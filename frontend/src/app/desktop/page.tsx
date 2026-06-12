@@ -45,6 +45,7 @@ import {
   useApplianceApps,
   type ApplianceApp,
 } from "@/appliance/apps";
+import { Dock, DockItem } from "@/appliance/dock";
 
 type DesktopApp = {
   name: string;
@@ -252,6 +253,11 @@ export default function DesktopShellPage() {
   ][today.getDay()];
 
   const debouncedSearch = useDebounce(desktopSearch, 200);
+
+  // Electron 外壳:桌面透明穿透模式(显示真实系统桌面);
+  // 非 Electron(浏览器 / NAS)则铺自有极光壁纸。
+  const isElectronShell =
+    typeof window !== "undefined" && !!window.octopus?.isElectron;
 
   const openApp = (app: DesktopApp) => navigate(app.route);
 
@@ -616,6 +622,11 @@ export default function DesktopShellPage() {
 
   return (
     <main className="relative h-screen overflow-hidden bg-transparent text-white">
+      {/* Octopus OS:浏览器/NAS 模式下的原创极光壁纸(深色景深,衬托毛玻璃面板)。
+          Electron 叠加模式不渲染它,让真实系统桌面透过来。 */}
+      {!isElectronShell && (
+        <div aria-hidden className="desktop-wallpaper absolute inset-0 z-0" />
+      )}
       <section className="relative z-10 flex h-full min-h-0 flex-col">
         <header className="hidden">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -1068,33 +1079,28 @@ export default function DesktopShellPage() {
           </div>
         )}
 
-        <nav
-          data-desktop-interactive
-          className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-end gap-2.5 rounded-[24px] border border-white/38 bg-white/48 px-3.5 py-2.5 shadow-2xl shadow-black/22 backdrop-blur-2xl"
-        >
+        <Dock className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-end gap-2.5 rounded-[24px] border border-white/45 bg-white/40 px-3.5 py-2.5 shadow-[0_18px_50px_-12px_rgba(0,0,0,0.45)] ring-1 ring-inset ring-white/40 backdrop-blur-2xl">
           {DOCK_APPS.map((app) => {
             const Icon = app.icon;
             return (
-              <button
+              <DockItem
                 key={app.name}
-                type="button"
                 onClick={() => openApp(app)}
                 title={app.name}
                 className={cn(
-                  "grid size-[54px] place-items-center rounded-[15px] bg-gradient-to-br text-white shadow-lg shadow-black/18 ring-1 ring-white/25 transition hover:-translate-y-2 hover:scale-110",
+                  "rounded-[15px] bg-gradient-to-br text-white shadow-lg shadow-black/18 ring-1 ring-white/25",
                   app.color,
                 )}
               >
                 <Icon className="size-6" />
-              </button>
+              </DockItem>
             );
           })}
-          <span className="mx-1 h-10 w-px bg-slate-700/16" />
+          <span className="mx-1 h-10 w-px self-center bg-slate-700/16" />
           {dockApplianceApps.length > 0
             ? dockApplianceApps.map((app) => (
-                <button
+                <DockItem
                   key={app.id}
-                  type="button"
                   onClick={() => openApplianceApp(app)}
                   title={
                     app.state === "running"
@@ -1102,7 +1108,7 @@ export default function DesktopShellPage() {
                       : `${app.name} · 已停止,点击启动`
                   }
                   className={cn(
-                    "relative grid size-[54px] place-items-center rounded-[15px] bg-white/86 text-slate-700 shadow-lg shadow-black/12 ring-1 ring-white/25 transition hover:-translate-y-2 hover:scale-110",
+                    "rounded-[15px] bg-white/86 text-slate-700 shadow-lg shadow-black/12 ring-1 ring-white/25",
                     app.state !== "running" && "opacity-55 saturate-50",
                   )}
                 >
@@ -1120,56 +1126,52 @@ export default function DesktopShellPage() {
                   {app.state === "running" && (
                     <span className="absolute bottom-1 size-1.5 rounded-full bg-emerald-500" />
                   )}
-                </button>
+                </DockItem>
               ))
             : LOCAL_APP_PLACEHOLDERS.map((app) => {
                 const Icon = app.icon;
                 return (
-                  <button
+                  <DockItem
                     key={app.name}
-                    type="button"
                     onClick={() => openApp(app)}
                     title={`${app.name} · ${app.subtitle}`}
                     className={cn(
-                      "grid size-[54px] place-items-center rounded-[15px] bg-gradient-to-br shadow-lg shadow-black/12 ring-1 ring-white/25 transition hover:-translate-y-2 hover:scale-110",
+                      "rounded-[15px] bg-gradient-to-br shadow-lg shadow-black/12 ring-1 ring-white/25",
                       app.color,
                     )}
                   >
                     <Icon className="size-6" />
-                  </button>
+                  </DockItem>
                 );
               })}
-          <span className="mx-1 h-10 w-px bg-slate-700/16" />
-          <button
-            type="button"
+          <span className="mx-1 h-10 w-px self-center bg-slate-700/16" />
+          <DockItem
             onClick={() => setDesktopDrawerOpen(true)}
             title="桌面文件"
-            className="grid size-[54px] place-items-center rounded-[15px] bg-white/76 text-orange-500 shadow-lg shadow-black/12 transition hover:-translate-y-2 hover:scale-110"
+            className="rounded-[15px] bg-white/76 text-orange-500 shadow-lg shadow-black/12"
           >
             <FolderIcon className="size-6" />
-          </button>
-          <button
-            type="button"
+          </DockItem>
+          <DockItem
             onClick={() => setShowWidget(!showWidget)}
             title="系统监控"
             className={cn(
-              "grid size-[54px] place-items-center rounded-[15px] shadow-lg shadow-black/12 transition hover:-translate-y-2 hover:scale-110",
+              "rounded-[15px] shadow-lg shadow-black/12",
               showWidget
                 ? "bg-blue-500 text-white ring-2 ring-blue-300"
                 : "bg-white/76 text-slate-700",
             )}
           >
             <CpuIcon className="size-6" />
-          </button>
-          <button
-            type="button"
+          </DockItem>
+          <DockItem
             onClick={() => navigate("/workspace")}
             title="设置"
-            className="grid size-[54px] place-items-center rounded-[15px] bg-white/76 text-slate-700 shadow-lg shadow-black/12 transition hover:-translate-y-2 hover:scale-110"
+            className="rounded-[15px] bg-white/76 text-slate-700 shadow-lg shadow-black/12"
           >
             <SettingsIcon className="size-6" />
-          </button>
-        </nav>
+          </DockItem>
+        </Dock>
         {showWidget && systemInfo && (
           <div
             data-desktop-interactive

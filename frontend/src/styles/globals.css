@@ -68,121 +68,230 @@
 @theme {
   --font-sans:
     "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
-    "Noto Color Emoji";
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 
   --animate-fade-in: fade-in 0.15s ease-out;
   @keyframes fade-in {
-    from { opacity: 0.3; }
-    to { opacity: 1; }
+    from {
+      opacity: 0.3;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   --animate-fade-in-up: fade-in-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   @keyframes fade-in-up {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   --animate-bouncing: bouncing 0.5s infinite alternate;
   @keyframes bouncing {
-    to { opacity: 0.1; transform: translateY(-8px); }
+    to {
+      opacity: 0.1;
+      transform: translateY(-8px);
+    }
   }
 
   --animate-streaming-bounce: streaming-bounce 1.4s ease-in-out infinite;
   @keyframes streaming-bounce {
-    0%, 80%, 100% { transform: translateY(0); }
-    40% { transform: translateY(-6px); }
+    0%,
+    80%,
+    100% {
+      transform: translateY(0);
+    }
+    40% {
+      transform: translateY(-6px);
+    }
   }
 
   --animate-skeleton-entrance: skeleton-entrance 0.35s ease-out forwards;
   @keyframes skeleton-entrance {
-    from { opacity: 0; transform: scaleX(0); }
-    to { opacity: 1; transform: scaleX(1); }
+    from {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+    to {
+      opacity: 1;
+      transform: scaleX(1);
+    }
   }
 
   --animate-suggestion-in: suggestion-in 0.2s ease-out forwards;
   @keyframes suggestion-in {
-    from { opacity: 0; transform: translateY(-1.25rem); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(-1.25rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   /* Implementation note. */
   --animate-learn-pulse: learn-pulse 1.2s cubic-bezier(0.16, 1, 0.3, 1) 2;
   @keyframes learn-pulse {
-    0%   { transform: scale(1);    filter: drop-shadow(0 0 0 transparent); }
-    25%  { transform: scale(1.12); filter: drop-shadow(0 0 8px color-mix(in oklch, var(--primary) 60%, transparent)); }
-    60%  { transform: scale(0.96); filter: drop-shadow(0 0 4px color-mix(in oklch, var(--primary) 30%, transparent)); }
-    100% { transform: scale(1);    filter: drop-shadow(0 0 0 transparent); }
+    0% {
+      transform: scale(1);
+      filter: drop-shadow(0 0 0 transparent);
+    }
+    25% {
+      transform: scale(1.12);
+      filter: drop-shadow(
+        0 0 8px color-mix(in oklch, var(--primary) 60%, transparent)
+      );
+    }
+    60% {
+      transform: scale(0.96);
+      filter: drop-shadow(
+        0 0 4px color-mix(in oklch, var(--primary) 30%, transparent)
+      );
+    }
+    100% {
+      transform: scale(1);
+      filter: drop-shadow(0 0 0 transparent);
+    }
   }
 
   --animate-learn-badge: learn-badge 2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   @keyframes learn-badge {
-    0%   { opacity: 0; transform: translateY(0) scale(0.6); }
-    15%  { opacity: 1; transform: translateY(-4px) scale(1.15); }
-    25%  { transform: translateY(-4px) scale(1); }
-    80%  { opacity: 1; transform: translateY(-4px) scale(1); }
-    100% { opacity: 0; transform: translateY(-10px) scale(0.9); }
+    0% {
+      opacity: 0;
+      transform: translateY(0) scale(0.6);
+    }
+    15% {
+      opacity: 1;
+      transform: translateY(-4px) scale(1.15);
+    }
+    25% {
+      transform: translateY(-4px) scale(1);
+    }
+    80% {
+      opacity: 1;
+      transform: translateY(-4px) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-10px) scale(0.9);
+    }
   }
 
   --animate-wave: wave 0.6s ease-in-out 2;
   @keyframes wave {
-    0%, 100% { transform: rotate(0deg); }
-    25% { transform: rotate(20deg); }
-    50% { transform: rotate(0deg); }
-    75% { transform: rotate(20deg); }
+    0%,
+    100% {
+      transform: rotate(0deg);
+    }
+    25% {
+      transform: rotate(20deg);
+    }
+    50% {
+      transform: rotate(0deg);
+    }
+    75% {
+      transform: rotate(20deg);
+    }
   }
 
   --animate-slide-in-up: slide-in-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   @keyframes slide-in-up {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   --animate-scale-in: scale-in 0.15s ease-out forwards;
   @keyframes scale-in {
-    from { opacity: 0; transform: scale(0.97); }
-    to { opacity: 1; transform: scale(1); }
+    from {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
 
   --animate-pulse-soft: pulse-soft 2.5s ease-in-out infinite;
   @keyframes pulse-soft {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
   }
 
   --animate-shimmer: shimmer 2s linear infinite;
   @keyframes shimmer {
-    from { background-position: -200% 0; }
-    to { background-position: 200% 0; }
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
   }
 
   --animate-float: float 3s ease-in-out infinite;
   @keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-6px); }
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
   }
 
   --animate-spin-slow: spin 3s linear infinite;
 
   --animate-glow: glow 2s ease-in-out infinite alternate;
   @keyframes glow {
-    from { box-shadow: 0 0 8px var(--primary)/20; }
-    to { box-shadow: 0 0 20px var(--primary)/40; }
+    from {
+      box-shadow: 0 0 8px var(--primary) / 20;
+    }
+    to {
+      box-shadow: 0 0 20px var(--primary) / 40;
+    }
   }
 
   /* Breathing light effect for bot icon status indicator */
   @keyframes breathing {
-    0%, 100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0%); }
-    50% { box-shadow: 0 0 12px 2px rgb(16 185 129 / 35%); }
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(16 185 129 / 0%);
+    }
+    50% {
+      box-shadow: 0 0 12px 2px rgb(16 185 129 / 35%);
+    }
   }
 
   /* Gradient shimmer text for streaming/thinking states.
      Usage: <span class="codex-shimmer-text">Thinking…</span>
      Also exposed as the animate-codex-shimmer utility for custom elements. */
-  --animate-codex-shimmer: codex-shimmer 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  --animate-codex-shimmer: codex-shimmer 2.2s cubic-bezier(0.4, 0, 0.2, 1)
+    infinite;
   @keyframes codex-shimmer {
-    0% { background-position: 140% 0; }
-    100% { background-position: -120% 0; }
+    0% {
+      background-position: 140% 0;
+    }
+    100% {
+      background-position: -120% 0;
+    }
   }
 }
 
@@ -232,17 +341,38 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --animate-aurora: aurora 8s ease-in-out infinite alternate;
   @keyframes aurora {
-    0% { background-position: 0% 50%; transform: rotate(-5deg) scale(0.9); }
-    25% { background-position: 50% 100%; transform: rotate(5deg) scale(1.1); }
-    50% { background-position: 100% 50%; transform: rotate(-3deg) scale(0.95); }
-    75% { background-position: 50% 0%; transform: rotate(3deg) scale(1.05); }
-    100% { background-position: 0% 50%; transform: rotate(-5deg) scale(0.9); }
+    0% {
+      background-position: 0% 50%;
+      transform: rotate(-5deg) scale(0.9);
+    }
+    25% {
+      background-position: 50% 100%;
+      transform: rotate(5deg) scale(1.1);
+    }
+    50% {
+      background-position: 100% 50%;
+      transform: rotate(-3deg) scale(0.95);
+    }
+    75% {
+      background-position: 50% 0%;
+      transform: rotate(3deg) scale(1.05);
+    }
+    100% {
+      background-position: 0% 50%;
+      transform: rotate(-5deg) scale(0.9);
+    }
   }
   --animate-shine: shine var(--duration) infinite linear;
   @keyframes shine {
-    0% { background-position: 0% 0%; }
-    50% { background-position: 100% 100%; }
-    to { background-position: 0% 0%; }
+    0% {
+      background-position: 0% 0%;
+    }
+    50% {
+      background-position: 100% 100%;
+    }
+    to {
+      background-position: 0% 0%;
+    }
   }
 }
 
@@ -261,17 +391,33 @@
   --color-token-foreground: var(--foreground);
   --color-token-text-primary: var(--foreground);
   --color-token-text-secondary: var(--muted-foreground);
-  --color-token-text-tertiary: color-mix(in oklch, var(--muted-foreground) 85%, transparent);
+  --color-token-text-tertiary: color-mix(
+    in oklch,
+    var(--muted-foreground) 85%,
+    transparent
+  );
   --color-token-description-foreground: var(--muted-foreground);
-  --color-token-disabled-foreground: color-mix(in oklch, var(--muted-foreground) 65%, transparent);
+  --color-token-disabled-foreground: color-mix(
+    in oklch,
+    var(--muted-foreground) 65%,
+    transparent
+  );
   --color-token-border: var(--border);
   --color-token-focus-border: var(--ring);
   --color-token-dropdown-background: var(--popover);
-  --color-token-list-hover-background: color-mix(in oklch, var(--accent) 85%, transparent);
+  --color-token-list-hover-background: color-mix(
+    in oklch,
+    var(--accent) 85%,
+    transparent
+  );
   --color-token-surface-raised: var(--card);
   --color-token-surface-inset: var(--muted);
   --color-token-link: var(--primary);
-  --color-token-link-hover: color-mix(in oklch, var(--primary) 75%, var(--foreground) 25%);
+  --color-token-link-hover: color-mix(
+    in oklch,
+    var(--primary) 75%,
+    var(--foreground) 25%
+  );
 
   /* Compact density switch (Codex uses a tighter 14px base).
      Apply via <html data-density="compact">. */
@@ -334,11 +480,11 @@
   --primary: oklch(0.72 0.18 264);
   --primary-foreground: oklch(0.145 0.006 264);
   --secondary: oklch(0.245 0.011 264);
-  --secondary-foreground: oklch(0.90 0.005 264);
+  --secondary-foreground: oklch(0.9 0.005 264);
   --muted: oklch(0.225 0.009 264);
   --muted-foreground: oklch(0.76 0.014 264);
   --accent: oklch(0.27 0.018 264);
-  --accent-foreground: oklch(0.90 0.01 264);
+  --accent-foreground: oklch(0.9 0.01 264);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(0.285 0.012 264);
   --input: oklch(0.265 0.011 264);
@@ -353,7 +499,7 @@
   --sidebar-primary: oklch(0.68 0.22 264);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.21 0.015 264);
-  --sidebar-accent-foreground: oklch(0.90 0.01 264);
+  --sidebar-accent-foreground: oklch(0.9 0.01 264);
   --sidebar-border: oklch(0.275 0.012 264);
   --sidebar-ring: oklch(0.55 0.15 264);
 }
@@ -394,54 +540,61 @@
   --sidebar-accent-foreground: oklch(0.25 0.055 253);
   --sidebar-border: oklch(0.86 0.006 255);
   --sidebar-ring: oklch(0.62 0.205 253);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   letter-spacing: 0;
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
-  --shadow-elevated: 0 2px 6px rgba(15, 23, 42, 0.06), 0 18px 44px rgba(15, 23, 42, 0.12);
-  --shadow-floating: 0 6px 18px rgba(15, 23, 42, 0.1), 0 28px 70px rgba(15, 23, 42, 0.18);
+  --shadow-card:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --shadow-elevated:
+    0 2px 6px rgba(15, 23, 42, 0.06), 0 18px 44px rgba(15, 23, 42, 0.12);
+  --shadow-floating:
+    0 6px 18px rgba(15, 23, 42, 0.1), 0 28px 70px rgba(15, 23, 42, 0.18);
   --shadow-modal: 0 18px 60px rgba(15, 23, 42, 0.22);
 }
 
 .dark.apple {
   color-scheme: dark;
-  --background: oklch(0.10 0.006 255);
+  --background: oklch(0.1 0.006 255);
   --foreground: oklch(0.94 0.004 255);
   --card: oklch(0.18 0.007 255);
   --card-foreground: oklch(0.94 0.004 255);
   --popover: oklch(0.16 0.007 255);
   --popover-foreground: oklch(0.94 0.004 255);
-  --primary: oklch(0.70 0.19 253);
-  --primary-foreground: oklch(0.10 0.006 255);
+  --primary: oklch(0.7 0.19 253);
+  --primary-foreground: oklch(0.1 0.006 255);
   --secondary: oklch(0.24 0.009 255);
   --secondary-foreground: oklch(0.88 0.005 255);
   --muted: oklch(0.235 0.008 255);
   --muted-foreground: oklch(0.67 0.014 255);
-  --accent: oklch(0.30 0.035 253);
+  --accent: oklch(0.3 0.035 253);
   --accent-foreground: oklch(0.9 0.01 253);
   --destructive: oklch(0.7 0.2 25);
-  --destructive-foreground: oklch(0.10 0.006 255);
+  --destructive-foreground: oklch(0.1 0.006 255);
   --border: oklch(0.28 0.01 255);
   --input: oklch(0.255 0.01 255);
-  --ring: oklch(0.70 0.19 253);
-  --chart-1: oklch(0.70 0.19 253);
+  --ring: oklch(0.7 0.19 253);
+  --chart-1: oklch(0.7 0.19 253);
   --chart-2: oklch(0.76 0.17 155);
   --chart-3: oklch(0.68 0.19 335);
-  --chart-4: oklch(0.80 0.16 85);
-  --chart-5: oklch(0.70 0.2 25);
+  --chart-4: oklch(0.8 0.16 85);
+  --chart-5: oklch(0.7 0.2 25);
   --sidebar: oklch(0.13 0.006 255);
   --sidebar-foreground: oklch(0.94 0.004 255);
-  --sidebar-primary: oklch(0.70 0.19 253);
+  --sidebar-primary: oklch(0.7 0.19 253);
   --sidebar-primary-foreground: oklch(0.995 0 0);
   --sidebar-accent: oklch(0.29 0.032 253);
   --sidebar-accent-foreground: oklch(0.9 0.01 253);
   --sidebar-border: oklch(0.27 0.01 255);
-  --sidebar-ring: oklch(0.70 0.19 253);
+  --sidebar-ring: oklch(0.7 0.19 253);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.26), 0 12px 34px rgba(0, 0, 0, 0.36);
-  --shadow-elevated: 0 2px 8px rgba(0, 0, 0, 0.34), 0 22px 54px rgba(0, 0, 0, 0.42);
-  --shadow-floating: 0 8px 22px rgba(0, 0, 0, 0.42), 0 34px 78px rgba(0, 0, 0, 0.52);
+  --shadow-elevated:
+    0 2px 8px rgba(0, 0, 0, 0.34), 0 22px 54px rgba(0, 0, 0, 0.42);
+  --shadow-floating:
+    0 8px 22px rgba(0, 0, 0, 0.42), 0 34px 78px rgba(0, 0, 0, 0.52);
   --shadow-modal: 0 18px 64px rgba(0, 0, 0, 0.62);
 }
 
@@ -459,8 +612,104 @@
     background: transparent;
   }
 
+  /* Octopus OS 桌面壁纸 — 原创极光网格渐变(非任何专有资源)。
+     深色twilight底,多个柔和光晕叠加出景深;顶部留亮、四周压暗成晕影,
+     让白色毛玻璃 Dock / 卡片浮起来。Electron 叠加模式下隐藏以保留穿透。 */
+  .desktop-wallpaper {
+    background-color: #0b1020;
+    background-image:
+      radial-gradient(
+        120% 80% at 12% 8%,
+        rgba(94, 132, 255, 0.42) 0%,
+        transparent 55%
+      ),
+      radial-gradient(
+        110% 75% at 88% 14%,
+        rgba(180, 110, 255, 0.36) 0%,
+        transparent 52%
+      ),
+      radial-gradient(
+        90% 70% at 76% 88%,
+        rgba(60, 200, 210, 0.3) 0%,
+        transparent 55%
+      ),
+      radial-gradient(
+        80% 60% at 22% 92%,
+        rgba(255, 130, 170, 0.22) 0%,
+        transparent 55%
+      ),
+      linear-gradient(160deg, #131a33 0%, #0b1020 50%, #090d1a 100%);
+    background-size:
+      200% 200%,
+      200% 200%,
+      200% 200%,
+      200% 200%,
+      100% 100%;
+    animation: desktop-aurora 38s ease-in-out infinite alternate;
+  }
+  .desktop-wallpaper::after {
+    /* 四周晕影,聚焦中心、压暗边缘。 */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      120% 120% at 50% 45%,
+      transparent 58%,
+      rgba(0, 0, 0, 0.34) 100%
+    );
+  }
+  @keyframes desktop-aurora {
+    0% {
+      background-position:
+        0% 0%,
+        100% 0%,
+        100% 100%,
+        0% 100%,
+        0% 0%;
+    }
+    100% {
+      background-position:
+        30% 20%,
+        70% 18%,
+        64% 78%,
+        26% 82%,
+        0% 0%;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
+    .desktop-wallpaper {
+      animation: none;
+    }
+  }
+
+  /* Dock 邻近缩放:--dock-s 由 dock.tsx 每帧写入(静息 1,峰值约 1.44)。
+     按钮宽高随之放大,内层 .dock-item-inner 继承同一变量同步缩放内容,
+     缓动用 macOS 风格的 ease-out 贝塞尔。 */
+  .dock-item {
+    display: grid;
+    place-items: center;
+    width: calc(54px * var(--dock-s, 1));
+    height: calc(54px * var(--dock-s, 1));
+    transition:
+      width 170ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 170ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .dock-item-inner {
+    transform: scale(var(--dock-s, 1));
+    transition: transform 170ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dock-item,
+    .dock-item-inner {
+      transition: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
@@ -511,21 +760,39 @@
      The `:where(...)` block forces the cascade down to direct prose
      descendants so headings/lists/paragraphs scale with the chosen
      base, not the page's own root font size. */
-  .prose-sm :where(p, h1, h2, h3, h4, h5, h6, li, blockquote, ul, ol, pre, code, table),
-  .prose-base :where(p, h1, h2, h3, h4, h5, h6, li, blockquote, ul, ol, pre, code, table),
-  .prose-lg :where(p, h1, h2, h3, h4, h5, h6, li, blockquote, ul, ol, pre, code, table) {
+  .prose-sm
+    :where(p, h1, h2, h3, h4, h5, h6, li, blockquote, ul, ol, pre, code, table),
+  .prose-base
+    :where(p, h1, h2, h3, h4, h5, h6, li, blockquote, ul, ol, pre, code, table),
+  .prose-lg
+    :where(
+      p,
+      h1,
+      h2,
+      h3,
+      h4,
+      h5,
+      h6,
+      li,
+      blockquote,
+      ul,
+      ol,
+      pre,
+      code,
+      table
+    ) {
     font-size: inherit;
   }
   .prose-sm {
-    font-size: 0.875rem;     /* 14px */
+    font-size: 0.875rem; /* 14px */
     line-height: 1.7142857;
   }
   .prose-base {
-    font-size: 1rem;          /* 16px */
+    font-size: 1rem; /* 16px */
     line-height: 1.75;
   }
   .prose-lg {
-    font-size: 1.125rem;      /* 18px */
+    font-size: 1.125rem; /* 18px */
     line-height: 1.7777778;
   }
   .ui-density-stack {
@@ -598,8 +865,13 @@
     animation: codex-shimmer 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
   @media (prefers-reduced-motion: reduce) {
-    .codex-skeleton::before { animation: none; opacity: 0; }
-    .codex-skeleton { animation: pulse 2s ease-in-out infinite; }
+    .codex-skeleton::before {
+      animation: none;
+      opacity: 0;
+    }
+    .codex-skeleton {
+      animation: pulse 2s ease-in-out infinite;
+    }
   }
 
   /* Frosted command palette surface. Radix Dialog sets the
@@ -648,7 +920,12 @@
   }
 
   .gradient-text {
-    background: linear-gradient(135deg, var(--primary) 0%, oklch(0.58 0.22 280) 50%, oklch(0.62 0.24 320) 100%);
+    background: linear-gradient(
+      135deg,
+      var(--primary) 0%,
+      oklch(0.58 0.22 280) 50%,
+      oklch(0.62 0.24 320) 100%
+    );
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -657,14 +934,23 @@
   .gradient-border {
     position: relative;
     border: none;
-    background: linear-gradient(var(--card), var(--card)) padding-box,
-                linear-gradient(135deg, var(--primary), oklch(0.55 0.22 280), oklch(0.6 0.24 320)) border-box;
+    background:
+      linear-gradient(var(--card), var(--card)) padding-box,
+      linear-gradient(
+          135deg,
+          var(--primary),
+          oklch(0.55 0.22 280),
+          oklch(0.6 0.24 320)
+        )
+        border-box;
     border-radius: var(--radius-lg);
     border: 2px solid transparent;
   }
 
   .hover-lift {
-    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transition:
+      transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .hover-lift:hover {
     transform: translateY(-1px);
@@ -681,7 +967,7 @@
     background: linear-gradient(
       90deg,
       var(--muted) 25%,
-      var(--muted-foreground)/10 50%,
+      var(--muted-foreground) / 10 50%,
       var(--muted) 75%
     );
     background-size: 200% 100%;
@@ -701,11 +987,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--muted-foreground)/20;
+    background: var(--muted-foreground) / 20;
     border-radius: 8px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--muted-foreground)/40;
+    background: var(--muted-foreground) / 40;
   }
 
   ::selection {
@@ -724,8 +1010,14 @@
     animation: tooltip-in 0.12s ease-out forwards;
   }
   @keyframes tooltip-in {
-    from { opacity: 0; transform: scale(0.97) translateX(-50%); }
-    to { opacity: 1; transform: scale(1) translateX(-50%); }
+    from {
+      opacity: 0;
+      transform: scale(0.97) translateX(-50%);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) translateX(-50%);
+    }
   }
 
   [data-slot="dropdown-menu-content"] {
@@ -733,16 +1025,30 @@
     transform-origin: top;
   }
   @keyframes dropdown-in {
-    from { opacity: 0; transform: scaleY(0.97) translateY(-1px); }
-    to { opacity: 1; transform: scaleY(1) translateY(0); }
+    from {
+      opacity: 0;
+      transform: scaleY(0.97) translateY(-1px);
+    }
+    to {
+      opacity: 1;
+      transform: scaleY(1) translateY(0);
+    }
   }
 
   .container-md {
     width: 100%;
-    @media (width >= 40rem) { max-width: 40rem; }
-    @media (width >= 48rem) { max-width: 48rem; }
-    @media (width >= 64rem) { max-width: 64rem; }
-    @media (width >= 80rem) { max-width: 80rem; }
+    @media (width >= 40rem) {
+      max-width: 40rem;
+    }
+    @media (width >= 48rem) {
+      max-width: 48rem;
+    }
+    @media (width >= 64rem) {
+      max-width: 64rem;
+    }
+    @media (width >= 80rem) {
+      max-width: 80rem;
+    }
   }
 
   .ambilight {
@@ -759,8 +1065,16 @@
     top: 0;
     background: linear-gradient(
       45deg,
-      #fb0094, #0000ff, #00ff00, #ffff00, #ff0000,
-      #fb0094, #0000ff, #00ff00, #ffff00, #ff0000
+      #fb0094,
+      #0000ff,
+      #00ff00,
+      #ffff00,
+      #ff0000,
+      #fb0094,
+      #0000ff,
+      #00ff00,
+      #ffff00,
+      #ff0000
     );
     background-size: 400%;
     width: 100%;
@@ -769,15 +1083,27 @@
     z-index: -1;
     animation: ambilight 40s ease-in-out infinite;
   }
-  .ambilight.enabled { opacity: 1; }
-  .dark .ambilight:before,
-  .dark .ambilight:after { opacity: 0.85; }
-  @keyframes ambilight {
-    0% { background-position: 0 0; }
-    50% { background-position: 400% 0; }
-    100% { background-position: 0 0; }
+  .ambilight.enabled {
+    opacity: 1;
   }
-  .ambilight:after { filter: blur(60px); }
+  .dark .ambilight:before,
+  .dark .ambilight:after {
+    opacity: 0.85;
+  }
+  @keyframes ambilight {
+    0% {
+      background-position: 0 0;
+    }
+    50% {
+      background-position: 400% 0;
+    }
+    100% {
+      background-position: 0 0;
+    }
+  }
+  .ambilight:after {
+    filter: blur(60px);
+  }
 
   .golden-text {
     background: linear-gradient(135deg, #d19e1d 0%, #e9c665 50%, #e3a812 100%);
@@ -789,32 +1115,88 @@
 
   .css-starfield {
     background:
-      radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.8), transparent),
-      radial-gradient(1.5px 1.5px at 40% 15%, rgba(200,180,255,0.7), transparent),
-      radial-gradient(1px 1px at 55% 70%, rgba(255,255,255,0.5), transparent),
-      radial-gradient(1.5px 1.5px at 70% 35%, rgba(180,200,255,0.6), transparent),
-      radial-gradient(1px 1px at 85% 55%, rgba(255,255,255,0.7), transparent),
-      radial-gradient(1.5px 1.5px at 60% 10%, rgba(200,200,255,0.6), transparent),
-      radial-gradient(1px 1px at 30% 90%, rgba(255,255,255,0.4), transparent),
-      radial-gradient(1px 1px at 80% 85%, rgba(255,255,255,0.5), transparent);
+      radial-gradient(
+        1px 1px at 10% 20%,
+        rgba(255, 255, 255, 0.8),
+        transparent
+      ),
+      radial-gradient(
+        1.5px 1.5px at 40% 15%,
+        rgba(200, 180, 255, 0.7),
+        transparent
+      ),
+      radial-gradient(
+        1px 1px at 55% 70%,
+        rgba(255, 255, 255, 0.5),
+        transparent
+      ),
+      radial-gradient(
+        1.5px 1.5px at 70% 35%,
+        rgba(180, 200, 255, 0.6),
+        transparent
+      ),
+      radial-gradient(
+        1px 1px at 85% 55%,
+        rgba(255, 255, 255, 0.7),
+        transparent
+      ),
+      radial-gradient(
+        1.5px 1.5px at 60% 10%,
+        rgba(200, 200, 255, 0.6),
+        transparent
+      ),
+      radial-gradient(
+        1px 1px at 30% 90%,
+        rgba(255, 255, 255, 0.4),
+        transparent
+      ),
+      radial-gradient(1px 1px at 80% 85%, rgba(255, 255, 255, 0.5), transparent);
     animation: starfield-drift 60s linear infinite;
   }
 
   @keyframes starfield-drift {
-    0% { background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%, 0% 0%; }
-    100% { background-position: 100% 100%, 50% -100%, -50% 100%, 100% -50%, 50% 100%, -50% -100%, 100% 50%, -100% -50%; }
+    0% {
+      background-position:
+        0% 0%,
+        0% 0%,
+        0% 0%,
+        0% 0%,
+        0% 0%,
+        0% 0%,
+        0% 0%,
+        0% 0%;
+    }
+    100% {
+      background-position:
+        100% 100%,
+        50% -100%,
+        -50% 100%,
+        100% -50%,
+        50% 100%,
+        -50% -100%,
+        100% 50%,
+        -100% -50%;
+    }
   }
 
   .workspace-shell {
     position: relative;
     background:
-      linear-gradient(180deg, color-mix(in oklch, var(--background) 94%, white 6%), var(--background) 28rem),
+      linear-gradient(
+        180deg,
+        color-mix(in oklch, var(--background) 94%, white 6%),
+        var(--background) 28rem
+      ),
       var(--background);
   }
 
   .dark:not(.apple) .workspace-shell {
     background:
-      linear-gradient(180deg, color-mix(in oklch, var(--background) 90%, white 3%), var(--background) 28rem),
+      linear-gradient(
+        180deg,
+        color-mix(in oklch, var(--background) 90%, white 3%),
+        var(--background) 28rem
+      ),
       var(--background);
   }
 
@@ -823,13 +1205,19 @@
     background: color-mix(in oklch, var(--card) 92%, var(--background) 8%);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 22px rgba(15, 23, 42, 0.05);
-    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 8px 22px rgba(15, 23, 42, 0.05);
+    transition:
+      box-shadow 0.2s ease,
+      border-color 0.2s ease;
   }
 
   .workspace-panel:hover {
     border-color: color-mix(in oklch, var(--border) 76%, var(--primary) 24%);
-    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.05), 0 12px 28px rgba(15, 23, 42, 0.08);
+    box-shadow:
+      0 2px 4px rgba(15, 23, 42, 0.05),
+      0 12px 28px rgba(15, 23, 42, 0.08);
   }
 
   .workspace-panel-subtle {
@@ -837,7 +1225,10 @@
     background: color-mix(in oklch, var(--card) 84%, var(--background) 16%);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      background 0.2s ease,
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
   }
 
   .workspace-panel-subtle:hover {
@@ -850,13 +1241,19 @@
     background: color-mix(in oklch, var(--card) 90%, var(--background) 10%);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 10px 28px rgba(0, 0, 0, 0.22);
-    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.28),
+      0 10px 28px rgba(0, 0, 0, 0.22);
+    transition:
+      box-shadow 0.2s ease,
+      border-color 0.2s ease;
   }
 
   .dark .workspace-panel:hover {
     border-color: color-mix(in oklch, var(--border) 70%, var(--primary) 30%);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 16px 34px rgba(0, 0, 0, 0.28);
+    box-shadow:
+      0 2px 8px rgba(0, 0, 0, 0.3),
+      0 16px 34px rgba(0, 0, 0, 0.28);
   }
 
   .dark .workspace-panel-subtle {
@@ -864,7 +1261,10 @@
     background: color-mix(in oklch, var(--card) 80%, var(--background) 20%);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      background 0.2s ease,
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
   }
 
   .dark .workspace-panel-subtle:hover {
@@ -904,21 +1304,45 @@
 
   .apple body {
     background:
-      linear-gradient(180deg, color-mix(in oklch, var(--background) 88%, white 12%), var(--background) 34rem),
-      radial-gradient(circle at 24% -10%, color-mix(in oklch, var(--primary) 12%, transparent), transparent 32rem);
+      linear-gradient(
+        180deg,
+        color-mix(in oklch, var(--background) 88%, white 12%),
+        var(--background) 34rem
+      ),
+      radial-gradient(
+        circle at 24% -10%,
+        color-mix(in oklch, var(--primary) 12%, transparent),
+        transparent 32rem
+      );
   }
 
   .apple .workspace-shell {
     background:
-      linear-gradient(180deg, color-mix(in oklch, var(--background) 82%, white 18%), var(--background) 38rem),
-      radial-gradient(circle at 18% 0%, color-mix(in oklch, var(--primary) 10%, transparent), transparent 30rem);
+      linear-gradient(
+        180deg,
+        color-mix(in oklch, var(--background) 82%, white 18%),
+        var(--background) 38rem
+      ),
+      radial-gradient(
+        circle at 18% 0%,
+        color-mix(in oklch, var(--primary) 10%, transparent),
+        transparent 30rem
+      );
   }
 
   .dark.apple body,
   .dark.apple .workspace-shell {
     background:
-      linear-gradient(180deg, color-mix(in oklch, var(--background) 82%, white 3%), var(--background) 36rem),
-      radial-gradient(circle at 22% -8%, color-mix(in oklch, var(--primary) 16%, transparent), transparent 32rem);
+      linear-gradient(
+        180deg,
+        color-mix(in oklch, var(--background) 82%, white 3%),
+        var(--background) 36rem
+      ),
+      radial-gradient(
+        circle at 22% -8%,
+        color-mix(in oklch, var(--primary) 16%, transparent),
+        transparent 32rem
+      );
   }
 
   .apple .workspace-panel {
@@ -975,10 +1399,11 @@
   .apple button,
   .apple [role="button"] {
     border-radius: calc(var(--radius) * 1.05);
-    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-                box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-                background-color 0.15s ease,
-                border-color 0.15s ease;
+    transition:
+      transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+      background-color 0.15s ease,
+      border-color 0.15s ease;
   }
 
   .apple [data-slot="button"] {
@@ -986,8 +1411,14 @@
   }
 
   .apple [data-slot="button"][data-variant="default"] {
-    background: linear-gradient(180deg, color-mix(in oklch, var(--primary) 94%, white 6%), var(--primary));
-    box-shadow: 0 1px 2px color-mix(in oklch, var(--primary) 22%, transparent), 0 8px 18px color-mix(in oklch, var(--primary) 16%, transparent);
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--primary) 94%, white 6%),
+      var(--primary)
+    );
+    box-shadow:
+      0 1px 2px color-mix(in oklch, var(--primary) 22%, transparent),
+      0 8px 18px color-mix(in oklch, var(--primary) 16%, transparent);
   }
 
   .apple [data-slot="button"][data-variant="outline"],
@@ -1012,7 +1443,10 @@
     box-shadow: inset 0 1px 0 color-mix(in oklch, white 70%, transparent);
     backdrop-filter: blur(14px) saturate(1.35);
     -webkit-backdrop-filter: blur(14px) saturate(1.35);
-    transition: box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+    transition:
+      box-shadow 0.2s ease,
+      border-color 0.2s ease,
+      background-color 0.2s ease;
   }
 
   .dark.apple [data-slot="input"],
@@ -1063,12 +1497,14 @@
     background: color-mix(in oklch, var(--background) 68%, transparent);
     backdrop-filter: blur(24px) saturate(1.75);
     -webkit-backdrop-filter: blur(24px) saturate(1.75);
-    border-bottom: 0.5px solid color-mix(in oklch, var(--border) 50%, transparent);
+    border-bottom: 0.5px solid
+      color-mix(in oklch, var(--border) 50%, transparent);
   }
 
   .dark.apple .nav-bar {
     background: color-mix(in oklch, var(--background) 60%, transparent);
-    border-bottom: 0.5px solid color-mix(in oklch, var(--border) 30%, transparent);
+    border-bottom: 0.5px solid
+      color-mix(in oklch, var(--border) 30%, transparent);
   }
 
   .apple [data-slot="segmented-control"] {
@@ -1136,7 +1572,11 @@
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: radial-gradient(circle at top right, var(--primary) / 5, transparent 60%);
+    background: radial-gradient(
+      circle at top right,
+      var(--primary) / 5,
+      transparent 60%
+    );
     pointer-events: none;
   }
 
@@ -1147,15 +1587,23 @@
     container: composer-footer / inline-size;
   }
   @container composer-footer (width <= 440px) {
-    .composer-footer__label--sm { display: none; }
+    .composer-footer__label--sm {
+      display: none;
+    }
   }
   @container composer-footer (width <= 320px) {
-    .composer-footer__label--xs { display: none; }
+    .composer-footer__label--xs {
+      display: none;
+    }
   }
   @container composer-footer (width <= 280px) {
-    .composer-footer__secondary { display: none; }
+    .composer-footer__secondary {
+      display: none;
+    }
   }
   @container composer-footer (width >= 300px) {
-    .composer-footer__icon-collapsed { display: none; }
+    .composer-footer__icon-collapsed {
+      display: none;
+    }
   }
 }
