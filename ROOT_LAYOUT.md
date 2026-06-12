@@ -18,6 +18,7 @@ to scan.
 | `runtime/` | Python runtime and API surface |
 | `frontend/` | React/Electron workspace |
 | `tests/` | Test suite |
+| `appliance/` | Octopus OS appliance layer (octopus-os fork; see docs/OCTOPUS_OS_PLAN.md) |
 
 ## Product Assets
 

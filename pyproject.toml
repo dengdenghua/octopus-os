@@ -46,6 +46,11 @@ serve = [
 web = [
     "httpx>=0.27",
 ]
+# ── Octopus OS appliance(octopus-os fork:NAS 启动器)──────
+appliance = [
+    "fastapi>=0.115,<1.0",
+    "httpx>=0.27",
+]
 # ── Web content extraction (Readability-style main content) ─
 extract = [
     "trafilatura>=2.0",

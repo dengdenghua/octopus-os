@@ -58,6 +58,7 @@ ROOT_ALLOWLIST: set[str] = {
     "runtime",
     "frontend",
     "tests",
+    "appliance",  # octopus-os fork: OS 专属层(见 docs/OCTOPUS_OS_PLAN.md §4)
     # ── Product assets ──────────────────────────────────────
     "agents",
     "skills",

@@ -1386,4 +1386,15 @@ def create_app(
             "anthropic compat router failed to mount: %s", _anth_exc,
         )
 
+    # ── Octopus OS appliance profile(octopus-os fork)──────────────
+    # NAS 桌面启动器的应用注册器;仅 OCTOPUS_APPLIANCE=1 时挂载,
+    # 母体行为零变化。实现放在顶层 appliance/ 包,最小化合并面
+    # (docs/OCTOPUS_OS_PLAN.md §4)。
+    import os as _os
+
+    if _os.environ.get("OCTOPUS_APPLIANCE") == "1":
+        from appliance.app_registry.router import create_appliance_router
+
+        app.include_router(create_appliance_router())
+
     return app

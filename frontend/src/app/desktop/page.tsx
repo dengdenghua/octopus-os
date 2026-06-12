@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AppWindowIcon,
@@ -33,6 +39,12 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/hooks";
 import type { NativeDesktopItem } from "@/types/electron";
+import {
+  appOpenUrl,
+  startApplianceApp,
+  useApplianceApps,
+  type ApplianceApp,
+} from "@/appliance/apps";
 
 type DesktopApp = {
   name: string;
@@ -126,7 +138,16 @@ const DESKTOP_CATEGORIES: DesktopCategory[] = [
   { key: "other", label: "其他" },
 ];
 
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico"]);
+const IMAGE_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "svg",
+  "ico",
+]);
 const DOCUMENT_EXTENSIONS = new Set([
   "txt",
   "md",
@@ -139,7 +160,17 @@ const DOCUMENT_EXTENSIONS = new Set([
   "pptx",
   "csv",
 ]);
-const PACKAGE_EXTENSIONS = new Set(["zip", "rar", "7z", "tar", "gz", "exe", "msi", "dmg", "pkg"]);
+const PACKAGE_EXTENSIONS = new Set([
+  "zip",
+  "rar",
+  "7z",
+  "tar",
+  "gz",
+  "exe",
+  "msi",
+  "dmg",
+  "pkg",
+]);
 const ARCHIVE_FOLDER_MAP: Record<string, string> = {
   image: "图片",
   document: "文档",
@@ -148,7 +179,9 @@ const ARCHIVE_FOLDER_MAP: Record<string, string> = {
 };
 const DESKTOP_ORGANIZER_ENABLED_KEY = "octopus:desktop-organizer-enabled";
 
-function getDesktopItemCategory(item: NativeDesktopItem): DesktopCategory["key"] {
+function getDesktopItemCategory(
+  item: NativeDesktopItem,
+): DesktopCategory["key"] {
   if (item.kind === "folder") return "folder";
   if (item.kind === "app") return "app";
   if (IMAGE_EXTENSIONS.has(item.extension)) return "image";
@@ -162,7 +195,9 @@ function groupDesktopItems(items: NativeDesktopItem[]) {
     .map((category) => ({
       key: category.key,
       title: category.label,
-      items: items.filter((item) => getDesktopItemCategory(item) === category.key),
+      items: items.filter(
+        (item) => getDesktopItemCategory(item) === category.key,
+      ),
     }))
     .filter((group) => group.items.length > 0);
 }
@@ -170,9 +205,12 @@ function groupDesktopItems(items: NativeDesktopItem[]) {
 export default function DesktopShellPage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
-  const [nativeDesktopItems, setNativeDesktopItems] = useState<NativeDesktopItem[]>([]);
+  const [nativeDesktopItems, setNativeDesktopItems] = useState<
+    NativeDesktopItem[]
+  >([]);
   const [desktopDrawerOpen, setDesktopDrawerOpen] = useState(false);
-  const [desktopCategory, setDesktopCategory] = useState<DesktopCategory["key"]>("all");
+  const [desktopCategory, setDesktopCategory] =
+    useState<DesktopCategory["key"]>("all");
   const [desktopSearch, setDesktopSearch] = useState("");
   const [organizerEnabled, setOrganizerEnabled] = useState(() =>
     typeof window !== "undefined"
@@ -181,7 +219,10 @@ export default function DesktopShellPage() {
   );
   const [archiving, setArchiving] = useState(false);
   const [undoing, setUndoing] = useState(false);
-  const [archiveResult, setArchiveResult] = useState<{ moved: number; skipped: number } | null>(null);
+  const [archiveResult, setArchiveResult] = useState<{
+    moved: number;
+    skipped: number;
+  } | null>(null);
   const [showWidget, setShowWidget] = useState(false);
   const [systemInfo, setSystemInfo] = useState<{
     cpu: { model: string; cores: number; usage: number };
@@ -200,13 +241,38 @@ export default function DesktopShellPage() {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const mousePassthroughRef = useRef(false);
   const today = useMemo(() => new Date(), []);
-  const weekday = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][
-    today.getDay()
-  ];
+  const weekday = [
+    "星期日",
+    "星期一",
+    "星期二",
+    "星期三",
+    "星期四",
+    "星期五",
+    "星期六",
+  ][today.getDay()];
 
   const debouncedSearch = useDebounce(desktopSearch, 200);
 
   const openApp = (app: DesktopApp) => navigate(app.route);
+
+  // Octopus OS:Dock 的"本地应用"段接真实数据(Docker 应用注册器)。
+  // API 不可用时 dockApplianceApps 为空,渲染处回退到占位图标。
+  const { apps: applianceApps, refresh: refreshApplianceApps } =
+    useApplianceApps();
+  const dockApplianceApps = useMemo(
+    () => applianceApps.filter((app) => appOpenUrl(app) !== null).slice(0, 6),
+    [applianceApps],
+  );
+  const openApplianceApp = (app: ApplianceApp) => {
+    if (app.state !== "running") {
+      void startApplianceApp(app.id)
+        .then(refreshApplianceApps)
+        .catch(() => {});
+      return;
+    }
+    const url = appOpenUrl(app);
+    if (url) window.open(url, "_blank", "noopener");
+  };
 
   useEffect(() => {
     if (!organizerEnabled) return;
@@ -247,7 +313,8 @@ export default function DesktopShellPage() {
     const onPointerMove = (event: PointerEvent) => {
       const target = event.target;
       const overInteractive =
-        target instanceof Element && !!target.closest("[data-desktop-interactive]");
+        target instanceof Element &&
+        !!target.closest("[data-desktop-interactive]");
       setPassthrough(!overInteractive);
     };
 
@@ -346,10 +413,13 @@ export default function DesktopShellPage() {
     const search = debouncedSearch.trim().toLowerCase();
     return nativeDesktopItems.filter((item) => {
       const matchesCategory =
-        desktopCategory === "all" || getDesktopItemCategory(item) === desktopCategory;
+        desktopCategory === "all" ||
+        getDesktopItemCategory(item) === desktopCategory;
       if (!matchesCategory) return false;
       if (!search) return true;
-      return `${item.name} ${item.subtitle} ${item.extension}`.toLowerCase().includes(search);
+      return `${item.name} ${item.subtitle} ${item.extension}`
+        .toLowerCase()
+        .includes(search);
     });
   }, [desktopCategory, debouncedSearch, nativeDesktopItems]);
 
@@ -388,7 +458,8 @@ export default function DesktopShellPage() {
     setArchiveResult(null);
     try {
       const fileItems = nativeDesktopItems.filter(
-        (item) => item.kind === "file" && getDesktopItemCategory(item) !== "app",
+        (item) =>
+          item.kind === "file" && getDesktopItemCategory(item) !== "app",
       );
       if (fileItems.length === 0) {
         toast.info("桌面上没有可整理的文件");
@@ -436,7 +507,10 @@ export default function DesktopShellPage() {
     }
   };
 
-  const handleContextMenuAction = async (action: "open" | "archive" | "delete", item: NativeDesktopItem) => {
+  const handleContextMenuAction = async (
+    action: "open" | "archive" | "delete",
+    item: NativeDesktopItem,
+  ) => {
     setContextMenu(null);
     if (action === "open") {
       openDesktopFile(item);
@@ -453,7 +527,10 @@ export default function DesktopShellPage() {
         const folderName = ARCHIVE_FOLDER_MAP[category];
         if (!folderName || !desktopPath) return;
         const destDir = desktopPath + "\\" + folderName;
-        const result = await window.octopus.desktop.moveItem(item.path, destDir);
+        const result = await window.octopus.desktop.moveItem(
+          item.path,
+          destDir,
+        );
         if (result.ok) {
           refreshDesktopItems();
           toast.success(`已将 "${item.name}" 归档到 ${folderName}`);
@@ -473,7 +550,9 @@ export default function DesktopShellPage() {
     if (!value) return;
     const app = DESKTOP_APPS.find((item) => {
       const haystack = `${item.name} ${item.subtitle}`.toLowerCase();
-      return haystack.includes(value) || value.includes(item.name.toLowerCase());
+      return (
+        haystack.includes(value) || value.includes(item.name.toLowerCase())
+      );
     });
     if (app) {
       openApp(app);
@@ -502,7 +581,8 @@ export default function DesktopShellPage() {
             <div>
               <h1 className="text-xl font-semibold">桌面助手未开启</h1>
               <p className="text-sm text-muted-foreground">
-                Octopus 默认进入欢迎、登录与工作区。需要处理系统桌面文件时，可以单独开启透明桌面助手。
+                Octopus
+                默认进入欢迎、登录与工作区。需要处理系统桌面文件时，可以单独开启透明桌面助手。
               </p>
             </div>
           </div>
@@ -536,7 +616,6 @@ export default function DesktopShellPage() {
 
   return (
     <main className="relative h-screen overflow-hidden bg-transparent text-white">
-
       <section className="relative z-10 flex h-full min-h-0 flex-col">
         <header className="hidden">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -623,34 +702,35 @@ export default function DesktopShellPage() {
         <div className="relative min-h-0 flex-1 px-8 pb-28 pt-7">
           <div className="pointer-events-none absolute right-8 top-8 rounded-[22px] bg-black/20 px-5 py-4 text-right shadow-2xl shadow-black/14 backdrop-blur-2xl">
             <div className="text-xs font-semibold text-white/78">今日</div>
-            <div className="mt-1 text-4xl font-semibold leading-none">{today.getDate()}</div>
+            <div className="mt-1 text-4xl font-semibold leading-none">
+              {today.getDate()}
+            </div>
             <div className="mt-1 text-xs text-white/72">
               {today.getFullYear()}年{today.getMonth() + 1}月 · {weekday}
             </div>
           </div>
 
           <div className="mx-auto flex h-full max-w-[760px] flex-col items-center justify-center pb-12">
-              <div
-                data-desktop-interactive
-                className="flex h-12 w-full max-w-[620px] items-center gap-3 rounded-2xl border border-white/36 bg-white/68 px-4 text-slate-700 shadow-2xl shadow-black/12 backdrop-blur-2xl"
+            <div
+              data-desktop-interactive
+              className="flex h-12 w-full max-w-[620px] items-center gap-3 rounded-2xl border border-white/36 bg-white/68 px-4 text-slate-700 shadow-2xl shadow-black/12 backdrop-blur-2xl"
+            >
+              <SearchIcon className="size-5 shrink-0 text-blue-600" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder="搜索任务、文件、应用，或打开工作台"
+                className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
+              />
+              <button
+                type="button"
+                onClick={submit}
+                className="rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-700"
               >
-                <SearchIcon className="size-5 shrink-0 text-blue-600" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={onKeyDown}
-                  placeholder="搜索任务、文件、应用，或打开工作台"
-                  className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-slate-400"
-                />
-                <button
-                  type="button"
-                  onClick={submit}
-                  className="rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-slate-700"
-                >
-                  打开
-                </button>
-              </div>
-
+                打开
+              </button>
+            </div>
           </div>
         </div>
 
@@ -777,7 +857,8 @@ export default function DesktopShellPage() {
                       category.key === "all"
                         ? nativeDesktopItems.length
                         : nativeDesktopItems.filter(
-                            (item) => getDesktopItemCategory(item) === category.key,
+                            (item) =>
+                              getDesktopItemCategory(item) === category.key,
                           ).length;
                     return (
                       <button
@@ -795,14 +876,18 @@ export default function DesktopShellPage() {
                           e.preventDefault();
                           setDragOverCategory(null);
                           const srcPath = e.dataTransfer.getData("text/plain");
-                          if (!srcPath || !window.octopus?.desktop?.moveItem) return;
+                          if (!srcPath || !window.octopus?.desktop?.moveItem)
+                            return;
                           const desktopPath = await window.octopus.desktop
                             .listItems()
                             .then((r) => r.desktopPath || "");
                           const folderName = ARCHIVE_FOLDER_MAP[category.key];
                           if (!folderName) return;
                           const destDir = desktopPath + "\\" + folderName;
-                          const result = await window.octopus.desktop.moveItem(srcPath, destDir);
+                          const result = await window.octopus.desktop.moveItem(
+                            srcPath,
+                            destDir,
+                          );
                           if (result.ok) {
                             refreshDesktopItems();
                             toast.success("文件已移动");
@@ -831,7 +916,9 @@ export default function DesktopShellPage() {
                     <div className="grid h-56 place-items-center">
                       <div className="text-center">
                         <Loader2Icon className="mx-auto size-8 animate-spin text-slate-400" />
-                        <p className="mt-3 text-sm font-medium text-slate-500">正在读取桌面文件...</p>
+                        <p className="mt-3 text-sm font-medium text-slate-500">
+                          正在读取桌面文件...
+                        </p>
                       </div>
                     </div>
                   ) : filteredDesktopItems.length > 0 ? (
@@ -842,14 +929,17 @@ export default function DesktopShellPage() {
                             {
                               key: desktopCategory,
                               title:
-                                DESKTOP_CATEGORIES.find((item) => item.key === desktopCategory)
-                                  ?.label || "文件",
+                                DESKTOP_CATEGORIES.find(
+                                  (item) => item.key === desktopCategory,
+                                )?.label || "文件",
                               items: filteredDesktopItems,
                             },
                           ]
                       ).map((group) => (
                         <div key={group.key}>
-                          <div className="mb-2 text-xs font-semibold text-slate-500">{group.title}</div>
+                          <div className="mb-2 text-xs font-semibold text-slate-500">
+                            {group.title}
+                          </div>
                           <div className="grid grid-cols-5 gap-3">
                             {group.items.map((item) => {
                               const category = getDesktopItemCategory(item);
@@ -867,13 +957,20 @@ export default function DesktopShellPage() {
                                   type="button"
                                   draggable={item.kind === "file"}
                                   onDragStart={(e) => {
-                                    e.dataTransfer.setData("text/plain", item.path);
+                                    e.dataTransfer.setData(
+                                      "text/plain",
+                                      item.path,
+                                    );
                                     e.dataTransfer.effectAllowed = "move";
                                   }}
                                   onClick={() => openDesktopFile(item)}
                                   onContextMenu={(e) => {
                                     e.preventDefault();
-                                    setContextMenu({ x: e.clientX, y: e.clientY, item });
+                                    setContextMenu({
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      item,
+                                    });
                                   }}
                                   title={item.path}
                                   className="group flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-2xl p-2 text-center transition hover:bg-white/62 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2"
@@ -948,7 +1045,9 @@ export default function DesktopShellPage() {
             {contextMenu.item.kind === "file" && (
               <button
                 type="button"
-                onClick={() => handleContextMenuAction("archive", contextMenu.item)}
+                onClick={() =>
+                  handleContextMenuAction("archive", contextMenu.item)
+                }
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 transition hover:bg-slate-100"
               >
                 <FolderInputIcon className="size-3.5" />
@@ -958,7 +1057,9 @@ export default function DesktopShellPage() {
             <div className="my-1 h-px bg-slate-200" />
             <button
               type="button"
-              onClick={() => handleContextMenuAction("delete", contextMenu.item)}
+              onClick={() =>
+                handleContextMenuAction("delete", contextMenu.item)
+              }
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
             >
               <Trash2Icon className="size-3.5" />
@@ -989,23 +1090,55 @@ export default function DesktopShellPage() {
             );
           })}
           <span className="mx-1 h-10 w-px bg-slate-700/16" />
-          {LOCAL_APP_PLACEHOLDERS.map((app) => {
-            const Icon = app.icon;
-            return (
-              <button
-                key={app.name}
-                type="button"
-                onClick={() => openApp(app)}
-                title={`${app.name} · ${app.subtitle}`}
-                className={cn(
-                  "grid size-[54px] place-items-center rounded-[15px] bg-gradient-to-br shadow-lg shadow-black/12 ring-1 ring-white/25 transition hover:-translate-y-2 hover:scale-110",
-                  app.color,
-                )}
-              >
-                <Icon className="size-6" />
-              </button>
-            );
-          })}
+          {dockApplianceApps.length > 0
+            ? dockApplianceApps.map((app) => (
+                <button
+                  key={app.id}
+                  type="button"
+                  onClick={() => openApplianceApp(app)}
+                  title={
+                    app.state === "running"
+                      ? `${app.name} · ${app.status}`
+                      : `${app.name} · 已停止,点击启动`
+                  }
+                  className={cn(
+                    "relative grid size-[54px] place-items-center rounded-[15px] bg-white/86 text-slate-700 shadow-lg shadow-black/12 ring-1 ring-white/25 transition hover:-translate-y-2 hover:scale-110",
+                    app.state !== "running" && "opacity-55 saturate-50",
+                  )}
+                >
+                  {app.icon ? (
+                    <img
+                      src={app.icon}
+                      alt=""
+                      className="size-7 rounded-[8px]"
+                    />
+                  ) : (
+                    <span className="text-lg font-semibold">
+                      {(app.name[0] ?? "?").toUpperCase()}
+                    </span>
+                  )}
+                  {app.state === "running" && (
+                    <span className="absolute bottom-1 size-1.5 rounded-full bg-emerald-500" />
+                  )}
+                </button>
+              ))
+            : LOCAL_APP_PLACEHOLDERS.map((app) => {
+                const Icon = app.icon;
+                return (
+                  <button
+                    key={app.name}
+                    type="button"
+                    onClick={() => openApp(app)}
+                    title={`${app.name} · ${app.subtitle}`}
+                    className={cn(
+                      "grid size-[54px] place-items-center rounded-[15px] bg-gradient-to-br shadow-lg shadow-black/12 ring-1 ring-white/25 transition hover:-translate-y-2 hover:scale-110",
+                      app.color,
+                    )}
+                  >
+                    <Icon className="size-6" />
+                  </button>
+                );
+              })}
           <span className="mx-1 h-10 w-px bg-slate-700/16" />
           <button
             type="button"
@@ -1043,7 +1176,9 @@ export default function DesktopShellPage() {
             className="absolute bottom-24 right-8 z-20 w-64 rounded-2xl border border-white/34 bg-white/78 p-4 text-slate-800 shadow-2xl shadow-black/24 backdrop-blur-2xl"
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500">系统监控</span>
+              <span className="text-xs font-semibold text-slate-500">
+                系统监控
+              </span>
               <button
                 type="button"
                 onClick={() => setShowWidget(false)}
@@ -1064,13 +1199,18 @@ export default function DesktopShellPage() {
                   <div
                     className={cn(
                       "h-full rounded-full transition-all",
-                      systemInfo.cpu.usage > 80 ? "bg-red-500" : systemInfo.cpu.usage > 50 ? "bg-amber-500" : "bg-emerald-500",
+                      systemInfo.cpu.usage > 80
+                        ? "bg-red-500"
+                        : systemInfo.cpu.usage > 50
+                          ? "bg-amber-500"
+                          : "bg-emerald-500",
                     )}
                     style={{ width: `${systemInfo.cpu.usage}%` }}
                   />
                 </div>
                 <div className="mt-0.5 text-[10px] text-slate-400">
-                  {systemInfo.cpu.model.split(" ").slice(0, 3).join(" ")} · {systemInfo.cpu.cores} 核心
+                  {systemInfo.cpu.model.split(" ").slice(0, 3).join(" ")} ·{" "}
+                  {systemInfo.cpu.cores} 核心
                 </div>
               </div>
               <div>
@@ -1078,13 +1218,19 @@ export default function DesktopShellPage() {
                   <span className="flex items-center gap-1 text-slate-600">
                     <HardDriveIcon className="size-3" /> 内存
                   </span>
-                  <span className="font-medium">{systemInfo.memory.percent}%</span>
+                  <span className="font-medium">
+                    {systemInfo.memory.percent}%
+                  </span>
                 </div>
                 <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200">
                   <div
                     className={cn(
                       "h-full rounded-full transition-all",
-                      systemInfo.memory.percent > 80 ? "bg-red-500" : systemInfo.memory.percent > 50 ? "bg-amber-500" : "bg-blue-500",
+                      systemInfo.memory.percent > 80
+                        ? "bg-red-500"
+                        : systemInfo.memory.percent > 50
+                          ? "bg-amber-500"
+                          : "bg-blue-500",
                     )}
                     style={{ width: `${systemInfo.memory.percent}%` }}
                   />
@@ -1094,7 +1240,8 @@ export default function DesktopShellPage() {
                 </div>
               </div>
               <div className="text-[10px] text-slate-400">
-                运行时间: {Math.floor(systemInfo.uptime / 60)} 小时 {systemInfo.uptime % 60} 分钟
+                运行时间: {Math.floor(systemInfo.uptime / 60)} 小时{" "}
+                {systemInfo.uptime % 60} 分钟
               </div>
             </div>
           </div>
