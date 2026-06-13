@@ -83,6 +83,41 @@ class TestCatalog:
         apps = build_catalog([stopped, hidden, running])
         assert [a.name for a in apps] == ["zulu", "aria2"]
 
+    def test_enterprise_compose_appears_as_one_pm_plugin(self):
+        # 契约校验:企业版 docker-compose 部署在 OS 上时,只有 frontend 作为
+        # 「项目管理」应用出现,基础设施服务(postgres/redis/minio/backend)被隐藏。
+        # 标签形状对齐 octopus-enterprise/docker-compose.yml。
+        enterprise = [
+            _container(
+                Id="f" * 32,
+                Names=["/octopus-enterprise-frontend-1"],
+                State="running",
+                Labels={
+                    "sh.octopus.name": "项目管理",
+                    "sh.octopus.description": "AI 项目管理 · 任务/甘特/里程碑/风险/PRD 导入",
+                    "com.docker.compose.service": "frontend",
+                },
+                Ports=[{"PrivatePort": 3000, "PublicPort": 3100, "Type": "tcp"}],
+            ),
+            _container(
+                Id="e" * 32,
+                Names=["/octopus-enterprise-backend-1"],
+                State="running",
+                Labels={"sh.octopus.hide": "1"},
+                Ports=[{"PrivatePort": 8000, "PublicPort": 8100, "Type": "tcp"}],
+            ),
+            _container(
+                Id="a" * 32,
+                Names=["/octopus-enterprise-postgres-1"],
+                State="running",
+                Labels={"sh.octopus.hide": "1"},
+                Ports=[{"PrivatePort": 5432, "PublicPort": 5532, "Type": "tcp"}],
+            ),
+        ]
+        apps = build_catalog(enterprise)
+        assert [a.name for a in apps] == ["项目管理"]
+        assert apps[0].web_port == 3100  # 3100 非偏好端口,取唯一发布端口
+
 
 class _StubDocker:
     def __init__(self, containers=None, fail=False):
