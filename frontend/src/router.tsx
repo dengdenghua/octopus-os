@@ -46,7 +46,6 @@ const TeamIndexPage = lazy(() => import("./app/workspace/team/page"));
 const TeamNewPage = lazy(() => import("./app/workspace/team/new/page"));
 const TeamJoinPage = lazy(() => import("./app/workspace/team/join/page"));
 const TeamPage = lazy(() => import("./app/workspace/team/[thread_id]/page"));
-const CompanyPage = lazy(() => import("./app/workspace/company/page"));
 const BrowserPage = lazy(() => import("./app/workspace/browser/page"));
 const ComputerPage = lazy(() => import("./app/workspace/computer/page"));
 const DesktopOrganizerPage = lazy(
@@ -155,7 +154,6 @@ export function AppRouter() {
               <Route path="team/new" element={<TeamNewPage />} />
               <Route path="team/join" element={<TeamJoinPage />} />
               <Route path="team/:threadId" element={<TeamPage />} />
-              <Route path="company/*" element={<CompanyPage />} />
               <Route path="browser" element={<BrowserPage />} />
               <Route path="computer" element={<ComputerPage />} />
               <Route
