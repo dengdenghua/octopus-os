@@ -28,11 +28,33 @@ export interface NativeDesktopItem {
   extension: string;
 }
 
+/** 本地已装应用(原生 shell 系统手层枚举的 freedesktop .desktop)。 */
+export interface NativeApp {
+  id: string;
+  name: string;
+  exec: string;
+  /** 解析出的图标文件绝对路径;解析不到为 null。 */
+  icon: string | null;
+  categories: string[];
+  source: "native";
+}
+
 export interface OctopusElectronAPI {
   isElectron: true;
   platform: NodeJS.Platform;
   /** Synchronous backend URL injected by Electron preload for packaged builds. */
   backendBaseURL?: string;
+
+  /**
+   * 原生 shell(A 路线):本地已装应用 枚举/启动。会话 shell 模式下,Dock/启动器
+   * 渲染真实已装应用(freedesktop .desktop)。非 Electron 端为 undefined。
+   */
+  apps?: {
+    /** 枚举本地已装应用(原生 .desktop;Docker 应用仍走后端 app_registry)。 */
+    list: () => Promise<NativeApp[]>;
+    /** 启动一个应用(传 exec)。 */
+    launch: (exec: string) => Promise<{ ok: boolean; pid?: number; error?: string }>;
+  };
 
   browser: {
     setDevice: (

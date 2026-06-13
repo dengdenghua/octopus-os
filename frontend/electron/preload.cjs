@@ -28,6 +28,12 @@ const api = {
   platform: process.platform,
   backendBaseURL: ipcRenderer.sendSync("backend:getBaseURLSync"),
 
+  // 原生 shell(A 路线):本地已装应用 枚举/启动。Dock/启动器渲染真实应用清单。
+  apps: {
+    list: invoke("apps:list"), // → [{id,name,exec,icon,categories,source}]
+    launch: invoke("apps:launch"), // (exec) → {ok,pid?|error}
+  },
+
   browser: {
     setDevice: invoke("browser:setDevice"),
     executeJS: invoke("browser:executeJS"),

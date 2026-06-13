@@ -19,6 +19,13 @@ const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
 
+// 原生 shell(A 路线)系统手层:枚举/启动本地已装应用(freedesktop .desktop)。
+const systemShell = require("./system-shell.cjs");
+// 会话 shell 模式:开机即全屏接管(无窗框/kiosk),作为设备的原生桌面 shell。
+const NATIVE_SHELL =
+  process.env.OCTOPUS_NATIVE_SHELL === "1" ||
+  process.env.OCTOPUS_SHELL_MODE === "session";
+
 const DEV_URL = process.env.ELECTRON_START_URL || "http://127.0.0.1:3000";
 const DESKTOP_DIR = path.join(os.homedir(), "Desktop");
 
@@ -310,6 +317,9 @@ function registerIpc() {
   handle("app:openExternal", (url) => shell.openExternal(url));
   handle("app:getPlatform", () => process.platform);
 
+  // 原生 shell:本地已装应用 枚举/启动(window.octopus.apps.*)
+  systemShell.registerSystemShellIpc(ipcMain);
+
   // dialog
   handle("dialog:open", (options) =>
     dialog.showOpenDialog(mainWindow, options),
@@ -599,7 +609,11 @@ function createMainWindow() {
     minWidth: 960,
     minHeight: 600,
     show: false,
-    ...(process.platform === "win32"
+    // 会话 shell:全屏、无窗框、kiosk 独占屏幕——设备开机即此桌面,无浏览器/窗口壳。
+    ...(NATIVE_SHELL
+      ? { fullscreen: true, frame: false, kiosk: true, autoHideMenuBar: true }
+      : {}),
+    ...(process.platform === "win32" && !NATIVE_SHELL
       ? { titleBarStyle: "hidden", titleBarOverlay: { height: 36 } }
       : {}),
     webPreferences: {
