@@ -2,6 +2,10 @@ import {
   ArrowUpDownIcon,
   BotIcon,
   BrainIcon,
+  BriefcaseIcon,
+  Building2Icon,
+  CalendarDaysIcon,
+  CheckCircle2Icon,
   ChevronRightIcon,
   Code2Icon,
   DatabaseIcon,
@@ -13,6 +17,7 @@ import {
   NetworkIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
+  PlusIcon,
   PuzzleIcon,
   Trash2Icon,
   type LucideIcon,
@@ -68,6 +73,7 @@ import { useActiveAgentId } from "@/core/agents/active";
 import { formatRelativeTimestamp } from "@/core/utils/datetime";
 import { basename, isAbsolutePath } from "@/lib/path-utils";
 import { cn } from "@/lib/utils";
+import { useCompanyEnabled } from "@/appliance/company-capability";
 
 // Surface modes in the left sidebar. Chat and Company are handled by a
 // dedicated two-panel switch so they feel like peer work surfaces instead
@@ -82,6 +88,7 @@ type NavRoute = {
   label?: string;
 };
 const PRIMARY_WORKSPACE_ROUTE = "/workspace/realtime/new";
+const COMPANY_WORKSPACE_ROUTE = "/workspace/company";
 
 const CHAT_CAPABILITY_ROUTES: NavRoute[] = [
   {
@@ -103,6 +110,55 @@ const CHAT_CAPABILITY_ROUTES: NavRoute[] = [
     to: "/workspace/evolution?surface=chat",
     labelKey: "navEvolution",
     icon: DnaIcon,
+  },
+];
+
+const COMPANY_ORG_ROUTES: NavRoute[] = [
+  { to: COMPANY_WORKSPACE_ROUTE, label: "工作台", icon: BriefcaseIcon },
+  {
+    to: "/workspace/company/projects",
+    label: "项目",
+    icon: Building2Icon,
+  },
+  {
+    to: "/workspace/company/tasks",
+    label: "任务",
+    icon: CheckCircle2Icon,
+  },
+  {
+    to: "/workspace/company/milestones",
+    label: "里程碑",
+    icon: CalendarDaysIcon,
+  },
+  {
+    to: "/workspace/company/ai",
+    label: "AI 助手",
+    icon: BotIcon,
+  },
+  { to: "/workspace/team/new", labelKey: "navTeam", icon: NetworkIcon },
+  { to: "/workspace/agents", labelKey: "navHR", icon: BriefcaseIcon },
+];
+
+const COMPANY_CAPABILITY_ROUTES: NavRoute[] = [
+  {
+    to: "/workspace/intelligence?surface=company",
+    labelKey: "navIntelligence",
+    icon: BrainIcon,
+  },
+  {
+    to: "/workspace/evolution?surface=company",
+    labelKey: "navEvolution",
+    icon: DnaIcon,
+  },
+  {
+    to: "/workspace/knowledge?surface=company",
+    labelKey: "navKnowledgeGraph",
+    icon: DatabaseIcon,
+  },
+  {
+    to: "/workspace/plugins?surface=company",
+    labelKey: "navPlugins",
+    icon: PuzzleIcon,
   },
 ];
 
@@ -341,7 +397,7 @@ function readProjectGroupingEnabled(): boolean {
 }
 
 export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const apiClient = useMemo(() => getAPIClient(), []);
@@ -363,8 +419,16 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
       })),
     [resolveLabel],
   );
+  const companyOrgItems = useMemo(
+    () => resolveRoutes(COMPANY_ORG_ROUTES),
+    [resolveRoutes],
+  );
   const chatCapabilityItems = useMemo(
     () => resolveRoutes(CHAT_CAPABILITY_ROUTES),
+    [resolveRoutes],
+  );
+  const companyCapabilityItems = useMemo(
+    () => resolveRoutes(COMPANY_CAPABILITY_ROUTES),
     [resolveRoutes],
   );
 
@@ -691,6 +755,13 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
     }
   };
+  // OS appliance 默认剥离 company(PM 交给企业版插件)→ 隐藏"工作"surface 入口。
+  const companyEnabled = useCompanyEnabled();
+  const surfaceParam = new URLSearchParams(search).get("surface");
+  const companySurfaceActive =
+    companyEnabled &&
+    (surfaceParam === "company" ||
+      (surfaceParam !== "chat" && isCompanySurfaceRoute(pathname)));
   const sidebarConversationThreads = conversationThreads;
 
   return (
@@ -702,7 +773,10 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
     >
       {/* Implementation note. */}
       <SidebarHeader className="relative h-11 shrink-0 items-center justify-center border-b border-border/45 bg-sidebar/65 px-2.5 py-0 group-data-[collapsible=icon]:h-20 group-data-[collapsible=icon]:justify-end group-data-[collapsible=icon]:pb-2 group-data-[collapsible=icon]:pt-2">
-        <WorkspaceSurfaceSwitch active="agent" />
+        <WorkspaceSurfaceSwitch
+          active={companySurfaceActive ? "work" : "agent"}
+          showWork={companyEnabled}
+        />
         <div className="absolute right-0.5 top-1/2 -translate-y-1/2 group-data-[collapsible=icon]:left-1/2 group-data-[collapsible=icon]:right-auto group-data-[collapsible=icon]:top-2 group-data-[collapsible=icon]:-translate-x-[calc(50%+4px)] group-data-[collapsible=icon]:translate-y-0">
           <CollapseToggle compact />
         </div>
@@ -712,28 +786,39 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
           sit closer to the header and we win a few rows of vertical
           space back. */}
       <SidebarContent className="gap-1.5 px-2.5 py-2">
-        {/* OS 原生路线:工作/company surface(PM)已收敛交给企业版插件,
-            侧栏只保留 agent 对话 surface。 */}
-        <SurfaceCreateButton />
-        <NavSection items={chatCapabilityItems} pathname={pathname} />
-        <ProjectsSection
-          groups={projectOrder}
-          byProject={byProject}
-          pathname={pathname}
-          draftOpen={projectDraftOpen}
-          deletableProjects={deletableProjects}
-          deletingProject={deletingProject}
-          groupingEnabled={projectGroupingEnabled}
-          onDraftCommit={saveProjectName}
-          onDraftCancel={() => setProjectDraftOpen(false)}
-          onDeleteProject={deleteProject}
-          onToggleGrouping={toggleProjectGrouping}
-        />
-        <ChatsSection
-          threads={sidebarConversationThreads}
-          pathname={pathname}
-          label={t.sidebar.sectionChats}
-        />
+        <SurfaceCreateButton companySurfaceActive={companySurfaceActive} />
+        {companySurfaceActive ? (
+          <>
+            <NavSection
+              label={t.sidebar.navSwarm}
+              items={companyOrgItems}
+              pathname={pathname}
+            />
+            <NavSection items={companyCapabilityItems} pathname={pathname} />
+          </>
+        ) : (
+          <>
+            <NavSection items={chatCapabilityItems} pathname={pathname} />
+            <ProjectsSection
+              groups={projectOrder}
+              byProject={byProject}
+              pathname={pathname}
+              draftOpen={projectDraftOpen}
+              deletableProjects={deletableProjects}
+              deletingProject={deletingProject}
+              groupingEnabled={projectGroupingEnabled}
+              onDraftCommit={saveProjectName}
+              onDraftCancel={() => setProjectDraftOpen(false)}
+              onDeleteProject={deleteProject}
+              onToggleGrouping={toggleProjectGrouping}
+            />
+            <ChatsSection
+              threads={sidebarConversationThreads}
+              pathname={pathname}
+              label={t.sidebar.sectionChats}
+            />
+          </>
+        )}
         {/* Hidden directory input — used as the Safari/Firefox fallback
             when showDirectoryPicker is unavailable. webkitdirectory
             forces a folder selection instead of a single file. */}
@@ -802,6 +887,9 @@ function isNavRouteActive(pathname: string, to: string) {
   if (path === PRIMARY_WORKSPACE_ROUTE) {
     return isChatSurfaceRoute(pathname);
   }
+  if (path === COMPANY_WORKSPACE_ROUTE) {
+    return pathname === COMPANY_WORKSPACE_ROUTE;
+  }
   if (path === "/workspace/team/new") {
     return (
       pathname === "/workspace/team" || pathname.startsWith("/workspace/team/")
@@ -827,6 +915,28 @@ function isChatSurfaceRoute(pathname: string) {
   );
 }
 
+function isCompanySurfaceRoute(pathname: string) {
+  if (isAgentChatRoute(pathname)) return false;
+  return (
+    pathname === COMPANY_WORKSPACE_ROUTE ||
+    pathname.startsWith(`${COMPANY_WORKSPACE_ROUTE}/`) ||
+    pathname === "/workspace/team" ||
+    pathname.startsWith("/workspace/team/") ||
+    pathname === "/workspace/agents" ||
+    pathname.startsWith("/workspace/agents/") ||
+    pathname === "/workspace/intelligence" ||
+    pathname.startsWith("/workspace/intelligence/") ||
+    pathname === "/workspace/evolution" ||
+    pathname.startsWith("/workspace/evolution/") ||
+    pathname === "/workspace/knowledge" ||
+    pathname.startsWith("/workspace/knowledge/") ||
+    pathname === "/workspace/plugins" ||
+    pathname.startsWith("/workspace/plugins/") ||
+    pathname === "/workspace/skills" ||
+    pathname.startsWith("/workspace/skills/")
+  );
+}
+
 export const __testing = {
   isNavRouteActive,
 };
@@ -835,10 +945,25 @@ type WorkspaceSurfaceMode = "agent" | "work" | "browser";
 
 export function WorkspaceSurfaceSwitch({
   active,
+  showWork = true,
 }: {
   active: WorkspaceSurfaceMode;
+  // OS appliance 剥离 company 时隐藏"工作"surface(PM 交给企业版插件)。
+  showWork?: boolean;
 }) {
+  const { t } = useI18n();
   const items = [
+    ...(showWork
+      ? [
+          {
+            to: COMPANY_WORKSPACE_ROUTE,
+            label: t.sidebar.navCompany,
+            icon: BriefcaseIcon,
+            active: active === "work",
+            kind: "icon" as const,
+          },
+        ]
+      : []),
     {
       to: PRIMARY_WORKSPACE_ROUTE,
       label: "Octopus",
@@ -903,14 +1028,24 @@ export function WorkspaceSurfaceSwitch({
   );
 }
 
-function SurfaceCreateButton() {
+function SurfaceCreateButton({
+  companySurfaceActive,
+}: {
+  companySurfaceActive: boolean;
+}) {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const createAction = {
-    label: t.sidebar.actionNewChat,
-    icon: MessageSquarePlusIcon,
-    to: PRIMARY_WORKSPACE_ROUTE,
-  };
+  const createAction = companySurfaceActive
+    ? {
+        label: t.sidebar.actionNewTask,
+        icon: PlusIcon,
+        to: "/workspace/team/new",
+      }
+    : {
+        label: t.sidebar.actionNewChat,
+        icon: MessageSquarePlusIcon,
+        to: PRIMARY_WORKSPACE_ROUTE,
+      };
   const CreateIcon = createAction.icon;
 
   return (
