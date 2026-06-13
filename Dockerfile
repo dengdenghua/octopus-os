@@ -50,10 +50,12 @@ WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY runtime/ ./runtime/
 COPY tools/ ./tools/
+COPY appliance/ ./appliance/
 
 # --prefix=/install 将依赖安装到独立目录 · 运行时阶段只复制此目录
+# appliance extra(NAS 启动器,octopus-os fork)随 serve/web 一并装入。
 RUN pip install --prefix=/install --no-warn-script-location \
-    ".[serve,tracing,web]"
+    ".[serve,tracing,web,appliance]"
 
 
 # ═══════════════════════════════════════════════════════════

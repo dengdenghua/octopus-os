@@ -159,7 +159,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["runtime*", "tools*"]
+include = ["runtime*", "tools*", "appliance*"]
 exclude = ["tests*", "*.fixtures*"]
 
 # ─── pytest ──────────────────────────────────────────

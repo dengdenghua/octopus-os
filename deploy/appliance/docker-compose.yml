@@ -1,0 +1,90 @@
+# Octopus OS · NAS 桌面 appliance 部署栈
+# ───────────────────────────────────────────────────────────────
+# 原生路线:桌面即系统主页 + Docker 应用启动器。装在任意带 Docker 的
+# NAS / 主机上,浏览器打开即原生桌面,自动发现并点亮已装的 Docker 应用。
+#
+# 启动:
+#   cd deploy/appliance
+#   docker compose up -d --build
+#   浏览器打开 http://<NAS_IP>:8000/#/desktop
+#
+# 关键点:
+#   * OCTOPUS_APPLIANCE=1   启用启动器应用注册器(/api/appliance/*)
+#   * 挂载 docker.sock       让注册器读取/启停宿主容器
+#   * 挂载 NAS 存储卷         供桌面文件区使用(P2 文件管理器)
+#
+# ⚠ 安全:挂载 docker.sock = 容器获得宿主 root 等价权限(CasaOS /
+#   Portainer 等 NAS 面板同此惯例)。启停应用在应用层经 approval 审批门
+#   把关(见 appliance/app_registry/router.py)。仅在可信内网部署。
+#
+# CasaOS / ZimaOS 一键安装:本文件含 x-casaos 元数据,可直接在
+#   CasaOS「自定义安装 → 导入 compose」中粘贴使用。
+
+name: octopus-os
+
+services:
+  octopus-os:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: octopus-os:latest
+    container_name: octopus-os
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # 启用 NAS 桌面 appliance profile(应用注册器随之挂载)
+      OCTOPUS_APPLIANCE: "1"
+      # 容器内访问宿主 Docker 的 socket 路径(下方 volume 挂到此处)
+      OCTOPUS_DOCKER_SOCK: /var/run/docker.sock
+      OCTOPUS_LOG_LEVEL: ${OCTOPUS_LOG_LEVEL:-INFO}
+      # LLM 可选:不配也能用桌面/启动器/文件;配上才有对话 Agent
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      # 应用注册器读取/启停宿主容器(root 等价,见上方安全说明)
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 持久化:journal / 记忆 / 配置
+      - ./data:/data
+      # NAS 存储:把宿主的共享目录挂进来供桌面文件区使用
+      - ${NAS_STORAGE:-./storage}:/data/nas
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          # N100/16G 级别基线;ollama 另算(若启用本地模型)
+          memory: 2G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ─── CasaOS / ZimaOS 应用商店元数据(纯 docker compose 运行时忽略)───
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: octopus-os
+  description:
+    en_us: Native AI desktop for your NAS — launcher for your Docker apps, file desktop, and an on-device agent.
+    zh_cn: NAS 原生 AI 桌面 —— Docker 应用启动器、文件桌面,与设备端 Agent。
+  tagline:
+    en_us: Your NAS, with a desktop and an agent.
+    zh_cn: 给 NAS 一个桌面和一个 Agent。
+  developer: octopus-os
+  author: octopus-os
+  category: NAS
+  port_map: "8000"
+  scheme: http
+  index: /#/desktop
+  title:
+    en_us: Octopus OS
+    zh_cn: Octopus OS
