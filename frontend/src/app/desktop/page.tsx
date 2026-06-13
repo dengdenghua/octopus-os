@@ -49,6 +49,7 @@ import { Dock, DockItem } from "@/appliance/dock";
 import { fetchApplianceAuthStatus } from "@/appliance/auth";
 import { ApplianceLogin } from "@/appliance/login";
 import { FileManager } from "@/appliance/file-manager";
+import { AppWindow, type DesktopWindow } from "@/appliance/app-window";
 
 type DesktopApp = {
   name: string;
@@ -279,6 +280,32 @@ export default function DesktopShellPage() {
     if (isElectronShell) setDesktopDrawerOpen(true);
     else setFileManagerOpen(true);
   };
+
+  // 桌面窗口:第三方应用以 iframe 开成桌面内窗口(桌面即窗口系统)。
+  const [windows, setWindows] = useState<DesktopWindow[]>([]);
+  const [minimized, setMinimized] = useState<Set<string>>(new Set());
+  const [focusedWin, setFocusedWin] = useState<string | null>(null);
+  const openWindow = (win: DesktopWindow) => {
+    setWindows((prev) =>
+      prev.some((w) => w.id === win.id) ? prev : [...prev, win],
+    );
+    setMinimized((prev) => {
+      const next = new Set(prev);
+      next.delete(win.id);
+      return next;
+    });
+    setFocusedWin(win.id);
+  };
+  const closeWindow = (id: string) => {
+    setWindows((prev) => prev.filter((w) => w.id !== id));
+    setMinimized((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+  const minimizeWindow = (id: string) =>
+    setMinimized((prev) => new Set(prev).add(id));
   useEffect(() => {
     let alive = true;
     fetchApplianceAuthStatus()
@@ -312,7 +339,10 @@ export default function DesktopShellPage() {
       return;
     }
     const url = appOpenUrl(app);
-    if (url) window.open(url, "_blank", "noopener");
+    // 原生路线:开成桌面内窗口;Electron 寄生模式仍走新标签(无窗口系统)。
+    if (!url) return;
+    if (isElectronShell) window.open(url, "_blank", "noopener");
+    else openWindow({ id: app.id, title: app.name, url });
   };
 
   useEffect(() => {
@@ -1298,6 +1328,20 @@ export default function DesktopShellPage() {
       {fileManagerOpen && (
         <FileManager onClose={() => setFileManagerOpen(false)} />
       )}
+
+      {windows
+        .filter((win) => !minimized.has(win.id))
+        .map((win, i) => (
+          <AppWindow
+            key={win.id}
+            win={win}
+            index={i}
+            focused={focusedWin === win.id}
+            onFocus={() => setFocusedWin(win.id)}
+            onClose={() => closeWindow(win.id)}
+            onMinimize={() => minimizeWindow(win.id)}
+          />
+        ))}
     </main>
   );
 }
