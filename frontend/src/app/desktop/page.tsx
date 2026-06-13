@@ -180,6 +180,12 @@ const ARCHIVE_FOLDER_MAP: Record<string, string> = {
 };
 const DESKTOP_ORGANIZER_ENABLED_KEY = "octopus:desktop-organizer-enabled";
 
+// Octopus OS 原生路线:桌面即系统主页 —— 默认进入、不透明、自带壁纸+启动器。
+// 母体 octopus-agent 走寄生路线(透明叠加真实桌面的整理工具,类比腾讯/360
+// 桌面助手),那里此常量为 false:保留 opt-in 门、desktop-overlay 透明类与
+// 鼠标穿透。把差异收敛到这一个常量,从母体合并更新时冲突面最小。
+const IS_NATIVE_DESKTOP = true;
+
 function getDesktopItemCategory(
   item: NativeDesktopItem,
 ): DesktopCategory["key"] {
@@ -214,9 +220,10 @@ export default function DesktopShellPage() {
     useState<DesktopCategory["key"]>("all");
   const [desktopSearch, setDesktopSearch] = useState("");
   const [organizerEnabled, setOrganizerEnabled] = useState(() =>
-    typeof window !== "undefined"
+    IS_NATIVE_DESKTOP ||
+    (typeof window !== "undefined"
       ? localStorage.getItem(DESKTOP_ORGANIZER_ENABLED_KEY) === "true"
-      : false,
+      : false),
   );
   const [archiving, setArchiving] = useState(false);
   const [undoing, setUndoing] = useState(false);
@@ -291,7 +298,8 @@ export default function DesktopShellPage() {
   }, [organizerEnabled]);
 
   useEffect(() => {
-    if (!organizerEnabled) return;
+    // 寄生模式专属:透明叠加真实桌面。原生 OS 桌面不透明,跳过。
+    if (IS_NATIVE_DESKTOP || !organizerEnabled) return;
     document.documentElement.classList.add("desktop-overlay");
     return () => {
       document.documentElement.classList.remove("desktop-overlay");
@@ -300,7 +308,8 @@ export default function DesktopShellPage() {
   }, [organizerEnabled]);
 
   useEffect(() => {
-    if (!organizerEnabled) return;
+    // 寄生模式专属:空白处鼠标穿透到真实桌面。原生 OS 桌面不需要。
+    if (IS_NATIVE_DESKTOP || !organizerEnabled) return;
     if (!window.octopus?.window?.setMousePassthrough) return;
 
     const setPassthrough = (enabled: boolean) => {
@@ -576,7 +585,8 @@ export default function DesktopShellPage() {
     setOrganizerEnabled(true);
   };
 
-  if (!organizerEnabled) {
+  // 寄生路线的 opt-in 门:原生 OS 桌面默认进入,不显示此门(IS_NATIVE_DESKTOP)。
+  if (!IS_NATIVE_DESKTOP && !organizerEnabled) {
     return (
       <main className="flex h-screen items-center justify-center bg-background p-6 text-foreground">
         <section className="w-full max-w-xl rounded-3xl border border-border bg-card p-6 shadow-sm">
@@ -622,9 +632,10 @@ export default function DesktopShellPage() {
 
   return (
     <main className="relative h-screen overflow-hidden bg-transparent text-white">
-      {/* Octopus OS:浏览器/NAS 模式下的原创极光壁纸(深色景深,衬托毛玻璃面板)。
-          Electron 叠加模式不渲染它,让真实系统桌面透过来。 */}
-      {!isElectronShell && (
+      {/* 原创极光壁纸(深色景深,衬托毛玻璃面板)。原生 OS 桌面始终铺壁纸
+          (含将来的 Electron kiosk);母体寄生模式仅浏览器铺,Electron 叠加
+          时不渲染以让真实系统桌面透过来。 */}
+      {(IS_NATIVE_DESKTOP || !isElectronShell) && (
         <div aria-hidden className="desktop-wallpaper absolute inset-0 z-0" />
       )}
       <section className="relative z-10 flex h-full min-h-0 flex-col">
