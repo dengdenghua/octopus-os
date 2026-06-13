@@ -13,7 +13,6 @@ import {
   FolderIcon,
   FolderPlusIcon,
   GlobeIcon,
-  MessageSquareIcon,
   MessageSquarePlusIcon,
   NetworkIcon,
   PanelLeftCloseIcon,
@@ -74,6 +73,7 @@ import { useActiveAgentId } from "@/core/agents/active";
 import { formatRelativeTimestamp } from "@/core/utils/datetime";
 import { basename, isAbsolutePath } from "@/lib/path-utils";
 import { cn } from "@/lib/utils";
+import { useCompanyEnabled } from "@/appliance/company-capability";
 
 // Surface modes in the left sidebar. Chat and Company are handled by a
 // dedicated two-panel switch so they feel like peer work surfaces instead
@@ -755,10 +755,13 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
     }
   };
+  // OS appliance 默认剥离 company(PM 交给企业版插件)→ 隐藏"工作"surface 入口。
+  const companyEnabled = useCompanyEnabled();
   const surfaceParam = new URLSearchParams(search).get("surface");
   const companySurfaceActive =
-    surfaceParam === "company" ||
-    (surfaceParam !== "chat" && isCompanySurfaceRoute(pathname));
+    companyEnabled &&
+    (surfaceParam === "company" ||
+      (surfaceParam !== "chat" && isCompanySurfaceRoute(pathname)));
   const sidebarConversationThreads = conversationThreads;
 
   return (
@@ -772,6 +775,7 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader className="relative h-11 shrink-0 items-center justify-center border-b border-border/45 bg-sidebar/65 px-2.5 py-0 group-data-[collapsible=icon]:h-20 group-data-[collapsible=icon]:justify-end group-data-[collapsible=icon]:pb-2 group-data-[collapsible=icon]:pt-2">
         <WorkspaceSurfaceSwitch
           active={companySurfaceActive ? "work" : "agent"}
+          showWork={companyEnabled}
         />
         <div className="absolute right-0.5 top-1/2 -translate-y-1/2 group-data-[collapsible=icon]:left-1/2 group-data-[collapsible=icon]:right-auto group-data-[collapsible=icon]:top-2 group-data-[collapsible=icon]:-translate-x-[calc(50%+4px)] group-data-[collapsible=icon]:translate-y-0">
           <CollapseToggle compact />
@@ -941,18 +945,25 @@ type WorkspaceSurfaceMode = "agent" | "work" | "browser";
 
 export function WorkspaceSurfaceSwitch({
   active,
+  showWork = true,
 }: {
   active: WorkspaceSurfaceMode;
+  // OS appliance 剥离 company 时隐藏"工作"surface(PM 交给企业版插件)。
+  showWork?: boolean;
 }) {
   const { t } = useI18n();
   const items = [
-    {
-      to: COMPANY_WORKSPACE_ROUTE,
-      label: t.sidebar.navCompany,
-      icon: BriefcaseIcon,
-      active: active === "work",
-      kind: "icon" as const,
-    },
+    ...(showWork
+      ? [
+          {
+            to: COMPANY_WORKSPACE_ROUTE,
+            label: t.sidebar.navCompany,
+            icon: BriefcaseIcon,
+            active: active === "work",
+            kind: "icon" as const,
+          },
+        ]
+      : []),
     {
       to: PRIMARY_WORKSPACE_ROUTE,
       label: "Octopus",
