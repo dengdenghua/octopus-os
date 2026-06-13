@@ -181,3 +181,6 @@ evidence/kimi-desktop/
 output/
 ura-artifacts/
 evidence/
+
+# P1 去 fork:预构建的 agent wheel(投喂 Docker 构建,不入库)
+deploy/appliance/agent-dist/

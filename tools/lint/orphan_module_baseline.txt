@@ -1,7 +1,0 @@
-# Runtime modules nobody imports, captured by
-# tools/lint/orphan_module_check.py. Each line is a relpath.
-# Wired one up or deleted it? Remove its line to lock the win.
-# A line for a module used only via importlib/registry documents
-# that dynamic dependency — keep it, it's not a bug.
-
-runtime/sensing/gateway/android_router.py

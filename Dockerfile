@@ -47,15 +47,19 @@ ENV PIP_NO_CACHE_DIR=1 \
 
 WORKDIR /build
 
+# P1 去 fork:runtime/tools 不再随 os 仓库,改由 pinned agent 依赖提供。
+# agent 仓库私有 → 构建前先跑 deploy/appliance/prepare-agent-wheel.sh 预构建
+# agent wheel 到 deploy/appliance/agent-dist/,此处本地投喂(无需 GitHub token)。
 COPY pyproject.toml README.md ./
-COPY runtime/ ./runtime/
-COPY tools/ ./tools/
+COPY deploy/appliance/agent-dist/ ./agent-dist/
 COPY appliance/ ./appliance/
 
-# --prefix=/install 将依赖安装到独立目录 · 运行时阶段只复制此目录
-# appliance extra(NAS 启动器,octopus-os fork)随 serve/web 一并装入。
+# 1) 装 agent(=runtime/tools)+ serve/web/tracing extra:octopus-agent 取自本地
+#    find-links 的 wheel,其余依赖(fastapi 等)走 PyPI。
+# 2) 装 os 自身(仅 appliance 层),--no-deps 不再去 git 拉 agent(已装)。
 RUN pip install --prefix=/install --no-warn-script-location \
-    ".[serve,tracing,web,appliance]"
+        --find-links agent-dist/ "octopus-agent[serve,tracing,web]" \
+ && pip install --prefix=/install --no-warn-script-location --no-deps .
 
 
 # ═══════════════════════════════════════════════════════════

@@ -4,9 +4,13 @@
 # NAS / 主机上,浏览器打开即原生桌面,自动发现并点亮已装的 Docker 应用。
 #
 # 启动:
+#   ./deploy/appliance/prepare-agent-wheel.sh   # P1 去 fork:先备好 agent wheel
 #   cd deploy/appliance
 #   docker compose up -d --build
 #   浏览器打开 http://<NAS_IP>:8000/#/desktop
+#
+# 注(P1):os 不再 fork agent 的 runtime/,改装 pinned agent 依赖。构建前必须先跑
+# prepare-agent-wheel.sh 生成 agent wheel(投喂 Dockerfile 的 --find-links)。
 #
 # 关键点:
 #   * OCTOPUS_APPLIANCE=1   启用启动器应用注册器(/api/appliance/*)

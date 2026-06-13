@@ -4,6 +4,13 @@
 > `runtime/`(~22 万行),而把 agent 当 **pinned 依赖**装入,`appliance/` 经 P0 扩展
 > API 挂载。os 后端 = 纯 appliance 层 + 一个 agent 版本钉,差距从此复利、不再漂移。
 
+> **执行状态(已落地于 os-main)**:源码级去 fork **已完成并本地验证**——删除
+> `runtime/`+`tools/`(2216 文件)、pyproject 改名 `octopus-os` 并钉 agent 依赖、
+> appliance 经扩展点挂载。本地实测:os serve + 51 appliance 测试全部跑在**装好的
+> agent 包**上(本机无 os-runtime 源码)。**唯一待验证**:Docker 镜像组装需在带
+> Docker 的 NAS 上 `compose up --build` 跑通(本机无 Docker;wheel 预构建脚本本身
+> 已实测产出正确 wheel)。下方 §3/§4 保留作背景与回滚参考。
+
 ## 1. 前提(已具备)
 
 - **agent 已可打包**:`octopus-agent/pyproject.toml` 声明 `name=octopus-agent`、

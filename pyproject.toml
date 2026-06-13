@@ -1,7 +1,7 @@
 [project]
-name = "octopus-agent"
+name = "octopus-os"
 version = "0.2.0"
-description = "Biomimetic self-evolving agent OS."
+description = "Octopus OS · 家庭服务器 AI Agent 设备层(NAS 桌面/启动器/文件)。以 octopus-agent 为 pinned 依赖,自身只含 appliance 层。"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.11"
@@ -13,8 +13,11 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-    "pydantic>=2.12.0",
-    "bcrypt>=4.0",
+    # P1 去 fork:runtime/tools 不再随 os 仓库 fork,改由 agent 作 pinned 依赖提供。
+    # serve/web extra = 运行 appliance(NAS 桌面/启动器)所需的 FastAPI/httpx 等。
+    # 注:agent 仓库私有,裸 `pip install octopus-os` 需 GitHub token;Docker 构建
+    # 走 sibling 源码本地装(见 Dockerfile),不触发该 git 拉取。
+    "octopus-agent[serve,web] @ git+https://github.com/dengdenghua/octopus-agent.git@fedd0c5",
 ]
 
 [project.optional-dependencies]
@@ -145,10 +148,8 @@ Changelog = "https://github.com/octopus-agent/octopus-agent/blob/main/CHANGELOG.
 [tool.octopus]
 repo_url = "https://github.com/octopus-agent/octopus-agent"
 
-[project.scripts]
-octopus-lint = "tools.lint.invariant_check:main"
-octopus = "runtime.cli:main"
-octopus-agent = "runtime.cli:main"
+# console scripts(octopus / octopus-agent / octopus-lint)由 agent 依赖提供,
+# os 不再重复声明(避免与 agent 包的同名脚本冲突)。
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
@@ -159,7 +160,8 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["runtime*", "tools*", "appliance*"]
+# os 仓库只发布 appliance 层;runtime*/tools* 由 agent 依赖提供(P1 去 fork)。
+include = ["appliance*"]
 exclude = ["tests*", "*.fixtures*"]
 
 # ─── pytest ──────────────────────────────────────────

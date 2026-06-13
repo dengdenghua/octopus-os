@@ -1,5 +1,0 @@
-# Wrong-way cross-package imports, captured by
-# tools/lint/import_direction_check.py. Each line is
-# '<relpath>\t<target_module>'. Fixed an edge? Delete its line so
-# the audit locks in the win. Regenerate with --write-baseline.
-
