@@ -43,6 +43,12 @@ services:
       OCTOPUS_LOG_LEVEL: ${OCTOPUS_LOG_LEVEL:-INFO}
       # LLM 可选:不配也能用桌面/启动器/文件;配上才有对话 Agent
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # 企业版 PM 编程接入(可选):配置后 Agent 获得 pm_list_projects /
+      # pm_list_tasks / pm_create_task 工具,能在企业版里列项目/建任务。
+      # 指向同机部署的企业版(见 octopus-enterprise/docker-compose.yml)。
+      OCTOPUS_PM_URL: ${OCTOPUS_PM_URL:-}
+      OCTOPUS_PM_TOKEN: ${OCTOPUS_PM_TOKEN:-}
+      OCTOPUS_PM_TENANT: ${OCTOPUS_PM_TENANT:-}
     volumes:
       # 应用注册器读取/启停宿主容器(root 等价,见上方安全说明)
       - /var/run/docker.sock:/var/run/docker.sock

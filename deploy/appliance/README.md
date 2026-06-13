@@ -23,7 +23,17 @@ Dock 里"本地应用"段会列出宿主上已装的 Docker 应用(运行中带�
 | `OCTOPUS_ADMIN_PASSWORD` | 空 | 管理员登录密码(用户名固定 `admin`);**不设则首启随机生成并打印到容器日志** |
 | `NAS_STORAGE` | `./storage` | 挂进桌面文件区的宿主共享目录(如 `/DATA` / `/volume1`) |
 | `ANTHROPIC_API_KEY` | 空 | 配上才有对话 Agent;桌面/启动器/文件不需要 |
+| `OCTOPUS_PM_URL` | 空 | 企业版地址。配上后 Agent 获得 PM 工具(列项目/建任务),能在企业版里操作项目管理 |
+| `OCTOPUS_PM_TOKEN` | 空 | 企业版登录 JWT(`Authorization: Bearer`) |
+| `OCTOPUS_PM_TENANT` | 空 | 企业版租户 ID(`X-Tenant-ID`;单租户可留空) |
 | `OCTOPUS_LOG_LEVEL` | `INFO` | 日志级别 |
+
+### Agent 调企业版 PM(可选)
+
+把企业版部署在同一机器(它会自动出现在启动器,见上文),再给本服务设
+`OCTOPUS_PM_URL` 指向企业版,Agent 即获得三个工具:`pm_list_projects` /
+`pm_list_tasks` / `pm_create_task`。这样用户可以直接对 Agent 说「把这次调研拆成
+任务记到项目里」,Agent 调企业版的 PM API 完成——UI 在窗口里看,操作可对话驱动。
 
 ### 首次登录
 

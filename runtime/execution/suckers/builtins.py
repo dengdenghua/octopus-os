@@ -627,6 +627,15 @@ def register_all(registry: SkillRegistry) -> int:
     lsp_count = register_lsp_skills(registry)
     # Code quality · lint / test / format
     quality_count = register_code_quality_skills(registry)
+    # Octopus OS appliance(fork):企业版 PM 工具,配置 OCTOPUS_PM_URL 时挂载,
+    # 让 Agent 能在企业版里列项目/建任务(D① 编程接入)。未配置则零注册。
+    import os as _os_pm
+
+    pm_count = 0
+    if _os_pm.environ.get("OCTOPUS_PM_URL"):
+        from appliance.pm_skills import register_pm_skills
+
+        pm_count = register_pm_skills(registry)
     return (
         len(BUILTIN_NAMES)
         + web_count
@@ -641,4 +650,5 @@ def register_all(registry: SkillRegistry) -> int:
         + code_edit_count
         + lsp_count
         + quality_count
+        + pm_count
     )
