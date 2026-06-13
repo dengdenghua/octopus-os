@@ -77,6 +77,21 @@
    core 依赖;否则一并删。
 6. **收尾**:os 前端 = 桌面 + appliance + 共享原语/基建 + (可选)浏览器。
 
+## 4.5 进度:问题 A 已解决(2026-06-13)
+
+**外部 agent 工作台 UI 的 serve 机制已做完并验证**(选定"同机 webui 投喂"):
+- 后端 `appliance/agent_ui.py`(os cc6e2de):`OCTOPUS_AGENT_WEBUI_DIST` 指向独立
+  构建的 agent webui 时挂到 `/agent-ui/`;`/api/appliance/config` 暴露 URL,前端
+  `loadAgentWorkspaceConfig()` 读它设全局 → 窗口加载外部 webui,未投喂则同源回退。
+- 部署 glue(os 70ec7ce):`prepare-agent-webui.sh` 以 `base=/agent-ui/` 构建 agent
+  前端(实测 26s 成功);Dockerfile COPY + 设 env;`.dockerignore` 加例外放行投喂
+  产物(并修复 P1 wheel 同样被 `deploy/` 排除的隐患)。
+- 实测:os serve 真实 agent webui dist → config 回 `/agent-ui/#/...`、`/agent-ui/`
+  是真实 Octopus index、assets 200。
+
+→ **§4 step 1 完成**;deletion 已解除前置。剩余:§4 step 2(桌面应用逐个改嵌入
+窗口)→ step 3(甄别 core/)→ step 4(删工作台前端)。镜像组装待 NAS 验证。
+
 ## 5. 已落地(非破坏性接缝,os b5573da)
 
 - `frontend/src/appliance/agent-workspace.ts`:`resolveAgentWorkspaceUrl()` —
