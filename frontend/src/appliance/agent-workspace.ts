@@ -27,6 +27,26 @@ export function resolveAgentWorkspaceUrl(): string {
   return DEFAULT_WORKSPACE_PATH;
 }
 
+/**
+ * 向后端问一次"agent 工作台 UI 在哪"(P2 同机 webui 投喂)。后端 serve 了独立
+ * agent webui 时回 /agent-ui/...,据此设全局 → 窗口加载外部 webui 而非同源工作台。
+ * 后端未投喂(agent_workspace_url=null)或接口不可用 → 保持同源回退,不打扰。
+ * 在桌面挂载时调用一次即可;失败静默。
+ */
+export async function loadAgentWorkspaceConfig(): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    const res = await fetch("/api/appliance/config");
+    if (!res.ok) return;
+    const cfg = (await res.json()) as { agent_workspace_url?: string | null };
+    if (cfg.agent_workspace_url) {
+      window.__OCTOPUS_AGENT_WORKSPACE_URL__ = cfg.agent_workspace_url;
+    }
+  } catch {
+    // 接口不可用(母体/未开 appliance)→ 同源回退。
+  }
+}
+
 /** 工作台桌面窗口的稳定 id(同一窗口不重复开)。 */
 export const AGENT_WORKSPACE_WINDOW_ID = "agent-workspace";
 

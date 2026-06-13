@@ -53,6 +53,7 @@ import { AppWindow, type DesktopWindow } from "@/appliance/app-window";
 import {
   AGENT_WORKSPACE_FALLBACK_ROUTE,
   AGENT_WORKSPACE_WINDOW_ID,
+  loadAgentWorkspaceConfig,
   resolveAgentWorkspaceUrl,
 } from "@/appliance/agent-workspace";
 
@@ -321,6 +322,8 @@ export default function DesktopShellPage() {
         // 状态接口不可用(母体模式 / 未开 appliance)→ 不拦截。
         if (alive) setApplianceAuthed(true);
       });
+    // P2:问后端 agent 工作台 UI 在哪(投喂了独立 webui 则窗口加载 /agent-ui/)。
+    void loadAgentWorkspaceConfig();
     return () => {
       alive = false;
     };

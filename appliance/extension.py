@@ -22,9 +22,10 @@ def register_app(app: Any, context: Any) -> None:
     if os.environ.get("OCTOPUS_APPLIANCE") != "1":
         return
 
+    from runtime.adapters.integrations.local_auth import create_local_auth_router
+
     from appliance.app_registry.router import create_appliance_router
     from appliance.auth import ADMIN_USERNAME, load_or_bootstrap_auth
-    from runtime.adapters.integrations.local_auth import create_local_auth_router
 
     auth_cfg, generated_pw = load_or_bootstrap_auth()
     if generated_pw:
@@ -41,6 +42,12 @@ def register_app(app: Any, context: Any) -> None:
         )
     )
     app.include_router(create_appliance_router(jwt_secret=auth_cfg.jwt_secret))
+
+    # P2 同机 agent webui 投喂:serve 独立 agent 工作台 UI 于 /agent-ui/(若已投喂)
+    # + 公开 /api/appliance/config 告诉前端窗口该加载哪个 URL。见 appliance/agent_ui.py。
+    from appliance.agent_ui import mount_agent_ui
+
+    mount_agent_ui(app)
 
     # NAS 文件管理器(回收站语义)。root 默认对齐 compose 的存储挂载点;
     # 路径不可用时跳过挂载,不影响其余功能。
