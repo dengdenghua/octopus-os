@@ -630,8 +630,10 @@ function createMainWindow() {
     return { action: "deny" };
   });
 
-  if (app.isPackaged) {
-    win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+  // 会话 shell 从源码跑时也加载构建好的 dist(设备上不连 vite dev)。
+  const _distIndex = path.join(__dirname, "..", "dist", "index.html");
+  if (app.isPackaged || (NATIVE_SHELL && fs.existsSync(_distIndex))) {
+    win.loadFile(_distIndex);
   } else {
     win.loadURL(DEV_URL);
     win.webContents.on("did-fail-load", (_e, code, desc) => {
