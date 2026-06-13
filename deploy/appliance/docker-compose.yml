@@ -5,12 +5,15 @@
 #
 # 启动:
 #   ./deploy/appliance/prepare-agent-wheel.sh   # P1 去 fork:先备好 agent wheel
+#   ./deploy/appliance/prepare-agent-webui.sh   # P2 去 fork:再备好 agent 工作台前端
 #   cd deploy/appliance
 #   docker compose up -d --build
 #   浏览器打开 http://<NAS_IP>:8000/#/desktop
 #
-# 注(P1):os 不再 fork agent 的 runtime/,改装 pinned agent 依赖。构建前必须先跑
-# prepare-agent-wheel.sh 生成 agent wheel(投喂 Dockerfile 的 --find-links)。
+# 注(P1/P2):os 不再 fork agent 的 runtime/ 与工作台前端,改装 pinned agent 依赖 +
+# 在 /agent-ui/ serve 独立构建的 agent webui。构建前必须先跑两个 prepare 脚本:
+#   - prepare-agent-wheel.sh → agent wheel(投喂 Dockerfile 的 --find-links)
+#   - prepare-agent-webui.sh → agent 工作台前端(base=/agent-ui/,投喂 OCTOPUS_AGENT_WEBUI_DIST)
 #
 # 关键点:
 #   * OCTOPUS_APPLIANCE=1   启用启动器应用注册器(/api/appliance/*)

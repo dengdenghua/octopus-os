@@ -56,6 +56,10 @@ docs/
 
 # Local deployment sources excluded from runtime image
 deploy/
+# 例外:prepare-*.sh 预构建的投喂产物必须进构建上下文(P1 agent wheel、
+# P2 同机 agent webui)。BuildKit 按顺序应用,这两条负向规则覆盖上面的 deploy/。
+!deploy/appliance/agent-dist
+!deploy/appliance/agent-webui
 docker-compose*.yml
 Dockerfile
 .dockerignore

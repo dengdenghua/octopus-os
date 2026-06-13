@@ -184,3 +184,6 @@ evidence/
 
 # P1 去 fork:预构建的 agent wheel(投喂 Docker 构建,不入库)
 deploy/appliance/agent-dist/
+
+# P2 同机 webui 投喂:预构建的 agent 前端(投喂 Docker,不入库)
+deploy/appliance/agent-webui/

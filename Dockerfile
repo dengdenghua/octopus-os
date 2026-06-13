@@ -75,7 +75,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     OCTOPUS_DATA_DIR=/data \
     OCTOPUS_CONFIG=/etc/octopus/config.yaml \
     OCTOPUS_WEBUI_DIST=/app/webui \
-    OCTOPUS_RESOURCES_DIR=/app/resources
+    OCTOPUS_RESOURCES_DIR=/app/resources \
+    OCTOPUS_AGENT_WEBUI_DIST=/app/agent-webui
 
 RUN groupadd -r octopus && \
     useradd -r -g octopus -d /data -s /bin/false octopus && \
@@ -94,7 +95,12 @@ COPY prompts/   /app/resources/prompts/
 COPY protocols/ /app/resources/protocols/
 COPY teams/     /app/resources/teams/
 COPY config.example.yaml /etc/octopus/config.example.yaml
-RUN chown -R octopus:octopus /app/resources /etc/octopus
+
+# P2 同机 webui 投喂:独立构建的 agent 工作台前端(base=/agent-ui/),由后端在
+# /agent-ui/ serve、os 桌面窗口加载。构建前先跑 deploy/appliance/prepare-agent-webui.sh
+# 产出此目录(.gitignore)。未投喂(目录空)→ 后端回退,前端用同源工作台路由。
+COPY deploy/appliance/agent-webui/ /app/agent-webui/
+RUN chown -R octopus:octopus /app/resources /app/agent-webui /etc/octopus
 
 USER octopus
 WORKDIR /data
