@@ -13,18 +13,32 @@ declare global {
   interface Window {
     /** 部署/后端可注入,指向外部 agent 服务的工作台 UI(去 fork 时用)。 */
     __OCTOPUS_AGENT_WORKSPACE_URL__?: string;
+    /** 外部 agent webui 的挂载前缀(/agent-ui/);据此为任意 agent 路由拼窗口 URL。 */
+    __OCTOPUS_AGENT_UI_BASE__?: string;
   }
 }
 
 /** os 自带 agent 前端时的同源工作台入口(对话/编程/项目的实时工作台)。 */
 const DEFAULT_WORKSPACE_PATH = "/workspace/realtime/new";
 
-/** 解析 agent 工作台窗口要加载的 URL:优先外部注入,回退同源路由。 */
+/**
+ * 为**任意** agent 路由(如 /workspace/observability)解析桌面窗口要加载的 URL:
+ * - 已投喂外部 agent webui(有 base)→ `${base}#${route}`(hash 路由进外部 SPA);
+ * - 否则 → 同源 `route`(os 仍自带 agent 前端,过渡态)。
+ * 这是 P2 step2 的统一入口:桌面 agent 应用都经它窗口化,换 base 即整体切到外部消费。
+ */
+export function resolveAgentAppUrl(route: string): string {
+  const base =
+    typeof window !== "undefined" ? window.__OCTOPUS_AGENT_UI_BASE__ : undefined;
+  return base ? `${base}#${route}` : route;
+}
+
+/** 解析 agent 工作台窗口要加载的 URL:优先外部注入,回退按 base 拼同源/外部路由。 */
 export function resolveAgentWorkspaceUrl(): string {
   if (typeof window !== "undefined" && window.__OCTOPUS_AGENT_WORKSPACE_URL__) {
     return window.__OCTOPUS_AGENT_WORKSPACE_URL__;
   }
-  return DEFAULT_WORKSPACE_PATH;
+  return resolveAgentAppUrl(DEFAULT_WORKSPACE_PATH);
 }
 
 /**
@@ -38,9 +52,15 @@ export async function loadAgentWorkspaceConfig(): Promise<void> {
   try {
     const res = await fetch("/api/appliance/config");
     if (!res.ok) return;
-    const cfg = (await res.json()) as { agent_workspace_url?: string | null };
+    const cfg = (await res.json()) as {
+      agent_workspace_url?: string | null;
+      agent_ui_base?: string | null;
+    };
     if (cfg.agent_workspace_url) {
       window.__OCTOPUS_AGENT_WORKSPACE_URL__ = cfg.agent_workspace_url;
+    }
+    if (cfg.agent_ui_base) {
+      window.__OCTOPUS_AGENT_UI_BASE__ = cfg.agent_ui_base;
     }
   } catch {
     // 接口不可用(母体/未开 appliance)→ 同源回退。

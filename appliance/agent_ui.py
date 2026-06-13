@@ -39,8 +39,18 @@ def _resolve_dist() -> Path | None:
     return None
 
 
+def agent_ui_base() -> str | None:
+    """已投喂 agent webui 时返回其挂载前缀(/agent-ui/),否则 None。
+
+    前端据此为**任意** agent 路由拼窗口 URL:base ? `${base}#${route}` : route。
+    """
+    if _resolve_dist() is None:
+        return None
+    return f"{_MOUNT_PREFIX}/"
+
+
 def agent_workspace_url() -> str | None:
-    """已投喂 agent webui 时返回桌面窗口该加载的 URL,否则 None。"""
+    """已投喂 agent webui 时返回工作台首入口 URL,否则 None(同源回退)。"""
     if _resolve_dist() is None:
         return None
     return f"{_MOUNT_PREFIX}/{_WORKSPACE_HASH}"
@@ -59,7 +69,10 @@ def mount_agent_ui(app: Any) -> bool:
 
     @router.get("/api/appliance/config", include_in_schema=False)
     def _appliance_config() -> dict[str, Any]:
-        return {"agent_workspace_url": agent_workspace_url()}
+        return {
+            "agent_workspace_url": agent_workspace_url(),
+            "agent_ui_base": agent_ui_base(),
+        }
 
     app.include_router(router)
 
