@@ -50,6 +50,11 @@ import { fetchApplianceAuthStatus } from "@/appliance/auth";
 import { ApplianceLogin } from "@/appliance/login";
 import { FileManager } from "@/appliance/file-manager";
 import { AppWindow, type DesktopWindow } from "@/appliance/app-window";
+import {
+  AGENT_WORKSPACE_FALLBACK_ROUTE,
+  AGENT_WORKSPACE_WINDOW_ID,
+  resolveAgentWorkspaceUrl,
+} from "@/appliance/agent-workspace";
 
 type DesktopApp = {
   name: string;
@@ -343,6 +348,21 @@ export default function DesktopShellPage() {
     if (!url) return;
     if (isElectronShell) window.open(url, "_blank", "noopener");
     else openWindow({ id: app.id, title: app.name, url });
+  };
+
+  // P2 前端去 fork:把 agent 工作台当桌面应用开在窗口里(dogfood 窗口系统)。
+  // URL 由 resolveAgentWorkspaceUrl 决定:默认同源工作台,可注入指向外部 agent
+  // 服务 → os 不再 fork agent 前端。Electron 寄生模式无窗口系统,整页打开。
+  const openAgentWorkspace = () => {
+    if (isElectronShell) {
+      navigate(AGENT_WORKSPACE_FALLBACK_ROUTE);
+      return;
+    }
+    openWindow({
+      id: AGENT_WORKSPACE_WINDOW_ID,
+      title: "Agent 工作台",
+      url: resolveAgentWorkspaceUrl(),
+    });
   };
 
   useEffect(() => {
@@ -1155,6 +1175,15 @@ export default function DesktopShellPage() {
         )}
 
         <Dock className="absolute bottom-5 left-1/2 z-20 flex -translate-x-1/2 items-end gap-2.5 rounded-[24px] border border-white/45 bg-white/40 px-3.5 py-2.5 shadow-[0_18px_50px_-12px_rgba(0,0,0,0.45)] ring-1 ring-inset ring-white/40 backdrop-blur-2xl">
+          {/* P2:agent 工作台作为桌面窗口应用(消费而非 fork agent 前端)。 */}
+          <DockItem
+            onClick={openAgentWorkspace}
+            title="Agent 工作台 · 在桌面窗口里打开"
+            className="rounded-[15px] bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-black/18 ring-1 ring-white/25"
+          >
+            <BotIcon className="size-6" />
+          </DockItem>
+          <span className="mx-1 h-10 w-px self-center bg-slate-700/16" />
           {DOCK_APPS.map((app) => {
             const Icon = app.icon;
             return (
