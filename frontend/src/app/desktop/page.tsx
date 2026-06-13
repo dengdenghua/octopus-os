@@ -48,6 +48,7 @@ import {
 import { Dock, DockItem } from "@/appliance/dock";
 import { fetchApplianceAuthStatus } from "@/appliance/auth";
 import { ApplianceLogin } from "@/appliance/login";
+import { FileManager } from "@/appliance/file-manager";
 
 type DesktopApp = {
   name: string;
@@ -272,6 +273,12 @@ export default function DesktopShellPage() {
   // Appliance 单用户认证门:null=检测中,true=放行(无需认证或已登录),
   // false=需登录。仅 NAS appliance 形态会要求认证(后端 OCTOPUS_APPLIANCE=1)。
   const [applianceAuthed, setApplianceAuthed] = useState<boolean | null>(null);
+  // NAS 文件管理器(原生路线;Electron 寄生模式仍用透明桌面整理抽屉)。
+  const [fileManagerOpen, setFileManagerOpen] = useState(false);
+  const openFiles = () => {
+    if (isElectronShell) setDesktopDrawerOpen(true);
+    else setFileManagerOpen(true);
+  };
   useEffect(() => {
     let alive = true;
     fetchApplianceAuthStatus()
@@ -1184,8 +1191,8 @@ export default function DesktopShellPage() {
               })}
           <span className="mx-1 h-10 w-px self-center bg-slate-700/16" />
           <DockItem
-            onClick={() => setDesktopDrawerOpen(true)}
-            title="桌面文件"
+            onClick={openFiles}
+            title={isElectronShell ? "桌面文件" : "文件"}
             className="rounded-[15px] bg-white/76 text-orange-500 shadow-lg shadow-black/12"
           >
             <FolderIcon className="size-6" />
@@ -1287,6 +1294,10 @@ export default function DesktopShellPage() {
           </div>
         )}
       </section>
+
+      {fileManagerOpen && (
+        <FileManager onClose={() => setFileManagerOpen(false)} />
+      )}
     </main>
   );
 }

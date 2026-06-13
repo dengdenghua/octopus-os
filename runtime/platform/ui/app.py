@@ -1416,4 +1416,21 @@ def create_app(
         )
         app.include_router(create_appliance_router(jwt_secret=_auth_cfg.jwt_secret))
 
+        # NAS 文件管理器(回收站语义)。root 默认对齐 compose 的存储挂载点;
+        # 路径不可用时跳过挂载,不影响其余功能。
+        _nas_root = (
+            _os.environ.get("OCTOPUS_NAS_ROOT")
+            or _os.path.join(_os.environ.get("OCTOPUS_DATA_DIR", "/data"), "nas")
+        )
+        try:
+            from appliance.files import FileManager, create_files_router
+
+            app.include_router(
+                create_files_router(
+                    FileManager(_nas_root), jwt_secret=_auth_cfg.jwt_secret
+                )
+            )
+        except OSError as _fs_exc:
+            _alog.warning("NAS file manager not mounted (%s): %s", _nas_root, _fs_exc)
+
     return app

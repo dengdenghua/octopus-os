@@ -22,30 +22,9 @@ from starlette.concurrency import run_in_threadpool
 
 from appliance.app_registry.catalog import build_catalog
 from appliance.app_registry.docker_client import DockerClient, DockerUnavailable
+from appliance.security import is_authenticated, make_auth_dependency
 
 _CONTAINER_ID = re.compile(r"^[0-9a-f]{12,64}$")
-
-
-def _bearer_token(request: Request) -> str | None:
-    header = request.headers.get("authorization", "")
-    if header.lower().startswith("bearer "):
-        return header[7:].strip() or None
-    return None
-
-
-def _is_authenticated(request: Request, jwt_secret: str | None) -> bool:
-    if not jwt_secret:
-        return True  # 未启用认证(本地开发)
-    token = _bearer_token(request)
-    if not token:
-        return False
-    from runtime.safety.auth.identity import JWTError, verify_jwt_hs256
-
-    try:
-        verify_jwt_hs256(token, secret=jwt_secret)
-    except JWTError:
-        return False
-    return True
 
 
 def create_appliance_router(
@@ -55,9 +34,7 @@ def create_appliance_router(
     client = docker or DockerClient()
     router = APIRouter(prefix="/api/appliance", tags=["appliance"])
 
-    def _require_auth(request: Request) -> None:
-        if not _is_authenticated(request, jwt_secret):
-            raise HTTPException(status_code=401, detail="authentication required")
+    _require_auth = make_auth_dependency(jwt_secret)
 
     def _validated(container_id: str) -> str:
         if not _CONTAINER_ID.match(container_id):
@@ -69,7 +46,7 @@ def create_appliance_router(
         # 公开:前端据此决定是否弹登录。
         return {
             "authRequired": jwt_secret is not None,
-            "authenticated": _is_authenticated(request, jwt_secret),
+            "authenticated": is_authenticated(request, jwt_secret),
         }
 
     @router.get("/apps", dependencies=[Depends(_require_auth)])
