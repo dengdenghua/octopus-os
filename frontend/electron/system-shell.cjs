@@ -86,6 +86,23 @@ const _ICON_THEME_ROOTS = [
 const _ICON_SIZES = ["scalable", "512x512", "256x256", "128x128", "64x64", "48x48"];
 const _PIXMAPS = "/usr/share/pixmaps";
 
+const _ICON_MIME = { ".svg": "image/svg+xml", ".png": "image/png" };
+
+/** 把图标文件读成 data URL,供渲染端 <img> 直接显示(避免 file:// 沙箱限制)。
+ *  读不了/过大(>256KB)→ null,渲染端回退到占位。 */
+function iconDataUrl(iconPath) {
+  if (!iconPath) return null;
+  const mime = _ICON_MIME[path.extname(iconPath).toLowerCase()];
+  if (!mime) return null; // .xpm 等浏览器不认,跳过
+  try {
+    const stat = fs.statSync(iconPath);
+    if (stat.size > 256 * 1024) return null;
+    return `data:${mime};base64,${fs.readFileSync(iconPath).toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 function resolveIcon(iconName) {
   if (!iconName) return null;
   // 绝对路径直接用
@@ -131,11 +148,13 @@ function listApplications() {
         );
         if (!isLaunchableApp(entry)) continue;
         seen.add(id);
+        const iconPath = resolveIcon(entry.Icon);
         apps.push({
           id,
           name: entry.Name || id,
           exec: cleanExec(entry.Exec),
-          icon: resolveIcon(entry.Icon),
+          icon: iconPath,
+          iconDataUrl: iconDataUrl(iconPath),
           categories: (entry.Categories || "")
             .split(";")
             .filter(Boolean),
@@ -179,6 +198,7 @@ module.exports = {
   cleanExec,
   isLaunchableApp,
   resolveIcon,
+  iconDataUrl,
   listApplications,
   launchApplication,
   registerSystemShellIpc,

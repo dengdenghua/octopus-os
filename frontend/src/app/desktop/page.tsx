@@ -46,6 +46,7 @@ import {
   type ApplianceApp,
 } from "@/appliance/apps";
 import { Dock, DockItem } from "@/appliance/dock";
+import { useNativeApps } from "@/appliance/apps-native";
 import { fetchApplianceAuthStatus } from "@/appliance/auth";
 import { ApplianceLogin } from "@/appliance/login";
 import { FileManager } from "@/appliance/file-manager";
@@ -349,6 +350,8 @@ export default function DesktopShellPage() {
   // API 不可用时 dockApplianceApps 为空,渲染处回退到占位图标。
   const { apps: applianceApps, refresh: refreshApplianceApps } =
     useApplianceApps();
+  // 原生 shell:本地已装应用(仅 Electron 会话 shell;web 端为空,Dock 不变)。
+  const { apps: nativeApps, launch: launchNativeApp } = useNativeApps();
   const dockApplianceApps = useMemo(
     () => applianceApps.filter((app) => appOpenUrl(app) !== null).slice(0, 6),
     [applianceApps],
@@ -1241,6 +1244,32 @@ export default function DesktopShellPage() {
                   </DockItem>
                 );
               })}
+          {/* 原生 shell:本地已装应用(真实图标,点击 spawn 启动)。web 端 nativeApps 为空。 */}
+          {nativeApps.length > 0 && (
+            <>
+              <span className="mx-1 h-10 w-px self-center bg-slate-700/16" />
+              {nativeApps.slice(0, 8).map((app) => (
+                <DockItem
+                  key={`native:${app.id}`}
+                  onClick={() => launchNativeApp(app.exec)}
+                  title={`${app.name} · 本地应用`}
+                  className="rounded-[15px] bg-white/86 text-slate-700 shadow-lg shadow-black/12 ring-1 ring-white/25"
+                >
+                  {app.iconDataUrl ? (
+                    <img
+                      src={app.iconDataUrl}
+                      alt=""
+                      className="size-7 rounded-[8px]"
+                    />
+                  ) : (
+                    <span className="text-lg font-semibold">
+                      {(app.name[0] ?? "?").toUpperCase()}
+                    </span>
+                  )}
+                </DockItem>
+              ))}
+            </>
+          )}
           <span className="mx-1 h-10 w-px self-center bg-slate-700/16" />
           <DockItem
             onClick={openFiles}

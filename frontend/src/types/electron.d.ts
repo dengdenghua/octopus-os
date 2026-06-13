@@ -35,6 +35,8 @@ export interface NativeApp {
   exec: string;
   /** 解析出的图标文件绝对路径;解析不到为 null。 */
   icon: string | null;
+  /** 图标 data URL(渲染端 <img> 直接用);读不了/过大/非 png-svg 为 null。 */
+  iconDataUrl: string | null;
   categories: string[];
   source: "native";
 }
