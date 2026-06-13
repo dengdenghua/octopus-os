@@ -9,37 +9,89 @@
 
 ---
 
-## 0. 准备
+## 0. 准备(去 fork 后:需 os + agent **两个仓库**)
+
+P1/P2 去 fork 后,os 不再自带 agent 的 runtime 与工作台前端,改在构建前从 agent
+源码**预构建投喂**(wheel + webui)。所以要 clone 两个仓库为 sibling:
 
 ```bash
+# 两仓库并列放(prepare 脚本默认找 ../octopus-agent;或设 OCTOPUS_AGENT_SRC)
+git clone https://github.com/dengdenghua/octopus-agent.git
 git clone https://github.com/dengdenghua/octopus-os.git
-cd octopus-os/deploy/appliance
-# 可选:指定管理员密码与 NAS 存储目录(不指定则密码随机生成、存储用 ./storage)
+cd octopus-os
+
+# ① 预构建 agent wheel(=runtime/tools)+ agent 工作台前端(base=/agent-ui/)
+./deploy/appliance/prepare-agent-wheel.sh     # 产出 deploy/appliance/agent-dist/*.whl
+./deploy/appliance/prepare-agent-webui.sh     # 产出 deploy/appliance/agent-webui/
+
+# ② 可选:管理员密码与 NAS 存储目录
 export OCTOPUS_ADMIN_PASSWORD=改成你的密码
-export NAS_STORAGE=/path/to/your/nas/share   # 群晖如 /volume1/share
+export NAS_STORAGE=/path/to/your/nas/share    # 群晖如 /volume1/share
 ```
+
+> prepare 脚本要在能跑 Node/pnpm + Python 的机器上跑(构建前端 + wheel)。若 NAS
+> 本身不便装构建工具,可在开发机跑完两个脚本,把 `deploy/appliance/agent-dist/`
+> 和 `deploy/appliance/agent-webui/` 连同 os 仓库一起拷到 NAS 再 compose。
 
 ---
 
-## 1. 镜像构建闭环(P1 第 5 步唯一未验证项)⭐ 最高优先级
+## 1. 镜像构建闭环(去 fork 后的新构建流程)⭐ 最高优先级
+
+> ⚠️ 必须先跑完 §0 的两个 prepare 脚本(agent-dist/ 和 agent-webui/ 要存在),
+> 否则 Dockerfile 的 `COPY deploy/appliance/agent-dist|agent-webui` 会失败。
 
 ```bash
+cd deploy/appliance
 docker compose up -d --build
 ```
 
-**预期**:多阶段构建成功(node 构前端 → pip 装后端含 appliance extra → 运行时镜像),
-容器起来后 `docker compose ps` 显示 healthy。
+**预期**:多阶段构建成功——node 构 os 前端 → py-builder 用 `--find-links agent-dist/`
+本地装 `octopus-agent[serve,tracing,web]`(=去 fork 的 runtime/tools 来自 wheel,
+非自带)+ `pip install . --no-deps`(os 的 appliance)→ 运行时镜像 COPY agent-webui
+到 /app/agent-webui。`docker compose ps` 显示 healthy。
 
 **检查点**:
-- [ ] `docker compose build` 无错(重点看 pip 装 `.[serve,tracing,web,appliance]`
-      和 `COPY appliance/` 是否生效)
-- [ ] `docker compose ps` → `octopus-os` 状态 healthy
-- [ ] `curl http://localhost:8000/api/health` 返回 200
-- [ ] `docker compose logs | grep "appliance admin password"`
-      → 若没设 OCTOPUS_ADMIN_PASSWORD,这里能看到随机初始密码
+- [ ] `docker compose build` 无错(重点:`pip install --find-links agent-dist/
+      octopus-agent[...]` 成功、`COPY deploy/appliance/agent-dist|agent-webui` 不报
+      "no source files")
+- [ ] `docker compose ps` → `octopus-os` healthy
+- [ ] `curl http://localhost:8000/api/health` → 200
+- [ ] `docker compose logs | grep "agent webui 已投喂"` → 确认 /agent-ui/ 已挂载
+- [ ] `docker compose logs | grep "appliance admin password"` → 未设密码时看初始密码
 
-> 若 build 失败:大概率是依赖/路径层面(某个 extra 缺包、COPY 漏目录)。
-> 把 `docker compose build` 的完整报错贴回来即可定位。
+> **若 build 在 COPY agent-dist/agent-webui 处失败**("no source files in
+> snapshot"):①没跑 prepare 脚本;或 ②`.dockerignore` 的 `!deploy/appliance/
+> agent-dist`、`!deploy/appliance/agent-webui` 负向例外未被你的 Docker 版本识别
+> (旧 Docker)。后者把这两行换成把 `deploy/` 整行删掉即可(代价:构建上下文略大)。
+> **若 pip --find-links 找不到 octopus-agent**:prepare-agent-wheel.sh 没产出 wheel,
+> 或 agent 源码不在 ../octopus-agent(设 OCTOPUS_AGENT_SRC)。
+
+---
+
+## 1b. 去 fork 链路专项验证(P1+P2 的核心,决定能否删自带工作台)⭐⭐
+
+这是"先 NAS 验证再删"的关键:确认**外部 agent UI 真能替代自带工作台**。
+
+```bash
+# ① 后端 serve 独立 agent webui
+curl -s http://localhost:8000/api/appliance/config
+#   预期:{"agent_workspace_url":"/agent-ui/#/workspace/realtime/new","agent_ui_base":"/agent-ui/"}
+curl -s http://localhost:8000/agent-ui/ | grep -o "<title>[^<]*</title>"
+#   预期:<title>Octopus</title>(真实 agent 前端,非空)
+```
+
+**检查点**:
+- [ ] `/api/appliance/config` 返回 `agent_ui_base: "/agent-ui/"`(非 null)
+- [ ] `/agent-ui/` 返回真实 agent 前端 index.html;其 assets(`/agent-ui/assets/*`)200
+- [ ] 桌面点 Dock "工作台" → 开桌面窗口,**iframe 加载 `/agent-ui/#/workspace/
+      realtime/new`**(DevTools 看 iframe src 带 `/agent-ui/`,不是同源 `/workspace`)
+- [ ] 窗口里是完整 agent 工作台(侧栏对话/插件/知识库 + 输入框 + 快速开始),能正常
+      交互(若配了 ANTHROPIC_API_KEY/模型,能对话)
+- [ ] "终端日志" 同样开窗口加载 `/agent-ui/#/workspace/observability`
+
+> ✅ 以上全过 = 外部 agent UI 已能替代自带工作台 → 回填确认,我即删 os 自带的
+> `components/workspace`(314 文件)等前端,完成 P2 前端去 fork。
+> ❌ 任一项失败 = 暂不删,把现象/报错贴回来先修。
 
 ---
 
@@ -119,10 +171,13 @@ docker compose up -d --build
 
 ## 反馈给开发(回填后贴回来)
 
-1. **第 1 节** build 成功?失败贴 `docker compose build` 报错。
-2. **第 3 节那张表**:哪些应用 iframe 直接显示、哪些空白 + Console 报错文本。
-   ← 这是我接着做反向代理和应用技能(SKILL.md)最需要的输入。
-3. 第 2/4/5 节有任何不符预期的,描述现象即可。
+1. **第 1b 节(去 fork 链路)⭐ 最关键** —— 全过了吗?这决定我能否删 os 自带的
+   650 文件工作台前端。`/agent-ui/` 是否 serve 真实工作台、桌面"工作台"窗口是否
+   加载 `/agent-ui/`。任一项失败贴现象。
+2. **第 1 节** build 成功?失败贴 `docker compose build` 报错(尤其 COPY agent-dist/
+   agent-webui 或 pip --find-links 处)。
+3. **第 3 节那张表**:哪些第三方应用 iframe 直接显示、哪些空白 + Console 报错文本。
+4. 第 2/4/5 节有任何不符预期的,描述现象即可。
 
 ---
 
@@ -130,6 +185,10 @@ docker compose up -d --build
 
 | 阶段 | 项 | 状态 |
 |---|---|---|
+| P0 | agent 插件扩展 API(挂路由/注册技能) | ✅ 本机验证 |
+| P1 | 后端去 fork(删 runtime/tools,钉 agent 依赖 + wheel 投喂) | ⏳ **本清单第 1 节** |
+| P2 | 同机 webui 投喂(后端 serve /agent-ui/ + 桌面窗口加载) | ⏳ **本清单第 1b 节** ⭐ |
+| P2 | 删 os 自带工作台前端(650 文件) | 🔒 待第 1b 节验证通过 |
 | P1 | 应用注册器 + Dock 接真实应用 | ✅ 本机验证 |
 | P1 | 桌面视觉(极光壁纸 + Dock 邻近缩放) | ✅ 预览验证 |
 | P1 | 原生默认主页(去寄生叠加) | ✅ 预览验证 |
