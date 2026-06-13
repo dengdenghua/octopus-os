@@ -1393,8 +1393,27 @@ def create_app(
     import os as _os
 
     if _os.environ.get("OCTOPUS_APPLIANCE") == "1":
-        from appliance.app_registry.router import create_appliance_router
+        import logging as _logging
 
-        app.include_router(create_appliance_router())
+        from appliance.app_registry.router import create_appliance_router
+        from appliance.auth import ADMIN_USERNAME, load_or_bootstrap_auth
+        from runtime.adapters.integrations.local_auth import create_local_auth_router
+
+        _alog = _logging.getLogger("octopus.appliance")
+        _auth_cfg, _generated_pw = load_or_bootstrap_auth()
+        if _generated_pw:
+            _alog.warning(
+                "appliance admin password generated (set OCTOPUS_ADMIN_PASSWORD to "
+                "choose your own): username=%s password=%s",
+                ADMIN_USERNAME,
+                _generated_pw,
+            )
+        # 登录端点(/api/auth/local/login,签发长会话 JWT)+ 受保护的启动器接口。
+        app.include_router(
+            create_local_auth_router(
+                config=_auth_cfg, identity_store=cocoloop_identity_store
+            )
+        )
+        app.include_router(create_appliance_router(jwt_secret=_auth_cfg.jwt_secret))
 
     return app

@@ -20,9 +20,24 @@ Dock 里"本地应用"段会列出宿主上已装的 Docker 应用(运行中带�
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PORT` | `8000` | 对外端口 |
+| `OCTOPUS_ADMIN_PASSWORD` | 空 | 管理员登录密码(用户名固定 `admin`);**不设则首启随机生成并打印到容器日志** |
 | `NAS_STORAGE` | `./storage` | 挂进桌面文件区的宿主共享目录(如 `/DATA` / `/volume1`) |
 | `ANTHROPIC_API_KEY` | 空 | 配上才有对话 Agent;桌面/启动器/文件不需要 |
 | `OCTOPUS_LOG_LEVEL` | `INFO` | 日志级别 |
+
+### 首次登录
+
+桌面是单用户的,打开即要求输入管理员密码:
+
+- **设了 `OCTOPUS_ADMIN_PASSWORD`** → 用它登录;
+- **没设** → 首启随机生成,查容器日志拿初始密码:
+  ```bash
+  docker compose logs | grep "appliance admin password"
+  ```
+
+密码哈希与会话密钥持久化在 data 卷(`appliance-auth.json`,0600),
+会话 30 天长效。改 `OCTOPUS_ADMIN_PASSWORD` 不会覆盖已设的密码
+(要重置就删掉 data 卷里的 `appliance-auth.json` 再重启)。
 
 例:把群晖 `/volume1/share` 挂进来、换 9000 端口:
 

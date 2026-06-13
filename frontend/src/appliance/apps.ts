@@ -8,6 +8,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { authHeader } from "@/appliance/auth";
+
 export type ApplianceApp = {
   id: string;
   name: string;
@@ -35,7 +37,9 @@ export function appOpenUrl(app: ApplianceApp): string | null {
 }
 
 export async function fetchApplianceApps(): Promise<AppsResponse> {
-  const response = await fetch("/api/appliance/apps");
+  const response = await fetch("/api/appliance/apps", {
+    headers: authHeader(),
+  });
   if (!response.ok) throw new Error(`apps fetch failed: ${response.status}`);
   return (await response.json()) as AppsResponse;
 }
@@ -43,6 +47,7 @@ export async function fetchApplianceApps(): Promise<AppsResponse> {
 export async function startApplianceApp(id: string): Promise<void> {
   const response = await fetch(`/api/appliance/apps/${id}/start`, {
     method: "POST",
+    headers: authHeader(),
   });
   if (!response.ok) throw new Error(`start failed: ${response.status}`);
 }

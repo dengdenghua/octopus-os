@@ -33,8 +33,11 @@ services:
     ports:
       - "${PORT:-8000}:8000"
     environment:
-      # 启用 NAS 桌面 appliance profile(应用注册器随之挂载)
+      # 启用 NAS 桌面 appliance profile(应用注册器 + 单用户认证随之挂载)
       OCTOPUS_APPLIANCE: "1"
+      # 管理员密码:不设则首启随机生成并打印到容器日志(docker compose logs)。
+      # 设置后即为登录密码(用户名固定 admin),持久化到 data 卷,改此值不影响已设密码。
+      OCTOPUS_ADMIN_PASSWORD: ${OCTOPUS_ADMIN_PASSWORD:-}
       # 容器内访问宿主 Docker 的 socket 路径(下方 volume 挂到此处)
       OCTOPUS_DOCKER_SOCK: /var/run/docker.sock
       OCTOPUS_LOG_LEVEL: ${OCTOPUS_LOG_LEVEL:-INFO}

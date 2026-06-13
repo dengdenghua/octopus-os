@@ -46,6 +46,8 @@ import {
   type ApplianceApp,
 } from "@/appliance/apps";
 import { Dock, DockItem } from "@/appliance/dock";
+import { fetchApplianceAuthStatus } from "@/appliance/auth";
+import { ApplianceLogin } from "@/appliance/login";
 
 type DesktopApp = {
   name: string;
@@ -219,11 +221,12 @@ export default function DesktopShellPage() {
   const [desktopCategory, setDesktopCategory] =
     useState<DesktopCategory["key"]>("all");
   const [desktopSearch, setDesktopSearch] = useState("");
-  const [organizerEnabled, setOrganizerEnabled] = useState(() =>
-    IS_NATIVE_DESKTOP ||
-    (typeof window !== "undefined"
-      ? localStorage.getItem(DESKTOP_ORGANIZER_ENABLED_KEY) === "true"
-      : false),
+  const [organizerEnabled, setOrganizerEnabled] = useState(
+    () =>
+      IS_NATIVE_DESKTOP ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem(DESKTOP_ORGANIZER_ENABLED_KEY) === "true"
+        : false),
   );
   const [archiving, setArchiving] = useState(false);
   const [undoing, setUndoing] = useState(false);
@@ -265,6 +268,24 @@ export default function DesktopShellPage() {
   // 非 Electron(浏览器 / NAS)则铺自有极光壁纸。
   const isElectronShell =
     typeof window !== "undefined" && !!window.octopus?.isElectron;
+
+  // Appliance 单用户认证门:null=检测中,true=放行(无需认证或已登录),
+  // false=需登录。仅 NAS appliance 形态会要求认证(后端 OCTOPUS_APPLIANCE=1)。
+  const [applianceAuthed, setApplianceAuthed] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetchApplianceAuthStatus()
+      .then((s) => {
+        if (alive) setApplianceAuthed(!s.authRequired || s.authenticated);
+      })
+      .catch(() => {
+        // 状态接口不可用(母体模式 / 未开 appliance)→ 不拦截。
+        if (alive) setApplianceAuthed(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const openApp = (app: DesktopApp) => navigate(app.route);
 
@@ -584,6 +605,12 @@ export default function DesktopShellPage() {
     localStorage.setItem(DESKTOP_ORGANIZER_ENABLED_KEY, "true");
     setOrganizerEnabled(true);
   };
+
+  // Appliance 认证门:需登录且未登录时显示原生登录屏。检测中(null)先不渲染
+  // 桌面,避免未登录态一闪而过。
+  if (applianceAuthed === false) {
+    return <ApplianceLogin onSuccess={() => setApplianceAuthed(true)} />;
+  }
 
   // 寄生路线的 opt-in 门:原生 OS 桌面默认进入,不显示此门(IS_NATIVE_DESKTOP)。
   if (!IS_NATIVE_DESKTOP && !organizerEnabled) {
