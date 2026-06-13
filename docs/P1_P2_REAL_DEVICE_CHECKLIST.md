@@ -98,6 +98,17 @@ docker compose up -d --build
 
 ---
 
+## 4b. 企业版 ↔ agent 服务化联调(PM 归并 D②,可选)
+
+把企业版作为 PM 插件部署后,可让它把 AI 调用走 agent(而非自带 LLM key):
+
+- 企业版 backend 设 `OCTOPUS_AGENT_URL=http://<agent_IP>:8000`(agent 服务地址);
+- 在企业版里触发一次需 AI 的操作(如 PRD 导入 / 风险扫描);
+- [ ] 看 agent 侧日志收到 `/v1/chat/completions` 请求 → 证明走的是 agent 网关;
+- [ ] 不配 `OCTOPUS_AGENT_URL` 时仍能用自带 `LLM_BASE_URL` 直连(回退正常)。
+
+> 本机已用单测验证路由逻辑 + 进程内耦合解除;此项是真实双服务的联调确认。
+
 ## 5. 安全复核(挂了 docker.sock = 宿主 root 等价)
 
 - [ ] 确认 8000 端口**只在内网**可达,未直接暴露公网
