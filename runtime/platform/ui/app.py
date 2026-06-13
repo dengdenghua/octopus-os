@@ -567,55 +567,68 @@ def create_app(
     app.state.team_tasks_router = team_tasks_router
     app.include_router(team_tasks_router)
 
-    # Company Workbench: long-running project planning domain. This sits
-    # above team_tasks so milestones/Gantt data can evolve without
-    # disturbing existing team-room task execution.
-    from runtime.company.api import create_company_router
+    # Company Workbench: long-running project planning domain (人类项目管理:
+    # 项目/甘特/里程碑/风险). octopus-os fork:OS appliance 形态默认**关闭**——
+    # PM 交给企业版插件(octopus-enterprise/docs/PM_INTERFACE.md);母体/非
+    # appliance 默认开启,行为不变,可用 OCTOPUS_ENABLE_COMPANY=1/0 覆盖。
+    # team_rooms/team_tasks(Agent 协调)始终保留;company 未挂载时,上面 team
+    # 事件广播里的 getattr(app.state, "company_router", None) 自动跳过同步。
+    import os as _os_company
 
-    async def _company_team_task_dispatcher(
-        request: Any,
-        payload: dict[str, Any],
-        run: bool = False,
-    ) -> dict[str, Any]:
-        creator = getattr(team_tasks_router, "create_task_from_payload", None)
-        if creator is None:
-            raise RuntimeError("team task creator is not available")
-        team_task = await creator(request, payload)
-        if run:
-            runner = getattr(team_tasks_router, "run_task_from_request", None)
-            if runner is None:
-                raise RuntimeError("team task runner is not available")
-            team_task = await runner(request, str(team_task["id"]))
-        return team_task
-
-    async def _company_team_room_creator(
-        request: Any,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        creator = getattr(team_rooms_router, "create_team_from_payload", None)
-        if creator is None:
-            raise RuntimeError("team room creator is not available")
-        return creator(request, payload)
-
-    async def _company_team_room_updater(
-        request: Any,
-        team_id: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        updater = getattr(team_rooms_router, "update_team_from_payload", None)
-        if updater is None:
-            raise RuntimeError("team room updater is not available")
-        return await updater(request, team_id, payload)
-
-    company_router = create_company_router(
-        team_task_dispatcher=_company_team_task_dispatcher,
-        team_room_creator=_company_team_room_creator,
-        team_room_updater=_company_team_room_updater,
-        agent_registry=agent_registry,
-        runtime=stack.runtime if stack is not None else None,
+    _company_default = (
+        "0" if _os_company.environ.get("OCTOPUS_APPLIANCE") == "1" else "1"
     )
-    app.state.company_router = company_router
-    app.include_router(company_router)
+    _company_enabled = (
+        _os_company.environ.get("OCTOPUS_ENABLE_COMPANY", _company_default) == "1"
+    )
+
+    if _company_enabled:
+        from runtime.company.api import create_company_router
+
+        async def _company_team_task_dispatcher(
+            request: Any,
+            payload: dict[str, Any],
+            run: bool = False,
+        ) -> dict[str, Any]:
+            creator = getattr(team_tasks_router, "create_task_from_payload", None)
+            if creator is None:
+                raise RuntimeError("team task creator is not available")
+            team_task = await creator(request, payload)
+            if run:
+                runner = getattr(team_tasks_router, "run_task_from_request", None)
+                if runner is None:
+                    raise RuntimeError("team task runner is not available")
+                team_task = await runner(request, str(team_task["id"]))
+            return team_task
+
+        async def _company_team_room_creator(
+            request: Any,
+            payload: dict[str, Any],
+        ) -> dict[str, Any]:
+            creator = getattr(team_rooms_router, "create_team_from_payload", None)
+            if creator is None:
+                raise RuntimeError("team room creator is not available")
+            return creator(request, payload)
+
+        async def _company_team_room_updater(
+            request: Any,
+            team_id: str,
+            payload: dict[str, Any],
+        ) -> dict[str, Any]:
+            updater = getattr(team_rooms_router, "update_team_from_payload", None)
+            if updater is None:
+                raise RuntimeError("team room updater is not available")
+            return await updater(request, team_id, payload)
+
+        company_router = create_company_router(
+            team_task_dispatcher=_company_team_task_dispatcher,
+            team_room_creator=_company_team_room_creator,
+            team_room_updater=_company_team_room_updater,
+            agent_registry=agent_registry,
+            runtime=stack.runtime if stack is not None else None,
+        )
+        app.state.company_router = company_router
+        app.include_router(company_router)
 
     if parallel_agent_orchestrator is None:
         from runtime.execution.parallel_agents import ParallelAgentOrchestrator

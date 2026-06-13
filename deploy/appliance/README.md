@@ -23,6 +23,7 @@ Dock 里"本地应用"段会列出宿主上已装的 Docker 应用(运行中带�
 | `OCTOPUS_ADMIN_PASSWORD` | 空 | 管理员登录密码(用户名固定 `admin`);**不设则首启随机生成并打印到容器日志** |
 | `NAS_STORAGE` | `./storage` | 挂进桌面文件区的宿主共享目录(如 `/DATA` / `/volume1`) |
 | `ANTHROPIC_API_KEY` | 空 | 配上才有对话 Agent;桌面/启动器/文件不需要 |
+| `OCTOPUS_ENABLE_COMPANY` | `0`(appliance 默认关) | 内置人类项目管理(`/api/company/*`)。appliance 形态默认关——PM 交给企业版插件;置 `1` 可重新启用 |
 | `OCTOPUS_LOG_LEVEL` | `INFO` | 日志级别 |
 
 ### 首次登录
