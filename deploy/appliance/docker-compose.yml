@@ -35,6 +35,10 @@ services:
     environment:
       # 启用 NAS 桌面 appliance profile(应用注册器 + 单用户认证随之挂载)
       OCTOPUS_APPLIANCE: "1"
+      # 「消费而非 fork」:appliance 路由 / 企业版 PM 技能不再改 agent 源码,
+      # 改由 agent 官方扩展点加载(见 runtime/platform/extensions.py)。
+      OCTOPUS_APP_EXTENSIONS: appliance.extension
+      OCTOPUS_SKILL_EXTENSIONS: appliance.pm_skills:register_pm_skills
       # 管理员密码:不设则首启随机生成并打印到容器日志(docker compose logs)。
       # 设置后即为登录密码(用户名固定 admin),持久化到 data 卷,改此值不影响已设密码。
       OCTOPUS_ADMIN_PASSWORD: ${OCTOPUS_ADMIN_PASSWORD:-}

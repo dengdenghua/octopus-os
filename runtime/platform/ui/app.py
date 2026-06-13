@@ -1342,51 +1342,22 @@ def create_app(
             "anthropic compat router failed to mount: %s", _anth_exc,
         )
 
-    # ── Octopus OS appliance profile(octopus-os fork)──────────────
-    # NAS 桌面启动器的应用注册器;仅 OCTOPUS_APPLIANCE=1 时挂载,
-    # 母体行为零变化。实现放在顶层 appliance/ 包,最小化合并面
-    # (docs/OCTOPUS_OS_PLAN.md §4)。
-    import os as _os
+    # 扩展点:消费者(企业版/octopus-os/mobile)经 OCTOPUS_APP_EXTENSIONS 在此挂
+    # 自定义路由,无需 fork agent。未配置则 no-op。见 runtime/platform/extensions.py。
+    # octopus-os 的 appliance 块已抽到 appliance/extension.py,经此扩展点加载
+    # (OCTOPUS_APP_EXTENSIONS=appliance.extension),app.py 与母体重新对齐。
+    from runtime.platform.extensions import (
+        AppExtensionContext,
+        load_app_extensions,
+    )
 
-    if _os.environ.get("OCTOPUS_APPLIANCE") == "1":
-        import logging as _logging
-
-        from appliance.app_registry.router import create_appliance_router
-        from appliance.auth import ADMIN_USERNAME, load_or_bootstrap_auth
-        from runtime.adapters.integrations.local_auth import create_local_auth_router
-
-        _alog = _logging.getLogger("octopus.appliance")
-        _auth_cfg, _generated_pw = load_or_bootstrap_auth()
-        if _generated_pw:
-            _alog.warning(
-                "appliance admin password generated (set OCTOPUS_ADMIN_PASSWORD to "
-                "choose your own): username=%s password=%s",
-                ADMIN_USERNAME,
-                _generated_pw,
-            )
-        # 登录端点(/api/auth/local/login,签发长会话 JWT)+ 受保护的启动器接口。
-        app.include_router(
-            create_local_auth_router(
-                config=_auth_cfg, identity_store=cocoloop_identity_store
-            )
-        )
-        app.include_router(create_appliance_router(jwt_secret=_auth_cfg.jwt_secret))
-
-        # NAS 文件管理器(回收站语义)。root 默认对齐 compose 的存储挂载点;
-        # 路径不可用时跳过挂载,不影响其余功能。
-        _nas_root = (
-            _os.environ.get("OCTOPUS_NAS_ROOT")
-            or _os.path.join(_os.environ.get("OCTOPUS_DATA_DIR", "/data"), "nas")
-        )
-        try:
-            from appliance.files import FileManager, create_files_router
-
-            app.include_router(
-                create_files_router(
-                    FileManager(_nas_root), jwt_secret=_auth_cfg.jwt_secret
-                )
-            )
-        except OSError as _fs_exc:
-            _alog.warning("NAS file manager not mounted (%s): %s", _nas_root, _fs_exc)
+    load_app_extensions(
+        app,
+        AppExtensionContext(
+            identity_store=cocoloop_identity_store,
+            stack=stack,
+            agent_registry=agent_registry,
+        ),
+    )
 
     return app
