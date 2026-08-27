@@ -1,0 +1,514 @@
+#!/usr/bin/env python3
+"""Session-private bridge between a KWin script and Echo Desktop.
+
+KWin is the only process that owns compositor window objects. Its JavaScript
+plugin publishes sanitized snapshots and polls fixed actions over the session
+D-Bus. Echo Desktop talks to this daemon through a mode-0600 Unix socket; the
+renderer never receives D-Bus access or an executable/argument surface.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import re
+import signal
+import socket
+import socketserver
+import stat
+import sys
+import threading
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+
+BUS_NAME = "org.echoos.WindowBridge"
+OBJECT_PATH = "/org/echoos/WindowBridge"
+INTERFACE = "org.echoos.WindowBridge1"
+PROVIDER = "kwin-wayland"
+PROTOCOL_VERSION = 2
+MAX_MESSAGE_BYTES = 1024 * 1024
+MAX_WINDOWS = 4096
+MAX_OUTPUTS = 128
+MAX_PENDING_ACTIONS = 256
+GENERATION_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+VALID_ACTIONS = frozenset({"focus", "minimize", "close"})
+
+
+class ProtocolError(ValueError):
+    """A peer supplied data outside the bridge contract."""
+
+
+def default_socket_path() -> Path:
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime:
+        runtime = f"/run/user/{os.getuid()}"
+    return Path(runtime) / "echo-os" / "kwin-window-bridge.sock"
+
+
+def canonical_window_id(value: Any) -> str:
+    raw = str(value or "").strip().strip("{}")
+    try:
+        parsed = uuid.UUID(raw)
+    except (ValueError, AttributeError, TypeError) as error:
+        raise ProtocolError("invalid KWin window UUID") from error
+    return str(parsed)
+
+
+def bounded_text(value: Any, maximum: int, field: str) -> str:
+    text = str(value or "")
+    if "\x00" in text or len(text) > maximum:
+        raise ProtocolError(f"invalid {field}")
+    return text
+
+
+def validate_window(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ProtocolError("window must be an object")
+    provider = value.get("provider")
+    if provider != PROVIDER:
+        raise ProtocolError("invalid window provider")
+    desktop = value.get("desktop")
+    pid = value.get("pid")
+    if isinstance(desktop, bool) or not isinstance(desktop, int):
+        raise ProtocolError("invalid desktop index")
+    if desktop < -1 or desktop > 10_000:
+        raise ProtocolError("invalid desktop index")
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid < 0 or pid > 2**31 - 1:
+        raise ProtocolError("invalid window pid")
+    active = value.get("active")
+    minimized = value.get("minimized")
+    if not isinstance(active, bool) or not isinstance(minimized, bool):
+        raise ProtocolError("invalid window state")
+    return {
+        "id": canonical_window_id(value.get("id")),
+        "desktop": desktop,
+        "pid": pid,
+        "host": bounded_text(value.get("host"), 255, "host"),
+        "wmClass": bounded_text(value.get("wmClass"), 512, "window class"),
+        "title": bounded_text(value.get("title"), 1024, "window title"),
+        "active": active,
+        "minimized": minimized,
+        "provider": PROVIDER,
+    }
+
+
+def validate_output(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ProtocolError("output must be an object")
+    name = bounded_text(value.get("name"), 255, "output name")
+    if not name:
+        raise ProtocolError("invalid output name")
+    coordinates: dict[str, int] = {}
+    for field in ("x", "y", "width", "height"):
+        coordinate = value.get(field)
+        if isinstance(coordinate, bool) or not isinstance(coordinate, int):
+            raise ProtocolError(f"invalid output {field}")
+        if field in {"width", "height"}:
+            if coordinate <= 0 or coordinate > 100_000:
+                raise ProtocolError(f"invalid output {field}")
+        elif coordinate < -1_000_000 or coordinate > 1_000_000:
+            raise ProtocolError(f"invalid output {field}")
+        coordinates[field] = coordinate
+    scale = value.get("scale")
+    if (
+        isinstance(scale, bool)
+        or not isinstance(scale, (int, float))
+        or not math.isfinite(scale)
+        or scale < 0.25
+        or scale > 16
+    ):
+        raise ProtocolError("invalid output scale")
+    return {"name": name, **coordinates, "scale": float(scale)}
+
+
+class BridgeState:
+    """Thread-safe snapshot, action queue, and acknowledgement ledger."""
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._generation = ""
+        self._windows: tuple[dict[str, Any], ...] = ()
+        self._outputs: tuple[dict[str, Any], ...] = ()
+        self._ready = False
+        self._next_sequence = 1
+        self._actions: list[dict[str, Any]] = []
+        self._pending: set[int] = set()
+        self._results: dict[int, tuple[bool, str]] = {}
+
+    def publish(self, payload: str, generation: str) -> bool:
+        if not isinstance(payload, str) or len(payload.encode("utf-8")) > MAX_MESSAGE_BYTES:
+            return False
+        if not GENERATION_RE.fullmatch(str(generation or "")):
+            return False
+        try:
+            decoded = json.loads(payload)
+            if not isinstance(decoded, dict):
+                raise ProtocolError("invalid compositor snapshot")
+            decoded_windows = decoded.get("windows")
+            decoded_outputs = decoded.get("outputs")
+            if not isinstance(decoded_windows, list) or len(decoded_windows) > MAX_WINDOWS:
+                raise ProtocolError("invalid window snapshot")
+            if (
+                not isinstance(decoded_outputs, list)
+                or not decoded_outputs
+                or len(decoded_outputs) > MAX_OUTPUTS
+            ):
+                raise ProtocolError("invalid output snapshot")
+            windows = tuple(validate_window(item) for item in decoded_windows)
+            outputs = tuple(validate_output(item) for item in decoded_outputs)
+            ids = [item["id"] for item in windows]
+            if len(ids) != len(set(ids)):
+                raise ProtocolError("duplicate KWin window UUID")
+            if sum(1 for item in windows if item["active"]) > 1:
+                raise ProtocolError("multiple active windows")
+            output_names = [item["name"] for item in outputs]
+            if len(output_names) != len(set(output_names)):
+                raise ProtocolError("duplicate KWin output name")
+        except (json.JSONDecodeError, ProtocolError):
+            return False
+        with self._condition:
+            self._windows = windows
+            self._outputs = outputs
+            self._generation = generation
+            self._ready = True
+            self._condition.notify_all()
+        return True
+
+    def capabilities(self) -> dict[str, Any]:
+        with self._condition:
+            ready = self._ready
+            generation = self._generation
+        return {
+            "ok": ready,
+            "nativeShell": True,
+            "provider": PROVIDER if ready else None,
+            "list": ready,
+            "focus": ready,
+            "minimize": ready,
+            "close": ready,
+            "protocolVersion": PROTOCOL_VERSION,
+            "generation": generation,
+            **({} if ready else {"error": "KWin has not published a window snapshot"}),
+        }
+
+    def list_windows(self) -> dict[str, Any]:
+        with self._condition:
+            if not self._ready:
+                return {
+                    "ok": False,
+                    "provider": PROVIDER,
+                    "windows": [],
+                    "error": "KWin has not published a window snapshot",
+                }
+            windows = [dict(item) for item in self._windows]
+            outputs = [dict(item) for item in self._outputs]
+        return {
+            "ok": True,
+            "provider": PROVIDER,
+            "windows": windows,
+            "outputs": outputs,
+        }
+
+    def request_action(
+        self, action: Any, window_id: Any, timeout_seconds: float = 3.0
+    ) -> dict[str, Any]:
+        if action not in VALID_ACTIONS:
+            return {"ok": False, "action": str(action), "error": "unknown window action"}
+        try:
+            canonical_id = canonical_window_id(window_id)
+        except ProtocolError as error:
+            return {"ok": False, "action": action, "error": str(error)}
+        with self._condition:
+            if not self._ready:
+                return {"ok": False, "action": action, "error": "KWin bridge is not ready"}
+            if canonical_id not in {item["id"] for item in self._windows}:
+                return {"ok": False, "action": action, "error": "unknown KWin window UUID"}
+            if len(self._pending) >= MAX_PENDING_ACTIONS:
+                return {"ok": False, "action": action, "error": "window action queue is full"}
+            sequence = self._next_sequence
+            self._next_sequence = 1 if sequence >= 2**31 - 1 else sequence + 1
+            self._pending.add(sequence)
+            self._actions.append(
+                {"sequence": sequence, "action": action, "windowId": canonical_id}
+            )
+            self._condition.notify_all()
+            deadline = time.monotonic() + timeout_seconds
+            while sequence not in self._results:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self._pending.discard(sequence)
+                    self._actions = [
+                        item for item in self._actions if item["sequence"] != sequence
+                    ]
+                    return {
+                        "ok": False,
+                        "action": action,
+                        "windowId": canonical_id,
+                        "provider": PROVIDER,
+                        "error": "KWin did not acknowledge the action",
+                    }
+                self._condition.wait(remaining)
+            ok, error = self._results.pop(sequence)
+            self._pending.discard(sequence)
+        result = {
+            "ok": ok,
+            "action": action,
+            "windowId": canonical_id,
+            "provider": PROVIDER,
+        }
+        if not ok:
+            result["error"] = error or "KWin rejected the action"
+        return result
+
+    def take_actions(self) -> str:
+        with self._condition:
+            actions = self._actions
+            self._actions = []
+        return json.dumps(actions, separators=(",", ":"), ensure_ascii=True)
+
+    def complete_action(self, sequence: int, ok: bool, error: str) -> bool:
+        if not isinstance(sequence, int) or isinstance(sequence, bool):
+            return False
+        with self._condition:
+            if sequence not in self._pending:
+                return False
+            self._results[sequence] = (bool(ok), bounded_text(error, 1024, "action error"))
+            self._condition.notify_all()
+        return True
+
+
+def handle_request(state: BridgeState, request: Any) -> dict[str, Any]:
+    if not isinstance(request, dict):
+        return {"ok": False, "error": "request must be an object"}
+    method = request.get("method")
+    if method == "capabilities":
+        return state.capabilities()
+    if method == "list":
+        return state.list_windows()
+    if method == "action":
+        return state.request_action(request.get("action"), request.get("windowId"))
+    return {"ok": False, "error": "unknown bridge method"}
+
+
+class BridgeRequestHandler(socketserver.StreamRequestHandler):
+    def handle(self) -> None:
+        raw = self.rfile.readline(MAX_MESSAGE_BYTES + 1)
+        if not raw or len(raw) > MAX_MESSAGE_BYTES:
+            response = {"ok": False, "error": "request is empty or too large"}
+        else:
+            try:
+                request = json.loads(raw.decode("utf-8"))
+                response = handle_request(self.server.bridge_state, request)  # type: ignore[attr-defined]
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                response = {"ok": False, "error": "request is not valid JSON"}
+        encoded = json.dumps(response, separators=(",", ":"), ensure_ascii=True).encode(
+            "utf-8"
+        )
+        self.wfile.write(encoded + b"\n")
+
+
+class BridgeUnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+    allow_reuse_address = False
+
+
+def prepare_socket_path(path: Path) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    parent = path.parent.stat()
+    if parent.st_uid != os.getuid() or parent.st_mode & 0o022:
+        raise RuntimeError(f"unsafe bridge runtime directory: {path.parent}")
+    try:
+        current = path.lstat()
+    except FileNotFoundError:
+        return
+    if current.st_uid != os.getuid() or not stat.S_ISSOCK(current.st_mode):
+        raise RuntimeError(f"refusing to replace unsafe bridge path: {path}")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.1)
+        try:
+            probe.connect(str(path))
+        except (ConnectionRefusedError, FileNotFoundError):
+            pass
+        except socket.timeout as error:
+            raise RuntimeError(f"KWin bridge socket is busy: {path}") from error
+        else:
+            raise RuntimeError(f"KWin bridge socket is already active: {path}")
+    path.unlink()
+
+
+def client_request(path: Path, request: dict[str, Any], timeout: float = 3.5) -> dict[str, Any]:
+    encoded = json.dumps(request, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    if len(encoded) > MAX_MESSAGE_BYTES:
+        raise RuntimeError("bridge request is too large")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(timeout)
+        client.connect(str(path))
+        client.sendall(encoded + b"\n")
+        received = bytearray()
+        while b"\n" not in received:
+            chunk = client.recv(65536)
+            if not chunk:
+                break
+            received.extend(chunk)
+            if len(received) > MAX_MESSAGE_BYTES:
+                raise RuntimeError("bridge response is too large")
+    line = bytes(received).split(b"\n", 1)[0]
+    if not line:
+        raise RuntimeError("bridge returned no response")
+    response = json.loads(line.decode("utf-8"))
+    if not isinstance(response, dict):
+        raise RuntimeError("bridge returned an invalid response")
+    return response
+
+
+def serve(socket_path: Path) -> int:
+    try:
+        import dbus
+        import dbus.service
+        from dbus.mainloop.glib import DBusGMainLoop
+        from gi.repository import GLib
+    except ImportError as error:
+        print(f"Echo KWin bridge dependency is missing: {error}", file=sys.stderr)
+        return 1
+
+    DBusGMainLoop(set_as_default=True)
+    session_bus = dbus.SessionBus()
+    bus_name = dbus.service.BusName(BUS_NAME, bus=session_bus, do_not_queue=True)
+    prepare_socket_path(socket_path)
+    state = BridgeState()
+    unix_server = BridgeUnixServer(str(socket_path), BridgeRequestHandler)
+    unix_server.bridge_state = state  # type: ignore[attr-defined]
+    os.chmod(socket_path, 0o600)
+    socket_inode = socket_path.stat().st_ino
+    unix_thread = threading.Thread(target=unix_server.serve_forever, daemon=True)
+    unix_thread.start()
+
+    def is_kwin_sender(sender: str | None) -> bool:
+        if not sender:
+            return False
+        try:
+            return str(session_bus.get_name_owner("org.kde.KWin")) == str(sender)
+        except dbus.DBusException:
+            return False
+
+    class WindowBridgeInterface(dbus.service.Object):
+        @dbus.service.method(
+            INTERFACE,
+            in_signature="ss",
+            out_signature="b",
+            sender_keyword="sender",
+        )
+        def PublishState(
+            self, payload: str, generation: str, sender: str | None = None
+        ) -> bool:
+            if not is_kwin_sender(sender):
+                return False
+            was_ready = state.capabilities()["ok"]
+            accepted = state.publish(str(payload), str(generation))
+            if accepted and not was_ready:
+                current_state = state.list_windows()
+                count = len(current_state["windows"])
+                output_count = len(current_state["outputs"])
+                print(
+                    "ECHO_KWIN_WINDOW_STATE_READY "
+                    f"provider={PROVIDER} windows={count} outputs={output_count}",
+                    flush=True,
+                )
+            return accepted
+
+        @dbus.service.method(
+            INTERFACE,
+            in_signature="",
+            out_signature="s",
+            sender_keyword="sender",
+        )
+        def TakeActions(self, sender: str | None = None) -> str:
+            if not is_kwin_sender(sender):
+                return "[]"
+            return state.take_actions()
+
+        @dbus.service.method(
+            INTERFACE,
+            in_signature="sbs",
+            out_signature="b",
+            sender_keyword="sender",
+        )
+        def CompleteAction(
+            self,
+            sequence: str,
+            ok: bool,
+            error: str,
+            sender: str | None = None,
+        ) -> bool:
+            if not is_kwin_sender(sender):
+                return False
+            try:
+                parsed_sequence = int(str(sequence), 10)
+                return state.complete_action(parsed_sequence, bool(ok), str(error))
+            except (ProtocolError, ValueError):
+                return False
+
+    interface = WindowBridgeInterface(bus_name, OBJECT_PATH)
+    loop = GLib.MainLoop()
+
+    def request_stop(_signum: int, _frame: Any) -> None:
+        loop.quit()
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+    print(
+        f"ECHO_KWIN_BRIDGE_READY bus={BUS_NAME} socket={socket_path}",
+        flush=True,
+    )
+    try:
+        loop.run()
+    finally:
+        interface.remove_from_connection()
+        unix_server.shutdown()
+        unix_server.server_close()
+        try:
+            current = socket_path.lstat()
+            if stat.S_ISSOCK(current.st_mode) and current.st_ino == socket_inode:
+                socket_path.unlink()
+        except FileNotFoundError:
+            pass
+    return 0
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--socket", type=Path, default=default_socket_path())
+    parser.add_argument("--probe", action="store_true")
+    parser.add_argument("--request", choices=("capabilities", "list", *sorted(VALID_ACTIONS)))
+    parser.add_argument("--window-id")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    if args.probe or args.request:
+        method = args.request or "capabilities"
+        request: dict[str, Any]
+        if method in VALID_ACTIONS:
+            if not args.window_id:
+                print("--window-id is required for a window action", file=sys.stderr)
+                return 2
+            request = {"method": "action", "action": method, "windowId": args.window_id}
+        else:
+            request = {"method": method}
+        try:
+            response = client_request(args.socket, request)
+        except (OSError, RuntimeError, json.JSONDecodeError) as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        print(json.dumps(response, separators=(",", ":"), ensure_ascii=True))
+        return 0 if response.get("ok") else 1
+    return serve(args.socket)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

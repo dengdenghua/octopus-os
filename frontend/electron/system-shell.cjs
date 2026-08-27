@@ -1,5 +1,5 @@
 /**
- * Octopus OS · 原生 shell(A 路线)的"系统手"层。
+ * Echo OS · 原生 shell(A 路线)的"系统手"层。
  *
  * Electron 会话 shell 模式下,主进程经此模块拥有真实系统能力:枚举已装本地应用
  * (freedesktop .desktop)、解析应用图标、启动应用。暴露给渲染进程的 React 桌面
@@ -15,20 +15,28 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { spawn } = require("child_process");
+const { execFile } = require("child_process");
+
+const LAUNCH_TIMEOUT_MS = 10_000;
+const LAUNCH_MAX_BUFFER_BYTES = 64 * 1024;
 
 // ── XDG 应用目录(freedesktop)──────────────────────────────────
-function _appDirs() {
-  const dirs = [];
+function appDirs() {
   const dataHome =
     process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
-  dirs.push(path.join(dataHome, "applications"));
-  const dataDirs =
-    process.env.XDG_DATA_DIRS || "/usr/local/share:/usr/share";
-  for (const d of dataDirs.split(":")) {
-    if (d) dirs.push(path.join(d, "applications"));
-  }
-  return dirs;
+  const dataDirs = process.env.XDG_DATA_DIRS || "/usr/local/share:/usr/share";
+  return [dataHome, ...dataDirs.split(":").filter(Boolean)].map((directory) =>
+    path.join(directory, "applications"),
+  );
+}
+
+function iconThemeRoots() {
+  const dataHome =
+    process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
+  const dataDirs = process.env.XDG_DATA_DIRS || "/usr/local/share:/usr/share";
+  return [...new Set([dataHome, ...dataDirs.split(":").filter(Boolean)])].map(
+    (directory) => path.join(directory, "icons"),
+  );
 }
 
 // ── .desktop 解析(纯函数,可单测)──────────────────────────────
@@ -59,15 +67,6 @@ function parseDesktopEntry(text) {
   return entry;
 }
 
-/** Exec 去掉 freedesktop 字段码(%f %u %F %U %i %c %k …),供启动用。 */
-function cleanExec(exec) {
-  if (!exec) return "";
-  return exec
-    .replace(/%[fFuUdDnNickvm]/g, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
 /** 一个 entry 是否是应该显示在启动器里的应用。 */
 function isLaunchableApp(entry) {
   if (!entry) return false;
@@ -78,12 +77,14 @@ function isLaunchableApp(entry) {
 }
 
 // ── 图标解析(freedesktop 图标主题,尽力而为)────────────────────
-const _ICON_THEME_ROOTS = [
-  path.join(os.homedir(), ".local", "share", "icons"),
-  "/usr/local/share/icons",
-  "/usr/share/icons",
+const _ICON_SIZES = [
+  "scalable",
+  "512x512",
+  "256x256",
+  "128x128",
+  "64x64",
+  "48x48",
 ];
-const _ICON_SIZES = ["scalable", "512x512", "256x256", "128x128", "64x64", "48x48"];
 const _PIXMAPS = "/usr/share/pixmaps";
 
 const _ICON_MIME = { ".svg": "image/svg+xml", ".png": "image/png" };
@@ -103,7 +104,7 @@ function iconDataUrl(iconPath) {
   }
 }
 
-function resolveIcon(iconName) {
+function resolveIcon(iconName, roots = iconThemeRoots()) {
   if (!iconName) return null;
   // 绝对路径直接用
   if (path.isAbsolute(iconName)) {
@@ -114,7 +115,7 @@ function resolveIcon(iconName) {
     if (fs.existsSync(direct)) return direct;
   }
   // hicolor / 各主题 的 <size>/apps/<name>.{svg,png}
-  for (const root of _ICON_THEME_ROOTS) {
+  for (const root of roots) {
     for (const theme of ["hicolor", "Adwaita"]) {
       for (const size of _ICON_SIZES) {
         for (const ext of [".svg", ".png"]) {
@@ -127,11 +128,20 @@ function resolveIcon(iconName) {
   return null;
 }
 
+function isFlatpakExport(desktopFile) {
+  return desktopFile.includes(
+    `${path.sep}flatpak${path.sep}exports${path.sep}share${path.sep}applications${path.sep}`,
+  );
+}
+
 // ── 枚举已装应用 ───────────────────────────────────────────────
-function listApplications() {
+function listApplicationRecords(
+  directories = appDirs(),
+  iconRoots = iconThemeRoots(),
+) {
   const seen = new Set();
   const apps = [];
-  for (const dir of _appDirs()) {
+  for (const dir of directories) {
     let files;
     try {
       files = fs.readdirSync(dir);
@@ -142,23 +152,23 @@ function listApplications() {
       if (!file.endsWith(".desktop")) continue;
       const id = file.slice(0, -".desktop".length);
       if (seen.has(id)) continue; // 前面的目录优先(XDG 顺序)
+      // Hidden=true in a higher-priority XDG directory masks the same desktop
+      // id below it. Mark it seen before launchability filtering.
+      seen.add(id);
       try {
-        const entry = parseDesktopEntry(
-          fs.readFileSync(path.join(dir, file), "utf-8"),
-        );
+        const desktopFile = path.join(dir, file);
+        const entry = parseDesktopEntry(fs.readFileSync(desktopFile, "utf-8"));
         if (!isLaunchableApp(entry)) continue;
-        seen.add(id);
-        const iconPath = resolveIcon(entry.Icon);
+        const iconPath = resolveIcon(entry.Icon, iconRoots);
         apps.push({
           id,
           name: entry.Name || id,
-          exec: cleanExec(entry.Exec),
+          desktopFile,
+          startupWmClass: entry.StartupWMClass || null,
           icon: iconPath,
           iconDataUrl: iconDataUrl(iconPath),
-          categories: (entry.Categories || "")
-            .split(";")
-            .filter(Boolean),
-          source: "native",
+          categories: (entry.Categories || "").split(";").filter(Boolean),
+          source: isFlatpakExport(desktopFile) ? "flatpak" : "native",
         });
       } catch {
         // 单个 .desktop 坏了不影响其余
@@ -169,37 +179,105 @@ function listApplications() {
   return apps;
 }
 
+function listApplications() {
+  return listApplicationRecords().map(
+    ({ desktopFile: _desktopFile, ...app }) => app,
+  );
+}
+
 // ── 启动应用 ───────────────────────────────────────────────────
-function launchApplication(exec) {
-  const cmd = cleanExec(exec);
-  if (!cmd) return { ok: false, error: "empty exec" };
-  try {
-    // .desktop Exec 设计为被类 shell 启动器执行(gtk-launch 同理)。
-    // .desktop 是系统安装的可信文件;detached 让应用独立于 shell 存活。
-    const child = spawn("/bin/sh", ["-c", cmd], {
-      detached: true,
-      stdio: "ignore",
-    });
-    child.unref();
-    return { ok: true, pid: child.pid };
-  } catch (err) {
-    return { ok: false, error: String(err && err.message) };
+function isValidApplicationId(appId) {
+  return (
+    typeof appId === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/.test(appId)
+  );
+}
+
+function launchErrorMessage(error, stderr) {
+  if (error && error.code === "ENOENT") {
+    return "system application launcher is missing";
   }
+  if (error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+    return "system application launcher output exceeded its limit";
+  }
+  if (error && error.killed) {
+    return "system application launcher timed out";
+  }
+  const detail = String(stderr || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 256);
+  return detail
+    ? `application launch failed: ${detail}`
+    : "application launch failed";
+}
+
+function launchDesktopFile(desktopFile, execFileImpl = execFile) {
+  if (!path.isAbsolute(desktopFile) || !desktopFile.endsWith(".desktop")) {
+    return Promise.resolve({ ok: false, error: "invalid desktop file" });
+  }
+  return new Promise((resolve) => {
+    try {
+      // GLib interprets the freedesktop Exec field and its field codes without
+      // passing untrusted desktop-file text through a command shell. Success is
+      // reported only after the gio helper exits zero; asynchronous spawn and
+      // non-zero failures must reach the renderer instead of looking successful.
+      execFileImpl(
+        "/usr/bin/gio",
+        ["launch", desktopFile],
+        {
+          timeout: LAUNCH_TIMEOUT_MS,
+          windowsHide: true,
+          maxBuffer: LAUNCH_MAX_BUFFER_BYTES,
+        },
+        (error, _stdout, stderr) => {
+          if (error) {
+            resolve({ ok: false, error: launchErrorMessage(error, stderr) });
+            return;
+          }
+          resolve({ ok: true });
+        },
+      );
+    } catch (error) {
+      resolve({ ok: false, error: launchErrorMessage(error, "") });
+    }
+  });
+}
+
+/** Renderer may select an enumerated application, but may not supply a shell
+ * command. This keeps the privileged IPC boundary narrower than `Exec` text. */
+async function launchApplicationById(appId, options = {}) {
+  const id = String(appId || "");
+  if (!isValidApplicationId(id)) {
+    return { ok: false, error: "invalid native application id" };
+  }
+  const app = listApplicationRecords(
+    options.appDirs || appDirs(),
+    options.iconRoots || iconThemeRoots(),
+  ).find((candidate) => candidate.id === id);
+  if (!app) return { ok: false, error: "native application not found" };
+  return launchDesktopFile(app.desktopFile, options.execFile || execFile);
 }
 
 /** 注册 IPC:渲染进程经 window.octopus.apps.* 调用。 */
 function registerSystemShellIpc(ipcMain) {
   ipcMain.handle("apps:list", async () => listApplications());
-  ipcMain.handle("apps:launch", async (_e, exec) => launchApplication(exec));
+  ipcMain.handle("apps:launch", async (_e, appId) =>
+    launchApplicationById(appId),
+  );
 }
 
 module.exports = {
   parseDesktopEntry,
-  cleanExec,
   isLaunchableApp,
+  isValidApplicationId,
+  appDirs,
+  iconThemeRoots,
   resolveIcon,
   iconDataUrl,
+  listApplicationRecords,
   listApplications,
-  launchApplication,
+  launchDesktopFile,
+  launchApplicationById,
   registerSystemShellIpc,
 };

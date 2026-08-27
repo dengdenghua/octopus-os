@@ -1,5 +1,5 @@
 /**
- * Octopus desktop shell — main process.
+ * Echo desktop shell — main process.
  *
  * Rebuilt 2026-06-13 against the contract in src/types/electron.d.ts
  * (the original electron/ directory was never committed and was lost).
@@ -21,10 +21,22 @@ const path = require("path");
 
 // 原生 shell(A 路线)系统手层:枚举/启动本地已装应用(freedesktop .desktop)。
 const systemShell = require("./system-shell.cjs");
-// 会话 shell 模式:开机即全屏接管(无窗框/kiosk),作为设备的原生桌面 shell。
+const systemActions = require("./system-actions.cjs");
+const systemUpdate = require("./system-update.cjs");
+const systemControls = require("./system-controls.cjs");
+const systemNotifications = require("./system-notifications.cjs");
+const agentService = require("./agent-service.cjs");
+const nativeWindows = require("./native-windows.cjs");
+const rendererReadiness = require("./renderer-readiness.cjs");
+const nativeAppIpcSmoke = require("./native-app-ipc-smoke.cjs");
+// `session` 是旧 Cage/kiosk 会话；`desktop` 是目标 C 的 KWin 通用桌面会话。
+const SHELL_MODE = process.env.OCTOPUS_SHELL_MODE || "";
+const DESKTOP_SESSION = SHELL_MODE === "desktop";
 const NATIVE_SHELL =
   process.env.OCTOPUS_NATIVE_SHELL === "1" ||
-  process.env.OCTOPUS_SHELL_MODE === "session";
+  SHELL_MODE === "session" ||
+  DESKTOP_SESSION;
+const KIOSK_SHELL = NATIVE_SHELL && !DESKTOP_SESSION;
 
 const DEV_URL = process.env.ELECTRON_START_URL || "http://127.0.0.1:3000";
 const DESKTOP_DIR = path.join(os.homedir(), "Desktop");
@@ -53,7 +65,7 @@ function ensureDesktopConfig() {
         );
     if (fs.existsSync(bundled)) fs.copyFileSync(bundled, target);
   } catch (err) {
-    console.warn("[octopus] config.desktop.yaml copy failed:", err.message);
+    console.warn("[echo] config.desktop.yaml copy failed:", err.message);
   }
 }
 
@@ -299,10 +311,7 @@ async function loadEnabledExtensions() {
     try {
       await session.defaultSession.loadExtension(ext.path);
     } catch (err) {
-      console.warn(
-        `[octopus] extension ${ext.name} failed to load:`,
-        err.message,
-      );
+      console.warn(`[echo] extension ${ext.name} failed to load:`, err.message);
     }
   }
 }
@@ -316,6 +325,71 @@ function registerIpc() {
   handle("app:getVersion", () => app.getVersion());
   handle("app:openExternal", (url) => shell.openExternal(url));
   handle("app:getPlatform", () => process.platform);
+
+  // Echo OS 电源动作：双重限制为原生 Linux 会话 + 固定 systemctl 白名单。
+  handle("system:getCapabilities", () =>
+    systemActions.getSystemActionCapabilities({
+      nativeShell: NATIVE_SHELL,
+    }),
+  );
+  handle("system:runAction", (action) =>
+    systemActions.runSystemAction(action, { nativeShell: NATIVE_SHELL }),
+  );
+
+  // Signed OS updates: read one bounded public state and invoke one fixed
+  // PolicyKit helper. No renderer-selected command, path or argument crosses.
+  handle("updates:getCapabilities", () =>
+    systemUpdate.getSystemUpdateCapabilities({ nativeShell: NATIVE_SHELL }),
+  );
+  handle("updates:getStatus", () =>
+    systemUpdate.getSystemUpdateStatus({ nativeShell: NATIVE_SHELL }),
+  );
+  handle("updates:apply", () =>
+    systemUpdate.applySystemUpdate({ nativeShell: NATIVE_SHELL }),
+  );
+
+  // Real NetworkManager/BlueZ/PipeWire/backlight state for the control center.
+  handle("controls:getState", () =>
+    systemControls.getSystemControlState({ nativeShell: NATIVE_SHELL }),
+  );
+  handle("controls:setWifiEnabled", (enabled) =>
+    systemControls.setWifiEnabled(enabled, { nativeShell: NATIVE_SHELL }),
+  );
+  handle("controls:setBluetoothEnabled", (enabled) =>
+    systemControls.setBluetoothEnabled(enabled, { nativeShell: NATIVE_SHELL }),
+  );
+  handle("controls:setAudioVolume", (percentage) =>
+    systemControls.setAudioVolume(percentage, { nativeShell: NATIVE_SHELL }),
+  );
+  handle("controls:setDisplayBrightness", (percentage) =>
+    systemControls.setDisplayBrightness(percentage, {
+      nativeShell: NATIVE_SHELL,
+    }),
+  );
+
+  // org.freedesktop.Notifications is owned by the supervised Echo session
+  // daemon. The renderer sees only bounded JSON over its private 0600 socket.
+  handle("notifications:getCapabilities", () =>
+    systemNotifications.getNotificationCapabilities({
+      nativeShell: NATIVE_SHELL,
+    }),
+  );
+  handle("notifications:list", () =>
+    systemNotifications.listNotifications({ nativeShell: NATIVE_SHELL }),
+  );
+  handle("notifications:close", (notificationId) =>
+    systemNotifications.closeNotification(notificationId, {
+      nativeShell: NATIVE_SHELL,
+    }),
+  );
+  handle("notifications:clear", () =>
+    systemNotifications.clearNotifications({ nativeShell: NATIVE_SHELL }),
+  );
+
+  // 目标 C:窗口管理器是真实窗口状态源；IPC 本身与 KWin/EWMH provider 解耦。
+  nativeWindows.registerNativeWindowsIpc(ipcMain, {
+    nativeShell: NATIVE_SHELL,
+  });
 
   // 原生 shell:本地已装应用 枚举/启动(window.octopus.apps.*)
   systemShell.registerSystemShellIpc(ipcMain);
@@ -333,11 +407,9 @@ function registerIpc() {
   ipcMain.on("backend:getBaseURLSync", (event) => {
     event.returnValue = resolveBackendBaseURL();
   });
-  handle("backend:restart", () => ({
-    ok: false,
-    reason:
-      "backend runs externally in dev (pnpm dev:full); packaged restart not reimplemented yet",
-  }));
+  handle("backend:restart", () =>
+    agentService.restartAgentService({ nativeShell: NATIVE_SHELL }),
+  );
 
   // window
   handle("window:setDeviceBounds", (mode, width, height) => {
@@ -609,11 +681,14 @@ function createMainWindow() {
     minWidth: 960,
     minHeight: 600,
     show: false,
-    // 会话 shell:全屏、无窗框、kiosk 独占屏幕——设备开机即此桌面,无浏览器/窗口壳。
-    ...(NATIVE_SHELL
+    title: "Echo Desktop",
+    // 旧会话 shell 仍可 kiosk 独占。目标 C 的 desktop 会话必须允许 KWin
+    // 在它上方管理真实应用窗口，因此只做无框最大化，不进入 kiosk/fullscreen。
+    ...(KIOSK_SHELL
       ? { fullscreen: true, frame: false, kiosk: true, autoHideMenuBar: true }
       : {}),
-    ...(process.platform === "win32" && !NATIVE_SHELL
+    ...(DESKTOP_SESSION ? { frame: false, autoHideMenuBar: true } : {}),
+    ...(process.platform === "win32" && !KIOSK_SHELL
       ? { titleBarStyle: "hidden", titleBarOverlay: { height: 36 } }
       : {}),
     webPreferences: {
@@ -624,11 +699,34 @@ function createMainWindow() {
     },
   });
 
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    if (DESKTOP_SESSION) {
+      win.maximize();
+      win.setSkipTaskbar(true);
+    }
+    win.show();
+  });
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
   });
+  if (DESKTOP_SESSION) {
+    win.webContents.once("did-finish-load", () => {
+      console.log("ECHO_RENDERER_READY", win.webContents.getURL());
+      rendererReadiness.publishRendererReadyFile({
+        desktopSession: DESKTOP_SESSION,
+      });
+      void systemControls
+        .getSystemControlState({ nativeShell: NATIVE_SHELL })
+        .then((state) => {
+          const marker = systemControls.formatSystemControlsReadyMarker(state);
+          if (marker) console.log(marker);
+        })
+        .catch(() => {
+          console.error("[echo] native system-control readiness probe failed");
+        });
+    });
+  }
 
   // 会话 shell 从源码跑时也加载构建好的 dist(设备上不连 vite dev)。
   const _distIndex = path.join(__dirname, "..", "dist", "index.html");
@@ -638,7 +736,7 @@ function createMainWindow() {
     win.loadURL(DEV_URL);
     win.webContents.on("did-fail-load", (_e, code, desc) => {
       console.error(
-        `[octopus] dev server not reachable (${code} ${desc}); retrying in 1s…`,
+        `[echo] dev server not reachable (${code} ${desc}); retrying in 1s…`,
       );
       setTimeout(() => win.loadURL(DEV_URL), 1000);
     });
@@ -657,7 +755,7 @@ function watchDesktop() {
       );
     });
   } catch (err) {
-    console.warn("[octopus] desktop watch unavailable:", err.message);
+    console.warn("[echo] desktop watch unavailable:", err.message);
   }
 }
 
@@ -698,15 +796,49 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow = createMainWindow();
     watchDesktop();
 
-    if (process.env.OCTOPUS_SMOKE === "1") {
+    const standaloneSmoke = process.env.OCTOPUS_SMOKE === "1";
+    const nativeAppSmokeRequested = Boolean(
+      process.env.OCTOPUS_NATIVE_APP_SMOKE_ID,
+    );
+    if (standaloneSmoke || nativeAppSmokeRequested) {
       mainWindow.webContents.once("did-finish-load", () => {
-        console.log("SMOKE OK:", mainWindow.webContents.getURL());
-        setTimeout(() => app.quit(), 500);
+        void (async () => {
+          if (standaloneSmoke) {
+            console.log("SMOKE OK:", mainWindow.webContents.getURL());
+          }
+          if (nativeAppSmokeRequested) {
+            const result = await nativeAppIpcSmoke.runNativeAppIpcSmoke({
+              desktopSession: DESKTOP_SESSION,
+              webContents: mainWindow.webContents,
+            });
+            if (!result.ok) {
+              console.error(
+                "NATIVE APP IPC SMOKE FAILED:",
+                result.error || "unknown error",
+              );
+              app.exit(1);
+              return;
+            }
+            console.log(result.marker);
+          }
+          if (standaloneSmoke) {
+            const requestedHold = Number.parseInt(
+              process.env.OCTOPUS_SMOKE_HOLD_MS || "500",
+              10,
+            );
+            const holdMilliseconds = Number.isFinite(requestedHold)
+              ? Math.min(Math.max(requestedHold, 0), 60000)
+              : 500;
+            setTimeout(() => app.quit(), holdMilliseconds);
+          }
+        })();
       });
+    }
+    if (standaloneSmoke) {
       setTimeout(() => {
         console.error("SMOKE TIMEOUT");
         app.exit(1);
-      }, 30000);
+      }, 90000);
     }
 
     app.on("activate", () => {

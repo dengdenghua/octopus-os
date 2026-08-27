@@ -1,7 +1,8 @@
 /**
- * Octopus desktop shell — preload bridge.
+ * Echo desktop shell — preload bridge.
  *
- * Exposes window.octopus implementing the OctopusElectronAPI contract
+ * Exposes the compatibility `window.octopus` bridge implementing the
+ * OctopusElectronAPI contract
  * declared in src/types/electron.d.ts. Every method maps 1:1 onto an
  * ipcMain.handle channel in main.cjs.
  */
@@ -30,8 +31,17 @@ const api = {
 
   // 原生 shell(A 路线):本地已装应用 枚举/启动。Dock/启动器渲染真实应用清单。
   apps: {
-    list: invoke("apps:list"), // → [{id,name,exec,icon,categories,source}]
-    launch: invoke("apps:launch"), // (exec) → {ok,pid?|error}
+    list: invoke("apps:list"), // → [{id,name,icon,categories,source}]
+    launch: invoke("apps:launch"), // (appId) → {ok,error?}; resolves after gio exits
+  },
+
+  // 目标 C:由系统窗口管理器提供真实应用窗口，而不是 React 假窗口。
+  windows: {
+    getCapabilities: invoke("windows:getCapabilities"),
+    list: invoke("windows:list"),
+    focus: invoke("windows:focus"),
+    minimize: invoke("windows:minimize"),
+    close: invoke("windows:close"),
   },
 
   browser: {
@@ -72,6 +82,32 @@ const api = {
     getVersion: invoke("app:getVersion"),
     openExternal: invoke("app:openExternal"),
     getPlatform: invoke("app:getPlatform"),
+  },
+
+  system: {
+    getCapabilities: invoke("system:getCapabilities"),
+    runAction: invoke("system:runAction"),
+  },
+
+  updates: {
+    getCapabilities: invoke("updates:getCapabilities"),
+    getStatus: invoke("updates:getStatus"),
+    apply: invoke("updates:apply"),
+  },
+
+  systemControls: {
+    getState: invoke("controls:getState"),
+    setWifiEnabled: invoke("controls:setWifiEnabled"),
+    setBluetoothEnabled: invoke("controls:setBluetoothEnabled"),
+    setAudioVolume: invoke("controls:setAudioVolume"),
+    setDisplayBrightness: invoke("controls:setDisplayBrightness"),
+  },
+
+  notifications: {
+    getCapabilities: invoke("notifications:getCapabilities"),
+    list: invoke("notifications:list"),
+    close: invoke("notifications:close"),
+    clear: invoke("notifications:clear"),
   },
 
   desktop: {

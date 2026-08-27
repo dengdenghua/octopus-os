@@ -1,0 +1,130 @@
+name: Echo Wayland gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/echo-wayland-gate
+    paths:
+      - ".github/workflows/echo-wayland-gate.yml"
+      - "deploy/core-apps/**"
+      - "deploy/desktop-session/**"
+      - "deploy/oem/echo-wayland.desktop"
+      - "deploy/oem/kscreenlockerrc"
+      - "frontend/electron/**"
+      - "packaging/desktop/echo-wayland-gate-builder.yml"
+  pull_request:
+    branches: [os-main, main]
+    paths:
+      - ".github/workflows/echo-wayland-gate.yml"
+      - "deploy/core-apps/**"
+      - "deploy/desktop-session/**"
+      - "deploy/oem/echo-wayland.desktop"
+      - "deploy/oem/kscreenlockerrc"
+      - "frontend/electron/**"
+      - "packaging/desktop/echo-wayland-gate-builder.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: echo-wayland-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kwin-wayland:
+    name: Debian 13 · KWin Wayland compositor contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: debian:trixie-slim
+
+    env:
+      CI: "true"
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - name: Install KWin, Electron and native desktop dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git xz-utils python3 \
+            kwin-wayland xwayland wayland-utils libkscreenlocker6 \
+            fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 \
+            fcitx5-frontend-qt5 fcitx5-frontend-qt6 \
+            plasma-workspace libqt6sql6-sqlite python3-pyqt6.qtqml wl-clipboard \
+            at-spi2-core python3-pyatspi python3-gi libgtk-3-0t64 \
+            dbus-daemon dbus-x11 libgl1-mesa-dri libglib2.0-bin \
+            libnss3 libasound2t64 libgbm1 libdrm2 libxss1 libxtst6 \
+            libxrandr2 libxcomposite1 libxdamage1 libatk-bridge2.0-0t64 \
+            libatspi2.0-0t64 libcups2t64 fonts-dejavu-core \
+            dolphin konsole firefox-esr kate okular gwenview ark haruna kcalc \
+            xdg-utils desktop-file-utils shared-mime-info 7zip bzip2 unar unzip zip
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+        with:
+          version: 10.26.2
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install locked Electron runtime
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify portable compositor and preload boundaries
+        run: |
+          bash -n \
+            deploy/desktop-session/echo-wayland-session.sh \
+            deploy/desktop-session/echo-wayland-shell-session.sh \
+            deploy/desktop-session/smoke-wayland-session.sh \
+            deploy/desktop-session/smoke-wayland-session-client.sh
+          python3 deploy/desktop-session/test_echo_kwin_window_bridge.py
+          python3 deploy/desktop-session/test_verify_wayland_native_app_ipc.py
+          python3 deploy/desktop-session/test_echo_accessibility_smoke.py
+          python3 deploy/desktop-session/test_echo_clipboard_host.py
+          node frontend/electron/native-windows.node-test.cjs
+          node frontend/electron/renderer-readiness.node-test.cjs
+          node frontend/electron/native-app-ipc-smoke.node-test.cjs
+
+      - name: Package production Electron main and preload with bounded renderer fixture
+        run: |
+          install -d -m 0755 frontend/dist
+          install -m 0644 \
+            deploy/desktop-session/wayland-renderer-smoke.html \
+            frontend/dist/index.html
+          cd frontend
+          pnpm dlx electron-builder@26.15.3 \
+            --linux dir \
+            --x64 \
+            --config ../packaging/desktop/echo-wayland-gate-builder.yml
+
+      - name: Install production compositor bridge and session helpers
+        run: |
+          install -d -m 0755 /usr/lib/echo-os
+          install -m 0755 deploy/desktop-session/echo-kwin-window-bridge /usr/lib/echo-os/echo-kwin-window-bridge
+          install -m 0755 deploy/desktop-session/echo-clipboard-host /usr/lib/echo-os/echo-clipboard-host
+          install -m 0755 deploy/desktop-session/echo-accessibility-smoke.py /usr/lib/echo-os/echo-accessibility-smoke.py
+          install -m 0644 deploy/desktop-session/klipperrc /etc/xdg/klipperrc
+          install -m 0644 deploy/core-apps/mimeapps.list /etc/xdg/mimeapps.list
+          install -d -m 0755 /usr/share/kwin/scripts/org.echoos.windowbridge
+          cp -a deploy/desktop-session/kwin-window-bridge/. /usr/share/kwin/scripts/org.echoos.windowbridge/
+
+      - name: Exercise dual-output HiDPI, native windows, preload IPC and lock
+        env:
+          ECHO_SMOKE_LOG_DIR: ${{ runner.temp }}/echo-wayland-gate
+        run: ./deploy/desktop-session/smoke-wayland-session.sh
+
+      - name: Upload Wayland evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: echo-wayland-gate
+          path: ${{ runner.temp }}/echo-wayland-gate
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,20 @@
+appId: com.echo.os.wayland-gate
+productName: Echo OS Wayland Gate
+asar: true
+
+directories:
+  output: release
+
+extraMetadata:
+  main: electron/main.cjs
+
+files:
+  - dist/**/*
+  - electron/**/*.cjs
+  - "!electron/**/*.test.cjs"
+  - "!electron/**/*.node-test.cjs"
+  - package.json
+
+linux:
+  category: System
+  executableName: echo-os-desktop
