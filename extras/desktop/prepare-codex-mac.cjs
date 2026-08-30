@@ -94,7 +94,7 @@ const LICENSE_FILES = [
       "THIRD_PARTY_LICENSES-codex-cli.html",
     ),
     destination: "third-party/codex-rust/THIRD_PARTY_LICENSES-codex-cli.html",
-    sha256: "085bfd0627d8011777788beb1c74a7399c5acba157bac3eb766e0562f58a432b",
+    sha256: "841d5072916479fc3d6fbe8c4b240b66d468de9f625a2fcb658c34fe1a4ec771",
   },
   {
     source: path.join(

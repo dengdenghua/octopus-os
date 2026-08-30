@@ -55,7 +55,7 @@ const LICENSE_FILES = [
       "THIRD_PARTY_LICENSES-codex-cli.html",
     ),
     destination: "third-party/codex-rust/THIRD_PARTY_LICENSES-codex-cli.html",
-    sha256: "085bfd0627d8011777788beb1c74a7399c5acba157bac3eb766e0562f58a432b",
+    sha256: "841d5072916479fc3d6fbe8c4b240b66d468de9f625a2fcb658c34fe1a4ec771",
   },
   {
     source: path.join(
@@ -66,7 +66,7 @@ const LICENSE_FILES = [
     ),
     destination:
       "third-party/codex-rust/THIRD_PARTY_LICENSES-code-mode-host.html",
-    sha256: "df6e9546efb4f6a30f06cc7417bb81beeee81bc2e9ea5c670cdfd04a2e9a1503",
+    sha256: "6b562200ef39938051e8eca39ce61a4d032752e04e1d21ba0fe216bd0ad91434",
   },
   {
     source: path.join(
@@ -77,7 +77,7 @@ const LICENSE_FILES = [
     ),
     destination:
       "third-party/codex-rust/THIRD_PARTY_LICENSES-windows-sandbox.html",
-    sha256: "df32d1e635d49d3b86caa4b56e0015dcf116025792ef3c0957dec342a1909721",
+    sha256: "8858ef427eb901498d06d12d14ce6c3ef53fdeb352251006276dac8ec53ac5e4",
   },
   {
     source: path.join(
