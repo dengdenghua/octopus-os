@@ -1,0 +1,158 @@
+# Echo desktop packaging config (electron-builder).
+#
+# electron-builder is a build-only dependency. electron-updater is a pinned
+# production dependency because the packaged main process loads it at runtime.
+#
+# 解析基准：electron-builder 在 REPO_ROOT/frontend 下执行（打包脚本位于
+# frontend/package.json），因此 files / extraResources 的相对路径均以
+# frontend/ 为基准。frontend 目录中已包含 dist/ 与 electron/。
+#
+# 约定：
+#   - main 入口指向 frontend/electron/main.cjs（frontend/package.json 的
+#     "main" 字段，electron-builder 据此打包入口）。
+#   - extraResources 放入首启配置模板和只读运行资源。Windows 的
+#     win.extraResources 额外强制携带 CI 生成的 PyInstaller 后端和锁定的
+#     官方 Codex Windows 原生运行时。
+
+appId: ai.echo.desktop
+productName: Echo
+copyright: EchoAI · EchoOS
+
+# 说明：main 入口由 frontend/package.json 的 "main" 字段决定
+# （值：electron/main.cjs）。此处仅注释备忘，避免重复声明产生歧义。
+
+directories:
+  output: release
+  buildResources: ../packaging/desktop
+
+# The standalone desktop shell updates only from this repository's signed
+# GitHub Releases. Echo OS native sessions keep using the separate atomic OS
+# updater and explicitly disable this Electron channel at runtime.
+publish:
+  provider: github
+  owner: dengdenghua
+  repo: echo-os
+
+# 打包进 app 的文件（相对 frontend/）。dist 为 Vite 产物，electron 为主进程。
+# 注意：electron-builder 默认总会附带 package.json 与生产依赖 node_modules。
+files:
+  - dist/**/*
+  - electron/**/*
+  - "!electron/**/*.test.cjs"
+  - "!electron/**/*.test.mjs"
+  - "!electron/**/*.node-test.cjs"
+  - "!**/*.map"
+
+# 额外资源：放入应用 resources/ 目录（打包后 process.resourcesPath 下一级）。
+# main.cjs 在启动后端前会先将配置和可变资源安全物化到
+# userData。Python 运行时及依赖由 PyInstaller 后端固定，不从系统或网络获取。
+extraResources:
+  - from: ../extensions/echo-browser-relay
+    to: extensions/echo-browser-relay
+    filter:
+      - "**/*"
+  - from: ../packaging/desktop/config.desktop.yaml
+    to: config.desktop.yaml
+  - from: ../agents
+    to: agents
+    filter:
+      - "**/*"
+      - "!**/sessions/**"
+      - "!**/workspace/**"
+      - "!**/*.jsonl"
+      - "!**/*.lock"
+      - "!**/*.bak"
+      - "!**/visuals/backups/**"
+      - "!**/agent-core/.soul_history/**"
+  - from: ../prompts
+    to: prompts
+  - from: ../protocols
+    to: protocols
+  - from: ../resources
+    to: resources
+    filter:
+      - "**/*"
+  - from: ../.echo/plugins
+    to: .echo/plugins
+    filter:
+      - "**/*"
+  - from: ../skills.lock.json
+    to: skills.lock.json
+
+# 目标平台
+mac:
+  target:
+    - dmg
+    - zip
+  artifactName: "${productName}-Setup-macOS-${version}-${env.GITHUB_SHA}-${arch}.${ext}"
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  strictVerify: true
+  # Notarization activates only when the protected Apple API-key environment
+  # is present. The macOS release workflow requires it and validates the
+  # stapled ticket before uploading any artifact.
+  notarize: true
+  # The PyInstaller backend and the pinned darwin-x64 Codex runtime are
+  # materialized by extras/desktop/build-backend-mac.cjs and
+  # extras/desktop/prepare-codex-mac.cjs before electron-builder runs.
+  extraResources:
+    - from: ../extras/desktop/build/backend/echo-backend
+      to: backend/echo-backend
+    - from: ../extras/desktop/build/codex
+      to: codex
+      filter:
+        - "**/*"
+
+win:
+  target:
+    - nsis
+  # Release builds are invalid without Authenticode. electron-builder obtains
+  # the protected PKCS#12 bundle from CSC_LINK/CSC_KEY_PASSWORD, signs the
+  # unpacked app, copied backend/Codex executables and NSIS installer, and requests a
+  # SHA-256 RFC3161 timestamp from this explicitly trusted endpoint.
+  forceCodeSigning: true
+  # Explicitly include every copied native executable (backend, Codex and its
+  # sandbox helpers) in electron-builder's signing transformer.
+  signExts:
+    - .exe
+  artifactName: "${productName}-Setup-${version}-${env.GITHUB_SHA}.${ext}"
+  signtoolOptions:
+    signingHashAlgorithms:
+      - sha256
+    # DigiCert's published TSA endpoint is HTTP; RFC3161 signs the response,
+    # and both workflows require Windows to validate its timestamp certificate.
+    rfc3161TimeStampServer: http://timestamp.digicert.com
+  # 该文件由 extras/desktop/build-backend-win.cjs 在 CI 中生成。
+  # Codex 目录由 prepare-codex-win.cjs 从 pnpm 锁定的官方平台包生成。
+  # CI 在打包前后均显式校验；缺失时中止，不允许生成依赖系统
+  # uv/Python/Codex/PATH 或首启下载的安装包。
+  extraResources:
+    - from: ../extras/desktop/build/backend/echo-backend.exe
+      to: backend/echo-backend.exe
+    - from: ../extras/desktop/build/codex
+      to: codex
+      filter:
+        - "**/*"
+
+linux:
+  executableName: echo
+  target:
+    - AppImage
+  category: Development
+  # Bind each AppImage to the exact source commit it was built from, matching
+  # the Windows installer naming so CI can verify provenance by filename.
+  artifactName: "${productName}-Setup-Linux-${version}-${env.GITHUB_SHA}.${ext}"
+  # The PyInstaller backend and the pinned linux-musl Codex runtime are
+  # materialized by extras/desktop/build-backend-linux.cjs and
+  # extras/desktop/prepare-codex-linux.cjs before electron-builder runs.
+  extraResources:
+    - from: ../extras/desktop/build/backend/echo-backend
+      to: backend/echo-backend
+    - from: ../extras/desktop/build/codex
+      to: codex
+      filter:
+        - "**/*"
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

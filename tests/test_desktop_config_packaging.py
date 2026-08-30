@@ -480,7 +480,7 @@ def test_desktop_backend_routes_mutable_state_to_user_data() -> None:
     assert (
         "../extensions/workbuddy-connectors",
         "extensions/workbuddy-connectors",
-    ) in resources
+    ) not in resources
     assert ("../.echo/plugins", ".echo/plugins") in resources
     assert ("../skills.lock.json", "skills.lock.json") in resources
     for removed in ("runtime", "echo_runtime", "tools", "pyproject.toml", "uv"):
@@ -579,10 +579,10 @@ def test_desktop_core_keeps_shipped_clip_studio_video_runtime() -> None:
     assert "bcrypt:$2b$04$" in verifier
     assert "Authorization: Bearer $access_token" in verifier
     assert "/api/plugins/clip-studio/health" in verifier
-    assert "PACKAGED_CONNECTOR_ASSETS_OK=96" in verifier
+    assert "PACKAGED_CONNECTOR_MARKETPLACE_ON_DEMAND=1" in verifier
     assert "PACKAGED_UPDATE_CHANNEL_OK=github:dengdenghua/echo-os" in verifier
     assert "PACKAGED_ELECTRON_UPDATER_OK=6.8.9" in verifier
-    assert "--offline --verify-only" in verifier
+    assert "must not embed the WorkBuddy marketplace snapshot" in verifier
     assert "ECHO_SMOKE=1" in verifier
     assert "SMOKE OK: echo-app://app/" in verifier
     assert "backend_stopped=0" in verifier
@@ -938,10 +938,9 @@ def test_windows_workflow_builds_and_smokes_canonical_offline_shell() -> None:
     electron = steps["Build canonical Electron EXE"]
     assert electron["working-directory"] == "frontend"
     assert electron["run"] == "pnpm electron:build:win"
-    connector_smoke = steps["Verify packaged connector binary assets"]["run"]
-    assert "materialize-binary-assets.py" in connector_smoke
-    assert "--offline --verify-only" in connector_smoke
-    assert "$result.verified -ne 96" in connector_smoke
+    connector_smoke = steps["Verify connector marketplace stays on demand"]["run"]
+    assert "workbuddy-connectors" in connector_smoke
+    assert "must not embed" in connector_smoke
     smoke = steps["Verify packaged backend and Codex are present and runnable"]["run"]
     assert "frontend/release/win-unpacked/resources/backend/echo-backend.exe" in smoke
     assert '"frontend/release/win-unpacked/resources/codex"' in smoke
@@ -1329,8 +1328,8 @@ def test_linux_workflow_builds_and_smokes_canonical_linux_shell() -> None:
     assert "uv" not in smoke.lower()
     assert "python3 -c" in smoke
     assert "ensureDesktopConfigFile" in smoke
-    assert "materialize-binary-assets.py" in smoke
-    assert '"verified": 96' in smoke
+    assert "materialize-binary-assets.py" not in smoke
+    assert "must not embed the WorkBuddy marketplace snapshot" in smoke
     assert 'app_executable="$extract_dir/echo"' in smoke
     assert "ECHO_SMOKE=1" in smoke
     assert "SMOKE OK: echo-app://app/" in smoke
