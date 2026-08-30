@@ -49,11 +49,13 @@ export default function Login() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-6xl mb-3">🐙</div>
-          <h1 className="text-2xl font-semibold text-white">Octopus-Agent</h1>
+          <h1 className="text-2xl font-semibold text-white">Echo Agent</h1>
           <p className="text-sm text-mute mt-1">{t.loginPage.appSubtitle}</p>
         </div>
 
-        {!providers && !err && <Spinner label={t.loginPage.checkingProviders} />}
+        {!providers && !err && (
+          <Spinner label={t.loginPage.checkingProviders} />
+        )}
         {err && <ErrorHint error={err} />}
         {providers && providers.length === 0 && (
           <Card>
@@ -123,7 +125,6 @@ export default function Login() {
 // ═══════════════════════════════════════════════════════════
 // Implementation note.
 // ═══════════════════════════════════════════════════════════
-
 
 function SmsLoginForm({ mockMode }: { mockMode: boolean }) {
   const nav = useNavigate();
@@ -203,7 +204,9 @@ function SmsLoginForm({ mockMode }: { mockMode: boolean }) {
       )}
       {step === "phone" && (
         <>
-          <label className="block text-xs text-slate-300 mb-1">{t.loginPage.phoneLabel}</label>
+          <label className="block text-xs text-slate-300 mb-1">
+            {t.loginPage.phoneLabel}
+          </label>
           <input
             className="input w-full text-base"
             placeholder="13800001234"
@@ -222,8 +225,8 @@ function SmsLoginForm({ mockMode }: { mockMode: boolean }) {
             {loading
               ? t.loginPage.sending
               : cooldown > 0
-              ? t.loginPage.resendInSec(cooldown)
-              : t.loginPage.getCode}
+                ? t.loginPage.resendInSec(cooldown)
+                : t.loginPage.getCode}
           </button>
         </>
       )}
@@ -238,7 +241,9 @@ function SmsLoginForm({ mockMode }: { mockMode: boolean }) {
               onClick={send}
               disabled={cooldown > 0}
             >
-              {cooldown > 0 ? t.loginPage.resendInSec(cooldown) : t.loginPage.resend}
+              {cooldown > 0
+                ? t.loginPage.resendInSec(cooldown)
+                : t.loginPage.resend}
             </button>
           </div>
           {devHint && (
@@ -246,7 +251,9 @@ function SmsLoginForm({ mockMode }: { mockMode: boolean }) {
               {devHint}
             </div>
           )}
-          <label className="block text-xs text-slate-300 mb-1">{t.loginPage.codeLabel}</label>
+          <label className="block text-xs text-slate-300 mb-1">
+            {t.loginPage.codeLabel}
+          </label>
           <input
             className="input w-full text-lg font-mono tracking-widest text-center"
             placeholder="••••••"
@@ -281,8 +288,14 @@ function SmsLoginForm({ mockMode }: { mockMode: boolean }) {
         </>
       )}
 
-      {err && <div className="mt-3"><ErrorHint error={err} /></div>}
-      {loading && !err && !devHint && <Spinner label={t.loginPage.spinnerWait} />}
+      {err && (
+        <div className="mt-3">
+          <ErrorHint error={err} />
+        </div>
+      )}
+      {loading && !err && !devHint && (
+        <Spinner label={t.loginPage.spinnerWait} />
+      )}
     </>
   );
 }
@@ -290,7 +303,6 @@ function SmsLoginForm({ mockMode }: { mockMode: boolean }) {
 // ═══════════════════════════════════════════════════════════
 // Implementation note.
 // ═══════════════════════════════════════════════════════════
-
 
 function LocalLoginForm() {
   const nav = useNavigate();
@@ -334,7 +346,9 @@ function LocalLoginForm() {
       <div className="mb-3 p-2 rounded bg-warn/10 border border-warn/30 text-warn text-[11px]">
         {t.loginPage.localBanner}
       </div>
-      <label className="block text-xs text-slate-300 mb-1">{t.loginPage.usernameLabel}</label>
+      <label className="block text-xs text-slate-300 mb-1">
+        {t.loginPage.usernameLabel}
+      </label>
       <input
         className="input w-full text-base"
         placeholder="alice"
@@ -362,7 +376,11 @@ function LocalLoginForm() {
       >
         {loading ? t.loginPage.loggingIn : t.loginPage.loginButton}
       </button>
-      {err && <div className="mt-3"><ErrorHint error={err} /></div>}
+      {err && (
+        <div className="mt-3">
+          <ErrorHint error={err} />
+        </div>
+      )}
     </>
   );
 }
@@ -370,7 +388,6 @@ function LocalLoginForm() {
 // ═══════════════════════════════════════════════════════════
 // Utils
 // ═══════════════════════════════════════════════════════════
-
 
 function mask(phone: string): string {
   if (phone.length < 7) return phone;

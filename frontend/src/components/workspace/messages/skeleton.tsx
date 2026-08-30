@@ -1,20 +1,15 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
-const STAGGER_MS = 60;
-
 function SkeletonBar({
   className,
-  style,
   originRight,
 }: {
   className?: string;
-  style?: React.CSSProperties;
   originRight?: boolean;
 }) {
   return (
     <div
-      className={`animate-skeleton-entrance fill-mode-[forwards] overflow-hidden rounded-lg ${originRight ? "origin-[right]" : "origin-[left]"} ${className ?? ""}`}
-      style={{ opacity: 0, ...style }}
+      className={`animate-skeleton-entrance fill-mode-[forwards] overflow-hidden rounded-lg opacity-0 ${originRight ? "origin-[right]" : "origin-[left]"} ${className ?? ""}`}
     >
       <Skeleton className="h-full w-full rounded-lg" />
     </div>
@@ -22,59 +17,48 @@ function SkeletonBar({
 }
 
 export function MessageListSkeleton() {
-  let index = 0;
   return (
-    <div className="flex w-full max-w-(--container-width-md) flex-col gap-12 p-8 pt-16">
+    <div
+      aria-label="Loading conversation"
+      className="mx-auto flex w-full max-w-(--container-width-md) flex-col gap-8 px-5 pb-8 pt-10 sm:gap-12 sm:p-8 sm:pt-16"
+    >
       <div
         role="human-message"
-        className="flex w-[50%] flex-col items-end gap-2 self-end"
+        className="flex w-[58%] max-w-sm flex-col items-end gap-2 self-end sm:w-[50%]"
       >
         <SkeletonBar
-          className="h-6 w-full"
+          className="h-4 w-full [animation-delay:0ms] sm:h-5"
           originRight
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
         />
         <SkeletonBar
-          className="h-6 w-[80%]"
+          className="h-4 w-[72%] [animation-delay:60ms] sm:h-5 sm:w-[80%]"
           originRight
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
         />
       </div>
-      <div role="assistant-message" className="flex flex-col gap-2">
+      <div role="assistant-message" className="flex items-start gap-3">
+        <SkeletonBar className="mt-0.5 size-7 shrink-0 rounded-full [animation-delay:100ms] sm:size-8" />
+        <div className="flex min-w-0 flex-1 flex-col gap-2 pt-0.5">
+          <SkeletonBar className="h-4 w-[92%] [animation-delay:140ms] sm:h-5" />
+          <SkeletonBar className="h-4 w-full [animation-delay:200ms] sm:h-5" />
+          <SkeletonBar className="h-4 w-[64%] [animation-delay:260ms] sm:h-5" />
+        </div>
+      </div>
+      <div
+        role="human-message"
+        className="flex w-[44%] max-w-xs flex-col items-end gap-2 self-end"
+      >
         <SkeletonBar
-          className="h-6 w-full"
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
+          className="h-4 w-full [animation-delay:320ms] sm:h-5"
+          originRight
         />
-        <SkeletonBar
-          className="h-6 w-full"
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
-        />
-        <SkeletonBar
-          className="h-6 w-[70%]"
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
-        />
-        <SkeletonBar
-          className="h-6 w-full"
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
-        />
-        <SkeletonBar
-          className="h-6 w-full"
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
-        />
-        <SkeletonBar
-          className="h-6 w-full"
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
-        />
-        <SkeletonBar
-          className="h-6 w-[60%]"
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
-        />
-        <SkeletonBar
-          className="h-6 w-[40%]"
-          style={{ animationDelay: `${index++ * STAGGER_MS}ms` }}
-        />
+      </div>
+      <div role="assistant-message" className="flex items-start gap-3">
+        <SkeletonBar className="mt-0.5 size-7 shrink-0 rounded-full [animation-delay:380ms] sm:size-8" />
+        <div className="flex min-w-0 flex-1 flex-col gap-2 pt-0.5">
+          <SkeletonBar className="h-4 w-full [animation-delay:420ms] sm:h-5" />
+          <SkeletonBar className="h-4 w-[78%] [animation-delay:480ms] sm:h-5" />
+        </div>
       </div>
     </div>
   );
 }
-

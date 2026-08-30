@@ -48,12 +48,15 @@ export const JsonRpcErrorCode = {
   UNAUTHORIZED: -32020,
 } as const;
 
-export type JsonRpcErrorCode = (typeof JsonRpcErrorCode)[keyof typeof JsonRpcErrorCode];
+export type JsonRpcErrorCode =
+  (typeof JsonRpcErrorCode)[keyof typeof JsonRpcErrorCode];
 
 // Type guards.
 
 export function isResponse(msg: Envelope): msg is JsonRpcResponse {
-  return "id" in msg && (("result" in msg) || ("error" in msg)) && !("method" in msg);
+  return (
+    "id" in msg && ("result" in msg || "error" in msg) && !("method" in msg)
+  );
 }
 
 export function isRequest(msg: Envelope): msg is JsonRpcRequest {

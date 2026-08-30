@@ -47,6 +47,9 @@ import type {
 } from "@/core/teach-repeat/types";
 import { swallow } from "@/core/utils/log";
 import { useI18n } from "@/core/i18n/hooks";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -55,13 +58,16 @@ import { cn } from "@/lib/utils";
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    completed: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-    adapted: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-    failed: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-    running: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-    pending: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-    success: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-    skipped: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+    completed:
+      "bg-success/10 text-success dark:bg-success/30 dark:text-success",
+    adapted:
+      "bg-warning/10 text-warning dark:bg-warning/30 dark:text-warning",
+    failed: "bg-destructive/10 text-destructive dark:bg-destructive/30 dark:text-destructive",
+    running: "bg-primary/10 text-primary dark:bg-primary/30 dark:text-primary",
+    pending: "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground/70",
+    success:
+      "bg-success/10 text-success dark:bg-success/30 dark:text-success",
+    skipped: "bg-muted text-muted-foreground dark:bg-muted dark:text-muted-foreground/70",
   };
 
   return (
@@ -79,15 +85,15 @@ function StatusBadge({ status }: { status: string }) {
 function StepResultIcon({ status }: { status: string }) {
   switch (status) {
     case "success":
-      return <CheckCircle2Icon className="size-3.5 text-green-500" />;
+      return <CheckCircle2Icon className="size-3.5 text-success" />;
     case "adapted":
-      return <WrenchIcon className="size-3.5 text-amber-500" />;
+      return <WrenchIcon className="size-3.5 text-warning" />;
     case "failed":
-      return <XCircleIcon className="size-3.5 text-red-500" />;
+      return <XCircleIcon className="size-3.5 text-destructive" />;
     case "skipped":
-      return <CircleIcon className="size-3.5 text-gray-400" />;
+      return <CircleIcon className="size-3.5 text-muted-foreground/70" />;
     default:
-      return <CircleDotIcon className="size-3.5 text-gray-400" />;
+      return <CircleDotIcon className="size-3.5 text-muted-foreground/70" />;
   }
 }
 
@@ -115,6 +121,7 @@ function RecordingIndicator({
         ({status.step_count} {t.teachRepeat.steps})
       </span>
       <button
+        type="button"
         onClick={onStop}
         className="text-destructive hover:text-destructive/80 ml-auto text-xs underline"
       >
@@ -168,15 +175,16 @@ function StartRecordingDialog({
         {t.teachRepeat.startRecordingDesc}
       </p>
       <div className="space-y-2">
-        <input
+        <Input
           type="text"
           placeholder={t.teachRepeat.workflowNamePlaceholder}
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="border-input bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
+          aria-label={t.teachRepeat.workflowNamePlaceholder}
           autoFocus
         />
-        <textarea
+        <Textarea
           placeholder={t.teachRepeat.descriptionOptional}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -184,11 +192,10 @@ function StartRecordingDialog({
           className="border-input bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
         />
       </div>
-      {error && (
-        <p className="text-destructive text-xs">{error}</p>
-      )}
+      {error && <p className="text-destructive text-xs">{error}</p>}
       <div className="flex gap-2">
         <button
+          type="button"
           onClick={() => void handleStart()}
           disabled={!name.trim() || loading}
           className="bg-destructive text-destructive-foreground hover:bg-destructive/90 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50"
@@ -201,6 +208,7 @@ function StartRecordingDialog({
           {t.teachRepeat.startRecording}
         </button>
         <button
+          type="button"
           onClick={onCancel}
           className="text-muted-foreground hover:text-foreground text-xs"
         >
@@ -226,7 +234,10 @@ function ReplayDialog({
 }) {
   const { t } = useI18n();
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
-  const params: WorkflowParam[] = template.params ?? [];
+  const params = useMemo<WorkflowParam[]>(
+    () => template.params ?? [],
+    [template.params],
+  );
 
   // Pre-fill defaults
   useEffect(() => {
@@ -261,9 +272,7 @@ function ReplayDialog({
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold">
-        Replay: {template.name}
-      </h3>
+      <h3 className="text-sm font-semibold">Replay: {template.name}</h3>
       <p className="text-muted-foreground text-xs">
         {template.description || t.teachRepeat.noDescription}
       </p>
@@ -274,7 +283,9 @@ function ReplayDialog({
             <div key={p.name} className="space-y-0.5">
               <label className="text-muted-foreground text-xs">
                 {p.name}
-                {p.required && <span className="text-destructive ml-0.5">*</span>}
+                {p.required && (
+                  <span className="text-destructive ml-0.5">*</span>
+                )}
                 {p.description && (
                   <span className="ml-1 opacity-60">({p.description})</span>
                 )}
@@ -298,6 +309,7 @@ function ReplayDialog({
                   onChange={(e) =>
                     setParamValues({ ...paramValues, [p.name]: e.target.value })
                   }
+                  aria-label={p.name}
                   className="border-input bg-background w-full rounded-lg border px-3 py-1.5 text-sm"
                 />
               )}
@@ -307,6 +319,7 @@ function ReplayDialog({
       )}
       <div className="flex flex-wrap gap-2">
         <button
+          type="button"
           onClick={() => handleReplay(false)}
           className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
         >
@@ -314,6 +327,7 @@ function ReplayDialog({
           {t.teachRepeat.replay}
         </button>
         <button
+          type="button"
           onClick={() => handleReplay(true)}
           className="bg-secondary text-secondary-foreground hover:bg-secondary/80 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium"
         >
@@ -321,6 +335,7 @@ function ReplayDialog({
           {t.teachRepeat.adaptiveReplay}
         </button>
         <button
+          type="button"
           onClick={onCancel}
           className="text-muted-foreground hover:text-foreground text-xs"
         >
@@ -358,11 +373,15 @@ function ReplayResultsView({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold">{t.teachRepeat.replayResults}</h3>
+          <h3 className="text-sm font-semibold">
+            {t.teachRepeat.replayResults}
+          </h3>
           <StatusBadge status={result.status} />
         </div>
         <button
+          type="button"
           onClick={onClose}
+          aria-label="Close"
           className="text-muted-foreground hover:text-foreground"
         >
           <XCircleIcon className="size-4" />
@@ -383,6 +402,7 @@ function ReplayResultsView({
         {result.step_results.map((sr: StepResult) => (
           <div key={sr.step_id} className="rounded-lg border text-xs">
             <button
+              type="button"
               onClick={() => toggle(sr.step_id)}
               className="hover:bg-muted/50 flex w-full items-center gap-2 px-2 py-1.5 text-left"
             >
@@ -402,11 +422,9 @@ function ReplayResultsView({
                     {sr.output.slice(0, 500)}
                   </p>
                 )}
-                {sr.error && (
-                  <p className="text-destructive">{sr.error}</p>
-                )}
+                {sr.error && <p className="text-destructive">{sr.error}</p>}
                 {sr.adaptation_note && (
-                  <p className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <p className="text-warning flex items-center gap-1">
                     <AlertTriangleIcon className="size-3" />
                     {sr.adaptation_note}
                   </p>
@@ -462,11 +480,14 @@ function TemplateLibrary({
             placeholder={t.teachRepeat.searchWorkflows}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label={t.teachRepeat.searchWorkflows}
             className="w-full bg-transparent text-sm outline-none"
           />
         </div>
         <button
+          type="button"
           onClick={onRefresh}
+          aria-label="Refresh"
           className="text-muted-foreground hover:text-foreground"
           title="Refresh"
         >
@@ -493,13 +514,20 @@ function TemplateLibrary({
             className="hover:bg-muted/50 group flex items-center gap-2 rounded-lg border px-3 py-2"
           >
             <div
+              role="button"
+              tabIndex={0}
               className="min-w-0 flex-1 cursor-pointer"
               onClick={() => onSelect(t)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                onSelect(t);
+              }}
             >
               <div className="flex items-center gap-1.5">
                 <span className="truncate text-sm font-medium">{t.name}</span>
                 {t.tags.length > 0 && (
-                  <span className="bg-muted rounded px-1 py-0.5 text-[10px]">
+                  <span className="bg-muted rounded px-1 py-0.5 text-xs">
                     {t.tags[0]}
                   </span>
                 )}
@@ -512,30 +540,36 @@ function TemplateLibrary({
             </div>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onSelect(t);
                 }}
+                aria-label="Replay"
                 title="Replay"
                 className="text-muted-foreground hover:text-foreground rounded p-1"
               >
                 <PlayIcon className="size-3.5" />
               </button>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDuplicate(t.id);
                 }}
+                aria-label="Duplicate"
                 title="Duplicate"
                 className="text-muted-foreground hover:text-foreground rounded p-1"
               >
                 <CopyIcon className="size-3.5" />
               </button>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(t.id);
                 }}
+                aria-label="Delete"
                 title="Delete"
                 className="text-muted-foreground hover:text-destructive rounded p-1"
               >
@@ -569,6 +603,7 @@ export function TeachRepeatPanel({
   className,
 }: TeachRepeatPanelProps) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [view, setView] = useState<PanelView>("library");
   const [templates, setTemplates] = useState<WorkflowTemplateListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -589,7 +624,9 @@ export function TeachRepeatPanel({
     try {
       const data = await listTemplates({ limit: 100 });
       setTemplates(data.templates);
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
     setLoading(false);
   }, []);
 
@@ -598,7 +635,9 @@ export function TeachRepeatPanel({
     try {
       const status = await getRecordingStatus(threadId);
       setRecordingStatus(status);
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   }, [threadId]);
 
   useEffect(() => {
@@ -620,7 +659,9 @@ export function TeachRepeatPanel({
       await stopRecording({ thread_id: threadId, use_llm: true });
       await refreshRecordingStatus();
       await refreshTemplates();
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   };
 
   const handleReplay = async (
@@ -655,14 +696,29 @@ export function TeachRepeatPanel({
     try {
       await duplicateTemplate(id);
       await refreshTemplates();
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   };
 
   const handleDelete = async (id: string) => {
+    const template = templates.find((tpl) => tpl.id === id);
+    if (
+      !(await confirm({
+        title: t.teachRepeat.deleteConfirmTitle,
+        description: template
+          ? t.teachRepeat.deleteConfirmDescription(template.name)
+          : t.teachRepeat.deleteConfirmDescriptionUnknown,
+        confirmLabel: t.common.delete,
+      }))
+    )
+      return;
     try {
       await deleteTemplate(id);
       setTemplates((prev) => prev.filter((t) => t.id !== id));
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   };
 
   // -- Render ---------------------------------------------------------------
@@ -767,6 +823,7 @@ export function TeachRepeatPanel({
           )}
         </>
       )}
+      {confirmDialog}
     </div>
   );
 }

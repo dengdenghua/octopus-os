@@ -29,8 +29,8 @@ function fixture() {
 
 function environment(paths, overrides = {}) {
   return {
-    OCTOPUS_SMOKE: "1",
-    OCTOPUS_NATIVE_APP_SMOKE_ID: "org.kde.kcalc",
+    ECHO_SMOKE: "1",
+    ECHO_NATIVE_APP_SMOKE_ID: "org.kde.kcalc",
     XDG_RUNTIME_DIR: paths.runtime,
     ECHO_NATIVE_APP_IPC_READY_FILE: paths.readyPath,
     ...overrides,
@@ -59,7 +59,7 @@ async function run() {
         },
       });
       assert.equal(result.ok, true);
-      assert.match(executed, /window\.octopus.*apps/s);
+      assert.match(executed, /window\.echo.*apps/s);
       assert.match(executed, /bridge\.list\(\)/);
       assert.match(executed, /bridge\.launch\("org\.kde\.kcalc"\)/);
       assert.equal(executed, IPC_SCRIPT);
@@ -140,7 +140,7 @@ async function run() {
         platform: "linux",
         desktopSession: true,
         environment: environment(paths, {
-          OCTOPUS_NATIVE_APP_SMOKE_ID: "org.kde.konsole",
+          ECHO_NATIVE_APP_SMOKE_ID: "org.kde.konsole",
         }),
         currentUid: fs.lstatSync(paths.privateDirectory).uid,
         webContents: {
@@ -174,7 +174,7 @@ async function run() {
       const result = await runNativeAppIpcSmoke({
         platform: "linux",
         desktopSession: true,
-        environment: environment(paths, { OCTOPUS_SMOKE: "0" }),
+        environment: environment(paths, { ECHO_SMOKE: "0" }),
         currentUid: fs.lstatSync(paths.privateDirectory).uid,
         webContents: {
           async executeJavaScript() {
@@ -241,7 +241,7 @@ async function run() {
         platform: "linux",
         desktopSession: true,
         environment: environment(paths, {
-          OCTOPUS_SMOKE: "0",
+          ECHO_SMOKE: "0",
           XDG_SESSION_TYPE: "wayland",
         }),
         currentUid: fs.lstatSync(paths.privateDirectory).uid,
@@ -271,7 +271,7 @@ async function run() {
         platform: "linux",
         desktopSession: true,
         environment: environment(paths, {
-          OCTOPUS_SMOKE: "0",
+          ECHO_SMOKE: "0",
           XDG_SESSION_TYPE: "x11",
         }),
         currentUid: fs.lstatSync(paths.privateDirectory).uid,
@@ -289,7 +289,9 @@ async function run() {
       });
       assert.equal(called, false);
       passed += 1;
-      console.log("  ✓ the root request cannot authorize a non-Wayland session");
+      console.log(
+        "  ✓ the root request cannot authorize a non-Wayland session",
+      );
     } finally {
       fs.rmSync(paths.root, { recursive: true, force: true });
     }
@@ -300,7 +302,9 @@ async function run() {
     const requestPath = path.join(paths.root, "request", "wayland-ipc");
     const requestParent = path.dirname(requestPath);
     fs.mkdirSync(requestParent, { mode: 0o700 });
-    fs.writeFileSync(requestPath, ROOT_WAYLAND_REQUEST_CONTENT, { mode: 0o444 });
+    fs.writeFileSync(requestPath, ROOT_WAYLAND_REQUEST_CONTENT, {
+      mode: 0o444,
+    });
     const requiredUid = fs.statSync(requestPath).uid;
     try {
       assert.equal(hasRootWaylandRequest(requestPath, requiredUid), true);

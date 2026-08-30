@@ -24,13 +24,18 @@
  */
 
 import { swallow } from "@/core/utils/log";
-import { getBackendBaseURL } from "@/core/config";
 import type { Extension } from "@codemirror/state";
-import { ArrowLeftIcon, FileWarningIcon, PlayIcon, SaveIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  FileWarningIcon,
+  PlayIcon,
+  SaveIcon,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { reflexFetch } from "../api";
 import { ReflexCardEditor } from "./card-editor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +46,6 @@ import {
 import {
   WorkspaceBody,
   WorkspaceContainer,
-  WorkspaceHeader,
 } from "@/components/workspace/workspace-container";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
@@ -89,6 +93,13 @@ type TestResp = {
 
 type StatusKind = "idle" | "ok" | "warn" | "err";
 
+function localizeReflexError(error: string, fallback: string) {
+  if (error.trim().toLowerCase() === "no rules file") {
+    return "未找到规则文件，请先创建规则或从磁盘重新加载。";
+  }
+  return error || fallback;
+}
+
 export default function ReflexEditorPage() {
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
@@ -112,11 +123,14 @@ export default function ReflexEditorPage() {
   const loadFile = useCallback(async () => {
     setStatus(t.reflexEditor.statusLoading);
     try {
-      const r: LoadResp = await fetch(`${getBackendBaseURL()}/api/reflex/rules-yaml`).then((r) =>
-        r.json(),
-      );
+      const r: LoadResp = await reflexFetch<LoadResp>("/api/reflex/rules-yaml");
       if (!r.ok) {
-        setStatus(t.reflexEditor.statusLoadFailed(r.error ?? t.reflexEditor.statusUnknown), "err");
+        setStatus(
+          t.reflexEditor.statusLoadFailed(
+            localizeReflexError(r.error ?? "", t.reflexEditor.statusUnknown),
+          ),
+          "err",
+        );
         return;
       }
       setContent(r.content ?? "");
@@ -125,7 +139,10 @@ export default function ReflexEditorPage() {
       setStatus(t.reflexEditor.statusLoaded, "ok");
     } catch (e) {
       swallow(e);
-      setStatus(e instanceof Error ? e.message : t.reflexEditor.statusFetchError, "err");
+      setStatus(
+        e instanceof Error ? e.message : t.reflexEditor.statusFetchError,
+        "err",
+      );
     }
   }, [setStatus, t]);
 
@@ -137,17 +154,25 @@ export default function ReflexEditorPage() {
     async (reload: boolean) => {
       setStatus(t.reflexEditor.statusSaving);
       try {
-        const r: SaveResp = await fetch(`${getBackendBaseURL()}/api/reflex/rules-yaml`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            content,
-            expected_mtime: mtime,
-            reload,
-          }),
-        }).then((r) => r.json());
+        const r: SaveResp = await reflexFetch<SaveResp>(
+          "/api/reflex/rules-yaml",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content,
+              expected_mtime: mtime,
+              reload,
+            }),
+          },
+        );
         if (!r.ok) {
-          setStatus(t.reflexEditor.statusSaveFailed(r.error ?? t.reflexEditor.statusUnknown), "err");
+          setStatus(
+            t.reflexEditor.statusSaveFailed(
+              r.error ?? t.reflexEditor.statusUnknown,
+            ),
+            "err",
+          );
           return;
         }
         setMtime(r.new_mtime ?? mtime);
@@ -162,7 +187,10 @@ export default function ReflexEditorPage() {
         setStatus(msg, kind);
       } catch (e) {
         swallow(e);
-        setStatus(e instanceof Error ? e.message : t.reflexEditor.statusSaveError, "err");
+        setStatus(
+          e instanceof Error ? e.message : t.reflexEditor.statusSaveError,
+          "err",
+        );
       }
     },
     [content, mtime, setStatus, t],
@@ -171,7 +199,7 @@ export default function ReflexEditorPage() {
   const runTests = useCallback(async () => {
     setStatus(t.reflexEditor.statusRunningTests);
     try {
-      const r: TestResp = await fetch(`${getBackendBaseURL()}/api/reflex/test`).then((r) => r.json());
+      const r: TestResp = await reflexFetch<TestResp>("/api/reflex/test");
       setTest(r);
       if (r.error) {
         setStatus(t.reflexEditor.statusTestError(r.error), "err");
@@ -181,7 +209,10 @@ export default function ReflexEditorPage() {
       setStatus(head, r.failed === 0 ? "ok" : "err");
     } catch (e) {
       swallow(e);
-      setStatus(e instanceof Error ? e.message : t.reflexEditor.statusTestErrorFallback, "err");
+      setStatus(
+        e instanceof Error ? e.message : t.reflexEditor.statusTestErrorFallback,
+        "err",
+      );
     }
   }, [setStatus, t]);
 
@@ -199,15 +230,14 @@ export default function ReflexEditorPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [save]);
 
-  const cmTheme =
-    resolvedTheme === "dark" ? customDarkTheme : customLightTheme;
+  const cmTheme = resolvedTheme === "dark" ? customDarkTheme : customLightTheme;
+  const initialLoadFailed = statusKind === "err" && !content && !path;
 
   return (
     <WorkspaceContainer>
-      <WorkspaceHeader />
       <WorkspaceBody className="px-4 pb-4">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
-          <section className="workspace-panel rounded-[1.75rem] px-6 py-4">
+          <section className="workspace-panel px-6 py-4">
             <div className="flex items-center gap-3">
               <Button asChild variant="ghost" size="sm">
                 <Link to="/workspace/reflex">
@@ -216,14 +246,18 @@ export default function ReflexEditorPage() {
                 </Link>
               </Button>
               <div className="flex-1">
-                <h1 className="text-lg font-semibold">{t.reflexEditor.pageTitle}</h1>
+                <h1 className="text-lg font-semibold">
+                  {t.reflexEditor.pageTitle}
+                </h1>
                 <div className="text-xs text-muted-foreground">
                   {path}
                   {mtime > 0 && (
                     <>
                       {" · "}
                       <span className="font-mono">
-                        {t.reflexEditor.mtimePrefix(new Date(mtime * 1000).toLocaleString())}
+                        {t.reflexEditor.mtimePrefix(
+                          new Date(mtime * 1000).toLocaleString(),
+                        )}
                       </span>
                     </>
                   )}
@@ -232,7 +266,7 @@ export default function ReflexEditorPage() {
               <StatusBadge msg={statusMsg} kind={statusKind} />
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-md border border-border/60 p-0.5">
+              <div className="inline-flex rounded-md border border-border-default p-0.5">
                 <button
                   onClick={() => setMode("card")}
                   className={cn(
@@ -256,7 +290,7 @@ export default function ReflexEditorPage() {
                   {t.reflexEditor.modeYaml}
                 </button>
               </div>
-              {mode === "yaml" && (
+              {!initialLoadFailed && mode === "yaml" && (
                 <>
                   <Button variant="outline" size="sm" onClick={loadFile}>
                     {t.reflexEditor.reloadFromDisk}
@@ -273,7 +307,7 @@ export default function ReflexEditorPage() {
                     {t.reflexEditor.saveNoReload}
                   </Button>
                   <span className="ml-auto text-xs text-muted-foreground">
-                    <kbd className="rounded border border-border/60 bg-background/60 px-1.5 py-0.5 font-mono text-[10px]">
+                    <kbd className="rounded border border-border-default bg-background/60 px-1.5 py-0.5 font-mono text-xs">
                       Ctrl/⌘+S
                     </kbd>{" "}
                     {t.reflexEditor.keyboardHintSuffix}
@@ -284,7 +318,7 @@ export default function ReflexEditorPage() {
           </section>
 
           {test && (
-            <Card className="workspace-panel rounded-[1.5rem] border-white/40 shadow-none dark:border-white/10">
+            <Card className="workspace-panel border-white/40 shadow-none dark:border-white/10">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <FileWarningIcon className="size-4" />
@@ -293,27 +327,37 @@ export default function ReflexEditorPage() {
               </CardHeader>
               <CardContent>
                 {test.error ? (
-                  <div className="text-sm text-rose-400">{t.reflexEditor.errorPrefix(test.error)}</div>
+                  <div className="text-sm text-destructive">
+                    {t.reflexEditor.errorPrefix(test.error)}
+                  </div>
                 ) : test.note ? (
-                  <div className="text-sm text-muted-foreground">{test.note}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {test.note}
+                  </div>
                 ) : (
                   <div className="space-y-1 text-sm">
                     <div
                       className={cn(
                         "font-medium",
-                        test.failed === 0
-                          ? "text-emerald-400"
-                          : "text-rose-400",
+                        test.failed === 0 ? "text-success" : "text-destructive",
                       )}
                     >
-                      {t.reflexEditor.testSummary(test.passed, test.total, test.failed)}
+                      {t.reflexEditor.testSummary(
+                        test.passed,
+                        test.total,
+                        test.failed,
+                      )}
                     </div>
                     {test.failures.map((f, i) => (
                       <div
                         key={`${f.source_rule_id}-${i}`}
-                        className="font-mono text-xs text-rose-300"
+                        className="font-mono text-xs text-destructive"
                       >
-                        {t.reflexEditor.testFailureRow(f.source_rule_id, JSON.stringify(f.input), f.reason)}
+                        {t.reflexEditor.testFailureRow(
+                          f.source_rule_id,
+                          JSON.stringify(f.input),
+                          f.reason,
+                        )}
                       </div>
                     ))}
                   </div>
@@ -322,8 +366,19 @@ export default function ReflexEditorPage() {
             </Card>
           )}
 
-          {mode === "yaml" ? (
-            <Card className="workspace-panel rounded-[1.5rem] border-white/40 shadow-none dark:border-white/10">
+          {initialLoadFailed ? (
+            <Card className="workspace-panel border-white/40 shadow-none dark:border-white/10">
+              <CardContent className="flex flex-col items-center gap-3 px-4 py-12 text-center">
+                <FileWarningIcon className="size-8 text-destructive" />
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button variant="outline" size="sm" onClick={loadFile}>
+                    {t.reflexEditor.reloadFromDisk}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : mode === "yaml" ? (
+            <Card className="workspace-panel border-white/40 shadow-none dark:border-white/10">
               <CardContent className="p-2">
                 <Suspense
                   fallback={
@@ -364,16 +419,13 @@ export default function ReflexEditorPage() {
 function StatusBadge({ msg, kind }: { msg: string; kind: StatusKind }) {
   const cls = {
     idle: "bg-muted/40 text-muted-foreground",
-    ok: "bg-emerald-500/15 text-emerald-300",
-    warn: "bg-amber-500/15 text-amber-300",
-    err: "bg-rose-500/15 text-rose-300",
+    ok: "bg-success/15 text-success",
+    warn: "bg-warning/15 text-warning",
+    err: "bg-destructive/15 text-destructive",
   }[kind];
   return (
     <span
-      className={cn(
-        "rounded-md px-3 py-1 font-mono text-xs",
-        cls,
-      )}
+      className={cn("rounded-md px-3 py-1 font-mono text-xs", cls)}
       title={msg}
     >
       {msg}

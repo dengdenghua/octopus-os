@@ -23,14 +23,18 @@ describe("computeLineDiff", () => {
   it("detects added lines", () => {
     const hunks = computeLineDiff("a", "a\nb");
     expect(hunks.length).toBeGreaterThan(0);
-    const addLines = hunks.flatMap((h) => h.lines).filter((l) => l.type === "add");
+    const addLines = hunks
+      .flatMap((h) => h.lines)
+      .filter((l) => l.type === "add");
     expect(addLines.length).toBeGreaterThan(0);
     expect(addLines.some((l) => l.content === "b")).toBe(true);
   });
 
   it("detects removed lines", () => {
     const hunks = computeLineDiff("a\nb", "a");
-    const removeLines = hunks.flatMap((h) => h.lines).filter((l) => l.type === "remove");
+    const removeLines = hunks
+      .flatMap((h) => h.lines)
+      .filter((l) => l.type === "remove");
     expect(removeLines.length).toBeGreaterThan(0);
   });
 
@@ -42,15 +46,25 @@ describe("computeLineDiff", () => {
 
 describe("computeWordDiff", () => {
   it("returns equal segments for identical lines", () => {
-    const { oldSegments, newSegments } = computeWordDiff("hello world", "hello world");
+    const { oldSegments, newSegments } = computeWordDiff(
+      "hello world",
+      "hello world",
+    );
     expect(oldSegments.every((s) => s.type === "equal")).toBe(true);
     expect(newSegments.every((s) => s.type === "equal")).toBe(true);
   });
 
   it("detects word-level changes", () => {
-    const { oldSegments, newSegments } = computeWordDiff("hello world", "hello earth");
-    expect(oldSegments.some((s) => s.type === "remove" && s.text === "world")).toBe(true);
-    expect(newSegments.some((s) => s.type === "add" && s.text === "earth")).toBe(true);
+    const { oldSegments, newSegments } = computeWordDiff(
+      "hello world",
+      "hello earth",
+    );
+    expect(
+      oldSegments.some((s) => s.type === "remove" && s.text === "world"),
+    ).toBe(true);
+    expect(
+      newSegments.some((s) => s.type === "add" && s.text === "earth"),
+    ).toBe(true);
   });
 });
 
@@ -73,8 +87,12 @@ describe("parseUnifiedDiff", () => {
     const hunks = parseUnifiedDiff(diff);
     expect(hunks).toHaveLength(1);
     expect(hunks[0]!.oldStart).toBe(1);
-    expect(hunks[0]!.lines.some((l) => l.type === "remove" && l.content === "old")).toBe(true);
-    expect(hunks[0]!.lines.some((l) => l.type === "add" && l.content === "new")).toBe(true);
+    expect(
+      hunks[0]!.lines.some((l) => l.type === "remove" && l.content === "old"),
+    ).toBe(true);
+    expect(
+      hunks[0]!.lines.some((l) => l.type === "add" && l.content === "new"),
+    ).toBe(true);
   });
 });
 
@@ -166,9 +184,42 @@ describe("getLanguageFromPath", () => {
 
 describe("sortFiles", () => {
   const files: FileDiff[] = [
-    { id: "1", filePath: "b.ts", status: "modified", additions: 5, deletions: 2, hunks: [], originalContent: null, newContent: null, accepted: null, timestamp: 0 },
-    { id: "2", filePath: "a.ts", status: "added", additions: 10, deletions: 0, hunks: [], originalContent: null, newContent: null, accepted: null, timestamp: 0 },
-    { id: "3", filePath: "c.ts", status: "deleted", additions: 0, deletions: 8, hunks: [], originalContent: null, newContent: null, accepted: null, timestamp: 0 },
+    {
+      id: "1",
+      filePath: "b.ts",
+      status: "modified",
+      additions: 5,
+      deletions: 2,
+      hunks: [],
+      originalContent: null,
+      newContent: null,
+      accepted: null,
+      timestamp: 0,
+    },
+    {
+      id: "2",
+      filePath: "a.ts",
+      status: "added",
+      additions: 10,
+      deletions: 0,
+      hunks: [],
+      originalContent: null,
+      newContent: null,
+      accepted: null,
+      timestamp: 0,
+    },
+    {
+      id: "3",
+      filePath: "c.ts",
+      status: "deleted",
+      additions: 0,
+      deletions: 8,
+      hunks: [],
+      originalContent: null,
+      newContent: null,
+      accepted: null,
+      timestamp: 0,
+    },
   ];
 
   it("sorts by name", () => {
@@ -178,7 +229,11 @@ describe("sortFiles", () => {
 
   it("sorts by status (added → modified → deleted)", () => {
     const sorted = sortFiles(files, "status");
-    expect(sorted.map((f) => f.status)).toEqual(["added", "modified", "deleted"]);
+    expect(sorted.map((f) => f.status)).toEqual([
+      "added",
+      "modified",
+      "deleted",
+    ]);
   });
 
   it("sorts by changes (most first)", () => {
@@ -190,9 +245,42 @@ describe("sortFiles", () => {
 describe("groupFilesByDirectory", () => {
   it("groups files by directory", () => {
     const files: FileDiff[] = [
-      { id: "1", filePath: "src/a.ts", status: "added", additions: 1, deletions: 0, hunks: [], originalContent: null, newContent: null, accepted: null, timestamp: 0 },
-      { id: "2", filePath: "src/b.ts", status: "added", additions: 1, deletions: 0, hunks: [], originalContent: null, newContent: null, accepted: null, timestamp: 0 },
-      { id: "3", filePath: "lib/c.ts", status: "added", additions: 1, deletions: 0, hunks: [], originalContent: null, newContent: null, accepted: null, timestamp: 0 },
+      {
+        id: "1",
+        filePath: "src/a.ts",
+        status: "added",
+        additions: 1,
+        deletions: 0,
+        hunks: [],
+        originalContent: null,
+        newContent: null,
+        accepted: null,
+        timestamp: 0,
+      },
+      {
+        id: "2",
+        filePath: "src/b.ts",
+        status: "added",
+        additions: 1,
+        deletions: 0,
+        hunks: [],
+        originalContent: null,
+        newContent: null,
+        accepted: null,
+        timestamp: 0,
+      },
+      {
+        id: "3",
+        filePath: "lib/c.ts",
+        status: "added",
+        additions: 1,
+        deletions: 0,
+        hunks: [],
+        originalContent: null,
+        newContent: null,
+        accepted: null,
+        timestamp: 0,
+      },
     ];
     const groups = groupFilesByDirectory(files);
     expect(groups).toHaveLength(2);
@@ -201,7 +289,18 @@ describe("groupFilesByDirectory", () => {
 
   it("uses (root) for files without directory", () => {
     const files: FileDiff[] = [
-      { id: "1", filePath: "readme.md", status: "modified", additions: 1, deletions: 0, hunks: [], originalContent: null, newContent: null, accepted: null, timestamp: 0 },
+      {
+        id: "1",
+        filePath: "readme.md",
+        status: "modified",
+        additions: 1,
+        deletions: 0,
+        hunks: [],
+        originalContent: null,
+        newContent: null,
+        accepted: null,
+        timestamp: 0,
+      },
     ];
     const groups = groupFilesByDirectory(files);
     expect(groups[0]!.directory).toBe("(root)");

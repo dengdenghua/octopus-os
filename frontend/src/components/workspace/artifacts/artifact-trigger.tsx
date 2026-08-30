@@ -13,10 +13,10 @@ export const ArtifactTrigger = ({ className }: { className?: string }) => {
   return (
     <Button
       className={cn(
-        "relative size-8 rounded-lg border text-muted-foreground transition-colors",
+        "relative size-8 border text-muted-foreground transition-colors",
         open
           ? "border-border bg-muted text-foreground"
-          : "border-transparent hover:border-border/50 hover:bg-muted/60 hover:text-foreground",
+          : "border-transparent hover:border-border-subtle hover:bg-muted/60 hover:text-foreground",
         className,
       )}
       variant="ghost"
@@ -29,7 +29,7 @@ export const ArtifactTrigger = ({ className }: { className?: string }) => {
     >
       <FilesIcon className="size-4" />
       {count > 0 && (
-        <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 text-[10px] font-medium leading-none text-background">
+        <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 text-xs font-medium leading-none text-background">
           {count > 99 ? "99+" : count}
         </span>
       )}

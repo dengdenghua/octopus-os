@@ -1,27 +1,55 @@
 /**
- * Octopus OS appliance 登录屏(原生路线)。
+ * Echo OS appliance 登录屏(原生路线)。
  *
- * 与桌面同一极光壁纸 + 毛玻璃卡片;单用户(admin)只需密码。
+ * 与桌面同一极光壁纸 + 毛玻璃卡片；管理员与家庭成员使用各自账号。
  * 登录成功后回调 onSuccess,由桌面切换到主界面。
  */
 
-import { useState, type FormEvent } from "react";
-import { LockIcon, Loader2Icon } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import {
+  ArrowRightIcon,
+  Loader2Icon,
+  MoonIcon,
+  PowerIcon,
+  RotateCcwIcon,
+  WifiIcon,
+} from "lucide-react";
 
 import { applianceLogin } from "@/appliance/auth";
+import { EchoMark } from "@/components/brand/echo-mark";
+import type {
+  MacSystemAction,
+  MacSystemCapabilities,
+} from "@/appliance/macos-shell";
+import { MacDesktopWallpaperArtwork } from "@/appliance/macos-shell";
 
-export function ApplianceLogin({ onSuccess }: { onSuccess: () => void }) {
+export function ApplianceLogin({
+  onSuccess,
+  systemCapabilities,
+  onSystemAction,
+}: {
+  onSuccess: () => void;
+  systemCapabilities: MacSystemCapabilities;
+  onSystemAction: (action: MacSystemAction) => void;
+}) {
+  const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!password || submitting) return;
+    if (!username.trim() || !password || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
-      await applianceLogin(password);
+      await applianceLogin(username, password);
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : "登录失败");
@@ -30,50 +58,122 @@ export function ApplianceLogin({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <main className="relative grid h-screen place-items-center overflow-hidden bg-transparent text-white">
-      <div aria-hidden className="desktop-wallpaper absolute inset-0 z-0" />
-      <form
-        onSubmit={submit}
-        className="relative z-10 w-[min(92vw,360px)] rounded-[26px] border border-white/30 bg-white/15 p-7 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.55)] ring-1 ring-inset ring-white/25 backdrop-blur-2xl"
-      >
-        <div className="mb-5 flex flex-col items-center gap-3 text-center">
-          <div className="grid size-14 place-items-center rounded-2xl bg-white/20 ring-1 ring-white/30">
-            <LockIcon className="size-6" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold">Octopus OS</h1>
-            <p className="mt-0.5 text-xs text-white/70">
-              输入管理员密码以进入桌面
-            </p>
-          </div>
+    <main className="macos-desktop-root mac-login-screen relative h-screen overflow-hidden bg-transparent text-white">
+      <div aria-hidden className="desktop-wallpaper absolute inset-0 z-0">
+        <MacDesktopWallpaperArtwork />
+        <span className="desktop-wallpaper-fold desktop-wallpaper-fold-a" />
+        <span className="desktop-wallpaper-fold desktop-wallpaper-fold-b" />
+        <span className="desktop-wallpaper-fold desktop-wallpaper-fold-c" />
+      </div>
+      <div className="mac-login-vignette" />
+      <time className="mac-login-clock">
+        <span>
+          {now.toLocaleTimeString("zh-CN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })}
+        </span>
+        <small>
+          {now.getMonth() + 1}月{now.getDate()}日 周
+          {"日一二三四五六"[now.getDay()]}
+        </small>
+      </time>
+      <form onSubmit={submit} className="mac-login-form">
+        <div className="mac-login-avatar">
+          <EchoMark tone="light" />
         </div>
+        <h1>Echo</h1>
+        <p>{username.trim() === "admin" ? "设备管理员" : "家庭成员"}</p>
 
-        <input
-          type="password"
-          autoFocus
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="管理员密码"
-          className="h-11 w-full rounded-xl border border-white/25 bg-white/15 px-4 text-sm text-white outline-none transition placeholder:text-white/50 focus:border-white/45 focus:bg-white/20"
-        />
+        <label className="mac-login-username">
+          <input
+            type="text"
+            autoFocus
+            autoComplete="username"
+            spellCheck={false}
+            value={username}
+            onChange={(event) => {
+              setUsername(event.target.value);
+              if (error) setError(null);
+            }}
+            placeholder="用户名"
+            aria-label="用户名"
+          />
+        </label>
 
-        {error && (
-          <p className="mt-2 text-center text-xs text-rose-200">{error}</p>
-        )}
+        <label className="mac-login-password">
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => {
+              setPassword(event.target.value);
+              if (error) setError(null);
+            }}
+            placeholder="输入密码"
+            aria-label="密码"
+          />
+          <button
+            type="submit"
+            disabled={!username.trim() || !password || submitting}
+            aria-label="进入桌面"
+          >
+            {submitting ? (
+              <Loader2Icon className="animate-spin" />
+            ) : (
+              <ArrowRightIcon />
+            )}
+          </button>
+        </label>
 
-        <button
-          type="submit"
-          disabled={!password || submitting}
-          className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/90 text-sm font-semibold text-slate-900 transition hover:bg-white disabled:opacity-50"
-        >
-          {submitting && <Loader2Icon className="size-4 animate-spin" />}
-          {submitting ? "登录中…" : "进入桌面"}
-        </button>
-
-        <p className="mt-4 text-center text-[11px] leading-relaxed text-white/55">
-          首次启动的初始密码见容器日志,或由 OCTOPUS_ADMIN_PASSWORD 指定。
-        </p>
+        {error && <p className="mac-login-error">{error}</p>}
+        <small>使用 Echo 家庭账号登录</small>
       </form>
+
+      <div className="mac-login-system-actions">
+        <button
+          type="button"
+          title="睡眠"
+          disabled={!systemCapabilities.suspend}
+          onClick={() => onSystemAction("suspend")}
+        >
+          <span>
+            <MoonIcon />
+          </span>
+          <small>睡眠</small>
+        </button>
+        <button
+          type="button"
+          title="重新启动"
+          disabled={!systemCapabilities.restart}
+          onClick={() => onSystemAction("restart")}
+        >
+          <span>
+            <RotateCcwIcon />
+          </span>
+          <small>重新启动</small>
+        </button>
+        <button
+          type="button"
+          title="关机"
+          disabled={!systemCapabilities.shutdown}
+          onClick={() => onSystemAction("shutdown")}
+        >
+          <span>
+            <PowerIcon />
+          </span>
+          <small>关机</small>
+        </button>
+      </div>
+
+      <footer className="mac-login-footer">
+        <span>
+          <WifiIcon />
+          Echo Home
+        </span>
+        <span>首次启动密码可在设备控制台中查看</span>
+      </footer>
     </main>
   );
 }

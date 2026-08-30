@@ -62,12 +62,38 @@ export interface StartRecordingRequest {
   thread_id: string;
   name: string;
   description?: string;
+  provider?: "agent" | "human" | "hybrid";
 }
 
 export interface StartRecordingResponse {
   recording: boolean;
   thread_id: string;
   name: string;
+  provider?: "agent" | "human" | "hybrid";
+  session_id?: string;
+  started_at?: string;
+  max_duration_seconds?: number;
+}
+
+export interface RecordingEvent {
+  schema?: "echo.recording.event.v1";
+  event_id?: string;
+  ts: string;
+  source: "human" | "agent" | "browser" | "desktop";
+  kind: string;
+  app?: string;
+  window?: string;
+  target?: Record<string, unknown>;
+  data?: Record<string, unknown>;
+}
+
+export interface AppendRecordingEventsResponse {
+  recording: boolean;
+  thread_id: string;
+  session_id?: string;
+  accepted: number;
+  event_count: number;
+  step_count: number;
 }
 
 export interface StopRecordingRequest {
@@ -77,17 +103,36 @@ export interface StopRecordingRequest {
 }
 
 export interface StopRecordingResponse {
-  template_id: string;
   name: string;
-  description: string;
-  step_count: number;
-  param_count: number;
+  // Active-forge result (REC stop now forges a skill from the conversation's
+  // trajectory): "promoted" | "quarantined" | "shadow_failed" |
+  // "no_candidate" | "no_successful_trajectory" | "no_runtime".
+  status?: string;
+  forged?: string[];
+  quarantined?: string[];
+  candidates_total?: number;
+  thread_id?: string;
+  step_count?: number;
+  event_count?: number;
+  events_path?: string;
+  metadata_path?: string;
+  provider?: "agent" | "human" | "hybrid";
+  session_id?: string;
+  // Legacy stub fields (no longer returned by the forge-backed stop):
+  template_id?: string;
+  description?: string;
+  param_count?: number;
 }
 
 export interface RecordingStatus {
   recording: boolean;
   step_count: number;
+  event_count?: number;
   name: string;
+  provider?: "agent" | "human" | "hybrid";
+  session_id?: string;
+  started_at?: string;
+  max_duration_seconds?: number;
 }
 
 export interface StepResult {

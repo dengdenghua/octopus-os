@@ -1,5 +1,11 @@
-
-import { ChevronDownIcon, ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  FileIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  RefreshCwIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { swallow } from "@/core/utils/log";
 import type { components } from "@/core/api/openapi-types";
@@ -34,21 +40,24 @@ export interface FileTreeEvent {
 }
 
 const FILE_ICONS: Record<string, string> = {
-  ts: "text-blue-500 dark:text-blue-400",
-  tsx: "text-blue-500 dark:text-blue-400",
-  js: "text-yellow-500 dark:text-yellow-400",
-  jsx: "text-yellow-500 dark:text-yellow-400",
-  py: "text-green-500 dark:text-green-400",
-  json: "text-yellow-600 dark:text-yellow-500",
+  ts: "text-info dark:text-info",
+  tsx: "text-info dark:text-info",
+  js: "text-warning",
+  jsx: "text-warning",
+  py: "text-success",
+  json: "text-warning dark:text-warning",
   md: "text-muted-foreground",
-  css: "text-purple-500 dark:text-purple-400",
-  html: "text-orange-500 dark:text-orange-400",
-  yaml: "text-red-400 dark:text-red-300",
-  yml: "text-red-400 dark:text-red-300",
-  toml: "text-red-400 dark:text-red-300",
+  css: "text-chart-1 dark:text-chart-1",
+  html: "text-chart-7 dark:text-chart-7",
+  yaml: "text-destructive dark:text-destructive",
+  yml: "text-destructive dark:text-destructive",
+  toml: "text-destructive dark:text-destructive",
 };
 
-const treeCache = new Map<string, { entries: FileEntry[]; timestamp: number }>();
+const treeCache = new Map<
+  string,
+  { entries: FileEntry[]; timestamp: number }
+>();
 const CACHE_TTL = 30_000;
 
 // How long (ms) a file keeps its "just touched" glow after an event.
@@ -81,7 +90,9 @@ function parentPaths(path: string): string[] {
 }
 
 function collapsedDirsFor(entries: FileEntry[]): Set<string> {
-  return new Set(entries.filter((entry) => entry.type === "dir").map((entry) => entry.path));
+  return new Set(
+    entries.filter((entry) => entry.type === "dir").map((entry) => entry.path),
+  );
 }
 
 export function FileTree({
@@ -104,7 +115,9 @@ export function FileTree({
 }) {
   const { t } = useI18n();
   const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [gitStatuses, setGitStatuses] = useState<Map<string, GitStatus>>(new Map());
+  const [gitStatuses, setGitStatuses] = useState<Map<string, GitStatus>>(
+    new Map(),
+  );
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [highlights, setHighlights] = useState<Map<string, number>>(new Map());
@@ -113,62 +126,65 @@ export function FileTree({
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const lastProcessedAtRef = useRef<number>(0);
 
-  const fetchTree = useCallback(async (force = false) => {
-    const cacheKey = `${threadId ?? ""}:${workDir}`;
-    const applyEntries = (nextEntries: FileEntry[]) => {
-      setEntries(nextEntries);
-      if (initializedCollapsedKeyRef.current !== cacheKey) {
-        initializedCollapsedKeyRef.current = cacheKey;
-        setCollapsed(collapsedDirsFor(nextEntries));
+  const fetchTree = useCallback(
+    async (force = false) => {
+      const cacheKey = `${threadId ?? ""}:${workDir}`;
+      const applyEntries = (nextEntries: FileEntry[]) => {
+        setEntries(nextEntries);
+        if (initializedCollapsedKeyRef.current !== cacheKey) {
+          initializedCollapsedKeyRef.current = cacheKey;
+          setCollapsed(collapsedDirsFor(nextEntries));
+        }
+      };
+      const cached = treeCache.get(cacheKey);
+      if (!force && cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        applyEntries(cached.entries);
+        setLoading(false);
+        return;
       }
-    };
-    const cached = treeCache.get(cacheKey);
-    if (!force && cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      applyEntries(cached.entries);
-      setLoading(false);
-      return;
-    }
 
-    setLoading(true);
-    // Bound the tree fetch to 8s so a saturated backend can't leave the
-    // explorer spinner running indefinitely — it's non-critical chrome,
-    // late/fallback display is acceptable.
-    const ac = new AbortController();
-    const abortTimeout = window.setTimeout(() => ac.abort(), 8000);
-    try {
-      // Reduced depth 3→2: enough to show immediate project structure
-      // without walking potentially-large subtrees (node_modules, .git
-      // internals, build outputs). Deeper subdirs lazy-reveal on click.
-      const params = new URLSearchParams({
-        path: workDir,
-        depth: "2",
-        workspace_path: workDir,
-      });
-      if (threadId) {
-        params.set("thread_id", threadId);
+      setLoading(true);
+      // Bound the tree fetch to 8s so a saturated backend can't leave the
+      // explorer spinner running indefinitely — it's non-critical chrome,
+      // late/fallback display is acceptable.
+      const ac = new AbortController();
+      const abortTimeout = window.setTimeout(() => ac.abort(), 8000);
+      try {
+        // Reduced depth 3→2: enough to show immediate project structure
+        // without walking potentially-large subtrees (node_modules, .git
+        // internals, build outputs). Deeper subdirs lazy-reveal on click.
+        const params = new URLSearchParams({
+          path: workDir,
+          depth: "2",
+          workspace_path: workDir,
+        });
+        if (threadId) {
+          params.set("thread_id", threadId);
+        }
+        const res = await fetch(
+          `${getBackendBaseURL()}/api/fs/tree?${params.toString()}`,
+          { headers: authHeaders(), signal: ac.signal },
+        );
+        const data = await res.json();
+        let result: FileEntry[] = [];
+        if (Array.isArray(data)) {
+          result = data;
+        } else if (data && Array.isArray(data.entries)) {
+          result = data.entries;
+        }
+        applyEntries(result);
+        treeCache.set(cacheKey, { entries: result, timestamp: Date.now() });
+      } catch (e) {
+        swallow(e);
+        // Aborted / error — fall back to empty so the UI can render.
+        applyEntries([]);
+      } finally {
+        window.clearTimeout(abortTimeout);
+        setLoading(false);
       }
-      const res = await fetch(
-        `${getBackendBaseURL()}/api/fs/tree?${params.toString()}`,
-        { headers: authHeaders(), signal: ac.signal },
-      );
-      const data = await res.json();
-      let result: FileEntry[] = [];
-      if (Array.isArray(data)) {
-        result = data;
-      } else if (data && Array.isArray(data.entries)) {
-        result = data.entries;
-      }
-      applyEntries(result);
-      treeCache.set(cacheKey, { entries: result, timestamp: Date.now() });
-    } catch (e) {
-      swallow(e);
-      // Aborted / error — fall back to empty so the UI can render.
-      applyEntries([]);
-    } finally {
-      window.clearTimeout(abortTimeout);
-      setLoading(false);
-    }
-  }, [threadId, workDir]);
+    },
+    [threadId, workDir],
+  );
 
   const fetchGitStatus = useCallback(async () => {
     try {
@@ -181,7 +197,11 @@ export function FileTree({
       const next = new Map<string, GitStatus>();
       if (Array.isArray(data?.files)) {
         for (const file of data.files) {
-          if (file && typeof file.path === "string" && typeof file.status === "string") {
+          if (
+            file &&
+            typeof file.path === "string" &&
+            typeof file.status === "string"
+          ) {
             next.set(normalizePath(file.path), file.status as GitStatus);
           }
         }
@@ -205,8 +225,9 @@ export function FileTree({
 
   useEffect(() => {
     const handler = () => void fetchTree(true);
-    window.addEventListener("octopus:workspace-changed", handler);
-    return () => window.removeEventListener("octopus:workspace-changed", handler);
+    window.addEventListener("echo:workspace-changed", handler);
+    return () =>
+      window.removeEventListener("echo:workspace-changed", handler);
   }, [fetchTree]);
 
   // Build a lookup: entry.path -> highlight expiry timestamp.
@@ -286,10 +307,13 @@ export function FileTree({
     return () => clearInterval(interval);
   }, [highlights]);
 
-  const highlightedKeys = useMemo(() => new Set(highlights.keys()), [highlights]);
+  const highlightedKeys = useMemo(
+    () => new Set(highlights.keys()),
+    [highlights],
+  );
 
   const toggleDir = (path: string) => {
-    setCollapsed(prev => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
@@ -320,7 +344,7 @@ export function FileTree({
   return (
     <div className={cn("overflow-y-auto text-xs", className)}>
       <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
-        <span className="text-muted-foreground font-semibold uppercase tracking-wider text-[10px]">
+        <span className="text-muted-foreground font-semibold uppercase tracking-wider text-xs">
           {t.codeMode.explorer}
         </span>
         <button
@@ -336,7 +360,9 @@ export function FileTree({
         const isDir = entry.type === "dir";
         const isOpen = !collapsed.has(entry.path);
         const isHot = !isDir && highlightedKeys.has(entry.path);
-        const gitStatus = !isDir ? gitStatuses.get(normalizePath(entry.path)) : undefined;
+        const gitStatus = !isDir
+          ? gitStatuses.get(normalizePath(entry.path))
+          : undefined;
 
         return (
           <div
@@ -347,11 +373,25 @@ export function FileTree({
             }}
             className={cn(
               "flex items-center gap-1 px-2 py-[3px] hover:bg-accent/50 active:bg-accent/60 cursor-pointer rounded-lg mx-1 transition-colors group",
-              isHot &&
-                "bg-primary/10 ring-1 ring-primary/40 shadow-[0_0_12px_rgba(var(--primary-rgb,99,102,241),0.35)] animate-pulse",
+              isHot && "bg-primary/10 ring-1 ring-primary/40",
             )}
             style={{ paddingLeft: `${entry.depth * 14 + 8}px` }}
-            onClick={() => isDir ? toggleDir(entry.path) : onFileClick?.(entry.path)}
+            role="button"
+            tabIndex={0}
+            aria-label={isDir ? t.fileTree.openFolderAria(entry.name) : t.fileTree.openFileAria(entry.name)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                if (isDir) {
+                  toggleDir(entry.path);
+                } else {
+                  onFileClick?.(entry.path);
+                }
+              }
+            }}
+            onClick={() =>
+              isDir ? toggleDir(entry.path) : onFileClick?.(entry.path)
+            }
           >
             {isDir ? (
               <>
@@ -361,15 +401,17 @@ export function FileTree({
                   <ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
                 )}
                 {isOpen ? (
-                  <FolderOpenIcon className="size-3.5 shrink-0 text-amber-400" />
+                  <FolderOpenIcon className="size-3.5 shrink-0 text-warning" />
                 ) : (
-                  <FolderIcon className="size-3.5 shrink-0 text-amber-400" />
+                  <FolderIcon className="size-3.5 shrink-0 text-warning" />
                 )}
               </>
             ) : (
               <>
                 <span className="size-3 shrink-0" />
-                <FileIcon className={cn("size-3.5 shrink-0", getFileColor(entry.name))} />
+                <FileIcon
+                  className={cn("size-3.5 shrink-0", getFileColor(entry.name))}
+                />
               </>
             )}
             <span
@@ -384,11 +426,15 @@ export function FileTree({
             {gitStatus && (
               <span
                 className={cn(
-                  "ml-auto shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold",
-                  gitStatus === "M" && "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-                  gitStatus === "A" && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-                  gitStatus === "D" && "bg-rose-500/10 text-rose-600 dark:text-rose-400",
-                  gitStatus === "R" && "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+                  "ml-auto shrink-0 rounded px-1 py-0.5 text-xs font-semibold",
+                  gitStatus === "M" &&
+                    "bg-warning/10 text-warning",
+                  gitStatus === "A" &&
+                    "bg-success/10 text-success",
+                  gitStatus === "D" &&
+                    "bg-destructive/10 text-destructive",
+                  gitStatus === "R" &&
+                    "bg-info/10 text-info dark:text-info",
                 )}
               >
                 {gitStatus}

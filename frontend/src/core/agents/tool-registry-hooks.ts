@@ -34,7 +34,9 @@ export function useSaveAgentToolRegistry(agentId: string) {
         queryKey: ["agent-tool-registry", agentId],
       });
       // Agent detail/list also changes (tool_groups, arms) after save
-      void queryClient.invalidateQueries({ queryKey: ["agent-detail", agentId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["agent-detail", agentId],
+      });
       void queryClient.invalidateQueries({ queryKey: ["agents"] });
     },
   });

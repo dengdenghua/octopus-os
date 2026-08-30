@@ -1,18 +1,30 @@
 import { Fragment, lazy, Suspense, useEffect, useState } from "react";
-import { Outlet } from "react-router-dom";
-import { Toaster } from "sonner";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { MoliliLoginDialog } from "@/components/auth/molili-login-dialog";
 import { Banner } from "@/components/ui/banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
+import { WorkspaceRouteOutlet } from "@/components/workspace/workspace-route-outlet";
+import {
+  ELECTRON_TITLE_BAR_HEIGHT,
+  inElectron,
+} from "@/components/electron-title-bar";
 import {
   STUB_RESPONSE_EVENT,
   type StubResponseDetail,
 } from "@/core/api/client";
+import { useEvent } from "@/core/events";
+import { useModuleRouteGuard } from "@/core/modules/use-module-route-guard";
+import { PRIMARY_WORKSPACE_ROUTE } from "@/core/workspace/sidebar-routing";
 import { swallow } from "@/core/utils/log";
+import { uuid } from "@/core/utils/uuid";
 import { useWorkspaceShortcuts } from "@/core/shortcuts/use-global-shortcuts";
 import { useI18n } from "@/core/i18n/hooks";
+import { taskWorkspaceRoute } from "@/core/router/task-workspace-route";
+import { useActiveAgentId } from "@/core/agents/active";
+import { workspacePresetForAgent } from "@/core/workspace/workspace-presets";
+import { useWorkbenchAvailabilitySync } from "@/core/workbench/availability";
+import { cn } from "@/lib/utils";
 
 const CommandPalette = lazy(() =>
   import("@/components/workspace/command-palette").then((m) => ({
@@ -20,55 +32,11 @@ const CommandPalette = lazy(() =>
   })),
 );
 
-/* Implementation note. */
-const ELECTRON_TITLE_BAR_HEIGHT = 36;
-const inElectron = (): boolean =>
-  typeof window !== "undefined" && !!window.octopus?.isElectron;
-
-/* Implementation note. */
-function useTitleBarThemeSync() {
-  useEffect(() => {
-    if (
-      typeof navigator === "undefined" ||
-      !navigator.userAgent.includes("Windows") ||
-      !window.octopus
-    ) {
-      return;
-    }
-    const apply = () => {
-      const root = document.documentElement;
-      const cs = getComputedStyle(root);
-      const bg = cs.getPropertyValue("--background").trim();
-      const fg = cs.getPropertyValue("--foreground").trim();
-      const wrap = (v: string, fb: string) => {
-        if (!v) return fb;
-        if (v.startsWith("#") || v.startsWith("rgb") || v.startsWith("oklch"))
-          return v;
-        return `hsl(${v})`;
-      };
-      void window.octopus!.window
-        .setTitleBarOverlay({
-          color: wrap(bg, "#fcfcfd"),
-          symbolColor: wrap(fg, "#525252"),
-        })
-        .catch((e) => { swallow(e); });
-    };
-    apply();
-    const obs = new MutationObserver(apply);
-    obs.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme", "class"],
-    });
-    return () => obs.disconnect();
-  }, []);
-}
-
 function showStubResponseBanner(): boolean {
   if (typeof window === "undefined") return false;
   try {
     return (
-      window.localStorage?.getItem?.("octopus.debug.showStubResponses") ===
-      "true"
+      window.localStorage?.getItem?.("echo.debug.showStubResponses") === "true"
     );
   } catch (e) {
     swallow(e);
@@ -108,37 +76,94 @@ function StubResponseBannerHost() {
   );
 }
 
-export default function WorkspaceLayout() {
+export default function WorkspaceLayout({
+  embeddedInWindow = false,
+}: {
+  embeddedInWindow?: boolean;
+}) {
   const electron = inElectron();
-  useTitleBarThemeSync();
+  const navigate = useNavigate();
+  const activeAgentId = useActiveAgentId() ?? "general";
+  const personaThemeId = workspacePresetForAgent(activeAgentId).themeId;
+  const [searchParams] = useSearchParams();
+  const embeddedDesignChat = searchParams.get("embedded") === "design";
+  const embeddedApp = searchParams.get("embedded") === "app";
+  const embeddedWorkspace = embeddedDesignChat || embeddedApp;
   useWorkspaceShortcuts();
+  useWorkbenchAvailabilitySync();
+  // A hidden module's route must also be unreachable by URL, not just absent
+  // from the sidebar.
+  useModuleRouteGuard(PRIMARY_WORKSPACE_ROUTE);
+  useEvent(
+    "task:new",
+    (taskIdentity) => {
+      navigate(
+        taskWorkspaceRoute({
+          agentId: taskIdentity?.agentId,
+          workspacePath: taskIdentity?.workspacePath,
+        }),
+        {
+          state: {
+            taskNonce: uuid(),
+            workspacePath: taskIdentity?.workspacePath,
+          },
+        },
+      );
+    },
+    [navigate],
+  );
   return (
     <Fragment>
-      {/* Implementation note. */}
-      {/* Implementation note. */}
-      {/* Implementation note. */}
-      <SidebarProvider
-        className="workspace-shell h-screen"
-        defaultOpen
-        style={
-          electron
-            ? ({ paddingTop: ELECTRON_TITLE_BAR_HEIGHT } as React.CSSProperties)
-            : undefined
-        }
-      >
-        <WorkspaceSidebar />
-        <SidebarInset className="flex min-w-0 flex-col overflow-hidden">
-          <StubResponseBannerHost />
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <Outlet />
+      {embeddedWorkspace ? (
+        <SidebarProvider
+          data-persona-theme={personaThemeId}
+          className={cn(
+            "persona-shell workspace-shell overflow-hidden bg-background",
+            embeddedInWindow ? "h-full" : "h-screen",
+          )}
+          defaultOpen={false}
+          style={
+            electron && embeddedApp && !embeddedInWindow
+              ? ({
+                  paddingTop: ELECTRON_TITLE_BAR_HEIGHT,
+                } as React.CSSProperties)
+              : undefined
+          }
+        >
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <WorkspaceRouteOutlet />
           </div>
-        </SidebarInset>
-      </SidebarProvider>
-      <MoliliLoginDialog />
-      <Suspense fallback={null}>
-        <CommandPalette />
-      </Suspense>
-      <Toaster position="top-center" />
+        </SidebarProvider>
+      ) : (
+        <>
+          <SidebarProvider
+            data-persona-theme={personaThemeId}
+            className={cn(
+              "persona-shell workspace-shell overflow-hidden",
+              embeddedInWindow ? "h-full" : "h-screen",
+            )}
+            defaultOpen
+            style={
+              electron && !embeddedInWindow
+                ? ({
+                    paddingTop: ELECTRON_TITLE_BAR_HEIGHT,
+                  } as React.CSSProperties)
+                : undefined
+            }
+          >
+            <WorkspaceSidebar />
+            <SidebarInset className="relative z-[1] flex min-w-0 flex-col overflow-hidden">
+              <StubResponseBannerHost />
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+                <WorkspaceRouteOutlet />
+              </div>
+            </SidebarInset>
+          </SidebarProvider>
+          <Suspense fallback={null}>
+            <CommandPalette />
+          </Suspense>
+        </>
+      )}
     </Fragment>
   );
 }

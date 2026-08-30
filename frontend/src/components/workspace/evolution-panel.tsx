@@ -25,6 +25,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   forgetMemory,
@@ -106,7 +107,7 @@ export function EvolutionPanel({ status, trigger }: EvolutionPanelProps) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="flex h-[86vh] sm:!max-w-3xl flex-col overflow-hidden p-0">
-        <DialogHeader className="border-b border-border/50 px-5 py-4 pr-12">
+        <DialogHeader className="border-b border-border-default px-5 py-4 pr-12">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <DialogTitle className="flex items-center gap-2 text-lg">
@@ -124,8 +125,8 @@ export function EvolutionPanel({ status, trigger }: EvolutionPanelProps) {
                   className={cn(
                     "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
                     reactFails > 0
-                      ? "border-amber-300/70 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300"
-                      : "border-emerald-300/70 bg-emerald-50 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300",
+                      ? "border-warning/70 bg-warning/5 text-warning dark:border-warning/30 dark:bg-warning/10 dark:text-warning"
+                      : "border-success/70 bg-success/5 text-success dark:border-success/30 dark:bg-success/10 dark:text-success",
                   )}
                 >
                   <CheckCircle2Icon className="size-3" />
@@ -141,8 +142,8 @@ export function EvolutionPanel({ status, trigger }: EvolutionPanelProps) {
               onClick={() => reflectMutation.mutate()}
               disabled={reflectMutation.isPending}
               className={cn(
-                "flex h-9 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium",
-                "bg-foreground text-background transition-opacity hover:opacity-85",
+                "flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-medium",
+                "bg-foreground text-background transition-colors hover:bg-foreground/90",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
             >
@@ -194,7 +195,10 @@ export function EvolutionPanel({ status, trigger }: EvolutionPanelProps) {
               icon={CheckCircle2Icon}
               label={t.evolutionPanel.statReactLabel}
               onClick={() => setActiveView("react")}
-              tooltip={t.evolutionPanel.statReactTooltip(reactTrajs, reactFails)}
+              tooltip={t.evolutionPanel.statReactTooltip(
+                reactTrajs,
+                reactFails,
+              )}
               value={t.evolutionPanel.statReactValue(reactTrajs, reactFails)}
               highlight={reactFails > 0}
             />
@@ -262,21 +266,21 @@ export function EvolutionPanel({ status, trigger }: EvolutionPanelProps) {
           )}
           {(activeView === "history" || activeView === "react") &&
             variants.length > 0 && (
-            <details className="group rounded-lg border border-border/50 bg-muted/15">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium">
-                <span className="inline-flex items-center gap-2">
-                  <SlidersHorizontalIcon className="size-4 text-muted-foreground" />
-                  {t.evolutionPanel.advancedTitle}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {t.evolutionPanel.linesSuffix(variants.length)}
-                </span>
-              </summary>
-              <div className="border-t border-border/40 p-4">
-                <ReActVariantsTable variants={variants} />
-              </div>
-            </details>
-          )}
+              <details className="group rounded-lg border border-border-default bg-muted/15">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium">
+                  <span className="inline-flex items-center gap-2">
+                    <SlidersHorizontalIcon className="size-4 text-muted-foreground" />
+                    {t.evolutionPanel.advancedTitle}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {t.evolutionPanel.linesSuffix(variants.length)}
+                  </span>
+                </summary>
+                <div className="border-t border-border-subtle p-4">
+                  <ReActVariantsTable variants={variants} />
+                </div>
+              </details>
+            )}
         </div>
       </DialogContent>
     </Dialog>
@@ -313,7 +317,7 @@ function StatTab({
         "transition-colors hover:border-border hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
           ? "border-primary/55 bg-primary/10 text-foreground"
-          : "border-border/50 bg-background",
+          : "border-border-default bg-background",
       )}
     >
       <Icon className="size-4 shrink-0 text-muted-foreground" />
@@ -359,7 +363,7 @@ function MetricDetail({
   value: string | number;
 }) {
   return (
-    <section className="rounded-lg border border-border/50 bg-muted/15 p-4">
+    <section className="rounded-lg border border-border-default bg-muted/15 p-4">
       <div className="flex items-start gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-background">
           <Icon className="size-4 text-muted-foreground" />
@@ -407,6 +411,7 @@ function LearningList({
   title: string;
 }) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const learningCopy = {
     failureGeneric: t.evolutionPanel.failureGeneric,
     failureReadBeforeWrite: t.evolutionPanel.failureReadBeforeWrite,
@@ -427,7 +432,7 @@ function LearningList({
         </span>
       </div>
       {lines.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-border/60 bg-muted/20 px-3 py-3 text-sm leading-6 text-muted-foreground">
+        <p className="rounded-lg border border-dashed border-border-default bg-muted/20 px-3 py-3 text-sm leading-6 text-muted-foreground">
           {emptyHint}
         </p>
       ) : (
@@ -436,23 +441,32 @@ function LearningList({
             <li
               key={`${i}-${line.slice(0, 32)}`}
               className={cn(
-                "group flex items-start gap-3 rounded-lg border border-border/50",
-                "bg-muted/15 px-3 py-2 transition-colors hover:border-border/90",
+                "group flex items-start gap-3 rounded-lg border border-border-default",
+                "bg-muted/15 px-3 py-2 transition-colors hover:border-border-strong",
                 isDeletingIndex === i && "opacity-40",
               )}
             >
-              <CheckCircle2Icon className="mt-0.5 size-4 shrink-0 text-emerald-500" />
+              <CheckCircle2Icon className="mt-0.5 size-4 shrink-0 text-success" />
               <div className="min-w-0 flex-1">
                 <div className="break-words text-sm leading-6">
                   {friendlyLearningLine(line, learningCopy)}
                 </div>
-                <div className="sr-only">
-                  {t.evolutionPanel.nextRunImpact}
-                </div>
+                <div className="sr-only">{t.evolutionPanel.nextRunImpact}</div>
               </div>
               <button
                 type="button"
-                onClick={() => onDelete(i)}
+                onClick={async () => {
+                  if (
+                    !(await confirm({
+                      title: t.evolutionPanel.forgetConfirmTitle,
+                      description:
+                        t.evolutionPanel.forgetConfirmDescription,
+                      confirmLabel: t.evolutionPanel.forgetLineButton,
+                    }))
+                  )
+                    return;
+                  onDelete(i);
+                }}
                 disabled={isDeletingIndex !== undefined}
                 className={cn(
                   "flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs",
@@ -469,6 +483,7 @@ function LearningList({
           ))}
         </ul>
       )}
+      {confirmDialog}
     </section>
   );
 }
@@ -480,7 +495,7 @@ function ReActVariantsTable({ variants }: { variants: ReActVariantStat[] }) {
       <div className="mb-2 text-sm font-medium">
         {t.evolutionPanel.reactVariantsTitle}
       </div>
-      <div className="overflow-hidden rounded-md border border-border/40">
+      <div className="overflow-hidden rounded-md border border-border-subtle">
         <table className="w-full text-xs">
           <thead className="bg-muted/50 text-muted-foreground">
             <tr>
@@ -500,7 +515,7 @@ function ReActVariantsTable({ variants }: { variants: ReActVariantStat[] }) {
           </thead>
           <tbody>
             {variants.map((v) => (
-              <tr key={v.name} className="border-t border-border/30">
+              <tr key={v.name} className="border-t border-border-subtle">
                 <td className="px-2 py-2 font-medium">
                   {friendlyVariantName(v.name)}
                 </td>

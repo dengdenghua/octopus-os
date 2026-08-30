@@ -36,8 +36,10 @@ export function PausedTasksBanner({ className }: Props) {
     user_request: b.reasonUserRequest,
     budget_near_limit: b.reasonBudgetNearLimit,
     iteration_near_limit: b.reasonIterationNearLimit,
+    model_spinning: b.reasonExternal,
     external: b.reasonExternal,
     client_disconnect: b.reasonExternal,
+    approval_required: t.toolApproval.requiresApproval,
   } as Record<PauseReason, string>;
   const tasks = useTasks("all");
   const resume = useResumeTask();
@@ -51,9 +53,9 @@ export function PausedTasksBanner({ className }: Props) {
   const [dismissedBudgetDialogs, setDismissedBudgetDialogs] = useState<
     Set<string>
   >(() => new Set());
-  const [extraTokensK, setExtraTokensK] = useState("250");
-  const [extraUsd, setExtraUsd] = useState("5");
-  const [extraIterations, setExtraIterations] = useState("80");
+  const [extraTokensK, setExtraTokensK] = useState("100");
+  const [extraUsd, setExtraUsd] = useState("0");
+  const [extraIterations, setExtraIterations] = useState("15");
 
   // Implementation note.
   // Implementation note.
@@ -63,24 +65,29 @@ export function PausedTasksBanner({ className }: Props) {
     const handler = () => {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
     };
-    window.addEventListener("octopus:task_changed", handler);
-    return () => window.removeEventListener("octopus:task_changed", handler);
+    window.addEventListener("echo:task_changed", handler);
+    return () => window.removeEventListener("echo:task_changed", handler);
   }, [qc]);
 
   // Show both pending (just-requested, waiting for ReAct ack) and paused
   // (fully checkpointed). Pending is usually short-lived but surfacing
   // it avoids a dead-ack UI gap. Dedup by task_id so a request that
   // transitions pending→paused in one poll cycle doesn't flash twice.
-  const pending = tasks.data?.pending ?? [];
-  const paused = tasks.data?.paused ?? [];
-  const active = tasks.data?.active ?? [];
-  const byId = new Map<string, typeof pending[0] & { confirmed: boolean }>();
-  for (const p of pending) byId.set(p.task_id, { ...p, confirmed: false });
-  for (const p of paused) byId.set(p.task_id, { ...p, confirmed: true });
-  // Implementation note.
-  // Implementation note.
-  const activeVisible = active.filter((a) => !byId.has(a.task_id));
-  const entries = [...byId.values()];
+  const { entries, activeVisible } = useMemo(() => {
+    const pending = tasks.data?.pending ?? [];
+    const paused = tasks.data?.paused ?? [];
+    const active = tasks.data?.active ?? [];
+    const byId = new Map<
+      string,
+      (typeof pending)[0] & { confirmed: boolean }
+    >();
+    for (const p of pending) byId.set(p.task_id, { ...p, confirmed: false });
+    for (const p of paused) byId.set(p.task_id, { ...p, confirmed: true });
+    return {
+      entries: [...byId.values()],
+      activeVisible: active.filter((a) => !byId.has(a.task_id)),
+    };
+  }, [tasks.data]);
   const budgetEntries = useMemo(
     () => entries.filter((entry) => entry.reason === "budget_near_limit"),
     [entries],
@@ -99,7 +106,9 @@ export function PausedTasksBanner({ className }: Props) {
   if (entries.length === 0 && activeVisible.length === 0) return null;
 
   async function handlePauseActive(
-    taskId: string, _threadId: string, _agentId: string,
+    taskId: string,
+    _threadId: string,
+    _agentId: string,
   ) {
     try {
       await pause.mutateAsync({ taskId, reason: "user_request" });
@@ -180,33 +189,43 @@ export function PausedTasksBanner({ className }: Props) {
       {activeVisible.map((t) => (
         <div
           key={t.task_id}
-          className="flex items-start gap-3 rounded-lg border border-blue-300/60 bg-blue-50 p-3 shadow-md dark:border-blue-700/40 dark:bg-blue-950/40"
+          className="flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 p-3 shadow-[var(--shadow-sm)]"
         >
-          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-200/70 text-blue-900 dark:bg-blue-800/50 dark:text-blue-200">
+          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-info/20 text-info">
             <LoaderIcon className="h-3.5 w-3.5 animate-spin" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-sm font-medium">
               {b.executing}
               {t.max_iterations > 0 && (
-                <span className="rounded-md border border-border/60 bg-background/60 px-1.5 py-0.5 text-[10px] font-mono font-normal text-muted-foreground">
+                <span className="rounded-md border border-border-default bg-background/60 px-1.5 py-0.5 text-xs font-mono font-normal text-muted-foreground">
                   {t.current_iteration}/{t.max_iterations}
                 </span>
               )}
-              <span className="rounded-md border border-border/60 bg-background/60 px-1.5 py-0.5 text-[10px] font-mono font-normal text-muted-foreground">
+              <span className="rounded-md border border-border-default bg-background/60 px-1.5 py-0.5 text-xs font-mono font-normal text-muted-foreground">
                 {t.task_id.slice(0, 10)}
               </span>
             </div>
-            {(t.max_tokens > 0 || t.max_usd > 0) && (
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
-                {t.max_tokens > 0 && (
+            {(t.tokens_spent > 0 ||
+              (t.context_capacity_tokens ?? 0) > 0 ||
+              t.max_usd > 0) && (
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                {(t.context_capacity_tokens ?? 0) > 0 && (
                   <span>
-                    {b.tokensLabel}{" "}
+                    ctx{" "}
+                    <span className="font-mono">
+                      {((t.current_context_tokens ?? 0) / 1000).toFixed(1)}k /
+                      {((t.context_capacity_tokens ?? 0) / 1000).toFixed(0)}k
+                    </span>
+                    {(t.context_utilization ?? 0) >= 0.7 ? " ⚠" : ""}
+                  </span>
+                )}
+                {t.tokens_spent > 0 && (
+                  <span title={b.tokensLabel}>
+                    Σ{" "}
                     <span className="font-mono">
                       {(t.tokens_spent / 1000).toFixed(1)}k
-                      /{(t.max_tokens / 1000).toFixed(0)}k
                     </span>
-                    {t.tokens_spent / t.max_tokens >= 0.7 ? " ⚠" : ""}
                   </span>
                 )}
                 {t.max_usd > 0 && (
@@ -225,7 +244,7 @@ export function PausedTasksBanner({ className }: Props) {
               </div>
             )}
             {t.thread_id && (
-              <div className="mt-0.5 text-[10px] text-muted-foreground font-mono truncate">
+              <div className="mt-0.5 text-xs text-muted-foreground font-mono truncate">
                 {b.threadLabel} {t.thread_id.slice(0, 16)}…
               </div>
             )}
@@ -233,7 +252,7 @@ export function PausedTasksBanner({ className }: Props) {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 gap-1 text-[12px]"
+                className="h-7 gap-1 text-xs"
                 onClick={() =>
                   handlePauseActive(t.task_id, t.thread_id, t.agent_id)
                 }
@@ -245,7 +264,7 @@ export function PausedTasksBanner({ className }: Props) {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 gap-1 text-[12px] text-muted-foreground"
+                className="h-7 gap-1 text-xs text-muted-foreground"
                 onClick={() => remove.mutate({ taskId: t.task_id })}
                 disabled={remove.isPending}
               >
@@ -258,15 +277,15 @@ export function PausedTasksBanner({ className }: Props) {
       {entries.map((req) => (
         <div
           key={req.task_id}
-          className="flex items-start gap-3 rounded-lg border border-amber-300/60 bg-amber-50 p-3 shadow-md dark:border-amber-700/40 dark:bg-amber-950/40"
+          className="flex items-start gap-3 rounded-lg border border-warning/60 bg-warning/5 p-3 shadow-[var(--shadow-sm)] dark:border-warning/40"
         >
-          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-200/70 text-amber-900 dark:bg-amber-800/50 dark:text-amber-200">
+          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-warning/15 text-warning dark:bg-warning/50">
             <PauseIcon className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-sm font-medium">
               {req.confirmed ? b.paused : b.pendingPause}
-              <span className="rounded-md border border-border/60 bg-background/60 px-1.5 py-0.5 text-[10px] font-mono font-normal text-muted-foreground">
+              <span className="rounded-md border border-border-default bg-background/60 px-1.5 py-0.5 text-xs font-mono font-normal text-muted-foreground">
                 {req.task_id.slice(0, 10)}
               </span>
             </div>
@@ -275,14 +294,14 @@ export function PausedTasksBanner({ className }: Props) {
               {req.note ? ` · ${req.note}` : ""}
             </div>
             {req.thread_id ? (
-              <div className="mt-0.5 text-[10px] text-muted-foreground font-mono truncate">
+              <div className="mt-0.5 text-xs text-muted-foreground font-mono truncate">
                 {b.threadLabel} {req.thread_id.slice(0, 16)}…
               </div>
             ) : null}
             <div className="mt-2 flex gap-2">
               <Button
                 size="sm"
-                className="h-7 gap-1 text-[12px]"
+                className="h-7 gap-1 text-xs"
                 onClick={() =>
                   req.reason === "budget_near_limit"
                     ? setBudgetDialogTaskId(req.task_id)
@@ -296,7 +315,7 @@ export function PausedTasksBanner({ className }: Props) {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 gap-1 text-[12px] text-muted-foreground"
+                className="h-7 gap-1 text-xs text-muted-foreground"
                 onClick={() => handleClear(req.task_id)}
                 disabled={remove.isPending}
                 title={b.clearTitle}
@@ -321,8 +340,8 @@ export function PausedTasksBanner({ className }: Props) {
           </DialogHeader>
           {budgetDialogTask ? (
             <div className="space-y-3">
-              <div className="rounded-md border border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
-                <div className="font-mono text-[11px]">
+              <div className="rounded-md border border-border-default bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+                <div className="font-mono text-xs">
                   {budgetDialogTask.task_id.slice(0, 10)}
                 </div>
                 {budgetDialogTask.note ? (
@@ -352,9 +371,7 @@ export function PausedTasksBanner({ className }: Props) {
                   <span>{b.extraIterationsLabel}</span>
                   <Input
                     value={extraIterations}
-                    onChange={(event) =>
-                      setExtraIterations(event.target.value)
-                    }
+                    onChange={(event) => setExtraIterations(event.target.value)}
                     inputMode="numeric"
                     className="h-8"
                   />

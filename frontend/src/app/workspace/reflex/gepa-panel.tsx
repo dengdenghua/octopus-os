@@ -23,7 +23,6 @@
  */
 
 import { swallow } from "@/core/utils/log";
-import { getBackendBaseURL } from "@/core/config";
 import {
   CheckCircleIcon,
   DownloadIcon,
@@ -44,6 +43,8 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import type { Translations } from "@/core/i18n/locales/types";
 
+import { reflexFetch } from "./api";
+
 type AppliedResp = {
   applied: boolean;
   path?: string;
@@ -62,6 +63,20 @@ type AddendumEntry = {
   preview: string;
 };
 type AddendumsResp = { addendums: AddendumEntry[] };
+
+type ApplyResp = {
+  ok: boolean;
+  error: string;
+  scope: string;
+  size: number;
+  path: string;
+};
+
+type DeleteAddendumResp = {
+  ok: boolean;
+  error: string;
+  deleted: boolean;
+};
 
 type CanaryEntry = {
   skill_name: string;
@@ -202,7 +217,7 @@ type RunResp = {
   elapsed_s?: number;
   front_size?: number;
   ts?: number;
-  recipe_id?: string | null;   // echoed from the run query param
+  recipe_id?: string | null; // echoed from the run query param
   best?: Candidate;
   history?: HistoryEntry[];
   winner_proposal?: WinnerProposal | null;
@@ -313,24 +328,32 @@ export function GepaPanel() {
     total: 0,
   });
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [appliedLoading, setAppliedLoading] = useState(true);
+  const [appliedLoadFailed, setAppliedLoadFailed] = useState(false);
+  const [canariesLoaded, setCanariesLoaded] = useState(false);
+  const [canaryLoadFailed, setCanaryLoadFailed] = useState(false);
 
   const loadApplied = useCallback(async () => {
+    setAppliedLoading(true);
     try {
-      const r: AppliedResp = await fetch(
-        `${getBackendBaseURL()}/api/evolution/forge/applied`,
-      ).then((r) => r.json());
+      const r: AppliedResp = await reflexFetch<AppliedResp>(
+        "/api/evolution/forge/applied",
+      );
       setApplied(r);
+      setAppliedLoadFailed(false);
     } catch (e) {
       swallow(e);
-      setStatusMsg(e instanceof Error ? e.message : t.recipeForge.statusFetchFailed);
+      setAppliedLoadFailed(true);
+    } finally {
+      setAppliedLoading(false);
     }
-  }, [t]);
+  }, []);
 
   const loadHistory = useCallback(async () => {
     try {
-      const r: RunsResp = await fetch(
-        `${getBackendBaseURL()}/api/evolution/forge/runs?limit=20`,
-      ).then((r) => r.json());
+      const r: RunsResp = await reflexFetch<RunsResp>(
+        "/api/evolution/forge/runs?limit=20",
+      );
       setHistory(r.runs ?? []);
     } catch (e) {
       swallow(e);
@@ -341,26 +364,31 @@ export function GepaPanel() {
 
   const loadAddendums = useCallback(async () => {
     try {
-      const r: AddendumsResp = await fetch(
-        `${getBackendBaseURL()}/api/evolution/forge/addendums`,
-      ).then((r) => r.json());
+      const r: AddendumsResp = await reflexFetch<AddendumsResp>(
+        "/api/evolution/forge/addendums",
+      );
       setAddendums(r.addendums ?? []);
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   }, []);
 
   const loadCanaries = useCallback(async () => {
     try {
-      const r: CanaryResp = await fetch(
-        `${getBackendBaseURL()}/api/evolution/canary?include_all=true&limit=20`,
-      ).then((r) => r.json());
+      const r: CanaryResp = await reflexFetch<CanaryResp>(
+        "/api/evolution/canary?include_all=true&limit=20",
+      );
       setCanaries(r.canaries ?? []);
       setCanarySummary({
         active: r.active_count ?? 0,
         rolledBack: r.rolled_back_count ?? 0,
-        total: r.total ?? (r.canaries?.length ?? 0),
+        total: r.total ?? r.canaries?.length ?? 0,
       });
+      setCanariesLoaded(true);
+      setCanaryLoadFailed(false);
     } catch (e) {
       swallow(e);
+      setCanaryLoadFailed(true);
     }
   }, []);
 
@@ -376,16 +404,18 @@ export function GepaPanel() {
     setStatusMsg(t.recipeForge.statusRunInProgress(nIter * 2, nIter * 12));
     setRun(null);
     try {
-      const r: RunResp = await fetch(
+      const r: RunResp = await reflexFetch<RunResp>(
         `/api/evolution/forge/run?n_iter=${nIter}&eval_tasks=${evalTasks}&optimizer_backend=${encodeURIComponent(optimizerBackend)}`,
         { method: "POST" },
-      ).then((r) => r.json());
+      );
       setRun(r);
       if (!r.ok) {
         setStatusMsg(t.recipeForge.statusRunError(r.error ?? "unknown"));
       } else if ((r.iterations_run ?? 0) === 0) {
         setStatusMsg(
-          t.recipeForge.statusNoRun(r.history?.[0]?.reason ?? "insufficient data"),
+          t.recipeForge.statusNoRun(
+            r.history?.[0]?.reason ?? "insufficient data",
+          ),
         );
       } else {
         setStatusMsg(
@@ -400,7 +430,9 @@ export function GepaPanel() {
       void loadCanaries();
     } catch (e) {
       swallow(e);
-      setStatusMsg(e instanceof Error ? e.message : t.recipeForge.statusRunFailed);
+      setStatusMsg(
+        e instanceof Error ? e.message : t.recipeForge.statusRunFailed,
+      );
     } finally {
       setRunning(false);
     }
@@ -410,12 +442,14 @@ export function GepaPanel() {
     setAutoRunning(true);
     setStatusMsg(t.recipeForge.statusAutoProposeInProgress(nIter * 12));
     try {
-      const r: AutoProposeResp = await fetch(
+      const r: AutoProposeResp = await reflexFetch<AutoProposeResp>(
         `/api/evolution/forge/auto-propose?n_iter=${nIter}&eval_tasks=${evalTasks}`,
         { method: "POST" },
-      ).then((r) => r.json());
+      );
       if (!r.ok) {
-        setStatusMsg(t.recipeForge.statusAutoProposeError(r.error ?? "unknown"));
+        setStatusMsg(
+          t.recipeForge.statusAutoProposeError(r.error ?? "unknown"),
+        );
       } else if ((r.proposals_generated ?? 0) === 0) {
         const skip = r.results?.[0];
         setStatusMsg(
@@ -432,7 +466,11 @@ export function GepaPanel() {
       void loadCanaries();
     } catch (e) {
       swallow(e);
-      setStatusMsg(e instanceof Error ? e.message : t.recipeForge.statusDeleteFailedGeneric);
+      setStatusMsg(
+        e instanceof Error
+          ? e.message
+          : t.recipeForge.statusDeleteFailedGeneric,
+      );
     } finally {
       setAutoRunning(false);
     }
@@ -454,7 +492,7 @@ export function GepaPanel() {
         : t.recipeForge.globalScope;
       setStatusMsg(t.recipeForge.statusApplying(c.candidate_id, where));
       try {
-        const r = await fetch(`${getBackendBaseURL()}/api/evolution/forge/apply`, {
+        const r = await reflexFetch<ApplyResp>("/api/evolution/forge/apply", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -466,21 +504,21 @@ export function GepaPanel() {
             target_recipe_id: target ?? undefined,
             winner_proposal: opts?.winnerProposal ?? undefined,
           }),
-        }).then((r) => r.json());
+        });
         if (!r.ok) {
           setStatusMsg(t.recipeForge.statusApplyFailed(r.error));
           return;
         }
-        setStatusMsg(
-          t.recipeForge.statusApplied(r.scope, r.size, r.path),
-        );
+        setStatusMsg(t.recipeForge.statusApplied(r.scope, r.size, r.path));
         void loadApplied();
         void loadHistory();
         void loadAddendums();
         void loadCanaries();
       } catch (e) {
         swallow(e);
-        setStatusMsg(e instanceof Error ? e.message : t.recipeForge.statusApplyFailed(""));
+        setStatusMsg(
+          e instanceof Error ? e.message : t.recipeForge.statusApplyFailed(""),
+        );
       }
     },
     [loadApplied, loadHistory, loadAddendums, loadCanaries, t],
@@ -510,23 +548,29 @@ export function GepaPanel() {
       if (!id) return;
       setStatusMsg(t.recipeForge.statusDeleteAddendum);
       try {
-        const r = await fetch(
+        const r = await reflexFetch<DeleteAddendumResp>(
           `/api/evolution/forge/addendums/${encodeURIComponent(id)}`,
           { method: "DELETE" },
-        ).then((r) => r.json());
+        );
         if (!r.ok) {
           setStatusMsg(t.recipeForge.statusDeleteFailed(r.error));
           return;
         }
         setStatusMsg(
-          r.deleted ? t.recipeForge.statusDeleted(entry.path) : t.recipeForge.statusNothingToDelete,
+          r.deleted
+            ? t.recipeForge.statusDeleted(entry.path)
+            : t.recipeForge.statusNothingToDelete,
         );
         void loadApplied();
         void loadAddendums();
         void loadCanaries();
       } catch (e) {
         swallow(e);
-        setStatusMsg(e instanceof Error ? e.message : t.recipeForge.statusDeleteFailedGeneric);
+        setStatusMsg(
+          e instanceof Error
+            ? e.message
+            : t.recipeForge.statusDeleteFailedGeneric,
+        );
       }
     },
     [loadApplied, loadAddendums, loadCanaries, t],
@@ -534,65 +578,89 @@ export function GepaPanel() {
 
   const clearApplied = useCallback(async () => {
     setStatusMsg(
-      t.recipeForge.clearAddendumPath(applied?.path ?? "data/forge_planner_addendum.md"),
+      t.recipeForge.clearAddendumPath(
+        applied?.path ?? "data/forge_planner_addendum.md",
+      ),
     );
   }, [applied, t]);
 
   return (
-    <Card className="workspace-panel rounded-[1.5rem] border-white/40 shadow-none dark:border-white/10">
+    <Card className="workspace-panel border-white/40 shadow-none dark:border-white/10">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <Sparkles className="size-4" />
           {t.recipeForge.panelTitle}
-          <Badge variant="outline" className="text-[10px] font-normal">
+          <Badge variant="outline" className="text-xs font-normal">
             {t.recipeForge.reflectionPathBadge}
           </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         {/* Currently applied */}
-        <div className="rounded-xl border border-border/60 bg-background/60 px-4 py-3">
+        <div className="rounded-lg border border-border-default bg-background/60 px-4 py-3">
           <div className="flex items-center justify-between">
-              <div className="font-medium">{t.recipeForge.addendumAppliedTitle}</div>
-              {applied?.applied ? (
-                <Badge className="bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/15">
-                  <CheckCircleIcon className="mr-1 size-3" />
-                  {t.recipeForge.addendumLive}
-                </Badge>
-              ) : (
-                <Badge variant="outline">{t.recipeForge.addendumNone}</Badge>
-              )}
+            <div className="font-medium">
+              {t.recipeForge.addendumAppliedTitle}
             </div>
-            {applied?.applied && (
-              <>
-                <div className="mt-2 text-xs text-muted-foreground">
-                  {applied.path} · {applied.size
-                    ? t.recipeForge.addendumBytes(applied.size)
-                    : "?"} ·{" "}
-                  {applied.mtime
-                    ? new Date(applied.mtime * 1000).toLocaleString()
-                    : "?"}
-                </div>
-                {applied.content_preview && (
-                  <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-background/60 p-2 font-mono text-[11px] text-muted-foreground">
-                    {applied.content_preview}
-                  </pre>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2 h-7 text-xs"
-                  onClick={clearApplied}
-                >
-                  <XCircleIcon className="mr-1 size-3" />
-                  {t.recipeForge.addendumClearButton}
-                </Button>
-              </>
+            {appliedLoading && !applied ? (
+              <Badge variant="outline">{t.recipeForge.stateLoading}</Badge>
+            ) : appliedLoadFailed && !applied ? (
+              <Badge variant="outline">{t.recipeForge.stateUnavailable}</Badge>
+            ) : applied?.applied ? (
+              <Badge className="bg-success/15 text-success hover:bg-success/15">
+                <CheckCircleIcon className="mr-1 size-3" />
+                {t.recipeForge.addendumLive}
+              </Badge>
+            ) : (
+              <Badge variant="outline">{t.recipeForge.addendumNone}</Badge>
             )}
+          </div>
+          {appliedLoadFailed && (
+            <div
+              role="alert"
+              className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            >
+              <span>{t.recipeForge.addendumUnavailable}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => void loadApplied()}
+              >
+                {t.reflexPage.retryButton}
+              </Button>
+            </div>
+          )}
+          {applied?.applied && (
+            <>
+              <div className="mt-2 text-xs text-muted-foreground">
+                {applied.path} ·{" "}
+                {applied.size ? t.recipeForge.addendumBytes(applied.size) : "?"}{" "}
+                ·{" "}
+                {applied.mtime
+                  ? new Date(applied.mtime * 1000).toLocaleString()
+                  : "?"}
+              </div>
+              {applied.content_preview && (
+                <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-background/60 p-2 font-mono text-xs text-muted-foreground">
+                  {applied.content_preview}
+                </pre>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2 h-7 text-xs"
+                onClick={clearApplied}
+              >
+                <XCircleIcon className="mr-1 size-3" />
+                {t.recipeForge.addendumClearButton}
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Run controls */}
-        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border/60 bg-background/60 px-4 py-3">
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border-default bg-background/60 px-4 py-3">
           <NumberKnob
             label={t.recipeForge.knobIterations}
             value={nIter}
@@ -607,10 +675,10 @@ export function GepaPanel() {
             min={1}
             max={10}
           />
-          <label className="flex min-w-[180px] flex-col gap-1 text-[11px] text-muted-foreground">
+          <label className="flex min-w-[180px] flex-col gap-1 text-xs text-muted-foreground">
             <span>Optimizer</span>
             <select
-              className="h-9 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground"
+              className="h-9 rounded-md border border-border-default bg-background px-2 text-xs text-foreground"
               value={optimizerBackend}
               onChange={(event) => setOptimizerBackend(event.target.value)}
             >
@@ -628,7 +696,9 @@ export function GepaPanel() {
             title={t.recipeForge.autoProposeTitle}
           >
             <Wand2Icon className="mr-2 size-4" />
-            {autoRunning ? t.recipeForge.autoProposeRunning : t.recipeForge.autoProposeButton}
+            {autoRunning
+              ? t.recipeForge.autoProposeRunning
+              : t.recipeForge.autoProposeButton}
           </Button>
           <Button
             onClick={triggerRun}
@@ -636,7 +706,9 @@ export function GepaPanel() {
             size="sm"
           >
             <PlayIcon className="mr-2 size-4" />
-            {running ? t.recipeForge.runForgeRunning : t.recipeForge.runForgeButton}
+            {running
+              ? t.recipeForge.runForgeRunning
+              : t.recipeForge.runForgeButton}
           </Button>
         </div>
 
@@ -649,17 +721,18 @@ export function GepaPanel() {
             and skipped runs still tell the operator WHY they were
             skipped via the history list). */}
         {run && run.ok && (
-          <div className="space-y-3 rounded-xl border border-border/60 bg-background/60 px-4 py-3">
+          <div className="space-y-3 rounded-lg border border-border-default bg-background/60 px-4 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 font-medium">
-                <TrendingUpIcon className="size-4 text-emerald-400" />
+                <TrendingUpIcon className="size-4 text-success" />
                 {t.recipeForge.paretoFrontTitle(run.front_size ?? 0)}
               </div>
               <span className="text-xs text-muted-foreground">
-                {t.recipeForge.iterCount(run.iterations_run ?? 0)} · {t.recipeForge.elapsedSeconds(run.elapsed_s ?? 0)}
+                {t.recipeForge.iterCount(run.iterations_run ?? 0)} ·{" "}
+                {t.recipeForge.elapsedSeconds(run.elapsed_s ?? 0)}
               </span>
             </div>
-            <Badge className="w-fit bg-slate-500/15 text-[10px] text-slate-300 hover:bg-slate-500/15">
+            <Badge className="w-fit bg-muted-foreground/15 text-xs text-muted-foreground hover:bg-muted-foreground/15">
               {run.optimizer_backend || "native_gepa"}
             </Badge>
 
@@ -690,7 +763,7 @@ export function GepaPanel() {
               <summary className="cursor-pointer text-muted-foreground">
                 {t.recipeForge.thisRunHistory(run.history?.length ?? 0)}
               </summary>
-              <div className="mt-2 max-h-64 space-y-1 overflow-y-auto font-mono text-[11px]">
+              <div className="mt-2 max-h-64 space-y-1 overflow-y-auto font-mono text-xs">
                 {(run.history ?? []).map((h, i) => (
                   <HistoryRow key={i} entry={h} t={t} />
                 ))}
@@ -701,7 +774,7 @@ export function GepaPanel() {
 
         {/* Active addendums · global + per-recipe map */}
         {addendums.length > 0 && (
-          <div className="rounded-xl border border-border/60 bg-background/60 px-4 py-3">
+          <div className="rounded-lg border border-border-default bg-background/60 px-4 py-3">
             <div className="mb-2 flex items-center justify-between">
               <div className="font-medium">
                 {t.recipeForge.addendumsByScope(addendums.length)}
@@ -714,10 +787,7 @@ export function GepaPanel() {
                   asChild
                   title={t.recipeForge.addendumCsvTooltip}
                 >
-                  <a
-                    href="/api/evolution/forge/addendums.csv"
-                    download
-                  >
+                  <a href="/api/evolution/forge/addendums.csv" download>
                     <DownloadIcon className="mr-1 size-3" />
                     CSV
                   </a>
@@ -742,14 +812,14 @@ export function GepaPanel() {
                 />
               ))}
             </div>
-            <div className="mt-2 text-[10px] text-muted-foreground">
+            <div className="mt-2 text-xs text-muted-foreground">
               {t.recipeForge.addendumGlobalHint}
             </div>
           </div>
         )}
 
         {/* Canary states · active / full / rolled back */}
-        <div className="rounded-xl border border-border/60 bg-background/60 px-4 py-3">
+        <div className="rounded-lg border border-border-default bg-background/60 px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2 font-medium">
               <ShieldCheckIcon className="size-4" />
@@ -766,27 +836,47 @@ export function GepaPanel() {
               </Button>
             </div>
           </div>
-          <div className="mb-2 text-[10px] text-muted-foreground">
-            {t.recipeForge.canaryCounts(
-              canarySummary.active,
-              canarySummary.rolledBack,
-              canarySummary.total,
-            )}
+          {canaryLoadFailed && (
+            <div
+              role="alert"
+              className="mb-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive"
+            >
+              {t.recipeForge.canaryUnavailable}
+            </div>
+          )}
+          <div className="mb-2 text-xs text-muted-foreground">
+            {!canariesLoaded && canaryLoadFailed
+              ? t.recipeForge.canaryCountsUnavailable
+              : !canariesLoaded
+                ? t.recipeForge.stateLoading
+                : t.recipeForge.canaryCounts(
+                    canarySummary.active,
+                    canarySummary.rolledBack,
+                    canarySummary.total,
+                  )}
           </div>
           <div className="space-y-2">
-            {canaries.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border/50 px-3 py-2 text-xs text-muted-foreground">
+            {!canariesLoaded ? (
+              <div className="rounded-md border border-dashed border-border-default px-3 py-2 text-xs text-muted-foreground">
+                {canaryLoadFailed
+                  ? t.recipeForge.canaryUnavailable
+                  : t.recipeForge.stateLoading}
+              </div>
+            ) : canaries.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border-default px-3 py-2 text-xs text-muted-foreground">
                 {t.recipeForge.canaryEmpty}
               </div>
             ) : (
-              canaries.map((c) => <CanaryRow key={c.skill_name} entry={c} t={t} />)
+              canaries.map((c) => (
+                <CanaryRow key={c.skill_name} entry={c} t={t} />
+              ))
             )}
           </div>
         </div>
 
         {/* Past runs · cross-session history of all Forge runs */}
         {history.length > 0 && (
-          <div className="rounded-xl border border-border/60 bg-background/60 px-4 py-3">
+          <div className="rounded-lg border border-border-default bg-background/60 px-4 py-3">
             <div className="mb-2 flex items-center justify-between">
               <div className="flex items-center gap-2 font-medium">
                 <HistoryIcon className="size-4" />
@@ -823,9 +913,7 @@ export function GepaPanel() {
                   canary={findRunCanary(h, canaries)}
                   onApplyGlobal={() => applyFromHistory(h, "global")}
                   onApplyRecipe={
-                    h.recipe_id
-                      ? () => applyFromHistory(h, "per_recipe")
-                      : null
+                    h.recipe_id ? () => applyFromHistory(h, "per_recipe") : null
                   }
                   t={t}
                 />
@@ -839,7 +927,13 @@ export function GepaPanel() {
 }
 
 /* Implementation note. */
-function ConvergenceChart({ history, t }: { history: HistoryEntry[]; t: Translations }) {
+function ConvergenceChart({
+  history,
+  t,
+}: {
+  history: HistoryEntry[];
+  t: Translations;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   // Project history into (iter, child_avg, improved) triples,
@@ -924,7 +1018,7 @@ function ConvergenceChart({ history, t }: { history: HistoryEntry[]; t: Translat
       pad.t + innerH - Math.max(0, Math.min(1, s)) * innerH;
 
     // Best-so-far step line · monotone non-decreasing.
-    ctx.strokeStyle = "#34d399";  // emerald
+    ctx.strokeStyle = "#34d399"; // emerald
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     let bestSoFar = -Infinity;
@@ -946,9 +1040,7 @@ function ConvergenceChart({ history, t }: { history: HistoryEntry[]; t: Translat
 
     // Per-iter dots · green = improved front, gray = dominated.
     for (const p of points) {
-      ctx.fillStyle = p.improved
-        ? "#34d399"
-        : "rgba(148, 163, 184, 0.5)";
+      ctx.fillStyle = p.improved ? "#34d399" : "rgba(148, 163, 184, 0.5)";
       ctx.beginPath();
       ctx.arc(xFor(p.iter), yFor(p.score), 3, 0, Math.PI * 2);
       ctx.fill();
@@ -958,16 +1050,12 @@ function ConvergenceChart({ history, t }: { history: HistoryEntry[]; t: Translat
     ctx.fillStyle = "rgba(148, 163, 184, 0.7)";
     ctx.textBaseline = "top";
     ctx.textAlign = "right";
-    ctx.fillText(
-      `iter ${maxIter}`,
-      pad.l + innerW,
-      pad.t + innerH + 4,
-    );
+    ctx.fillText(`iter ${maxIter}`, pad.l + innerW, pad.t + innerH + 4);
   }, [points, t.recipeForge.noIterationsYet]);
 
   return (
-    <div className="rounded-md border border-border/40 bg-background/40 p-2">
-      <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+    <div className="rounded-md border border-border-subtle bg-background/40 p-2">
+      <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
         <TrendingUpIcon className="size-3" />
         Convergence · best-so-far (line) + per-iter score (dots)
       </div>
@@ -979,10 +1067,10 @@ function ConvergenceChart({ history, t }: { history: HistoryEntry[]; t: Translat
 function CanaryRow({ entry, t }: { entry: CanaryEntry; t: Translations }) {
   const phaseColor =
     entry.phase === "rolled_back"
-      ? "bg-rose-500/15 text-rose-300"
+      ? "bg-destructive/15 text-destructive"
       : entry.phase === "full"
-        ? "bg-emerald-500/15 text-emerald-300"
-        : "bg-amber-500/15 text-amber-300";
+        ? "bg-success/15 text-success"
+        : "bg-warning/15 text-warning";
   const dt = entry.entered_ts ? new Date(entry.entered_ts) : null;
   const shortSkill =
     entry.skill_name.length > 72
@@ -993,18 +1081,18 @@ function CanaryRow({ entry, t }: { entry: CanaryEntry; t: Translations }) {
       className={cn(
         "rounded-md border px-3 py-2 text-xs",
         entry.phase === "rolled_back"
-          ? "border-rose-500/30 bg-rose-500/5"
-          : "border-border/50 bg-background/40",
+          ? "border-destructive/30 bg-destructive/5"
+          : "border-border-default bg-background/40",
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Badge className={cn("text-[10px]", phaseColor, "hover:" + phaseColor)}>
+        <Badge className={cn("text-xs", phaseColor, "hover:" + phaseColor)}>
           {t.recipeForge.canaryPhase(entry.phase)}
         </Badge>
-        <span className="min-w-0 max-w-full truncate font-mono text-[11px] text-muted-foreground">
+        <span className="min-w-0 max-w-full truncate font-mono text-xs text-muted-foreground">
           {shortSkill}
         </span>
-        <span className="font-mono text-[11px] text-emerald-400">
+        <span className="font-mono text-xs text-success">
           {t.recipeForge.canaryRate(entry.current_rate ?? 0)}
         </span>
         <span className="text-muted-foreground">
@@ -1018,7 +1106,7 @@ function CanaryRow({ entry, t }: { entry: CanaryEntry; t: Translations }) {
           <span className="text-muted-foreground">{dt.toLocaleString()}</span>
         )}
       </div>
-      <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+      <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
         {entry.candidate_id && (
           <span>{t.recipeForge.canaryCandidate(entry.candidate_id)}</span>
         )}
@@ -1032,7 +1120,7 @@ function CanaryRow({ entry, t }: { entry: CanaryEntry; t: Translations }) {
           <span>{t.recipeForge.bestAvg(entry.avg_score)}</span>
         )}
         {entry.last_rollback_reason && (
-          <span className="basis-full text-rose-300">
+          <span className="basis-full text-destructive">
             {t.recipeForge.canaryRollbackReason(entry.last_rollback_reason)}
           </span>
         )}
@@ -1041,7 +1129,10 @@ function CanaryRow({ entry, t }: { entry: CanaryEntry; t: Translations }) {
   );
 }
 
-function findRunCanary(run: StoredRun, canaries: CanaryEntry[]): CanaryEntry | null {
+function findRunCanary(
+  run: StoredRun,
+  canaries: CanaryEntry[],
+): CanaryEntry | null {
   const recipeKey = run.recipe_id ?? null;
   const candidateKey = run.best_candidate_id ?? null;
   if (!candidateKey) return null;
@@ -1051,7 +1142,9 @@ function findRunCanary(run: StoredRun, canaries: CanaryEntry[]): CanaryEntry | n
       (c.candidate_id ?? null) === candidateKey,
   );
   if (exact) return exact;
-  return canaries.find((c) => (c.candidate_id ?? null) === candidateKey) ?? null;
+  return (
+    canaries.find((c) => (c.candidate_id ?? null) === candidateKey) ?? null
+  );
 }
 
 function PastRunRow({
@@ -1069,8 +1162,8 @@ function PastRunRow({
 }) {
   const triggerColor =
     run.trigger === "auto_propose"
-      ? "bg-violet-500/15 text-violet-300"
-      : "bg-cyan-500/15 text-cyan-300";
+      ? "bg-chart-1/15 text-chart-1"
+      : "bg-info/15 text-info";
   const dt = new Date(run.ts * 1000);
   const canApply = !!(run.best_candidate_id && run.best_prompt && !run.applied);
   const lifecyclePhase =
@@ -1081,11 +1174,11 @@ function PastRunRow({
     null;
   const lifecycleColor =
     lifecyclePhase === "rolled_back"
-      ? "bg-rose-500/15 text-rose-300"
+      ? "bg-destructive/15 text-destructive"
       : lifecyclePhase === "full" || lifecyclePhase === "applied"
-        ? "bg-emerald-500/15 text-emerald-300"
+        ? "bg-success/15 text-success"
         : lifecyclePhase
-          ? "bg-amber-500/15 text-amber-300"
+          ? "bg-warning/15 text-warning"
           : "";
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -1116,9 +1209,9 @@ function PastRunRow({
     if (detail || detailLoading) return;
     setDetailLoading(true);
     try {
-      const r: ProposalDetailResp = await fetch(
-        `${getBackendBaseURL()}/api/evolution/ledger/${encodeURIComponent(run.winner_proposal_id)}`,
-      ).then((res) => res.json());
+      const r: ProposalDetailResp = await reflexFetch<ProposalDetailResp>(
+        `/api/evolution/ledger/${encodeURIComponent(run.winner_proposal_id)}`,
+      );
       setDetail(r);
       setDetailOpen(true);
     } catch (e) {
@@ -1132,48 +1225,47 @@ function PastRunRow({
       className={cn(
         "rounded-md border px-3 py-2 text-xs",
         lifecyclePhase === "rolled_back"
-          ? "border-rose-500/30 bg-rose-500/5"
+          ? "border-destructive/30 bg-destructive/5"
           : run.applied
-            ? "border-emerald-500/30 bg-emerald-500/5"
-            : "border-border/50",
+            ? "border-success/30 bg-success/5"
+            : "border-border-default",
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          className={cn("text-[10px]", triggerColor, "hover:" + triggerColor)}
-        >
+        <Badge className={cn("text-xs", triggerColor, "hover:" + triggerColor)}>
           {run.trigger === "auto_propose"
             ? t.recipeForge.triggerAutoPropose
             : t.recipeForge.triggerManual}
         </Badge>
         {run.recipe_id && (
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-xs text-muted-foreground">
             {t.recipeForge.recipePrefix}: {run.recipe_id.slice(0, 12)}
           </span>
         )}
-        <Badge className="bg-slate-500/15 text-[10px] text-slate-300 hover:bg-slate-500/15">
+        <Badge className="bg-muted-foreground/15 text-xs text-muted-foreground hover:bg-muted-foreground/15">
           {run.optimizer_backend || "native_gepa"}
         </Badge>
         {lifecyclePhase && (
-          <Badge className={cn("text-[10px]", lifecycleColor, "hover:" + lifecycleColor)}>
+          <Badge
+            className={cn("text-xs", lifecycleColor, "hover:" + lifecycleColor)}
+          >
             {t.recipeForge.canaryPhase(lifecyclePhase)}
           </Badge>
         )}
         <span className="text-muted-foreground">{dt.toLocaleString()}</span>
         <span className="text-muted-foreground">
-          · {t.recipeForge.iterCount(run.iterations_run)} · {t.recipeForge.elapsedSeconds(run.elapsed_s)}
+          · {t.recipeForge.iterCount(run.iterations_run)} ·{" "}
+          {t.recipeForge.elapsedSeconds(run.elapsed_s)}
         </span>
-        <span className="text-muted-foreground">
-          · front {run.front_size}
-        </span>
+        <span className="text-muted-foreground">· front {run.front_size}</span>
         {run.best_avg_score !== null && (
-          <span className="font-mono text-emerald-400">
+          <span className="font-mono text-success">
             {t.recipeForge.bestAvg(run.best_avg_score)}
           </span>
         )}
         <div className="flex-1" />
         {run.applied && (
-          <Badge className="bg-emerald-500/15 text-[10px] text-emerald-300 hover:bg-emerald-500/15">
+          <Badge className="bg-success/15 text-xs text-success hover:bg-success/15">
             <CheckCircleIcon className="mr-1 size-3" />
             {t.recipeForge.addendumLive}
           </Badge>
@@ -1182,7 +1274,7 @@ function PastRunRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 px-2 text-[10px]"
+            className="h-6 px-2 text-xs"
             onClick={() => {
               setDetailOpen((v) => !v);
               void loadDetail();
@@ -1198,7 +1290,7 @@ function PastRunRow({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-6 text-[11px]"
+                className="h-6 text-xs"
                 onClick={onApplyRecipe}
                 title={`${t.recipeForge.recipePrefix} ${run.recipe_id}`}
               >
@@ -1208,7 +1300,7 @@ function PastRunRow({
             <Button
               size="sm"
               variant="ghost"
-              className="h-6 text-[11px]"
+              className="h-6 text-xs"
               onClick={onApplyGlobal}
               title={t.recipeForge.applyGlobalButton}
             >
@@ -1218,28 +1310,35 @@ function PastRunRow({
         )}
       </div>
       {run.winner_rollback_reason && (
-        <div className="mt-1 text-[10px] text-rose-300">
+        <div className="mt-1 text-xs text-destructive">
           {t.recipeForge.canaryRollbackReason(run.winner_rollback_reason)}
         </div>
       )}
-      {(nativeEvaluation || replayCandidate || sandboxReplayCandidate || turnReplayCandidate || llmReplayCandidate) && (
-        <div className="mt-2 rounded-md border border-border/40 bg-background/40 px-2 py-1.5 text-[10px] text-muted-foreground">
+      {(nativeEvaluation ||
+        replayCandidate ||
+        sandboxReplayCandidate ||
+        turnReplayCandidate ||
+        llmReplayCandidate) && (
+        <div className="mt-2 rounded-md border border-border-subtle bg-background/40 px-2 py-1.5 text-xs text-muted-foreground">
           <button
             type="button"
             className="flex w-full items-center gap-2 text-left"
+            aria-expanded={evidenceOpen}
             onClick={() => setEvidenceOpen((value) => !value)}
           >
-            <ShieldCheckIcon className="size-3 text-emerald-400" />
+            <ShieldCheckIcon className="size-3 text-success" />
             <span className="font-medium text-foreground">
               {t.recipeForge.nativeEvidenceTitle}
             </span>
             {nativeEvaluation?.verdict && (
-              <Badge className="bg-emerald-500/10 text-[9px] text-emerald-300 hover:bg-emerald-500/10">
+              <Badge className="bg-success/10 text-xs text-success hover:bg-success/10">
                 {nativeEvaluation.verdict}
               </Badge>
             )}
             {typeof replayCandidate?.total === "number" && (
-              <span>{t.recipeForge.nativeEvidenceReplay(replayCandidate.total)}</span>
+              <span>
+                {t.recipeForge.nativeEvidenceReplay(replayCandidate.total)}
+              </span>
             )}
             {typeof sandboxReplayCandidate?.total === "number" && (
               <span>
@@ -1277,26 +1376,55 @@ function PastRunRow({
             </span>
           </button>
           {evidenceOpen && (
-            <div className="mt-2 space-y-1 border-t border-border/40 pt-2">
+            <div className="mt-2 space-y-1 border-t border-border-subtle pt-2">
               {nativeEvaluation && (
                 <div className="flex flex-wrap gap-x-3 gap-y-1">
-                  <span>{t.recipeForge.nativeEvidenceMetric("task", nativeEvaluation.task_score)}</span>
-                  <span>{t.recipeForge.nativeEvidenceMetric("constraints", nativeEvaluation.constraint_score)}</span>
-                  <span>{t.recipeForge.nativeEvidenceMetric("failures", nativeEvaluation.failure_coverage)}</span>
-                  <span>{t.recipeForge.nativeEvidenceMetric("preservation", nativeEvaluation.positive_preservation)}</span>
-                  <span>{t.recipeForge.nativeEvidenceMetric("efficiency", nativeEvaluation.efficiency)}</span>
+                  <span>
+                    {t.recipeForge.nativeEvidenceMetric(
+                      "task",
+                      nativeEvaluation.task_score,
+                    )}
+                  </span>
+                  <span>
+                    {t.recipeForge.nativeEvidenceMetric(
+                      "constraints",
+                      nativeEvaluation.constraint_score,
+                    )}
+                  </span>
+                  <span>
+                    {t.recipeForge.nativeEvidenceMetric(
+                      "failures",
+                      nativeEvaluation.failure_coverage,
+                    )}
+                  </span>
+                  <span>
+                    {t.recipeForge.nativeEvidenceMetric(
+                      "preservation",
+                      nativeEvaluation.positive_preservation,
+                    )}
+                  </span>
+                  <span>
+                    {t.recipeForge.nativeEvidenceMetric(
+                      "efficiency",
+                      nativeEvaluation.efficiency,
+                    )}
+                  </span>
                 </div>
               )}
-              {((llmReplayCandidate?.weak_cases?.length ?? 0) > 0
-                || (turnReplayCandidate?.weak_cases?.length ?? 0) > 0
-                || (sandboxReplayCandidate?.weak_cases?.length ?? 0) > 0
-                || (replayCandidate?.weak_cases?.length ?? 0) > 0) ? (
-                (llmReplayCandidate?.weak_cases
-                  ?? turnReplayCandidate?.weak_cases
-                  ?? sandboxReplayCandidate?.weak_cases
-                  ?? replayCandidate?.weak_cases
+              {(llmReplayCandidate?.weak_cases?.length ?? 0) > 0 ||
+              (turnReplayCandidate?.weak_cases?.length ?? 0) > 0 ||
+              (sandboxReplayCandidate?.weak_cases?.length ?? 0) > 0 ||
+              (replayCandidate?.weak_cases?.length ?? 0) > 0 ? (
+                (
+                  llmReplayCandidate?.weak_cases ??
+                  turnReplayCandidate?.weak_cases ??
+                  sandboxReplayCandidate?.weak_cases ??
+                  replayCandidate?.weak_cases
                 )?.map((weakCase) => (
-                  <div key={weakCase.case_id ?? weakCase.reason} className="text-amber-300">
+                  <div
+                    key={weakCase.case_id ?? weakCase.reason}
+                    className="text-warning"
+                  >
                     {t.recipeForge.nativeEvidenceWeakCase(
                       weakCase.case_id ?? "case",
                       weakCase.reason ?? "weak coverage",
@@ -1312,7 +1440,7 @@ function PastRunRow({
                   </div>
                 ))
               ) : (
-                <div className="text-emerald-300">
+                <div className="text-success">
                   {t.recipeForge.nativeEvidenceNoWeakCases}
                 </div>
               )}
@@ -1321,30 +1449,47 @@ function PastRunRow({
         </div>
       )}
       {detailOpen && (
-        <div className="mt-2 rounded-md border border-border/40 bg-background/50 p-2 text-[10px] text-muted-foreground">
+        <div className="mt-2 rounded-md border border-border-subtle bg-background/50 p-2 text-xs text-muted-foreground">
           {!detail ? (
             <div>{t.recipeForge.proposalDetailsLoading}</div>
           ) : detail.ok && detail.proposal ? (
             <div className="space-y-1">
               <div className="flex flex-wrap gap-2">
-                <span className="font-mono text-foreground">{detail.proposal.id}</span>
+                <span className="font-mono text-foreground">
+                  {detail.proposal.id}
+                </span>
                 <span>{detail.proposal.kind}</span>
-                <span>{t.recipeForge.proposalDetailsStatus(detail.proposal.status)}</span>
-                <span>{t.recipeForge.proposalDetailsCanaries(detail.canaries?.length ?? 0)}</span>
-                <span>{t.recipeForge.proposalDetailsRollbacks(detail.rollbacks?.length ?? 0)}</span>
+                <span>
+                  {t.recipeForge.proposalDetailsStatus(detail.proposal.status)}
+                </span>
+                <span>
+                  {t.recipeForge.proposalDetailsCanaries(
+                    detail.canaries?.length ?? 0,
+                  )}
+                </span>
+                <span>
+                  {t.recipeForge.proposalDetailsRollbacks(
+                    detail.rollbacks?.length ?? 0,
+                  )}
+                </span>
               </div>
               <div>{detail.proposal.description}</div>
               {detail.proposal.rejection_reason && (
-                <div className="text-rose-300">{detail.proposal.rejection_reason}</div>
+                <div className="text-destructive">
+                  {detail.proposal.rejection_reason}
+                </div>
               )}
-              {detail.proposal.metadata && Object.keys(detail.proposal.metadata).length > 0 && (
-                <details>
-                  <summary className="cursor-pointer">{t.recipeForge.proposalDetailsMetadata}</summary>
-                  <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-background/60 p-2 font-mono text-[10px]">
-                    {JSON.stringify(detail.proposal.metadata, null, 2)}
-                  </pre>
-                </details>
-              )}
+              {detail.proposal.metadata &&
+                Object.keys(detail.proposal.metadata).length > 0 && (
+                  <details>
+                    <summary className="cursor-pointer">
+                      {t.recipeForge.proposalDetailsMetadata}
+                    </summary>
+                    <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-background/60 p-2 font-mono text-xs">
+                      {JSON.stringify(detail.proposal.metadata, null, 2)}
+                    </pre>
+                  </details>
+                )}
               {(detail.canaries?.length ?? 0) > 0 && (
                 <div className="space-y-1">
                   {detail.canaries?.map((c) => (
@@ -1357,7 +1502,7 @@ function PastRunRow({
               {(detail.rollbacks?.length ?? 0) > 0 && (
                 <div className="space-y-1">
                   {detail.rollbacks?.map((r) => (
-                    <div key={r.id} className="font-mono text-rose-300">
+                    <div key={r.id} className="font-mono text-destructive">
                       {r.id} · {r.description}
                     </div>
                   ))}
@@ -1393,12 +1538,13 @@ function NumberKnob({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
       <input
         type="number"
-        className="w-20 rounded-md border border-border/60 bg-background/60 px-2 py-1 text-sm tabular-nums"
+        aria-label={label}
+        className="w-20 rounded-md border border-border-default bg-background/60 px-2 py-1 text-sm tabular-nums"
         value={value}
         min={min}
         max={max}
@@ -1430,21 +1576,21 @@ function CandidateRow({
       className={cn(
         "rounded-lg border px-3 py-2",
         isBest
-          ? "border-emerald-500/30 bg-emerald-500/5"
-          : "border-border/50 bg-background/40",
+          ? "border-success/30 bg-success/5"
+          : "border-border-default bg-background/40",
       )}
     >
       <div className="flex items-center gap-2">
         <span className="font-mono text-xs">{candidate.candidate_id}</span>
         {isBest && (
-          <Badge className="bg-emerald-500/15 text-[10px] text-emerald-300 hover:bg-emerald-500/15">
+          <Badge className="bg-success/15 text-xs text-success hover:bg-success/15">
             {t.recipeForge.bestBadge}
           </Badge>
         )}
-        <span className="font-mono text-sm tabular-nums text-emerald-400">
+        <span className="font-mono text-sm tabular-nums text-success">
           {candidate.avg_score.toFixed(3)}
         </span>
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <span className="font-mono text-xs text-muted-foreground">
           [{candidate.task_scores.map((s) => s.toFixed(2)).join(", ")}]
         </span>
         <div className="flex-1" />
@@ -1462,7 +1608,7 @@ function CandidateRow({
             {runRecipeId && (
               <Button
                 size="sm"
-                className="h-7 bg-emerald-600 text-xs hover:bg-emerald-700"
+                className="h-7 bg-success text-xs hover:bg-success"
                 onClick={() => {
                   onApply(candidate.prompt_preview, "per_recipe");
                   setConfirming(false);
@@ -1504,7 +1650,7 @@ function CandidateRow({
         <summary className="cursor-pointer text-muted-foreground">
           {t.recipeForge.promptPreview}
         </summary>
-        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-background/60 p-2 font-mono text-[11px] text-muted-foreground">
+        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-background/60 p-2 font-mono text-xs text-muted-foreground">
           {candidate.prompt_preview}
         </pre>
       </details>
@@ -1531,18 +1677,18 @@ function AddendumRow({
   const dt = new Date(entry.mtime * 1000);
   const scopeColor =
     entry.scope === "global"
-      ? "bg-cyan-500/15 text-cyan-300"
-      : "bg-violet-500/15 text-violet-300";
+      ? "bg-info/15 text-info"
+      : "bg-chart-1/15 text-chart-1";
   return (
-    <div className="rounded-md border border-border/50 bg-background/40 px-3 py-2 text-xs">
+    <div className="rounded-md border border-border-default bg-background/40 px-3 py-2 text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          className={cn("text-[10px]", scopeColor, "hover:" + scopeColor)}
-        >
-          {entry.scope === "global" ? t.recipeForge.globalScope : t.recipeForge.perRecipeScope}
+        <Badge className={cn("text-xs", scopeColor, "hover:" + scopeColor)}>
+          {entry.scope === "global"
+            ? t.recipeForge.globalScope
+            : t.recipeForge.perRecipeScope}
         </Badge>
         {entry.recipe_id && (
-          <span className="font-mono text-[11px] text-muted-foreground">
+          <span className="font-mono text-xs text-muted-foreground">
             {t.recipeForge.recipePrefix}: {entry.recipe_id}
           </span>
         )}
@@ -1554,7 +1700,7 @@ function AddendumRow({
           <Button
             size="sm"
             variant="ghost"
-            className="h-6 text-[10px]"
+            className="h-6 text-xs"
             onClick={() => setConfirmDelete(true)}
           >
             <XCircleIcon className="mr-1 size-3" />
@@ -1564,7 +1710,7 @@ function AddendumRow({
           <div className="flex items-center gap-1">
             <Button
               size="sm"
-              className="h-6 bg-rose-600 text-[10px] hover:bg-rose-700"
+              className="h-6 bg-destructive text-xs hover:bg-destructive"
               onClick={() => {
                 onDelete();
                 setConfirmDelete(false);
@@ -1575,7 +1721,7 @@ function AddendumRow({
             <Button
               size="sm"
               variant="ghost"
-              className="h-6 text-[10px]"
+              className="h-6 text-xs"
               onClick={() => setConfirmDelete(false)}
             >
               {t.recipeForge.cancelButton}
@@ -1584,10 +1730,10 @@ function AddendumRow({
         )}
       </div>
       <details className="mt-1">
-        <summary className="cursor-pointer text-[10px] text-muted-foreground">
+        <summary className="cursor-pointer text-xs text-muted-foreground">
           {t.recipeForge.previewSummary}
         </summary>
-        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-background/60 p-2 font-mono text-[10px] text-muted-foreground">
+        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-background/60 p-2 font-mono text-xs text-muted-foreground">
           {entry.preview}
         </pre>
       </details>
@@ -1598,14 +1744,17 @@ function AddendumRow({
 function HistoryRow({ entry, t }: { entry: HistoryEntry; t: Translations }) {
   if (entry.skipped) {
     return (
-      <div className="text-amber-300">
-        {t.recipeForge.historySkipped(String(entry.iter ?? "0"), entry.reason ?? "")}
+      <div className="text-warning">
+        {t.recipeForge.historySkipped(
+          String(entry.iter ?? "0"),
+          entry.reason ?? "",
+        )}
       </div>
     );
   }
   if (entry.early_stop) {
     return (
-      <div className="text-violet-300">
+      <div className="text-chart-1">
         {t.recipeForge.historyEarlyStop(String(entry.iter))}
       </div>
     );
@@ -1621,7 +1770,7 @@ function HistoryRow({ entry, t }: { entry: HistoryEntry; t: Translations }) {
     <div
       className={cn(
         "flex flex-wrap gap-2",
-        entry.improved ? "text-emerald-300" : "text-muted-foreground",
+        entry.improved ? "text-success" : "text-muted-foreground",
       )}
     >
       <span>{t.recipeForge.historyIter(String(entry.iter))}</span>
@@ -1632,7 +1781,7 @@ function HistoryRow({ entry, t }: { entry: HistoryEntry; t: Translations }) {
       <span>front={entry.front_size}</span>
       {entry.improved && <span>{t.recipeForge.historyImproved}</span>}
       {entry.rationale && (
-        <span className="basis-full pl-12 text-[10px] italic">
+        <span className="basis-full pl-12 text-xs italic">
           “{entry.rationale.slice(0, 120)}”
         </span>
       )}

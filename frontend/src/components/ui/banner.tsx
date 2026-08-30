@@ -9,6 +9,7 @@ import {
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
 /**
@@ -41,11 +42,11 @@ const TONE_ICONS: Record<BannerTone, LucideIcon> = {
 const TONE_STYLES: Record<BannerTone, string> = {
   info: "border-[color:color-mix(in_oklch,var(--primary)_25%,transparent)] bg-[color:color-mix(in_oklch,var(--primary)_6%,transparent)] text-foreground [&_[data-banner-icon]]:text-primary",
   success:
-    "border-emerald-500/25 bg-emerald-500/[0.06] text-foreground [&_[data-banner-icon]]:text-emerald-500",
+    "border-success/25 bg-success/50/[0.06] text-foreground [&_[data-banner-icon]]:text-success",
   warning:
-    "border-amber-500/30 bg-amber-500/[0.08] text-foreground [&_[data-banner-icon]]:text-amber-500",
+    "border-warning/30 bg-warning/50/[0.08] text-foreground [&_[data-banner-icon]]:text-warning",
   danger:
-    "border-red-500/30 bg-red-500/[0.07] text-foreground [&_[data-banner-icon]]:text-red-500",
+    "border-destructive/30 bg-destructive/50/[0.07] text-foreground [&_[data-banner-icon]]:text-destructive",
 };
 
 export function Banner({
@@ -57,6 +58,7 @@ export function Banner({
   onDismiss,
   className,
 }: BannerProps) {
+  const { t } = useI18n();
   const Icon = icon ?? TONE_ICONS[tone];
   return (
     <div
@@ -75,10 +77,7 @@ export function Banner({
         )}
         {children && (
           <div
-            className={cn(
-              "text-xs text-muted-foreground",
-              title && "mt-0.5",
-            )}
+            className={cn("text-xs text-muted-foreground", title && "mt-0.5")}
           >
             {children}
           </div>
@@ -91,7 +90,7 @@ export function Banner({
           variant="ghost"
           size="icon-sm"
           onClick={onDismiss}
-          aria-label="Dismiss"
+          aria-label={t.common.close}
           className="-mr-1 -mt-0.5 size-7 shrink-0 opacity-60 hover:opacity-100"
         >
           <XIcon className="size-3.5" />

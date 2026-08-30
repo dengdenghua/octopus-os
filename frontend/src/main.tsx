@@ -12,12 +12,17 @@ import { AuthProvider } from "./providers/AuthProvider";
 import { AppearanceBootstrap } from "./hooks/use-appearance";
 import { installPageAgentBridge } from "./core/page-agent-bridge";
 import { installHashRouterShellUrlNormalizer } from "./core/router/hash-shell-url";
+import { normalizeLoopbackOrigin } from "./core/router/loopback-origin";
+import { migrateLegacyEchoStorage } from "./core/storage/echo-storage";
 
 import "./styles/globals.css";
 
 const queryClient = new QueryClient();
 
 async function bootstrap() {
+  if (normalizeLoopbackOrigin()) return;
+
+  migrateLegacyEchoStorage();
   installHashRouterShellUrlNormalizer();
   installPageAgentBridge();
 
@@ -30,7 +35,7 @@ async function bootstrap() {
   createRoot(document.getElementById("root")!).render(
     <HashRouter>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="system" storageKey="octopus-theme">
+        <ThemeProvider defaultTheme="system" storageKey="echo-theme">
           <I18nProvider
             initialLocale={initialLocale}
             initialTranslations={initialTranslations}

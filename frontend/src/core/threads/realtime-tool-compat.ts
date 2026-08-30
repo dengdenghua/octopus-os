@@ -8,7 +8,9 @@ export function commandExecutionToolName(item: CommandExecutionItem): string {
   return item.command || "command";
 }
 
-export function commandExecutionInput(item: CommandExecutionItem): Record<string, unknown> {
+export function commandExecutionInput(
+  item: CommandExecutionItem,
+): Record<string, unknown> {
   const input = isRecord(item.inputPreview) ? { ...item.inputPreview } : {};
   if (item.inputPreview !== undefined && !isRecord(item.inputPreview)) {
     input.inputPreview = item.inputPreview;

@@ -27,7 +27,7 @@ import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 import { OnboardingStep } from "./onboarding-step";
 
-const STORAGE_KEY = "octopus:onboarding_completed";
+const STORAGE_KEY = "echo:onboarding_completed";
 const TOTAL_STEPS = 4;
 
 export function OnboardingGuide() {
@@ -74,7 +74,7 @@ export function OnboardingGuide() {
         <div className="min-h-[320px] flex items-center justify-center">
           <div
             key={step}
-            className="w-full animate-in fade-in slide-in-from-right-4 duration-300"
+            className="w-full animate-in fade-in slide-in-from-right-4 duration-slow"
           >
             {step === 0 && <WelcomeStep />}
             {step === 1 && <ChatModesStep />}
@@ -101,7 +101,7 @@ export function OnboardingGuide() {
                 key={i}
                 onClick={() => setStep(i)}
                 className={cn(
-                  "size-2 rounded-lg transition-all duration-200",
+                  "size-2 rounded-lg transition-all duration-base",
                   i === step
                     ? "bg-primary w-5"
                     : "bg-muted-foreground/30 hover:bg-muted-foreground/50",
@@ -143,7 +143,7 @@ function WelcomeStep() {
   const { t } = useI18n();
   return (
     <OnboardingStep
-      title={t.onboarding.welcomeToOctopus}
+      title={t.onboarding.welcomeToEcho}
       description={t.onboarding.yourAIPlatform}
     >
       <div className="flex flex-col items-center gap-4">
@@ -156,7 +156,7 @@ function WelcomeStep() {
   );
 }
 
-/* ---------- Step 2: Chat Modes ---------- */
+/* ---------- Step 2: Task Capabilities ---------- */
 function ChatModesStep() {
   const { t } = useI18n();
   const modes = [
@@ -164,19 +164,19 @@ function ChatModesStep() {
       icon: MessageSquareIcon,
       title: t.onboarding.modeChat,
       desc: t.onboarding.modeChatDesc,
-      color: "text-blue-500 bg-blue-500/10",
+      color: "text-info bg-info/10",
     },
     {
       icon: CodeIcon,
       title: t.onboarding.modeCode,
       desc: t.onboarding.modeCodeDesc,
-      color: "text-green-500 bg-green-500/10",
+      color: "text-success bg-success/10",
     },
     {
       icon: UsersIcon,
       title: t.onboarding.modeTeam,
       desc: t.onboarding.modeTeamDesc,
-      color: "text-purple-500 bg-purple-500/10",
+      color: "text-chart-1 bg-chart-1/10",
     },
   ];
 
@@ -213,25 +213,25 @@ function KeyFeaturesStep() {
       icon: GlobeIcon,
       title: t.onboarding.featureAgentWorld,
       desc: t.onboarding.featureAgentWorldDesc,
-      color: "text-sky-500 bg-sky-500/10",
+      color: "text-info bg-info/10",
     },
     {
       icon: GitBranchIcon,
       title: t.onboarding.featureWorkflows,
       desc: t.onboarding.featureWorkflowsDesc,
-      color: "text-orange-500 bg-orange-500/10",
+      color: "text-chart-7 bg-chart-7/10",
     },
     {
       icon: ShoppingBagIcon,
       title: t.onboarding.featureSkillsMarket,
       desc: t.onboarding.featureSkillsMarketDesc,
-      color: "text-pink-500 bg-pink-500/10",
+      color: "text-chart-3 bg-chart-3/10",
     },
     {
       icon: ClipboardListIcon,
       title: t.onboarding.featureTaskBoard,
       desc: t.onboarding.featureTaskBoardDesc,
-      color: "text-emerald-500 bg-emerald-500/10",
+      color: "text-success bg-success/10",
     },
   ];
 

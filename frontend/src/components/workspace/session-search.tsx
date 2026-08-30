@@ -1,4 +1,3 @@
-
 import {
   SearchIcon,
   Loader2Icon,
@@ -74,7 +73,9 @@ export function SessionSearch({
         const data = await res.json();
         setResults(data.threads || data || []);
       }
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
     setLoading(false);
   }, []);
 
@@ -99,7 +100,12 @@ export function SessionSearch({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-background w-full max-w-lg rounded-lg border shadow-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.common.search}
+        className="bg-background w-full max-w-lg rounded-lg border shadow-2xl"
+      >
         {/* Search input */}
         <div className="flex items-center gap-2 border-b px-4 py-3">
           <SearchIcon className="text-muted-foreground size-4 shrink-0" />
@@ -108,6 +114,7 @@ export function SessionSearch({
             value={query}
             onChange={(e) => handleInput(e.target.value)}
             placeholder={t.common.search + "..."}
+            aria-label={t.common.search}
             className="placeholder:text-muted-foreground flex-1 bg-transparent text-sm outline-none"
             autoFocus
           />
@@ -116,6 +123,7 @@ export function SessionSearch({
           )}
           <button
             onClick={onClose}
+            aria-label={t.common.close}
             className="text-muted-foreground hover:text-foreground"
           >
             <XIcon className="size-4" />
@@ -148,7 +156,7 @@ export function SessionSearch({
                     {r.snippet}
                   </div>
                 )}
-                <div className="text-muted-foreground/60 mt-1 text-[10px]">
+                <div className="text-muted-foreground/60 mt-1 text-xs">
                   {r.message_count} messages
                   {r.created_at
                     ? ` · ${new Date(r.created_at).toLocaleDateString()}`
@@ -160,7 +168,7 @@ export function SessionSearch({
         </div>
 
         {/* Footer */}
-        <div className="text-muted-foreground border-t px-4 py-2 text-[10px]">
+        <div className="text-muted-foreground border-t px-4 py-2 text-xs">
           <kbd className="rounded border px-1">Esc</kbd> to close
         </div>
       </div>

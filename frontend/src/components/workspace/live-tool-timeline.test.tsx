@@ -87,9 +87,7 @@ describe("LiveToolTimeline · nested sub-tool rendering", () => {
 
     // The ``ml-6 border-l pl-2`` stack is the indent hallmark — one
     // such container per parent that has kids.
-    const nestedContainers = container.querySelectorAll(
-      ".ml-6.border-l.pl-2",
-    );
+    const nestedContainers = container.querySelectorAll(".ml-6.border-l.pl-2");
     expect(nestedContainers.length).toBe(1);
 
     // All 3 children + the parent = 4 rows in the timeline.
@@ -116,7 +114,11 @@ describe("LiveToolTimeline · nested sub-tool rendering", () => {
     const labels = rows
       .map((row) => row.querySelector(".font-medium")?.textContent ?? "")
       .map((s) => s.trim());
-    expect(labels).toEqual(["recall", "Write blackboard", "Read blackboard"]);
+    expect(labels).toEqual([
+      "Other action",
+      "Write blackboard",
+      "Read blackboard",
+    ]);
   });
 
   test("children show the sub-agent role badge", () => {
@@ -132,7 +134,7 @@ describe("LiveToolTimeline · nested sub-tool rendering", () => {
     wrap(events);
     // The sub-agent badge appears as " · architect" next to the
     // row label. Rendered via ``{showAgent && event.agentName && …}``.
-    expect(screen.getByText(/architect/)).toBeInTheDocument();
+    expect(screen.getAllByText(/architect/).length).toBeGreaterThan(0);
   });
 
   test("events with parentToolUseId never appear as top-level rows", () => {
@@ -244,84 +246,107 @@ describe("LiveToolTimeline · nested sub-tool rendering", () => {
   });
 
   test("code tools render developer-readable activity labels", () => {
-    wrap([
-      parentEvent({
-        id: "read-1",
-        name: "read_file",
-        status: "done",
-        startedAt: 1000,
-        finishedAt: 1100,
-        input: { path: "frontend/vite.config.ts", start_line: 121, end_line: 150 },
-      }),
-      parentEvent({
-        id: "grep-1",
-        name: "grep",
-        status: "done",
-        startedAt: 1200,
-        finishedAt: 1300,
-        input: { pattern: "useThreadStream", path: "frontend/src" },
-      }),
-      parentEvent({
-        id: "bash-1",
-        name: "exec_shell",
-        status: "running",
-        startedAt: 1400,
-        input: {
-          description: "Run frontend typecheck",
-          command: "npm run typecheck",
-        },
-      }),
-    ], { showAll: true });
+    wrap(
+      [
+        parentEvent({
+          id: "read-1",
+          name: "read_file",
+          status: "done",
+          startedAt: 1000,
+          finishedAt: 1100,
+          input: {
+            path: "frontend/vite.config.ts",
+            start_line: 121,
+            end_line: 150,
+          },
+        }),
+        parentEvent({
+          id: "grep-1",
+          name: "grep",
+          status: "done",
+          startedAt: 1200,
+          finishedAt: 1300,
+          input: { pattern: "useThreadStream", path: "frontend/src" },
+        }),
+        parentEvent({
+          id: "bash-1",
+          name: "exec_shell",
+          status: "running",
+          startedAt: 1400,
+          input: {
+            description: "Run frontend typecheck",
+            command: "npm run typecheck",
+          },
+        }),
+      ],
+      { showAll: true },
+    );
 
-    expect(screen.getByText("Read frontend/vite.config.ts (lines 121-150)")).toBeInTheDocument();
-    expect(screen.getByText("Searched text useThreadStream")).toBeInTheDocument();
-    expect(screen.getByText("Running command Run frontend typecheck")).toBeInTheDocument();
+    expect(
+      screen.getByText("Read frontend/vite.config.ts (lines 121-150)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Searched text useThreadStream"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Running command Run frontend typecheck"),
+    ).toBeInTheDocument();
     expect(screen.getByText("npm run typecheck")).toBeInTheDocument();
   });
 
   test("file actions use specific running and completed labels", () => {
-    wrap([
-      parentEvent({
-        id: "list-1",
-        name: "list_cwd",
-        status: "running",
-        startedAt: 1000,
-        input: { path: "frontend/src" },
-      }),
-      parentEvent({
-        id: "create-1",
-        name: "create_file",
-        status: "done",
-        startedAt: 1200,
-        finishedAt: 1300,
-        input: { path: "frontend/src/new-file.ts" },
-      }),
-      parentEvent({
-        id: "planning-1",
-        name: "planning",
-        status: "running",
-        startedAt: 1400,
-        input: { task: "decide next implementation step" },
-      }),
-    ], { showAll: true });
+    wrap(
+      [
+        parentEvent({
+          id: "list-1",
+          name: "list_cwd",
+          status: "running",
+          startedAt: 1000,
+          input: { path: "frontend/src" },
+        }),
+        parentEvent({
+          id: "create-1",
+          name: "create_file",
+          status: "done",
+          startedAt: 1200,
+          finishedAt: 1300,
+          input: { path: "frontend/src/new-file.ts" },
+        }),
+        parentEvent({
+          id: "planning-1",
+          name: "planning",
+          status: "running",
+          startedAt: 1400,
+          input: { task: "decide next implementation step" },
+        }),
+      ],
+      { showAll: true },
+    );
 
-    expect(screen.getByText("Browsing directory frontend/src")).toBeInTheDocument();
-    expect(screen.getByText("Created file frontend/src/new-file.ts")).toBeInTheDocument();
+    expect(
+      screen.getByText("Browsing directory frontend/src"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Created file frontend/src/new-file.ts"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Planning next step")).toBeInTheDocument();
   });
 
   test("execution rows expose compact input and result summaries", () => {
-    wrap([
-      parentEvent({
-        id: "read-summary-1",
-        name: "read_file",
-        status: "done",
-        startedAt: 1000,
-        finishedAt: 1100,
-        input: { path: "frontend/src/app.tsx" },
-        output: { stdout: "export default App" },
-      }),
-    ], { showAll: true });
+    wrap(
+      [
+        parentEvent({
+          id: "read-summary-1",
+          name: "read_file",
+          status: "done",
+          startedAt: 1000,
+          finishedAt: 1100,
+          input: { path: "frontend/src/app.tsx" },
+          output: { stdout: "export default App" },
+        }),
+      ],
+      { showAll: true },
+    );
 
     expect(screen.getByText("Read frontend/src/app.tsx")).toBeInTheDocument();
     expect(screen.getByText("Input")).toBeInTheDocument();
@@ -331,42 +356,46 @@ describe("LiveToolTimeline · nested sub-tool rendering", () => {
   });
 
   test("Chinese locale uses localized status badges and detail titles", () => {
-    wrap([
-      parentEvent({
-        id: "status-running",
-        name: "read_file",
-        status: "running",
-        startedAt: 1000,
-        input: { path: "src/running.ts" },
-      }),
-      parentEvent({
-        id: "status-done",
-        name: "read_file",
-        status: "done",
-        startedAt: 1100,
-        finishedAt: 1200,
-        input: { path: "src/done.ts" },
-        output: { stdout: "ok" },
-        thought: "\u5148\u770b\u6587\u4ef6",
-        observation: "\u8bfb\u53d6\u6210\u529f",
-      }),
-      parentEvent({
-        id: "status-error",
-        name: "read_file",
-        status: "error",
-        startedAt: 1300,
-        finishedAt: 1400,
-        input: { path: "src/error.ts" },
-        output: { error: "missing" },
-      }),
-      parentEvent({
-        id: "status-approval",
-        name: "read_file",
-        status: "waiting_approval",
-        startedAt: 1500,
-        input: { path: "src/approval.ts" },
-      }),
-    ], { showAll: true }, "zh-CN");
+    const { container } = wrap(
+      [
+        parentEvent({
+          id: "status-running",
+          name: "read_file",
+          status: "running",
+          startedAt: 1000,
+          input: { path: "src/running.ts" },
+        }),
+        parentEvent({
+          id: "status-done",
+          name: "read_file",
+          status: "done",
+          startedAt: 1100,
+          finishedAt: 1200,
+          input: { path: "src/done.ts" },
+          output: { stdout: "ok" },
+          thought: "\u5148\u770b\u6587\u4ef6",
+          observation: "\u8bfb\u53d6\u6210\u529f",
+        }),
+        parentEvent({
+          id: "status-error",
+          name: "read_file",
+          status: "error",
+          startedAt: 1300,
+          finishedAt: 1400,
+          input: { path: "src/error.ts" },
+          output: { error: "missing" },
+        }),
+        parentEvent({
+          id: "status-approval",
+          name: "read_file",
+          status: "waiting_approval",
+          startedAt: 1500,
+          input: { path: "src/approval.ts" },
+        }),
+      ],
+      { showAll: true },
+      "zh-CN",
+    );
 
     expect(screen.getByText("\u8fdb\u884c\u4e2d")).toBeInTheDocument();
     expect(screen.getByText("\u5df2\u5b8c\u6210")).toBeInTheDocument();
@@ -374,42 +403,104 @@ describe("LiveToolTimeline · nested sub-tool rendering", () => {
     expect(screen.getByText("\u7b49\u5f85\u5ba1\u6279")).toBeInTheDocument();
     expect(screen.getAllByText("\u8f93\u5165").length).toBeGreaterThan(0);
     expect(screen.getAllByText("\u7ed3\u679c").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^\u601d\u8003/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^\u89c2\u5bdf/).length).toBeGreaterThan(0);
+    expect(container).not.toHaveTextContent("模型");
+    expect(container).not.toHaveTextContent("思考细节");
+    expect(container).not.toHaveTextContent("Action:");
+    expect(container).not.toHaveTextContent("Observation:");
+  });
+
+  test("Chinese model-side timeline events read like product progress, not raw model logs", () => {
+    const { container } = wrap(
+      [
+        parentEvent({
+          id: "thought-1",
+          name: "agent_thought",
+          status: "running",
+          startedAt: 1000,
+        }),
+        parentEvent({
+          id: "planning-1",
+          name: "planning",
+          status: "running",
+          startedAt: 1100,
+        }),
+      ],
+      { showAll: true },
+      "zh-CN",
+    );
+
+    expect(
+      screen.getByText("这一轮公开返回了可展示的整理片段。"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/正在组织下一步/).length).toBeGreaterThan(0);
+    expect(container).not.toHaveTextContent("模型");
+    expect(container).not.toHaveTextContent("思考细节");
+    expect(container).not.toHaveTextContent("reasoning");
+  });
+
+  test("sanitizes unknown tool labels and expanded payload details", () => {
+    const { container } = wrap(
+      [
+        parentEvent({
+          id: "unknown-1",
+          name: "internal_private_runner",
+          status: "done",
+          startedAt: 1000,
+          finishedAt: 1100,
+          input: {
+            token: "super-secret-token",
+            nested: { authorization: "Bearer abc123" },
+            path: "src/app.tsx",
+          },
+          output: { result: "ok", api_key: "sk-live-123456" },
+        }),
+      ],
+      { showAll: true },
+      "zh-CN",
+    );
+
+    expect(screen.getByText("其他操作")).toBeInTheDocument();
+    expect(container).not.toHaveTextContent("internal_private_runner");
+    fireEvent.click(screen.getByRole("button", { name: "展开工具详情" }));
+    expect(container).toHaveTextContent("[redacted]");
+    expect(container).not.toHaveTextContent("super-secret-token");
+    expect(container).not.toHaveTextContent("abc123");
+    expect(container).not.toHaveTextContent("sk-live-123456");
   });
 
   test("consecutive research searches stay separate and show their own results", () => {
-    wrap([
-      parentEvent({
-        id: "search-1",
-        name: "web_search",
-        status: "done",
-        startedAt: 1000,
-        finishedAt: 1200,
-        durationMs: 200,
-        input: { query: "NAS 2026", max_results: 5 },
-        output: {
-          results: [
-            { title: "Synology guide", url: "https://www.synology.com/a" },
-            { title: "QNAP guide", url: "https://www.qnap.com/b" },
-          ],
-        },
-      }),
-      parentEvent({
-        id: "search-2",
-        name: "web_search",
-        status: "done",
-        startedAt: 1300,
-        finishedAt: 1500,
-        durationMs: 200,
-        input: { query: "NAS market share", max_results: 5 },
-        output: {
-          results: [
-            { title: "Market", url: "https://example.com/market" },
-          ],
-        },
-      }),
-    ], { showAll: true });
+    wrap(
+      [
+        parentEvent({
+          id: "search-1",
+          name: "web_search",
+          status: "done",
+          startedAt: 1000,
+          finishedAt: 1200,
+          durationMs: 200,
+          input: { query: "NAS 2026", max_results: 5 },
+          output: {
+            results: [
+              { title: "Synology guide", url: "https://www.synology.com/a" },
+              { title: "QNAP guide", url: "https://www.qnap.com/b" },
+            ],
+          },
+        }),
+        parentEvent({
+          id: "search-2",
+          name: "web_search",
+          status: "done",
+          startedAt: 1300,
+          finishedAt: 1500,
+          durationMs: 200,
+          input: { query: "NAS market share", max_results: 5 },
+          output: {
+            results: [{ title: "Market", url: "https://example.com/market" }],
+          },
+        }),
+      ],
+      { showAll: true },
+    );
 
     expect(screen.getByText("Found 2 web pages")).toBeInTheDocument();
     expect(screen.getByText("Found 1 web pages")).toBeInTheDocument();
@@ -420,22 +511,25 @@ describe("LiveToolTimeline · nested sub-tool rendering", () => {
   });
 
   test("long search result lists stay compact until expanded", () => {
-    wrap([
-      parentEvent({
-        id: "search-long",
-        name: "web_search",
-        status: "done",
-        startedAt: 1000,
-        finishedAt: 1200,
-        input: { query: "OpenClaw", max_results: 8 },
-        output: {
-          results: Array.from({ length: 8 }, (_, index) => ({
-            title: `Search result ${index + 1}`,
-            url: `https://example.com/${index + 1}`,
-          })),
-        },
-      }),
-    ], { showAll: true });
+    wrap(
+      [
+        parentEvent({
+          id: "search-long",
+          name: "web_search",
+          status: "done",
+          startedAt: 1000,
+          finishedAt: 1200,
+          input: { query: "OpenClaw", max_results: 8 },
+          output: {
+            results: Array.from({ length: 8 }, (_, index) => ({
+              title: `Search result ${index + 1}`,
+              url: `https://example.com/${index + 1}`,
+            })),
+          },
+        }),
+      ],
+      { showAll: true },
+    );
 
     expect(screen.getByText("Search result 1")).toBeInTheDocument();
     expect(screen.getByText("Search result 5")).toBeInTheDocument();
@@ -488,7 +582,8 @@ describe("LiveToolTimeline · visibility rules (transitive via component)", () =
     // First row should be the RUNNING one · read the tool name from
     // the ``font-medium`` label span. Testing order rather than
     // CSS class names because jsdom doesn't compute Tailwind styles.
-    const firstLabel = rows[0]!.querySelector(".font-medium")?.textContent ?? "";
+    const firstLabel =
+      rows[0]!.querySelector(".font-medium")?.textContent ?? "";
     expect(firstLabel).toContain("Dispatching parallel subtasks");
   });
 });

@@ -113,14 +113,19 @@ function computeEditOps(oldLines: string[], newLines: string[]): EditOp[] {
 export function computeLineDiff(
   oldText: string,
   newText: string,
-  contextLines: number = 3,
+  contextLines = 3,
 ): DiffHunk[] {
   const oldLines = oldText.split("\n");
   const newLines = newText.split("\n");
   const ops = computeEditOps(oldLines, newLines);
 
   // Convert ops to a flat list of raw diff lines
-  const allLines: Array<{ type: DiffLineType; content: string; oldLine: number | null; newLine: number | null }> = [];
+  const allLines: Array<{
+    type: DiffLineType;
+    content: string;
+    oldLine: number | null;
+    newLine: number | null;
+  }> = [];
 
   for (const op of ops) {
     if (op.type === "equal") {
@@ -152,7 +157,12 @@ export function computeLineDiff(
 }
 
 function groupIntoHunks(
-  allLines: Array<{ type: DiffLineType; content: string; oldLine: number | null; newLine: number | null }>,
+  allLines: Array<{
+    type: DiffLineType;
+    content: string;
+    oldLine: number | null;
+    newLine: number | null;
+  }>,
   contextLines: number,
 ): DiffHunk[] {
   // Find ranges of changed lines
@@ -320,7 +330,9 @@ export function parseUnifiedDiff(diffText: string): DiffHunk[] {
     if (line.startsWith("@@")) {
       if (currentHunk) hunks.push(currentHunk);
 
-      const match = line.match(/@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)/);
+      const match = line.match(
+        /@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)/,
+      );
       if (match) {
         const oldStart = parseInt(match[1]!, 10);
         const oldCount = match[2] ? parseInt(match[2], 10) : 1;
@@ -544,10 +556,13 @@ export function sortFiles(files: FileDiff[], mode: SortMode): FileDiff[] {
   const sorted = [...files];
   switch (mode) {
     case "name":
-      return sorted.sort((a, b) => getFileName(a.filePath).localeCompare(getFileName(b.filePath)));
+      return sorted.sort((a, b) =>
+        getFileName(a.filePath).localeCompare(getFileName(b.filePath)),
+      );
     case "status":
       return sorted.sort(
-        (a, b) => (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99),
+        (a, b) =>
+          (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99),
       );
     case "changes":
       return sorted.sort(

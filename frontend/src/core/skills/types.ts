@@ -9,6 +9,15 @@ export interface SkillInfo {
   trusted_source?: string | null;
   has_tests?: boolean;
   kind?: "system" | "automation" | "domain";
+  market_visibility?:
+    | "market"
+    | "internal"
+    | "provider"
+    | "duplicate"
+    | "deprecated"
+    | string;
+  market_reason?: string | null;
+  canonical_skill?: string | null;
 }
 
 export interface CustomSkillContent extends SkillInfo {

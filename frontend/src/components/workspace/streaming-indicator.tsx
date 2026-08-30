@@ -19,7 +19,7 @@ export const StreamingIndicator = memo(function StreamingIndicator({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-2.5 rounded-lg border transition-all duration-300",
+        "inline-flex items-center gap-2.5 rounded-lg border transition-colors duration-slow",
         isSm
           ? "border-primary/15 bg-primary/[0.03] px-3 py-1.5"
           : "border-primary/20 bg-primary/[0.05] px-4 py-2",
@@ -39,14 +39,16 @@ export const StreamingIndicator = memo(function StreamingIndicator({
             isSm ? "size-4" : "size-5",
           )}
         >
-          <SparklesIcon className={cn("text-primary", isSm ? "size-2.5" : "size-3")} />
+          <SparklesIcon
+            className={cn("text-primary", isSm ? "size-2.5" : "size-3")}
+          />
         </div>
       </div>
       {showLabel && (
         <div className="flex items-center gap-2">
           <span
             className={cn(
-              "codex-shimmer-text font-medium",
+              "font-medium text-foreground",
               isSm ? "text-xs" : "text-sm",
             )}
           >

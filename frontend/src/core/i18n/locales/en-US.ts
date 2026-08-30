@@ -8,8 +8,9 @@ import {
   SparklesIcon,
   VideoIcon,
 } from "lucide-react";
-
 import type { Translations } from "./types";
+import { workspaceComputerEnUS } from "./workspace-computer";
+import { agentOperatorEnUS } from "./agent-operator";
 
 export const enUS: Translations = {
   // Locale meta
@@ -27,6 +28,7 @@ export const enUS: Translations = {
     share: "Share",
     openInNewWindow: "Open in new window",
     close: "Close",
+    back: "Back",
     more: "More",
     search: "Search",
     download: "Download",
@@ -36,6 +38,7 @@ export const enUS: Translations = {
     custom: "Custom",
     notAvailableInDemoMode: "Not available in demo mode",
     loading: "Loading...",
+    error: "Error",
     copy: "Copy",
     copied: "Copied",
     version: "Version",
@@ -56,10 +59,19 @@ export const enUS: Translations = {
     unlink: "Unlink",
     guest: "Guest",
     confirm: "Confirm",
+    stop: "Stop",
+    step: "Step",
+    revert: "Revert",
+    review: "Review",
+    fileSizeB: "B",
+    fileSizeKB: "KB",
+    fileSizeMB: "MB",
     timeAgo: (value: number, unit: string) => `${value}${unit} ago`,
     stubResponseTitle: "Simulated backend response",
     stubResponseDescription: (method: string, path: string) =>
       `${method} ${path} returned stub data. Treat this workspace state as a development fallback until the real backend endpoint is enabled.`,
+    openSidebarMenu: "Open sidebar menu",
+    loadingWorkspace: "Loading workspace...",
   },
 
   // Home
@@ -68,7 +80,9 @@ export const enUS: Translations = {
     blog: "Blog",
   },
 
-  // Landing page
+  // Welcome
+
+  // Echo OS landing page
   landing: {
     tagline: "Agent OS for supervised autonomous work",
     subtitle:
@@ -86,15 +100,24 @@ export const enUS: Translations = {
     },
   },
 
-  // Welcome
   welcome: {
-    greeting: "Hello, again!",
+    greeting: "Hello, I am {name}",
     description:
-      "Welcome to 🦌 Octopus, an open source super agent. With built-in and custom skills, Octopus helps you search on the web, analyze data, and generate artifacts like slides, web pages and do almost anything.",
+      "Welcome to 🦌 EchoAI, an open source super agent. With built-in and custom skills, EchoAI helps you search on the web, analyze data, and generate artifacts like slides, web pages and do almost anything.",
+    echoTagline: "Multi-agent collaboration · One input, direct solutions",
 
     createYourOwnSkill: "Create Your Own Skill",
     createYourOwnSkillDescription:
-      "Create your own skill to release the power of Octopus. With customized skills,\nOctopus can help you search on the web, analyze data, and generate\n artifacts like slides, web pages and do almost anything.",
+      "Create your own skill to release the power of EchoAI. With customized skills,\nEchoAI can help you search on the web, analyze data, and generate\n artifacts like slides, web pages and do almost anything.",
+
+    scenes: {
+      daily: "Daily Work",
+      code: "Code Dev",
+      design: "Design",
+      data: "Data Analysis",
+      doc: "Documents",
+      agent: "Agent Orchestration",
+    },
   },
 
   // Clipboard
@@ -108,11 +131,6 @@ export const enUS: Translations = {
   // Input Box
   inputBox: {
     placeholder: "How can I assist you today?",
-    createSkillPrompt:
-      "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
-    addAttachments: "Add attachments",
-    stop: "Stop",
-    send: "Send",
     mode: "Mode",
     flashMode: "Chat",
     flashModeDescription: "Fast response",
@@ -123,7 +141,8 @@ export const enUS: Translations = {
     ephemeralModeDescription: "No memory read, no memory written (incognito)",
     reasoningMode: "Think",
     reasoningModeDescription: "ReAct reasoning",
-    reasoningEffort: "Reasoning Effort",
+    reasoningEffort: "Reasoning effort",
+    reasoningEffortOff: "Off",
     reasoningEffortMinimal: "Minimal",
     reasoningEffortMinimalDescription: "Retrieval + Direct Output",
     reasoningEffortLow: "Low",
@@ -134,6 +153,11 @@ export const enUS: Translations = {
     reasoningEffortHigh: "High",
     reasoningEffortHighDescription:
       "Full-dimensional Logic Deduction + Multi-path Verification + Backward Check",
+    reasoningEffortXHigh: "Ultra",
+    reasoningEffortMax: "Max",
+    reasoningEffortCurrent: (label) => `Current ${label}`,
+    reasoningEffortMapped: (current, effective) =>
+      `Will be sent as ${effective}`,
     searchModels: "Search models...",
     surpriseMe: "Surprise",
     surpriseMePrompt: "Surprise me",
@@ -196,30 +220,141 @@ export const enUS: Translations = {
 
   // Message display
   message: {
-    thinking: "Thinking",
-    thinkingProcess: "Thinking process",
+    thinking: "Organizing",
+    thinkingProcess: "Process notes",
     replyThinking: "Reply summary",
     replyThinkingDescription:
       "Concise processing summary for the final response",
-    executionProcess: "Execution log",
+    executionProcess: "Action trail",
     executionProcessDescription:
-      "Structured timeline of model connection, tool calls, and observations",
-    visibleReasoning: "Visible reasoning",
-    executionSteps: "Execution steps",
-    toolCalls: "Tool calls",
+      "Visible actions, references, and result clues for this turn",
+    visibleReasoning: "Public progress",
+    executionSteps: "Action steps",
+    toolCalls: "Action records",
     todoAndContext: "Todo & Context",
     expandable: "Expandable",
     agentCluster: "Agent Cluster",
-    processDetails: "Process details",
-    statusViewing: "Viewing",
+    agentProgressSummary: (total, completed, errors) =>
+      [
+        `${total} sub-agent${total === 1 ? "" : "s"}`,
+        completed > 0 ? `${completed} completed` : "",
+        errors > 0 ? `${errors} error${errors === 1 ? "" : "s"}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    processDetails: "Open details",
+    completedSteps: (n: number) => `Completed ${n} step${n === 1 ? "" : "s"}`,
+    completedThings: (n: number) =>
+      `Completed ${n} ${n === 1 ? "thing" : "things"}`,
+    statusViewing: "Running",
     statusCompleted: "Completed",
     statusError: "Error",
     statusWaiting: "Waiting",
+    assistant: "Assistant",
+    turnLabel: (n: number) => `Turn ${n}`,
+    turnNumberLabel: (n: number, label: string) => `Turn ${n}: ${label}`,
+    turnLocator: "Turn locator",
+    jumpToFirstTurn: "Jump to first turn",
+    jumpToLastTurn: "Jump to last turn",
+    backToLatest: "Back to latest message",
+    latest: "Latest",
+    newUpdates: () => "New content",
+    timeoutWarning: (seconds: number) =>
+      `No progress for ${seconds}s; it may be stuck`,
+    thinkingPlan: "Thinking plan",
+    thinkingPlanSourceCheck: "source check",
+    thinkingPlanCoworkFit: "cowork fit",
+    agent: "Agent",
+    noTaskDescription: "No task description",
+    processRecords: (n: number) => `${n} process records`,
+    showMoreAgents: (n: number) => `Show ${n} more agents`,
+    collapseAgents: "Collapse agents",
+    viewReport: "View report",
+    viewReportError: "View failure reason",
+    collapseReport: "Collapse report",
+    latestTool: "Latest action",
+    execution: "Action",
+    verification: "Verification",
+    process: "Process",
+    actionCount: (n: number) => `${n} action${n === 1 ? "" : "s"}`,
+    checkCount: (n: number) => `${n} check${n === 1 ? "" : "s"}`,
+    reviewSelf: "Review myself",
+    reviewTeam: "Assign to team",
+    reviewSecurity: "Security review",
+    artifactsCreated: (n: number) =>
+      `${n} artifact${n === 1 ? "" : "s"} created`,
+    artifactsCreatedAndFilesEdited: (created: number, edited: number) =>
+      `${created} artifact${created === 1 ? "" : "s"} created, ${edited} file${edited === 1 ? "" : "s"} edited`,
+    filesEdited: (n: number) => `${n} file${n === 1 ? "" : "s"} edited`,
+    revertSuccess: (n: number) => `Reverted ${n} change${n === 1 ? "" : "s"}`,
+    revertFailed: "Failed to revert",
+    reviewAssigned: (label: string) => `Review assigned to: ${label}`,
+    taskCompleted: "Task complete",
+    taskFailed: "Task did not complete",
+    previousAttemptRecovered: "Earlier attempt failed; a later turn recovered",
+    taskOutputs: "Task outputs",
+    viewProcess: "View process",
+    makeSimilar: "Make similar",
+    makeSimilarHint: "Start a new task with the same prompt",
+    retryTask: "Retry",
+    retryTaskHint: "Start a new task with the same prompt",
+    taskFailedReason: "Failure reason",
+    resultUrl: "Result URL",
+    openResult: "Open result",
+    verificationRan: "Verifications",
+    verificationPassed: "Passed",
+    verificationFailed: "Failed",
+    testsPassed: "Tests passed",
+    lintClean: "Lint clean",
+    buildSucceeded: "Build succeeded",
+    completedChanges: "Completed changes",
+    viewComputer: "View computer",
+    artifactsSummary: "Artifacts summary",
+    changesSummary: "File changes summary",
+    auditActions: "Audit actions",
+    assignReviewTo: "Assign review to",
+    moreFiles: (n: number) =>
+      `${n} more file${n === 1 ? "" : "s"}, expand to view`,
+    downloadStillInArtifactsPanel:
+      "Download entry is still available in the right artifacts panel",
+    diffTruncated: "diff truncated",
+    diffTruncatedTooltip:
+      "Diff was truncated by the server output limit; line counts are incomplete and full revert is unavailable",
+    hunkReverted: "Hunk reverted",
+    hunkRevertFailed: "Failed to revert hunk",
+    accept: "Accept",
+    reject: "Reject",
+    accepted: "Accepted",
+    rejected: "Reverted",
+    useTopicInAgent: "Use this topic in Agent",
+    actionLabel: (action: string) => `Action: ${action}`,
+    attachmentFallback: "attachment",
+    imageAttachment: "Image attachment",
+    attachmentPreview: "Attachment preview",
+    removeAttachment: "Remove attachment",
+    previousBranch: "Previous response version",
+    nextBranch: "Next response version",
+    branchPosition: (current, total) => `${current} of ${total}`,
+    grounding: {
+      summary: (first: string, total: number) =>
+        total > 1 ? `Used ${first} and ${total - 1} more` : `Used ${first}`,
+    },
+    thinkingForSeconds: (seconds: number) => `${seconds}s thinking`,
+    planningNSteps: (n: number) => `${n} planning step${n === 1 ? "" : "s"}`,
+    fileOperationsCount: (n: number) =>
+      `${n} file operation${n === 1 ? "" : "s"}`,
+    fileOperationsCountWithDiff: (n: number, added: number, removed: number) =>
+      `${n} file operation${n === 1 ? "" : "s"} (+${added} / -${removed})`,
+    toolCallsCount: (n: number) => `${n} action record${n === 1 ? "" : "s"}`,
+    diffLinesHidden: (n: number) =>
+      `… truncated, ${n} more line${n === 1 ? "" : "s"} hidden …`,
+    loadOlderTurns: "Load older turns",
+    loadingOlderTurns: "Loading older turns…",
   },
 
   // Execution Checklist
   executionChecklist: {
-    title: "Execution Steps",
+    title: "Progress Checklist",
     clarifyGoal: "Clarify task goal",
     clarifyGoalDetail:
       "Converge user request into an executable output target.",
@@ -229,17 +364,18 @@ export const enUS: Translations = {
       `Adjust keywords based on round ${round} results`,
     adjustKeywordsDetail:
       "After reading results, narrow scope and continue to supplement missing market, competitor, or demand evidence.",
-    webSearch: (count: number) => `Web search ${count} times`,
+    webSearch: (count: number) => `Search sources ${count} times`,
     readContext: "Read context",
     writeFile: "Write/modify file",
-    runCommand: "Run command",
-    callTool: (count: number) => `Call tool ${count} times`,
+    runCommand: "Run checks",
+    callTool: (count: number) =>
+      `Coordinate ${count} action${count === 1 ? "" : "s"}`,
     toolCallDetail:
-      "Tool calls are the evidence collection and execution layer, not the complete thinking process.",
+      "These are visible progress signals; detailed operations stay in the workbench.",
     analyzeAndAlign: "Analyze and align data",
     analyzeAndAlignDetail:
       "Summarize, deduplicate, and calibrate search results from each round, rather than directly pasting search results.",
-    generateResponse: "Generate response",
+    generateResponse: "Draft response",
     generateResponseDetail:
       "Organize analysis conclusions into final content readable by users.",
     marketSize: "Calibrate market size and growth metrics",
@@ -255,22 +391,67 @@ export const enUS: Translations = {
   // Chat Input Box
   chatInputBox: {
     quickCapabilities: "Tools",
+    collaborators: "Collaboration",
+    collaboratorsSingle: "On demand",
+    collaboratorsCountUnit: "members",
+    collaboratorsHelp:
+      "Only @mentioned AI members reply by default; add collaborators for coordinated or parallel work.",
+    collaboratorsSearchPlaceholder: "Search agents / installed capabilities",
+    collaboratorsTaskFallback: "Team task",
+    collaboratorsCoreGroup: "White Ghost Squad",
+    collaboratorsOnDemandGroup: "On-demand capabilities",
+    collaboratorsOnDemandBadge: "On demand",
+    collaboratorsOnDemandHint:
+      "Experts, digital twins, and installed capabilities join only this conversation; they do not replace your primary identity.",
+    responseMode: "AI participation",
+    responseModeTeamRequired:
+      "Add an AI member before using Coordinated or Parallel collaboration",
+    groupTaskTools: "Start a task or add content",
+    groupTaskStart: "Start a task",
+    groupTaskAddContent: "Add content",
+    groupTaskAuto: "Auto",
+    groupTaskBuild: "Create deliverable",
+    groupTaskResearch: "Deep research",
+    groupTaskDevelop: "Develop",
+    groupTaskAudit: "Read-only audit",
+    groupTaskUxui: "UX/UI review",
+    groupTaskActive: "Task",
+    groupTaskClear: "Return to automatic handling",
     addResearchMaterial: "Add material",
-    webSearch: "Web search",
-    createPpt: "Create PPT",
-    createHtml: "Create page",
-    renderTable: "Format table",
-    createImage: "Generate image",
-    scheduledTask: "Scheduled Task",
+    codexPlan: "Plan",
+    codexSpec: "Spec",
+    codexGoal: "Goal",
+    composerInsertions: "Insert into input",
+    uploadImages: "Upload images",
+    projectFiles: "Project files",
+    workspaceFiles: (workspace: string) => `${workspace} files`,
+    noWorkspaceFiles: "Choose a project folder to browse workspace files.",
+    uploadDeviceFiles: "Choose files from device",
+    commands: "Commands",
+    plugins: "Plugins",
+    skills: "Skills",
+    availablePlugins: "Available plugins",
+    managePlugins: "Manage plugins",
+    explorePlugins: "Explore more plugins",
+    noAvailablePlugins: "No enabled plugins",
+    searchSkills: "Search skills",
+    manageSkills: "Manage skills",
+    noAvailableSkills: "No enabled skills",
+    capabilityLoadFailed: "Unable to load capabilities",
+    removeCapability: (name: string) => `Remove ${name}`,
+    insertCodexPlan: "Plan mode",
+    insertCodexSpec: "Insert Spec marker",
+    insertCodexGoal: "Goal",
+    insertBrowserSurface: "Insert Browser marker",
+    insertChromeSurface: "Insert Chrome marker",
     workflow: "Workflow",
-    projectFiles: "Project Files",
     deepResearchConfig: "Research settings",
     roles: "Subagents",
     materials: "Materials",
     collapse: "Collapse",
     materialNote: "Material Note",
     url: "URL",
-    file: "File",
+    file: "Add files",
     text: "Text",
     textTitle: "Text Title",
     pasteTextMaterial: "Paste text material",
@@ -284,40 +465,100 @@ export const enUS: Translations = {
     removeMaterial: "Remove Material",
     startThreadBeforeUpload: "Start or open a thread before uploading files.",
     uploadFailed: "Upload failed",
+    attachmentReadFailed: "Failed to read attachment. Please try again.",
     maxSubagents: "Max Subagents",
     maxSearches: "Max Searches",
     permissionModeLabel: "Permissions",
-    permissionModeDefault: "Confirm",
-    permissionModeDefaultDesc: "Confirm before risky tool use.",
-    permissionModeAcceptEdits: "Edit files",
+    permissionModeDefault: "Default",
+    permissionModeDefaultDesc:
+      "Any write or command asks for your approval first. Safest option.",
+    permissionModeAcceptEdits: "Accept edits",
     permissionModeAcceptEditsDesc:
-      "Allow file edits automatically; still confirm other risky actions.",
-    permissionModeBypass: "Trusted",
-    permissionModeBypassDesc: "Auto-approve local tools for trusted tasks.",
-    permissionModePlan: "Plan",
-    permissionModePlanDesc: "Plan first; run tools after you decide.",
-    seedWebSearch: "Search the web, cross-check sources, and summarize: ",
-    seedCreatePpt: "Write content structured for a PPT deck: ",
-    seedCreateHtml: "Generate a complete HTML page: ",
-    seedRenderTable: "Organize and render the following as a clear table: ",
-    seedCreateImage: "Generate an image: ",
-    seedScheduledTask: "Create a scheduled task: ",
+      "File changes run automatically; commands still ask for approval.",
+    permissionModeBypass: "Full access",
+    permissionModeBypassDesc:
+      "Every action runs automatically with no questions. Maximum permissions.",
+    permissionModeBypassConfirmTitle: "Switch to Full access?",
+    permissionModeBypassConfirmDesc:
+      "This mode skips routine confirmation for commands, file changes, and Git operations. Safety blocks remain active, but accidental changes are more likely.",
+    permissionModeBypassConfirmAction: "Enable Full access",
+    permissionModePlan: "Plan only",
+    permissionModePlanDesc: "Suggest steps only; do not call tools yet.",
     seedWorkflow: "Create or run a workflow: ",
-    seedProjectFiles: "Based on project files, help me: ",
+    send: "Send",
+    stop: "Stop",
+    projectModeLabel: "Project attached",
+    projectModeHint:
+      "A local folder is bound; this thread will use project context for code tasks.",
+    projectStatusTitle: "Project attached",
+    projectStatusDescUnlocked:
+      "This agent can inspect, edit, and verify the bound project.",
+    projectStatusDescLocked:
+      "This agent can use project context, but write scope downgrades unless a role with project-write access is selected.",
+    projectWriteAccess: "Project write",
+    projectReadOnly: "Read only",
+    permissionFullAccess: "Full access",
+    permissionAcceptEdits: "Accept edits",
+    permissionConfirm: "Default",
+    addImage: "Add image (paste / drag / select)",
+    addAppshot: "Attach current window snapshot",
+    capturingAppshot: "Attaching the current window…",
+    appshotHint: "Add a one-time screenshot and accessibility text",
+    appshotSource: "Current window Appshot",
+    appshotFailed: "Unable to read the current window",
+    windowTools: "Window",
+    automationTarget: "Target",
+    chooseAutomationTarget: "Choose a browser or desktop window",
+    currentChromeTab: "Current Chrome tab",
+    currentDesktopWindow: "Desktop window",
+    loadingAutomationTargets: "Finding controllable windows…",
+    noAutomationTargets:
+      "No controllable windows. Connect the browser relay or open an app window.",
+    clearAutomationTarget: "Clear pinned target",
+    automationOnline: "Browser online",
+    automationOffline: "Browser offline",
+    automationReconnecting: "Reconnecting",
+    automationDesktop: "Desktop control",
+    automationIdle: "Idle",
+    automationRunning: "Agent controlling",
+    automationPaused: "Paused",
+    automationPause: "Pause",
+    automationResume: "Resume",
+    automationTakeover: "Take over",
+    automationEvidence: "Action receipts",
+    automationNoEvidence: "No action receipts yet",
+    automationControlFailed: "Unable to update control state",
+    removeImage: "Remove",
+    readme: "README",
   },
 
-  // Team Mode
+  coworkCollab: {
+    searchPlaceholder:
+      "Search blackboard / tasks / events / room messages / room tasks",
+    noResults: "No matches",
+    online: "online",
+    members: "Members",
+    unread: (n) => `${n} unread`,
+    kindBlackboard: "Blackboard",
+    kindTask: "Task",
+    kindEvent: "Event",
+    kindRoomMessage: "Room message",
+    kindRoomTask: "Room task",
+    linkedRoom: "Linked room",
+  },
+
+  // Collaboration Mode
   teamMode: {
     mode: "Collaboration",
-    modeTeam: "Team",
-    modeTeamDesc: "Collaborate with multiple agents",
-    createTeam: "Create Team",
-    chat: "Host",
+    modeTeam: "Collaborate",
+    modeTeamDesc: "Invite helpers into the current task",
+    createTeam: "Invite collaborators",
+    chat: "Solo Task",
     chatDescription:
-      "TL-coordinated chat — the team leader replies first and routes each question to the right members",
-    cowork: "Collab",
+      "Start with one role and add members later without losing the task thread",
+    cowork: "Group Task",
     coworkDescription:
-      "TL decomposes first, members contribute from their own memory, then TL synthesizes the final agent result",
+      "TL decomposes first, members contribute from their own memory, then TL synthesizes the final result",
     comingSoon: "Coming soon",
   },
 
@@ -330,9 +571,82 @@ export const enUS: Translations = {
     categoryHomework: "Homework",
     categoryWriting: "Writing",
     categoryTravel: "Travel",
-    hint: "Projects help you organize related conversations. Move threads in after you create one.",
+    aiMembersLabel: "Initial AI collaborators",
+    aiMembersDescription:
+      "They join the work group immediately. Keep at least one; you can adjust the roster later.",
+    aiMembersSelected: (count) => `${count} selected`,
+    agentsLoading: "Loading available AI…",
+    agentsUnavailable:
+      "The list is unavailable. The project will use the default general assistant.",
+    humanMembersLabel: "People",
+    humanMembersAfterCreate: "Invite after creation",
+    humanMembersDescription:
+      "After creation, you will enter the work group and can invite members or viewers with a secure link.",
+    invitePeopleOnArrival: "Invite people when the group opens",
+    creatorRoleLabel: "Your project role",
+    creatorRole: "Project owner · Group owner",
+    creatorRoleDescription:
+      "You can manage the project, orchestrate AI, and invite people.",
+    hint: "The work group, project capabilities, and right-side workbench are created and linked together.",
     cancel: "Cancel",
     create: "Create project",
+  },
+
+  promoteProjectDialog: {
+    trigger: "Create project plan",
+    title: "Create a project plan for this work group",
+    description:
+      "Keep the current members and full chat history, then add milestones, items, files, and a project workbench.",
+    nameLabel: "Project name",
+    namePlaceholder: "For example: Fall product launch",
+    goalLabel: "Project goal",
+    goalPlaceholder:
+      "Describe the outcome you want. The first milestones will be planned from it.",
+    cancel: "Cancel",
+    submit: "Create and attach",
+    submitting: "Creating…",
+    success: "Project capabilities are now enabled for this work group",
+    failed: "Could not create the project plan. Try again.",
+  },
+
+  projectCapability: {
+    enabled: "Project enabled",
+    startPlan: "Create project plan",
+    openWorkbench: "Open project workbench",
+    moreActions: "Project actions",
+    detach: "Turn off project capabilities",
+    detachConfirmTitle: "Turn off project capabilities for this group?",
+    detachConfirmDescription:
+      "The project plan will be detached. Group members, invitations, chat history, and this link will stay unchanged.",
+    detachConfirmAction: "Turn off project capabilities",
+    forceDetachConfirmTitle:
+      "The project is still active. Turn off project capabilities anyway?",
+    forceDetachConfirmDescription:
+      "Project execution and status will be separated from this work group, but the project record will remain available in Projects. Group members and the full chat history will stay unchanged.",
+    forceDetachConfirmAction: "Turn off anyway",
+    detached:
+      "Project capabilities are off; the work group and chat history were kept",
+    detachCancelled: "Project capabilities were not turned off",
+    detachFailed: "Could not turn off project capabilities. Try again.",
+    detachBindingChanged:
+      "This group is now attached to a different project. Refresh and try again.",
+    statusPlanning: "Planning",
+    statusRunning: "In progress",
+    statusBlocked: "At risk",
+    statusDone: "Completed",
+    statusFailed: "Issue",
+  },
+
+  // Clarification Questionnaire
+  clarificationQuestionnaire: {
+    title: "Please answer the following questions",
+    recommended: "Recommended",
+    previous: "Previous",
+    cancel: "Cancel",
+    continueLabel: "Continue",
+    completedHeader: "Requirements clarified:",
+    continuePrompt:
+      "Please continue based on the above choices; if critical conditions are still missing, ask 1-2 more necessary questions at most, otherwise start directly.",
   },
 
   // Dispatch Card
@@ -388,9 +702,91 @@ export const enUS: Translations = {
     editFileRemoved: (file: string, removed: number) =>
       `Edit ${file} -${removed} lines`,
     executeCommand: "Run command",
-    executeCommandWith: (cmd: string) => `Run ${cmd}`,
+    executeCommandWith: (cmd: string) => `Run checks: ${cmd}`,
     planStep: "Plan step",
     think: "Thinking",
+    thinking: "Thinking",
+    deepThinking: "Deep thinking",
+    thoughtFor: "thought for",
+    hideProcessReplay: "Hide process replay",
+    processReplay: "Process replay",
+    replayNSteps: (n: number) => `Replay ${n} previous steps`,
+    hideSavedSteps: "Hide saved steps",
+    viewProcessSummary: "View process summary",
+    viewNSavedSteps: (n: number) => `View ${n} saved steps`,
+    countItems: (n: number) => `${n} items`,
+    liveProcess: "Live process",
+    liveProcessRunning: "Running",
+    liveProcessWaiting: "Waiting",
+    liveProcessError: "Error",
+    liveProcessDone: "Done",
+    liveProcessPending: "Pending",
+    liveProcessHistory: (n: number) => `${n} replay step${n === 1 ? "" : "s"}`,
+    reasoningFallback: "Summarize public progress",
+    callTeammate: "Call teammate",
+    searchSources: "Search sources",
+    readWebpage: "Read webpage",
+    readFile: "Read file",
+    updateFile: "Update file",
+    runAction: "Run operation",
+    teammateTimeout: "Teammate did not return in time; EchoAI took over",
+    factSummaryPath: (value: string) => `Confirmed: ${value}`,
+    factSummaryCount: (value: string) => `Confirmed: ${value} items`,
+    factSummaryStatus: (value: string) => `Confirmed: ${value}`,
+    factSummaryTitle: (value: string) => `Confirmed: ${value}`,
+    factSummaryText: (value: string) => `Confirmed: ${value}`,
+    factSummaryDuration: (value: string) => `Took ${value}`,
+    factSummaryLines: (value: string) => `${value} lines`,
+    factSummaryMatches: (value: string) => `${value} matches`,
+    factSummarySucceeded: "Execution succeeded",
+    factSummaryFailed: "Execution failed",
+    factSummaryExitCode: (value: string) => `Exit code ${value}`,
+    effectNeedsReview: "Needs review",
+    capabilityDisabled: (toolName: string) =>
+      `${toolName} is disabled in settings`,
+    enableCapability: "Enable",
+    enablingCapability: "Enabling…",
+    actionLabels: {
+      createFile: "Create",
+      editFile: "Edit",
+      searchFiles: "Search files",
+      viewDirectory: "View folder",
+      readFile: "Read",
+      runCommand: "Run",
+      searchWeb: "Search the web",
+      browseWeb: "Browse page",
+      browserClick: "Click",
+      browserType: "Type",
+      browserScreenshot: "Take screenshot",
+      browserNavigate: "Navigate to",
+      browserAction: "Use browser",
+      updatePlan: "Update plan",
+      useCapability: "Use capability",
+      delegateTask: "Delegate task",
+      submitResult: "Submit result",
+      deleteFile: "Delete",
+      moveFile: "Move/rename",
+      startPreview: "Start preview",
+      networkRequest: "Network request",
+      aggregateFileWrite: (count: number) =>
+        `Edited ${count} file${count === 1 ? "" : "s"}`,
+      aggregateFileRead: (count: number) =>
+        `Viewed ${count} file${count === 1 ? "" : "s"}`,
+      aggregateCommand: (count: number) =>
+        `Ran ${count} command${count === 1 ? "" : "s"}`,
+      aggregateWebSearch: (count: number) =>
+        `Searched ${count} time${count === 1 ? "" : "s"}`,
+      aggregateBrowser: (count: number) =>
+        `${count} browser action${count === 1 ? "" : "s"}`,
+      aggregateTeammate: (count: number) =>
+        `Delegated ${count} task${count === 1 ? "" : "s"}`,
+      aggregateTodo: (count: number) =>
+        `Updated plan ${count} time${count === 1 ? "" : "s"}`,
+      aggregateOther: (count: number) =>
+        `Ran ${count} action${count === 1 ? "" : "s"}`,
+    },
+    thinkingDuration: (value: string) => `Thought for ${value}`,
+    thinkingProcess: "Thinking process",
   },
 
   // Trace generator labels
@@ -410,21 +806,56 @@ export const enUS: Translations = {
     ],
   },
 
-  // Create Team Dialog
+  // Collaboration picker
   createTeamDialog: {
-    title: "Create team",
+    title: "Invite collaborators",
     description:
-      "Add agents and set a TL (team leader) to build your collaborative team.",
+      "Add agents and set the main controller so they join the current task.",
     allAgents: (n: number) => `All agents · ${n}`,
     selected: (n: number, max: number) => `Selected · ${n}/${max}`,
+    memberCounter: (n: number, max: number) => `${n}/${max} members`,
+    selectMembersTitle: "Select members",
+    memberLimitReached: "Limit reached",
+    searchAgentsPlaceholder: "Search agents",
+    selectedBadge: "Selected",
+    noMatches: "No matching agents",
+    clearSelected: "Clear",
+    membersLabel: "Members",
+    leaderLabel: "TL",
+    leaderUnset: "Not set",
     emptyHintL1: "Click an agent on the left",
-    emptyHintL2: "to add them to the team",
+    emptyHintL2: "to add them to this task",
     currentTl: "Current TL",
     setAsTl: "Set as TL",
-    teamNameLabel: "Team name *",
-    teamNamePlaceholder: "e.g. dev-team",
-    create: "Create team",
+    teamNameLabel: "Collaboration name *",
+    teamNamePlaceholder: "e.g. product research",
+    create: "Start collaboration",
     cancel: "Cancel",
+    roleModels: {
+      title: "Model tiers",
+      description:
+        "Simple roles default to cheaper models; override each role here.",
+      customCount: (n: number) => `${n} customized`,
+      defaultPrefix: "Default",
+      help: "Cheap tiers use glm-4-flash style models to control cost; primary uses the main model. Changes apply to future team runs.",
+      tiers: {
+        default: "Default",
+        cheap: "Cheap",
+        primary: "Primary",
+      },
+      roles: {
+        planner: "Planner",
+        generator: "Generator",
+        synthesizer: "Synthesizer",
+        researcher: "Researcher",
+        critic: "Critic",
+        evaluator: "Evaluator",
+        reviewer: "Reviewer",
+        fact_checker: "Fact checker",
+        verifier: "Verifier",
+        arbiter: "Arbiter",
+      },
+    },
   },
 
   // Code Mode
@@ -541,6 +972,12 @@ export const enUS: Translations = {
       "Verification failed without detailed check output.",
     // Terminal input
     terminalPlaceholder: "Ask, plan, or code...",
+    terminalRestart: "Restart shell",
+    terminalClose: "Close terminal",
+    terminalConnectionFailed:
+      "Terminal connection failed. Use restart to reconnect.",
+    terminalConnectedHint: "Terminal connected. Type a command to begin.",
+    terminalConnecting: "Connecting terminal...",
     stop: "Stop",
     send: "Send",
     // File tree
@@ -552,6 +989,7 @@ export const enUS: Translations = {
     previewConsoleEmpty: "No log entries yet",
     previewConsoleClear: "Clear",
     previewConsoleAddToChat: "Add to chat",
+    previewConsoleCount: (n: number) => `${n} ${n === 1 ? "log" : "logs"}`,
     previewDevTools: "DevTools",
     previewDevToolsUnavailable: "DevTools is only available in the desktop app",
     // Tool panel (realtime)
@@ -611,6 +1049,56 @@ export const enUS: Translations = {
     hideDetails: "Hide details",
     input: "Input",
     result: "Result",
+  },
+
+  realtime: {
+    title: "Realtime Threads",
+    subtitle: "Item-oriented conversations over /api/realtime.",
+    newThread: "New thread",
+    orResume: "or resume",
+    threadIdPlaceholder: "thread id",
+    open: "Open",
+    recent: "Recent",
+    loadError: (error) =>
+      `Could not load thread list: ${error}. Start a new thread above to begin.`,
+    loading: "Loading…",
+    empty: "No threads yet — click New thread to start.",
+    turns: (count) => `${count} turns`,
+    lastStatus: (status) => `last status: ${status}`,
+    updated: (date) => `updated: ${date}`,
+    panelToggle: {
+      close: "Close right panel",
+      open: "Open right panel",
+    },
+    viewActions: "View controls",
+    finalArtifact: {
+      generated: "Final report generated",
+      view: "View",
+    },
+    recording: {
+      recording: (stepCount: number) =>
+        `Recording · ${stepCount} steps, click to open recorder`,
+      idle: "REC: Record this conversation and learn as a reusable replay skill",
+    },
+    replay: {
+      titleDefault: "EchoAI Run Replay",
+      footer: "Self-contained offline replay",
+    },
+    composer: {
+      legacyOnDemandContinued:
+        "Started a new task with your current White Ghost lead and added the former role on demand.",
+      legacyOnDemandAttachments:
+        "Legacy role chats no longer execute directly. A new task is open; reattach the files before sending.",
+      placeholderCode:
+        "Describe the project task to modify, debug, or verify...",
+      placeholderNew:
+        "Describe the task to implement, generate, debug, or verify...",
+      placeholderEcho:
+        "Just say it: check progress, delegate a task, summarize subscriptions...",
+    },
+    recorder: {
+      defaultName: "Conversation Replay Learning",
+    },
   },
 
   realtimeItems: {
@@ -733,6 +1221,9 @@ export const enUS: Translations = {
     },
   },
 
+  workspaceComputer: workspaceComputerEnUS,
+  agentOperator: agentOperatorEnUS,
+
   // Agent Workbench Panel
   agentWorkbench: {
     idle: "Idle",
@@ -746,6 +1237,7 @@ export const enUS: Translations = {
       "Submit a task above; when parallel help is needed, progress will appear here.",
     taskListView: "Tasks",
     computerView: "Computer",
+    executionView: "Execution view",
     reportView: "Report",
     traceFeedEmpty: "Agent hasn't started working",
     liveEventStream: "Live events",
@@ -781,7 +1273,7 @@ export const enUS: Translations = {
     terminalActions: (count: number) =>
       `${count} terminal action${count !== 1 ? "s" : ""}`,
     executionActions: (count: number) =>
-      `${count} execution action${count !== 1 ? "s" : ""}`,
+      `${count} execution operation${count !== 1 ? "s" : ""}`,
     listSeparator: ", ",
     statusProcessing: "Processing",
     statusCompleted: "Completed",
@@ -789,6 +1281,8 @@ export const enUS: Translations = {
     executingTask: "Executing task...",
     waitingToContinue: "Waiting to Continue",
     currentProgress: "Current Progress",
+    stepProgress: (current: number, total: number) =>
+      `Step ${current} / ${total}`,
     minimizeProgress: "Minimize Progress",
     restoreProgress: "Restore Progress",
     closeWorkspace: "Close Workspace",
@@ -856,11 +1350,214 @@ export const enUS: Translations = {
     unknown: "unknown",
   },
 
+  // Agent workbench pages
+  agentPhases: {
+    planning: "Analyzing requirements",
+    exploring: "Exploring the codebase",
+    implementing: "Editing code",
+    testing: "Verifying changes",
+    deploying: "Deploying",
+    genericPrepare: "Gathering context",
+    genericExecute: "Working through leads",
+    genericDeliver: "Pulling the answer together",
+  },
+  agentWorkbenchPages: {
+    collapse: "Collapse",
+    expandDetails: "Expand details",
+    openArtifact: (title) => `Open artifact ${title}`,
+    viewDiff: (title) => `View diff ${title}`,
+    reference: {
+      files: "Files",
+      plans: "Plans",
+      web: "Search/Web",
+      memory: "Memory",
+      other: "Other",
+    },
+    statusRunning: "Running",
+    statusWaitingApproval: "Waiting for approval",
+    statusError: "Error",
+    statusDone: "Done",
+    progress: "Progress",
+    currentObjective: "Current objective",
+    currentObjectiveHint:
+      "The Agent is working on this item. A result receipt will appear when it is complete.",
+    resultReceipt: "Result receipt",
+    resultReceiptDescription:
+      "Completed work, artifacts, and unresolved issues in one place for quick verification.",
+    recoveredOperations: (count) =>
+      `${count} recovered operation${count === 1 ? "" : "s"}`,
+    verifiedSteps: (count) =>
+      `${count} completed item${count === 1 ? "" : "s"}`,
+    unresolvedSteps: (count) =>
+      `${count} unresolved item${count === 1 ? "" : "s"}`,
+    noResultYet: "The result will appear when execution finishes",
+    thinkingDetail: "Thinking",
+    thinkingInProgress: "Thinking",
+    thinkingDone: "Done",
+    executionDetail: "Execution",
+    roundTitle: (iteration) => `Round ${iteration}`,
+    roundActivitySummary: (actionCount, factCount) =>
+      actionCount > 0 && factCount > 0
+        ? `${actionCount} actions · ${factCount} findings`
+        : actionCount > 0
+          ? `${actionCount} actions`
+          : `${factCount} findings`,
+    artifacts: "Artifacts",
+    generatedArtifacts: "Generated artifacts",
+    changedFiles: "Changed files",
+    subagents: "Subagents",
+    subagentsCompleted: (done, total) => `${done}/${total} completed`,
+    subagentsFailed: (count) => `${count} failed`,
+    subagentsRunning: (count) => `${count} running`,
+    subagentsPending: (count) => `${count} pending`,
+    failedLanes: (lanes) => `Failed lanes: ${lanes}`,
+    inputs: "Inputs",
+    inputsUploadedFiles: (count) => `${count} uploaded files`,
+    inputsAttachments: (count) => `${count} attachments`,
+    context: "Context",
+    contextCompress: "Compress",
+    contextDescription: "Context available to AI in this conversation",
+    contextUsed: (percentage, limit) => `${percentage}% used (${limit} limit)`,
+    observableThisRound: "Observable this round",
+    sourceCount: (count) => `${count} sources`,
+    sourceCountWithLabel: (label, count) => `${label}: ${count} sources`,
+    estimatePercentage: (percentage) => `Estimated ${percentage}%`,
+    noSources: "No sources",
+    estimatedTokens: (count) => `${count.toLocaleString()} estimated tokens`,
+    noObservableReferences: "No observable references this round",
+    dashboardOverview: "Dashboard overview",
+    dashboardOverviewDescription:
+      "Once the Agent starts working, progress, artifacts, and observable context for this round will appear here.",
+    noSubagentsObservedDescription:
+      "No subagents observed yet. After triggering call_agent_parallel, each subagent's status, tools, blackboard writes, and file changes will be grouped here by parent task.",
+    metricRunning: "Running",
+    metricCompleted: "Completed",
+    metricError: "Error",
+    waitingForTaskEvents: "Waiting for task events",
+    subagentRuntimeDetails: "Subagent runtime details",
+    roleLabel: "Role",
+    currentToolLabel: "Current tool",
+    startTimeLabel: "Started at",
+    durationLabel: "Duration",
+    eventCountLabel: "Events",
+    parentTaskLabel: "Parent task",
+    latestThoughtLabel: "Latest thought",
+    resultSummaryLabel: "Result summary",
+    blackboardWritesLabel: "Blackboard writes",
+    filesTouchedLabel: "Files touched",
+    errorLabel: "Error",
+    noneYet: "None yet",
+    eventsCount: (count) => `${count} events`,
+    agentClusterCreateAssistant: "Agent Cluster - Create Assistant",
+    roleCard: "Role card",
+    backToRoleCard: "Back to role card",
+    roleDescription: "Role description",
+    noFullRoleDescription: "No full role description available.",
+    defaultMotto:
+      "I will take charge of this task and keep the main controller updated on progress.",
+    iterationRound: (count) => `${count} rounds`,
+    noWorkDirDescription:
+      "No working directory located yet. It will be linked automatically after the Agent reads or writes files.",
+    noDiffEntriesDescription:
+      "No diffs captured yet. Edits returned by file tools will appear here.",
+    filesTab: "Files",
+    diffTab: "Diff",
+    terminalTab: "Terminal",
+    browserTab: "Task Preview",
+    projectTab: "Project",
+  },
+
+  // Agent workbench panel (kanban / screen timeline)
+  agentWorkbenchPanel: {
+    noOperationRecords: "No operation records",
+    noCurrentOperation: "No current operation",
+    processFrames: "Process frames",
+    frameCount: (count) => `${count} frame${count === 1 ? "" : "s"}`,
+    frameLabel: (current, total) => `Frame ${current}/${total}`,
+    currentFrameLabel: (current, total) => `Current frame ${current}/${total}`,
+    phaseStatusRunning: "Running",
+    phaseStatusError: "Error",
+    phaseStatusDone: "Completed",
+    phaseStatusPending: "Pending",
+    robot: "Collaboration scene",
+    noRunningRobotProcess: "No active collaboration process yet.",
+    startingRobotProcess:
+      "Joined the collaboration scene — waiting for the first visible action…",
+    locateTranscriptEvent: "Locate in conversation",
+    collapseWorkbench: "Collapse workbench",
+    tabList: "Tab list",
+    summaryLabel: "Summary",
+    latestTurnContext: "Latest turn",
+    latestTurnContextDescription:
+      "This workbench reflects the latest conversation turn, even while older messages are in view.",
+    agentStatusRunning: "Running",
+    agentStatusError: "Error",
+    agentStatusDone: "Finished",
+    agentStatusPending: "Waiting",
+    mainComputer: "Main computer",
+    filterByAgent: "Filter by agent",
+    filterChipMain: "Main process",
+    mainController: "Main",
+    subComputer: "Sub computer",
+    currentConversation: "Current conversation",
+    timelinePosition: (sequence) => `Timeline item ${sequence}`,
+    workbenchSlots: "Slots",
+    viewMainAgentSlot: "View main computer",
+    mainAgentProcessTitle: "Main computer: current conversation main process",
+    dockStatusRunning: "Running",
+    dockStatusError: "Error",
+    dockStatusDone: "Completed",
+    dockStatusPending: "Waiting",
+    dockStatusPresent: "Present",
+    collaboratorSeat: "Collaborator",
+    leaderSeat: "Leader",
+    collaboratorPresentDescription: (role) =>
+      `Joined the current task workspace as ${role}; no independent process activity has started yet.`,
+    noIndependentProcessActivity: "No independent process activity yet",
+    noIndependentProcessActivityDescription:
+      "Process records will appear here after this member starts an independent process.",
+    switchToMainComputer: "Switch back to main computer",
+    viewAgentProcess: (label) => `View ${label} independent process`,
+    agentClusterIndependentProcess: "Agent Cluster - Independent Process",
+    subAgent: "Subagent",
+    noTaskDescription: "No task description yet.",
+    waitingForSubagentOutput: "Waiting for subagent output",
+    processReplay: "Process replay",
+    subagentConversation: "Subagent conversation",
+    mainDelegatedTask: "Task delegated by the main agent",
+    processRecords: (count) =>
+      `${count} process record${count === 1 ? "" : "s"}`,
+    iterationRounds: (count) => `${count} round${count === 1 ? "" : "s"}`,
+    computerViewSubtitle: "Select a subagent to view its computer",
+    computerViewSelectHint:
+      "Computer view only shows subagent independent operation records. Click a card below to view that subagent's computer screen.",
+    computerViewEmpty: "No subagents yet",
+    computerViewEmptyDesc:
+      "When tasks are dispatched to subagents, you can view their independent computer operation records here.",
+    visibilityPanelTitle: "Capability decisions",
+    visibilityPanelAttention: "Action required",
+    visibilityPanelEmpty: "No capability decisions this turn",
+    visibilityStep: "Decision",
+    scrollToBottom: "Scroll to bottom",
+    viewLatestProgress: "View latest progress",
+    subagentBusStreamTitle: "Subagent event stream",
+    subagentBusStreamLive: "Live",
+    subagentBusStreamConnecting: "Connecting…",
+    subagentBusStreamError: "Stream error — reconnecting",
+    subagentDispatchFailed:
+      "Parallel delegation did not start, so no subagents were created.",
+    subagentBusStreamEmpty: "No subagent activity yet",
+    subagentBusStreamEvents: (count) => `${count} events`,
+    substreamTab: "Subagent event stream",
+  },
+
   diagnosticsPage: {
     title: "Diagnostics",
     description:
       "Feature flags, follow-up suggestions, remote backends, and invariants — one place to see and tune them.",
     tabs: {
+      runtime: "Runtime",
+      streaming: "Streaming",
       featureFlags: "Feature Flags",
       suggestions: "Suggestions",
       remote: "Remote",
@@ -868,6 +1565,102 @@ export const enUS: Translations = {
     },
     noActiveProject:
       "No active project bound. Open a workspace project to see suggestions.",
+    streaming: {
+      title: "Streaming response metrics",
+      description:
+        "Keeps latency and status for the latest 100 turns on this device. Message content is never stored.",
+      clear: "Clear streaming metrics",
+      empty: "Complete a realtime turn to see first-token latency and pauses.",
+      samples: "Samples",
+      ttftP50: "TTFT P50",
+      ttftP95: "TTFT P95",
+      maxGapP95: "Longest pause P95",
+      stalledRate: "Possibly stalled",
+      unsuccessfulRate: "Not completed",
+      time: "Completed",
+      outcome: "Outcome",
+      maxGap: "Longest pause",
+      duration: "Duration",
+      endState: "End state",
+      stalled: "Long silence",
+      normal: "Normal",
+      outcomes: {
+        completed: "Completed",
+        paused: "Paused",
+        cancelled: "Cancelled",
+        interrupted: "Interrupted",
+        failed: "Failed",
+      },
+    },
+  },
+
+  runtimeSelfCheckPanel: {
+    title: "Runtime Self-Check",
+    ready: "ready",
+    degraded: "degraded",
+    blocked: "blocked",
+    notReported: "not reported",
+    refresh: "Refresh",
+    refreshing: "Refreshing...",
+    refreshAria: "Refresh runtime self-check",
+    loading: "Loading runtime status...",
+    loadFailed: (error) => `Failed to load runtime status: ${error}`,
+    status: "Status",
+    runtimeVersion: "Runtime version",
+    generatedAt: "Generated",
+    versions: "Versions",
+    runtime: "Runtime",
+    pyproject: "pyproject",
+    frontendPackage: "Frontend package",
+    process: "Process",
+    pid: "PID",
+    python: "Python",
+    cwd: "Working directory",
+    argv: "Arguments",
+    frontend: "Frontend",
+    clientBackendBaseUrl: "Client backend base URL",
+    sameOriginBackend: "same-origin / Vite proxy",
+    selfCheckEndpoint: "Self-check endpoint",
+    observedOrigin: "Observed origin",
+    canonicalOrigin: "Canonical origin",
+    proxyTarget: "Vite proxy target",
+    proxyMatchesBackend: "Proxy matches backend",
+    webui: "WebUI static bundle",
+    webuiAvailable: "Available",
+    webuiDist: "Bundle path",
+    webuiEnvDist: "Env path",
+    webuiAssets: "Assets",
+    webuiEnvInvalid: "Env path invalid",
+    webuiDevFallback: "Dev fallback",
+    modelCompat: "Model compatibility",
+    compatProfiles: "Compat profiles",
+    domesticProfiles: "Domestic profiles",
+    requiredProfilesPresent: "Required profiles present",
+    missingProfiles: "Missing profiles",
+    profileIds: "Profile IDs",
+    apiSurface: "API surface",
+    routeCount: "Route count",
+    requiredRoutesPresent: "Required routes present",
+    missingRoutes: "Missing routes",
+    capabilitySurfaces: "Capability surfaces",
+    surface: "Surface",
+    capabilities: "Capabilities",
+    missing: "Missing",
+    orchestration: "Orchestration",
+    runEvidence: "Run evidence",
+    automation: "Automation",
+    backend: "Backend",
+    canonicalBaseUrl: "Canonical base URL",
+    requestOrigin: "Request origin",
+    host: "Host",
+    port: "Port",
+    loopbackAliases: "Loopback aliases",
+    checks: "Checks",
+    warnings: "Warnings",
+    nextActions: "Next actions",
+    passed: "pass",
+    failed: "fail",
+    empty: "No data.",
   },
 
   featureFlagsPanel: {
@@ -901,6 +1694,12 @@ export const enUS: Translations = {
     experimental: "experimental",
   },
 
+  followUpSuggestions: {
+    title: "Follow-up suggestions",
+    selectAria: (title) => `Send follow-up: ${title}`,
+    dismissAria: (title) => `Dismiss suggestion: ${title}`,
+  },
+
   remoteBackendsPanel: {
     title: "Remote Backends",
     disabled: "disabled",
@@ -925,6 +1724,9 @@ export const enUS: Translations = {
     removing: "Removing...",
     pingAria: (name) => `Ping ${name}`,
     removeAria: (name) => `Remove ${name}`,
+    removeConfirmTitle: (name) => `Remove remote backend "${name}"?`,
+    removeConfirmDescription:
+      "This backend will be removed from the list. You can add it again later if needed.",
   },
 
   invariantsPanel: {
@@ -970,6 +1772,61 @@ export const enUS: Translations = {
     statusDisabled: "Disabled",
     emptyTitle: "No plugins registered",
     emptyHint: "Install plugins to extend agent capabilities",
+    searchPlaceholder: "Search plugin name, description, or author",
+    filterAllAuthors: "All authors",
+    filterByAuthor: (author: string) => `Author ${author}`,
+    statusAll: "All statuses",
+    statusEnabledFilter: "Enabled",
+    statusDisabledFilter: "Disabled",
+    noMatches: "No matching plugins",
+    tryDifferentQuery: "Try another keyword or filter",
+    configureTitle: (name: string) => `${name} configuration`,
+    configureDescription: (name: string) =>
+      `Configure runtime parameters for ${name}`,
+    configureNoConfig: "This plugin does not require configuration",
+    configureCancel: "Cancel",
+    configureSave: "Save",
+    configureSaving: "Saving...",
+    statusEnabledTooltip: "Enabled",
+    statusDisabledTooltip: "Disabled",
+    statusErrorTooltip: "Plugin error",
+    badgeSkill: "Skill",
+    badgeChannel: "Channel",
+    badgeConfig: "Config",
+    badgeCommand: "Command",
+    badgeCapability: "Capability",
+    statusError: "Error",
+    configure: "Configure",
+    configureAria: (name: string) => `Configure ${name}`,
+    backToWorkspace: "Back to workspace",
+    registryTitle: "Trusted plugin updates",
+    registryDescription:
+      "The registry fixture has verified content digests, publisher policies, and App/MCP capability surfaces.",
+    registryInstallable: (count: number) => `${count} installable`,
+    registryInstallAria: (id: string) =>
+      `Install verified registry plugin ${id}`,
+    registryInstalling: "Installing",
+    registryUpgrade: "Upgrade",
+    registryUpToDate: "Up to date",
+    registryInstalledMessage: (id: string, version: string) =>
+      `${id} ${version} installed via signature/digest, permission, and migration gates.`,
+    surfaceFallback: "plugin",
+    discoveredTitle: "Discovered (not loaded)",
+    discoveredHint:
+      "Scan the local plugin directory for plugins that are not yet loaded. Load, start, stop, or unload them manually.",
+    noDiscovered: "No new plugins found",
+    refreshDiscovered: "Re-scan",
+    actionLoad: "Load",
+    actionStart: "Start",
+    actionStop: "Stop",
+    actionUnload: "Unload",
+    actionPending: "Working…",
+    stateLoaded: "Loaded",
+    stateStarted: "Running",
+    stateStopped: "Stopped",
+    lifecycleActionError: (name: string, action: string) =>
+      `Failed to ${action} plugin "${name}"`,
+    lifecycleRefreshError: "Failed to refresh plugin list",
   },
 
   // Live Preview
@@ -987,6 +1844,46 @@ export const enUS: Translations = {
     emptyHint: "Preview will appear after code generation",
     showPanel: "Show preview",
     hidePanel: "Hide preview",
+    inspectElement: "Select element",
+    cancelInspect: "Cancel selection",
+    inspectHint: "Click a page element · Esc to cancel",
+    aiEditTitle: "Ask AI to edit this element",
+    aiEditCancel: "Cancel element edit",
+    aiEditPlaceholder:
+      "e.g. Make this heading more futuristic without changing the layout",
+    aiEditSend: "Send edit",
+    aiEditQueued:
+      "Sent to AI. This task will update the file and refresh the preview.",
+    aiEditUnavailable:
+      "This task cannot accept the edit right now. Please try again shortly.",
+    officeEdit: "Edit with AI",
+    officeSelect: "Select content",
+    officeCancelSelect: "Cancel selection",
+    officeSelected: "Selected",
+    officeEditTitle: "Edit this office file",
+    officeEditPlaceholder:
+      "For example: turn slide 3 into a risk matrix and keep the current theme",
+    officeEditHint:
+      "The edit is sent to this task and the preview refreshes when it finishes",
+    previewError:
+      "Unable to load the preview. Check your sign-in and try again.",
+    previewRetry: "Reload preview",
+    officeFidelity: "Original layout",
+    humanEdit: "Edit directly",
+    humanEditing: "Editing page",
+    humanUnsaved: "Unsaved changes",
+    humanSave: "Save page",
+    humanCancel: "Discard changes",
+    humanSaved: "Page changes saved",
+    humanUndo: "Undo last save",
+    humanRestored: "Restored the version from before the save",
+    humanConflict: "The Agent updated this page; your changes are not saved",
+    humanReloadLatest: "Discard and load latest",
+    humanUnavailable: "This HTML is not a writable task artifact",
+    humanDiscardTitle: "Discard unsaved page changes?",
+    humanDiscardDescription:
+      "Leaving this preview will lose your unsaved edits. This cannot be undone.",
+    humanDiscardConfirm: "Discard and leave",
   },
 
   // Code Status
@@ -1015,11 +1912,12 @@ export const enUS: Translations = {
     sectionOlder: "Older",
     agents: "Agents",
     skills: "Skills",
-    createTeam: "Create Team",
+    createTeam: "Invite collaborators",
     switchAgent: "Switch Agent",
     selectAgent: "Select Agent",
     confirmDeleteProject: (project: string) =>
-      `Delete project "${project}"?\n(Threads in this project will not be deleted, only unclassified.)`,
+      `Threads in project "${project}" will be unclassified but not deleted.`,
+    confirmDeleteProjectTitle: "Delete project",
     confirmDeleteThread: (title: string) => `Delete conversation "${title}"?`,
     tools: "Tools",
     navigate: "Navigate",
@@ -1035,7 +1933,6 @@ export const enUS: Translations = {
     projects: "Projects",
     channels: "Channels",
     pairing: "Pairing Auth",
-    browser: "Browser Preview",
     moveToProject: "Move to project",
     newProject: "New project",
     // Additional fields
@@ -1047,17 +1944,24 @@ export const enUS: Translations = {
     navAdmin: "Admin",
     navSwarm: "Collab",
     navCompany: "Cowork",
-    navTeam: "Team",
+    navTeam: "Collaborate",
+    navDatabase: "Local File Agent",
     navKnowledgeGraph: "Knowledge Base",
     navReflex: "Reflex Rules",
     navIntelligence: "Automation",
+    navAssistant: "Assistant",
+    navPaperTrading: "Paper Trading",
+    navPaperTradingDesc: "Platform margin trading · paper trade plugin",
+    navCommunity: "Discover",
     navMcp: "MCP",
-    navStore: "Market",
     navEvolution: "Evolution",
+    navProjects: "Projects",
+    navDesign: "Design Canvas",
+    navNarrative: "Narrative Studio",
     navPlugins: "Plugins",
     navHR: "Agents",
+    navComputer: "Local Assistant",
     navDesktopOrganizer: "Desktop Organizer",
-    navMobile: "Mobile",
     navArchitecture: "Architecture",
     groupTools: "Tools",
     groupAdvancedTools: "Advanced Tools",
@@ -1067,30 +1971,47 @@ export const enUS: Translations = {
     groupSystem: "System",
     // Agent / team footer
     noAgents: "No agents available",
-    loginMolili: "Log in",
-    loginMoliliReason:
-      "Log in to unlock official models, credits and Page Agent",
+    loadingAgents: "Loading agents…",
+    agentsLoadFailed: "Could not load agents",
+    retryAgents: "Reload",
     remainingCredits: "Credits balance",
     logout: "Log out",
-    noTeams: "No teams yet",
-    selectTeam: "Select team",
-    deleteTeam: "Delete team",
-    newTeam: "New team",
+    noTeams: "No groups yet",
+    selectTeam: "Select group",
+    deleteTeam: "Delete group",
+    newTeam: "Invite collaborators",
     teamMembers: (n: number) => `${n} ${n === 1 ? "member" : "members"}`,
     lockedAgentTooltip: (name: string) => `This page is locked to ${name}`,
     adminAgentName: "Admin",
     switchAgentLabel: "Switch agent",
+    switchAgentMenuTitle: "Switch agent",
+    openAgentHud: "Open HUD",
+    openAgentHudFor: (name: string) => `Open HUD for ${name}`,
+    currentAgent: "Current agent",
+    soloChat: "Solo chat",
+    oneOnOneTask: "One-on-one task",
+    soloTasks: "Solo tasks",
+    groupTasks: "Collaborative tasks",
+    recentThreadsSummary: (recent, hidden) =>
+      `Recent ${recent} · ${hidden} more in history`,
+    showMoreProjectThreads: (count) => `Show ${count} more tasks`,
+    showFewerProjectThreads: "Show fewer tasks",
     // Header/footer tooltips
     newChatTooltip: "New chat",
     searchTooltip: "Search (⌘K)",
     settingsTooltip: "Settings",
     // Project + chat list actions
     deleteProjectTooltip: "Delete project",
+    deleteProjectFailed: "Failed to delete project. Please try again.",
     deleteThreadTooltip: "Delete chat",
     actionSort: "Sort",
-    actionNewProject: "New project",
+    actionNewProject: "Choose project folder",
+    projectPickerFailed:
+      "The system folder picker could not be opened. Check that the local service is running.",
     actionNewTask: "New task",
     actionNewChat: "New chat",
+    actionNew: "New",
+    sectionStart: "Start",
     actionEnableProjectGrouping: "Enable project grouping",
     actionDisableProjectGrouping: "Disable project grouping",
     sectionProjects: "Projects",
@@ -1099,7 +2020,123 @@ export const enUS: Translations = {
     noChatsYet: "No chats yet",
     collapseSidebar: "Collapse sidebar (⌘B)",
     expandSidebar: "Expand sidebar (⌘B)",
+    collapseSection: (label: string) => `Collapse ${label}`,
+    expandSection: (label: string) => `Expand ${label}`,
     projectNamePlaceholder: "Project name",
+    backToProjectList: "Back to projects",
+    openThreadFilesTooltip: "Open project files",
+    // Surface switch + task statuses
+    navBrowserSurface: "AI Browser",
+    editModules: "Edit sidebar",
+    editModulesDone: "Done",
+    editModulesHint: "Choose which modules appear in the sidebar",
+    modulePinned: "Always on",
+    moduleGroupWorkspace: "Workspace",
+    moduleGroupKnowledge: "Knowledge & storage",
+    moduleGroupCommunity: "Community",
+    moduleGroupGrowth: "Growth",
+    sectionTaskHistory: "Task history",
+    noTaskHistory: "No historical tasks",
+    unnamedTask: "Untitled task",
+    currentTaskSession: "Current task session",
+    taskStatusRunning: "Running",
+    taskStatusFailed: "Failed",
+    taskStatusPending: "Pending",
+    // Aria labels
+    ariaCollapseLocalDatabase: "Collapse local database",
+    ariaExpandLocalDatabase: "Expand local database",
+    ariaResizeSidebar: "Drag to resize width",
+    ariaResizeWorkbench: "Resize agent workbench width",
+    ariaChatWorkspace: "Conversation workspace",
+    ariaUtilityPanel: "Artifacts, plan, and research panel",
+    ariaAgentWorkbench: "Agent workbench",
+    ariaToggleWorkbenchDrawer: "Expand or collapse the agent workbench drawer",
+    // Storage library labels
+    libraryApps: "Apps",
+    libraryDocs: "Docs",
+    libraryImages: "Images",
+    libraryVideos: "Videos",
+    libraryComputer: "Computer",
+    libraryAuthorizedDirs: "Authorized dirs",
+    // Chats drawer
+    searchChats: "Search chats",
+    noMatchingChats: "No matching chats",
+  },
+
+  // Floating REC recorder overlay
+  recorder: {
+    title: "Recorder",
+    close: "Close",
+    taskNameLabel: "What task are you recording?",
+    taskNamePlaceholder: "e.g. Export this week's statement to Feishu",
+    stopFailed: "Failed to stop REC",
+  },
+
+  // Local brain readiness panel
+  localBrain: {
+    refresh: "Re-check",
+    dismiss: "Don't show again",
+    title: "Local brain",
+    ready: "Ready",
+    pending: (count: number) => `${count} to configure`,
+    checking: "Checking…",
+    requestFailed: "Request failed",
+    checkFailed: (error: string) =>
+      `Check failed: ${error} (backend not running?)`,
+    currentState: (detail: string) => `Current: ${detail}`,
+    nextStep: (action: string) => `Next: ${action}`,
+  },
+
+  // Team tasks panel
+  teamTasksPanel: {
+    emptyState: "Select or create a Team to see the team todo list here.",
+    summary: (total, running, done) =>
+      `${total} tasks · ${running} running · ${done} completed`,
+    newTask: "New",
+    loading: "Loading tasks...",
+    emptyFilter: "No matching tasks",
+    autoMatch: "Auto-match",
+    artifactCount: (count) => `${count} artifact${count === 1 ? "" : "s"}`,
+    rolesCompleted: (completed, total) =>
+      ` · ${completed}/${total} roles completed`,
+    statusPending: "Pending",
+    timeline: {
+      evidenceToggle: "Process evidence",
+      processCount: (count) => `${count} event${count === 1 ? "" : "s"}`,
+      artifactCount: (count) => `${count} artifact${count === 1 ? "" : "s"}`,
+      rawState: (included) => `raw ${included ? "included" : "hidden"}`,
+      refreshing: "Refreshing",
+      empty: "No persisted process evidence yet",
+    },
+    toast: {
+      runStarted: "Task started",
+      runFailed: "Failed to run task",
+      taskPaused: "Task paused",
+      pauseFailed: "Failed to pause task",
+      taskDeleted: "Task deleted",
+      deleteFailed: "Failed to delete task",
+    },
+    deleteConfirmTitle: "Delete task",
+    deleteConfirmDescription: (title: string) =>
+      `Delete task "${title}"? This action cannot be undone.`,
+    events: {
+      runStarted: "Task started",
+      roleStarted: (role) => (role ? `${role} started` : "Role started"),
+      roleCompleted: (role) =>
+        role ? `${role} completed` : "A role completed",
+      runDone: "Task completed, artifacts written back",
+      runFailed: "Task failed",
+      runCancelled: "Task cancelled",
+      fallback: (role) => (role ? `${role} updated` : "Task updated"),
+    },
+    roles: {
+      planner: "Planner",
+      researcher: "Researcher",
+      executor: "Executor",
+      critic: "Critic",
+      synthesizer: "Synthesizer",
+      evaluator: "Evaluator",
+    },
   },
 
   // Browser settings
@@ -1129,9 +2166,9 @@ export const enUS: Translations = {
       "Limit the number of tabs the agent can retain. Tabs opened with retain=true won't be auto-closed after a task ends.",
     saveConfig: "Save Config",
     configSaved: "Config saved",
-    installExtensionTitle: "Install Octopus Browser Relay",
+    installExtensionTitle: "Install EchoAI Browser Relay",
     installExtensionDesc:
-      "Install the extension to connect your browser to Octopus.",
+      "Install the extension to connect your browser to EchoAI.",
     step1Title: "Open Chrome Extensions page and enable Developer Mode",
     step1Desc: "Open the extensions management page in your browser",
     step1Action: "Open chrome://extensions",
@@ -1149,7 +2186,7 @@ export const enUS: Translations = {
     relayVersion: "Version",
     compareTitle: "Choose Connection Method",
     compareDesc:
-      "Both methods connect your browser to Octopus. Choose the one that fits your needs.",
+      "Both methods connect your browser to EchoAI. Choose the one that fits your needs.",
     compareFeature: "Feature",
     compareExtension: "Extension",
     compareCdp: "CDP Direct",
@@ -1182,7 +2219,7 @@ export const enUS: Translations = {
     allVersions: "All versions",
     // Page Agent integration
     pageAgentDesc:
-      "Page Agent is an open-source GUI Agent framework by Alibaba. It controls web pages via text-based DOM manipulation — no screenshots or multimodal models needed. Integrated into Octopus via MCP protocol.",
+      "Page Agent is an open-source GUI Agent framework by Alibaba. It controls web pages via text-based DOM manipulation — no screenshots or multimodal models needed. Integrated into EchoAI via MCP protocol.",
     pageAgentDocs: "View docs",
     pageAgentFeature1: "In-page JS integration",
     pageAgentFeature1Desc:
@@ -1220,7 +2257,7 @@ export const enUS: Translations = {
       "Page Agent MCP server enabled — agents can now use browser tools.",
     systemArchitecture: "Architecture",
     step3DragHint:
-      "Drag the octopus-browser-relay folder onto the chrome://extensions page, and Chrome will install it immediately.",
+      "Drag the echo-browser-relay folder onto the chrome://extensions page, and Chrome will install it immediately.",
     extProInstallOnce:
       "Install once, auto-connect, no re-authorization needed.",
     extProNoManualAuth: "No manual authorization clicks required.",
@@ -1228,7 +2265,7 @@ export const enUS: Translations = {
     extConNeedExtension: "Requires installing a Chrome extension.",
     cdpProNoExtension: "No extension installation required.",
     cdpProChrome144: "Works with Chrome 144+.",
-    cdpConReAuth: "Requires re-authorization after each Octopus restart.",
+    cdpConReAuth: "Requires re-authorization after each EchoAI restart.",
     cdpConChrome144Only: "Only supports Chrome 144+.",
   },
 
@@ -1353,7 +2390,19 @@ export const enUS: Translations = {
     localDataNote: "All connection data is stored locally — no cloud involved.",
     connectedCount: (n: number) => `${n} connected`,
     loading: "Loading channels...",
+    loadFailed: "Failed to load channels",
+    retry: "Retry",
     noRegistered: "No messaging channels registered.",
+    noRegisteredDescription:
+      "Once the channel service is running, available platforms and pairing status will appear here.",
+    searchPlaceholder: "Search channels, platforms, agents...",
+    filterAll: "All",
+    filterConnected: "Connected",
+    filterUnlinked: "Unlinked",
+    noSearchResults: "No matching channels",
+    noSearchResultsDescription:
+      "Try another keyword, or switch back to all statuses.",
+    categoryOther: "Other",
     connectedBadge: "Connected",
     toastAgentBound: "Agent bound",
     toastBindFailed: "Bind failed",
@@ -1365,6 +2414,9 @@ export const enUS: Translations = {
     noAgentsAvailable:
       "No agents available yet — create one on the Agents page first.",
     unassignCurrent: "Unbind current agent",
+    unassignConfirmTitle: "Unbind agent",
+    unassignConfirmDescription:
+      "Messages from this channel will no longer be handled by the agent. You can rebind anytime.",
     howToSetup: "How to connect?",
     clickToChangeAgent: "Click to change agent",
     handlingMessages: "Handling messages for this channel",
@@ -1431,7 +2483,7 @@ export const enUS: Translations = {
     reasonExternal: "External trigger",
     resumedTitlePrefix: "Resumed · task",
     resumedDescWithThread:
-      "Jumped to the original conversation. Send any message to continue from the checkpoint (+15 iterations).",
+      "Returned to the original conversation and will continue from the saved checkpoint with runway appropriate to the pause reason.",
     resumedTitleClearMark: "Pause flag cleared · task",
     resumedDescNoThread:
       "No thread_id recorded. Open the relevant thread and send a message to continue.",
@@ -1441,11 +2493,11 @@ export const enUS: Translations = {
       "Effective on the next iteration; status will switch to Paused automatically.",
     agentLabel: "agent:",
     threadLabel: "thread:",
-    tokensLabel: "tokens",
+    tokensLabel: "cumulative usage",
     costLabel: "cost",
     budgetDialogTitle: "Budget checkpoint reached",
     budgetDialogDesc:
-      "The task has saved a checkpoint before crossing its budget guardrail. Add more budget to continue, or keep it paused.",
+      "Task state is saved. Cumulative processing runway and USD cost are independent; the cost ceiling increases only when you enter a USD amount explicitly.",
     budgetResumedDesc:
       "Added budget and resumed from the checkpoint. The task can continue without starting over.",
     extraTokensKLabel: "Tokens (k)",
@@ -1474,7 +2526,7 @@ export const enUS: Translations = {
     loadoutReady: "LOADOUT READY",
     saved: "Agent configuration saved",
     saveFailed: (msg) => `Save failed: ${msg}`,
-    officialFaction: "Octopus Command",
+    officialFaction: "EchoAI Command",
     authorFaction: (author) => `${author} Lab`,
     categoryRoles: {
       assistant: "Support",
@@ -1508,10 +2560,11 @@ export const enUS: Translations = {
     visualWatermark: "CHARACTER",
     visualLoadoutLabel: "FOR YOUR LOADOUT",
     visualSystemOnline: "SYSTEM ONLINE",
-    visualGenerateAction: "Generate views",
+    visualGenerateAction: "Generate Agnes HD character views",
     visualGenerating: "Generating",
-    visualGenerateSuccess: "Agent three-view reference generated",
-    visualGenerateFailed: (msg) => `Failed to generate views: ${msg}`,
+    visualGenerateSuccess: "Agnes HD character views generated",
+    visualGenerateFailed: (msg) =>
+      `Failed to generate Agnes character views: ${msg}`,
     visualMissing: "No views yet",
     viewFront: "Front",
     viewSide: "Side",
@@ -1533,6 +2586,116 @@ export const enUS: Translations = {
     skillSubtitle: "Private skills and routing",
     privateSkillsLabel: "Private skill whitelist",
     privateSkillsPlaceholder: "skill-a, skill-b",
+    characterFileLabel: "Character file",
+    characterBackgroundLabel: "Profile record",
+    characterAgeLabel: "Age cue",
+    characterTemperamentLabel: "Temperament",
+    characterPersonalityLabel: "Personality color",
+    characterBestForLabel: "Best commissions",
+    characterBoundaryLabel: "Operating boundaries",
+    characterVisualKeywordsLabel: "Artwork keywords",
+    characterProfileReady: "Character profile ready",
+    characterPromptHint: "Used for artwork",
+    characterSkillHiddenHint:
+      "Skills and permissions stay in the bottom config actions; this panel keeps only character details useful for artwork generation.",
+    capabilityPackLabel: "Capability pack",
+    characterBackground: (name, role, type, faction, description) =>
+      `${name} is a ${type} from ${faction}, shaped around ${role}. ${description || "Background can be refined in the basic profile."} The artwork should express their role, experience, and trustworthy presence.`,
+    characterIntro: (
+      name,
+      role,
+      type,
+      faction,
+      origin,
+      personality,
+      temperament,
+    ) =>
+      `${name} is a ${type} deployed by ${faction}, usually placed in a ${role} position. ${origin} When entering a mission, ${name} reads the field first, then turns scattered signals into a clear next move. Their personality leans ${personality}, with a ${temperament} presence that should read at a glance.`,
+    characterDefaultOrigin:
+      "The archive does not yet contain a full origin, but the role already suggests someone who keeps rhythm inside complex situations.",
+    characterEpithets: {
+      assistant: "Echo of Order",
+      automation: "Field Executor",
+      coder: "Night Shift Debugger",
+      creative: "Spark Weaver",
+      researcher: "Silent Observer",
+      specialist: "Boundary Expert",
+      financial: "Calm Strategist",
+    },
+    characterQuotes: {
+      assistant: "Turn scattered noise into the next executable step.",
+      automation: "Command confirmed. Route cleared. Execution begins.",
+      coder: "Reproduce the break, then make the fix stand.",
+      creative: "Inspiration is not lightning; it is a route you can light.",
+      researcher: "Do not rush the conclusion. Evidence will speak.",
+      specialist: "Complexity is only waiting for the right entry point.",
+      financial: "Volatility speaks. The trick is hearing the stress.",
+    },
+    characterAgeArchetypes: {
+      assistant: "young adult to mature",
+      automation: "mature operator",
+      coder: "young technical expert",
+      creative: "young creator",
+      researcher: "mature researcher",
+      specialist: "seasoned specialist",
+      financial: "mature advisor",
+    },
+    characterPersonalities: {
+      assistant:
+        "warm, reliable, quick to respond, and good at making complexity clear.",
+      automation: "calm, disciplined, direct, like an on-site task lead.",
+      coder:
+        "focused, sharp, quietly confident, with a lightweight engineer feel.",
+      creative: "curious, expressive, visually sensitive, and lively.",
+      researcher:
+        "careful, patient, observant, with a lab-and-notebook presence.",
+      specialist: "composed, professional, bounded, and deeply competent.",
+      financial:
+        "rational, restrained, steady in judgment, with an analyst-advisor tone.",
+    },
+    characterTemperaments: {
+      assistant: "approachable, clean",
+      automation: "crisp, dependable",
+      coder: "cool, clever",
+      creative: "vivid, inspired",
+      researcher: "quiet, thoughtful",
+      specialist: "steady, precise",
+      financial: "restrained, professional",
+    },
+    characterVisualKeywords: {
+      assistant: [
+        "clean silhouette",
+        "soft expression",
+        "light gear",
+        "blue-white accents",
+      ],
+      automation: [
+        "tactical jacket",
+        "tool belt",
+        "clear stance",
+        "industrial details",
+      ],
+      coder: ["dark hoodie", "neon blue lines", "pixel badge", "focused eyes"],
+      creative: [
+        "asymmetric cut",
+        "bright accents",
+        "art tools",
+        "lively pose",
+      ],
+      researcher: ["long coat", "folder", "calm eyes", "lab elements"],
+      specialist: [
+        "premium uniform",
+        "precise accessories",
+        "steady pose",
+        "domain insignia",
+      ],
+      financial: [
+        "tailored suit",
+        "muted palette",
+        "metal watch",
+        "advisor presence",
+      ],
+    },
     keySkillsLabel: "Key skills",
     browseSkillWhitelist: "Browse skill whitelist",
     availableSkillPoolLabel: "Full skill pool",
@@ -1561,10 +2724,15 @@ export const enUS: Translations = {
     checkNoExecutableSkills:
       "Executable Skill is 0; this agent is effectively unavailable",
     checkUnsavedChanges: "Unsaved changes exist; save before they take effect",
+    configDockTitle: "Config shortcuts",
     configureProfileAction: "Edit profile & prompt",
+    configureProfileHint: "Description, model, and Soul Prompt",
     configureArmAction: "Configure ARM",
+    configureArmHint: "Capability module access",
     configureSkillsAction: "Open Skill market",
+    configureSkillsHint: "Private Skill whitelist",
     configurePermissionsAction: "Adjust permissions",
+    configurePermissionsHint: "High-risk capability limits",
     routingConfig: "Routing & budget",
     saveTitle: "SAVE",
     saveSubtitle: "Apply changes",
@@ -1575,6 +2743,106 @@ export const enUS: Translations = {
     modified: "Modified",
     signedDelta: (count) => `${count > 0 ? "+" : ""}${count}`,
   },
+
+  // Agent role profile dialog
+  agentRoleProfile: {
+    imageReadFailed: "Failed to read image",
+    switchToAgent: (name) => `Switch to ${name}`,
+    generateVisualPromptTitle: "Generate visual prompt",
+    generateVisualPromptDescription:
+      "Use the agent-visual-kit workflow for quality control, then add your own appearance terms.",
+    visualPromptGroupStyle: "Style",
+    visualPromptGroupComposition: "Composition",
+    visualPromptGroupBackground: "Background",
+    visualPromptGroupQuality: "Quality",
+    visualPromptOptionGameCharacter: "Game character art",
+    visualPromptOptionCleanAnime: "Clean anime style",
+    visualPromptOptionSemiReal: "Semi-realistic",
+    visualPromptOptionFullBody: "Full body",
+    visualPromptOptionSafeHeadroom: "Extra headroom",
+    visualPromptOptionAvatarReady: "Avatar-friendly",
+    visualPromptOptionThreeViewConsistency: "Three-view consistency",
+    visualPromptOptionTransparent: "Transparent background",
+    visualPromptOptionSoftShadow: "Soft shadow",
+    visualPromptOptionHighResolution: "High-resolution details",
+    visualPromptOptionNoArtifacts: "Reduce artifacts",
+    customAdditions: "Custom additions",
+    customPromptPlaceholder:
+      "e.g., silver-white short hair, black techwear jacket, yellow energy lines, calm but approachable.",
+    referenceImages: "Reference images",
+    referenceImagesHint: (count) =>
+      `Up to ${count} images to help keep face and art style consistent`,
+    referenceImageUrlPlaceholder:
+      "Paste image URLs, one per line; or upload local images directly.",
+    upload: "Upload",
+    referenceImageAlt: (index) => `Reference image ${index + 1}`,
+    removeReferenceImage: "Remove reference image",
+    referenceImagesGenerateHint: (count) =>
+      `Will send ${count} reference image(s) to Agnes for reference-based generation.`,
+    reset: "Reset",
+    cancel: "Cancel",
+    generateThreeViews: "Generate three views",
+    codeMode: "Code mode",
+    codeModeDescription:
+      "Top-level access switch; enables code mode and extra workspace authorization when on.",
+    toggleCodeMode: "Toggle code mode",
+    saveCodeMode: "Save code mode",
+    coderBestFor: [
+      "Code review and fixes",
+      "Refactoring plans",
+      "Tests and edge cases",
+    ],
+    coderBoundaries: [
+      "Locate a reproduction path before changing code",
+      "Confirm high-risk bulk edits",
+    ],
+    researcherBestFor: [
+      "Market research",
+      "Competitive landscape",
+      "Opportunities and risk assessment",
+    ],
+    researcherBoundaries: [
+      "Conclusions must cite sources",
+      "Do not present guesses as facts",
+    ],
+    growthBestFor: [
+      "Campaign copy",
+      "Growth experiments",
+      "Product selling points",
+    ],
+    growthBoundaries: [
+      "Creatives must lead to conversion actions",
+      "Do not replace legal or compliance commitments",
+    ],
+    ecommerceBestFor: [
+      "Category strategy",
+      "Inventory and supply chain analysis",
+      "Conversion funnel optimization",
+    ],
+    ecommerceBoundaries: [
+      "Strategy must match fulfillment capability",
+      "Pricing and contract matters need review",
+    ],
+    aoiBestFor: [
+      "Character interaction",
+      "World-building",
+      "Creative narrative and atmosphere",
+    ],
+    aoiBoundaries: [
+      "Confirm risky requests first",
+      "Keep character tone without overriding user intent",
+    ],
+    defaultBestFor: [
+      "Writing and summarizing",
+      "Plan breakdown",
+      "Information organization and Q&A",
+    ],
+    defaultBoundaries: [
+      "Will confirm before external actions",
+      "Will flag gaps in uncertain content",
+    ],
+  },
+
   chatPage: {
     stopNote: "User clicked Stop in the chat input",
   },
@@ -1613,17 +2881,256 @@ export const enUS: Translations = {
     save: "Save agent",
     saving: "Saving agent...",
     saveRequested:
-      "Save requested. Octopus is generating and saving an initial version now.",
+      "Save requested. EchoAI is generating and saving an initial version now.",
     saveHint:
       "You can save this agent at any time from the top-right menu, even if this is only a first draft.",
     saveCommandMessage:
       "Please save this custom agent now based on everything we have discussed so far. Treat this as my explicit confirmation to save. If some details are still missing, make reasonable assumptions, generate a concise first SOUL.md in English, and call setup_agent immediately without asking me for more confirmation.",
     agentCreatedPendingRefresh:
-      "The agent was created, but Octopus could not load it yet. Please refresh this page in a moment.",
+      "The agent was created, but EchoAI could not load it yet. Please refresh this page in a moment.",
     more: "More actions",
     agentCreated: "Agent created!",
     startChatting: "Start chatting",
     backToGallery: "Back to Gallery",
+    agentNew: {
+      pageTitle: "Create Agent",
+      pageSubtitle:
+        "Describe your goal in one sentence, Agent Generator auto-completes the config",
+      placeholder:
+        "e.g. Help me do competitive research, output opportunities, risk alerts and next steps every week.",
+      buttons: {
+        checking: "Checking...",
+        generate: "Generate Agent",
+        back: "Back",
+        autoConfig: "Quick Config Generator",
+        generateConfig: "Generate Config Description",
+      },
+      labels: {
+        permissions: "Permissions",
+      },
+      roles: [
+        {
+          id: "operator",
+          label: "Workflow Operator",
+          nameSuggestion: "workflow-operator",
+          brief:
+            "Breaks user goals into steps, executes with tools, and reports progress at key milestones.",
+        },
+        {
+          id: "analyst",
+          label: "Insight Analyst",
+          nameSuggestion: "insight-analyst",
+          brief:
+            "Researches, analyzes, synthesizes evidence, and outputs structured judgments and next actions.",
+        },
+        {
+          id: "creator",
+          label: "Content Creator",
+          nameSuggestion: "content-creator",
+          brief:
+            "Transforms vague ideas into publishable content, scripts, copy, and visual direction.",
+        },
+        {
+          id: "assistant",
+          label: "Personal Assistant",
+          nameSuggestion: "personal-assistant",
+          brief:
+            "Organizes schedules, messages, files, and todos to help users stay on track.",
+        },
+      ],
+      scenarios: [
+        {
+          id: "workspace",
+          label: "Workspace Collaboration",
+          brief:
+            "Works primarily within team, knowledge base, project materials, and shared context.",
+          permissions: [
+            "Read workspace materials",
+            "Write drafts and tasks",
+            "Confirm high-risk external actions",
+          ],
+        },
+        {
+          id: "research",
+          label: "Deep Research",
+          brief:
+            "Needs web search, source comparison, evidence chain organization, and judgment.",
+          permissions: [
+            "Allow web search",
+            "Must cite sources",
+            "Explicitly state uncertain conclusions",
+          ],
+        },
+        {
+          id: "automation",
+          label: "Automation Execution",
+          brief:
+            "Suitable for repetitive workflows, spreadsheet processing, file organization, and cross-tool orchestration.",
+          permissions: [
+            "Allow local/tool operations",
+            "Preview before writing",
+            "Confirm delete and send actions",
+          ],
+        },
+        {
+          id: "chat",
+          label: "Conversational Companion",
+          brief:
+            "Values long-term memory, tone consistency, character setting, and interaction boundaries.",
+          permissions: [
+            "Follow character tone",
+            "Maintain safety boundaries",
+            "Do not fake real identity",
+          ],
+        },
+      ],
+      abilities: [
+        {
+          id: "knowledge",
+          label: "Knowledge Base",
+          arms: ["knowledge", "files"],
+          skills: ["read_knowledge", "summarize_docs", "cite_sources"],
+          brief:
+            "Reads and synthesizes knowledge bases, files, and historical context.",
+        },
+        {
+          id: "web",
+          label: "Web Research",
+          arms: ["browser", "search"],
+          skills: ["web_search", "open_url", "extract_evidence"],
+          brief:
+            "Searches the web, opens pages, extracts sources and factual evidence.",
+        },
+        {
+          id: "workspace-tools",
+          label: "Workspace Tools",
+          arms: ["tasks", "calendar", "team"],
+          skills: ["create_task", "read_calendar", "draft_update"],
+          brief:
+            "Handles tasks, schedules, team messages, and project updates.",
+        },
+        {
+          id: "local",
+          label: "Local Operations",
+          arms: ["computer", "filesystem"],
+          skills: ["inspect_files", "edit_file", "run_command"],
+          brief:
+            "Reads files, modifies drafts, or executes local commands with user confirmation.",
+        },
+      ],
+      templates: [
+        {
+          id: "team-qa",
+          name: "Team Q&A",
+          nameSuggestion: "team-qa",
+          description:
+            "Answers questions based on team materials, group messages, and shared docs.",
+          integrations: ["Knowledge Base", "Team Messages", "Google Drive"],
+          capabilities: [
+            "Organize team docs and answer member questions",
+            "Cite sources and gaps in answers",
+            "Turn recurring questions into reusable knowledge",
+          ],
+        },
+        {
+          id: "morning-planner",
+          name: "Morning Planner",
+          nameSuggestion: "morning-planner",
+          description:
+            "Plans daily schedule based on calendar, tasks, and open conversations.",
+          integrations: ["Calendar", "Todos", "Conversation History"],
+          capabilities: [
+            "Turn scattered tasks into daily plan",
+            "Identify deadlines and time conflicts",
+            "Track unfinished items and roll over",
+          ],
+        },
+        {
+          id: "defect-triage",
+          name: "Defect Triage",
+          nameSuggestion: "defect-triage",
+          description:
+            "Reviews new defects, determines priority, and writes to tracker.",
+          integrations: ["Linear", "Jira", "Logs"],
+          capabilities: [
+            "Complete repro steps and impact scope",
+            "Assign priority and responsible direction",
+            "Sync conclusions to defect tracker",
+          ],
+        },
+        {
+          id: "data-analyst",
+          name: "Data Analyst",
+          nameSuggestion: "data-analyst",
+          description:
+            "Organizes data, SQL, charts, and quality checks around analysis goals.",
+          integrations: ["Airtable", "Hex", "SQL"],
+          capabilities: [
+            "Turn vague data needs into analysis plans",
+            "Check dataset structure and anomalies",
+            "Write or fix SQL and extraction logic",
+            "Choose the clearest charts or tables",
+            "Stress-test analysis before sharing",
+          ],
+        },
+        {
+          id: "exec-assistant",
+          name: "Executive Assistant",
+          nameSuggestion: "exec-assistant",
+          description:
+            "Summarizes schedule, inbox, and project progress to drive follow-ups.",
+          integrations: ["Mail", "Calendar", "Docs"],
+          capabilities: [
+            "Summarize key info and decisions needed",
+            "Draft replies and meeting follow-ups",
+            "Turn commitments into trackable tasks",
+          ],
+        },
+        {
+          id: "knowledge-search",
+          name: "Knowledge Search",
+          nameSuggestion: "knowledge-search",
+          description:
+            "Reliable retrieval and answer synthesis across docs, web, and conversations.",
+          integrations: ["Web", "Knowledge", "Files"],
+          capabilities: [
+            "Cross-source retrieval and merged answers",
+            "Distinguish facts, inferences, and uncertainty",
+            "Proactively verify time-sensitive questions online",
+          ],
+        },
+      ],
+    },
+  },
+
+  // Agent card
+  agentCard: {
+    chat: "Chat",
+    chatAriaLabel: (name) => `Chat with ${name}`,
+    addOnDemand: "Add to conversation",
+    addOnDemandAriaLabel: (name) => `Add ${name} to a conversation on demand`,
+    profile: "Profile",
+    profileAriaLabel: (name) => `${name} profile`,
+    deleteAriaLabel: (name) => `Delete role ${name}`,
+    deleteTitle: (name) => `Delete role “${name}”`,
+    deleteConfirm: (name) =>
+      `Role “${name}” will be permanently deleted. This action cannot be undone.`,
+  },
+
+  // Enterprise assets tab
+  enterpriseAssetsTab: {
+    loading: "Loading…",
+    notAvailableTitle: "Enterprise asset library not connected.",
+    notAvailableHintPrefix: "Configure",
+    notAvailableHintSuffix:
+      "in the backend to list enterprise-managed agent assets here.",
+    empty: "No matching enterprise assets.",
+    header: (count) =>
+      `From enterprise asset library · ${count} items (consume, not fork)`,
+    install: "Install locally",
+    installing: "Importing…",
+    importSuccess: (name) => `Imported "${name}" to local agent library`,
+    importFailed: (msg) => `Import failed: ${msg}`,
   },
 
   // Breadcrumb
@@ -1634,13 +3141,13 @@ export const enUS: Translations = {
 
   // Workspace
   workspace: {
-    officialWebsite: "Octopus's official website",
-    githubTooltip: "Octopus on Github",
+    officialWebsite: "EchoAI's official website",
+    githubTooltip: "EchoAI on Github",
     settingsAndMore: "Settings and more",
-    visitGithub: "Octopus on GitHub",
+    visitGithub: "EchoAI on GitHub",
     reportIssue: "Report a issue",
     contactUs: "Contact us",
-    about: "About Octopus",
+    about: "About EchoAI",
     modes: {
       chat: "Chat",
       team: "Team",
@@ -1652,7 +3159,7 @@ export const enUS: Translations = {
       badge: "Agent OS Control Room",
       headline: "Give agents a goal, then supervise the work.",
       description:
-        "Octopus turns goals into plans, runs tools in a scoped runtime, records the trace, and keeps useful memory for the next run.",
+        "EchoAI turns goals into plans, runs tools in a scoped runtime, records the trace, and keeps useful memory for the next run.",
       newTask: "New Task",
       codeTask: "Code Task",
       systemLoop: {
@@ -1725,9 +3232,23 @@ export const enUS: Translations = {
     noArtifactSelected: "No artifact selected",
     selectArtifactToView: "Select an artifact to view its details",
     artifactsTitle: "Artifacts",
+    artifactsTabChanges: "Changes",
+    artifactsTabPreview: "Preview",
+    noChangesArtifacts: "No changes",
+    noPreviewArtifacts: "Nothing to preview",
     retry: "Retry",
+    messageQueued: "Queued",
+    messageSending: "Sending",
+    messageSendFailed: "Not sent",
+    previousMessagePending:
+      "The previous message is still sending. Wait for confirmation, then retry.",
+    steeringTurnUnavailable:
+      "The original task is no longer running. Send this again as a new message.",
     editResend: "Edit and resend",
     regenerateResponse: "Regenerate response",
+    forkFromHere: "Fork conversation from here",
+    forkedThread: "Forked a new conversation",
+    forkFailed: "Fork failed: this turn is not complete yet",
     goodResponse: "Good response",
     badResponse: "Bad response",
     feedbackThanks: "Thanks for the feedback!",
@@ -1735,6 +3256,10 @@ export const enUS: Translations = {
     feedbackFailed: "Failed to save feedback.",
     interruptedMessage:
       "This response was interrupted during generation and may be incomplete.",
+    pausedMessage:
+      "This task is paused. Progress and its checkpoint were saved, and it can be continued.",
+    cancelledMessage:
+      "This task was cancelled. Completed steps and outputs are still preserved.",
     strategyReflex: "⚡ Reflex",
     strategyReact: "🧠 ReAct",
     strategyDirectLlm: "💬 Direct",
@@ -1743,6 +3268,7 @@ export const enUS: Translations = {
     clarificationChoose: "Choose to continue",
     clarificationAutoSubmit: (seconds: number) =>
       `Default continues in ${seconds}s`,
+    clarificationOtherPlaceholder: "Other (type your own answer)…",
   },
 
   // Chats
@@ -1762,7 +3288,7 @@ export const enUS: Translations = {
 
   // Page titles (document title)
   pages: {
-    appName: "Octopus",
+    appName: "EchoAI",
     chats: "Chats",
     newChat: "New chat",
     untitled: "Untitled",
@@ -1772,10 +3298,10 @@ export const enUS: Translations = {
   toolCalls: {
     moreSteps: (count: number) => `${count} more step${count === 1 ? "" : "s"}`,
     lessSteps: "Less steps",
-    executeCommand: "Execute command",
+    executeCommand: "Run command",
     presentFiles: "Present files",
     needYourHelp: "Need your help",
-    useTool: (toolName: string) => `Use "${toolName}" tool`,
+    useTool: () => "Run action",
     searchFor: (query: string) => `Search for "${query}"`,
     searchForRelatedInfo: "Search for related information",
     searchForRelatedImages: "Search for related images",
@@ -1788,7 +3314,7 @@ export const enUS: Translations = {
     writeFile: "Write file",
     clickToViewContent: "Click to view file content",
     writeTodos: "Update to-do list",
-    skillInstallTooltip: "Install skill and make it available to Octopus",
+    skillInstallTooltip: "Install skill and make it available to EchoAI",
     toastSkillInstallFailed: "Failed to install skill",
     toastExportConversationFailed: "Failed to export conversation",
   },
@@ -1797,6 +3323,10 @@ export const enUS: Translations = {
   uploads: {
     uploading: "Uploading...",
     uploadingFiles: "Uploading files, please wait...",
+    uploadProgress: (percent) => `Uploading ${percent}%`,
+    uploadFailed: "Upload failed",
+    retryUpload: "Retry upload",
+    waitingForUpload: "Waiting for attachments to finish uploading",
   },
 
   streaming: {
@@ -1807,19 +3337,33 @@ export const enUS: Translations = {
       "Network disconnected. Task auto-paused — send a message to resume from checkpoint.",
     turnFailed:
       "This turn stopped before finishing. Continue the chat or retry.",
+    guardBlocked:
+      "The result was preserved, but a completion guard did not pass. Continue using the reason below.",
+    lifecycleFailed:
+      "The task outcome could not be persisted reliably. Retry or restart the backend.",
+    workspaceWriteRequired:
+      "This task requires a project file change, but no successful file change was recorded.",
     verificationRequired:
-      "Code changes need verification before Octopus can finish this turn. Run tests, lint, typecheck, or build, then continue.",
+      "Code changes need verification before EchoAI can finish this turn. Run tests, lint, typecheck, or build, then continue.",
+    environmentBlocked:
+      "This task is blocked by an environment constraint — the reason is below.",
+    environmentBlockedAuthorizeCommon: 'Authorize "common domains" and retry',
+    environmentBlockedAuthorizeFull: "Authorize full network and retry",
+    blockedOnUser: "This task needs your input before it can continue.",
     streamEndpointUnavailable:
-      "The backend chat/team stream endpoint is not enabled or is unavailable. Start the full Octopus backend or check the frontend proxy.",
+      "The backend chat/team stream endpoint is not enabled or is unavailable. Start the full EchoAI backend or check the frontend proxy.",
     iteration: (count: number) => `Round ${count}`,
     toolCalls: (count: number) => `${count} call${count === 1 ? "" : "s"}`,
     generating: "Generating…",
+    codeBlockWrap: "Soft wrap",
+    codeBlockScroll: "Horizontal scroll",
   },
 
   subagents: {
     subagent: "Sub-agent",
     executing: (count: number) =>
       `Executing ${count === 1 ? "" : count + " "}sub-agent${count === 1 ? "" : "s in parallel"}`,
+    parallelExecution: "Parallel Execution",
     pending: "Waiting",
     reasoning: "Reasoning",
     iterating: "Iterating",
@@ -1827,10 +3371,19 @@ export const enUS: Translations = {
     analyzing: "Analyzing",
     summarizing: "Summarizing",
     in_progress: "Sub-agent running",
-    completed: "Sub-agent completed",
-    failed: "Sub-agent failed",
+    completed: "Completed",
+    failed: "Failed",
     cancelled: "Cancelled",
     timed_out: "Timed out",
+    running: "Running",
+    expandAll: "Expand All",
+    collapseAll: "Collapse All",
+    iterations: "iterations",
+    duration: "Duration",
+    filesModified: "Files Modified",
+    executionHistory: "Execution History",
+    modifiedFiles: "Modified Files",
+    viewDetails: "View Details",
   },
 
   todoList: {
@@ -1896,7 +3449,7 @@ export const enUS: Translations = {
     actions: "Actions",
     keyboardShortcuts: "Keyboard Shortcuts",
     keyboardShortcutsDescription:
-      "Navigate Octopus faster with keyboard shortcuts.",
+      "Navigate EchoAI faster with keyboard shortcuts.",
     openCommandPalette: "Open Command Palette",
     commandPaletteDescription: "Search for a command to run...",
     toggleSidebar: "Toggle Sidebar",
@@ -1938,6 +3491,14 @@ export const enUS: Translations = {
     reject: "Reject",
     approved: "Approved",
     rejected: "Rejected",
+    tools: {
+      bash: "Run command",
+      write_file: "Write file",
+      str_replace: "Edit file",
+      git_commit: "Commit",
+      schedule_cron: "Schedule task",
+      remote_trigger: "Webhook",
+    },
   },
 
   diffEditor: {
@@ -1974,21 +3535,24 @@ export const enUS: Translations = {
   // Settings
   settings: {
     title: "Settings",
-    description: "Adjust how Octopus looks and behaves for you.",
+    description: "Adjust how EchoAI looks and behaves for you.",
     sections: {
       account: "Account",
-      subscription: "Plan & Billing",
+      subscription: "Plan & Usage",
       appearance: "Appearance",
-      memory: "Memory & History",
+      general: "General",
+      conversation: "Conversation",
+      memory: "Memory & Personal Rules",
       tools: "Tools",
       skills: "Skills",
       notification: "Notification",
       browser: "Browser Preferences",
-      observability: "Observability",
-      privacy: "Privacy & Security",
+      observability: "Run diagnostics",
+      privacy: "Personal Space & Security",
       about: "About",
       automation: "Execution & Permissions",
       evolution: "Self-evolution",
+      sandbox: "Sandbox & Execution",
     },
     automation: {
       title: "Execution & Permissions",
@@ -2003,11 +3567,27 @@ export const enUS: Translations = {
       desktopTitle: "Allow desktop actions",
       desktopDesc:
         "When ON, screen_capture / screen_info / mouse_click / mouse_move / keyboard_type / keyboard_press register, letting agents take real screenshots and drive mouse/keyboard. OFF removes them for every agent.",
+      localToolsTitle: "Local tools",
+      localToolsDesc:
+        "Lower-frequency local connection, desktop cleanup, and device-level tools live here so the main sidebar stays focused on core workflows.",
       groupLabel: "group:",
       reset: "Reset",
       save: "Save",
+      saveSuccess: "Execution capability settings saved",
+      saveFailed:
+        "The settings could not be saved. Existing settings were not changed.",
       saveDescription:
         "Restart the backend afterwards — the new skill registry reads this file at boot.",
+      nextStepSaveTitle: "Next: save your changes",
+      nextStepVerifyTitle: "Next: verify automation works",
+      nextStepSaveHint:
+        "Save, then restart when prompted so the new browser/desktop automation toggles take effect.",
+      nextStepVerifyHint:
+        "Toggles are in sync. Open the computer automation page to watch the screen, generate a plan, and confirm local capabilities run.",
+      nextStepDisabledTitle: "Browser and desktop control are off",
+      nextStepDisabledHint:
+        "Turn on at least one capability and save before using local automation.",
+      openComputerTool: "Open computer automation",
       loading: "Loading automation capabilities...",
       loadFailed: "Load failed",
       restartConfirmTitle: "Restart backend to apply",
@@ -2017,12 +3597,13 @@ export const enUS: Translations = {
       restartNow: "Restart now",
       restarting: "Restarting backend...",
       restartFailed: "Restart failed",
+      restartManualOnly:
+        "Web mode cannot restart the backend for you. Restart it manually when ready.",
       rules: {
         sectionTitle: "Approval rules",
         sectionDescription:
           "Per-tool allow / deny rules layered on top of the capability switches. Rules are scanned in order; the first match wins. A miss falls through to the UI approval prompt (or AutoDeny if no UI is wired).",
-        emptyState:
-          "No rules configured. Copy permissions.example.json from the repo root into data/permissions.json to start from a balanced template.",
+        emptyState: "No approval rules yet. Add the first one below.",
         loading: "Loading rules...",
         loadFailed: "Failed to load rules",
         addTitle: "Add rule",
@@ -2039,6 +3620,9 @@ export const enUS: Translations = {
         adding: "Adding...",
         addError: "Failed to add rule",
         deleteButton: "Delete",
+        deleteConfirmTitle: "Delete approval rule",
+        deleteConfirmHint:
+          "The new rule order applies to the next tool call immediately.",
         deleteError: "Failed to delete rule",
         moveUpButton: "Move up",
         moveDownButton: "Move down",
@@ -2087,13 +3671,13 @@ export const enUS: Translations = {
       gepaDryRunBadge: "dry-run",
       gepaAutoApplyBadge: "auto-apply",
       gepaDryRunHint:
-        "💡 GEPA is in dry-run. Set OCTOPUS_GEPA_AUTO_APPLY=1 to actually update recipe weights.",
+        "💡 GEPA is in dry-run. Set ECHO_GEPA_AUTO_APPLY=1 to actually update recipe weights.",
       notGenerated: "Not generated",
       camouflageTitle: "Camouflage Evolution (LLM-driven)",
       camouflageDescription:
         "PromptEvolver reads losing samples and asks an LLM to propose new prompt variants · OFF by default.",
       camouflageDisabledHint:
-        "⚙️ Set OCTOPUS_CAMOUFLAGE_ENABLED=1 to enable · OFF by default because LLM calls cost real money.",
+        "⚙️ Set ECHO_CAMOUFLAGE_ENABLED=1 to enable · OFF by default because LLM calls cost real money.",
       camouflageEnabledBadge: "enabled",
       camouflageDisabledBadge: "disabled",
       camouflageVariantsLabel: "Variant pool",
@@ -2109,7 +3693,7 @@ export const enUS: Translations = {
     memory: {
       title: "Memory",
       description:
-        "Octopus automatically learns from your conversations in the background. These memories help Octopus understand you better and deliver a more personalized experience.",
+        "Manage saved facts and conversation summaries, and control when EchoAI records and uses them.",
       empty: "No memory data to display.",
       rawJson: "Raw JSON",
       exportButton: "Export memory",
@@ -2121,6 +3705,7 @@ export const enUS: Translations = {
       importFileLabel: "Selected file",
       importInvalidFile:
         "Failed to read the selected memory file. Please choose a valid JSON export.",
+      importFileTooLarge: "The memory file must be 5 MB or smaller.",
       importSuccess: "Memory imported",
       manualFactSource: "Manual",
       addFact: "Add fact",
@@ -2144,6 +3729,8 @@ export const enUS: Translations = {
       factCategoryPlaceholder: "context",
       factConfidenceHint: "Use a number between 0 and 1.",
       factSave: "Save fact",
+      factEditorDescription:
+        "Save a searchable fact. Higher confidence makes it more likely to be used in relevant conversations.",
       factValidationContent: "Fact content cannot be empty.",
       factValidationConfidence: "Confidence must be a number between 0 and 1.",
       noFacts: "No saved facts yet.",
@@ -2152,6 +3739,7 @@ export const enUS: Translations = {
       memoryFullyEmpty: "No memory saved yet.",
       factPreviewLabel: "Fact to delete",
       searchPlaceholder: "Search memory",
+      filterLabel: "Filter memory type",
       filterAll: "All",
       filterFacts: "Facts",
       filterSummaries: "Summaries",
@@ -2160,6 +3748,11 @@ export const enUS: Translations = {
       agentScope: "Agent: ",
       globalScope: "Global",
       saved: "Saved",
+      actionFailed:
+        "The action failed. Existing memory was not changed. Try again.",
+      configLoading: "Loading memory controls…",
+      configLoadFailed:
+        "Memory controls could not be loaded. Their current state was not changed.",
       enableMemory: "Enable Memory",
       enableMemoryDesc: "When off, memory is neither read nor written.",
       autoCapture: "Auto Capture",
@@ -2203,19 +3796,52 @@ export const enUS: Translations = {
       system: "System",
       light: "Light",
       dark: "Dark",
-      apple: "Apple",
       systemDescription: "Match the operating system preference automatically.",
       lightDescription: "Bright palette with higher contrast for daytime.",
       darkDescription: "Dim palette that reduces glare for focus.",
-      appleDescription: "Modern, crisp, and clean Apple-inspired design.",
+      paletteTitle: "Color palette",
+      paletteDescription:
+        "Pick an overall color palette that shapes the accent and backdrop.",
+      paletteRose: "Rose",
+      paletteRoseDescription: "Elegant, romantic pink — refined and soft.",
+      paletteSteel: "Indigo",
+      paletteSteelDescription: "Composed indigo — rational without glare.",
+      paletteEmerald: "Jade",
+      paletteEmeraldDescription:
+        "Blue-shifted jade green — restrained and clear.",
+      paletteViolet: "Mauve",
+      paletteVioletDescription: "Greyed rose-purple — understated, wears well.",
+      paletteAmber: "Clay",
+      paletteAmberDescription: "Warm terracotta — earthy and tactile.",
+      paletteTeal: "Slate Teal",
+      paletteTealDescription: "Low-chroma slate teal — smoky and calm.",
+      paletteApricot: "Apricot",
+      paletteApricotDescription: "Soft warm apricot — bright and gentle.",
+      paletteMint: "Mint",
+      paletteMintDescription: "Clear mint green — light and clean.",
+      paletteGroupSoft: "Soft",
+      paletteGroupDeep: "Deep",
+      paletteCustom: "Custom",
+      paletteCustomDescription:
+        "Pick your own accent color — live preview, auto-saved.",
+      paletteCustomHint:
+        "Use the picker for any accent; text and highlights adapt automatically.",
       languageTitle: "Language",
       languageDescription: "Switch between languages.",
+      languageEnglish: "English",
+      languageChineseSimplified: "Chinese (Simplified)",
       chatFontSizeTitle: "Chat font size",
       chatFontSizeDescription:
         "Scale the text size of chat messages. Applies immediately to every conversation.",
       chatFontSizeSmall: "Small",
       chatFontSizeMedium: "Medium (default)",
       chatFontSizeLarge: "Large",
+      conversationDetailLevelTitle: "Conversation detail",
+      conversationDetailLevelDescription:
+        "Control how much intermediate activity is shown during conversations.",
+      conversationDetailLevelLow: "Low - Minimal view",
+      conversationDetailLevelMedium: "Medium - Balanced",
+      conversationDetailLevelHigh: "High - Verbose",
       cornerRadiusTitle: "Corner radius",
       cornerRadiusDescription:
         "Global multiplier applied to every rounded corner. Crisp feels more code-editor, pill feels friendlier.",
@@ -2226,9 +3852,12 @@ export const enUS: Translations = {
       cornerPill: "Pill",
       uiDensityTitle: "UI density",
       uiDensityDescription:
-        "Compact shrinks base text and row padding for information-dense workflows.",
+        "Adjust base text, row height, and control spacing from relaxed reading to dense workflows.",
+      densityRelaxed: "Relaxed",
       densityComfortable: "Comfortable",
       densityCompact: "Compact",
+      densityDense: "Dense",
+      densityUltraDense: "Ultra",
     },
     tools: {
       title: "Tools",
@@ -2241,11 +3870,12 @@ export const enUS: Translations = {
       createSkill: "Create skill",
       emptyTitle: "No agent skill yet",
       emptyDescription:
-        "Put your agent skill folders under the `/skills/custom` folder under the root folder of Octopus.",
+        "Put your agent skill folders under the `/skills/custom` folder under the root folder of EchoAI.",
       emptyButton: "Create Your First Skill",
       enabledDescription:
         "Enabled skills enter the Agent tool catalog. Disabled skills are hidden from models and cannot be executed.",
       noMatch: (query) => `No skills match "${query}"`,
+      searchPlaceholder: "Search skills...",
       tabMarket: "Skills Market",
       tabInstalled: "Installed",
       tabPerformance: "Performance",
@@ -2264,13 +3894,19 @@ export const enUS: Translations = {
     notification: {
       title: "Notification",
       description:
-        "Octopus only sends a completion notification when the window is not active. This is especially useful for long-running tasks so you can switch to other work and get notified when done.",
+        "EchoAI only sends a completion notification when the window is not active. This is especially useful for long-running tasks so you can switch to other work and get notified when done.",
+      enableNotification: "Enable notifications",
+      permissionGranted: "Permission granted",
+      permissionPrompt: "Permission required",
+      permissionDenied: "Permission denied",
       requestPermission: "Request notification permission",
       deniedHint:
-        "Notification permission was denied. You can enable it in your browser's site settings to receive completion alerts.",
+        "Notification permission was denied. Enable EchoAI notifications in your system or browser notification settings.",
       testButton: "Send test notification",
-      testTitle: "Octopus",
+      testTitle: "EchoAI",
       testBody: "This is a test notification.",
+      testSent: "Test notification sent",
+      requestFailed: "Unable to request notification permission",
       notSupported: "Your browser does not support notifications.",
       disableNotification: "Disable notification",
     },
@@ -2373,127 +4009,194 @@ export const enUS: Translations = {
       selectFree: "Select Free",
       subscribe: "Subscribe",
     },
-  },
-
-  modelSettings: {
-    title: "Models",
-    customModels: "Custom Models",
-    addCustomModel: "Add Custom Model",
-    emptyCustomModels: "No custom models configured yet.",
-    externalModelRisk:
-      "Adding an external model means you understand and agree to assume the associated risks.",
-    provider: "Provider",
-    modelId: "Model ID",
-    modelIdPlaceholder: "e.g. gpt-4o-mini",
-    displayName: "Display Name",
-    displayNamePlaceholder: "e.g. My Model",
-    providerLabel: "Provider",
-    providerAutoHint: "Auto-detected from Base URL",
-    apiKey: "API Key",
-    apiKeyPlaceholder: "Enter API key",
-    getApiKey: "Get API Key →",
-    customModel: "Custom",
-    fillModelId: "Fill this Model ID",
-    apiProtocol: "API Protocol",
-    baseUrlLabel: "Base URL",
-    baseUrlPlaceholder: "https://api.openai.com/v1",
-    extraHeadersTitle: "Custom HTTP Headers (optional)",
-    extraHeadersPlaceholder:
-      "User-Agent: claude-cli/1.0.0 (external, cli)\nX-Custom-Key: value",
-    extraHeadersHint:
-      "One per line as Header-Name: value. Needed for APIs that gate on User-Agent (e.g. Kimi Coding).",
-    requiredFields: "Model ID, API Key, and Base URL are required",
-    fillRequiredBeforeTest: "Fill in Model ID, API Key, and Base URL first",
-    testEndpointHint: "Sends a real request to verify the endpoint.",
-    taglineCostBalance: "Balanced effect and cost",
-    taglineBestEffect: "Best effect",
-    taglineBestValue: "Best value",
-    taglineGoodValue: "Good value",
-    updateFailed: "Failed to update",
-    networkError: "Network error",
-    editModelTitle: (name: string) => `Edit: ${name}`,
-    keepApiKeyHint: "API Key (leave empty to keep current value)",
-    saveSuccess: "Saved successfully",
-    testSuccess: "Connection test succeeded",
-    testFailed: "Connection test failed",
-    diagnoseHealthy: "Diagnosis complete: all services are healthy.",
-    diagnoseIssues: (issues: string) => `Diagnosis found issues: ${issues}`,
-    deleteConfirm: (name: string) => `Delete model "${name}"?`,
-    gatewayReturned: (status: number) => `Gateway returned ${status}`,
-    cannotReachGateway: "Cannot reach Gateway API",
-    current: "Current",
-    setDefault: "Set Default",
-    edit: "Edit",
-    gatewayUrl: "Gateway URL",
-    connected: "Connected",
-    disconnected: "Disconnected",
-    reconnect: "Reconnect",
-    maxTokensLabel: "Max Tokens",
-    thinkingLabel: "Thinking",
-    visionLabel: "Vision",
-    resetConnection: "Reset Connection",
-    diagnose: "Diagnose",
-    port: "Port",
-    portDescription:
-      "Changing the port will restart the Gateway automatically. If the default port is occupied, the system will try adjacent ports.",
-    connectionHelp: "If the connection is abnormal, try the following:",
-    connectionHelpReconnect:
-      "Reconnect — Lightest option. Disconnects and reconnects without affecting any settings.",
-    connectionHelpReset:
-      "Reset Connection — Clears connection state and restarts the service. Active conversations will be interrupted.",
-    connectionHelpDiagnose:
-      "Diagnose — Detects and repairs configuration issues. May clear manually added custom model configurations during repair.",
-    // Additional fields for model settings page
-    loadFailed: "Failed to load models",
-    setDefaultSuccess: "Set as system default",
-    setDefaultFailed: "Failed to set default",
-    deleteSuccess: "Model deleted",
-    deleteFailed: "Failed to delete model",
-    systemDefault: "System Default",
-    setAsDefault: "Set as Default",
-    backendUrlHint:
-      "Current gateway URL. Use VITE_BACKEND_BASE_URL env var to change.",
-    setDefaultHint:
-      "Click 'Set as Default' in the custom models list to switch system default.",
-    noOfficialModels: "No official models found",
-    moliliHosted: "Hosted by the official model gateway",
-    notBound: "Not logged in",
-    gatewayDisabled: "Official model gateway disabled",
-    moliliNotLinked: "Account not linked",
-    moliliNotEnabled: "Official model gateway not enabled",
-    officialModels: "Official Models",
-    officialModelsHint:
-      "Official models are hosted by the system, no API key required",
-    // Open-ended model id list · index 0 = picker default, index -1 =
-    // strongest slot for Auto mode's performance verdict.
-    modelList: {
-      label: "Model list",
-      hint: "First entry is the picker default. Last entry is what Auto mode uses for the performance tier. Add or remove as many as you need — ordered list of model entries.",
-      addButton: "Add model ID",
-      removeTooltip: "Remove this model ID",
-      empty: "At least one model ID is required",
-    },
-    localModels: {
-      title: "Local models",
-      subtitle:
-        "One-click scan for Ollama / LM Studio / vLLM / llama.cpp running on this box. Import a discovered row to route Auto mode's local tier through it without hand-filling the base URL.",
-      scanButton: "Scan local services",
-      scanButtonScanning: "Scanning…",
-      empty: "No local services found",
-      emptyHint:
-        'Start Ollama / LM Studio / vLLM / llama.cpp first, then click "Scan local services" again.',
-      modelsCount: (n: number) => `${n} ${n === 1 ? "model" : "models"}`,
-      importButton: "Import",
-      importingButton: "Importing…",
-      imported: "Imported into custom models",
-      importFailed: "Import failed",
-      serviceStatus: {
-        ok: "Online",
-        empty: "Online · no models yet",
-        error: "Error",
+    model: {
+      title: "Models",
+      customModels: "Custom Models",
+      addCustomModel: "Add Custom Model",
+      emptyCustomModels: "No custom models configured yet.",
+      externalModelRisk:
+        "Adding an external model means you understand and agree to assume the associated risks.",
+      provider: "Provider",
+      modelIdPlaceholder: "e.g. gpt-4o-mini",
+      displayName: "Display Name",
+      displayNamePlaceholder: "e.g. My Model",
+      providerLabel: "Provider",
+      providerAutoHint: "Auto-detected from Base URL",
+      apiKey: "API Key",
+      apiKeyPlaceholder: "Enter API key",
+      getApiKey: "Get API Key →",
+      fillModelId: "Fill this Model ID",
+      apiProtocol: "API Protocol",
+      baseUrlLabel: "Base URL",
+      baseUrlPlaceholder: "https://api.openai.com/v1",
+      extraHeadersTitle: "Custom HTTP Headers (optional)",
+      extraHeadersPlaceholder:
+        "User-Agent: claude-cli/1.0.0 (external, cli)\nX-Custom-Key: value",
+      extraHeadersHint:
+        "One per line as Header-Name: value. Needed for APIs that gate on User-Agent (e.g. Kimi Coding).",
+      requiredFields: "Model ID, API Key, and Base URL are required",
+      fillRequiredBeforeTest: "Fill in Model ID, API Key, and Base URL first",
+      testEndpointHint: "Sends a real request to verify the endpoint.",
+      updateFailed: "Failed to update",
+      networkError: "Network error",
+      editModelTitle: (name: string) => `Edit: ${name}`,
+      keepApiKeyHint: "API Key (leave empty to keep current value)",
+      saveSuccess: "Saved successfully",
+      notTested: "Connection not tested yet",
+      testFailed: "Connection test failed",
+      saveRequiresTestPass: "The connection test must pass before saving",
+      testConnection: "Test connection",
+      showApiKey: "Show API key",
+      hideApiKey: "Hide API key",
+      diagnoseHealthy: "Diagnosis complete: all services are healthy.",
+      diagnoseIssues: (issues: string) => `Diagnosis found issues: ${issues}`,
+      deleteConfirm: (name: string) =>
+        `Model "${name}" will be permanently deleted.`,
+      deleteModelTitle: "Delete model",
+      gatewayReturned: (status: number) => `Gateway returned ${status}`,
+      cannotReachGateway: "Cannot reach Gateway API",
+      gatewayUrl: "Gateway URL",
+      connected: "Connected",
+      disconnected: "Disconnected",
+      reconnect: "Reconnect",
+      diagnose: "Diagnose",
+      port: "Port",
+      thinkingLabel: "Thinking",
+      defaultReasoningEffortLabel: "Default reasoning effort",
+      defaultReasoningEffortFollow: "Follow built-in default",
+      defaultReasoningEffortOff: "Off",
+      defaultReasoningEffortHigh: "High",
+      defaultReasoningEffortMax: "Max",
+      defaultReasoningEffortNone: "None (no injection)",
+      visionLabel: "Vision",
+      visionDetected: "Vision capability detected",
+      visionNotSupported: "This model does not support vision",
+      millionContextLabel: "1M context",
+      backendUrlHint:
+        "Current gateway URL. Use VITE_BACKEND_BASE_URL env var to change.",
+      connectionHelp: "If the connection is abnormal, try the following:",
+      connectionHelpReconnect:
+        "Reconnect — Lightest option. Disconnects and reconnects without affecting any settings.",
+      setDefaultHint:
+        "Click 'Set as Default' in the custom models list to switch system default.",
+      connectionHelpDiagnose:
+        "Diagnose — Detects and repairs configuration issues. May clear manually added custom model configurations during repair.",
+      loadFailed: "Failed to load models",
+      setDefaultSuccess: "Set as system default",
+      setDefaultFailed: "Failed to set default",
+      deleteSuccess: "Model deleted",
+      deleteFailed: "Failed to delete model",
+      systemDefault: "System Default",
+      setAsDefault: "Set as Default",
+      noOfficialModels: "No official models found",
+      gatewayHosted: "Hosted by the official model gateway",
+      accountNotLinked: "Account not linked",
+      gatewayNotEnabled: "Official model gateway not enabled",
+      officialModels: "Official Models",
+      officialModelsHint:
+        "Official models are hosted by the system, no API key required",
+      modelCount: (count: number) =>
+        `${count} ${count === 1 ? "model" : "models"}`,
+      modelList: {
+        label: "Model list",
+        hint: "First entry is the picker default. Last entry is what Auto mode uses for the performance tier. Add or remove as many as you need — ordered list of model entries.",
+        pickerDefault: "Picker default",
+        performanceTier: "Performance",
+        pickerDefaultAndPerformance: "Default · Performance",
+        fallback: "Fallback",
+        addButton: "Add model ID",
+        removeTooltip: "Remove this model ID",
+        empty: "At least one model ID is required",
       },
-      providerHint: "OpenAI-compatible",
-      collapseToggle: "Expand / collapse",
+      compatDiagnostics: {
+        title: "Compat",
+        loading: "Loading compatibility diagnostics",
+        unavailable: "Compatibility diagnostics unavailable",
+        notApplicable: "Not an OpenAI-compatible entry",
+        fallbacks: (count: number) =>
+          `${count} fallback${count === 1 ? "" : "s"}`,
+        headers: (names: string) => `headers: ${names}`,
+        removedFields: (fields: string, count: number) =>
+          `drops ${count > 5 ? `${fields}…` : fields}`,
+        changedFields: (fields: string, count: number) =>
+          `changes ${count > 5 ? `${fields}…` : fields}`,
+        addedFields: (fields: string, count: number) =>
+          `adds ${count > 5 ? `${fields}…` : fields}`,
+        compatScore: (score: string) => `compat ${score}`,
+        normalizationHints: (hints: string, count: number) =>
+          `normalizes: ${count > 5 ? `${hints}…` : hints}`,
+        compatibilityNotes: (notes: string, count: number) =>
+          `notes: ${count > 2 ? `${notes}…` : notes}`,
+        retryReasons: (reasons: string, count: number) =>
+          `retry plan: ${count > 4 ? `${reasons}…` : reasons}`,
+        loadFailed: "Failed to load compatibility diagnostics",
+      },
+      localModels: {
+        title: "Local models",
+        subtitle:
+          "One-click scan for Ollama / LM Studio / vLLM / llama.cpp running on this box. Import a discovered row to route Auto mode's local tier through it without hand-filling the base URL.",
+        scanButton: "Scan local services",
+        scanButtonScanning: "Scanning…",
+        empty: "No local services found",
+        emptyHint:
+          'Start Ollama / LM Studio / vLLM / llama.cpp first, then click "Scan local services" again.',
+        modelsCount: (n: number) => `${n} ${n === 1 ? "model" : "models"}`,
+        importButton: "Import",
+        importingButton: "Importing…",
+        imported: "Imported into custom models",
+        importFailed: "Import failed",
+        serviceStatus: {
+          ok: "Online",
+          empty: "Online · no models yet",
+          error: "Error",
+        },
+        providerHint: "OpenAI-compatible",
+      },
+      providers: {
+        zhipu: "Zhipu · GLM",
+        aliyun: "Alibaba Cloud · Tongyi Qwen (Qwen)",
+        tencent: "Tencent Cloud · Hunyuan",
+        volcengine: "Volcano Engine · Doubao (Ark)",
+      },
+    },
+    echoMix: {
+      title: "EchoAI Mix · multi-model collaboration",
+      description:
+        "Pick 2+ models as proposers (each drafts independently, no tools), then pick one aggregator to merge their answers. Selecting “EchoAI Mix” in chat routes through this config; if the proposer pool is empty, the default model × count is used instead.",
+      proposersLabel: "Proposers (models that draft)",
+      noCandidates: "No models available",
+      aggregatorLabel: "Aggregator",
+      aggregatorDefault: "Default",
+      nLabel: "Count when pool is empty",
+      saveButton: "Save",
+      saveSuccess: "EchoAI Mix configuration saved",
+      saveFailed: (status: number) => `Save failed (${status})`,
+      saveFailedFallback: "Save failed",
+    },
+    dialog: {
+      dragToResize: "Drag to resize",
+      searchPlaceholder: "Search settings",
+      clearSearch: "Clear search",
+      quickAccess: "Frequently used",
+      sectionsLabel: "Sections",
+      resultsCount: (count) => `${count} result${count === 1 ? "" : "s"}`,
+      noSearchResultsTitle: "No matching settings",
+      noSearchResultsDescription:
+        "Try another keyword, such as models, permissions, theme, or MCP.",
+      sectionKeywords: {
+        account: [],
+        subscription: [],
+        appearance: [],
+        models: [],
+        notification: [],
+        memory: [],
+        automation: [],
+        mcp: [],
+        privacy: [],
+        observability: [],
+        about: [],
+        sandbox: ["sandbox", "execution", "full access", "permissions"],
+      },
     },
   },
 
@@ -2503,6 +4206,8 @@ export const enUS: Translations = {
     description:
       "Unified view of background tasks, Quest tasks, scheduled tasks, and subscription tasks",
     refresh: "Refresh",
+    retry: "Retry",
+    loadFailed: "Task data is temporarily unavailable. Please try again.",
     noTasks: "No tasks",
     noTasksDesc: "No tasks to display right now",
     kanban: "Kanban",
@@ -2546,6 +4251,11 @@ export const enUS: Translations = {
     minutesAgo: "m ago",
     hoursAgo: "h ago",
     daysAgo: "d ago",
+    filterByType: "Filter by task type",
+    taskDetails: (name: string) => `View task details: ${name}`,
+    timelineChart: "Task execution timeline",
+    zoomReset: (percent: number) =>
+      `Reset timeline zoom, currently ${percent}%`,
   },
 
   // Arena
@@ -2596,7 +4306,7 @@ export const enUS: Translations = {
     approveExecute: "Approve & Execute",
     startQuest: "Start Quest",
     questDesc:
-      "Describe a complex task and let Octopus autonomously plan, execute, and verify it",
+      "Describe a complex task and let EchoAI autonomously plan, execute, and verify it",
     requirementPlaceholder: "Describe what you want to accomplish...",
     executionPlan: "Execution Plan",
     verificationPassed: "Verification passed",
@@ -2617,12 +4327,23 @@ export const enUS: Translations = {
     active: "Active",
     analyzing: "Analyzing...",
     generatingPlan: "Generating plan...",
+    rejectConfirmTitle: "Reject this plan?",
+    rejectConfirmDescription:
+      "Rejecting will discard the current plan. You'll need to start a new quest.",
+    cancelConfirmTitle: "Cancel this quest?",
+    cancelConfirmDescription:
+      "Cancelling will stop all in-progress steps. Completed work will be preserved.",
+    cancelConfirmLabel: "Cancel quest",
     verifyingResults: "Verifying results...",
     generatingReport: "Generating report...",
     newQuest: "New Quest",
     cancelled: "Cancelled",
     startNewQuest: "Start New Quest",
     quest: "Quest",
+    startFailed: "Failed to start quest",
+    approveFailed: "Failed to approve plan",
+    rejectFailed: "Failed to reject plan",
+    cancelFailed: "Failed to cancel quest",
   },
 
   // Knowledge Graph
@@ -2654,6 +4375,15 @@ export const enUS: Translations = {
     relationshipsHeader: "Relationships",
     loadFailed: "Load failed",
     pageSubtitle: "Memory, documents, graph & file management",
+    startTask: "Start a task",
+    refresh: "Refresh",
+    foundEntities: (found: number, total: number) =>
+      `${found} / ${total} entities found`,
+    totalEntitiesCount: (total: number) => `${total} entities in total`,
+    clearSearch: "Clear search",
+    noMatchingEntities: "No matching entities",
+    noMatchingEntitiesHint:
+      "Try a different keyword, or clear the search to view all knowledge entities.",
   },
 
   // Background Tasks
@@ -2669,6 +4399,9 @@ export const enUS: Translations = {
     pause: "Pause",
     resume: "Resume",
     cancel: "Cancel",
+    delete: "Delete",
+    back: "Back",
+    refresh: "Refresh",
     newTask: "New Task",
     taskPlaceholder: "Describe the task to run in the background...",
     waitingOutput: "Waiting for output...",
@@ -2680,6 +4413,21 @@ export const enUS: Translations = {
     runInBackground: "Run in background",
     noTasks: "No tasks",
     noTasksDescription: "Background tasks will appear here",
+    loading: "Loading background tasks...",
+    loadFailed: "Could not load background tasks. Please try again.",
+    retry: "Retry",
+    activeCount: (count) => `${count} active`,
+    agentLabel: "Agent",
+    threadLabel: "Thread",
+    durationLabel: "Duration",
+    taskFinished: (status) => `Task status: ${status}`,
+    justNow: "just now",
+    minutesAgo: (count) => `${count}m ago`,
+    hoursAgo: (count) => `${count}h ago`,
+    daysAgo: (count) => `${count}d ago`,
+    unnamedTask: "Untitled task",
+    cancelConfirm: (name) => `Cancel background task “${name}”?`,
+    deleteConfirm: (name) => `Permanently delete background task “${name}”?`,
   },
 
   unifiedStore: {
@@ -2691,6 +4439,7 @@ export const enUS: Translations = {
       apps: "Apps",
       plugins: "Plugins",
       skills: "Skills",
+      registry: "Store",
     },
     browserPlugins: {
       title: "Plugins",
@@ -2705,7 +4454,7 @@ export const enUS: Translations = {
       installFailed: "Plugin installation failed",
       statusFailed: "Plugin status update failed",
       removeConfirm:
-        "Remove this plugin from Octopus? Local files will not be deleted.",
+        "Remove this plugin from EchoAI? Local files will not be deleted.",
       removeFailed: "Plugin removal failed",
       enabled: "Enabled",
       disabled: "Disabled",
@@ -2716,7 +4465,7 @@ export const enUS: Translations = {
       emptyWeb: "The localhost preview cannot access the Electron plugin API.",
       placeholderTitle: "Plugin catalog placeholder",
       placeholderDesc:
-        "Run the desktop app to install and manage local plugins. The preview still shows the plugin categories Octopus supports.",
+        "Run the desktop app to install and manage local plugins. The preview still shows the plugin categories EchoAI supports.",
       placeholderBrowserTitle: "Browser plugins",
       placeholderBrowserDesc:
         "Chrome / Edge extensions that let agents read pages, click controls, and collect screenshots.",
@@ -2733,7 +4482,8 @@ export const enUS: Translations = {
       marketTab: "Online market",
       localTitle: "Local skill catalog",
       localDesc:
-        "Built-in local skills can be filtered by scenario and enabled directly.",
+        "This view shows the total local skill catalog, not the default skill set assigned to a single agent.",
+      catalogCount: (count) => `Catalog ${count}`,
       searchAria: "Search local skills",
       searchPlaceholder: "Search skills, descriptions, or tags",
       loading: "Reading local skill catalog",
@@ -2741,6 +4491,7 @@ export const enUS: Translations = {
       all: "All",
       other: "Other",
       visibleCount: (label, count) => `${label} · ${count} skills`,
+      totalCount: (count) => `${count} skills`,
       enabledCount: (count) => `${count} enabled`,
       noDescription: "No description",
       noMatch: (query) => `No local skills match "${query}".`,
@@ -2790,7 +4541,7 @@ export const enUS: Translations = {
     featured: "Featured",
     popular: "Popular",
     discover: "Square",
-    searchPlaceholder: "Search agents...",
+    searchPlaceholder: "Search roles...",
     categories: {
       all: "All",
       assistant: "Assistant",
@@ -2801,41 +4552,86 @@ export const enUS: Translations = {
       specialist: "Specialist",
       financial: "Financial",
     },
-    searchAgents: "Search agents...",
-    noAgentsFound: "No agents found",
+    searchAgents: "Search roles...",
+    noAgentsFound: "No roles found",
     noFeatured: "No featured agents",
     noPopular: "No popular agents",
     title: "Agent",
-    description: "Browse, configure, and install agents",
+    description: "Browse, configure, and summon collaborative roles",
     pageOf: (page: number, total: number) => `Page ${page} of ${total}`,
     by: "by",
-    agentInstalled: "installed",
+    agentInstalled: "joined",
     agentUninstalled: "uninstalled",
-    installThisAgent: "Install this agent",
+    installThisAgent: "Add to roles",
     assembleCapabilityPack: "Assemble pack",
-    keySkillCount: (count) => `${count} key skills`,
-    emptyState: "No agents yet. Be the first creator!",
-    createAgentCardTitle: "Create agent",
-    createAgentCardDesc: "Build a custom agent",
+    keySkillCount: (count) => `${count} callable abilities`,
+    emptyState: "No roles yet. Be the first creator!",
+    createAgentCardTitle: "Create role",
+    createAgentCardDesc: "Build a custom role",
     addAgent: "Add",
-    newAgent: "New agent",
-    importAgentPack: "Import Agent Pack",
-    importAgentPackDesc:
-      "Preview and import agents from a local Claude / Codex plugin pack.",
-    importAgentPackPlaceholder:
-      "Enter a local pack root path, for example F:\\packs\\kimi-agent",
-    previewAgentPack: "Preview",
-    importSelectedAgent: "Import selected agent",
-    noImportableAgents:
-      "No importable agents or Markdown agents were found in this pack.",
-    importedAgent: (name: string, path: string) => `Imported ${name} · ${path}`,
-    discoverTagline: "Browse, configure, and install agents",
-    toastInstalled: (name: string) => `"${name}" installed`,
+    newAgent: "New role",
+    discoverTagline: "Browse, configure, and summon collaborative roles",
+    toastInstalled: (name: string) => `"${name}" joined the role library`,
     toastCapabilityPackInstalled: (name: string, count: number) =>
       `"${name}" installed with ${count} key skills`,
     toastUninstalled: (name: string) => `"${name}" uninstalled`,
+    installAriaLabel: (name: string) => `Add role ${name}`,
+    uninstallAriaLabel: (name: string) => `Uninstall role ${name}`,
+    ratingAriaLabel: (rating: string, count: number) =>
+      `Rated ${rating} from ${count} reviews`,
+    downloadCountAriaLabel: (count: string) => `${count} downloads`,
     authorPrefix: "By",
   },
+
+  // Agent World Unified
+  agentWorldUnified: {
+    pageTitle: "Role Hub",
+    pageDescription:
+      "Manage local roles and add new collaborators from the marketplace.",
+    addAgentButton: "Add role",
+    roleLibrary: "Role Library",
+    roleLibraryDescription:
+      "Pick ready-to-use roles; each card represents its responsibilities, tone, and callable abilities.",
+    installedLabel: "Joined",
+    installableLabel: "Available",
+    installAllButton: "Join All",
+    installAllConfirmButton: (count: number) => `Confirm joining ${count}`,
+    installAllConfirmTitle: (count: number) =>
+      `Click again to join ${count} roles under the current filter`,
+    installAllConfirmHint: "Requires confirmation",
+    installSuccess: (installed: number) =>
+      `${installed} role${installed === 1 ? "" : "s"} joined`,
+    installSuccessWithFailure: (installed: number, failed: number) =>
+      `${installed} joined, ${failed} failed`,
+    installFailed: "Installation failed, please try again later",
+    enterprise: "Enterprise",
+    localTab: "Local",
+    enabledTab: "Enabled",
+    marketplaceTab: "Marketplace",
+    categoryFilterLabel: "Filter by role category",
+    domainFilterLabel: "Filter by business domain",
+    domains: {
+      all: "All",
+      general: "General",
+      coding: "Coding",
+      research: "Research",
+      creative: "Creative",
+      automation: "Automation",
+      ecommerce: "E-commerce",
+      finance: "Finance",
+    },
+    loadingAgents: "Loading roles…",
+    loadAgentsFailed: "Roles could not be loaded. Please try again.",
+    retryAgents: "Reload",
+    searchPlaceholderAgents: "Search role name, description, or tags",
+    searchPlaceholderPlugins: "Search plugin name, description, or author",
+    searchPlaceholderSkills: "Search skill name, description, or tags",
+  },
+
+  // Local Agent Connect Dialog
+
+  // Agent World Card
+  agentWorldCard: {},
 
   // Community
   community: {
@@ -2878,11 +4674,114 @@ export const enUS: Translations = {
     toggleDevice: "Toggle device",
     deviceDesktop: "Desktop view",
     deviceTablet: "Tablet view · 768×1024",
-    deviceMobile: "Mobile view · 375×812",
+    deviceMobile: "Mobile view · 390×844",
     viewportHint: (label, w, h) =>
       `${label} · viewport ${w}×${h} · responsive CSS active; use Playwright mode for UA-sniffing sites`,
     startBrowsingHint: "Enter a URL to start browsing",
+    loadingPage: "Loading page...",
     embeddedBlocked: "This website does not support embedded display",
+    embeddedBlockedDescription:
+      "Open it externally, or switch to desktop browser mode to continue.",
+    assistant: {
+      stopAgent: "Stop",
+      stopAgentTooltip: "Stop agent auto-operation",
+      autoBrowseOnTooltip: "AI can operate the current page · click to disable",
+      autoBrowseOffTooltip: "AI answers only · click to enable operation",
+      summarizePage: "Summarize page",
+      extractKeyPoints: "Extract key points",
+      translateToChinese: "Translate to Chinese",
+      recorderTitle: "External AI Research · Recorder",
+      recorderDesc:
+        "Platforms open from browser desktop; this handles scheduling, logging, and briefings",
+      researchGoalPlaceholder: "Research goal, leave empty to use input below",
+      start: "Start",
+      recordCurrentPage: "Record current page",
+      clearLog: "Clear log",
+      copied: "Copied",
+      copyBrief: "Copy brief",
+      exportMd: "Export .md",
+      emptyHint: "Ask something about this page · or use quick actions above",
+      thinking: "Thinking…",
+      inputPlaceholder: "Ask something…",
+      noAgents: "No agents available",
+      confirmInputContent: "Will input content into the page",
+      confirmSubmitForm: "May submit the current form",
+      confirmSensitiveClick: "Click target appears to be a sensitive action",
+      confirmSensitiveAction: "Page semantic action appears to be sensitive",
+      stopAgentMessage:
+        "[User stopped agent manually · no further auto actions]",
+      maxLoopReached: (count) =>
+        `[Max agent loop ${count} reached, auto-stopped to prevent runaway]`,
+      webviewNotReadyError:
+        "[Execution failed: webview not ready (possibly running in browser rather than Electron)]",
+      confirmedRiskyOperation: "[User confirmed high-risk operation]",
+      recorderProtocol: `[External AI Research · Recorder Mode]
+Goal: minimize local model token usage. You are a browser dispatcher and recorder, not the main research model.
+Strategy:
+1. Prefer opening/controlling external AI platforms for heavy reasoning, e.g. Gemini, NotebookLM, Doubao, Perplexity.
+2. Locally only do short-step planning, page operations, waiting for results, extracting key conclusions, and saving evidence logs.
+3. Do not feed full page long text back into the local model; only extract title, URL, 3-8 key conclusions, obvious citations, and points to verify.
+4. After each platform output, record: platform, prompt used, result summary, URL, time, evidence/screenshot clues.
+5. When encountering login, file upload, sending sensitive data, posting/submitting forms/payment operations, you must stop and ask the user for confirmation.
+6. The final report should only merge results from each platform, deduplicate, mark conflicts, and suggest next steps.`,
+      researchMissionLabel: "[Research Mission]",
+      researchPlatformDivisionLabel: "[External Platform Division]",
+      researchExecutionRequirementsLabel: "[Execution Requirements]",
+      researchRequirementOpenFirstPlatform:
+        "- Open the first platform and enter a prompt suitable for that platform.",
+      researchRequirementExtractHighDensity:
+        "- Extract only high-density results from each platform: conclusions, source clues, controversies, next steps.",
+      researchRequirementDoNotFeedBack:
+        "- Do not feed the full long answer from external platforms back into the local model repeatedly.",
+      researchRequirementLogPerPlatform:
+        "- After each platform, report with a short research log: platform / URL / up to 5 key points / pending verification.",
+      researchRequirementPauseForSensitive:
+        "- Pause and ask the user for confirmation when login, upload, or submitting sensitive information is required.",
+      researchPlatformHintGemini:
+        "General search, long questions, multi-turn analysis",
+      researchPlatformHintNotebookLM:
+        "Knowledge base, citations, in-document research",
+      researchPlatformNameDoubao: "Doubao",
+      researchPlatformHintDoubao:
+        "Chinese research, Chinese rewriting, domestic context",
+      researchPlatformHintPerplexity:
+        "Web retrieval, source clues, fact checking",
+      researchLogDispatchLabel: "Dispatch",
+      researchStartTitle: "Start external AI research",
+      researchPlatformsPrefix: "Platforms:",
+      currentPageFallback: "Current page",
+      recordedPageNote: "Current page recorded.",
+      needElectronError:
+        "Need Electron · currently running in browser (not Electron)",
+      tabNotReadyError: "Current tab is not ready",
+      summarizePagePrompt:
+        "Please briefly summarize the core content of this page in Chinese, 3-5 key points.",
+      extractKeyPointsPrompt:
+        "Extract all factual points from this page as an ordered list.",
+      translateToChinesePrompt:
+        "Translate the main content of this page into Chinese completely.",
+      currentPageLabel: "[Current page]",
+      urlLabel: "URL:",
+      titleLabel: "Title:",
+      pageAgentCapabilityLabel: "[Page semantic capability pageAgent]",
+      truncatedSuffix: (count) => `[Truncated · full ${count} characters]`,
+      needsUserConfirmationTitle: "User confirmation required",
+      confirmExecute: "Confirm execute",
+      researchBriefTitle: "# External AI Research Brief",
+      researchBriefGeneratedAt: (time) => `Generated at: ${time}`,
+      researchBriefRecordCount: (count) => `Records: ${count}`,
+      researchBriefAbstractRecords: "## Summary Records",
+      researchBriefEntryTime: (time) => `- Time: ${time}`,
+      researchBriefEntryRecordLabel: "- Record:",
+      researchBriefPendingVerification: "## Pending Verification",
+      researchBriefVerifyCrossPlatform:
+        "- Cross-validate conclusions from different platforms.",
+      researchBriefKeepEvidence:
+        "- Keep the original page URL or screenshot as an evidence clue.",
+      researchBriefConfirmSensitive:
+        "- Confirm actions requiring login, upload, submission, or payment separately.",
+      unknownPlatform: "page",
+    },
     copilot: {
       stopAgent: "Stop",
       stopAgentTooltip: "Stop agent auto-operation",
@@ -2910,9 +4809,10 @@ export const enUS: Translations = {
       confirmSensitiveClick: "Click target appears to be a sensitive action",
       confirmSensitiveAction: "Page semantic action appears to be sensitive",
     },
+
     extensionMarketplace: {
       title: "Extensions",
-      subtitle: "Manage Octopus browser extension capabilities",
+      subtitle: "Manage EchoAI browser extension capabilities",
       installLocal: "Install Local Extension",
       refreshAriaLabel: "Refresh extensions",
       closeAriaLabel: "Close extensions",
@@ -2942,7 +4842,7 @@ export const enUS: Translations = {
       errorStatusFailed: "Extension status update failed",
       errorRemoveFailed: "Extension removal failed",
       confirmRemove:
-        "Remove this extension from Octopus? Local files will not be deleted.",
+        "Remove this extension from EchoAI? Local files will not be deleted.",
       categoryFeatured: "Featured",
       categoryEfficiency: "Efficiency",
       categoryResearch: "Research",
@@ -2971,17 +4871,17 @@ export const enUS: Translations = {
       openDirectory: "Open Directory",
       extPluginTitle: "External Browser Plugin",
       extPluginDesc:
-        "For Chrome / Edge. The plugin connects to local Octopus, allowing external pages to be read and operated by Agent.",
+        "For Chrome / Edge. The plugin connects to local EchoAI, allowing external pages to be read and operated by Agent.",
       dragToBookmarks: "Drag to Bookmarks Bar",
       dragToBookmarksDesc:
         "Lightweight Page Agent mode, suitable for temporarily connecting the current page.",
       dragToBookmarksTitle: "Drag to Chrome/Edge bookmarks bar",
       step1Temporary:
-        "1. Temporary: Drag the Octopus Agent above to your bookmarks bar, then click it on the target page.",
+        "1. Temporary: Drag the EchoAI Agent above to your bookmarks bar, then click it on the target page.",
       step2LongTerm:
         "2. Long-term: Open Chrome/Edge extension management page, enable 'Developer mode'.",
       step3LoadExtension:
-        "3. Click 'Load unpacked extension', select the Octopus plugin directory.",
+        "3. Click 'Load unpacked extension', select the EchoAI plugin directory.",
       pluginDirectory: "Plugin Directory",
       pluginDirectoryOpened: (path: string) =>
         `Plugin directory opened: ${path}`,
@@ -3035,9 +4935,15 @@ export const enUS: Translations = {
       panelTitleDesktopSettings: "Desktop Settings",
       panelSubtitle: "Browser Desktop Control Panel",
       panelClose: "Close",
-      themeNames: ["Morning Mist Glass", "Dark Focus", "Fresh Blue-White"],
+      themeNames: [
+        "Follow Palette",
+        "Morning Mist Glass",
+        "Dark Focus",
+        "Fresh Blue-White",
+      ],
       themeDescs: [
-        "Current theme · Soft grey-pink gradient",
+        "Auto-syncs with the global color palette",
+        "Soft grey-pink gradient",
         "Suitable for night research and long reading",
         "More like a productivity browser homepage",
       ],
@@ -3099,10 +5005,49 @@ export const enUS: Translations = {
       addIconBtn: "Add Icon",
       addWidgetBtn: "Add Widget",
       appNameDoubao: "Doubao",
+      deleteConfirmTitle: "Delete desktop item",
+      deleteConfirmDescription:
+        "This item will be removed from the desktop. This action cannot be undone.",
+      resetLayoutConfirmTitle: "Reset desktop layout",
+      resetLayoutConfirmDescription:
+        "Default app order and wallpaper will be restored. Customizations will be lost.",
+    },
+    empty: {
+      noMatch: "No matching records",
+      noTabs: "No tabs yet",
+      noRecent: "No recent visits",
+      noFavorites: "No favorites yet",
+    },
+    defaultTabTitle: "AI Browser Desktop",
+    pageTitle: "AI Browser",
+    pageSubtitle: (pinned: boolean) =>
+      pinned ? "Tab Workspace · Pinned" : "Tab Workspace",
+    searchPlaceholder: "Search tabs...",
+    copy: {
+      link: "Copy Link",
+      title: "Copy Title",
+      copied: "Copied",
+      tabMenuItem: "Duplicate Tab",
+    },
+    menu: {
+      closeOtherTabs: "Close Other Tabs",
+    },
+    tabs: {
+      label: "Tabs",
+      recent: "Recent",
+      favorites: "Favorites",
+    },
+    newTab: "New Tab",
+    newTabPage: "New Tab Page",
+    closeTab: "Close Tab",
+    sidePanel: {
+      unpin: "Unpin tab workspace",
+      expand: "Expand tab workspace",
     },
     tabBar: {
       close: "Close",
       newTab: "New Tab · Ctrl+T",
+      homeTabShort: "Home",
     },
     urlBar: {
       back: "Back",
@@ -3112,7 +5057,7 @@ export const enUS: Translations = {
       searchOrUrl: "Search or enter URL",
       siteInfo: "Site Info",
       siteInfoDesc:
-        "Login state, cookies, and local data are retained in the Octopus browser and shared across tabs.",
+        "Login state, cookies, and local data are retained in the EchoAI browser and shared across tabs.",
       clearData: "Clear Data",
       openExternally: "Open Externally",
       confirmClearSiteData:
@@ -3154,7 +5099,183 @@ export const enUS: Translations = {
       openBrowserExtensions: "Open Browser Extensions",
       extensionsLabel: "Extensions",
       aiAssistant: "AI Assistant",
+      moreActions: "More Actions",
+      pageActions: "Page Actions",
+      findInPage: "Find in Page",
+      findPrompt: "Find on this page",
+      zoom: "Zoom",
+      zoomOut: "Zoom Out",
+      zoomIn: "Zoom In",
+      resetZoom: "Reset Zoom",
+      devicePreview: "Device Preview",
     },
+    closeFolderAria: (name: string) => `Close folder: ${name}`,
+  },
+
+  // Gene Lock Badge
+  geneLockBadge: {
+    levelNames: ["Newborn", "Infant", "Growing", "Mature", "Fully Mature"],
+    levelDescriptions: [
+      "All autonomous evolution disabled",
+      "Allow applying changes, but require human confirmation",
+      "Allow weight adjustments",
+      "Allow automatic promotion",
+      "No restrictions except immutable fields",
+    ],
+    badgeTitle: "Gene-lock governance status · click to adjust",
+    badgeLabel: "Gene Lock",
+    panicBadge: "Panic Lock",
+    productionBadge: "PROD",
+    dropdownTitle: "Gene Lock · Self-Evolution Governance",
+    modeLabel: "Mode",
+    maturityLabel: "Maturity",
+    panicActive: "Panic Active",
+    panicStartedAt: "Started at",
+    panicReason: "Reason",
+    unlockButton: "Unlock",
+    panicButton: "Panic Lock",
+    panicConfirm:
+      "Activate the panic lock? This pauses every autonomous change.",
+    levelSummary: (level, name, description) =>
+      `Lv ${level} ${name} · ${description}`,
+    compactTitle: "Gene Lock",
+    modeRelaxed: "Relaxed",
+    modeStrict: "Strict",
+    strictHint: "Strictly blocks non-compliant self-modifications",
+    relaxedHint: "Relaxed mode only warns about risks",
+    modeDescription:
+      "Relaxed mode only warns about risks; strict mode actually blocks non-compliant self-modifications.",
+    evolutionPaused: "Autonomous changes paused",
+    settingsTitle: "Gene Lock Settings",
+    settingsDescription:
+      "Controls whether the system can autonomously modify configs, skill weights, and evolution results.",
+    openModeLabel: "Mode",
+    levelLabel: "Evolution Level",
+    masterSwitchLabel: "Master Switch",
+    disableEvolutionButton: "Disable Autonomous Evolution",
+    disabledHint:
+      "Disabling enters panic lock; all autonomous changes will be blocked.",
+    updateSuccess: "Updated",
+    operationFailed: "Operation failed",
+  },
+
+  // Browser Preview Panel
+  browserPreviewPanel: {
+    desktopLabel: "Desktop",
+    actionPending: "Pending",
+    actionSuccess: "Success",
+    actionFailed: "Failed",
+    coordinateLabel: (coord) => `Coords ${coord}`,
+    noDetail: "No details",
+    livePreviewTitle: "Live Preview",
+    toggleSurfaceMode: "Toggle screenshot / live preview",
+    surfaceModeLive: "Live",
+    surfaceModeScreenshot: "Screenshot",
+    selectDevicePreset: "Select device preset",
+    continueInFullBrowser: "Continue in full browser",
+    takeoverButton: "AI Browser",
+    switchToLivePreview: "Switch to live preview",
+    switchToLivePreviewDescription: "Continue in an interactive page",
+    switchToScreenshot: "Switch to screenshot preview",
+    switchToScreenshotDescription: "View and operate the latest screenshot",
+    sessionHealthyLabel: "Session running normally",
+    sessionAttentionLabel: "Session needs attention",
+    endSession: "End browser session",
+    annotateScreenshot: "Annotate screenshot and send to chat",
+    annotationButton: "Annotate",
+    annotationPlaceholder:
+      "Describe the change, then mark it on the screenshot",
+    annotationInputLabel: "Screenshot annotation note",
+    sendAnnotation: "Send",
+    cancelAnnotation: "Cancel annotation",
+    sessionNeedsAttention: (issues) =>
+      `Browser session needs attention: ${issues}`,
+    reconnectButton: "Reconnect",
+    semanticSnapshotFallback: "Page semantic snapshot",
+    truncatedBadge: "Truncated",
+    closeSemanticSnapshot: "Close semantic snapshot",
+    noReadableText: "No readable text yet",
+    loadingLivePage: "Loading live page",
+    screenshotClickTitle: (mode, viewport) =>
+      `Click screenshot to perform ${mode} · ${viewport}`,
+    clickMode: "single click",
+    doubleClickMode: "double click",
+    localServices: "Local Services",
+    noLocalServices: "No running local services found",
+    scanButton: "Scan",
+    serviceTypeFrontend: "Frontend",
+    serviceTypeBackend: "Backend",
+    serviceTypeOther: "Service",
+    scanLocalServices: "Scan local services",
+    localPreviewMode: "Local preview",
+    localPreviewRunning: (port) => `Port ${port} · Running`,
+    localPreviewRefresh: "Refresh preview",
+    localPreviewOpenExternal: "Open in system browser",
+    selectedAction: (action) => `Selected ${action}`,
+    locateActionTitle: "Locate this action on screenshot",
+    deselectTitle: "Deselect",
+    failureCount: (count) => `${count} failed`,
+    coordinateCount: (count) => `${count} coords`,
+    attachScreenshotToComposer: "Attach screenshot to composer",
+    attachScreenshotSource: "Browser screenshot",
+    attachScreenshotSuccess: "Screenshot added to composer",
+    attachScreenshotFailed: "Failed to attach screenshot",
+  },
+
+  // Browser Home
+  browserHome: {
+    appNameDoubao: "Doubao",
+    appNameTongyiQianwen: "Tongyi Qianwen",
+    appNameWenxinYiyan: "Wenxin Yiyan",
+    appNameTencentYuanbao: "Tencent Yuanbao",
+    appNameZhihu: "Zhihu",
+    appDescGemini: "Comprehensive search, multi-turn analysis",
+    appDescNotebookLM: "Library, citations, document research",
+    appDescDoubao: "Chinese research, Chinese rewriting",
+    appDescDeepSeek: "Reasoning, coding, Chinese Q&A",
+    appDescTongyiQianwen: "Tongyi models, multimodal chat",
+    appDescWenxinYiyan: "Baidu agents, Chinese creation",
+    appDescTencentYuanbao: "Chinese search, material summary",
+    appDescPerplexity: "Web search, source leads",
+    appDescChatGPT: "General chat, coding assistance",
+    appDescClaude: "Long-text analysis, writing organization",
+    appDescKimi: "Long context, Chinese materials",
+    appDescAgnesAi: "AI gateway, image/video generation",
+    appDescYouTube: "Videos, channels, live streams",
+    appDescBilibili: "Videos, anime, knowledge zone",
+    appDescGitHub: "Code repos, project collaboration",
+    appDescStackOverflow: "Programming Q&A, troubleshooting",
+    appDescMdn: "Web docs, API reference",
+    appDescZhihu: "Q&A, columns, Chinese materials",
+    appDescWikipedia: "Encyclopedia, background materials",
+    groupAiTools: "AI Tools",
+    groupAiToolsSubtitle: "Models, writing, research",
+    groupVideo: "Video",
+    groupVideoSubtitle: "YouTube, Bilibili",
+    groupDev: "Dev",
+    groupDevSubtitle: "Code, docs, Q&A",
+    groupKnowledge: "Knowledge",
+    groupKnowledgeSubtitle: "Q&A, encyclopedia, materials",
+    searchEngineBaidu: "Baidu",
+    searchEngineBaiduIcon: "Bai",
+    metaBookmark: "Bookmark",
+    metaRecent: "Recent",
+    metaCommon: "Common",
+    categoryVideo: "Video",
+    categoryDev: "Dev",
+    switchSearchEngine: "Switch search engine",
+    commonCategories: "Common categories",
+    recentVisits: "Recent visits",
+    recentVisitCount: (count: number) =>
+      `${count} recent visit${count !== 1 ? "s" : ""}`,
+    historyOnly: "From history",
+    noRecentVisits: "No recent visits yet",
+    commonEntries: "Common entries",
+    addToDock: "Add to Dock",
+    todoPlaceholder: "To-do items...",
+    removeFromDock: "Remove from Dock",
+    alreadyInDock: "Already in Dock",
+    add: "Add",
   },
 
   // Execution Plan
@@ -3185,30 +5306,95 @@ export const enUS: Translations = {
     toastModifyFailed: "Failed to modify plan",
     toastRejected: "Plan rejected",
     toastRejectFailed: "Failed to reject plan",
+    removeStepAria: "Remove this step",
+    stepDescriptionAria: "Step description",
   },
 
   // Mode Selector
   modes: {
     builder: "Builder",
     coder: "Coder",
+    develop: "Develop",
+    audit: "Audit",
+    uxui: "UX/UI",
     architect: "Architect",
+    ultra: "Ultra",
+    standard: "Standard",
     teamCoder: "Programmer",
     admin: "Admin",
-    builderTooltip: "Create a new project from scratch",
-    coderTooltip: "Iterate on an existing codebase",
-    architectTooltip: "Safely evolve system architecture with forced review",
+    builderTooltip:
+      "New project or empty folder: create a runnable slice first",
+    coderTooltip: "Existing codebase: inspect, make small edits, verify",
+    developTooltip:
+      "Implementation work with automatic new/existing project handling",
+    auditTooltip: "Quality audit with evidence, risk, and priorities",
+    uxuiTooltip: "UX/UI review for flows, layout, visuals, and regressions",
+    architectTooltip:
+      "Architecture or migration: assess impact and stage the work",
+    ultraTooltip:
+      "Audit Ultra workflow: staged planning, tool/subtask scheduling, verification, and review",
     teamCoderTooltip:
       "Senior Programmer mode — executes coding tasks with restricted privileges",
     adminTooltip:
       "System Admin — highest privileges, manages all agents and settings",
-    builderDesc: "Create new projects from scratch",
-    coderDesc: "Iterate on existing codebase",
-    architectDesc: "Architect — safe system integration",
+    builderDesc: "New project",
+    coderDesc: "Existing codebase",
+    developDesc: "Build, fix, iterate",
+    auditDesc: "Quality and risk",
+    uxuiDesc: "Experience and visuals",
+    architectDesc: "Architecture",
+    ultraDesc: "Audit workflow",
+    builderEffect:
+      "Define the entry point and acceptance check, then build the smallest runnable slice.",
+    coderEffect:
+      "Read the existing structure first, edit in small steps, and run relevant checks.",
+    developEffect:
+      "Project scan handles new vs existing; implement in small verified steps.",
+    auditEffect:
+      "Read first, then report issues with evidence, severity, and suggested fixes.",
+    ultraEffect:
+      "Use UltraCode-style orchestration under Audit: decompose, schedule tools/subtasks, verify continuously, and review the run. This is not reasoning depth or token limit.",
+    uxuiEffect:
+      "Prioritize browser walkthroughs for layout, interaction, copy, polish, and responsive states.",
+    architectEffect:
+      "Start with tradeoffs, impact, and staged migration steps before broad edits.",
+    strategyNote:
+      "Affects execution strategy for this turn; tools still follow capability and permission settings.",
+    autoShort: "auto",
+    manualOverrideShort: "manual",
+    autoDetectedMode: (mode: string) => `Auto-detected as ${mode}`,
+    autoDetecting: "Detecting project type",
+    autoModeNote:
+      "Follows the project scan by default; tools still follow capability and permission settings.",
+    autoModeNoteCompact: "Following scan result by default",
+    manualOverrideNote:
+      "Manual override is active and only changes this turn's execution strategy.",
+    followAuto: "Follow auto",
+    projectKind: "Project kind",
+    projectKindNew: "New project",
+    projectKindExisting: "Existing codebase",
+    projectKindArchitecture: "Architecture-heavy project",
     teamCoderDesc: "Programmer — restricted privileges",
     adminDesc: "System Admin — cannot be deleted",
     autoDetected: "Auto-detected",
     projectTemplates: "Project Templates",
     projectSignals: "Project Signals",
+    viewDetectionBasis: "View basis",
+    signalFiles: (count: number) => `${count} files`,
+    signalTechStack: (count: number) => `${count} tech signals`,
+    signalLocks: (count: number) => `${count} lock files`,
+    signalCommits: (count: number) => `${count} commits`,
+    signalReadme: "README found",
+    signalSummaryEmpty: "No additional project signals",
+  },
+
+  // Intent-based mode auto-switch
+  modeIntent: {
+    suggestSwitch: (modeLabel: string) => `Switch to "${modeLabel}" mode?`,
+    switch: "Switch",
+    ignore: "Ignore",
+    autoSwitched: (modeLabel: string) =>
+      `Switched to "${modeLabel}" mode automatically`,
   },
 
   // Code page tabs
@@ -3219,6 +5405,11 @@ export const enUS: Translations = {
     teach: "Teach",
     browser: "Browser",
     diff: "Diff",
+  },
+
+  // Editor Tabs
+  editorTabs: {
+    closeTabAria: (label: string) => `Close tab: ${label}`,
   },
 
   // Skills Market
@@ -3318,6 +5509,12 @@ export const enUS: Translations = {
     sendRequest: "Send Request",
     response: "Response",
     revoke: "Revoke",
+    revokeKeyConfirmTitle: "Revoke API key",
+    revokeKeyConfirmDescription:
+      "Requests using this key will fail immediately. This action cannot be undone.",
+    deleteApiConfirmTitle: "Unpublish API",
+    deleteApiConfirmDescription:
+      "This API publication and its associated keys and call logs will be deleted. This action cannot be undone.",
     disable: "Disable",
     enable: "Enable",
     refreshTooltip: "Refresh",
@@ -3413,6 +5610,9 @@ export const enUS: Translations = {
     toastStartIndexingFailed: "Failed to start indexing",
     toastIndexCleared: "Index cleared",
     toastClearIndexFailed: "Failed to clear index",
+    clearIndexConfirmTitle: "Clear codebase index?",
+    clearIndexConfirmDescription:
+      "All indexed files, chunks, and vectors will be deleted. The next indexing run will rebuild from scratch.",
   },
 
   // Teach & Repeat
@@ -3441,6 +5641,11 @@ export const enUS: Translations = {
     used: "used",
     noDescription: "No description",
     duplicate: "Duplicate",
+    deleteConfirmTitle: "Delete this workflow template?",
+    deleteConfirmDescription: (name) =>
+      `Permanently delete "${name}" and all its steps and parameters. This cannot be undone.`,
+    deleteConfirmDescriptionUnknown:
+      "Permanently delete this template and all its steps and parameters. This cannot be undone.",
   },
 
   // Parallel Agents
@@ -3467,6 +5672,18 @@ export const enUS: Translations = {
     noActiveTasks: "No active parallel tasks",
     cancelAll: "Cancel all",
     depends: "Depends",
+    recoveryReady: "Recovery snapshot",
+    coordinationSummary: "Coordination",
+    coordinationAction: (action: string) => `next: ${action}`,
+    primaryTask: (taskId: string) => `primary ${taskId}`,
+    cancelledTasks: (count: number) => `${count} cancelled`,
+    coordinationWarnings: (count: number) => `${count} coordination warning(s)`,
+    rerunnableTasks: (count: number) => `${count} rerunnable task(s)`,
+    failedTasks: (count: number) => `${count} failed`,
+    dependencyBlocked: (count: number) => `${count} dependency-blocked`,
+    checkpointSequence: (sequence: number) => `checkpoint #${sequence}`,
+    recoverySafe: "redacted",
+    recoveryUnsafe: "raw data included",
     statusLabels: {
       pending: "Pending",
       running: "Running",
@@ -3484,12 +5701,12 @@ export const enUS: Translations = {
     tokens: "Tokens",
     estCost: "Est. Cost",
     turns: "turns",
-    toolCalls: "Tool Calls",
+    toolCalls: "Action Records",
     cacheReads: "Cache Reads",
     tokensCached: "tokens cached",
     unique: "unique",
-    toolUsage: "Tool Usage",
-    noToolCalls: "No tool calls yet",
+    toolUsage: "Action Usage",
+    noToolCalls: "No action records yet",
     telemetry: "Telemetry",
     otelEnabled: "OTel Enabled",
     otelDisabled: "OTel Disabled",
@@ -3536,139 +5753,167 @@ export const enUS: Translations = {
     linkCopied: "Link copied",
     copyFailed: "Copy failed",
     onlineCount: (count: number) => `${count} online`,
-  },
-
-  // Workflow Editor
-  workflowEditor: {
-    title: "Workflow Editor",
-    untitled: "Untitled Workflow",
-    newWorkflow: "+ New",
-    savedWorkflows: "Workflows",
-    placeholder: "Workflow name",
-    descPlaceholder: "Description...",
-    layoutApplied: "Layout applied",
-    saved: "Workflow saved",
-    saveFailed: "Failed to save workflow",
-    loadFailed: "Failed to load workflow",
-    deleted: "Workflow deleted",
-    deleteFailed: "Failed to delete workflow",
-    valid: "Workflow is valid",
-    fixErrors: "Fix validation errors before running",
-    executed: "Workflow executed successfully",
-    executeFailed: "Execution failed",
-    codeCopied: "Python code copied to clipboard",
-    start: "Start",
-    end: "End",
-    nodePaletteTitle: "Nodes",
-    save: "Save",
-    run: "Run",
-    savedToJsonFile:
-      "Saved · workflow registered as a skill · LLM can call it directly",
-    runBackendNotReady:
-      "Execution backend isn't ready yet · workflows can only be edited locally for now",
-    dismiss: "Dismiss",
-    more: "more",
-    noSavedWorkflows: "No saved workflows",
-    selectNodeToConfigure: "Select a node to configure",
-    searchNodes: "Search nodes...",
-    runningWorkflow: "Running workflow...",
-    executionCompleted: "Execution completed",
-    executionFailed: "Execution failed",
-    runResults: "Run Results",
-    viewResultJson: "View result JSON",
-    importN8n: "Import n8n",
-    saving: "Saving...",
-    running: "Running...",
-    runCompleted: "Run completed",
-    runFailed: "Run failed",
-    statusPrefix: "Status",
-    importSuccess: (name, nodeCount) =>
-      `Imported: ${name} (${nodeCount} nodes)`,
-    nodes: {
-      llm: "LLM",
-      tool: "Tool",
-      condition: "Condition",
-      code: "Code",
-      subagent: "Sub-Agent",
-      loop: "Loop",
-      parallel: "Parallel",
-      humanInput: "Human Input",
-      memory: "Memory",
-      http: "HTTP Request",
+    defaultTeamName: "Collaboration task",
+    projectPrefix: (teamName: string) => `Collab · ${teamName}`,
+    teamModes: [
+      {
+        id: "chat",
+        label: "On demand",
+        description:
+          "@ an AI to request a reply; without @, AI members stay quiet.",
+      },
+      {
+        id: "cluster",
+        label: "Coordinated",
+        description:
+          "Leader decomposes → dispatches → each role works → merges (orchestrated, centralized).",
+      },
+      {
+        id: "swarm",
+        label: "Parallel",
+        description:
+          "Multiple AI members explore the same goal in parallel and build on one another.",
+      },
+      {
+        id: "project",
+        label: "Project",
+        description:
+          "Milestone-driven — handed to Project OS to break into tasks → execute → accept.",
+      },
+    ],
+    common: {
+      online: "Online",
+      offline: "Offline",
+      leader: "Leader",
+      aiMember: "AI Member",
+      cancel: "Cancel",
+      create: "Create",
+      loading: "Loading...",
     },
-    config: {
-      label: "Label",
-      model: "Model",
-      systemPrompt: "System Prompt",
-      temperature: "Temperature",
-      maxTokens: "Max Tokens",
-      toolName: "Tool Name",
-      parameters: "Parameters (JSON)",
-      conditionExpr: "Condition Expression",
-      language: "Language",
-      code: "Code",
-      agentName: "Agent Name",
-      agentConfig: "Agent Config (JSON)",
-      loopBody: "Loop Body Node ID",
-      maxIterations: "Max Iterations",
-      breakCondition: "Break Condition",
-      branchNodes: "Branch Node IDs (comma-separated)",
-      aggregation: "Aggregation Strategy",
-      aggregationMergeAll: "Merge All",
-      aggregationFirstResult: "First Result",
-      aggregationMajorityVote: "Majority Vote",
-      promptMessage: "Prompt Message",
-      url: "URL",
-      method: "Method",
-      headers: "Headers (JSON)",
-      body: "Body",
-      operation: "Operation",
-      memoryKey: "Memory Key",
-      valueExpression: "Value Expression",
-      timeout: "Timeout (seconds)",
-      responseFormat: "Response Format",
+    workbench: {
+      tabMembers: "Members",
+      tabTasks: "Tasks",
+      tabWorkspace: "Workspace",
+      title: "Collaboration Workbench",
+      closeTitle: "Close workbench",
+      leaderStandby: "Leader · Standing by",
+      standby: "Standing by",
+      memberNameWithRole: (name: string, isLeader: boolean) =>
+        `${name} · ${isLeader ? "Leader" : "AI Member"}`,
+      currentWorkspace: "Current Workspace",
+      noDirectorySelected: "No directory selected",
     },
-    palette: {
-      flow: "Flow",
-      ai: "AI",
-      actions: "Actions",
-      data: "Data",
+    roster: {
+      title: "Members",
+      noTeamSelected: "No team selected",
+      aiMembersCount: (count: number) => `${count} AI members`,
+      onlineCount: (online: number, total: number) =>
+        `${online}/${total} online`,
+      workstationGroup: "Workstations · Standing by",
+      aiMemberDefault: "AI Member",
+      standby: "Standing by",
+      collaboratorsGroup: "Collaborators",
+      emptyHint: "No one else yet · Invite people with the button above",
+      statusWithRole: (status: string, role: string) => `${status} · ${role}`,
     },
-    toolbar: {
-      save: "Save (Ctrl+S)",
-      undo: "Undo (Ctrl+Z)",
-      redo: "Redo (Ctrl+Y)",
-      copy: "Copy (Ctrl+C)",
-      paste: "Paste (Ctrl+V)",
-      delete: "Delete (Del)",
-      autoLayout: "Auto Layout",
-      validate: "Validate",
-      exportCode: "Export Python",
-      run: "Run",
-      running: "Running...",
+    createTask: {
+      toastCreated: "Task created",
+      toastFailed: "Failed to create task",
+      title: "New Task",
+      description:
+        "Break team goals into runnable, trackable tasks with deliverables.",
+      taskTitleLabel: "Task title",
+      descriptionLabel: "Details",
+      sopLabel: "Capability Pack / SOP",
+      assigneeLabel: "Assign Agent",
+      titlePlaceholder: "e.g. Research a niche market worth entering",
+      descriptionPlaceholder:
+        "Scope, output format, constraints, existing materials...",
+      autoMatchFreeform: "Auto-match or free execution",
+      loadingPacks: "Loading capability packs",
+      cancel: "Cancel",
+      create: "Create",
     },
-    nodeDescriptions: {
-      start: "Workflow entry point",
-      end: "Workflow exit point",
-      condition: "If/else conditional branch",
-      loop: "Iterate with break condition",
-      parallel: "Fan-out / fan-in parallel execution",
-      llm: "Large Language Model call",
-      subagent: "Delegate to another agent",
-      tool: "Execute a tool / function",
-      code: "Run custom Python / JS code",
-      http: "Make an HTTP API call",
-      memory: "Read or write to memory store",
-      humanInput: "Pause and wait for user input",
+    inviteAgents: {
+      toastAdded: (count: number) => `Added ${count} Agent(s)`,
+      toastFailed: "Failed to add Agent",
+      roleMember: "Member",
+      roleMemberDesc: "Can initiate AI tasks and collaborate",
+      roleViewer: "Viewer",
+      roleViewerDesc: "Can view progress and comment, no task initiation",
+      addAgentTitle: "Add Agent",
+      countText: (inTeam: number, available: number) =>
+        `${inTeam} in team · ${available} available`,
+      addFiltered: "Add filtered",
+      searchPlaceholder: "Search Agent or role",
+      loadingAgents: "Loading Agents...",
+      noMatches: "No matching Agents",
+      inTeam: "In Team",
+      add: "Add",
     },
-    nodeLabels: {
-      noModelSet: "No model set",
-      noToolSelected: "No tool selected",
-      noAgentSelected: "No agent selected",
-      noCodeWritten: "No code written",
-      noUrlConfigured: "No URL configured",
-      pausesForInput: "Pauses for input",
-      workflowEntryPoint: "Workflow entry point",
+    humanInvite: {
+      trigger: "Invite people",
+      dialogTitle: "Invite people to this workgroup",
+      dialogDescription:
+        "Create an invite link with a role and expiry. AI members remain in collaboration settings.",
+      roleLabel: "Role after joining",
+      expiresLabel: "Link expiry",
+      expiresHour: "1 hour",
+      expiresDay: "1 day",
+      expiresWeek: "7 days",
+      expiresMonth: "30 days",
+      createLink: "Create invite link",
+      creatingLink: "Creating...",
+      currentLink: "New invite link",
+      linkVisibleOnce:
+        "For security, the complete link is only shown after it is created.",
+      recordsTitle: "Invite history",
+      refresh: "Refresh",
+      emptyRecords: "No invites yet",
+      loadingRecords: "Loading invites...",
+      createFailed: "Failed to create invite link",
+      loadFailed: "Failed to load invites",
+      revoke: "Revoke invite",
+      revokeSuccess: "Invite revoked",
+      revokeFailed: "Failed to revoke invite",
+      statusActive: "Active",
+      statusExpired: "Expired",
+      statusExhausted: "Used up",
+      statusRevoked: "Revoked",
+      neverExpires: "Never expires",
+      expiresAt: (value: string) => `Expires: ${value}`,
+      usage: (used: number, max: number | null) =>
+        max == null ? `${used} uses` : `${used}/${max} uses`,
+      roomRequired: "Create the workgroup before inviting people",
+      joinPolicyLabel: "Join method",
+      joinPolicyApply: "Request approval",
+      joinPolicyApplyDesc:
+        "Work groups require owner approval before chat and any enabled project content become available.",
+      joinPolicyDirect: "Join directly",
+      joinPolicyDirectDesc:
+        "People in the same tenant with a valid link can join immediately.",
+      directJoinConfirmTitle: "Allow direct joining?",
+      directJoinConfirmDescription:
+        "All currently active invite links will immediately let people enter this work group without owner approval.",
+      directJoinConfirmAction: "Allow direct joining",
+      directJoinConfirmCancel: "Keep approval",
+      policySaveFailed: "Failed to save the join method",
+      pendingRequestsTitle: "Pending requests",
+      pendingRequestsEmpty: "No pending requests",
+      requestsLoadFailed: "Failed to load join requests",
+      approveRequest: "Approve",
+      rejectRequest: "Reject",
+      approveSuccess: "Join request approved",
+      rejectSuccess: "Join request rejected",
+      requestActionFailed: "Failed to process the join request",
+    },
+    mobileJoin: {
+      title: "Connect mobile",
+      description:
+        "Install echo-mobile on your phone, scan or paste the code to join (same Wi-Fi required)",
+      connectCodeLabel: "Connect code (paste in phone settings)",
+      manualFillPrefix: "Or enter manually: address",
+      manualFillCode: "· code",
     },
   },
 
@@ -3747,6 +5992,9 @@ export const enUS: Translations = {
     untrustedTag: "untrusted",
     trustButton: "Trust",
     revokeButton: "Revoke",
+    revokeConfirmTitle: "Revoke MCP trust",
+    revokeConfirmDescription: (name: string) =>
+      `Trust for "${name}" will be revoked. Related tool calls will fail. Trust can be re-granted.`,
     unapprovedHint:
       "Unapproved · tools from this server won't register with the skill catalog until you click Trust.",
     noServers:
@@ -3759,6 +6007,14 @@ export const enUS: Translations = {
     toastToggleSuccess: (name: string, enabled: boolean) =>
       `MCP server ${name} ${enabled ? "enabled" : "disabled"}`,
     toastUpdateFailed: "Failed to update MCP config",
+    addRemoteTitle: "Add remote MCP server",
+    addNamePlaceholder: "name (e.g. github)",
+    addUrlPlaceholder: "https://server/mcp",
+    addAuthPlaceholder: "auth token (optional)",
+    addButton: "Add",
+    toastAddSuccess: (name: string) => `Added MCP server ${name}`,
+    toastAddFailed: "Failed to add MCP server",
+    toastAddInvalid: "Name and URL are required",
   },
 
   intelligence: {
@@ -3805,7 +6061,6 @@ export const enUS: Translations = {
     reportLanguageEn: "English",
     reportLanguageBoth: "Bilingual",
     subscriptionsHeader: "Automated subscriptions",
-    topicPlaceholder: "Enter a topic...",
     addButton: "Add",
     noSubscriptionsHint: (keywordExample: string) =>
       `No subscriptions yet. Add a topic and the system will track it on schedule and generate reports. (e.g. ${keywordExample})`,
@@ -3817,7 +6072,8 @@ export const enUS: Translations = {
     noReportsHint:
       "No reports yet · once a topic is subscribed, the background scanner produces reports and displays them here.",
     itemsCount: (n: number) => `${n} items`,
-    loadFailed: "Load failed",
+    loadFailed: "Automated subscriptions could not be loaded. Try again.",
+    retry: "Retry",
     subscriptionAdded: "Subscription added",
     addFailed: "Failed to add",
     updateFailed: "Failed to update",
@@ -3837,55 +6093,156 @@ export const enUS: Translations = {
     createSubscription: "Create Subscription",
     draftPlaceholder: "Draft will appear here",
     deleteSubscription: "Delete Subscription",
+    deleteConfirmTitle: "Delete automated subscription",
+    deleteConfirmDescription: (name: string) =>
+      `Delete the automated subscription "${name}"? Existing reports will remain. This action cannot be undone.`,
+    selectSubscription: (name: string) => `View subscription reports: ${name}`,
+    runSubscription: (name: string) => `Run subscription now: ${name}`,
+    enableSubscription: (name: string) => `Enable subscription: ${name}`,
+    disableSubscription: (name: string) => `Disable subscription: ${name}`,
+    deleteSubscriptionNamed: (name: string) => `Delete subscription: ${name}`,
     source: "Source",
     web: "web",
+    // Automation tabs
+    configuredTip: "Automation tasks run on schedule and consume credits.",
+    configuredTipToggle: "Don't show again",
+    configuredEmptyTitle: "No automation tasks",
+    configuredEmptyDescription:
+      "Choose a template or ask an Agent to create one in chat.",
+    createCustomTask: "Custom task",
+    useTemplate: "Use template",
+    // Create automation dialog
+    nameRequired: "Please enter a task name",
+    topicRequired: "Please enter a topic to track",
+    createTaskSuccess: "Automation task created",
+    createTaskFailed: "Failed to create automation task",
+    createTaskTitle: "New automation task",
+    createTaskDescription: "Set the task name, topic, and schedule.",
+    taskNameLabel: "Task name",
+    taskNamePlaceholder: "e.g. Daily AI news summary",
+    topicLabel: "Topic",
+    topicPlaceholder: "Enter topic or keywords",
+    cadenceLabel: "Schedule",
+    cadenceHourly: "Hourly",
+    scheduleTimeLabel: "Run time",
+    scheduleDayLabel: "Run day",
+    instructionsLabel: "Instructions",
+    instructionsPlaceholder: "Optional: filters, output format, etc.",
+    createTask: "Create task",
+    // Automation history
+    historyItemsAnalyzed: (n: number) => `${n} items analyzed`,
+    historyErrors: (n: number) => `${n} source errors`,
+    historyCollapse: "Collapse",
+    historyViewDetails: "View details",
+    historyEmptyTitle: "No runs yet",
+    historyEmptyDescription:
+      "Run results will appear here after a task executes.",
   },
 
   intelligencePanel: {
     examplePrompts: [
-      "Track Octopus Agent GitHub releases, issues, and competitor updates daily, keeping only changes relevant to product decisions",
+      "Track EchoAI Agent GitHub releases, issues, and competitor updates daily, keeping only changes relevant to product decisions",
       "Summarize new papers and open-source projects on AI Agents, browser automation, and multi-agent frameworks weekly, filtering duplicate news",
       "Monitor pricing, plugin ecosystem, and enterprise feature changes for three competitors, alerting on important updates",
     ],
+    goalLabel: "Describe what you want to track continuously",
     goalPlaceholder:
-      "e.g., Track Octopus Agent, browser-use, and OpenAI Agent SDK releases, issues, and important discussions daily, keeping only changes that impact the product roadmap.",
+      "e.g., Track EchoAI Agent, browser-use, and OpenAI Agent SDK releases, issues, and important discussions daily, keeping only changes that impact the product roadmap.",
+    subscriptionName: "Subscription name",
+    keywords: "Keywords (comma-separated)",
+    cadence: "Frequency",
+    sources: "Sources (comma-separated)",
+    instructions: "Filtering and report requirements",
+    cadenceHighFrequency: "High frequency",
+    cadenceDaily: "Daily",
+    cadenceWeekly: "Weekly",
+    cadenceMonthly: "Monthly",
+    weekdayMonday: "Monday",
+    weekdayTuesday: "Tuesday",
+    weekdayWednesday: "Wednesday",
+    weekdayThursday: "Thursday",
+    weekdayFriday: "Friday",
+    weekdaySaturday: "Saturday",
+    weekdaySunday: "Sunday",
+    reportWeekdaySunday: "Sun",
+    reportWeekdayMonday: "Mon",
+    reportWeekdayTuesday: "Tue",
+    reportWeekdayWednesday: "Wed",
+    reportWeekdayThursday: "Thu",
+    reportWeekdayFriday: "Fri",
+    reportWeekdaySaturday: "Sat",
+    scheduleHighFrequency: (timezone) => `High-frequency check · ${timezone}`,
+    scheduleWeekly: (weekday, time, timezone) =>
+      `Weekly on ${weekday} at ${time} · ${timezone}`,
+    scheduleMonthly: (day, time, timezone) =>
+      `Monthly on day ${day} at ${time} · ${timezone}`,
+    scheduleDaily: (time, timezone) => `Daily at ${time} · ${timezone}`,
+    monthDayLabel: (day) => `Day ${day}`,
+    keyFindingsHeading: "Key findings",
+    recommendationsHeading: "Recommendations",
+    aiGenerated: "AI-generated",
+    itemsCount: (count) => `${count} items`,
+    skillsCount: (count) => `${count} skills`,
+    view: "View",
+    runTime: "Run time",
+    monthlyDate: "Monthly day",
+    weeklyDate: "Weekly day",
+    timezone: "Timezone",
+    expectedRun: (schedule) => `Next run: ${schedule}`,
+    noSubscriptionsYet: "No automated subscriptions yet",
+    latestUpdates: "Latest updates",
+    sortedBySubscriptionPush: "Sorted by subscription push",
+    newsFeed: "News feed",
+    noReportsYet: "No reports yet",
+    trackingNow: "Tracking continuously",
+    reportTimelineHint:
+      "New reports will appear in the timeline; click a card to read the full push.",
+    subscriptionTopic: "Subscription topic",
+    todayPush: "Today",
   },
 
   // Live Run Feedback
   liveRunFeedback: {
     title: "Live Feedback",
-    phaseUnderstand: "Understand",
-    phaseExecute: "Execute",
-    phaseVerify: "Verify",
-    generatingActionDraft: "Generating action draft",
-    generatingReasoning: "Generating reasoning",
+    phaseUnderstand: "Reading context",
+    phaseExecute: "Working",
+    phaseVerify: "Checking",
+    generatingActionDraft: "Shaping the next step",
+    generatingReasoning: "Organizing judgment",
     iteration: (n: number) => `Iteration ${n}`,
     contentPreview: "Content Preview",
-    updatingTodos: "Updating todos",
-    writingFile: "Writing",
-    writeComplete: "Write complete",
-    readingFile: "Reading",
-    readingContext: "Reading context",
-    runningCommand: "Running command",
-    calling: "Calling",
+    updatingTodos: "Updating plan",
+    writingFile: "Updating",
+    writeComplete: "Updated",
+    readingFile: "Checking",
+    readingContext: "context",
+    runningCommand: "Running local check",
+    calling: "Working",
   },
 
   // Public Thinking Status
   publicThinkingStatus: {
-    title: "Thinking Status",
-    organizingReply: "Organizing reply",
-    executingTool: "Executing tool",
-    gotResults: "Got execution results",
-    analyzing: "Analyzing",
-    understandingTask: "Understanding task",
-    planningFirstStep: "Planning first step",
-    waitingForModel: "Waiting for model",
-    stillWaiting: "Still waiting",
+    waitingForModel: "Thinking",
+    firstResponseSlow: "First response is taking longer",
+    modelWorking: "Thinking...",
+    thinkingCompleted: "Thinking complete",
+    slowResponse: "Still on it — slower than usual",
+    reconnecting: "Connection dropped — reconnecting",
+    processing: "Working",
+    ttftLabel: "TTFT",
+    ttftHint: "Time from request to the first token of this turn",
   },
 
   // Evolution Dashboard
   evolutionDashboard: {
     title: "Self-Evolution",
+    pageDescription:
+      "Review recent learning, capability changes, and next optimization steps.",
+    reflexRules: "Reflection rules",
+    showRuntimeMonitor: "Show runtime monitor",
+    hideRuntimeMonitor: "Hide runtime monitor",
+    runtimeMonitorDescription:
+      "Inspect budgets, circuit breakers, candidate skills, model proposals, protocol drift, and runtime status.",
     skills: "Skills",
     memories: "Memories",
     knowledgeGraph: "Knowledge Base",
@@ -3932,6 +6289,7 @@ export const enUS: Translations = {
     connectionFailed: "Failed to connect to the evolution dashboard API.",
     loading: "Loading evolution data...",
     refresh: "Refresh",
+    retryLoading: "Reload",
     selfImprovement: "Self Improvement",
     measureChanges: "Continuously measure capability changes",
     noLearningData:
@@ -3944,6 +6302,95 @@ export const enUS: Translations = {
     active: "Active",
     disabled: "Disabled",
     of100: "/ 100",
+    recentEvolutionTitle: "What has evolved recently",
+    growthSummary: (
+      totalMemories: number,
+      totalSkills: number,
+      learningEvents: number,
+    ) =>
+      `It has accumulated ${totalMemories} memories, ${totalSkills} skills, and distilled experience from ${learningEvents} learning events.`,
+    noEvidenceDescription:
+      "Not enough evolution evidence yet. After running more tasks, this will automatically become a readable growth record.",
+    overallImprovementLabel: "Overall improvement",
+    observeTasks: "Observe tasks",
+    observeTasksDescription:
+      "Find experience from real conversations and execution.",
+    accumulateMemories: "Accumulate memories",
+    accumulateMemoriesDescription:
+      "Store reusable facts, preferences, and rules.",
+    formSkills: "Form skills",
+    formSkillsDescription: "Turn stable practices into reusable capabilities.",
+    proposeImprovements: "Propose improvements",
+    proposeImprovementsDescription:
+      "Leave clear directions for the next round of optimization.",
+    unitTimes: "times",
+    unitItems: "items",
+    unitSkills: "skills",
+    unitSuggestions: "suggestions",
+    autoExtractedSkills: "Auto-extracted skills",
+    autoExtractedSkillsShare: (percent: string) => `${percent} of all skills`,
+    waitingForSkillAccumulation: "Waiting for skills to accumulate",
+    reusableMemoryLibrary: "Reusable experience library",
+    ruleMemoryCount: (count: number) =>
+      `${count} are rules / pitfalls to avoid`,
+    memoryDetailDefault:
+      "Remember facts, preferences, and execution experience",
+    nextSteps: "Next steps",
+    nextStepsAvailable: "You can click to view more",
+    nextStepsNone: "No actionable suggestions for now",
+    capabilityTrend: "Capability trend",
+    noTrendYet:
+      "No trend has formed yet. After a few rounds of tasks, success rate and duration changes will be shown here.",
+    recentChange: "Recent change",
+    currentSuccessRate: "Tool-call success rate",
+    recentSkillCalls: "Recent skill calls",
+    strongerSkills: "Frequently used skills",
+    noSkillPerformanceYet:
+      "No skill performance data yet. The most used capabilities will be shown by usage and success rate.",
+    skillCalls: (count: number) => `Called ${count} times`,
+    howToImproveNext: "How to improve next",
+    noPendingRecommendations:
+      "No pending recommendations. When optimization opportunities are found, they will appear here as plain-language suggestions.",
+    storyNoRealChangeTitle: "No real evolution happened in this period",
+    storyRealChangeTitle: (count: number) =>
+      `Actually learned ${count} new things`,
+    storyNoRealChangeDescription: (count: number) =>
+      `The system observed ${count} tasks, but did not save a new memory, rule, or skill. Running tasks is not the same as evolving.`,
+    storyRealChangeDescription: (count: number) =>
+      `These ${count} durable changes are stored and can affect future tasks.`,
+    notEvolutionBadge: "Observed only — not evolution",
+    observedTasks: "Tasks observed",
+    observedTasksPlainDescription: "Execution records were captured",
+    savedLessons: "Lessons saved",
+    savedLessonsPlainDescription: "Can be recalled on similar tasks",
+    changedBehaviors: "Behaviors changed",
+    changedBehaviorsPlainDescription: "Will affect the next execution",
+    actualChangesTitle: "What it actually learned",
+    actualChangesEmptyTitle: "No reusable lesson has been learned yet",
+    actualChangesEmptyDescription:
+      "The records only show that tasks ran. They have not been reflected on and saved for future use.",
+    changeRuleLabel: "Avoid a mistake",
+    changeMemoryLabel: "Remember a lesson",
+    changeSkillLabel: "New capability",
+    ruleFutureEffect: "This rule will be applied before similar tasks run.",
+    memoryFutureEffect: "This lesson can be recalled in a similar situation.",
+    skillFutureEffect:
+      "This capability can be called directly in future tasks.",
+    observationsTitle: "Tasks it recently observed",
+    observationsDescription:
+      "These are learning materials only. If they are not listed above, behavior has not changed yet.",
+    unnamedObservedTask: "Untitled task",
+    taskCompleted: "Completed",
+    taskNotCompleted: "Not fully completed",
+    taskSteps: (count: number) => `${count} execution steps`,
+    nextActionTitle: "How to make it truly evolve",
+    reflectionActionTitle: (count: number) =>
+      `Reflect on the latest ${count} tasks`,
+    reflectionActionDescription:
+      "Extract repeated successes and failures into saved rules. Future behavior changes only after that.",
+    technicalDetails: "View runtime metrics (advanced)",
+    metricsNotEvolutionNote:
+      "Success rate and latency describe operation, not learning",
   },
 
   // Wiki Panel
@@ -3960,7 +6407,7 @@ export const enUS: Translations = {
       "This will analyze your project code using LLM and generate structured documentation.\n" +
       "\u2022 May take several minutes for large projects\n" +
       "\u2022 Consumes API tokens (estimated cost depends on project size)\n" +
-      "\u2022 Results are saved to .octopus/repowiki/\n\n" +
+      "\u2022 Results are saved to .echo/repowiki/\n\n" +
       "Continue?",
     generateStarted: "Wiki generation started",
     generateComplete: "Wiki generation complete",
@@ -4011,18 +6458,18 @@ export const enUS: Translations = {
   // Onboarding
   onboarding: {
     title: "Onboarding Guide",
-    welcomeToOctopus: "Welcome to Octopus",
+    welcomeToEcho: "Welcome to EchoAI",
     yourAIPlatform: "Your AI Agent Platform",
     welcomeDesc:
-      "Octopus is an open-source super agent harness that orchestrates sub-agents, memory, and sandboxes to do almost anything \u2014 powered by extensible skills.",
-    chatModes: "Chat Modes",
-    chatModesDesc: "Choose the right mode for your task",
+      "EchoAI is an open-source super agent harness that orchestrates sub-agents, memory, and sandboxes to do almost anything \u2014 powered by extensible skills.",
+    chatModes: "Task capabilities",
+    chatModesDesc: "Start with one task, then add capabilities and helpers",
     modeChat: "Chat",
     modeChatDesc: "Natural conversations with AI agents",
     modeCode: "Code",
     modeCodeDesc: "AI-assisted development and debugging",
-    modeTeam: "Team",
-    modeTeamDesc: "Collaborate with multiple agents",
+    modeTeam: "Invite",
+    modeTeamDesc: "Add collaborators to the current task",
     keyFeatures: "Key Features",
     keyFeaturesDesc: "Everything you need to build with AI agents",
     featureAgentWorld: "Agent Market",
@@ -4090,6 +6537,7 @@ export const enUS: Translations = {
     gitDiff: "Git Diff",
     streamRecovery: "Stream recovery",
     running: "running...",
+    genericAction: "Other action",
   },
 
   liveToolTimeline: {
@@ -4106,6 +6554,8 @@ export const enUS: Translations = {
     pageOpenedAndExtracted: "Page opened and main content extracted.",
     parallelDispatching: (count) =>
       `Dispatching${count ? ` ${count}` : ""} parallel subtasks`,
+    parallelDispatchFailed: (count) =>
+      `Parallel delegation failed${count ? ` · ${count} subtasks not started` : ""}`,
     parallelTasksReturned: (count) =>
       `Parallel subtasks returned${count ? ` · ${count}` : ""}`,
     rolesWithNextStep: (roles) =>
@@ -4126,31 +6576,30 @@ export const enUS: Translations = {
     pullParallelResults:
       "Pulling parallel results back to the main thread for synthesis and cross-validation.",
     thoughtDetailLabel: (iteration) =>
-      `Thought detail${iteration ? ` · Round ${iteration}` : ""}`,
+      `Process note${iteration ? ` · Round ${iteration}` : ""}`,
     modelPublicReasoningFragment:
-      "The model publicly returned this round's reasoning/planning fragment.",
-    modelPublicReasoningStream: "Model Public Reasoning Stream",
+      "A display-safe planning fragment arrived for this round.",
+    modelPublicReasoningStream: "Public planning notes",
     modelOutputtingReasoning:
-      "The model is outputting the reasoning content publicly returned by the provider.",
+      "Receiving display-safe planning notes for this round.",
     invokeSkillProcess: "Invoking skill/skill retrieval process.",
     understandTask: "Understanding Task",
     readingUserRequirements:
       "Reading user requirements, conversation context, and current work mode.",
     connectRuntime: "Connecting Runtime",
-    establishingCallbackChannel:
-      "Establishing real-time callback channel for model and tool events.",
-    renderingModelOutput: "Rendering model output",
+    establishingCallbackChannel: "Establishing the real-time callback channel.",
+    renderingModelOutput: "Rendering the answer",
     incrementalTextReceived:
       "Incremental text received; answer content will continue to be appended to the message area in segments.",
     thinking: "Thinking...",
-    modelOrganizingNextStep: "The model is organizing the next step.",
+    modelOrganizingNextStep: "Organizing the next step.",
     modelOrganizingNextStepWithWait: (seconds) =>
-      `The model is organizing the next step; waited ${seconds}s.`,
-    modelOutputIncomplete: "Model output incomplete",
+      `Organizing the next step; waited ${seconds}s.`,
+    modelOutputIncomplete: "This response did not finish",
     providerRejected:
       "The provider rejected the request, the account is unavailable, or no renderable content was returned.",
-    modelOutputReceived: "Model output received",
-    modelStartedReturning: "The model has started returning content.",
+    modelOutputReceived: "Answer content received",
+    modelStartedReturning: "Content has started returning.",
     readFileToUnderstand:
       "Reading file content to understand the current implementation.",
     viewDirectoryStructure:
@@ -4187,6 +6636,76 @@ export const enUS: Translations = {
       "Demand-side leads supplemented; next step is to incorporate user pain points and consumption trends into conclusions.",
     roundResultsRead:
       "Results for this round read; next step is to adjust scope, supplement gaps, and enter comprehensive analysis.",
+    detailTitles: {
+      input: "Input",
+      thought: "Note",
+      publicReasoning: "Public progress",
+      result: "Result",
+      observation: "Observation",
+      preview: "Live content preview",
+    },
+    statusRunning: "Running",
+    statusDone: "Done",
+    statusFailed: "Failed",
+    statusWaitingApproval: "Waiting approval",
+    showMoreResults: (count) => `Show ${count} more`,
+    collapseResults: "Collapse results",
+    applyingSkill: (running) => (running ? "Applying skill" : "Applied skill"),
+    planningNextStep: (running) =>
+      running ? "Planning next step" : "Planned next step",
+    readingFile: (running) => (running ? "Reading" : "Read"),
+    browsingDirectory: (running) =>
+      running ? "Browsing directory" : "Browsed directory",
+    searchingFiles: (running) =>
+      running ? "Searching files" : "Searched files",
+    searchingText: (running) => (running ? "Searching text" : "Searched text"),
+    runningCommand: (running) => (running ? "Running command" : "Ran command"),
+    creatingFile: (running) => (running ? "Creating file" : "Created file"),
+    writingFile: (running) => (running ? "Writing file" : "Wrote file"),
+    editingFile: (running) => (running ? "Editing file" : "Edited file"),
+    readingGitStatus: (running) =>
+      running ? "Reading Git status" : "Read Git status",
+    readingGitDiff: (running) =>
+      running ? "Reading Git diff" : "Read Git diff",
+    committingGit: (running) => (running ? "Committing Git" : "Committed Git"),
+  },
+
+  // Store utilities
+  storeUtils: {
+    appCategoryLabels: {
+      all: "All",
+      developer: "Developer",
+      ai: "AI",
+      creative: "Creative",
+      research: "Research",
+      productivity: "Productivity",
+      finance: "Finance",
+      ops: "Ops",
+      connector: "Connector",
+      other: "Other",
+    },
+    technicalDetails: "Technical details",
+    createPluginPrompt:
+      "Use $plugin-creator to create a new EchoAI plugin.\nPlease first ask for the plugin name, purpose, and whether it includes skills/apps/MCP, then scaffold it into the personal plugin directory, complete the manifest, and verify the plugin can be recognized by the marketplace.",
+  },
+
+  // Local skill directory panel
+  localSkillDirectory: {
+    errorTitle: "Local skill catalog unavailable",
+    retryLabel: "Reload",
+    hideInternalSkills: "Hide internal skills",
+    showInternalSkills: (count) => `Show internal ${count}`,
+    verified: "Verified",
+    localCapability: "Local capability",
+    marketReasonMerged: "Merged display",
+    internalSkill: "Internal skill",
+    visibilityDuplicate: "Duplicate",
+    visibilityProvider: "Provider",
+    visibilitySpecialized: "Specialized",
+    visibilityDeprecated: "Deprecated",
+    visibilityInternal: "Internal",
+    enabled: "Enabled",
+    enable: "Enable",
   },
 
   // Annotations
@@ -4208,6 +6727,11 @@ export const enUS: Translations = {
     showResolved: (count: number) => `Show resolved (${count})`,
     hideResolved: (count: number) => `Hide resolved (${count})`,
     anonymous: "Anonymous",
+    sendReply: "Send reply",
+    justNow: "just now",
+    minutesAgo: (count: number) => `${count}m ago`,
+    hoursAgo: (count: number) => `${count}h ago`,
+    daysAgo: (count: number) => `${count}d ago`,
   },
 
   // Mention Autocomplete
@@ -4262,8 +6786,13 @@ export const enUS: Translations = {
     noTasks: "No scheduled tasks",
     last: "Last",
     jobName: "Job name",
+    jobNamePlaceholder: "For example: Hourly report sync",
     commandToRun: "Command to run",
-    cronExpression: "Cron expression (e.g. 0 * * * *)",
+    commandPlaceholder: "For example: python scripts/report.py",
+    cronExpression: "Schedule (Cron)",
+    cronPlaceholder: "For example: 0 * * * *",
+    cronHint:
+      "Runs in this device's time zone. Enter minute, hour, day, month, and weekday.",
     create: "Create",
     cancel: "Cancel",
     addTask: "Add Task",
@@ -4273,16 +6802,41 @@ export const enUS: Translations = {
     createFailed: "Failed to create scheduled task",
     deleteSuccess: "Scheduled task deleted",
     deleteFailed: "Failed to delete scheduled task",
+    needsAuth:
+      "Scheduled tasks involve local command execution and require login or authorization to manage.",
+    nameRequired: "Job name is required",
+    commandRequired: "Command is required",
+    cronRequired: "Cron expression is required",
+    cronInvalid: "Invalid cron expression (expected 5 fields, e.g. 0 * * * *)",
+    deleteConfirmTitle: "Delete scheduled task",
+    deleteConfirmDescription: (name: string) =>
+      `Delete scheduled task "${name}"? This action cannot be undone.`,
+    deleteTask: (name: string) => `Delete scheduled task: ${name}`,
   },
 
   // Team Input
   teamInput: {
     placeholder:
-      "Describe your task, the team will collaborate to complete it...",
+      "Describe the task, or @Local File Agent to search local materials...",
+    assigneeAll: "All",
+    assigneeCount: (count: number) => `${count} members`,
+    assigneeHint: "Choose who starts this task; members can be added later",
+    assigneeMenuTitle: "Who should start this task",
+    clearAssignee: "Clear selection and let the full team decide",
+    localFileAgent: "Local File Agent",
+    localFileAgentHint:
+      "Summon the local file agent: search authorized local files before adding confirmed context",
+  },
+
+  // Mobile
+  mobile: {
+    micDisabledAria: "Voice input (not yet enabled)",
   },
 
   fileTree: {
     emptyDirectory: "Empty directory",
+    openFolderAria: (name: string) => `Open folder: ${name}`,
+    openFileAria: (name: string) => `Open file: ${name}`,
   },
 
   // TAOR Indicator
@@ -4300,10 +6854,11 @@ export const enUS: Translations = {
   // Bundle Info
   bundleInfo: {
     title: "Build Information",
+    appVersion: "EchoAI version",
+    license: "License",
     environment: "Environment",
     vite: "Vite",
     react: "React",
-    sourceModules: "Source Modules",
   },
 
   // Model Picker
@@ -4319,20 +6874,24 @@ export const enUS: Translations = {
     enabling: "Enabling...",
     clickToEnable: "Disabled · Click to enable",
     recommended: "Recommended",
-    bindMoliliFirst: "Please log in first",
-    bindMoliliDesc: "Log in with your phone number to enable official models.",
+    bindAccountFirst: "Please log in first",
+    bindAccountDesc: "Log in with your phone number to enable official models.",
     modelEnabled: (name: string) => `${name} enabled`,
     enableFailed: "Enable failed",
     enableFailedWithMessage: (msg: string) => `Enable failed: ${msg}`,
     autoModelLabel: "Auto",
     autoModelDescription: "Let the system pick the best model per task",
     autoModelBadge: "Smart",
+    longContextHint: "Use the 1M context window",
+    contextLength: "Context length",
+    contextStandard: "Standard",
+    contextMax: "Max",
   },
 
   // Account Settings
   accountSettings: {
     creditsBalance: "Credits Balance",
-    moliliAccount: "Official Account",
+    octAccount: "Official Account",
     available: "Available",
     refreshing: "Refreshing",
     refresh: "Refresh",
@@ -4347,6 +6906,8 @@ export const enUS: Translations = {
     primaryAccount: "Primary",
     linkGoogle: "Link Google",
     linkGithub: "Link GitHub",
+    thirdPartyLinkUnavailable:
+      "Third-party account linking is not available yet. Existing links can still be removed.",
     unlinkConfirm: "Are you sure you want to unlink?",
     systemManaged: "Managed by system, cannot be modified",
     clickToChangeAvatar: "Click to change avatar",
@@ -4357,25 +6918,30 @@ export const enUS: Translations = {
     confirmDelete: "Confirm Delete",
     factoryResetTitle: "Factory reset",
     factoryResetDescription:
-      "Clear local conversations, workspaces, memory, install state, and browser-side Octopus cache. Source code and built-in roles are preserved.",
+      "Clear local conversations, workspaces, memory, install state, and browser-side EchoAI cache. Source code and built-in roles are preserved.",
     factoryResetDialogDescription:
       "This deletes local runtime data and cache. Restart or refresh the app afterward. Source code and built-in role folders will not be deleted.",
-    factoryResetTypeToConfirm: "Type RESET OCTOPUS to confirm",
-    factoryResetTypeMismatch: "Type RESET OCTOPUS to confirm",
+    factoryResetTypeToConfirm: "Type RESET ECHO to confirm",
+    factoryResetTypeMismatch: "Type RESET ECHO to confirm",
     factoryResetSuccess:
       "Local runtime data has been cleared. Restart or refresh the app.",
     factoryResetFailed: "Factory reset failed",
     factoryResetPending: "Clearing...",
     factoryResetConfirm: "Confirm reset",
     avatarTooLarge: "Avatar must be smaller than 5MB",
-    moliliSessionExpired: (reason: string) =>
-      `Account session expired (${reason})`,
-    moliliSessionExpiredDefaultReason: "Logged in from another device",
-    moliliSessionCacheHint:
+    sessionExpired: (reason: string) => `Account session expired (${reason})`,
+    sessionExpiredDefaultReason: "Logged in from another device",
+    sessionCacheHint:
       "The credits shown below are cached. Please log out and log in again with your phone number to refresh.",
     cachedSuffix: " (cached)",
     expiredTooltip:
       "Difference between nominal and available balance (expired or frozen)",
+    profileUpdated: "Profile updated",
+    avatarUploaded: "Avatar updated",
+    accountUnlinked: "Account unlinked",
+    privacyUpdated: "Privacy settings updated",
+    dataUnavailable: "Account information could not be loaded.",
+    retry: "Reload account information",
   },
 
   // Subscription Settings
@@ -4385,8 +6951,24 @@ export const enUS: Translations = {
     currentPlan: "Current Plan",
     upgradeNow: "Upgrade Now",
     contactUs: "Contact us: ",
+    supportEmail: "support@echo.local",
     invoiceHint: ", invoices available after purchase",
     totalCredits: (total) => `Total ${total} credits`,
+    billingUnavailableTitle: "Plans are temporarily unavailable",
+    billingUnavailableDescription:
+      "Your EchoAI account is signed in, but the billing service is not connected. Retry to refresh the account link and available plans.",
+    subscriptionUnavailable: "Subscription information could not be loaded.",
+    plansUnavailable: "Plans could not be loaded.",
+    noPlans: "No purchasable plans are currently available.",
+    reloadSubscription: "Reload subscription information",
+    reloadBilling: "Reconnect billing service",
+    reloadPlans: "Reload plan list",
+    cancelTitle: "Cancel subscription?",
+    cancelDescription:
+      "Your current access remains available until the end of the paid period. This action turns off renewal.",
+    keepPlan: "Keep plan",
+    confirmCancel: "Cancel subscription",
+    cancelled: "Subscription cancelled",
     plans: {
       plus: {
         name: "Plus (Monthly)",
@@ -4473,9 +7055,41 @@ export const enUS: Translations = {
     panelStatusCompleted: "Completed",
     panelStatusFailed: "Failed",
     statTotal: "Total tasks",
+    statCapacity: "Scope",
     statRunning: "Running",
     statCompleted: "Completed",
     statFailed: "Failed",
+    statEvidence: "Evidence",
+    phaseDispatch: "Dispatch",
+    phaseExecute: "Execute",
+    phaseAggregate: "Aggregate",
+    phaseSynthesize: "Synthesize",
+    deliveryReady: "Delivery ready",
+    deliveryNeedsReview: "Needs review",
+    deliveryPrimary: "Primary",
+    deliverySupporting: (n) => `${n} supporting`,
+    deliveryRetry: (n) => `${n} to retry`,
+    deliverySummary: "Main answer",
+    deliveryCopy: "Copy main answer",
+    deliveryCopied: "Copied main answer",
+    deliveryReplayExport: "Export replay package",
+    deliveryReplayExported: "Replay package exported",
+    deliveryRetryNote: (n) => `${n} member(s) need a retry before merging`,
+    deliveryCoverage: (answered, total) =>
+      `Coverage: ${answered}/${total} members`,
+    deliveryNext: "Next",
+    deliveryActionUsePrimary: "Use the primary response",
+    deliveryActionUsePrimaryAndRetry: "Use primary and retry failed members",
+    deliveryActionAskMembers: "Ask members to expand",
+    deliveryActionRetryOrFallback: "Retry members or fall back",
+    deliveryActionFallback: "Fall back to one agent",
+    rhythmActive: (name) => `${name} is working`,
+    rhythmWorking: "Collaboration running",
+    rhythmDelivered: "Collaboration delivered",
+    rhythmNeedsReview: "Needs review",
+    rhythmProgress: (done, total) => `${done}/${total} done`,
+    rhythmEvidence: (n) => `${n} evidence`,
+    rhythmResults: (n) => `${n} results`,
     taskListHeader: "Task list",
     noSwarmTasksTitle: "No parallel tasks",
     noSwarmTasksHint:
@@ -4517,6 +7131,29 @@ export const enUS: Translations = {
     credits: "Credits",
     refreshed: "Credits refreshed",
     refreshFailed: "Refresh failed",
+  },
+
+  // Community credits ledger / credits center
+  creditsCenter: {
+    title: "Credits Center",
+    totalBalance: "Total credits",
+    accountBalance: "Account credits",
+    communityBalance: "Community credits",
+    signIn: "Daily check-in",
+    signInDone: "Checked in today",
+    signInSuccess: (n: number) => `Checked in! +${n} credits`,
+    signInFailed: "Check-in failed",
+    earned: "Total earned",
+    spent: "Total spent",
+    ledger: "Transaction history",
+    emptyLedger: "No transactions yet. Explore the community!",
+    earnHints: "How to earn credits",
+    earnHintSignIn: (n: number) => `Daily check-in +${n}`,
+    earnHintPublish: (n: number) => `Publish an idea +${n}`,
+    earnHintFork: (n: number) => `Content forked +${n}/time`,
+    earnHintLike: (n: number) => `Content liked +${n}/time`,
+    spendNoBalance:
+      "Not enough community credits. Check in or create to earn more!",
   },
 
   // Daily credits claim
@@ -4570,7 +7207,7 @@ export const enUS: Translations = {
   appAuth: {
     pageTitle: "App authorizations",
     pageSubtitle:
-      "Authorize third-party platforms so Octopus can access data on your behalf.",
+      "Authorize third-party platforms so EchoAI can access data on your behalf.",
     searchPlaceholder: "Search authorizations...",
     connectedCount: (n: number) => `${n} connected`,
     tabAll: "All",
@@ -4623,44 +7260,6 @@ export const enUS: Translations = {
     toastBrowserAuthSuccess: "Authorization succeeded",
     toastBrowserAuthFailed: "Authorization failed",
     toastBrowserAuthCancelled: "Cancelled",
-  },
-
-  // Skills page
-  skillsPage: {
-    pageTitle: "Skills",
-    pageSubtitle:
-      "Manage your skill library — install and enable what you need.",
-    disclaimer:
-      "Skills come from community developers. Octopus is not responsible for any risk, liability, or damage from using third-party skills.",
-    createButton: "Create skill",
-    tabInstalled: "Installed",
-    loadingSkills: "Loading skills...",
-    noInstalledTitle: "No skills installed",
-    noInstalledHint:
-      "The runtime loaded with an empty skill catalog. Register groups via runtime.execution.all_skills.register_all during bootstrap.",
-    categories: {
-      sourcing: "Sourcing & selection",
-      research: "Market research",
-      browse: "Browse & search",
-      file: "Files & coding",
-      comm: "Comm & collab",
-      content: "Content generation",
-      memory: "Memory",
-      system: "System",
-      other: "Other",
-    },
-    searchPlaceholder: "Search skills (name/description/tags)",
-    matchCount: (matched: number, total: number) =>
-      `${matched} match / ${total} total`,
-    totalCount: (n: number) => `${n} skills total`,
-    noMatch: (query: string) => `No skills matching "${query}"`,
-    tooltipSource: (source: string) => `Source: ${source}`,
-    tooltipCost: (cost: string) => `Cost: ${cost}`,
-    tooltipTags: (tags: string) => `Tags: ${tags}`,
-    tooltipTested: "✓ Tested",
-    tooltipUntested: "• Untested",
-    testedDotTitle: "Tested",
-    noDescription: "No description",
   },
 
   // Activity indicators (file ops + preview refresh)
@@ -4730,6 +7329,9 @@ export const enUS: Translations = {
     threshold: "Auto-compress at",
     contextFull: "Context nearly full!",
     autoCompressed: "Auto-compressed",
+    title: "Compressing Context",
+    description: "Optimizing conversation history to improve response speed",
+    tip: "This process may take a few moments. Please wait...",
   },
 
   // Reflex page (app/workspace/reflex/page.tsx)
@@ -4746,6 +7348,11 @@ export const enUS: Translations = {
       `loaded ${rules} rules${statsReset ? " · stats reset" : ""}`,
     reloadError: (error: string) => `error: ${error}`,
     fetchFailed: "fetch failed",
+    dataLoading: "Loading reflex data…",
+    dataUnavailable: "Reflex data is temporarily unavailable.",
+    dataRefreshFailed:
+      "Refresh failed. Showing the last successfully loaded data.",
+    retryButton: "Retry",
     reloadFailed: "reload failed",
     statTry: "Try",
     statHit: "Hit",
@@ -4755,6 +7362,7 @@ export const enUS: Translations = {
     statLastHourHits: "Last hour hits",
     sparklineTitle: "Reflex hits · last 60 min · 1 min buckets",
     sparklineEmpty: "No reflex hits in the last 60 minutes",
+    sparklineUnavailable: "Reflex trend data is temporarily unavailable.",
     rulesTableTitle: "Rules",
     responseTiersTitle: "Response tiers",
     colRule: "Rule",
@@ -4766,6 +7374,7 @@ export const enUS: Translations = {
     colRate: "Rate",
     colLast: "Last",
     noRulesLoaded: "No rules loaded.",
+    rulesUnavailable: "Rule data is temporarily unavailable.",
     tierEnabled: "enabled",
     tierDisabled: "disabled",
     tierSize: "size",
@@ -4860,6 +7469,10 @@ export const enUS: Translations = {
     addendumAppliedTitle: "Currently applied addendum",
     addendumLive: "live",
     addendumNone: "none",
+    stateLoading: "loading…",
+    stateUnavailable: "unavailable",
+    addendumUnavailable:
+      "Addendum status is temporarily unavailable. Existing settings are unchanged.",
     addendumClearButton: "Clear (manual)",
     addendumBytes: (size: number) => `${size} bytes`,
     knobIterations: "iterations",
@@ -4882,6 +7495,9 @@ export const enUS: Translations = {
     canaryTitle: "Canary / rollback",
     canaryRefresh: "refresh",
     canaryEmpty: "No canary states yet",
+    canaryUnavailable:
+      "Canary status is temporarily unavailable. Existing data is unchanged.",
+    canaryCountsUnavailable: "active — · rolled back — · total —",
     canaryCounts: (active: number, rolledBack: number, total: number) =>
       `active ${active} · rolled back ${rolledBack} · total ${total}`,
     canaryPhase: (phase: string) => `phase ${phase}`,
@@ -4974,11 +7590,6 @@ export const enUS: Translations = {
     clearAddendumPath: (path: string) => `to clear: rm ${path}`,
   },
 
-  // Workflows wrapper page
-  workflowsWrapperPage: {
-    loadingEditor: "Loading editor...",
-  },
-
   // AppAuth wrapper page
   appAuthWrapperPage: {
     securityKicker: "Security",
@@ -5011,6 +7622,81 @@ export const enUS: Translations = {
     journalRow: (task: string, arm: string) => `task=${task} arm=${arm}`,
     subtitle:
       "Runtime introspection · parallel collaboration / blackboard / journal stream / self-evolution / context budget / cost",
+    shell: {
+      startTask: "Start a task",
+      runReviewTitle: "Run review",
+      runReviewDescription:
+        "See what ran smoothly, what failed, and what deserves a closer look.",
+      liveEventsTitle: "Live events",
+      liveEventsDescription:
+        "Collaboration, blackboard activity, and logs in one event view.",
+      resourcesTitle: "Resources and cost",
+      resourcesDescription:
+        "Context budget, token usage, and cost totals in one place.",
+      systemTitle: "System status",
+      systemDescription:
+        "Self-evolution, diagnostics, and backend state together.",
+      overviewTab: "Overview",
+      eventsTab: "Events",
+      resourcesTab: "Resources and cost",
+      systemTab: "System",
+      overviewTitle: "Start with the overview",
+      overviewDescription:
+        "Health, events, resources, and system state are grouped into four clear views.",
+      openNewTask: "Open a new task",
+      eventsEyebrow: "Events",
+      eventsTitle: "Runs, collaboration, and logs together",
+      eventsDescription:
+        "Review runs, collaboration, blackboard activity, and logs without navigating a long row of tabs.",
+      resourcesEyebrow: "Resources and cost",
+      resourcesGroupTitle: "Budget first, bill second",
+      resourcesGroupDescription:
+        "Context budget and spend share one level, so you can compare them without switching views.",
+      systemEyebrow: "System",
+      systemGroupTitle: "Backend state and self-evolution together",
+      systemGroupDescription:
+        "Diagnostics and self-evolution now share a single system view.",
+    },
+    toolEffects: {
+      title: "External action receipts",
+      description:
+        "Detect duplicate execution, host takeover, and external side effects that need human review.",
+      retryAuthorizedSuccess:
+        "One fencing-token-protected retry was authorized",
+      retryAuthorizationFailed: "Authorization failed",
+      pendingReview: (count: number) => `${count} awaiting review`,
+      noPendingReview: "Nothing awaiting review",
+      refreshAriaLabel: "Refresh external action receipts",
+      backendLabel: "Backend",
+      sharedAcrossHosts: "Shared across hosts",
+      localCoordination: "Local coordination",
+      committedLabel: "Committed",
+      runningLabel: "Running",
+      loadFailed: (error: string) => `Could not load receipt state: ${error}`,
+      empty:
+        "No external action receipts yet. Tool activity will appear here automatically.",
+      unknownTool: "Unknown tool",
+      receiptMeta: (task: string, step: number, token: number) =>
+        `Task ${task} · step ${step} · token ${token}`,
+      reviewAndRetry: "Review and retry",
+      collapsedHistory:
+        "Older committed receipts are hidden; showing items needing attention and the latest 6.",
+      confirmTitle: "Confirm the external action did not happen",
+      confirmDescription:
+        "Authorize a retry only after confirming that the action did not succeed in the external system, file, or remote service. The fencing token prevents a stale page from changing a newer receipt.",
+      reasonPlaceholder:
+        "Enter evidence, for example: the payment provider confirms no order was created.",
+      cancel: "Cancel",
+      submitting: "Checking state…",
+      confirmRetry: "Confirm and allow retry",
+      states: {
+        claimed: "Claimed",
+        started: "Running",
+        committed: "Committed",
+        indeterminate: "Needs review",
+        retryAuthorized: "Retry authorized",
+      },
+    },
     swarmCardTitle: "Agent collaboration session · live skill calls",
     noConcurrentTasks: "No concurrent tasks",
     noConcurrentTasksHint:
@@ -5049,6 +7735,9 @@ export const enUS: Translations = {
     pause: "Pause",
     resume: "Resume",
     clear: "Clear",
+    clearConfirmTitle: "Clear current log?",
+    clearConfirmDescription:
+      "This will empty the displayed event list. New events will continue to stream in.",
     noEvents: "No events",
     noEventsHint:
       "Wait for journal events to appear · Make a request to start.",
@@ -5089,6 +7778,8 @@ export const enUS: Translations = {
     // Regeneration panel
     loading: "Loading…",
     errorPrefix: "Error:",
+    crossTenantAdminRequired:
+      "Cross-tenant administrator permission is required.",
     trajectoryTotal: "Total trajectories",
     failureCount: "Failure count",
     regenProducers: {
@@ -5179,6 +7870,13 @@ export const enUS: Translations = {
       source: (source: string, events: number) =>
         `${source} · ${events} events`,
       resetButton: "Reset",
+      breakerStates: {
+        closed: "Healthy",
+        open: "Open",
+        halfOpen: "Half-open",
+      },
+      hourlyUsageAria: (component: string, used: number, limit: number) =>
+        `${component} hourly usage ${used} of ${limit}`,
     },
     skillProposals: {
       cardTitle: "Skill proposals from intel",
@@ -5238,14 +7936,14 @@ export const enUS: Translations = {
   evolutionPanel: {
     title: "Self-evolution status",
     description:
-      "Octopus reviews completed tasks and carries useful lessons into future runs. This view shows what it has learned and how it will affect the next task.",
+      "EchoAI reviews completed tasks and carries useful lessons into future runs. This view shows what it has learned and how it will affect the next task.",
     summaryEmpty: "Still collecting experience",
     summaryReady: (learned: number, total: number) =>
       `Learned ${learned} reusable lessons from ${total} tasks`,
     summaryHealthy:
       "No action is needed right now; similar future tasks will use these lessons automatically.",
     summaryFailures: (failures: number) =>
-      `${failures} deep-task failures were recorded recently, so Octopus will prioritize learning how to avoid them.`,
+      `${failures} deep-task failures were recorded recently, so EchoAI will prioritize learning how to avoid them.`,
     statusNormal: "Looks good",
     statusNeedsReview: "Worth checking",
     statAvoidRule: "Risk lessons",
@@ -5263,18 +7961,18 @@ export const enUS: Translations = {
     statAllTrajsTooltip: (total: number) =>
       `${total} historical tasks are in the review pool. More samples make lessons less dependent on one-off outcomes.`,
     statAllTrajsDesc:
-      "These are historical tasks in the review pool. Octopus uses them to find stable approaches and risk patterns.",
+      "These are historical tasks in the review pool. EchoAI uses them to find stable approaches and risk patterns.",
     statAllTrajsPoints: (total: number, learned: number) => [
       `${total} samples are in the review pool.`,
       `${learned} lessons are ready to be applied automatically in similar tasks.`,
-      "As the sample grows, Octopus weighs long-term patterns more than one-off outcomes.",
+      "As the sample grows, EchoAI weighs long-term patterns more than one-off outcomes.",
     ],
     statReactLabel: "Deep tasks",
     statReactHint: (reviewCount: number) =>
       reviewCount > 0 ? `${reviewCount} to review` : "Stable",
     statReactTooltip: (attempts: number, reviewCount: number) =>
       `${attempts} deep tasks entered multi-step execution; ${reviewCount} are marked for review.`,
-    statReactValue: (attempts: number, reviewCount: number) => `${attempts}`,
+    statReactValue: (attempts: number, _reviewCount: number) => `${attempts}`,
     statReactDesc:
       "Deep tasks are runs that entered multi-step reasoning, tool use, or longer execution chains. This metric tracks stability in complex work.",
     statReactPoints: (attempts: number, failures: number) => [
@@ -5282,29 +7980,32 @@ export const enUS: Translations = {
       `${failures} items are marked for review and prioritized for risk lessons.`,
       "Worth checking does not mean you must fix it manually; it means the system is learning from these records first.",
     ],
-    learnedMitigationsTitle: "Pitfalls Octopus learned to avoid",
+    learnedMitigationsTitle: "Pitfalls EchoAI learned to avoid",
     learnedMitigationsDesc:
       "These lessons come from repeated failures and are used as guardrails next time.",
-    consolidatedMemoriesTitle: "Useful approaches Octopus remembers",
+    consolidatedMemoriesTitle: "Useful approaches EchoAI remembers",
     consolidatedMemoriesDesc:
       "These approaches worked repeatedly and can be reused on similar tasks.",
     noMitigationsHint:
-      "No repeated pitfall has been found yet. Once a problem repeats, Octopus will list what to avoid here.",
+      "No repeated pitfall has been found yet. Once a problem repeats, EchoAI will list what to avoid here.",
     noMemoriesHint:
       "No stable successful approach has enough evidence yet. After more similar tasks, reusable approaches will appear here.",
     linesSuffix: (n: number) => `${n}`,
     forgetLineTitle: "Forget this line (make the system unlearn it)",
     forgetLineButton: "Forget",
+    forgetConfirmTitle: "Forget this learning?",
+    forgetConfirmDescription:
+      "Removes it from learned rules/memories. The system won't reference it on similar tasks next time.",
     nextRunImpact: "Used automatically the next time a similar task appears.",
     failureReadBeforeWrite: "read-before-write was required",
     failureTypeError: "a type error",
     failureGeneric: (failure: string) => `failure signature ${failure}`,
     toolFailureLesson: (tool: string, failure: string, count: number) =>
-      `${tool} failed ${count} times due to ${failure}; next time Octopus will validate inputs first and switch tools if needed.`,
+      `${tool} failed ${count} times due to ${failure}; next time EchoAI will validate inputs first and switch tools if needed.`,
     reflectingButton: "Reviewing...",
     reflectButton: "Review now",
     reflectHint:
-      "You usually do not need to click this. Octopus reviews tasks automatically; use this after an important task to organize lessons immediately.",
+      "You usually do not need to click this. EchoAI reviews tasks automatically; use this after an important task to organize lessons immediately.",
     advancedTitle: "Advanced details",
     reactVariantsTitle: "Execution strategy experiments",
     tableName: "Strategy",
@@ -5326,7 +8027,7 @@ export const enUS: Translations = {
   privacySettings: {
     identityLockTitle: "Identity Lock",
     identityLockDesc:
-      "When enabled, vendor/model names in model replies (Claude / Kimi / Anthropic / Moonshot, etc.) are rewritten to Octopus · users only see the product identity. Disable to enter developer mode where the raw LLM identity shows through — useful for tuning prompts or verifying routing.",
+      "When enabled, vendor/model names in model replies (Claude / Kimi / Anthropic / Moonshot, etc.) are rewritten to EchoAI · users only see the product identity. Disable to enter developer mode where the raw LLM identity shows through — useful for tuning prompts or verifying routing.",
     lockedTag: "LOCKED",
     unlockedTag: "UNLOCKED",
     sourceLabel: "source",
@@ -5346,7 +8047,7 @@ export const enUS: Translations = {
     profileLoadFailed: "(Backend not reachable · profile status unavailable)",
     alternativeUnlockTitle: "Other unlock paths",
     altEnvLabel: "Environment variable:",
-    altEnvDesc: "Set OCTOPUS_IDENTITY_LOCK=0 before startup · applies globally",
+    altEnvDesc: "Set ECHO_IDENTITY_LOCK=0 before startup · applies globally",
     altTurnLabel: "Single turn:",
     altTurnDesc:
       "Prefix a user message with /raw · passes through for that turn only",
@@ -5359,6 +8060,162 @@ export const enUS: Translations = {
     toastLockOn: "Identity lock enabled",
     toastLockOff: "Identity lock disabled (dev mode)",
     toastToggleFailed: (msg: string) => `Toggle failed: ${msg}`,
+    // AI mode (efficiency / privacy)
+    aiModeTitle: "AI Mode",
+    aiModeDescScanning: "Detecting device configuration…",
+    aiModeRecommended: (label: string) =>
+      `Recommended for this device: ${label}`,
+    efficiencyMode: "Efficiency",
+    efficiencyModeDesc:
+      "Prefer cloud high-performance models for faster, stronger responses.",
+    privacyMode: "Privacy",
+    privacyModeDesc: "Prefer local models; data stays on this device.",
+    detectButton: "Detect",
+    recommendedTag: "Recommended",
+    enabledTag: "Enabled",
+    deviceLabel: "Device:",
+    toastAiModeSwitched: (label: string) => `Switched to ${label}`,
+    toastAiModeSwitchFailed: (msg: string) =>
+      `Failed to switch AI mode: ${msg}`,
+    // Path denylist
+    pathDenyTitle: "Unreadable Folders",
+    pathDenyDesc:
+      "Once added, the agent will refuse to read or write any files under these paths.",
+    addPathButton: "Add",
+    pathDenyEmpty:
+      "None yet — the default denylist (.vscode / AppData / .cache etc.) is active",
+    pathActionAria: (path: string) => `Actions for ${path}`,
+    pathDeleteButton: "Delete",
+    addPathDialogTitle: "Add Unreadable Folder",
+    addPathDialogDesc:
+      "Enter an absolute path (e.g. C:\\Users\\you\\secrets or /home/you/.ssh). The agent will refuse to read or write any files under this directory.",
+    pathLabel: "Path",
+    toastInvalidPath: "Please enter a valid path",
+    toastPathAdded: (path: string) => `Added: ${path}`,
+    toastPathAddFailed: (msg: string) => `Failed to add: ${msg}`,
+    toastPathRemoved: (path: string) => `Removed: ${path}`,
+    toastPathRemoveFailed: (msg: string) => `Failed to remove: ${msg}`,
+    // LLM judge
+    judgeTitle: "LLM Semantic Review (judge)",
+    judgeDesc:
+      "Each outbound message triggers an extra model call to review semantic violations such as phishing or unauthorized scraping. Off by default (has cost).",
+    judgeUnavailable: " No model route currently available; cannot enable.",
+    toastJudgeEnabled: "LLM semantic review enabled",
+    toastJudgeDisabled: "LLM semantic review disabled",
+    toastJudgeToggleFailed: (msg: string) => `Toggle failed: ${msg}`,
+  },
+
+  // Sandbox / execution permission settings
+  sandboxSettings: {
+    title: "Sandbox & Execution Permissions",
+    description:
+      "Execution environment and permission level are two independent dimensions you can combine freely — e.g. “Sandbox + Full access” for full automation inside isolation, or “Local + Accept edits” to run on this machine while commands still ask for confirmation.",
+    activeTag: "Current",
+    scopeNote:
+      "Changes are saved to local settings and apply to all future tasks; tasks already running are unaffected.",
+    restartHint:
+      "“Full access” grants permanent approval — only use it on a machine you trust.",
+    envTitle: "Execution environment",
+    envDesc:
+      "Where commands run and how much of the file system they can write.",
+    permissionTitle: "Permission level",
+    permissionDesc: "How much confirmation file edits and commands require.",
+    guardianTitle: "High-risk action review",
+    guardianDesc:
+      "High-risk actions get a second opinion from an independent review model (user authorization evidence × action risk), working independently of the permission tier above — even “Full Access” can't let through an unauthorized high-risk action. Off by default.",
+    guardianToggleLabel: "Enable independent review",
+    guardianToggleDesc:
+      "Runs only for high/critical actions; failures degrade to the rule engine conclusion without blocking; max 3 reviews per turn.",
+    guardianModelLabel: "Review model",
+    guardianModelHint:
+      "Leave empty to use the conversation\u2019s own model (recommended); or pick a dedicated reviewer, e.g. gpt-5.6-luna.",
+    toastGuardianOn: "High-risk action review enabled",
+    toastGuardianOff: "High-risk action review disabled",
+    toastEnvSwitched: (label: string) =>
+      `Execution environment switched to “${label}”`,
+    toastPermissionSwitched: (label: string) =>
+      `Permission level switched to “${label}”`,
+    toastFailed: (msg: string) => `Switch failed: ${msg}`,
+    env: {
+      sandbox: {
+        label: "Sandbox",
+        description:
+          "Commands run in an isolated sandbox; file writes are limited to the workspace.",
+      },
+      local: {
+        label: "Local",
+        description:
+          "Commands run directly on this machine with unrestricted file writes (bypasses sandbox isolation).",
+      },
+    },
+    permission: {
+      default: {
+        label: "Default",
+        description:
+          "Any write or command asks for your approval first. Safest option.",
+      },
+      acceptEdits: {
+        label: "Accept edits",
+        description:
+          "File changes run automatically; commands still ask for approval.",
+      },
+      bypassPermissions: {
+        label: "Full access",
+        description:
+          "Every action runs automatically with no questions. Maximum permissions.",
+      },
+    },
+    networkTitle: "Network access",
+    networkDesc:
+      "Network scope for sandboxed commands: by default only model inference stays reachable; the “Common domains” tier additionally pre-allows dev-tool hosts.",
+    presetDomainsNote:
+      "Dev-tool domains pre-allowed by the “Common domains” tier (read-only):",
+    toastNetworkSwitched: (label: string) =>
+      `Network access switched to “${label}”`,
+    network: {
+      deny: {
+        label: "Blocked",
+        description:
+          "Only model inference endpoints are reachable; all other requests are blocked (most secure).",
+      },
+      common: {
+        label: "Common domains",
+        description:
+          "Pre-allows bundled dev-tool hosts (npm / pip / github / apt); everything else stays blocked (recommended).",
+      },
+      full: {
+        label: "Allowed",
+        description:
+          "Sandboxed commands can reach any network (pnpm install, git clone, etc.).",
+      },
+    },
+    replyStyleTitle: "Reply style",
+    replyStyleDesc:
+      "Pick the assistant's reply personality (character / values / tone / escalation). Affects how it speaks, not what it can do.",
+    toastReplyStyleSwitched: (label: string) =>
+      `Reply style switched to “${label}”`,
+    replyStyle: {
+      default: {
+        label: "Default",
+        description: "Classic emoji decoration + pragmatic engineering tone.",
+      },
+      professional: {
+        label: "Professional",
+        description: "Restrained and structured, minimal emoji.",
+      },
+      friendly: {
+        label: "Friendly",
+        description: "Warm and patient, light emoji, like a reliable teammate.",
+      },
+      concise: {
+        label: "Concise",
+        description: "Minimal, conclusion first, no filler.",
+      },
+      socratic: {
+        label: "Socratic",
+        description: "Guides with questions; key conclusions stay explicit.",
+      },
+    },
   },
 
   // Login page
@@ -5400,13 +8257,13 @@ export const enUS: Translations = {
   // Register page
   registerPage: {
     loadingText: "Loading...",
-    badgeText: "Create your Octopus account",
+    badgeText: "Create your EchoAI account",
     heroTitleLine1: "Start right after you join",
     heroTitleLine2: "the multi-agent workflow",
     heroDescription:
       "Set up your own workspace, plug in skills, tools and models, and unify research, collaboration and automation on one platform.",
     cardTitle: "Create account",
-    cardDescription: "Join Octopus and start your agent journey",
+    cardDescription: "Join EchoAI and start your agent journey",
     usernameLabel: "Username",
     usernamePlaceholder: "at least 3 characters",
     emailLabel: "Email (optional)",
@@ -5435,8 +8292,11 @@ export const enUS: Translations = {
     currentAccount: "Current account",
     loginAccount: "Login",
     phoneNumber: "Phone Number",
+    emailLabel: "Email",
+    tabEmail: "Email Login",
     verificationCode: "Verification Code",
     sendCode: "Send Code",
+    devCodeNotice: (code: string) => `Verification code (dev mode): ${code}`,
     sending: "Sending...",
     loggingIn: "Logging in...",
     enterDirectly: "Enter as Guest",
@@ -5452,15 +8312,21 @@ export const enUS: Translations = {
     },
     errors: {
       invalidPhone: "Please enter a valid phone number",
+      invalidEmail: "Please enter a valid email address",
       sendFailed: "Failed to send",
       fillRequired: "Please fill in phone number and verification code",
+      emailFillRequired: "Please fill in email and verification code",
+      emailRequired: "Please enter your email address",
+      codeRequired: "Please enter the verification code",
+      invalidCode: "Enter the 6-digit verification code",
       loginFailed: "Login failed",
       enterFailed: "Failed to enter",
-      moliliNotEnabled:
+      gatewayNotEnabled:
         "Account login is not enabled on this server · use local auth or a custom model instead",
     },
     success: {
       codeSent: "Verification code sent, please check your SMS",
+      emailCodeSent: "Verification code sent, please check your email",
       loginSuccess: "Login successful",
       guestEntered: "Entered guest mode",
     },
@@ -5472,29 +8338,73 @@ export const enUS: Translations = {
     terms: {
       autoRegister:
         "Unregistered phone numbers will be automatically registered",
+      emailAutoRegister:
+        "Unregistered email addresses will be automatically registered",
       agreeTo: "By logging in, you agree to",
+      and: "and",
       userAgreement: "User Agreement",
       privacyPolicy: "Privacy Policy",
     },
     page: {
-      title: "Secure Access to Your Octopus Workspace",
+      title: "Secure Access to Your EchoAI Workspace",
       subtitle: "Continue your",
       description:
         "Continue your research, coding, collaboration, and automation tasks in a unified workspace for managing context, skills, and execution results.",
       cardDescription:
         "Login with phone number, automatically bind to LLMs and credits",
-    },
-    molili: {
-      title: "Login to Continue",
-      reason: "Official models, credits, and subscriptions require an account.",
-      autoRegister:
-        "Unregistered phone numbers will be automatically registered.",
+      emailCardDescription:
+        "Login with an email code, automatically bind to LLMs and credits",
     },
   },
 
-  // Settings Dialog
-  settingsDialog: {
-    dragToResize: "Drag to resize",
+  // Store panels (registry skills/plugins/roles)
+  store: {
+    skillsPanelTitle: "Skill Store · Install on demand from the registry",
+    pluginsPanelTitle: "Plugin Store · Install capabilities",
+    searchSkillsPlaceholder: "Search skills",
+    searchPluginsPlaceholder: "Search plugins",
+    searchRolesPlaceholder: "Search roles",
+    install: "Install",
+    installing: "Installing",
+    installed: "Installed",
+    browseOnly: "Browse only",
+    pluginsSafetyNotice:
+      "Plugins are either capability notes or signed bundles. Bundles are installed only after checksum, publisher, and permission checks.",
+    typeLabelStore: "Store",
+    typeLabelPluginBundle: "Store · Plugin bundle",
+    typeLabelPromptCapability: "Store · Capability note",
+    typeLabelTwinRole: "Store · Digital twin role template",
+    categoryDigitalTwin: "Digital Twin",
+    expertsPanelTitle: "Expert Store · WorkBuddy Cloud",
+    searchExpertsPlaceholder: "Search experts / fields / tags",
+    expertTypeAgent: "Expert",
+    expertTypeTeam: "Team",
+    typeAll: "All",
+    refreshTooltip: "Refresh (re-fetch cloud data)",
+    installExpertTitle: "Install this expert?",
+    installExpertDesc: (name: string) =>
+      `Download and import expert "${name}" into your local Agent library. The bundle is unpacked and registered automatically.`,
+    confirmInstall: "Install",
+    cancelInstall: "Cancel",
+    phaseDownload: "Downloading bundle…",
+    phaseUnpack: "Unpacking & verifying…",
+    phaseImport: "Importing as local Agent…",
+    installSuccess: (name: string) => `Expert "${name}" installed`,
+    installFailed: (name: string, reason: string) =>
+      `Failed to install expert "${name}": ${reason}`,
+    detailTitle: (name: string) => `Expert details · ${name}`,
+    detailProfession: "Field",
+    detailQuickPrompts: "Quick prompts",
+    detailTags: "Tags",
+    detailDescription: "About",
+    detailInstall: "Install this expert",
+    detailInstalled: "Installed",
+    loadMore: "Load more",
+    noMoreItems: "All loaded",
+    retry: "Retry",
+    noMatchExperts: (total: number) =>
+      total > 0 ? `${total} experts · No matches` : "No matches",
+    expertLoadingAria: "Loading expert list",
   },
 
   // Skill Categories
@@ -5536,18 +8446,21 @@ export const enUS: Translations = {
   },
 
   hero: {
-    releaseBadge: "Octopus 2.0 released",
-    withOctopus: "with Octopus",
+    releaseBadge: "EchoAI 2.0 released",
+    withEcho: "with EchoAI",
     heroDescription:
       "An open-source SuperAgent harness that researches, codes, and creates. With the help of sandboxes, memories, tools, skills and subagents, it handles different levels of tasks that could take minutes to hours.",
   },
 
   channelPairings: {
     loadFailed: "Load failed",
+    retry: "Retry",
     loading: "Loading...",
     users: "Users",
     groups: "Groups",
     pending: "Pending",
+    emptyListTitle: "No pairings yet",
+    noPendingTitle: "No pending requests",
     noUsers: "No users have sent messages to this channel yet",
     noGroups: "No groups have been identified in this channel yet",
     noPending:
@@ -5632,6 +8545,9 @@ export const enUS: Translations = {
     title: "Execution timeline",
     loading: "Loading timeline...",
     empty: "No execution records yet",
+    loadFailed: "Failed to load execution timeline",
+    noMatches: "No matching tasks",
+    noMatchesDescription: "Try another task_id keyword, or clear the search.",
     searchPlaceholder: "Search task_id...",
     refresh: "Refresh",
     noTask: "(No task)",
@@ -5639,9 +8555,48 @@ export const enUS: Translations = {
   },
 
   planPanel: {
+    title: "Plan",
     completed: "Completed",
     inProgress: "In progress",
     pending: "Pending",
+    steps: (completed, total) => `${completed}/${total} steps`,
+  },
+
+  diagnosticsPanel: {
+    title: "Diagnostics",
+    noPreviewIssues: "No preview diagnostics reported",
+    sections: {
+      preview: "Preview",
+      workspace: "Workspace",
+      project: "Project",
+      thread: "Thread",
+      writeScope: "Write Scope",
+      server: "Server",
+    },
+    labels: {
+      path: "Path",
+      resolved: "Resolved",
+      exists: "Exists",
+      git: "Git",
+      rules: "Rules",
+      type: "Type",
+      checks: "Checks",
+      mode: "Mode",
+      sandbox: "Sandbox",
+      agent: "Agent",
+      persistedWD: "Persisted WD",
+      requested: "Requested",
+      primaryRoot: "Primary root",
+      rootN: (n) => `Root ${n}`,
+      cwd: "CWD",
+      python: "Python",
+      none: "none",
+    },
+    status: {
+      yes: "Yes",
+      no: "No",
+    },
+    serverCwdDiffers: "Server CWD differs from workspace",
   },
 
   todoPanel: {
@@ -5655,24 +8610,24 @@ export const enUS: Translations = {
 
   scopeSettings: {
     codeModeDisabled:
-      "This agent does not have code mode enabled · write scope is fixed to its own workspace",
-    authorizeWorkspaces: "Authorize additional workspaces (code mode)",
+      "This agent does not have project-write access · write scope is fixed to its own workspace",
+    authorizeWorkspaces: "Authorize additional project folders",
     noAuthorized:
-      "Not authorized yet · defaults to writing only inside the agent's own workspace",
+      "No extra folders authorized · defaults to the bound project plus this thread's own workspace",
     writeScopeTitle: "Write scope",
     writeScopeTooltip: "Write scope settings",
     writeScopeDescription:
-      "Controls which directories the current conversation can write to · paths outside the allowlist are always rejected",
+      "Controls which project folders this thread may write · paths outside the allowlist are always rejected",
   },
 
   teamSelector: {
-    selectTeam: "Select team",
-    noTeams: "No teams yet, create one below",
+    selectTeam: "Select group",
+    noTeams: "No groups yet, invite collaborators below",
     memberCount: (count) => `${count} members`,
     confirmDisband: (name) =>
-      `Are you sure you want to disband team \"${name}\"?`,
-    disbandTeam: "Disband team",
-    createTeam: "Create team",
+      `Are you sure you want to disband group \"${name}\"?`,
+    disbandTeam: "Disband group",
+    createTeam: "Invite collaborators",
   },
 
   teamMembers: {
@@ -5718,21 +8673,70 @@ export const enUS: Translations = {
     grantFloor: "Give the floor",
   },
 
+  share: {
+    share: "Share",
+    shareTask: "Share task",
+    shareDescription:
+      "Creates a public read-only snapshot without reasoning, tool payloads, or local paths",
+    wechat: "WeChat",
+    moments: "Moments",
+    copyLink: "Copy link",
+    qrCode: "QR code",
+    openInBrowser: "Browser",
+    creatingLink: "Creating share link…",
+    linkCopied: "Share link copied",
+    linkFailed: "Failed to create the share link",
+    wechatQrTitle: "Share to WeChat",
+    momentsQrTitle: "Share to Moments",
+    qrTitle: "Share QR code",
+    wechatQrHint: "Scan with WeChat, then send the page to a friend.",
+    momentsQrHint: "Scan with WeChat, open the page, then share it to Moments.",
+    qrHint: "Scan the QR code to open the public task.",
+    localOnlyHint:
+      "This is a local address and only works on this device. A deployed site uses its public address.",
+    stopSharing: "Stop public sharing",
+    sharingStopped: "Public sharing stopped",
+    stopSharingFailed: "Failed to stop sharing",
+    unavailable: "Send a message before sharing this task",
+    exportReplay: "Export replayable HTML",
+  },
+
   teamJoin: {
     missingToken: "The invite link is missing a token.",
     invalidInvite: "The invite link is invalid or has expired.",
     joinSuccess: (name) => `Joined ${name}`,
-    joinFailed: "Failed to join team",
+    joinFailed: "Failed to join collaboration",
     guestName: "Guest",
-    title: "Join team",
+    title: "Join collaborative task",
     description:
-      "After joining, this team will be saved to your team list so you can open Team mode directly later.",
+      "After joining, you will return to the same task workspace and can manage members from the top-right control.",
     loadingInvite: "Reading invite...",
     membersAndParticipants: (members, participants) =>
       `${members} AI members · ${participants} participants`,
     displayNamePlaceholder: "Your display name",
     joining: "Joining...",
-    joinButton: "Join team",
+    joinButton: "Join task",
+    applyButton: "Request to join",
+    applying: "Submitting request...",
+    approvalRequired: "Owner approval required",
+    approvalRequiredDescription:
+      "Group messages and any enabled project workbench stay private until approval.",
+    requestPendingTitle: "Request submitted",
+    requestPendingDescription:
+      "This page will enter the work group after the owner approves you.",
+    requestSubmitted: "Join request submitted",
+    requestRejected: "The join request was rejected",
+    requestWithdrawn: "The join request was withdrawn",
+    requestExpired: "The join request expired",
+    requestCancelled: "The join request was cancelled",
+    requestApprovedButUnavailable:
+      "The request was approved, but the membership is no longer active. Contact the owner.",
+    refreshStatus: "Refresh status",
+    withdrawRequest: "Withdraw request",
+    withdrawFailed: "Failed to withdraw the request",
+    statusCheckFailed: "Failed to check approval status",
+    missingDestination:
+      "You joined the group, but its chat destination is not linked. Contact the owner.",
   },
 
   evolutionIndicator: {
@@ -5741,6 +8745,23 @@ export const enUS: Translations = {
       `${rules} rules · ${memories} memories`,
     deltaRules: (count) => `+${count} rules`,
     deltaMemories: (count) => `+${count} memories`,
+  },
+
+  evolutionExplain: {
+    fitnessTitle: "Fitness",
+    noAgentSelected: "Select an agent to view fitness",
+    loading: "Loading...",
+    noFitnessData: "No fitness data",
+    driftTitle: "Drift Detection",
+    noDriftData: "No drift data",
+    noDriftDetected: "No drift detected",
+    driftDetected: (maxSeverity: string) => `Drift detected: ${maxSeverity}`,
+    variantTitle: "Variant Performance",
+    noVariantData: "No variant data",
+    colName: "Name",
+    colUsage: "Usage",
+    colSuccessRate: "Success Rate",
+    colStatus: "Status",
   },
 
   armsEditor: {
@@ -5783,11 +8804,26 @@ export const enUS: Translations = {
     noSkillsFound: "No matching skills",
     permissionsLabel: "Runtime permissions",
     permissionsHint:
-      "Global capability gates that control whether matching skills are allowed to execute.",
+      "Global gates, agent grants, and final effective permissions are shown separately.",
+    permissionEffectiveCount: (enabled, total) =>
+      `${enabled}/${total} effective`,
+    permissionGlobalGate: "Global gate",
+    permissionAgentGrant: "Agent grant",
+    permissionEffective: "Effective",
     permissionEnabled: "Enabled",
     permissionDisabled: "Disabled",
     permissionAvailable: "Available",
     permissionUnavailable: "Not registered",
+    permissionAgentDefault: "Default grant",
+    permissionAgentGranted: "Agent granted",
+    permissionAgentDenied: "Agent not granted",
+    permissionEffectiveHint:
+      "This agent can execute this capability while the global gate stays enabled.",
+    permissionBlockedByGlobal: "Blocked by the global capability gate.",
+    permissionBlockedByAgent:
+      "Global gate is enabled, but this agent does not have this capability in its arms or skill whitelist.",
+    permissionDefaultGrantHint:
+      "Atomic/default capability available to every agent.",
     permissionUpdateFailed: (msg) => `Permission update failed: ${msg}`,
     budgetLabel: "Budget",
     budgetOverride: "override",
@@ -5801,6 +8837,13 @@ export const enUS: Translations = {
     title: "Architecture",
     subtitle:
       "Hand-written design docs under docs/architecture/. Mermaid code blocks render automatically.",
+    loading: "Loading architecture docs...",
+    rendering: "Rendering document...",
+    loadFailed: "Failed to load architecture docs",
+    retry: "Retry",
+    emptyTitle: "No architecture document to show",
+    emptyDescription:
+      "The backend returned no content, or this document has not been written yet.",
     groups: {
       entry: "Entry",
       diagrams: "Diagrams",
@@ -5827,11 +8870,31 @@ export const enUS: Translations = {
     graphView: "Graph view",
     listView: "List view",
     searchPlaceholder: "Search entities...",
-    layouts: {
-      ring: "Ring",
-      star: "Star",
-      layers: "Layers",
-      clusters: "Clusters",
+    entityTypes: {
+      center: "Center",
+      subject: "Subject",
+      object: "Object",
+      neighbor: "Neighbor",
+    },
+    controls: {
+      filters: "Filters",
+      focus: "Focus",
+      groups: "Groups",
+      display: "Display",
+      forces: "Forces",
+      evidence: "Evidence",
+      labels: "Labels",
+      links: "Links",
+      stars: "Star field",
+      autoRotate: "Auto rotate",
+      confidence: "Confidence",
+      degree: "Degree",
+      updated: "Updated",
+      nodeSize: "Node size",
+      linkWidth: "Link width",
+      linkDistance: "Link distance",
+      spread: "Spread",
+      fitGraph: "Fit graph",
     },
     nodeAndEdgeStats: (n: number, e: number) => `${n} nodes · ${e} edges`,
   },
@@ -6088,6 +9151,8 @@ export const enUS: Translations = {
     error: "Error",
     completed: "Completed",
     agentCollaboration: "Agent(s) collaborating",
+    viewMachine: "View machine",
+    viewResult: "View result",
     readyToReadEditVerify: "Ready to read, edit, and verify code",
     readyToBreakdownAndGather:
       "Ready to break down problems and gather evidence",
@@ -6147,5 +9212,659 @@ export const enUS: Translations = {
     refresh: "Refresh",
     noAffinity: "(none)",
     whenToUse: "When to use",
+  },
+
+  // Desktop page
+  desktop: {
+    disabledTitle: "Desktop assistant is off",
+    disabledDescription:
+      "By default, EchoAI opens the welcome, sign-in, and workspace surfaces. Turn on the transparent desktop assistant when you want to manage system desktop files.",
+    enableButton: "Enable Desktop Assistant",
+    pluginSettingsButton: "Open Plugin Settings",
+    backToWorkspaceButton: "Back to Workspace",
+    header: {
+      workspaceTooltip: "Open Workspace",
+      brand: "EchoAI",
+      accountModels: "Official Models",
+      desktopAssistant: "Desktop Assistant",
+      desktopCount: (count) => `Desktop ${count || "--"}`,
+      market: "Market",
+      aiReady: "AI Ready",
+      wifi: "Wi-Fi",
+      notifications: "Notifications",
+      quickSettings: "Quick Settings",
+      date: (month, date, weekday) => `${month}/${date} · ${weekday}`,
+    },
+    widget: {
+      today: "Today",
+      date: (year, month, date, weekday) =>
+        `${year} · ${month}/${date} · ${weekday}`,
+    },
+    searchPlaceholder: "Search tasks, files, apps, or open the workspace",
+    open: "Open",
+    drawer: {
+      title: "Desktop Assistant",
+      loading: "Reading desktop files...",
+      error: (error) => error,
+      count: (count) => `${count} desktop items organized`,
+      electronMode: "Shows the real system desktop in Electron mode",
+      archiveBadge: (moved) => `${moved} organized`,
+      autoArchiveTooltip: "Organize desktop files with one click",
+      archiving: "Organizing...",
+      archive: "Organize",
+      undoTooltip: "Undo last organization",
+      undoing: "Undoing...",
+      undo: "Undo",
+      closeAria: "Close desktop files",
+      readFailed: "Read failed",
+      retry: "Retry",
+      searchPlaceholder: "Search desktop files, apps, images",
+    },
+    categories: {
+      all: "All",
+      folder: "Folder",
+      app: "App",
+      image: "Image",
+      document: "Document",
+      package: "Package",
+      other: "Other",
+    },
+    loadingItems: "Reading desktop files...",
+    fallbackGroupTitle: "Files",
+    empty: {
+      noSearchResults: "No matching files found",
+      tryAnotherKeyword: "Try a different keyword",
+      noDesktopFiles: "No files on the desktop",
+      dropFilesHere: "Drop files on the desktop to manage them here",
+      noFilesInCategory: "No files in this category",
+    },
+    contextMenu: {
+      open: "Open",
+      archiveToCategory: "Archive to category",
+      delete: "Delete",
+      confirmTrash: (name) => `Move “${name}” to the system trash?`,
+      trashing: "Moving to trash...",
+    },
+    dock: {
+      desktopFiles: "Desktop Files",
+      systemMonitor: "System Monitor",
+      settings: "Settings",
+    },
+    apps: {
+      workspace: { name: "Workspace", subtitle: "Chat, code, projects" },
+      aiBrowser: { name: "AI Browser", subtitle: "Browse, research, automate" },
+      localFiles: { name: "Local Files", subtitle: "Workspace and materials" },
+      localApps: { name: "Local Apps", subtitle: "App shortcuts" },
+      terminalLogs: { name: "Terminal Logs", subtitle: "System status" },
+      settings: { name: "Settings", subtitle: "Account, models, permissions" },
+    },
+    placeholders: {
+      browser: "Browser",
+      communication: "Communication",
+      notes: "Notes",
+      subtitle: "Local app placeholder",
+    },
+    systemWidget: {
+      title: "System Monitor",
+      cpu: "CPU",
+      memory: "Memory",
+      cores: "cores",
+      uptime: (hours, minutes) => `Uptime: ${hours}h ${minutes}m`,
+    },
+    weekdays: [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ],
+    errors: {
+      listItems: "Failed to read desktop files",
+      refresh: "Refresh failed",
+      archive: "Organization failed",
+      undo: "Undo failed",
+      move: "Move failed",
+      archiveOnlyFiles: "Only files can be archived",
+      trash: "Failed to move item to trash",
+    },
+    toasts: {
+      noFilesToArchive: "No files to organize on the desktop",
+      archived: (moved) => `Organized ${moved} files into category folders`,
+      undone: (undone) => `Undone move for ${undone} files`,
+      noUndoOperations: "Nothing to undo",
+      fileMoved: "File moved",
+      fileArchived: (name, folder) => `Archived "${name}" to ${folder}`,
+      trashed: (name) => `Moved “${name}” to trash`,
+    },
+  },
+
+  remoteWorkspace: {
+    switcherTitle: "Workspaces",
+    switcherAria: "Switch workspace",
+    searchPlaceholder: "Search workspaces...",
+    empty: "No workspaces registered.",
+    loading: "Loading workspaces...",
+    loadFailed: (error) => `Failed to load workspaces: ${error}`,
+    addWorkspace: "Connect folder or remote directory",
+    switchWorkspaceAria: (name) => `Switch to ${name}`,
+    activeWorkspace: "Active",
+    typeLocal: "Local",
+    typeSmb: "SMB",
+    typeNfs: "NFS",
+    typeWebdav: "WebDAV",
+    typeSftp: "SFTP",
+    typeS3: "S3",
+    mountTarget: "Mount target",
+
+    mountDialog: {
+      title: "Connect folder or remote directory",
+      nameLabel: "Name",
+      namePlaceholder: "Workspace name",
+      protocolLabel: "Protocol",
+      pathLabel: "Path",
+      pathPlaceholder: "/absolute/path/to/folder",
+      hostLabel: "Host",
+      shareLabel: "Share",
+      usernameLabel: "Username",
+      passwordLabel: "Password",
+      domainLabel: "Domain",
+      exportPathLabel: "Export path",
+      urlLabel: "URL",
+      portLabel: "Port",
+      identityFileLabel: "Identity file",
+      endpointUrlLabel: "Endpoint URL",
+      bucketLabel: "Bucket",
+      accessKeyLabel: "Access key",
+      secretKeyLabel: "Secret key",
+      regionLabel: "Region",
+      testConnection: "Test connection",
+      testing: "Testing...",
+      testOk: "Connection OK",
+      testFailed: (error) => `Connection failed: ${error}`,
+      create: "Create",
+      creating: "Creating...",
+      createFailed: (error) => `Failed to create workspace: ${error}`,
+      credentialsHint:
+        "Credentials are sent to the backend only — they are not persisted in the browser.",
+    },
+
+    members: {
+      title: "Members",
+      loading: "Loading members...",
+      empty: "No members yet.",
+      addMember: "Add member",
+      addMemberPlaceholder: "Member ID",
+      roleOwner: "Owner",
+      roleEditor: "Editor",
+      roleReviewer: "Reviewer",
+      roleViewer: "Viewer",
+      changeRoleAria: (name) => `Change role of ${name}`,
+      removeMemberAria: (name) => `Remove ${name}`,
+      editingFile: (file) => `Editing ${file}`,
+      editingNone: "Idle",
+      addFailed: (error) => `Failed to add member: ${error}`,
+      removeFailed: (error) => `Failed to remove member: ${error}`,
+      roleChangeFailed: (error) => `Failed to change role: ${error}`,
+    },
+
+    lease: {
+      locked: "Locked",
+      lockedBy: (name) => `Locked by ${name}`,
+      remaining: (seconds) => `${Math.max(0, Math.round(seconds))}s left`,
+      requestTakeover: "Request takeover",
+      takeoverSent: "Takeover request sent",
+      takeoverFailed: (error) => `Takeover failed: ${error}`,
+    },
+
+    localTab: "Local folder",
+    remoteTab: "Remote mount",
+    remoteEmpty: "No remote workspaces registered.",
+    remoteLoading: "Loading remote workspaces...",
+    remoteLoadFailed: (error) => `Failed to load remote workspaces: ${error}`,
+  },
+
+  // Deep Research Panel
+  deepResearchPanel: {
+    title: "Agent",
+    cancelAgentRunTitle: "Cancel agent run",
+    cancelRunConfirmTitle: "Cancel agent run?",
+    cancelRunConfirmDescription: (count) =>
+      `This will cancel ${count} active agent task${count === 1 ? "" : "s"}. Partial progress will be discarded.`,
+    cancelRunConfirmLabel: "Cancel run",
+    copyReportFailedToast: "Failed to copy report",
+    metricRoles: "Roles",
+    metricSources: "Sources",
+    metricMaterials: "Materials",
+    agentBudget: "Agent Budget",
+    searchesCount: (n) => `${n} searches`,
+    batchProgress: (completed, total) => `${completed}/${total} completed`,
+    batchFailedCancelled: (failed, cancelled) =>
+      `${failed} failed · ${cancelled} cancelled`,
+    batchIdLabel: (id) => `Batch ${id}`,
+    liveAgentStream: "Live Agent Stream",
+    eventsCount: (n) => `${n} events`,
+    prefetch: "Prefetch",
+    prefetchStats: (runs, evidence) => `${runs} runs · ${evidence} evidence`,
+    executionSteps: "Execution Steps",
+    synthesisRoleLabel: "synthesis",
+    searchSources: "Search Sources",
+    evidence: "Evidence",
+    finalReport: "Final Report",
+    savedToLeadMemory: "saved to lead memory",
+    copied: "Copied",
+    copyMarkdown: "Copy Markdown",
+    downloadMarkdown: "Download Markdown",
+    stageSummary: "Stage Summary",
+    openUrl: "Open URL",
+    hitsCount: (n) => `${n} hits`,
+    evidenceCount: (n) => `${n} evidence`,
+    batchEventTitle: (status) => `Batch ${status}`,
+    subagentEventTitle: (name, status) => `${name} ${status}`,
+    subagentFallback: "subagent",
+    statusComplete: "complete",
+    statusUpdated: "updated",
+    routeBlocked: "Route blocked",
+    routeWarning: "Route warning",
+    routeAllowed: "Route allowed",
+  },
+
+  // Desktop Organizer Page
+  desktopOrganizerPage: {
+    title: "Desktop Assistant",
+    description:
+      "Starts in the workspace by default; enable the transparent desktop assistant when you need to handle system desktop files.",
+    enabledOn: "Enabled",
+    enabledOff: "Disabled",
+    tileNotTakeoverTitle: "Does not take over the desktop",
+    tileNotTakeoverBody:
+      "The transparent layer appears only when you open it; once closed, mouse and window control return to Windows.",
+    tileRightClickTitle: "Invoke assistant via right-click",
+    tileRightClickBody:
+      "Right-click inside the organizer layer to open a drawer of desktop files sorted by type.",
+    tileSafePreviewTitle: "Safe preview first",
+    tileSafePreviewBody:
+      "Currently only collects views and never moves files automatically; moving and organizing will get its own confirmation and undo.",
+    webEnvNotice:
+      "You're in a web environment, so right-click menu install/remove stays disabled. Switch to the desktop app to make these options take effect.",
+    contextMenuTitle: "System right-click menu",
+    contextMenuDescription:
+      'Right-click on the Windows desktop shows "EchoAI Organize Desktop".',
+    installButton: "Install right-click command",
+    installingButton: "Installing",
+    removeButton: "Remove",
+    removingButton: "Removing",
+    installSuccess: "System right-click command installed.",
+    installUnsupported: "Current environment does not support installation.",
+    removeSuccess: "System right-click command removed.",
+    removeUnsupported: "Current environment does not support removal.",
+    openAssistant: "Open Desktop Assistant",
+    backToWorkspace: "Back to workspace",
+    confirmRemoveTitle: "Remove system right-click menu?",
+    confirmRemoveDescription:
+      "This will remove the EchoAI one-click organize command from the Windows desktop right-click menu.",
+  },
+
+  // Knowledge page
+  knowledge: {
+    comingSoon: "Coming soon",
+    tabFiles: "Files",
+    memoryManagement: "Memory management",
+    wikiDocs: "Wiki docs",
+    fileManagement: "File management",
+  },
+
+  // Work block labels (template strings with {var} placeholders)
+  workBlocks: {
+    actions: {
+      awaitVerification: "Awaiting verification",
+      spawnAgent: "Create agent",
+      finishAgent: "Agent finished",
+      writeTodoList: "Write to-do list",
+      parallelDispatch: "Dispatch in parallel",
+      submitResult: "Submit result",
+      loadSkill: "Load skill",
+      terminalFailed: "Terminal run failed",
+      terminalRecovered: "Terminal recovered",
+      runTerminal: "Run terminal",
+      read: "Read",
+      createFile: "Create file",
+      deleteFile: "Delete file",
+      editFile: "Edit",
+      browse: "Browse",
+      search: "Search",
+      execute: "Execute",
+    },
+    actionTarget: "{action} {target}",
+    spawnAgent: "Create agent {name}",
+    finishAgent: "Agent {name} finished",
+    parallelDispatch: "Dispatch subtasks in parallel",
+    parallelDispatchWithCount: "Dispatch {count} subtasks in parallel",
+    parallelTarget: "Subtasks",
+    parallelTargetWithCount: "{count} subtasks",
+    skillNamed: "Load skill {skill}",
+    skillDeepResearch: "Load deep research swarm skill",
+    skillReportWriting: "Load report writing skill",
+    skillDocx: "Assemble DOCX deliverable",
+    connectModel: "Connect model",
+    subagentFallback: "Subagent",
+  },
+
+  // Storage (local knowledge base) page
+  storage: {
+    defaultQuery: "Find the embedded tech notes I wrote last week",
+    libraries: {
+      overviewLabel: "All",
+      overviewDetail: "Local database",
+      appsLabel: "Apps",
+      appsDetail: "Software & actions",
+      docsLabel: "Docs",
+      docsDetail: "Topics / Sources / Recent",
+      imagesLabel: "Images",
+      imagesDetail: "Library / Topics / Sources",
+      videosLabel: "Videos",
+      videosDetail: "Keyframes / Semantic search",
+      computerLabel: "This Mac",
+      computerDetail: "Local disks",
+      sourcesLabel: "Authorized folders",
+      sourcesDetail: "Scan scope",
+    },
+    service: {
+      credentialsExpired:
+        "The local knowledge base is running, but its credentials have expired. Reconnecting…",
+      notFound:
+        "echo-storage was not found. Install the local knowledge base service or set ECHO_STORAGE_CMD, then try again.",
+      startFailed:
+        "The local knowledge base service failed to start. Check the backend logs and try again.",
+      notConnected: "Local knowledge base service is still unreachable: {url}",
+      networkError:
+        "Unable to connect to the local knowledge base service. Please make sure it is running and try again.",
+    },
+    toolbar: {
+      authorize: "Authorize",
+      scan: "Scan",
+      privacy: "Privacy",
+      efficiency: "Efficiency",
+      online: "Online",
+      offline: "Offline",
+      reconnecting: "Connecting",
+      reconnect: "Reconnect",
+      searchPlaceholder: "File name, content, OCR, path, or app",
+      searchAria: "Search",
+      searchIn: "Search in {label}:",
+      scopeFilterAria: "Filter search scope",
+      gridViewAria: "Grid view",
+      listViewAria: "List view",
+      filterAria: "Filter",
+      sortAria: "Sort",
+    },
+    overview: {
+      tabAll: "All local",
+      tabDocs: "Docs",
+      tabImages: "Images",
+      tabRecent: "Recent",
+      indexingTitle: "Index keeps building",
+      indexingDesc:
+        "New files are automatically added to topics, sources, and full-text search.",
+      aggregateDesc:
+        "Aggregates docs, images, apps, and local folders. Local index first.",
+      localDatabaseBadge: "Local database",
+      previewTitle: "Local mini-brain index",
+      previewSubtitle:
+        "Parsing, OCR, and embedding run on this machine; Q&A follows your privacy policy.",
+      itemsWithStatus: "{count} items · {status}",
+    },
+    docs: {
+      title: "Documents",
+      subtitle: "{count} items · Full-text, sheets, OCR, and source paths",
+      searchLabel: "Search docs:",
+      allDocs: "All documents",
+      indexNote: "June 2026 · Local index first",
+      badgeRecent: "Recent",
+      badgeLocalDocs: "Local docs",
+      colName: "Name",
+      colLocation: "Location",
+      colSize: "Size",
+      colModified: "Date modified",
+      colActions: "Actions",
+      footerNote:
+        "Documents only enter the local index; they never enter the context until you quote them into a task.",
+    },
+    images: {
+      title: "Images",
+      subtitle:
+        "{count} items · Unified search across OCR, places, people, and screenshots",
+      searchLabel: "Search images:",
+      badgeAllImages: "All images",
+      filterAll: "All {count}",
+      filterOcr: "OCR'd",
+      filterLocalLibrary: "Local library",
+      ocrBadge: "OCR'd",
+    },
+    videos: {
+      title: "Videos",
+      subtitle: "{count} items · Keyframe semantic & people search",
+      searchLabel: "Search videos:",
+      badgeAllVideos: "All videos",
+      indexNote: "Video index · Keyframe semantic search",
+      indexAction: "Rebuild index",
+      indexing: "Indexing…",
+      noResults: "No matching videos",
+      colName: "Name",
+      colLocation: "Location",
+      colSize: "Size",
+      colDuration: "Duration",
+      colModified: "Modified",
+      colActions: "Actions",
+      footerNote:
+        "Videos are keyframed and vector-indexed locally; the original files are never uploaded.",
+      tabVideos: "Videos",
+      tabPeople: "People",
+      tabTags: "Tags",
+      searchPlaceholder: "Search video content or text…",
+      searchHint: "Supports keyframe semantics, people, speech, text in videos",
+      noIndex: 'No video index built yet, please click "Rebuild index"',
+      noFaces: "No recognized people yet",
+      noTags: "No scene tags available",
+      noOcr: "No video segments containing this text found",
+      summary: "Summary",
+      cover: "Cover",
+      duration: "Duration",
+      peopleCount: (n) => `${n} ${n === 1 ? "person" : "people"}`,
+      faceCount: (n) =>
+        `${n} ${n === 1 ? "face" : "faces"} in ${n} segment${n === 1 ? "" : "s"}`,
+      player: {
+        open: "Play",
+        close: "Close",
+        prev: "Previous",
+        next: "Next",
+        atTime: (t) => `Go to ${t}`,
+      },
+      ocr: {
+        label: "Text in video",
+        hint: "OCR text recognition on keyframes",
+      },
+    },
+    apps: {
+      title: "Apps",
+      subtitle: "{count} items · Local app registry",
+      searchLabel: "Search apps:",
+      registeredTitle: "Registered apps",
+      registeredSubtitle:
+        "Unified search by launcher, system component, and tool categories",
+      badgeList: "List",
+      colName: "Name",
+      colType: "Type",
+      colStatus: "Status",
+      colActions: "Actions",
+      open: "Open",
+      actions: "Actions",
+      typeSystemApp: "System app",
+      typeImagePdf: "Images / PDF",
+      typeDocsSheets: "Docs & sheets",
+      typeWebResources: "Web resources",
+      typeSystemTool: "System tool",
+      typeDownloadManager: "Download manager",
+      statusRegistered: "Registered",
+      statusPendingScan: "Pending scan",
+      statusCallable: "Callable",
+      statusFolder: "Folder",
+    },
+    computer: {
+      searchLabel: "Search in current location:",
+      currentDirBadge: "Current folder",
+      itemsCount: "{count} items",
+      stayNote:
+        "Starts at your home folder by default, so deep project paths are not expanded right away.",
+      colName: "Name",
+      colType: "Type",
+      colItems: "Items",
+      footerOnline:
+        "Frequent locations are connected to EchoAI NAS. The local database only stores paths, thumbnails, OCR text, and vector indexes.",
+      footerOffline:
+        "Frequent locations are browsable; EchoAI NAS is waiting to connect. The local database only stores paths, thumbnails, OCR text, and vector indexes.",
+      folderType: "Folder",
+    },
+    sources: {
+      title: "Authorized folders",
+      subtitle: "Manage authorized folders, index status, and scan scope",
+      add: "Add",
+      scanQueueAria: "Scan queue",
+      privacyPolicyAria: "Privacy policy",
+      metricSources: "Authorized folders",
+      metricFiles: "Files scanned",
+      metricChunks: "Indexed chunks",
+      reconnectTitle: "Next step: reconnect the local knowledge base service",
+      notConnected: "Not connected to {url}",
+      badgeLocalIndex: "Local index",
+      badgeNoUpload: "Files never uploaded",
+      colDirectory: "Folder",
+      colFiles: "Files",
+      colChunks: "Chunks",
+      colStatus: "Status",
+      emptyTitleOnline: "Pick a local folder to start indexing",
+      emptyTitleOffline: "Restore the local service before adding folders",
+      emptyDescOnline:
+        "The local database parses files, OCRs images, and builds vector indexes on this machine. Original files are never uploaded; only the snippets you quote enter the task context.",
+      emptyDescOffline:
+        "You can browse frequent locations while offline, but new folders cannot be scanned. Reconnect, then add folders; indexes are built locally.",
+      addFolder: "Add folder",
+      viewPrivacyPolicy: "View privacy policy",
+      footerPrivacy:
+        "Privacy: parsing, OCR, and vector indexes stay on this machine by default.",
+      footerQueue: "Scan queue: 0 waiting · 0 OCR in progress · 0 failed",
+      filesCount: "{count} files",
+      chunksCount: "{count} chunks",
+      statusReady: "Ready",
+      statusPending: "Pending index",
+      removeTitle: "Remove authorized folder",
+      removeDesc:
+        'This will remove "{name}" and its index data. This action cannot be undone.',
+      removeConfirm: "Remove",
+      remove: "Remove",
+    },
+    search: {
+      backTo: "Back to {label}",
+      resultsTitle: "Search results",
+      statusTitle: "Search status",
+      hitsSummary:
+        '"{query}" · {count} hits in the local index. Nothing enters the task context until you quote it.',
+      noHitsSummary: '"{query}" · No hits returned by the local librarian',
+      continueLabel: "Keep searching:",
+      quoteSelected: "Quote selected",
+      engineNotAttached: "Local search engine not attached yet",
+      noMatch: "No matching materials found",
+      noMatchHint:
+        'Try another keyword, or add a folder under "Authorized folders" and run indexing first.',
+      viewSources: "View authorized folders",
+      switchPrivacyMode: "Switch privacy mode",
+    },
+    preview: {
+      sourceLocation: "Source",
+      typeLabel: "Type",
+      updatedLabel: "Updated",
+      sizeLabel: "Size",
+      snippetTitle: "Snippets you can bring into tasks",
+      snippetDesc:
+        "Local hit summaries stay in the preview area first. Once you quote, only the snippet, file name, and source location enter the task context.",
+      quoteInChat: "Quote in chat",
+      openLocation: "Open location",
+      actionPreview: "Preview",
+      actionQuote: "Quote into task",
+      actionLocate: "Show in folder",
+    },
+    topics: {
+      docsAllTitle: "All documents",
+      docsAllSubtitle: "PDF, Word, PPT, sheets, Markdown, and code",
+      docsAllStatus: "Index keeps building",
+      docsSourcesTitle: "Document sources",
+      docsSourcesSubtitle: "Grouped by authorized folders and project origins",
+      docsSourcesStatus: "Synced",
+      docsTopicsTitle: "Document topics",
+      docsTopicsSubtitle: "Auto-clustered contracts, tech notes, and research",
+      docsTopicsStatus: "AI topics building",
+      docsRecentTitle: "Recent files",
+      docsRecentSubtitle: "Recently opened, edited, or search-hit documents",
+      docsRecentStatus: "Recently updated",
+      imagesAllTitle: "All images",
+      imagesAllSubtitle:
+        "Photos, screenshots, design assets, and text in images",
+      imagesAllStatus: "Smart image search",
+      imagesTopicsTitle: "Image topics",
+      imagesTopicsSubtitle: "People, places, holidays, receipts, screenshots",
+      imagesTopicsStatus: "Continuously building",
+      imagesSourcesTitle: "Image sources",
+      imagesSourcesSubtitle: "Auto-archived by folder, app, and project origin",
+      imagesSourcesStatus: "Synced",
+      imagesOcrTitle: "Screenshot OCR",
+      imagesOcrSubtitle: "Text and UI content in screenshots become searchable",
+      imagesOcrStatus: "OCR queue",
+      coverWork: "Work",
+      coverProject: "Projects",
+      coverDownloads: "Downloads",
+      coverContract: "Contracts",
+      coverTech: "Tech",
+      coverResearch: "Research",
+      coverToday: "Today",
+      cover7Days: "7 days",
+      cover30Days: "30 days",
+      coverPeople: "People",
+      coverPlaces: "Places",
+      coverTheme: "Themes",
+      coverDesktop: "Desktop",
+      coverWechat: "WeChat",
+      coverWhiteboard: "Whiteboard",
+      coverInterface: "UI",
+      coverSpreadsheet: "Sheets",
+    },
+    demoFiles: {
+      doc1Name: "AI Glasses Market Research.md",
+      doc1Kind: "Markdown",
+      doc1Updated: "Today 14:21",
+      doc2Name: "2026 Product Roadmap.pptx",
+      doc2Kind: "Presentation",
+      doc2Updated: "Yesterday 18:09",
+      doc3Name: "Vendor Contract Scan.pdf",
+      doc3Kind: "PDF",
+      doc3Updated: "Jun 12",
+      doc4Name: "Local Small Model Deployment Notes.md",
+      doc4Kind: "Markdown",
+      doc4Updated: "Jun 10",
+      doc5Name: "NAS Permissions.xlsx",
+      doc5Kind: "Spreadsheet",
+      doc5Updated: "Jun 8",
+      image1Kind: "Character art",
+      image1Updated: "Today 11:42",
+      image2Name: "Meeting Whiteboard OCR.jpg",
+      image2Kind: "Photo / OCR",
+      image2Updated: "Yesterday 16:18",
+      image3Name: "Product Screenshot - Workspace.webp",
+      image3Kind: "UI screenshot",
+      image3Updated: "Jun 12",
+      image4Name: "Receipt - Travel.png",
+      image4Kind: "Receipt",
+      image4Updated: "Jun 9",
+    },
   },
 };

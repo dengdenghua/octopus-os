@@ -1,15 +1,11 @@
 "use client";
 
-import {
-  BrainCircuitIcon,
-  ClockIcon,
-  Loader2Icon,
-  MessageSquareTextIcon,
-  WrenchIcon,
-} from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-
 import { useI18n } from "@/core/i18n/hooks";
+import {
+  FIRST_RESPONSE_DELAY_NOTICE_MS,
+  formatStreamElapsed,
+  type StreamVitals,
+} from "@/core/realtime/stream-vitals";
 import { cn } from "@/lib/utils";
 
 import type { LiveToolEvent } from "./live-tool-timeline";
@@ -18,243 +14,199 @@ interface PublicThinkingStatusProps {
   isLoading: boolean;
   liveToolEvents: LiveToolEvent[];
   hasStreamingMessage?: boolean;
-  threadId?: string | null;
+  vitals?: StreamVitals;
   className?: string;
 }
 
-interface StatusLine {
-  label: string;
-  detail?: string;
-  tone?: "active" | "done";
-  icon?: "brain" | "tool" | "message" | "clock";
-}
-
-interface ThinkingSignal {
-  iteration?: number | null;
-  type?: string | null;
-}
-
-function elapsedLabel(ms: number) {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-}
-
-function compact(value: unknown, max = 120): string | undefined {
+function compact(value: unknown, max = 80): string | undefined {
   if (value === undefined || value === null) return undefined;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return undefined;
-  return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized;
+  return normalized.length > max
+    ? `${normalized.slice(0, max)}...`
+    : normalized;
 }
 
-function eventSummary(event: LiveToolEvent | undefined): string | undefined {
-  if (!event) return undefined;
+function basenamePath(value: string): string {
+  const normalized = value.replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalized.split("/").filter(Boolean).at(-1) ?? normalized;
+}
+
+function compactUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return url.hostname || value;
+  } catch {
+    return value;
+  }
+}
+
+function eventTarget(event: LiveToolEvent): string | undefined {
   const input = event.input ?? {};
-  const main =
-    compact(input.query) ??
-    compact(input.command) ??
-    compact(input.path) ??
-    compact(input.file_path) ??
-    compact(input.url);
-  const name = event.name.replace(/_/g, " ");
-  return main ? `${name}: ${main}` : name;
+  const queryTarget = compact(input.query);
+  if (queryTarget && !isSensitiveTarget(queryTarget)) return queryTarget;
+  const urlTarget = compact(input.url);
+  if (urlTarget && !isSensitiveTarget(urlTarget)) return compactUrl(urlTarget);
+  const fileTarget = compact(input.path) ?? compact(input.file_path);
+  if (fileTarget) return basenamePath(fileTarget);
+  return undefined;
 }
 
-function latestEvent(events: LiveToolEvent[], predicate?: (event: LiveToolEvent) => boolean) {
-  const filtered = predicate ? events.filter(predicate) : events;
-  return [...filtered].sort(
-    (a, b) => (b.finishedAt ?? b.startedAt) - (a.finishedAt ?? a.startedAt),
-  )[0];
+function isSensitiveTarget(value: string): boolean {
+  return /(?:sk-[\w-]+|bearer\s+[a-z0-9._-]+|api[_-]?key|token|secret|credential|password|passwd)/i.test(
+    value,
+  );
 }
 
-function statusLines({
-  elapsedMs,
-  liveToolEvents,
-  hasStreamingMessage,
-  thinkingSignal,
-  t,
-}: {
-  elapsedMs: number;
-  liveToolEvents: LiveToolEvent[];
-  hasStreamingMessage?: boolean;
-  thinkingSignal?: ThinkingSignal | null;
-  t: { publicThinkingStatus: { organizingReply: string; executingTool: string; gotResults: string; analyzing: string; understandingTask: string; planningFirstStep: string; waitingForModel: string; stillWaiting: string } };
-}): StatusLine[] {
-  const running = latestEvent(
-    liveToolEvents,
-    (event) => event.status === "running" || event.status === "waiting_approval",
-  );
-  const finished = liveToolEvents.filter(
-    (event) => event.status !== "running" && event.status !== "waiting_approval",
-  );
-  const latestFinished = latestEvent(finished);
-
-  if (hasStreamingMessage) {
-    return [{ label: t.publicThinkingStatus.organizingReply, tone: "active", icon: "message" }];
+function eventActionLabel(
+  event: LiveToolEvent,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  const name = event.name.toLowerCase();
+  if (
+    name === "call_agent" ||
+    name === "call_agent_parallel" ||
+    name === "delegate_agent" ||
+    name === "spawn_agent"
+  ) {
+    return t.messageGrouping.callTeammate;
   }
-
-  if (running) {
-    return [
-      {
-        label: t.publicThinkingStatus.executingTool,
-        detail: eventSummary(running),
-        tone: "active",
-        icon: "tool",
-      },
-    ];
+  if (name.includes("search") || name.includes("glob")) {
+    return t.messageGrouping.searchSources;
   }
-
-  if (finished.length > 0) {
-    return [
-      {
-        label: t.publicThinkingStatus.gotResults,
-        detail: eventSummary(latestFinished),
-        tone: "done",
-        icon: "tool",
-      },
-      {
-        label: t.publicThinkingStatus.analyzing,
-        tone: "active",
-        icon: "brain",
-      },
-    ];
+  if (
+    name.includes("fetch") ||
+    name.includes("browser") ||
+    name.includes("web")
+  ) {
+    return t.messageGrouping.readWebpage;
   }
-
-  if (thinkingSignal) {
-    return [
-      {
-        label:
-          thinkingSignal.type === "text_delta"
-            ? t.publicThinkingStatus.organizingReply
-            : t.publicThinkingStatus.analyzing,
-        detail: thinkingSignal.iteration ? `第 ${thinkingSignal.iteration} 轮` : undefined,
-        tone: "active",
-        icon: "brain",
-      },
-    ];
+  if (name.includes("read") || name === "ls" || name === "list_cwd") {
+    return t.messageGrouping.readFile;
   }
-
-  if (elapsedMs < 4000) {
-    return [{ label: t.publicThinkingStatus.understandingTask, tone: "active", icon: "brain" }];
+  if (
+    name.includes("write") ||
+    name.includes("edit") ||
+    name.includes("replace") ||
+    name.includes("patch")
+  ) {
+    return t.messageGrouping.updateFile;
   }
-
-  if (elapsedMs < 12000) {
-    return [{ label: t.publicThinkingStatus.planningFirstStep, tone: "active", icon: "brain" }];
-  }
-
-  if (elapsedMs < 25000) {
-    return [{ label: t.publicThinkingStatus.waitingForModel, tone: "active", icon: "clock" }];
-  }
-
-  return [{ label: t.publicThinkingStatus.stillWaiting, tone: "active", icon: "clock" }];
+  return t.messageGrouping.runAction;
 }
 
-function StatusIcon({ line }: { line: StatusLine }) {
-  const className = cn(
-    "size-3.5 shrink-0",
-    line.tone === "done" ? "text-emerald-500" : "text-primary",
-  );
-  if (line.icon === "tool") return <WrenchIcon className={className} />;
-  if (line.icon === "message") return <MessageSquareTextIcon className={className} />;
-  if (line.icon === "clock") return <ClockIcon className={className} />;
-  return <BrainCircuitIcon className={className} />;
+function eventSummary(
+  event: LiveToolEvent | undefined,
+  t: ReturnType<typeof useI18n>["t"],
+): string | undefined {
+  if (!event) return undefined;
+  const label = eventActionLabel(event, t);
+  const target = eventTarget(event);
+  return target ? `${label}: ${target}` : label;
+}
+
+function latestRunningEvent(events: LiveToolEvent[]) {
+  return [...events]
+    .filter(
+      (event) =>
+        event.status === "running" || event.status === "waiting_approval",
+    )
+    .sort(
+      (a, b) => (b.finishedAt ?? b.startedAt) - (a.finishedAt ?? a.startedAt),
+    )[0];
 }
 
 export function PublicThinkingStatus({
   isLoading,
   liveToolEvents,
   hasStreamingMessage,
-  threadId,
+  vitals,
   className,
 }: PublicThinkingStatusProps) {
   const { t } = useI18n();
-  const [startedAt, setStartedAt] = useState(() => Date.now());
-  const [now, setNow] = useState(() => Date.now());
-  const [thinkingSignal, setThinkingSignal] = useState<ThinkingSignal | null>(null);
-
-  useEffect(() => {
-    if (!isLoading) return;
-    const start = Date.now();
-    setStartedAt(start);
-    setNow(start);
-    setThinkingSignal(null);
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [isLoading]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      setThinkingSignal(null);
-      return;
-    }
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{
-        threadId?: string | null;
-        type?: string | null;
-        iteration?: number | null;
-      }>).detail;
-      if (!detail) return;
-      if (threadId && detail.threadId && detail.threadId !== threadId) return;
-      setThinkingSignal({
-        iteration: detail.iteration ?? null,
-        type: detail.type ?? null,
-      });
-    };
-    window.addEventListener("octopus:thinking_signal", handler);
-    return () => window.removeEventListener("octopus:thinking_signal", handler);
-  }, [isLoading, threadId]);
-
-  const elapsedMs = Math.max(0, now - startedAt);
-  const lines = useMemo(
-    () => statusLines({ elapsedMs, liveToolEvents, hasStreamingMessage, thinkingSignal, t }),
-    [elapsedMs, hasStreamingMessage, liveToolEvents, thinkingSignal, t],
-  );
 
   if (!isLoading) return null;
 
+  // An optimistic outbound message becomes visible before turn/started can
+  // seed vitals. During that receipt gap ``isLoading`` is already true while
+  // vitals are still idle; treat it as an honest first-response wait so the
+  // assistant lane appears immediately after Send.
+  const measuredPhase = vitals?.phase;
+  const phase =
+    measuredPhase && measuredPhase !== "idle"
+      ? measuredPhase
+      : hasStreamingMessage
+        ? "streaming"
+        : "waiting";
+  if (phase === "streaming") return null;
+
+  const running = latestRunningEvent(liveToolEvents);
+  const action = running ? eventSummary(running, t) : undefined;
+  const firstResponseDelayed =
+    phase === "waiting" &&
+    (vitals?.elapsedMs ?? 0) >= FIRST_RESPONSE_DELAY_NOTICE_MS;
+  // "思考中" (waitingForModel) is reserved for the genuinely pre-response
+  // state of a fresh turn — nothing from the agent yet. Once the task is
+  // underway the line must say what is happening (the running action, or a
+  // neutral "processing" between rounds), not collapse every pause into
+  // "thinking".
+  const label =
+    phase === "disconnected"
+      ? t.publicThinkingStatus.reconnecting
+      : phase === "slow"
+        ? t.publicThinkingStatus.slowResponse
+        : firstResponseDelayed
+          ? t.publicThinkingStatus.firstResponseSlow
+          : phase === "waiting"
+            ? t.publicThinkingStatus.waitingForModel
+            : (action ?? t.publicThinkingStatus.processing);
+  // In the working phase the action already leads the line; only the
+  // alert phases keep it as trailing context.
+  const detail = phase === "working" ? undefined : action;
+  const elapsed =
+    !action && vitals && vitals.elapsedMs >= 3_000
+      ? formatStreamElapsed(vitals.elapsedMs)
+      : undefined;
+
   return (
     <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="false"
+      data-phase={phase}
+      data-first-response-delayed={firstResponseDelayed ? "true" : "false"}
+      data-testid="conversation-activity-pulse"
       className={cn(
-        "workspace-panel-subtle my-2 w-full rounded-lg border border-border/60 p-3 text-xs",
+        "my-1.5 ml-11 flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground/55",
         className,
       )}
     >
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
-          <Loader2Icon className="size-3.5 animate-spin text-primary" />
-          {t.publicThinkingStatus.title}
+      <span
+        className={cn(
+          "inline-block size-1 shrink-0 rounded-full animate-pulse",
+          phase === "slow" || firstResponseDelayed
+            ? "bg-warning/50"
+            : phase === "disconnected"
+              ? "bg-destructive/50"
+              : "bg-muted-foreground/40",
+        )}
+        aria-hidden="true"
+      />
+      <span className="shrink-0">{label}</span>
+      {detail && (
+        <span className="min-w-0 truncate text-muted-foreground/45">
+          · {detail}
         </span>
-        <span className="text-[11px] tabular-nums text-muted-foreground">
-          {elapsedLabel(elapsedMs)}
+      )}
+      {elapsed && (
+        <span
+          className="shrink-0 tabular-nums text-muted-foreground/45"
+          data-testid="conversation-activity-elapsed"
+        >
+          · {elapsed}
         </span>
-      </div>
-      <div className="space-y-1.5">
-        {lines.map((line) => (
-          <div key={`${line.label}:${line.detail ?? ""}`} className="flex gap-2">
-            <div className="mt-0.5">
-              <StatusIcon line={line} />
-            </div>
-            <div className="min-w-0">
-              <div
-                className={cn(
-                  "leading-5",
-                  line.tone === "done"
-                    ? "text-emerald-700 dark:text-emerald-300"
-                    : "font-medium text-foreground",
-                )}
-              >
-                {line.label}
-              </div>
-              {line.detail && (
-                <div className="mt-0.5 break-words text-[11px] leading-4 text-muted-foreground/85">
-                  {line.detail}
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+      )}
     </div>
   );
 }

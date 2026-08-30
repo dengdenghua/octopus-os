@@ -48,7 +48,7 @@ export function TAORBadge({
       className={cn(
         phase === "think"
           ? "inline-flex items-center gap-1 rounded px-0 py-0 text-sm font-medium normal-case tracking-normal"
-          : "inline-flex items-center gap-1 rounded px-0 py-0 text-[10px] font-medium normal-case tracking-normal",
+          : "inline-flex items-center gap-1 rounded px-0 py-0 text-xs font-medium normal-case tracking-normal",
         config.color,
         className,
       )}

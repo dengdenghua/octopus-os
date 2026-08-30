@@ -1,5 +1,5 @@
 /**
- * Octopus API client - direct fetch with zero framework dependencies.
+ * Echo API client - direct fetch with zero framework dependencies.
  */
 
 import { swallow } from "@/core/utils/log";
@@ -7,7 +7,7 @@ import type { Thread, ThreadState } from "./types";
 
 const warnedStubResponses = new Set<string>();
 
-export const STUB_RESPONSE_EVENT = "octopus:api-stub-response";
+export const STUB_RESPONSE_EVENT = "echo:api-stub-response";
 
 export interface StubResponseDetail {
   method: string;
@@ -29,7 +29,7 @@ function warnOnStubResponse(method: string, path: string, value: unknown) {
   if (warnedStubResponses.has(key)) return;
   warnedStubResponses.add(key);
   console.warn(
-    `[Octopus API] ${key} returned a stub response. This endpoint is using simulated compatibility data.`,
+    `[Echo API] ${key} returned a stub response. This endpoint is using simulated compatibility data.`,
   );
   if (typeof window !== "undefined") {
     window.dispatchEvent(
@@ -40,7 +40,7 @@ function warnOnStubResponse(method: string, path: string, value: unknown) {
   }
 }
 
-export class OctopusClient {
+export class EchoClient {
   private baseUrl: string;
   private getToken?: () => string | null;
 
@@ -102,7 +102,9 @@ export class OctopusClient {
         if (/^https?:\/\//i.test(this.baseUrl)) {
           return `${new URL(this.baseUrl).origin}${path}`;
         }
-      } catch (e) { swallow(e); }
+      } catch (e) {
+        swallow(e);
+      }
       return path;
     }
     return `${this.baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
@@ -123,7 +125,9 @@ export class OctopusClient {
     const resp = await fetch(this._resolveUrl(path), init);
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
-      throw new Error(`${method} ${path} failed: ${resp.status}${text ? ` - ${text}` : ""}`);
+      throw new Error(
+        `${method} ${path} failed: ${resp.status}${text ? ` - ${text}` : ""}`,
+      );
     }
     if (resp.status === 204) return undefined as T;
     // Return the raw JSON unmodified; call sites (e.g. the account hooks)
@@ -153,81 +157,65 @@ export class OctopusClient {
   // -- Threads API --
 
   threads = {
-    create: async (body?: Record<string, unknown>): Promise<Thread> => {
-      const resp = await fetch(`${this.baseUrl}/threads`, {
-        method: "POST",
-        headers: this._safeHeaders(true),
-        body: JSON.stringify(body ?? {}),
-      });
-      if (!resp.ok) throw new Error(`Create thread failed: ${resp.status}`);
-      return resp.json();
-    },
+    create: (body?: Record<string, unknown>): Promise<Thread> =>
+      this.post<Thread>("/threads", body),
 
-    get: async (threadId: string): Promise<Thread> => {
-      const resp = await fetch(`${this.baseUrl}/threads/${threadId}`, {
-        headers: this._safeHeaders(false),
-      });
-      if (!resp.ok) throw new Error(`Get thread failed: ${resp.status}`);
-      return resp.json();
-    },
+    get: (threadId: string): Promise<Thread> =>
+      this.get<Thread>(`/threads/${threadId}`),
 
-    search: async (params?: Record<string, unknown>): Promise<Thread[]> => {
-      const resp = await fetch(`${this.baseUrl}/threads/search`, {
-        method: "POST",
-        headers: this._safeHeaders(true),
-        body: JSON.stringify(params ?? {}),
-      });
-      if (!resp.ok) throw new Error(`Search threads failed: ${resp.status}`);
-      return resp.json();
-    },
+    search: (params?: Record<string, unknown>): Promise<Thread[]> =>
+      this.post<Thread[]>("/threads/search", params),
 
-    delete: async (threadId: string): Promise<void> => {
-      const resp = await fetch(`${this.baseUrl}/threads/${threadId}`, {
-        method: "DELETE",
-        headers: this._safeHeaders(false),
-      });
-      if (!resp.ok) throw new Error(`Delete thread failed: ${resp.status}`);
-    },
+    delete: (threadId: string): Promise<void> =>
+      this.delete<void>(`/threads/${threadId}`),
 
-    getState: async <T = Record<string, unknown>>(
+    getState: <T = Record<string, unknown>>(
       threadId: string,
-    ): Promise<ThreadState<T>> => {
-      const resp = await fetch(`${this.baseUrl}/threads/${threadId}/state`, {
-        headers: this._safeHeaders(false),
-      });
-      if (!resp.ok) throw new Error(`Get state failed: ${resp.status}`);
-      return resp.json();
-    },
+    ): Promise<ThreadState<T>> =>
+      this.get<ThreadState<T>>(`/threads/${threadId}/state`),
 
-    updateState: async (
+    updateState: (
       threadId: string,
       body: Record<string, unknown>,
-    ): Promise<ThreadState> => {
-      const resp = await fetch(`${this.baseUrl}/threads/${threadId}/state`, {
-        method: "POST",
-        headers: this._safeHeaders(true),
-        body: JSON.stringify(body),
-      });
-      if (!resp.ok) throw new Error(`Update state failed: ${resp.status}`);
-      return resp.json();
-    },
+    ): Promise<ThreadState> =>
+      this.post<ThreadState>(`/threads/${threadId}/state`, body),
 
-    getHistory: async (
+    getHistory: (
       threadId: string,
       params?: { limit?: number },
-    ): Promise<ThreadState[]> => {
-      const resp = await fetch(
-        `${this.baseUrl}/threads/${threadId}/history`,
-        {
-          method: "POST",
-          headers: this._safeHeaders(true),
-          body: JSON.stringify(params ?? {}),
-        },
-      );
-      if (!resp.ok) throw new Error(`Get history failed: ${resp.status}`);
-      return resp.json();
-    },
+    ): Promise<ThreadState[]> =>
+      this.post<ThreadState[]>(`/threads/${threadId}/history`, params),
+
+    renameTitle: (
+      threadId: string,
+      title: string,
+    ): Promise<SessionTitleSnapshot> =>
+      this.post<SessionTitleSnapshot>(`/threads/${threadId}/title/rename`, {
+        title,
+      }),
+
+    refreshTitle: (
+      threadId: string,
+      body?: { provider?: string; force?: boolean },
+    ): Promise<SessionTitleSnapshot> =>
+      this.post<SessionTitleSnapshot>(`/threads/${threadId}/title/refresh`, body ?? {}),
+
+    forkThread: (
+      threadId: string,
+      atMessageIndex?: number,
+    ): Promise<{ thread_id: string; seeded_messages: number }> =>
+      this.post<{ thread_id: string; seeded_messages: number }>(
+        `/threads/${threadId}/fork`,
+        atMessageIndex != null ? { at_message_index: atMessageIndex } : {},
+      ),
   };
+}
 
-
+export interface SessionTitleSnapshot {
+  title: string;
+  source: "fallback" | "provider" | "user";
+  pinned: boolean;
+  provider?: string | null;
+  model?: string | null;
+  updated_at?: string;
 }

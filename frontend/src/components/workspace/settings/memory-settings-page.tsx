@@ -1,15 +1,24 @@
-
 import {
+  AlertTriangleIcon,
   DownloadIcon,
   Loader2Icon,
   PenLineIcon,
   PlusIcon,
+  RefreshCwIcon,
   SearchIcon,
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Suspense, lazy, useDeferredValue, useEffect, useId, useRef, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -47,8 +56,11 @@ import type {
 import { useStreamdownPlugins } from "@/core/streamdown";
 import { pathOfThread } from "@/core/threads/utils";
 import { formatTimeAgo } from "@/core/utils/datetime";
+import { cn } from "@/lib/utils";
 
 import { SettingsSection } from "./settings-section";
+import { PersonalWorkRulesSettings } from "./personal-space-settings-page";
+import { getMemoryLoadErrorCopy } from "./settings-resilience";
 
 const LazyStreamdown = lazy(
   () => import("@/components/ai-elements/streamdown-host"),
@@ -73,8 +85,20 @@ type PendingImport = {
   memory: UserMemory;
 };
 
+export const MAX_MEMORY_IMPORT_BYTES = 5 * 1024 * 1024;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isMemoryTimestamp(
+  value: unknown,
+  allowEmpty = false,
+): value is string {
+  return (
+    typeof value === "string" &&
+    ((allowEmpty && value.length === 0) || Number.isFinite(Date.parse(value)))
+  );
 }
 
 function isMemorySection(value: unknown): value is {
@@ -84,7 +108,7 @@ function isMemorySection(value: unknown): value is {
   return (
     isRecord(value) &&
     typeof value.summary === "string" &&
-    typeof value.updatedAt === "string"
+    isMemoryTimestamp(value.updatedAt, true)
   );
 }
 
@@ -92,27 +116,42 @@ function isMemoryFact(value: unknown): value is UserMemory["facts"][number] {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
+    value.id.trim().length > 0 &&
     typeof value.content === "string" &&
+    value.content.trim().length > 0 &&
     typeof value.category === "string" &&
+    value.category.trim().length > 0 &&
     typeof value.confidence === "number" &&
     Number.isFinite(value.confidence) &&
-    typeof value.createdAt === "string" &&
-    typeof value.source === "string"
+    value.confidence >= 0 &&
+    value.confidence <= 1 &&
+    isMemoryTimestamp(value.createdAt) &&
+    typeof value.source === "string" &&
+    value.source.trim().length > 0
   );
 }
 
-function isImportedMemory(value: unknown): value is UserMemory {
+export function isImportedMemory(value: unknown): value is UserMemory {
   if (!isRecord(value)) {
     return false;
   }
 
   if (
     typeof value.version !== "string" ||
-    typeof value.lastUpdated !== "string" ||
+    value.version.trim().length === 0 ||
+    !isMemoryTimestamp(value.lastUpdated, true) ||
     !isRecord(value.user) ||
     !isRecord(value.history) ||
     !Array.isArray(value.facts)
   ) {
+    return false;
+  }
+
+  if (!value.facts.every(isMemoryFact)) {
+    return false;
+  }
+  const factIds = new Set(value.facts.map((fact) => fact.id));
+  if (factIds.size !== value.facts.length) {
     return false;
   }
 
@@ -122,8 +161,7 @@ function isImportedMemory(value: unknown): value is UserMemory {
     isMemorySection(value.user.topOfMind) &&
     isMemorySection(value.history.recentMonths) &&
     isMemorySection(value.history.earlierContext) &&
-    isMemorySection(value.history.longTermBackground) &&
-    value.facts.every(isMemoryFact)
+    isMemorySection(value.history.longTermBackground)
   );
 }
 
@@ -263,9 +301,7 @@ function summariesToMarkdown(
 // Implementation note.
 // Implementation note.
 // Implementation note.
-function safeSummary(
-  section: { summary?: string } | undefined | null,
-): string {
+function safeSummary(section: { summary?: string } | undefined | null): string {
   return (section?.summary ?? "").trim();
 }
 
@@ -298,9 +334,18 @@ function upperFirst(str: string) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-function factScopeLabel(fact: MemoryFact, t: { settings: { memory: { projectScope: string; agentScope: string; globalScope: string } } }) {
-  if (fact.scope === "project" && fact.project) return `${t.settings.memory.projectScope}${fact.project}`;
-  if (fact.scope === "agent" && fact.agent_id) return `${t.settings.memory.agentScope}${fact.agent_id}`;
+function factScopeLabel(
+  fact: MemoryFact,
+  t: {
+    settings: {
+      memory: { projectScope: string; agentScope: string; globalScope: string };
+    };
+  },
+) {
+  if (fact.scope === "project" && fact.project)
+    return `${t.settings.memory.projectScope}${fact.project}`;
+  if (fact.scope === "agent" && fact.agent_id)
+    return `${t.settings.memory.agentScope}${fact.agent_id}`;
   return t.settings.memory.globalScope;
 }
 
@@ -309,10 +354,16 @@ function isThreadSource(source: string) {
 }
 
 export default function MemorySettingsPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const streamdownPlugins = useStreamdownPlugins();
-  const { memory, isLoading, error } = useMemory();
-  const { config: memoryConfig } = useMemoryConfig();
+  const { memory, isLoading, error, refetch, isRefreshing } = useMemory();
+  const {
+    config: memoryConfig,
+    isLoading: isMemoryConfigLoading,
+    error: memoryConfigError,
+    refetch: refetchMemoryConfig,
+    isRefreshing: isMemoryConfigRefreshing,
+  } = useMemoryConfig();
   const updateMemoryConfig = useUpdateMemoryConfig();
   const clearMemory = useClearMemory();
   const createMemoryFact = useCreateMemoryFact();
@@ -343,15 +394,17 @@ export default function MemorySettingsPage() {
 
   // Debounced backend FTS5 search
   useEffect(() => {
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = null;
     if (!normalizedQuery) {
       setBackendSearchResults(null);
       setIsSearching(false);
       return;
     }
 
+    setBackendSearchResults(null);
     setIsSearching(true);
     const timer = window.setTimeout(() => {
-      searchAbortRef.current?.abort();
       const controller = new AbortController();
       searchAbortRef.current = controller;
 
@@ -373,6 +426,7 @@ export default function MemorySettingsPage() {
 
     return () => {
       window.clearTimeout(timer);
+      searchAbortRef.current?.abort();
     };
   }, [normalizedQuery, deferredQuery]);
 
@@ -427,16 +481,19 @@ export default function MemorySettingsPage() {
     t.settings.memory.exportSuccess ?? t.common.exportSuccess;
   const importButton = t.settings.memory.importButton ?? t.common.import;
   const importSuccess = t.settings.memory.importSuccess ?? "Memory imported";
-  const memoryConfigEnabled = memoryConfig?.enabled ?? true;
-  const autoCaptureEnabled = memoryConfig?.auto_capture_enabled ?? true;
-  const injectionEnabled = memoryConfig?.injection_enabled ?? true;
+  const memoryConfigEnabled = memoryConfig?.enabled ?? false;
+  const autoCaptureEnabled = memoryConfig?.auto_capture_enabled ?? false;
+  const injectionEnabled = memoryConfig?.injection_enabled ?? false;
+  const memoryConfigUnavailable =
+    isMemoryConfigLoading || Boolean(memoryConfigError) || !memoryConfig;
 
   async function handleMemoryConfigChange(patch: MemoryConfigPatch) {
+    if (memoryConfigUnavailable) return;
     try {
       await updateMemoryConfig.mutateAsync(patch);
       toast.success(t.settings.memory.saved);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+    } catch {
+      toast.error(t.settings.memory.actionFailed);
     }
   }
 
@@ -493,7 +550,7 @@ export default function MemorySettingsPage() {
     try {
       setIsExporting(true);
       const exportedMemory = await exportMemory();
-      const fileName = `octopus-memory-${(exportedMemory.lastUpdated || new Date().toISOString()).replace(/[:.]/g, "-")}.json`;
+      const fileName = `echo-memory-${(exportedMemory.lastUpdated || new Date().toISOString()).replace(/[:.]/g, "-")}.json`;
       const blob = new Blob([JSON.stringify(exportedMemory, null, 2)], {
         type: "application/json",
       });
@@ -504,10 +561,10 @@ export default function MemorySettingsPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
       toast.success(exportSuccess);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+    } catch {
+      toast.error(t.settings.memory.actionFailed);
     } finally {
       setIsExporting(false);
     }
@@ -519,6 +576,11 @@ export default function MemorySettingsPage() {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) {
+      return;
+    }
+
+    if (file.size > MAX_MEMORY_IMPORT_BYTES) {
+      toast.error(t.settings.memory.importFileTooLarge);
       return;
     }
 
@@ -546,8 +608,8 @@ export default function MemorySettingsPage() {
       await importMemoryMutation.mutateAsync(pendingImport.memory);
       toast.success(importSuccess);
       setPendingImport(null);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+    } catch {
+      toast.error(t.settings.memory.actionFailed);
     }
   }
 
@@ -556,8 +618,8 @@ export default function MemorySettingsPage() {
       await clearMemory.mutateAsync();
       toast.success(clearAllSuccess);
       setClearDialogOpen(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+    } catch {
+      toast.error(t.settings.memory.actionFailed);
     }
   }
 
@@ -568,8 +630,8 @@ export default function MemorySettingsPage() {
       await deleteMemoryFact.mutateAsync(factToDelete.id);
       toast.success(factDeleteSuccess);
       setFactToDelete(null);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+    } catch {
+      toast.error(t.settings.memory.actionFailed);
     }
   }
 
@@ -627,13 +689,20 @@ export default function MemorySettingsPage() {
       setFactEditorOpen(false);
       setFactToEdit(null);
       setFactForm(DEFAULT_FACT_FORM_STATE);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
+    } catch {
+      toast.error(t.settings.memory.actionFailed);
     }
   }
 
   const isFactFormPending =
     createMemoryFact.isPending || updateMemoryFact.isPending;
+  const factFormConfidence = Number(factForm.confidence);
+  const factFormConfidenceValid =
+    Number.isFinite(factFormConfidence) &&
+    factFormConfidence >= 0 &&
+    factFormConfidence <= 1;
+  const factFormValid =
+    factForm.content.trim().length > 0 && factFormConfidenceValid;
 
   return (
     <>
@@ -641,67 +710,144 @@ export default function MemorySettingsPage() {
         title={t.settings.memory.title}
         description={t.settings.memory.description}
       >
+        <div className="mb-8 border-b border-border-subtle pb-8">
+          <PersonalWorkRulesSettings />
+        </div>
         {isLoading ? (
           <div className="text-muted-foreground text-sm">
             {t.common.loading}
           </div>
         ) : error ? (
-          <div>Error: {error.message}</div>
+          <div
+            role="alert"
+            className="flex flex-col items-start justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/[0.04] px-4 py-3 sm:flex-row sm:items-center"
+          >
+            <div className="flex min-w-0 items-start gap-2 text-sm text-destructive">
+              <AlertTriangleIcon className="mt-0.5 size-4 shrink-0" />
+              <span>{getMemoryLoadErrorCopy(locale)}</span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="w-full shrink-0 sm:w-auto"
+              disabled={isRefreshing}
+              onClick={() => void refetch()}
+            >
+              <RefreshCwIcon
+                className={cn(
+                  "mr-1.5 size-3.5",
+                  isRefreshing && "animate-spin",
+                )}
+              />
+              {t.errorBoundary.retry}
+            </Button>
+          </div>
         ) : !memory ? (
           <div className="text-muted-foreground text-sm">
             {t.settings.memory.empty}
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-lg border p-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="flex items-start justify-between gap-3 rounded-md border bg-muted/30 p-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">{t.settings.memory.enableMemory}</div>
-                    <div className="text-muted-foreground mt-1 text-xs">
-                      {t.settings.memory.enableMemoryDesc}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={memoryConfigEnabled}
-                    disabled={updateMemoryConfig.isPending}
-                    onCheckedChange={(enabled) =>
-                      void handleMemoryConfigChange({ enabled })
-                    }
+            {isMemoryConfigLoading ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+              >
+                <Loader2Icon className="size-3.5 animate-spin" />
+                {t.settings.memory.configLoading}
+              </div>
+            ) : memoryConfigError ? (
+              <div
+                role="alert"
+                className="flex flex-col items-start justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/[0.04] px-4 py-3 text-xs sm:flex-row sm:items-center"
+              >
+                <span className="text-destructive">
+                  {t.settings.memory.configLoadFailed}
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 w-full px-2 text-xs sm:w-auto"
+                  disabled={isMemoryConfigRefreshing}
+                  onClick={() => void refetchMemoryConfig?.()}
+                >
+                  <RefreshCwIcon
+                    className={cn(
+                      "mr-1.5 size-3.5",
+                      isMemoryConfigRefreshing && "animate-spin",
+                    )}
                   />
-                </div>
-
-                <div className="flex items-start justify-between gap-3 rounded-md border bg-muted/30 p-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">{t.settings.memory.autoCapture}</div>
-                    <div className="text-muted-foreground mt-1 text-xs">
-                      {t.settings.memory.autoCaptureDesc}
-                    </div>
+                  {t.errorBoundary.retry}
+                </Button>
+              </div>
+            ) : null}
+            <div className="rounded-lg border bg-card divide-y">
+              <div className="flex items-center justify-between gap-4 px-5 py-4">
+                <div className="min-w-0 space-y-0.5">
+                  <div className="text-sm font-medium">
+                    {t.settings.memory.enableMemory}
                   </div>
-                  <Switch
-                    checked={memoryConfigEnabled && autoCaptureEnabled}
-                    disabled={!memoryConfigEnabled || updateMemoryConfig.isPending}
-                    onCheckedChange={(auto_capture_enabled) =>
-                      void handleMemoryConfigChange({ auto_capture_enabled })
-                    }
-                  />
-                </div>
-
-                <div className="flex items-start justify-between gap-3 rounded-md border bg-muted/30 p-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">{t.settings.memory.injectOnReply}</div>
-                    <div className="text-muted-foreground mt-1 text-xs">
-                      {t.settings.memory.injectOnReplyDesc}
-                    </div>
+                  <div className="text-xs text-muted-foreground">
+                    {t.settings.memory.enableMemoryDesc}
                   </div>
-                  <Switch
-                    checked={memoryConfigEnabled && injectionEnabled}
-                    disabled={!memoryConfigEnabled || updateMemoryConfig.isPending}
-                    onCheckedChange={(injection_enabled) =>
-                      void handleMemoryConfigChange({ injection_enabled })
-                    }
-                  />
                 </div>
+                <Switch
+                  aria-label={t.settings.memory.enableMemory}
+                  checked={memoryConfigEnabled}
+                  disabled={
+                    memoryConfigUnavailable || updateMemoryConfig.isPending
+                  }
+                  onCheckedChange={(enabled) =>
+                    void handleMemoryConfigChange({ enabled })
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 px-5 py-4">
+                <div className="min-w-0 space-y-0.5">
+                  <div className="text-sm font-medium">
+                    {t.settings.memory.autoCapture}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {t.settings.memory.autoCaptureDesc}
+                  </div>
+                </div>
+                <Switch
+                  aria-label={t.settings.memory.autoCapture}
+                  checked={memoryConfigEnabled && autoCaptureEnabled}
+                  disabled={
+                    !memoryConfigEnabled ||
+                    updateMemoryConfig.isPending ||
+                    memoryConfigUnavailable
+                  }
+                  onCheckedChange={(auto_capture_enabled) =>
+                    void handleMemoryConfigChange({ auto_capture_enabled })
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4 px-5 py-4">
+                <div className="min-w-0 space-y-0.5">
+                  <div className="text-sm font-medium">
+                    {t.settings.memory.injectOnReply}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {t.settings.memory.injectOnReplyDesc}
+                  </div>
+                </div>
+                <Switch
+                  aria-label={t.settings.memory.injectOnReply}
+                  checked={memoryConfigEnabled && injectionEnabled}
+                  disabled={
+                    !memoryConfigEnabled ||
+                    updateMemoryConfig.isPending ||
+                    memoryConfigUnavailable
+                  }
+                  onCheckedChange={(injection_enabled) =>
+                    void handleMemoryConfigChange({ injection_enabled })
+                  }
+                />
               </div>
             </div>
 
@@ -711,11 +857,12 @@ export default function MemorySettingsPage() {
               </div>
             ) : null}
 
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="relative sm:max-w-xs w-full">
                   <SearchIcon className="text-muted-foreground absolute left-2.5 top-2.5 size-4" />
                   <Input
+                    aria-label={searchPlaceholder}
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder={searchPlaceholder}
@@ -726,6 +873,7 @@ export default function MemorySettingsPage() {
                   ) : null}
                 </div>
                 <ToggleGroup
+                  aria-label={t.settings.memory.filterLabel}
                   type="single"
                   value={filter}
                   onValueChange={(value) => {
@@ -741,7 +889,7 @@ export default function MemorySettingsPage() {
                 </ToggleGroup>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -751,28 +899,35 @@ export default function MemorySettingsPage() {
                 />
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={importMemoryMutation.isPending}
                 >
-                  <UploadIcon className="mr-2 h-4 w-4" />
+                  <UploadIcon className="mr-1.5 size-3.5" />
                   {importButton}
                 </Button>
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={() => void handleExportMemory()}
                   disabled={isExporting}
                 >
-                  <DownloadIcon className="mr-2 h-4 w-4" />
+                  <DownloadIcon className="mr-1.5 size-3.5" />
                   {isExporting ? t.common.loading : exportButton}
                 </Button>
-                <Button variant="outline" onClick={openCreateFactDialog}>
-                  <PlusIcon className="mr-2 h-4 w-4" />
+                <Button variant="outline" size="sm" onClick={openCreateFactDialog}>
+                  <PlusIcon className="mr-1.5 size-3.5" />
                   {addFactLabel}
                 </Button>
                 <Button
-                  variant="destructive"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
                   onClick={() => setClearDialogOpen(true)}
-                  disabled={clearMemory.isPending}
+                  disabled={
+                    clearMemory.isPending ||
+                    (isMemorySummaryEmpty(memory) && memory.facts.length === 0)
+                  }
                 >
                   {clearMemory.isPending ? t.common.loading : clearAllLabel}
                 </Button>
@@ -808,19 +963,17 @@ export default function MemorySettingsPage() {
             ) : null}
 
             {shouldRenderFactsBlock ? (
-              <div className="rounded-lg border p-4">
-                <div className="mb-4">
-                  <h3 className="text-base font-medium">
-                    {t.settings.memory.markdown.facts}
-                  </h3>
-                </div>
+              <div className="rounded-lg border bg-card p-5">
+                <h3 className="text-sm font-medium mb-4">
+                  {t.settings.memory.markdown.facts}
+                </h3>
 
                 {filteredFacts.length === 0 ? (
-                  <div className="text-muted-foreground text-sm">
+                  <div className="text-sm text-muted-foreground">
                     {normalizedQuery ? noMatches : noFacts}
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="divide-y">
                     {filteredFacts.map((fact) => {
                       const { key } = confidenceToLevelKey(fact.confidence);
                       const confidenceText =
@@ -829,34 +982,34 @@ export default function MemorySettingsPage() {
                       return (
                         <div
                           key={fact.id}
-                          className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-start sm:justify-between"
+                          className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between"
                         >
-                          <div className="min-w-0 space-y-2">
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                          <div className="min-w-0 space-y-1.5">
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                               <span>
-                                <span className="text-muted-foreground">
-                                  {t.settings.memory.markdown.table.category}:
-                                </span>{" "}
-                                {upperFirst(fact.category)}
+                                {t.settings.memory.markdown.table.category}:{" "}
+                                <span className="text-foreground">
+                                  {upperFirst(fact.category)}
+                                </span>
                               </span>
                               <span>
-                                <span className="text-muted-foreground">
-                                  {t.settings.memory.markdown.table.confidence}:
-                                </span>{" "}
-                                {confidenceText}
+                                {t.settings.memory.markdown.table.confidence}:{" "}
+                                <span className="text-foreground">
+                                  {confidenceText}
+                                </span>
                               </span>
                               <span>
-                                <span className="text-muted-foreground">
-                                  {t.settings.memory.markdown.table.createdAt}:
-                                </span>{" "}
-                                {formatTimeAgo(fact.createdAt)}
+                                {t.settings.memory.markdown.table.createdAt}:{" "}
+                                <span className="text-foreground">
+                                  {formatTimeAgo(fact.createdAt)}
+                                </span>
                               </span>
                               <span>
-                                <span className="text-muted-foreground">
-                                  {t.settings.memory.markdown.table.source}:
-                                </span>{" "}
+                                {t.settings.memory.markdown.table.source}:{" "}
                                 {fact.source === "manual" ? (
-                                  t.settings.memory.manualFactSource
+                                  <span className="text-foreground">
+                                    {t.settings.memory.manualFactSource}
+                                  </span>
                                 ) : isThreadSource(fact.source) ? (
                                   <Link
                                     to={pathOfThread(fact.source)}
@@ -865,14 +1018,16 @@ export default function MemorySettingsPage() {
                                     {t.settings.memory.markdown.table.view}
                                   </Link>
                                 ) : (
-                                  fact.source
+                                  <span className="text-foreground">
+                                    {fact.source}
+                                  </span>
                                 )}
                               </span>
                               <span>
-                                <span className="text-muted-foreground">
-                                  {t.settings.memory.scopeLabel}
-                                </span>{" "}
-                                {factScopeLabel(fact, t)}
+                                {t.settings.memory.scopeLabel}:{" "}
+                                <span className="text-foreground">
+                                  {factScopeLabel(fact, t)}
+                                </span>
                               </span>
                             </div>
                             <p className="text-sm break-words">
@@ -888,9 +1043,9 @@ export default function MemorySettingsPage() {
                               onClick={() => openEditFactDialog(fact)}
                               disabled={deleteMemoryFact.isPending}
                               title={t.common.edit}
-                              aria-label={t.common.edit}
+                              aria-label={`${t.common.edit}: ${truncateFactPreview(fact.content, 60)}`}
                             >
-                              <PenLineIcon className="h-4 w-4" />
+                              <PenLineIcon className="size-3.5" />
                             </Button>
 
                             <Button
@@ -900,9 +1055,9 @@ export default function MemorySettingsPage() {
                               onClick={() => setFactToDelete(fact)}
                               disabled={deleteMemoryFact.isPending}
                               title={t.common.delete}
-                              aria-label={t.common.delete}
+                              aria-label={`${t.common.delete}: ${truncateFactPreview(fact.content, 60)}`}
                             >
-                              <Trash2Icon className="h-4 w-4" />
+                              <Trash2Icon className="size-3.5" />
                             </Button>
                           </div>
                         </div>
@@ -956,6 +1111,9 @@ export default function MemorySettingsPage() {
             <DialogTitle>
               {factToEdit ? editFactTitle : addFactTitle}
             </DialogTitle>
+            <DialogDescription>
+              {t.settings.memory.factEditorDescription}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -967,6 +1125,7 @@ export default function MemorySettingsPage() {
               </label>
               <Textarea
                 id={factContentInputId}
+                required
                 value={factForm.content}
                 onChange={(event) =>
                   setFactForm((current) => ({
@@ -1009,7 +1168,13 @@ export default function MemorySettingsPage() {
                 </label>
                 <Input
                   id={factConfidenceInputId}
+                  required
                   aria-describedby={factConfidenceHintId}
+                  aria-invalid={
+                    factForm.confidence.length > 0 && !factFormConfidenceValid
+                      ? true
+                      : undefined
+                  }
                   type="number"
                   min="0"
                   max="1"
@@ -1045,7 +1210,7 @@ export default function MemorySettingsPage() {
             </Button>
             <Button
               onClick={() => void handleSaveFact()}
-              disabled={isFactFormPending}
+              disabled={isFactFormPending || !factFormValid}
             >
               {isFactFormPending ? t.common.loading : factSave}
             </Button>

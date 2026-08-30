@@ -6,6 +6,8 @@ import type {
   DeleteTeamTaskResponse,
   ListTeamTasksResponse,
   TeamTask,
+  TeamTaskProcessTimeline,
+  TeamTaskProcessTimelineResponse,
   UpdateTeamTaskInput,
 } from "./types";
 
@@ -74,4 +76,18 @@ export async function runTask(taskId: string): Promise<TeamTask> {
     body: JSON.stringify({}),
   });
   return parseJson<TeamTask>(res, "Run team task");
+}
+
+export async function getTaskProcessTimeline(
+  taskId: string,
+): Promise<TeamTaskProcessTimeline> {
+  const res = await fetch(
+    `${BASE()}/${encodeURIComponent(taskId)}/process-timeline`,
+    { headers: authHeaders() },
+  );
+  const data = await parseJson<TeamTaskProcessTimelineResponse>(
+    res,
+    "Load team task process timeline",
+  );
+  return data.timeline;
 }

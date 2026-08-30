@@ -1,4 +1,3 @@
-
 import { useLocation } from "react-router-dom";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 

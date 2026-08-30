@@ -1,4 +1,12 @@
-import { EditorView, Decoration, type DecorationSet, ViewPlugin, type ViewUpdate, WidgetType, keymap } from "@codemirror/view";
+import {
+  EditorView,
+  Decoration,
+  type DecorationSet,
+  ViewPlugin,
+  type ViewUpdate,
+  WidgetType,
+  keymap,
+} from "@codemirror/view";
 import { StateField, StateEffect, type Extension } from "@codemirror/state";
 import { swallow } from "@/core/utils/log";
 import { getBackendBaseURL } from "@/core/config";
@@ -8,7 +16,9 @@ const setGhostText = StateEffect.define<string>();
 const clearGhostText = StateEffect.define<void>();
 
 class GhostTextWidget extends WidgetType {
-  constructor(readonly text: string) { super(); }
+  constructor(readonly text: string) {
+    super();
+  }
   toDOM() {
     const span = document.createElement("span");
     span.className = "cm-ghost-text";
@@ -18,16 +28,23 @@ class GhostTextWidget extends WidgetType {
     span.style.pointerEvents = "none";
     return span;
   }
-  eq(other: GhostTextWidget) { return this.text === other.text; }
+  eq(other: GhostTextWidget) {
+    return this.text === other.text;
+  }
 }
 
 const ghostField = StateField.define<DecorationSet>({
-  create() { return Decoration.none; },
+  create() {
+    return Decoration.none;
+  },
   update(deco, tr) {
     for (const e of tr.effects) {
       if (e.is(setGhostText) && e.value) {
         const pos = tr.state.selection.main.head;
-        const widget = Decoration.widget({ widget: new GhostTextWidget(e.value), side: 1 });
+        const widget = Decoration.widget({
+          widget: new GhostTextWidget(e.value),
+          side: 1,
+        });
         return Decoration.set([widget.range(pos)]);
       }
       if (e.is(clearGhostText)) return Decoration.none;
@@ -86,7 +103,9 @@ const completionPlugin = (filePath: string) =>
                 update.view.dispatch({ effects: setGhostText.of(text) });
               }
             })
-            .catch((e) => { swallow(e); });
+            .catch((e) => {
+              swallow(e);
+            });
         }, 500);
       }
     },

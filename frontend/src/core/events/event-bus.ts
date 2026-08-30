@@ -6,12 +6,16 @@
  */
 
 import { swallow } from "@/core/utils/log";
-import { useEffect, useCallback } from "react";
+import {
+  DEFAULT_PRIMARY_AGENT_ID,
+  isPrimaryPersonaAgentId,
+} from "@/core/agents/persona-policy";
+import { useEffect, useCallback, useRef } from "react";
 
 // 事件类型定义
 export interface EventMap {
   // Agent 相关
-  "agent:changed": { name: string };
+  "agent:changed": { name: string; source?: "user" | "thread" | "system" };
 
   // 设置相关
   "settings:changed": void;
@@ -31,6 +35,15 @@ export interface EventMap {
 
   // 聊天相关
   "chats:sort": void;
+  "thread:run-status": {
+    href?: string;
+    state: "running" | "waiting" | "pending" | "error" | "done" | null;
+    threadId: string;
+  };
+  // A new realtime turn receives its server thread id before the workspace
+  // page can safely remount onto that route. The sidebar uses this transient
+  // route while the page keeps its live socket mounted.
+  "thread:route-sync": { href: string; threadId: string };
 
   // 团队相关
   "team:select": { id: string; name: string };
@@ -43,6 +56,12 @@ export interface EventMap {
   "team:room-updated": { roomId: string };
 
   // 任务相关
+  "task:new":
+    | {
+        agentId?: string;
+        workspacePath?: string;
+      }
+    | undefined;
   "task:changed": { type: string; task_id?: string; threadId?: string };
 
   // ReAct 相关
@@ -154,10 +173,13 @@ export const eventBus = new EventBus();
 export function useEvent<T extends EventName>(
   event: T,
   listener: Listener<T>,
-  deps: React.DependencyList = []
+  deps: React.DependencyList = [],
 ): void {
+  const listenerRef = useRef(listener);
+  listenerRef.current = listener;
+
   useEffect(() => {
-    return eventBus.on(event, listener);
+    return eventBus.on(event, (payload) => listenerRef.current(payload));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event, ...deps]);
 }
@@ -165,7 +187,7 @@ export function useEvent<T extends EventName>(
 // React Hook: 订阅事件（带记忆化回调）
 export function useEventCallback<T extends EventName>(
   event: T,
-  listener: Listener<T>
+  listener: Listener<T>,
 ): void {
   const callback = useCallback(listener, [listener]);
   useEffect(() => {
@@ -174,12 +196,26 @@ export function useEventCallback<T extends EventName>(
 }
 
 // 便捷函数：触发 agent 变更事件
-export function emitAgentChanged(name: string): void {
-  eventBus.emit("agent:changed", { name });
-  // 同时更新 localStorage 保持兼容性
+export function emitAgentChanged(
+  name: string,
+  source: "user" | "thread" | "system" = "user",
+): void {
+  eventBus.emit("agent:changed", { name, source });
+  // Only fixed White Ghost identities own personal conversation lanes.
+  // Historical expert-owned threads may still announce their owner, but that
+  // must not replace the persisted lead for the next task.
   try {
-    window.localStorage.setItem("octopus.active-agent", name);
-  } catch (e) { swallow(e, "storage"); }
+    if (isPrimaryPersonaAgentId(name)) {
+      window.localStorage.setItem("echo.active-agent", name);
+    } else if (source !== "thread") {
+      window.localStorage.setItem(
+        "echo.active-agent",
+        DEFAULT_PRIMARY_AGENT_ID,
+      );
+    }
+  } catch (e) {
+    swallow(e, "storage");
+  }
 }
 
 // 便捷函数：触发设置变更事件

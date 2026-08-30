@@ -30,7 +30,7 @@
  * - 拖拽阈值 5px
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 // ── Types ──────────────────────────────────────────────
 
@@ -38,14 +38,14 @@ export type InteractionMode = "direct" | "trackpad";
 
 export interface GestureEvent {
   action: GestureAction;
-  x?: number;          // 归一化坐标 [0,1]（direct模式）
+  x?: number; // 归一化坐标 [0,1]（direct模式）
   y?: number;
-  dx?: number;         // 相对移动量（trackpad模式）
+  dx?: number; // 相对移动量（trackpad模式）
   dy?: number;
-  deltaX?: number;     // 滚轮增量
+  deltaX?: number; // 滚轮增量
   deltaY?: number;
   button?: "left" | "right" | "middle";
-  key?: string;        // 快捷键
+  key?: string; // 快捷键
   duration_ms?: number;
 }
 
@@ -97,9 +97,15 @@ export function useTouchGestureEngine(
   config: TouchGestureConfig = DEFAULT_GESTURE_CONFIG,
 ) {
   const [mode, setMode] = useState<InteractionMode>(config.mode);
-  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const [isDragging, setIsDragging] = useState(false);
-  const [showRipple, setShowRipple] = useState<{ x: number; y: number; type: string } | null>(null);
+  const [showRipple, setShowRipple] = useState<{
+    x: number;
+    y: number;
+    type: string;
+  } | null>(null);
 
   // 触控状态
   const touchStateRef = useRef({
@@ -129,12 +135,9 @@ export function useTouchGestureEngine(
   // 手势事件回调
   const onGestureRef = useRef<((event: GestureEvent) => void) | null>(null);
 
-  const setOnGesture = useCallback(
-    (handler: (event: GestureEvent) => void) => {
-      onGestureRef.current = handler;
-    },
-    [],
-  );
+  const setOnGesture = useCallback((handler: (event: GestureEvent) => void) => {
+    onGestureRef.current = handler;
+  }, []);
 
   const emit = useCallback((event: GestureEvent) => {
     onGestureRef.current?.(event);
@@ -245,10 +248,6 @@ export function useTouchGestureEngine(
 
         if (mode === "direct") {
           // 直接触控模式：光标跟随手指
-          const dx = firstTouch.x - state.cursor.x;
-          const dy = firstTouch.y - state.cursor.y;
-          const dist = Math.hypot(dx, dy);
-
           state.cursor = { x: firstTouch.x, y: firstTouch.y };
           setCursorPos({ x: firstTouch.x, y: firstTouch.y });
 
@@ -258,7 +257,10 @@ export function useTouchGestureEngine(
               firstTouch.x - state.dragStart.x,
               firstTouch.y - state.dragStart.y,
             );
-            if (dragDist > config.dragThreshold / Math.max(rect.width, rect.height)) {
+            if (
+              dragDist >
+              config.dragThreshold / Math.max(rect.width, rect.height)
+            ) {
               state.dragging = true;
               setIsDragging(true);
               emit({
@@ -295,9 +297,6 @@ export function useTouchGestureEngine(
           const prevTouch = state.touches.get(e.changedTouches[0]!.identifier);
           if (prevTouch && now - state.lastMoveTime >= config.moveThrottle) {
             state.lastMoveTime = now;
-            // 计算相对移动量
-            const prevX = (e.changedTouches[0]!.clientX - rect.left) / rect.width;
-            const prevY = (e.changedTouches[0]!.clientY - rect.top) / rect.height;
             // 这里简化处理：用当前位移作为相对移动
             emit({
               action: "mouse_move",
@@ -305,8 +304,22 @@ export function useTouchGestureEngine(
               dy: (firstTouch.y - state.cursor.y) * config.trackpadSensitivity,
             });
             // 更新光标
-            state.cursor.x = Math.max(0, Math.min(1, state.cursor.x + (firstTouch.x - state.cursor.x) * config.trackpadSensitivity));
-            state.cursor.y = Math.max(0, Math.min(1, state.cursor.y + (firstTouch.y - state.cursor.y) * config.trackpadSensitivity));
+            state.cursor.x = Math.max(
+              0,
+              Math.min(
+                1,
+                state.cursor.x +
+                  (firstTouch.x - state.cursor.x) * config.trackpadSensitivity,
+              ),
+            );
+            state.cursor.y = Math.max(
+              0,
+              Math.min(
+                1,
+                state.cursor.y +
+                  (firstTouch.y - state.cursor.y) * config.trackpadSensitivity,
+              ),
+            );
             setCursorPos({ x: state.cursor.x, y: state.cursor.y });
           }
         }
@@ -317,7 +330,10 @@ export function useTouchGestureEngine(
             firstTouch.x - state.dragStart.x,
             firstTouch.y - state.dragStart.y,
           );
-          if (startDist > config.dragThreshold / Math.max(rect.width, rect.height)) {
+          if (
+            startDist >
+            config.dragThreshold / Math.max(rect.width, rect.height)
+          ) {
             clearTimeout(state.longPressTimer);
             state.longPressTimer = null;
           }
@@ -327,7 +343,10 @@ export function useTouchGestureEngine(
       // ── 双指：滚动/缩放 ──
       if (touchCount === 2) {
         const pts = Array.from(state.touches.values());
-        const currentDist = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
+        const currentDist = Math.hypot(
+          pts[0]!.x - pts[1]!.x,
+          pts[0]!.y - pts[1]!.y,
+        );
         const midX = (pts[0]!.x + pts[1]!.x) / 2;
         const midY = (pts[0]!.y + pts[1]!.y) / 2;
 
@@ -336,7 +355,6 @@ export function useTouchGestureEngine(
 
           // 判断是滚动还是缩放
           const distChange = Math.abs(currentDist - state.initialPinchDist);
-          const avgY = (pts[0]!.y + pts[1]!.y) / 2;
 
           if (distChange > 0.02) {
             // 缩放：Ctrl+滚轮
@@ -434,7 +452,11 @@ export function useTouchGestureEngine(
             x: state.cursor.x,
             y: state.cursor.y,
           });
-          setShowRipple({ x: state.cursor.x, y: state.cursor.y, type: "double" });
+          setShowRipple({
+            x: state.cursor.x,
+            y: state.cursor.y,
+            type: "double",
+          });
           setTimeout(() => setShowRipple(null), 400);
           state.lastTapTime = 0; // 重置，防止三击
         } else {
@@ -498,12 +520,9 @@ export function useTouchGestureEngine(
     [emit],
   );
 
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault(); // 禁用浏览器右键菜单
-    },
-    [],
-  );
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault(); // 禁用浏览器右键菜单
+  }, []);
 
   return {
     mode,

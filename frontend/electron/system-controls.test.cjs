@@ -167,7 +167,10 @@ function fakeExec(responses, calls) {
       },
     };
     await assert.rejects(() => setWifiEnabled("off", options), /boolean/);
-    await assert.rejects(() => setAudioVolume("0; shutdown", options), /number/);
+    await assert.rejects(
+      () => setAudioVolume("0; shutdown", options),
+      /number/,
+    );
     assert.strictEqual(executed, false);
   });
 

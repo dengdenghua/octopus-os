@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/core/i18n/hooks";
-import { useConfirmOrder } from "@/core/molili";
+import { octApi } from "@/core/oct/api";
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_MAX_ATTEMPTS = 30; // 30 * 2s = 60s window
@@ -34,7 +34,6 @@ export function PayOrderDialog({
   amountYuan,
 }: PayOrderDialogProps) {
   const { t } = useI18n();
-  const confirm = useConfirmOrder();
   const [polling, setPolling] = useState(false);
   const cancelRef = useRef(false);
 
@@ -60,8 +59,8 @@ export function PayOrderDialog({
         return;
       }
       try {
-        const result = await confirm.mutateAsync(orderNo);
-        if (result.paid) {
+        const o = await octApi.orders.findByOrderNo(orderNo);
+        if (o.status === "PAID") {
           toast.success(t.payOrder.paidSuccess);
           setPolling(false);
           onOpenChange(false);
@@ -129,14 +128,14 @@ export function PayOrderDialog({
 
         <div className="grid gap-5 px-6 pb-6 md:grid-cols-2">
           {/* Left column — QR + description */}
-          <div className="rounded-2xl bg-muted/40 px-6 py-8 flex flex-col items-center">
+          <div className="rounded-lg bg-muted/40 px-6 py-8 flex flex-col items-center">
             <h2 className="text-2xl font-semibold text-center">
               {t.payOrder.title}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground text-center">
               {t.payOrder.subtitle}
             </p>
-            <div className="mt-6 flex size-[260px] items-center justify-center rounded-xl bg-white p-4 shadow-sm">
+            <div className="mt-6 flex size-[260px] items-center justify-center rounded-lg bg-white p-4 shadow-[var(--shadow-xs)]">
               {paymentLink ? (
                 <QRCodeSVG
                   value={paymentLink}
@@ -163,7 +162,9 @@ export function PayOrderDialog({
 
             <dl className="mt-4 space-y-3 text-sm">
               <div className="flex items-center justify-between">
-                <dt className="text-muted-foreground">{t.payOrder.planName}:</dt>
+                <dt className="text-muted-foreground">
+                  {t.payOrder.planName}:
+                </dt>
                 <dd className="font-medium">{goodsName || "—"}</dd>
               </div>
               <div className="flex items-center justify-between">

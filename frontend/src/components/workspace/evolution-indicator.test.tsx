@@ -3,7 +3,10 @@ import { describe, expect, test, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 
 import { AllProviders } from "@/test/harness";
-import type { EvolutionStatus } from "@/core/observability/api";
+import {
+  GlobalControlPlaneAccessError,
+  type EvolutionStatus,
+} from "@/core/observability/api";
 
 // Mock the API module BEFORE importing the component under test so
 // the query hook picks up the mock factory.
@@ -17,10 +20,20 @@ vi.mock("@/core/observability/api", async () => {
   };
 });
 
- 
 import { getEvolutionStatus } from "@/core/observability/api";
- 
+
 import { EvolutionIndicator } from "./evolution-indicator";
+
+vi.mock("@/providers/AuthProvider", () => ({
+  useAuth: () => ({
+    authStatus: { enabled: false },
+    user: null,
+  }),
+  useOptionalAuth: () => ({
+    authStatus: { enabled: false },
+    user: null,
+  }),
+}));
 
 const mockedGetStatus = vi.mocked(getEvolutionStatus);
 
@@ -51,7 +64,23 @@ describe("EvolutionIndicator", () => {
     );
     // Wait for the query to settle · disabled → returns null
     await waitFor(() => expect(mockedGetStatus).toHaveBeenCalled());
-    expect(container.querySelector("[data-testid=evolution-indicator]")).toBeNull();
+    expect(
+      container.querySelector("[data-testid=evolution-indicator]"),
+    ).toBeNull();
+  });
+
+  test("hides the optional indicator and does not retry a 403", async () => {
+    mockedGetStatus.mockRejectedValue(new GlobalControlPlaneAccessError());
+    const { container } = render(
+      <AllProviders locale="en-US">
+        <EvolutionIndicator />
+      </AllProviders>,
+    );
+
+    await waitFor(() => expect(mockedGetStatus).toHaveBeenCalledTimes(1));
+    expect(
+      container.querySelector("[data-testid=evolution-admin-gate]"),
+    ).toBeNull();
   });
 
   test("renders nothing when both counters are 0 and showWhenEmpty is false", async () => {
@@ -64,7 +93,9 @@ describe("EvolutionIndicator", () => {
       </AllProviders>,
     );
     await waitFor(() => expect(mockedGetStatus).toHaveBeenCalled());
-    expect(container.querySelector("[data-testid=evolution-indicator]")).toBeNull();
+    expect(
+      container.querySelector("[data-testid=evolution-indicator]"),
+    ).toBeNull();
   });
 
   test("renders 0/0 when showWhenEmpty=true", async () => {
@@ -106,7 +137,9 @@ describe("EvolutionIndicator", () => {
     );
     const trigger = await screen.findByTestId("evolution-indicator");
     expect(trigger.getAttribute("title")).toContain("3 rules");
-    expect(trigger.querySelector(".sr-only")?.textContent).toContain("7 memories");
+    expect(trigger.querySelector(".sr-only")?.textContent).toContain(
+      "7 memories",
+    );
     expect(trigger.textContent).toContain("10");
   });
 

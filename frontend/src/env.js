@@ -10,9 +10,11 @@ export const env = {
     import.meta.env.NEXT_PUBLIC_BACKEND_BASE_URL ??
     "",
 
-  NEXT_PUBLIC_OCTOPUS_BASE_URL:
-    import.meta.env.VITE_OCTOPUS_BASE_URL ??
-    import.meta.env.NEXT_PUBLIC_OCTOPUS_BASE_URL ??
+  NEXT_PUBLIC_ECHO_BASE_URL:
+    import.meta.env.VITE_ECHO_BASE_URL ??
+    import.meta.env.NEXT_PUBLIC_ECHO_BASE_URL ??
+    import.meta.env.VITE_ECHO_BASE_URL ??
+    import.meta.env.NEXT_PUBLIC_ECHO_BASE_URL ??
     "",
 
   // Implementation note.

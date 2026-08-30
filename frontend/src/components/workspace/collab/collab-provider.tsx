@@ -12,7 +12,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { swallow } from "@/core/utils/log";
-import { getBackendBaseURL } from "@/core/config";
+import { getToken } from "@/core/auth/api";
+import { getBackendWebSocketBaseURL } from "@/core/config";
 import { readOrCreateTeamParticipantId } from "@/core/teams";
 import type { SpeakerPolicy } from "@/core/teams";
 import { eventBus } from "@/core/events";
@@ -153,21 +154,27 @@ export function CollabProvider({
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [floor, setFloor] = useState<FloorState>(DEFAULT_FLOOR);
 
-  const localUser = useMemo<User>(() => ({
-    id: resolvedParticipantId,
-    name: resolvedDisplayName,
-    avatar: avatar ?? undefined,
-    color: colorFor(resolvedParticipantId),
-  }), [avatar, resolvedDisplayName, resolvedParticipantId]);
+  const localUser = useMemo<User>(
+    () => ({
+      id: resolvedParticipantId,
+      name: resolvedDisplayName,
+      avatar: avatar ?? undefined,
+      color: colorFor(resolvedParticipantId),
+    }),
+    [avatar, resolvedDisplayName, resolvedParticipantId],
+  );
 
   useEffect(() => {
     setTaskEvents([]);
   }, [teamId]);
 
-  const notifyRemoved = useCallback((reason = "removed") => {
-    if (!teamId || typeof window === "undefined") return;
-    eventBus.emit("team:removed", { teamId });
-  }, [teamId]);
+  const notifyRemoved = useCallback(
+    (_reason = "removed") => {
+      if (!teamId || typeof window === "undefined") return;
+      eventBus.emit("team:removed", { teamId });
+    },
+    [teamId],
+  );
 
   const closeSocket = useCallback(() => {
     shouldReconnectRef.current = false;
@@ -192,14 +199,17 @@ export function CollabProvider({
 
     const connect = () => {
       if (disposed || !shouldReconnectRef.current) return;
-      const base = getBackendBaseURL() || window.location.origin;
-      const wsBase = base.replace(/^http/, "ws");
+      const wsBase = getBackendWebSocketBaseURL();
       const params = new URLSearchParams({
         participant_id: resolvedParticipantId,
         display_name: resolvedDisplayName,
       });
       if (normalizedThreadId) {
         params.set("thread_id", normalizedThreadId);
+      }
+      const token = getToken();
+      if (token) {
+        params.set("token", token);
       }
       const socket = new WebSocket(
         `${wsBase}/api/teams/${encodeURIComponent(teamId)}/ws?${params.toString()}`,
@@ -264,7 +274,7 @@ export function CollabProvider({
           const senderId = String(msg.participant_id ?? "");
           if (senderId === resolvedParticipantId) return;
           window.dispatchEvent(
-            new CustomEvent("octopus:team-thread-update", {
+            new CustomEvent("echo:team-thread-update", {
               detail: {
                 teamId,
                 threadId: incomingThreadId,
@@ -368,24 +378,30 @@ export function CollabProvider({
     }
   }, []);
 
-  const updateCursor = useCallback((position: { x: number; y: number }) => {
-    sendJson({
-      type: "cursor",
-      position,
-      ...(normalizedThreadId ? { thread_id: normalizedThreadId } : {}),
-    });
-  }, [normalizedThreadId, sendJson]);
+  const updateCursor = useCallback(
+    (position: { x: number; y: number }) => {
+      sendJson({
+        type: "cursor",
+        position,
+        ...(normalizedThreadId ? { thread_id: normalizedThreadId } : {}),
+      });
+    },
+    [normalizedThreadId, sendJson],
+  );
 
-  const sendRoomMessage = useCallback((text: string, onBehalfOf?: string) => {
-    const clean = text.trim();
-    if (!clean) return;
-    sendJson({
-      type: "message",
-      text: clean,
-      ...(onBehalfOf ? { on_behalf_of: onBehalfOf } : {}),
-      ...(normalizedThreadId ? { thread_id: normalizedThreadId } : {}),
-    });
-  }, [normalizedThreadId, sendJson]);
+  const sendRoomMessage = useCallback(
+    (text: string, onBehalfOf?: string) => {
+      const clean = text.trim();
+      if (!clean) return;
+      sendJson({
+        type: "message",
+        text: clean,
+        ...(onBehalfOf ? { on_behalf_of: onBehalfOf } : {}),
+        ...(normalizedThreadId ? { thread_id: normalizedThreadId } : {}),
+      });
+    },
+    [normalizedThreadId, sendJson],
+  );
 
   const raiseHand = useCallback(() => {
     sendJson({ type: "floor:request" });
@@ -395,44 +411,57 @@ export function CollabProvider({
     sendJson({ type: "floor:yield" });
   }, [sendJson]);
 
-  const grantFloor = useCallback((targetId: string | null) => {
-    sendJson({ type: "floor:grant", target: targetId ?? "" });
-  }, [sendJson]);
+  const grantFloor = useCallback(
+    (targetId: string | null) => {
+      sendJson({ type: "floor:grant", target: targetId ?? "" });
+    },
+    [sendJson],
+  );
 
-  const notifyThreadUpdate = useCallback((reason = "updated") => {
-    if (!normalizedThreadId) return;
-    sendJson({
-      type: "thread:update",
-      thread_id: normalizedThreadId,
-      reason,
-    });
-  }, [normalizedThreadId, sendJson]);
+  const notifyThreadUpdate = useCallback(
+    (reason = "updated") => {
+      if (!normalizedThreadId) return;
+      sendJson({
+        type: "thread:update",
+        thread_id: normalizedThreadId,
+        reason,
+      });
+    },
+    [normalizedThreadId, sendJson],
+  );
 
-  const author = useMemo<AnnotationAuthor | null>(() => (
-    currentUser
-      ? { display_name: currentUser.name, avatar_color: currentUser.color }
-      : null
-  ), [currentUser]);
+  const author = useMemo<AnnotationAuthor | null>(
+    () =>
+      currentUser
+        ? { display_name: currentUser.name, avatar_color: currentUser.color }
+        : null,
+    [currentUser],
+  );
 
-  const addAnnotation = useCallback(async (messageId: string, body: string) => {
-    setAnnotations((prev) => [
-      ...prev,
-      {
-        annotation_id: `ann-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        message_id: messageId,
-        author,
-        body,
-        created_at: Math.floor(Date.now() / 1000),
-        resolved: false,
-        replies: [],
-      },
-    ]);
-  }, [author]);
+  const addAnnotation = useCallback(
+    async (messageId: string, body: string) => {
+      setAnnotations((prev) => [
+        ...prev,
+        {
+          annotation_id: `ann-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          message_id: messageId,
+          author,
+          body,
+          created_at: Math.floor(Date.now() / 1000),
+          resolved: false,
+          replies: [],
+        },
+      ]);
+    },
+    [author],
+  );
 
   const resolveAnnotation = useCallback(async (annotationId: string) => {
     setAnnotations((prev) =>
       prev.map((item) =>
-        item.annotation_id === annotationId ? { ...item, resolved: true } : item,
+        item.annotation_id === annotationId
+          ? { ...item, resolved: true }
+          : item,
       ),
     );
   }, []);
@@ -440,7 +469,9 @@ export function CollabProvider({
   const unresolveAnnotation = useCallback(async (annotationId: string) => {
     setAnnotations((prev) =>
       prev.map((item) =>
-        item.annotation_id === annotationId ? { ...item, resolved: false } : item,
+        item.annotation_id === annotationId
+          ? { ...item, resolved: false }
+          : item,
       ),
     );
   }, []);
@@ -451,26 +482,29 @@ export function CollabProvider({
     );
   }, []);
 
-  const replyToAnnotation = useCallback(async (annotationId: string, body: string) => {
-    setAnnotations((prev) =>
-      prev.map((item) =>
-        item.annotation_id === annotationId
-          ? {
-              ...item,
-              replies: [
-                ...item.replies,
-                {
-                  reply_id: `reply-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-                  author,
-                  body,
-                  created_at: Math.floor(Date.now() / 1000),
-                },
-              ],
-            }
-          : item,
-      ),
-    );
-  }, [author]);
+  const replyToAnnotation = useCallback(
+    async (annotationId: string, body: string) => {
+      setAnnotations((prev) =>
+        prev.map((item) =>
+          item.annotation_id === annotationId
+            ? {
+                ...item,
+                replies: [
+                  ...item.replies,
+                  {
+                    reply_id: `reply-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                    author,
+                    body,
+                    created_at: Math.floor(Date.now() / 1000),
+                  },
+                ],
+              }
+            : item,
+        ),
+      );
+    },
+    [author],
+  );
 
   return (
     <CollabContext.Provider
@@ -519,7 +553,7 @@ function parseMessage(data: unknown): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(data);
     return parsed && typeof parsed === "object"
-      ? parsed as Record<string, unknown>
+      ? (parsed as Record<string, unknown>)
       : null;
   } catch (e) {
     swallow(e);
@@ -527,13 +561,11 @@ function parseMessage(data: unknown): Record<string, unknown> | null {
   }
 }
 
-function participantToUser(
-  participant: unknown,
-  avatar?: string | null,
-): User {
-  const item = participant && typeof participant === "object"
-    ? participant as Record<string, unknown>
-    : {};
+function participantToUser(participant: unknown, avatar?: string | null): User {
+  const item =
+    participant && typeof participant === "object"
+      ? (participant as Record<string, unknown>)
+      : {};
   const id = String(item.id ?? `guest-${Date.now()}`);
   const name = String(item.display_name ?? "Guest");
   return {
@@ -544,10 +576,12 @@ function participantToUser(
   };
 }
 
-function teamHasRemovedParticipant(team: unknown, participantId: string): boolean {
-  const item = team && typeof team === "object"
-    ? team as Record<string, unknown>
-    : {};
+function teamHasRemovedParticipant(
+  team: unknown,
+  participantId: string,
+): boolean {
+  const item =
+    team && typeof team === "object" ? (team as Record<string, unknown>) : {};
   const participants = Array.isArray(item.participants)
     ? item.participants
     : [];
@@ -645,8 +679,11 @@ function floorFrom(source: unknown): FloorState {
   return {
     speakerPolicy: FLOOR_POLICIES.has(policy) ? policy : "free",
     currentSpeakerId:
-      typeof item.current_speaker_id === "string" ? item.current_speaker_id : null,
-    moderatorId: typeof item.moderator_id === "string" ? item.moderator_id : null,
+      typeof item.current_speaker_id === "string"
+        ? item.current_speaker_id
+        : null,
+    moderatorId:
+      typeof item.moderator_id === "string" ? item.moderator_id : null,
     floorRequests: Array.isArray(item.floor_requests)
       ? item.floor_requests.filter((x): x is string => typeof x === "string")
       : [],

@@ -81,7 +81,9 @@ function requestNotificationService(request, options = {}) {
       const newline = received.indexOf(0x0a);
       if (newline < 0) return;
       try {
-        const response = JSON.parse(received.subarray(0, newline).toString("utf8"));
+        const response = JSON.parse(
+          received.subarray(0, newline).toString("utf8"),
+        );
         finish(
           response && typeof response === "object"
             ? response
@@ -92,7 +94,8 @@ function requestNotificationService(request, options = {}) {
       }
     });
     client.on("end", () => {
-      if (!finished) finish({ ok: false, error: "incomplete notification response" });
+      if (!finished)
+        finish({ ok: false, error: "incomplete notification response" });
     });
   });
 }
@@ -111,7 +114,10 @@ function normalizeNotification(value) {
   ) {
     return null;
   }
-  const bounded = (text, max) => String(text || "").replace(/\0/g, "").slice(0, max);
+  const bounded = (text, max) =>
+    String(text || "")
+      .replace(/\0/g, "")
+      .slice(0, max);
   return {
     id,
     appName: bounded(value.appName, 128) || "应用",
@@ -141,7 +147,10 @@ async function getNotificationCapabilities(options = {}) {
         list: false,
         close: false,
         clear: false,
-        reason: response.reason || response.error || "notification service unavailable",
+        reason:
+          response.reason ||
+          response.error ||
+          "notification service unavailable",
       };
 }
 
@@ -152,7 +161,8 @@ async function listNotifications(options = {}) {
       ok: false,
       provider: null,
       notifications: [],
-      error: response.reason || response.error || "notification service unavailable",
+      error:
+        response.reason || response.error || "notification service unavailable",
     };
   }
   return {

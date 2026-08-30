@@ -53,7 +53,9 @@ function getSystemControlCapabilities({
 }
 
 function boundedError(value) {
-  return String(value || "hardware control failed").trim().slice(0, 512);
+  return String(value || "hardware control failed")
+    .trim()
+    .slice(0, 512);
 }
 
 function runTool(executable, args, execFileImpl = execFile) {
@@ -133,7 +135,12 @@ async function readWifiState(nmcliPath, execFileImpl) {
 
 async function readBluetoothState(bluetoothctlPath, execFileImpl) {
   if (!bluetoothctlPath) {
-    return { available: false, present: false, enabled: null, controller: null };
+    return {
+      available: false,
+      present: false,
+      enabled: null,
+      controller: null,
+    };
   }
   const result = await runTool(bluetoothctlPath, ["show"], execFileImpl);
   if (!result.ok) {
@@ -145,7 +152,9 @@ async function readBluetoothState(bluetoothctlPath, execFileImpl) {
       error: result.stderr,
     };
   }
-  const controller = result.stdout.match(/^Controller\s+\S+\s+(.+)$/m)?.[1]?.trim();
+  const controller = result.stdout
+    .match(/^Controller\s+\S+\s+(.+)$/m)?.[1]
+    ?.trim();
   const powered = result.stdout.match(/^\s*Powered:\s*(yes|no)\s*$/im)?.[1];
   return {
     available: true,
@@ -229,7 +238,8 @@ function readBatteryState({
         String(readFileSync(`${base}/capacity`, "utf8")).trim(),
         10,
       );
-      if (Number.isFinite(value)) percentage = Math.max(0, Math.min(100, value));
+      if (Number.isFinite(value))
+        percentage = Math.max(0, Math.min(100, value));
     } catch {
       /* capacity is optional on unusual supplies */
     }
@@ -308,7 +318,8 @@ function formatSystemControlsReadyMarker(state) {
 }
 
 function requireBoolean(value) {
-  if (typeof value !== "boolean") throw new TypeError("enabled must be boolean");
+  if (typeof value !== "boolean")
+    throw new TypeError("enabled must be boolean");
   return value;
 }
 

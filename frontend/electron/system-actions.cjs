@@ -1,7 +1,7 @@
 /**
  * Echo OS 原生会话和电源动作。
  *
- * 只有 `OCTOPUS_NATIVE_SHELL=1`（兼容环境变量）或 session shell 模式下的
+ * 只有 `ECHO_NATIVE_SHELL=1`（兼容环境变量）或 session shell 模式下的
  * Linux 进程能调用 loginctl/systemctl。网页预览、普通 Electron 开发窗口和其他平台
  * 都只会返回 unsupported，不会触碰宿主系统。
  */

@@ -63,7 +63,9 @@ export async function saveAgentToolRegistry(
   }
 }
 
-export async function listCapabilityPermissions(): Promise<CapabilityPermission[]> {
+export async function listCapabilityPermissions(): Promise<
+  CapabilityPermission[]
+> {
   const res = await fetch(`${getBackendBaseURL()}/api/capability-permissions`, {
     headers: authHeaders(),
   });

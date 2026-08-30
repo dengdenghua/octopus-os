@@ -1,4 +1,3 @@
-
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -15,7 +14,7 @@ export type ArtifactProps = HTMLAttributes<HTMLDivElement>;
 export const Artifact = ({ className, ...props }: ArtifactProps) => (
   <div
     className={cn(
-      "bg-background flex flex-col overflow-hidden rounded-lg border shadow-lg",
+      "bg-background flex flex-col overflow-hidden rounded-lg border shadow-[var(--shadow-md)]",
       className,
     )}
     {...props}
@@ -147,4 +146,3 @@ export const ArtifactContent = ({
     {...props}
   />
 );
-

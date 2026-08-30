@@ -32,7 +32,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mockOnce(body: unknown, init: Partial<{ ok: boolean; status: number }> = {}) {
+function mockOnce(
+  body: unknown,
+  init: Partial<{ ok: boolean; status: number }> = {},
+) {
   fetchMock.mockResolvedValueOnce({
     ok: init.ok ?? true,
     status: init.status ?? 200,
@@ -74,7 +77,9 @@ describe("RemoteBackendsPanel", () => {
       target: { value: "https://stage.example.com" },
     });
 
-    mockOnce({ backend: { ...ENABLED_LIST.backends[0], id: "b2", name: "stage" } });
+    mockOnce({
+      backend: { ...ENABLED_LIST.backends[0], id: "b2", name: "stage" },
+    });
     mockOnce({
       enabled: true,
       backends: [
@@ -127,6 +132,15 @@ describe("RemoteBackendsPanel", () => {
     mockOnce({ enabled: true, backends: [] });
 
     fireEvent.click(screen.getByRole("button", { name: /Remove prod/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: /Remove remote backend/i }),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Remove$/i }),
+    );
 
     await waitFor(() => {
       const del = fetchMock.mock.calls.find(

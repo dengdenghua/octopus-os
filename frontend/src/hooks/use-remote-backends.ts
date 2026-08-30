@@ -35,7 +35,11 @@ export interface RemoteBackendsState {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  add: (input: { name: string; url: string; ssh?: RemoteSshTunnel | null }) => Promise<{
+  add: (input: {
+    name: string;
+    url: string;
+    ssh?: RemoteSshTunnel | null;
+  }) => Promise<{
     ok: boolean;
     error: string | null;
     backend: RemoteBackend | null;
@@ -80,7 +84,11 @@ export function useRemoteBackends(
   }, [baseUrl]);
 
   const add = useCallback(
-    async (input: { name: string; url: string; ssh?: RemoteSshTunnel | null }) => {
+    async (input: {
+      name: string;
+      url: string;
+      ssh?: RemoteSshTunnel | null;
+    }) => {
       try {
         const resp = await fetch(`${baseUrl}/api/remote-backends`, {
           method: "POST",

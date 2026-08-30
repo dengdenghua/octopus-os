@@ -20,9 +20,9 @@ import { swallow } from "@/core/utils/log";
 import { useI18n } from "@/core/i18n/hooks";
 
 const SEVERITY_COLOR: Record<string, string> = {
-  high: "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30",
-  mid: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
-  low: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30",
+  high: "bg-destructive/15 text-destructive border-destructive/30",
+  mid: "bg-warning/15 text-warning border-warning/30",
+  low: "bg-info/15 text-info dark:text-info border-info/30",
 };
 
 function formatTs(ts: number | undefined): string {
@@ -68,14 +68,37 @@ export default function EvolutionSettingsPage() {
 
   if (loading && !data) {
     return (
-      <div className="flex items-center py-8 text-sm text-muted-foreground">
+      <div
+        className="flex items-center py-8 text-sm text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
         <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
         {e.loading}
       </div>
     );
   }
-  if (err) {
-    return <div className="py-6 text-sm text-destructive">{e.loadFailed}: {err}</div>;
+  if (err && !data) {
+    return (
+      <div
+        className="flex flex-col items-start justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center"
+        role="alert"
+      >
+        <span>
+          {e.loadFailed}: {err}
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full sm:w-auto"
+          onClick={() => void load()}
+        >
+          <RefreshCwIcon className="mr-1.5 size-3.5" aria-hidden="true" />
+          {e.refresh}
+        </Button>
+      </div>
+    );
   }
   if (!data) return null;
 
@@ -86,22 +109,50 @@ export default function EvolutionSettingsPage() {
   const camouflage = data.camouflage;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" aria-busy={loading}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">{e.title}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {e.description}
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{e.description}</p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => void load()}>
-          <RefreshCwIcon className="mr-1.5 h-3.5 w-3.5" />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={loading}
+          onClick={() => void load()}
+        >
+          <RefreshCwIcon
+            className={`mr-1.5 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+            aria-hidden="true"
+          />
           {e.refresh}
         </Button>
       </div>
 
+      {err ? (
+        <div
+          className="flex flex-col items-start justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive sm:flex-row sm:items-center"
+          role="alert"
+        >
+          <span>
+            {e.loadFailed}: {err}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="w-full sm:w-auto"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            {e.refresh}
+          </Button>
+        </div>
+      ) : null}
+
       {/* Scheduler */}
-      <div className="rounded-lg border border-border/60 bg-card/30 p-4">
+      <div className="rounded-lg border border-border-default bg-card/30 p-4">
         <div className="flex items-center gap-2 text-sm font-medium">
           <ActivityIcon className="h-4 w-4" />
           {e.schedulerStatus}
@@ -112,8 +163,8 @@ export default function EvolutionSettingsPage() {
             <div
               className={
                 sched.running
-                  ? "mt-0.5 font-medium text-emerald-600 dark:text-emerald-400"
-                  : "mt-0.5 font-medium text-rose-600"
+                  ? "mt-0.5 font-medium text-success"
+                  : "mt-0.5 font-medium text-destructive"
               }
             >
               {sched.running ? e.runningYes : e.runningNo}
@@ -125,7 +176,10 @@ export default function EvolutionSettingsPage() {
           </div>
           <div>
             <div className="text-muted-foreground">{e.tickedLabel}</div>
-            <div className="mt-0.5 font-mono">{sched.tick_count}{e.tickedUnit ? ` ${e.tickedUnit}` : ""}</div>
+            <div className="mt-0.5 font-mono">
+              {sched.tick_count}
+              {e.tickedUnit ? ` ${e.tickedUnit}` : ""}
+            </div>
           </div>
         </div>
         {sched.last_summary && Object.keys(sched.last_summary).length > 0 && (
@@ -136,7 +190,7 @@ export default function EvolutionSettingsPage() {
                 <Badge
                   key={k}
                   variant="outline"
-                  className="text-[10px] font-mono"
+                  className="text-xs font-mono"
                 >
                   {k}={String(v)}
                 </Badge>
@@ -154,9 +208,10 @@ export default function EvolutionSettingsPage() {
         {rules ? (
           <>
             <div className="mt-2 text-xs text-muted-foreground">
-              {e.scanned} {rules.trajectories_scanned} {e.trajectoryUnit} {rules.failure_count} ·
-              {" "}{e.clusters} {rules.clusters_formed} · {e.produced} {rules.rules.length} {e.ruleUnit}
-              · {e.lastTick} {formatTs(rules.ts)}
+              {e.scanned} {rules.trajectories_scanned} {e.trajectoryUnit}{" "}
+              {rules.failure_count} · {e.clusters} {rules.clusters_formed} ·{" "}
+              {e.produced} {rules.rules.length} {e.ruleUnit}· {e.lastTick}{" "}
+              {formatTs(rules.ts)}
             </div>
             <div className="mt-3 space-y-2">
               {rules.rules.length === 0 ? (
@@ -167,28 +222,32 @@ export default function EvolutionSettingsPage() {
                 rules.rules.map((r) => (
                   <div
                     key={r.rule_id}
-                    className="rounded-lg border border-border/60 bg-card/30 p-3"
+                    className="rounded-lg border border-border-default bg-card/30 p-3"
                   >
                     <div className="flex items-center gap-2">
                       <Badge
                         variant="outline"
-                        className={`text-[10px] ${SEVERITY_COLOR[r.severity] || ""}`}
+                        className={`text-xs ${SEVERITY_COLOR[r.severity] || ""}`}
                       >
                         {r.severity}
                       </Badge>
-                      <span className="text-[10px] font-mono text-muted-foreground">
+                      <span className="text-xs font-mono text-muted-foreground">
                         {r.sucker_id}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         × {r.hit_count}
                       </span>
                     </div>
                     <div className="mt-1.5 text-xs">
-                      <span className="text-muted-foreground">{e.ruleTrigger}</span>{" "}
+                      <span className="text-muted-foreground">
+                        {e.ruleTrigger}
+                      </span>{" "}
                       {r.pattern}
                     </div>
                     <div className="mt-0.5 text-xs">
-                      <span className="text-muted-foreground">{e.ruleMitigation}</span>{" "}
+                      <span className="text-muted-foreground">
+                        {e.ruleMitigation}
+                      </span>{" "}
                       {r.mitigation}
                     </div>
                   </div>
@@ -197,7 +256,9 @@ export default function EvolutionSettingsPage() {
             </div>
           </>
         ) : (
-          <div className="mt-2 text-xs text-muted-foreground">{e.notGenerated}</div>
+          <div className="mt-2 text-xs text-muted-foreground">
+            {e.notGenerated}
+          </div>
         )}
       </div>
 
@@ -210,10 +271,10 @@ export default function EvolutionSettingsPage() {
           {e.recipeScoreTitle}
         </div>
         {recipes && recipes.scores.length > 0 ? (
-          <div className="mt-2 overflow-x-auto">
+          <div className="mt-2 overflow-x-auto max-w-full">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-border/60 text-left text-muted-foreground">
+                <tr className="border-b border-border-default text-left text-muted-foreground">
                   <th className="px-2 py-1">{e.colRecipe}</th>
                   <th className="px-2 py-1">{e.colUses}</th>
                   <th className="px-2 py-1">{e.colSuccessRate}</th>
@@ -224,17 +285,20 @@ export default function EvolutionSettingsPage() {
               </thead>
               <tbody>
                 {recipes.scores.map((s) => (
-                  <tr key={s.recipe_id} className="border-b border-border/30">
-                    <td className="px-2 py-1.5 font-mono">
-                      {s.recipe_id}
-                    </td>
+                  <tr
+                    key={s.recipe_id}
+                    className="border-b border-border-subtle"
+                  >
+                    <td className="px-2 py-1.5 font-mono">{s.recipe_id}</td>
                     <td className="px-2 py-1.5">{s.uses}</td>
                     <td className="px-2 py-1.5">
                       {fixed(numberOrZero(s.success_rate) * 100, 1)}%
                     </td>
-                    <td className="px-2 py-1.5">{fixed(s.avg_step_count, 1)}</td>
                     <td className="px-2 py-1.5">
-                      <Badge variant="outline" className="text-[10px]">
+                      {fixed(s.avg_step_count, 1)}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Badge variant="outline" className="text-xs">
                         {s.verdict}
                       </Badge>
                     </td>
@@ -258,7 +322,7 @@ export default function EvolutionSettingsPage() {
         <div className="flex items-center gap-2 text-sm font-medium">
           <ActivityIcon className="h-4 w-4" />
           {e.gepaTitle}
-          <Badge variant="outline" className="ml-2 text-[10px]">
+          <Badge variant="outline" className="ml-2 text-xs">
             {gepa?.auto_apply ? e.gepaAutoApplyBadge : e.gepaDryRunBadge}
           </Badge>
         </div>
@@ -272,17 +336,19 @@ export default function EvolutionSettingsPage() {
               {gepa.results.slice(0, 8).map((r, i) => (
                 <div
                   key={`${r.recipe_id}-${i}`}
-                  className="rounded-md border border-border/40 bg-card/20 p-2 text-xs"
+                  className="rounded-md border border-border-subtle bg-card/20 p-2 text-xs"
                 >
                   <div className="font-mono">{r.recipe_id}</div>
-                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                    {r.skipped ? `${e.gepaSkippedPrefix} ${r.reason}` : r.rationale ?? "ok"}
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {r.skipped
+                      ? `${e.gepaSkippedPrefix} ${r.reason}`
+                      : (r.rationale ?? "ok")}
                   </div>
                 </div>
               ))}
             </div>
             {!gepa.auto_apply && (
-              <div className="mt-3 rounded-md border border-amber-300/60 bg-amber-50/60 p-2.5 text-[11px] dark:border-amber-700/40 dark:bg-amber-950/30">
+              <div className="mt-3 rounded-md border border-warning/60 bg-warning/5 p-2.5 text-xs dark:border-warning/40">
                 {e.gepaDryRunHint}
               </div>
             )}
@@ -303,21 +369,23 @@ export default function EvolutionSettingsPage() {
             variant="outline"
             className={
               camouflage?.enabled
-                ? "ml-2 text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
-                : "ml-2 text-[10px] text-muted-foreground"
+                ? "ml-2 text-xs border-success/40 text-success"
+                : "ml-2 text-xs text-muted-foreground"
             }
           >
-            {camouflage?.enabled ? e.camouflageEnabledBadge : e.camouflageDisabledBadge}
+            {camouflage?.enabled
+              ? e.camouflageEnabledBadge
+              : e.camouflageDisabledBadge}
           </Badge>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
           {e.camouflageDescription}
         </p>
         {!camouflage?.enabled ? (
-          <div className="mt-3 rounded-md border border-amber-300/60 bg-amber-50/60 p-2.5 text-[11px] dark:border-amber-700/40 dark:bg-amber-950/30">
+          <div className="mt-3 rounded-md border border-warning/60 bg-warning/5 p-2.5 text-xs dark:border-warning/40">
             {e.camouflageDisabledHint}
             {camouflage?.last_error ? (
-              <div className="mt-1 font-mono text-[10px] opacity-70">
+              <div className="mt-1 font-mono text-xs opacity-70">
                 {camouflage.last_error}
               </div>
             ) : null}
@@ -326,33 +394,42 @@ export default function EvolutionSettingsPage() {
           <>
             <div className="mt-3 grid grid-cols-4 gap-3 text-xs">
               <div>
-                <div className="text-muted-foreground">{e.camouflageVariantsLabel}</div>
+                <div className="text-muted-foreground">
+                  {e.camouflageVariantsLabel}
+                </div>
                 <div className="mt-0.5 font-mono">
                   {camouflage.variants?.length ?? 0}
                 </div>
               </div>
               <div>
-                <div className="text-muted-foreground">{e.camouflageStepsLabel}</div>
+                <div className="text-muted-foreground">
+                  {e.camouflageStepsLabel}
+                </div>
                 <div className="mt-0.5 font-mono">
                   {camouflage.auto_retire?.total_steps ?? 0}
                 </div>
               </div>
               <div>
-                <div className="text-muted-foreground">{e.camouflageRetiredLabel}</div>
+                <div className="text-muted-foreground">
+                  {e.camouflageRetiredLabel}
+                </div>
                 <div className="mt-0.5 font-mono">
                   {camouflage.auto_retire?.total_retired ?? 0}
                 </div>
               </div>
               <div>
-                <div className="text-muted-foreground">{e.camouflageBoostedLabel}</div>
+                <div className="text-muted-foreground">
+                  {e.camouflageBoostedLabel}
+                </div>
                 <div className="mt-0.5 font-mono">
                   {camouflage.auto_retire?.total_boosted ?? 0}
                 </div>
               </div>
             </div>
             {camouflage.auto_retire?.last_step_at ? (
-              <div className="mt-2 text-[11px] text-muted-foreground">
-                {e.camouflageLastStepLabel} {formatTs(camouflage.auto_retire.last_step_at)}
+              <div className="mt-2 text-xs text-muted-foreground">
+                {e.camouflageLastStepLabel}{" "}
+                {formatTs(camouflage.auto_retire.last_step_at)}
                 {camouflage.auto_retire.last_step_summary
                   ? ` · ${camouflage.auto_retire.last_step_summary}`
                   : ""}
@@ -375,18 +452,21 @@ export default function EvolutionSettingsPage() {
                   return (
                     <div
                       key={v.name}
-                      className="flex items-center gap-2 rounded-md border border-border/40 bg-card/20 px-2 py-1.5 text-xs"
+                      className="flex items-center gap-2 rounded-md border border-border-subtle bg-card/20 px-2 py-1.5 text-xs"
                     >
                       <span className="font-mono">{v.name}</span>
-                      <Badge variant="outline" className="gap-1 text-[10px]">
-                        {OriginIcon ? <OriginIcon className="h-3 w-3" aria-hidden /> : null}
+                      <Badge variant="outline" className="gap-1 text-xs">
+                        {OriginIcon ? (
+                          <OriginIcon className="h-3 w-3" aria-hidden />
+                        ) : null}
                         {originLabel}
                       </Badge>
-                      <span className="text-[10px] text-muted-foreground">
-                        gen={v.generation} · w={fixed(v.weight, 2)} · {v.suffix_chars}ch
+                      <span className="text-xs text-muted-foreground">
+                        gen={v.generation} · w={fixed(v.weight, 2)} ·{" "}
+                        {v.suffix_chars}ch
                       </span>
                       {v.parents.length > 0 ? (
-                        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                        <span className="ml-auto font-mono text-xs text-muted-foreground">
                           ← {v.parents.join(", ")}
                         </span>
                       ) : null}

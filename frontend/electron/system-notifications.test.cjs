@@ -73,7 +73,10 @@ server.listen(socketPath, async () => {
       false,
     );
     assert.strictEqual(
-      resolveNotificationSocket({ ...options, socketPath: `${socketPath}-other` }).ok,
+      resolveNotificationSocket({
+        ...options,
+        socketPath: `${socketPath}-other`,
+      }).ok,
       false,
     );
 

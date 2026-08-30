@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 
 import { usePreviewRefresh } from "@/core/observability/file-ops";
 import { useI18n } from "@/core/i18n/hooks";
+import { canAccessOperatorControlPlane } from "@/core/auth/control-plane-access";
 import { cn } from "@/lib/utils";
+import { useOptionalAuth } from "@/providers/AuthProvider";
 
 interface Props {
   className?: string;
@@ -12,7 +14,13 @@ interface Props {
 
 export function PreviewRefreshIndicator({ className }: Props) {
   const { t } = useI18n();
-  const latest = usePreviewRefresh();
+  const auth = useOptionalAuth();
+  const latest = usePreviewRefresh({
+    enabled: canAccessOperatorControlPlane(
+      auth?.authStatus ?? null,
+      auth?.user ?? null,
+    ),
+  });
   const [flashKey, setFlashKey] = useState<number | null>(null);
   const [count, setCount] = useState(0);
 
@@ -28,7 +36,7 @@ export function PreviewRefreshIndicator({ className }: Props) {
     <button
       type="button"
       className={cn(
-        "flex items-center gap-1 rounded-md px-2 py-1 text-[11px]",
+        "flex items-center gap-1 rounded-lg px-2 py-1 text-xs",
         "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
         "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         className,

@@ -1,4 +1,3 @@
-
 import { FileIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -8,7 +7,11 @@ interface FileBreadcrumbProps {
   className?: string;
 }
 
-export function FileBreadcrumb({ filePath, onClear, className }: FileBreadcrumbProps) {
+export function FileBreadcrumb({
+  filePath,
+  onClear,
+  className,
+}: FileBreadcrumbProps) {
   if (!filePath) return null;
 
   const parts = filePath.split(/[/\\]/);
@@ -31,7 +34,10 @@ export function FileBreadcrumb({ filePath, onClear, className }: FileBreadcrumbP
       ))}
       <span className="text-primary font-medium">{fileName}</span>
       {onClear && (
-        <button onClick={onClear} className="text-muted-foreground/40 hover:text-muted-foreground ml-auto">
+        <button
+          onClick={onClear}
+          className="text-muted-foreground/40 hover:text-muted-foreground ml-auto"
+        >
           <XIcon className="size-3" />
         </button>
       )}

@@ -13,7 +13,10 @@ interface Props {
 }
 
 /* Implementation note. */
-export const ReactProgressPill = memo(function ReactProgressPill({ threadId, className }: Props) {
+export const ReactProgressPill = memo(function ReactProgressPill({
+  threadId,
+  className,
+}: Props) {
   const { t } = useI18n();
   const b = t.pausedTasksBanner;
   const tasks = useTasks("active");
@@ -31,38 +34,43 @@ export const ReactProgressPill = memo(function ReactProgressPill({ threadId, cla
         taskId: active.task_id,
         reason: "user_request",
       });
-      toast.success(`${b.pauseRequestedPrefix} ${active.task_id.slice(0, 8)}…`, {
-        description: b.pauseRequestedDesc,
-      });
+      toast.success(
+        `${b.pauseRequestedPrefix} ${active.task_id.slice(0, 8)}…`,
+        {
+          description: b.pauseRequestedDesc,
+        },
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     }
   }
 
-  const tokenPct =
-    active.max_tokens > 0
-      ? (active.tokens_spent / active.max_tokens) * 100
+  const contextPct =
+    active.context_capacity_tokens && active.context_capacity_tokens > 0
+      ? ((active.current_context_tokens ?? 0) /
+          active.context_capacity_tokens) *
+        100
       : 0;
   const iterPct =
     active.max_iterations > 0
       ? (active.current_iteration / active.max_iterations) * 100
       : 0;
-  const hot = tokenPct >= 70 || iterPct >= 70;
+  const hot = contextPct >= 70 || iterPct >= 70;
 
   return (
     <div
       className={cn(
-        "flex items-center gap-1.5 rounded-full border border-border/60 bg-card/50 px-2 py-0.5 text-[11px]",
+        "flex items-center gap-1.5 rounded-full border border-border-default bg-card/50 px-2 py-0.5 text-xs",
         hot
-          ? "border-amber-300/60 bg-amber-50/60 dark:border-amber-700/40 dark:bg-amber-950/30"
-          : "border-blue-300/60 bg-blue-50/60 dark:border-blue-700/40 dark:bg-blue-950/30",
+          ? "border-warning/60 bg-warning/5 dark:border-warning/40"
+          : "border-info/30 bg-info/10",
         className,
       )}
     >
       <LoaderIcon
         className={cn(
           "h-3 w-3 animate-spin",
-          hot ? "text-amber-600" : "text-blue-600",
+          hot ? "text-warning" : "text-info",
         )}
       />
       {active.max_iterations > 0 && (
@@ -70,15 +78,21 @@ export const ReactProgressPill = memo(function ReactProgressPill({ threadId, cla
           iter {active.current_iteration}/{active.max_iterations}
         </span>
       )}
-      {active.max_tokens > 0 && (
+      {!!active.context_capacity_tokens && (
         <span className="font-mono text-muted-foreground">
-          · {(active.tokens_spent / 1000).toFixed(1)}k/{(active.max_tokens / 1000).toFixed(0)}k
+          · ctx {((active.current_context_tokens ?? 0) / 1000).toFixed(1)}k/
+          {(active.context_capacity_tokens / 1000).toFixed(0)}k
+        </span>
+      )}
+      {active.tokens_spent > 0 && (
+        <span className="font-mono text-muted-foreground" title={b.tokensLabel}>
+          · Σ{(active.tokens_spent / 1000).toFixed(1)}k
         </span>
       )}
       <Button
         size="sm"
         variant="ghost"
-        className="ml-0.5 h-5 gap-0.5 rounded-full px-1.5 text-[11px] hover:bg-background/60"
+        className="ml-0.5 h-5 gap-0.5 rounded-full px-1.5 text-xs hover:bg-background/60"
         onClick={handlePause}
         disabled={pause.isPending}
         title={b.pauseBtn}

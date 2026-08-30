@@ -6,7 +6,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+    return value.filter(
+      (item): item is string =>
+        typeof item === "string" && item.trim().length > 0,
+    );
   }
   if (typeof value === "string" && value.trim().length > 0) {
     return [value.trim()];
@@ -75,14 +78,18 @@ function normalizeStep(value: unknown, index: number): ExecutionPlanStep {
   return {
     step_id: stepId,
     description,
-    tools_needed: stringArray(value.tools_needed ?? value.tools ?? value.tool_names),
+    tools_needed: stringArray(
+      value.tools_needed ?? value.tools ?? value.tool_names,
+    ),
     estimated_duration: estimatedDuration,
     risk,
     status,
   };
 }
 
-export function normalizeExecutionPlan(planData: unknown): ExecutionPlan | null {
+export function normalizeExecutionPlan(
+  planData: unknown,
+): ExecutionPlan | null {
   if (!isRecord(planData)) return null;
 
   const steps = Array.isArray(planData.steps)
@@ -112,7 +119,8 @@ export function normalizeExecutionPlan(planData: unknown): ExecutionPlan | null 
         : "Execution plan",
     steps,
     estimated_actions:
-      typeof planData.estimated_actions === "number" && Number.isFinite(planData.estimated_actions)
+      typeof planData.estimated_actions === "number" &&
+      Number.isFinite(planData.estimated_actions)
         ? planData.estimated_actions
         : steps.length,
     risk_level:
@@ -123,11 +131,13 @@ export function normalizeExecutionPlan(planData: unknown): ExecutionPlan | null 
         : "low",
     status,
     created_at:
-      typeof planData.created_at === "number" && Number.isFinite(planData.created_at)
+      typeof planData.created_at === "number" &&
+      Number.isFinite(planData.created_at)
         ? planData.created_at
         : 0,
     user_message:
-      typeof planData.user_message === "string" && planData.user_message.trim().length > 0
+      typeof planData.user_message === "string" &&
+      planData.user_message.trim().length > 0
         ? planData.user_message.trim()
         : undefined,
   };

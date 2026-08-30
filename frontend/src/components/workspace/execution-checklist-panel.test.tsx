@@ -23,11 +23,7 @@ function toolEvent(
 describe("ExecutionChecklistPanel", () => {
   it("does not render a generic checklist for text-only streaming", () => {
     const { container } = renderWithProviders(
-      <ExecutionChecklistPanel
-        liveToolEvents={[]}
-        hasAnswer
-        isRunning
-      />,
+      <ExecutionChecklistPanel liveToolEvents={[]} hasAnswer isRunning />,
     );
 
     expect(container.firstChild).toBeNull();
@@ -36,12 +32,14 @@ describe("ExecutionChecklistPanel", () => {
   it("renders when real tool work exists", () => {
     renderWithProviders(
       <ExecutionChecklistPanel
-        liveToolEvents={[toolEvent("read_file", { input: { path: "README.md" } })]}
+        liveToolEvents={[
+          toolEvent("read_file", { input: { path: "README.md" } }),
+        ]}
         hasAnswer
       />,
     );
 
-    expect(screen.getByText("Execution Steps")).toBeInTheDocument();
+    expect(screen.getByText("Progress Checklist")).toBeInTheDocument();
     expect(screen.getByText("Read context")).toBeInTheDocument();
   });
 
@@ -57,10 +55,14 @@ describe("ExecutionChecklistPanel", () => {
     );
 
     expect(
-      screen.getByText((content) =>
-        content.includes("Write/modify file") && content.includes("Run command"),
+      screen.getByText(
+        (content) =>
+          content.includes("Write/modify file") &&
+          content.includes("Run checks"),
       ),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/Run command/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/npm test/)).not.toBeInTheDocument();
   });
 
   it("lets TodoPanel own explicit todo_write events", () => {

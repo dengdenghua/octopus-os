@@ -1,5 +1,4 @@
 import type { LucideIcon } from "lucide-react";
-
 export interface Translations {
   // Locale meta
   locale: {
@@ -16,6 +15,7 @@ export interface Translations {
     share: string;
     openInNewWindow: string;
     close: string;
+    back: string;
     more: string;
     search: string;
     download: string;
@@ -25,6 +25,7 @@ export interface Translations {
     custom: string;
     notAvailableInDemoMode: string;
     loading: string;
+    error: string;
     copy: string;
     copied: string;
     version: string;
@@ -45,9 +46,18 @@ export interface Translations {
     unlink: string;
     guest: string;
     confirm: string;
+    stop: string;
+    step: string;
+    revert: string;
+    review: string;
+    fileSizeB: string;
+    fileSizeKB: string;
+    fileSizeMB: string;
     timeAgo: (value: number, unit: string) => string;
     stubResponseTitle: string;
     stubResponseDescription: (method: string, path: string) => string;
+    openSidebarMenu: string;
+    loadingWorkspace: string;
   };
 
   home: {
@@ -55,7 +65,9 @@ export interface Translations {
     blog: string;
   };
 
-  // Landing page
+  // Welcome
+
+  // Echo OS landing page
   landing: {
     tagline: string;
     subtitle: string;
@@ -72,12 +84,20 @@ export interface Translations {
     };
   };
 
-  // Welcome
   welcome: {
     greeting: string;
     description: string;
+    echoTagline: string;
     createYourOwnSkill: string;
     createYourOwnSkillDescription: string;
+    scenes: {
+      daily: string;
+      code: string;
+      design: string;
+      data: string;
+      doc: string;
+      agent: string;
+    };
   };
 
   // Clipboard
@@ -91,10 +111,6 @@ export interface Translations {
   // Input Box
   inputBox: {
     placeholder: string;
-    createSkillPrompt: string;
-    addAttachments: string;
-    stop: string;
-    send: string;
     mode: string;
     flashMode: string;
     flashModeDescription: string;
@@ -106,6 +122,7 @@ export interface Translations {
     reasoningMode: string;
     reasoningModeDescription: string;
     reasoningEffort: string;
+    reasoningEffortOff: string;
     reasoningEffortMinimal: string;
     reasoningEffortMinimalDescription: string;
     reasoningEffortLow: string;
@@ -114,6 +131,10 @@ export interface Translations {
     reasoningEffortMediumDescription: string;
     reasoningEffortHigh: string;
     reasoningEffortHighDescription: string;
+    reasoningEffortXHigh: string;
+    reasoningEffortMax: string;
+    reasoningEffortCurrent: (label: string) => string;
+    reasoningEffortMapped: (current: string, effective: string) => string;
     searchModels: string;
     surpriseMe: string;
     surpriseMePrompt: string;
@@ -153,11 +174,113 @@ export interface Translations {
     todoAndContext: string;
     expandable: string;
     agentCluster: string;
+    agentProgressSummary: (
+      total: number,
+      completed: number,
+      errors: number,
+    ) => string;
     processDetails: string;
+    completedSteps: (n: number) => string;
+    completedThings: (n: number) => string;
     statusViewing: string;
     statusCompleted: string;
     statusError: string;
     statusWaiting: string;
+    assistant: string;
+    turnLabel: (n: number) => string;
+    turnNumberLabel: (n: number, label: string) => string;
+    turnLocator: string;
+    jumpToFirstTurn: string;
+    jumpToLastTurn: string;
+    backToLatest: string;
+    latest: string;
+    newUpdates: (n: number) => string;
+    timeoutWarning: (seconds: number) => string;
+    thinkingPlan: string;
+    thinkingPlanSourceCheck: string;
+    thinkingPlanCoworkFit: string;
+    agent: string;
+    noTaskDescription: string;
+    processRecords: (n: number) => string;
+    showMoreAgents: (n: number) => string;
+    collapseAgents: string;
+    viewReport: string;
+    viewReportError: string;
+    collapseReport: string;
+    latestTool: string;
+    execution: string;
+    verification: string;
+    process: string;
+    actionCount: (n: number) => string;
+    checkCount: (n: number) => string;
+    reviewSelf: string;
+    reviewTeam: string;
+    reviewSecurity: string;
+    artifactsCreated: (n: number) => string;
+    artifactsCreatedAndFilesEdited: (created: number, edited: number) => string;
+    filesEdited: (n: number) => string;
+    revertSuccess: (n: number) => string;
+    revertFailed: string;
+    reviewAssigned: (label: string) => string;
+    taskCompleted: string;
+    taskFailed: string;
+    previousAttemptRecovered: string;
+    taskOutputs: string;
+    viewProcess: string;
+    makeSimilar: string;
+    makeSimilarHint: string;
+    retryTask: string;
+    retryTaskHint: string;
+    taskFailedReason: string;
+    resultUrl: string;
+    openResult: string;
+    verificationRan: string;
+    verificationPassed: string;
+    verificationFailed: string;
+    testsPassed: string;
+    lintClean: string;
+    buildSucceeded: string;
+    completedChanges: string;
+    viewComputer: string;
+    artifactsSummary: string;
+    changesSummary: string;
+    auditActions: string;
+    assignReviewTo: string;
+    moreFiles: (n: number) => string;
+    downloadStillInArtifactsPanel: string;
+    diffTruncated: string;
+    diffTruncatedTooltip: string;
+    hunkReverted: string;
+    hunkRevertFailed: string;
+    accept: string;
+    reject: string;
+    accepted: string;
+    rejected: string;
+    useTopicInAgent: string;
+    actionLabel: (action: string) => string;
+    attachmentFallback: string;
+    imageAttachment: string;
+    attachmentPreview: string;
+    removeAttachment: string;
+    previousBranch: string;
+    nextBranch: string;
+    branchPosition: (current: number, total: number) => string;
+    grounding: {
+      /** Describe auto-prefetched context separately from explicit tool work. */
+      summary: (first: string, total: number) => string;
+    };
+    thinkingForSeconds: (seconds: number) => string;
+    planningNSteps: (n: number) => string;
+    fileOperationsCount: (n: number) => string;
+    fileOperationsCountWithDiff: (
+      n: number,
+      added: number,
+      removed: number,
+    ) => string;
+    toolCallsCount: (n: number) => string;
+    diffLinesHidden: (n: number) => string;
+    loadOlderTurns: string;
+    loadingOlderTurns: string;
   };
 
   // Execution Checklist
@@ -191,15 +314,57 @@ export interface Translations {
   // Chat Input Box
   chatInputBox: {
     quickCapabilities: string;
-    addResearchMaterial: string;
-    webSearch: string;
-    createPpt: string;
-    createHtml: string;
-    renderTable: string;
-    createImage: string;
-    scheduledTask: string;
-    workflow: string;
+    collaborators: string;
+    collaboratorsSingle: string;
+    collaboratorsCountUnit: string;
+    collaboratorsHelp: string;
+    collaboratorsSearchPlaceholder: string;
+    collaboratorsTaskFallback: string;
+    collaboratorsCoreGroup: string;
+    collaboratorsOnDemandGroup: string;
+    collaboratorsOnDemandBadge: string;
+    collaboratorsOnDemandHint: string;
+    responseMode: string;
+    responseModeTeamRequired: string;
+    groupTaskTools: string;
+    groupTaskStart: string;
+    groupTaskAddContent: string;
+    groupTaskAuto: string;
+    groupTaskBuild: string;
+    groupTaskResearch: string;
+    groupTaskDevelop: string;
+    groupTaskAudit: string;
+    groupTaskUxui: string;
+    groupTaskActive: string;
+    groupTaskClear: string;
     projectFiles: string;
+    removeCapability: (name: string) => string;
+    uploadImages: string;
+    workspaceFiles: (name: string) => string;
+    noWorkspaceFiles: string;
+    uploadDeviceFiles: string;
+    commands: string;
+    plugins: string;
+    availablePlugins: string;
+    capabilityLoadFailed: string;
+    noAvailablePlugins: string;
+    managePlugins: string;
+    explorePlugins: string;
+    skills: string;
+    searchSkills: string;
+    noAvailableSkills: string;
+    manageSkills: string;
+    addResearchMaterial: string;
+    codexPlan: string;
+    codexSpec: string;
+    codexGoal: string;
+    composerInsertions: string;
+    insertCodexPlan: string;
+    insertCodexSpec: string;
+    insertCodexGoal: string;
+    insertBrowserSurface: string;
+    insertChromeSurface: string;
+    workflow: string;
     deepResearchConfig: string;
     roles: string;
     materials: string;
@@ -220,6 +385,7 @@ export interface Translations {
     removeMaterial: string;
     startThreadBeforeUpload: string;
     uploadFailed: string;
+    attachmentReadFailed: string;
     maxSubagents: string;
     maxSearches: string;
     permissionModeLabel: string;
@@ -229,19 +395,71 @@ export interface Translations {
     permissionModeAcceptEditsDesc: string;
     permissionModeBypass: string;
     permissionModeBypassDesc: string;
+    permissionModeBypassConfirmTitle: string;
+    permissionModeBypassConfirmDesc: string;
+    permissionModeBypassConfirmAction: string;
     permissionModePlan: string;
     permissionModePlanDesc: string;
-    seedWebSearch: string;
-    seedCreatePpt: string;
-    seedCreateHtml: string;
-    seedRenderTable: string;
-    seedCreateImage: string;
-    seedScheduledTask: string;
     seedWorkflow: string;
-    seedProjectFiles: string;
+    send: string;
+    stop: string;
+    projectModeLabel: string;
+    projectModeHint: string;
+    projectStatusTitle: string;
+    projectStatusDescUnlocked: string;
+    projectStatusDescLocked: string;
+    projectWriteAccess: string;
+    projectReadOnly: string;
+    permissionFullAccess: string;
+    permissionAcceptEdits: string;
+    permissionConfirm: string;
+    addImage: string;
+    addAppshot: string;
+    capturingAppshot: string;
+    appshotHint: string;
+    appshotSource: string;
+    appshotFailed: string;
+    windowTools: string;
+    automationTarget: string;
+    chooseAutomationTarget: string;
+    currentChromeTab: string;
+    currentDesktopWindow: string;
+    loadingAutomationTargets: string;
+    noAutomationTargets: string;
+    clearAutomationTarget: string;
+    automationOnline: string;
+    automationOffline: string;
+    automationReconnecting: string;
+    automationDesktop: string;
+    automationIdle: string;
+    automationRunning: string;
+    automationPaused: string;
+    automationPause: string;
+    automationResume: string;
+    automationTakeover: string;
+    automationEvidence: string;
+    automationNoEvidence: string;
+    automationControlFailed: string;
+    removeImage: string;
+    readme: string;
   };
 
-  // Team Mode
+  // Cowork group: presence + unread + replayable search
+  coworkCollab: {
+    searchPlaceholder: string;
+    noResults: string;
+    online: string;
+    members: string;
+    unread: (n: number) => string;
+    kindBlackboard: string;
+    kindTask: string;
+    kindEvent: string;
+    kindRoomMessage: string;
+    kindRoomTask: string;
+    linkedRoom: string;
+  };
+
+  // Collaboration capability
   teamMode: {
     mode: string;
     modeTeam: string;
@@ -263,9 +481,70 @@ export interface Translations {
     categoryHomework: string;
     categoryWriting: string;
     categoryTravel: string;
+    aiMembersLabel: string;
+    aiMembersDescription: string;
+    aiMembersSelected: (count: number) => string;
+    agentsLoading: string;
+    agentsUnavailable: string;
+    humanMembersLabel: string;
+    humanMembersAfterCreate: string;
+    humanMembersDescription: string;
+    invitePeopleOnArrival: string;
+    creatorRoleLabel: string;
+    creatorRole: string;
+    creatorRoleDescription: string;
     hint: string;
     cancel: string;
     create: string;
+  };
+
+  promoteProjectDialog: {
+    trigger: string;
+    title: string;
+    description: string;
+    nameLabel: string;
+    namePlaceholder: string;
+    goalLabel: string;
+    goalPlaceholder: string;
+    cancel: string;
+    submit: string;
+    submitting: string;
+    success: string;
+    failed: string;
+  };
+
+  projectCapability: {
+    enabled: string;
+    startPlan: string;
+    openWorkbench: string;
+    moreActions: string;
+    detach: string;
+    detachConfirmTitle: string;
+    detachConfirmDescription: string;
+    detachConfirmAction: string;
+    forceDetachConfirmTitle: string;
+    forceDetachConfirmDescription: string;
+    forceDetachConfirmAction: string;
+    detached: string;
+    detachCancelled: string;
+    detachFailed: string;
+    detachBindingChanged: string;
+    statusPlanning: string;
+    statusRunning: string;
+    statusBlocked: string;
+    statusDone: string;
+    statusFailed: string;
+  };
+
+  // Clarification Questionnaire
+  clarificationQuestionnaire: {
+    title: string;
+    recommended: string;
+    previous: string;
+    cancel: string;
+    continueLabel: string;
+    completedHeader: string;
+    continuePrompt: string;
   };
 
   // Dispatch Card (swarm)
@@ -319,6 +598,79 @@ export interface Translations {
     executeCommandWith: (cmd: string) => string;
     planStep: string;
     think: string;
+    thinking: string;
+    deepThinking: string;
+    thoughtFor: string;
+    hideProcessReplay: string;
+    processReplay: string;
+    replayNSteps: (n: number) => string;
+    hideSavedSteps: string;
+    viewProcessSummary: string;
+    viewNSavedSteps: (n: number) => string;
+    countItems: (n: number) => string;
+    liveProcess: string;
+    liveProcessRunning: string;
+    liveProcessWaiting: string;
+    liveProcessError: string;
+    liveProcessDone: string;
+    liveProcessPending: string;
+    liveProcessHistory: (n: number) => string;
+    reasoningFallback: string;
+    callTeammate: string;
+    searchSources: string;
+    readWebpage: string;
+    readFile: string;
+    updateFile: string;
+    runAction: string;
+    teammateTimeout: string;
+    factSummaryPath: (value: string) => string;
+    factSummaryCount: (value: string) => string;
+    factSummaryStatus: (value: string) => string;
+    factSummaryTitle: (value: string) => string;
+    factSummaryText: (value: string) => string;
+    factSummaryDuration: (value: string) => string;
+    factSummaryLines: (value: string) => string;
+    factSummaryMatches: (value: string) => string;
+    factSummarySucceeded: string;
+    factSummaryFailed: string;
+    factSummaryExitCode: (value: string) => string;
+    effectNeedsReview: string;
+    capabilityDisabled: (toolName: string) => string;
+    enableCapability: string;
+    enablingCapability: string;
+    actionLabels: {
+      createFile: string;
+      editFile: string;
+      searchFiles: string;
+      viewDirectory: string;
+      readFile: string;
+      runCommand: string;
+      searchWeb: string;
+      browseWeb: string;
+      browserClick: string;
+      browserType: string;
+      browserScreenshot: string;
+      browserNavigate: string;
+      browserAction: string;
+      updatePlan: string;
+      useCapability: string;
+      delegateTask: string;
+      submitResult: string;
+      deleteFile: string;
+      moveFile: string;
+      startPreview: string;
+      networkRequest: string;
+      aggregateFileWrite: (count: number) => string;
+      aggregateFileRead: (count: number) => string;
+      aggregateCommand: (count: number) => string;
+      aggregateWebSearch: (count: number) => string;
+      aggregateBrowser: (count: number) => string;
+      aggregateTeammate: (count: number) => string;
+      aggregateTodo: (count: number) => string;
+      aggregateOther: (count: number) => string;
+    };
+    thinkingDuration: (value: string) => string;
+    thinkingProcess: string;
   };
 
   // Trace generator (swarm simulation label bag)
@@ -331,12 +683,22 @@ export interface Translations {
     thinkThoughts: string[];
   };
 
-  // Create Team Dialog (CreateTeamDialog component)
+  // Collaboration picker strings
   createTeamDialog: {
     title: string;
     description: string;
     allAgents: (n: number) => string;
     selected: (n: number, max: number) => string;
+    memberCounter: (n: number, max: number) => string;
+    selectMembersTitle: string;
+    memberLimitReached: string;
+    searchAgentsPlaceholder: string;
+    selectedBadge: string;
+    noMatches: string;
+    clearSelected: string;
+    membersLabel: string;
+    leaderLabel: string;
+    leaderUnset: string;
     emptyHintL1: string;
     emptyHintL2: string;
     currentTl: string;
@@ -345,6 +707,27 @@ export interface Translations {
     teamNamePlaceholder: string;
     create: string;
     cancel: string;
+    roleModels: {
+      title: string;
+      description: string;
+      customCount: (n: number) => string;
+      defaultPrefix: string;
+      help: string;
+      tiers: Record<"default" | "cheap" | "primary", string>;
+      roles: Record<
+        | "planner"
+        | "generator"
+        | "synthesizer"
+        | "researcher"
+        | "critic"
+        | "evaluator"
+        | "reviewer"
+        | "fact_checker"
+        | "verifier"
+        | "arbiter",
+        string
+      >;
+    };
   };
 
   // Code Mode
@@ -456,6 +839,11 @@ export interface Translations {
     verificationFailedNoDetails: string;
     // Terminal input
     terminalPlaceholder: string;
+    terminalRestart: string;
+    terminalClose: string;
+    terminalConnectionFailed: string;
+    terminalConnectedHint: string;
+    terminalConnecting: string;
     stop: string;
     send: string;
     // File tree
@@ -467,6 +855,7 @@ export interface Translations {
     previewConsoleEmpty: string;
     previewConsoleClear: string;
     previewConsoleAddToChat: string;
+    previewConsoleCount: (n: number) => string;
     previewDevTools: string;
     previewDevToolsUnavailable: string;
     // Tool panel (realtime)
@@ -525,6 +914,50 @@ export interface Translations {
     hideDetails: string;
     input: string;
     result: string;
+  };
+
+  // Realtime index page
+  realtime: {
+    title: string;
+    subtitle: string;
+    newThread: string;
+    orResume: string;
+    threadIdPlaceholder: string;
+    open: string;
+    recent: string;
+    loadError: (error: string) => string;
+    loading: string;
+    empty: string;
+    turns: (count: number) => string;
+    lastStatus: (status: string) => string;
+    updated: (date: string) => string;
+    panelToggle: {
+      close: string;
+      open: string;
+    };
+    viewActions: string;
+    finalArtifact: {
+      generated: string;
+      view: string;
+    };
+    recording: {
+      recording: (stepCount: number) => string;
+      idle: string;
+    };
+    replay: {
+      titleDefault: string;
+      footer: string;
+    };
+    composer: {
+      legacyOnDemandContinued: string;
+      legacyOnDemandAttachments: string;
+      placeholderCode: string;
+      placeholderNew: string;
+      placeholderEcho: string;
+    };
+    recorder: {
+      defaultName: string;
+    };
   };
 
   // Realtime item views
@@ -598,6 +1031,10 @@ export interface Translations {
   };
 
   // Agent Workbench Panel (swarm)
+  workspaceComputer: Record<string, string>;
+  agentOperator: Record<string, string>;
+
+  // Agent Workbench Panel (swarm)
   agentWorkbench: {
     idle: string;
     finished: string;
@@ -609,6 +1046,7 @@ export interface Translations {
     composerHint: string;
     taskListView: string;
     computerView: string;
+    executionView: string;
     reportView: string;
     traceFeedEmpty: string;
     liveEventStream: string;
@@ -635,6 +1073,7 @@ export interface Translations {
     executingTask: string;
     waitingToContinue: string;
     currentProgress: string;
+    stepProgress: (current: number, total: number) => string;
     minimizeProgress: string;
     restoreProgress: string;
     closeWorkspace: string;
@@ -692,17 +1131,294 @@ export interface Translations {
     unknown: string;
   };
 
+  // Agent workbench pages
+  agentPhases: {
+    planning: string;
+    exploring: string;
+    implementing: string;
+    testing: string;
+    deploying: string;
+    genericPrepare: string;
+    genericExecute: string;
+    genericDeliver: string;
+  };
+
+  agentWorkbenchPages: {
+    collapse: string;
+    expandDetails: string;
+    openArtifact: (title: string) => string;
+    viewDiff: (title: string) => string;
+    reference: {
+      files: string;
+      plans: string;
+      web: string;
+      memory: string;
+      other: string;
+    };
+    statusRunning: string;
+    statusWaitingApproval: string;
+    statusError: string;
+    statusDone: string;
+    progress: string;
+    currentObjective: string;
+    currentObjectiveHint: string;
+    resultReceipt: string;
+    resultReceiptDescription: string;
+    recoveredOperations: (count: number) => string;
+    verifiedSteps: (count: number) => string;
+    unresolvedSteps: (count: number) => string;
+    noResultYet: string;
+    thinkingDetail: string;
+    thinkingInProgress: string;
+    thinkingDone: string;
+    executionDetail: string;
+    roundTitle: (iteration: number) => string;
+    roundActivitySummary: (actionCount: number, factCount: number) => string;
+    artifacts: string;
+    generatedArtifacts: string;
+    changedFiles: string;
+    subagents: string;
+    subagentsCompleted: (done: number, total: number) => string;
+    subagentsFailed: (count: number) => string;
+    subagentsRunning: (count: number) => string;
+    subagentsPending: (count: number) => string;
+    failedLanes: (lanes: string) => string;
+    inputs: string;
+    inputsUploadedFiles: (count: number) => string;
+    inputsAttachments: (count: number) => string;
+    context: string;
+    contextCompress: string;
+    contextDescription: string;
+    contextUsed: (percentage: number, limit: string) => string;
+    observableThisRound: string;
+    sourceCount: (count: number) => string;
+    sourceCountWithLabel: (label: string, count: number) => string;
+    estimatePercentage: (percentage: number) => string;
+    noSources: string;
+    estimatedTokens: (count: number) => string;
+    noObservableReferences: string;
+    dashboardOverview: string;
+    dashboardOverviewDescription: string;
+    noSubagentsObservedDescription: string;
+    metricRunning: string;
+    metricCompleted: string;
+    metricError: string;
+    waitingForTaskEvents: string;
+    subagentRuntimeDetails: string;
+    roleLabel: string;
+    currentToolLabel: string;
+    startTimeLabel: string;
+    durationLabel: string;
+    eventCountLabel: string;
+    parentTaskLabel: string;
+    latestThoughtLabel: string;
+    resultSummaryLabel: string;
+    blackboardWritesLabel: string;
+    filesTouchedLabel: string;
+    errorLabel: string;
+    noneYet: string;
+    eventsCount: (count: number) => string;
+    agentClusterCreateAssistant: string;
+    roleCard: string;
+    backToRoleCard: string;
+    roleDescription: string;
+    noFullRoleDescription: string;
+    defaultMotto: string;
+    iterationRound: (count: number) => string;
+    noWorkDirDescription: string;
+    noDiffEntriesDescription: string;
+    filesTab: string;
+    diffTab: string;
+    terminalTab: string;
+    browserTab: string;
+    projectTab: string;
+  };
+
+  // Agent workbench panel (kanban / screen timeline)
+  agentWorkbenchPanel: {
+    noOperationRecords: string;
+    noCurrentOperation: string;
+    processFrames: string;
+    frameCount: (count: number) => string;
+    frameLabel: (current: number, total: number) => string;
+    currentFrameLabel: (current: number, total: number) => string;
+    phaseStatusRunning: string;
+    phaseStatusError: string;
+    phaseStatusDone: string;
+    phaseStatusPending: string;
+    robot: string;
+    noRunningRobotProcess: string;
+    startingRobotProcess: string;
+    locateTranscriptEvent: string;
+    collapseWorkbench: string;
+    tabList: string;
+    summaryLabel: string;
+    latestTurnContext: string;
+    latestTurnContextDescription: string;
+    agentStatusRunning: string;
+    agentStatusError: string;
+    agentStatusDone: string;
+    agentStatusPending: string;
+    mainComputer: string;
+    filterByAgent: string;
+    filterChipMain: string;
+    mainController: string;
+    subComputer: string;
+    currentConversation: string;
+    timelinePosition: (sequence: number) => string;
+    workbenchSlots: string;
+    viewMainAgentSlot: string;
+    mainAgentProcessTitle: string;
+    dockStatusRunning: string;
+    dockStatusError: string;
+    dockStatusDone: string;
+    dockStatusPending: string;
+    dockStatusPresent: string;
+    collaboratorSeat: string;
+    leaderSeat: string;
+    collaboratorPresentDescription: (role: string) => string;
+    noIndependentProcessActivity: string;
+    noIndependentProcessActivityDescription: string;
+    switchToMainComputer: string;
+    viewAgentProcess: (label: string) => string;
+    agentClusterIndependentProcess: string;
+    subAgent: string;
+    noTaskDescription: string;
+    waitingForSubagentOutput: string;
+    processReplay: string;
+    subagentConversation: string;
+    mainDelegatedTask: string;
+    processRecords: (count: number) => string;
+    iterationRounds: (count: number) => string;
+    computerViewSubtitle: string;
+    computerViewSelectHint: string;
+    computerViewEmpty: string;
+    computerViewEmptyDesc: string;
+    visibilityPanelTitle: string;
+    visibilityPanelAttention: string;
+    visibilityPanelEmpty: string;
+    visibilityStep: string;
+    scrollToBottom: string;
+    viewLatestProgress: string;
+    subagentBusStreamTitle: string;
+    subagentBusStreamLive: string;
+    subagentBusStreamConnecting: string;
+    subagentBusStreamError: string;
+    subagentDispatchFailed: string;
+    subagentBusStreamEmpty: string;
+    subagentBusStreamEvents: (count: number) => string;
+    substreamTab: string;
+  };
+
   // Diagnostics page
   diagnosticsPage: {
     title: string;
     description: string;
     tabs: {
+      runtime: string;
+      streaming: string;
       featureFlags: string;
       suggestions: string;
       remote: string;
       invariants: string;
     };
     noActiveProject: string;
+    streaming: {
+      title: string;
+      description: string;
+      clear: string;
+      empty: string;
+      samples: string;
+      ttftP50: string;
+      ttftP95: string;
+      maxGapP95: string;
+      stalledRate: string;
+      unsuccessfulRate: string;
+      time: string;
+      outcome: string;
+      maxGap: string;
+      duration: string;
+      endState: string;
+      stalled: string;
+      normal: string;
+      outcomes: {
+        completed: string;
+        paused: string;
+        cancelled: string;
+        interrupted: string;
+        failed: string;
+      };
+    };
+  };
+
+  // Runtime self-check panel
+  runtimeSelfCheckPanel: {
+    title: string;
+    ready: string;
+    degraded: string;
+    blocked: string;
+    notReported: string;
+    refresh: string;
+    refreshing: string;
+    refreshAria: string;
+    loading: string;
+    loadFailed: (error: string) => string;
+    status: string;
+    runtimeVersion: string;
+    generatedAt: string;
+    versions: string;
+    runtime: string;
+    pyproject: string;
+    frontendPackage: string;
+    process: string;
+    pid: string;
+    python: string;
+    cwd: string;
+    argv: string;
+    frontend: string;
+    clientBackendBaseUrl: string;
+    sameOriginBackend: string;
+    selfCheckEndpoint: string;
+    observedOrigin: string;
+    canonicalOrigin: string;
+    proxyTarget: string;
+    proxyMatchesBackend: string;
+    webui: string;
+    webuiAvailable: string;
+    webuiDist: string;
+    webuiEnvDist: string;
+    webuiAssets: string;
+    webuiEnvInvalid: string;
+    webuiDevFallback: string;
+    modelCompat: string;
+    compatProfiles: string;
+    domesticProfiles: string;
+    requiredProfilesPresent: string;
+    missingProfiles: string;
+    profileIds: string;
+    apiSurface: string;
+    routeCount: string;
+    requiredRoutesPresent: string;
+    missingRoutes: string;
+    capabilitySurfaces: string;
+    surface: string;
+    capabilities: string;
+    missing: string;
+    orchestration: string;
+    runEvidence: string;
+    automation: string;
+    backend: string;
+    canonicalBaseUrl: string;
+    requestOrigin: string;
+    host: string;
+    port: string;
+    loopbackAliases: string;
+    checks: string;
+    warnings: string;
+    nextActions: string;
+    passed: string;
+    failed: string;
+    empty: string;
   };
 
   // Feature Flags panel
@@ -737,6 +1453,13 @@ export interface Translations {
     experimental: string;
   };
 
+  // Follow-up suggestions (contextual bubbles)
+  followUpSuggestions: {
+    title: string;
+    selectAria: (title: string) => string;
+    dismissAria: (title: string) => string;
+  };
+
   // Remote Backends panel
   remoteBackendsPanel: {
     title: string;
@@ -762,6 +1485,8 @@ export interface Translations {
     removing: string;
     pingAria: (name: string) => string;
     removeAria: (name: string) => string;
+    removeConfirmTitle: (name: string) => string;
+    removeConfirmDescription: string;
   };
 
   // Invariants panel
@@ -805,6 +1530,55 @@ export interface Translations {
     statusDisabled: string;
     emptyTitle: string;
     emptyHint: string;
+    searchPlaceholder: string;
+    filterAllAuthors: string;
+    filterByAuthor: (author: string) => string;
+    statusAll: string;
+    statusEnabledFilter: string;
+    statusDisabledFilter: string;
+    noMatches: string;
+    tryDifferentQuery: string;
+    configureTitle: (name: string) => string;
+    configureDescription: (name: string) => string;
+    configureNoConfig: string;
+    configureCancel: string;
+    configureSave: string;
+    configureSaving: string;
+    statusEnabledTooltip: string;
+    statusDisabledTooltip: string;
+    statusErrorTooltip: string;
+    badgeSkill: string;
+    badgeChannel: string;
+    badgeConfig: string;
+    badgeCommand: string;
+    badgeCapability: string;
+    statusError: string;
+    configure: string;
+    configureAria: (name: string) => string;
+    backToWorkspace: string;
+    registryTitle: string;
+    registryDescription: string;
+    registryInstallable: (count: number) => string;
+    registryInstallAria: (id: string) => string;
+    registryInstalling: string;
+    registryUpgrade: string;
+    registryUpToDate: string;
+    registryInstalledMessage: (id: string, version: string) => string;
+    surfaceFallback: string;
+    discoveredTitle: string;
+    discoveredHint: string;
+    noDiscovered: string;
+    refreshDiscovered: string;
+    actionLoad: string;
+    actionStart: string;
+    actionStop: string;
+    actionUnload: string;
+    actionPending: string;
+    stateLoaded: string;
+    stateStarted: string;
+    stateStopped: string;
+    lifecycleActionError: (name: string, action: string) => string;
+    lifecycleRefreshError: string;
   };
 
   // Live Preview
@@ -822,6 +1596,39 @@ export interface Translations {
     emptyHint: string;
     showPanel: string;
     hidePanel: string;
+    inspectElement: string;
+    cancelInspect: string;
+    inspectHint: string;
+    aiEditTitle: string;
+    aiEditCancel: string;
+    aiEditPlaceholder: string;
+    aiEditSend: string;
+    aiEditQueued: string;
+    aiEditUnavailable: string;
+    officeEdit: string;
+    officeSelect: string;
+    officeCancelSelect: string;
+    officeSelected: string;
+    officeEditTitle: string;
+    officeEditPlaceholder: string;
+    officeEditHint: string;
+    previewError: string;
+    previewRetry: string;
+    officeFidelity: string;
+    humanEdit: string;
+    humanEditing: string;
+    humanUnsaved: string;
+    humanSave: string;
+    humanCancel: string;
+    humanSaved: string;
+    humanUndo: string;
+    humanRestored: string;
+    humanConflict: string;
+    humanReloadLatest: string;
+    humanUnavailable: string;
+    humanDiscardTitle: string;
+    humanDiscardDescription: string;
+    humanDiscardConfirm: string;
   };
 
   // Code Status
@@ -854,6 +1661,7 @@ export interface Translations {
     switchAgent: string;
     selectAgent: string;
     confirmDeleteProject: (project: string) => string;
+    confirmDeleteProjectTitle: string;
     confirmDeleteThread: (title: string) => string;
     tools: string;
     navigate: string;
@@ -869,7 +1677,6 @@ export interface Translations {
     projects: string;
     channels: string;
     pairing: string;
-    browser: string;
     moveToProject: string;
     newProject: string;
     // Additional fields
@@ -882,16 +1689,23 @@ export interface Translations {
     navSwarm: string;
     navCompany: string;
     navTeam: string;
+    navDatabase: string;
     navKnowledgeGraph: string;
     navReflex: string;
     navIntelligence: string;
+    navAssistant: string;
+    navPaperTrading: string;
+    navPaperTradingDesc: string;
+    navCommunity: string;
     navMcp: string;
-    navStore: string;
     navEvolution: string;
+    navProjects: string;
+    navDesign: string;
+    navNarrative: string;
     navPlugins: string;
     navHR: string;
+    navComputer: string;
     navDesktopOrganizer: string;
-    navMobile: string;
     navArchitecture: string;
     groupTools: string;
     groupAdvancedTools: string;
@@ -901,8 +1715,9 @@ export interface Translations {
     groupSystem: string;
     // Agent / team footer
     noAgents: string;
-    loginMolili: string;
-    loginMoliliReason: string;
+    loadingAgents: string;
+    agentsLoadFailed: string;
+    retryAgents: string;
     remainingCredits: string;
     logout: string;
     noTeams: string;
@@ -913,17 +1728,32 @@ export interface Translations {
     lockedAgentTooltip: (name: string) => string;
     adminAgentName: string;
     switchAgentLabel: string;
+    switchAgentMenuTitle: string;
+    openAgentHud: string;
+    openAgentHudFor: (name: string) => string;
+    currentAgent: string;
+    soloChat: string;
+    oneOnOneTask: string;
+    soloTasks: string;
+    groupTasks: string;
+    recentThreadsSummary: (recent: number, hidden: number) => string;
+    showMoreProjectThreads: (count: number) => string;
+    showFewerProjectThreads: string;
     // Header/footer tooltips
     newChatTooltip: string;
     searchTooltip: string;
     settingsTooltip: string;
     // Project + chat list actions
     deleteProjectTooltip: string;
+    deleteProjectFailed: string;
     deleteThreadTooltip: string;
     actionSort: string;
     actionNewProject: string;
+    projectPickerFailed: string;
     actionNewTask: string;
     actionNewChat: string;
+    actionNew: string;
+    sectionStart: string;
     actionEnableProjectGrouping: string;
     actionDisableProjectGrouping: string;
     sectionProjects: string;
@@ -932,7 +1762,119 @@ export interface Translations {
     noChatsYet: string;
     collapseSidebar: string;
     expandSidebar: string;
+    collapseSection: (label: string) => string;
+    expandSection: (label: string) => string;
     projectNamePlaceholder: string;
+    backToProjectList: string;
+    openThreadFilesTooltip: string;
+    // Surface switch + task statuses
+    navBrowserSurface: string;
+    // Pluggable module editor (DingTalk-style "edit sidebar" panel)
+    editModules: string;
+    editModulesDone: string;
+    editModulesHint: string;
+    modulePinned: string;
+    moduleGroupWorkspace: string;
+    moduleGroupKnowledge: string;
+    moduleGroupCommunity: string;
+    moduleGroupGrowth: string;
+    sectionTaskHistory: string;
+    noTaskHistory: string;
+    unnamedTask: string;
+    currentTaskSession: string;
+    taskStatusRunning: string;
+    taskStatusFailed: string;
+    taskStatusPending: string;
+    // Aria labels
+    ariaCollapseLocalDatabase: string;
+    ariaExpandLocalDatabase: string;
+    ariaResizeSidebar: string;
+    ariaResizeWorkbench: string;
+    ariaChatWorkspace: string;
+    ariaUtilityPanel: string;
+    ariaAgentWorkbench: string;
+    ariaToggleWorkbenchDrawer: string;
+    // Storage library labels
+    libraryApps: string;
+    libraryDocs: string;
+    libraryImages: string;
+    libraryVideos: string;
+    libraryComputer: string;
+    libraryAuthorizedDirs: string;
+    // Chats drawer
+    searchChats: string;
+    noMatchingChats: string;
+  };
+
+  // Floating REC recorder overlay
+  recorder: {
+    title: string;
+    close: string;
+    taskNameLabel: string;
+    taskNamePlaceholder: string;
+    stopFailed: string;
+  };
+
+  // Local brain readiness panel
+  localBrain: {
+    refresh: string;
+    dismiss: string;
+    title: string;
+    ready: string;
+    pending: (count: number) => string;
+    checking: string;
+    requestFailed: string;
+    checkFailed: (error: string) => string;
+    currentState: (detail: string) => string;
+    nextStep: (action: string) => string;
+  };
+
+  // Team tasks panel
+  teamTasksPanel: {
+    emptyState: string;
+    summary: (total: number, running: number, done: number) => string;
+    newTask: string;
+    loading: string;
+    emptyFilter: string;
+    autoMatch: string;
+    artifactCount: (count: number) => string;
+    rolesCompleted: (completed: number, total: number) => string;
+    statusPending: string;
+    timeline: {
+      evidenceToggle: string;
+      processCount: (count: number) => string;
+      artifactCount: (count: number) => string;
+      rawState: (included: boolean) => string;
+      refreshing: string;
+      empty: string;
+    };
+    toast: {
+      runStarted: string;
+      runFailed: string;
+      taskPaused: string;
+      pauseFailed: string;
+      taskDeleted: string;
+      deleteFailed: string;
+    };
+    deleteConfirmTitle: string;
+    deleteConfirmDescription: (title: string) => string;
+    events: {
+      runStarted: string;
+      roleStarted: (role?: string | null) => string;
+      roleCompleted: (role?: string | null) => string;
+      runDone: string;
+      runFailed: string;
+      runCancelled: string;
+      fallback: (role?: string | null) => string;
+    };
+    roles: {
+      planner: string;
+      researcher: string;
+      executor: string;
+      critic: string;
+      synthesizer: string;
+      evaluator: string;
+    };
   };
 
   // Browser settings page
@@ -1155,7 +2097,17 @@ export interface Translations {
     localDataNote: string;
     connectedCount: (n: number) => string;
     loading: string;
+    loadFailed: string;
+    retry: string;
     noRegistered: string;
+    noRegisteredDescription: string;
+    searchPlaceholder: string;
+    filterAll: string;
+    filterConnected: string;
+    filterUnlinked: string;
+    noSearchResults: string;
+    noSearchResultsDescription: string;
+    categoryOther: string;
     connectedBadge: string;
     toastAgentBound: string;
     toastBindFailed: string;
@@ -1165,6 +2117,8 @@ export interface Translations {
     assignDialogDesc: string;
     noAgentsAvailable: string;
     unassignCurrent: string;
+    unassignConfirmTitle: string;
+    unassignConfirmDescription: string;
     howToSetup: string;
     clickToChangeAgent: string;
     handlingMessages: string;
@@ -1306,6 +2260,41 @@ export interface Translations {
     skillSubtitle: string;
     privateSkillsLabel: string;
     privateSkillsPlaceholder: string;
+    characterFileLabel: string;
+    characterBackgroundLabel: string;
+    characterAgeLabel: string;
+    characterTemperamentLabel: string;
+    characterPersonalityLabel: string;
+    characterBestForLabel: string;
+    characterBoundaryLabel: string;
+    characterVisualKeywordsLabel: string;
+    characterProfileReady: string;
+    characterPromptHint: string;
+    characterSkillHiddenHint: string;
+    capabilityPackLabel: string;
+    characterBackground: (
+      name: string,
+      role: string,
+      type: string,
+      faction: string,
+      description: string,
+    ) => string;
+    characterIntro: (
+      name: string,
+      role: string,
+      type: string,
+      faction: string,
+      origin: string,
+      personality: string,
+      temperament: string,
+    ) => string;
+    characterDefaultOrigin: string;
+    characterEpithets: Record<string, string>;
+    characterQuotes: Record<string, string>;
+    characterAgeArchetypes: Record<string, string>;
+    characterPersonalities: Record<string, string>;
+    characterTemperaments: Record<string, string>;
+    characterVisualKeywords: Record<string, string[]>;
     keySkillsLabel: string;
     browseSkillWhitelist: string;
     availableSkillPoolLabel: string;
@@ -1329,10 +2318,15 @@ export interface Translations {
     checkBlockedSkills: (count: number) => string;
     checkNoExecutableSkills: string;
     checkUnsavedChanges: string;
+    configDockTitle: string;
     configureProfileAction: string;
+    configureProfileHint: string;
     configureArmAction: string;
+    configureArmHint: string;
     configureSkillsAction: string;
+    configureSkillsHint: string;
     configurePermissionsAction: string;
+    configurePermissionsHint: string;
     routingConfig: string;
     saveTitle: string;
     saveSubtitle: string;
@@ -1343,6 +2337,58 @@ export interface Translations {
     modified: string;
     signedDelta: (count: number) => string;
   };
+
+  // Agent role profile dialog
+  agentRoleProfile: {
+    imageReadFailed: string;
+    switchToAgent: (name: string) => string;
+    generateVisualPromptTitle: string;
+    generateVisualPromptDescription: string;
+    visualPromptGroupStyle: string;
+    visualPromptGroupComposition: string;
+    visualPromptGroupBackground: string;
+    visualPromptGroupQuality: string;
+    visualPromptOptionGameCharacter: string;
+    visualPromptOptionCleanAnime: string;
+    visualPromptOptionSemiReal: string;
+    visualPromptOptionFullBody: string;
+    visualPromptOptionSafeHeadroom: string;
+    visualPromptOptionAvatarReady: string;
+    visualPromptOptionThreeViewConsistency: string;
+    visualPromptOptionTransparent: string;
+    visualPromptOptionSoftShadow: string;
+    visualPromptOptionHighResolution: string;
+    visualPromptOptionNoArtifacts: string;
+    customAdditions: string;
+    customPromptPlaceholder: string;
+    referenceImages: string;
+    referenceImagesHint: (count: number) => string;
+    referenceImageUrlPlaceholder: string;
+    upload: string;
+    referenceImageAlt: (index: number) => string;
+    removeReferenceImage: string;
+    referenceImagesGenerateHint: (count: number) => string;
+    reset: string;
+    cancel: string;
+    generateThreeViews: string;
+    codeMode: string;
+    codeModeDescription: string;
+    toggleCodeMode: string;
+    saveCodeMode: string;
+    coderBestFor: string[];
+    coderBoundaries: string[];
+    researcherBestFor: string[];
+    researcherBoundaries: string[];
+    growthBestFor: string[];
+    growthBoundaries: string[];
+    ecommerceBestFor: string[];
+    ecommerceBoundaries: string[];
+    aoiBestFor: string[];
+    aoiBoundaries: string[];
+    defaultBestFor: string[];
+    defaultBoundaries: string[];
+  };
+
   chatPage: {
     stopNote: string;
   };
@@ -1380,6 +2426,75 @@ export interface Translations {
     agentCreated: string;
     startChatting: string;
     backToGallery: string;
+    agentNew: {
+      pageTitle: string;
+      pageSubtitle: string;
+      placeholder: string;
+      buttons: {
+        checking: string;
+        generate: string;
+        back: string;
+        autoConfig: string;
+        generateConfig: string;
+      };
+      labels: {
+        permissions: string;
+      };
+      roles: {
+        id: string;
+        label: string;
+        nameSuggestion: string;
+        brief: string;
+      }[];
+      scenarios: {
+        id: string;
+        label: string;
+        brief: string;
+        permissions: string[];
+      }[];
+      abilities: {
+        id: string;
+        label: string;
+        arms: string[];
+        skills: string[];
+        brief: string;
+      }[];
+      templates: {
+        id: string;
+        name: string;
+        nameSuggestion: string;
+        description: string;
+        integrations: string[];
+        capabilities: string[];
+      }[];
+    };
+  };
+
+  // Agent card
+  agentCard: {
+    chat: string;
+    chatAriaLabel: (name: string) => string;
+    addOnDemand: string;
+    addOnDemandAriaLabel: (name: string) => string;
+    profile: string;
+    profileAriaLabel: (name: string) => string;
+    deleteAriaLabel: (name: string) => string;
+    deleteTitle: (name: string) => string;
+    deleteConfirm: (name: string) => string;
+  };
+
+  // Enterprise assets tab
+  enterpriseAssetsTab: {
+    loading: string;
+    notAvailableTitle: string;
+    notAvailableHintPrefix: string;
+    notAvailableHintSuffix: string;
+    empty: string;
+    header: (count: number) => string;
+    install: string;
+    installing: string;
+    importSuccess: (name: string) => string;
+    importFailed: (msg: string) => string;
   };
 
   // Breadcrumb
@@ -1477,15 +2592,29 @@ export interface Translations {
     noArtifactSelected: string;
     selectArtifactToView: string;
     artifactsTitle: string;
+    artifactsTabChanges: string;
+    artifactsTabPreview: string;
+    noChangesArtifacts: string;
+    noPreviewArtifacts: string;
     retry: string;
+    messageQueued: string;
+    messageSending: string;
+    messageSendFailed: string;
+    previousMessagePending: string;
+    steeringTurnUnavailable: string;
     editResend: string;
     regenerateResponse: string;
+    forkFromHere: string;
+    forkedThread: string;
+    forkFailed: string;
     goodResponse: string;
     badResponse: string;
     feedbackThanks: string;
     feedbackRecorded: string;
     feedbackFailed: string;
     interruptedMessage: string;
+    pausedMessage: string;
+    cancelledMessage: string;
     strategyReflex: string;
     strategyReact: string;
     strategyDirectLlm: string;
@@ -1493,6 +2622,7 @@ export interface Translations {
     strategyCache: string;
     clarificationChoose: string;
     clarificationAutoSubmit: (seconds: number) => string;
+    clarificationOtherPlaceholder: string;
   };
 
   // Chats
@@ -1544,6 +2674,10 @@ export interface Translations {
   uploads: {
     uploading: string;
     uploadingFiles: string;
+    uploadProgress: (percent: number) => string;
+    uploadFailed: string;
+    retryUpload: string;
+    waitingForUpload: string;
   };
 
   // Streaming status
@@ -1553,16 +2687,26 @@ export interface Translations {
     connectionLost: string;
     networkLost: string;
     turnFailed: string;
+    guardBlocked: string;
+    lifecycleFailed: string;
+    workspaceWriteRequired: string;
     verificationRequired: string;
+    environmentBlocked: string;
+    environmentBlockedAuthorizeCommon: string;
+    environmentBlockedAuthorizeFull: string;
+    blockedOnUser: string;
     streamEndpointUnavailable: string;
     iteration: (count: number) => string;
     toolCalls: (count: number) => string;
     generating: string;
+    codeBlockWrap: string;
+    codeBlockScroll: string;
   };
 
   subagents: {
     subagent: string;
     executing: (count: number) => string;
+    parallelExecution: string;
     pending: string;
     reasoning: string;
     iterating: string;
@@ -1574,6 +2718,15 @@ export interface Translations {
     failed: string;
     cancelled: string;
     timed_out: string;
+    running: string;
+    expandAll: string;
+    collapseAll: string;
+    iterations: string;
+    duration: string;
+    filesModified: string;
+    executionHistory: string;
+    modifiedFiles: string;
+    viewDetails: string;
   };
 
   todoList: {
@@ -1682,6 +2835,14 @@ export interface Translations {
     reject: string;
     approved: string;
     rejected: string;
+    tools: {
+      bash: string;
+      write_file: string;
+      str_replace: string;
+      git_commit: string;
+      schedule_cron: string;
+      remote_trigger: string;
+    };
   };
 
   // Diff Editor
@@ -1724,6 +2885,8 @@ export interface Translations {
       account: string;
       subscription: string;
       appearance: string;
+      general: string;
+      conversation: string;
       memory: string;
       tools: string;
       skills: string;
@@ -1734,6 +2897,7 @@ export interface Translations {
       about: string;
       automation: string;
       evolution: string;
+      sandbox: string;
     };
     automation: {
       title: string;
@@ -1744,10 +2908,21 @@ export interface Translations {
       browserDesc: string;
       desktopTitle: string;
       desktopDesc: string;
+      localToolsTitle: string;
+      localToolsDesc: string;
       groupLabel: string;
       reset: string;
       save: string;
+      saveSuccess: string;
+      saveFailed: string;
       saveDescription: string;
+      nextStepSaveTitle: string;
+      nextStepVerifyTitle: string;
+      nextStepSaveHint: string;
+      nextStepVerifyHint: string;
+      nextStepDisabledTitle: string;
+      nextStepDisabledHint: string;
+      openComputerTool: string;
       loading: string;
       loadFailed: string;
       restartConfirmTitle: string;
@@ -1756,6 +2931,7 @@ export interface Translations {
       restartNow: string;
       restarting: string;
       restartFailed: string;
+      restartManualOnly: string;
       rules: {
         sectionTitle: string;
         sectionDescription: string;
@@ -1776,6 +2952,8 @@ export interface Translations {
         adding: string;
         addError: string;
         deleteButton: string;
+        deleteConfirmTitle: string;
+        deleteConfirmHint: string;
         deleteError: string;
         moveUpButton: string;
         moveDownButton: string;
@@ -1850,6 +3028,7 @@ export interface Translations {
       importConfirmDescription: string;
       importFileLabel: string;
       importInvalidFile: string;
+      importFileTooLarge: string;
       importSuccess: string;
       manualFactSource: string;
       addFact: string;
@@ -1871,6 +3050,7 @@ export interface Translations {
       factCategoryPlaceholder: string;
       factConfidenceHint: string;
       factSave: string;
+      factEditorDescription: string;
       factValidationContent: string;
       factValidationConfidence: string;
       noFacts: string;
@@ -1878,6 +3058,7 @@ export interface Translations {
       memoryFullyEmpty: string;
       factPreviewLabel: string;
       searchPlaceholder: string;
+      filterLabel: string;
       filterAll: string;
       filterFacts: string;
       filterSummaries: string;
@@ -1886,6 +3067,9 @@ export interface Translations {
       agentScope: string;
       globalScope: string;
       saved: string;
+      actionFailed: string;
+      configLoading: string;
+      configLoadFailed: string;
       enableMemory: string;
       enableMemoryDesc: string;
       autoCapture: string;
@@ -1928,18 +3112,46 @@ export interface Translations {
       system: string;
       light: string;
       dark: string;
-      apple: string;
       systemDescription: string;
       lightDescription: string;
       darkDescription: string;
-      appleDescription: string;
+      paletteTitle: string;
+      paletteDescription: string;
+      paletteRose: string;
+      paletteRoseDescription: string;
+      paletteSteel: string;
+      paletteSteelDescription: string;
+      paletteEmerald: string;
+      paletteEmeraldDescription: string;
+      paletteViolet: string;
+      paletteVioletDescription: string;
+      paletteAmber: string;
+      paletteAmberDescription: string;
+      paletteTeal: string;
+      paletteTealDescription: string;
+      paletteApricot: string;
+      paletteApricotDescription: string;
+      paletteMint: string;
+      paletteMintDescription: string;
+      paletteGroupSoft: string;
+      paletteGroupDeep: string;
+      paletteCustom: string;
+      paletteCustomDescription: string;
+      paletteCustomHint: string;
       languageTitle: string;
       languageDescription: string;
+      languageEnglish: string;
+      languageChineseSimplified: string;
       chatFontSizeTitle: string;
       chatFontSizeDescription: string;
       chatFontSizeSmall: string;
       chatFontSizeMedium: string;
       chatFontSizeLarge: string;
+      conversationDetailLevelTitle: string;
+      conversationDetailLevelDescription: string;
+      conversationDetailLevelLow: string;
+      conversationDetailLevelMedium: string;
+      conversationDetailLevelHigh: string;
       cornerRadiusTitle: string;
       cornerRadiusDescription: string;
       cornerCrisp: string;
@@ -1949,8 +3161,11 @@ export interface Translations {
       cornerPill: string;
       uiDensityTitle: string;
       uiDensityDescription: string;
+      densityRelaxed: string;
       densityComfortable: string;
       densityCompact: string;
+      densityDense: string;
+      densityUltraDense: string;
     };
     tools: {
       title: string;
@@ -1965,6 +3180,7 @@ export interface Translations {
       emptyButton: string;
       enabledDescription: string;
       noMatch: (query: string) => string;
+      searchPlaceholder: string;
       tabMarket: string;
       tabInstalled: string;
       tabPerformance: string;
@@ -1980,11 +3196,17 @@ export interface Translations {
     notification: {
       title: string;
       description: string;
+      enableNotification: string;
+      permissionGranted: string;
+      permissionPrompt: string;
+      permissionDenied: string;
       requestPermission: string;
       deniedHint: string;
       testButton: string;
       testTitle: string;
       testBody: string;
+      testSent: string;
+      requestFailed: string;
       notSupported: string;
       disableNotification: string;
     };
@@ -2082,122 +3304,264 @@ export interface Translations {
       selectFree: string;
       subscribe: string;
     };
+    model: {
+      title: string;
+      customModels: string;
+      addCustomModel: string;
+      emptyCustomModels: string;
+      externalModelRisk: string;
+      provider: string;
+      modelIdPlaceholder: string;
+      displayName: string;
+      displayNamePlaceholder: string;
+      providerLabel: string;
+      providerAutoHint: string;
+      apiKey: string;
+      apiKeyPlaceholder: string;
+      getApiKey: string;
+      fillModelId: string;
+      apiProtocol: string;
+      baseUrlLabel: string;
+      baseUrlPlaceholder: string;
+      extraHeadersTitle: string;
+      extraHeadersPlaceholder: string;
+      extraHeadersHint: string;
+      requiredFields: string;
+      fillRequiredBeforeTest: string;
+      testEndpointHint: string;
+      updateFailed: string;
+      networkError: string;
+      editModelTitle: (name: string) => string;
+      keepApiKeyHint: string;
+      saveSuccess: string;
+      notTested: string;
+      testFailed: string;
+      saveRequiresTestPass: string;
+      testConnection: string;
+      showApiKey: string;
+      hideApiKey: string;
+      diagnoseHealthy: string;
+      diagnoseIssues: (issues: string) => string;
+      deleteConfirm: (name: string) => string;
+      deleteModelTitle: string;
+      gatewayReturned: (status: number) => string;
+      cannotReachGateway: string;
+      gatewayUrl: string;
+      connected: string;
+      disconnected: string;
+      reconnect: string;
+      diagnose: string;
+      port: string;
+      thinkingLabel: string;
+      defaultReasoningEffortLabel: string;
+      defaultReasoningEffortFollow: string;
+      defaultReasoningEffortOff: string;
+      defaultReasoningEffortHigh: string;
+      defaultReasoningEffortMax: string;
+      defaultReasoningEffortNone: string;
+      visionLabel: string;
+      visionDetected: string;
+      visionNotSupported: string;
+      millionContextLabel: string;
+      backendUrlHint: string;
+      connectionHelp: string;
+      connectionHelpReconnect: string;
+      setDefaultHint: string;
+      connectionHelpDiagnose: string;
+      loadFailed: string;
+      setDefaultSuccess: string;
+      setDefaultFailed: string;
+      deleteSuccess: string;
+      deleteFailed: string;
+      systemDefault: string;
+      setAsDefault: string;
+      noOfficialModels: string;
+      gatewayHosted: string;
+      accountNotLinked: string;
+      gatewayNotEnabled: string;
+      officialModels: string;
+      officialModelsHint: string;
+      modelCount: (count: number) => string;
+      modelList: {
+        label: string;
+        hint: string;
+        pickerDefault: string;
+        performanceTier: string;
+        pickerDefaultAndPerformance: string;
+        fallback: string;
+        addButton: string;
+        removeTooltip: string;
+        empty: string;
+      };
+      compatDiagnostics: {
+        title: string;
+        loading: string;
+        unavailable: string;
+        notApplicable: string;
+        fallbacks: (count: number) => string;
+        headers: (names: string) => string;
+        removedFields: (fields: string, count: number) => string;
+        changedFields: (fields: string, count: number) => string;
+        addedFields: (fields: string, count: number) => string;
+        compatScore: (score: string) => string;
+        normalizationHints: (hints: string, count: number) => string;
+        compatibilityNotes: (notes: string, count: number) => string;
+        retryReasons: (reasons: string, count: number) => string;
+        loadFailed: string;
+      };
+      localModels: {
+        title: string;
+        subtitle: string;
+        scanButton: string;
+        scanButtonScanning: string;
+        empty: string;
+        providerHint: string;
+        modelsCount: (n: number) => string;
+        emptyHint: string;
+        importButton: string;
+        importingButton: string;
+        imported: string;
+        importFailed: string;
+        serviceStatus: {
+          ok: string;
+          empty: string;
+          error: string;
+        };
+      };
+      providers: {
+        zhipu: string;
+        aliyun: string;
+        tencent: string;
+        volcengine: string;
+      };
+    };
+    echoMix: {
+      title: string;
+      description: string;
+      proposersLabel: string;
+      noCandidates: string;
+      aggregatorLabel: string;
+      aggregatorDefault: string;
+      nLabel: string;
+      saveButton: string;
+      saveSuccess: string;
+      saveFailed: (status: number) => string;
+      saveFailedFallback: string;
+    };
+    dialog: {
+      dragToResize: string;
+      searchPlaceholder: string;
+      clearSearch: string;
+      quickAccess: string;
+      sectionsLabel: string;
+      resultsCount: (count: number) => string;
+      noSearchResultsTitle: string;
+      noSearchResultsDescription: string;
+      sectionKeywords: {
+        account: string[];
+        subscription: string[];
+        appearance: string[];
+        models: string[];
+        notification: string[];
+        memory: string[];
+        automation: string[];
+        mcp: string[];
+        privacy: string[];
+        observability: string[];
+        about: string[];
+        sandbox: string[];
+      };
+    };
   };
 
-  // Model Settings
-  modelSettings: {
+  // Sandbox / execution permission settings
+  sandboxSettings: {
     title: string;
-    customModels: string;
-    addCustomModel: string;
-    emptyCustomModels: string;
-    externalModelRisk: string;
-    provider: string;
-    modelId: string;
-    modelIdPlaceholder: string;
-    displayName: string;
-    displayNamePlaceholder: string;
-    providerLabel: string;
-    providerAutoHint: string;
-    apiKey: string;
-    apiKeyPlaceholder: string;
-    getApiKey: string;
-    customModel: string;
-    fillModelId: string;
-    apiProtocol: string;
-    baseUrlLabel: string;
-    baseUrlPlaceholder: string;
-    extraHeadersTitle: string;
-    extraHeadersPlaceholder: string;
-    extraHeadersHint: string;
-    requiredFields: string;
-    fillRequiredBeforeTest: string;
-    testEndpointHint: string;
-    taglineCostBalance: string;
-    taglineBestEffect: string;
-    taglineBestValue: string;
-    taglineGoodValue: string;
-    updateFailed: string;
-    networkError: string;
-    editModelTitle: (name: string) => string;
-    keepApiKeyHint: string;
-    saveSuccess: string;
-    testSuccess: string;
-    testFailed: string;
-    diagnoseHealthy: string;
-    diagnoseIssues: (issues: string) => string;
-    deleteConfirm: (name: string) => string;
-    gatewayReturned: (status: number) => string;
-    cannotReachGateway: string;
-    current: string;
-    setDefault: string;
-    edit: string;
-    gatewayUrl: string;
-    connected: string;
-    disconnected: string;
-    reconnect: string;
-    maxTokensLabel: string;
-    thinkingLabel: string;
-    visionLabel: string;
-    resetConnection: string;
-    diagnose: string;
-    port: string;
-    portDescription: string;
-    connectionHelp: string;
-    connectionHelpReconnect: string;
-    connectionHelpReset: string;
-    connectionHelpDiagnose: string;
-    // Additional fields for model settings page
-    loadFailed: string;
-    setDefaultSuccess: string;
-    setDefaultFailed: string;
-    deleteSuccess: string;
-    deleteFailed: string;
-    systemDefault: string;
-    setAsDefault: string;
-    backendUrlHint: string;
-    setDefaultHint: string;
-    noOfficialModels: string;
-    moliliHosted: string;
-    notBound: string;
-    gatewayDisabled: string;
-    moliliNotLinked: string;
-    moliliNotEnabled: string;
-    officialModels: string;
-    officialModelsHint: string;
-    // Open-ended model id list · one custom-model row now holds an
-    // arbitrary number of upstream model ids. Index 0 is the picker
-    // default; index -1 is the strongest slot for Auto mode's
-    // performance verdict.
-    modelList: {
-      label: string;
-      hint: string;
-      addButton: string;
-      removeTooltip: string;
-      empty: string;
-    };
-    // Local-model scan + one-click import. The collapsible in the
-    // settings page probes Ollama / LM Studio / vLLM / llama.cpp
-    // defaults and lets the operator import a discovered row with
-    // one click (no need to hand-fill base_url).
-    localModels: {
-      title: string;
-      subtitle: string;
-      scanButton: string;
-      scanButtonScanning: string;
-      empty: string;
-      emptyHint: string;
-      modelsCount: (n: number) => string;
-      importButton: string;
-      importingButton: string;
-      imported: string;
-      importFailed: string;
-      serviceStatus: {
-        ok: string;
-        empty: string;
-        error: string;
+    description: string;
+    activeTag: string;
+    scopeNote: string;
+    restartHint: string;
+    envTitle: string;
+    envDesc: string;
+    permissionTitle: string;
+    permissionDesc: string;
+    guardianTitle: string;
+    guardianDesc: string;
+    guardianToggleLabel: string;
+    guardianToggleDesc: string;
+    guardianModelLabel: string;
+    guardianModelHint: string;
+    toastGuardianOn: string;
+    toastGuardianOff: string;
+    toastEnvSwitched: (label: string) => string;
+    toastPermissionSwitched: (label: string) => string;
+    toastFailed: (msg: string) => string;
+    env: {
+      sandbox: {
+        label: string;
+        description: string;
       };
-      providerHint: string;
-      collapseToggle: string;
+      local: {
+        label: string;
+        description: string;
+      };
+    };
+    permission: {
+      default: {
+        label: string;
+        description: string;
+      };
+      acceptEdits: {
+        label: string;
+        description: string;
+      };
+      bypassPermissions: {
+        label: string;
+        description: string;
+      };
+    };
+    networkTitle: string;
+    networkDesc: string;
+    presetDomainsNote: string;
+    toastNetworkSwitched: (label: string) => string;
+    network: {
+      deny: {
+        label: string;
+        description: string;
+      };
+      common: {
+        label: string;
+        description: string;
+      };
+      full: {
+        label: string;
+        description: string;
+      };
+    };
+    replyStyleTitle: string;
+    replyStyleDesc: string;
+    toastReplyStyleSwitched: (label: string) => string;
+    replyStyle: {
+      default: {
+        label: string;
+        description: string;
+      };
+      professional: {
+        label: string;
+        description: string;
+      };
+      friendly: {
+        label: string;
+        description: string;
+      };
+      concise: {
+        label: string;
+        description: string;
+      };
+      socratic: {
+        label: string;
+        description: string;
+      };
     };
   };
 
@@ -2206,6 +3570,8 @@ export interface Translations {
     title: string;
     description: string;
     refresh: string;
+    retry: string;
+    loadFailed: string;
     noTasks: string;
     noTasksDesc: string;
     kanban: string;
@@ -2249,6 +3615,10 @@ export interface Translations {
     minutesAgo: string;
     hoursAgo: string;
     daysAgo: string;
+    filterByType: string;
+    taskDetails: (name: string) => string;
+    timelineChart: string;
+    zoomReset: (percent: number) => string;
   };
 
   // Arena
@@ -2319,12 +3689,21 @@ export interface Translations {
     active: string;
     analyzing: string;
     generatingPlan: string;
+    rejectConfirmTitle: string;
+    rejectConfirmDescription: string;
+    cancelConfirmTitle: string;
+    cancelConfirmDescription: string;
+    cancelConfirmLabel: string;
     verifyingResults: string;
     generatingReport: string;
     newQuest: string;
     cancelled: string;
     startNewQuest: string;
     quest: string;
+    startFailed: string;
+    approveFailed: string;
+    rejectFailed: string;
+    cancelFailed: string;
   };
 
   // Knowledge Graph
@@ -2355,6 +3734,13 @@ export interface Translations {
     relationshipsHeader: string;
     loadFailed: string;
     pageSubtitle: string;
+    startTask: string;
+    refresh: string;
+    foundEntities: (found: number, total: number) => string;
+    totalEntitiesCount: (total: number) => string;
+    clearSearch: string;
+    noMatchingEntities: string;
+    noMatchingEntitiesHint: string;
   };
 
   // Background Tasks
@@ -2370,6 +3756,9 @@ export interface Translations {
     pause: string;
     resume: string;
     cancel: string;
+    delete: string;
+    back: string;
+    refresh: string;
     newTask: string;
     taskPlaceholder: string;
     waitingOutput: string;
@@ -2381,6 +3770,21 @@ export interface Translations {
     runInBackground: string;
     noTasks: string;
     noTasksDescription: string;
+    loading: string;
+    loadFailed: string;
+    retry: string;
+    activeCount: (count: number) => string;
+    agentLabel: string;
+    threadLabel: string;
+    durationLabel: string;
+    taskFinished: (status: string) => string;
+    justNow: string;
+    minutesAgo: (count: number) => string;
+    hoursAgo: (count: number) => string;
+    daysAgo: (count: number) => string;
+    unnamedTask: string;
+    cancelConfirm: (name: string) => string;
+    deleteConfirm: (name: string) => string;
   };
 
   unifiedStore: {
@@ -2392,6 +3796,7 @@ export interface Translations {
       apps: string;
       plugins: string;
       skills: string;
+      registry: string;
     };
     browserPlugins: {
       title: string;
@@ -2427,6 +3832,7 @@ export interface Translations {
       marketTab: string;
       localTitle: string;
       localDesc: string;
+      catalogCount: (count: number) => string;
       searchAria: string;
       searchPlaceholder: string;
       loading: string;
@@ -2434,6 +3840,7 @@ export interface Translations {
       all: string;
       other: string;
       visibleCount: (label: string, count: number) => string;
+      totalCount: (count: number) => string;
       enabledCount: (count: number) => string;
       noDescription: string;
       noMatch: (query: string) => string;
@@ -2482,20 +3889,62 @@ export interface Translations {
     createAgentCardDesc: string;
     addAgent: string;
     newAgent: string;
-    importAgentPack: string;
-    importAgentPackDesc: string;
-    importAgentPackPlaceholder: string;
-    previewAgentPack: string;
-    importSelectedAgent: string;
-    noImportableAgents: string;
-    importedAgent: (name: string, path: string) => string;
     discoverTagline: string;
     // AgentWorldCard extras
     toastInstalled: (name: string) => string;
     toastCapabilityPackInstalled: (name: string, count: number) => string;
     toastUninstalled: (name: string) => string;
+    installAriaLabel: (name: string) => string;
+    uninstallAriaLabel: (name: string) => string;
+    ratingAriaLabel: (rating: string, count: number) => string;
+    downloadCountAriaLabel: (count: string) => string;
     authorPrefix: string;
   };
+
+  // Agent World Unified
+  agentWorldUnified: {
+    pageTitle: string;
+    pageDescription: string;
+    addAgentButton: string;
+    roleLibrary: string;
+    roleLibraryDescription: string;
+    installedLabel: string;
+    installableLabel: string;
+    installAllButton: string;
+    installAllConfirmButton: (count: number) => string;
+    installAllConfirmTitle: (count: number) => string;
+    installAllConfirmHint: string;
+    installSuccess: (installed: number) => string;
+    installSuccessWithFailure: (installed: number, failed: number) => string;
+    installFailed: string;
+    enterprise: string;
+    localTab: string;
+    enabledTab: string;
+    marketplaceTab: string;
+    categoryFilterLabel: string;
+    domainFilterLabel: string;
+    domains: {
+      all: string;
+      general: string;
+      coding: string;
+      research: string;
+      creative: string;
+      automation: string;
+      ecommerce: string;
+      finance: string;
+    };
+    loadingAgents: string;
+    loadAgentsFailed: string;
+    retryAgents: string;
+    searchPlaceholderAgents: string;
+    searchPlaceholderPlugins: string;
+    searchPlaceholderSkills: string;
+  };
+
+  // Local Agent Connect Dialog
+
+  // Agent World Card
+  agentWorldCard: {};
 
   // Community
   community: {
@@ -2540,7 +3989,81 @@ export interface Translations {
     deviceMobile: string;
     viewportHint: (label: string, w: number, h: number) => string;
     startBrowsingHint: string;
+    loadingPage: string;
     embeddedBlocked: string;
+    embeddedBlockedDescription: string;
+    assistant: {
+      stopAgent: string;
+      stopAgentTooltip: string;
+      autoBrowseOnTooltip: string;
+      autoBrowseOffTooltip: string;
+      summarizePage: string;
+      extractKeyPoints: string;
+      translateToChinese: string;
+      recorderTitle: string;
+      recorderDesc: string;
+      researchGoalPlaceholder: string;
+      start: string;
+      recordCurrentPage: string;
+      clearLog: string;
+      copied: string;
+      copyBrief: string;
+      exportMd: string;
+      emptyHint: string;
+      thinking: string;
+      inputPlaceholder: string;
+      noAgents: string;
+      confirmInputContent: string;
+      confirmSubmitForm: string;
+      confirmSensitiveClick: string;
+      confirmSensitiveAction: string;
+      stopAgentMessage: string;
+      maxLoopReached: (count: number) => string;
+      webviewNotReadyError: string;
+      confirmedRiskyOperation: string;
+      recorderProtocol: string;
+      researchMissionLabel: string;
+      researchPlatformDivisionLabel: string;
+      researchExecutionRequirementsLabel: string;
+      researchRequirementOpenFirstPlatform: string;
+      researchRequirementExtractHighDensity: string;
+      researchRequirementDoNotFeedBack: string;
+      researchRequirementLogPerPlatform: string;
+      researchRequirementPauseForSensitive: string;
+      researchPlatformHintGemini: string;
+      researchPlatformHintNotebookLM: string;
+      researchPlatformNameDoubao: string;
+      researchPlatformHintDoubao: string;
+      researchPlatformHintPerplexity: string;
+      researchLogDispatchLabel: string;
+      researchStartTitle: string;
+      researchPlatformsPrefix: string;
+      currentPageFallback: string;
+      recordedPageNote: string;
+      needElectronError: string;
+      tabNotReadyError: string;
+      summarizePagePrompt: string;
+      extractKeyPointsPrompt: string;
+      translateToChinesePrompt: string;
+      currentPageLabel: string;
+      urlLabel: string;
+      titleLabel: string;
+      pageAgentCapabilityLabel: string;
+      truncatedSuffix: (count: number) => string;
+      needsUserConfirmationTitle: string;
+      confirmExecute: string;
+      researchBriefTitle: string;
+      researchBriefGeneratedAt: (time: string) => string;
+      researchBriefRecordCount: (count: number) => string;
+      researchBriefAbstractRecords: string;
+      researchBriefEntryTime: (time: string) => string;
+      researchBriefEntryRecordLabel: string;
+      researchBriefPendingVerification: string;
+      researchBriefVerifyCrossPlatform: string;
+      researchBriefKeepEvidence: string;
+      researchBriefConfirmSensitive: string;
+      unknownPlatform: string;
+    };
     copilot: {
       stopAgent: string;
       stopAgentTooltip: string;
@@ -2567,6 +4090,7 @@ export interface Translations {
       confirmSensitiveClick: string;
       confirmSensitiveAction: string;
     };
+
     extensionMarketplace: {
       title: string;
       subtitle: string;
@@ -2722,10 +4246,46 @@ export interface Translations {
       addIconBtn: string;
       addWidgetBtn: string;
       appNameDoubao: string;
+      deleteConfirmTitle: string;
+      deleteConfirmDescription: string;
+      resetLayoutConfirmTitle: string;
+      resetLayoutConfirmDescription: string;
+    };
+    empty: {
+      noMatch: string;
+      noTabs: string;
+      noRecent: string;
+      noFavorites: string;
+    };
+    defaultTabTitle: string;
+    pageTitle: string;
+    pageSubtitle: (pinned: boolean) => string;
+    searchPlaceholder: string;
+    copy: {
+      link: string;
+      title: string;
+      copied: string;
+      tabMenuItem: string;
+    };
+    menu: {
+      closeOtherTabs: string;
+    };
+    tabs: {
+      label: string;
+      recent: string;
+      favorites: string;
+    };
+    newTab: string;
+    newTabPage: string;
+    closeTab: string;
+    sidePanel: {
+      unpin: string;
+      expand: string;
     };
     tabBar: {
       close: string;
       newTab: string;
+      homeTabShort: string;
     };
     urlBar: {
       back: string;
@@ -2775,7 +4335,168 @@ export interface Translations {
       openBrowserExtensions: string;
       extensionsLabel: string;
       aiAssistant: string;
+      moreActions: string;
+      pageActions: string;
+      findInPage: string;
+      findPrompt: string;
+      zoom: string;
+      zoomOut: string;
+      zoomIn: string;
+      resetZoom: string;
+      devicePreview: string;
     };
+    closeFolderAria: (name: string) => string;
+  };
+
+  // Gene Lock Badge
+  geneLockBadge: {
+    levelNames: string[];
+    levelDescriptions: string[];
+    badgeTitle: string;
+    badgeLabel: string;
+    panicBadge: string;
+    productionBadge: string;
+    dropdownTitle: string;
+    modeLabel: string;
+    maturityLabel: string;
+    panicActive: string;
+    panicStartedAt: string;
+    panicReason: string;
+    unlockButton: string;
+    panicButton: string;
+    panicConfirm: string;
+    levelSummary: (level: number, name: string, description: string) => string;
+    compactTitle: string;
+    modeRelaxed: string;
+    modeStrict: string;
+    strictHint: string;
+    relaxedHint: string;
+    modeDescription: string;
+    evolutionPaused: string;
+    settingsTitle: string;
+    settingsDescription: string;
+    openModeLabel: string;
+    levelLabel: string;
+    masterSwitchLabel: string;
+    disableEvolutionButton: string;
+    disabledHint: string;
+    updateSuccess: string;
+    operationFailed: string;
+  };
+
+  // Browser Preview Panel
+  browserPreviewPanel: {
+    desktopLabel: string;
+    actionPending: string;
+    actionSuccess: string;
+    actionFailed: string;
+    coordinateLabel: (coord: string) => string;
+    noDetail: string;
+    livePreviewTitle: string;
+    toggleSurfaceMode: string;
+    surfaceModeLive: string;
+    surfaceModeScreenshot: string;
+    selectDevicePreset: string;
+    continueInFullBrowser: string;
+    takeoverButton: string;
+    switchToLivePreview: string;
+    switchToLivePreviewDescription: string;
+    switchToScreenshot: string;
+    switchToScreenshotDescription: string;
+    sessionHealthyLabel: string;
+    sessionAttentionLabel: string;
+    endSession: string;
+    annotateScreenshot: string;
+    annotationButton: string;
+    annotationPlaceholder: string;
+    annotationInputLabel: string;
+    sendAnnotation: string;
+    cancelAnnotation: string;
+    sessionNeedsAttention: (issues: string) => string;
+    reconnectButton: string;
+    semanticSnapshotFallback: string;
+    truncatedBadge: string;
+    closeSemanticSnapshot: string;
+    noReadableText: string;
+    loadingLivePage: string;
+    screenshotClickTitle: (mode: string, viewport: string) => string;
+    clickMode: string;
+    doubleClickMode: string;
+    localServices: string;
+    noLocalServices: string;
+    scanButton: string;
+    serviceTypeFrontend: string;
+    serviceTypeBackend: string;
+    serviceTypeOther: string;
+    scanLocalServices: string;
+    localPreviewMode: string;
+    localPreviewRunning: (port: string) => string;
+    localPreviewRefresh: string;
+    localPreviewOpenExternal: string;
+    selectedAction: (action: string) => string;
+    locateActionTitle: string;
+    deselectTitle: string;
+    failureCount: (count: number) => string;
+    coordinateCount: (count: number) => string;
+    attachScreenshotToComposer: string;
+    attachScreenshotSource: string;
+    attachScreenshotSuccess: string;
+    attachScreenshotFailed: string;
+  };
+
+  // Browser Home
+  browserHome: {
+    appNameDoubao: string;
+    appNameTongyiQianwen: string;
+    appNameWenxinYiyan: string;
+    appNameTencentYuanbao: string;
+    appNameZhihu: string;
+    appDescGemini: string;
+    appDescNotebookLM: string;
+    appDescDoubao: string;
+    appDescDeepSeek: string;
+    appDescTongyiQianwen: string;
+    appDescWenxinYiyan: string;
+    appDescTencentYuanbao: string;
+    appDescPerplexity: string;
+    appDescChatGPT: string;
+    appDescClaude: string;
+    appDescKimi: string;
+    appDescAgnesAi: string;
+    appDescYouTube: string;
+    appDescBilibili: string;
+    appDescGitHub: string;
+    appDescStackOverflow: string;
+    appDescMdn: string;
+    appDescZhihu: string;
+    appDescWikipedia: string;
+    groupAiTools: string;
+    groupAiToolsSubtitle: string;
+    groupVideo: string;
+    groupVideoSubtitle: string;
+    groupDev: string;
+    groupDevSubtitle: string;
+    groupKnowledge: string;
+    groupKnowledgeSubtitle: string;
+    searchEngineBaidu: string;
+    searchEngineBaiduIcon: string;
+    metaBookmark: string;
+    metaRecent: string;
+    metaCommon: string;
+    categoryVideo: string;
+    categoryDev: string;
+    switchSearchEngine: string;
+    commonCategories: string;
+    recentVisits: string;
+    recentVisitCount: (count: number) => string;
+    historyOnly: string;
+    noRecentVisits: string;
+    commonEntries: string;
+    addToDock: string;
+    todoPlaceholder: string;
+    removeFromDock: string;
+    alreadyInDock: string;
+    add: string;
   };
 
   // Execution Plan
@@ -2806,28 +4527,78 @@ export interface Translations {
     toastModifyFailed: string;
     toastRejected: string;
     toastRejectFailed: string;
+    removeStepAria: string;
+    stepDescriptionAria: string;
   };
 
   // Mode Selector
   modes: {
     builder: string;
     coder: string;
+    develop: string;
+    audit: string;
+    uxui: string;
     architect: string;
+    ultra: string;
+    standard: string;
     teamCoder: string;
     admin: string;
     builderTooltip: string;
     coderTooltip: string;
+    developTooltip: string;
+    auditTooltip: string;
+    uxuiTooltip: string;
     architectTooltip: string;
+    ultraTooltip: string;
     teamCoderTooltip: string;
     adminTooltip: string;
     builderDesc: string;
     coderDesc: string;
+    developDesc: string;
+    auditDesc: string;
+    uxuiDesc: string;
     architectDesc: string;
+    ultraDesc: string;
+    builderEffect: string;
+    coderEffect: string;
+    developEffect: string;
+    auditEffect: string;
+    uxuiEffect: string;
+    architectEffect: string;
+    ultraEffect: string;
+    strategyNote: string;
+    autoShort: string;
+    manualOverrideShort: string;
+    autoDetectedMode: (mode: string) => string;
+    autoDetecting: string;
+    autoModeNote: string;
+    autoModeNoteCompact: string;
+    manualOverrideNote: string;
+    followAuto: string;
+    projectKind: string;
+    projectKindNew: string;
+    projectKindExisting: string;
+    projectKindArchitecture: string;
     teamCoderDesc: string;
     adminDesc: string;
     autoDetected: string;
     projectTemplates: string;
     projectSignals: string;
+    viewDetectionBasis: string;
+    signalFiles: (count: number) => string;
+    signalTechStack: (count: number) => string;
+    signalLocks: (count: number) => string;
+    signalCommits: (count: number) => string;
+    signalReadme: string;
+    signalSummaryEmpty: string;
+  };
+
+  // Intent-based mode auto-switch
+  modeIntent: {
+    suggestSwitch: (modeLabel: string) => string;
+    switch: string;
+    ignore: string;
+    autoSwitched: (modeLabel: string) => string;
   };
 
   // Code page tabs
@@ -2838,6 +4609,11 @@ export interface Translations {
     teach: string;
     browser: string;
     diff: string;
+  };
+
+  // Editor Tabs
+  editorTabs: {
+    closeTabAria: (label: string) => string;
   };
 
   // Skills Market
@@ -2935,6 +4711,10 @@ export interface Translations {
     sendRequest: string;
     response: string;
     revoke: string;
+    revokeKeyConfirmTitle: string;
+    revokeKeyConfirmDescription: string;
+    deleteApiConfirmTitle: string;
+    deleteApiConfirmDescription: string;
     disable: string;
     enable: string;
     refreshTooltip: string;
@@ -3029,6 +4809,8 @@ export interface Translations {
     toastStartIndexingFailed: string;
     toastIndexCleared: string;
     toastClearIndexFailed: string;
+    clearIndexConfirmTitle: string;
+    clearIndexConfirmDescription: string;
   };
 
   // Teach & Repeat
@@ -3056,6 +4838,9 @@ export interface Translations {
     used: string;
     noDescription: string;
     duplicate: string;
+    deleteConfirmTitle: string;
+    deleteConfirmDescription: (name: string) => string;
+    deleteConfirmDescriptionUnknown: string;
   };
 
   // Parallel Agents
@@ -3081,6 +4866,18 @@ export interface Translations {
     noActiveTasks: string;
     cancelAll: string;
     depends: string;
+    recoveryReady: string;
+    coordinationSummary: string;
+    coordinationAction: (action: string) => string;
+    primaryTask: (taskId: string) => string;
+    cancelledTasks: (count: number) => string;
+    coordinationWarnings: (count: number) => string;
+    rerunnableTasks: (count: number) => string;
+    failedTasks: (count: number) => string;
+    dependencyBlocked: (count: number) => string;
+    checkpointSequence: (sequence: number) => string;
+    recoverySafe: string;
+    recoveryUnsafe: string;
     statusLabels: {
       pending: string;
       running: string;
@@ -3151,136 +4948,134 @@ export interface Translations {
     copyFailed: string;
     // PresenceAvatars
     onlineCount: (count: number) => string;
-  };
-
-  // Workflow Editor
-  workflowEditor: {
-    title: string;
-    untitled: string;
-    newWorkflow: string;
-    savedWorkflows: string;
-    placeholder: string;
-    descPlaceholder: string;
-    layoutApplied: string;
-    saved: string;
-    saveFailed: string;
-    loadFailed: string;
-    deleted: string;
-    deleteFailed: string;
-    valid: string;
-    fixErrors: string;
-    executed: string;
-    executeFailed: string;
-    codeCopied: string;
-    start: string;
-    end: string;
-    nodePaletteTitle: string;
-    save: string;
-    run: string;
-    savedToJsonFile: string;
-    runBackendNotReady: string;
-    dismiss: string;
-    more: string;
-    noSavedWorkflows: string;
-    selectNodeToConfigure: string;
-    searchNodes: string;
-    runningWorkflow: string;
-    executionCompleted: string;
-    executionFailed: string;
-    runResults: string;
-    viewResultJson: string;
-    importN8n: string;
-    saving: string;
-    running: string;
-    runCompleted: string;
-    runFailed: string;
-    statusPrefix: string;
-    importSuccess: (name: string, nodeCount: number) => string;
-    nodes: {
-      llm: string;
-      tool: string;
-      condition: string;
-      code: string;
-      subagent: string;
-      loop: string;
-      parallel: string;
-      humanInput: string;
-      memory: string;
-      http: string;
-    };
-    config: {
+    defaultTeamName: string;
+    projectPrefix: (teamName: string) => string;
+    teamModes: Array<{
+      id: string;
       label: string;
-      model: string;
-      systemPrompt: string;
-      temperature: string;
-      maxTokens: string;
-      toolName: string;
-      parameters: string;
-      conditionExpr: string;
-      language: string;
-      code: string;
-      agentName: string;
-      agentConfig: string;
-      loopBody: string;
-      maxIterations: string;
-      breakCondition: string;
-      branchNodes: string;
-      aggregation: string;
-      aggregationMergeAll: string;
-      aggregationFirstResult: string;
-      aggregationMajorityVote: string;
-      promptMessage: string;
-      url: string;
-      method: string;
-      headers: string;
-      body: string;
-      operation: string;
-      memoryKey: string;
-      valueExpression: string;
-      timeout: string;
-      responseFormat: string;
+      description: string;
+    }>;
+    common: {
+      online: string;
+      offline: string;
+      leader: string;
+      aiMember: string;
+      cancel: string;
+      create: string;
+      loading: string;
     };
-    palette: {
-      flow: string;
-      ai: string;
-      actions: string;
-      data: string;
+    workbench: {
+      tabMembers: string;
+      tabTasks: string;
+      tabWorkspace: string;
+      title: string;
+      closeTitle: string;
+      leaderStandby: string;
+      standby: string;
+      memberNameWithRole: (name: string, isLeader: boolean) => string;
+      currentWorkspace: string;
+      noDirectorySelected: string;
     };
-    toolbar: {
-      save: string;
-      undo: string;
-      redo: string;
-      copy: string;
-      paste: string;
-      delete: string;
-      autoLayout: string;
-      validate: string;
-      exportCode: string;
-      run: string;
-      running: string;
+    roster: {
+      title: string;
+      noTeamSelected: string;
+      aiMembersCount: (count: number) => string;
+      onlineCount: (online: number, total: number) => string;
+      workstationGroup: string;
+      aiMemberDefault: string;
+      standby: string;
+      collaboratorsGroup: string;
+      emptyHint: string;
+      statusWithRole: (status: string, role: string) => string;
     };
-    nodeDescriptions: {
-      start: string;
-      end: string;
-      condition: string;
-      loop: string;
-      parallel: string;
-      llm: string;
-      subagent: string;
-      tool: string;
-      code: string;
-      http: string;
-      memory: string;
-      humanInput: string;
+    createTask: {
+      toastCreated: string;
+      toastFailed: string;
+      title: string;
+      description: string;
+      taskTitleLabel: string;
+      descriptionLabel: string;
+      sopLabel: string;
+      assigneeLabel: string;
+      titlePlaceholder: string;
+      descriptionPlaceholder: string;
+      autoMatchFreeform: string;
+      loadingPacks: string;
+      cancel: string;
+      create: string;
     };
-    nodeLabels: {
-      noModelSet: string;
-      noToolSelected: string;
-      noAgentSelected: string;
-      noCodeWritten: string;
-      noUrlConfigured: string;
-      pausesForInput: string;
-      workflowEntryPoint: string;
+    inviteAgents: {
+      toastAdded: (count: number) => string;
+      toastFailed: string;
+      roleMember: string;
+      roleMemberDesc: string;
+      roleViewer: string;
+      roleViewerDesc: string;
+      addAgentTitle: string;
+      countText: (inTeam: number, available: number) => string;
+      addFiltered: string;
+      searchPlaceholder: string;
+      loadingAgents: string;
+      noMatches: string;
+      inTeam: string;
+      add: string;
+    };
+    humanInvite: {
+      trigger: string;
+      dialogTitle: string;
+      dialogDescription: string;
+      roleLabel: string;
+      expiresLabel: string;
+      expiresHour: string;
+      expiresDay: string;
+      expiresWeek: string;
+      expiresMonth: string;
+      createLink: string;
+      creatingLink: string;
+      currentLink: string;
+      linkVisibleOnce: string;
+      recordsTitle: string;
+      refresh: string;
+      emptyRecords: string;
+      loadingRecords: string;
+      createFailed: string;
+      loadFailed: string;
+      revoke: string;
+      revokeSuccess: string;
+      revokeFailed: string;
+      statusActive: string;
+      statusExpired: string;
+      statusExhausted: string;
+      statusRevoked: string;
+      neverExpires: string;
+      expiresAt: (value: string) => string;
+      usage: (used: number, max: number | null) => string;
+      roomRequired: string;
+      joinPolicyLabel: string;
+      joinPolicyApply: string;
+      joinPolicyApplyDesc: string;
+      joinPolicyDirect: string;
+      joinPolicyDirectDesc: string;
+      directJoinConfirmTitle: string;
+      directJoinConfirmDescription: string;
+      directJoinConfirmAction: string;
+      directJoinConfirmCancel: string;
+      policySaveFailed: string;
+      pendingRequestsTitle: string;
+      pendingRequestsEmpty: string;
+      requestsLoadFailed: string;
+      approveRequest: string;
+      rejectRequest: string;
+      approveSuccess: string;
+      rejectSuccess: string;
+      requestActionFailed: string;
+    };
+    mobileJoin: {
+      title: string;
+      description: string;
+      connectCodeLabel: string;
+      manualFillPrefix: string;
+      manualFillCode: string;
     };
   };
 
@@ -3355,6 +5150,8 @@ export interface Translations {
     untrustedTag: string;
     trustButton: string;
     revokeButton: string;
+    revokeConfirmTitle: string;
+    revokeConfirmDescription: (name: string) => string;
     unapprovedHint: string;
     noServers: string;
     toastLoadConfigFailed: string;
@@ -3364,6 +5161,14 @@ export interface Translations {
     toastRevokeFailed: string;
     toastToggleSuccess: (name: string, enabled: boolean) => string;
     toastUpdateFailed: string;
+    addRemoteTitle: string;
+    addNamePlaceholder: string;
+    addUrlPlaceholder: string;
+    addAuthPlaceholder: string;
+    addButton: string;
+    toastAddSuccess: (name: string) => string;
+    toastAddFailed: string;
+    toastAddInvalid: string;
   };
 
   // Intelligence
@@ -3408,7 +5213,6 @@ export interface Translations {
     reportLanguageBoth: string;
     // IntelligencePanel extras
     subscriptionsHeader: string;
-    topicPlaceholder: string;
     addButton: string;
     noSubscriptionsHint: (keywordExample: string) => string;
     exampleKeyword: string;
@@ -3419,6 +5223,7 @@ export interface Translations {
     noReportsHint: string;
     itemsCount: (n: number) => string;
     loadFailed: string;
+    retry: string;
     subscriptionAdded: string;
     addFailed: string;
     updateFailed: string;
@@ -3437,13 +5242,101 @@ export interface Translations {
     createSubscription: string;
     draftPlaceholder: string;
     deleteSubscription: string;
+    deleteConfirmTitle: string;
+    deleteConfirmDescription: (name: string) => string;
+    selectSubscription: (name: string) => string;
+    runSubscription: (name: string) => string;
+    enableSubscription: (name: string) => string;
+    disableSubscription: (name: string) => string;
+    deleteSubscriptionNamed: (name: string) => string;
     source: string;
     web: string;
+    // Automation tabs
+    configuredTip: string;
+    configuredTipToggle: string;
+    configuredEmptyTitle: string;
+    configuredEmptyDescription: string;
+    createCustomTask: string;
+    useTemplate: string;
+    // Create automation dialog
+    nameRequired: string;
+    topicRequired: string;
+    createTaskSuccess: string;
+    createTaskFailed: string;
+    createTaskTitle: string;
+    createTaskDescription: string;
+    taskNameLabel: string;
+    taskNamePlaceholder: string;
+    topicLabel: string;
+    topicPlaceholder: string;
+    cadenceLabel: string;
+    cadenceHourly: string;
+    scheduleTimeLabel: string;
+    scheduleDayLabel: string;
+    instructionsLabel: string;
+    instructionsPlaceholder: string;
+    createTask: string;
+    // Automation history
+    historyItemsAnalyzed: (n: number) => string;
+    historyErrors: (n: number) => string;
+    historyCollapse: string;
+    historyViewDetails: string;
+    historyEmptyTitle: string;
+    historyEmptyDescription: string;
   };
 
   intelligencePanel: {
     examplePrompts: string[];
+    goalLabel: string;
     goalPlaceholder: string;
+    subscriptionName: string;
+    keywords: string;
+    cadence: string;
+    sources: string;
+    instructions: string;
+    cadenceHighFrequency: string;
+    cadenceDaily: string;
+    cadenceWeekly: string;
+    cadenceMonthly: string;
+    weekdayMonday: string;
+    weekdayTuesday: string;
+    weekdayWednesday: string;
+    weekdayThursday: string;
+    weekdayFriday: string;
+    weekdaySaturday: string;
+    weekdaySunday: string;
+    reportWeekdaySunday: string;
+    reportWeekdayMonday: string;
+    reportWeekdayTuesday: string;
+    reportWeekdayWednesday: string;
+    reportWeekdayThursday: string;
+    reportWeekdayFriday: string;
+    reportWeekdaySaturday: string;
+    scheduleHighFrequency: (timezone: string) => string;
+    scheduleWeekly: (weekday: string, time: string, timezone: string) => string;
+    scheduleMonthly: (day: string, time: string, timezone: string) => string;
+    scheduleDaily: (time: string, timezone: string) => string;
+    monthDayLabel: (day: string) => string;
+    keyFindingsHeading: string;
+    recommendationsHeading: string;
+    aiGenerated: string;
+    itemsCount: (count: number) => string;
+    skillsCount: (count: number) => string;
+    view: string;
+    runTime: string;
+    monthlyDate: string;
+    weeklyDate: string;
+    timezone: string;
+    expectedRun: (schedule: string) => string;
+    noSubscriptionsYet: string;
+    latestUpdates: string;
+    sortedBySubscriptionPush: string;
+    newsFeed: string;
+    noReportsYet: string;
+    trackingNow: string;
+    reportTimelineHint: string;
+    subscriptionTopic: string;
+    todayPush: string;
   };
 
   // Live Run Feedback
@@ -3467,20 +5360,25 @@ export interface Translations {
 
   // Public Thinking Status
   publicThinkingStatus: {
-    title: string;
-    organizingReply: string;
-    executingTool: string;
-    gotResults: string;
-    analyzing: string;
-    understandingTask: string;
-    planningFirstStep: string;
     waitingForModel: string;
-    stillWaiting: string;
+    firstResponseSlow: string;
+    modelWorking: string;
+    thinkingCompleted: string;
+    slowResponse: string;
+    reconnecting: string;
+    processing: string;
+    ttftLabel: string;
+    ttftHint: string;
   };
 
   // Evolution Dashboard
   evolutionDashboard: {
     title: string;
+    pageDescription: string;
+    reflexRules: string;
+    showRuntimeMonitor: string;
+    hideRuntimeMonitor: string;
+    runtimeMonitorDescription: string;
     skills: string;
     memories: string;
     knowledgeGraph: string;
@@ -3533,6 +5431,7 @@ export interface Translations {
     connectionFailed: string;
     loading: string;
     refresh: string;
+    retryLoading: string;
     selfImprovement: string;
     measureChanges: string;
     noLearningData: string;
@@ -3543,6 +5442,80 @@ export interface Translations {
     active: string;
     disabled: string;
     of100: string;
+    // Growth story hero
+    recentEvolutionTitle: string;
+    growthSummary: (
+      totalMemories: number,
+      totalSkills: number,
+      learningEvents: number,
+    ) => string;
+    noEvidenceDescription: string;
+    overallImprovementLabel: string;
+    observeTasks: string;
+    observeTasksDescription: string;
+    accumulateMemories: string;
+    accumulateMemoriesDescription: string;
+    formSkills: string;
+    formSkillsDescription: string;
+    proposeImprovements: string;
+    proposeImprovementsDescription: string;
+    unitTimes: string;
+    unitItems: string;
+    unitSkills: string;
+    unitSuggestions: string;
+    autoExtractedSkills: string;
+    autoExtractedSkillsShare: (percent: string) => string;
+    waitingForSkillAccumulation: string;
+    reusableMemoryLibrary: string;
+    ruleMemoryCount: (count: number) => string;
+    memoryDetailDefault: string;
+    nextSteps: string;
+    nextStepsAvailable: string;
+    nextStepsNone: string;
+    // Learning story
+    capabilityTrend: string;
+    noTrendYet: string;
+    recentChange: string;
+    currentSuccessRate: string;
+    recentSkillCalls: string;
+    // Skill story
+    strongerSkills: string;
+    noSkillPerformanceYet: string;
+    skillCalls: (count: number) => string;
+    // Recommendations story
+    howToImproveNext: string;
+    noPendingRecommendations: string;
+    storyNoRealChangeTitle: string;
+    storyRealChangeTitle: (count: number) => string;
+    storyNoRealChangeDescription: (count: number) => string;
+    storyRealChangeDescription: (count: number) => string;
+    notEvolutionBadge: string;
+    observedTasks: string;
+    observedTasksPlainDescription: string;
+    savedLessons: string;
+    savedLessonsPlainDescription: string;
+    changedBehaviors: string;
+    changedBehaviorsPlainDescription: string;
+    actualChangesTitle: string;
+    actualChangesEmptyTitle: string;
+    actualChangesEmptyDescription: string;
+    changeRuleLabel: string;
+    changeMemoryLabel: string;
+    changeSkillLabel: string;
+    ruleFutureEffect: string;
+    memoryFutureEffect: string;
+    skillFutureEffect: string;
+    observationsTitle: string;
+    observationsDescription: string;
+    unnamedObservedTask: string;
+    taskCompleted: string;
+    taskNotCompleted: string;
+    taskSteps: (count: number) => string;
+    nextActionTitle: string;
+    reflectionActionTitle: (count: number) => string;
+    reflectionActionDescription: string;
+    technicalDetails: string;
+    metricsNotEvolutionNote: string;
   };
 
   // Wiki Panel
@@ -3600,7 +5573,7 @@ export interface Translations {
   // Onboarding
   onboarding: {
     title: string;
-    welcomeToOctopus: string;
+    welcomeToEcho: string;
     yourAIPlatform: string;
     welcomeDesc: string;
     chatModes: string;
@@ -3677,6 +5650,7 @@ export interface Translations {
     gitDiff: string;
     streamRecovery: string;
     running: string;
+    genericAction: string;
   };
 
   // Live Tool Timeline detail labels
@@ -3691,6 +5665,7 @@ export interface Translations {
     sourceFrom: (source: string) => string;
     pageOpenedAndExtracted: string;
     parallelDispatching: (count?: number) => string;
+    parallelDispatchFailed: (count?: number) => string;
     parallelTasksReturned: (count?: number) => string;
     rolesWithNextStep: (roles: string) => string;
     subtaskAggregation: string;
@@ -3746,6 +5721,59 @@ export interface Translations {
     technologyLeads: string;
     demandLeads: string;
     roundResultsRead: string;
+    detailTitles: {
+      input: string;
+      thought: string;
+      publicReasoning: string;
+      result: string;
+      observation: string;
+      preview: string;
+    };
+    statusRunning: string;
+    statusDone: string;
+    statusFailed: string;
+    statusWaitingApproval: string;
+    showMoreResults: (count: number) => string;
+    collapseResults: string;
+    applyingSkill: (running: boolean) => string;
+    planningNextStep: (running: boolean) => string;
+    readingFile: (running: boolean) => string;
+    browsingDirectory: (running: boolean) => string;
+    searchingFiles: (running: boolean) => string;
+    searchingText: (running: boolean) => string;
+    runningCommand: (running: boolean) => string;
+    creatingFile: (running: boolean) => string;
+    writingFile: (running: boolean) => string;
+    editingFile: (running: boolean) => string;
+    readingGitStatus: (running: boolean) => string;
+    readingGitDiff: (running: boolean) => string;
+    committingGit: (running: boolean) => string;
+  };
+
+  // Store utilities
+  storeUtils: {
+    appCategoryLabels: Record<string, string>;
+    technicalDetails: string;
+    createPluginPrompt: string;
+  };
+
+  // Local skill directory panel
+  localSkillDirectory: {
+    errorTitle: string;
+    retryLabel: string;
+    hideInternalSkills: string;
+    showInternalSkills: (count: number) => string;
+    verified: string;
+    localCapability: string;
+    marketReasonMerged: string;
+    internalSkill: string;
+    visibilityDuplicate: string;
+    visibilityProvider: string;
+    visibilitySpecialized: string;
+    visibilityDeprecated: string;
+    visibilityInternal: string;
+    enabled: string;
+    enable: string;
   };
 
   // Annotations
@@ -3766,6 +5794,11 @@ export interface Translations {
     showResolved: (count: number) => string;
     hideResolved: (count: number) => string;
     anonymous: string;
+    sendReply: string;
+    justNow: string;
+    minutesAgo: (count: number) => string;
+    hoursAgo: (count: number) => string;
+    daysAgo: (count: number) => string;
   };
 
   // Mention Autocomplete
@@ -3819,8 +5852,12 @@ export interface Translations {
     noTasks: string;
     last: string;
     jobName: string;
+    jobNamePlaceholder: string;
     commandToRun: string;
+    commandPlaceholder: string;
     cronExpression: string;
+    cronPlaceholder: string;
+    cronHint: string;
     create: string;
     cancel: string;
     addTask: string;
@@ -3830,15 +5867,37 @@ export interface Translations {
     createFailed: string;
     deleteSuccess: string;
     deleteFailed: string;
+    needsAuth: string;
+    nameRequired: string;
+    commandRequired: string;
+    cronRequired: string;
+    cronInvalid: string;
+    deleteConfirmTitle: string;
+    deleteConfirmDescription: (name: string) => string;
+    deleteTask: (name: string) => string;
   };
 
   // Team Input
   teamInput: {
     placeholder: string;
+    assigneeAll: string;
+    assigneeCount: (count: number) => string;
+    assigneeHint: string;
+    assigneeMenuTitle: string;
+    clearAssignee: string;
+    localFileAgent: string;
+    localFileAgentHint: string;
+  };
+
+  // Mobile
+  mobile: {
+    micDisabledAria: string;
   };
 
   fileTree: {
     emptyDirectory: string;
+    openFolderAria: (name: string) => string;
+    openFileAria: (name: string) => string;
   };
 
   // TAOR Indicator
@@ -3856,10 +5915,11 @@ export interface Translations {
   // Bundle Info
   bundleInfo: {
     title: string;
+    appVersion: string;
+    license: string;
     environment: string;
     vite: string;
     react: string;
-    sourceModules: string;
   };
 
   // Model Picker
@@ -3874,8 +5934,8 @@ export interface Translations {
     enabling: string;
     clickToEnable: string;
     recommended: string;
-    bindMoliliFirst: string;
-    bindMoliliDesc: string;
+    bindAccountFirst: string;
+    bindAccountDesc: string;
     modelEnabled: (name: string) => string;
     enableFailed: string;
     enableFailedWithMessage: (msg: string) => string;
@@ -3883,12 +5943,16 @@ export interface Translations {
     autoModelDescription: string;
     /** Compact badge for the picker row (e.g. "智能" / "Smart"). */
     autoModelBadge: string;
+    longContextHint: string;
+    contextLength: string;
+    contextStandard: string;
+    contextMax: string;
   };
 
   // Account Settings
   accountSettings: {
     creditsBalance: string;
-    moliliAccount: string;
+    octAccount: string;
     available: string;
     refreshing: string;
     refresh: string;
@@ -3902,6 +5966,7 @@ export interface Translations {
     primaryAccount: string;
     linkGoogle: string;
     linkGithub: string;
+    thirdPartyLinkUnavailable: string;
     unlinkConfirm: string;
     systemManaged: string;
     clickToChangeAvatar: string;
@@ -3920,11 +5985,17 @@ export interface Translations {
     factoryResetConfirm: string;
     // Avatar / account session hints
     avatarTooLarge: string;
-    moliliSessionExpired: (reason: string) => string;
-    moliliSessionExpiredDefaultReason: string;
-    moliliSessionCacheHint: string;
+    sessionExpired: (reason: string) => string;
+    sessionExpiredDefaultReason: string;
+    sessionCacheHint: string;
     cachedSuffix: string;
     expiredTooltip: string;
+    profileUpdated: string;
+    avatarUploaded: string;
+    accountUnlinked: string;
+    privacyUpdated: string;
+    dataUnavailable: string;
+    retry: string;
   };
 
   // Subscription Settings
@@ -3934,8 +6005,22 @@ export interface Translations {
     currentPlan: string;
     upgradeNow: string;
     contactUs: string;
+    supportEmail: string;
     invoiceHint: string;
     totalCredits: (total: string) => string;
+    billingUnavailableTitle: string;
+    billingUnavailableDescription: string;
+    subscriptionUnavailable: string;
+    plansUnavailable: string;
+    noPlans: string;
+    reloadSubscription: string;
+    reloadBilling: string;
+    reloadPlans: string;
+    cancelTitle: string;
+    cancelDescription: string;
+    keepPlan: string;
+    confirmCancel: string;
+    cancelled: string;
     plans: {
       plus: {
         name: string;
@@ -3989,9 +6074,40 @@ export interface Translations {
     panelStatusCompleted: string;
     panelStatusFailed: string;
     statTotal: string;
+    statCapacity: string;
     statRunning: string;
     statCompleted: string;
     statFailed: string;
+    statEvidence: string;
+    phaseDispatch: string;
+    phaseExecute: string;
+    phaseAggregate: string;
+    phaseSynthesize: string;
+    deliveryReady: string;
+    deliveryNeedsReview: string;
+    deliveryPrimary: string;
+    deliverySupporting: (n: number) => string;
+    deliveryRetry: (n: number) => string;
+    deliverySummary: string;
+    deliveryCopy: string;
+    deliveryCopied: string;
+    deliveryReplayExport: string;
+    deliveryReplayExported: string;
+    deliveryRetryNote: (n: number) => string;
+    deliveryCoverage: (answered: number, total: number) => string;
+    deliveryNext: string;
+    deliveryActionUsePrimary: string;
+    deliveryActionUsePrimaryAndRetry: string;
+    deliveryActionAskMembers: string;
+    deliveryActionRetryOrFallback: string;
+    deliveryActionFallback: string;
+    rhythmActive: (name: string) => string;
+    rhythmWorking: string;
+    rhythmDelivered: string;
+    rhythmNeedsReview: string;
+    rhythmProgress: (done: number, total: number) => string;
+    rhythmEvidence: (n: number) => string;
+    rhythmResults: (n: number) => string;
     taskListHeader: string;
     noSwarmTasksTitle: string;
     noSwarmTasksHint: string;
@@ -4029,6 +6145,28 @@ export interface Translations {
     credits: string;
     refreshed: string;
     refreshFailed: string;
+  };
+
+  // Community credits ledger (本地积分账本 / 积分中心)
+  creditsCenter: {
+    title: string;
+    totalBalance: string;
+    accountBalance: string;
+    communityBalance: string;
+    signIn: string;
+    signInDone: string;
+    signInSuccess: (n: number) => string;
+    signInFailed: string;
+    earned: string;
+    spent: string;
+    ledger: string;
+    emptyLedger: string;
+    earnHints: string;
+    earnHintSignIn: (n: number) => string;
+    earnHintPublish: (n: number) => string;
+    earnHintFork: (n: number) => string;
+    earnHintLike: (n: number) => string;
+    spendNoBalance: string;
   };
 
   // Daily credits claim
@@ -4191,40 +6329,6 @@ export interface Translations {
     toastBrowserAuthCancelled: string;
   };
 
-  // Skills page (app/workspace/skills/page.tsx)
-  skillsPage: {
-    pageTitle: string;
-    pageSubtitle: string;
-    disclaimer: string;
-    createButton: string;
-    tabInstalled: string;
-    loadingSkills: string;
-    noInstalledTitle: string;
-    noInstalledHint: string;
-    categories: {
-      sourcing: string;
-      research: string;
-      browse: string;
-      file: string;
-      comm: string;
-      content: string;
-      memory: string;
-      system: string;
-      other: string;
-    };
-    searchPlaceholder: string;
-    matchCount: (matched: number, total: number) => string;
-    totalCount: (n: number) => string;
-    noMatch: (query: string) => string;
-    tooltipSource: (source: string) => string;
-    tooltipCost: (cost: string) => string;
-    tooltipTags: (tags: string) => string;
-    tooltipTested: string;
-    tooltipUntested: string;
-    testedDotTitle: string;
-    noDescription: string;
-  };
-
   // FileActivityIndicator + PreviewRefreshIndicator (observability chrome)
   activityIndicators: {
     recentFileActivity: (n: number) => string;
@@ -4287,6 +6391,9 @@ export interface Translations {
     threshold: string;
     contextFull: string;
     autoCompressed: string;
+    title: string;
+    description: string;
+    tip: string;
   };
 
   // Reflex page (app/workspace/reflex/page.tsx)
@@ -4301,6 +6408,10 @@ export interface Translations {
     reloadLoaded: (rules: number, statsReset: boolean) => string;
     reloadError: (error: string) => string;
     fetchFailed: string;
+    dataLoading: string;
+    dataUnavailable: string;
+    dataRefreshFailed: string;
+    retryButton: string;
     reloadFailed: string;
     statTry: string;
     statHit: string;
@@ -4310,6 +6421,7 @@ export interface Translations {
     statLastHourHits: string;
     sparklineTitle: string;
     sparklineEmpty: string;
+    sparklineUnavailable: string;
     rulesTableTitle: string;
     responseTiersTitle: string;
     colRule: string;
@@ -4321,6 +6433,7 @@ export interface Translations {
     colRate: string;
     colLast: string;
     noRulesLoaded: string;
+    rulesUnavailable: string;
     tierEnabled: string;
     tierDisabled: string;
     tierSize: string;
@@ -4412,6 +6525,9 @@ export interface Translations {
     addendumAppliedTitle: string;
     addendumLive: string;
     addendumNone: string;
+    stateLoading: string;
+    stateUnavailable: string;
+    addendumUnavailable: string;
     addendumClearButton: string;
     addendumBytes: (size: number) => string;
     knobIterations: string;
@@ -4432,6 +6548,8 @@ export interface Translations {
     canaryTitle: string;
     canaryRefresh: string;
     canaryEmpty: string;
+    canaryUnavailable: string;
+    canaryCountsUnavailable: string;
     canaryCounts: (active: number, rolledBack: number, total: number) => string;
     canaryPhase: (phase: string) => string;
     canaryRate: (rate: number) => string;
@@ -4511,11 +6629,6 @@ export interface Translations {
     clearAddendumPath: (path: string) => string;
   };
 
-  // Workflows wrapper page (app/workspace/workflows/page.tsx)
-  workflowsWrapperPage: {
-    loadingEditor: string;
-  };
-
   // AppAuth wrapper page (app/workspace/app-auth/page.tsx)
   appAuthWrapperPage: {
     securityKicker: string;
@@ -4543,6 +6656,66 @@ export interface Translations {
     defaultStrategy: string;
     journalRow: (task: string, arm: string) => string;
     subtitle: string;
+    shell: {
+      startTask: string;
+      runReviewTitle: string;
+      runReviewDescription: string;
+      liveEventsTitle: string;
+      liveEventsDescription: string;
+      resourcesTitle: string;
+      resourcesDescription: string;
+      systemTitle: string;
+      systemDescription: string;
+      overviewTab: string;
+      eventsTab: string;
+      resourcesTab: string;
+      systemTab: string;
+      overviewTitle: string;
+      overviewDescription: string;
+      openNewTask: string;
+      eventsEyebrow: string;
+      eventsTitle: string;
+      eventsDescription: string;
+      resourcesEyebrow: string;
+      resourcesGroupTitle: string;
+      resourcesGroupDescription: string;
+      systemEyebrow: string;
+      systemGroupTitle: string;
+      systemGroupDescription: string;
+    };
+    toolEffects: {
+      title: string;
+      description: string;
+      retryAuthorizedSuccess: string;
+      retryAuthorizationFailed: string;
+      pendingReview: (count: number) => string;
+      noPendingReview: string;
+      refreshAriaLabel: string;
+      backendLabel: string;
+      sharedAcrossHosts: string;
+      localCoordination: string;
+      committedLabel: string;
+      runningLabel: string;
+      loadFailed: (error: string) => string;
+      empty: string;
+      unknownTool: string;
+      receiptMeta: (task: string, step: number, token: number) => string;
+      reviewAndRetry: string;
+      collapsedHistory: string;
+      confirmTitle: string;
+      confirmDescription: string;
+      reasonPlaceholder: string;
+      cancel: string;
+      submitting: string;
+      confirmRetry: string;
+      states: {
+        claimed: string;
+        started: string;
+        committed: string;
+        indeterminate: string;
+        retryAuthorized: string;
+      };
+    };
     swarmCardTitle: string;
     noConcurrentTasks: string;
     noConcurrentTasksHint: string;
@@ -4576,6 +6749,8 @@ export interface Translations {
     pause: string;
     resume: string;
     clear: string;
+    clearConfirmTitle: string;
+    clearConfirmDescription: string;
     noEvents: string;
     noEventsHint: string;
     eventActionFile: string;
@@ -4612,6 +6787,7 @@ export interface Translations {
     // Regeneration panel
     loading: string;
     errorPrefix: string;
+    crossTenantAdminRequired: string;
     trajectoryTotal: string;
     failureCount: string;
     regenProducers: {
@@ -4696,6 +6872,16 @@ export interface Translations {
       lastReset: (value: string) => string;
       source: (source: string, events: number) => string;
       resetButton: string;
+      breakerStates: {
+        closed: string;
+        open: string;
+        halfOpen: string;
+      };
+      hourlyUsageAria: (
+        component: string,
+        used: number,
+        limit: number,
+      ) => string;
     };
     skillProposals: {
       cardTitle: string;
@@ -4787,6 +6973,8 @@ export interface Translations {
     linesSuffix: (n: number) => string;
     forgetLineTitle: string;
     forgetLineButton: string;
+    forgetConfirmTitle: string;
+    forgetConfirmDescription: string;
     nextRunImpact: string;
     failureReadBeforeWrite: string;
     failureTypeError: string;
@@ -4808,6 +6996,24 @@ export interface Translations {
     toastForgetRuleSuccess: string;
     toastForgetMemorySuccess: string;
     toastDeleteFailed: (msg: string) => string;
+  };
+
+  // Evolution explain cards
+  evolutionExplain: {
+    fitnessTitle: string;
+    noAgentSelected: string;
+    loading: string;
+    noFitnessData: string;
+    driftTitle: string;
+    noDriftData: string;
+    noDriftDetected: string;
+    driftDetected: (maxSeverity: string) => string;
+    variantTitle: string;
+    noVariantData: string;
+    colName: string;
+    colUsage: string;
+    colSuccessRate: string;
+    colStatus: string;
   };
 
   // Privacy settings page
@@ -4840,6 +7046,42 @@ export interface Translations {
     toastLockOn: string;
     toastLockOff: string;
     toastToggleFailed: (msg: string) => string;
+    // AI mode (efficiency / privacy)
+    aiModeTitle: string;
+    aiModeDescScanning: string;
+    aiModeRecommended: (label: string) => string;
+    efficiencyMode: string;
+    efficiencyModeDesc: string;
+    privacyMode: string;
+    privacyModeDesc: string;
+    detectButton: string;
+    recommendedTag: string;
+    enabledTag: string;
+    deviceLabel: string;
+    toastAiModeSwitched: (label: string) => string;
+    toastAiModeSwitchFailed: (msg: string) => string;
+    // Path denylist
+    pathDenyTitle: string;
+    pathDenyDesc: string;
+    addPathButton: string;
+    pathDenyEmpty: string;
+    pathActionAria: (path: string) => string;
+    pathDeleteButton: string;
+    addPathDialogTitle: string;
+    addPathDialogDesc: string;
+    pathLabel: string;
+    toastInvalidPath: string;
+    toastPathAdded: (path: string) => string;
+    toastPathAddFailed: (msg: string) => string;
+    toastPathRemoved: (path: string) => string;
+    toastPathRemoveFailed: (msg: string) => string;
+    // LLM judge
+    judgeTitle: string;
+    judgeDesc: string;
+    judgeUnavailable: string;
+    toastJudgeEnabled: string;
+    toastJudgeDisabled: string;
+    toastJudgeToggleFailed: (msg: string) => string;
   };
 
   auth: {
@@ -4851,8 +7093,11 @@ export interface Translations {
     currentAccount: string;
     loginAccount: string;
     phoneNumber: string;
+    emailLabel: string;
+    tabEmail: string;
     verificationCode: string;
     sendCode: string;
+    devCodeNotice: (code: string) => string;
     sending: string;
     loggingIn: string;
     enterDirectly: string;
@@ -4863,14 +7108,20 @@ export interface Translations {
     };
     errors: {
       invalidPhone: string;
+      invalidEmail: string;
       sendFailed: string;
       fillRequired: string;
+      emailFillRequired: string;
+      emailRequired: string;
+      codeRequired: string;
+      invalidCode: string;
       loginFailed: string;
       enterFailed: string;
-      moliliNotEnabled: string;
+      gatewayNotEnabled: string;
     };
     success: {
       codeSent: string;
+      emailCodeSent: string;
       loginSuccess: string;
       guestEntered: string;
     };
@@ -4881,7 +7132,9 @@ export interface Translations {
     };
     terms: {
       autoRegister: string;
+      emailAutoRegister: string;
       agreeTo: string;
+      and: string;
       userAgreement: string;
       privacyPolicy: string;
     };
@@ -4890,17 +7143,54 @@ export interface Translations {
       subtitle: string;
       description: string;
       cardDescription: string;
-    };
-    molili: {
-      title: string;
-      reason: string;
-      autoRegister: string;
+      emailCardDescription: string;
     };
   };
 
-  // Settings Dialog
-  settingsDialog: {
-    dragToResize: string;
+  // Store panels (registry skills/plugins/roles)
+  store: {
+    skillsPanelTitle: string;
+    pluginsPanelTitle: string;
+    searchSkillsPlaceholder: string;
+    searchPluginsPlaceholder: string;
+    searchRolesPlaceholder: string;
+    install: string;
+    installing: string;
+    installed: string;
+    browseOnly: string;
+    pluginsSafetyNotice: string;
+    typeLabelStore: string;
+    typeLabelPluginBundle: string;
+    typeLabelPromptCapability: string;
+    typeLabelTwinRole: string;
+    categoryDigitalTwin: string;
+    expertsPanelTitle: string;
+    searchExpertsPlaceholder: string;
+    expertTypeAgent: string;
+    expertTypeTeam: string;
+    typeAll: string;
+    refreshTooltip: string;
+    installExpertTitle: string;
+    installExpertDesc: (name: string) => string;
+    confirmInstall: string;
+    cancelInstall: string;
+    phaseDownload: string;
+    phaseUnpack: string;
+    phaseImport: string;
+    installSuccess: (name: string) => string;
+    installFailed: (name: string, reason: string) => string;
+    detailTitle: (name: string) => string;
+    detailProfession: string;
+    detailQuickPrompts: string;
+    detailTags: string;
+    detailDescription: string;
+    detailInstall: string;
+    detailInstalled: string;
+    loadMore: string;
+    noMoreItems: string;
+    retry: string;
+    noMatchExperts: (total: number) => string;
+    expertLoadingAria: string;
   };
 
   // Skill Categories
@@ -4944,17 +7234,20 @@ export interface Translations {
   // Hero (landing)
   hero: {
     releaseBadge: string;
-    withOctopus: string;
+    withEcho: string;
     heroDescription: string;
   };
 
   // Channel Pairings
   channelPairings: {
     loadFailed: string;
+    retry: string;
     loading: string;
     users: string;
     groups: string;
     pending: string;
+    emptyListTitle: string;
+    noPendingTitle: string;
     noUsers: string;
     noGroups: string;
     noPending: string;
@@ -5024,6 +7317,9 @@ export interface Translations {
     title: string;
     loading: string;
     empty: string;
+    loadFailed: string;
+    noMatches: string;
+    noMatchesDescription: string;
     searchPlaceholder: string;
     refresh: string;
     noTask: string;
@@ -5032,9 +7328,49 @@ export interface Translations {
 
   // Plan Panel extras
   planPanel: {
+    title: string;
     completed: string;
     inProgress: string;
     pending: string;
+    steps: (completed: number, total: number) => string;
+  };
+
+  // Diagnostics Panel
+  diagnosticsPanel: {
+    title: string;
+    noPreviewIssues: string;
+    sections: {
+      preview: string;
+      workspace: string;
+      project: string;
+      thread: string;
+      writeScope: string;
+      server: string;
+    };
+    labels: {
+      path: string;
+      resolved: string;
+      exists: string;
+      git: string;
+      rules: string;
+      type: string;
+      checks: string;
+      mode: string;
+      sandbox: string;
+      agent: string;
+      persistedWD: string;
+      requested: string;
+      primaryRoot: string;
+      rootN: (n: number) => string;
+      cwd: string;
+      python: string;
+      none: string;
+    };
+    status: {
+      yes: string;
+      no: string;
+    };
+    serverCwdDiffers: string;
   };
 
   // Todo Panel
@@ -5110,6 +7446,32 @@ export interface Translations {
     grantFloor: string;
   };
 
+  share: {
+    share: string;
+    shareTask: string;
+    shareDescription: string;
+    wechat: string;
+    moments: string;
+    copyLink: string;
+    qrCode: string;
+    openInBrowser: string;
+    creatingLink: string;
+    linkCopied: string;
+    linkFailed: string;
+    wechatQrTitle: string;
+    momentsQrTitle: string;
+    qrTitle: string;
+    wechatQrHint: string;
+    momentsQrHint: string;
+    qrHint: string;
+    localOnlyHint: string;
+    stopSharing: string;
+    sharingStopped: string;
+    stopSharingFailed: string;
+    unavailable: string;
+    exportReplay: string;
+  };
+
   // Team Join page
   teamJoin: {
     missingToken: string;
@@ -5124,6 +7486,23 @@ export interface Translations {
     displayNamePlaceholder: string;
     joining: string;
     joinButton: string;
+    applyButton: string;
+    applying: string;
+    approvalRequired: string;
+    approvalRequiredDescription: string;
+    requestPendingTitle: string;
+    requestPendingDescription: string;
+    requestSubmitted: string;
+    requestRejected: string;
+    requestWithdrawn: string;
+    requestExpired: string;
+    requestCancelled: string;
+    requestApprovedButUnavailable: string;
+    refreshStatus: string;
+    withdrawRequest: string;
+    withdrawFailed: string;
+    statusCheckFailed: string;
+    missingDestination: string;
   };
 
   // Evolution Indicator
@@ -5343,10 +7722,21 @@ export interface Translations {
     noSkillsFound: string;
     permissionsLabel: string;
     permissionsHint: string;
+    permissionEffectiveCount: (enabled: number, total: number) => string;
+    permissionGlobalGate: string;
+    permissionAgentGrant: string;
+    permissionEffective: string;
     permissionEnabled: string;
     permissionDisabled: string;
     permissionAvailable: string;
     permissionUnavailable: string;
+    permissionAgentDefault: string;
+    permissionAgentGranted: string;
+    permissionAgentDenied: string;
+    permissionEffectiveHint: string;
+    permissionBlockedByGlobal: string;
+    permissionBlockedByAgent: string;
+    permissionDefaultGrantHint: string;
     permissionUpdateFailed: (msg: string) => string;
     budgetLabel: string;
     budgetOverride: string;
@@ -5358,6 +7748,12 @@ export interface Translations {
   architecture: {
     title: string;
     subtitle: string;
+    loading: string;
+    rendering: string;
+    loadFailed: string;
+    retry: string;
+    emptyTitle: string;
+    emptyDescription: string;
     groups: {
       entry: string;
       diagrams: string;
@@ -5384,11 +7780,31 @@ export interface Translations {
     graphView: string;
     listView: string;
     searchPlaceholder: string;
-    layouts: {
-      ring: string;
-      star: string;
-      layers: string;
-      clusters: string;
+    entityTypes: {
+      center: string;
+      subject: string;
+      object: string;
+      neighbor: string;
+    };
+    controls: {
+      filters: string;
+      focus: string;
+      groups: string;
+      display: string;
+      forces: string;
+      evidence: string;
+      labels: string;
+      links: string;
+      stars: string;
+      autoRotate: string;
+      confidence: string;
+      degree: string;
+      updated: string;
+      nodeSize: string;
+      linkWidth: string;
+      linkDistance: string;
+      spread: string;
+      fitGraph: string;
     };
     nodeAndEdgeStats: (n: number, e: number) => string;
   };
@@ -5445,6 +7861,8 @@ export interface Translations {
     error: string;
     completed: string;
     agentCollaboration: string;
+    viewMachine: string;
+    viewResult: string;
     readyToReadEditVerify: string;
     readyToBreakdownAndGather: string;
     readyToExecuteTask: string;
@@ -5502,5 +7920,623 @@ export interface Translations {
     refresh: string;
     noAffinity: string;
     whenToUse: string;
+  };
+
+  // Desktop page
+  desktop: {
+    disabledTitle: string;
+    disabledDescription: string;
+    enableButton: string;
+    pluginSettingsButton: string;
+    backToWorkspaceButton: string;
+    header: {
+      workspaceTooltip: string;
+      brand: string;
+      accountModels: string;
+      desktopAssistant: string;
+      desktopCount: (count: number) => string;
+      market: string;
+      aiReady: string;
+      wifi: string;
+      notifications: string;
+      quickSettings: string;
+      date: (month: number, date: number, weekday: string) => string;
+    };
+    widget: {
+      today: string;
+      date: (
+        year: number,
+        month: number,
+        date: number,
+        weekday: string,
+      ) => string;
+    };
+    searchPlaceholder: string;
+    open: string;
+    drawer: {
+      title: string;
+      loading: string;
+      error: (error: string) => string;
+      count: (count: number) => string;
+      electronMode: string;
+      archiveBadge: (moved: number) => string;
+      autoArchiveTooltip: string;
+      archiving: string;
+      archive: string;
+      undoTooltip: string;
+      undoing: string;
+      undo: string;
+      closeAria: string;
+      readFailed: string;
+      retry: string;
+      searchPlaceholder: string;
+    };
+    categories: {
+      all: string;
+      folder: string;
+      app: string;
+      image: string;
+      document: string;
+      package: string;
+      other: string;
+    };
+    loadingItems: string;
+    fallbackGroupTitle: string;
+    empty: {
+      noSearchResults: string;
+      tryAnotherKeyword: string;
+      noDesktopFiles: string;
+      dropFilesHere: string;
+      noFilesInCategory: string;
+    };
+    contextMenu: {
+      open: string;
+      archiveToCategory: string;
+      delete: string;
+      confirmTrash: (name: string) => string;
+      trashing: string;
+    };
+    dock: {
+      desktopFiles: string;
+      systemMonitor: string;
+      settings: string;
+    };
+    apps: {
+      workspace: { name: string; subtitle: string };
+      aiBrowser: { name: string; subtitle: string };
+      localFiles: { name: string; subtitle: string };
+      localApps: { name: string; subtitle: string };
+      terminalLogs: { name: string; subtitle: string };
+      settings: { name: string; subtitle: string };
+    };
+    placeholders: {
+      browser: string;
+      communication: string;
+      notes: string;
+      subtitle: string;
+    };
+    systemWidget: {
+      title: string;
+      cpu: string;
+      memory: string;
+      cores: string;
+      uptime: (hours: number, minutes: number) => string;
+    };
+    weekdays: string[];
+    errors: {
+      listItems: string;
+      refresh: string;
+      archive: string;
+      undo: string;
+      move: string;
+      archiveOnlyFiles: string;
+      trash: string;
+    };
+    toasts: {
+      noFilesToArchive: string;
+      archived: (moved: number) => string;
+      undone: (undone: number) => string;
+      noUndoOperations: string;
+      fileMoved: string;
+      fileArchived: (name: string, folder: string) => string;
+      trashed: (name: string) => string;
+    };
+  };
+
+  // Remote Workspace collaboration (Task 8–11)
+  remoteWorkspace: {
+    switcherTitle: string;
+    switcherAria: string;
+    searchPlaceholder: string;
+    empty: string;
+    loading: string;
+    loadFailed: (error: string) => string;
+    addWorkspace: string;
+    switchWorkspaceAria: (name: string) => string;
+    activeWorkspace: string;
+    typeLocal: string;
+    typeSmb: string;
+    typeNfs: string;
+    typeWebdav: string;
+    typeSftp: string;
+    typeS3: string;
+    mountTarget: string;
+
+    mountDialog: {
+      title: string;
+      nameLabel: string;
+      namePlaceholder: string;
+      protocolLabel: string;
+      pathLabel: string;
+      pathPlaceholder: string;
+      hostLabel: string;
+      shareLabel: string;
+      usernameLabel: string;
+      passwordLabel: string;
+      domainLabel: string;
+      exportPathLabel: string;
+      urlLabel: string;
+      portLabel: string;
+      identityFileLabel: string;
+      endpointUrlLabel: string;
+      bucketLabel: string;
+      accessKeyLabel: string;
+      secretKeyLabel: string;
+      regionLabel: string;
+      testConnection: string;
+      testing: string;
+      testOk: string;
+      testFailed: (error: string) => string;
+      create: string;
+      creating: string;
+      createFailed: (error: string) => string;
+      credentialsHint: string;
+    };
+
+    members: {
+      title: string;
+      loading: string;
+      empty: string;
+      addMember: string;
+      addMemberPlaceholder: string;
+      roleOwner: string;
+      roleEditor: string;
+      roleReviewer: string;
+      roleViewer: string;
+      changeRoleAria: (name: string) => string;
+      removeMemberAria: (name: string) => string;
+      editingFile: (file: string) => string;
+      editingNone: string;
+      addFailed: (error: string) => string;
+      removeFailed: (error: string) => string;
+      roleChangeFailed: (error: string) => string;
+    };
+
+    lease: {
+      locked: string;
+      lockedBy: (name: string) => string;
+      remaining: (seconds: number) => string;
+      requestTakeover: string;
+      takeoverSent: string;
+      takeoverFailed: (error: string) => string;
+    };
+
+    // WorkDirSelector remote-tab labels (Task 12)
+    localTab: string;
+    remoteTab: string;
+    remoteEmpty: string;
+    remoteLoading: string;
+    remoteLoadFailed: (error: string) => string;
+  };
+
+  // Deep Research Panel
+  deepResearchPanel: {
+    title: string;
+    cancelAgentRunTitle: string;
+    cancelRunConfirmTitle: string;
+    cancelRunConfirmDescription: (count: number) => string;
+    cancelRunConfirmLabel: string;
+    copyReportFailedToast: string;
+    metricRoles: string;
+    metricSources: string;
+    metricMaterials: string;
+    agentBudget: string;
+    searchesCount: (n: number) => string;
+    batchProgress: (completed: number, total: number) => string;
+    batchFailedCancelled: (failed: number, cancelled: number) => string;
+    batchIdLabel: (id: string) => string;
+    liveAgentStream: string;
+    eventsCount: (n: number) => string;
+    prefetch: string;
+    prefetchStats: (runs: number, evidence: number) => string;
+    executionSteps: string;
+    synthesisRoleLabel: string;
+    searchSources: string;
+    evidence: string;
+    finalReport: string;
+    savedToLeadMemory: string;
+    copied: string;
+    copyMarkdown: string;
+    downloadMarkdown: string;
+    stageSummary: string;
+    openUrl: string;
+    hitsCount: (n: number) => string;
+    evidenceCount: (n: number) => string;
+    batchEventTitle: (status: string) => string;
+    subagentEventTitle: (name: string, status: string) => string;
+    subagentFallback: string;
+    statusComplete: string;
+    statusUpdated: string;
+    routeBlocked: string;
+    routeWarning: string;
+    routeAllowed: string;
+  };
+
+  // Desktop Organizer Page
+  desktopOrganizerPage: {
+    title: string;
+    description: string;
+    enabledOn: string;
+    enabledOff: string;
+    tileNotTakeoverTitle: string;
+    tileNotTakeoverBody: string;
+    tileRightClickTitle: string;
+    tileRightClickBody: string;
+    tileSafePreviewTitle: string;
+    tileSafePreviewBody: string;
+    webEnvNotice: string;
+    contextMenuTitle: string;
+    contextMenuDescription: string;
+    installButton: string;
+    installingButton: string;
+    removeButton: string;
+    removingButton: string;
+    installSuccess: string;
+    installUnsupported: string;
+    removeSuccess: string;
+    removeUnsupported: string;
+    openAssistant: string;
+    backToWorkspace: string;
+    confirmRemoveTitle: string;
+    confirmRemoveDescription: string;
+  };
+
+  // Knowledge page
+  knowledge: {
+    comingSoon: string;
+    tabFiles: string;
+    memoryManagement: string;
+    wikiDocs: string;
+    fileManagement: string;
+  };
+
+  // Work block labels (template strings with {var} placeholders)
+  workBlocks: {
+    actions: {
+      awaitVerification: string;
+      spawnAgent: string;
+      finishAgent: string;
+      writeTodoList: string;
+      parallelDispatch: string;
+      submitResult: string;
+      loadSkill: string;
+      terminalFailed: string;
+      terminalRecovered: string;
+      runTerminal: string;
+      read: string;
+      createFile: string;
+      deleteFile: string;
+      editFile: string;
+      browse: string;
+      search: string;
+      execute: string;
+    };
+    actionTarget: string;
+    spawnAgent: string;
+    finishAgent: string;
+    parallelDispatch: string;
+    parallelDispatchWithCount: string;
+    parallelTarget: string;
+    parallelTargetWithCount: string;
+    skillNamed: string;
+    skillDeepResearch: string;
+    skillReportWriting: string;
+    skillDocx: string;
+    connectModel: string;
+    subagentFallback: string;
+  };
+
+  // Storage (local knowledge base) page
+  storage: {
+    defaultQuery: string;
+    libraries: {
+      overviewLabel: string;
+      overviewDetail: string;
+      appsLabel: string;
+      appsDetail: string;
+      docsLabel: string;
+      docsDetail: string;
+      imagesLabel: string;
+      imagesDetail: string;
+      videosLabel: string;
+      videosDetail: string;
+      computerLabel: string;
+      computerDetail: string;
+      sourcesLabel: string;
+      sourcesDetail: string;
+    };
+    service: {
+      credentialsExpired: string;
+      notFound: string;
+      startFailed: string;
+      notConnected: string;
+      networkError: string;
+    };
+    toolbar: {
+      authorize: string;
+      scan: string;
+      privacy: string;
+      efficiency: string;
+      online: string;
+      offline: string;
+      reconnecting: string;
+      reconnect: string;
+      searchPlaceholder: string;
+      searchAria: string;
+      searchIn: string;
+      scopeFilterAria: string;
+      gridViewAria: string;
+      listViewAria: string;
+      filterAria: string;
+      sortAria: string;
+    };
+    overview: {
+      tabAll: string;
+      tabDocs: string;
+      tabImages: string;
+      tabRecent: string;
+      indexingTitle: string;
+      indexingDesc: string;
+      aggregateDesc: string;
+      localDatabaseBadge: string;
+      previewTitle: string;
+      previewSubtitle: string;
+      itemsWithStatus: string;
+    };
+    docs: {
+      title: string;
+      subtitle: string;
+      searchLabel: string;
+      allDocs: string;
+      indexNote: string;
+      badgeRecent: string;
+      badgeLocalDocs: string;
+      colName: string;
+      colLocation: string;
+      colSize: string;
+      colModified: string;
+      colActions: string;
+      footerNote: string;
+    };
+    images: {
+      title: string;
+      subtitle: string;
+      searchLabel: string;
+      badgeAllImages: string;
+      filterAll: string;
+      filterOcr: string;
+      filterLocalLibrary: string;
+      ocrBadge: string;
+    };
+    videos: {
+      title: string;
+      subtitle: string;
+      searchLabel: string;
+      badgeAllVideos: string;
+      indexNote: string;
+      indexAction: string;
+      indexing: string;
+      noResults: string;
+      colName: string;
+      colLocation: string;
+      colSize: string;
+      colDuration: string;
+      colModified: string;
+      colActions: string;
+      footerNote: string;
+      tabVideos: string;
+      tabPeople: string;
+      tabTags: string;
+      searchPlaceholder: string;
+      searchHint: string;
+      noIndex: string;
+      noFaces: string;
+      noTags: string;
+      noOcr: string;
+      summary: string;
+      cover: string;
+      duration: string;
+      peopleCount: (n: number) => string;
+      faceCount: (n: number) => string;
+      player: {
+        open: string;
+        close: string;
+        prev: string;
+        next: string;
+        atTime: (t: string) => string;
+      };
+      ocr: {
+        label: string;
+        hint: string;
+      };
+    };
+    apps: {
+      title: string;
+      subtitle: string;
+      searchLabel: string;
+      registeredTitle: string;
+      registeredSubtitle: string;
+      badgeList: string;
+      colName: string;
+      colType: string;
+      colStatus: string;
+      colActions: string;
+      open: string;
+      actions: string;
+      typeSystemApp: string;
+      typeImagePdf: string;
+      typeDocsSheets: string;
+      typeWebResources: string;
+      typeSystemTool: string;
+      typeDownloadManager: string;
+      statusRegistered: string;
+      statusPendingScan: string;
+      statusCallable: string;
+      statusFolder: string;
+    };
+    computer: {
+      searchLabel: string;
+      currentDirBadge: string;
+      itemsCount: string;
+      stayNote: string;
+      colName: string;
+      colType: string;
+      colItems: string;
+      footerOnline: string;
+      footerOffline: string;
+      folderType: string;
+    };
+    sources: {
+      title: string;
+      subtitle: string;
+      add: string;
+      scanQueueAria: string;
+      privacyPolicyAria: string;
+      metricSources: string;
+      metricFiles: string;
+      metricChunks: string;
+      reconnectTitle: string;
+      notConnected: string;
+      badgeLocalIndex: string;
+      badgeNoUpload: string;
+      colDirectory: string;
+      colFiles: string;
+      colChunks: string;
+      colStatus: string;
+      emptyTitleOnline: string;
+      emptyTitleOffline: string;
+      emptyDescOnline: string;
+      emptyDescOffline: string;
+      addFolder: string;
+      viewPrivacyPolicy: string;
+      footerPrivacy: string;
+      footerQueue: string;
+      filesCount: string;
+      chunksCount: string;
+      statusReady: string;
+      statusPending: string;
+      removeTitle: string;
+      removeDesc: string;
+      removeConfirm: string;
+      remove: string;
+    };
+    search: {
+      backTo: string;
+      resultsTitle: string;
+      statusTitle: string;
+      hitsSummary: string;
+      noHitsSummary: string;
+      continueLabel: string;
+      quoteSelected: string;
+      engineNotAttached: string;
+      noMatch: string;
+      noMatchHint: string;
+      viewSources: string;
+      switchPrivacyMode: string;
+    };
+    preview: {
+      sourceLocation: string;
+      typeLabel: string;
+      updatedLabel: string;
+      sizeLabel: string;
+      snippetTitle: string;
+      snippetDesc: string;
+      quoteInChat: string;
+      openLocation: string;
+      actionPreview: string;
+      actionQuote: string;
+      actionLocate: string;
+    };
+    topics: {
+      docsAllTitle: string;
+      docsAllSubtitle: string;
+      docsAllStatus: string;
+      docsSourcesTitle: string;
+      docsSourcesSubtitle: string;
+      docsSourcesStatus: string;
+      docsTopicsTitle: string;
+      docsTopicsSubtitle: string;
+      docsTopicsStatus: string;
+      docsRecentTitle: string;
+      docsRecentSubtitle: string;
+      docsRecentStatus: string;
+      imagesAllTitle: string;
+      imagesAllSubtitle: string;
+      imagesAllStatus: string;
+      imagesTopicsTitle: string;
+      imagesTopicsSubtitle: string;
+      imagesTopicsStatus: string;
+      imagesSourcesTitle: string;
+      imagesSourcesSubtitle: string;
+      imagesSourcesStatus: string;
+      imagesOcrTitle: string;
+      imagesOcrSubtitle: string;
+      imagesOcrStatus: string;
+      coverWork: string;
+      coverProject: string;
+      coverDownloads: string;
+      coverContract: string;
+      coverTech: string;
+      coverResearch: string;
+      coverToday: string;
+      cover7Days: string;
+      cover30Days: string;
+      coverPeople: string;
+      coverPlaces: string;
+      coverTheme: string;
+      coverDesktop: string;
+      coverWechat: string;
+      coverWhiteboard: string;
+      coverInterface: string;
+      coverSpreadsheet: string;
+    };
+    demoFiles: {
+      doc1Name: string;
+      doc1Kind: string;
+      doc1Updated: string;
+      doc2Name: string;
+      doc2Kind: string;
+      doc2Updated: string;
+      doc3Name: string;
+      doc3Kind: string;
+      doc3Updated: string;
+      doc4Name: string;
+      doc4Kind: string;
+      doc4Updated: string;
+      doc5Name: string;
+      doc5Kind: string;
+      doc5Updated: string;
+      image1Kind: string;
+      image1Updated: string;
+      image2Name: string;
+      image2Kind: string;
+      image2Updated: string;
+      image3Name: string;
+      image3Kind: string;
+      image3Updated: string;
+      image4Name: string;
+      image4Kind: string;
+      image4Updated: string;
+    };
   };
 }

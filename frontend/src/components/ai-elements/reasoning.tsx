@@ -8,9 +8,17 @@ import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { Suspense, createContext, lazy, memo, useContext, useEffect, useState } from "react";
+import {
+  Suspense,
+  createContext,
+  lazy,
+  memo,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
-import { Shimmer } from "./shimmer";
 
 const LazyStreamdown = lazy(() => import("./streamdown-host"));
 
@@ -75,11 +83,18 @@ export const Reasoning = memo(
       }
     }, [isStreaming, setDuration, startTime]);
 
+    // Auto-open only on the false→true edge of `isStreaming`. Tracking
+    // `isOpen` here meant a user who manually collapsed the panel mid-stream
+    // got it forced back open on the next render — the user's explicit
+    // choice must win over the convenience default.
+    const prevStreamingRef = useRef(isStreaming);
     useEffect(() => {
-      if (isStreaming && !isOpen) {
+      const wasStreaming = prevStreamingRef.current;
+      prevStreamingRef.current = isStreaming;
+      if (isStreaming && !wasStreaming) {
         setIsOpen(true);
       }
-    }, [isOpen, isStreaming, setIsOpen]);
+    }, [isStreaming, setIsOpen]);
 
     return (
       <ReasoningContext.Provider
@@ -117,7 +132,7 @@ export const ReasoningTrigger = memo(
       getThinkingMessage ??
       ((streaming: boolean, elapsed?: number) => {
         if (streaming || elapsed === 0) {
-          return <Shimmer duration={1}>{t.streaming.thinking}</Shimmer>;
+          return <span className="animate-pulse">{t.streaming.thinking}</span>;
         }
         if (elapsed === undefined) {
           return <span>{t.streaming.thoughtProcess}</span>;
@@ -128,7 +143,7 @@ export const ReasoningTrigger = memo(
     return (
       <CollapsibleTrigger
         className={cn(
-          "text-muted-foreground hover:text-foreground inline-flex w-full items-center gap-2 rounded-lg px-1 py-0.5 text-sm transition-colors hover:bg-muted/30",
+          "text-muted-foreground hover:text-foreground inline-flex w-full items-center gap-2 px-1 py-0.5 text-sm transition-colors hover:bg-muted/30",
           className,
         )}
         {...props}
@@ -164,8 +179,9 @@ export const ReasoningContent = memo(
         className={cn(
           "mt-2 text-sm relative overflow-hidden",
           "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground data-[state=closed]:animate-out data-[state=open]:animate-in outline-none",
-          "rounded-lg border border-border/40 bg-muted/20 p-3 pl-4",
-          isStreaming && "border-l-primary/50 shadow-[inset_2px_0_0_0_var(--primary)]",
+          "rounded-lg border border-border-subtle bg-muted/20 p-3 pl-4",
+          isStreaming &&
+            "border-l-primary/50 shadow-[inset_2px_0_0_0_var(--primary)]",
           className,
         )}
         {...props}

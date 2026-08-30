@@ -58,13 +58,21 @@ export function ContextCompressor({
       !hasAutoCompressed &&
       !autoCompressRef.current &&
       !isCompressing &&
+      !disabled &&
       onCompress
     ) {
       autoCompressRef.current = true;
       setHasAutoCompressed(true);
       void onCompress();
     }
-  }, [progress, compressThreshold, hasAutoCompressed, isCompressing, onCompress]);
+  }, [
+    progress,
+    compressThreshold,
+    hasAutoCompressed,
+    isCompressing,
+    disabled,
+    onCompress,
+  ]);
 
   useEffect(() => {
     if (progress < compressThreshold * 0.8) {
@@ -82,7 +90,7 @@ export function ContextCompressor({
   const isFull = progress >= 0.95;
   const circumference = 2 * Math.PI * 7;
   const strokeLength = circumference * progress;
-  const canCompress = Boolean(onCompress) && !isCompressing;
+  const canCompress = Boolean(onCompress) && !isCompressing && !disabled;
   const contextLabel = `${t.contextCompressor?.contextUsage ?? "Context Usage"}: ${percentage}%`;
 
   return (
@@ -105,11 +113,7 @@ export function ContextCompressor({
           aria-valuemax={100}
           aria-valuenow={percentage}
         >
-          <svg
-            aria-hidden
-            viewBox="0 0 18 18"
-            className="size-4 -rotate-90"
-          >
+          <svg aria-hidden viewBox="0 0 18 18" className="size-4 -rotate-90">
             <circle
               cx="9"
               cy="9"
@@ -130,7 +134,7 @@ export function ContextCompressor({
                 strokeLinecap="round"
                 strokeDasharray={`${strokeLength} ${circumference}`}
                 className={cn(
-                  "transition-[stroke-dasharray] duration-300",
+                  "transition-[stroke-dasharray] duration-slow",
                   isCompressing && "animate-pulse",
                 )}
               />
@@ -141,11 +145,10 @@ export function ContextCompressor({
       </TooltipTrigger>
       <TooltipContent side="top" align="center">
         <div className="space-y-1 text-xs">
-          <div className="font-medium">
-            {contextLabel}
-          </div>
+          <div className="font-medium">{contextLabel}</div>
           <div className="text-muted-foreground">
-            {t.contextCompressor?.clickToCompress ?? "Click to compress context"}
+            {t.contextCompressor?.clickToCompress ??
+              "Click to compress context"}
           </div>
           <div className="flex justify-between gap-4">
             <span className="text-muted-foreground">Tokens</span>
@@ -162,7 +165,7 @@ export function ContextCompressor({
             </span>
           </div>
           {isFull && (
-            <div className="border-t border-border/50 pt-1 font-medium text-destructive">
+            <div className="border-t border-border-default pt-1 font-medium text-destructive">
               {t.contextCompressor?.contextFull ?? "Context nearly full!"}
             </div>
           )}

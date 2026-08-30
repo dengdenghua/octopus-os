@@ -24,7 +24,8 @@ const TS_EXT = [".ts", ".tsx", ".jsx", ".js"];
 async function* walk(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
   for (const e of entries) {
-    if (e.name === "node_modules" || e.name === "dist" || e.name === "coverage") continue;
+    if (e.name === "node_modules" || e.name === "dist" || e.name === "coverage")
+      continue;
     const full = join(dir, e.name);
     if (e.isDirectory()) yield* walk(full);
     else if (e.isFile()) yield full;
@@ -93,8 +94,14 @@ for (const f of allFiles) {
   // export { a, b as c } from "x"  OR  export { a, b }
   const re2 = /export\s*\{\s*([^}]+)\s*\}(?:\s+from\s+["']([^"']+)["'])?/g;
   while ((mm = re2.exec(src)) !== null) {
-    const names = mm[1].split(",").map((s) => s.trim().split(/\s+as\s+/)[0].trim());
-    for (const n of names) if (n && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(n)) m.set(n, "re-export");
+    const names = mm[1].split(",").map((s) =>
+      s
+        .trim()
+        .split(/\s+as\s+/)[0]
+        .trim(),
+    );
+    for (const n of names)
+      if (n && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(n)) m.set(n, "re-export");
   }
   if (/export\s+default\s+/.test(src)) m.set("default", "default");
   exportsByFile.set(stripExt(relPosix(f)), m);
@@ -107,11 +114,19 @@ for (const f of allFiles) {
   const re1 = /import\s*\{\s*([^}]+)\s*\}\s*from\s*["']([^"']+)["']/g;
   let mm;
   while ((mm = re1.exec(src)) !== null) {
-    const names = mm[1].split(",").map((s) => s.trim().split(/\s+as\s+/)[0].trim());
+    const names = mm[1].split(",").map((s) =>
+      s
+        .trim()
+        .split(/\s+as\s+/)[0]
+        .trim(),
+    );
     for (const n of names) {
       if (n) {
         let s = usageByName.get(n);
-        if (!s) { s = new Set(); usageByName.set(n, s); }
+        if (!s) {
+          s = new Set();
+          usageByName.set(n, s);
+        }
         s.add(meRel);
       }
     }
@@ -120,15 +135,22 @@ for (const f of allFiles) {
   const re2 = /import\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s*["']([^"']+)["']/g;
   while ((mm = re2.exec(src)) !== null) {
     let s = usageByName.get(mm[1]);
-    if (!s) { s = new Set(); usageByName.set(mm[1], s); }
+    if (!s) {
+      s = new Set();
+      usageByName.set(mm[1], s);
+    }
     s.add(meRel);
   }
   // import X, { a, b } from "x"  (default + named, same regex catches default)
   // import * as X from "x"
-  const re3 = /import\s*\*\s*as\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s*["']([^"']+)["']/g;
+  const re3 =
+    /import\s*\*\s*as\s+([A-Za-z_$][A-Za-z0-9_$]*)\s+from\s*["']([^"']+)["']/g;
   while ((mm = re3.exec(src)) !== null) {
     let s = usageByName.get(mm[1]);
-    if (!s) { s = new Set(); usageByName.set(mm[1], s); }
+    if (!s) {
+      s = new Set();
+      usageByName.set(mm[1], s);
+    }
     s.add(meRel);
   }
   // import "x" (side-effect, no names, but file is reached)
@@ -140,7 +162,8 @@ const reachedFiles = new Set();
 for (const f of allFiles) {
   const src = await readFile(f, "utf8");
   // All import specifiers
-  const re = /(?:import\s+(?:[^"';]+\s+from\s+)?|import\s*\(\s*|export\s*\*\s*from\s*|export\s*\{[^}]+\}\s*from\s*)["']([^"']+)["']/g;
+  const re =
+    /(?:import\s+(?:[^"';]+\s+from\s+)?|import\s*\(\s*|export\s*\*\s*from\s*|export\s*\{[^}]+\}\s*from\s*)["']([^"']+)["']/g;
   let mm;
   while ((mm = re.exec(src)) !== null) {
     const resolved = resolveImport(f, mm[1]);
@@ -165,7 +188,10 @@ for (const [file, m] of exportsByFile) {
   }
 }
 
-const totalExports = [...exportsByFile.values()].reduce((a, m) => a + m.size, 0);
+const totalExports = [...exportsByFile.values()].reduce(
+  (a, m) => a + m.size,
+  0,
+);
 const summary = {
   totalFiles: allFiles.length,
   totalExports,
@@ -175,4 +201,14 @@ const summary = {
 // dedupe orphan files list
 const orphanDedup = [...new Set(orphanFiles)].sort();
 
-process.stdout.write(JSON.stringify({ summary, orphanFiles: orphanDedup, unusedExports: unusedExports.slice(0, 200) }, null, 2) + "\n");
+process.stdout.write(
+  JSON.stringify(
+    {
+      summary,
+      orphanFiles: orphanDedup,
+      unusedExports: unusedExports.slice(0, 200),
+    },
+    null,
+    2,
+  ) + "\n",
+);

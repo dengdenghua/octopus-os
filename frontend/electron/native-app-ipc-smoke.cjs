@@ -4,15 +4,13 @@ const fs = require("fs");
 const path = require("path");
 
 const SMOKE_APP_ID = "org.kde.kcalc";
-const ROOT_WAYLAND_REQUEST_PATH =
-  "/etc/echo-os/wayland-native-app-ipc";
-const ROOT_WAYLAND_REQUEST_CONTENT =
-  "schema=1 app=org.kde.kcalc\n";
+const ROOT_WAYLAND_REQUEST_PATH = "/etc/echo-os/wayland-native-app-ipc";
+const ROOT_WAYLAND_REQUEST_CONTENT = "schema=1 app=org.kde.kcalc\n";
 const READY_CONTENT =
   "app=org.kde.kcalc path=preload-ipc-gio result=zero-exit\n";
 const IPC_TIMEOUT_MS = 15_000;
 const IPC_SCRIPT = `(async () => {
-  const bridge = window.octopus && window.octopus.apps;
+  const bridge = window.echo && window.echo.apps;
   if (!bridge) return { ok: false, error: "apps bridge unavailable" };
   const apps = await bridge.list();
   if (!Array.isArray(apps) || !apps.some((app) => app && app.id === "org.kde.kcalc")) {
@@ -170,14 +168,14 @@ async function executeWithTimeout(webContents, setTimer, clearTimer) {
 
 async function runNativeAppIpcSmoke(options = {}) {
   const environment = options.environment || process.env;
-  const requestedApp = environment.OCTOPUS_NATIVE_APP_SMOKE_ID || "";
+  const requestedApp = environment.ECHO_NATIVE_APP_SMOKE_ID || "";
   if (!requestedApp) return { ok: false, skipped: true };
   const platform = options.platform || process.platform;
   const desktopSession = options.desktopSession === true;
   const currentUid =
     options.currentUid ??
     (typeof process.getuid === "function" ? process.getuid() : -1);
-  const standaloneSmoke = environment.OCTOPUS_SMOKE === "1";
+  const standaloneSmoke = environment.ECHO_SMOKE === "1";
   const rootWaylandRequest =
     environment.XDG_SESSION_TYPE === "wayland" &&
     (options.rootWaylandRequestAuthorizer

@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
+import type { Translations } from "@/core/i18n";
 import { cn } from "@/lib/utils";
 
 import {
@@ -44,15 +45,15 @@ function initials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-function timeAgo(ts: number): string {
+function timeAgo(ts: number, t: Translations["annotations"]): string {
   const seconds = Math.floor(Date.now() / 1000 - ts);
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return t.justNow;
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t.minutesAgo(minutes);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return t.hoursAgo(hours);
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return t.daysAgo(days);
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +103,7 @@ export function AnnotationThread({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-card p-3 text-sm shadow-sm transition-colors",
+        "rounded-lg border bg-card p-3 text-sm shadow-[var(--shadow-xs)] transition-colors",
         annotation.resolved && "opacity-60",
         className,
       )}
@@ -112,7 +113,7 @@ export function AnnotationThread({
         <div className="flex items-center gap-2">
           {annotation.author && (
             <div
-              className="flex size-6 shrink-0 items-center justify-center rounded-lg text-[10px] font-semibold text-white"
+              className="flex size-6 shrink-0 items-center justify-center rounded-lg text-xs font-semibold text-white"
               style={{ backgroundColor: annotation.author.avatar_color }}
             >
               {initials(annotation.author.display_name)}
@@ -122,8 +123,8 @@ export function AnnotationThread({
             <span className="text-xs font-medium">
               {annotation.author?.display_name ?? t.annotations.anonymous}
             </span>
-            <span className="text-[10px] text-muted-foreground">
-              {timeAgo(annotation.created_at)}
+            <span className="text-xs text-muted-foreground">
+              {timeAgo(annotation.created_at, t.annotations)}
             </span>
           </div>
         </div>
@@ -137,7 +138,10 @@ export function AnnotationThread({
                   variant="ghost"
                   size="icon"
                   className="size-6"
-                  onClick={() => void unresolveAnnotation(annotation.annotation_id)}
+                  onClick={() =>
+                    void unresolveAnnotation(annotation.annotation_id)
+                  }
+                  aria-label={t.annotations.unresolve}
                 >
                   <Undo2 size={12} />
                 </Button>
@@ -151,7 +155,10 @@ export function AnnotationThread({
                   variant="ghost"
                   size="icon"
                   className="size-6"
-                  onClick={() => void resolveAnnotation(annotation.annotation_id)}
+                  onClick={() =>
+                    void resolveAnnotation(annotation.annotation_id)
+                  }
+                  aria-label={t.annotations.resolve}
                 >
                   <CheckCircle2 size={12} />
                 </Button>
@@ -166,6 +173,7 @@ export function AnnotationThread({
                 size="icon"
                 className="size-6 text-destructive hover:text-destructive"
                 onClick={() => void deleteAnnotation(annotation.annotation_id)}
+                aria-label={t.annotations.delete}
               >
                 <Trash2 size={12} />
               </Button>
@@ -182,7 +190,7 @@ export function AnnotationThread({
 
       {/* Resolved badge */}
       {annotation.resolved && (
-        <div className="mb-2 flex items-center gap-1 text-xs text-emerald-600">
+        <div className="mb-2 flex items-center gap-1 text-xs text-success">
           <Check size={12} />
           <span>{t.annotations.resolved}</span>
         </div>
@@ -216,6 +224,7 @@ export function AnnotationThread({
             className="size-6"
             disabled={!replyText.trim() || replying}
             onClick={() => void handleReply()}
+            aria-label={t.annotations.sendReply}
           >
             <Send size={12} />
           </Button>
@@ -235,7 +244,7 @@ function ReplyBubble({ reply }: { reply: AnnotationReply }) {
     <div className="flex items-start gap-2">
       {reply.author && (
         <div
-          className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-lg text-[9px] font-semibold text-white"
+          className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-lg text-xs font-semibold text-white"
           style={{ backgroundColor: reply.author.avatar_color }}
         >
           {initials(reply.author.display_name)}
@@ -243,11 +252,11 @@ function ReplyBubble({ reply }: { reply: AnnotationReply }) {
       )}
       <div className="flex flex-col">
         <div className="flex items-baseline gap-1.5">
-          <span className="text-[11px] font-medium">
+          <span className="text-xs font-medium">
             {reply.author?.display_name ?? t.annotations.anonymous}
           </span>
-          <span className="text-[10px] text-muted-foreground">
-            {timeAgo(reply.created_at)}
+          <span className="text-xs text-muted-foreground">
+            {timeAgo(reply.created_at, t.annotations)}
           </span>
         </div>
         <p className="text-xs leading-relaxed">{reply.body}</p>
@@ -290,9 +299,7 @@ export function AnnotationSidebar({
       >
         <MessageSquarePlus size={32} strokeWidth={1.5} />
         <p className="text-sm">{t.annotations.noAnnotations}</p>
-        <p className="text-xs">
-          {t.annotations.noAnnotationsHint}
-        </p>
+        <p className="text-xs">{t.annotations.noAnnotationsHint}</p>
       </div>
     );
   }
@@ -312,7 +319,9 @@ export function AnnotationSidebar({
             onClick={() => setShowResolved((v) => !v)}
           >
             <RotateCcw size={12} className="mr-1" />
-            {showResolved ? t.annotations.hideResolved(resolvedCount) : t.annotations.showResolved(resolvedCount)}
+            {showResolved
+              ? t.annotations.hideResolved(resolvedCount)
+              : t.annotations.showResolved(resolvedCount)}
           </Button>
         )}
       </div>
@@ -372,6 +381,7 @@ export function AddAnnotationButton({
               setOpen(true);
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
+            aria-label={t.annotations.addComment}
           >
             <MessageSquarePlus size={14} />
           </Button>
@@ -382,7 +392,12 @@ export function AddAnnotationButton({
   }
 
   return (
-    <div className={cn("mt-1 flex flex-col gap-1.5 rounded-lg border bg-card p-2 shadow-sm", className)}>
+    <div
+      className={cn(
+        "mt-1 flex flex-col gap-1.5 rounded-lg border bg-card p-2 shadow-[var(--shadow-xs)]",
+        className,
+      )}
+    >
       <textarea
         ref={inputRef}
         className="min-h-[60px] w-full resize-none rounded-lg border bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-ring"

@@ -1,4 +1,3 @@
-
 import React, {
   useCallback,
   useEffect,
@@ -199,4 +198,3 @@ export const FlickeringGrid: React.FC<FlickeringGridProps> = ({
     </div>
   );
 };
-

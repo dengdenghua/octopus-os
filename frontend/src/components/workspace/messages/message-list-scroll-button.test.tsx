@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import type * as React from "react";
 import { describe, expect, test, vi } from "vitest";
 
@@ -6,13 +6,17 @@ import type { Message } from "@/core/api/types";
 import type { BaseStream } from "@/core/api/use-stream-types";
 import type { AgentThreadState } from "@/core/threads";
 import { SubtasksProvider } from "@/core/tasks/context";
+import { groupMessages } from "@/core/messages/utils";
 import { renderWithProviders } from "@/test/harness";
 
 import { ThreadProviders } from "./context";
 import type { LiveToolEvent } from "../live-tool-timeline";
 import {
+  buildTurnMarkers,
+  HistoricalTurnBoundary,
   MessageList,
   nearestTurnKeyByViewportCenter,
+  partitionMessageGroupsIntoTurns,
   turnMarkerKindFromMessages,
   visibleTurnMarkerWindow,
 } from "./message-list";
@@ -33,14 +37,23 @@ vi.mock("@/components/ai-elements/conversation", () => ({
     className?: string;
   }) => <div className={className}>{children}</div>,
   ConversationScrollButton: ({
+    activityKey: _activityKey,
+    activityLabel: _activityLabel,
     children,
     style,
     ...props
-  }: React.ComponentProps<"button">) => (
-    <button data-testid="scroll-to-latest" style={style} {...props}>
-      {children}
-    </button>
-  ),
+  }: React.ComponentProps<"button"> & {
+    activityKey?: string | number;
+    activityLabel?: (count: number) => React.ReactNode;
+  }) => {
+    void _activityKey;
+    void _activityLabel;
+    return (
+      <button data-testid="scroll-to-latest" style={style} {...props}>
+        {children}
+      </button>
+    );
+  },
 }));
 
 vi.mock("../artifacts", () => ({
@@ -96,6 +109,47 @@ Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
 });
 
 describe("MessageList scroll-to-latest affordance", () => {
+  test("unmounts distant historical turn content until it nears the viewport", () => {
+    let notify: IntersectionObserverCallback | null = null;
+    class MockIntersectionObserver implements IntersectionObserver {
+      readonly root = null;
+      readonly rootMargin = "1200px 0px";
+      readonly thresholds = [0];
+      constructor(callback: IntersectionObserverCallback) {
+        notify = callback;
+      }
+      disconnect() {}
+      observe() {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      unobserve() {}
+    }
+    const originalIntersectionObserver = window.IntersectionObserver;
+    window.IntersectionObserver = MockIntersectionObserver;
+    try {
+      const view = render(
+        <HistoricalTurnBoundary cacheKey="thread:turn" virtualize>
+          <span>heavy historical content</span>
+        </HistoricalTurnBoundary>,
+      );
+      const boundary = view.container.firstElementChild;
+      expect(boundary).toHaveAttribute("data-turn-mounted", "false");
+      expect(screen.queryByText("heavy historical content")).toBeNull();
+
+      act(() => {
+        notify?.(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+      });
+      expect(boundary).toHaveAttribute("data-turn-mounted", "true");
+      expect(screen.getByText("heavy historical content")).toBeInTheDocument();
+    } finally {
+      window.IntersectionObserver = originalIntersectionObserver;
+    }
+  });
+
   beforeEach(() => {
     scrollIntoViewMock.mockClear();
   });
@@ -113,13 +167,49 @@ describe("MessageList scroll-to-latest affordance", () => {
           />
         </ThreadProviders>
       </SubtasksProvider>,
-      { initialRoute: "/workspace/chats/thread-1" },
+      { initialRoute: "/workspace/realtime/thread-1" },
     );
 
     const button = screen.getByTestId("scroll-to-latest");
-    expect(button).toHaveTextContent("最新");
-    expect(button).toHaveAccessibleName("回到最新消息");
-    expect(button).toHaveStyle({ bottom: "192px" });
+    expect(button).toHaveTextContent("Latest");
+    expect(button).toHaveAccessibleName("Back to latest message");
+    expect(button).toHaveStyle({
+      bottom: "calc(var(--chat-input-overlay-height, 160px) + 12px)",
+    });
+    expect(screen.getByTestId("conversation-bottom-safe-area")).toHaveStyle({
+      height: "max(0px, calc(var(--chat-input-overlay-height, 180px) - 52px))",
+    });
+    expect(screen.getByTestId("conversation-bottom-safe-area")).toHaveAttribute(
+      "data-clearance-mode",
+      "composer-overlap-only",
+    );
+  });
+
+  test("uses the measured composer height instead of preserving the fallback floor", () => {
+    const thread = mockThread();
+
+    renderWithProviders(
+      <div
+        style={
+          { "--chat-input-overlay-height": "112px" } as React.CSSProperties
+        }
+      >
+        <SubtasksProvider>
+          <ThreadProviders thread={thread}>
+            <MessageList
+              threadId="thread-1"
+              thread={thread}
+              paddingBottom={180}
+            />
+          </ThreadProviders>
+        </SubtasksProvider>
+      </div>,
+      { initialRoute: "/workspace/realtime/thread-1" },
+    );
+
+    expect(screen.getByTestId("conversation-bottom-safe-area")).toHaveStyle({
+      height: "max(0px, calc(var(--chat-input-overlay-height, 180px) - 52px))",
+    });
   });
 
   test("renders a left turn locator rail for quick jumps between user turns", () => {
@@ -137,31 +227,28 @@ describe("MessageList scroll-to-latest affordance", () => {
           <MessageList threadId="thread-1" thread={thread} paddingBottom={0} />
         </ThreadProviders>
       </SubtasksProvider>,
-      { initialRoute: "/workspace/chats/thread-1" },
+      { initialRoute: "/workspace/realtime/thread-1" },
     );
 
     const rail = screen.getByRole("navigation", {
-      name: "\u5bf9\u8bdd\u5b9a\u4f4d",
+      name: "Turn locator",
     });
-    expect(rail).toHaveClass("block");
-    expect(rail).not.toHaveClass("hidden");
+    expect(rail).toHaveClass("hidden", "md:block");
     expect(
-      within(rail).getByRole("button", { name: /\u7b2c 1 \u8f6e/ }),
+      within(rail).getByRole("button", { name: /Turn 1/ }),
     ).toHaveAccessibleName(/first request/);
     expect(
       within(rail).getByRole("button", {
-        name: "\u8df3\u5230\u7b2c\u4e00\u8f6e\u5bf9\u8bdd",
+        name: "Jump to first turn",
       }),
     ).toBeInTheDocument();
     expect(
       within(rail).getByRole("button", {
-        name: "\u8df3\u5230\u6700\u540e\u4e00\u8f6e\u5bf9\u8bdd",
+        name: "Jump to last turn",
       }),
     ).toBeInTheDocument();
 
-    fireEvent.click(
-      within(rail).getByRole("button", { name: /\u7b2c 2 \u8f6e/ }),
-    );
+    fireEvent.click(within(rail).getByRole("button", { name: /Turn 2/ }));
 
     expect(scrollIntoViewMock).toHaveBeenCalledWith({
       behavior: "smooth",
@@ -169,7 +256,93 @@ describe("MessageList scroll-to-latest affordance", () => {
     });
   });
 
-  test("renders phased turns as quiet bars and short turns as dots", () => {
+  test("display-locks only completed turns and keeps the newest turn active", () => {
+    const messages: Message[] = [
+      { id: "user-1", type: "human", content: "first request" },
+      { id: "assistant-1", type: "ai", content: "first answer" },
+      { id: "user-2", type: "human", content: "second request" },
+      { id: "assistant-2", type: "ai", content: "streaming answer" },
+    ];
+    const assistant = messages[3]!;
+    const thread = mockThread({
+      messages,
+      streamingMessage: assistant,
+      isLoading: true,
+    });
+
+    const { container } = renderWithProviders(
+      <SubtasksProvider>
+        <ThreadProviders thread={thread}>
+          <MessageList threadId="thread-1" thread={thread} paddingBottom={0} />
+        </ThreadProviders>
+      </SubtasksProvider>,
+      { initialRoute: "/workspace/realtime/thread-1" },
+    );
+
+    const turns = container.querySelectorAll("[data-message-turn]");
+    expect(turns).toHaveLength(2);
+    expect(turns[0]).toHaveAttribute("data-turn-rendering", "history");
+    expect(turns[0]).toHaveClass("message-turn-history");
+    expect(turns[1]).toHaveAttribute("data-turn-rendering", "active");
+    expect(turns[1]).not.toHaveClass("message-turn-history");
+    expect(turns[1]).toContainElement(screen.getByText("streaming answer"));
+  });
+
+  test("partitions leading activity and human turns without dropping groups", () => {
+    const grouped = groupMessages(
+      [
+        { id: "assistant-prelude", type: "ai", content: "restored context" },
+        { id: "user-1", type: "human", content: "first request" },
+        { id: "assistant-1", type: "ai", content: "first answer" },
+        { id: "user-2", type: "human", content: "second request" },
+      ],
+      (group) => group,
+    );
+
+    const turns = partitionMessageGroupsIntoTurns(grouped);
+
+    expect(turns.map((turn) => turn.groupIndexes)).toEqual([[0], [1, 2], [3]]);
+    expect(turns[0]?.key).toMatch(/^prelude:/);
+    expect(turns[1]?.key).toMatch(/^human:/);
+  });
+
+  test("builds locator markers from turn boundaries without including a prelude", () => {
+    const grouped = groupMessages(
+      [
+        { id: "assistant-prelude", type: "ai", content: "restored context" },
+        { id: "user-1", type: "human", content: "  first   request  " },
+        {
+          id: "assistant-1",
+          type: "ai",
+          content: "planned answer",
+          additional_kwargs: { phase_id: "phase-1" },
+        },
+        { id: "user-2", type: "human", content: "" },
+        { id: "assistant-2", type: "ai", content: "short answer" },
+      ] as Message[],
+      (group) => group,
+    );
+    const turns = partitionMessageGroupsIntoTurns(grouped);
+
+    expect(
+      buildTurnMarkers(grouped, turns, (number) => `Turn ${number}`),
+    ).toEqual([
+      {
+        key: turns[1]!.key,
+        kind: "phase",
+        label: "first request",
+        number: 1,
+      },
+      {
+        key: turns[2]!.key,
+        kind: "dot",
+        label: "Turn 2",
+        number: 2,
+      },
+    ]);
+  });
+
+  test("renders explicitly phased turns as quiet bars and short turns as dots", () => {
     const messages: Message[] = [
       { id: "user-1", type: "human", content: "large research task" },
       {
@@ -177,7 +350,7 @@ describe("MessageList scroll-to-latest affordance", () => {
         type: "ai",
         content: "Working through the plan.",
         additional_kwargs: {
-          reasoning_content: "Phase 1: plan\nPhase 2: execute",
+          phase_id: "phase-1",
         },
       },
       { id: "user-2", type: "human", content: "quick follow-up" },
@@ -191,17 +364,17 @@ describe("MessageList scroll-to-latest affordance", () => {
           <MessageList threadId="thread-1" thread={thread} paddingBottom={0} />
         </ThreadProviders>
       </SubtasksProvider>,
-      { initialRoute: "/workspace/chats/thread-1" },
+      { initialRoute: "/workspace/realtime/thread-1" },
     );
 
     const rail = screen.getByRole("navigation", {
-      name: "\u5bf9\u8bdd\u5b9a\u4f4d",
+      name: "Turn locator",
     });
     const phasedTurn = within(rail).getByRole("button", {
-      name: /\u7b2c 1 \u8f6e/,
+      name: /Turn 1/,
     });
     const shortTurn = within(rail).getByRole("button", {
-      name: /\u7b2c 2 \u8f6e/,
+      name: /Turn 2/,
     });
 
     expect(phasedTurn).toHaveAttribute("data-turn-marker-kind", "phase");
@@ -212,10 +385,13 @@ describe("MessageList scroll-to-latest affordance", () => {
     expect(shortTurn.querySelector("span[aria-hidden='true']")).toHaveClass(
       "size-2.5",
     );
-    expect(shortTurn.querySelector("[data-turn-marker-avatar='true']")).toBeTruthy();
+    expect(shortTurn).toHaveAttribute("data-turn-marker-active", "true");
+    expect(
+      shortTurn.querySelector("[data-turn-marker-avatar='true']"),
+    ).toBeNull();
   });
 
-  test("shows a workbench status light only on the running latest turn avatar", () => {
+  test("shows a workbench status light only on the running latest turn marker", () => {
     const messages: Message[] = [
       { id: "user-1", type: "human", content: "large research task" },
       {
@@ -246,17 +422,17 @@ describe("MessageList scroll-to-latest affordance", () => {
           />
         </ThreadProviders>
       </SubtasksProvider>,
-      { initialRoute: "/workspace/chats/thread-1" },
+      { initialRoute: "/workspace/realtime/thread-1" },
     );
 
     const rail = screen.getByRole("navigation", {
-      name: "\u5bf9\u8bdd\u5b9a\u4f4d",
+      name: "Turn locator",
     });
     const firstTurn = within(rail).getByRole("button", {
-      name: /\u7b2c 1 \u8f6e/,
+      name: /Turn 1/,
     });
     const latestTurn = within(rail).getByRole("button", {
-      name: /\u7b2c 2 \u8f6e/,
+      name: /Turn 2/,
     });
 
     expect(firstTurn.querySelector("[data-turn-marker-status]")).toBeNull();
@@ -265,10 +441,10 @@ describe("MessageList scroll-to-latest affordance", () => {
     ).toBeTruthy();
   });
 
-  test("treats plan-like tool turns as phased locator bars", () => {
+  test("does not infer phased locator bars from tool names or prose", () => {
     expect(
       turnMarkerKindFromMessages([
-        { id: "user-1", type: "human", content: "build the whole feature" },
+        { id: "user-1", type: "human", content: "第 2 阶段：实现界面" },
         {
           id: "assistant-1",
           type: "ai",
@@ -283,6 +459,27 @@ describe("MessageList scroll-to-latest affordance", () => {
                   { content: "Implement", status: "in_progress" },
                 ],
               },
+            },
+          ],
+        },
+      ]),
+    ).toBe("dot");
+  });
+
+  test("uses explicit timeline coordinates for phased locator bars", () => {
+    expect(
+      turnMarkerKindFromMessages([
+        { id: "user-1", type: "human", content: "build the whole feature" },
+        {
+          id: "assistant-1",
+          type: "ai",
+          content: "",
+          tool_calls: [
+            {
+              id: "read-1",
+              name: "read_file",
+              args: { path: "src/app.tsx" },
+              phaseId: "phase-2",
             },
           ],
         },

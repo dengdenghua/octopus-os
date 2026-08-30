@@ -3,6 +3,11 @@ import type { AgentPhase } from "./agent-phases";
 import type { LiveToolEvent } from "./live-tool-timeline";
 import type { WorkBlock } from "./work-blocks";
 import {
+  agentRunBadgeClass,
+  agentRunDotClass,
+  agentRunTextClass,
+} from "./agent-run-status";
+import {
   type AgentTile,
   avatarForRole,
   agentEventGroupId,
@@ -17,114 +22,130 @@ import {
   compactDetail,
   uniqueStrings,
   maxDefined,
+  isInternalAutoParallelFailure,
 } from "./agent-workbench-utils";
+
+export function deriveAgentTilesFromEvents(
+  events: LiveToolEvent[],
+): AgentTile[] {
+  const byId = new Map<string, AgentTile>();
+  const ordered = [...events].sort((a, b) => a.startedAt - b.startedAt);
+  for (const event of ordered) {
+    if (isInternalAutoParallelFailure(event)) continue;
+    addDispatchSpecTiles(event, byId);
+    addDispatchResultTiles(event, byId);
+    const id = agentEventGroupId(event);
+    if (!id || id === "__main__") continue;
+    const existing = byId.get(id);
+    // Only an agent lifecycle/result marker may settle an agent. Child tool
+    // rows also use done/error for their OWN execution state; treating those
+    // as the worker's terminal state made cards claim completion while the
+    // child was still running more rounds.
+    const isTerminalAgentEvent =
+      event.lifecycle === "finished" ||
+      (event.name === "subagent" &&
+        event.lifecycle === undefined &&
+        (event.status === "done" || event.status === "error"));
+    let status: AgentTile["status"];
+    if (event.lifecycle === "spawned") {
+      status = "running";
+    } else if (isTerminalAgentEvent) {
+      status = event.status === "error" ? "error" : "done";
+    } else if (event.status === "waiting_approval") {
+      status = "waiting_approval";
+    } else if (existing || event.status === "running" || event.status === "done") {
+      status = "running";
+    } else {
+      status = "pending";
+    }
+    const existingIsTerminal =
+      existing?.status === "done" || existing?.status === "error";
+    // Stale child activity cannot reopen a lifecycle-complete tile. Likewise,
+    // don't downgrade running to pending when a sparse event arrives.
+    const finalStatus = existingIsTerminal
+      ? existing.status
+      : existing?.status === "running" && status === "pending"
+        ? existing.status
+        : status;
+    const currentTool =
+      event.lifecycle === undefined
+        ? readableToolName(event)
+        : existing?.currentTool;
+    const lastThought = thoughtFromEvent(event) ?? existing?.lastThought;
+    const prompt =
+      stringFromKeys(event.input, [
+        "prompt",
+        "prompt_preview",
+        "task",
+        "description",
+        "query",
+        "objective",
+      ]) ?? existing?.prompt;
+    const resultSummary = existing?.resultSummary;
+    const blackboardWrites = uniqueStrings([
+      ...(existing?.blackboardWrites ?? []),
+      ...blackboardWritesFromEvent(event),
+    ]);
+    const filesTouched = uniqueStrings([
+      ...(existing?.filesTouched ?? []),
+      ...filesFromAgentEvent(event),
+    ]);
+    const startedAt = Math.min(
+      existing?.startedAt ?? event.startedAt,
+      event.startedAt,
+    );
+    byId.set(id, {
+      id,
+      name:
+        event.subagentCodename ??
+        existing?.codename ??
+        event.agentName ??
+        event.subAgentRole ??
+        id,
+      label: existing?.label ?? String(byId.size + 1).padStart(2, "0"),
+      status: finalStatus,
+      task:
+        lastThought ?? existing?.task ?? currentTool ?? readableToolName(event),
+      prompt,
+      avatar:
+        event.subagentAvatar ??
+        existing?.avatar ??
+        avatarForRole(event.subAgentRole),
+      codename: event.subagentCodename ?? existing?.codename,
+      role: event.subAgentRole ?? existing?.role,
+      roleDisplayName:
+        event.subagentRoleDisplayName ?? existing?.roleDisplayName,
+      roleDescription:
+        event.subagentRoleDescription ?? existing?.roleDescription,
+      specIndex: existing?.specIndex,
+      taskLabel: existing?.taskLabel,
+      parentToolUseId: event.parentToolUseId ?? existing?.parentToolUseId,
+      currentTool,
+      lastThought,
+      resultSummary,
+      iterationCount: event.iterationCount ?? existing?.iterationCount,
+      blackboardWrites,
+      filesTouched,
+      durationMs: event.durationMs ?? existing?.durationMs,
+      error:
+        isTerminalAgentEvent && status === "error"
+          ? (errorFromAgentEvent(event) ?? existing?.error)
+          : isTerminalAgentEvent
+            ? undefined
+            : existing?.error,
+      eventCount: (existing?.eventCount ?? 0) + 1,
+      startedAt,
+      finishedAt: maxDefined(existing?.finishedAt, event.finishedAt),
+    });
+  }
+  if (byId.size > 0) return Array.from(byId.values()).slice(0, 12);
+
+  // No dispatch specs or real sub-agent lifecycle events were observed.
+  return [];
+}
 
 export function useAgentWorkbenchI18n() {
   const { t } = useI18n();
-
-  function deriveAgentTiles(events: LiveToolEvent[]): AgentTile[] {
-    const byId = new Map<string, AgentTile>();
-    const ordered = [...events].sort((a, b) => a.startedAt - b.startedAt);
-    for (const event of ordered) {
-      addDispatchSpecTiles(event, byId);
-      addDispatchResultTiles(event, byId);
-      const id = agentEventGroupId(event);
-      if (!id || id === "__main__") continue;
-      const existing = byId.get(id);
-      // Lifecycle events take precedence — a "spawned" event creates
-      // the tile immediately, "finished" updates it to done/error.
-      let status: AgentTile["status"];
-      if (event.lifecycle === "spawned") {
-        status = "running";
-      } else if (event.lifecycle === "finished") {
-        status = event.status === "error" ? "error" : "done";
-      } else if (event.status === "error") {
-        status = "error";
-      } else if (event.status === "done") {
-        status = "done";
-      } else if (
-        event.status === "running" ||
-        event.status === "waiting_approval"
-      ) {
-        status = "running";
-      } else {
-        status = "pending";
-      }
-      // Don't downgrade running → pending if the next event happens
-      // to be a stale tool call.
-      const finalStatus =
-        existing?.status === "running" && status === "pending"
-          ? existing.status
-          : status;
-      const currentTool =
-        event.lifecycle === undefined
-          ? readableToolName(event)
-          : existing?.currentTool;
-      const lastThought = thoughtFromEvent(event) ?? existing?.lastThought;
-      const prompt =
-        stringFromKeys(event.input, [
-          "prompt",
-          "task",
-          "description",
-          "query",
-          "objective",
-        ]) ?? existing?.prompt;
-      const resultSummary = existing?.resultSummary;
-      const blackboardWrites = uniqueStrings([
-        ...(existing?.blackboardWrites ?? []),
-        ...blackboardWritesFromEvent(event),
-      ]);
-      const filesTouched = uniqueStrings([
-        ...(existing?.filesTouched ?? []),
-        ...filesFromAgentEvent(event),
-      ]);
-      const startedAt = Math.min(
-        existing?.startedAt ?? event.startedAt,
-        event.startedAt,
-      );
-      byId.set(id, {
-        id,
-        name:
-          event.subagentCodename ??
-          existing?.codename ??
-          event.agentName ??
-          event.subAgentRole ??
-          id,
-        label: existing?.label ?? String(byId.size + 1).padStart(2, "0"),
-        status: finalStatus,
-        task:
-          lastThought ??
-          existing?.task ??
-          currentTool ??
-          readableToolName(event),
-        prompt,
-        avatar:
-          event.subagentAvatar ??
-          existing?.avatar ??
-          avatarForRole(event.subAgentRole),
-        codename: event.subagentCodename ?? existing?.codename,
-        role: event.subAgentRole ?? existing?.role,
-        specIndex: existing?.specIndex,
-        taskLabel: existing?.taskLabel,
-        parentToolUseId: event.parentToolUseId ?? existing?.parentToolUseId,
-        currentTool,
-        lastThought,
-        resultSummary,
-        iterationCount: event.iterationCount ?? existing?.iterationCount,
-        blackboardWrites,
-        filesTouched,
-        durationMs: event.durationMs ?? existing?.durationMs,
-        error: errorFromAgentEvent(event) ?? existing?.error,
-        eventCount: (existing?.eventCount ?? 0) + 1,
-        startedAt,
-        finishedAt: maxDefined(existing?.finishedAt, event.finishedAt),
-      });
-    }
-    if (byId.size > 0) return Array.from(byId.values()).slice(0, 12);
-
-    // No dispatch specs or real sub-agent lifecycle events were observed.
-    return [];
-  }
 
   function phaseBlockSummary(phase: AgentPhase, blocks: WorkBlock[]) {
     const related = blocks.filter((block) => phase.blockIds.includes(block.id));
@@ -154,49 +175,109 @@ export function useAgentWorkbenchI18n() {
 
   function agentStatusLabel(status: AgentTile["status"]) {
     if (status === "running") return t.agentWorkbench.statusProcessing;
+    if (status === "waiting_approval")
+      return t.agentWorkbenchPages.statusWaitingApproval;
     if (status === "done") return t.agentWorkbench.statusCompleted;
     if (status === "error") return t.agentWorkbench.statusError;
     return t.agentWorkbench.waitingToStart;
   }
 
   function agentStatusClass(status: AgentTile["status"]) {
-    if (status === "running") return "text-foreground";
-    if (status === "done") return "text-emerald-600 dark:text-emerald-300";
-    if (status === "error") return "text-destructive";
-    return "text-muted-foreground";
+    return agentRunTextClass(status);
   }
 
-  function workbenchStatus(blocks: WorkBlock[], phases: AgentPhase[]) {
+  function workbenchStatus(
+    blocks: WorkBlock[],
+    phases: AgentPhase[],
+    options?: {
+      settled?: boolean;
+      failed?: boolean;
+      interrupted?: boolean;
+      blocked?: boolean;
+    },
+  ) {
+    // The server can leave a stale pending phase in a replayed snapshot even
+    // after the turn has emitted its final answer. Once the host tells us the
+    // run is settled, that lifecycle signal is authoritative for the compact
+    // header badge; the detailed phase list remains available below.
+    if (options?.failed) {
+      return {
+        label: t.agentWorkbench.statusError,
+        className: agentRunBadgeClass("error"),
+        dotClassName: agentRunDotClass("error"),
+      };
+    }
+    if (options?.interrupted) {
+      return {
+        label: t.backgroundTasks.interrupted,
+        className: agentRunBadgeClass("waiting"),
+        dotClassName: agentRunDotClass("waiting"),
+      };
+    }
+    if (options?.blocked) {
+      return {
+        label: t.streaming.blockedOnUser,
+        className: agentRunBadgeClass("waiting"),
+        dotClassName: agentRunDotClass("waiting"),
+      };
+    }
+    if (options?.settled) {
+      return {
+        label: t.agentWorkbench.statusCompleted,
+        className: agentRunBadgeClass("done"),
+        dotClassName: agentRunDotClass("done"),
+      };
+    }
+    if (blocks.length === 0 && phases.length === 0) {
+      return {
+        label: t.agentWorkbenchPanel.agentStatusPending,
+        className: agentRunBadgeClass("pending"),
+        dotClassName: agentRunDotClass("pending"),
+      };
+    }
+    if (
+      phases.some((phase) => phase.status === "error") ||
+      blocks.some((block) => block.status === "error")
+    ) {
+      return {
+        label: t.agentWorkbench.statusError,
+        className: agentRunBadgeClass("error"),
+        dotClassName: agentRunDotClass("error"),
+      };
+    }
+    if (
+      phases.some((phase) => phase.status === "waiting_approval") ||
+      blocks.some((block) => block.status === "waiting_approval")
+    ) {
+      return {
+        label: t.agentWorkbenchPages.statusWaitingApproval,
+        className: agentRunBadgeClass("waiting"),
+        dotClassName: agentRunDotClass("waiting"),
+      };
+    }
     if (phases.some((phase) => phase.status === "running")) {
       return {
         label: t.agentWorkbench.executingTask,
-        className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-        dotClassName: "bg-emerald-500",
-      };
-    }
-    if (blocks.some((block) => block.status === "error")) {
-      return {
-        label: t.agentWorkbench.statusError,
-        className: "bg-destructive/10 text-destructive",
-        dotClassName: "bg-destructive",
+        className: agentRunBadgeClass("running"),
+        dotClassName: agentRunDotClass("running"),
       };
     }
     if (phases.some((phase) => phase.status === "pending")) {
       return {
         label: t.agentWorkbench.waitingToContinue,
-        className: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-        dotClassName: "bg-amber-500",
+        className: agentRunBadgeClass("pending"),
+        dotClassName: agentRunDotClass("pending"),
       };
     }
     return {
       label: t.agentWorkbench.statusCompleted,
-      className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-      dotClassName: "bg-emerald-500",
+      className: agentRunBadgeClass("done"),
+      dotClassName: agentRunDotClass("done"),
     };
   }
 
   return {
-    deriveAgentTiles,
+    deriveAgentTiles: deriveAgentTilesFromEvents,
     phaseBlockSummary,
     agentStatusLabel,
     agentStatusClass,
@@ -208,27 +289,36 @@ function addDispatchSpecTiles(
   event: LiveToolEvent,
   byId: Map<string, AgentTile>,
 ) {
-  if (event.name !== "call_agent_parallel" && event.name !== "call_agent") {
+  if (
+    event.name !== "call_agent_parallel" &&
+    event.name !== "call_agent" &&
+    event.name !== "team_swarm"
+  ) {
     return;
   }
+  if (dispatchRejectedBeforeSpawn(event)) return;
   const specs = dispatchSpecsFromEvent(event);
   specs.forEach((spec, index) => {
+    const requestedId = stringFromKeys(spec, ["agent_id", "subagent_id"]);
     const role =
-      stringFromKeys(spec, [
-        "agent_id",
-        "subagent_name",
-        "subagent_type",
-        "role",
-        "name",
-        "agent",
-      ]) || `agent-${index + 1}`;
+      (requestedId ??
+        stringFromKeys(spec, [
+          "subagent_name",
+          "subagent_type",
+          "role",
+          "name",
+          "agent",
+        ])) ||
+      `agent-${index + 1}`;
     const taskLabel =
       stringFromKeys(spec, ["task_label", "bb_key", "key", "lane", "title"]) ||
       role;
     const id =
-      event.name === "call_agent_parallel"
-        ? `${event.id}:spec:${index + 1}`
-        : event.id;
+      event.name === "team_swarm"
+        ? role
+        : event.name === "call_agent_parallel"
+          ? (requestedId ?? `${event.id}:spec:${index + 1}`)
+          : event.id;
     const existing = byId.get(id);
     const prompt =
       stringFromKeys(spec, [
@@ -299,7 +389,11 @@ function addDispatchResultTiles(
   event: LiveToolEvent,
   byId: Map<string, AgentTile>,
 ) {
-  if (event.name !== "call_agent_parallel" && event.name !== "call_agent") {
+  if (
+    event.name !== "call_agent_parallel" &&
+    event.name !== "call_agent" &&
+    event.name !== "team_swarm"
+  ) {
     return;
   }
   if (event.status !== "done" && event.status !== "error") return;
@@ -441,6 +535,8 @@ function idForDispatchResult(
   index: number,
 ): string {
   if (event.name === "call_agent") return event.id;
+  const requestedId = stringFromKeys(result, ["agent_id"]);
+  if (requestedId && byId.has(requestedId)) return requestedId;
   const specIndex = numberFromUnknown(result.spec_index);
   if (specIndex !== undefined) {
     const specId = `${event.id}:spec:${specIndex + 1}`;
@@ -493,9 +589,27 @@ function dispatchSpecsFromEvent(
   return specs.filter(isRecord);
 }
 
+function dispatchRejectedBeforeSpawn(event: LiveToolEvent): boolean {
+  const envelope = dispatchEnvelopeFromOutput(event.output);
+  if (envelope?.ok === false) {
+    const total = numberFromUnknown(envelope.total ?? envelope.count);
+    const successes = Array.isArray(envelope.successes)
+      ? envelope.successes.length
+      : numberFromUnknown(envelope.success_count);
+    if ((total ?? 0) === 0 && (successes ?? 0) === 0) return true;
+  }
+  if (typeof event.output !== "string") return false;
+  return (
+    /^\s*\((?:工具失败|tool failed)\)/i.test(event.output) &&
+    (/\berror=structured_error\b/i.test(event.output) ||
+      /"(?:count|total)"\s*:\s*0/i.test(event.output))
+  );
+}
+
 function dispatchStatus(status: LiveToolEvent["status"]): AgentTile["status"] {
   if (status === "error") return "error";
   if (status === "done") return "done";
-  if (status === "running" || status === "waiting_approval") return "running";
+  if (status === "waiting_approval") return "waiting_approval";
+  if (status === "running") return "running";
   return "pending";
 }

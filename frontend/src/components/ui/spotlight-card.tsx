@@ -1,4 +1,3 @@
-
 import React, { useRef } from "react";
 import "./spotlight-card.css";
 
@@ -46,4 +45,3 @@ const SpotlightCard: React.FC<SpotlightCardProps> = ({
 };
 
 export default SpotlightCard;
-

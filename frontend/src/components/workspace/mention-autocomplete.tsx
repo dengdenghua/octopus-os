@@ -15,16 +15,19 @@
  */
 
 import { swallow } from "@/core/utils/log";
+import { withAgentAvatarVersion } from "@/core/agents/avatar";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   BookOpenIcon,
   BotIcon,
   BracesIcon,
+  DatabaseIcon,
   FileIcon,
   FolderIcon,
   GitBranchIcon,
   GlobeIcon,
+  HistoryIcon,
   Loader2Icon,
   PackageIcon,
   PuzzleIcon,
@@ -52,6 +55,8 @@ export interface MentionItem {
   value: string;
   description: string;
   icon: string;
+  /** Real avatar image (group members) — rendered instead of the icon. */
+  avatarUrl?: string;
 }
 
 export type MentionCategory =
@@ -65,7 +70,8 @@ export type MentionCategory =
   | "agent"
   | "plugin"
   | "skill"
-  | "pack";
+  | "pack"
+  | "session";
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   file: FileIcon,
@@ -81,21 +87,238 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
   plugin: PuzzleIcon,
   skill: ZapIcon,
   pack: PackageIcon,
+  database: DatabaseIcon,
+  session: HistoryIcon,
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  file: "text-blue-500",
-  symbol: "text-purple-500",
-  folder: "text-amber-500",
-  git: "text-orange-500",
-  docs: "text-green-500",
-  web: "text-cyan-500",
-  terminal: "text-zinc-400",
-  agent: "text-indigo-500",
-  plugin: "text-fuchsia-500",
-  skill: "text-yellow-500",
-  pack: "text-pink-500",
+  file: "text-info",
+  symbol: "text-chart-1",
+  folder: "text-warning",
+  git: "text-chart-7",
+  docs: "text-success",
+  web: "text-info",
+  terminal: "text-muted-foreground",
+  agent: "text-chart-6",
+  plugin: "text-chart-3",
+  skill: "text-warning",
+  pack: "text-chart-5",
+  database: "text-success",
+  session: "text-chart-2",
 };
+
+// Echo Native mention encoding — canonical ``echo-session:`` URI of the
+// session id (base64url of ASCII-escaped JSON), mirrored from
+// ``session_reference_uri.py`` so the backend's strict canonical re-encode
+// check accepts what the UI inserts.
+function ensureAsciiJson(value: string): string {
+  const json = JSON.stringify(value);
+  let out = "";
+  for (const ch of json) {
+    const code = ch.charCodeAt(0);
+    // Keep JSON's short escapes for control chars; escape anything ≥ 0x7F
+    // as \uXXXX (surrogate pairs stay paired, matching Python's
+    // ``json.dumps(..., ensure_ascii=True)``).
+    out += code < 0x7f ? ch : `\\u${code.toString(16).padStart(4, "0")}`;
+  }
+  return out;
+}
+
+export function encodeSessionReferenceUri(sessionId: string): string {
+  const bytes = new TextEncoder().encode(ensureAsciiJson(sessionId));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const payload = btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `echo-session:${payload}`;
+}
+
+function escapeMentionLabel(label: string): string {
+  return label.replace(/[\\\]]/g, (ch) => `\\${ch}`);
+}
+
+export function formatSessionReferenceMention(
+  sessionId: string,
+  label?: string,
+): string {
+  const safeLabel = escapeMentionLabel(label ?? sessionId);
+  return `@[${safeLabel}](${encodeSessionReferenceUri(sessionId)})`;
+}
+
+const SESSION_CATEGORY_ITEM: MentionItem = {
+  type: "session",
+  label: "会话",
+  value: "session:",
+  description: "引用此前子代理会话的转录,只读注入上下文",
+  icon: "session",
+};
+
+type SessionAutocomplete =
+  | { mode: "none" }
+  | { mode: "category-only" }
+  | { mode: "candidates"; search: string };
+
+/** Classify an @-query into the session lane: prefix → category row,
+ * ``session:`` → live candidates from the backend seam. */
+function sessionAutocompleteState(query: string): SessionAutocomplete {
+  const q = query.trim().toLowerCase();
+  if (q.startsWith("session:")) {
+    return { mode: "candidates", search: q.slice("session:".length).trim() };
+  }
+  if (q.length <= "session".length && "session".startsWith(q) && q !== "") {
+    return { mode: "category-only" };
+  }
+  return { mode: "none" };
+}
+
+async function fetchSessionCandidates(
+  search: string,
+  target: string | undefined,
+  signal: AbortSignal,
+): Promise<MentionItem[]> {
+  const params = new URLSearchParams({ query: search, limit: "20" });
+  if (target) params.set("target", target);
+  try {
+    const res = await fetch(`${BASE_URL}/api/subagents/sessions?${params}`, {
+      signal,
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+    return candidates.map(
+      (candidate: { session_id?: string; label?: string }) => ({
+        type: "session",
+        label: candidate.label || candidate.session_id || "会话",
+        value: candidate.session_id || "",
+        description: `会话 ${candidate.session_id || ""}`,
+        icon: "session",
+      }),
+    );
+  } catch (e) {
+    swallow(e);
+    return [];
+  }
+}
+
+const LOCAL_FILE_AGENT_MENTION: MentionItem = {
+  type: "agent",
+  label: "本地数据库",
+  value: "本地数据库",
+  description: "只在本机索引和检索授权资料，确认后再带入任务上下文",
+  icon: "database",
+};
+
+function withLocalFileAgentMention(
+  query: string,
+  results: MentionItem[],
+): MentionItem[] {
+  const normalized = query.trim().toLowerCase();
+  const shouldShow =
+    normalized === "" ||
+    "本地数据库".includes(normalized) ||
+    "私域资料库".includes(normalized) ||
+    "本地资料官".includes(normalized) ||
+    "local database".includes(normalized) ||
+    "private storage".includes(normalized) ||
+    "local file agent".includes(normalized) ||
+    "nas".includes(normalized) ||
+    "storage".includes(normalized) ||
+    normalized === "agent:" ||
+    normalized.startsWith("agent:本地数据库") ||
+    normalized.startsWith("agent:私域") ||
+    normalized.startsWith("agent:本地") ||
+    normalized.startsWith("agent:local");
+  if (!shouldShow) return results;
+  if (results.some((item) => item.value === LOCAL_FILE_AGENT_MENTION.value)) {
+    return results;
+  }
+  return [LOCAL_FILE_AGENT_MENTION, ...results];
+}
+
+/** A team member offered by the @ typeahead (group roster). */
+export interface MentionMemberInput {
+  name: string;
+  display_name?: string | null;
+  icon?: string | null;
+  description?: string | null;
+  avatar_url?: string | null;
+  /** Optional stable token inserted after `@` (for example `agent:planner`). */
+  mention_value?: string | null;
+}
+
+/** Resolve an agent avatar_url to an absolute, cache-busted src. */
+function resolveMentionAvatar(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  return url.startsWith("http") ? url : `${getBackendBaseURL()}${url}`;
+}
+
+/** Prepend matching group members so typing "@" in a team room summons the
+ * roster inline — no hard button needed. */
+function withMemberMentions(
+  query: string,
+  members: MentionMemberInput[],
+  results: MentionItem[],
+): MentionItem[] {
+  if (!members.length) return results;
+  const q = query.trim().toLowerCase();
+  // WeChat-style: a team @ is for mentioning people, so drop the tool/skill
+  // category noise (the "Bundled skills:" packs and bare category rows). Keep
+  // people + 本地数据库 + any concrete file/symbol hits the user typed.
+  const peopleFocused = results.filter(
+    (r) => !/^Bundled skills:/.test(String(r.description ?? "")),
+  );
+  results = peopleFocused;
+  const existing = new Set(results.map((r) => r.value));
+  const matched: MentionItem[] = members
+    .filter((m) => {
+      const dn = (m.display_name ?? m.name).toLowerCase();
+      return (
+        q === "" ||
+        q === "agent:" ||
+        dn.includes(q) ||
+        m.name.toLowerCase().includes(q) ||
+        q.startsWith(`agent:${dn}`)
+      );
+    })
+    .map((m) => {
+      const label = m.display_name ?? m.name;
+      const rawAvatar = m.avatar_url ?? null;
+      return {
+        type: "agent",
+        label,
+        value: m.mention_value?.trim() || label,
+        description: m.description || "群成员",
+        icon: m.icon?.trim() || "bot",
+        avatarUrl: resolveMentionAvatar(
+          rawAvatar ? withAgentAvatarVersion(rawAvatar) : null,
+        ),
+      };
+    })
+    .filter((m) => !existing.has(m.value));
+
+  // WeChat/DingTalk style: "@所有人" first, to address the whole group.
+  const showAll =
+    q === "" ||
+    "所有人".includes(q) ||
+    "全员".includes(q) ||
+    "everyone".includes(q) ||
+    "all".includes(q);
+  const everyone: MentionItem[] =
+    showAll && !existing.has("所有人")
+      ? [
+          {
+            type: "agent",
+            label: "所有人",
+            value: "所有人",
+            description: "通知群里全体成员",
+            icon: "users",
+          },
+        ]
+      : [];
+  return [...everyone, ...matched, ...results];
+}
 
 // ============================================================================
 // API
@@ -118,10 +341,9 @@ async function fetchMentionAutocomplete(
   if (threadId) params.set("thread_id", threadId);
   if (actor) params.set("actor", actor);
   try {
-    const res = await fetch(
-      `${BASE_URL}/api/mentions/autocomplete?${params}`,
-      { signal },
-    );
+    const res = await fetch(`${BASE_URL}/api/mentions/autocomplete?${params}`, {
+      signal,
+    });
     if (!res.ok) return [];
     const data = await res.json();
     return data.items ?? [];
@@ -141,6 +363,8 @@ interface UseMentionAutocompleteOptions {
   workDir?: string;
   threadId?: string;
   actor?: string;
+  /** Group members offered first when typing "@" in a team room. */
+  members?: MentionMemberInput[];
   /** Debounce delay in ms for API calls. Default 150. */
   debounceMs?: number;
 }
@@ -151,8 +375,13 @@ export function useMentionAutocomplete({
   workDir,
   threadId,
   actor,
+  members,
   debounceMs = 150,
 }: UseMentionAutocompleteOptions) {
+  // Stable handle to the latest roster so the fetch effect can read it
+  // without re-running on every render (members is a fresh array each time).
+  const membersRef = useRef<MentionMemberInput[]>(members ?? []);
+  membersRef.current = members ?? [];
   const [isOpen, setIsOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [items, setItems] = useState<MentionItem[]>([]);
@@ -163,6 +392,22 @@ export function useMentionAutocomplete({
   const triggerPosRef = useRef(-1);
   const abortRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ---- IME/paste-robust trigger ----
+  // The keydown handler only opens the popup when the browser reports
+  // key === "@". Under a Chinese IME (where "@" is Shift+2 routed through
+  // composition) that key never arrives, so typing "@" did nothing. As a
+  // fallback, open from the *value*: if it ends with an "@mention" at a word
+  // boundary, treat that "@" as the trigger.
+  useEffect(() => {
+    if (isOpen) return;
+    const match = /(?:^|[\s\n\t])@([^\s@]*)$/.exec(value);
+    if (!match) return;
+    const atPos = value.length - (match[1] ?? "").length - 1;
+    if (atPos < 0 || value[atPos] !== "@") return;
+    triggerPosRef.current = atPos;
+    setIsOpen(true);
+  }, [value, isOpen]);
 
   // ---- Detect @ trigger and extract query ----
   useEffect(() => {
@@ -211,10 +456,14 @@ export function useMentionAutocomplete({
         "plugin",
         "skill",
         "pack",
+        "session",
       ];
       if (validTypes.includes(typeStr.toLowerCase())) {
         // For @web: allow spaces in the query
-        if (typeStr.toLowerCase() === "web" || typeStr.toLowerCase() === "docs") {
+        if (
+          typeStr.toLowerCase() === "web" ||
+          typeStr.toLowerCase() === "docs"
+        ) {
           setMentionQuery(afterAt);
         } else {
           // For other types, stop at first space after colon
@@ -269,23 +518,52 @@ export function useMentionAutocomplete({
       const controller = new AbortController();
       abortRef.current = controller;
 
-      fetchMentionAutocomplete(
-        mentionQuery,
-        workDir || ".",
-        controller.signal,
-        threadId,
-        actor,
-      )
-        .then((results) => {
-          if (!controller.signal.aborted) {
-            setItems(results);
-            setSelectedIndex(0);
-            setIsLoading(false);
+      Promise.all([
+        fetchMentionAutocomplete(
+          mentionQuery,
+          workDir || ".",
+          controller.signal,
+          threadId,
+          actor,
+        ),
+        (async () => {
+          const state = sessionAutocompleteState(mentionQuery);
+          if (state.mode === "candidates") {
+            return fetchSessionCandidates(
+              state.search,
+              threadId,
+              controller.signal,
+            );
           }
+          return [];
+        })(),
+      ])
+        .then(([genericResults, sessionResults]) => {
+          if (controller.signal.aborted) return;
+          const state = sessionAutocompleteState(mentionQuery);
+          let merged = genericResults;
+          if (state.mode !== "none") {
+            merged = [
+              SESSION_CATEGORY_ITEM,
+              ...sessionResults,
+              ...genericResults,
+            ];
+          }
+          setItems(
+            withMemberMentions(
+              mentionQuery,
+              membersRef.current,
+              withLocalFileAgentMention(mentionQuery, merged),
+            ),
+          );
+          setSelectedIndex(0);
+          setIsLoading(false);
         })
         .catch(() => {
           if (!controller.signal.aborted) {
-            setItems([]);
+            // Members still resolve locally even if the backend mention API
+            // is unreachable.
+            setItems(withMemberMentions(mentionQuery, membersRef.current, []));
             setIsLoading(false);
           }
         });
@@ -310,8 +588,13 @@ export function useMentionAutocomplete({
       const atPos = triggerPosRef.current;
       if (atPos < 0) return;
 
-      // Build the mention text to insert
-      const mentionText = `@${item.value} `;
+      // Build the mention text to insert. Session candidates insert the
+      // host-neutral canonical mention ``@[label](echo-session:...)`` so the
+      // backend resolver's canonical lane picks them up.
+      const mentionText =
+        item.type === "session" && !item.value.endsWith(":")
+          ? `${formatSessionReferenceMention(item.value, item.label)} `
+          : `@${item.value} `;
 
       // Replace from @ to current cursor position
       const before = value.slice(0, atPos);
@@ -330,7 +613,8 @@ export function useMentionAutocomplete({
         } else {
           const afterColon = afterAt.slice(colonIdx + 1);
           const spaceIdx = afterColon.indexOf(" ");
-          endOffset = spaceIdx !== -1 ? colonIdx + 1 + spaceIdx : afterAt.length;
+          endOffset =
+            spaceIdx !== -1 ? colonIdx + 1 + spaceIdx : afterAt.length;
         }
       } else {
         const spaceIdx = afterAt.indexOf(" ");
@@ -354,8 +638,7 @@ export function useMentionAutocomplete({
       if (!isOpen) {
         if (e.key === "@" && !e.ctrlKey && !e.metaKey) {
           const pos = e.currentTarget.selectionStart;
-          const charBefore =
-            pos > 0 ? value[pos - 1] : undefined;
+          const charBefore = pos > 0 ? value[pos - 1] : undefined;
           // Only trigger if @ is at start or after whitespace
           if (
             charBefore === undefined ||
@@ -395,9 +678,7 @@ export function useMentionAutocomplete({
         case "ArrowUp":
           e.preventDefault();
           setSelectedIndex((i) =>
-            items.length > 0
-              ? (i - 1 + items.length) % items.length
-              : 0,
+            items.length > 0 ? (i - 1 + items.length) % items.length : 0,
           );
           break;
 
@@ -527,13 +808,13 @@ export function MentionAutocompletePopup({
   return (
     <div
       className={cn(
-        "bg-popover text-popover-foreground absolute bottom-full left-0 z-50 mb-1 w-80 overflow-hidden rounded-lg border shadow-lg",
+        "bg-popover text-popover-foreground absolute bottom-full left-0 z-50 mb-1 w-80 overflow-hidden rounded-lg border shadow-[var(--shadow-md)]",
         className,
       )}
     >
       {/* Header */}
       <div className="border-b px-3 py-1.5">
-        <div className="text-muted-foreground flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider">
+        <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider">
           <span>@</span>
           <span>{t.mentions.mentions}</span>
           {mentionQuery && (
@@ -561,8 +842,11 @@ export function MentionAutocompletePopup({
         ) : (
           items.map((item, index) => {
             const IconComponent =
-              CATEGORY_ICONS[item.icon] || CATEGORY_ICONS[item.type] || FileIcon;
-            const colorClass = CATEGORY_COLORS[item.type] || "text-muted-foreground";
+              CATEGORY_ICONS[item.icon] ||
+              CATEGORY_ICONS[item.type] ||
+              FileIcon;
+            const colorClass =
+              CATEGORY_COLORS[item.type] || "text-muted-foreground";
             const isSelected = index === selectedIndex;
 
             return (
@@ -583,24 +867,32 @@ export function MentionAutocompletePopup({
               >
                 <div
                   className={cn(
-                    "flex size-6 shrink-0 items-center justify-center rounded",
+                    "flex size-6 shrink-0 items-center justify-center overflow-hidden rounded",
                     isSelected ? "bg-accent-foreground/10" : "bg-muted",
                   )}
                 >
-                  <IconComponent className={cn("size-3.5", colorClass)} />
+                  {item.avatarUrl ? (
+                    <img
+                      src={item.avatarUrl}
+                      alt={item.label}
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <IconComponent className={cn("size-3.5", colorClass)} />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium text-[13px] leading-tight">
+                  <div className="truncate font-medium text-sm leading-tight">
                     {item.label}
                   </div>
                   {item.description && (
-                    <div className="text-muted-foreground truncate text-[11px] leading-tight">
+                    <div className="text-muted-foreground truncate text-xs leading-tight">
                       {item.description}
                     </div>
                   )}
                 </div>
                 {item.value.endsWith(":") && (
-                  <div className="text-muted-foreground/50 text-[10px]">
+                  <div className="text-muted-foreground/50 text-xs">
                     &rsaquo;
                   </div>
                 )}
@@ -612,17 +904,19 @@ export function MentionAutocompletePopup({
 
       {/* Footer hint */}
       <div className="border-t px-3 py-1">
-        <div className="text-muted-foreground/60 flex items-center gap-3 text-[10px]">
+        <div className="text-muted-foreground/60 flex items-center gap-3 text-xs">
           <span>
-            <kbd className="bg-muted rounded px-1 font-mono text-[9px]">&uarr;&darr;</kbd>{" "}
+            <kbd className="bg-muted rounded px-1 font-mono text-xs">
+              &uarr;&darr;
+            </kbd>{" "}
             {t.mentions.navigate}
           </span>
           <span>
-            <kbd className="bg-muted rounded px-1 font-mono text-[9px]">Tab</kbd>{" "}
+            <kbd className="bg-muted rounded px-1 font-mono text-xs">Tab</kbd>{" "}
             {t.mentions.select}
           </span>
           <span>
-            <kbd className="bg-muted rounded px-1 font-mono text-[9px]">Esc</kbd>{" "}
+            <kbd className="bg-muted rounded px-1 font-mono text-xs">Esc</kbd>{" "}
             {t.mentions.close}
           </span>
         </div>
@@ -641,7 +935,11 @@ interface MentionBadgeProps {
   className?: string;
 }
 
-export function MentionBadge({ type, reference, className }: MentionBadgeProps) {
+export function MentionBadge({
+  type,
+  reference,
+  className,
+}: MentionBadgeProps) {
   const IconComponent =
     CATEGORY_ICONS[type] || CATEGORY_ICONS[type] || FileIcon;
   const colorClass = CATEGORY_COLORS[type] || "text-muted-foreground";
@@ -677,13 +975,8 @@ export function useFileMention({
   onChange: (value: string) => void;
   workDir?: string;
 }) {
-  const {
-    isOpen,
-    items,
-    selectedIndex,
-    isLoading,
-    handleKeyDown,
-  } = useMentionAutocomplete({ value, onChange, workDir });
+  const { isOpen, items, selectedIndex, isLoading, handleKeyDown } =
+    useMentionAutocomplete({ value, onChange, workDir });
 
   // Map items to the old FileEntry shape for the popup
   const filteredFiles = useMemo(

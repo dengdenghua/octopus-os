@@ -11,7 +11,12 @@ interface DiffViewProps {
   className?: string;
 }
 
-export function DiffView({ oldValue, newValue, filename, className }: DiffViewProps) {
+export function DiffView({
+  oldValue,
+  newValue,
+  filename,
+  className,
+}: DiffViewProps) {
   const diff = useMemo(() => {
     return diffLines(oldValue, newValue);
   }, [oldValue, newValue]);
@@ -40,16 +45,16 @@ function DiffLine({ part, index }: { part: Change; index: number }) {
   });
 
   const bgColor = part.added
-    ? "bg-green-500/10"
+    ? "bg-success/10"
     : part.removed
-    ? "bg-red-500/10"
-    : "bg-transparent";
+      ? "bg-destructive/10"
+      : "bg-transparent";
 
   const textColor = part.added
-    ? "text-green-700 dark:text-green-300"
+    ? "text-success"
     : part.removed
-    ? "text-red-700 dark:text-red-300"
-    : "text-foreground";
+      ? "text-destructive"
+      : "text-foreground";
 
   const prefix = part.added ? "+" : part.removed ? "-" : " ";
 
@@ -58,11 +63,7 @@ function DiffLine({ part, index }: { part: Change; index: number }) {
       {lines.map((line, lineIndex) => (
         <div
           key={`${index}-${lineIndex}`}
-          className={cn(
-            "flex px-4 py-0.5 whitespace-pre",
-            bgColor,
-            textColor
-          )}
+          className={cn("flex px-4 py-0.5 whitespace-pre", bgColor, textColor)}
         >
           <span className="select-none w-4 mr-2 text-muted-foreground">
             {prefix}

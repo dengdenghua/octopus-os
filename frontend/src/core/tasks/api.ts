@@ -5,6 +5,9 @@ export type PauseReason =
   | "user_request"
   | "budget_near_limit"
   | "iteration_near_limit"
+  | "model_spinning"
+  | "client_disconnect"
+  | "approval_required"
   | "external";
 
 export interface PauseRequest {
@@ -24,7 +27,15 @@ export interface ActiveTask {
   started_at: number;
   current_iteration: number;
   max_iterations: number;
+  /** Cumulative model accounting across every call in this task. */
   tokens_spent: number;
+  input_tokens_spent?: number;
+  output_tokens_spent?: number;
+  cache_read_tokens?: number;
+  /** Provider-reported size of the latest live model request. */
+  current_context_tokens?: number;
+  context_capacity_tokens?: number;
+  context_utilization?: number;
   cost_usd: number;
   max_tokens: number;
   max_usd: number;
@@ -61,10 +72,12 @@ export interface ResumeTaskResponse {
 
 export async function listTasks(
   status?: "paused" | "pending" | "active" | "all",
+  signal?: AbortSignal,
 ): Promise<TasksListResponse> {
   const qs = status ? `?status=${status}` : "";
   const res = await fetch(`${getBackendBaseURL()}/api/tasks${qs}`, {
     headers: authHeaders(),
+    signal,
   });
   if (!res.ok) throw new Error(`Failed to list tasks: ${res.statusText}`);
   return (await res.json()) as TasksListResponse;
@@ -94,7 +107,9 @@ export async function pauseTask(
   );
   if (!res.ok) {
     const detail = await res.text();
-    throw new Error(`Failed to pause: ${res.status} ${detail || res.statusText}`);
+    throw new Error(
+      `Failed to pause: ${res.status} ${detail || res.statusText}`,
+    );
   }
   return (await res.json()) as { ok: boolean; request: PauseRequest };
 }
@@ -117,7 +132,9 @@ export async function resumeTask(
   );
   if (!res.ok) {
     const detail = await res.text();
-    throw new Error(`Failed to resume: ${res.status} ${detail || res.statusText}`);
+    throw new Error(
+      `Failed to resume: ${res.status} ${detail || res.statusText}`,
+    );
   }
   return (await res.json()) as ResumeTaskResponse;
 }
@@ -129,6 +146,8 @@ export async function deleteTask(taskId: string): Promise<void> {
   );
   if (!res.ok) {
     const detail = await res.text();
-    throw new Error(`Failed to delete: ${res.status} ${detail || res.statusText}`);
+    throw new Error(
+      `Failed to delete: ${res.status} ${detail || res.statusText}`,
+    );
   }
 }

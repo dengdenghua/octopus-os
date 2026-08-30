@@ -31,6 +31,25 @@ B. 企业级存储
   test("ignores ordinary option-looking text without a clarification cue", () => {
     expect(parseClarificationChoices("A. Alpha\nB. Beta")).toBeNull();
   });
+
+  test("keeps duplicate labels render-safe when the model repeats option letters", () => {
+    const parsed = parseClarificationChoices(`
+请选择一个方向：
+
+A. 第一组 A
+B. 第一组 B
+
+A. 第二组 A
+B. 第二组 B
+`);
+
+    expect(parsed?.choices.map((choice) => choice.key)).toEqual([
+      "A",
+      "B",
+      "A",
+      "B",
+    ]);
+  });
 });
 
 describe("extractClarificationQuestionnaire", () => {

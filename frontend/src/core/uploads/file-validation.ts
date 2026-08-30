@@ -9,12 +9,28 @@ export const MACOS_APP_BUNDLE_UPLOAD_MESSAGE =
 const MAX_UPLOAD_FILE_SIZE = 100 * 1024 * 1024;
 
 const BLOCKED_EXTENSIONS = new Set([
-  ".exe", ".bat", ".cmd", ".com", ".scr", ".pif",
-  ".sh", ".bash", ".zsh",
-  ".msi", ".msp", ".mst",
-  ".cpl", ".gadget",
-  ".ws", ".wsf", ".vbs", ".vbe", ".wsh",
-  ".ps1", ".psm1", ".psd1",
+  ".exe",
+  ".bat",
+  ".cmd",
+  ".com",
+  ".scr",
+  ".pif",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".msi",
+  ".msp",
+  ".mst",
+  ".cpl",
+  ".gadget",
+  ".ws",
+  ".wsf",
+  ".vbs",
+  ".vbe",
+  ".wsh",
+  ".ps1",
+  ".psm1",
+  ".psd1",
   ".app",
 ]);
 
@@ -60,7 +76,10 @@ export function splitUnsupportedUploadFiles(fileList: File[] | FileList) {
     }
     if (file.size > MAX_UPLOAD_FILE_SIZE) {
       rejected.push(file);
-      reasons.set(file, `File too large (max ${MAX_UPLOAD_FILE_SIZE / 1024 / 1024}MB)`);
+      reasons.set(
+        file,
+        `File too large (max ${MAX_UPLOAD_FILE_SIZE / 1024 / 1024}MB)`,
+      );
       continue;
     }
     if (hasDangerousFilename(file.name)) {

@@ -9,6 +9,7 @@ import {
 import { useMemo } from "react";
 
 import { useI18n } from "@/core/i18n/hooks";
+import type { Translations } from "@/core/i18n/locales";
 import { cn } from "@/lib/utils";
 
 import type { LiveToolEvent } from "./live-tool-timeline";
@@ -34,13 +35,17 @@ interface ExecutionChecklistPanelProps {
   className?: string;
 }
 
-function hasTool(events: LiveToolEvent[], predicate: (name: string) => boolean) {
+function hasTool(
+  events: LiveToolEvent[],
+  predicate: (name: string) => boolean,
+) {
   return events.some((event) => predicate(event.name));
 }
 
 function hasRunningTool(events: LiveToolEvent[]) {
   return events.some(
-    (event) => event.status === "running" || event.status === "waiting_approval",
+    (event) =>
+      event.status === "running" || event.status === "waiting_approval",
   );
 }
 
@@ -52,12 +57,14 @@ function queryText(event: LiveToolEvent): string {
 function classifySearchQuery(
   query: string,
   index: number,
-  t: { executionChecklist: { marketSize: string; competition: string; technology: string; consumerDemand: string; evidenceRound: (round: number) => string } }
+  t: Translations,
 ): string {
   if (/规模|增[长長]|CAGR|market size|forecast/i.test(query)) {
     return t.executionChecklist.marketSize;
   }
-  if (/品牌|竞争|格局|company|companies|Oura|Eight Sleep|床垫|床墊/i.test(query)) {
+  if (
+    /品牌|竞争|格局|company|companies|Oura|Eight Sleep|床垫|床墊/i.test(query)
+  ) {
     return t.executionChecklist.competition;
   }
   if (/技术|technology|AI|sensor|wearable|产品|product/i.test(query)) {
@@ -71,16 +78,21 @@ function classifySearchQuery(
 
 function buildToolStep(
   events: LiveToolEvent[],
-  t: { executionChecklist: { webSearch: (count: number) => string; readContext: string; writeFile: string; runCommand: string; callTool: (count: number) => string; toolCallDetail: string } }
+  t: Translations,
 ): ChecklistStep | null {
   if (events.length === 0) return null;
   const running = hasRunningTool(events);
   const parts: string[] = [];
-  const searchCount = events.filter((event) => isSearchToolName(event.name)).length;
+  const searchCount = events.filter((event) =>
+    isSearchToolName(event.name),
+  ).length;
   if (searchCount > 0) parts.push(t.executionChecklist.webSearch(searchCount));
-  if (hasTool(events, isReadToolName)) parts.push(t.executionChecklist.readContext);
-  if (hasTool(events, isFileMutationToolName)) parts.push(t.executionChecklist.writeFile);
-  if (hasTool(events, isShellToolName)) parts.push(t.executionChecklist.runCommand);
+  if (hasTool(events, isReadToolName))
+    parts.push(t.executionChecklist.readContext);
+  if (hasTool(events, isFileMutationToolName))
+    parts.push(t.executionChecklist.writeFile);
+  if (hasTool(events, isShellToolName))
+    parts.push(t.executionChecklist.runCommand);
   if (parts.length === 0) {
     parts.push(t.executionChecklist.callTool(events.length));
   }
@@ -94,7 +106,7 @@ function buildToolStep(
 
 function buildResearchIterationSteps(
   events: LiveToolEvent[],
-  t: { executionChecklist: { searchRound: (round: number, query: string) => string; adjustKeywords: (round: number) => string; adjustKeywordsDetail: string } }
+  t: Translations,
 ): ChecklistStep[] {
   const searches = events
     .filter((event) => isSearchToolName(event.name))
@@ -104,11 +116,14 @@ function buildResearchIterationSteps(
   const steps: ChecklistStep[] = [];
   searches.forEach((event, index) => {
     const query = queryText(event);
-    const settled = event.status !== "running" && event.status !== "waiting_approval";
-    const classifiedQuery = classifySearchQuery(query, index, t as unknown as { executionChecklist: { marketSize: string; competition: string; technology: string; consumerDemand: string; evidenceRound: (round: number) => string } });
+    const settled =
+      event.status !== "running" && event.status !== "waiting_approval";
+    const classifiedQuery = classifySearchQuery(query, index, t);
     steps.push({
       label: t.executionChecklist.searchRound(index + 1, classifiedQuery),
-      detail: query ? `${t.executionChecklist.queryPrefix}${query}` : t.executionChecklist.continueFromPrevious,
+      detail: query
+        ? `${t.executionChecklist.queryPrefix}${query}`
+        : t.executionChecklist.continueFromPrevious,
       status: settled ? "completed" : "in_progress",
     });
     if (index < searches.length - 1) {
@@ -126,7 +141,7 @@ function buildSteps(
   events: LiveToolEvent[],
   hasAnswer: boolean,
   isRunning: boolean,
-  t: { executionChecklist: { clarifyGoal: string; clarifyGoalDetail: string; analyzeAndAlign: string; analyzeAndAlignDetail: string; generateResponse: string; generateResponseDetail: string; webSearch: (count: number) => string; readContext: string; writeFile: string; runCommand: string; callTool: (count: number) => string; toolCallDetail: string; searchRound: (round: number, query: string) => string; adjustKeywords: (round: number) => string; adjustKeywordsDetail: string } }
+  t: Translations,
 ): ChecklistStep[] {
   const researchSteps = buildResearchIterationSteps(events, t);
   const toolStep = buildToolStep(events, t);
@@ -157,7 +172,12 @@ function buildSteps(
   steps.push({
     label: t.executionChecklist.generateResponse,
     detail: t.executionChecklist.generateResponseDetail,
-    status: hasAnswer && !isRunning ? "completed" : generating ? "in_progress" : "pending",
+    status:
+      hasAnswer && !isRunning
+        ? "completed"
+        : generating
+          ? "in_progress"
+          : "pending",
   });
 
   return steps;
@@ -165,10 +185,12 @@ function buildSteps(
 
 function StepIcon({ status }: { status: StepStatus }) {
   if (status === "completed") {
-    return <CheckCircle2Icon className="size-4 shrink-0 text-emerald-500" />;
+    return <CheckCircle2Icon className="size-4 shrink-0 text-success" />;
   }
   if (status === "in_progress") {
-    return <Loader2Icon className="size-4 shrink-0 animate-spin text-blue-500" />;
+    return (
+      <Loader2Icon className="size-4 shrink-0 animate-spin text-info" />
+    );
   }
   return <CircleIcon className="size-4 shrink-0 text-muted-foreground/50" />;
 }
@@ -180,10 +202,12 @@ export function ExecutionChecklistPanel({
   className,
 }: ExecutionChecklistPanelProps) {
   const { t } = useI18n();
-  const hasExplicitTodos = liveToolEvents.some((event) => event.name === "todo_write");
+  const hasExplicitTodos = liveToolEvents.some(
+    (event) => event.name === "todo_write",
+  );
   const steps = useMemo(
     () => buildSteps(liveToolEvents, hasAnswer, isRunning, t),
-    [hasAnswer, isRunning, liveToolEvents, t]
+    [hasAnswer, isRunning, liveToolEvents, t],
   );
 
   if (hasExplicitTodos || liveToolEvents.length === 0) {
@@ -195,16 +219,16 @@ export function ExecutionChecklistPanel({
   return (
     <div
       className={cn(
-        "workspace-panel-subtle my-3 rounded-lg border border-border/60 p-3",
+        "workspace-panel-subtle my-3 rounded-lg border border-border-default p-3",
         className,
       )}
     >
       <div className="mb-2 flex items-center justify-between">
         <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-          <ListChecksIcon className="size-3.5 text-violet-500" />
+          <ListChecksIcon className="size-3.5 text-chart-1" />
           {t.executionChecklist.title}
         </div>
-        <div className="text-[11px] tabular-nums text-muted-foreground">
+        <div className="text-xs tabular-nums text-muted-foreground">
           {completed}/{steps.length}
         </div>
       </div>
@@ -218,14 +242,15 @@ export function ExecutionChecklistPanel({
               <div
                 className={cn(
                   "text-sm leading-5",
-                  step.status === "completed" && "text-muted-foreground line-through",
+                  step.status === "completed" &&
+                    "text-muted-foreground line-through",
                   step.status === "in_progress" && "font-medium",
                 )}
               >
                 {step.label}
               </div>
               {step.detail && (
-                <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground/80">
+                <div className="mt-0.5 text-xs leading-4 text-muted-foreground/80">
                   {step.detail}
                 </div>
               )}

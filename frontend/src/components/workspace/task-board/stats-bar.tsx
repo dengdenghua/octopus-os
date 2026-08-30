@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { useI18n } from "@/core/i18n/hooks";
+import { Skeleton as _Skeleton } from "@/components/ui/skeleton";
 import type { TaskBoardStats } from "@/core/task-board/types";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +38,10 @@ function MiniSparkline({
       {data.map((value, i) => (
         <div
           key={i}
-          className={cn("w-1 min-h-[2px] rounded-lg transition-all duration-300", color)}
+          className={cn(
+            "w-1 min-h-[2px] rounded-lg transition-colors duration-slow",
+            color,
+          )}
           style={{ height: `${Math.max(2, (value / max) * 20)}px` }}
         />
       ))}
@@ -77,11 +81,15 @@ function StatCard({
         {icon}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
         <div className="flex items-baseline gap-2">
-          <p className="text-lg font-semibold tabular-nums leading-tight">{value}</p>
+          <p className="text-lg font-semibold tabular-nums leading-tight">
+            {value}
+          </p>
           {subValue && (
-            <span className="text-[10px] text-muted-foreground">{subValue}</span>
+            <span className="text-xs text-muted-foreground">
+              {subValue}
+            </span>
           )}
         </div>
       </div>
@@ -108,7 +116,10 @@ export function StatsBar({
     return (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-[72px] animate-pulse rounded-lg border bg-muted/50" />
+          <div
+            key={i}
+            className="h-[72px] border"
+          />
         ))}
       </div>
     );
@@ -146,18 +157,22 @@ export function StatsBar({
       />
 
       <StatCard
-        icon={<ActivityIcon className="size-4 text-amber-500" />}
-        iconColor="bg-amber-500/10"
+        icon={<ActivityIcon className="size-4 text-warning" />}
+        iconColor="bg-warning/10"
         label={t.taskBoard.running}
         value={stats.running_count}
-        subValue={stats.queued_count > 0 ? `+${stats.queued_count} ${t.taskBoard.queued.toLowerCase()}` : undefined}
+        subValue={
+          stats.queued_count > 0
+            ? `+${stats.queued_count} ${t.taskBoard.queued.toLowerCase()}`
+            : undefined
+        }
         sparkline={statusSparkline}
-        sparklineColor="bg-amber-500/50"
+        sparklineColor="bg-warning/50"
       />
 
       <StatCard
-        icon={<TrendingUpIcon className="size-4 text-emerald-500" />}
-        iconColor="bg-emerald-500/10"
+        icon={<TrendingUpIcon className="size-4 text-success" />}
+        iconColor="bg-success/10"
         label={t.taskBoard.successRate}
         value={stats.total > 0 ? `${Math.round(stats.success_rate)}%` : "--"}
         subValue={
@@ -168,10 +183,14 @@ export function StatsBar({
       />
 
       <StatCard
-        icon={<ClockIcon className="size-4 text-sky-500" />}
-        iconColor="bg-sky-500/10"
+        icon={<ClockIcon className="size-4 text-info" />}
+        iconColor="bg-info/10"
         label={t.taskBoard.avgDuration}
-        value={stats.avg_duration_ms > 0 ? formatDurationMs(stats.avg_duration_ms) : "--"}
+        value={
+          stats.avg_duration_ms > 0
+            ? formatDurationMs(stats.avg_duration_ms)
+            : "--"
+        }
         subValue={stats.total > 0 ? t.taskBoard.across(stats.total) : undefined}
       />
     </div>

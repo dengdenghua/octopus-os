@@ -13,12 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAgent } from "@/core/agents/hooks";
 import {
   useAgentToolRegistry,
@@ -53,13 +48,17 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
     budget.max_iterations != null;
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [selectedPrivateSkills, setSelectedPrivateSkills] = useState<Set<string>>(
-    new Set(),
-  );
+  const [selectedPrivateSkills, setSelectedPrivateSkills] = useState<
+    Set<string>
+  >(new Set());
   const [affinity, setAffinity] = useState("");
   const [skillQuery, setSkillQuery] = useState("");
-  const [armFilter, setArmFilter] = useState<"all" | "enabled" | "disabled">("all");
-  const [skillFilter, setSkillFilter] = useState<"all" | "selected" | "unselected">("all");
+  const [armFilter, setArmFilter] = useState<"all" | "enabled" | "disabled">(
+    "all",
+  );
+  const [skillFilter, setSkillFilter] = useState<
+    "all" | "selected" | "unselected"
+  >("all");
   const [skillSourceFilter, setSkillSourceFilter] = useState("all");
   const [tab, setTab] = useState<Props["initialTab"]>(initialTab);
   const [dirty, setDirty] = useState(false);
@@ -77,7 +76,7 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
     }
   }, [registryQuery.data]);
 
-  const arms = armsQuery.data ?? [];
+  const arms = useMemo(() => armsQuery.data ?? [], [armsQuery.data]);
   const skillCatalog = useMemo(() => {
     const byName = new Map<string, SkillInfo>();
     for (const skill of skillsQuery.skills) {
@@ -104,7 +103,10 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
   );
 
   const skillSources = useMemo(() => {
-    const counts = new Map<string, { id: string; label: string; count: number }>();
+    const counts = new Map<
+      string,
+      { id: string; label: string; count: number }
+    >();
     for (const skill of skillCatalog) {
       const id = skill.group || skill.category || "domain";
       const label = skill.category || skill.group || id;
@@ -132,6 +134,48 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
     return next;
   }, [permissionsQuery.data]);
 
+  const selectedArmSkills = useMemo(() => {
+    const next = new Set<string>();
+    for (const arm of arms) {
+      if (!selected.has(arm.arm_id)) continue;
+      for (const skill of arm.skills) next.add(skill);
+    }
+    return next;
+  }, [arms, selected]);
+
+  const permissionRows = useMemo(() => {
+    return (permissionsQuery.data ?? []).map((permission) => {
+      const agentSkills = permission.skill_names.filter(
+        (skill) =>
+          selectedArmSkills.has(skill) || selectedPrivateSkills.has(skill),
+      );
+      const defaultGranted =
+        permission.id === "builtin" || permission.id === "memory";
+      const agentGranted = defaultGranted || agentSkills.length > 0;
+      return {
+        ...permission,
+        agentSkills,
+        agentGranted,
+        defaultGranted,
+        effective: permission.enabled && agentGranted,
+      };
+    });
+  }, [permissionsQuery.data, selectedArmSkills, selectedPrivateSkills]);
+
+  const permissionSummary = useMemo(() => {
+    const globalEnabled = permissionRows.filter((item) => item.enabled).length;
+    const agentGranted = permissionRows.filter(
+      (item) => item.agentGranted,
+    ).length;
+    const effective = permissionRows.filter((item) => item.effective).length;
+    return {
+      globalEnabled,
+      agentGranted,
+      effective,
+      total: permissionRows.length,
+    };
+  }, [permissionRows]);
+
   const visibleArms = useMemo(() => {
     if (armFilter === "enabled") {
       return arms.filter((arm) => selected.has(arm.arm_id));
@@ -145,18 +189,29 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
   const visibleSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
     return skillCatalog.filter((skill) => {
-      if (skillFilter === "selected" && !selectedPrivateSkills.has(skill.name)) {
+      if (
+        skillFilter === "selected" &&
+        !selectedPrivateSkills.has(skill.name)
+      ) {
         return false;
       }
-      if (skillFilter === "unselected" && selectedPrivateSkills.has(skill.name)) {
+      if (
+        skillFilter === "unselected" &&
+        selectedPrivateSkills.has(skill.name)
+      ) {
         return false;
       }
       if (skillSourceFilter !== "all") {
         if (skillSourceFilter === "custom") {
-          if (skill.group || skill.trusted_source?.startsWith("skill://all_skills/")) {
+          if (
+            skill.group ||
+            skill.trusted_source?.startsWith("skill://all_skills/")
+          ) {
             return false;
           }
-        } else if ((skill.group || skill.category || "domain") !== skillSourceFilter) {
+        } else if (
+          (skill.group || skill.category || "domain") !== skillSourceFilter
+        ) {
           return false;
         }
       }
@@ -167,7 +222,13 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
         .toLowerCase()
         .includes(query);
     });
-  }, [selectedPrivateSkills, skillCatalog, skillFilter, skillQuery, skillSourceFilter]);
+  }, [
+    selectedPrivateSkills,
+    skillCatalog,
+    skillFilter,
+    skillQuery,
+    skillSourceFilter,
+  ]);
 
   const original = useMemo(
     () => ({
@@ -296,7 +357,9 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
     const err = armsQuery.error ?? registryQuery.error ?? skillsQuery.error;
     return (
       <div className="py-6 text-sm text-destructive">
-        {t.armsEditor.loadFailed(err instanceof Error ? err.message : String(err))}
+        {t.armsEditor.loadFailed(
+          err instanceof Error ? err.message : String(err),
+        )}
       </div>
     );
   }
@@ -340,7 +403,7 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
             <div className="text-sm font-medium">
               {t.armsEditor.availableArmsLabel}
             </div>
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-xs">
               {t.armsEditor.selectedArmsCount(selected.size, arms.length)}
             </Badge>
           </div>
@@ -384,12 +447,14 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         {arm.icon ? (
-                          <span className="text-base leading-none">{arm.icon}</span>
+                          <span className="text-base leading-none">
+                            {arm.icon}
+                          </span>
                         ) : null}
                         <div className="font-medium">
                           {arm.display_name || arm.arm_id}
                         </div>
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge variant="outline" className="text-xs">
                           {arm.arm_id}
                         </Badge>
                       </div>
@@ -404,7 +469,7 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
                             <Badge
                               key={s}
                               variant="outline"
-                              className="rounded-sm bg-background/60 text-[10px] font-mono"
+                              className="rounded-sm bg-background/60 text-xs font-mono"
                             >
                               {s}
                             </Badge>
@@ -429,7 +494,7 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
             <div>
               <div className="flex items-center gap-2 text-sm font-medium">
                 {t.armsEditor.privateSkillsLabel}
-                <Badge variant="secondary" className="rounded-sm text-[10px]">
+                <Badge variant="secondary" className="rounded-sm text-xs">
                   {t.armsEditor.skillMarketplaceLabel}
                 </Badge>
               </div>
@@ -437,7 +502,7 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
                 {t.armsEditor.privateSkillsHint}
               </div>
             </div>
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-xs">
               {t.armsEditor.selectedSkillsCount(selectedPrivateSkills.size)}
             </Badge>
           </div>
@@ -471,51 +536,58 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
 
           <div className="space-y-2 rounded-sm border border-border bg-card/55 p-2.5">
             <div className="flex items-center justify-between gap-3">
-              <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              <div className="font-mono text-xs uppercase tracking-caps text-muted-foreground">
                 {t.armsEditor.skillMarketplaceLabel}
               </div>
-              <div className="font-mono text-[10px] text-muted-foreground">
-                {t.armsEditor.visibleSkillsCount(visibleSkills.length, skillCatalog.length)}
+              <div className="font-mono text-xs text-muted-foreground">
+                {t.armsEditor.visibleSkillsCount(
+                  visibleSkills.length,
+                  skillCatalog.length,
+                )}
               </div>
             </div>
             <div className="flex max-h-20 flex-wrap gap-1.5 overflow-y-auto pr-1">
-                {[
-                  ["all", t.armsEditor.skillCategoryAll, skillCatalog.length],
-                  ...skillSources.map((source) => [source.id, source.label, source.count] as const),
-                  [
-                    "custom",
-                    t.armsEditor.skillCategoryCustom,
-                    skillCatalog.filter(
-                      (skill) =>
-                        !skill.group &&
-                        !skill.trusted_source?.startsWith("skill://all_skills/"),
-                    ).length,
-                  ] as const,
-                ].map(([id, label, count]) => (
-                  <Button
-                    key={id}
-                    className="h-7 max-w-[180px] justify-between rounded-sm px-2 text-xs"
-                    size="sm"
-                    variant={skillSourceFilter === id ? "default" : "ghost"}
-                    onClick={() => setSkillSourceFilter(String(id))}
-                  >
-                    <span className="min-w-0 truncate">{label}</span>
-                    <span className="ml-2 font-mono text-[10px] opacity-75">
-                      {count}
-                    </span>
-                  </Button>
-                ))}
+              {[
+                ["all", t.armsEditor.skillCategoryAll, skillCatalog.length],
+                ...skillSources.map(
+                  (source) => [source.id, source.label, source.count] as const,
+                ),
+                [
+                  "custom",
+                  t.armsEditor.skillCategoryCustom,
+                  skillCatalog.filter(
+                    (skill) =>
+                      !skill.group &&
+                      !skill.trusted_source?.startsWith("skill://all_skills/"),
+                  ).length,
+                ] as const,
+              ].map(([id, label, count]) => (
+                <Button
+                  key={id}
+                  className="h-7 max-w-[180px] justify-between rounded-sm px-2 text-xs"
+                  size="sm"
+                  variant={skillSourceFilter === id ? "default" : "ghost"}
+                  onClick={() => setSkillSourceFilter(String(id))}
+                >
+                  <span className="min-w-0 truncate">{label}</span>
+                  <span className="ml-2 font-mono text-xs opacity-75">
+                    {count}
+                  </span>
+                </Button>
+              ))}
             </div>
             <div className="grid gap-2 lg:grid-cols-[1fr_auto]">
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-sm border border-border bg-background/70 px-2.5 py-1.5">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                  <div className="font-mono text-xs uppercase tracking-caps text-muted-foreground">
                     {t.armsEditor.filterAll}
                   </div>
-                  <div className="text-sm font-semibold">{skillCatalog.length}</div>
+                  <div className="text-sm font-semibold">
+                    {skillCatalog.length}
+                  </div>
                 </div>
                 <div className="rounded-sm border border-border bg-background/70 px-2.5 py-1.5">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                  <div className="font-mono text-xs uppercase tracking-caps text-muted-foreground">
                     {t.armsEditor.filterSelected}
                   </div>
                   <div className="text-sm font-semibold">
@@ -567,9 +639,12 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
               visibleSkills.map((skill) => {
                 const isOn = selectedPrivateSkills.has(skill.name);
                 const permission = permissionBySkill.get(skill.name);
-                const source = skill.group || skill.category || skill.trusted_source || "";
+                const source =
+                  skill.group || skill.category || skill.trusted_source || "";
                 const skillLabel =
-                  skill.name === "*" ? t.agentConfig.allSkillsWildcard : skill.name;
+                  skill.name === "*"
+                    ? t.agentConfig.allSkillsWildcard
+                    : skill.name;
                 return (
                   <div
                     key={skill.name}
@@ -594,7 +669,7 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
                           </div>
                           <Badge
                             variant={skill.enabled ? "outline" : "secondary"}
-                            className="rounded-sm text-[10px]"
+                            className="rounded-sm text-xs"
                           >
                             {skill.enabled
                               ? t.armsEditor.permissionEnabled
@@ -602,10 +677,13 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
                           </Badge>
                           {permission ? (
                             <Badge
-                              variant={permission.enabled ? "outline" : "secondary"}
+                              variant={
+                                permission.enabled ? "outline" : "secondary"
+                              }
                               className={cn(
-                                "rounded-sm text-[10px]",
-                                !permission.enabled && "border-destructive/30 text-destructive",
+                                "rounded-sm text-xs",
+                                !permission.enabled &&
+                                  "border-destructive/30 text-destructive",
                               )}
                             >
                               {permission.id} ·{" "}
@@ -644,10 +722,39 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
                 {t.armsEditor.permissionsHint}
               </div>
             </div>
-            <Badge variant="outline" className="text-[10px]">
-              {permissionsQuery.data?.filter((item) => item.enabled).length ?? 0}/
-              {permissionsQuery.data?.length ?? 0}
+            <Badge variant="outline" className="text-xs">
+              {t.armsEditor.permissionEffectiveCount(
+                permissionSummary.effective,
+                permissionSummary.total,
+              )}
             </Badge>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-3">
+            <div className="rounded-sm border border-border bg-card/60 px-3 py-2">
+              <div className="font-mono text-xs uppercase tracking-caps text-muted-foreground">
+                {t.armsEditor.permissionGlobalGate}
+              </div>
+              <div className="mt-1 text-sm font-semibold">
+                {permissionSummary.globalEnabled}/{permissionSummary.total}
+              </div>
+            </div>
+            <div className="rounded-sm border border-border bg-card/60 px-3 py-2">
+              <div className="font-mono text-xs uppercase tracking-caps text-muted-foreground">
+                {t.armsEditor.permissionAgentGrant}
+              </div>
+              <div className="mt-1 text-sm font-semibold">
+                {permissionSummary.agentGranted}/{permissionSummary.total}
+              </div>
+            </div>
+            <div className="rounded-sm border border-border bg-card/60 px-3 py-2">
+              <div className="font-mono text-xs uppercase tracking-caps text-muted-foreground">
+                {t.armsEditor.permissionEffective}
+              </div>
+              <div className="mt-1 text-sm font-semibold">
+                {permissionSummary.effective}/{permissionSummary.total}
+              </div>
+            </div>
           </div>
 
           {permissionsQuery.isLoading ? (
@@ -665,70 +772,145 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
             </div>
           ) : (
             <div className="grid gap-3 lg:grid-cols-2">
-              {(permissionsQuery.data ?? []).map((permission) => (
-                <div
-                  key={permission.id}
-                  className={cn(
-                    "relative overflow-hidden rounded-sm border p-3 transition-colors",
-                    "before:pointer-events-none before:absolute before:left-0 before:top-0 before:h-2 before:w-2 before:border-l before:border-t",
-                    permission.enabled
-                      ? "border-primary/45 bg-primary/5 before:border-primary/70"
-                      : "border-border bg-card/55 before:border-border",
-                  )}
-                >
-                  <div className="flex items-start gap-3">
-                    <Switch
-                      checked={permission.enabled}
-                      disabled={updatePermission.isPending}
-                      onCheckedChange={(enabled) =>
-                        void togglePermission(permission.id, enabled)
-                      }
-                      className="mt-1 shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <div className="font-mono text-xs font-semibold uppercase tracking-[0.12em]">
-                          {permission.id}
+              {permissionRows.map((permission) => {
+                const shownAgentSkills = permission.agentSkills.slice(0, 8);
+                const shownPermissionSkills = permission.skill_names.slice(
+                  0,
+                  10,
+                );
+                return (
+                  <div
+                    key={permission.id}
+                    className={cn(
+                      "relative overflow-hidden rounded-sm border p-3 transition-colors",
+                      "before:pointer-events-none before:absolute before:left-0 before:top-0 before:h-2 before:w-2 before:border-l before:border-t",
+                      permission.effective
+                        ? "border-primary/45 bg-primary/5 before:border-primary/70"
+                        : "border-border bg-card/55 before:border-border",
+                    )}
+                  >
+                    <div className="flex items-start gap-3">
+                      <Switch
+                        checked={permission.enabled}
+                        disabled={updatePermission.isPending}
+                        onCheckedChange={(enabled) =>
+                          void togglePermission(permission.id, enabled)
+                        }
+                        className="mt-1 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-mono text-xs font-semibold uppercase tracking-caps">
+                            {permission.id}
+                          </div>
+                          <Badge
+                            variant={
+                              permission.available ? "outline" : "secondary"
+                            }
+                            className="rounded-sm text-xs"
+                          >
+                            {permission.available
+                              ? t.armsEditor.permissionAvailable
+                              : t.armsEditor.permissionUnavailable}
+                          </Badge>
+                          <Badge
+                            variant={
+                              permission.enabled ? "outline" : "secondary"
+                            }
+                            className={cn(
+                              "rounded-sm text-xs",
+                              !permission.enabled &&
+                                "border-destructive/30 text-destructive",
+                            )}
+                          >
+                            {t.armsEditor.permissionGlobalGate}:{" "}
+                            {permission.enabled
+                              ? t.armsEditor.permissionEnabled
+                              : t.armsEditor.permissionDisabled}
+                          </Badge>
+                          <Badge
+                            variant={
+                              permission.agentGranted
+                                ? "outline"
+                                : "secondary"
+                            }
+                            className={cn(
+                              "rounded-sm text-xs",
+                              !permission.agentGranted &&
+                                "border-warning/30 text-warning",
+                            )}
+                          >
+                            {permission.defaultGranted
+                              ? t.armsEditor.permissionAgentDefault
+                              : permission.agentGranted
+                                ? t.armsEditor.permissionAgentGranted
+                                : t.armsEditor.permissionAgentDenied}
+                          </Badge>
                         </div>
-                        <Badge
-                          variant={permission.available ? "outline" : "secondary"}
-                          className="rounded-sm text-[10px]"
-                        >
-                          {permission.available
-                            ? t.armsEditor.permissionAvailable
-                            : t.armsEditor.permissionUnavailable}
-                        </Badge>
-                        <Badge variant="outline" className="rounded-sm text-[10px]">
-                          {permission.enabled
-                            ? t.armsEditor.permissionEnabled
-                            : t.armsEditor.permissionDisabled}
-                        </Badge>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          {permission.effective
+                            ? t.armsEditor.permissionEffectiveHint
+                            : !permission.enabled
+                              ? t.armsEditor.permissionBlockedByGlobal
+                              : t.armsEditor.permissionBlockedByAgent}
+                        </div>
+                        {shownAgentSkills.length > 0 ? (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {shownAgentSkills.map((skill) => (
+                              <Badge
+                                key={skill}
+                                variant="outline"
+                                className="rounded-sm bg-background/70 text-xs font-mono"
+                              >
+                                {skill}
+                              </Badge>
+                            ))}
+                            {permission.agentSkills.length >
+                            shownAgentSkills.length ? (
+                              <Badge
+                                variant="secondary"
+                                className="rounded-sm text-xs"
+                              >
+                                +
+                                {permission.agentSkills.length -
+                                  shownAgentSkills.length}
+                              </Badge>
+                            ) : null}
+                          </div>
+                        ) : permission.defaultGranted ? (
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            {t.armsEditor.permissionDefaultGrantHint}
+                          </div>
+                        ) : null}
+                        {permission.skill_names.length > 0 ? (
+                          <div className="mt-2 flex max-h-16 flex-wrap gap-1 overflow-hidden border-t border-border-default pt-2">
+                            {shownPermissionSkills.map((skill) => (
+                              <Badge
+                                key={skill}
+                                variant="outline"
+                                className="rounded-sm bg-background/40 text-xs font-mono text-muted-foreground"
+                              >
+                                {skill}
+                              </Badge>
+                            ))}
+                            {permission.skill_names.length >
+                            shownPermissionSkills.length ? (
+                              <Badge
+                                variant="secondary"
+                                className="rounded-sm text-xs"
+                              >
+                                +
+                                {permission.skill_names.length -
+                                  shownPermissionSkills.length}
+                              </Badge>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
-                      {permission.skill_names.length > 0 ? (
-                        <div className="mt-2 flex max-h-20 flex-wrap gap-1 overflow-hidden">
-                          {permission.skill_names.slice(0, 12).map((skill) => (
-                            <Badge
-                              key={skill}
-                              variant="outline"
-                              className="rounded-sm bg-background/60 text-[10px] font-mono"
-                            >
-                              {skill}
-                            </Badge>
-                          ))}
-                          {permission.skill_names.length > 12 ? (
-                            <Badge
-                              variant="secondary"
-                              className="rounded-sm text-[10px]"
-                            >
-                              +{permission.skill_names.length - 12}
-                            </Badge>
-                          ) : null}
-                        </div>
-                      ) : null}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </TabsContent>
@@ -749,7 +931,7 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
                 setDirty(true);
               }}
               placeholder={t.armsEditor.extraAffinityPlaceholder}
-              className="mt-1 w-full rounded-sm border border-border bg-card/70 px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              className="mt-1 w-full rounded-sm border border-border bg-card/70 px-3 py-2 text-sm shadow-[var(--shadow-xs)] focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
 
@@ -758,13 +940,13 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
               <CoinsIcon className="h-4 w-4 text-muted-foreground" />
               {t.armsEditor.budgetLabel}
               {hasBudgetOverride ? (
-                <Badge variant="outline" className="text-[10px]">
+                <Badge variant="outline" className="text-xs">
                   {t.armsEditor.budgetOverride}
                 </Badge>
               ) : (
                 <Badge
                   variant="outline"
-                  className="text-[10px] text-muted-foreground"
+                  className="text-xs text-muted-foreground"
                 >
                   {t.armsEditor.budgetDefault}
                 </Badge>
@@ -788,12 +970,14 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
               <div>
                 <div className="text-muted-foreground">max_usd</div>
                 <div className="mt-0.5 font-mono">
-                  {budget.max_usd != null ? `$${budget.max_usd.toFixed(2)}` : "-"}
+                  {budget.max_usd != null
+                    ? `$${budget.max_usd.toFixed(2)}`
+                    : "-"}
                 </div>
               </div>
             </div>
             {!hasBudgetOverride && (
-              <div className="mt-2 text-[11px] text-muted-foreground">
+              <div className="mt-2 text-xs text-muted-foreground">
                 {t.armsEditor.budgetEditHint(agentId)}
               </div>
             )}

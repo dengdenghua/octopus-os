@@ -1,4 +1,3 @@
-
 import * as React from "react";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
@@ -55,4 +54,3 @@ function ScrollBar({
 }
 
 export { ScrollArea, ScrollBar };
-

@@ -259,7 +259,7 @@ async function launchApplicationById(appId, options = {}) {
   return launchDesktopFile(app.desktopFile, options.execFile || execFile);
 }
 
-/** 注册 IPC:渲染进程经 window.octopus.apps.* 调用。 */
+/** 注册 IPC:渲染进程经 window.echo.apps.* 调用。 */
 function registerSystemShellIpc(ipcMain) {
   ipcMain.handle("apps:list", async () => listApplications());
   ipcMain.handle("apps:launch", async (_e, appId) =>
