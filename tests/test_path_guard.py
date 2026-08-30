@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from runtime.safety.auth import check_path, is_safe_path
 
 # ═══════════════════════════════════════════════════════════
@@ -72,13 +71,16 @@ class TestSandboxContainment:
 
 class TestSensitivePaths:
     @pytest.mark.skipif(sys.platform == "win32", reason="unix paths")
-    @pytest.mark.parametrize("path", [
-        "/etc/passwd",
-        "/etc/shadow",
-        "/etc/sudoers",
-        "/root/.bashrc",
-        "/root/anything",
-    ])
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/etc/passwd",
+            "/etc/shadow",
+            "/etc/sudoers",
+            "/root/.bashrc",
+            "/root/anything",
+        ],
+    )
     def test_unix_absolute_sensitive_blocked(self, path):
         v = check_path(path)
         assert not v.allow
@@ -136,11 +138,18 @@ class TestSensitivePaths:
 
 class TestDOSDeviceNames:
     @pytest.mark.skipif(sys.platform != "win32", reason="windows-only rule")
-    @pytest.mark.parametrize("path", [
-        "CON", "con", "aux.txt", "nul",
-        "COM1.log", "LPT3",
-        "C:/temp/aux",
-    ])
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "CON",
+            "con",
+            "aux.txt",
+            "nul",
+            "COM1.log",
+            "LPT3",
+            "C:/temp/aux",
+        ],
+    )
     def test_dos_device_blocked_on_windows(self, path):
         v = check_path(path)
         assert not v.allow
@@ -168,7 +177,8 @@ class TestBasicValidation:
     def test_must_exist_when_missing(self, tmp_path):
         v = check_path(
             str(tmp_path / "nope.txt"),
-            sandbox_dir=tmp_path, must_exist=True,
+            sandbox_dir=tmp_path,
+            must_exist=True,
         )
         assert not v.allow
         assert "not_found" in v.reason

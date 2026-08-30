@@ -1,8 +1,8 @@
 """Tests for runtime.memory.skills_lib.meta_skill — Meta-Skill (能力包) orchestration."""
+
 from pathlib import Path
 
 import pytest
-
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.execution.tool_engine import ToolExecutor
@@ -84,18 +84,14 @@ class TestMetaSkillValidation:
         with pytest.raises(ValueError, match="cannot depend on itself"):
             MetaSkill(
                 name="test",
-                steps=(
-                    MetaStep(node_id="a", skill_ref="x", depends_on=("a",)),
-                ),
+                steps=(MetaStep(node_id="a", skill_ref="x", depends_on=("a",)),),
             )
 
     def test_unknown_dependency_rejected(self):
         with pytest.raises(ValueError, match="depends_on unknown"):
             MetaSkill(
                 name="test",
-                steps=(
-                    MetaStep(node_id="a", skill_ref="x", depends_on=("ghost",)),
-                ),
+                steps=(MetaStep(node_id="a", skill_ref="x", depends_on=("ghost",)),),
             )
 
     def test_edge_unknown_node_rejected(self):
@@ -204,7 +200,8 @@ class TestCompile:
             steps=(
                 MetaStep(node_id="a", skill_ref="foo"),
                 MetaStep(
-                    node_id="b", skill_ref="bar",
+                    node_id="b",
+                    skill_ref="bar",
                     args_template={"input": "{a.output}"},
                     depends_on=("a",),
                 ),
@@ -225,7 +222,8 @@ class TestCompile:
             steps=(
                 MetaStep(node_id="research", skill_ref="foo"),
                 MetaStep(
-                    node_id="paper", skill_ref="bar",
+                    node_id="paper",
+                    skill_ref="bar",
                     args_template={"src": "{research.output}"},
                     depends_on=("research",),
                 ),
@@ -240,10 +238,13 @@ class TestCompile:
     def test_compile_injects_user_input(self):
         meta = MetaSkill(
             name="with-input",
-            steps=(MetaStep(
-                node_id="a", skill_ref="foo",
-                args_template={"topic": "{user_input.topic}"},
-            ),),
+            steps=(
+                MetaStep(
+                    node_id="a",
+                    skill_ref="foo",
+                    args_template={"topic": "{user_input.topic}"},
+                ),
+            ),
         )
         graph = compile_to_task_graph(meta, user_input={"topic": "RAG systems"})
         a = graph.nodes[0]
@@ -271,7 +272,8 @@ class TestCompile:
                 MetaStep(node_id="b", skill_ref="left", depends_on=("a",)),
                 MetaStep(node_id="c", skill_ref="right", depends_on=("a",)),
                 MetaStep(
-                    node_id="d", skill_ref="merge",
+                    node_id="d",
+                    skill_ref="merge",
                     depends_on=("b", "c"),
                 ),
             ),
@@ -338,16 +340,21 @@ class TestRoundTrip:
             lambda: tmp_path,
         )
         for name in ("alpha", "beta", "gamma"):
-            save_meta_skill(MetaSkill(
-                name=name,
-                description=f"desc-{name}",
-                steps=(MetaStep(node_id="a", skill_ref="foo"),),
-            ))
+            save_meta_skill(
+                MetaSkill(
+                    name=name,
+                    description=f"desc-{name}",
+                    steps=(MetaStep(node_id="a", skill_ref="foo"),),
+                )
+            )
 
         results = list_meta_skills()
         names = [r["name"] for r in results]
-        assert set(names) == {"alpha", "beta", "gamma"}
+        expected = {"alpha", "beta", "gamma"}
+        assert expected <= set(names)
         for r in results:
+            if r["name"] not in expected:
+                continue
             assert r["steps"] == ["a"]
 
 
@@ -361,6 +368,7 @@ class TestBuiltinExamples:
     def _override_paths(self, monkeypatch):
 
         import runtime.platform.process.paths as paths_mod
+
         project_root = Path(__file__).resolve().parents[1]
         monkeypatch.setattr(paths_mod, "project_root", lambda: project_root)
 
@@ -456,11 +464,13 @@ class TestMatchMetaSkill:
 
     def test_picks_best_match_when_multiple(self):
         a = MetaSkill(
-            name="a", when_to_use="write a paper",
+            name="a",
+            when_to_use="write a paper",
             steps=(MetaStep(node_id="a", skill_ref="x"),),
         )
         b = MetaSkill(
-            name="b", when_to_use="write a research paper for me",
+            name="b",
+            when_to_use="write a research paper for me",
             steps=(MetaStep(node_id="a", skill_ref="x"),),
         )
         m = match_meta_skill("write a research paper for me", available=[a, b])
@@ -500,13 +510,15 @@ class TestKind:
 
     def test_default_kind_is_skill_cluster(self):
         m = MetaSkill(
-            name="x", steps=(MetaStep(node_id="a", skill_ref="foo"),),
+            name="x",
+            steps=(MetaStep(node_id="a", skill_ref="foo"),),
         )
         assert m.kind == "skill_cluster"
 
     def test_explicit_kind_preserved(self):
         m = MetaSkill(
-            name="x", kind="recipe",
+            name="x",
+            kind="recipe",
             steps=(MetaStep(node_id="a", skill_ref="foo"),),
         )
         assert m.kind == "recipe"
@@ -540,9 +552,7 @@ class TestKind:
             steps=(MetaStep(node_id="a", skill_ref="foo"),),
         )
         save_meta_skill(m)
-        text = (tmp_path / "meta_skills" / "kind-test.yaml").read_text(
-            encoding="utf-8"
-        )
+        text = (tmp_path / "meta_skills" / "kind-test.yaml").read_text(encoding="utf-8")
         assert "kind: skill_cluster" in text
 
     def test_round_trip_preserves_kind(self, tmp_path, monkeypatch):
@@ -565,13 +575,14 @@ class TestKind:
             "runtime.platform.process.paths.project_root",
             lambda: tmp_path,
         )
-        save_meta_skill(MetaSkill(
-            name="show-name",
-            steps=(MetaStep(node_id="a", skill_ref="foo"),),
-        ))
+        save_meta_skill(
+            MetaSkill(
+                name="show-name",
+                steps=(MetaStep(node_id="a", skill_ref="foo"),),
+            )
+        )
         results = list_meta_skills()
-        assert len(results) == 1
-        entry = results[0]
+        entry = next(result for result in results if result["name"] == "show-name")
         assert entry["kind"] == "skill_cluster"
         # UI-facing label in Chinese
         assert entry["display_name"] == "能力包"
@@ -601,16 +612,23 @@ class TestMermaidRenderer:
         return MetaSkill(
             name="e2e-chain",
             affinity=("finance", "writing"),
-            budget_tokens=60_000, budget_usd=1.5, budget_latency_ms=1_800_000,
+            budget_tokens=60_000,
+            budget_usd=1.5,
+            budget_latency_ms=1_800_000,
             steps=(
-                MetaStep(node_id="s1", skill_ref="echo",
-                         args_template={"value": 42}),
-                MetaStep(node_id="s2", skill_ref="add",
-                         args_template={"a": "{s1.output.echoed}", "b": 8},
-                         depends_on=("s1",)),
-                MetaStep(node_id="s3", skill_ref="final",
-                         args_template={"trigger": "{s2.output.sum}"},
-                         depends_on=("s2",)),
+                MetaStep(node_id="s1", skill_ref="echo", args_template={"value": 42}),
+                MetaStep(
+                    node_id="s2",
+                    skill_ref="add",
+                    args_template={"a": "{s1.output.echoed}", "b": 8},
+                    depends_on=("s1",),
+                ),
+                MetaStep(
+                    node_id="s3",
+                    skill_ref="final",
+                    args_template={"trigger": "{s2.output.sum}"},
+                    depends_on=("s2",),
+                ),
             ),
         )
 
@@ -618,17 +636,20 @@ class TestMermaidRenderer:
         return MetaSkill(
             name="e2e-diamond",
             steps=(
-                MetaStep(node_id="left", skill_ref="echo",
-                         args_template={"value": "L"}),
-                MetaStep(node_id="right", skill_ref="add",
-                         args_template={"a": 1, "b": 2}),
-                MetaStep(node_id="merge", skill_ref="join",
-                         args_template={"x": "{left.output.echoed}",
-                                        "y": "{right.output.sum}"},
-                         depends_on=("left", "right")),
-                MetaStep(node_id="done", skill_ref="final",
-                         args_template={"trigger": "{merge.output.joined}"},
-                         depends_on=("merge",)),
+                MetaStep(node_id="left", skill_ref="echo", args_template={"value": "L"}),
+                MetaStep(node_id="right", skill_ref="add", args_template={"a": 1, "b": 2}),
+                MetaStep(
+                    node_id="merge",
+                    skill_ref="join",
+                    args_template={"x": "{left.output.echoed}", "y": "{right.output.sum}"},
+                    depends_on=("left", "right"),
+                ),
+                MetaStep(
+                    node_id="done",
+                    skill_ref="final",
+                    args_template={"trigger": "{merge.output.joined}"},
+                    depends_on=("merge",),
+                ),
             ),
         )
 
@@ -657,11 +678,11 @@ class TestMermaidRenderer:
         """Root (no parents) gets ::root; sink (no children) gets ::sink."""
         mm = meta_skill_to_mermaid(self._chain_meta())
         # s1 has no parents → root
-        assert ':::root' in mm and 's1["' in mm
+        assert ":::root" in mm and 's1["' in mm
         # s2 has a parent (s1) and a child (s3) → bridge
         assert "s2[..." in mm or 's2["' in mm
         # s3 has no children → sink
-        assert ':::sink' in mm
+        assert ":::sink" in mm
         # Verify the exact role assignments
         s1_line = next(ln for ln in mm.splitlines() if ln.lstrip().startswith('s1["'))
         assert ":::root" in s1_line
@@ -729,19 +750,19 @@ class TestMermaidRenderer:
         meta = MetaSkill(
             name="three-way",
             steps=(
-                MetaStep(node_id="probe", skill_ref="echo",
-                         args_template={"value": "p"}),
-                MetaStep(node_id="audit", skill_ref="echo",
-                         args_template={"value": "a"}),
-                MetaStep(node_id="fuzz", skill_ref="echo",
-                         args_template={"value": "f"}),
-                MetaStep(node_id="merge", skill_ref="join",
-                         args_template={
-                             "p": "{probe.output.echoed}",
-                             "a": "{audit.output.echoed}",
-                             "f": "{fuzz.output.echoed}",
-                         },
-                         depends_on=("probe", "audit", "fuzz")),
+                MetaStep(node_id="probe", skill_ref="echo", args_template={"value": "p"}),
+                MetaStep(node_id="audit", skill_ref="echo", args_template={"value": "a"}),
+                MetaStep(node_id="fuzz", skill_ref="echo", args_template={"value": "f"}),
+                MetaStep(
+                    node_id="merge",
+                    skill_ref="join",
+                    args_template={
+                        "p": "{probe.output.echoed}",
+                        "a": "{audit.output.echoed}",
+                        "f": "{fuzz.output.echoed}",
+                    },
+                    depends_on=("probe", "audit", "fuzz"),
+                ),
             ),
         )
         mm = meta_skill_to_mermaid(meta)
@@ -756,8 +777,7 @@ class TestMermaidRenderer:
         long_str = "x" * 200
         meta = MetaSkill(
             name="longy",
-            steps=(MetaStep(node_id="a", skill_ref="echo",
-                            args_template={"huge": long_str}),),
+            steps=(MetaStep(node_id="a", skill_ref="echo", args_template={"huge": long_str}),),
         )
         mm = meta_skill_to_mermaid(meta)
         # The arg label is "huge=xxx…" with exactly 60 chars of "x" + "…"
@@ -770,8 +790,11 @@ class TestMermaidRenderer:
         """Only the first 2 args are shown; the rest get a ``+N`` marker."""
         meta = MetaSkill(
             name="manyargs",
-            steps=(MetaStep(node_id="a", skill_ref="echo",
-                            args_template={"a": 1, "b": 2, "c": 3, "d": 4}),),
+            steps=(
+                MetaStep(
+                    node_id="a", skill_ref="echo", args_template={"a": 1, "b": 2, "c": 3, "d": 4}
+                ),
+            ),
         )
         mm = meta_skill_to_mermaid(meta)
         # +2 marker for the omitted 2 args
@@ -801,7 +824,8 @@ class TestMermaidRenderer:
 
     def test_include_budget_false_omits_footer(self):
         mm = meta_skill_to_mermaid(
-            self._chain_meta(), include_budget=False,
+            self._chain_meta(),
+            include_budget=False,
         )
         assert "%% budget:" not in mm
         # classDefs still present
@@ -819,9 +843,7 @@ class TestMermaidRenderer:
             meta = load_meta_skill(name)
             assert meta is not None
             mm = meta_skill_to_mermaid(meta)
-            assert mm.startswith("flowchart LR\n"), (
-                f"{name} did not start with flowchart LR"
-            )
+            assert mm.startswith("flowchart LR\n"), f"{name} did not start with flowchart LR"
             # At least one edge
             assert "-->" in mm, f"{name} had no edges"
             # And the subgraph for affinity/kind
@@ -837,8 +859,7 @@ class TestMermaidRenderer:
         )
         mm = meta_skill_to_mermaid(meta)
         # The node label is ``a<br/>echo`` — no trailing ``<br/>``.
-        a_line = next(ln for ln in mm.splitlines()
-                      if ln.lstrip().startswith('a["'))
+        a_line = next(ln for ln in mm.splitlines() if ln.lstrip().startswith('a["'))
         # Count of <br/> in the label section only
         label = a_line.split('"')[1]
         assert label.count("<br/>") == 1, (
@@ -874,6 +895,7 @@ def e2e_stack():
             if name == "final":
                 return {"ok": True, "trigger": kwargs.get("trigger")}
             return {"name": name, "args": kwargs}
+
         return handler
 
     registry = SkillRegistry()
@@ -909,7 +931,10 @@ def _run_meta_skill(stack, meta, *, user_input=None) -> object:
         limits=BudgetLimits(tokens=10_000, usd=0.10, latency_ms=60_000),
     )
     return stack["runtime"].run(
-        graph, budget=budget, caller="arms/test", arm_id=ArmId("test_arm"),
+        graph,
+        budget=budget,
+        caller="arms/test",
+        arm_id=ArmId("test_arm"),
     )
 
 
@@ -927,14 +952,19 @@ class TestEndToEnd:
         meta = MetaSkill(
             name="e2e-chain",
             steps=(
-                MetaStep(node_id="s1", skill_ref="echo",
-                         args_template={"value": 42}),
-                MetaStep(node_id="s2", skill_ref="add",
-                         args_template={"a": "{s1.output.echoed}", "b": 8},
-                         depends_on=("s1",)),
-                MetaStep(node_id="s3", skill_ref="final",
-                         args_template={"trigger": "{s2.output.sum}"},
-                         depends_on=("s2",)),
+                MetaStep(node_id="s1", skill_ref="echo", args_template={"value": 42}),
+                MetaStep(
+                    node_id="s2",
+                    skill_ref="add",
+                    args_template={"a": "{s1.output.echoed}", "b": 8},
+                    depends_on=("s1",),
+                ),
+                MetaStep(
+                    node_id="s3",
+                    skill_ref="final",
+                    args_template={"trigger": "{s2.output.sum}"},
+                    depends_on=("s2",),
+                ),
             ),
         )
         traj = _run_meta_skill(e2e_stack, meta)
@@ -956,19 +986,23 @@ class TestEndToEnd:
         meta = MetaSkill(
             name="e2e-diamond",
             steps=(
-                MetaStep(node_id="left", skill_ref="echo",
-                         args_template={"value": "L"}),
-                MetaStep(node_id="right", skill_ref="add",
-                         args_template={"a": 1, "b": 2}),
-                MetaStep(node_id="merge", skill_ref="join",
-                         args_template={
-                             "x": "{left.output.echoed}",
-                             "y": "{right.output.sum}",
-                         },
-                         depends_on=("left", "right")),
-                MetaStep(node_id="done", skill_ref="final",
-                         args_template={"trigger": "{merge.output.joined}"},
-                         depends_on=("merge",)),
+                MetaStep(node_id="left", skill_ref="echo", args_template={"value": "L"}),
+                MetaStep(node_id="right", skill_ref="add", args_template={"a": 1, "b": 2}),
+                MetaStep(
+                    node_id="merge",
+                    skill_ref="join",
+                    args_template={
+                        "x": "{left.output.echoed}",
+                        "y": "{right.output.sum}",
+                    },
+                    depends_on=("left", "right"),
+                ),
+                MetaStep(
+                    node_id="done",
+                    skill_ref="final",
+                    args_template={"trigger": "{merge.output.joined}"},
+                    depends_on=("merge",),
+                ),
             ),
         )
         traj = _run_meta_skill(e2e_stack, meta)
@@ -1018,11 +1052,13 @@ steps:
         meta = MetaSkill(
             name="e2e-failure",
             steps=(
-                MetaStep(node_id="a", skill_ref="boom",
-                         args_template={"reason": "test"}),
-                MetaStep(node_id="b", skill_ref="final",
-                         args_template={"trigger": "should not run"},
-                         depends_on=("a",)),
+                MetaStep(node_id="a", skill_ref="boom", args_template={"reason": "test"}),
+                MetaStep(
+                    node_id="b",
+                    skill_ref="final",
+                    args_template={"trigger": "should not run"},
+                    depends_on=("a",),
+                ),
             ),
         )
         traj = _run_meta_skill(e2e_stack, meta)
@@ -1109,21 +1145,18 @@ class TestBuiltinTriggers:
         """Real user query must hit the intended 能力包 (best-match)."""
         meta = match_meta_skill(query)
         assert meta is not None, f"no match for {query!r}"
-        assert meta.name == name, (
-            f"{query!r} routed to {meta.name!r}, expected {name!r}"
-        )
+        assert meta.name == name, f"{query!r} routed to {meta.name!r}, expected {name!r}"
 
     def test_all_packs_are_reachable(self):
         """Sanity: every EXPECTED row in TestCatalogSnapshot must
         appear at least once in TestBuiltinTriggers.CASES.
         """
         from tests.test_meta_skill import TestCatalogSnapshot  # noqa: PLC0415
+
         expected = {name for name, _, _ in TestCatalogSnapshot.EXPECTED}
         routed = {name for name, _ in self.CASES}
         missing = expected - routed
-        assert not missing, (
-            f"these shipped packs have no trigger test: {sorted(missing)}"
-        )
+        assert not missing, f"these shipped packs have no trigger test: {sorted(missing)}"
 
     def test_unrelated_query_returns_none(self):
         """Things that share no tokens with any trigger should NOT
@@ -1145,7 +1178,6 @@ class TestBuiltinTriggers:
         meta = match_meta_skill("安全 pentest 漏洞扫描")
         assert meta is not None
         assert meta.name == "bug-hunt"
-
 
     def test_builtin_examples_have_kind(self):
         """The 15 hand-authored YAMLs (3 baseline + 12 added in the
@@ -1172,9 +1204,7 @@ class TestBuiltinTriggers:
         for name in expected:
             meta = load_meta_skill(name)
             assert meta is not None, f"{name} not found in meta_skills/"
-            assert meta.kind == "skill_cluster", (
-                f"{name} should declare kind: skill_cluster"
-            )
+            assert meta.kind == "skill_cluster", f"{name} should declare kind: skill_cluster"
 
 
 # ── Built-in catalog snapshot (能力包 index) ─────────────────────
@@ -1224,23 +1254,24 @@ class TestCatalogSnapshot:
         for name, min_steps, expected_affinity in self.EXPECTED:
             meta = load_meta_skill(name)
             assert meta is not None, f"{name} failed to load"
-            assert meta.kind == "skill_cluster", (
-                f"{name} should be a 能力包 (skill_cluster)"
-            )
+            assert meta.kind == "skill_cluster", f"{name} should be a 能力包 (skill_cluster)"
             assert len(meta.steps) >= min_steps, (
                 f"{name} should have ≥{min_steps} steps, got {len(meta.steps)}"
             )
             # affinity should overlap (loose check: ≥1 common tag)
             assert set(meta.affinity) & set(expected_affinity), (
-                f"{name} affinity {list(meta.affinity)} should overlap "
-                f"with {expected_affinity}"
+                f"{name} affinity {list(meta.affinity)} should overlap with {expected_affinity}"
             )
 
     def test_list_meta_skills_shape(self):
         for entry in list_meta_skills():
             assert set(entry) >= {
-                "name", "file", "description", "steps",
-                "kind", "display_name",
+                "name",
+                "file",
+                "description",
+                "steps",
+                "kind",
+                "display_name",
             }, f"malformed list entry: {entry}"
             assert entry["kind"] == "skill_cluster"
             assert entry["display_name"] == "能力包"

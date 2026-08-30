@@ -1,0 +1,2 @@
+DROP TABLE accounts;
+CREATE TABLE accounts_v4(id INTEGER PRIMARY KEY);

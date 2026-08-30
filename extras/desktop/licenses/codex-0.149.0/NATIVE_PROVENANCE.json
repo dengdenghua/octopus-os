@@ -1,0 +1,1203 @@
+{
+  "artifacts": [
+    {
+      "expanded_sha256": "00baffcf54b30fe198c3e5cc40ec88674ff99cac2b8b60f8e325efce3ce771bb",
+      "kind": "OpenAI Codex rusty_v8 ptrcomp+sandbox static library (gzip)",
+      "name": "rusty_v8_ptrcomp_sandbox_release_x86_64-pc-windows-msvc.lib.gz",
+      "reviewed_component_inventory": {
+        "header_only_symbol_markers": [
+          {
+            "component": "fast_float",
+            "marker_ascii": "fast_float@@",
+            "occurrence_count": 49
+          },
+          {
+            "component": "dragonbox",
+            "marker_ascii": "dragonbox@jkj@@",
+            "occurrence_count": 27
+          },
+          {
+            "component": "fp16",
+            "marker_ascii": "fp64_to_fp16_raw_bits",
+            "occurrence_count": 13
+          }
+        ],
+        "member_prefix_counts": {
+          "obj/build/rust/allocator/": 2,
+          "obj/buildtools/third_party/libc++/": 51,
+          "obj/rusty_v8/": 2,
+          "obj/src/deno_inspector/": 8,
+          "obj/third_party/abseil-cpp/": 138,
+          "obj/third_party/highway/": 7,
+          "obj/third_party/icu/": 456,
+          "obj/third_party/partition_alloc/": 66,
+          "obj/third_party/simdutf/": 1,
+          "obj/v8/": 1197
+        },
+        "object_member_count": 1928
+      },
+      "sha256": "732ec5da4243aa166799780c8519a5eea6f32f6e47657a323342794dc3c239d6",
+      "source_url": "https://github.com/openai/codex/releases/download/rusty-v8-v150.4.0/rusty_v8_ptrcomp_sandbox_release_x86_64-pc-windows-msvc.lib.gz"
+    },
+    {
+      "kind": "OpenAI Codex rusty_v8 ptrcomp+sandbox Rust binding",
+      "name": "src_binding_ptrcomp_sandbox_release_x86_64-pc-windows-msvc.rs",
+      "sha256": "dabf78ba1faac127660db9862b1d0354175c71b8db2d4fcb5bacbd9c93576b16",
+      "source_url": "https://github.com/openai/codex/releases/download/rusty-v8-v150.4.0/src_binding_ptrcomp_sandbox_release_x86_64-pc-windows-msvc.rs"
+    }
+  ],
+  "components": [
+    {
+      "crate_archive_sha256": "1fa7e52a4c5c547c741610a2c6f123f3881e409b714cd27e6798ef020c514f0a",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "728536b4160e051f86d7c9c388f704866b3d512cd7df97ac3516c65279523c4e",
+          "origin": "crate:aws-lc-sys-0.39.0",
+          "path": "LICENSE",
+          "sha256": "728536b4160e051f86d7c9c388f704866b3d512cd7df97ac3516c65279523c4e",
+          "title": "AWS-LC and BoringSSL notices"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "43e358d7b6eb109d0f51f7b3a090fd82607965767c25fadee39e922475de2061",
+          "origin": "crate:aws-lc-sys-0.39.0",
+          "path": "aws-lc/third_party/fiat/LICENSE",
+          "sha256": "43e358d7b6eb109d0f51f7b3a090fd82607965767c25fadee39e922475de2061",
+          "title": "AWS-LC vendored Fiat Cryptography license"
+        }
+      ],
+      "name": "aws-lc-sys",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:aws-lc-sys-0.39.0.crate",
+          "sha256": "1fa7e52a4c5c547c741610a2c6f123f3881e409b714cd27e6798ef020c514f0a"
+        }
+      ],
+      "reachable_from": [
+        "codex-cli",
+        "code-mode-host",
+        "windows-sandbox"
+      ],
+      "registry_checksum": "1fa7e52a4c5c547c741610a2c6f123f3881e409b714cd27e6798ef020c514f0a",
+      "source": "https://crates.io/crates/aws-lc-sys/0.39.0",
+      "vcs_commit": "d61726b69d589460645e1b22ebd9a847b7f2f63a",
+      "version": "0.39.0"
+    },
+    {
+      "crate_archive_sha256": "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "b3d734001a94efff3579978d953391aa7115f877657d25eb54037a43875d078a",
+          "origin": "crate:ring-0.17.14",
+          "path": "LICENSE",
+          "sha256": "b3d734001a94efff3579978d953391aa7115f877657d25eb54037a43875d078a",
+          "title": "ring license routing notice"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "005fc765ddc5115da796cca915baa9557abae13ff35e0a47c47affc56f6c414d",
+          "origin": "crate:ring-0.17.14",
+          "path": "LICENSE-BoringSSL",
+          "sha256": "005fc765ddc5115da796cca915baa9557abae13ff35e0a47c47affc56f6c414d",
+          "title": "ring BoringSSL license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "f025ccfb7dfb6bdfedc75ca0f67acc69e6fb4998143d834f7c2f38a29989680f",
+          "origin": "crate:ring-0.17.14",
+          "path": "LICENSE-other-bits",
+          "sha256": "f025ccfb7dfb6bdfedc75ca0f67acc69e6fb4998143d834f7c2f38a29989680f",
+          "title": "ring ISC license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "origin": "crate:ring-0.17.14",
+          "path": "src/polyfill/once_cell/LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "title": "ring once_cell Apache-2.0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "6ee2ed6c77710de911761acd5fc1ad1da00f476beb1a7ef27e78c2d1858deafc",
+          "origin": "crate:ring-0.17.14",
+          "path": "src/polyfill/once_cell/LICENSE-MIT",
+          "sha256": "6ee2ed6c77710de911761acd5fc1ad1da00f476beb1a7ef27e78c2d1858deafc",
+          "title": "ring once_cell MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "9eacbcb81be660840c714a560a9d65ba07913db98dd4baf969f78dd499fdd60f",
+          "origin": "crate:ring-0.17.14",
+          "path": "third_party/fiat/LICENSE",
+          "sha256": "9eacbcb81be660840c714a560a9d65ba07913db98dd4baf969f78dd499fdd60f",
+          "title": "ring vendored Fiat Cryptography license"
+        }
+      ],
+      "name": "ring",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:ring-0.17.14.crate",
+          "sha256": "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7"
+        }
+      ],
+      "reachable_from": [
+        "codex-cli",
+        "code-mode-host",
+        "windows-sandbox"
+      ],
+      "registry_checksum": "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7",
+      "source": "https://crates.io/crates/ring/0.17.14",
+      "vcs_commit": "2723abbca9e83347d82b056d5b239c6604f786df",
+      "version": "0.17.14"
+    },
+    {
+      "crate_archive_sha256": "3888aaa89e4b2a40fca9848e400f6a658a5a3978de7be858e209cafa8be9a4a0",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "00fcc7a934ddbc9ece2a7cc063ac788e284b703b1d705ccbba72d462aa97921e",
+          "origin": "crate:blake3-1.8.2",
+          "path": "LICENSE_A2",
+          "sha256": "00fcc7a934ddbc9ece2a7cc063ac788e284b703b1d705ccbba72d462aa97921e",
+          "title": "BLAKE3 Apache-2.0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "783f78935cf47130349090d7f24d2ee00c337285c76a0d566725c2653cef6513",
+          "origin": "crate:blake3-1.8.2",
+          "path": "LICENSE_A2LLVM",
+          "sha256": "a5695f57ea0c221e0e8b7d784ff774c35e88c3d3270353646a925880bb3492cc",
+          "title": "BLAKE3 Apache-2.0 with LLVM exception license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+          "origin": "crate:blake3-1.8.2",
+          "path": "LICENSE_CC0",
+          "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+          "title": "BLAKE3 CC0-1.0 license"
+        }
+      ],
+      "name": "blake3",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:blake3-1.8.2.crate",
+          "sha256": "3888aaa89e4b2a40fca9848e400f6a658a5a3978de7be858e209cafa8be9a4a0"
+        }
+      ],
+      "reachable_from": [
+        "codex-cli",
+        "code-mode-host",
+        "windows-sandbox"
+      ],
+      "registry_checksum": "3888aaa89e4b2a40fca9848e400f6a658a5a3978de7be858e209cafa8be9a4a0",
+      "source": "https://crates.io/crates/blake3/1.8.2",
+      "vcs_commit": "df610ddc3b93841ffc59a87e3da659a15910eb46",
+      "version": "1.8.2"
+    },
+    {
+      "crate_archive_sha256": "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "a77b7cfeaf911ed410ffbe76f0cb2b24ad8a4d94e7ead5727e914425c416cc63",
+          "origin": "crate:zstd-sys-2.0.16+zstd.1.5.7",
+          "path": "LICENSE",
+          "sha256": "a77b7cfeaf911ed410ffbe76f0cb2b24ad8a4d94e7ead5727e914425c416cc63",
+          "title": "zstd-sys license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "origin": "crate:zstd-sys-2.0.16+zstd.1.5.7",
+          "path": "LICENSE.Apache-2.0",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "title": "zstd-sys Apache-2.0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "48341f685c87304089aa099b23c386f8bacc519ef555aa7a13e239908907b3fd",
+          "origin": "crate:zstd-sys-2.0.16+zstd.1.5.7",
+          "path": "LICENSE.BSD-3-Clause",
+          "sha256": "48341f685c87304089aa099b23c386f8bacc519ef555aa7a13e239908907b3fd",
+          "title": "zstd-sys BSD-3-Clause license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "129e8edef29e9abcd2ebabe252f4ef1b1289cdca356bf0040284a2fbccfb96c8",
+          "origin": "crate:zstd-sys-2.0.16+zstd.1.5.7",
+          "path": "LICENSE.Mit",
+          "sha256": "129e8edef29e9abcd2ebabe252f4ef1b1289cdca356bf0040284a2fbccfb96c8",
+          "title": "zstd-sys MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+          "origin": "crate:zstd-sys-2.0.16+zstd.1.5.7",
+          "path": "zstd/COPYING",
+          "sha256": "f9c375a1be4a41f7b70301dd83c91cb89e41567478859b77eef375a52d782505",
+          "title": "Zstandard copying notice"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8",
+          "origin": "crate:zstd-sys-2.0.16+zstd.1.5.7",
+          "path": "zstd/LICENSE",
+          "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8",
+          "title": "Zstandard BSD license"
+        }
+      ],
+      "name": "zstd-sys",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:zstd-sys-2.0.16+zstd.1.5.7.crate",
+          "sha256": "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748"
+        }
+      ],
+      "reachable_from": [
+        "codex-cli",
+        "code-mode-host",
+        "windows-sandbox"
+      ],
+      "registry_checksum": "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748",
+      "source": "https://crates.io/crates/zstd-sys/2.0.16+zstd.1.5.7",
+      "vcs_commit": "434ca4cb364e8a81846a2d99d430977e07b15a52",
+      "version": "2.0.16+zstd.1.5.7"
+    },
+    {
+      "crate_archive_sha256": "225bff33b2141874fe80d71e07d6eec4f85c5c216453dd96388240f96e1acc14",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "origin": "crate:bzip2-sys-0.1.13+1.0.8",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "title": "bzip2-sys Apache-2.0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "c8c6324cf2f0f076e3ed5dea4a21f00bd4dd6fce44f72b110bc52e7fe06f6e1e",
+          "origin": "crate:bzip2-sys-0.1.13+1.0.8",
+          "path": "LICENSE-MIT",
+          "sha256": "c8c6324cf2f0f076e3ed5dea4a21f00bd4dd6fce44f72b110bc52e7fe06f6e1e",
+          "title": "bzip2-sys MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3",
+          "origin": "crate:bzip2-sys-0.1.13+1.0.8",
+          "path": "bzip2-1.0.8/LICENSE",
+          "sha256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3",
+          "title": "libbzip2 1.0.8 license"
+        }
+      ],
+      "name": "bzip2-sys",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:bzip2-sys-0.1.13+1.0.8.crate",
+          "sha256": "225bff33b2141874fe80d71e07d6eec4f85c5c216453dd96388240f96e1acc14"
+        }
+      ],
+      "reachable_from": [
+        "codex-cli"
+      ],
+      "registry_checksum": "225bff33b2141874fe80d71e07d6eec4f85c5c216453dd96388240f96e1acc14",
+      "source": "https://crates.io/crates/bzip2-sys/0.1.13+1.0.8",
+      "vcs_commit": "f5f9d090d8a43b789ab9484ec1f78a46be076e62",
+      "version": "0.1.13+1.0.8"
+    },
+    {
+      "crate_archive_sha256": "b1f111c8c41e7c61a49cd34e44c7619462967221a6443b0ec299e0ac30cfb9b1",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "c10c1f27337546471e5f7e4e97fdd398b35b9d4e126115dcd22de8d8e65abf6f",
+          "origin": "crate:libsqlite3-sys-0.37.0",
+          "path": "LICENSE",
+          "sha256": "c10c1f27337546471e5f7e4e97fdd398b35b9d4e126115dcd22de8d8e65abf6f",
+          "title": "libsqlite3-sys MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "ea4fcb309f14a22065e1ea45362d494d320012249ed865fe9c7c0946db754131",
+          "origin": "crate:libsqlite3-sys-0.37.0",
+          "path": "sqlcipher/LICENSE",
+          "sha256": "ea4fcb309f14a22065e1ea45362d494d320012249ed865fe9c7c0946db754131",
+          "title": "SQLCipher license (conservative vendored notice)"
+        },
+        {
+          "extraction": "SQLite amalgamation public-domain comment",
+          "notice_sha256": "49cf7bcb103eb3244150a23bb23d840370a4762914faf1b450072a4b03c14670",
+          "origin": "crate:libsqlite3-sys-0.37.0",
+          "path": "sqlite3/sqlite3.c",
+          "sha256": "9512509b1bccb7461f79bea8aad6280ae4699e925fa4804381b71f59e7efb0c5",
+          "title": "SQLite public-domain dedication and blessing"
+        }
+      ],
+      "name": "libsqlite3-sys",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:libsqlite3-sys-0.37.0.crate",
+          "sha256": "b1f111c8c41e7c61a49cd34e44c7619462967221a6443b0ec299e0ac30cfb9b1"
+        },
+        {
+          "kind": "vendored SQLite 3.51.3 amalgamation",
+          "path": "crate:libsqlite3-sys-0.37.0/sqlite3/sqlite3.c",
+          "sha256": "9512509b1bccb7461f79bea8aad6280ae4699e925fa4804381b71f59e7efb0c5"
+        }
+      ],
+      "reachable_from": [
+        "codex-cli"
+      ],
+      "registry_checksum": "b1f111c8c41e7c61a49cd34e44c7619462967221a6443b0ec299e0ac30cfb9b1",
+      "source": "https://crates.io/crates/libsqlite3-sys/0.37.0",
+      "vcs_commit": "2a1790a69107cd03dae85d501dcbdb11c5b32ef3",
+      "version": "0.37.0"
+    },
+    {
+      "crate_archive_sha256": "5fda04ab3764e6cde78b9974eec4f779acaba7c4e84b36eca3cf77c581b85d27",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "origin": "crate:lzma-sys-0.1.20",
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "title": "lzma-sys Apache-2.0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "69036b033e4bb951821964dbc3d9b1efe6913a6e36d9c1f206de4035a1a85cc4",
+          "origin": "crate:lzma-sys-0.1.20",
+          "path": "LICENSE-MIT",
+          "sha256": "69036b033e4bb951821964dbc3d9b1efe6913a6e36d9c1f206de4035a1a85cc4",
+          "title": "lzma-sys MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "073060d5c1ee43ee909638ed7dba5547161ab264f7859cfddef8a213ef6b67fe",
+          "origin": "crate:lzma-sys-0.1.20",
+          "path": "xz-5.2/COPYING",
+          "sha256": "bcb02973ef6e87ea73d331b3a80df7748407f17efdb784b61b47e0e610d3bb5c",
+          "title": "XZ Utils licensing summary"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "05b826dcc92ca816b8e397bf68be9da9336a6a518f1eb37f75f9839cf0254023",
+          "origin": "crate:lzma-sys-0.1.20",
+          "path": "xz-5.2/AUTHORS",
+          "sha256": "72d7a7ee8a4eaca5d0b53f20609eff95d5e6f9e155ecce98127414b8215b0b15",
+          "title": "XZ Utils authors"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+          "origin": "crate:lzma-sys-0.1.20",
+          "path": "xz-5.2/COPYING.GPLv2",
+          "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+          "title": "XZ vendored GPL-2.0 text"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+          "origin": "crate:lzma-sys-0.1.20",
+          "path": "xz-5.2/COPYING.GPLv3",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+          "title": "XZ vendored GPL-3.0 text"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+          "origin": "crate:lzma-sys-0.1.20",
+          "path": "xz-5.2/COPYING.LGPLv2.1",
+          "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+          "title": "XZ vendored LGPL-2.1 text"
+        }
+      ],
+      "name": "lzma-sys",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:lzma-sys-0.1.20.crate",
+          "sha256": "5fda04ab3764e6cde78b9974eec4f779acaba7c4e84b36eca3cf77c581b85d27"
+        }
+      ],
+      "reachable_from": [
+        "codex-cli"
+      ],
+      "registry_checksum": "5fda04ab3764e6cde78b9974eec4f779acaba7c4e84b36eca3cf77c581b85d27",
+      "source": "https://crates.io/crates/lzma-sys/0.1.20",
+      "vcs_commit": "f68a0980b0a478a54b3f069c643867853dac4ed9",
+      "version": "0.1.20"
+    },
+    {
+      "crate_archive_sha256": "c7f86c6eef3d6df15f23bcfb6af487cbd2fed4e5581d58d5bf1f5f8b7f6727dc",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "71f321038b088358004bee991635ac09e4c703bec467d3c30c06992c0595f189",
+          "origin": "crate:onig_sys-69.9.1",
+          "path": "LICENSE.md",
+          "sha256": "71f321038b088358004bee991635ac09e4c703bec467d3c30c06992c0595f189",
+          "title": "onig_sys license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "70ba5469ea0bab6e18a32d7009068f996503168d27be57747e08da34337ff26f",
+          "origin": "crate:onig_sys-69.9.1",
+          "path": "oniguruma/COPYING",
+          "sha256": "70ba5469ea0bab6e18a32d7009068f996503168d27be57747e08da34337ff26f",
+          "title": "Oniguruma native source license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "172a2a72c080d3067969599308c91385af86fdeb2419f8ad687883ca5a8ff912",
+          "origin": "crate:onig_sys-69.9.1",
+          "path": "oniguruma/AUTHORS",
+          "sha256": "172a2a72c080d3067969599308c91385af86fdeb2419f8ad687883ca5a8ff912",
+          "title": "Oniguruma authors"
+        }
+      ],
+      "name": "onig_sys",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:onig_sys-69.9.1.crate",
+          "sha256": "c7f86c6eef3d6df15f23bcfb6af487cbd2fed4e5581d58d5bf1f5f8b7f6727dc"
+        }
+      ],
+      "reachable_from": [
+        "codex-cli"
+      ],
+      "registry_checksum": "c7f86c6eef3d6df15f23bcfb6af487cbd2fed4e5581d58d5bf1f5f8b7f6727dc",
+      "source": "https://crates.io/crates/onig_sys/69.9.1",
+      "vcs_commit": "ed05d7ac1a1a138c6d9c46b451b9d9bea0fbe0b1",
+      "version": "69.9.1"
+    },
+    {
+      "crate_archive_sha256": "78f873475d258561b06f1c595d93308a7ed124d9977cb26b148c2084a4a3cc87",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "6a18c5fac70d7860b57f5b72b4e2c9a1ba6b3d2741eef7ff9767c5379364f10d",
+          "origin": "crate:tree-sitter-0.25.10",
+          "path": "src/unicode/LICENSE",
+          "sha256": "6a18c5fac70d7860b57f5b72b4e2c9a1ba6b3d2741eef7ff9767c5379364f10d",
+          "title": "Tree-sitter vendored Unicode data license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "5f9cf9fb6acb1972b35ae29119ce563bb60ec097656bc4b69b9bac2d04c7a147",
+          "origin": "git:tree-sitter@da6fe9beb4f7f67beb75914ca8e0d48ae48d6406",
+          "path": "LICENSE",
+          "sha256": "5f9cf9fb6acb1972b35ae29119ce563bb60ec097656bc4b69b9bac2d04c7a147",
+          "title": "Tree-sitter MIT license"
+        }
+      ],
+      "name": "tree-sitter",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:tree-sitter-0.25.10.crate",
+          "sha256": "78f873475d258561b06f1c595d93308a7ed124d9977cb26b148c2084a4a3cc87"
+        }
+      ],
+      "reachable_from": [
+        "codex-cli"
+      ],
+      "registry_checksum": "78f873475d258561b06f1c595d93308a7ed124d9977cb26b148c2084a4a3cc87",
+      "source": "https://crates.io/crates/tree-sitter/0.25.10",
+      "vcs_commit": "da6fe9beb4f7f67beb75914ca8e0d48ae48d6406",
+      "version": "0.25.10"
+    },
+    {
+      "crate_archive_sha256": "18b9073c1a2549bd409bf4a32c94d903bb1a09bf845bc306ae148897fa0760a4",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "origin": "crate:pcre2-sys-0.2.10",
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "title": "pcre2-sys wrapper notice"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14",
+          "origin": "crate:pcre2-sys-0.2.10",
+          "path": "LICENSE-MIT",
+          "sha256": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14",
+          "title": "pcre2-sys MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "origin": "crate:pcre2-sys-0.2.10",
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "title": "pcre2-sys Unlicense text"
+        },
+        {
+          "extraction": "C comment containing the PCRE2 redistribution terms",
+          "notice_sha256": "b5af5a2c86e27565eb5a2083c5418e3297d5a280ff0a2e9536e1ae5bc3789f8b",
+          "origin": "crate:pcre2-sys-0.2.10",
+          "path": "upstream/src/pcre2_compile.c",
+          "sha256": "54a8fb643749f0a7753f68d65f4e9e0dbc4728ed04461b580a0fba3b35d57b7d",
+          "title": "PCRE2 10.46 redistribution terms"
+        },
+        {
+          "extraction": "leading C license comment",
+          "notice_sha256": "5f216505c0f6ea3273caec89e766eef93cdeb7bbb0c429f9360116d7c938feeb",
+          "origin": "crate:pcre2-sys-0.2.10",
+          "path": "upstream/deps/sljit/sljit_src/sljitLir.c",
+          "sha256": "0746669d1bf493f6f927a3318743c9a1488088b65826d0fd413008154a1b192f",
+          "title": "SLJIT redistribution terms"
+        }
+      ],
+      "name": "pcre2-sys",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:pcre2-sys-0.2.10.crate",
+          "sha256": "18b9073c1a2549bd409bf4a32c94d903bb1a09bf845bc306ae148897fa0760a4"
+        },
+        {
+          "kind": "vendored PCRE2 10.46 source",
+          "path": "crate:pcre2-sys-0.2.10/upstream/src/pcre2_compile.c",
+          "sha256": "54a8fb643749f0a7753f68d65f4e9e0dbc4728ed04461b580a0fba3b35d57b7d"
+        },
+        {
+          "kind": "vendored SLJIT source",
+          "path": "crate:pcre2-sys-0.2.10/upstream/deps/sljit/sljit_src/sljitLir.c",
+          "sha256": "0746669d1bf493f6f927a3318743c9a1488088b65826d0fd413008154a1b192f"
+        },
+        {
+          "kind": "PCRE2 10.46 update recipe",
+          "path": "crate:pcre2-sys-0.2.10/update-pcre2",
+          "sha256": "40b55b8e57aedfff5b3a33c5026c98da0163713048ba6cc48255bc23aa500c98"
+        }
+      ],
+      "reachable_from": [
+        "ripgrep"
+      ],
+      "registry_checksum": "18b9073c1a2549bd409bf4a32c94d903bb1a09bf845bc306ae148897fa0760a4",
+      "source": "https://crates.io/crates/pcre2-sys/0.2.10",
+      "vcs_commit": "fd05026e1bf3ad62b3876cf9bd952dc742368462",
+      "version": "0.2.10"
+    },
+    {
+      "crate_archive_sha256": "42a978ff11f15b24e5c05a7123cf2b68f41e763546699781a924ef4e2cf43a49",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "1c6356fb751d45f0c53093ebf8a7f5e580e802f51999178e19d60f3ec39e147d",
+          "origin": "git:denoland/rusty_v8@5c15a6995c9bb4bacd3e341b59fff32c909c80bf",
+          "path": "LICENSE",
+          "sha256": "1c6356fb751d45f0c53093ebf8a7f5e580e802f51999178e19d60f3ec39e147d",
+          "title": "rusty_v8 MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "ff11d445fb41a1087c7630e120ab15f1a2cb67c1b707173cb494141805fca35e",
+          "origin": "git:https://chromium.googlesource.com/chromium/src/buildtools.git@17495e454aae81b581e8b3caccbb53054509b280",
+          "path": "LICENSE",
+          "sha256": "ff11d445fb41a1087c7630e120ab15f1a2cb67c1b707173cb494141805fca35e",
+          "title": "Chromium BSD license for allocator and PartitionAlloc sources"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "origin": "git:https://chromium.googlesource.com/chromium/src/third_party/abseil-cpp.git@d16e32215c3ab90ba57c2e904a5344d85c7353e4",
+          "path": "LICENSE",
+          "sha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747",
+          "title": "Abseil Apache-2.0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "1fd39030c119b4c97014f59e0ad0ed65f23475bbdf55a52740f31eb82b34b4ee",
+          "origin": "git:https://chromium.googlesource.com/chromium/src/third_party/abseil-cpp.git@d16e32215c3ab90ba57c2e904a5344d85c7353e4",
+          "path": "AUTHORS",
+          "sha256": "1fd39030c119b4c97014f59e0ad0ed65f23475bbdf55a52740f31eb82b34b4ee",
+          "title": "Abseil authors"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "17e4f539024be2749ee729d1e2f01d24cef12ece8c9bf18e91a4349be29c80bf",
+          "origin": "git:https://github.com/Maratyszcza/FP16.git@3d2de1816307bac63c16a297e8c4dc501b4076df",
+          "path": "LICENSE",
+          "sha256": "17e4f539024be2749ee729d1e2f01d24cef12ece8c9bf18e91a4349be29c80bf",
+          "title": "FP16 MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libcxx.git@5abc7f839700f0f17338434e1c1c6a8c87c00c11",
+          "path": "LICENSE.TXT",
+          "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b",
+          "title": "LLVM libc++ Apache-2.0 WITH LLVM-exception license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libcxxabi.git@8f11bb1d4438d0239d0dfc1bd9456a9f31629dda",
+          "path": "LICENSE.TXT",
+          "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c",
+          "title": "LLVM libc++abi Apache-2.0 WITH LLVM-exception license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libunwind.git@d6c7a21e978f0adaa43accaad53bc64f0b64f6ec",
+          "path": "LICENSE.TXT",
+          "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d",
+          "title": "LLVM libunwind Apache-2.0 WITH LLVM-exception license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "e562f3f974ced7e69dd1db77b820b36bcf8f30377f1aa105723fba449c53c4e6",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/fastfloat/fast_float.git@05087a303dad9c98768b33c829d398223a649bc6",
+          "path": "LICENSE-MIT",
+          "sha256": "e562f3f974ced7e69dd1db77b820b36bcf8f30377f1aa105723fba449c53c4e6",
+          "title": "fast_float MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "097a889aa954d04e088b790b10a4014d6189561d0a6013935a73ce3d4ddaaf06",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/fastfloat/fast_float.git@05087a303dad9c98768b33c829d398223a649bc6",
+          "path": "LICENSE-APACHE",
+          "sha256": "097a889aa954d04e088b790b10a4014d6189561d0a6013935a73ce3d4ddaaf06",
+          "title": "fast_float Apache-2.0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/fastfloat/fast_float.git@05087a303dad9c98768b33c829d398223a649bc6",
+          "path": "LICENSE-BOOST",
+          "sha256": "8d8291caf1cee26d23acf3eb67c9f9a2d58f1c681b16a4fbe8cbfb9e3c0b5a9b",
+          "title": "fast_float Boost-1.0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "ed249424bce4e318fa190dd6d8becf60cfc37287132ad3f89e16e0f28d878dcf",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/fastfloat/fast_float.git@05087a303dad9c98768b33c829d398223a649bc6",
+          "path": "AUTHORS",
+          "sha256": "ed249424bce4e318fa190dd6d8becf60cfc37287132ad3f89e16e0f28d878dcf",
+          "title": "fast_float authors"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "ebcd9bbf783a73d05c53ba4d586b8d5813dcdf3bbec50265860ccc885e606f47",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libc.git@9309c117ebae84dd2f9df1ef99de4782162527d5",
+          "path": "LICENSE.TXT",
+          "sha256": "ebcd9bbf783a73d05c53ba4d586b8d5813dcdf3bbec50265860ccc885e606f47",
+          "title": "LLVM libc Apache-2.0 WITH LLVM-exception license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "fc8dbc04e03ad4efc08a647ffe7f995b811a95bc04c0e85a56d5277c6593fa5f",
+          "origin": "git:https://chromium.googlesource.com/chromium/src/third_party/simdutf@f7356eed293f8208c40b3c1b344a50bd70971983",
+          "path": "LICENSE",
+          "sha256": "fc8dbc04e03ad4efc08a647ffe7f995b811a95bc04c0e85a56d5277c6593fa5f",
+          "title": "simdutf MIT license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "b8b1fae5894cfbe213b47f1378bb2269cf82de18b34447e871c0225ace0d3ad7",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/google/highway.git@2607d3b5b0113992fe84d3848859eae13b3b52c1",
+          "path": "LICENSE",
+          "sha256": "e340270d4f64384569a91d546acb5b094d69ce47f0c015db77abb74dc6f815af",
+          "title": "Highway full Apache-2.0/BSD-3-Clause/CC0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "9e45e856bedccee9f67254082ca11851d954de2fed7448c4bed19ad9aab99a91",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/jk-jeon/dragonbox.git@beeeef91cf6fef89a4d4ba5e95d47ca64ccb3a44",
+          "path": "LICENSE-Apache2-LLVM",
+          "sha256": "9e45e856bedccee9f67254082ca11851d954de2fed7448c4bed19ad9aab99a91",
+          "title": "Dragonbox Apache-2.0 WITH LLVM-exception license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+          "origin": "git:https://chromium.googlesource.com/external/github.com/jk-jeon/dragonbox.git@beeeef91cf6fef89a4d4ba5e95d47ca64ccb3a44",
+          "path": "LICENSE-Boost",
+          "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+          "title": "Dragonbox Boost-1.0 license"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "fa60d5a34dff8985ccee2bbd9702cac4ce8712e1c0d7521ce00879403b0fcc27",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "AUTHORS",
+          "sha256": "fa60d5a34dff8985ccee2bbd9702cac4ce8712e1c0d7521ce00879403b0fcc27",
+          "title": "V8 source notice: AUTHORS"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "6ab33af8774a0f396ee3aeeb761e3229057682d6f9fa7f572e390c2cb3a6e509",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "LICENSE",
+          "sha256": "6ab33af8774a0f396ee3aeeb761e3229057682d6f9fa7f572e390c2cb3a6e509",
+          "title": "V8 source notice: LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "e7115e18444dae09d17f361ddc365fb1d342640fe500796209c63f7c80dfae10",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "LICENSE.fdlibm",
+          "sha256": "e7115e18444dae09d17f361ddc365fb1d342640fe500796209c63f7c80dfae10",
+          "title": "V8 source notice: LICENSE.fdlibm"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "6a585a9f466654abc8fc0829d56b1bc987e3a073d31faa03bba37d33640a23cd",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "LICENSE.strongtalk",
+          "sha256": "6a585a9f466654abc8fc0829d56b1bc987e3a073d31faa03bba37d33640a23cd",
+          "title": "V8 source notice: LICENSE.strongtalk"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "4af93c12062c58058378de2397dc1c92bbff9ddfb1d583a01c84127557ce97ca",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "LICENSE.v8",
+          "sha256": "4af93c12062c58058378de2397dc1c92bbff9ddfb1d583a01c84127557ce97ca",
+          "title": "V8 source notice: LICENSE.v8"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "cac35c02686e5d04a5a7140bfb3b36e73aed496656e891102e428886d7930318",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/colorama/LICENSE",
+          "sha256": "15137d6c822e3ab097093a33c3a39a9df699f373f6438867ad534ff60762a947",
+          "title": "V8 source notice: third_party/colorama/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "17e4f539024be2749ee729d1e2f01d24cef12ece8c9bf18e91a4349be29c80bf",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/fp16/LICENSE",
+          "sha256": "c91377adafa2f498211a4fe017788e20c38892124673860f068f2919c289193d",
+          "title": "V8 source notice: third_party/fp16/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/glibc/LICENSE",
+          "sha256": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe",
+          "title": "V8 source notice: third_party/glibc/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/highway/LICENSE",
+          "sha256": "43070e2d4e532684de521b885f385d0841030efa2b1a20bafb76133a5e1379c1",
+          "title": "V8 source notice: third_party/highway/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "450ebb9e9e50c2809d9ca581931fc8946d8d5aa0c8c35aae9ac471342fe4a88e",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/inspector_protocol/LICENSE",
+          "sha256": "450ebb9e9e50c2809d9ca581931fc8946d8d5aa0c8c35aae9ac471342fe4a88e",
+          "title": "V8 source notice: third_party/inspector_protocol/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "76c45ece83a26117f86f4e349e7df118708e061e87225328fb478ce1e8b3eb86",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/jsoncpp/LICENSE",
+          "sha256": "76c45ece83a26117f86f4e349e7df118708e061e87225328fb478ce1e8b3eb86",
+          "title": "V8 source notice: third_party/jsoncpp/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "db672df7faf793fbe28b8074fdd10822363e1525816b45c9627754885de842b0",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/rapidhash-v8/LICENSE",
+          "sha256": "db672df7faf793fbe28b8074fdd10822363e1525816b45c9627754885de842b0",
+          "title": "V8 source notice: third_party/rapidhash-v8/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "6040cda75d90b1738292a631d89934c411ef7ffd543c4d6a1b7edfc8edf29449",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/re2/LICENSE",
+          "sha256": "6040cda75d90b1738292a631d89934c411ef7ffd543c4d6a1b7edfc8edf29449",
+          "title": "V8 source notice: third_party/re2/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "36ffd9dc085d529a7e60e1276d73ae5a030b020313e6c5408593a6ae2af39673",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/siphash/LICENSE",
+          "sha256": "36ffd9dc085d529a7e60e1276d73ae5a030b020313e6c5408593a6ae2af39673",
+          "title": "V8 source notice: third_party/siphash/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "3f712e5fbdfdbd5ee7d9b8c8152580220df55de47f4eba2f26c95c4de19ad096",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/utf8-decoder/LICENSE",
+          "sha256": "3f712e5fbdfdbd5ee7d9b8c8152580220df55de47f4eba2f26c95c4de19ad096",
+          "title": "V8 source notice: third_party/utf8-decoder/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "b9a6d9320b8f2693e8d41e496ce56caadacaddcca9be2a64a61749278f425cf2",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/v8/builtins/LICENSE",
+          "sha256": "b9a6d9320b8f2693e8d41e496ce56caadacaddcca9be2a64a61749278f425cf2",
+          "title": "V8 source notice: third_party/v8/builtins/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "17e4f539024be2749ee729d1e2f01d24cef12ece8c9bf18e91a4349be29c80bf",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/v8/codegen/LICENSE",
+          "sha256": "17e4f539024be2749ee729d1e2f01d24cef12ece8c9bf18e91a4349be29c80bf",
+          "title": "V8 source notice: third_party/v8/codegen/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "ebf25b8ce59c9e8883acd1ca75b6fc121937ca034f666c4077d2be739d2e1622",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/valgrind/LICENSE",
+          "sha256": "ebf25b8ce59c9e8883acd1ca75b6fc121937ca034f666c4077d2be739d2e1622",
+          "title": "V8 source notice: third_party/valgrind/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "02aea3ade0c02470335987f7d93ffaed877bcefc8414a416e2e548665bb0bfd0",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/vtune/LICENSE",
+          "sha256": "02aea3ade0c02470335987f7d93ffaed877bcefc8414a416e2e548665bb0bfd0",
+          "title": "V8 source notice: third_party/vtune/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+          "origin": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896",
+          "path": "third_party/wasm-api/LICENSE",
+          "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
+          "title": "V8 source notice: third_party/wasm-api/LICENSE"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "451167c55c0fa447cc2d5632714f5e3c567fe4f1e1badefab2c1333852198aca",
+          "origin": "git:chromium/deps/icu@ee5f27adc28bd3f15b2c293f726d14d2e336cbd5",
+          "path": "LICENSE",
+          "sha256": "451167c55c0fa447cc2d5632714f5e3c567fe4f1e1badefab2c1333852198aca",
+          "title": "ICU full license and third-party notices"
+        }
+      ],
+      "name": "v8",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:v8-150.4.0.crate",
+          "sha256": "42a978ff11f15b24e5c05a7123cf2b68f41e763546699781a924ef4e2cf43a49"
+        },
+        {
+          "kind": "V8 native dependency graph for Abseil, FP16, fast_float, Highway, PartitionAlloc, Dragonbox, ICU, and simdutf",
+          "path": "git:denoland/v8@ac1e23989121713ca642f6650b34deff7b686896/BUILD.gn",
+          "sha256": "d2c3b33e4bc82792bee79431c15a70baf634dae230356307b72b4ae9b0952f47"
+        },
+        {
+          "kind": "Chromium Rust allocator error handler",
+          "path": "git:https://github.com/denoland/chromium_build.git@8acb33ac8dceef0503443109c0a92988189563ef/rust/allocator/alloc_error_handler_impl.cc",
+          "sha256": "b39be8f83054ec9b655244cb5bdb3e2b71a22e7ea70f039260439a8a4a36d1ee"
+        },
+        {
+          "kind": "Chromium Rust allocator alias implementation",
+          "path": "git:https://github.com/denoland/chromium_build.git@8acb33ac8dceef0503443109c0a92988189563ef/rust/allocator/alias.cc",
+          "sha256": "4e71087b1dd5aeae401550bdfd1e28d7edbdec0d0e2ac10a3843c665b80ff4e6"
+        },
+        {
+          "kind": "PartitionAlloc Chromium BSD source header",
+          "path": "git:https://chromium.googlesource.com/chromium/src/base/allocator/partition_allocator.git@ff3b8b885b8374cbd3902642d94dc737bda93d5d/src/partition_alloc/address_pool_manager.cc",
+          "sha256": "2c2c1f1483df6e276ff58417f9095f212034652e7c1c2f43cc86bc064cd7bd32"
+        }
+      ],
+      "reachable_from": [
+        "code-mode-host"
+      ],
+      "registry_checksum": "42a978ff11f15b24e5c05a7123cf2b68f41e763546699781a924ef4e2cf43a49",
+      "source": "https://crates.io/crates/v8/150.4.0",
+      "vcs_commit": "5c15a6995c9bb4bacd3e341b59fff32c909c80bf",
+      "version": "150.4.0"
+    },
+    {
+      "crate_archive_sha256": "a9efff8990a82c1ae664292507e1a5c6749ddd2312898cdf9cd7cb1fd4bc64c6",
+      "license_inputs": [
+        {
+          "extraction": "full-file",
+          "notice_sha256": "1c6356fb751d45f0c53093ebf8a7f5e580e802f51999178e19d60f3ec39e147d",
+          "origin": "git:denoland/rusty_v8@5c15a6995c9bb4bacd3e341b59fff32c909c80bf",
+          "path": "LICENSE",
+          "sha256": "1c6356fb751d45f0c53093ebf8a7f5e580e802f51999178e19d60f3ec39e147d",
+          "title": "Deno MIT license for deno_core_icudata wrapper"
+        },
+        {
+          "extraction": "full-file",
+          "notice_sha256": "451167c55c0fa447cc2d5632714f5e3c567fe4f1e1badefab2c1333852198aca",
+          "origin": "git:chromium/deps/icu@ee5f27adc28bd3f15b2c293f726d14d2e336cbd5",
+          "path": "LICENSE",
+          "sha256": "451167c55c0fa447cc2d5632714f5e3c567fe4f1e1badefab2c1333852198aca",
+          "title": "ICU full license for embedded icudtl.dat"
+        }
+      ],
+      "name": "deno_core_icudata",
+      "native_payloads": [
+        {
+          "kind": "crates.io package archive (pins all vendored/build/include sources)",
+          "path": "crate-archive:deno_core_icudata-0.77.0.crate",
+          "sha256": "a9efff8990a82c1ae664292507e1a5c6749ddd2312898cdf9cd7cb1fd4bc64c6"
+        },
+        {
+          "kind": "embedded ICU data",
+          "path": "crate:deno_core_icudata-0.77.0/src/icudtl.dat",
+          "sha256": "1cf67874b5a87a8363a86fb3f81e3cbbed54d389062dab8fb52308d5cf8c8612"
+        }
+      ],
+      "reachable_from": [
+        "code-mode-host"
+      ],
+      "registry_checksum": "a9efff8990a82c1ae664292507e1a5c6749ddd2312898cdf9cd7cb1fd4bc64c6",
+      "source": "https://crates.io/crates/deno_core_icudata/0.77.0",
+      "vcs_commit": "83537ba16a4bf1645fc8322e81f7aaf0149a8922",
+      "version": "0.77.0"
+    }
+  ],
+  "notice_bundle": {
+    "license_input_count": 80,
+    "path": "NATIVE_THIRD_PARTY_NOTICES.md",
+    "sha256": "da7997facd0e36f4ebca01594c60abdc1204f5421a35d28c4760b13addf247c5"
+  },
+  "roots": [
+    {
+      "ecosystem": "codex",
+      "features": [],
+      "manifest": "codex-rs/cli/Cargo.toml",
+      "name": "codex-cli",
+      "reachable_native_components": [
+        "aws-lc-sys",
+        "blake3",
+        "bzip2-sys",
+        "libsqlite3-sys",
+        "lzma-sys",
+        "onig_sys",
+        "ring",
+        "tree-sitter",
+        "zstd-sys"
+      ]
+    },
+    {
+      "ecosystem": "codex",
+      "features": [],
+      "manifest": "codex-rs/code-mode-host/Cargo.toml",
+      "name": "code-mode-host",
+      "package": "codex-code-mode-host",
+      "reachable_native_components": [
+        "aws-lc-sys",
+        "blake3",
+        "deno_core_icudata",
+        "ring",
+        "v8",
+        "zstd-sys"
+      ]
+    },
+    {
+      "ecosystem": "codex",
+      "features": [],
+      "manifest": "codex-rs/windows-sandbox-rs/Cargo.toml",
+      "name": "windows-sandbox",
+      "package": "codex-windows-sandbox",
+      "reachable_native_components": [
+        "aws-lc-sys",
+        "blake3",
+        "ring",
+        "zstd-sys"
+      ]
+    },
+    {
+      "ecosystem": "ripgrep",
+      "features": [
+        "pcre2"
+      ],
+      "manifest": "Cargo.toml",
+      "name": "ripgrep",
+      "reachable_native_components": [
+        "pcre2-sys"
+      ]
+    }
+  ],
+  "schema_version": "codex-native-notices.v1",
+  "source_locks": {
+    "codex": {
+      "cargo_lock_sha256": "0c32858e9c47d0acf82735c8620c96840a5381152eec63acad15d1acadb9edad",
+      "commit": "758ef40f50c1a458425c7cfbf1eb12cbc07af0b0",
+      "tag": "rust-v0.149.0",
+      "version": "0.149.0"
+    },
+    "icu": {
+      "commit": "ee5f27adc28bd3f15b2c293f726d14d2e336cbd5",
+      "license_sha256": "451167c55c0fa447cc2d5632714f5e3c567fe4f1e1badefab2c1333852198aca"
+    },
+    "ripgrep": {
+      "cargo_lock_sha256": "7a7d39cda8a03930e578f1dbb724e055771901842eca239e03b01e19da946a64",
+      "commit": "e89fff89ac9af12e8d4ce9d5fd07beb408ca730f",
+      "tag": "15.2.0",
+      "version": "15.2.0"
+    },
+    "rusty_v8": {
+      "commit": "5c15a6995c9bb4bacd3e341b59fff32c909c80bf",
+      "gitlinks": [
+        {
+          "commit": "ac1e23989121713ca642f6650b34deff7b686896",
+          "disposition": "primary V8 source; 1197 reviewed archive members",
+          "path": "v8",
+          "source_url": "https://github.com/denoland/v8.git"
+        },
+        {
+          "commit": "8acb33ac8dceef0503443109c0a92988189563ef",
+          "disposition": "Chromium Rust allocator source; 2 reviewed archive members",
+          "path": "build",
+          "source_url": "https://github.com/denoland/chromium_build.git"
+        },
+        {
+          "commit": "17495e454aae81b581e8b3caccbb53054509b280",
+          "disposition": "Chromium build support and the BSD terms referenced by Chromium sources",
+          "path": "buildtools",
+          "source_url": "https://chromium.googlesource.com/chromium/src/buildtools.git"
+        },
+        {
+          "commit": "45f4b9e25124809497a27a8ae0e63d603b0f9f1b",
+          "disposition": "reviewed build-only gitlink; no distinct archive member or root license",
+          "path": "tools/clang",
+          "source_url": "https://chromium.googlesource.com/chromium/src/tools/clang.git"
+        },
+        {
+          "commit": "c3027d884967773057bf74b957e3fea87e5df4d7",
+          "disposition": "reviewed build-time code-generation input; no archive member",
+          "path": "third_party/jinja2",
+          "source_url": "https://chromium.googlesource.com/chromium/src/third_party/jinja2.git"
+        },
+        {
+          "commit": "4256084ae14175d38a3ff7d739dca83ae49ccec6",
+          "disposition": "reviewed build-time code-generation input; no archive member",
+          "path": "third_party/markupsafe",
+          "source_url": "https://chromium.googlesource.com/chromium/src/third_party/markupsafe.git"
+        },
+        {
+          "commit": "ee5f27adc28bd3f15b2c293f726d14d2e336cbd5",
+          "disposition": "ICU source and data; 456 reviewed archive members",
+          "path": "third_party/icu",
+          "source_url": "https://chromium.googlesource.com/chromium/deps/icu.git"
+        },
+        {
+          "commit": "d16e32215c3ab90ba57c2e904a5344d85c7353e4",
+          "disposition": "Abseil source; 138 reviewed archive members",
+          "path": "third_party/abseil-cpp",
+          "source_url": "https://chromium.googlesource.com/chromium/src/third_party/abseil-cpp.git"
+        },
+        {
+          "commit": "3d2de1816307bac63c16a297e8c4dc501b4076df",
+          "disposition": "header-only V8 dependency with reviewed symbol evidence",
+          "path": "third_party/fp16/src",
+          "source_url": "https://github.com/Maratyszcza/FP16.git"
+        },
+        {
+          "commit": "5abc7f839700f0f17338434e1c1c6a8c87c00c11",
+          "disposition": "custom libc++ source; 51 reviewed archive members",
+          "path": "third_party/libc++/src",
+          "source_url": "https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libcxx.git"
+        },
+        {
+          "commit": "8f11bb1d4438d0239d0dfc1bd9456a9f31629dda",
+          "disposition": "custom libc++ include/build source; conservatively attributed",
+          "path": "third_party/libc++abi/src",
+          "source_url": "https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libcxxabi.git"
+        },
+        {
+          "commit": "d6c7a21e978f0adaa43accaad53bc64f0b64f6ec",
+          "disposition": "custom libc++ include/build source; conservatively attributed",
+          "path": "third_party/libunwind/src",
+          "source_url": "https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libunwind.git"
+        },
+        {
+          "commit": "05087a303dad9c98768b33c829d398223a649bc6",
+          "disposition": "header-only V8 dependency with reviewed symbol evidence",
+          "path": "third_party/fast_float/src",
+          "source_url": "https://chromium.googlesource.com/external/github.com/fastfloat/fast_float.git"
+        },
+        {
+          "commit": "9309c117ebae84dd2f9df1ef99de4782162527d5",
+          "disposition": "V8 include/build source; conservatively attributed",
+          "path": "third_party/llvm-libc/src",
+          "source_url": "https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libc.git"
+        },
+        {
+          "commit": "f7356eed293f8208c40b3c1b344a50bd70971983",
+          "disposition": "simdutf source; 1 reviewed archive member",
+          "path": "third_party/simdutf",
+          "source_url": "https://chromium.googlesource.com/chromium/src/third_party/simdutf"
+        },
+        {
+          "commit": "2607d3b5b0113992fe84d3848859eae13b3b52c1",
+          "disposition": "Highway source; 7 reviewed archive members",
+          "path": "third_party/highway/src",
+          "source_url": "https://chromium.googlesource.com/external/github.com/google/highway.git"
+        },
+        {
+          "commit": "ff3b8b885b8374cbd3902642d94dc737bda93d5d",
+          "disposition": "PartitionAlloc source; 66 reviewed archive members",
+          "path": "third_party/partition_alloc",
+          "source_url": "https://chromium.googlesource.com/chromium/src/base/allocator/partition_allocator.git"
+        },
+        {
+          "commit": "beeeef91cf6fef89a4d4ba5e95d47ca64ccb3a44",
+          "disposition": "header-only V8 dependency with reviewed symbol evidence",
+          "path": "third_party/dragonbox/src",
+          "source_url": "https://chromium.googlesource.com/external/github.com/jk-jeon/dragonbox.git"
+        },
+        {
+          "commit": "26e8ff47f18a8d28d6187a04b6a16cb7332356f8",
+          "disposition": "reviewed build-only gitlink; no distinct archive member or root license",
+          "path": "third_party/rust",
+          "source_url": "https://chromium.googlesource.com/chromium/src/third_party/rust"
+        },
+        {
+          "commit": "faefd1b6fa9eeb033ad6fe60368ccb9bf908cbd0",
+          "disposition": "reviewed build-only gitlink; no distinct archive member or root license",
+          "path": "tools/win",
+          "source_url": "https://chromium.googlesource.com/chromium/src/tools/win"
+        }
+      ],
+      "gitmodules_sha256": "64abd45978444b338c5d3816cfbec508f68d6877c0c26ece649b9593d2665054",
+      "tag": "v150.4.0",
+      "version": "150.4.0"
+    },
+    "tree_sitter": {
+      "commit": "da6fe9beb4f7f67beb75914ca8e0d48ae48d6406",
+      "version": "0.25.10"
+    },
+    "v8": {
+      "commit": "ac1e23989121713ca642f6650b34deff7b686896",
+      "version": "15.0.245.2"
+    }
+  },
+  "target": "x86_64-pc-windows-msvc"
+}

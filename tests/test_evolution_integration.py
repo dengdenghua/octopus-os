@@ -1,4 +1,5 @@
 """Integration and E2E tests for the evolution system."""
+
 from __future__ import annotations
 
 from datetime import UTC
@@ -29,15 +30,28 @@ from runtime.safety.evolution.strategy import StrategyEngine
 
 class TestSkillCurator:
     def _make_skill(
-        self, name, desc="test", state=SkillState.ACTIVE,
-        use_count=0, category=None, tags=None, days_ago=0,
+        self,
+        name,
+        desc="test",
+        state=SkillState.ACTIVE,
+        use_count=0,
+        category=None,
+        tags=None,
+        days_ago=0,
     ):
         from datetime import datetime, timedelta
+
         ts = (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
         return SkillInfo(
-            name=name, description=desc, state=state,
-            use_count=use_count, created_at=ts, last_activity_at=ts,
-            content_hash="abc123", tags=tags or [], category=category,
+            name=name,
+            description=desc,
+            state=state,
+            use_count=use_count,
+            created_at=ts,
+            last_activity_at=ts,
+            content_hash="abc123",
+            tags=tags or [],
+            category=category,
         )
 
     def test_empty_skills_returns_empty_report(self):
@@ -76,7 +90,9 @@ class TestSkillCurator:
 
     def test_merge_proposal_has_umbrella(self):
         skills = [
-            self._make_skill("pr-triage", "PR triage and review", use_count=20, tags=["pr", "review"]),
+            self._make_skill(
+                "pr-triage", "PR triage and review", use_count=20, tags=["pr", "review"]
+            ),
             self._make_skill("pr-merge", "PR merge automation", use_count=5, tags=["pr"]),
         ]
         report = SkillCurator(CuratorConfig(similarity_threshold=0.3)).analyze(skills)
@@ -97,8 +113,12 @@ class TestSkillCurator:
         assert CuratorAction.UPGRADE in actions
 
     def test_similarity_computation(self):
-        a = self._make_skill("gw-auth", "gateway auth", tags=["gateway", "auth"], category="network")
-        b = self._make_skill("gw-routing", "gateway routing", tags=["gateway", "routing"], category="network")
+        a = self._make_skill(
+            "gw-auth", "gateway auth", tags=["gateway", "auth"], category="network"
+        )
+        b = self._make_skill(
+            "gw-routing", "gateway routing", tags=["gateway", "routing"], category="network"
+        )
         sim = SkillCurator._compute_similarity(a, b)
         assert 0.0 <= sim <= 1.0
         assert sim > 0.3
@@ -117,10 +137,26 @@ class TestSkillCurator:
 class TestCuratorLedgerIntegration:
     def test_curator_proposals_recorded_in_ledger(self, tmp_path):
         skills = [
-            SkillInfo("gw-auth", "gateway auth", SkillState.ACTIVE, 10,
-                      "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", "h1", tags=["gateway"]),
-            SkillInfo("gw-routing", "gateway routing", SkillState.ACTIVE, 5,
-                      "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", "h2", tags=["gateway"]),
+            SkillInfo(
+                "gw-auth",
+                "gateway auth",
+                SkillState.ACTIVE,
+                10,
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:00Z",
+                "h1",
+                tags=["gateway"],
+            ),
+            SkillInfo(
+                "gw-routing",
+                "gateway routing",
+                SkillState.ACTIVE,
+                5,
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:00Z",
+                "h2",
+                tags=["gateway"],
+            ),
         ]
         curator = SkillCurator(CuratorConfig(similarity_threshold=0.3))
         report = curator.analyze(skills)
@@ -148,9 +184,12 @@ class TestFitnessStrategyCanaryIntegration:
     def test_unhealthy_fitness_triggers_evolve_then_canary(self):
         engine = StrategyEngine()
         report = FitnessReport(
-            agent_id="test", ts="t",
+            agent_id="test",
+            ts="t",
             l1=L1Fitness(0.3, "regressing", 0.3, 15.0, {}),
-            l2=None, combined=0.3, verdict="unhealthy",
+            l2=None,
+            combined=0.3,
+            verdict="unhealthy",
         )
         decision = engine.decide(report)
         assert decision.action == "evolve"
@@ -179,19 +218,22 @@ class TestComputeFitnessRegression:
     cannot recur silently.
     """
 
-    def test_compute_fitness_returns_report_for_unknown_agent(self):
+    def test_compute_fitness_returns_report_for_unknown_agent(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("runtime.memory.learning.turn_scoring._project_root", lambda: tmp_path)
         report = compute_fitness("nonexistent_agent_for_regression_test")
         assert isinstance(report, FitnessReport)
         assert report.agent_id == "nonexistent_agent_for_regression_test"
         assert report.verdict in {"healthy", "degraded", "unhealthy", "critical"}
         assert 0.0 <= report.combined <= 1.0
 
-    def test_compute_fitness_publishes_event(self, monkeypatch):
+    def test_compute_fitness_publishes_event(self, tmp_path, monkeypatch):
         """``_publish_fitness_event`` must run on the constructed report,
         not on an uninitialised name. Patch the eventbus and assert it
         sees the right agent_id + verdict.
         """
         from runtime.platform import eventbus as _eventbus
+
+        monkeypatch.setattr("runtime.memory.learning.turn_scoring._project_root", lambda: tmp_path)
 
         captured: list[object] = []
 
@@ -215,9 +257,12 @@ class TestFederationLedgerIntegration:
     def test_federation_adopt_records_in_ledger(self, tmp_path):
         hub = FederationHub(FederationConfig(shared_dir=str(tmp_path / "fed")))
         proposal = SharedProposal(
-            proposal_id="fed001", source_agent="agent_a",
-            kind="add_lesson", description="use caching",
-            fitness_delta=0.2, ts="2026-01-01T00:00:00",
+            proposal_id="fed001",
+            source_agent="agent_a",
+            kind="add_lesson",
+            description="use caching",
+            fitness_delta=0.2,
+            ts="2026-01-01T00:00:00",
         )
         hub.publish("agent_a", proposal)
         discovered = hub.discover("agent_b")
@@ -244,26 +289,34 @@ class TestDriftFitnessStrategyIntegration:
     def test_critical_drift_triggers_revert_strategy(self):
         engine = StrategyEngine()
         report = FitnessReport(
-            agent_id="test", ts="t",
+            agent_id="test",
+            ts="t",
             l1=L1Fitness(0.1, "regressing", 0.1, 20.0, {}),
-            l2=None, combined=0.1, verdict="critical",
+            l2=None,
+            combined=0.1,
+            verdict="critical",
         )
         decision = engine.decide(report)
         assert decision.action == "revert"
 
     def test_no_drift_and_healthy_fitness_hold(self):
         monitor = DriftMonitor("healthy_agent")
-        with patch.object(monitor, "_check_soul_drift", return_value=None):
-            with patch.object(monitor, "_check_genome_drift", return_value=None):
-                with patch.object(monitor, "_check_score_drift", return_value=None):
-                    drift_report = monitor.check()
-                    assert drift_report.has_drift is False
+        with (
+            patch.object(monitor, "_check_soul_drift", return_value=None),
+            patch.object(monitor, "_check_genome_drift", return_value=None),
+            patch.object(monitor, "_check_score_drift", return_value=None),
+        ):
+            drift_report = monitor.check()
+            assert drift_report.has_drift is False
 
         engine = StrategyEngine()
         report = FitnessReport(
-            agent_id="healthy_agent", ts="t",
+            agent_id="healthy_agent",
+            ts="t",
             l1=L1Fitness(0.85, "stable", 0.85, 3.0, {}),
-            l2=None, combined=0.85, verdict="healthy",
+            l2=None,
+            combined=0.85,
+            verdict="healthy",
         )
         decision = engine.decide(report)
         assert decision.action == "hold"
@@ -300,10 +353,26 @@ class TestFullEvolutionPipeline:
 
     def test_curator_to_federation_to_adopt(self, tmp_path):
         skills = [
-            SkillInfo("mcp-server", "MCP server setup", SkillState.ACTIVE, 15,
-                      "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", "h1", tags=["mcp"]),
-            SkillInfo("mcp-client", "MCP client config", SkillState.ACTIVE, 8,
-                      "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", "h2", tags=["mcp"]),
+            SkillInfo(
+                "mcp-server",
+                "MCP server setup",
+                SkillState.ACTIVE,
+                15,
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:00Z",
+                "h1",
+                tags=["mcp"],
+            ),
+            SkillInfo(
+                "mcp-client",
+                "MCP client config",
+                SkillState.ACTIVE,
+                8,
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:00Z",
+                "h2",
+                tags=["mcp"],
+            ),
         ]
         curator = SkillCurator(CuratorConfig(similarity_threshold=0.3))
         report = curator.analyze(skills)

@@ -6,8 +6,8 @@ $hostName = "127.0.0.1"
 $configPath = Join-Path $repoRoot "config.local.yaml"
 $frontendDist = Join-Path $repoRoot "frontend\dist"
 $logDir = Join-Path $repoRoot "data\logs"
-$outLog = Join-Path $logDir "octopus-full-8000.out.log"
-$errLog = Join-Path $logDir "octopus-full-8000.err.log"
+$outLog = Join-Path $logDir "echo-full-8000.out.log"
+$errLog = Join-Path $logDir "echo-full-8000.err.log"
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -19,9 +19,9 @@ if ($listener -and $listener.OwningProcess) {
     Start-Sleep -Seconds 1
 }
 
-$env:OCTOPUS_WEBUI_DIST = $frontendDist
+$env:ECHO_WEBUI_DIST = $frontendDist
 
-Write-Host "Starting full Octopus backend on http://${hostName}:$port ..."
+Write-Host "Starting full Echo backend on http://${hostName}:$port ..."
 $proc = Start-Process `
     -FilePath python `
     -ArgumentList @("-m", "runtime", "serve", "--config", $configPath, "--host", $hostName, "--port", "$port") `

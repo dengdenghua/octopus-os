@@ -1,5 +1,5 @@
 # Implementation note.
-name: demo-octopus
+name: demo-echo
 version_compat: "0.2"
 
 planner:

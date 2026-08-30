@@ -1,0 +1,3 @@
+echo-var PARTLABEL=echo-var none tpm2-device=auto,token-timeout=10s,tries=3,x-initrd.attach
+echo-home PARTLABEL=echo-home none tpm2-device=auto,token-timeout=10s,tries=3
+echo-swap PARTLABEL=echo-swap none tpm2-device=auto,token-timeout=10s,tries=3

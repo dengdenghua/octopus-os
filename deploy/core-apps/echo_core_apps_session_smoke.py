@@ -53,6 +53,15 @@ class SessionSmokeError(RuntimeError):
     """The functional core-application session contract was not satisfied."""
 
 
+def required_session_executables(session: str) -> tuple[Path, ...]:
+    common = (XDG_MIME, XDG_OPEN, GIO, DESKTOP_FILE_VALIDATE, ZIP)
+    if session == "x11":
+        return (*common, WMCTRL)
+    if session == "wayland":
+        return (*common, KWIN_BRIDGE)
+    raise SessionSmokeError("unsupported core-app session type")
+
+
 @dataclass(frozen=True)
 class AppCase:
     name: str
@@ -512,13 +521,9 @@ def main() -> int:
     elif arguments.bridge_socket is not None:
         raise SessionSmokeError("X11 session does not accept a KWin bridge socket")
 
-    for executable in (XDG_MIME, XDG_OPEN, GIO, DESKTOP_FILE_VALIDATE, WMCTRL, ZIP):
+    for executable in required_session_executables(arguments.session):
         if not executable.is_file() or not os.access(executable, os.X_OK):
             raise SessionSmokeError(f"core-app session executable is missing: {executable}")
-    if arguments.session == "wayland" and (
-        not KWIN_BRIDGE.is_file() or not os.access(KWIN_BRIDGE, os.X_OK)
-    ):
-        raise SessionSmokeError("KWin bridge executable is missing")
 
     runtime = _safe_runtime_directory()
     fixture_root = Path(tempfile.mkdtemp(prefix="core-apps-session-", dir=runtime))

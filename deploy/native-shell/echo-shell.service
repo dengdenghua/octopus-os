@@ -1,0 +1,31 @@
+# Echo OS 原生 shell 会话:开机 → cage(极简 Wayland 合成器)→ Electron 全屏桌面。
+# 由 setup-native-shell.sh 安装到 /etc/systemd/system/ 并按实际 OS_DIR / 用户改写。
+#
+# 关键点(VM 上最可能要调的):
+# - PAMName=login + TTYPath 让 logind 给 cage 一个 seat + XDG_RUNTIME_DIR;
+#   若 cage 报 "cannot find seat" / "XDG_RUNTIME_DIR not set",先查这两行 + seatd/logind。
+# - WantedBy=graphical.target;记得 `systemctl set-default graphical.target`。
+[Unit]
+Description=Echo OS native shell (cage + Electron session)
+After=systemd-user-sessions.service plymouth-quit-wait.service docker.service network-online.target
+Wants=docker.service
+
+[Service]
+Type=simple
+User=echo
+PAMName=login
+TTYPath=/dev/tty7
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty7
+UtmpMode=user
+Environment=XDG_SESSION_TYPE=wayland
+# cage 全屏托起 Electron 会话 shell;退出即重启(设备永远在桌面)。
+ExecStart=/usr/bin/cage -- /opt/echo-os/deploy/native-shell/echo-shell-launch.sh
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+
+[Install]
+WantedBy=graphical.target

@@ -15,7 +15,7 @@
     "name": "auto"
   },
   "runtime": "local",
-  "creator": "octopus",
+  "creator": "echo",
   "defaultProject": {
     "dir": "project"
   },

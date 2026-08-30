@@ -37,12 +37,12 @@ class TestCatalog:
         assert app.web_port == 8096
         assert app.description == "jellyfin/jellyfin:latest"
 
-    def test_label_cascade_prefers_octopus_then_casaos(self):
+    def test_label_cascade_prefers_echo_then_casaos(self):
         app = container_to_app(
             _container(
                 Labels={
                     "casaos.name": "Jellyfin CasaOS",
-                    "sh.octopus.name": "影音中心",
+                    "sh.echo.name": "影音中心",
                     "casaos.icon": "https://cdn.example/jellyfin.png",
                 }
             )
@@ -51,10 +51,31 @@ class TestCatalog:
         assert app.icon == "https://cdn.example/jellyfin.png"
 
     def test_webui_label_beats_port_heuristic(self):
-        app = container_to_app(
-            _container(Labels={"casaos.webui": "http://nas.local:8096/web"})
-        )
+        app = container_to_app(_container(Labels={"casaos.webui": "http://nas.local:8096/web"}))
         assert app.web_url == "http://nas.local:8096/web"
+
+    def test_https_webui_label_preserves_path_query_and_fragment(self):
+        value = "https://nas.local:8443/ui?source=hub#library"
+        app = container_to_app(_container(Labels={"sh.echo.webui": value}))
+        assert app.web_url == value
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "javascript:alert(1)",
+            "data:text/html,malicious",
+            "file:///etc/passwd",
+            "http://user:password@nas.local:8096",
+            "http://nas.local:not-a-port",
+            "http://[invalid",
+            "http://nas.local:8096/\nInjected: header",
+            "http://nas.local/" + "x" * 2_049,
+        ],
+    )
+    def test_unsafe_webui_label_is_not_projected(self, value):
+        app = container_to_app(_container(Labels={"sh.echo.webui": value}))
+        assert app.web_url is None
+        assert app.web_port == 8096
 
     def test_web_port_preference_picks_80_over_higher(self):
         ports = [
@@ -72,45 +93,43 @@ class TestCatalog:
         assert app.ports == []
 
     def test_hide_label_removes_app(self):
-        assert container_to_app(_container(Labels={"sh.octopus.hide": "1"})) is None
+        assert container_to_app(_container(Labels={"sh.echo.hide": "1"})) is None
 
     def test_catalog_orders_running_first_then_name(self):
-        stopped = _container(
-            Id="b" * 32, Names=["/aria2"], State="exited", Status="Exited"
-        )
+        stopped = _container(Id="b" * 32, Names=["/aria2"], State="exited", Status="Exited")
         running = _container(Id="c" * 32, Names=["/zulu"], State="running")
-        hidden = _container(Id="d" * 32, Labels={"sh.octopus.hide": "true"})
+        hidden = _container(Id="d" * 32, Labels={"sh.echo.hide": "true"})
         apps = build_catalog([stopped, hidden, running])
         assert [a.name for a in apps] == ["zulu", "aria2"]
 
     def test_enterprise_compose_appears_as_one_pm_plugin(self):
         # 契约校验:企业版 docker-compose 部署在 OS 上时,只有 frontend 作为
         # 「项目管理」应用出现,基础设施服务(postgres/redis/minio/backend)被隐藏。
-        # 标签形状对齐 octopus-enterprise/docker-compose.yml。
+        # 标签形状对齐 echo-enterprise/docker-compose.yml。
         enterprise = [
             _container(
                 Id="f" * 32,
-                Names=["/octopus-enterprise-frontend-1"],
+                Names=["/echo-enterprise-frontend-1"],
                 State="running",
                 Labels={
-                    "sh.octopus.name": "项目管理",
-                    "sh.octopus.description": "AI 项目管理 · 任务/甘特/里程碑/风险/PRD 导入",
+                    "sh.echo.name": "项目管理",
+                    "sh.echo.description": "AI 项目管理 · 任务/甘特/里程碑/风险/PRD 导入",
                     "com.docker.compose.service": "frontend",
                 },
                 Ports=[{"PrivatePort": 3000, "PublicPort": 3100, "Type": "tcp"}],
             ),
             _container(
                 Id="e" * 32,
-                Names=["/octopus-enterprise-backend-1"],
+                Names=["/echo-enterprise-backend-1"],
                 State="running",
-                Labels={"sh.octopus.hide": "1"},
+                Labels={"sh.echo.hide": "1"},
                 Ports=[{"PrivatePort": 8000, "PublicPort": 8100, "Type": "tcp"}],
             ),
             _container(
                 Id="a" * 32,
-                Names=["/octopus-enterprise-postgres-1"],
+                Names=["/echo-enterprise-postgres-1"],
                 State="running",
-                Labels={"sh.octopus.hide": "1"},
+                Labels={"sh.echo.hide": "1"},
                 Ports=[{"PrivatePort": 5432, "PublicPort": 5532, "Type": "tcp"}],
             ),
         ]
@@ -161,7 +180,8 @@ class TestRouter:
         body = client_factory(_StubDocker(fail=True)).get("/api/appliance/apps").json()
         assert body["available"] is False
         assert body["apps"] == []
-        assert "docker socket" in body["error"]
+        assert body["error"] == "Docker control is unavailable"
+        assert "/var/run/docker.sock" not in str(body)
 
     def test_start_validates_container_id(self, client_factory):
         client = client_factory(_StubDocker())
@@ -177,4 +197,7 @@ class TestRouter:
 
     def test_stop_maps_unavailable_to_503(self, client_factory):
         client = client_factory(_StubDocker(fail=True))
-        assert client.post("/api/appliance/apps/abcdef123456/stop").status_code == 503
+        response = client.post("/api/appliance/apps/abcdef123456/stop")
+        assert response.status_code == 503
+        assert response.json()["detail"] == "application control is unavailable"
+        assert "gone" not in response.text

@@ -1,10 +1,10 @@
-// Octopus Agent profile · edit this to tune the agent.
+// Echo Agent profile · edit this to tune the agent.
 
 {
   "id": "general",
-  "templateId": "octopus",
+  "templateId": "echo",
   "templateVersion": "1.0.0",
-  "name": "Octopus",
+  "name": "Echo",
   "icon": "🐙",
   "did": "DID-F456DA-2B0D4C",
   "description": "General-purpose assistant for writing, planning, research, summarization, Q&A · 也能操作桌面。",
@@ -14,7 +14,7 @@
     "name": "auto"
   },
   "runtime": "local",
-  "creator": "octopus",
+  "creator": "echo",
   "defaultProject": {
     "dir": "project"
   }

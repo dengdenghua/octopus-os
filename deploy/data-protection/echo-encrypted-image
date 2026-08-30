@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# Safely access one disposable Echo OS root plus its encrypted var in Linux CI.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DATA_PROTECTION="$SCRIPT_DIR/echo_data_protection.py"
+ACTION="${1:-}"
+IMAGE_INPUT="${2:-}"
+IMAGE_VERSION="${3:-}"
+RECOVERY_KEY_INPUT="${4:-}"
+
+fail() {
+  echo "Echo OS encrypted-image harness: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat >&2 <<EOF
+usage:
+  $0 copy-to IMAGE.raw VERSION RECOVERY_KEY SOURCE ABSOLUTE_DESTINATION
+  $0 copy-from IMAGE.raw VERSION RECOVERY_KEY ABSOLUTE_SOURCE DESTINATION
+  $0 remove IMAGE.raw VERSION RECOVERY_KEY ABSOLUTE_PATH
+  $0 assert-absent IMAGE.raw VERSION RECOVERY_KEY ABSOLUTE_PATH
+EOF
+}
+
+case "$ACTION" in
+  copy-to | copy-from) [[ $# -eq 6 ]] || { usage; exit 2; } ;;
+  remove | assert-absent) [[ $# -eq 5 ]] || { usage; exit 2; } ;;
+  *) usage; exit 2 ;;
+esac
+[[ "$(uname -s)" == Linux && "$(id -u)" -eq 0 ]] || \
+  fail "a privileged Linux host is required"
+[[ "$IMAGE_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+:~_-]*$ ]] || \
+  fail "image version is invalid"
+for command_name in \
+  awk basename chmod chown cp cryptsetup dirname id install losetup lsblk \
+  mkdir mktemp modprobe mount mv readlink realpath rm stat sync udevadm umount uname; do
+  command -v "$command_name" >/dev/null 2>&1 || \
+    fail "required command is missing: $command_name"
+done
+[[ -x "$DATA_PROTECTION" ]] || fail "data-protection verifier is missing"
+[[ -f "$IMAGE_INPUT" && ! -L "$IMAGE_INPUT" ]] || \
+  fail "image must be a regular non-symlink file"
+[[ -f "$RECOVERY_KEY_INPUT" && ! -L "$RECOVERY_KEY_INPUT" ]] || \
+  fail "recovery key must be a regular non-symlink file"
+IMAGE="$(realpath "$IMAGE_INPUT")"
+RECOVERY_KEY="$(realpath "$RECOVERY_KEY_INPUT")"
+"$DATA_PROTECTION" check-recovery-key "$RECOVERY_KEY" >/dev/null
+
+ABSOLUTE_PATH=""
+case "$ACTION" in
+  copy-to) ABSOLUTE_PATH="$6" ;;
+  copy-from | remove | assert-absent) ABSOLUTE_PATH="$5" ;;
+esac
+[[ "$ABSOLUTE_PATH" == /* && "$ABSOLUTE_PATH" != / ]] || \
+  fail "image path must be absolute and must not be root"
+NORMALIZED_PATH="$(realpath -m -- "$ABSOLUTE_PATH")"
+[[ "$NORMALIZED_PATH" == "$ABSOLUTE_PATH" ]] || \
+  fail "image path must already be normalized"
+
+WORK_DIR="$(mktemp -d /run/echo-encrypted-image.XXXXXX)"
+ROOT_MOUNT="$WORK_DIR/root"
+ETC_LOWER="$WORK_DIR/etc-lower"
+LOOP_DEVICE=""
+VAR_MAPPING_NAME=""
+ROOT_MOUNTED=0
+VAR_MOUNTED=0
+ETC_LOWER_MOUNTED=0
+ETC_OVERLAY_MOUNTED=0
+cleanup() {
+  local exit_code="$?"
+  trap - EXIT INT TERM
+  sync >/dev/null 2>&1 || true
+  if [[ "$ETC_OVERLAY_MOUNTED" -eq 1 ]]; then
+    umount "$ROOT_MOUNT/etc" >/dev/null 2>&1 || true
+  fi
+  if [[ "$ETC_LOWER_MOUNTED" -eq 1 ]]; then
+    umount "$ETC_LOWER" >/dev/null 2>&1 || true
+  fi
+  if [[ "$VAR_MOUNTED" -eq 1 ]]; then
+    umount "$ROOT_MOUNT/var" >/dev/null 2>&1 || true
+  fi
+  if [[ "$ROOT_MOUNTED" -eq 1 ]]; then
+    umount "$ROOT_MOUNT" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$VAR_MAPPING_NAME" ]]; then
+    cryptsetup close "$VAR_MAPPING_NAME" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$LOOP_DEVICE" ]]; then
+    losetup --detach "$LOOP_DEVICE" >/dev/null 2>&1 || true
+  fi
+  rm -rf -- "$WORK_DIR"
+  exit "$exit_code"
+}
+trap cleanup EXIT INT TERM
+
+LOOP_DEVICE="$(losetup --find --show --partscan "$IMAGE")"
+udevadm settle --timeout=30
+mapfile -t ROOT_PARTITIONS < <(
+  lsblk -nrpo PATH,PARTLABEL "$LOOP_DEVICE" |
+    awk -v wanted="echo-root-$IMAGE_VERSION" '$2 == wanted { print $1 }'
+)
+mapfile -t VAR_PARTITIONS < <(
+  lsblk -nrpo PATH,PARTLABEL "$LOOP_DEVICE" |
+    awk '$2 == "echo-var" { print $1 }'
+)
+[[ "${#ROOT_PARTITIONS[@]}" -eq 1 && "${#VAR_PARTITIONS[@]}" -eq 1 ]] || \
+  fail "image must contain one versioned root and one echo-var partition"
+ROOT_PARTITION="${ROOT_PARTITIONS[0]}"
+VAR_PARTITION="${VAR_PARTITIONS[0]}"
+VAR_MAPPING_NAME="echo-ci-var-${LOOP_DEVICE##*/}-$$"
+cryptsetup open --type luks2 --key-file "$RECOVERY_KEY" \
+  "$VAR_PARTITION" "$VAR_MAPPING_NAME"
+mkdir -m 0755 "$ROOT_MOUNT"
+# Never replay the ext4 journal or write a superblock on a dm-verity data
+# partition. This harness mutates only the separately mounted encrypted /var.
+mount -o ro,noload "$ROOT_PARTITION" "$ROOT_MOUNT"
+ROOT_MOUNTED=1
+[[ -d "$ROOT_MOUNT/var" && ! -L "$ROOT_MOUNT/var" ]] || \
+  fail "root /var mountpoint is missing or redirected"
+mount -o rw "/dev/mapper/$VAR_MAPPING_NAME" "$ROOT_MOUNT/var"
+VAR_MOUNTED=1
+
+# Recreate the same encrypted /etc overlay used by the boot initrd. Test-only
+# account/login changes must land in persistent var, never in the signed root.
+mkdir -m 0700 "$ETC_LOWER"
+mount --bind "$ROOT_MOUNT/etc" "$ETC_LOWER"
+ETC_LOWER_MOUNTED=1
+mount -o remount,bind,ro "$ETC_LOWER"
+ETC_OVERLAY="$ROOT_MOUNT/var/lib/echo-os/etc-overlay"
+mkdir -p "$ETC_OVERLAY/upper" "$ETC_OVERLAY/work"
+chmod 0700 "$ETC_OVERLAY" "$ETC_OVERLAY/upper" "$ETC_OVERLAY/work"
+modprobe overlay
+mount -t overlay \
+  -o "lowerdir=$ETC_LOWER,upperdir=$ETC_OVERLAY/upper,workdir=$ETC_OVERLAY/work" \
+  overlay "$ROOT_MOUNT/etc"
+ETC_OVERLAY_MOUNTED=1
+
+IMAGE_FILE="$ROOT_MOUNT${ABSOLUTE_PATH}"
+IMAGE_PARENT="$(realpath -m -- "$(dirname "$IMAGE_FILE")")"
+[[ "$IMAGE_PARENT" == "$ROOT_MOUNT" || \
+   "$IMAGE_PARENT" == "$ROOT_MOUNT"/* ]] || \
+  fail "image path escapes the mounted image"
+
+case "$ACTION" in
+  copy-to)
+    SOURCE_INPUT="$5"
+    [[ -f "$SOURCE_INPUT" && ! -L "$SOURCE_INPUT" ]] || \
+      fail "copy source must be a regular non-symlink file"
+    [[ -d "$IMAGE_PARENT" && ! -L "$IMAGE_PARENT" ]] || \
+      fail "image destination parent is missing or redirected"
+    SOURCE="$(realpath "$SOURCE_INPUT")"
+    SOURCE_MODE="$(stat -c '%a' "$SOURCE")"
+    STAGED_FILE="$(mktemp "$IMAGE_PARENT/.echo-copy.XXXXXX")"
+    install -m "$SOURCE_MODE" "$SOURCE" "$STAGED_FILE"
+    chown root:root "$STAGED_FILE"
+    mv -f -- "$STAGED_FILE" "$IMAGE_FILE"
+    ;;
+  copy-from)
+    DESTINATION_INPUT="$6"
+    [[ ! -L "$DESTINATION_INPUT" && ! -e "$DESTINATION_INPUT" ]] || \
+      fail "copy destination must be a new non-symlink path"
+    [[ -f "$IMAGE_FILE" && ! -L "$IMAGE_FILE" ]] || \
+      fail "image source is not a regular file: $ABSOLUTE_PATH"
+    DESTINATION_PARENT="$(realpath "$(dirname "$DESTINATION_INPUT")")"
+    DESTINATION="$DESTINATION_PARENT/$(basename "$DESTINATION_INPUT")"
+    cp --preserve=mode,timestamps -- "$IMAGE_FILE" "$DESTINATION"
+    ;;
+  remove)
+    [[ ! -d "$IMAGE_FILE" ]] || fail "refusing to remove an image directory"
+    rm -f -- "$IMAGE_FILE"
+    ;;
+  assert-absent)
+    [[ ! -e "$IMAGE_FILE" && ! -L "$IMAGE_FILE" ]] || \
+      fail "image path unexpectedly exists: $ABSOLUTE_PATH"
+    ;;
+esac
+
+sync
+echo "ECHO_ENCRYPTED_IMAGE_OK action=$ACTION path=$ABSOLUTE_PATH"

@@ -8,7 +8,6 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.core.cerebrum.planner import Rule, StaticPlanner
 from runtime.tentacle.base import ToolCall
 from runtime.tentacle.coordinator import TentacleCoordinator
@@ -45,16 +44,20 @@ def app_and_coord():
 
     # 注册 mock 设备
     import asyncio
+
     device = MobileDevice(
         tentacle_id="android-dash-001",
         device_meta={"brand": "Google", "model": "Pixel 8"},
     )
-    # 同步调用 async 方法
-    asyncio.get_event_loop().run_until_complete(device.connect())
-    asyncio.get_event_loop().run_until_complete(coord.pool.register(device))
+    # Python 3.12 no longer creates a main-thread loop implicitly. Keep both
+    # operations on the same explicit loop, matching the pre-3.12 semantics.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(device.connect())
+    loop.run_until_complete(coord.pool.register(device))
 
     app = FastAPI()
-    app.include_router(create_tentacle_router(coord))
+    app.include_router(create_tentacle_router(coord, require_auth=False))
 
     return app, coord
 
@@ -69,7 +72,7 @@ def test_dashboard_html(client):
     """Dashboard 应返回 HTML 页面."""
     r = client.get("/api/tentacle/dashboard")
     assert r.status_code == 200
-    assert "Octopus Tentacle Dashboard" in r.text
+    assert "Echo Tentacle Dashboard" in r.text
 
 
 def test_list_devices(client):
@@ -98,10 +101,13 @@ def test_device_detail_not_found(client):
 
 def test_submit_task(client):
     """提交任务应返回执行结果."""
-    r = client.post("/api/tentacle/task", json={
-        "task": "打开示例应用",
-        "tentacle_id": "android-dash-001",
-    })
+    r = client.post(
+        "/api/tentacle/task",
+        json={
+            "task": "打开示例应用",
+            "tentacle_id": "android-dash-001",
+        },
+    )
     assert r.status_code == 200
     data = r.json()
     assert data["success"] is True
@@ -135,10 +141,13 @@ def test_stats(client):
 def test_task_history(client):
     """执行任务后应出现在历史记录中."""
     # 先执行一个任务
-    client.post("/api/tentacle/task", json={
-        "task": "打开应用",
-        "tentacle_id": "android-dash-001",
-    })
+    client.post(
+        "/api/tentacle/task",
+        json={
+            "task": "打开应用",
+            "tentacle_id": "android-dash-001",
+        },
+    )
     # 查看历史
     r = client.get("/api/tentacle/tasks")
     assert r.status_code == 200

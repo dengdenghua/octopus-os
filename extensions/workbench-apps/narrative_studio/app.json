@@ -1,0 +1,23 @@
+{
+  "schema": "echo.workbench_app.v1",
+  "id": "narrative_studio",
+  "name": "叙事工坊",
+  "description": "角色、世界观、剧情分支与正典协作",
+  "route": "/workspace/narrative",
+  "module_id": "narrative",
+  "version": "0.2.0",
+  "release_summary": "0.2.0：支持角色、世界观、剧情分支与正典资产协作。",
+  "host_api": ">=0.2,<0.3",
+  "dependencies": [],
+  "entry": "dist/index.html",
+  "runtime_plugin": "narrative_studio",
+  "isolation": "iframe",
+  "permissions": [
+    "host.same_origin",
+    "host.navigation",
+    "backend.api",
+    "workspace.storage"
+  ],
+  "data_paths": ["narrative-studio"]
+}
+

@@ -46,9 +46,7 @@ class TestPricing:
 
 class TestSplitSystem:
     def test_no_system(self):
-        sys_text, rest = _split_system(
-            [Message(role="user", content="hi")]
-        )
+        sys_text, rest = _split_system([Message(role="user", content="hi")])
         assert sys_text == ""
         assert rest == [{"role": "user", "content": "hi"}]
 
@@ -204,18 +202,14 @@ class TestCallFlow:
                         description="tool docs " * 500,
                         input_schema={
                             "type": "object",
-                            "properties": {
-                                "path": {"type": "string", "description": "p" * 2000}
-                            },
+                            "properties": {"path": {"type": "string", "description": "p" * 2000}},
                         },
                     )
                 ],
             )
         )
 
-        assert client.last_call["tools"][-1]["cache_control"] == {
-            "type": "ephemeral"
-        }
+        assert client.last_call["tools"][-1]["cache_control"] == {"type": "ephemeral"}
 
     def test_default_model_when_empty(self):
         client = _MockAnthropicClient()
@@ -232,7 +226,10 @@ class TestCallFlow:
     def test_no_api_key_no_client_raises(self, monkeypatch):
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-        with pytest.raises(RuntimeError, match="ANTHROPIC_(API_KEY|AUTH_TOKEN)"):
+        with pytest.raises(
+            RuntimeError,
+            match="ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|no.*api.*key|anthropic SDK not installed",
+        ):
             AnthropicModelRouter(api_key=None)
 
     def test_stream_final_includes_prompt_cache_telemetry(self):
@@ -277,12 +274,8 @@ class TestCallFlow:
             )
         )
 
-        assert client.last_call["system"][0]["cache_control"] == {
-            "type": "ephemeral"
-        }
-        assert client.last_call["tools"][-1]["cache_control"] == {
-            "type": "ephemeral"
-        }
+        assert client.last_call["system"][0]["cache_control"] == {"type": "ephemeral"}
+        assert client.last_call["tools"][-1]["cache_control"] == {"type": "ephemeral"}
 
 
 @pytest.mark.skipif(not ANTHROPIC_AVAILABLE, reason="anthropic SDK not installed")
@@ -290,3 +283,4 @@ class TestImportAvailable:
     def test_module_imports_cleanly(self):
         # Implementation note.
         from runtime.sensing.model_router.anthropic_router import AnthropicModelRouter  # noqa: F401
+

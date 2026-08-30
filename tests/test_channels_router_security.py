@@ -7,6 +7,7 @@ pairings. Now all mutations require admin role.
 
 See channels_router.py ``_require_admin`` + system_router pattern.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -14,7 +15,6 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.safety.auth.identity import Identity, IdentityStore  # noqa: E402
 from runtime.sensing.gateway.channels_router import (  # noqa: E402
     LocalChannelManager,

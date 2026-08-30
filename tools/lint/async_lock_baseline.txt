@@ -1,0 +1,5 @@
+# `await` held across a synchronous lock, captured by
+# tools/lint/async_lock_check.py. Each line is '<relpath>:<lineno>'.
+# Moved the await outside the lock? Delete its line to lock in the fix.
+# Regenerate with --write-baseline.
+

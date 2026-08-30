@@ -5,7 +5,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.memory.journal import InMemoryJournal
 from runtime.platform.models import (
@@ -32,16 +31,12 @@ from runtime.safety.recovery.skill_forge import _default_name_for
 
 
 def _make_step(idx: int, sucker: str, args: dict | None = None) -> Step:
-    call = ToolCall(
-        caller="arms/code_arm", sucker_id=sucker, args=args or {}
-    )
+    call = ToolCall(caller="arms/code_arm", sucker_id=sucker, args=args or {})
     return Step(
         step_id=idx,
         node_id=f"n{idx}",
         action=call,
-        result=ExecutionResult(
-            call_id=call.call_id, status="success", output={"ok": True}
-        ),
+        result=ExecutionResult(call_id=call.call_id, status="success", output={"ok": True}),
     )
 
 
@@ -137,9 +132,7 @@ class TestPropose:
         for c in candidates:
             assert len(c.underlying_sequence) >= 2
 
-    def test_meets_min_hits_and_success_rate(
-        self, journal_with_samples, base_registry
-    ):
+    def test_meets_min_hits_and_success_rate(self, journal_with_samples, base_registry):
         """Implementation note."""
         forge = SkillForge(
             journal=journal_with_samples,
@@ -151,9 +144,7 @@ class TestPropose:
         names = [c.underlying_sequence for c in candidates]
         assert ["list_cwd", "count_words"] in names
 
-    def test_insufficient_hits_excluded(
-        self, journal_with_samples, base_registry
-    ):
+    def test_insufficient_hits_excluded(self, journal_with_samples, base_registry):
         forge = SkillForge(
             journal=journal_with_samples,
             registry=base_registry,
@@ -172,9 +163,7 @@ class TestPropose:
         )
         assert forge.propose() == []
 
-    def test_candidate_has_golden_tests(
-        self, journal_with_samples, base_registry
-    ):
+    def test_candidate_has_golden_tests(self, journal_with_samples, base_registry):
         forge = SkillForge(journal=journal_with_samples, registry=base_registry)
         candidates = forge.propose()
         assert candidates
@@ -189,14 +178,10 @@ class TestPropose:
 
 
 class TestShadowValidate:
-    def test_shadow_passes_for_sane_candidate(
-        self, journal_with_samples, base_registry
-    ):
+    def test_shadow_passes_for_sane_candidate(self, journal_with_samples, base_registry):
         forge = SkillForge(journal=journal_with_samples, registry=base_registry)
         [cand] = [
-            c
-            for c in forge.propose()
-            if c.underlying_sequence == ["list_cwd", "count_words"]
+            c for c in forge.propose() if c.underlying_sequence == ["list_cwd", "count_words"]
         ]
         passed, report = forge.shadow_validate(cand)
         assert passed
@@ -312,9 +297,7 @@ class TestTrajectoryCollection:
 
 
 class TestRunPipeline:
-    def test_successful_run_promotes_candidate(
-        self, journal_with_samples, base_registry
-    ):
+    def test_successful_run_promotes_candidate(self, journal_with_samples, base_registry):
         forge = SkillForge(journal=journal_with_samples, registry=base_registry)
         result = forge.run()
         assert len(result.promoted) >= 1
@@ -329,9 +312,7 @@ class TestRunPipeline:
         assert result.candidates_total == 0
         assert result.promoted == []
 
-    def test_forged_skill_callable_after_promotion(
-        self, journal_with_samples, base_registry
-    ):
+    def test_forged_skill_callable_after_promotion(self, journal_with_samples, base_registry):
         forge = SkillForge(journal=journal_with_samples, registry=base_registry)
         result = forge.run()
         assert result.promoted
@@ -343,9 +324,7 @@ class TestRunPipeline:
         assert "composite_output" in out
         assert out["steps"] == 2
 
-    def test_promotion_rejects_composite_with_dangerous_underlying_skill(
-        self, base_registry
-    ):
+    def test_promotion_rejects_composite_with_dangerous_underlying_skill(self, base_registry):
         base_registry.register(
             Skill(
                 name="exec_shell",
@@ -370,9 +349,7 @@ class TestRunPipeline:
             forge.promote_to_public(candidate)
         assert not base_registry.has(candidate.name)
 
-    def test_run_retires_dangerous_composite_without_registering(
-        self, base_registry
-    ):
+    def test_run_retires_dangerous_composite_without_registering(self, base_registry):
         base_registry.register(
             Skill(
                 name="exec_shell",

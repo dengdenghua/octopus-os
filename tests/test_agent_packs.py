@@ -49,7 +49,13 @@ You are a pitch agent.
 """,
     )
     write(
-        tmp_path / "plugins" / "agent-plugins" / "pitch-agent" / "skills" / "dcf-model" / "SKILL.md",
+        tmp_path
+        / "plugins"
+        / "agent-plugins"
+        / "pitch-agent"
+        / "skills"
+        / "dcf-model"
+        / "SKILL.md",
         """---
 name: dcf-model
 description: Build DCF models
@@ -70,7 +76,9 @@ Load the dcf skill.
     )
     write(
         tmp_path / "plugins" / "agent-plugins" / "pitch-agent" / ".mcp.json",
-        json.dumps({"mcpServers": {"capiq": {"type": "http", "url": "https://example.invalid/mcp"}}}),
+        json.dumps(
+            {"mcpServers": {"capiq": {"type": "http", "url": "https://example.invalid/mcp"}}}
+        ),
     )
     write(
         tmp_path / "managed-agent-cookbooks" / "pitch-agent" / "agent.yaml",
@@ -188,7 +196,7 @@ description: Create a sourced research brief
     assert any("MCP server" in warning for warning in preview.warnings)
 
 
-def test_scan_agent_pack_discovers_octopus_app_jsonc(tmp_path: Path) -> None:
+def test_scan_agent_pack_discovers_echo_app_jsonc(tmp_path: Path) -> None:
     write(
         tmp_path / ".codex-plugin" / "plugin.json",
         json.dumps(
@@ -201,10 +209,10 @@ def test_scan_agent_pack_discovers_octopus_app_jsonc(tmp_path: Path) -> None:
         ),
     )
     write(
-        tmp_path / "octopus-app.jsonc",
+        tmp_path / "echo-app.jsonc",
         """
 {
-  // Octopus application manifest v1.
+  // Echo application manifest v1.
   "schema_version": "1",
   "apps": {
     "research-console": {
@@ -247,7 +255,12 @@ def test_import_agent_from_pack_creates_local_agent_without_enabling_mcp(tmp_pat
     agents_root = tmp_path / "agents"
     skills_root = tmp_path / "skills" / "public"
     write(
-        pack_root / "plugins" / "agent-plugins" / "market-researcher" / ".claude-plugin" / "plugin.json",
+        pack_root
+        / "plugins"
+        / "agent-plugins"
+        / "market-researcher"
+        / ".claude-plugin"
+        / "plugin.json",
         json.dumps(
             {
                 "name": "market-researcher",
@@ -258,7 +271,12 @@ def test_import_agent_from_pack_creates_local_agent_without_enabling_mcp(tmp_pat
         ),
     )
     write(
-        pack_root / "plugins" / "agent-plugins" / "market-researcher" / "agents" / "market-researcher.md",
+        pack_root
+        / "plugins"
+        / "agent-plugins"
+        / "market-researcher"
+        / "agents"
+        / "market-researcher.md",
         """---
 name: market-researcher
 description: Produces sector market research
@@ -269,7 +287,13 @@ Use sector-overview and competitive-analysis to produce a short report.
 """,
     )
     write(
-        pack_root / "plugins" / "agent-plugins" / "market-researcher" / "skills" / "sector-overview" / "SKILL.md",
+        pack_root
+        / "plugins"
+        / "agent-plugins"
+        / "market-researcher"
+        / "skills"
+        / "sector-overview"
+        / "SKILL.md",
         """---
 name: sector-overview
 description: Build a sector overview
@@ -279,7 +303,13 @@ description: Build a sector overview
 """,
     )
     write(
-        pack_root / "plugins" / "agent-plugins" / "market-researcher" / "skills" / "competitive-analysis" / "SKILL.md",
+        pack_root
+        / "plugins"
+        / "agent-plugins"
+        / "market-researcher"
+        / "skills"
+        / "competitive-analysis"
+        / "SKILL.md",
         """---
 name: competitive-analysis
 description: Compare competitors
@@ -296,7 +326,9 @@ description: Compare competitors
     result = import_agent_from_pack(pack_root, "market-researcher", agents_root, skills_root)
 
     agent_root = agents_root / "market_researcher"
-    registry = json.loads((agent_root / "agent-core" / "tool-registry.jsonc").read_text(encoding="utf-8"))
+    registry = json.loads(
+        (agent_root / "agent-core" / "tool-registry.jsonc").read_text(encoding="utf-8")
+    )
     assert result.agent_id == "market_researcher"
     assert result.copied_skills == ["competitive-analysis", "sector-overview"]
     assert "mcp__capiq__*" in registry["disabled_source_tools"]

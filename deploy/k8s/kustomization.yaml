@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: octopus-agent
+namespace: echo-agent
 
 resources:
   - namespace.yaml
@@ -11,12 +11,13 @@ resources:
   - redis.yaml
   - deployment.yaml
   - service.yaml
+  - networkpolicy.yaml
   - ingress.yaml
 
 commonLabels:
-  app.kubernetes.io/part-of: octopus-agent
+  app.kubernetes.io/part-of: echo-agent
 
-# Implementation note.
 # images:
-#   - name: ghcr.io/octopus-agent/octopus-agent
-#     newTag: "v0.2.0"
+#   - name: ghcr.io/dengdenghua/echo-os
+#     # A real sha256 digest transforms both the main and init container.
+#     digest: sha256:<RELEASE_MANIFEST_DIGEST>

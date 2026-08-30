@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CLIENT_SCRIPT="$REPO_ROOT/deploy/desktop-session/smoke-wayland-session-client.sh"
 BRIDGE=/usr/lib/echo-os/echo-kwin-window-bridge
 
-for command_name in dbus-run-session gdbus kwin_wayland wayland-info node python3 timeout; do
+for command_name in dbus-run-session gdbus kwin_wayland kwriteconfig6 wayland-info node python3 timeout; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "Wayland smoke dependency missing: $command_name" >&2
     exit 1
@@ -32,8 +32,12 @@ else
 fi
 export ECHO_SMOKE_LOG_DIR="$LOG_DIR"
 export XDG_RUNTIME_DIR="$LOG_DIR/runtime"
-mkdir -p "$XDG_RUNTIME_DIR/echo-os"
+export XDG_CONFIG_HOME="$LOG_DIR/config"
+mkdir -p "$XDG_RUNTIME_DIR/echo-os" "$XDG_CONFIG_HOME"
 chmod 0700 "$XDG_RUNTIME_DIR" "$XDG_RUNTIME_DIR/echo-os"
+
+kwriteconfig6 --file kwinrc --group Plugins \
+  --key org.echoos.liquidglassEnabled true
 
 cleanup() {
   local status="$1"
@@ -74,7 +78,7 @@ export ECHO_KWIN_WINDOW_BRIDGE_SOCKET="$BRIDGE_SOCKET"
 export XDG_SESSION_TYPE=wayland
 export XDG_SESSION_DESKTOP=echo
 export XDG_CURRENT_DESKTOP=Echo:KDE
-export OCTOPUS_NATIVE_SHELL=1
+export ECHO_NATIVE_SHELL=1
 export LIBGL_ALWAYS_SOFTWARE=1
 export GTK_IM_MODULE=fcitx
 export QT_IM_MODULE=fcitx

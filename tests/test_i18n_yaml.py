@@ -14,6 +14,7 @@ Covers:
 - t() plural-aware
 - detect_lang from env
 """
+
 from __future__ import annotations
 
 import os
@@ -199,6 +200,7 @@ class TestReload(unittest.TestCase):
 
     def test_hot_reload_picks_up_yaml_changes(self) -> None:
         from runtime.platform import i18n as i18n_mod
+
         saved = get_lang()
         try:
             set_lang("en")

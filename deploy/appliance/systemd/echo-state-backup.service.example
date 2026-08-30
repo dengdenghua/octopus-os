@@ -1,0 +1,26 @@
+[Unit]
+Description=Verified offline Echo appliance-state backup
+Requires=docker.service
+After=docker.service network-online.target local-fs.target remote-fs.target
+RequiresMountsFor=/var/backups
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/echo-os/deploy/appliance
+Environment=ECHO_BACKUP_DIR=/var/backups/echo-os
+Environment=ECHO_BACKUP_MOUNTPOINT=/var/backups
+Environment=ECHO_BACKUP_KEEP=7
+LoadCredentialEncrypted=echo-backup-passphrase:/etc/credstore.encrypted/echo-backup-passphrase
+ExecStart=/opt/echo-os/deploy/appliance/backup-state.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/echo-os
+ReadWritePaths=/run/lock
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target

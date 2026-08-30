@@ -1,0 +1,14 @@
+#!/bin/bash
+# Fixed PolicyKit entrypoint for installing the already authenticated candidate.
+set -euo pipefail
+
+[[ $# -eq 0 ]] || {
+  echo "Echo OS graphical update apply accepts no arguments" >&2
+  exit 2
+}
+[[ "$(id -u)" -eq 0 ]] || {
+  echo "Echo OS graphical update apply requires administrator authorization" >&2
+  exit 1
+}
+
+exec /usr/bin/echo-os-update-channel apply

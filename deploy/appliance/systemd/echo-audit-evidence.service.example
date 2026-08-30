@@ -1,0 +1,27 @@
+[Unit]
+Description=Encrypted external Echo appliance audit evidence export
+Requires=docker.service
+After=docker.service network-online.target local-fs.target remote-fs.target
+RequiresMountsFor=/mnt/echo-audit-evidence
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/echo-os/deploy/appliance
+Environment=ECHO_AUDIT_EXPORT_DIR=/mnt/echo-audit-evidence
+Environment=ECHO_AUDIT_EXPORT_MOUNTPOINT=/mnt/echo-audit-evidence
+Environment=ECHO_AUDIT_KEEP_DAYS=365
+Environment=ECHO_AUDIT_KEEP_MINIMUM=12
+LoadCredentialEncrypted=echo-audit-export-passphrase:/etc/credstore.encrypted/echo-audit-export-passphrase
+ExecStart=/opt/echo-os/deploy/appliance/export-audit-evidence.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/mnt/echo-audit-evidence
+ReadWritePaths=/run/lock
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target

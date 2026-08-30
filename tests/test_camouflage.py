@@ -6,7 +6,6 @@ from collections import Counter
 from uuid import uuid4
 
 import pytest
-
 from runtime.safety.experiments import ABSplitter, Variant
 
 # ═══════════════════════════════════════════════════════════
@@ -21,10 +20,12 @@ class TestConstruction:
 
     def test_duplicate_names_raise(self):
         with pytest.raises(ValueError, match="duplicate"):
-            ABSplitter([
-                Variant("a", payload=1),
-                Variant("a", payload=2),
-            ])
+            ABSplitter(
+                [
+                    Variant("a", payload=1),
+                    Variant("a", payload=2),
+                ]
+            )
 
     def test_variant_empty_name_raises(self):
         with pytest.raises(ValueError, match="non-empty"):
@@ -105,22 +106,24 @@ class TestWeightedAssignment:
 
 class TestStickyAssignment:
     def test_same_key_same_variant(self):
-        s = ABSplitter([
-            Variant("A", payload=1, weight=0.5),
-            Variant("B", payload=2, weight=0.5),
-        ])
+        s = ABSplitter(
+            [
+                Variant("A", payload=1, weight=0.5),
+                Variant("B", payload=2, weight=0.5),
+            ]
+        )
         key = "task-abc-123"
         picks = {s.assign_for(key).name for _ in range(30)}
         assert len(picks) == 1  # Implementation note.
 
     def test_different_keys_distribute(self):
-        s = ABSplitter([
-            Variant("A", payload=1, weight=0.5),
-            Variant("B", payload=2, weight=0.5),
-        ])
-        counts = Counter(
-            s.assign_for(f"task-{i}").name for i in range(2000)
+        s = ABSplitter(
+            [
+                Variant("A", payload=1, weight=0.5),
+                Variant("B", payload=2, weight=0.5),
+            ]
         )
+        counts = Counter(s.assign_for(f"task-{i}").name for i in range(2000))
         assert 900 <= counts["A"] <= 1100
         assert 900 <= counts["B"] <= 1100
 
@@ -130,10 +133,12 @@ class TestStickyAssignment:
         assert v.name == "A"
 
     def test_stats_counted_for_sticky(self):
-        s = ABSplitter([
-            Variant("A", payload=1, weight=0.5),
-            Variant("B", payload=2, weight=0.5),
-        ])
+        s = ABSplitter(
+            [
+                Variant("A", payload=1, weight=0.5),
+                Variant("B", payload=2, weight=0.5),
+            ]
+        )
         for i in range(10):
             s.assign_for(f"k{i}")
         total = s.stats["A"].assignments + s.stats["B"].assignments
@@ -180,17 +185,23 @@ class TestPlannerVariants:
         from runtime.platform.models import BudgetSpec, ParsedIntent, SkillId
 
         planner_a = StaticPlanner(
-            rules=[Rule(
-                name="ra", intent_types=["task"],
-                skill_sequence=[SkillId("list_cwd")],
-            )],
+            rules=[
+                Rule(
+                    name="ra",
+                    intent_types=["task"],
+                    skill_sequence=[SkillId("list_cwd")],
+                )
+            ],
             default_budget=BudgetSpec(tokens=1000, usd=0.01),
         )
         planner_b = StaticPlanner(
-            rules=[Rule(
-                name="rb", intent_types=["task"],
-                skill_sequence=[SkillId("hash_text")],
-            )],
+            rules=[
+                Rule(
+                    name="rb",
+                    intent_types=["task"],
+                    skill_sequence=[SkillId("hash_text")],
+                )
+            ],
             default_budget=BudgetSpec(tokens=1000, usd=0.01),
         )
         s = ABSplitter(
@@ -214,10 +225,12 @@ class TestPlannerVariants:
 
     def test_sticky_task_id_keeps_variant_for_trajectory(self):
         """Implementation note."""
-        s = ABSplitter([
-            Variant("A", payload=1, weight=0.5),
-            Variant("B", payload=2, weight=0.5),
-        ])
+        s = ABSplitter(
+            [
+                Variant("A", payload=1, weight=0.5),
+                Variant("B", payload=2, weight=0.5),
+            ]
+        )
         task_id = str(uuid4())
         v1 = s.assign_for(task_id)
         v2 = s.assign_for(task_id)
@@ -232,9 +245,11 @@ class TestPlannerVariants:
 
 class TestIntrospection:
     def test_names_listed_in_order(self):
-        s = ABSplitter([
-            Variant("x", payload=1),
-            Variant("y", payload=2),
-            Variant("z", payload=3),
-        ])
+        s = ABSplitter(
+            [
+                Variant("x", payload=1),
+                Variant("y", payload=2),
+                Variant("z", payload=3),
+            ]
+        )
         assert s.names == ["x", "y", "z"]

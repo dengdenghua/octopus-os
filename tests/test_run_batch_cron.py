@@ -4,10 +4,10 @@ Covers the wiring that turns ``python -m runtime.safety.evolution.run_batch_cron
 into a one-line cron call: argument parsing, judge resolution defaults,
 no-op behaviour when no judge is wired, exit codes.
 """
+
 from __future__ import annotations
 
 import pytest
-
 from runtime.safety.evolution import run_batch_cron
 from runtime.safety.evolution.guard_judge import (
     GuardJudgeVerdict,
@@ -51,10 +51,12 @@ class TestArgParsing:
 
 class TestJudgeResolution:
     def test_no_provider_returns_null_judge(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Force the import inside _resolve_judge to fail.
         import sys
+
         original = sys.modules.get("runtime.platform.process.service_provider")
         sys.modules["runtime.platform.process.service_provider"] = None  # type: ignore[assignment]
         try:
@@ -67,7 +69,8 @@ class TestJudgeResolution:
                 sys.modules.pop("runtime.platform.process.service_provider", None)
 
     def test_resolved_judge_used_when_available(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Inject a fake judge into the provider; _resolve_judge should
         # find it. We can't easily reach the real service_provider in
@@ -93,12 +96,14 @@ class TestJudgeResolution:
 
 class TestMainEntry:
     def test_no_judge_returns_zero(
-        self, capsys: pytest.CaptureFixture[str],
+        self,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         # No judge wired → null_guard_judge → batch is a no-op.
         # Provider may or may not have guard_judge registered from
         # other tests; explicitly clear it.
         from runtime.platform.process.service_provider import get_provider
+
         get_provider().register_instance("guard_judge", None)
 
         rc = run_batch_cron.main([])
@@ -107,7 +112,8 @@ class TestMainEntry:
         assert "no judge" in captured.out.lower()
 
     def test_dry_run_returns_zero(
-        self, capsys: pytest.CaptureFixture[str],
+        self,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         from runtime.platform.process.service_provider import get_provider
 

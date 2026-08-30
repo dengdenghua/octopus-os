@@ -1,0 +1,7 @@
+name: blackboard_arm
+kind: arm
+version: 0.1.0
+description: "Reference execution arm #2 — registers the blackboard collaboration skill family (bb_write / bb_read / bb_keys). Shows an arm with no service dependency."
+author: Echo
+provides:
+  - blackboard_arm.skills

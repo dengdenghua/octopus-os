@@ -34,7 +34,7 @@
 去 fork 后,工作台 UI 不再由 os 前端打包,必须由**别处**提供给 iframe 加载。候选:
 - **(推荐)同机 agent 自带 webui**:os 后端已装 agent(P1)。让 os 的镜像顺带构建
   agent 的 `frontend/`(类似 P1 的 wheel 投喂,做个 webui 投喂),后端在子路径
-  serve 它;`window.__OCTOPUS_AGENT_WORKSPACE_URL__` 指该子路径。**注**:agent 的
+  serve 它;`window.__ECHO_AGENT_WORKSPACE_URL__` 指该子路径。**注**:agent 的
   前端不在 pip 包里(包只含 runtime*/tools*),需单独构建产物。
 - 独立 agent 容器:另起一个 agent 服务容器,os 桌面 iframe 指它。更"消费",但单盒
   部署多一个容器。
@@ -64,7 +64,7 @@
 ## 4. 建议顺序(每步可验证、可回滚;不一次性大删)
 
 1. **先解决问题 A**:让 os 能 serve(或指向)一个独立 agent 工作台 UI,把 §5 的
-   `__OCTOPUS_AGENT_WORKSPACE_URL__` 真正指过去,验证窗口里加载的是"外部" agent。
+   `__ECHO_AGENT_WORKSPACE_URL__` 真正指过去,验证窗口里加载的是"外部" agent。
 2. **桌面应用逐个改造**(问题 B):把 5 个 navigate-工作台 的 dock 应用改成嵌入
    窗口(或砍),每改一个验证一次。改完桌面不再直接依赖工作台路由。
 3. **甄别 core/**:把"共享基建/浏览器要用"的子目录(api/utils/i18n/auth/config/
@@ -77,35 +77,33 @@
    core 依赖;否则一并删。
 6. **收尾**:os 前端 = 桌面 + appliance + 共享原语/基建 + (可选)浏览器。
 
-## 4.5 进度:问题 A 已解决(2026-06-13)
+## 4.5 历史路线：外置 WebUI 桥接（已于 2026-08-29 被替代）
 
-**外部 agent 工作台 UI 的 serve 机制已做完并验证**(选定"同机 webui 投喂"):
-- 后端 `appliance/agent_ui.py`(os cc6e2de):`OCTOPUS_AGENT_WEBUI_DIST` 指向独立
-  构建的 agent webui 时挂到 `/agent-ui/`;`/api/appliance/config` 暴露 URL,前端
-  `loadAgentWorkspaceConfig()` 读它设全局 → 窗口加载外部 webui,未投喂则同源回退。
-- 部署 glue(os 70ec7ce):`prepare-agent-webui.sh` 以 `base=/agent-ui/` 构建 agent
-  前端(实测 26s 成功);Dockerfile COPY + 设 env;`.dockerignore` 加例外放行投喂
-  产物(并修复 P1 wheel 同样被 `deploy/` 排除的隐患)。
-- 实测:os serve 真实 agent webui dist → config 回 `/agent-ui/#/...`、`/agent-ui/`
-  是真实 Octopus index、assets 200。
+本节以下记录是旧迁移中间态，不再是当前部署合同。当前实现已收口为：
 
-→ **§4 step 1 完成**;deletion 已解除前置。剩余:§4 step 2(桌面应用逐个改嵌入
-窗口)→ step 3(甄别 core/)→ step 4(删工作台前端)。镜像组装待 NAS 验证。
+- Echo OS 拥有唯一前端和内建 Agent 工作台；
+- Agent bundle 只包含 wheel、运行资源和 Agent 锁定 Codex；
+- 旧静态挂载、第二前端端口和外置 UI 地址均已退役。
 
-## 5. 已落地(非破坏性接缝,os b5573da)
+历史上曾使用“同机静态投喂 + iframe”作为迁移过渡方案；该构建脚本、
+环境变量、静态路由和运行时健康依赖已全部删除。
 
-- `frontend/src/appliance/agent-workspace.ts`:`resolveAgentWorkspaceUrl()` —
-  默认同源 `/workspace/realtime/new`,可经 `window.__OCTOPUS_AGENT_WORKSPACE_URL__`
-  注入指向外部 agent 服务。
-- `app/desktop/page.tsx`:Dock 加 "Agent 工作台" 项,`openWindow` 开 iframe 窗口
-  (dogfood 窗口管理器)。预览实测:开出桌面窗口、iframe 加载工作台全 UI、无递归。
+→ **§4 step 1-6 已完成**：桌面应用统一消费同级 `echo-agent`；旧
+`app/workspace`、`app/realtime`、`components/workspace`、`components/realtime`、
+旧 Store/插件页面和不可达 Agent core 已删除。生产构建与浏览器冒烟通过；镜像组装
+仍需独立 NAS/冷启动验证。
 
-**这层是开关**:问题 A 解决后,把 URL 指向外部,即可在"自带 vs 外部"间切换,
-为 §4 的逐步删除提供随时可回退的过渡态。
+## 5. 已落地（OS 唯一前端边界）
+
+- `frontend/src/appliance/agent-workspace.ts` 只解析 OS 内部工作台路由。
+- `app/desktop/page.tsx` 将 `EmbeddedAgentWorkspace` 直接作为 React 内容放入桌面窗口。
+
+**这层现在是硬边界**：OS 自己管 UI，Agent 通过窄 API 提供运行时能力。
 
 ## 6. 风险与原则
 
-- **不一次性大删**:650 文件牵连深(尤其 core/ 混用),分步删 + 每步 build/冒烟。
+- **删除已分批完成**：页面、组件、core 和依赖按构建可达性逐批删除，每批执行
+  typecheck/build/测试/浏览器冒烟。
 - **保留 os 身份层**:appliance/、app/desktop、components/ui、共享 hooks/lib —— 留。
 - **浏览器/商店按产品决策**:它们是"os 桌面应用"还是"工作台一部分",由你定。
 - 与 P1 一致:能本地 `pnpm build` + 预览验证;镜像层面待 NAS 验证。

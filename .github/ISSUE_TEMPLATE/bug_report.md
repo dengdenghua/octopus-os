@@ -28,7 +28,7 @@ labels: bug
 
 - [ ] 相关 thread ID(如果是 backend 报错)· 让维护者能在你的 journal 里查
 - [ ] 复现的 minimal agent config / prompt
-- [ ] `additional_kwargs.octopus` metadata(bench_runner 输出就有)
+- [ ] `additional_kwargs.echo` metadata(bench_runner 输出就有)
 - [ ] `.scores.jsonl` 最后几行(如果跟自演化有关)
 - [ ] `benchmarks/results/runs-*.jsonl` 里失败那一行(如果是 bench)
 

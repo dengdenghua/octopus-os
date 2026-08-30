@@ -1,0 +1,16 @@
+Package: openmediavault-echo-os
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: all
+Maintainer: Echo Project <verify@echo-age.com>
+Homepage: https://echo-age.com
+Depends: openmediavault (>= 8.0), openmediavault (<< 9.0), adduser, dpkg, init-system-helpers, python3, systemd, util-linux
+XB-Plugin-Section: utilities
+XB-Plugin-Architecture: amd64, arm64
+Installed-Size: @INSTALLED_SIZE@
+Description: OpenMediaVault Echo OS integration plugin
+ Installs the constrained local Unix-socket bridge used by Echo OS to read
+ redacted OpenMediaVault storage state and perform narrowly approved SMB and
+ filesystem user/group quota transactions. It never formats disks or exposes
+ the OpenMediaVault RPC socket to containers.

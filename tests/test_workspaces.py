@@ -7,13 +7,13 @@ The manager is deliberately small — just enough to prove:
 * ``discard`` refuses to delete anything outside its configured root.
 * Slug sanitisation handles the shapes a realtime thread id can take.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 import pytest
-
 from runtime.platform.runtime_policy.workspaces import WorkspaceManager
 
 
@@ -40,7 +40,7 @@ class TestAllocate:
             assert (ws / rel).is_dir()
 
         manifest = json.loads((ws / "workspace.json").read_text(encoding="utf-8"))
-        assert manifest["schema"] == "octopus.workspace.v1"
+        assert manifest["schema"] == "echo.workspace.v1"
         assert manifest["thread_id"] == "th-1"
         assert manifest["slug"] == "th-1"
         assert manifest["dirs"] == {
@@ -87,7 +87,7 @@ class TestAllocate:
 
         manifest = mgr.manifest("th-manifest")
 
-        assert manifest["schema"] == "octopus.workspace.v1"
+        assert manifest["schema"] == "echo.workspace.v1"
         assert manifest["thread_id"] == "th-manifest"
 
 

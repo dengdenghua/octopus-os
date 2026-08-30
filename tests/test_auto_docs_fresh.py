@@ -26,8 +26,11 @@ Regeneration::
 
     python scripts/gen_wiki.py
 """
+
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -45,8 +48,10 @@ def _import_generator():
     # object has no attribute '__dict__'``.
     import importlib.util
     import sys
+
     spec = importlib.util.spec_from_file_location(
-        "gen_wiki", _REPO_ROOT / "scripts" / "gen_wiki.py",
+        "gen_wiki",
+        _REPO_ROOT / "scripts" / "gen_wiki.py",
     )
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
@@ -61,9 +66,7 @@ def _import_generator():
 
 class TestAutoDocsFresh:
     def test_docs_auto_dir_exists(self):
-        assert _AUTO_DIR.is_dir(), (
-            "docs/auto/ missing · run `python scripts/gen_wiki.py`"
-        )
+        assert _AUTO_DIR.is_dir(), "docs/auto/ missing · run `python scripts/gen_wiki.py`"
 
     def test_top_level_pages_exist(self):
         """Minimum set of pages every commit should have."""
@@ -106,6 +109,10 @@ class TestAutoDocsFresh:
             if rel in volatile:
                 continue  # timestamp-bearing · byte-compare would always drift
             actual = path.read_text(encoding="utf-8")
+            # Exact byte-compare. The generator emits a single deterministic
+            # trailing newline for every page (``page_agent`` strips stray
+            # blank lines from optional fields before write), so there is no
+            # longer an order-dependent trailing-newline delta to tolerate.
             if actual != expected:
                 drift.append(f"drift: docs/auto/{rel}")
 
@@ -116,10 +123,8 @@ class TestAutoDocsFresh:
                 drift.append(f"stale: {p.relative_to(_AUTO_DIR)}")
 
         if drift:
-            msg = (
-                "docs/auto/ out of date · run "
-                "`python scripts/gen_wiki.py`.\n\n"
-                + "\n".join(drift[:30])
+            msg = "docs/auto/ out of date · run `python scripts/gen_wiki.py`.\n\n" + "\n".join(
+                drift[:30]
             )
             if len(drift) > 30:
                 msg += f"\n... (+{len(drift) - 30} more)"
@@ -128,6 +133,7 @@ class TestAutoDocsFresh:
     def test_manifest_valid(self):
         """``index.json`` must parse and reference real files."""
         import json
+
         mf_path = _AUTO_DIR / "index.json"
         assert mf_path.is_file(), "index.json missing"
         manifest = json.loads(mf_path.read_text(encoding="utf-8"))
@@ -139,10 +145,21 @@ class TestAutoDocsFresh:
         def check(node):
             if node.get("type") == "doc":
                 p = _AUTO_DIR / node["path"]
-                assert p.is_file(), (
-                    f"manifest references missing doc: {node['path']}"
-                )
+                assert p.is_file(), f"manifest references missing doc: {node['path']}"
             for child in node.get("children", []):
                 check(child)
+
         for top in manifest["tree"]:
             check(top)
+
+    def test_check_mode_accepts_current_timestamped_manifest(self):
+        result = subprocess.run(
+            [sys.executable, "scripts/gen_wiki.py", "--check"],
+            cwd=_REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+

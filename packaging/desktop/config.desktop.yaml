@@ -1,15 +1,15 @@
-# Octopus desktop default configuration.
+# Echo desktop default configuration.
 #
 # This file is copied into the Electron userData directory on first launch.
 # It intentionally contains no API keys. Users can edit the copied config or
 # configure providers from the app UI.
 
-name: octopus-desktop
+name: echo-desktop
 version_compat: "0.2"
 
 planner:
   type: llm
-  model: molili
+  model: echo-agent
   max_nodes: 10
 
 budget:
@@ -33,31 +33,25 @@ journal_file: null
 enable_web_skills: true
 default_arm_id: code_arm
 
-molili:
+oct:
   enabled: true
-  base_url: https://molili.8kbl.com/molili-agi/chatApi/v1
-  info_url: https://molili.8kbl.com/molili-agi/userApi/v1/userInfo
-  request_timeout_seconds: 30
-  jwt_secret: octopus-desktop-molili-jwt-secret-change-me
+  base_url: https://api.echo-age.com
+  default_model: qwen3.5-flash
+  request_timeout_seconds: 15
+  llm_timeout_seconds: 120
+  mock_mode: false
+  jwt_secret: __ECHO_DESKTOP_ACCOUNT_JWT_SECRET__
   jwt_expire_seconds: 2592000
-  jwt_issuer: octopus-agent
-  auth:
-    mock_mode: false
-    sms_send_url: https://molili.8kbl.com/molili-agi/loginApi/v1/sendSms
-    sms_verify_url: https://molili.8kbl.com/molili-agi/loginApi/v1/loginByMobile
-    send_phone_field: mobile
-    verify_phone_field: mobile
-    code_field: verifyCode
-    user_id_path: data.userId
-    token_path: data.token
-    mobile_path: data.userInfo.mobile
-    credits_path: data.userInfo
+  jwt_issuer: echo-agent
 
 local_auth:
   enabled: true
   allow_any_username: true
-  jwt_secret: octopus-desktop-local-jwt-secret-change-me
+  # Replaced atomically with a unique high-entropy value by
+  # frontend/electron/desktop-config.cjs before the backend starts.
+  jwt_secret: __ECHO_DESKTOP_ACCOUNT_JWT_SECRET__
   jwt_expire_seconds: 604800
-  jwt_issuer: octopus-agent
+  jwt_issuer: echo-agent
   actor_prefix: "local:"
   default_roles: [user, local]
+

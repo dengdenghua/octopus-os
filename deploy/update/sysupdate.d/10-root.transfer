@@ -1,0 +1,19 @@
+[Transfer]
+ProtectVersion=%A
+# Local bundles are authenticated by /usr/bin/echo-os-update before sysupdate
+# is invoked. Remote channels must use their own Verify=yes transfer files.
+Verify=no
+
+[Source]
+Type=regular-file
+Path=.
+PathRelativeTo=explicit
+MatchPattern=echo-os_@v.root.@u.raw.zst
+
+[Target]
+Type=partition
+Path=auto
+MatchPartitionType=root-x86-64
+MatchPattern=echo-root-@v
+InstancesMax=2
+ReadOnly=yes

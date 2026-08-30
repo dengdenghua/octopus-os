@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Wait for the loopback Agent and prove its runtime source identity."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+MANIFEST = Path("/opt/echo-agent/agent-bundle.json")
+BASE_URL = "http://127.0.0.1:8000"
+MAX_JSON_BYTES = 1024 * 1024
+
+
+def _json_file(path: Path) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file() or not 1 <= path.stat().st_size <= MAX_JSON_BYTES:
+        raise RuntimeError(f"unsafe or missing Agent manifest: {path}")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise RuntimeError(f"Agent manifest is not an object: {path}")
+    return value
+
+
+def _read(url: str, *, maximum: int) -> bytes:
+    request = urllib.request.Request(url, headers={"User-Agent": "echo-agent-health/1"})
+    with urllib.request.urlopen(request, timeout=3) as response:  # nosec B310 - fixed loopback URL
+        if response.status != 200:
+            raise RuntimeError(f"unexpected HTTP status {response.status} from {url}")
+        data = response.read(maximum + 1)
+    if not data or len(data) > maximum:
+        raise RuntimeError(f"unbounded or empty response from {url}")
+    return data
+
+
+def _verify_once(expected: dict[str, Any]) -> tuple[str, int]:
+    config_raw = _read(f"{BASE_URL}/api/appliance/config", maximum=MAX_JSON_BYTES)
+    config = json.loads(config_raw)
+    if not isinstance(config, dict):
+        raise RuntimeError("native Agent config response is not an object")
+    bundle = config.get("agent_bundle")
+    source = expected.get("source")
+    if not isinstance(bundle, dict) or not isinstance(source, dict):
+        raise RuntimeError("native Agent config or image manifest is incomplete")
+    if (
+        bundle.get("verified") is not True
+        or bundle.get("source_id") != source.get("source_id")
+        or config.get("agent_ui_base") is not None
+        or config.get("agent_workspace_url") is not None
+    ):
+        raise RuntimeError("running Agent identity or retired WebUI boundary is invalid")
+
+    health_raw = _read(f"{BASE_URL}/api/health", maximum=MAX_JSON_BYTES)
+    health = json.loads(health_raw)
+    runtime = health.get("runtime") if isinstance(health, dict) else None
+    if (
+        not isinstance(runtime, dict)
+        or health.get("status") != "ok"
+        or runtime.get("name") not in {"echo-agent-runtime", "echo-agent-runtime"}
+        or runtime.get("version") != bundle.get("version")
+        or runtime.get("sourceId") != source.get("source_id")
+        or runtime.get("verifiedBundle") is not True
+    ):
+        raise RuntimeError("running Agent health identity differs from the verified image bundle")
+
+    # A native image is not boot-complete unless the exact Agent runtime can
+    # discover persisted interrupted work. This is deliberately read-only:
+    # boot reports recovery work but never takes over a lease or resumes a
+    # checkpoint without the device owner's two explicit confirmations.
+    recovery_raw = _read(
+        f"{BASE_URL}/api/task-runs/recovery-queue?limit=200",
+        maximum=MAX_JSON_BYTES,
+    )
+    recovery = json.loads(recovery_raw)
+    if not isinstance(recovery, dict) or recovery.get("schema") not in {
+        "echo.task_recovery_queue.v1",
+        "echo.task_recovery_queue.v1",
+    }:
+        raise RuntimeError("native Agent recovery queue response is incompatible")
+    count = recovery.get("count")
+    total = recovery.get("total")
+    limit = recovery.get("limit")
+    items = recovery.get("items")
+    if (
+        not isinstance(count, int)
+        or isinstance(count, bool)
+        or not isinstance(total, int)
+        or isinstance(total, bool)
+        or not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not isinstance(items, list)
+        or count < 0
+        or total < count
+        or limit != 200
+        or len(items) != count
+        or count > limit
+    ):
+        raise RuntimeError("native Agent recovery queue has invalid bounds")
+    for item in items:
+        if (
+            not isinstance(item, dict)
+            or not str(item.get("task_id") or "").strip()
+            or not str(item.get("recommended_action") or "").strip()
+        ):
+            raise RuntimeError("native Agent recovery queue contains an invalid item")
+    return str(source["source_id"]), count
+
+
+def main() -> int:
+    expected = _json_file(MANIFEST)
+    raw_timeout = os.environ.get("ECHO_AGENT_HEALTH_TIMEOUT_SECONDS", "120")
+    if not raw_timeout.isdigit() or not 1 <= int(raw_timeout) <= 600:
+        print("invalid ECHO_AGENT_HEALTH_TIMEOUT_SECONDS", file=sys.stderr)
+        return 2
+    deadline = time.monotonic() + int(raw_timeout)
+    last_error = "Agent did not answer"
+    while time.monotonic() < deadline:
+        try:
+            source_id, recovery_count = _verify_once(expected)
+            print(
+                f"ECHO_AGENT_READY source={source_id} endpoint={BASE_URL} recovery={recovery_count}"
+            )
+            return 0
+        except (OSError, ValueError, KeyError, RuntimeError, urllib.error.URLError) as error:
+            last_error = str(error)
+            time.sleep(1)
+    print(f"native Echo Agent failed its health gate: {last_error}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

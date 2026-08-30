@@ -14,7 +14,7 @@
 | 器官 | 状态 |
 |---|---|
 | **Cerebrum** · LLMPlanner + StaticPlanner · 2 层 Agent（persona 包 ArmPool） | ✅ |
-| **Ganglia** · GraphRuntime + resume · 断点续跑 | ✅ |
+| **Ganglia** · GraphRuntime + resume · 断点续跑 | ✅（注：GraphRuntime 已实装，独立 Ganglion 自治层 / 断联自治未实装）|
 | **Arms** · 6 preset agent（含 desktop_operator）· 细粒度 arm 7 种 | ✅ |
 | **Suckers** · 30+ skill：file/web/browser(×8)/git(×6)/computer(×6)/exec · 原子/子集两层权限 | ✅ |
 | **Hemolymph** · ContextComposer · 四桶配额 · 渐进披露 | ✅ |
@@ -40,7 +40,7 @@
 | **Invariants** · 139 条 + 10 条静态 lint + AppendOnlyList + **速查卡** | ✅ |
 | **UI/HTTP** · FastAPI app + `/api/health` · `/api/agents` · `/api/conversations` · `/api/groups` · `/api/channels` · `/api/cocoloop` · `/v1/chat/completions` | ✅ |
 | **3 个端到端 demo** · bugfix + reflection + evolution 证据链 | ✅ |
-| **文档站** · mkdocs material 配置 · `octopus-agent tour` 交互式 walkthrough | ✅ |
+| **文档站** · mkdocs material 配置 · `echo-agent tour` 交互式 walkthrough | ✅ |
 
 ### ✅ 2026-04 补齐清单 · 上次 roadmap 的"社区共创点"已全部落地
 
@@ -55,11 +55,11 @@
 | 7 | mkdocs + tour + 速查卡 | `mkdocs.yml` + `runtime/tour.py` + `invariants-cheatsheet.md` | `tests/test_tour.py` (4) |
 
 **接入点没破坏 · 老代码零 breakage。所有新能力走 opt-in soft-dep**：
-- `pip install 'octopus-agent[mantle-ssh]'` → paramiko
-- `pip install 'octopus-agent[mantle-k8s]'` → kubernetes CLI 已够 · 想用 Python client 加 `[mantle-k8s]`
-- `pip install 'octopus-agent[hearts-redis]'` / `[hearts-etcd]`
-- `pip install 'octopus-agent[skin]'` → watchdog（没装降级 polling · 仍能用）
-- `pip install 'octopus-agent[docs]'` → mkdocs material
+- `pip install 'echo-agent[mantle-ssh]'` → paramiko
+- `pip install 'echo-agent[mantle-k8s]'` → kubernetes CLI 已够 · 想用 Python client 加 `[mantle-k8s]`
+- `pip install 'echo-agent[hearts-redis]'` / `[hearts-etcd]`
+- `pip install 'echo-agent[skin]'` → watchdog（没装降级 polling · 仍能用）
+- `pip install 'echo-agent[docs]'` → mkdocs material
 
 ### 🤝 仍然留给社区的题目（下一波贡献点）
 
@@ -107,7 +107,7 @@
 **对应生物**：幼体长出第一条腕
 
 - [ ] `cerebrum/` MVP：把目标拆成 ArmTask 序列
-- [ ] `ganglia/` MVP：单 Ganglion 驱动 Arm 跑完整个 DAG
+- [ ] `ganglia/` MVP：单 Ganglion 驱动 Arm 跑完整个 DAG（未实装）
 - [ ] `arms/code_arm.py`：第一条腕（代码腕），带 5–10 个 Suckers
 - [ ] `genome/checkpoint/` 接入，断点续跑
 - [ ] `hemolymph/` v1：context packet 打包器
@@ -172,7 +172,7 @@
 **对应生物**：成年章鱼繁殖
 
 - [ ] SKILL Hub：社区 Sucker 市场，安全扫描
-- [ ] IM 集成（Feishu/Slack/Telegram）—— fork octopus 现成模块
+- [ ] IM 集成（Feishu/Slack/Telegram）—— fork echo 现成模块
 - [ ] 多租户：Mantle 隔离 + Genome 分片
 - [ ] 协议：MCP 已有 + 考虑 ACP / A2A
 - [ ] 文档站 + demo 视频
@@ -181,11 +181,11 @@
 
 ## 阶段 6 · 触手期 Tentacles / 跨端期 Cross-Device （2026-Q3 起，~3-4 月）
 
-> **Octopus Mobile · 让章鱼的触手真正"触达"Android 设备与桌面**
+> **Echo Mobile · 让章鱼的触手真正"触达"Android 设备与桌面**
 >
-> 详见 [docs/mobile/README.md](mobile/README.md) · [docs/adr/008-octopus-mobile.md](adr/008-octopus-mobile.md) · [docs/biomimetic/tentacle/README.md](biomimetic/tentacle/README.md)
+> 详见 [docs/mobile/README.md](mobile/README.md) · [docs/adr/008-echo-mobile.md](adr/008-echo-mobile.md) · [docs/biomimetic/tentacle/README.md](biomimetic/tentacle/README.md)
 
-**目标**：让 octopus-agent 能**真实操控** Android 手机 + 桌面电脑，并实现跨端混合编排
+**目标**：让 echo-agent 能**真实操控** Android 手机 + 桌面电脑，并实现跨端混合编排
 **对应生物**：章鱼伸出触手（章鱼能伸出腕外肢体抓住远处目标）
 
 ### Phase 0 · 概念验证（✅ 已完成 2026-06-06）
@@ -194,23 +194,23 @@
 - [x] `runtime/tentacle/` 触手器官代码骨架
 - [x] `mobile_operator_arm` + `mobile_browser_operator_arm` preset
 - [x] 核心 10 个 SKILL.md（tap/swipe/input_text/get_screen_info/...）
-- [x] Octopus Mobile RPC 客户端骨架（Kotlin）
+- [x] Echo Mobile RPC 客户端骨架（Kotlin）
 - [x] ADR-008 决策记录 + docs/mobile/ 完整文档
 
 ### Phase 1 · 设备注册 + 简单工具（2 周）
 
-- [ ] Octopus Mobile 端 `OctopusMobileClient` WebSocket 客户端接通
+- [ ] Echo Mobile 端 `EchoMobileClient` WebSocket 客户端接通
 - [ ] `device/hello` 协议握手 + `device/heartbeat` 30s/次
 - [ ] `tool/execute` 通路：tap / swipe / input_text / open_app
 - [ ] 设备池 `TentaclePool` 上线，Cerebrum 可见"我的手机已连接"
-- [ ] 端到端：用户说"打开微信"，Runtime 派发到手机，Octopus Mobile 真机执行
+- [ ] 端到端：用户说"打开微信"，Runtime 派发到手机，Echo Mobile 真机执行
 
 ### Phase 2 · 30 技能完整接入（3 周）
 
-- [ ] 补全剩余 20 个 SKILL.md（与 Octopus Mobile BaseTool 一一对应）
+- [ ] 补全剩余 20 个 SKILL.md（与 Echo Mobile BaseTool 一一对应）
 - [ ] 工具调用双轨：本地 LLM 模式 + RPC 模式
 - [ ] Cerebrum 加 `mobile_operator_arm` 调度
-- [ ] 工具执行 token 优化（参考 Octopus Mobile 三级压缩）
+- [ ] 工具执行 token 优化（参考 Echo Mobile 三级压缩）
 
 ### Phase 3 · 双写配置 + 离线降级（2 周）
 
@@ -238,7 +238,7 @@
 - [ ] Regeneration 收集 mobile_operator_arm 轨迹
 - [ ] 夜间锻造"专用 Android 技能"（如 android_taobao_add_to_cart_v1）
 - [ ] `skill/install` 远程下发协议
-- [ ] Octopus Mobile 热加载新技能，无需更新 APK
+- [ ] Echo Mobile 热加载新技能，无需更新 APK
 
 ### Phase 7 · 浏览器内核集成（远期 4 周）
 
@@ -256,9 +256,9 @@
 ### 关键不变量（受 [invariants.md](invariants.md) 约束）
 
 - INV-T1：所有 touch 操作必须经过 Safety / Approval Gate（关键操作）
-- INV-T2：Octopus Mobile 自身的安全规则 10 条必须保留（prompt 层兜底）
-- INV-T3：设备锁（device/lock）由 Runtime 统一管理，Octopus Mobile 端只执行
-- INV-T4：本地模式（LOCAL_ONLY）跟现有 Octopus Mobile **完全一致**，无体验降级
+- INV-T2：Echo Mobile 自身的安全规则 10 条必须保留（prompt 层兜底）
+- INV-T3：设备锁（device/lock）由 Runtime 统一管理，Echo Mobile 端只执行
+- INV-T4：本地模式（LOCAL_ONLY）跟现有 Echo Mobile **完全一致**，无体验降级
 
 ### 验收标准
 
@@ -287,7 +287,7 @@
 | 风险 | 对应器官 | 护栏 |
 |---|---|---|
 | 腕失控疯狂烧钱 | Ink | per-task 预算硬顶，超限即停 |
-| 单点中枢挂掉 | Hearts | 3 心脏 HA + Ganglion 断联自治 |
+| 单点中枢挂掉 | Hearts | 3 心脏 HA + Ganglion 断联自治（未实装）|
 | 反思反而贵 | Regeneration | 全走 Batch API，夜间跑 |
 | 腕之间抢资源 | Chromatophores | 状态广播 + Cerebrum 仲裁 |
 | 技能爆炸污染上下文 | Suckers | Progressive disclosure，按 affinity 只挂相关子集 |
@@ -298,5 +298,5 @@
 
 - 不自研 LLM 推理框架 —— 直接用 Provider API
 - 不做通用低代码平台 —— 聚焦 agent 运行时
-- 不做可视化编辑器 —— fork octopus 的 xflow 够用
+- 不做可视化编辑器 —— fork echo 的 xflow 够用
 - 不兼容非 MCP 的老 Function Call 生态 —— MCP first

@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.memory.diagnostics.trace_store import AgentTraceStore
 from runtime.sensing.gateway.agent_trace_router import create_agent_trace_router
 
@@ -98,7 +97,7 @@ def _client_with_trace(tmp_path: Path) -> TestClient:
         reason="safe read",
         metadata={
             "trust_gateway": {
-                "schema": "octopus.trust_decision.v1",
+                "schema": "echo.trust_decision.v1",
                 "source": "risk_policy",
                 "action": "allow",
                 "risk": {
@@ -220,19 +219,13 @@ def test_trace_task_run_review_endpoint_exposes_replay_and_candidates(
 
     assert response.status_code == 200
     review = response.json()["review"]
-    assert review["schema"] == "octopus.task_run_review.v1"
+    assert review["schema"] == "echo.task_run_review.v1"
     assert review["task_id"] == "turn-1"
     assert review["status"] == "completed"
     assert review["replay"]["replayable"] is True
     assert review["summary"]["tool_calls_started"] == 1
-    assert any(
-        finding["type"] == "success_pattern"
-        for finding in review["findings"]
-    )
-    assert any(
-        item["kind"] == "success_pattern"
-        for item in review["learning_candidates"]
-    )
+    assert any(finding["type"] == "success_pattern" for finding in review["findings"])
+    assert any(item["kind"] == "success_pattern" for item in review["learning_candidates"])
     assert missing.status_code == 404
 
 
@@ -247,6 +240,7 @@ def test_trace_task_run_review_can_commit_to_experience_ledger(
     # (== "now") fall inside the half-open [week_start, week_start+7)
     # window regardless of which day of the week the test runs.
     from datetime import UTC, datetime
+
     today_iso = datetime.now(UTC).date().isoformat()
     summary = client.get(
         "/api/agent-trace/experience-ledger/weekly-summary",
@@ -372,7 +366,7 @@ def test_trace_task_run_process_timeline_merges_review_and_ledger(
 
     assert response.status_code == 200
     timeline = response.json()["timeline"]
-    assert timeline["schema"] == "octopus.process_timeline.v1"
+    assert timeline["schema"] == "echo.process_timeline.v1"
     assert timeline["task_id"] == "turn-1"
     assert timeline["overview"]["status"] == "completed"
     assert timeline["overview"]["approval_count"] == 1
@@ -470,7 +464,7 @@ def test_create_app_mounts_agent_trace_router(
 ) -> None:
     from runtime.platform.ui import create_app
 
-    monkeypatch.setenv("OCTOPUS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path / "data"))
     app = create_app(journal_path=tmp_path / "data" / "events.jsonl")
     client = TestClient(app)
 

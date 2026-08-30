@@ -1,0 +1,15 @@
+[Unit]
+Description=Require a healthy KWin and Echo Desktop before blessing this boot
+Documentation=file:/usr/lib/echo-os/image-contract
+Requires=echo-desktop.service echo-agent-health.service
+After=echo-desktop.service echo-agent-health.service
+Before=boot-complete.target
+ConditionCredential=echo.os.ci-session
+
+[Service]
+Type=oneshot
+Environment=ECHO_DESKTOP_READY_FILE=/run/echo-os/desktop-ready
+ExecStart=/usr/lib/echo-os/verify-desktop-boot.sh
+
+[Install]
+RequiredBy=boot-complete.target

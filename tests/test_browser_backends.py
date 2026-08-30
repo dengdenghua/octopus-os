@@ -6,6 +6,9 @@ Playwright install, or a connected extension. Live end-to-end behaviour
 needs those runtimes and is out of scope.
 """
 
+import json
+
+from runtime.execution.suckers import browser_backends
 from runtime.execution.suckers.browser_backend import (
     BrowserBackend,
     Track,
@@ -16,6 +19,21 @@ from runtime.execution.suckers.browser_backends import (
     ExtensionBackend,
     PlaywrightBackend,
 )
+from runtime.platform.process.session import Session, session_scope
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class _Recorder:
@@ -43,8 +61,17 @@ class TestElectronBackend:
         b.scroll(delta_y=120)
         b.wait("#done", timeout_ms=5000)
         b.extract()
+        b.screenshot()
         actions = [a for a, _ in rec.calls]
-        assert actions == ["navigate", "click", "type", "scroll", "wait", "extract"]
+        assert actions == [
+            "navigate",
+            "click",
+            "type",
+            "scroll",
+            "wait",
+            "extract",
+            "screenshot",
+        ]
         # Payload shape per track contract.
         assert rec.calls[1][1] == {"selector": "#go"}
         assert rec.calls[2][1] == {"selector": "#q", "text": "hi", "clear": True}
@@ -61,6 +88,19 @@ class TestElectronBackend:
     def test_available_probe(self):
         assert ElectronBackend(_Recorder(), available_probe=lambda: False).available() is False
         assert ElectronBackend(_Recorder(), available_probe=lambda: True).available() is True
+
+    def test_default_availability_requires_live_bridge(self, monkeypatch):
+        from runtime.execution.suckers import browser_act_skills
+
+        monkeypatch.setattr(browser_act_skills, "_bridge_status", lambda: None)
+        assert ElectronBackend().available() is False
+
+        monkeypatch.setattr(
+            browser_act_skills,
+            "_bridge_status",
+            lambda: {"ok": True, "browser_ready": True},
+        )
+        assert ElectronBackend().available() is True
 
 
 class TestPlaywrightBackend:
@@ -105,12 +145,135 @@ class TestPlaywrightBackend:
 
 
 class TestExtensionBackend:
-    def test_unwired_reports_unavailable(self):
+    def test_relay_request_uses_configured_gateway_token_without_echoing_it(self, monkeypatch):
+        seen = {}
+        token = "sk-internal-browser-relay"
+        monkeypatch.setenv("ECHO_BROWSER_RELAY_TOKEN", token)
+
+        def fake_urlopen(request, timeout):
+            seen["authorization"] = request.get_header("Authorization")
+            seen["timeout"] = timeout
+            return _FakeResponse({"connected": True})
+
+        monkeypatch.setattr(browser_backends.urllib_request, "urlopen", fake_urlopen)
+
+        result = browser_backends._browser_relay_request("GET", "/status")
+
+        assert seen == {
+            "authorization": f"Bearer {token}",
+            "timeout": browser_backends._BROWSER_RELAY_TIMEOUT_SECONDS,
+        }
+        assert result["connected"] is True
+        assert result["browser_relay"]["auth_configured"] is True
+        assert result["browser_relay"]["auth_configured_by"] == ("ECHO_BROWSER_RELAY_TOKEN")
+        assert token not in str(result)
+
+    def test_disconnected_default_relay_reports_unavailable(self, monkeypatch):
+        def fake_request(method, path, body=None, *, timeout_seconds=10):
+            assert method == "GET"
+            assert path == "/status"
+            return {
+                "connected": False,
+                "browser_relay": {"schema": "echo.browser_relay_bridge.v1"},
+            }
+
+        monkeypatch.setattr(
+            "runtime.execution.suckers.browser_backends._browser_relay_request",
+            fake_request,
+        )
+
         b = ExtensionBackend()
         assert b.available() is False
-        r = b.click("#x")
-        assert r.ok is False
-        assert "not wired" in (r.error or "")
+
+    def test_default_relay_transport_maps_actions(self, monkeypatch):
+        calls = []
+
+        def fake_request(method, path, body=None, *, timeout_seconds=10):
+            calls.append((method, path, body, timeout_seconds))
+            if path == "/status":
+                return {"connected": True}
+            return {"ok": True, "url": "https://x"}
+
+        monkeypatch.setattr(
+            "runtime.execution.suckers.browser_backends._browser_relay_request",
+            fake_request,
+        )
+
+        b = ExtensionBackend()
+        assert b.available() is True
+        result = b.navigate("https://x")
+
+        assert result.ok is True
+        assert result.track is Track.EXTENSION
+        assert calls == [
+            ("GET", "/status", None, 2),
+            ("POST", "/command", {"action": "navigate", "url": "https://x"}, 10),
+        ]
+
+    def test_default_relay_transport_keeps_wait_deadlines_aligned(self, monkeypatch):
+        calls = []
+
+        def fake_request(method, path, body=None, *, timeout_seconds=10):
+            calls.append((method, path, body, timeout_seconds))
+            return {"ok": True}
+
+        monkeypatch.setattr(
+            "runtime.execution.suckers.browser_backends._browser_relay_request",
+            fake_request,
+        )
+
+        result = ExtensionBackend().wait("#ready", timeout_ms=10_000)
+
+        assert result.ok is True
+        assert calls == [
+            (
+                "POST",
+                "/command",
+                {
+                    "action": "wait",
+                    "selector": "#ready",
+                    "timeout": 10_000,
+                    "timeout_seconds": 11.0,
+                },
+                13.0,
+            )
+        ]
+
+    def test_default_relay_transport_honors_selected_tab(self, monkeypatch):
+        calls = []
+
+        def fake_request(method, path, body=None, *, timeout_seconds=10):
+            calls.append((method, path, body, timeout_seconds))
+            return {"ok": True}
+
+        monkeypatch.setattr(
+            "runtime.execution.suckers.browser_backends._browser_relay_request",
+            fake_request,
+        )
+
+        with session_scope(
+            Session(
+                metadata={
+                    "automation_target": {
+                        "kind": "browser_tab",
+                        "source": "browser_relay",
+                        "id": "73",
+                        "url": "https://selected.example/path",
+                        "title": "Selected tab",
+                    }
+                }
+            )
+        ):
+            result = ExtensionBackend().click("#confirm")
+
+        assert result.ok is True
+        assert calls[0][2] == {
+            "action": "click",
+            "selector": "#confirm",
+            "target_tab_id": "73",
+            "target_tab_url": "https://selected.example/path",
+            "target_tab_title": "Selected tab",
+        }
 
     def test_wired_transport_maps_actions(self):
         rec = _Recorder({"ok": True})
@@ -118,7 +281,8 @@ class TestExtensionBackend:
         assert b.available() is True
         b.navigate("https://x")
         b.type("#q", "hi")
-        assert [a for a, _ in rec.calls] == ["navigate", "type"]
+        b.screenshot()
+        assert [a for a, _ in rec.calls] == ["navigate", "type", "screenshot"]
 
 
 class TestResolverWithRealAdapters:
@@ -134,3 +298,4 @@ class TestResolverWithRealAdapters:
         play = PlaywrightBackend(_Recorder(), available_probe=lambda: True)
         chosen = resolve_backend([ext, electron, play])
         assert chosen is play
+

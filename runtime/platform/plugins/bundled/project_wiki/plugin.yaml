@@ -1,0 +1,21 @@
+name: project_wiki
+version: 1.0.0
+description: Unified project Wiki generation and storage contract
+author: Echo
+tags:
+  - knowledge
+  - wiki
+  - project
+provides:
+  - project_wiki.api
+config:
+  schema_version: echo.project-wiki.manifest.v1
+  generator_version: structural-v1
+  output_dir: .echo-wiki
+  autosync_default: false
+config_schema:
+  type: object
+  properties:
+    autosync_default:
+      type: boolean
+      title: Auto-sync new project Wikis

@@ -17,6 +17,7 @@ Contract pinned
 6. Unknown override values silently dropped (can't typo-weaken)
 7. Overrides don't affect clean messages (no-op)
 """
+
 from __future__ import annotations
 
 import pytest
@@ -28,6 +29,7 @@ def _reset():
         reset_profile_for_tests,
         set_judge,
     )
+
     reset_profile_for_tests()
     set_judge(None)
     yield
@@ -45,6 +47,7 @@ class _StubAgent:
 
 def _session_with_agent(overrides):
     from runtime.platform.process.session import Session
+
     return Session(
         actor="u",
         agent=_StubAgent(overrides),
@@ -63,8 +66,10 @@ class TestPIIJournal:
 
     def test_journal_override_allows_unchanged(self):
         from runtime.safety.validation import check_outbound
+
         v = check_outbound(
-            self.MSG, "channels:x:y",
+            self.MSG,
+            "channels:x:y",
             overrides={"PRIV-2": "journal"},
         )
         assert v.action == "allow"
@@ -75,6 +80,7 @@ class TestPIIJournal:
 
     def test_agent_level_override_honored(self):
         from runtime.safety.validation import check_outbound
+
         sess = _session_with_agent({"PRIV-2": "journal"})
         v = check_outbound(self.MSG, "channels:x:y", session=sess)
         assert v.action == "allow"
@@ -83,10 +89,12 @@ class TestPIIJournal:
     def test_explicit_overrides_merge_with_agent(self):
         """Per-call kwarg wins on same clause · supplements on new ones."""
         from runtime.safety.validation import check_outbound
+
         sess = _session_with_agent({"PRIV-2": "journal"})
         # Caller flips PRIV-2 to block · overrides session's journal
         v = check_outbound(
-            self.MSG, "channels:x:y",
+            self.MSG,
+            "channels:x:y",
             session=sess,
             overrides={"PRIV-2": "block"},
         )
@@ -101,6 +109,7 @@ class TestPIIJournal:
 class TestPIIBlockUpgrade:
     def test_block_override_forces_block(self):
         from runtime.safety.validation import check_outbound
+
         v = check_outbound(
             "call me at user@example.com now",
             "channels:x:y",
@@ -112,6 +121,7 @@ class TestPIIBlockUpgrade:
     def test_block_override_beats_lax_profile(self):
         """Lax profile would allow+audit · block override upgrades."""
         from runtime.safety.validation import check_outbound, set_profile
+
         set_profile("lax")
         v = check_outbound(
             "email user@example.com",
@@ -131,6 +141,7 @@ class TestSecretHardFloor:
         import logging
 
         from runtime.safety.validation import check_outbound
+
         caplog.set_level(logging.WARNING)
 
         v = check_outbound(
@@ -139,10 +150,7 @@ class TestSecretHardFloor:
             overrides={"PRIV-4": "journal"},
         )
         assert v.action == "block"
-        assert any(
-            "IGNORED" in r.message and "secret" in r.message
-            for r in caplog.records
-        )
+        assert any("IGNORED" in r.message and "secret" in r.message for r in caplog.records)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -154,6 +162,7 @@ class TestMixedClauses:
     def test_unknown_override_value_dropped(self):
         """Typo-like values ({"PRIV-2": "ignore"}) must not sneak through."""
         from runtime.safety.validation import check_outbound
+
         v = check_outbound(
             "email user@example.com",
             "channels:x:y",
@@ -171,6 +180,7 @@ class TestMixedClauses:
 class TestNoOp:
     def test_clean_message_unaffected_by_override(self):
         from runtime.safety.validation import check_outbound
+
         v = check_outbound(
             "nothing sensitive here at all",
             "channels:x:y",

@@ -25,8 +25,8 @@ class _FakeResponse:
     def __init__(self, status_code: int, payload: Any = None, text: str = ""):
         self.status_code = status_code
         self._payload = payload
-        self.text = text if text else (
-            __import__("json").dumps(payload) if payload is not None else ""
+        self.text = (
+            text if text else (__import__("json").dumps(payload) if payload is not None else "")
         )
 
     def json(self):
@@ -123,7 +123,9 @@ class TestRequestShape:
         )
 
         payload = fake.calls[0]["json"]
-        assert payload["reasoning_effort"] == "xhigh"
+        # Chat Completions accepts up to ``high``; Echo's xhigh tier is
+        # normalized at the provider boundary instead of sending an invalid value.
+        assert payload["reasoning_effort"] == "high"
         assert payload["thinking"] == {"type": "enabled"}
 
     def test_extra_headers_merged(self):
@@ -155,9 +157,12 @@ class TestRequestShape:
 
 class TestResponseParsing:
     def test_extracts_content_and_cost(self):
-        fake = _FakeClient(response=_FakeResponse(
-            200, _openai_response(text="hi back", prompt_tokens=100, completion_tokens=50),
-        ))
+        fake = _FakeClient(
+            response=_FakeResponse(
+                200,
+                _openai_response(text="hi back", prompt_tokens=100, completion_tokens=50),
+            )
+        )
         r = OpenAIModelRouter(base_url="http://x/v1", client=fake)
         resp = r.call(_req())
 
@@ -233,11 +238,15 @@ class TestResponseParsing:
 
 class TestPricing:
     def test_per_model_pricing_overrides_default(self):
-        fake = _FakeClient(response=_FakeResponse(
-            200, _openai_response(prompt_tokens=1000, completion_tokens=500),
-        ))
+        fake = _FakeClient(
+            response=_FakeResponse(
+                200,
+                _openai_response(prompt_tokens=1000, completion_tokens=500),
+            )
+        )
         r = OpenAIModelRouter(
-            base_url="http://x/v1", client=fake,
+            base_url="http://x/v1",
+            client=fake,
             pricing_per_1k={"gpt-4o-mini": (0.15, 0.60)},  # USD / 1k tokens
         )
         resp = r.call(_req())
@@ -245,11 +254,15 @@ class TestPricing:
         assert abs(resp.cost.usd - 0.45) < 1e-9
 
     def test_unknown_model_falls_to_default_rate(self):
-        fake = _FakeClient(response=_FakeResponse(
-            200, _openai_response(prompt_tokens=100, completion_tokens=50),
-        ))
+        fake = _FakeClient(
+            response=_FakeResponse(
+                200,
+                _openai_response(prompt_tokens=100, completion_tokens=50),
+            )
+        )
         r = OpenAIModelRouter(
-            base_url="http://x/v1", client=fake,
+            base_url="http://x/v1",
+            client=fake,
             pricing_per_1k={"other-model": (1.0, 2.0)},  # Implementation note.
         )
         resp = r.call(_req())
@@ -277,13 +290,18 @@ class TestErrors:
             r.call(_req())
 
     def test_http_402_balance_error_is_user_readable(self):
-        fake = _FakeClient(response=_FakeResponse(402, {
-            "error": {
-                "code": "402",
-                "message": "Insufficient account balance",
-                "type": "insufficient_balance",
-            }
-        }))
+        fake = _FakeClient(
+            response=_FakeResponse(
+                402,
+                {
+                    "error": {
+                        "code": "402",
+                        "message": "Insufficient account balance",
+                        "type": "insufficient_balance",
+                    }
+                },
+            )
+        )
         r = OpenAIModelRouter(base_url="http://x/v1", client=fake)
         with pytest.raises(OpenAIRouterError) as exc:
             r.call(_req())
@@ -340,7 +358,9 @@ class TestAuthFromEnv:
         monkeypatch.setenv("OPENAI_API_KEY", "env-key")
         fake = _FakeClient(response=_FakeResponse(200, _openai_response()))
         r = OpenAIModelRouter(
-            base_url="http://x/v1", api_key="explicit-key", client=fake,
+            base_url="http://x/v1",
+            api_key="explicit-key",
+            client=fake,
         )
         r.call(_req())
         assert fake.calls[0]["headers"]["Authorization"] == "Bearer explicit-key"
@@ -362,10 +382,12 @@ class TestMultiRouterIntegration:
         )
         mm = MultiModelRouter(primary=primary)
         # Implementation note.
-        mm.call(ModelRequest(
-            model="caller-specified",
-            messages=[Message(role="user", content="hi")],
-        ))
+        mm.call(
+            ModelRequest(
+                model="caller-specified",
+                messages=[Message(role="user", content="hi")],
+            )
+        )
         assert fake.calls[0]["json"]["model"] == "llama3.2:3b"
 
     def test_as_fallback_in_multi(self):
@@ -378,11 +400,16 @@ class TestMultiRouterIntegration:
 
         fake = _FakeClient(response=_FakeResponse(200, _openai_response("via-fallback")))
         openai = OpenAIModelRouter(
-            base_url="http://x/v1", default_model="gpt-4o-mini", client=fake,
+            base_url="http://x/v1",
+            default_model="gpt-4o-mini",
+            client=fake,
         )
         mm = MultiModelRouter(primary=_Bad(), fallbacks=[openai])
-        resp = mm.call(ModelRequest(
-            model="any", messages=[Message(role="user", content="hi")],
-        ))
+        resp = mm.call(
+            ModelRequest(
+                model="any",
+                messages=[Message(role="user", content="hi")],
+            )
+        )
         assert resp.text == "via-fallback"
         assert mm.dispatch_log[-1].final_role == "fallback[0]"

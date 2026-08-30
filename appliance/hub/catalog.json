@@ -1,0 +1,1742 @@
+{
+  "schema": "echo.hub.catalog.v1",
+  "version": "2026.08.29-preview.12",
+  "publisher": {
+    "id": "echo-os",
+    "name": "Echo OS"
+  },
+  "apps": [
+    {
+      "id": "immich",
+      "name": "Immich",
+      "nameZh": "智能相册",
+      "version": "3.1.0",
+      "summary": "照片与视频备份、时间线、人物和语义检索的家庭媒体入口。",
+      "category": "photos",
+      "icon": "photos",
+      "sourceUrl": "https://immich.app/",
+      "featured": true,
+      "imageStorage": {
+        "schema": "echo.hub.image-storage.v1",
+        "architectures": {
+          "amd64": {
+            "downloadBytes": 1498798006,
+            "blobCount": 64
+          },
+          "arm64": {
+            "downloadBytes": 1138234978,
+            "blobCount": 64
+          }
+        }
+      },
+      "package": null,
+      "bundle": {
+        "schema": "echo.hub.bundle-package.v1",
+        "architectures": [
+          "amd64",
+          "arm64"
+        ],
+        "publicService": "server",
+        "networks": [
+          {
+            "name": "frontend",
+            "internal": false
+          },
+          {
+            "name": "backend",
+            "internal": true
+          }
+        ],
+        "volumes": [
+          {
+            "name": "library",
+            "source": "nas-data",
+            "relativePath": "photos/immich",
+            "retention": "retain",
+            "snapshotOnUpdate": false
+          },
+          {
+            "name": "database",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          },
+          {
+            "name": "model-cache",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          }
+        ],
+        "secrets": [
+          {
+            "name": "database-password",
+            "generation": "random-alphanumeric",
+            "bytes": 32,
+            "revealOnce": false
+          }
+        ],
+        "services": [
+          {
+            "id": "cache",
+            "role": "cache",
+            "version": "9",
+            "image": "docker.io/valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [],
+            "secrets": [],
+            "secretEnvironment": {},
+            "environment": {},
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "valkey-cli",
+                "ping"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 10,
+              "startPeriodSeconds": 10
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 256,
+              "pids": 256,
+              "shmSizeMiB": 64,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "database",
+            "role": "database",
+            "version": "14",
+            "image": "ghcr.io/immich-app/postgres@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [
+              {
+                "volume": "database",
+                "target": "/var/lib/postgresql/data",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "database-password",
+                "target": "/run/secrets/database-password"
+              }
+            ],
+            "secretEnvironment": {},
+            "environment": {
+              "DB_DATABASE_NAME": "immich",
+              "DB_PASSWORD_FILE": "/run/secrets/database-password",
+              "DB_USERNAME": "postgres",
+              "POSTGRES_INITDB_ARGS": "--data-checksums"
+            },
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "/usr/local/bin/healthcheck.sh"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 10,
+              "retries": 20,
+              "startPeriodSeconds": 300
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 1024,
+              "pids": 512,
+              "shmSizeMiB": 128,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "machine-learning",
+            "role": "worker",
+            "version": "3.1.0",
+            "image": "ghcr.io/immich-app/immich-machine-learning@sha256:5a0839dc5303cd7215bcd2180a26aed3af41675aefb3e75e5157e9f10ad16e6e",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [
+              {
+                "volume": "model-cache",
+                "target": "/cache",
+                "readOnly": false
+              }
+            ],
+            "secrets": [],
+            "secretEnvironment": {},
+            "environment": {},
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "python3",
+                "healthcheck.py"
+              ],
+              "intervalSeconds": 15,
+              "timeoutSeconds": 10,
+              "retries": 20,
+              "startPeriodSeconds": 180
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 3072,
+              "pids": 512,
+              "shmSizeMiB": 256,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "server",
+            "role": "app",
+            "version": "3.1.0",
+            "image": "ghcr.io/immich-app/immich-server@sha256:b434cb9287eea1471c9974845914d4dd328c9c2d652e446ed4930f99944f0ceb",
+            "dependsOn": [
+              "cache",
+              "database",
+              "machine-learning"
+            ],
+            "networks": [
+              "frontend",
+              "backend"
+            ],
+            "ports": [
+              {
+                "container": 2283,
+                "host": 2283,
+                "protocol": "tcp"
+              }
+            ],
+            "mounts": [
+              {
+                "volume": "library",
+                "target": "/data",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "database-password",
+                "target": "/run/secrets/database-password"
+              }
+            ],
+            "secretEnvironment": {
+              "DB_PASSWORD": "database-password"
+            },
+            "environment": {
+              "DB_DATABASE_NAME": "immich",
+              "DB_HOSTNAME": "database",
+              "DB_USERNAME": "postgres",
+              "IMMICH_MACHINE_LEARNING_URL": "http://machine-learning:3003",
+              "REDIS_HOSTNAME": "cache"
+            },
+            "entrypoint": [
+              "tini",
+              "--",
+              "/bin/bash",
+              "-c"
+            ],
+            "command": [
+              "start.sh"
+            ],
+            "healthcheck": {
+              "command": [
+                "immich-healthcheck"
+              ],
+              "intervalSeconds": 15,
+              "timeoutSeconds": 10,
+              "retries": 20,
+              "startPeriodSeconds": 180
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 2048,
+              "pids": 768,
+              "shmSizeMiB": 256,
+              "readOnlyRootfs": false
+            }
+          }
+        ],
+        "upgradePolicy": {
+          "applicationVersion": "3.1.0",
+          "maxMajorStep": 1,
+          "snapshotVolumes": [
+            "database",
+            "model-cache"
+          ],
+          "serviceOrder": [
+            "cache",
+            "database",
+            "machine-learning",
+            "server"
+          ]
+        }
+      },
+      "integrationStatus": "available",
+      "integrationNote": "四服务安装、NAS 照片专属目录、密钥注入、联合更新回滚和保留数据卸载已接入。"
+    },
+    {
+      "id": "jellyfin",
+      "name": "Jellyfin",
+      "nameZh": "家庭影视",
+      "version": "10.11.11",
+      "summary": "管理家庭电影、剧集和音乐，并向电视、手机和浏览器播放。",
+      "category": "media",
+      "icon": "media",
+      "sourceUrl": "https://jellyfin.org/",
+      "featured": true,
+      "imageStorage": {
+        "schema": "echo.hub.image-storage.v1",
+        "architectures": {
+          "amd64": {
+            "downloadBytes": 689739878,
+            "blobCount": 11
+          },
+          "arm64": {
+            "downloadBytes": 404408173,
+            "blobCount": 11
+          }
+        }
+      },
+      "package": {
+        "schema": "echo.hub.docker-package.v1",
+        "image": "docker.io/jellyfin/jellyfin@sha256:aefb67e6a7ff1debdd154a78a7bbb780fd0c873d8639210a7f6a2016ad2b35db",
+        "architectures": [
+          "amd64",
+          "arm64"
+        ],
+        "ports": [
+          {
+            "container": 8096,
+            "host": 8096,
+            "protocol": "tcp"
+          }
+        ],
+        "volumes": [
+          {
+            "source": "app-data",
+            "name": "config",
+            "target": "/config",
+            "readOnly": false
+          },
+          {
+            "source": "app-data",
+            "name": "cache",
+            "target": "/cache",
+            "readOnly": false
+          },
+          {
+            "source": "nas-root",
+            "name": "media",
+            "target": "/media",
+            "readOnly": true
+          }
+        ],
+        "environment": {
+          "TZ": "system"
+        },
+        "runtime": {
+          "memoryMiB": 3072,
+          "pids": 512,
+          "shmSizeMiB": 256,
+          "readOnlyRootfs": false
+        }
+      },
+      "integrationStatus": "available",
+      "integrationNote": "固定 Jellyfin 10.11.11 多架构镜像；配置与缓存独立持久化，NAS 媒体默认只读挂载。"
+    },
+    {
+      "id": "navidrome",
+      "name": "Navidrome",
+      "nameZh": "家庭音乐",
+      "version": "0.63.2",
+      "summary": "扫描 NAS 中的音乐，在浏览器和兼容播放器中建立家庭音乐库。",
+      "category": "media",
+      "icon": "media",
+      "sourceUrl": "https://www.navidrome.org/",
+      "featured": true,
+      "imageStorage": {
+        "schema": "echo.hub.image-storage.v1",
+        "architectures": {
+          "amd64": {
+            "downloadBytes": 89930806,
+            "blobCount": 6
+          },
+          "arm64": {
+            "downloadBytes": 87587539,
+            "blobCount": 6
+          }
+        }
+      },
+      "package": {
+        "schema": "echo.hub.docker-package.v1",
+        "image": "docker.io/deluan/navidrome@sha256:9012939114fbb1bb641b81cf96dec5ded15f0aafefe8d47a511d7cb919658e40",
+        "architectures": [
+          "amd64",
+          "arm64"
+        ],
+        "ports": [
+          {
+            "container": 4533,
+            "host": 4533,
+            "protocol": "tcp"
+          }
+        ],
+        "volumes": [
+          {
+            "source": "app-data",
+            "name": "data",
+            "target": "/data",
+            "readOnly": false
+          },
+          {
+            "source": "nas-root",
+            "name": "music",
+            "target": "/music",
+            "readOnly": true
+          }
+        ],
+        "environment": {
+          "TZ": "system"
+        },
+        "runtime": {
+          "memoryMiB": 1024,
+          "pids": 256,
+          "shmSizeMiB": 64,
+          "readOnlyRootfs": false
+        }
+      },
+      "integrationStatus": "available",
+      "integrationNote": "固定 Navidrome 0.63.2 多架构镜像；数据库与缓存独立持久化，NAS 音乐默认只读挂载。"
+    },
+    {
+      "id": "syncthing",
+      "name": "Syncthing",
+      "nameZh": "多端同步",
+      "version": "2.1.3",
+      "summary": "在可信设备之间持续同步文件，不把原始内容交给中心云盘。",
+      "category": "sync",
+      "icon": "sync",
+      "sourceUrl": "https://syncthing.net/",
+      "featured": true,
+      "imageStorage": {
+        "schema": "echo.hub.image-storage.v1",
+        "architectures": {
+          "amd64": {
+            "downloadBytes": 18682628,
+            "blobCount": 6
+          },
+          "arm64": {
+            "downloadBytes": 18194379,
+            "blobCount": 6
+          }
+        }
+      },
+      "package": null,
+      "bundle": {
+        "schema": "echo.hub.bundle-package.v1",
+        "architectures": [
+          "amd64",
+          "arm64"
+        ],
+        "publicService": "app",
+        "providers": [
+          "lan-discovery"
+        ],
+        "networks": [
+          {
+            "name": "frontend",
+            "internal": false
+          }
+        ],
+        "volumes": [
+          {
+            "name": "config",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          },
+          {
+            "name": "sync",
+            "source": "nas-data",
+            "relativePath": "sync/syncthing",
+            "retention": "retain",
+            "snapshotOnUpdate": false
+          }
+        ],
+        "secrets": [
+          {
+            "name": "admin-password",
+            "generation": "random-alphanumeric",
+            "bytes": 24,
+            "revealOnce": true
+          }
+        ],
+        "services": [
+          {
+            "id": "app",
+            "role": "app",
+            "version": "2.1.3",
+            "image": "docker.io/syncthing/syncthing@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0",
+            "dependsOn": [],
+            "networks": [
+              "frontend"
+            ],
+            "ports": [
+              {
+                "container": 8384,
+                "host": 3007,
+                "protocol": "tcp"
+              },
+              {
+                "container": 22000,
+                "host": 22000,
+                "protocol": "tcp"
+              },
+              {
+                "container": 22000,
+                "host": 22000,
+                "protocol": "udp"
+              }
+            ],
+            "mounts": [
+              {
+                "volume": "config",
+                "target": "/var/syncthing",
+                "readOnly": false
+              },
+              {
+                "volume": "sync",
+                "target": "/data",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "admin-password",
+                "target": "/run/secrets/admin-password"
+              }
+            ],
+            "secretEnvironment": {
+              "ST_GUI_PASSWORD": "admin-password"
+            },
+            "environment": {
+              "PGID": "system",
+              "PUID": "system",
+              "STGUIADDRESS": "0.0.0.0:8384",
+              "STNOUPGRADE": "1",
+              "STNOPORTPROBING": "1",
+              "TZ": "system"
+            },
+            "entrypoint": [
+              "/bin/sh",
+              "-c"
+            ],
+            "command": [
+              "if [ ! -f /var/syncthing/config/config.xml ]; then printf '%s\\n' \"$ST_GUI_PASSWORD\" | /bin/entrypoint.sh /bin/syncthing generate --gui-user admin --gui-password - --no-port-probing; fi\nunset ST_GUI_PASSWORD\nexec /bin/entrypoint.sh /bin/syncthing serve --no-browser --no-upgrade --no-port-probing"
+            ],
+            "healthcheck": {
+              "command": [
+                "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "http://127.0.0.1:8384/rest/noauth/health"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 12,
+              "startPeriodSeconds": 30
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 1024,
+              "pids": 512,
+              "shmSizeMiB": 64,
+              "readOnlyRootfs": false
+            }
+          }
+        ],
+        "upgradePolicy": {
+          "applicationVersion": "2.1.3",
+          "maxMajorStep": 1,
+          "snapshotVolumes": [
+            "config"
+          ],
+          "serviceOrder": [
+            "app"
+          ]
+        }
+      },
+      "integrationStatus": "available",
+      "integrationNote": "固定 Syncthing 2.1.3 官方多架构镜像；设备身份与 GUI 密码持久保留，专属 NAS 同步目录不纳入升级快照，并通过 Echo 的最小权限发现代理恢复局域网发现。"
+    },
+    {
+      "id": "home-assistant",
+      "name": "Home Assistant",
+      "nameZh": "智能家庭",
+      "version": "2026.8.3",
+      "summary": "在本地连接和自动化家庭设备，并向 Echo Agent 暴露受控动作。",
+      "category": "automation",
+      "icon": "home",
+      "sourceUrl": "https://www.home-assistant.io/",
+      "featured": true,
+      "imageStorage": {
+        "schema": "echo.hub.image-storage.v1",
+        "architectures": {
+          "amd64": {
+            "downloadBytes": 655645549,
+            "blobCount": 22
+          },
+          "arm64": {
+            "downloadBytes": 641301441,
+            "blobCount": 22
+          }
+        }
+      },
+      "bundle": {
+        "schema": "echo.hub.bundle-package.v1",
+        "architectures": [
+          "amd64",
+          "arm64"
+        ],
+        "publicService": "app",
+        "networks": [],
+        "volumes": [
+          {
+            "name": "config",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          }
+        ],
+        "secrets": [],
+        "services": [
+          {
+            "id": "app",
+            "role": "app",
+            "version": "2026.8.3",
+            "image": "ghcr.io/home-assistant/home-assistant@sha256:14931c6b13756317849f46da1d01b45937a1150db66c081cfe529d48215943fe",
+            "dependsOn": [],
+            "networks": [],
+            "networkMode": "host",
+            "ports": [
+              {
+                "container": 8123,
+                "host": 8123,
+                "protocol": "tcp"
+              }
+            ],
+            "mounts": [
+              {
+                "volume": "config",
+                "target": "/config",
+                "readOnly": false
+              }
+            ],
+            "secrets": [],
+            "secretEnvironment": {},
+            "environment": {
+              "TZ": "system"
+            },
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "python3",
+                "-c",
+                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8123/', timeout=5)"
+              ],
+              "intervalSeconds": 15,
+              "timeoutSeconds": 6,
+              "retries": 20,
+              "startPeriodSeconds": 120
+            },
+            "runtime": {
+              "profile": "unprivileged",
+              "memoryMiB": 2048,
+              "pids": 512,
+              "shmSizeMiB": 64,
+              "readOnlyRootfs": false
+            }
+          }
+        ],
+        "upgradePolicy": {
+          "applicationVersion": "2026.8.3",
+          "maxMajorStep": 1,
+          "snapshotVolumes": [
+            "config"
+          ],
+          "serviceOrder": [
+            "app"
+          ]
+        }
+      },
+      "integrationStatus": "available",
+      "integrationNote": "固定 Home Assistant 2026.8.3 官方多架构镜像；使用目录唯一允许的 host 网络恢复 mDNS/SSDP，但仍剥离全部 capability、禁止提权且不挂载设备、D-Bus 或 Docker socket。当前安全模式支持 LAN 集成，不宣称支持 USB、Bluetooth 或 Zigbee 直通。"
+    },
+    {
+      "id": "qbittorrent",
+      "name": "qBittorrent",
+      "nameZh": "下载中心",
+      "version": "5.2.3",
+      "summary": "将长期下载任务留在家庭服务器运行，并统一管理保存位置。",
+      "category": "downloads",
+      "icon": "download",
+      "sourceUrl": "https://www.qbittorrent.org/",
+      "featured": false,
+      "imageStorage": {
+        "schema": "echo.hub.image-storage.v1",
+        "architectures": {
+          "amd64": {
+            "downloadBytes": 87043100,
+            "blobCount": 11
+          },
+          "arm64": {
+            "downloadBytes": 85771954,
+            "blobCount": 11
+          }
+        }
+      },
+      "package": null,
+      "bundle": {
+        "schema": "echo.hub.bundle-package.v1",
+        "architectures": [
+          "amd64",
+          "arm64"
+        ],
+        "publicService": "app",
+        "networks": [
+          {
+            "name": "frontend",
+            "internal": false
+          }
+        ],
+        "volumes": [
+          {
+            "name": "config",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          },
+          {
+            "name": "downloads",
+            "source": "nas-data",
+            "relativePath": "downloads/qbittorrent",
+            "retention": "retain",
+            "snapshotOnUpdate": false
+          }
+        ],
+        "secrets": [
+          {
+            "name": "admin-password",
+            "generation": "random-alphanumeric",
+            "bytes": 24,
+            "revealOnce": true
+          }
+        ],
+        "services": [
+          {
+            "id": "app",
+            "role": "app",
+            "version": "5.2.3",
+            "image": "ghcr.io/linuxserver/qbittorrent@sha256:304b19cf94bf4fda534e0b086cab9c5f1a9e139a8180c05c0ad7d2ba1526fa99",
+            "dependsOn": [],
+            "networks": [
+              "frontend"
+            ],
+            "ports": [
+              {
+                "container": 8080,
+                "host": 3006,
+                "protocol": "tcp"
+              },
+              {
+                "container": 6881,
+                "host": 6881,
+                "protocol": "tcp"
+              },
+              {
+                "container": 6881,
+                "host": 6881,
+                "protocol": "udp"
+              }
+            ],
+            "mounts": [
+              {
+                "volume": "config",
+                "target": "/config",
+                "readOnly": false
+              },
+              {
+                "volume": "downloads",
+                "target": "/downloads",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "admin-password",
+                "target": "/run/secrets/admin-password"
+              }
+            ],
+            "secretEnvironment": {
+              "QBT_PASSWORD": "admin-password"
+            },
+            "environment": {
+              "PGID": "system",
+              "PUID": "system",
+              "TORRENTING_PORT": "6881",
+              "TZ": "system",
+              "WEBUI_PORT": "8080"
+            },
+            "entrypoint": [
+              "/bin/sh",
+              "-c"
+            ],
+            "command": [
+              "python3 - <<'PYQ'\nimport base64 as b,hashlib as h,os,secrets as s\nd='/config/qBittorrent';os.makedirs(d,exist_ok=1);p=d+'/qBittorrent.conf';t=open(p).read() if os.path.exists(p) else '[Preferences]\\n';k=r'WebUI\\Password_PBKDF2'\nif k not in t:\n x=s.token_bytes(16);y=h.pbkdf2_hmac('sha512',os.environ['QBT_PASSWORD'].encode(),x,100000);t+=('' if t.endswith('\\n') else '\\n')+f'{k}=\"@ByteArray({b.b64encode(x).decode()}:{b.b64encode(y).decode()})\"\\n';open(p,'w').write(t)\nPYQ\nunset QBT_PASSWORD\nexec /init"
+            ],
+            "healthcheck": {
+              "command": [
+                "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "http://127.0.0.1:8080/"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 12,
+              "startPeriodSeconds": 60
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 1024,
+              "pids": 512,
+              "shmSizeMiB": 64,
+              "readOnlyRootfs": false
+            }
+          }
+        ],
+        "upgradePolicy": {
+          "applicationVersion": "5.2.3",
+          "maxMajorStep": 1,
+          "snapshotVolumes": [
+            "config"
+          ],
+          "serviceOrder": [
+            "app"
+          ]
+        }
+      },
+      "integrationStatus": "available",
+      "integrationNote": "固定 qBittorrent 5.2.3 LinuxServer 多架构镜像；下载只写入专属 NAS 目录，管理员密码由 Echo 一次性生成并预置，配置纳入升级回滚。"
+    },
+    {
+      "id": "nextcloud",
+      "name": "Nextcloud",
+      "nameZh": "家庭云盘",
+      "version": "34.0.3",
+      "summary": "提供文件、分享、日历和协作能力的自托管家庭云服务。",
+      "category": "productivity",
+      "icon": "cloud",
+      "sourceUrl": "https://nextcloud.com/",
+      "featured": false,
+      "imageStorage": {
+        "schema": "echo.hub.image-storage.v1",
+        "architectures": {
+          "amd64": {
+            "downloadBytes": 711583113,
+            "blobCount": 40
+          },
+          "arm64": {
+            "downloadBytes": 700042604,
+            "blobCount": 40
+          }
+        }
+      },
+      "package": null,
+      "bundle": {
+        "schema": "echo.hub.bundle-package.v1",
+        "architectures": [
+          "amd64",
+          "arm64"
+        ],
+        "publicService": "app",
+        "networks": [
+          {
+            "name": "frontend",
+            "internal": false
+          },
+          {
+            "name": "backend",
+            "internal": true
+          }
+        ],
+        "volumes": [
+          {
+            "name": "database",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          },
+          {
+            "name": "nextcloud",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          }
+        ],
+        "secrets": [
+          {
+            "name": "database-password",
+            "generation": "random-base64url",
+            "bytes": 32,
+            "revealOnce": false
+          },
+          {
+            "name": "admin-password",
+            "generation": "random-base64url",
+            "bytes": 24,
+            "revealOnce": true
+          }
+        ],
+        "services": [
+          {
+            "id": "database",
+            "role": "database",
+            "version": "18.6",
+            "image": "docker.io/library/postgres@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [
+              {
+                "volume": "database",
+                "target": "/var/lib/postgresql",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "database-password",
+                "target": "/run/secrets/database-password"
+              }
+            ],
+            "secretEnvironment": {},
+            "environment": {
+              "POSTGRES_DB": "nextcloud",
+              "POSTGRES_PASSWORD_FILE": "/run/secrets/database-password",
+              "POSTGRES_USER": "nextcloud"
+            },
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "pg_isready",
+                "-U",
+                "nextcloud",
+                "-d",
+                "nextcloud"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 10,
+              "startPeriodSeconds": 30
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 768,
+              "pids": 384,
+              "shmSizeMiB": 128,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "cache",
+            "role": "cache",
+            "version": "8.10.1",
+            "image": "docker.io/library/redis@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [],
+            "secrets": [],
+            "secretEnvironment": {},
+            "environment": {},
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "redis-cli",
+                "ping"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 10,
+              "startPeriodSeconds": 10
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 256,
+              "pids": 256,
+              "shmSizeMiB": 64,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "app",
+            "role": "app",
+            "version": "34.0.3",
+            "image": "docker.io/library/nextcloud@sha256:8e5f49801db0cf4659b3089ce1917728023bb8cba7f93731f2abbdfe3a18df0a",
+            "dependsOn": [
+              "database",
+              "cache"
+            ],
+            "networks": [
+              "frontend",
+              "backend"
+            ],
+            "ports": [
+              {
+                "container": 80,
+                "host": 8081,
+                "protocol": "tcp"
+              }
+            ],
+            "mounts": [
+              {
+                "volume": "nextcloud",
+                "target": "/var/www/html",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "database-password",
+                "target": "/run/secrets/database-password"
+              },
+              {
+                "secret": "admin-password",
+                "target": "/run/secrets/admin-password"
+              }
+            ],
+            "secretEnvironment": {},
+            "environment": {
+              "NEXTCLOUD_ADMIN_PASSWORD_FILE": "/run/secrets/admin-password",
+              "NEXTCLOUD_ADMIN_USER": "admin",
+              "POSTGRES_DB": "nextcloud",
+              "POSTGRES_HOST": "database",
+              "POSTGRES_PASSWORD_FILE": "/run/secrets/database-password",
+              "POSTGRES_USER": "nextcloud",
+              "REDIS_HOST": "cache"
+            },
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "php",
+                "-r",
+                "$s=@file_get_contents('http://127.0.0.1/status.php'); exit($s===false ? 1 : 0);"
+              ],
+              "intervalSeconds": 15,
+              "timeoutSeconds": 10,
+              "retries": 12,
+              "startPeriodSeconds": 120
+            },
+            "runtime": {
+              "profile": "web-root-dropper",
+              "memoryMiB": 1536,
+              "pids": 768,
+              "shmSizeMiB": 128,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "cron",
+            "role": "worker",
+            "version": "34.0.3",
+            "image": "docker.io/library/nextcloud@sha256:8e5f49801db0cf4659b3089ce1917728023bb8cba7f93731f2abbdfe3a18df0a",
+            "dependsOn": [
+              "database",
+              "cache"
+            ],
+            "networks": [
+              "frontend",
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [
+              {
+                "volume": "nextcloud",
+                "target": "/var/www/html",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "database-password",
+                "target": "/run/secrets/database-password"
+              }
+            ],
+            "secretEnvironment": {},
+            "environment": {
+              "POSTGRES_DB": "nextcloud",
+              "POSTGRES_HOST": "database",
+              "POSTGRES_PASSWORD_FILE": "/run/secrets/database-password",
+              "POSTGRES_USER": "nextcloud",
+              "REDIS_HOST": "cache"
+            },
+            "entrypoint": [
+              "/cron.sh"
+            ],
+            "command": [],
+            "healthcheck": null,
+            "runtime": {
+              "profile": "web-root-dropper",
+              "memoryMiB": 512,
+              "pids": 256,
+              "shmSizeMiB": 128,
+              "readOnlyRootfs": false
+            }
+          }
+        ],
+        "upgradePolicy": {
+          "applicationVersion": "34.0.3",
+          "maxMajorStep": 1,
+          "snapshotVolumes": [
+            "database",
+            "nextcloud"
+          ],
+          "serviceOrder": [
+            "database",
+            "cache",
+            "app",
+            "cron"
+          ]
+        }
+      },
+      "integrationStatus": "available",
+      "integrationNote": "四服务原子安装、一次性管理员凭据、保留数据重装和联合快照更新已接入。"
+    },
+    {
+      "id": "paperless-ngx",
+      "name": "Paperless-ngx",
+      "nameZh": "家庭文档库",
+      "version": "3.1.0",
+      "summary": "归档、OCR 和检索账单、证件副本及扫描文档。",
+      "category": "documents",
+      "icon": "documents",
+      "sourceUrl": "https://docs.paperless-ngx.com/",
+      "featured": false,
+      "imageStorage": {
+        "schema": "echo.hub.image-storage.v1",
+        "architectures": {
+          "amd64": {
+            "downloadBytes": 1822394724,
+            "blobCount": 56
+          },
+          "arm64": {
+            "downloadBytes": 1766254153,
+            "blobCount": 56
+          }
+        }
+      },
+      "package": null,
+      "bundle": {
+        "schema": "echo.hub.bundle-package.v1",
+        "architectures": [
+          "amd64",
+          "arm64"
+        ],
+        "publicService": "app",
+        "networks": [
+          {
+            "name": "backend",
+            "internal": true
+          },
+          {
+            "name": "frontend",
+            "internal": false
+          }
+        ],
+        "volumes": [
+          {
+            "name": "database",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          },
+          {
+            "name": "cache",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          },
+          {
+            "name": "data",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          },
+          {
+            "name": "media",
+            "source": "nas-data",
+            "relativePath": "documents/paperless/media",
+            "retention": "retain",
+            "snapshotOnUpdate": false
+          },
+          {
+            "name": "consume",
+            "source": "nas-data",
+            "relativePath": "documents/paperless/consume",
+            "retention": "retain",
+            "snapshotOnUpdate": false
+          },
+          {
+            "name": "export",
+            "source": "nas-data",
+            "relativePath": "documents/paperless/export",
+            "retention": "retain",
+            "snapshotOnUpdate": false
+          }
+        ],
+        "secrets": [
+          {
+            "name": "database-password",
+            "generation": "random-alphanumeric",
+            "bytes": 32,
+            "revealOnce": false
+          },
+          {
+            "name": "paperless-secret",
+            "generation": "random-base64url",
+            "bytes": 48,
+            "revealOnce": false
+          },
+          {
+            "name": "admin-password",
+            "generation": "random-alphanumeric",
+            "bytes": 24,
+            "revealOnce": true
+          }
+        ],
+        "services": [
+          {
+            "id": "cache",
+            "role": "cache",
+            "version": "9",
+            "image": "docker.io/valkey/valkey@sha256:de31910896150d5e754a07d57d227cfdde4e258ddd0d1aa4607f2d2f95843715",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [
+              {
+                "volume": "cache",
+                "target": "/data",
+                "readOnly": false
+              }
+            ],
+            "secrets": [],
+            "secretEnvironment": {},
+            "environment": {},
+            "entrypoint": [],
+            "command": [
+              "valkey-server",
+              "--save",
+              "60",
+              "1",
+              "--loglevel",
+              "warning"
+            ],
+            "healthcheck": {
+              "command": [
+                "valkey-cli",
+                "ping"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 10,
+              "startPeriodSeconds": 10
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 256,
+              "pids": 256,
+              "shmSizeMiB": 64,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "database",
+            "role": "database",
+            "version": "18.6",
+            "image": "docker.io/library/postgres@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [
+              {
+                "volume": "database",
+                "target": "/var/lib/postgresql",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "database-password",
+                "target": "/run/secrets/database-password"
+              }
+            ],
+            "secretEnvironment": {},
+            "environment": {
+              "POSTGRES_DB": "paperless",
+              "POSTGRES_PASSWORD_FILE": "/run/secrets/database-password",
+              "POSTGRES_USER": "paperless"
+            },
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "pg_isready",
+                "-U",
+                "paperless",
+                "-d",
+                "paperless"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 10,
+              "startPeriodSeconds": 30
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 1024,
+              "pids": 512,
+              "shmSizeMiB": 256,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "gotenberg",
+            "role": "worker",
+            "version": "8.34",
+            "image": "docker.io/gotenberg/gotenberg@sha256:67097317623a503ba2a6a7e9ae8db6929a1f7e1bbd88077bacf2d325fbdab923",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [],
+            "secrets": [],
+            "secretEnvironment": {},
+            "environment": {},
+            "entrypoint": [],
+            "command": [
+              "gotenberg",
+              "--chromium-disable-javascript=true",
+              "--chromium-allow-list=file:///tmp/.*"
+            ],
+            "healthcheck": {
+              "command": [
+                "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "http://127.0.0.1:3000/health"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 12,
+              "startPeriodSeconds": 30
+            },
+            "runtime": {
+              "profile": "unprivileged",
+              "memoryMiB": 1024,
+              "pids": 512,
+              "shmSizeMiB": 256,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "tika",
+            "role": "worker",
+            "version": "3.3.1.0",
+            "image": "docker.io/apache/tika@sha256:90b7fa1dc018434075fce9e1d9b88b1e3d0ea6979d0cf86e116c79a8073ae973",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [],
+            "secrets": [],
+            "secretEnvironment": {},
+            "environment": {
+              "JAVA_TOOL_OPTIONS": "-Xms128m -Xmx768m"
+            },
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "/bin/sh",
+                "-c",
+                "while read -r _ local _ state _; do [ \"${local#*:}\" = 270E ] && [ \"$state\" = 0A ] && exit 0; done < /proc/net/tcp; exit 1"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 12,
+              "startPeriodSeconds": 30
+            },
+            "runtime": {
+              "profile": "unprivileged",
+              "memoryMiB": 1024,
+              "pids": 256,
+              "shmSizeMiB": 64,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "app",
+            "role": "app",
+            "version": "3.1.0",
+            "image": "ghcr.io/paperless-ngx/paperless-ngx@sha256:49eba766581b9134cfa6b584b9eb718355fb9cfbd44b2a7c9c72a427d4891648",
+            "dependsOn": [
+              "cache",
+              "database",
+              "gotenberg",
+              "tika"
+            ],
+            "networks": [
+              "backend",
+              "frontend"
+            ],
+            "ports": [
+              {
+                "container": 8000,
+                "host": 3008,
+                "protocol": "tcp"
+              }
+            ],
+            "mounts": [
+              {
+                "volume": "data",
+                "target": "/usr/src/paperless/data",
+                "readOnly": false
+              },
+              {
+                "volume": "media",
+                "target": "/usr/src/paperless/media",
+                "readOnly": false
+              },
+              {
+                "volume": "consume",
+                "target": "/usr/src/paperless/consume",
+                "readOnly": false
+              },
+              {
+                "volume": "export",
+                "target": "/usr/src/paperless/export",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "database-password",
+                "target": "/run/secrets/database-password"
+              },
+              {
+                "secret": "paperless-secret",
+                "target": "/run/secrets/paperless-secret"
+              },
+              {
+                "secret": "admin-password",
+                "target": "/run/secrets/admin-password"
+              }
+            ],
+            "secretEnvironment": {
+              "PAPERLESS_ADMIN_PASSWORD": "admin-password",
+              "PAPERLESS_DBPASS": "database-password",
+              "PAPERLESS_SECRET_KEY": "paperless-secret"
+            },
+            "environment": {
+              "PAPERLESS_ADMIN_USER": "admin",
+              "PAPERLESS_CONSUMER_POLLING": "10",
+              "PAPERLESS_CONSUMER_RECURSIVE": "true",
+              "PAPERLESS_DATE_PARSER_LANGUAGES": "zh+en",
+              "PAPERLESS_DBENGINE": "postgresql",
+              "PAPERLESS_DBHOST": "database",
+              "PAPERLESS_DBNAME": "paperless",
+              "PAPERLESS_DBUSER": "paperless",
+              "PAPERLESS_OCR_LANGUAGE": "chi_sim+eng",
+              "PAPERLESS_OCR_LANGUAGES": "chi-sim",
+              "PAPERLESS_REDIS": "redis://cache:6379",
+              "PAPERLESS_TASK_WORKERS": "1",
+              "PAPERLESS_THREADS_PER_WORKER": "1",
+              "PAPERLESS_TIKA_ENABLED": "1",
+              "PAPERLESS_TIKA_ENDPOINT": "http://tika:9998",
+              "PAPERLESS_TIKA_GOTENBERG_ENDPOINT": "http://gotenberg:3000",
+              "PAPERLESS_TIME_ZONE": "system",
+              "PAPERLESS_WEBSERVER_WORKERS": "1",
+              "USERMAP_GID": "system",
+              "USERMAP_UID": "system"
+            },
+            "entrypoint": [
+              "/init"
+            ],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--location",
+                "--max-time",
+                "2",
+                "http://127.0.0.1:8000"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 18,
+              "startPeriodSeconds": 120
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 2048,
+              "pids": 1024,
+              "shmSizeMiB": 128,
+              "readOnlyRootfs": false
+            }
+          }
+        ],
+        "upgradePolicy": {
+          "applicationVersion": "3.1.0",
+          "maxMajorStep": 1,
+          "snapshotVolumes": [
+            "database",
+            "cache",
+            "data"
+          ],
+          "serviceOrder": [
+            "cache",
+            "database",
+            "gotenberg",
+            "tika",
+            "app"
+          ]
+        }
+      },
+      "integrationStatus": "available",
+      "integrationNote": "固定 Paperless-ngx 3.1.0、Valkey、PostgreSQL、Gotenberg 与 Tika 官方多架构镜像；原始文档、导入和导出只写入专属 NAS 目录，支持中英文 OCR，管理员密码仅首装回显，状态卷纳入联合升级回滚。"
+    },
+    {
+      "id": "open-webui",
+      "name": "Open WebUI",
+      "nameZh": "本地模型中心",
+      "version": "0.11.1",
+      "summary": "连接本地模型服务，提供家庭设备上的通用对话与模型管理入口。",
+      "category": "ai",
+      "icon": "ai",
+      "sourceUrl": "https://openwebui.com/",
+      "featured": false,
+      "imageStorage": {
+        "schema": "echo.hub.image-storage.v1",
+        "architectures": {
+          "amd64": {
+            "downloadBytes": 1866305193,
+            "blobCount": 24
+          },
+          "arm64": {
+            "downloadBytes": 1700461580,
+            "blobCount": 24
+          }
+        }
+      },
+      "package": null,
+      "bundle": {
+        "schema": "echo.hub.bundle-package.v1",
+        "architectures": [
+          "amd64",
+          "arm64"
+        ],
+        "publicService": "app",
+        "networks": [
+          {
+            "name": "frontend",
+            "internal": false
+          },
+          {
+            "name": "backend",
+            "internal": true
+          }
+        ],
+        "volumes": [
+          {
+            "name": "data",
+            "source": "app-data",
+            "relativePath": null,
+            "retention": "retain",
+            "snapshotOnUpdate": true
+          }
+        ],
+        "secrets": [
+          {
+            "name": "webui-secret",
+            "generation": "random-base64url",
+            "bytes": 48,
+            "revealOnce": false
+          }
+        ],
+        "services": [
+          {
+            "id": "cache",
+            "role": "cache",
+            "version": "9",
+            "image": "docker.io/valkey/valkey@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411",
+            "dependsOn": [],
+            "networks": [
+              "backend"
+            ],
+            "ports": [],
+            "mounts": [],
+            "secrets": [],
+            "secretEnvironment": {},
+            "environment": {},
+            "entrypoint": [],
+            "command": [],
+            "healthcheck": {
+              "command": [
+                "valkey-cli",
+                "ping"
+              ],
+              "intervalSeconds": 10,
+              "timeoutSeconds": 5,
+              "retries": 10,
+              "startPeriodSeconds": 10
+            },
+            "runtime": {
+              "profile": "data-root-dropper",
+              "memoryMiB": 256,
+              "pids": 256,
+              "shmSizeMiB": 64,
+              "readOnlyRootfs": false
+            }
+          },
+          {
+            "id": "app",
+            "role": "app",
+            "version": "0.11.1",
+            "image": "ghcr.io/open-webui/open-webui@sha256:6bb1fbe8ab0a3e0456067f493044ffb66a30a65a34be47f6a5862176a370dd16",
+            "dependsOn": [
+              "cache"
+            ],
+            "networks": [
+              "frontend",
+              "backend"
+            ],
+            "ports": [
+              {
+                "container": 8080,
+                "host": 3005,
+                "protocol": "tcp"
+              }
+            ],
+            "mounts": [
+              {
+                "volume": "data",
+                "target": "/app/backend/data",
+                "readOnly": false
+              }
+            ],
+            "secrets": [
+              {
+                "secret": "webui-secret",
+                "target": "/run/secrets/webui-secret"
+              }
+            ],
+            "secretEnvironment": {
+              "WEBUI_SECRET_KEY": "webui-secret"
+            },
+            "environment": {
+              "ANONYMIZED_TELEMETRY": "false",
+              "DO_NOT_TRACK": "true",
+              "REDIS_URL": "redis://cache:6379/0",
+              "SCARF_NO_ANALYTICS": "true"
+            },
+            "entrypoint": [],
+            "command": [
+              "bash",
+              "start.sh"
+            ],
+            "healthcheck": {
+              "command": [
+                "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "http://127.0.0.1:8080/health"
+              ],
+              "intervalSeconds": 15,
+              "timeoutSeconds": 10,
+              "retries": 20,
+              "startPeriodSeconds": 120
+            },
+            "runtime": {
+              "profile": "unprivileged",
+              "memoryMiB": 4096,
+              "pids": 768,
+              "shmSizeMiB": 256,
+              "readOnlyRootfs": false
+            }
+          }
+        ],
+        "upgradePolicy": {
+          "applicationVersion": "0.11.1",
+          "maxMajorStep": 1,
+          "snapshotVolumes": [
+            "data"
+          ],
+          "serviceOrder": [
+            "cache",
+            "app"
+          ]
+        }
+      },
+      "integrationStatus": "available",
+      "integrationNote": "Open WebUI 0.11.1 与内部 Valkey 已接入；随机持久密钥、数据快照更新和受限资源合同由 Echo 管理，模型端点在应用内配置。"
+    }
+  ]
+}

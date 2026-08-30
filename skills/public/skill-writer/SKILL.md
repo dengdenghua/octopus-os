@@ -1,12 +1,12 @@
 ---
 name: skill-writer
-description: Guide users through creating Agent Skills for Octopus. Use when the user wants to create, write, author, or design a new Skill, or needs help with SKILL.md files, frontmatter, or skill structure.
+description: Guide users through creating Agent Skills for Echo. Use when the user wants to create, write, author, or design a new Skill, or needs help with SKILL.md files, frontmatter, or skill structure.
 always_apply: true
 ---
 
 # Skill Writer
 
-This Skill helps you create well-structured Agent Skills for Octopus that follow best practices and validation requirements.
+This Skill helps you create well-structured Agent Skills for Echo that follow best practices and validation requirements.
 
 ## When to use this Skill
 
@@ -37,12 +37,12 @@ First, understand what the Skill should do:
 
 Determine where to create the Skill:
 
-**Personal Skills** (`~/.octopus/skills/`):
+**Personal Skills** (`~/.echo/skills/`):
 - Individual workflows and preferences
 - Experimental Skills
 - Personal productivity tools
 
-**Project Skills** (`.octopus/skills/`):
+**Project Skills** (`.echo/skills/`):
 - Team workflows and conventions
 - Project-specific expertise
 - Shared utilities (committed to git)
@@ -53,10 +53,10 @@ Create the directory and files:
 
 ```bash
 # Personal
-mkdir -p ~/.octopus/skills/skill-name
+mkdir -p ~/.echo/skills/skill-name
 
 # Project
-mkdir -p .octopus/skills/skill-name
+mkdir -p .echo/skills/skill-name
 ```
 
 For multi-file Skills:
@@ -110,7 +110,7 @@ description: Brief description of what this does and when to use it
 
 ### Step 5: Write effective descriptions
 
-The description is critical for Octopus to discover your Skill.
+The description is critical for Echo to discover your Skill.
 
 **Formula**: `[What it does] + [When to use it] + [Key triggers]`
 
@@ -153,7 +153,7 @@ Provide a simple example to get started immediately.
 
 ## Instructions
 
-Step-by-step guidance for Octopus:
+Step-by-step guidance for Echo:
 1. First step with clear action
 2. Second step with expected outcome
 3. Handle edge cases
@@ -215,7 +215,7 @@ Check these requirements:
 - [ ] `description` is specific and < 1024 chars
 
 ✅ **Content quality**:
-- [ ] Clear instructions for Octopus
+- [ ] Clear instructions for Echo
 - [ ] Concrete examples provided
 - [ ] Edge cases handled
 - [ ] Dependencies listed (if any)
@@ -227,16 +227,16 @@ Check these requirements:
 
 ### Step 9: Test the Skill
 
-1. **Restart Octopus** (if running) to load the Skill
+1. **Restart Echo** (if running) to load the Skill
 
 2. **Ask relevant questions** that match the description:
    ```
    Can you help me extract text from this PDF?
    ```
 
-3. **Verify activation**: Octopus should use the Skill automatically
+3. **Verify activation**: Echo should use the Skill automatically
 
-4. **Check behavior**: Confirm Octopus follows the instructions correctly
+4. **Check behavior**: Confirm Echo follows the instructions correctly
 
 ### Step 10: Debug if needed
 
@@ -249,8 +249,8 @@ If Claude doesn't use the Skill:
 
 2. **Check file location**:
    ```bash
-   ls ~/.octopus/skills/skill-name/SKILL.md
-   ls .octopus/skills/skill-name/SKILL.md
+   ls ~/.echo/skills/skill-name/SKILL.md
+   ls .echo/skills/skill-name/SKILL.md
    ```
 
 3. **Validate YAML**:
@@ -260,7 +260,7 @@ If Claude doesn't use the Skill:
 
 4. **Run debug mode**:
    ```bash
-   octopus --debug
+   echo --debug
    ```
 
 ## Common patterns
@@ -324,7 +324,7 @@ Detailed reference: See [reference.md](reference.md)
 
 1. **One Skill, one purpose**: Don't create mega-Skills
 2. **Specific descriptions**: Include trigger words users will say
-3. **Clear instructions**: Write for Octopus, not humans
+3. **Clear instructions**: Write for Echo, not humans
 4. **Concrete examples**: Show real code, not pseudocode
 5. **List dependencies**: Mention required packages in description
 6. **Test with teammates**: Verify activation and clarity
@@ -344,7 +344,7 @@ Before finalizing a Skill, verify:
 - [ ] Dependencies are documented
 - [ ] File paths use forward slashes
 - [ ] Skill activates on relevant queries
-- [ ] Octopus follows instructions correctly
+- [ ] Echo follows instructions correctly
 
 ## Troubleshooting
 

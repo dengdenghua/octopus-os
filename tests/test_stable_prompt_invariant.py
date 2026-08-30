@@ -8,6 +8,7 @@ Anything per-turn (date, output_style, memory recall, camouflage
 A/B variant) MUST live outside the system prompt — in a synthetic
 prepended user message — or the cache prefix breaks every turn.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -81,6 +82,7 @@ def test_insert_stable_first() -> None:
 def test_same_inputs_same_hash() -> None:
     """Two builders with the same stable inputs in the same order
     must produce byte-equal output. This is THE cache invariant."""
+
     def make() -> StablePromptBuilder:
         b = StablePromptBuilder()
         b.add_stable("base", "REACT BASE")
@@ -173,8 +175,10 @@ def _system_text_from_run(thinking: bool = False, recall: str | None = None) -> 
     intent = _intent("test goal")
     if thinking:
         from runtime.core.cerebrum.thinking_mode import build_thinking_plan
+
         intent.user_context["thinking_plan"] = build_thinking_plan(
-            intent.normalized_goal, mode="react",
+            intent.normalized_goal,
+            mode="react",
         ).to_dict()
     if recall is not None:
         intent.user_context["mock_recall"] = recall
@@ -192,8 +196,10 @@ def test_system_prompt_unchanged_when_thinking_plan_added() -> None:
     same system bytes."""
     sys_no = _system_text_from_run(thinking=False)
     sys_yes = _system_text_from_run(thinking=True)
-    assert hashlib.sha256(sys_no.encode("utf-8")).hexdigest() == \
-           hashlib.sha256(sys_yes.encode("utf-8")).hexdigest(), (
+    assert (
+        hashlib.sha256(sys_no.encode("utf-8")).hexdigest()
+        == hashlib.sha256(sys_yes.encode("utf-8")).hexdigest()
+    ), (
         "Adding a thinking_plan should NOT change the system prompt — "
         "it's a per-turn signal and should ride in a prepended user "
         "message instead. If this fails, the cache prefix is broken."
@@ -204,6 +210,7 @@ def test_system_prompt_does_not_contain_current_date() -> None:
     """Current date is per-turn (changes daily) → MUST not appear
     in the system prompt or the cache breaks every midnight."""
     from datetime import datetime
+
     today = datetime.now().strftime("%Y-%m-%d")
     sys_text = _system_text_from_run()
     assert today not in sys_text, (

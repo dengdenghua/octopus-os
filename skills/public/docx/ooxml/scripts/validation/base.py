@@ -148,10 +148,9 @@ class BaseSchemaValidator:
             for error in errors:
                 print(error)
             return False
-        else:
-            if self.verbose:
-                print("PASSED - All XML files are well-formed")
-            return True
+        if self.verbose:
+            print("PASSED - All XML files are well-formed")
+        return True
 
     def validate_namespaces(self):
         """Validate that namespace prefixes in Ignorable attributes are declared."""
@@ -269,10 +268,9 @@ class BaseSchemaValidator:
             for error in errors:
                 print(error)
             return False
-        else:
-            if self.verbose:
-                print("PASSED - All required IDs are unique")
-            return True
+        if self.verbose:
+            print("PASSED - All required IDs are unique")
+        return True
 
     def validate_file_references(self):
         """
@@ -378,12 +376,11 @@ class BaseSchemaValidator:
                 + "and unreferenced files MUST be referenced or removed."
             )
             return False
-        else:
-            if self.verbose:
-                print(
-                    "PASSED - All references are valid and all files are properly referenced"
-                )
-            return True
+        if self.verbose:
+            print(
+                "PASSED - All references are valid and all files are properly referenced"
+            )
+        return True
 
     def validate_all_relationship_ids(self):
         """
@@ -478,10 +475,9 @@ class BaseSchemaValidator:
                 print(error)
             print("\nThese ID mismatches will cause the document to appear corrupt!")
             return False
-        else:
-            if self.verbose:
-                print("PASSED - All relationship ID references are valid")
-            return True
+        if self.verbose:
+            print("PASSED - All relationship ID references are valid")
+        return True
 
     def _get_expected_relationship_type(self, element_name):
         """
@@ -501,16 +497,13 @@ class BaseSchemaValidator:
             # e.g., "sldId" -> "sld", "sldMasterId" -> "sldMaster"
             prefix = elem_lower[:-2]  # Remove "id"
             # Check if this might be a compound like "sldMasterId"
-            if prefix.endswith("master"):
+            if prefix.endswith("master") or prefix.endswith("layout"):
                 return prefix.lower()
-            elif prefix.endswith("layout"):
-                return prefix.lower()
-            else:
-                # Simple case like "sldId" -> "slide"
-                # Common transformations
-                if prefix == "sld":
-                    return "slide"
-                return prefix.lower()
+            # Simple case like "sldId" -> "slide"
+            # Common transformations
+            if prefix == "sld":
+                return "slide"
+            return prefix.lower()
 
         # Pattern 2: Elements ending in "Reference" expect a relationship of the prefix type
         if elem_lower.endswith("reference") and len(elem_lower) > 9:
@@ -615,13 +608,11 @@ class BaseSchemaValidator:
                     continue
 
                 extension = file_path.suffix.lstrip(".").lower()
-                if extension and extension not in declared_extensions:
-                    # Check if it's a known media extension that should be declared
-                    if extension in media_extensions:
-                        relative_path = file_path.relative_to(self.unpacked_dir)
-                        errors.append(
-                            f'  {relative_path}: File with extension \'{extension}\' not declared in [Content_Types].xml - should add: <Default Extension="{extension}" ContentType="{media_extensions[extension]}"/>'
-                        )
+                if extension and extension not in declared_extensions and extension in media_extensions:
+                    relative_path = file_path.relative_to(self.unpacked_dir)
+                    errors.append(
+                        f'  {relative_path}: File with extension \'{extension}\' not declared in [Content_Types].xml - should add: <Default Extension="{extension}" ContentType="{media_extensions[extension]}"/>'
+                    )
 
         except Exception as e:
             errors.append(f"  Error parsing [Content_Types].xml: {e}")
@@ -631,12 +622,11 @@ class BaseSchemaValidator:
             for error in errors:
                 print(error)
             return False
-        else:
-            if self.verbose:
-                print(
-                    "PASSED - All content files are properly declared in [Content_Types].xml"
-                )
-            return True
+        if self.verbose:
+            print(
+                "PASSED - All content files are properly declared in [Content_Types].xml"
+            )
+        return True
 
     def validate_file_against_xsd(self, xml_file, verbose=False):
         """Validate a single XML file against XSD schema, comparing with original.
@@ -659,7 +649,7 @@ class BaseSchemaValidator:
 
         if is_valid is None:
             return None, set()  # Skipped
-        elif is_valid:
+        if is_valid:
             return True, set()  # Valid, no errors
 
         # Get errors from original file for this specific file
@@ -677,13 +667,12 @@ class BaseSchemaValidator:
                     truncated = error[:250] + "..." if len(error) > 250 else error
                     print(f"  - {truncated}")
             return False, new_errors
-        else:
-            # All errors existed in original
-            if verbose:
-                print(
-                    f"PASSED - No new errors (original had {len(current_errors)} errors)"
-                )
-            return True, set()
+        # All errors existed in original
+        if verbose:
+            print(
+                f"PASSED - No new errors (original had {len(current_errors)} errors)"
+            )
+        return True, set()
 
     def validate_against_xsd(self):
         """Validate XML files against XSD schemas, showing only new errors compared to original."""
@@ -701,10 +690,10 @@ class BaseSchemaValidator:
             if is_valid is None:
                 skipped_count += 1
                 continue
-            elif is_valid and not new_file_errors:
+            if is_valid and not new_file_errors:
                 valid_count += 1
                 continue
-            elif is_valid:
+            if is_valid:
                 # Had errors but all existed in original
                 original_error_count += 1
                 valid_count += 1
@@ -733,10 +722,9 @@ class BaseSchemaValidator:
             for error in new_errors:
                 print(error)
             return False
-        else:
-            if self.verbose:
-                print("\nPASSED - No new XSD validation errors introduced")
-            return True
+        if self.verbose:
+            print("\nPASSED - No new XSD validation errors introduced")
+        return True
 
     def _get_schema_path(self, xml_file):
         """Determine the appropriate schema path for an XML file."""
@@ -839,7 +827,7 @@ class BaseSchemaValidator:
                 schema = lxml.etree.XMLSchema(xsd_doc)
 
             # Load and preprocess XML
-            with open(xml_file, "r") as f:
+            with open(xml_file) as f:
                 xml_doc = lxml.etree.parse(f)
 
             xml_doc, _ = self._remove_template_tags_from_text_nodes(xml_doc)
@@ -856,12 +844,11 @@ class BaseSchemaValidator:
             # Validate
             if schema.validate(xml_doc):
                 return True, set()
-            else:
-                errors = set()
-                for error in schema.error_log:
-                    # Store normalized error message (without line numbers for comparison)
-                    errors.add(error.message)
-                return False, errors
+            errors = set()
+            for error in schema.error_log:
+                # Store normalized error message (without line numbers for comparison)
+                errors.add(error.message)
+            return False, errors
 
         except Exception as e:
             return False, {str(e)}

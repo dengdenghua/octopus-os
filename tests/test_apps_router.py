@@ -5,7 +5,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.sensing.gateway.apps_router import create_apps_router, discover_apps
 
 
@@ -27,7 +26,7 @@ def test_apps_router_discovers_app_actions_from_plugin_pack(tmp_path: Path) -> N
         ),
     )
     write(
-        plugin_dir / "octopus-app.jsonc",
+        plugin_dir / "echo-app.jsonc",
         """
 {
   "schema_version": "1",
@@ -76,7 +75,7 @@ def test_apps_router_skips_broken_plugin_pack(
             json.dumps({"name": name, "version": "0.1.0"}),
         )
     write(
-        tmp_path / "plugins" / "good" / "octopus-app.jsonc",
+        tmp_path / "plugins" / "good" / "echo-app.jsonc",
         """
 {
   "apps": {

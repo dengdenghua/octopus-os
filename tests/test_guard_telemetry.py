@@ -4,6 +4,7 @@ Covers the GuardTelemetry sink (record + stats + top_labels) and the
 evaluate_guards recorder hook — that a firing guard records exactly one
 (label, category) and that a recorder failure never breaks evaluation.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -74,8 +75,10 @@ class TestGuardTelemetrySink:
     def test_metadata_roundtrip(self, tmp_path: Path) -> None:
         sink = GuardTelemetry(path=tmp_path / "hits.jsonl")
         sink.record(
-            "secret-leak guard", "security",
-            goal_digest="abc123", iteration=7,
+            "secret-leak guard",
+            "security",
+            goal_digest="abc123",
+            iteration=7,
             metadata={"path": "runtime/foo.py"},
         )
         records = sink._read_all()  # type: ignore[attr-defined]
@@ -170,7 +173,10 @@ class TestEvaluateGuardsRecorder:
         ]
         ctx = GuardContext(steps=steps, final_answer="done", is_code_mode=True)
         recorded: list[tuple[str, str]] = []
-        hit = evaluate_guards(ctx, recorder=lambda label, cat: recorded.append((label, cat)))
+        hit = evaluate_guards(
+            ctx,
+            recorder=lambda label, cat, _msg: recorded.append((label, cat)),
+        )
         assert hit is not None
         assert recorded == [("secret-leak guard", "security")]
 
@@ -178,7 +184,10 @@ class TestEvaluateGuardsRecorder:
         steps = [_step(1, action='read_file({"path": "runtime/foo.py"})')]
         ctx = GuardContext(steps=steps, final_answer="reviewed", is_code_mode=False)
         recorded: list[tuple[str, str]] = []
-        hit = evaluate_guards(ctx, recorder=lambda label, cat: recorded.append((label, cat)))
+        hit = evaluate_guards(
+            ctx,
+            recorder=lambda label, cat, _msg: recorded.append((label, cat)),
+        )
         assert hit is None
         assert recorded == []
 

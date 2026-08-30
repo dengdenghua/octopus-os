@@ -4,7 +4,6 @@ import platform
 from typing import Any
 
 import pytest
-
 from runtime.execution.suckers import computer_uia_skills
 from runtime.execution.suckers.computer_uia_skills import (
     UIA_SKILL_NAMES,

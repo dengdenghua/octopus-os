@@ -35,10 +35,7 @@ def test_frontend_docs_use_pnpm_commands() -> None:
         r"\bnpx\s+": "npx",
         r"\bpackage-lock\.json\b": "package-lock.json",
     }
-    compiled = [
-        (re.compile(pattern), label)
-        for pattern, label in forbidden.items()
-    ]
+    compiled = [(re.compile(pattern), label) for pattern, label in forbidden.items()]
     failures: list[str] = []
     for rel in docs:
         text = (ROOT / rel).read_text(encoding="utf-8")

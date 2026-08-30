@@ -1,0 +1,1 @@
+../../auto-stat-test/scripts/statistical_test_suite.py

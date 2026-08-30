@@ -1,0 +1,18 @@
+[Transfer]
+ProtectVersion=%A
+# Authentication is completed by echo-os-update before systemd-sysupdate runs.
+Verify=no
+
+[Source]
+Type=regular-file
+Path=.
+PathRelativeTo=explicit
+MatchPattern=echo-os_@v.root-verity.@u.raw.zst
+
+[Target]
+Type=partition
+Path=auto
+MatchPartitionType=root-x86-64-verity
+MatchPattern=echo-root-@v-verity
+InstancesMax=2
+ReadOnly=yes

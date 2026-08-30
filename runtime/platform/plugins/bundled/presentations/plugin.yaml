@@ -1,0 +1,12 @@
+name: presentations
+version: 0.1.0
+display_name: 演示文稿
+description: 本地创建、提取和原位修改 PowerPoint 演示文稿。
+author: Echo
+tags: [presentations, pptx, powerpoint, office, productivity]
+provides: [presentations.skills]
+config:
+  schema_version: echo.presentations.manifest.v1
+config_schema:
+  type: object
+  properties: {}

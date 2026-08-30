@@ -1,4 +1,6 @@
-# Working rules (shared by all Octopus agents)
+# Working rules (shared by all Echo agents)
+
+This is the `agent-core` instruction surface for Echo's built-in `coder` agent.
 
 ## Project context discovery
 

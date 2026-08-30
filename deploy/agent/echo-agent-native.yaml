@@ -1,0 +1,13 @@
+# Echo OS integration policy layered over the source-bound Agent config.
+extends: resources/config.example.yaml
+name: echo-os-agent
+
+# The upstream personal runtime keeps the mobile bridge enabled for developer
+# convenience. A system service must not expose a second unauthenticated LAN
+# listener behind the loopback-only main API boundary.
+tentacle:
+  enabled: false
+
+# Boot must not schedule unsolicited network refreshes before the device owner
+# has configured providers and consented to networked Agent features.
+intel_sources: []

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Screen Reader
+Name[zh_CN]=屏幕阅读器
+Comment=Read the Echo OS desktop using Orca
+Comment[zh_CN]=使用 Orca 朗读 Echo OS 桌面
+Exec=/usr/bin/orca
+Icon=preferences-desktop-accessibility
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=accessibility;screen reader;speech;orca;无障碍;屏幕阅读器;
+StartupNotify=true

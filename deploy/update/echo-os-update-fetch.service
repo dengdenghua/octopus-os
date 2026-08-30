@@ -1,0 +1,36 @@
+[Unit]
+Description=Fetch and authenticate the latest Echo OS update
+After=network-online.target
+Wants=network-online.target
+ConditionACPower=true
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/echo-os-update-channel fetch
+CacheDirectory=echo-os
+CacheDirectoryMode=0700
+StateDirectory=echo-os-update
+StateDirectoryMode=0755
+RuntimeDirectory=echo-os-update-channel
+RuntimeDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/cache/echo-os /run/echo-os-update-channel
+
+[Install]
+WantedBy=multi-user.target

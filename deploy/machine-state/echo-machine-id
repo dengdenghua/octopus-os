@@ -1,0 +1,169 @@
+#!/bin/sh
+# systemd-initrd helper: attach encrypted per-device state to the verified
+# A/B sysroot before switch-root. The small prereqs/panic compatibility path
+# also keeps the standalone policy tests and older recovery media diagnosable.
+set -eu
+
+PREREQ=""
+prereqs() {
+  echo "$PREREQ"
+}
+if [ "${1:-}" = prereqs ]; then
+  prereqs
+  exit 0
+fi
+
+if [ -r /scripts/functions ]; then
+  # shellcheck disable=SC1091 # Present only in legacy initramfs-tools media.
+  . /scripts/functions
+fi
+
+fail() {
+  message="$1"
+  echo "echo-machine-id: $message" >&2
+  if command -v panic >/dev/null 2>&1 && [ "${ECHO_MACHINE_ID_TESTING:-no}" != yes ]; then
+    panic "$message"
+  fi
+  exit 1
+}
+
+read_machine_id() {
+  file_path="$1"
+  [ -f "$file_path" ] || return 1
+  tr -d '\n' <"$file_path"
+}
+
+valid_machine_id() {
+  candidate="$1"
+  [ "${#candidate}" -eq 32 ] || return 1
+  [ "$candidate" != 00000000000000000000000000000000 ] || return 1
+  case "$candidate" in
+    *[!0-9a-f]*) return 1 ;;
+  esac
+}
+
+provision_machine_id() {
+  state_file="$1"
+  seed="${2:-}"
+  if [ -e "$state_file" ]; then
+    [ -f "$state_file" ] || fail "persistent machine-id is not a regular file"
+    machine_id="$(read_machine_id "$state_file")"
+    valid_machine_id "$machine_id" || fail "persistent machine-id is invalid"
+    chmod 0444 "$state_file"
+    return 0
+  fi
+
+  if valid_machine_id "$seed"; then
+    machine_id="$seed"
+  else
+    random_source="${ECHO_MACHINE_ID_RANDOM_SOURCE:-/proc/sys/kernel/random/uuid}"
+    [ -r "$random_source" ] || fail "kernel random UUID source is unavailable"
+    machine_id="$(tr -d '\n-' <"$random_source")"
+    valid_machine_id "$machine_id" || fail "kernel random UUID is invalid"
+  fi
+
+  state_directory="$(dirname "$state_file")"
+  mkdir -p "$state_directory"
+  chmod 0700 "$state_directory"
+  state_temp="$state_file.$$"
+  if ! (
+    umask 077
+    printf '%s\n' "$machine_id" >"$state_temp"
+    chmod 0444 "$state_temp"
+    mv -f -- "$state_temp" "$state_file"
+  ); then
+    rm -f -- "$state_temp"
+    fail "cannot create persistent machine-id atomically"
+  fi
+}
+
+case "${1:-}" in
+  --validate)
+    [ "$#" -eq 2 ] || fail "usage: echo-machine-id --validate FILE"
+    value="$(read_machine_id "$2")" || fail "machine-id file is missing"
+    valid_machine_id "$value" || fail "machine-id file is invalid"
+    exit 0
+    ;;
+  --provision)
+    [ "$#" -eq 2 ] || fail "usage: echo-machine-id --provision FILE"
+    provision_machine_id "$2"
+    exit 0
+    ;;
+esac
+
+root_path="${rootmnt:-}"
+[ -n "$root_path" ] && [ -d "$root_path" ] || fail "mounted root path is unavailable"
+var_device="${ECHO_MACHINE_ID_VAR_DEVICE:-/dev/disk/by-partlabel/echo-var}"
+var_mount="${ECHO_MACHINE_ID_VAR_MOUNT:-$root_path/var}"
+
+attempt=0
+while [ ! -e "$var_device" ] && [ "$attempt" -lt 100 ]; do
+  sleep 0.1
+  attempt=$((attempt + 1))
+done
+[ -e "$var_device" ] || fail "persistent echo-var partition is unavailable"
+
+var_type="$(blkid -s TYPE -o value "$var_device" 2>/dev/null || true)"
+[ "$var_type" = crypto_LUKS ] || \
+  fail "persistent echo-var partition is not protected by LUKS2"
+var_mapping=/dev/mapper/echo-var
+if [ ! -b "$var_mapping" ]; then
+  echo "echo-machine-id: unlocking encrypted device state through TPM2 or recovery key"
+  cryptsetup open --type luks2 --tries 3 "$var_device" echo-var || \
+    fail "cannot unlock persistent echo-var partition"
+fi
+[ -b "$var_mapping" ] || fail "persistent echo-var mapping is unavailable"
+var_device="$var_mapping"
+
+mkdir -p "$var_mount"
+mount "$var_device" "$var_mount" || fail "cannot mount persistent echo-var partition"
+
+# Keep all mutable /etc state, especially password hashes, on encrypted var.
+# The versioned vendor /etc remains the read-only lower layer, so an A/B root
+# replacement can still provide new defaults while local changes survive in
+# the encrypted upper layer.
+etc_runtime="${ECHO_MACHINE_ID_ETC_RUNTIME:-/run/echo-os-etc}"
+etc_lower="$etc_runtime/lower"
+etc_overlay="$var_mount/lib/echo-os/etc-overlay"
+etc_upper="$etc_overlay/upper"
+etc_work="$etc_overlay/work"
+[ -d "$root_path/etc" ] && [ ! -L "$root_path/etc" ] || \
+  fail "vendor /etc is missing or redirected"
+mkdir -p "$etc_lower" "$etc_upper" "$etc_work"
+chmod 0700 "$etc_runtime" "$etc_overlay" "$etc_upper" "$etc_work"
+modprobe overlay 2>/dev/null || true
+mount --bind "$root_path/etc" "$etc_lower" || fail "cannot bind the vendor /etc layer"
+mount -o remount,bind,ro "$etc_lower" || fail "cannot make the vendor /etc layer read-only"
+mount -t overlay -o "lowerdir=$etc_lower,upperdir=$etc_upper,workdir=$etc_work" \
+  overlay "$root_path/etc" || fail "cannot activate encrypted /etc overlay"
+
+state_file="$var_mount/lib/echo-os/machine-id"
+root_machine_id="$root_path/etc/machine-id"
+seed=""
+if [ -f "$root_machine_id" ]; then
+  candidate="$(read_machine_id "$root_machine_id")"
+  if valid_machine_id "$candidate"; then
+    seed="$candidate"
+  fi
+fi
+provision_machine_id "$state_file" "$seed"
+
+mkdir -p "$root_path/etc"
+if [ -L "$root_machine_id" ] || { [ -e "$root_machine_id" ] && [ ! -f "$root_machine_id" ]; }; then
+  fail "root machine-id mount target is unsafe"
+fi
+if [ ! -e "$root_machine_id" ]; then
+  : >"$root_machine_id"
+fi
+mount --bind "$state_file" "$root_machine_id" || fail "cannot bind persistent machine-id"
+mount -o remount,bind,ro "$root_machine_id" || fail "cannot make machine-id binding read-only"
+
+# The overlay upper/work directories and machine-id source both live on this
+# filesystem. Keep /sysroot/var mounted across switch-root: detaching it here
+# would either fail with EBUSY or invalidate the active /etc overlay.
+
+if command -v log_success_msg >/dev/null 2>&1; then
+  log_success_msg "Echo OS persistent machine identity is ready"
+else
+  echo "Echo OS persistent machine identity is ready"
+fi

@@ -5,6 +5,7 @@ realistic tool observations? Run from project root:
 
 Reports char delta + a tokens-saved estimate for each fixture.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.token_juicer import juice
@@ -34,16 +35,20 @@ def main() -> int:
     # dominant cost; useful body is < 5% of bytes.
     fetch_url_observation = (
         "(real tool execution succeeded) fetch_url\n"
-        '{"url": "https://example.com/long?utm_source=' + 'x' * 250 + '",'
+        '{"url": "https://example.com/long?utm_source=' + "x" * 250 + '",'
         ' "html": "<html><head>'
-        + '<script>window.dataLayer=[];function gtag(){}</script>' * 20
-        + '<style>body{margin:0}</style>' * 10
-        + '</head><body>'
-        + '<nav>' + '<a href="/p">link</a>' * 30 + '</nav>'
-        + '<article><h1>Title</h1>'
-        + '<p>Real article paragraph.</p>' * 8
-        + '</article>'
-        + '<footer>' + '<a>fl</a>' * 50 + '</footer>'
+        + "<script>window.dataLayer=[];function gtag(){}</script>" * 20
+        + "<style>body{margin:0}</style>" * 10
+        + "</head><body>"
+        + "<nav>"
+        + '<a href="/p">link</a>' * 30
+        + "</nav>"
+        + "<article><h1>Title</h1>"
+        + "<p>Real article paragraph.</p>" * 8
+        + "</article>"
+        + "<footer>"
+        + "<a>fl</a>" * 50
+        + "</footer>"
         + '</body></html>"}'
     )
     _report("fetch_url HTML page", fetch_url_observation)
@@ -61,7 +66,7 @@ def main() -> int:
         "(real tool execution succeeded) exec_shell\n"
         '{"argv": ["pytest", "-q"], "exit_code": 0, "stdout": "'
         + ("warning: deprecated\\n" * 50)
-        + 'PASSED 1234 tests in 12.3s'
+        + "PASSED 1234 tests in 12.3s"
         + '"}'
     )
     _report("shell with repeated warnings", spammy_shell)

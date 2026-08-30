@@ -83,25 +83,27 @@ def test_crawl_site_follows_same_domain_links_and_writes_jsonl(tmp_path: Path) -
     page_a = "http://127.0.0.1/a"
     outside = "http://127.0.0.2/out"
     out = tmp_path / "crawl.jsonl"
-    client = _MockClient({
-        "http://127.0.0.1/robots.txt": _MockResponse(
-            text="User-agent: *\nAllow: /\n",
-            url="http://127.0.0.1/robots.txt",
-        ),
-        start: _MockResponse(
-            text=(
-                "<html><title>Home</title><body>"
-                f"<a href='{page_a}'>A</a>"
-                f"<a href='{outside}'>Out</a>"
-                "</body></html>"
+    client = _MockClient(
+        {
+            "http://127.0.0.1/robots.txt": _MockResponse(
+                text="User-agent: *\nAllow: /\n",
+                url="http://127.0.0.1/robots.txt",
             ),
-            url=start,
-        ),
-        page_a: _MockResponse(
-            text="<html><title>A</title><body>alpha</body></html>",
-            url=page_a,
-        ),
-    })
+            start: _MockResponse(
+                text=(
+                    "<html><title>Home</title><body>"
+                    f"<a href='{page_a}'>A</a>"
+                    f"<a href='{outside}'>Out</a>"
+                    "</body></html>"
+                ),
+                url=start,
+            ),
+            page_a: _MockResponse(
+                text="<html><title>A</title><body>alpha</body></html>",
+                url=page_a,
+            ),
+        }
+    )
 
     result = _crawl_site(
         start_url=start,
@@ -127,20 +129,22 @@ def test_crawl_site_follows_same_domain_links_and_writes_jsonl(tmp_path: Path) -
 def test_crawl_site_respects_robots_disallow(tmp_path: Path) -> None:
     start = "http://127.0.0.1/"
     private = "http://127.0.0.1/private"
-    client = _MockClient({
-        "http://127.0.0.1/robots.txt": _MockResponse(
-            text="User-agent: *\nDisallow: /private\n",
-            url="http://127.0.0.1/robots.txt",
-        ),
-        start: _MockResponse(
-            text=f"<html><title>Home</title><a href='{private}'>Private</a></html>",
-            url=start,
-        ),
-        private: _MockResponse(
-            text="<html><title>Private</title>secret</html>",
-            url=private,
-        ),
-    })
+    client = _MockClient(
+        {
+            "http://127.0.0.1/robots.txt": _MockResponse(
+                text="User-agent: *\nDisallow: /private\n",
+                url="http://127.0.0.1/robots.txt",
+            ),
+            start: _MockResponse(
+                text=f"<html><title>Home</title><a href='{private}'>Private</a></html>",
+                url=start,
+            ),
+            private: _MockResponse(
+                text="<html><title>Private</title>secret</html>",
+                url=private,
+            ),
+        }
+    )
 
     result = _crawl_site(
         start_url=start,
@@ -163,20 +167,24 @@ def test_crawl_site_respects_robots_disallow(tmp_path: Path) -> None:
 def test_crawl_site_browser_mode_uses_rendered_links(tmp_path: Path) -> None:
     start = "http://127.0.0.1/"
     rendered = "http://127.0.0.1/rendered"
-    client = _MockClient({
-        "http://127.0.0.1/robots.txt": _MockResponse(
-            text="User-agent: *\nAllow: /\n",
-            url="http://127.0.0.1/robots.txt",
-        ),
-    })
-    page = _FakeBrowserPage({
-        start: (
-            "<html><title>Rendered Home</title><body>"
-            f"<a href='{rendered}'>Rendered</a>"
-            "</body></html>"
-        ),
-        rendered: "<html><title>Rendered Detail</title><body>ready</body></html>",
-    })
+    client = _MockClient(
+        {
+            "http://127.0.0.1/robots.txt": _MockResponse(
+                text="User-agent: *\nAllow: /\n",
+                url="http://127.0.0.1/robots.txt",
+            ),
+        }
+    )
+    page = _FakeBrowserPage(
+        {
+            start: (
+                "<html><title>Rendered Home</title><body>"
+                f"<a href='{rendered}'>Rendered</a>"
+                "</body></html>"
+            ),
+            rendered: "<html><title>Rendered Detail</title><body>ready</body></html>",
+        }
+    )
 
     result = _crawl_site(
         start_url=start,
@@ -203,27 +211,31 @@ def test_crawl_site_browser_mode_uses_rendered_links(tmp_path: Path) -> None:
 def test_crawl_site_auto_mode_falls_back_to_browser_for_js_shell(tmp_path: Path) -> None:
     start = "http://127.0.0.1/"
     rendered = "http://127.0.0.1/rendered"
-    client = _MockClient({
-        "http://127.0.0.1/robots.txt": _MockResponse(
-            text="User-agent: *\nAllow: /\n",
-            url="http://127.0.0.1/robots.txt",
-        ),
-        start: _MockResponse(
-            text="<html><title>Shell</title><body><div id='root'></div><script></script></body></html>",
-            url=start,
-        ),
-        rendered: _MockResponse(
-            text="<html><title>HTTP Detail</title><body>detail</body></html>",
-            url=rendered,
-        ),
-    })
-    page = _FakeBrowserPage({
-        start: (
-            "<html><title>Rendered Shell</title><body>"
-            f"<a href='{rendered}'>Rendered</a>"
-            "</body></html>"
-        ),
-    })
+    client = _MockClient(
+        {
+            "http://127.0.0.1/robots.txt": _MockResponse(
+                text="User-agent: *\nAllow: /\n",
+                url="http://127.0.0.1/robots.txt",
+            ),
+            start: _MockResponse(
+                text="<html><title>Shell</title><body><div id='root'></div><script></script></body></html>",
+                url=start,
+            ),
+            rendered: _MockResponse(
+                text="<html><title>HTTP Detail</title><body>detail</body></html>",
+                url=rendered,
+            ),
+        }
+    )
+    page = _FakeBrowserPage(
+        {
+            start: (
+                "<html><title>Rendered Shell</title><body>"
+                f"<a href='{rendered}'>Rendered</a>"
+                "</body></html>"
+            ),
+        }
+    )
 
     result = _crawl_site(
         start_url=start,

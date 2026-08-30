@@ -14,6 +14,7 @@ Kept separate from ``test_cli_smoke.py`` (which only tests ``--help``)
 because this one actually executes the demo · ~10-15s wall. Skipped
 on CI without git.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -54,10 +55,7 @@ def test_bugfix_demo_v2_runs_and_restores_soul():
     soul_before = SOUL_PATH.read_bytes()
     soul_hash_before = _md5(soul_before.decode("utf-8", errors="replace"))
 
-    hist_files_before = (
-        set(p.name for p in HIST_DIR.iterdir())
-        if HIST_DIR.exists() else set()
-    )
+    hist_files_before = set(p.name for p in HIST_DIR.iterdir()) if HIST_DIR.exists() else set()
 
     # ── Run the demo · capture output ─────────────────────
     r = subprocess.run(
@@ -69,9 +67,7 @@ def test_bugfix_demo_v2_runs_and_restores_soul():
     )
 
     assert r.returncode == 0, (
-        f"bugfix-demo-v2 failed:\n"
-        f"stdout={r.stdout[-2000:]}\n"
-        f"stderr={r.stderr[-2000:]}"
+        f"bugfix-demo-v2 failed:\nstdout={r.stdout[-2000:]}\nstderr={r.stderr[-2000:]}"
     )
 
     # ── SOUL.md must be byte-identical after the demo ─────
@@ -88,10 +84,7 @@ def test_bugfix_demo_v2_runs_and_restores_soul():
     # appending the lesson. That snapshot is NOT cleaned up by the
     # demo's restore (it only restores SOUL.md, not the history dir).
     # Its presence proves the evolution path was actually exercised.
-    hist_files_after = (
-        set(p.name for p in HIST_DIR.iterdir())
-        if HIST_DIR.exists() else set()
-    )
+    hist_files_after = set(p.name for p in HIST_DIR.iterdir()) if HIST_DIR.exists() else set()
     new_snaps = hist_files_after - hist_files_before
     assert len(new_snaps) >= 1, (
         f"No new snapshot in .soul_history/ · evolution path may have "
@@ -108,8 +101,7 @@ def test_bugfix_demo_v2_runs_and_restores_soul():
         "self-evolution closed",
     ]:
         assert milestone in out, (
-            f"demo output missing milestone {milestone!r}. "
-            f"Got stdout[-1500:]: {r.stdout[-1500:]}"
+            f"demo output missing milestone {milestone!r}. Got stdout[-1500:]: {r.stdout[-1500:]}"
         )
 
     # ── Cleanup the snapshot files we left behind ─────────

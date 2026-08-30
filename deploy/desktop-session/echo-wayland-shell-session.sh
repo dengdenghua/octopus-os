@@ -2,7 +2,7 @@
 # KWin --exit-with-session child for the selectable Echo Wayland candidate.
 set -euo pipefail
 
-OS_DIR="${OCTOPUS_OS_DIR:-/opt/octopus-os}"
+OS_DIR="${ECHO_OS_DIR:-/opt/echo-os}"
 APP_DIR="$OS_DIR/frontend"
 KWIN_BRIDGE_SERVICE=/usr/lib/echo-os/echo-kwin-window-bridge
 KWIN_BRIDGE_SOCKET="${ECHO_KWIN_WINDOW_BRIDGE_SOCKET:?KWin bridge socket is required}"
@@ -22,9 +22,10 @@ ACCESSIBILITY_PROBE=/usr/lib/echo-os/echo-accessibility-smoke.py
 WAYLAND_IPC_REQUEST=/etc/echo-os/wayland-native-app-ipc
 WAYLAND_IPC_WINDOW_HELPER=/usr/lib/echo-os/verify-wayland-native-app-ipc.py
 NATIVE_APP_IPC_READY_FILE="$SESSION_RUNTIME/native-app-ipc-ready"
+KWIN_LIQUID_GLASS_PATH=/org/echoos/KWin/LiquidGlass
 
-export OCTOPUS_NATIVE_SHELL=1
-export OCTOPUS_SHELL_MODE=desktop
+export ECHO_NATIVE_SHELL=1
+export ECHO_SHELL_MODE=desktop
 export XDG_SESSION_TYPE=wayland
 export XDG_SESSION_DESKTOP=echo-wayland
 export XDG_CURRENT_DESKTOP=Echo:KDE
@@ -35,7 +36,7 @@ export QT_IM_MODULE=fcitx
 export XMODIFIERS=@im=fcitx
 export SDL_IM_MODULE=fcitx
 export QT_ACCESSIBILITY=1
-unset OCTOPUS_SMOKE OCTOPUS_NATIVE_APP_SMOKE_ID \
+unset ECHO_SMOKE ECHO_NATIVE_APP_SMOKE_ID \
   ECHO_NATIVE_APP_IPC_READY_FILE
 
 name_has_owner() {
@@ -306,6 +307,22 @@ done
 }
 echo "ECHO_KWIN_COMPOSITOR_BRIDGE_READY provider=kwin-wayland transport=private-socket"
 
+KWIN_LIQUID_GLASS_READY=0
+for _attempt in $(seq 1 150); do
+  if gdbus introspect --session \
+       --dest org.kde.KWin \
+       --object-path "$KWIN_LIQUID_GLASS_PATH" >/dev/null 2>&1; then
+    KWIN_LIQUID_GLASS_READY=1
+    break
+  fi
+  sleep 0.1
+done
+if [[ "$KWIN_LIQUID_GLASS_READY" == 1 ]]; then
+  echo "ECHO_KWIN_GLASS_EFFECT_READY provider=kwin-wayland-effect region=bounded fallback=webgl optics=kwin"
+else
+  echo "ECHO_KWIN_GLASS_EFFECT_UNAVAILABLE provider=webgl reason=effect-object-missing" >&2
+fi
+
 # A release image contains only the root-owned /etc/echo-os directory. The raw
 # SDDM harness may add this one exact request to its disposable encrypted /etc
 # overlay. Both this session and Electron validate it independently; normal
@@ -335,7 +352,7 @@ if [[ -e "$WAYLAND_IPC_REQUEST" || -L "$WAYLAND_IPC_REQUEST" ]]; then
       python3 "$WAYLAND_IPC_WINDOW_HELPER" baseline
   )"
   rm -f -- "$NATIVE_APP_IPC_READY_FILE"
-  export OCTOPUS_NATIVE_APP_SMOKE_ID=org.kde.kcalc
+  export ECHO_NATIVE_APP_SMOKE_ID=org.kde.kcalc
   export ECHO_NATIVE_APP_IPC_READY_FILE="$NATIVE_APP_IPC_READY_FILE"
   WAYLAND_NATIVE_APP_IPC_REQUESTED=1
 fi
@@ -366,7 +383,7 @@ export ECHO_LOCK_SCREEN_READY=1
 echo "ECHO_LOCK_SERVICE_READY provider=kscreenlocker pam=kde idle=600 resume=locked"
 
 # Flatpak applications and icons persist outside either A/B root slot.
-XDG_DATA_HOME_EFFECTIVE="${XDG_DATA_HOME:-${HOME:-/home/octopus}/.local/share}"
+XDG_DATA_HOME_EFFECTIVE="${XDG_DATA_HOME:-${HOME:-/home/echo}/.local/share}"
 XDG_DATA_DIRS_DEFAULT=/usr/local/share:/usr/share
 export XDG_DATA_DIRS="$XDG_DATA_HOME_EFFECTIVE/flatpak/exports/share:/var/lib/flatpak/exports/share:${XDG_DATA_DIRS:-$XDG_DATA_DIRS_DEFAULT}"
 

@@ -15,6 +15,7 @@ visible character).
 Run from project root:
     python tests/integration_chat_vs_tool_ttft.py
 """
+
 from __future__ import annotations
 
 import json
@@ -40,8 +41,9 @@ from runtime.sensing.model_router.openai_router import OpenAIModelRouter  # noqa
 
 def _build_router() -> OpenAIModelRouter:
     cfg = json.loads(
-        (Path(__file__).resolve().parents[1] / "data" / "custom_models.json")
-        .read_text(encoding="utf-8")
+        (Path(__file__).resolve().parents[1] / "data" / "custom_models.json").read_text(
+            encoding="utf-8"
+        )
     )["mimo2.5"]
     # Schema may use either "model" (single) or "models" (list);
     # take the first listed model in either case.
@@ -110,7 +112,10 @@ def _bench_chat(stack: _Stack, prompt: str, *, user_model: str | None = None) ->
     chunks: list[tuple[str, str]] = []
     routed_model = "?"
     for kind, payload, _final in _stream_direct_llm_fallback(
-        stack, intent, agent=None, model=user_model,
+        stack,
+        intent,
+        agent=None,
+        model=user_model,
     ):
         now = time.monotonic()
         if first_byte is None and kind == "text" and payload:
@@ -178,22 +183,25 @@ def main() -> int:
 
     # Warm: import overhead, first-call latency. Don't time it.
     print("warming up (one throw-away call)...")
-    list(_stream_direct_llm_fallback(
-        stack,
-        ParsedIntent(raw="warm", intent_type="task", normalized_goal="warm", user_context={}),
-        agent=None,
-        model="mimo-v2.5-pro",
-    ))
-
-    chat_prompt = "你好"
-    tool_prompt = (
-        "请用 slow_read 工具读取 a.py、b.py 两个文件的内容并对比。"
-        "可以并发读取。"
+    list(
+        _stream_direct_llm_fallback(
+            stack,
+            ParsedIntent(raw="warm", intent_type="task", normalized_goal="warm", user_context={}),
+            agent=None,
+            model="mimo-v2.5-pro",
+        )
     )
 
+    chat_prompt = "你好"
+    tool_prompt = "请用 slow_read 工具读取 a.py、b.py 两个文件的内容并对比。可以并发读取。"
+
     print("\n--- routing predictions ---")
-    print(f"  '{chat_prompt}'  → tool_intent? {looks_like_tool_intent(chat_prompt)}  (False = chat fast-path)")
-    print(f"  '{tool_prompt[:30]}…'  → tool_intent? {looks_like_tool_intent(tool_prompt)}  (True = ReAct)")
+    print(
+        f"  '{chat_prompt}'  → tool_intent? {looks_like_tool_intent(chat_prompt)}  (False = chat fast-path)"
+    )
+    print(
+        f"  '{tool_prompt[:30]}…'  → tool_intent? {looks_like_tool_intent(tool_prompt)}  (True = ReAct)"
+    )
 
     print("\n--- chat fast-path: '你好' (model=auto) ---")
     chat_stats = _bench_chat(stack, chat_prompt, user_model="auto")
@@ -216,12 +224,18 @@ def main() -> int:
     print("\n--- comparison ---")
     ratio = tool_stats["ttfb_ms"] / max(chat_stats["ttfb_ms"], 1)
     print(f"  TTFB ratio (tool/chat): {ratio:.1f}x")
-    print(f"  chat first text len:    {len(chat_stats['first_3_text'][0]) if chat_stats['first_3_text'] else 0}")
-    print(f"  tool first text len:    {len(tool_stats['first_3_text'][0]) if tool_stats['first_3_text'] else 0}")
+    print(
+        f"  chat first text len:    {len(chat_stats['first_3_text'][0]) if chat_stats['first_3_text'] else 0}"
+    )
+    print(
+        f"  tool first text len:    {len(tool_stats['first_3_text'][0]) if tool_stats['first_3_text'] else 0}"
+    )
     if chat_stats["text_chunks"] >= 3:
         print(f"  ✓ chat path streams in {chat_stats['text_chunks']} chunks (genuine streaming)")
     else:
-        print(f"  ⚠ chat path delivered in {chat_stats['text_chunks']} chunks (router may be batching)")
+        print(
+            f"  ⚠ chat path delivered in {chat_stats['text_chunks']} chunks (router may be batching)"
+        )
     return 0
 
 

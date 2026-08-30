@@ -156,7 +156,7 @@ LLM 优先选高成功率的策略组合
 
 ## 五、设计决策备忘
 
-1. **规划即地图，不是 ReAct** — Octopus 默认 Cerebrum 一次产 DAG，ReAct 是**对外兼容 + 故障回退**的第二条路径，不是主路径。
+1. **规划即地图，不是 ReAct** — Echo 默认 Cerebrum 一次产 DAG，ReAct 是**对外兼容 + 故障回退**的第二条路径，不是主路径。
 2. **工具调用共享 task_id** — 同一次 ReAct 回合内的所有 `Beak.execute_step` 用同一个 `react_task_id`，便于 Journal 聚合成一条 Trajectory。
 3. **反思节流** — `learn_from_journal` 读全量 journal，所以只在失败时触发（min_hits=3 自带防抖）。KG 更新最贵，每 5 次触发。
 4. **删除规则不回写磁盘** — `DELETE /api/evolution/rules/{i}` 只改内存 section；`auto_persist_rules_path` 负责的是结构化 `LearnedRule` 列表，二者不冲突。下次 `learn_from_journal` 调用会从 Journal 重新生成规则。

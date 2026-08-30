@@ -54,7 +54,7 @@ def main():
 
     # Run validators
     success = True
-    for V in validators:
+    for V in validators:  # noqa: N806
         validator = V(unpacked_dir, original_file, verbose=args.verbose)
         if not validator.validate():
             success = False

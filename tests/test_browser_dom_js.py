@@ -10,7 +10,6 @@ import shutil
 import subprocess
 
 import pytest
-
 from runtime.execution.suckers.browser_dom_js import (
     DOM_HELPERS_JS,
     dom_snapshot_function_js,
@@ -47,9 +46,7 @@ class TestPerceptionFields:
     def test_password_gate_present_in_value_line(self):
         # Cheap structural guard (the behavioural test below proves it
         # actually works, and catches a !== -> === inversion).
-        value_line = next(
-            line for line in DOM_HELPERS_JS.splitlines() if "value:" in line
-        )
+        value_line = next(line for line in DOM_HELPERS_JS.splitlines() if "value:" in line)
         assert "password" in value_line
 
 
@@ -106,10 +103,7 @@ class TestDescribeBehaviour:
             "global.CSS = { escape: (s) => s };\n"
             "let LAST = [];\n"
             "global.document = { querySelectorAll: () => LAST, title: 't', body: { innerText: '' } };\n"
-            "const setMatches = (arr) => { LAST = arr; };\n"
-            + DOM_HELPERS_JS
-            + "\n"
-            + snippet
+            "const setMatches = (arr) => { LAST = arr; };\n" + DOM_HELPERS_JS + "\n" + snippet
         )
         proc = subprocess.run(
             ["node", "-e", harness],

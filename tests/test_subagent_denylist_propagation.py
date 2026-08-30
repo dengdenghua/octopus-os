@@ -6,12 +6,12 @@ This is the multi-agent permission separation contract: even when
 the user's global denylist allows a path, the parent can pin
 additional restrictions just for THIS sub-agent's run.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
 from runtime.execution.subagents import bridge
 from runtime.safety.auth import path_denylist as pdn
 from runtime.safety.auth.path_guard import check_path
@@ -19,7 +19,7 @@ from runtime.safety.auth.path_guard import check_path
 
 @pytest.fixture(autouse=True)
 def _clear_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("OCTOPUS_PATH_DENYLIST_PATH", str(tmp_path / "dl.json"))
+    monkeypatch.setenv("ECHO_PATH_DENYLIST_PATH", str(tmp_path / "dl.json"))
     pdn._TURN_DENYLIST.set(())
     yield
     pdn._TURN_DENYLIST.set(())

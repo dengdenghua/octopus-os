@@ -1,4 +1,5 @@
 """Implementation note."""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +15,7 @@ from runtime.execution.suckers.market_skills import (
 
 # Implementation note.
 
+
 class TestParseFrontmatter:
     def test_simple_key_value(self):
         text = "---\nname: demo\ndescription: hi\n---\nbody"
@@ -28,26 +30,12 @@ class TestParseFrontmatter:
         assert body == text.strip()
 
     def test_block_scalar_folded(self):
-        text = (
-            "---\n"
-            "description: >\n"
-            "  this is a\n"
-            "  folded description\n"
-            "---\n"
-            "hi"
-        )
+        text = "---\ndescription: >\n  this is a\n  folded description\n---\nhi"
         meta, _ = _parse_frontmatter(text)
         assert meta["description"] == "this is a folded description"
 
     def test_list_expanded(self):
-        text = (
-            "---\n"
-            "tags:\n"
-            "  - one\n"
-            "  - two\n"
-            "---\n"
-            "body"
-        )
+        text = "---\ntags:\n  - one\n  - two\n---\nbody"
         meta, _ = _parse_frontmatter(text)
         assert meta["tags"] == ["one", "two"]
 
@@ -65,6 +53,7 @@ class TestParseFrontmatter:
 
 # ─── sanitize ────────────────────────────────────────────────
 
+
 class TestSanitize:
     def test_keeps_ascii_alnum(self):
         assert _sanitize_skill_name("shopify-builder", "x") == "shopify-builder"
@@ -80,13 +69,13 @@ class TestSanitize:
 
 # Implementation note.
 
+
 class TestRegistration:
     def test_registers_basic_skill(self, tmp_path: Path):
         skill = tmp_path / "copywriter"
         skill.mkdir()
         (skill / "SKILL.md").write_text(
-            "---\nname: copywriter\ndescription: write copy.\n---\n"
-            "# Guide\n\nDo the thing.\n",
+            "---\nname: copywriter\ndescription: write copy.\n---\n# Guide\n\nDo the thing.\n",
             encoding="utf-8",
         )
         r = SkillRegistry()
@@ -101,8 +90,7 @@ class TestRegistration:
         skill = tmp_path / "pdf"
         skill.mkdir()
         (skill / "SKILL.md").write_text(
-            "---\nname: pdf\ndescription: PDF stuff.\n---\n"
-            "# PDF Guide\n\nStep 1. Open.\n",
+            "---\nname: pdf\ndescription: PDF stuff.\n---\n# PDF Guide\n\nStep 1. Open.\n",
             encoding="utf-8",
         )
         (skill / "reference.md").write_text("extra docs", encoding="utf-8")
@@ -149,7 +137,8 @@ class TestRegistration:
         )
         cfg = {"99_my-skill": {"installedVersion": "0.0.1", "enabled": True}}
         (tmp_path / "skills_config.json").write_text(
-            json.dumps(cfg), encoding="utf-8",
+            json.dumps(cfg),
+            encoding="utf-8",
         )
         r = SkillRegistry()
         count = register_market_skills(r, all_skills_dir=tmp_path)
@@ -200,7 +189,8 @@ class TestRegistration:
     def test_missing_directory_returns_zero(self, tmp_path: Path):
         r = SkillRegistry()
         count = register_market_skills(
-            r, all_skills_dir=tmp_path / "does_not_exist",
+            r,
+            all_skills_dir=tmp_path / "does_not_exist",
         )
         assert count == 0
 
@@ -209,6 +199,7 @@ class TestRegistration:
 #
 # Implementation note.
 # Implementation note.
+
 
 class TestLoadSingleMarketSkill:
     """Implementation note."""
@@ -244,13 +235,17 @@ class TestLoadSingleMarketSkill:
     def test_returns_false_for_missing_dir(self, tmp_path: Path):
         r = SkillRegistry()
         assert not load_single_market_skill(
-            r, "does_not_exist", all_skills_dir=tmp_path,
+            r,
+            "does_not_exist",
+            all_skills_dir=tmp_path,
         )
 
     def test_returns_false_when_all_skills_dir_missing(self, tmp_path: Path):
         r = SkillRegistry()
         assert not load_single_market_skill(
-            r, "x", all_skills_dir=tmp_path / "nope",
+            r,
+            "x",
+            all_skills_dir=tmp_path / "nope",
         )
 
     def test_respects_frontmatter_when_opted_in(self, tmp_path: Path):
@@ -262,7 +257,8 @@ class TestLoadSingleMarketSkill:
         )
         r = SkillRegistry()
         ok = load_single_market_skill(
-            r, "off",
+            r,
+            "off",
             all_skills_dir=tmp_path,
             ignore_frontmatter_enabled=False,
         )
@@ -278,9 +274,11 @@ class TestRealAllSkillsDirSmoke:
         assert count >= 3, f"expected >= 3 market skills, got {count}"
         # Implementation note.
         all_names = set(r.all_names())
-        likely = {"xlsx", "create-website", "image-prompt-guide"}
-        hit = likely & all_names
-        assert hit, f"no common skills found; registry has {sorted(all_names)[:20]}..."
+        expected = {"backend-building", "browse", "code-quality"}
+        assert expected <= all_names, (
+            f"missing real bundled skills {sorted(expected - all_names)}; "
+            f"registry has {sorted(all_names)[:20]}..."
+        )
 
 
 class TestAliases:
@@ -290,7 +288,8 @@ class TestAliases:
     P3 cluster)."""
 
     def test_inline_alias_list_registers_canonical_plus_aliases(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ):
         skill = tmp_path / "valuation"
         skill.mkdir()
@@ -311,8 +310,9 @@ class TestAliases:
         assert r.has("cashflow-valuation")
         # Aliases share handler bodies — every name returns the same
         # instructions so prompts keying on either name look identical.
-        assert r.get("valuation").handler()["instructions"] == (
-            r.get("dcf-model").handler()["instructions"]
+        assert (
+            r.get("valuation").handler()["instructions"]
+            == (r.get("dcf-model").handler()["instructions"])
         )
         # Aliases are flagged as such via trusted_source so dedupers
         # / metrics can tell aliases from canonicals.
@@ -341,7 +341,8 @@ class TestAliases:
         assert r.has("tertiary")
 
     def test_alias_collision_with_existing_skill_is_skipped(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ):
         # Pre-register a skill with the alias name; the alias should
         # back off rather than raising.

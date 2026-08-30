@@ -2,17 +2,18 @@
 # Echo OS production-candidate session: KWin/DRM Wayland -> Echo desktop shell.
 set -euo pipefail
 
-OS_DIR="${OCTOPUS_OS_DIR:-/opt/octopus-os}"
+OS_DIR="${ECHO_OS_DIR:-/opt/echo-os}"
 SESSION_WORKER="$OS_DIR/deploy/desktop-session/echo-wayland-shell-session.sh"
 KWIN_WRAPPER=/usr/bin/kwin_wayland_wrapper
+KWIN_CONFIG_TOOL=/usr/bin/kwriteconfig6
 KWIN_BRIDGE_SERVICE=/usr/lib/echo-os/echo-kwin-window-bridge
 RUNTIME_ROOT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 SESSION_RUNTIME="$RUNTIME_ROOT/echo-os"
 KWIN_BRIDGE_SOCKET="$SESSION_RUNTIME/kwin-window-bridge.sock"
 
-export OCTOPUS_NATIVE_SHELL=1
-export OCTOPUS_SHELL_MODE=desktop
-export OCTOPUS_BACKEND_URL="${OCTOPUS_BACKEND_URL:-http://127.0.0.1:8000}"
+export ECHO_NATIVE_SHELL=1
+export ECHO_SHELL_MODE=desktop
+export ECHO_BACKEND_URL="${ECHO_BACKEND_URL:-http://127.0.0.1:8000}"
 export XDG_SESSION_TYPE=wayland
 export XDG_SESSION_DESKTOP=echo-wayland
 export XDG_CURRENT_DESKTOP=Echo:KDE
@@ -23,7 +24,8 @@ export XMODIFIERS=@im=fcitx
 export SDL_IM_MODULE=fcitx
 export QT_ACCESSIBILITY=1
 
-[[ -x "$KWIN_WRAPPER" && -x "$KWIN_BRIDGE_SERVICE" && -x "$SESSION_WORKER" ]] || {
+[[ -x "$KWIN_WRAPPER" && -x "$KWIN_CONFIG_TOOL" && \
+   -x "$KWIN_BRIDGE_SERVICE" && -x "$SESSION_WORKER" ]] || {
   echo "Echo OS Wayland session executables are incomplete" >&2
   exit 1
 }
@@ -89,6 +91,12 @@ done
   exit 1
 }
 export ECHO_KWIN_WINDOW_BRIDGE_SOCKET="$KWIN_BRIDGE_SOCKET"
+
+# Keep the native glass pass enabled for the immutable Echo session. KWin
+# still applies its own hardware support check and Electron falls back cleanly
+# if the effect cannot publish its fixed D-Bus object.
+"$KWIN_CONFIG_TOOL" --file kwinrc --group Plugins \
+  --key org.echoos.liquidglassEnabled true
 
 # The KDE wrapper pre-allocates Wayland/XWayland sockets and synchronizes their
 # names into the D-Bus and systemd user activation environments. The worker is

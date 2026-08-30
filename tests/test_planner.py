@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.core.cerebrum import PlannerError, StaticPlanner
 from runtime.core.cerebrum.planner import Rule
 from runtime.platform.models import BudgetSpec, ParsedIntent, SkillId
@@ -71,9 +70,7 @@ class TestMatching:
 
 class TestEdgeStructure:
     def test_linear_edges_between_consecutive_nodes(self, planner):
-        intent = ParsedIntent(
-            raw="x", intent_type="debug", normalized_goal="fix failing test"
-        )
+        intent = ParsedIntent(raw="x", intent_type="debug", normalized_goal="fix failing test")
         graph = planner.plan(intent)
         assert len(graph.edges) == 2
         assert graph.edges[0].from_node == "n0"
@@ -94,12 +91,8 @@ class TestTaskType:
 
 class TestPriority:
     def test_higher_priority_rule_wins(self):
-        high = Rule(
-            name="high", intent_types=["task"], skill_sequence=[SkillId("A")], priority=10
-        )
-        low = Rule(
-            name="low", intent_types=["task"], skill_sequence=[SkillId("B")], priority=1
-        )
+        high = Rule(name="high", intent_types=["task"], skill_sequence=[SkillId("A")], priority=10)
+        low = Rule(name="low", intent_types=["task"], skill_sequence=[SkillId("B")], priority=1)
         p = StaticPlanner(rules=[low, high], default_budget=BudgetSpec(tokens=100, usd=0.01))
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="y")
         graph = p.plan(intent)

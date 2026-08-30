@@ -79,12 +79,12 @@ Hearts 的**首要职责**是**功能隔离**，HA 是派生能力。
 | **外部 I/O 异步隔离** · subprocess 阻塞不回传主线程 | `runtime/mcp_client/persistent_client.py` · 后台 asyncio loop + `run_coroutine_threadsafe` |
 | **执行层并发隔离**（腕间） | `runtime/swarm/runtime.py` · ThreadPoolExecutor |
 | **进程级隔离**（不可信 skill） | `runtime/mantle/subprocess_mantle.py` |
-| **长跑进程入口** · 把上面全部组装 | `octopus-agent serve --config X.yaml --port 8000` |
+| **长跑进程入口** · 把上面全部组装 | `echo-agent serve --config X.yaml --port 8000` |
 
 ### `serve` 子命令 · Systemic 的真实入口
 
 ```bash
-octopus-agent serve \
+echo-agent serve \
     --config config.yaml \
     --port 8000 \
     --learn-interval 3600     # 每小时反思一次（可选）

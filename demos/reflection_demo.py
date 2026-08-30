@@ -3,22 +3,24 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from runtime.execution.tool_engine import ToolExecutor
 from runtime.core.graph_runtime import GraphRuntime
+from runtime.execution.suckers import SkillRegistry
+from runtime.execution.suckers.builtins import register_all
+from runtime.execution.suckers.write_skills import register_exec_skill
+from runtime.execution.tool_engine import ToolExecutor
 from runtime.memory.journal import JSONLJournal
-from runtime.safety.auth import TrustEngine
 from runtime.memory.knowledge_graph import KnowledgeGraph
 from runtime.platform.models import (
     ArmId,
     Budget,
     BudgetLimits,
 )
+from runtime.safety.auth import TrustEngine
 from runtime.safety.recovery import (
     ConsolidatorConfig,
     ExtractorConfig,
@@ -30,9 +32,6 @@ from runtime.safety.recovery import (
     SkillForge,
     WorkflowRewriter,
 )
-from runtime.execution.suckers import SkillRegistry
-from runtime.execution.suckers.builtins import register_all
-from runtime.execution.suckers.write_skills import register_exec_skill
 
 from .bugfix_demo import build_bugfix_graph, setup_buggy_project
 
@@ -243,7 +242,7 @@ def run_demo(
 
     tmp_ctx = None
     if workdir is None:
-        tmp_ctx = tempfile.TemporaryDirectory(prefix="octopus-reflect-")
+        tmp_ctx = tempfile.TemporaryDirectory(prefix="echo-reflect-")
         root = Path(tmp_ctx.name)
     else:
         root = Path(workdir)
@@ -252,7 +251,7 @@ def run_demo(
     try:
         if verbose:
             print(c.bold("╭─────────────────────────────────────────────────╮"))
-            print(c.bold("│ octopus-agent · Reflection Closure Demo          │"))
+            print(c.bold("│ Echo Agent · Reflection Closure Demo             │"))
             print(c.bold("╰─────────────────────────────────────────────────╯"))
             print()
             print(c.dim(f"  workdir: {root}"))

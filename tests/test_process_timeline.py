@@ -107,7 +107,7 @@ def test_process_timeline_merges_execution_approval_review_and_learning() -> Non
         ],
     )
 
-    assert timeline["schema"] == "octopus.process_timeline.v1"
+    assert timeline["schema"] == "echo.process_timeline.v1"
     assert timeline["overview"]["score"] == 0.2
     assert timeline["overview"]["approval_count"] == 1
     assert timeline["overview"]["experience_record_count"] == 1

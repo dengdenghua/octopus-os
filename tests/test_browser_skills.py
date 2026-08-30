@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.suckers.browser_skills import (
     BROWSER_SKILL_NAMES,
@@ -116,7 +115,8 @@ class TestBrowserGet:
         monkeypatch.setattr(browser_skills, "PLAYWRIGHT_AVAILABLE", False)
         # Implementation note.
         monkeypatch.setattr(
-            browser_skills, "_check_url_safe",
+            browser_skills,
+            "_check_url_safe",
             lambda url, allow_private: None,
         )
         r = browser_skills._browser_get(url="https://a")
@@ -157,9 +157,7 @@ class TestBrowserExtract:
             _FakeHandle(attrs={"href": "/b"}),
         ]
         page = _FakePage(handles=handles)
-        r = _browser_extract(
-            url="https://a", selector="a", attr="href", page=page
-        )
+        r = _browser_extract(url="https://a", selector="a", attr="href", page=page)
         assert r["items"] == ["/a", "/b"]
         assert r["attr"] == "href"
 
@@ -191,9 +189,7 @@ class TestRegistration:
         assert n == 0
         assert not reg.has("browser_get")
 
-    @pytest.mark.skipif(
-        not PLAYWRIGHT_AVAILABLE, reason="playwright not installed"
-    )
+    @pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright not installed")
     def test_register_with_playwright(self):
         reg = SkillRegistry()
         n = register_browser_skills(reg)
@@ -207,9 +203,7 @@ class TestRegistration:
             assert s.cost_profile == "high"
             assert s.trusted_source.startswith("skill://public/")
 
-    @pytest.mark.skipif(
-        not PLAYWRIGHT_AVAILABLE, reason="playwright not installed"
-    )
+    @pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright not installed")
     def test_golden_tests_pass(self):
         """Implementation note."""
         reg = SkillRegistry()

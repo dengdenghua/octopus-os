@@ -1,0 +1,484 @@
+name: Echo OS A/B update and rollback
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [os-main, main]
+    paths:
+      - ".github/workflows/ab-update-smoke.yml"
+      - "packaging/image/**"
+      - "packaging/recovery/**"
+      - "appliance/**"
+      - "deploy/agent/**"
+      - "deploy/appliance/**"
+      - "deploy/desktop-session/**"
+      - "deploy/apps/**"
+      - "deploy/machine-state/**"
+      - "deploy/network-security/**"
+      - "deploy/removable-storage/**"
+      - "deploy/printing/**"
+      - "deploy/scanning/**"
+      - "deploy/core-apps/**"
+      - "deploy/oem/**"
+      - "deploy/update/**"
+      - "deploy/recovery/**"
+      - "deploy/installer/**"
+      - "deploy/data-protection/**"
+      - "frontend/electron/**"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/src/**"
+      - "pyproject.toml"
+  push:
+    branches: [os-main, main]
+    paths:
+      - ".github/workflows/ab-update-smoke.yml"
+      - "packaging/image/**"
+      - "packaging/recovery/**"
+      - "appliance/**"
+      - "deploy/agent/**"
+      - "deploy/appliance/**"
+      - "deploy/desktop-session/**"
+      - "deploy/apps/**"
+      - "deploy/machine-state/**"
+      - "deploy/network-security/**"
+      - "deploy/removable-storage/**"
+      - "deploy/printing/**"
+      - "deploy/scanning/**"
+      - "deploy/core-apps/**"
+      - "deploy/oem/**"
+      - "deploy/update/**"
+      - "deploy/recovery/**"
+      - "deploy/installer/**"
+      - "deploy/data-protection/**"
+      - "frontend/electron/**"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/src/**"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: echo-os-ab-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    name: A/B source contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container: debian:trixie-slim
+
+    steps:
+      - name: Install source-contract dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates git python3 systemd
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Preflight the unified Echo source
+        if: >-
+          github.event_name != 'pull_request' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 deploy/appliance/delivery_source_preflight.py --compact
+
+      - name: Verify private-source and image contracts
+        run: |
+          python3 packaging/image/test_cleanup_linux_image_runner.py
+          python3 packaging/image/test_verify_linux_image_runner_host.py
+          python3 packaging/image/test_verify_linux_image_runner.py
+          ./packaging/image/verify-image.sh --static
+          python3 deploy/appliance/operations_bundle.py build \
+            --source-root "$PWD" \
+            --output-directory /tmp/echo-operations-build \
+            --image-reference \
+            ghcr.io/echo-os/echo-os@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          python3 deploy/appliance/operations_bundle.py extract \
+            /tmp/echo-operations-build/echo-appliance-operations.tar.gz \
+            --destination /tmp/echo-operations-production \
+            --require-root-owner
+          python3 deploy/appliance/verify_operations_systemd_units.py \
+            --require-os-id debian --require-version-id 13 \
+            --source-revision "$GITHUB_SHA" \
+            > /tmp/echo-operations-native-systemd-verification.json
+          cat /tmp/echo-operations-native-systemd-verification.json
+
+  signed-update-rollback:
+    name: Signed 0.2.0 → 0.2.1 · failed-root rollback
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+    needs: source-contract
+    runs-on: [self-hosted, linux, x64, echo-os-image]
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    container:
+      image: debian:trixie-slim
+      options: --privileged --volume /lib/modules:/lib/modules:ro
+
+    env:
+      CI: "true"
+      NODE_OPTIONS: --max-old-space-size=4096
+      TMPDIR: /__w/_temp
+      UPDATE_VERSION: 0.2.1
+
+    steps:
+      - name: Install image, update, VM and frontend dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git xz-utils file python3 debian-archive-keyring \
+            mkosi systemd-container systemd-boot-efi systemd-repart systemd-ukify \
+            qemu-system-x86 ovmf dosfstools mtools e2fsprogs fdisk gdisk zstd gnupg gpgv \
+            initramfs-tools-core kmod openssl qemu-utils sbsigntool udev util-linux \
+            python3-virt-firmware cryptsetup-bin systemd-cryptsetup \
+            swtpm swtpm-tools tpm2-tools libtss2-tcti-swtpm0t64
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Preflight dedicated Linux image runner
+        run: |
+          modprobe loop max_loop=64
+          modprobe nbd nbds_max=16 max_part=16
+          udevadm settle --timeout=30
+          python3 packaging/image/verify-linux-image-runner.py \
+            --workspace "$GITHUB_WORKSPACE" \
+            --scratch "$RUNNER_TEMP" \
+            --output "$RUNNER_TEMP/echo-image-runner.json" \
+            2>&1 | tee "$RUNNER_TEMP/echo-image-runner-preflight.log"
+
+      - name: Record the clean Echo OS source identity
+        run: |
+          os_source_manifest="$RUNNER_TEMP/echo-os-source-identity.json"
+          python3 packaging/image/os_source_identity.py capture \
+            --repo "$PWD" \
+            --expected-commit "$GITHUB_SHA" \
+            --output "$os_source_manifest"
+          echo "ECHO_OS_SOURCE_MANIFEST=$os_source_manifest" >>"$GITHUB_ENV"
+
+      - name: Verify operations units with Debian 13 native systemd
+        run: |
+          systemd_report="$RUNNER_TEMP/echo-operations-native-systemd-verification.json"
+          python3 deploy/appliance/verify_operations_systemd_units.py \
+            --require-os-id debian --require-version-id 13 \
+            --source-revision "$GITHUB_SHA" \
+            >"$systemd_report"
+          chmod 0444 "$systemd_report"
+          cat "$systemd_report"
+          echo "ECHO_OPERATIONS_SYSTEMD_VERIFICATION=$systemd_report" >>"$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+        with:
+          version: 10.26.2
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Setup pinned uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.25"
+
+      - name: Prepare the unified Echo runtime bundle
+        run: ./deploy/appliance/prepare-agent-bundle.sh
+
+      - name: Create isolated CI Secure Boot and PCR policy identities
+        run: |
+          secure_boot_dir="$(mktemp -d "$RUNNER_TEMP/echo-secure-boot.XXXXXX")"
+          secure_boot_key="$secure_boot_dir/db.key"
+          secure_boot_certificate="$secure_boot_dir/db.crt"
+          pcr_policy_key="$secure_boot_dir/pcr-policy.key"
+          pcr_policy_certificate="$secure_boot_dir/pcr-policy.crt"
+          pcr_policy_public_key="$secure_boot_dir/pcr-policy-public.pem"
+          openssl req -new -x509 -newkey rsa:3072 -sha256 -nodes -days 1 \
+            -subj "/CN=Echo OS isolated CI Secure Boot/" \
+            -keyout "$secure_boot_key" \
+            -out "$secure_boot_certificate"
+          openssl req -new -x509 -newkey rsa:3072 -sha256 -nodes -days 1 \
+            -subj "/CN=Echo OS isolated CI PCR policy/" \
+            -keyout "$pcr_policy_key" \
+            -out "$pcr_policy_certificate"
+          openssl pkey -in "$pcr_policy_key" -pubout \
+            -out "$pcr_policy_public_key"
+          chmod 0600 "$secure_boot_key" "$pcr_policy_key"
+          chmod 0644 "$secure_boot_certificate" "$pcr_policy_certificate" \
+            "$pcr_policy_public_key"
+          echo "ECHO_SECURE_BOOT_KEY=$secure_boot_key" >>"$GITHUB_ENV"
+          echo "ECHO_SECURE_BOOT_CERTIFICATE=$secure_boot_certificate" >>"$GITHUB_ENV"
+          echo "ECHO_PCR_POLICY_KEY=$pcr_policy_key" >>"$GITHUB_ENV"
+          echo "ECHO_PCR_POLICY_CERTIFICATE=$pcr_policy_certificate" >>"$GITHUB_ENV"
+          echo "ECHO_TPM2_PCR_PUBLIC_KEY=$pcr_policy_public_key" >>"$GITHUB_ENV"
+
+      - name: Create an isolated CI installer trust identity
+        run: |
+          install_gnupg_home="$(mktemp -d "$RUNNER_TEMP/echo-install-gnupg.XXXXXX")"
+          install_keyring="$RUNNER_TEMP/echo-install-keyring.gpg"
+          chmod 0700 "$install_gnupg_home"
+          GNUPGHOME="$install_gnupg_home" gpg --batch --passphrase "" \
+            --quick-generate-key \
+            "Echo OS isolated CI installer <ci-installer@example.invalid>" \
+            ed25519 sign 1d
+          install_fingerprint="$(
+            GNUPGHOME="$install_gnupg_home" gpg --batch --with-colons \
+              --list-secret-keys |
+              awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          test -n "$install_fingerprint"
+          GNUPGHOME="$install_gnupg_home" gpg --batch \
+            --export "$install_fingerprint" >"$install_keyring"
+          chmod 0644 "$install_keyring"
+          echo "GNUPGHOME=$install_gnupg_home" >>"$GITHUB_ENV"
+          echo "ECHO_INSTALL_KEYRING=$install_keyring" >>"$GITHUB_ENV"
+          echo "ECHO_INSTALL_SIGNING_KEY=$install_fingerprint" >>"$GITHUB_ENV"
+
+      - name: Create an isolated CI update trust identity
+        run: |
+          update_gnupg_home="$(mktemp -d "$RUNNER_TEMP/echo-update-gnupg.XXXXXX")"
+          update_keyring="$RUNNER_TEMP/echo-update-keyring.gpg"
+          chmod 0700 "$update_gnupg_home"
+          GNUPGHOME="$update_gnupg_home" gpg --batch --passphrase "" \
+            --quick-generate-key \
+            "Echo OS CI Update Test <ci-update@example.invalid>" \
+            ed25519 sign 1d
+          update_fingerprint="$(
+            GNUPGHOME="$update_gnupg_home" gpg --batch --with-colons \
+              --list-secret-keys |
+              awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          test -n "$update_fingerprint"
+          GNUPGHOME="$update_gnupg_home" gpg --batch \
+            --export "$update_fingerprint" >"$update_keyring"
+          chmod 0644 "$update_keyring"
+          echo "ECHO_UPDATE_GNUPGHOME=$update_gnupg_home" >>"$GITHUB_ENV"
+          echo "ECHO_UPDATE_KEYRING=$update_keyring" >>"$GITHUB_ENV"
+          echo "ECHO_UPDATE_SIGNING_KEY=$update_fingerprint" >>"$GITHUB_ENV"
+          echo "ECHO_UPDATE_TRUST_GENERATION=1" >>"$GITHUB_ENV"
+
+      - name: Create an isolated factory key for blank mutable data
+        run: |
+          factory_data_key="$RUNNER_TEMP/echo-factory-data.key"
+          openssl rand -hex 32 | tr -d '\n' >"$factory_data_key"
+          chmod 0600 "$factory_data_key"
+          echo "ECHO_FACTORY_DATA_KEY=$factory_data_key" >>"$GITHUB_ENV"
+
+      - name: Create one persistent virtual TPM identity for install and boot
+        run: |
+          swtpm_state="$RUNNER_TEMP/echo-swtpm-state"
+          swtpm_srk="$RUNNER_TEMP/echo-swtpm-srk.tpm2b-public"
+          recovery_key="$RUNNER_TEMP/echo-installed-recovery.key"
+          mkdir -m 0700 "$swtpm_state"
+          ./deploy/data-protection/echo-swtpm-ci initialize \
+            "$swtpm_state" "$swtpm_srk"
+          echo "ECHO_SWTPM_STATE_DIR=$swtpm_state" >>"$GITHUB_ENV"
+          echo "ECHO_INSTALL_TPM2_DEVICE_KEY=$swtpm_srk" >>"$GITHUB_ENV"
+          echo "ECHO_INSTALL_RECOVERY_KEY_OUTPUT=$recovery_key" >>"$GITHUB_ENV"
+          echo "ECHO_DATA_RECOVERY_KEY=$recovery_key" >>"$GITHUB_ENV"
+
+      - name: Verify one-time local-account policy
+        run: python3 deploy/oem/test_echo_oem_setup.py
+
+      - name: Verify persistent application-catalog policy
+        run: ./deploy/apps/test-echo-app-catalog.sh
+
+      - name: Verify persistent machine-identity policy
+        run: ./deploy/machine-state/test-echo-machine-id.sh
+
+      - name: Verify persistent NetworkManager-state policy
+        run: ./deploy/machine-state/test-echo-network-state.sh
+
+      - name: Verify nftables/firewalld host-firewall policy
+        run: |
+          python3 deploy/network-security/test_echo_firewall_policy.py
+          python3 deploy/network-security/test_echo_firewall_health.py
+
+      - name: Verify on-demand removable-storage policy
+        run: python3 deploy/removable-storage/test_echo_removable_storage_health.py
+
+      - name: Verify private local printing policy
+        run: |
+          python3 deploy/printing/test_echo_printing_policy.py
+          python3 deploy/printing/test_echo_printing_health.py
+
+      - name: Verify native scanning policy
+        run: |
+          python3 deploy/scanning/test_echo_scanning_policy.py
+          python3 deploy/scanning/test_echo_scanning_health.py
+
+      - name: Verify core desktop application defaults
+        run: |
+          python3 deploy/core-apps/test_echo_core_apps_policy.py
+          python3 deploy/core-apps/test_echo_core_apps_health.py
+          python3 deploy/core-apps/test_echo_core_apps_session_smoke.py
+
+      - name: Verify persistent regional-state policy
+        run: python3 deploy/machine-state/test_echo_region_state.py
+
+      - name: Verify PAM screen-lock policy
+        run: ./deploy/desktop-session/test-echo-session-lock.sh
+
+      - name: Verify compositor-native KWin bridge protocol
+        run: python3 deploy/desktop-session/test_echo_kwin_window_bridge.py
+
+      - name: Verify authenticated installer bundle policy
+        run: |
+          python3 deploy/installer/test_verify_install_bundle.py
+          python3 deploy/installer/test_verify_install_stream.py
+          python3 deploy/installer/test_verify_public_keyring.py
+
+      - name: Verify authenticated update bundle policy
+        run: |
+          python3 -m unittest discover -s deploy/update -p '*test*.py' -v
+          node frontend/electron/system-update.test.cjs
+          ./deploy/update/test-echo-os-update.sh
+          ./deploy/update/test-echo-os-update-channel.sh
+          ./deploy/update/smoke-update-trust-rotation.sh
+          ./deploy/update/smoke-update-repository-publication.sh
+
+      - name: Verify per-device data-protection enrollment policy
+        run: |
+          python3 deploy/data-protection/test_echo_data_protection.py
+          python3 deploy/data-protection/test_verify_uki_pcr_policy.py
+
+      - name: Verify resolved mkosi release-policy gate
+        run: |
+          python3 deploy/appliance/test_unified_echo_workflow_policy.py
+          python3 packaging/image/test_os_source_identity.py
+          ./deploy/system-health/test-echo-os-source-identity.sh
+          python3 packaging/image/test_verify_mkosi_summary.py
+          python3 packaging/image/test_interrupt_sysupdate_after_write.py
+          python3 packaging/image/test_verify_ab_update_evidence.py
+
+      - name: Build base image and desktop payload
+        run: ./packaging/image/build-image.sh
+
+      - name: Build next-version dm-verity triplet and UKI
+        env:
+          ECHO_IMAGE_VERSION: ${{ env.UPDATE_VERSION }}
+        run: ./packaging/image/build-image.sh --skip-frontend
+
+      - name: Create the authenticated base installer bundle
+        run: >-
+          ./deploy/installer/create-install-bundle.sh
+          packaging/image/mkosi.output/install-bundle
+
+      - name: Install the base release onto an ephemeral whole disk
+        run: |
+          ./deploy/installer/smoke-installer-install.sh \
+            packaging/image/mkosi.output/install-bundle \
+            "$ECHO_INSTALL_KEYRING" \
+            "$RUNNER_TEMP/echo-os-installed-base.raw" \
+            2>&1 | tee "$RUNNER_TEMP/echo-ab-installer.log"
+
+      - name: Complete production OEM first use on the installed disk
+        env:
+          ECHO_LOGIN_LOG_DIR: ${{ runner.temp }}/echo-ab-oem-login
+        run: >-
+          ./packaging/image/smoke-oem-image.sh
+          "$RUNNER_TEMP/echo-os-installed-base.raw"
+          "$RUNNER_TEMP/echo-os-provisioned-base.raw"
+
+      - name: Sign an isolated CI update bundle
+        run: |
+          GNUPGHOME="$ECHO_UPDATE_GNUPGHOME" \
+          ECHO_IMAGE_VERSION="$UPDATE_VERSION" \
+            ./deploy/update/create-update-bundle.sh \
+              "${{ runner.temp }}/echo-os-update-bundle"
+
+      - name: Apply, boot and force automatic rollback
+        env:
+          ECHO_AB_LOG_DIR: ${{ runner.temp }}/echo-os-ab-logs
+        run: |
+          ./packaging/image/smoke-ab-update.sh \
+            "$RUNNER_TEMP/echo-os-provisioned-base.raw" \
+            "${{ runner.temp }}/echo-os-update-bundle" \
+            "$ECHO_UPDATE_KEYRING" \
+            "$UPDATE_VERSION"
+
+      - name: Bind and sign the complete A/B lifecycle evidence
+        run: |
+          base_version="$(tr -d '[:space:]' <packaging/image/mkosi.version)"
+          evidence="$RUNNER_TEMP/echo-ab-update-evidence.json"
+          signature="$RUNNER_TEMP/echo-ab-update-evidence.json.gpg"
+          python3 packaging/image/verify-ab-update-evidence.py \
+            --base-version "$base_version" \
+            --update-version "$UPDATE_VERSION" \
+            --os-source-manifest "$ECHO_OS_SOURCE_MANIFEST" \
+            --agent-manifest "$PWD/packaging/image/mkosi.agent-runtime/opt/echo-agent/agent-bundle.json" \
+            --update-bundle "$RUNNER_TEMP/echo-os-update-bundle" \
+            --update-keyring "$ECHO_UPDATE_KEYRING" \
+            --base-image "$RUNNER_TEMP/echo-os-provisioned-base.raw" \
+            --runner-preflight "$RUNNER_TEMP/echo-image-runner-preflight.log" \
+            --operations-systemd-verification "$ECHO_OPERATIONS_SYSTEMD_VERIFICATION" \
+            --logs-root "$RUNNER_TEMP/echo-os-ab-logs" \
+            --output "$evidence"
+          GNUPGHOME="$ECHO_UPDATE_GNUPGHOME" \
+            ./packaging/image/sign-os-image-evidence.sh \
+              "$evidence" "$signature" \
+              "$ECHO_UPDATE_KEYRING" "$ECHO_UPDATE_SIGNING_KEY" \
+              2>&1 | tee "$RUNNER_TEMP/echo-ab-update-evidence-signing.log"
+
+      - name: Attest the signed A/B lifecycle evidence identity
+        if: >-
+          success() && github.event_name != 'pull_request' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/echo-ab-update-evidence.json
+            ${{ runner.temp }}/echo-ab-update-evidence.json.gpg
+            ${{ runner.temp }}/echo-update-keyring.gpg
+
+      - name: Upload the signed A/B release evidence
+        if: >-
+          success() && github.event_name != 'pull_request' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: echo-os-ab-update-release-evidence
+          path: |
+            ${{ runner.temp }}/echo-ab-update-evidence.json
+            ${{ runner.temp }}/echo-ab-update-evidence.json.gpg
+            ${{ runner.temp }}/echo-update-keyring.gpg
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload A/B boot evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: echo-os-ab-update-rollback-logs
+          path: |
+            ${{ runner.temp }}/echo-image-runner.json
+            ${{ runner.temp }}/echo-image-runner-preflight.log
+            ${{ runner.temp }}/echo-os-source-identity.json
+            ${{ runner.temp }}/echo-operations-native-systemd-verification.json
+            ${{ runner.temp }}/echo-ab-installer.log
+            ${{ runner.temp }}/echo-ab-oem-login
+            ${{ runner.temp }}/echo-os-ab-logs
+            ${{ runner.temp }}/echo-ab-update-evidence.json
+            ${{ runner.temp }}/echo-ab-update-evidence.json.gpg
+            ${{ runner.temp }}/echo-ab-update-evidence-signing.log
+            ${{ runner.temp }}/echo-update-keyring.gpg
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Remove generated bundle and whole-disk temporaries
+        if: always()
+        run: >-
+          python3 packaging/image/cleanup-linux-image-runner.py
+          --workspace "$GITHUB_WORKSPACE"
+          --scratch "$RUNNER_TEMP"

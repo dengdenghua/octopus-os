@@ -14,6 +14,7 @@ agent message round, rather than serially. These tests pin:
   * concurrency speedup: 3 calls each "sleeping" 80ms wall-clock should
     finish in roughly 80ms (parallel) rather than 240ms (serial)
 """
+
 from __future__ import annotations
 
 import time
@@ -155,7 +156,8 @@ def test_serial_when_todo_write_in_round() -> None:
     calls = [
         ToolCall(id="t-0", name="slow_sum", input={"a": 1, "b": 1, "sleep_ms": 5}),
         ToolCall(
-            id="t-todo", name="todo_write",
+            id="t-todo",
+            name="todo_write",
             input={"items": [{"content": "x", "status": "in_progress", "activeForm": "x"}]},
         ),
         ToolCall(id="t-2", name="slow_sum", input={"a": 2, "b": 2, "sleep_ms": 5}),

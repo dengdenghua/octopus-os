@@ -59,7 +59,7 @@ class TestTopLevelHelp:
     def test_top_level_help_succeeds(self):
         r = _run_cli(["--help"])
         assert r.returncode == 0, f"stderr={r.stderr}"
-        assert "octopus-agent" in r.stdout.lower() or "usage" in r.stdout.lower()
+        assert "echo-agent" in r.stdout.lower() or "usage" in r.stdout.lower()
 
     def test_help_lists_all_subcommands(self):
         """Implementation note."""
@@ -67,9 +67,7 @@ class TestTopLevelHelp:
         assert r.returncode == 0
         # Sanity: a few representative subcommands are listed.
         for key in ["demo", "status", "skills"]:
-            assert key in r.stdout, (
-                f"subcommand {key!r} missing from --help output"
-            )
+            assert key in r.stdout, f"subcommand {key!r} missing from --help output"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -82,23 +80,18 @@ class TestSubcommandHelp:
     def test_subcommand_help_exits_zero(self, cmd: str):
         r = _run_cli([cmd, "--help"])
         assert r.returncode == 0, (
-            f"`octopus-agent {cmd} --help` failed:\n"
-            f"stdout={r.stdout}\nstderr={r.stderr}"
+            f"`echo-agent {cmd} --help` failed:\nstdout={r.stdout}\nstderr={r.stderr}"
         )
         # Implementation note.
         combined = (r.stdout + r.stderr).lower()
-        assert "usage" in combined, (
-            f"`{cmd} --help` no usage text in output"
-        )
+        assert "usage" in combined, f"`{cmd} --help` no usage text in output"
 
 
 class TestSkillsSubcommandHelp:
     @pytest.mark.parametrize("subcmd", _SKILLS_SUBCOMMANDS)
     def test_skills_subcommand_help(self, subcmd: str):
         r = _run_cli(["skills", subcmd, "--help"])
-        assert r.returncode == 0, (
-            f"`skills {subcmd} --help` failed:\n{r.stderr}"
-        )
+        assert r.returncode == 0, f"`skills {subcmd} --help` failed:\n{r.stderr}"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -112,9 +105,7 @@ class TestInvalidInvocation:
         r = _run_cli([])
         # Implementation note.
         # Implementation note.
-        assert "Traceback" not in r.stderr, (
-            f"unexpected traceback: {r.stderr}"
-        )
+        assert "Traceback" not in r.stderr, f"unexpected traceback: {r.stderr}"
 
     def test_unknown_subcommand_treated_as_goal(self):
         """Product behavior: unknown args route to `code` as a goal."""
@@ -139,9 +130,15 @@ class TestStatusRuns:
         assert r.returncode == 0, f"status failed:\n{r.stderr}"
         # Implementation note.
         combined = r.stdout + r.stderr
-        assert any(k in combined for k in [
-            "skills", "capabilities", "opentelemetry", "httpx",
-        ]), f"status output missing key fields: {combined[:500]}"
+        assert any(
+            k in combined
+            for k in [
+                "skills",
+                "capabilities",
+                "opentelemetry",
+                "httpx",
+            ]
+        ), f"status output missing key fields: {combined[:500]}"
         assert "market_skills: registered" not in combined
 
     def test_demo_no_color_does_not_override_global_flag(self):
@@ -155,13 +152,15 @@ class TestQuickstart:
         monkeypatch.chdir(tmp_path)
         config_path = tmp_path / "config.yaml"
 
-        r = _run_cli([
-            "--no-color",
-            "quickstart",
-            "--output",
-            str(config_path),
-            "--non-interactive",
-        ])
+        r = _run_cli(
+            [
+                "--no-color",
+                "quickstart",
+                "--output",
+                str(config_path),
+                "--non-interactive",
+            ]
+        )
 
         assert r.returncode == 0, f"quickstart failed:\nstdout={r.stdout}\nstderr={r.stderr}"
         assert config_path.exists()

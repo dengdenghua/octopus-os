@@ -12,7 +12,7 @@ unless "paragraphs" is specified in the replacements for that shape.
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from inventory import InventoryData, extract_text_inventory
 from pptx import Presentation
@@ -25,7 +25,7 @@ from pptx.util import Pt
 
 def clear_paragraph_bullets(paragraph):
     """Clear bullet formatting from a paragraph."""
-    pPr = paragraph._element.get_or_add_pPr()
+    pPr = paragraph._element.get_or_add_pPr()  # noqa: N806
 
     # Remove existing bullet elements
     for child in list(pPr):
@@ -40,13 +40,13 @@ def clear_paragraph_bullets(paragraph):
     return pPr
 
 
-def apply_paragraph_properties(paragraph, para_data: Dict[str, Any]):
+def apply_paragraph_properties(paragraph, para_data: dict[str, Any]):
     """Apply formatting properties to a paragraph."""
     # Get the text but don't set it on paragraph directly yet
     text = para_data.get("text", "")
 
     # Get or create paragraph properties
-    pPr = clear_paragraph_bullets(paragraph)
+    pPr = clear_paragraph_bullets(paragraph)  # noqa: N806
 
     # Handle bullet formatting
     if para_data.get("bullet", False):
@@ -63,7 +63,7 @@ def apply_paragraph_properties(paragraph, para_data: Dict[str, Any]):
         pPr.attrib["indent"] = str(hanging_indent_emu)
 
         # Add bullet character
-        buChar = OxmlElement("a:buChar")
+        buChar = OxmlElement("a:buChar")  # noqa: N806
         buChar.set("char", "•")
         pPr.append(buChar)
 
@@ -76,7 +76,7 @@ def apply_paragraph_properties(paragraph, para_data: Dict[str, Any]):
         pPr.attrib["indent"] = "0"
 
         # Add buNone element
-        buNone = OxmlElement("a:buNone")
+        buNone = OxmlElement("a:buNone")  # noqa: N806
         pPr.insert(0, buNone)
 
     # Apply alignment
@@ -110,7 +110,7 @@ def apply_paragraph_properties(paragraph, para_data: Dict[str, Any]):
     apply_font_properties(run, para_data)
 
 
-def apply_font_properties(run, para_data: Dict[str, Any]):
+def apply_font_properties(run, para_data: dict[str, Any]):
     """Apply font properties to a text run."""
     if "bold" in para_data:
         run.font.bold = para_data["bold"]
@@ -140,7 +140,7 @@ def apply_font_properties(run, para_data: Dict[str, Any]):
             print(f"  WARNING: Unknown theme color name '{theme_name}'")
 
 
-def detect_frame_overflow(inventory: InventoryData) -> Dict[str, Dict[str, float]]:
+def detect_frame_overflow(inventory: InventoryData) -> dict[str, dict[str, float]]:
     """Detect text overflow in shapes (text exceeding shape bounds).
 
     Returns dict of slide_key -> shape_key -> overflow_inches.
@@ -159,7 +159,7 @@ def detect_frame_overflow(inventory: InventoryData) -> Dict[str, Dict[str, float
     return overflow_map
 
 
-def validate_replacements(inventory: InventoryData, replacements: Dict) -> List[str]:
+def validate_replacements(inventory: InventoryData, replacements: dict) -> list[str]:
     """Validate that all shapes in replacements exist in inventory.
 
     Returns list of error messages.
@@ -176,11 +176,11 @@ def validate_replacements(inventory: InventoryData, replacements: Dict) -> List[
             continue
 
         # Check each shape
-        for shape_key in shapes_data.keys():
+        for shape_key in shapes_data:
             if shape_key not in inventory[slide_key]:
                 # Find shapes without replacements defined and show their content
                 unused_with_content = []
-                for k in inventory[slide_key].keys():
+                for k in inventory[slide_key]:
                     if k not in shapes_data:
                         shape_data = inventory[slide_key][k]
                         # Get text from paragraphs as preview
@@ -225,7 +225,7 @@ def apply_replacements(pptx_file: str, json_file: str, output_file: str):
     original_overflow = detect_frame_overflow(inventory)
 
     # Load replacement data with duplicate key detection
-    with open(json_file, "r") as f:
+    with open(json_file) as f:
         replacements = json.load(f, object_pairs_hook=check_duplicate_keys)
 
     # Validate replacements
@@ -281,10 +281,7 @@ def apply_replacements(pptx_file: str, json_file: str, output_file: str):
 
             # Add replacement paragraphs
             for i, para_data in enumerate(replacement_shape_data["paragraphs"]):
-                if i == 0:
-                    p = text_frame.paragraphs[0]  # type: ignore
-                else:
-                    p = text_frame.add_paragraph()  # type: ignore
+                p = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()  # type: ignore
 
                 apply_paragraph_properties(p, para_data)
 

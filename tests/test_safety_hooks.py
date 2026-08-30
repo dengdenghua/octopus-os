@@ -6,7 +6,7 @@ lifecycle hooks system (PreToolUse / PostToolUse / UserPromptSubmit
 Distinct from the legacy ``runtime.core.nerves.hooks`` HookManager
 (see ``test_hooks.py``) · this is the community-facing dispatch
 system used by ``@register_hook`` decorated handlers in
-``~/.octopus/hooks/*.py``.
+``~/.echo/hooks/*.py``.
 
 Contract pinned
 ---------------
@@ -20,6 +20,7 @@ Contract pinned
 7. Executor honors PreToolUse modify_args (handler sees new args)
 8. Executor honors PostToolUse modify_output (result.output rewritten)
 """
+
 from __future__ import annotations
 
 from uuid import uuid4
@@ -31,6 +32,7 @@ import pytest
 def _clean_registry():
     """Every test starts with an empty global registry."""
     from runtime.safety.hooks.registry import get_global_registry
+
     reg = get_global_registry()
     reg.clear()
     yield
@@ -84,6 +86,7 @@ class TestRegistryBasics:
 class TestDispatchChain:
     def test_pass_through_default(self):
         from runtime.safety.hooks.runner import dispatch_pre_tool
+
         decision = dispatch_pre_tool(sucker_id="x", args={"a": 1})
         assert decision.cancelled is False
         assert decision.modified_args is None
@@ -212,6 +215,7 @@ class TestOtherDispatchers:
             raise RuntimeError("x")
 
         from runtime.safety.hooks.runner import dispatch_stop
+
         d = dispatch_stop(thread_id="t1", success=True, step_count=3)
         assert d.cancelled is False
 
@@ -228,14 +232,16 @@ def _make_executor():
     from runtime.safety.auth import TrustEngine
 
     reg = SkillRegistry()
-    reg.register(Skill(
-        name="echo",
-        description="echo back the input",
-        affinity=["test"],
-        cost_profile="low",
-        trusted_source="skill://public/echo",
-        handler=lambda x="default": f"echoed:{x}",
-    ))
+    reg.register(
+        Skill(
+            name="echo",
+            description="echo back the input",
+            affinity=["test"],
+            cost_profile="low",
+            trusted_source="skill://public/echo",
+            handler=lambda x="default": f"echoed:{x}",
+        )
+    )
     return ToolExecutor(
         registry=reg,
         immunity=TrustEngine(trusted_sources=["skill://public/*"]),
@@ -245,6 +251,7 @@ def _make_executor():
 
 def _make_budget(task_id):
     from runtime.platform.models import Budget, BudgetLimits
+
     return Budget(task_id=task_id, limits=BudgetLimits(tokens=1000, usd=0.01))
 
 
@@ -266,11 +273,13 @@ class TestExecutorIntegration:
         executor = _make_executor()
         tid = TaskId(uuid4())
         step = executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("echo"),
             args={"x": "hi"},
             caller="test",
-            task_id=tid, arm_id=ArmId("a"),
+            task_id=tid,
+            arm_id=ArmId("a"),
             budget=_make_budget(tid),
         )
         assert step.result.status == "failed"
@@ -292,11 +301,13 @@ class TestExecutorIntegration:
         executor = _make_executor()
         tid = TaskId(uuid4())
         step = executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("echo"),
             args={"x": "original"},
             caller="test",
-            task_id=tid, arm_id=ArmId("a"),
+            task_id=tid,
+            arm_id=ArmId("a"),
             budget=_make_budget(tid),
         )
         assert step.result.status == "success"
@@ -317,11 +328,13 @@ class TestExecutorIntegration:
         executor = _make_executor()
         tid = TaskId(uuid4())
         step = executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("echo"),
             args={"x": "sensitive"},
             caller="test",
-            task_id=tid, arm_id=ArmId("a"),
+            task_id=tid,
+            arm_id=ArmId("a"),
             budget=_make_budget(tid),
         )
         assert step.result.status == "success"
@@ -340,11 +353,13 @@ class TestExecutorIntegration:
         executor = _make_executor()
         tid = TaskId(uuid4())
         step = executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("echo"),
             args={"x": "ok"},
             caller="test",
-            task_id=tid, arm_id=ArmId("a"),
+            task_id=tid,
+            arm_id=ArmId("a"),
             budget=_make_budget(tid),
         )
         assert step.result.status == "success"

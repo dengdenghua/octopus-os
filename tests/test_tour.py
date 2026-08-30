@@ -6,7 +6,6 @@ import io
 from contextlib import redirect_stdout
 
 import pytest
-
 from runtime.tour import CHAPTERS, run_tour
 
 

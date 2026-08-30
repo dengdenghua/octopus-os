@@ -4,21 +4,20 @@ Replaces the deprecated test_a2_auto_rollback.py.
 Quantifies rollback latency and query performance for canary, ledger,
 and coordinator subsystems.
 """
+
 from __future__ import annotations
 
 import sys
 import time
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from runtime.safety.evolution.canary import CanaryConfig, CanaryManager
-from runtime.safety.evolution.proposal_ledger import ProposalLedger, ProposalStatus
-from runtime.safety.evolution.rollback_coordinator import RollbackCoordinator
+from runtime.safety.evolution.canary import CanaryConfig, CanaryManager  # noqa: E402
+from runtime.safety.evolution.proposal_ledger import ProposalLedger, ProposalStatus  # noqa: E402
+from runtime.safety.evolution.rollback_coordinator import RollbackCoordinator  # noqa: E402
 
 
 class TestBenchCanaryRollback:
@@ -167,3 +166,4 @@ class TestBenchRollbackCoordinator:
         print(f"coordinator rollback_history (10 rollbacks): {elapsed * 1000:.2f} ms")
         assert len(history) == 10
         assert elapsed < 0.2
+

@@ -1,0 +1,14 @@
+[Unit]
+Description=Gate normal boot on a complete Echo OS restore transaction
+Documentation=file:/usr/share/doc/echo-os/user-backup.md
+After=local-fs.target systemd-tmpfiles-setup.service
+RequiresMountsFor=/home /var
+Before=echo-agent.service sddm.service echo-desktop.service boot-complete.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/echo-restore-transaction.py health --home-root /home --var-root /var
+RemainAfterExit=yes
+
+[Install]
+RequiredBy=echo-agent.service sddm.service echo-desktop.service boot-complete.target

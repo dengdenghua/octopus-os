@@ -102,7 +102,8 @@ class TestTrustEngineIntegration:
         # its free pass once it is a known attacker.
         engine = TrustEngine(trusted_sources=["skill://public/*"])
         engine.attack_memory.record_attack(
-            "skill://public/compromised", "reported by operator",
+            "skill://public/compromised",
+            "reported by operator",
         )
         report = engine.check(_call(), _sig("skill://public/compromised"))
         assert report.verdict == "reject"

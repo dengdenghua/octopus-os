@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Echo OS (Wayland Candidate)
 Comment=Echo OS compositor-native validation session
-Exec=/opt/octopus-os/deploy/desktop-session/echo-wayland-session.sh
-TryExec=/opt/octopus-os/deploy/desktop-session/echo-wayland-session.sh
+Exec=/opt/echo-os/deploy/desktop-session/echo-wayland-session.sh
+TryExec=/opt/echo-os/deploy/desktop-session/echo-wayland-session.sh
 Type=Application
 DesktopNames=Echo;KDE;

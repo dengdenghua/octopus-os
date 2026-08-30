@@ -7,7 +7,7 @@ function normalizeBaseURL(value) {
 }
 
 function readBackendBaseURLArg() {
-  const prefix = "--octopus-backend-base-url=";
+  const prefix = "--echo-backend-base-url=";
   const arg = process.argv.find((item) => String(item || "").startsWith(prefix));
   if (!arg) return "";
   const raw = arg.slice(prefix.length);
@@ -164,4 +164,4 @@ const api = {
   },
 };
 
-contextBridge.exposeInMainWorld("octopus", api);
+contextBridge.exposeInMainWorld("echo", api);

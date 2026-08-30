@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from runtime.safety.organization.builtin_topologies import (
     BUILTIN_TOPOLOGIES,
     seed_builtin_topologies,
@@ -29,9 +28,7 @@ def test_builtin_topology_invariants() -> None:
     seen_fingerprints: set[str] = set()
     for topology in BUILTIN_TOPOLOGIES:
         # Unique name across the four.
-        assert topology.name not in seen_names, (
-            f"duplicate name: {topology.name}"
-        )
+        assert topology.name not in seen_names, f"duplicate name: {topology.name}"
         seen_names.add(topology.name)
         # Unique fingerprint.
         assert topology.fingerprint not in seen_fingerprints
@@ -44,9 +41,7 @@ def test_builtin_topology_invariants() -> None:
         for role, spec in topology.agents.items():
             assert isinstance(role, Role)
             assert spec.agent_id, f"{topology.name}: empty agent_id"
-            assert spec.system_addendum, (
-                f"{topology.name}/{role}: empty system prompt"
-            )
+            assert spec.system_addendum, f"{topology.name}/{role}: empty system prompt"
             assert len(spec.system_addendum) >= 50, (
                 f"{topology.name}/{role}: system_addendum too short "
                 f"({len(spec.system_addendum)} chars)"

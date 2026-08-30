@@ -1,8 +1,8 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: octopus-agent
-  namespace: octopus-agent
+  name: echo-agent
+  namespace: echo-agent
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
@@ -14,16 +14,16 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - octopus.example.com
-      secretName: octopus-tls
+        - echo.example.com
+      secretName: echo-tls
   rules:
-    - host: octopus.example.com
+    - host: echo.example.com
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: octopus-agent
+                name: echo-agent
                 port:
                   number: 80

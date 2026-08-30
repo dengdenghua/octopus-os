@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过 IMAP/SMTP 协议将 Octopus-Agent 接入电子邮件，实现通过邮件与 AI 进行对话交互。
+通过 IMAP/SMTP 协议将 Echo Agent 接入电子邮件，实现通过邮件与 AI 进行对话交互。
 
 ## 前置条件
 
@@ -32,7 +32,7 @@
 2. 开启 IMAP 服务
 3. 按提示获取授权码
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 Email，填写以下字段：
 
@@ -46,7 +46,7 @@
 | 密码 | 邮箱授权码/应用专用密码 | `xxxx xxxx xxxx xxxx` |
 | 轮询间隔 | 检查新邮件的间隔（秒） | `30` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -64,7 +64,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -84,7 +84,7 @@ octopus serve
 
 ## Webhook 配置
 
-Email 渠道使用 IMAP 轮询方式接收邮件，无需配置 Webhook。Octopus-Agent 会定期检查收件箱中的新邮件并处理。
+Email 渠道使用 IMAP 轮询方式接收邮件，无需配置 Webhook。Echo Agent 会定期检查收件箱中的新邮件并处理。
 
 常见邮箱服务器配置：
 
@@ -105,10 +105,10 @@ A: Gmail 不支持使用账号密码直接登录，必须使用应用专用密�
 A: 1) 减小 `poll_interval` 值（最小建议 10 秒）；2) 检查网络到邮件服务器的延迟；3) 考虑使用邮件转发 + Webhook 方式实现实时接收。
 
 ### Q: 如何避免重复回复同一封邮件？
-A: Octopus-Agent 会自动记录已处理的邮件 Message-ID，确保不会重复处理。处理记录存储在 `~/.octopus/data/email_processed.json` 中。
+A: Echo Agent 会自动记录已处理的邮件 Message-ID，确保不会重复处理。处理记录存储在 `~/.echo/data/email_processed.json` 中。
 
 ## 相关链接
 
 - [Gmail IMAP 设置](https://support.google.com/mail/answer/7126229)
 - [QQ 邮箱帮助中心](https://service.mail.qq.com/)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/email)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/email)

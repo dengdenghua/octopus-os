@@ -1,0 +1,20 @@
+[Unit]
+Description=Recover an interrupted Echo appliance image upgrade
+Requires=docker.service
+After=docker.service local-fs.target
+Before=echo-state-backup.service echo-audit-evidence.service
+ConditionPathExists=/opt/echo-os/deploy/appliance/.echo-upgrade-transaction.json
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/echo-os/deploy/appliance
+ExecStart=/opt/echo-os/deploy/appliance/recover-appliance-upgrade.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/echo-os/deploy/appliance
+ReadWritePaths=/run/lock
+
+[Install]
+WantedBy=multi-user.target

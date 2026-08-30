@@ -1,0 +1,44 @@
+# Production baseline for deploy/echo-agent.service.
+#
+# Copy this file to /etc/echo/config.yaml and inject both referenced
+# secrets through /etc/echo/echo.env. Missing or weak JWT material makes
+# schema validation fail, so the network-facing service never falls back to an
+# unauthenticated control plane.
+
+name: echo-systemd
+version_compat: "0.2"
+
+planner:
+  type: llm
+  model: claude-haiku-4-5-20251001
+  mock_response: null
+
+budget:
+  max_tokens: 50000
+  max_usd: 0.50
+  max_latency_ms: 600000
+
+local_auth:
+  enabled: true
+  allow_any_username: false
+  users:
+    admin: ${ECHO_ADMIN_PASSWORD_HASH}
+  login_max_failures: 5
+  login_ip_max_failures: 20
+  login_failure_window_seconds: 300
+  login_lockout_seconds: 60
+  login_rate_limit_max_entries: 10000
+  jwt_secret: ${ECHO_LOCAL_AUTH_JWT_SECRET}
+  jwt_expire_seconds: 28800
+  jwt_audience: echo-agent-web
+  # This baseline exposes one administrator account. Do not add ordinary users
+  # until roles can be assigned per account instead of through default_roles.
+  default_roles: [user, local, admin, operator]
+
+execution:
+  deployment_mode: production
+  process_sandbox: strict
+
+# Every mutable runtime path is rooted under /var/lib/echo by the unit's
+# ECHO_DATA_DIR setting; keep the journal inside that writable boundary too.
+journal_file: /var/lib/echo/events.jsonl

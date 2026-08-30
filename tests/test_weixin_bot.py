@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from runtime.adapters.channels import (
     ChannelManager,
     InboundMessage,
@@ -29,7 +28,11 @@ from runtime.execution.agents import AgentRegistry, make_general_agent
 
 class _FakeResp:
     def __init__(
-        self, *, status_code: int = 200, body: Any = None, text: str = "",
+        self,
+        *,
+        status_code: int = 200,
+        body: Any = None,
+        text: str = "",
     ) -> None:
         self.status_code = status_code
         self._body = body if body is not None else {}
@@ -54,17 +57,26 @@ class _SeqHttp:
         return self._responses.pop(0)
 
     def get(self, url, params=None, headers=None, **_kw):
-        self.calls.append({
-            "method": "GET", "url": url,
-            "params": params, "headers": headers,
-        })
+        self.calls.append(
+            {
+                "method": "GET",
+                "url": url,
+                "params": params,
+                "headers": headers,
+            }
+        )
         return self._serve()
 
     def post(self, url, params=None, json=None, headers=None, **_kw):
-        self.calls.append({
-            "method": "POST", "url": url, "params": params,
-            "json": json, "headers": headers,
-        })
+        self.calls.append(
+            {
+                "method": "POST",
+                "url": url,
+                "params": params,
+                "json": json,
+                "headers": headers,
+            }
+        )
         return self._serve()
 
 
@@ -84,17 +96,26 @@ class _RouteHttp:
         raise AssertionError(f"no route for {url}")
 
     def get(self, url, params=None, headers=None, **_kw):
-        self.calls.append({
-            "method": "GET", "url": url,
-            "params": params, "headers": headers,
-        })
+        self.calls.append(
+            {
+                "method": "GET",
+                "url": url,
+                "params": params,
+                "headers": headers,
+            }
+        )
         return self._serve(url)
 
     def post(self, url, params=None, json=None, headers=None, **_kw):
-        self.calls.append({
-            "method": "POST", "url": url, "params": params,
-            "json": json, "headers": headers,
-        })
+        self.calls.append(
+            {
+                "method": "POST",
+                "url": url,
+                "params": params,
+                "json": json,
+                "headers": headers,
+            }
+        )
         return self._serve(url)
 
 
@@ -138,18 +159,24 @@ class TestConstruct:
 class TestQRLogin:
     def test_happy_path(self, tmp_path: Path):
         tiny_png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"x" * 100).decode()
-        http = _SeqHttp([
-            _FakeResp(body={
-                "qrcode": "QR-ABC",
-                "qrcode_img_content": tiny_png,
-            }),
-            _FakeResp(body={"status": "pending"}),
-            _FakeResp(body={
-                "status": "confirmed",
-                "bot_token": "LIVE-TOKEN",
-                "baseurl": "https://ilinkai.weixin.qq.com",
-            }),
-        ])
+        http = _SeqHttp(
+            [
+                _FakeResp(
+                    body={
+                        "qrcode": "QR-ABC",
+                        "qrcode_img_content": tiny_png,
+                    }
+                ),
+                _FakeResp(body={"status": "pending"}),
+                _FakeResp(
+                    body={
+                        "status": "confirmed",
+                        "bot_token": "LIVE-TOKEN",
+                        "baseurl": "https://ilinkai.weixin.qq.com",
+                    }
+                ),
+            ]
+        )
         ch = WeixinBotChannel(
             http_client=http,
             token_path=tmp_path / "tok.json",
@@ -166,12 +193,17 @@ class TestQRLogin:
         assert (tmp_path / "qr.png").exists()
 
     def test_rejected_raises(self, tmp_path: Path):
-        http = _SeqHttp([
-            _FakeResp(body={
-                "qrcode": "Q", "qrcode_img_content": base64.b64encode(b"ok").decode(),
-            }),
-            _FakeResp(body={"status": "rejected"}),
-        ])
+        http = _SeqHttp(
+            [
+                _FakeResp(
+                    body={
+                        "qrcode": "Q",
+                        "qrcode_img_content": base64.b64encode(b"ok").decode(),
+                    }
+                ),
+                _FakeResp(body={"status": "rejected"}),
+            ]
+        )
         ch = WeixinBotChannel(
             http_client=http,
             qr_png_path=tmp_path / "qr.png",
@@ -181,12 +213,17 @@ class TestQRLogin:
             ch._qr_login_flow()
 
     def test_expired_raises(self, tmp_path: Path):
-        http = _SeqHttp([
-            _FakeResp(body={
-                "qrcode": "Q", "qrcode_img_content": base64.b64encode(b"ok").decode(),
-            }),
-            _FakeResp(body={"status": "expired"}),
-        ])
+        http = _SeqHttp(
+            [
+                _FakeResp(
+                    body={
+                        "qrcode": "Q",
+                        "qrcode_img_content": base64.b64encode(b"ok").decode(),
+                    }
+                ),
+                _FakeResp(body={"status": "expired"}),
+            ]
+        )
         ch = WeixinBotChannel(
             http_client=http,
             qr_png_path=tmp_path / "qr.png",
@@ -200,13 +237,17 @@ class TestQRLogin:
         def _forever_pending():
             return _FakeResp(body={"status": "pending"})
 
-        http = _RouteHttp({
-            "/get_bot_qrcode": _FakeResp(body={
-                "qrcode": "Q",
-                "qrcode_img_content": base64.b64encode(b"ok").decode(),
-            }),
-            "/get_qrcode_status": _forever_pending,
-        })
+        http = _RouteHttp(
+            {
+                "/get_bot_qrcode": _FakeResp(
+                    body={
+                        "qrcode": "Q",
+                        "qrcode_img_content": base64.b64encode(b"ok").decode(),
+                    }
+                ),
+                "/get_qrcode_status": _forever_pending,
+            }
+        )
         ch = WeixinBotChannel(
             http_client=http,
             qr_png_path=tmp_path / "qr.png",
@@ -217,11 +258,14 @@ class TestQRLogin:
             ch._qr_login_flow()
 
     def test_bad_qr_response_shape(self, tmp_path: Path):
-        http = _SeqHttp([
-            _FakeResp(body={"no_qrcode": "here"}),
-        ])
+        http = _SeqHttp(
+            [
+                _FakeResp(body={"no_qrcode": "here"}),
+            ]
+        )
         ch = WeixinBotChannel(
-            http_client=http, qr_png_path=tmp_path / "qr.png",
+            http_client=http,
+            qr_png_path=tmp_path / "qr.png",
         )
         with pytest.raises(WeixinBotError, match="shape"):
             ch._qr_login_flow()
@@ -247,7 +291,7 @@ class TestHeaders:
         assert "Authorization" not in h
 
     def test_authed_without_token_raises(self):
-        ch = WeixinBotChannel()   # no token
+        ch = WeixinBotChannel()  # no token
         with pytest.raises(WeixinBotError, match="bot_token"):
             ch._headers(auth=True)
 
@@ -282,19 +326,26 @@ class TestSend:
         """Implementation note."""
         http = _SeqHttp([_FakeResp(body={"ret": 0})])
         ch = WeixinBotChannel(bot_token="T", http_client=http)
-        ch.send(OutboundMessage(
-            channel_id="weixin_bot", thread_id="fallback",
-            content="x",
-            metadata={"to_user_id": "specific@im.wechat", "context_token": ""},
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="weixin_bot",
+                thread_id="fallback",
+                content="x",
+                metadata={"to_user_id": "specific@im.wechat", "context_token": ""},
+            )
+        )
         assert http.calls[0]["json"]["msg"]["to_user_id"] == "specific@im.wechat"
 
     def test_send_without_token_raises(self):
         ch = WeixinBotChannel()
         with pytest.raises(WeixinBotError, match="logged in"):
-            ch.send(OutboundMessage(
-                channel_id="weixin_bot", thread_id="x", content="y",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="weixin_bot",
+                    thread_id="x",
+                    content="y",
+                )
+            )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -305,15 +356,17 @@ class TestSend:
 class TestParseInbound:
     def test_text_message(self):
         ch = WeixinBotChannel(bot_token="t")
-        msg = ch._parse_inbound({
-            "msg_id": "M1",
-            "from_user_id": "user@im.wechat",
-            "conversation_id": "conv-abc",
-            "context_token": "CTX",
-            "item_list": [
-                {"type": 1, "text_item": {"text": "hello"}},
-            ],
-        })
+        msg = ch._parse_inbound(
+            {
+                "msg_id": "M1",
+                "from_user_id": "user@im.wechat",
+                "conversation_id": "conv-abc",
+                "context_token": "CTX",
+                "item_list": [
+                    {"type": 1, "text_item": {"text": "hello"}},
+                ],
+            }
+        )
         assert msg is not None
         assert msg.channel_id == "weixin_bot"
         assert msg.thread_id == "conv-abc"
@@ -324,28 +377,35 @@ class TestParseInbound:
 
     def test_fallback_to_sender_as_thread(self):
         ch = WeixinBotChannel(bot_token="t")
-        msg = ch._parse_inbound({
-            "sender_id": "user@im.wechat",
-            "item_list": [{"type": 1, "text_item": {"text": "x"}}],
-        })
+        msg = ch._parse_inbound(
+            {
+                "sender_id": "user@im.wechat",
+                "item_list": [{"type": 1, "text_item": {"text": "x"}}],
+            }
+        )
         assert msg is not None
         assert msg.thread_id == "user@im.wechat"
 
     def test_non_text_filtered(self):
         ch = WeixinBotChannel(bot_token="t")
-        msg = ch._parse_inbound({
-            "from_user_id": "u",
-            "conversation_id": "c",
-            "item_list": [{"type": 2, "image_item": {"url": "..."}}],
-        })
+        msg = ch._parse_inbound(
+            {
+                "from_user_id": "u",
+                "conversation_id": "c",
+                "item_list": [{"type": 2, "image_item": {"url": "..."}}],
+            }
+        )
         assert msg is None
 
     def test_empty_text_filtered(self):
         ch = WeixinBotChannel(bot_token="t")
-        msg = ch._parse_inbound({
-            "from_user_id": "u", "conversation_id": "c",
-            "item_list": [{"type": 1, "text_item": {"text": ""}}],
-        })
+        msg = ch._parse_inbound(
+            {
+                "from_user_id": "u",
+                "conversation_id": "c",
+                "item_list": [{"type": 1, "text_item": {"text": ""}}],
+            }
+        )
         assert msg is None
 
     def test_malformed_returns_none(self):
@@ -363,22 +423,30 @@ class TestLongPoll:
     def test_single_message_dispatched(self):
         # Implementation note.
         responses = [
-            _FakeResp(body={
-                "ret": 0,
-                "get_updates_buf": "cursor-v2",
-                "msgs": [{
-                    "msg_id": "M1",
-                    "from_user_id": "u@wx",
-                    "conversation_id": "conv-1",
-                    "context_token": "CTX-1",
-                    "item_list": [
-                        {"type": 1, "text_item": {"text": "hello"}},
+            _FakeResp(
+                body={
+                    "ret": 0,
+                    "get_updates_buf": "cursor-v2",
+                    "msgs": [
+                        {
+                            "msg_id": "M1",
+                            "from_user_id": "u@wx",
+                            "conversation_id": "conv-1",
+                            "context_token": "CTX-1",
+                            "item_list": [
+                                {"type": 1, "text_item": {"text": "hello"}},
+                            ],
+                        }
                     ],
-                }],
-            }),
-            _FakeResp(body={
-                "ret": 0, "get_updates_buf": "cursor-v3", "msgs": [],
-            }),
+                }
+            ),
+            _FakeResp(
+                body={
+                    "ret": 0,
+                    "get_updates_buf": "cursor-v3",
+                    "msgs": [],
+                }
+            ),
         ]
         remaining = list(responses)
 
@@ -387,9 +455,13 @@ class TestLongPoll:
                 return remaining.pop(0)
             # Implementation note.
             time.sleep(0.05)
-            return _FakeResp(body={
-                "ret": 0, "get_updates_buf": "", "msgs": [],
-            })
+            return _FakeResp(
+                body={
+                    "ret": 0,
+                    "get_updates_buf": "",
+                    "msgs": [],
+                }
+            )
 
         http = _RouteHttp({"/getupdates": _serve_or_stop})
 
@@ -421,9 +493,13 @@ class TestLongPoll:
             if len(got_bodies) >= 1:
                 stop_after_first.set()
                 time.sleep(0.05)
-            return _FakeResp(body={
-                "ret": 0, "get_updates_buf": "CURSOR-NEW", "msgs": [],
-            })
+            return _FakeResp(
+                body={
+                    "ret": 0,
+                    "get_updates_buf": "CURSOR-NEW",
+                    "msgs": [],
+                }
+            )
 
         class _CaptureHttp:
             def post(self, url, params=None, json=None, headers=None, **_kw):
@@ -455,19 +531,25 @@ class TestAuthExpired:
     def test_401_clears_token_file(self, tmp_path: Path):
         token_path = tmp_path / "tok.json"
         token_path.write_text(json.dumps({"bot_token": "OLD"}))
-        http = _SeqHttp([
-            _FakeResp(status_code=401, text='{"err":"expired"}'),
-        ])
+        http = _SeqHttp(
+            [
+                _FakeResp(status_code=401, text='{"err":"expired"}'),
+            ]
+        )
         ch = WeixinBotChannel(
             bot_token="OLD",
             http_client=http,
             token_path=token_path,
         )
         with pytest.raises(WeixinBotError, match="HTTP 401"):
-            ch.send(OutboundMessage(
-                channel_id="weixin_bot", thread_id="x", content="y",
-                metadata={"to_user_id": "u", "context_token": ""},
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="weixin_bot",
+                    thread_id="x",
+                    content="y",
+                    metadata={"to_user_id": "u", "context_token": ""},
+                )
+            )
         # Implementation note.
         assert ch._bot_token is None
         assert not token_path.exists()
@@ -508,7 +590,8 @@ def _build_stack(tmp_path: Path):
     planner = StaticPlanner(
         rules=[
             Rule(
-                name="default", intent_types=["task"],
+                name="default",
+                intent_types=["task"],
                 skill_sequence=[SkillId("list_cwd")],
             )
         ],
@@ -518,6 +601,7 @@ def _build_stack(tmp_path: Path):
 
     class _S:
         pass
+
     s = _S()
     s.planner = planner
     s.runtime = runtime
@@ -534,10 +618,13 @@ class TestManagerIntegration:
 
         http_send = _SeqHttp([_FakeResp(body={"ret": 0})])
         ch = WeixinBotChannel(
-            bot_token="TOK", http_client=http_send,
+            bot_token="TOK",
+            http_client=http_send,
         )
         m = ChannelManager(
-            stack=stack, agent_registry=reg, default_agent_id="general",
+            stack=stack,
+            agent_registry=reg,
+            default_agent_id="general",
         )
         # Implementation note.
         m.register(ch)
@@ -545,7 +632,8 @@ class TestManagerIntegration:
 
         # Implementation note.
         msg = InboundMessage(
-            channel_id="weixin_bot", thread_id="conv",
+            channel_id="weixin_bot",
+            thread_id="conv",
             sender_id="u@im.wechat",
             content="list files",
             metadata={"context_token": "CTX", "to_user_id": "u@im.wechat"},

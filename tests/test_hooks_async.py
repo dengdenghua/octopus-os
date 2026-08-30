@@ -13,6 +13,7 @@ Contract pinned
 6. Async modify_args accumulates with later sync mods
 7. Works inside a thread with a running event loop
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +24,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _clear():
     from runtime.safety.hooks.registry import get_global_registry
+
     get_global_registry().clear()
     yield
     get_global_registry().clear()

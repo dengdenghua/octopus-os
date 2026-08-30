@@ -1,0 +1,33 @@
+[Unit]
+Description=Verify Echo OS host firewall before networking and login
+Documentation=file:/usr/share/doc/echo-os/host-firewall.md
+Requires=firewalld.service
+After=dbus.service firewalld.service
+Before=NetworkManager.service sddm.service echo-desktop.service boot-complete.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/echo-firewall-health
+RemainAfterExit=yes
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+RequiredBy=NetworkManager.service sddm.service echo-desktop.service boot-complete.target

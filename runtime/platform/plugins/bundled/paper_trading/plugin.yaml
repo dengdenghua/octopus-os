@@ -1,0 +1,168 @@
+name: paper_trading
+display_name: 模拟炒股
+version: 0.6.0
+delivery: remote
+description: 模拟炒股练习插件 — 本地模拟交易面板 + 「平台交易」页对接平台配资盘(申请资金/合约/持仓/真实买卖委托,全部二次确认),可选只读接入平台实时大盘。纯个人练习用。
+author: Echo
+tags:
+  - trading
+  - paper-trading
+  - simulation
+  - practice
+provides:
+  - paper_trading.api
+  - paper_trading.page
+  - paper_trading.skills
+  - paper_trading.quote_hub
+config:
+  initial_cash: 1000000.0
+  live_mode: false
+  base_url: http://114.66.32.152:58868/api
+  live_ttl: 30
+  auto_trade: false
+  auto_sign_in: false
+  auto_sign_in_hour: 8
+  auto_sign_in_minute: 5
+  quote_hub_enabled: true
+  quote_hub_max_codes_per_client: 100
+  quote_hub_max_clients: 50
+  quote_hub_max_union_codes: 500
+  quote_hub_queue_size: 50
+  quote_hub_stale_after: 12
+  quote_hub_failure_threshold: 3
+  quote_hub_recovery_threshold: 2
+  quote_hub_primary_recovery_seconds: 120
+  quote_hub_platform_rest_interval: 3
+  proxy_origin: true
+  allow_same_origin_third_party_scripts: true
+  trusted_single_user_local_proxy: false
+config_schema:
+  type: object
+  properties:
+    initial_cash:
+      type: number
+      title: 初始模拟资金
+      description: 首次启动时分配的模拟资金(元)
+      default: 1000000
+    data_dir:
+      type: string
+      title: 状态持久化目录
+      description: 账户/持仓/成交记录 JSON 的落盘目录(默认跟随 ECHO_DATA_DIR/paper_trading)
+    live_mode:
+      type: boolean
+      title: 平台实时行情
+      description: 默认关闭。开启后只读拉取平台后端真实大盘(指数/涨跌家数/市场状态),不进行任何交易；仅接受 HTTPS 上游，认证或多用户部署会禁用整个账户集成
+      default: false
+    base_url:
+      type: string
+      title: 平台 API 地址
+      description: 平台 API 根地址；live_mode 与 auto_trade 仅接受可信 HTTPS，同源原站代理在本地单用户环境可使用格式有效的 HTTP(S) 地址
+    live_ttl:
+      type: number
+      title: 实时行情缓存秒数
+      description: 页面每 2s 刷新,按此秒数合并对平台的请求(默认 30)
+      default: 30
+    credentials_file:
+      type: string
+      title: 凭证文件
+      description: "{phone, password} JSON 文件路径(默认位于工作台数据目录；也可用环境变量 PAPER_TRADING_PHONE/PAPER_TRADING_PASSWORD)"
+    auto_trade:
+      type: boolean
+      title: 自动交易(agent/程序化下单)
+      description: "默认 false:真实下单必须人工在页面二次确认;设为 true 后启用 paper_trading.trade skill,允许 agent 直接向平台自动下单(带 confirm 授权)。开启有风险,请谨慎。"
+      default: false
+    auto_sign_in:
+      type: boolean
+      title: 平台每日自动签到
+      description: "默认关闭；可在模拟炒股页面开启。开启后仅在本机后台每天检查签到状态，未签到才调用平台官方签到接口，不会执行任何交易。"
+      default: false
+    auto_sign_in_hour:
+      type: integer
+      title: 自动签到小时（上海时区）
+      minimum: 0
+      maximum: 23
+      default: 8
+    auto_sign_in_minute:
+      type: integer
+      title: 自动签到分钟
+      minimum: 0
+      maximum: 59
+      default: 5
+    quote_hub_enabled:
+      type: boolean
+      title: 统一行情中心
+      description: "默认开启。把所有客户端的股票代码合并为一份上游订阅，再由本机按用户过滤并通过 SSE 分发；没有客户端时不会主动连接上游。"
+      default: true
+    quote_hub_max_codes_per_client:
+      type: integer
+      title: 每个连接最多订阅股票数
+      minimum: 1
+      maximum: 500
+      default: 100
+    quote_hub_max_clients:
+      type: integer
+      title: 最大同时行情连接数
+      minimum: 1
+      maximum: 1000
+      default: 50
+    quote_hub_max_union_codes:
+      type: integer
+      title: 全站合并订阅股票上限
+      description: "所有在线用户代码去重后的总上限；2G 服务器建议保持 300–500，只推用户真正关注的股票。"
+      minimum: 1
+      maximum: 5000
+      default: 500
+    quote_hub_queue_size:
+      type: integer
+      title: 每个连接的行情缓冲批数
+      description: "缓冲满时自动丢弃最旧行情、保留最新行情，防止慢客户端耗尽服务器内存。"
+      minimum: 2
+      maximum: 500
+      default: 50
+    quote_hub_stale_after:
+      type: number
+      title: 行情过期秒数
+      description: "交易时段超过该时间没有新报价时标记为过期；过期行情不能用于提醒、自动信号或模拟成交。"
+      minimum: 3
+      maximum: 300
+      default: 12
+    quote_hub_failure_threshold:
+      type: integer
+      title: 主源连续失败切换次数
+      minimum: 1
+      maximum: 20
+      default: 3
+    quote_hub_recovery_threshold:
+      type: integer
+      title: 备用源接管前连续成功次数
+      minimum: 1
+      maximum: 20
+      default: 2
+    quote_hub_primary_recovery_seconds:
+      type: number
+      title: 主源稳定回切秒数
+      minimum: 0
+      maximum: 3600
+      default: 120
+    quote_hub_platform_rest_interval:
+      type: number
+      title: 平台快照备用轮询秒数
+      description: "平台 WebSocket 故障后才启用的批量快照间隔；所有用户代码会合并成一次请求，不按用户重复请求上游。"
+      minimum: 1
+      maximum: 30
+      default: 3
+    proxy_origin:
+      type: boolean
+      title: 平台原站同源反代(嵌入原版网页)
+      description: "默认 true。仅当此项和 allow_same_origin_third_party_scripts 都为 true、且 base_url 是格式有效的 HTTP(S) 地址时才会挂载。该功能会让第三方脚本运行在本应用 origin 下，HTTP 上游传输未加密，仅限可信的单用户本地环境。"
+      default: true
+    allow_same_origin_third_party_scripts:
+      type: boolean
+      title: 允许第三方脚本使用应用同源权限(危险)
+      description: "默认 true，可显式关闭的高风险确认开关。第三方脚本可能访问父页面会话并以当前用户身份调用 API；认证宿主会强制禁用。生产或多用户部署不得开启。"
+      default: true
+    trusted_single_user_local_proxy:
+      type: boolean
+      title: 认证本机的单用户原站代理
+      description: "默认 false。仅当 Echo 开启身份认证、运行在 local 部署且绑定 loopback 时才可显式开启；开启后仅为本机单用户放行原站同源代理与签到路由。共享、服务器或非 loopback 部署不得开启。"
+      default: false

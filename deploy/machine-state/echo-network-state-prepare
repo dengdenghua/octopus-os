@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Move the one supported mutable NetworkManager keyfile location out of the
+# replaceable A/B root. Legacy files are imported once without overwriting
+# already-persistent profiles.
+set -euo pipefail
+umask 077
+
+LEGACY_DIRECTORY="${ECHO_NETWORK_LEGACY_DIRECTORY:-/etc/NetworkManager/system-connections}"
+PERSISTENT_DIRECTORY="${ECHO_NETWORK_PERSISTENT_DIRECTORY:-/var/lib/NetworkManager/system-connections}"
+STATE_DIRECTORY="${ECHO_NETWORK_STATE_DIRECTORY:-/var/lib/echo-os}"
+STATE_MARKER="$STATE_DIRECTORY/network-state-v1"
+EXPECTED_OWNER_UID="${ECHO_NETWORK_EXPECTED_OWNER_UID:-0}"
+
+[[ "$(id -u)" -eq 0 || "${ECHO_NETWORK_STATE_TESTING:-no}" == yes ]] || {
+  echo "Echo OS network-state preparation must run as root" >&2
+  exit 1
+}
+
+file_metadata() {
+  local file_path="$1"
+  if stat -c '%u %a' "$file_path" >/dev/null 2>&1; then
+    stat -c '%u %a' "$file_path"
+  else
+    stat -f '%u %Lp' "$file_path"
+  fi
+}
+
+if [[ "${ECHO_NETWORK_STATE_TESTING:-no}" == yes ]]; then
+  install -d -m 0700 "$STATE_DIRECTORY"
+else
+  install -d -m 0700 -o root -g root "$STATE_DIRECTORY"
+fi
+if [[ -e "$STATE_MARKER" ]]; then
+  [[ -d "$PERSISTENT_DIRECTORY" ]] || {
+    echo "persistent NetworkManager directory disappeared after provisioning" >&2
+    exit 1
+  }
+  echo "ECHO_NETWORK_STATE_READY storage=/var/lib/NetworkManager/system-connections migrated=0 ignored=0"
+  exit 0
+fi
+if [[ "${ECHO_NETWORK_STATE_TESTING:-no}" == yes ]]; then
+  install -d -m 0700 "$PERSISTENT_DIRECTORY"
+else
+  install -d -m 0700 -o root -g root "$PERSISTENT_DIRECTORY"
+fi
+
+migrated=0
+ignored=0
+if [[ -d "$LEGACY_DIRECTORY" ]]; then
+  while IFS= read -r -d '' source_file; do
+    read -r owner_uid file_mode < <(file_metadata "$source_file")
+    if [[ "$owner_uid" != "$EXPECTED_OWNER_UID" || \
+          ( "$file_mode" != 600 && "$file_mode" != 400 ) ]]; then
+      ignored=$((ignored + 1))
+      echo "ignoring insecure legacy NetworkManager profile: $(basename "$source_file")" >&2
+      continue
+    fi
+
+    destination="$PERSISTENT_DIRECTORY/$(basename "$source_file")"
+    [[ -e "$destination" ]] && continue
+    destination_temp="$destination.$$"
+    cp -- "$source_file" "$destination_temp"
+    chmod 0600 "$destination_temp"
+    if [[ "${ECHO_NETWORK_STATE_TESTING:-no}" != yes ]]; then
+      chown root:root "$destination_temp"
+    fi
+    mv -f -- "$destination_temp" "$destination"
+    migrated=$((migrated + 1))
+  done < <(find "$LEGACY_DIRECTORY" -mindepth 1 -maxdepth 1 -type f -print0)
+fi
+
+marker_temp="$STATE_MARKER.$$"
+trap 'rm -f -- "$marker_temp"' EXIT INT TERM
+printf 'schema=1\nstorage=%s\nmigrated=%d\nignored=%d\n' \
+  "$PERSISTENT_DIRECTORY" "$migrated" "$ignored" >"$marker_temp"
+chmod 0600 "$marker_temp"
+if [[ "${ECHO_NETWORK_STATE_TESTING:-no}" != yes ]]; then
+  chown root:root "$marker_temp"
+fi
+mv -f -- "$marker_temp" "$STATE_MARKER"
+trap - EXIT INT TERM
+
+echo "ECHO_NETWORK_STATE_READY storage=/var/lib/NetworkManager/system-connections migrated=$migrated ignored=$ignored"

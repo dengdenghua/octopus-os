@@ -155,7 +155,7 @@ isolation here.
 
 `_cache: SlashCommand[] | null` lives at module scope in
 `slash-command-picker.tsx`. Once loaded, it survives until the
-SPA reloads. If the user adds a `.md` to `.octopus/commands/`
+SPA reloads. If the user adds a `.md` to `.echo/commands/`
 mid-session, the picker won't show it without a refresh. Doc'd
 as a design choice (slash commands change rarely) but worth
 flagging if the reviewer thinks otherwise.

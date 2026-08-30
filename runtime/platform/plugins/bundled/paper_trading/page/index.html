@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模拟炒股 · 平台原版 · Echo 插件</title>
+<style>
+  :root{
+    --bg:#10131f; --bar:#1a1d33; --line:#39415f; --gold:#f0b90b;
+    --text:#e6e9f0; --muted:#9aa4b8;
+  }
+  *{margin:0; padding:0; box-sizing:border-box;}
+  html,body{height:100%; background:var(--bg); color:var(--text); font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .topbar{height:44px; display:flex; align-items:center; gap:10px; padding:0 14px;
+    background:var(--bar); border-bottom:1px solid var(--line); white-space:nowrap; overflow:hidden;}
+  .topbar .title{font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px;}
+  .topbar .tag{font-size:11px; color:var(--gold); border:1px solid var(--line); border-radius:99px; padding:1px 8px;}
+  .topbar .sp{flex:1;}
+  .topbar a,.topbar button{font:inherit; font-size:12px; color:var(--gold); text-decoration:none;
+    border:1px solid var(--line); border-radius:6px; padding:5px 10px; background:var(--bg);
+    line-height:16px; cursor:pointer; transition:.18s ease;}
+  .topbar a:hover,.topbar button:not(:disabled):hover{background:#273043; border-color:#596789;}
+  .topbar button:disabled{cursor:default; opacity:.82;}
+  .topbar .signin.done{color:#4ade80; border-color:#285c43; background:#10241a;}
+  .topbar .signin.err{color:#ff9f43; border-color:#5a4520; background:#241d10;}
+  .topbar .auto.on{color:#78b7ff; border-color:#315b86; background:#10243b;}
+  .topbar .note{font-size:12px; color:var(--muted);}
+  .topbar .warn{font-size:11px; color:#ff9f43; border:1px solid #5a4520;
+    border-radius:99px; padding:1px 8px; background:#241d10;}
+  #frameWrap{position:absolute; top:44px; left:0; right:0; bottom:0;}
+  #frameWrap iframe{width:100%; height:100%; border:0;}
+  .loadmask{position:absolute; inset:44px 0 0; display:flex; align-items:center; justify-content:center;
+    color:var(--muted); font-size:13px; background:var(--bg); z-index:2;}
+  .loadmask.hide{display:none;}
+  @media (max-width:1180px){.topbar .note,.topbar .warn{display:none;}}
+  @media (max-width:760px){.topbar .tag,#openWatch{display:none}.topbar{padding:0 8px;gap:6px}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="title">📈 模拟炒股 · 平台原版
+    <span class="tag">同源代理</span>
+  </span>
+  <span class="note">行情与交易走平台原站,已自动带入后端缓存的登录态。</span>
+  <span class="warn" title="原站脚本以本应用 origin 权限运行,且原站为明文 HTTP 传输">同源代理运行中</span>
+  <span class="sp"></span>
+  <button id="signInBtn" class="signin" type="button" disabled>签到状态…</button>
+  <button id="autoSignInBtn" class="auto" type="button" disabled>自动签到…</button>
+  <a id="openWatch" href="/api/plugins/paper-trading/watch" target="_blank" rel="noopener">📡 盯盘 ↗</a>
+  <a id="openExt" href="origin/trade/#/transaction" target="_blank" rel="noopener">新窗口打开 ↗</a>
+</div>
+
+<div id="frameWrap">
+  <div class="loadmask" id="loadMask">正在加载平台原版页面…</div>
+  <!-- 走同源反代:后端会中和原站的 electron 崩溃并注入已缓存的登录态。
+       路径相对本页(/api/plugins/paper-trading/page),故为 origin/... -->
+  <iframe id="frame" src="origin/trade/#/transaction"></iframe>
+</div>
+
+<script>
+(function(){
+  var fr=document.getElementById('frame');
+  var mask=document.getElementById('loadMask');
+  var signBtn=document.getElementById('signInBtn');
+  var autoBtn=document.getElementById('autoSignInBtn');
+  var checkInBase='/api/plugins/paper-trading/check-in';
+  var schedule={enabled:false,hour:8,minute:5};
+  var busy=false;
+  var lastSyncedToken='';
+
+  function hide(){ if(mask) mask.classList.add('hide'); }
+  function two(value){ return String(value).padStart(2,'0'); }
+  function scheduleText(){ return two(schedule.hour)+':'+two(schedule.minute); }
+  function setSignState(text, kind, disabled){
+    signBtn.textContent=text;
+    signBtn.className='signin'+(kind?' '+kind:'');
+    signBtn.disabled=!!disabled;
+    signBtn.title=text;
+  }
+  function setAutoState(){
+    autoBtn.textContent=schedule.enabled?'自动 '+scheduleText()+' ✓':'开启自动签到';
+    autoBtn.className='auto'+(schedule.enabled?' on':'');
+    autoBtn.disabled=busy;
+    autoBtn.title=schedule.enabled?'每天按上海时区自动检查，未签到才提交':'点击开启每天自动签到';
+  }
+  async function requestJson(url, options){
+    var response=await fetch(url, Object.assign({cache:'no-store'}, options||{}));
+    var data=await response.json().catch(function(){ return {}; });
+    if(!response.ok) throw new Error(data.detail||data.error||('HTTP '+response.status));
+    return data;
+  }
+  function applyStatus(data){
+    if(data.schedule){
+      schedule.enabled=!!data.schedule.enabled;
+      schedule.hour=Number(data.schedule.hour==null?8:data.schedule.hour);
+      schedule.minute=Number(data.schedule.minute==null?5:data.schedule.minute);
+    }
+    if(!data.ok){
+      setSignState(data.error||'签到不可用','err',false);
+      setAutoState();
+      return;
+    }
+    if(data.signed){
+      var reward=data.reward==null?'':' · +'+data.reward;
+      setSignState('✓ 今日已签'+reward,'done',true);
+    }else{
+      setSignState('🎁 每日签到','',false);
+    }
+    setAutoState();
+  }
+  async function refreshStatus(){
+    if(busy) return;
+    setSignState('签到状态…','',true);
+    try{
+      applyStatus(await requestJson(checkInBase+'/status'));
+    }catch(error){
+      setSignState('签到服务未连接','err',false);
+      signBtn.title=String(error&&error.message||error);
+      setAutoState();
+    }
+  }
+  async function syncPlatformSession(){
+    var raw='';
+    var userInfo=null;
+    try{
+      raw=localStorage.getItem('userInfo')||'';
+      userInfo=raw?JSON.parse(raw):null;
+    }catch(_error){ return; }
+    var token=String(userInfo&&userInfo.token||'');
+    if(!token||token===lastSyncedToken) return;
+    try{
+      var data=await requestJson(checkInBase+'/session',{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token})
+      });
+      if(data.ok){
+        lastSyncedToken=token;
+        applyStatus(data);
+      }
+    }catch(_error){
+      // 登录页面仍会展示自己的错误；后台继续保留上一个已验证令牌。
+    }
+  }
+  signBtn.addEventListener('click', async function(){
+    if(busy) return;
+    busy=true;
+    setSignState('正在签到…','',true);
+    setAutoState();
+    try{
+      var data=await requestJson(checkInBase,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirm:true})
+      });
+      applyStatus(data);
+    }catch(error){
+      setSignState(String(error&&error.message||'签到失败'),'err',false);
+    }finally{
+      busy=false;
+      setAutoState();
+    }
+  });
+  autoBtn.addEventListener('click', async function(){
+    if(busy) return;
+    busy=true;
+    autoBtn.disabled=true;
+    autoBtn.textContent=schedule.enabled?'正在关闭…':'正在开启…';
+    try{
+      var data=await requestJson(checkInBase+'/schedule',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({enabled:!schedule.enabled,hour:schedule.hour,minute:schedule.minute})
+      });
+      if(!data.ok) throw new Error(data.error||'设置失败');
+      schedule=data.schedule;
+    }catch(error){
+      autoBtn.title=String(error&&error.message||error);
+    }finally{
+      busy=false;
+      setAutoState();
+      await refreshStatus();
+    }
+  });
+  fr.addEventListener('load', function(){ hide(); syncPlatformSession(); refreshStatus(); });
+  // 兜底:若 iframe 加载异常,8 秒后隐藏遮罩,避免遮挡登录框
+  setTimeout(hide, 8000);
+  refreshStatus();
+  syncPlatformSession();
+  setInterval(refreshStatus, 60000);
+  setInterval(syncPlatformSession, 2000);
+  var open=document.getElementById('openExt');
+  if(open) open.addEventListener('click', function(){});
+})();
+</script>
+</body>
+</html>

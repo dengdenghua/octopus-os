@@ -8,6 +8,7 @@ react_loop, NOT in the base.
 If you add genuinely-needed content to the base, raise the budget in
 this test deliberately and document why.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_types import REACT_SYSTEM_PROMPT_BASE

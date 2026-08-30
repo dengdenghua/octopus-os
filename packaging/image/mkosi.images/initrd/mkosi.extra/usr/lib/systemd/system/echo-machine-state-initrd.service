@@ -1,0 +1,13 @@
+[Unit]
+Description=Attach Echo OS encrypted machine state to the verified root
+DefaultDependencies=no
+Requires=sysroot.mount systemd-cryptsetup@echo\x2dvar.service
+After=sysroot.mount systemd-cryptsetup@echo\x2dvar.service
+Before=initrd-root-fs.target initrd-switch-root.target
+OnFailure=emergency.target
+
+[Service]
+Type=oneshot
+Environment=rootmnt=/sysroot
+ExecStart=/usr/lib/echo-os/echo-machine-id
+RemainAfterExit=yes

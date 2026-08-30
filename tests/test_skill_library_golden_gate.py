@@ -4,6 +4,7 @@ Verifies that ``learn_skill_from_text(golden_samples=[...])`` gates
 template promotion on structural quality. Uses a monkey-patched
 ``_llm_call`` so the test is deterministic and doesn't spend tokens.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,9 +20,7 @@ GOOD_TEMPLATE_JSON = (
 
 # A "good" apply output that preserves all 3 H2s
 GOOD_APPLY_OUTPUT = (
-    "## Intro\n\nSome text here.\n\n"
-    "## Details\n\nMore text here.\n\n"
-    "## Conclusion\n\nSummary."
+    "## Intro\n\nSome text here.\n\n## Details\n\nMore text here.\n\n## Conclusion\n\nSummary."
 )
 
 # A "bad" apply output with no H2s (fails structural check)

@@ -5,8 +5,8 @@ The loader stacks memory at three scopes, with higher tiers
 overriding lower tiers by composition (newer / more specific content
 takes priority for weak models):
 
-    ~/.octopus/MEMORY.md              · global
-    <CWD>/.octopus/MEMORY.md          · project
+    ~/.echo/MEMORY.md              · global
+    <CWD>/.echo/MEMORY.md          · project
     agents/<id>/agent-core/MEMORY.md  · agent
 
 These tests pin:
@@ -14,15 +14,15 @@ These tests pin:
 1. All three tiers stack when present (not replace)
 2. Missing tiers are silently skipped (doesn't crash / empty-pollute)
 3. Template-only content is skipped at every tier
-4. ``$OCTOPUS_HOME`` overrides the global root (test isolation)
+4. ``$ECHO_HOME`` overrides the global root (test isolation)
 5. Back-compat · existing agents with only agent-tier memory still work
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
 from runtime.execution.agents.loader import (
     _compose_soul,
     _memory_tier_paths,
@@ -35,11 +35,13 @@ from runtime.execution.agents.loader import (
 
 class TestMemoryTierPaths:
     def test_returns_three_tiers_in_priority_order(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Priority order: global (lowest / recency-bias-weakest) →
         project → agent (highest / closest to LLM's output window)."""
-        monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "user-home"))
+        monkeypatch.setenv("ECHO_HOME", str(tmp_path / "user-home"))
         (tmp_path / "some-repo").mkdir()
         monkeypatch.chdir(tmp_path / "some-repo")
 
@@ -52,27 +54,31 @@ class TestMemoryTierPaths:
 
         # Each tier points at the expected MEMORY.md location
         assert tiers[0][1] == tmp_path / "user-home" / "MEMORY.md"
-        assert tiers[1][1] == tmp_path / "some-repo" / ".octopus" / "MEMORY.md"
+        assert tiers[1][1] == tmp_path / "some-repo" / ".echo" / "MEMORY.md"
         assert tiers[2][1] == core / "MEMORY.md"
 
-    def test_octopus_home_env_overrides_default(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    def test_echo_home_env_overrides_default(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
-        """$OCTOPUS_HOME is how tests keep the global tier
-        isolated from the developer's real ~/.octopus."""
-        monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "custom"))
+        """$ECHO_HOME is how tests keep the global tier
+        isolated from the developer's real ~/.echo."""
+        monkeypatch.setenv("ECHO_HOME", str(tmp_path / "custom"))
         tiers = _memory_tier_paths(tmp_path / "a", tmp_path / "a" / "c")
         global_path = tiers[0][1]
         assert global_path == tmp_path / "custom" / "MEMORY.md"
 
-    def test_default_falls_back_to_home_dot_octopus(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    def test_default_falls_back_to_home_dot_echo(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
-        """Without $OCTOPUS_HOME · resolves to ``~/.octopus``."""
-        monkeypatch.delenv("OCTOPUS_HOME", raising=False)
+        """Without $ECHO_HOME · resolves to ``~/.echo``."""
+        monkeypatch.delenv("ECHO_HOME", raising=False)
         tiers = _memory_tier_paths(tmp_path / "a", tmp_path / "a" / "c")
         global_path = tiers[0][1]
-        assert ".octopus" in str(global_path)
+        assert ".echo" in str(global_path)
         assert "MEMORY.md" in str(global_path)
 
 
@@ -112,7 +118,8 @@ def _setup_shared_dir(tmp_path: Path) -> Path:
 
 class TestThreeTierStacking:
     def test_identity_banner_uses_agent_display_name(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ):
         agent_dir, _core = _setup_agent_dir(
             tmp_path,
@@ -130,13 +137,15 @@ class TestThreeTierStacking:
         assert "You are **Coder**" in soul
         assert '"我是 Coder"' in soul
         assert "I'm Coder" in soul
-        assert '"我是 Octopus"' not in soul
-        assert "I'm Octopus" not in soul
+        assert '"我是 Echo"' not in soul
+        assert "I'm Echo" not in soul
 
     def test_all_three_tiers_appear_when_present(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
-        monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("ECHO_HOME", str(tmp_path / "home"))
         repo = tmp_path / "repo"
         repo.mkdir()
         monkeypatch.chdir(repo)
@@ -145,12 +154,14 @@ class TestThreeTierStacking:
         global_mem = tmp_path / "home" / "MEMORY.md"
         global_mem.parent.mkdir(parents=True)
         global_mem.write_text(
-            "User prefers concise answers.", encoding="utf-8",
+            "User prefers concise answers.",
+            encoding="utf-8",
         )
-        project_mem = repo / ".octopus" / "MEMORY.md"
+        project_mem = repo / ".echo" / "MEMORY.md"
         project_mem.parent.mkdir()
         project_mem.write_text(
-            "This repo uses pytest.", encoding="utf-8",
+            "This repo uses pytest.",
+            encoding="utf-8",
         )
 
         agent_dir, core = _setup_agent_dir(tmp_path)
@@ -180,17 +191,20 @@ class TestThreeTierStacking:
         assert gi < pi < ai
 
     def test_missing_tiers_silently_skipped(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Most common case: only agent-tier memory present ·
-        nothing in ~/.octopus or repo/.octopus · everything still
+        nothing in ~/.echo or repo/.echo · everything still
         works and just the one tier shows up."""
-        monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "nohome"))
+        monkeypatch.setenv("ECHO_HOME", str(tmp_path / "nohome"))
         monkeypatch.chdir(tmp_path)
 
         agent_dir, core = _setup_agent_dir(tmp_path)
         (core / "MEMORY.md").write_text(
-            "agent memory only", encoding="utf-8",
+            "agent memory only",
+            encoding="utf-8",
         )
         shared = _setup_shared_dir(tmp_path)
 
@@ -202,12 +216,14 @@ class TestThreeTierStacking:
         assert "Long-term Memory (project)" not in soul
 
     def test_template_only_tier_is_skipped(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """A tier containing only the scaffold ("no memories yet"
         placeholder + html comments) must not inject a useless
         heading into the soul."""
-        monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("ECHO_HOME", str(tmp_path / "home"))
         monkeypatch.chdir(tmp_path)
 
         # Global = real content · project = template scaffold
@@ -215,11 +231,10 @@ class TestThreeTierStacking:
         global_mem.parent.mkdir(parents=True)
         global_mem.write_text("real global memory", encoding="utf-8")
 
-        project_mem = tmp_path / ".octopus" / "MEMORY.md"
+        project_mem = tmp_path / ".echo" / "MEMORY.md"
         project_mem.parent.mkdir()
         project_mem.write_text(
-            "# Memory\n\n<!-- auto-generated · do not edit -->\n"
-            "_No memories yet._\n",
+            "# Memory\n\n<!-- auto-generated · do not edit -->\n_No memories yet._\n",
             encoding="utf-8",
         )
 
@@ -232,13 +247,15 @@ class TestThreeTierStacking:
         assert "Long-term Memory (project)" not in soul
 
     def test_include_memory_md_flag_disables_all_three(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """``profile.systemPrompt.includeMemoryMd: false`` must
         suppress ALL three tiers · not just the agent one.
         Opt-out is all-or-nothing by design · anyone who wants
         per-tier control can PR a new flag."""
-        monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("ECHO_HOME", str(tmp_path / "home"))
         monkeypatch.chdir(tmp_path)
 
         global_mem = tmp_path / "home" / "MEMORY.md"
@@ -250,7 +267,8 @@ class TestThreeTierStacking:
         shared = _setup_shared_dir(tmp_path)
 
         soul = _compose_soul(
-            agent_dir, shared,
+            agent_dir,
+            shared,
             profile={"systemPrompt": {"includeMemoryMd": False}},
         )
         assert "Long-term Memory" not in soul
@@ -263,19 +281,22 @@ class TestThreeTierStacking:
 
 class TestBackCompat:
     def test_old_agent_with_only_agent_memory_still_works(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """Agents that existed before this tier-expansion had only
         ``agent-core/MEMORY.md``. They should keep producing the
         same-shaped soul (just with a new ``(agent)`` suffix in
         the heading · acceptable drift)."""
-        monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "never"))
+        monkeypatch.setenv("ECHO_HOME", str(tmp_path / "never"))
         (tmp_path / "empty-repo").mkdir()
         monkeypatch.chdir(tmp_path / "empty-repo")
 
         agent_dir, core = _setup_agent_dir(tmp_path)
         (core / "MEMORY.md").write_text(
-            "· learned X\n· learned Y\n", encoding="utf-8",
+            "· learned X\n· learned Y\n",
+            encoding="utf-8",
         )
         shared = _setup_shared_dir(tmp_path)
 

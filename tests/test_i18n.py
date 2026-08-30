@@ -1,4 +1,5 @@
 """i18n module tests."""
+
 from __future__ import annotations
 
 from runtime.platform.i18n import L, _, get_lang, set_lang

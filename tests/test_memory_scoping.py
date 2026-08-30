@@ -29,17 +29,25 @@ from runtime.safety.recovery import (
 
 
 def _mk_traj(
-    *, arm_id: str, strategy: str, success: bool = True,
+    *,
+    arm_id: str,
+    strategy: str,
+    success: bool = True,
 ) -> Trajectory:
     call = ToolCall(caller="t", sucker_id="read_file", args={})
     step = Step(
-        step_id=0, node_id="n0", action=call,
+        step_id=0,
+        node_id="n0",
+        action=call,
         result=ExecutionResult(
-            call_id=call.call_id, status="success", output={},
+            call_id=call.call_id,
+            status="success",
+            output={},
         ),
     )
     return Trajectory(
-        task_id=TaskId(uuid4()), arm_id=ArmId(arm_id),
+        task_id=TaskId(uuid4()),
+        arm_id=ArmId(arm_id),
         strategy_id=strategy,
         steps=[step],
         outcome=TrajectoryOutcome(
@@ -84,13 +92,16 @@ class TestScopeFields:
 
 class TestScopedConsolidation:
     def test_agent_scope_only_sees_own_trajectories(self):
-        j = _seed_journal([
-            ("coder", "a1", "s1"),
-            ("shopify", "a2", "s2"),
-        ])
+        j = _seed_journal(
+            [
+                ("coder", "a1", "s1"),
+                ("shopify", "a2", "s2"),
+            ]
+        )
         c = MemoryConsolidator(journal=j, config=ConsolidatorConfig(min_samples_per_cluster=2))
         report = c.consolidate_scoped(
-            agents=["coder"], include_global=False,
+            agents=["coder"],
+            include_global=False,
         )
         # Implementation note.
         assert len(report.memories_produced) == 1
@@ -100,11 +111,13 @@ class TestScopedConsolidation:
         assert str(m.arm_id) == "a1"
 
     def test_group_scope_aggregates_members(self):
-        j = _seed_journal([
-            ("vibe_selling", "a1", "s1"),
-            ("ecommerce_mind", "a2", "s2"),
-            ("coder", "a3", "s3"),
-        ])
+        j = _seed_journal(
+            [
+                ("vibe_selling", "a1", "s1"),
+                ("ecommerce_mind", "a2", "s2"),
+                ("coder", "a3", "s3"),
+            ]
+        )
         c = MemoryConsolidator(journal=j, config=ConsolidatorConfig(min_samples_per_cluster=2))
         report = c.consolidate_scoped(
             groups={"ecom_team": ["vibe_selling", "ecommerce_mind"]},
@@ -120,10 +133,12 @@ class TestScopedConsolidation:
         assert "a3" not in arm_ids
 
     def test_three_tiers_together(self):
-        j = _seed_journal([
-            ("coder", "a1", "s1"),
-            ("vibe_selling", "a2", "s2"),
-        ])
+        j = _seed_journal(
+            [
+                ("coder", "a1", "s1"),
+                ("vibe_selling", "a2", "s2"),
+            ]
+        )
         c = MemoryConsolidator(journal=j, config=ConsolidatorConfig(min_samples_per_cluster=2))
         report = c.consolidate_scoped(
             agents=["coder", "vibe_selling"],
@@ -180,12 +195,14 @@ class TestScopedConsolidation:
 
 class TestFilter:
     def _build_memories(self):
-        j = _seed_journal([
-            ("coder", "a1", "s1"),
-            ("shopify", "a2", "s2"),
-            ("vibe_selling", "a3", "s3"),
-            ("ecommerce_mind", "a4", "s4"),
-        ])
+        j = _seed_journal(
+            [
+                ("coder", "a1", "s1"),
+                ("shopify", "a2", "s2"),
+                ("vibe_selling", "a3", "s3"),
+                ("ecommerce_mind", "a4", "s4"),
+            ]
+        )
         c = MemoryConsolidator(journal=j, config=ConsolidatorConfig(min_samples_per_cluster=2))
         return c.consolidate_scoped(
             agents=["coder", "shopify", "vibe_selling", "ecommerce_mind"],
@@ -196,7 +213,9 @@ class TestFilter:
     def test_coder_sees_global_and_own(self):
         mems = self._build_memories()
         filtered = filter_memories_for_agent(
-            mems, agent_id="coder", groups=[],
+            mems,
+            agent_id="coder",
+            groups=[],
         )
         # Implementation note.
         scopes = {m.scope for m in filtered}
@@ -211,7 +230,9 @@ class TestFilter:
     def test_vibe_selling_sees_its_group(self):
         mems = self._build_memories()
         filtered = filter_memories_for_agent(
-            mems, agent_id="vibe_selling", groups=["ecom_team"],
+            mems,
+            agent_id="vibe_selling",
+            groups=["ecom_team"],
         )
         scopes = {m.scope for m in filtered}
         assert "group" in scopes
@@ -223,7 +244,9 @@ class TestFilter:
     def test_agent_not_in_any_group(self):
         mems = self._build_memories()
         filtered = filter_memories_for_agent(
-            mems, agent_id="coder", groups=["nonexistent"],
+            mems,
+            agent_id="coder",
+            groups=["nonexistent"],
         )
         # Implementation note.
         group_mems = [m for m in filtered if m.scope == "group"]
@@ -233,7 +256,9 @@ class TestFilter:
         """Implementation note."""
         mems = self._build_memories()
         filtered = filter_memories_for_agent(
-            mems, agent_id="coder", groups=[],
+            mems,
+            agent_id="coder",
+            groups=[],
         )
         # Implementation note.
         agent_keys = {m.scope_key for m in filtered if m.scope == "agent"}
@@ -252,15 +277,22 @@ class TestAgentGroups:
 
         class _FE:
             journal = None
+
         return GraphRuntime(executor=_FE(), journal=None)
 
     def test_default_empty_groups(self):
         rt = self._rt()
         arm = Worker(
-            arm_id=ArmId("a"), affinity=[], allowed_skills=[], runtime=rt,
+            arm_id=ArmId("a"),
+            affinity=[],
+            allowed_skills=[],
+            runtime=rt,
         )
         agent = Agent(
-            agent_id="x", display_name="X", description="", soul="",
+            agent_id="x",
+            display_name="X",
+            description="",
+            soul="",
             arms=ArmPool([arm]),
         )
         assert agent.groups == []
@@ -268,10 +300,16 @@ class TestAgentGroups:
     def test_explicit_groups(self):
         rt = self._rt()
         arm = Worker(
-            arm_id=ArmId("a"), affinity=[], allowed_skills=[], runtime=rt,
+            arm_id=ArmId("a"),
+            affinity=[],
+            allowed_skills=[],
+            runtime=rt,
         )
         agent = Agent(
-            agent_id="vibe", display_name="V", description="", soul="",
+            agent_id="vibe",
+            display_name="V",
+            description="",
+            soul="",
             arms=ArmPool([arm]),
             groups=["ecom_team", "marketing_team"],
         )
@@ -286,10 +324,12 @@ class TestAgentGroups:
 class TestEndToEnd:
     def test_agent_views_filtered_memories(self):
         """Implementation note."""
-        j = _seed_journal([
-            ("vibe", "a1", "s1"),
-            ("mind", "a2", "s2"),
-        ])
+        j = _seed_journal(
+            [
+                ("vibe", "a1", "s1"),
+                ("mind", "a2", "s2"),
+            ]
+        )
         c = MemoryConsolidator(journal=j, config=ConsolidatorConfig(min_samples_per_cluster=2))
         report = c.consolidate_scoped(
             agents=["vibe", "mind"],
@@ -298,16 +338,18 @@ class TestEndToEnd:
         )
 
         vibe_view = filter_memories_for_agent(
-            report.memories_produced, agent_id="vibe", groups=["ecom"],
+            report.memories_produced,
+            agent_id="vibe",
+            groups=["ecom"],
         )
         mind_view = filter_memories_for_agent(
-            report.memories_produced, agent_id="mind", groups=["ecom"],
+            report.memories_produced,
+            agent_id="mind",
+            groups=["ecom"],
         )
 
         def _summarize(mems):
-            return sorted(
-                (m.scope, m.scope_key, str(m.arm_id)) for m in mems
-            )
+            return sorted((m.scope, m.scope_key, str(m.arm_id)) for m in mems)
 
         # Implementation note.
         # Implementation note.

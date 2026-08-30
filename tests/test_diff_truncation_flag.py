@@ -10,13 +10,7 @@ diff and keep it out of revert paths.
 from runtime.protocol.items import diff_is_truncated
 from runtime.sensing.gateway.realtime_cerebrum import _file_change_item_from_tool_evt
 
-_PLAIN_DIFF = (
-    "--- a/foo.py\n"
-    "+++ b/foo.py\n"
-    "@@ -1,1 +1,1 @@\n"
-    "-old\n"
-    "+new\n"
-)
+_PLAIN_DIFF = "--- a/foo.py\n+++ b/foo.py\n@@ -1,1 +1,1 @@\n-old\n+new\n"
 
 
 class TestDiffIsTruncated:
@@ -34,12 +28,7 @@ class TestDiffIsTruncated:
         # Only a tail marker means the executor cut the output; the same
         # text inside a hunk body is user content.
         diff = (
-            "--- a/foo.py\n"
-            "+++ b/foo.py\n"
-            "@@ -1,1 +1,2 @@\n"
-            " keep\n"
-            "+... (truncated 99 bytes)\n"
-            "+tail\n"
+            "--- a/foo.py\n+++ b/foo.py\n@@ -1,1 +1,2 @@\n keep\n+... (truncated 99 bytes)\n+tail\n"
         )
         assert diff_is_truncated(diff) is False
 

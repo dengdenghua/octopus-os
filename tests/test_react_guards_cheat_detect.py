@@ -5,6 +5,7 @@ actually fixing the underlying problem". They are independent of
 §18-§23 (which guard the trajectory shape) — these guard the *content*
 of edits and final answers.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -118,40 +119,82 @@ class TestHasSuccessfulVerificationObservation:
 
 class TestFalseVerificationClaimGuard:
     def test_non_code_mode_silent(self) -> None:
-        steps = [_step(1, action='exec_shell({"command": "pytest"})', observation="ModuleNotFoundError")]
-        assert _false_verification_claim_guard(
-            steps, "All tests pass!", is_code_mode=False,
-        ) is None
+        steps = [
+            _step(1, action='exec_shell({"command": "pytest"})', observation="ModuleNotFoundError")
+        ]
+        assert (
+            _false_verification_claim_guard(
+                steps,
+                "All tests pass!",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_claim_silent(self) -> None:
-        steps = [_step(1, action='exec_shell({"command": "pytest"})', observation="ModuleNotFoundError")]
-        assert _false_verification_claim_guard(
-            steps, "Refactored the imports.", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(1, action='exec_shell({"command": "pytest"})', observation="ModuleNotFoundError")
+        ]
+        assert (
+            _false_verification_claim_guard(
+                steps,
+                "Refactored the imports.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_claim_with_failed_verifier_fires(self) -> None:
         steps = [
-            _step(1, action='exec_shell({"command": "pytest"})', observation="ModuleNotFoundError: No module named 'foo'"),
+            _step(
+                1,
+                action=(
+                    'edit_file({"path": "runtime/foo.py", '
+                    '"old_string": "x = 1", "new_string": "x = 2"})'
+                ),
+                observation="updated",
+            ),
+            _step(
+                2,
+                action='exec_shell({"command": "pytest"})',
+                observation="ModuleNotFoundError: No module named 'foo'",
+            ),
         ]
         msg = _false_verification_claim_guard(
-            steps, "All tests pass.", is_code_mode=True,
+            steps,
+            "All tests pass.",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "verifier" in msg.lower() or "verification" in msg.lower()
 
     def test_claim_with_clean_run_silent(self) -> None:
         steps = [
-            _step(1, action='exec_shell({"command": "pytest"})', observation="===== 5 passed ====="),
+            _step(
+                1, action='exec_shell({"command": "pytest"})', observation="===== 5 passed ====="
+            ),
         ]
-        assert _false_verification_claim_guard(
-            steps, "All tests pass.", is_code_mode=True,
-        ) is None
+        assert (
+            _false_verification_claim_guard(
+                steps,
+                "All tests pass.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_help_request_short_circuits(self) -> None:
-        steps = [_step(1, action='exec_shell({"command": "pytest"})', observation="ModuleNotFoundError")]
-        assert _false_verification_claim_guard(
-            steps, "Tests pass — but I cannot continue, please provide the API key.", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(1, action='exec_shell({"command": "pytest"})', observation="ModuleNotFoundError")
+        ]
+        assert (
+            _false_verification_claim_guard(
+                steps,
+                "Tests pass — but I cannot continue, please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -219,8 +262,7 @@ class TestStepReplacedCodeWithComment:
         step = _step(
             1,
             action=(
-                'edit_file({"path": "x.tsx", '
-                '"old_string": "doStuff()", "new_string": "// gone"})'
+                'edit_file({"path": "x.tsx", "old_string": "doStuff()", "new_string": "// gone"})'
             ),
         )
         assert not _step_replaced_code_with_comment(step)
@@ -241,35 +283,66 @@ class TestStepReplacedCodeWithComment:
 class TestCommentedOutAsFixGuard:
     def test_non_code_mode_silent(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "raise X", "new_string": "# gone"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "raise X", "new_string": "# gone"})',
+            ),
         ]
-        assert _commented_out_as_fix_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _commented_out_as_fix_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_replacement_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _commented_out_as_fix_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _commented_out_as_fix_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_executable_to_comment_fires(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "    raise ValueError(x)", "new_string": "    # was: raise ValueError(x)"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "    raise ValueError(x)", "new_string": "    # was: raise ValueError(x)"})',
+            ),
         ]
         msg = _commented_out_as_fix_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "comment" in msg.lower()
 
     def test_help_request_short_circuits(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "raise X", "new_string": "# gone"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "raise X", "new_string": "# gone"})',
+            ),
         ]
-        assert _commented_out_as_fix_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _commented_out_as_fix_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -364,15 +437,30 @@ class TestBroadExceptSuppressionGuard:
                 ),
             ),
         ]
-        assert _broad_except_suppression_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _broad_except_suppression_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_new_suppression_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _broad_except_suppression_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _broad_except_suppression_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_new_suppression_fires(self) -> None:
         steps = [
@@ -386,7 +474,9 @@ class TestBroadExceptSuppressionGuard:
             ),
         ]
         msg = _broad_except_suppression_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "except" in msg.lower()
@@ -402,6 +492,11 @@ class TestBroadExceptSuppressionGuard:
                 ),
             ),
         ]
-        assert _broad_except_suppression_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _broad_except_suppression_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )

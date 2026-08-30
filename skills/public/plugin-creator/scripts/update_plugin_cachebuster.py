@@ -7,9 +7,8 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-
 
 CACHEBUSTER_PREFIX = "codex"
 
@@ -62,7 +61,7 @@ def sanitize_cachebuster(value: str) -> str:
 
 
 def default_cachebuster() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    return datetime.now(UTC).strftime("%Y%m%d%H%M%S")
 
 
 def with_cachebuster(version: str, cachebuster: str) -> str:

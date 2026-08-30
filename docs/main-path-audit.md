@@ -1,4 +1,4 @@
-# Octopus Main Path Audit
+# Echo Main Path Audit
 
 This audit is based on the current repository shape. The goal is not to add
 another agent module, but to converge the existing runtime, frontend, memory,
@@ -7,7 +7,7 @@ path.
 
 ## Current Judgment
 
-Octopus already has most Agent OS primitives. The backend `runtime/` covers
+Echo already has most Agent OS primitives. The backend `runtime/` covers
 planning, execution, memory, safety, MCP, realtime, workflows, and observability.
 The frontend `frontend/` has now converged the primary user path to one
 realtime conversation workspace plus team mode. Chat and code routes still

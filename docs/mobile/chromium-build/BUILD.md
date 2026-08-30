@@ -1,4 +1,4 @@
-# Octopus Mobile · Chromium 真集成工程
+# Echo Mobile · Chromium 真集成工程
 
 > **路线 A · 真集成 Chromium for Android**
 > 包 +80-120MB / 反爬免疫 / 可装 Chrome Web Store 扩展 / 完整 CDP
@@ -125,15 +125,15 @@ ls -la out/Default/lib.unstripped/
 
 # 产物
 ls -la dist/
-#   octopus-webview-arm64-v8a-1.0.0.aar  (~85 MB)
+#   echo-webview-arm64-v8a-1.0.0.aar  (~85 MB)
 ```
 
-### Phase 4 · 集成到 Octopus Mobile（1 周）
+### Phase 4 · 集成到 Echo Mobile（1 周）
 
 ```kotlin
-// 1. 在 ../octopus-mobile/app/build.gradle.kts 加
+// 1. 在 ../echo-mobile/app/build.gradle.kts 加
 dependencies {
-    implementation(files("libs/octopus-webview-arm64-v8a-1.0.0.aar"))
+    implementation(files("libs/echo-webview-arm64-v8a-1.0.0.aar"))
 }
 
 // 2. 反射 / JNI 调用 WebView
@@ -199,7 +199,7 @@ class CdpDomain {
 | 1 | 拉源码 | 2-4 小时 | 2-3 天 |
 | 2 | 首次编译 | 4-8 小时 | 3-5 天 |
 | 3 | 打 AAR | 半天 | 4-5 天 |
-| 4 | Octopus Mobile 集成 | 1 周 | 2-3 周 |
+| 4 | Echo Mobile 集成 | 1 周 | 2-3 周 |
 | 5 | 扩展机制 | 1 周 | 3-4 周 |
 | 6 | CDP 桥接 | 3-5 天 | 4-5 周 |
 | 7 | 7 个 BrowserTool | 3-5 天 | 5-6 周 |
@@ -219,7 +219,7 @@ class CdpDomain {
 
 | 组件 | 状态 | 位置 |
 |---|---|---|
-| BrowserEngine 抽象 | 🔄 进行中 | `../octopus-mobile/.../octopus_mobile/browser/BrowserEngine.kt` |
+| BrowserEngine 抽象 | 🔄 进行中 | `../echo-mobile/.../echo_mobile/browser/BrowserEngine.kt` |
 | SystemWebView 兜底 | 🔄 进行中 | `.../browser/SystemWebViewEngine.kt` |
 | 7 个 BrowserTool | 📋 待写 | `.../tool/impl/browser/` |
 | 编译脚本脚手架 | 📋 待写 | `docs/mobile/chromium-build/build_scripts/` |

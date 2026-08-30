@@ -1,11 +1,11 @@
 """Tests for runtime.memory.learning.soul_holdout + deep_evolve gate."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 import pytest
-
 from runtime.memory import soul_holdout as sh
 from runtime.memory.learning.soul_holdout import (
     GatePolicy,
@@ -30,24 +30,33 @@ def tmp_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _write_score(
-    root: Path, agent_id: str, *, score: float, thread_id: str,
+    root: Path,
+    agent_id: str,
+    *,
+    score: float,
+    thread_id: str,
 ) -> None:
     p = root / "agents" / agent_id / "agent-core" / ".scores.jsonl"
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps({
-            "ts": "2026-05-30T00:00:00",
-            "agent_id": agent_id,
-            "score": score,
-            "reason": "success",
-            "soul_hash": "deadbeef",
-            "rounds": 1,
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "duration_ms": 0,
-            "thread_id": thread_id,
-            "turn_id": "",
-        }) + "\n")
+        fh.write(
+            json.dumps(
+                {
+                    "ts": "2026-05-30T00:00:00",
+                    "agent_id": agent_id,
+                    "score": score,
+                    "reason": "success",
+                    "soul_hash": "deadbeef",
+                    "rounds": 1,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "duration_ms": 0,
+                    "thread_id": thread_id,
+                    "turn_id": "",
+                }
+            )
+            + "\n"
+        )
 
 
 def _write_session(
@@ -96,16 +105,25 @@ def test_load_holdout_missing_file_auto_seeds_from_high_scoring_journal(
     _write_score(tmp_root, aid, score=0.88, thread_id="t2")
     _write_score(tmp_root, aid, score=0.5, thread_id="t3")
     _write_session(
-        tmp_root, aid, "t1",
-        prompt="Hello world", reply="The answer to that question is forty-two.",
+        tmp_root,
+        aid,
+        "t1",
+        prompt="Hello world",
+        reply="The answer to that question is forty-two.",
     )
     _write_session(
-        tmp_root, aid, "t2",
-        prompt="What is 2+2", reply="2+2 equals 4 in standard arithmetic.",
+        tmp_root,
+        aid,
+        "t2",
+        prompt="What is 2+2",
+        reply="2+2 equals 4 in standard arithmetic.",
     )
     _write_session(
-        tmp_root, aid, "t3",
-        prompt="Bad turn", reply="Should never seed",
+        tmp_root,
+        aid,
+        "t3",
+        prompt="Bad turn",
+        reply="Should never seed",
     )
 
     entries = load_holdout(aid)
@@ -116,9 +134,7 @@ def test_load_holdout_missing_file_auto_seeds_from_high_scoring_journal(
     # Low-scoring turn must not appear.
     assert "Bad turn" not in prompts
     # File now exists on disk.
-    assert (
-        tmp_root / "data" / "soul_holdout" / f"{aid}.jsonl"
-    ).exists()
+    assert (tmp_root / "data" / "soul_holdout" / f"{aid}.jsonl").exists()
 
 
 def test_auto_seed_holdout_writes_file_and_returns_count(
@@ -127,8 +143,11 @@ def test_auto_seed_holdout_writes_file_and_returns_count(
     aid = "agent_x"
     _write_score(tmp_root, aid, score=0.9, thread_id="ta")
     _write_session(
-        tmp_root, aid, "ta",
-        prompt="Solve X", reply="Solution: X equals 7.",
+        tmp_root,
+        aid,
+        "ta",
+        prompt="Solve X",
+        reply="Solution: X equals 7.",
     )
     n = auto_seed_holdout(aid)
     assert n == 1
@@ -152,8 +171,7 @@ def test_load_holdout_reads_existing_file(tmp_root: Path) -> None:
     p = tmp_root / "data" / "soul_holdout" / f"{aid}.jsonl"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
-        json.dumps({"prompt": "p1", "expected_signal": "ok", "weight": 2.0})
-        + "\n",
+        json.dumps({"prompt": "p1", "expected_signal": "ok", "weight": 2.0}) + "\n",
         encoding="utf-8",
     )
     entries = load_holdout(aid)
@@ -231,7 +249,9 @@ def test_gate_rejects_when_regression_exceeds_tolerance() -> None:
     new = HoldoutResult(pass_rate=0.7, detail=[])
     old = HoldoutResult(pass_rate=0.9, detail=[])
     allowed, reason = gate(
-        new, old, GatePolicy(floor=0.6, regression_tolerance=0.05),
+        new,
+        old,
+        GatePolicy(floor=0.6, regression_tolerance=0.05),
     )
     assert allowed is False
     assert "regress" in reason
@@ -241,7 +261,9 @@ def test_gate_allows_tiny_regression_within_tolerance() -> None:
     new = HoldoutResult(pass_rate=0.78, detail=[])
     old = HoldoutResult(pass_rate=0.80, detail=[])
     allowed, _reason = gate(
-        new, old, GatePolicy(floor=0.6, regression_tolerance=0.05),
+        new,
+        old,
+        GatePolicy(floor=0.6, regression_tolerance=0.05),
     )
     assert allowed is True
 
@@ -252,7 +274,8 @@ def test_gate_allows_tiny_regression_within_tolerance() -> None:
 
 
 def test_deep_evolve_refuses_on_holdout_regression(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A regressing runner must cause deep_evolve(dry_run=False) to skip apply."""
     from runtime.memory import deep_evolution as dev
@@ -261,6 +284,7 @@ def test_deep_evolve_refuses_on_holdout_regression(
 
     # Redirect both modules' project root to tmp_path so files land there.
     from runtime.memory import turn_scoring as ts
+
     monkeypatch.setattr(sh, "_project_root", lambda: tmp_path)
     monkeypatch.setattr(ts, "_project_root", lambda: tmp_path)
 
@@ -268,7 +292,8 @@ def test_deep_evolve_refuses_on_holdout_regression(
     soul_dir = tmp_path / "agents" / aid / "agent-core"
     soul_dir.mkdir(parents=True, exist_ok=True)
     (soul_dir / "SOUL.md").write_text(
-        "# soul\nbe helpful\n", encoding="utf-8",
+        "# soul\nbe helpful\n",
+        encoding="utf-8",
     )
     # Need scored turns so deep_evolve doesn't bail early.
     _write_score(tmp_path, aid, score=1.0, thread_id="t1")
@@ -277,14 +302,20 @@ def test_deep_evolve_refuses_on_holdout_regression(
     hpath = tmp_path / "data" / "soul_holdout" / f"{aid}.jsonl"
     hpath.parent.mkdir(parents=True, exist_ok=True)
     hpath.write_text(
-        json.dumps({
-            "prompt": "p1", "expected_signal": "MAGIC", "weight": 1.0,
-        }) + "\n",
+        json.dumps(
+            {
+                "prompt": "p1",
+                "expected_signal": "MAGIC",
+                "weight": 1.0,
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
 
     # Force the evolve router to be "wired" so deep_evolve proceeds.
     from runtime.platform.process.service_provider import get_provider
+
     get_provider().register_instance("evolve_router", object())
     get_provider().register_instance("evolve_default_model", "stub-model")
 
@@ -295,13 +326,18 @@ def test_deep_evolve_refuses_on_holdout_regression(
         if "self-improvement proposer" in system:
             call_log.append("propose")
             return (
-                {"candidates": [{
-                    "id": "c1", "kind": "add_lesson",
-                    "lesson": "always cite sources",
-                    "tag": "quality",
-                    "predicted_impact": "+",
-                    "risk": "low",
-                }]},
+                {
+                    "candidates": [
+                        {
+                            "id": "c1",
+                            "kind": "add_lesson",
+                            "lesson": "always cite sources",
+                            "tag": "quality",
+                            "predicted_impact": "+",
+                            "risk": "low",
+                        }
+                    ]
+                },
                 {"input_tokens": 1, "output_tokens": 1},
             )
         if "impact judge" in system:
@@ -330,6 +366,7 @@ def test_deep_evolve_refuses_on_holdout_regression(
             if "always cite sources" in soul:
                 return "no signal here"
             return "the MAGIC word"
+
         return runner
 
     monkeypatch.setattr(dev, "_build_holdout_runner", fake_runner_factory)
@@ -346,6 +383,7 @@ def test_deep_evolve_refuses_on_holdout_regression(
         return {"ok": True}
 
     import runtime.execution.suckers.memory_skills as mskills
+
     monkeypatch.setattr(mskills, "_update_soul", stub_update_soul)
     monkeypatch.setattr(mskills, "_revert_soul", stub_revert_soul)
 

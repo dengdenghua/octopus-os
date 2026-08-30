@@ -7,6 +7,7 @@ gateway's fastapi surface. Extracting them let us pin their
 behavior with pure-function tests · any refactor now has tight
 regression coverage on shape and priority ordering.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -59,15 +60,25 @@ class TestPickPreviewKeys:
         assert result[0] == ("text", "hi")
 
     def test_fills_to_three(self):
-        result = _pick_preview_keys({
-            "a": 1, "b": 2, "c": 3, "d": 4, "e": 5,
-        })
+        result = _pick_preview_keys(
+            {
+                "a": 1,
+                "b": 2,
+                "c": 3,
+                "d": 4,
+                "e": 5,
+            }
+        )
         assert len(result) == 3
 
     def test_respects_priority_order_among_multiple(self):
-        result = _pick_preview_keys({
-            "url": "u", "text": "t", "path": "p",
-        })
+        result = _pick_preview_keys(
+            {
+                "url": "u",
+                "text": "t",
+                "path": "p",
+            }
+        )
         # Priority: text, path, url, ... → text first, path second, url third.
         keys = [k for k, _v in result]
         assert keys == ["text", "path", "url"]
@@ -88,9 +99,14 @@ class TestPickPreviewKeys:
 
 class TestPickOutputKeys:
     def test_caps_at_two(self):
-        result = _pick_output_keys({
-            "result": 1, "reply": 2, "answer": 3, "text": 4,
-        })
+        result = _pick_output_keys(
+            {
+                "result": 1,
+                "reply": 2,
+                "answer": 3,
+                "text": 4,
+            }
+        )
         assert len(result) == 2
 
     def test_skips_underscore_prefixed(self):
@@ -141,7 +157,8 @@ class TestSummarizeStep:
 
     def test_args_and_output_both_present(self):
         step = _mk_step(
-            success=True, sucker_id="read_file",
+            success=True,
+            sucker_id="read_file",
             args={"path": "/a.txt"},
             output={"reply": "hello"},
         )
@@ -154,7 +171,8 @@ class TestSummarizeStep:
 
     def test_args_only(self):
         step = _mk_step(
-            success=True, sucker_id="list_cwd",
+            success=True,
+            sucker_id="list_cwd",
             args={"path": "."},
             output=None,
         )
@@ -164,7 +182,8 @@ class TestSummarizeStep:
 
     def test_output_only(self):
         step = _mk_step(
-            success=True, sucker_id="count_words",
+            success=True,
+            sucker_id="count_words",
             args=None,
             output={"word_count": 42},
         )
@@ -179,8 +198,10 @@ class TestSummarizeStep:
     def test_string_output_uses_80_char_cap(self):
         long = "x" * 200
         step = _mk_step(
-            success=True, sucker_id="tell",
-            args=None, output=long,
+            success=True,
+            sucker_id="tell",
+            args=None,
+            output=long,
         )
         out = summarize_step_for_stream(step)
         # The output portion is capped at 80 · marker + skill = small prefix.
@@ -209,7 +230,12 @@ class TestChatCompletionEnvelope:
     def test_required_openai_fields(self):
         env = chat_completion_envelope("hello", model="gpt-4")
         required = {
-            "id", "object", "created", "model", "choices", "usage",
+            "id",
+            "object",
+            "created",
+            "model",
+            "choices",
+            "usage",
         }
         assert required.issubset(env.keys())
         assert env["object"] == "chat.completion"
@@ -222,9 +248,9 @@ class TestChatCompletionEnvelope:
         assert c0["message"]["content"] == "hello"
         assert c0["finish_reason"] == "stop"
 
-    def test_octopus_meta_default_is_fallback(self):
+    def test_echo_meta_default_is_fallback(self):
         env = chat_completion_envelope("x", model="m")
-        meta = env["octopus"]
+        meta = env["echo"]
         assert meta["strategy"] == "direct_llm_fallback"
         assert meta["step_count"] == 0
         assert meta["success"] is True
@@ -232,20 +258,22 @@ class TestChatCompletionEnvelope:
     def test_agent_meta_populated_when_provided(self):
         agent = SimpleNamespace(agent_id="coder")
         env = chat_completion_envelope("x", model="m", agent=agent)
-        assert env["octopus"]["agent"] == "coder"
+        assert env["echo"]["agent"] == "coder"
 
     def test_actor_meta_populated_when_provided(self):
         env = chat_completion_envelope("x", model="m", actor="u1")
-        assert env["octopus"]["actor"] == "u1"
+        assert env["echo"]["actor"] == "u1"
 
     def test_extra_meta_merged(self):
         env = chat_completion_envelope(
-            "x", model="m", extra={"custom_flag": True, "step_count": 99},
+            "x",
+            model="m",
+            extra={"custom_flag": True, "step_count": 99},
         )
-        assert env["octopus"]["custom_flag"] is True
+        assert env["echo"]["custom_flag"] is True
         # extra can override defaults · by design, lets the caller
         # tag fallback with real info (e.g., planner_error string).
-        assert env["octopus"]["step_count"] == 99
+        assert env["echo"]["step_count"] == 99
 
     def test_id_is_prefixed(self):
         env = chat_completion_envelope("x", model="m")

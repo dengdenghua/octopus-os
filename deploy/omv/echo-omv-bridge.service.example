@@ -1,0 +1,53 @@
+[Unit]
+Description=Constrained OpenMediaVault integration bridge for Echo OS
+Documentation=https://docs.openmediavault.org/en/latest/development/tools/omv_rpc.html
+After=openmediavault-engined.service
+ConditionFileIsExecutable=/usr/sbin/omv-rpc
+ConditionFileIsExecutable=/usr/bin/lsblk
+
+[Service]
+Type=simple
+User=root
+# Create this host group with the same numeric GID passed to Echo as PGID.
+Group=echo-omv
+WorkingDirectory=/usr/lib/echo-os/omv-bridge
+Environment=PYTHONPATH=/usr/lib/echo-os/omv-bridge
+RuntimeDirectory=echo-omv
+RuntimeDirectoryMode=0750
+UMask=0007
+ExecStart=/usr/bin/python3 -m appliance.omv_bridge --socket /run/echo-omv/omv.sock --omv-rpc /usr/sbin/omv-rpc --lsblk /usr/bin/lsblk
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+
+# The subprocess needs OMV's local Unix RPC path plus read-only block metadata.
+# OMV engined remains the only configuration writer; this process can request
+# fixed SMB and filesystem user/group quota transactions but receives no
+# network, writable system tree, home directories, elevated capabilities, or
+# arbitrary shell.
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateNetwork=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectProc=invisible
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+RemoveIPC=true
+ReadWritePaths=/run/echo-omv
+
+[Install]
+WantedBy=multi-user.target

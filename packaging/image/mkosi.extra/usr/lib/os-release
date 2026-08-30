@@ -1,0 +1,12 @@
+NAME="Echo OS"
+PRETTY_NAME="Echo OS 0.2.0 (Debian 13)"
+ID=echo-os
+ID_LIKE=debian
+VERSION_ID="0.2.0"
+VERSION="0.2.0 (Trixie)"
+VERSION_CODENAME=trixie
+BUILD_ID=20260825
+IMAGE_ID=echo-os
+IMAGE_VERSION=0.2.0
+HOME_URL="https://github.com/echo-agent"
+SUPPORT_URL="https://github.com/echo-agent/echo-os/issues"

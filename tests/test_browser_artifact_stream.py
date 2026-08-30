@@ -6,7 +6,6 @@ import base64
 from pathlib import Path
 
 import pytest
-
 from runtime.execution.suckers.browser_act_skills import (
     _emit_screenshot_artifact,
 )
@@ -18,9 +17,9 @@ from runtime.memory.journal.journal import _parse_event
 def artifacts_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point ``_artifacts_root`` at tmp so file writes don't pollute
     the real data dir."""
-    monkeypatch.setenv("OCTOPUS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path))
     # The app_paths() lookup caches via ``_reset_module_state`` in
-    # conftest, but we want a concrete dir — poke OCTOPUS_DATA_DIR.
+    # conftest, but we want a concrete dir — poke ECHO_DATA_DIR.
     return tmp_path / "browser_artifacts"
 
 
@@ -62,12 +61,14 @@ class _FakeSession:
 
 
 def test_emit_writes_browser_artifact_event_to_journal(
-    artifacts_root: Path, monkeypatch: pytest.MonkeyPatch,
+    artifacts_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     journal = InMemoryJournal()
     session = _FakeSession(journal)
 
     import runtime.platform.process.session as _sess
+
     monkeypatch.setattr(_sess, "current_session", lambda: session)
 
     _emit_screenshot_artifact(_bridge_response(caption="search results"))
@@ -86,11 +87,13 @@ def test_emit_writes_browser_artifact_event_to_journal(
 
 
 def test_emit_without_session_still_writes_file(
-    artifacts_root: Path, monkeypatch: pytest.MonkeyPatch,
+    artifacts_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """When no session is bound (standalone skill test), file is
     saved but no journal event is fired."""
     import runtime.platform.process.session as _sess
+
     monkeypatch.setattr(_sess, "current_session", lambda: None)
 
     _emit_screenshot_artifact(_bridge_response())
@@ -101,24 +104,22 @@ def test_emit_without_session_still_writes_file(
 def test_emit_without_data_is_noop(artifacts_root: Path):
     _emit_screenshot_artifact({"data": ""})
     # No file written, no exception.
-    assert not artifacts_root.exists() or not list(
-        artifacts_root.glob("screenshot-*.png")
-    )
+    assert not artifacts_root.exists() or not list(artifacts_root.glob("screenshot-*.png"))
 
 
 def test_emit_strips_data_uri_prefix(
-    artifacts_root: Path, monkeypatch: pytest.MonkeyPatch,
+    artifacts_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Browser bridges sometimes send ``data:image/png;base64,...``."""
     journal = InMemoryJournal()
     session = _FakeSession(journal)
     import runtime.platform.process.session as _sess
+
     monkeypatch.setattr(_sess, "current_session", lambda: session)
 
     b64 = base64.b64encode(_png_bytes()).decode("ascii")
-    _emit_screenshot_artifact(
-        {"data": f"data:image/png;base64,{b64}", "caption": "x"}
-    )
+    _emit_screenshot_artifact({"data": f"data:image/png;base64,{b64}", "caption": "x"})
     ev = journal.read_all()[0]
     assert isinstance(ev, BrowserArtifactEvent)
     assert ev.caption == "x"
@@ -148,7 +149,8 @@ def test_event_round_trips_through_jsonl():
 
 
 def test_emit_calls_active_artifact_emitter(
-    artifacts_root: Path, monkeypatch: pytest.MonkeyPatch,
+    artifacts_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """The ContextVar emitter path is the legacy/fast channel. Journal
     mirror should NOT replace it — both are expected to fire.

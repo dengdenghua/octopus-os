@@ -21,10 +21,10 @@ Fix: three signals, priority order:
 
 These tests pin each signal + interactions + cycle detection.
 """
+
 from __future__ import annotations
 
 import pytest
-
 from runtime.core.cerebrum.llm_planner import (
     _extract_edges,
     _has_cycle,
@@ -87,9 +87,7 @@ class TestHasCycle:
         assert _has_cycle(2, {("n0", "n1"), ("n1", "n0")})
 
     def test_three_node_cycle(self):
-        assert _has_cycle(
-            3, {("n0", "n1"), ("n1", "n2"), ("n2", "n0")}
-        )
+        assert _has_cycle(3, {("n0", "n1"), ("n1", "n2"), ("n2", "n0")})
 
 
 # ═══════════════════════════════════════════════════════════

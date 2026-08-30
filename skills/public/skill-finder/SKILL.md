@@ -37,7 +37,7 @@ The local skill catalog contains all official/first-party skills — both instal
 
 ```bash
 # Read the local skills cache and search by keyword
-cat ~/.octopus/accounts/ACCOUNT_ID/skills/remote_skills_cache.json | \
+cat ~/.echo/accounts/ACCOUNT_ID/skills/remote_skills_cache.json | \
   python3 -c "
 import json, sys
 query = 'USER_QUERY_KEYWORDS'.lower().split()
@@ -62,22 +62,22 @@ Replace `ACCOUNT_ID` with the actual account ID from the agent's skill directory
 **To determine install status**, check if the skill directory exists locally:
 ```bash
 # Check account-level skills
-ls ~/.octopus/accounts/ACCOUNT_ID/skills/SKILL_NAME/SKILL.md 2>/dev/null && echo "installed" || echo "not installed"
+ls ~/.echo/accounts/ACCOUNT_ID/skills/SKILL_NAME/SKILL.md 2>/dev/null && echo "installed" || echo "not installed"
 
 # Check agent-level skills
-ls ~/.octopus/accounts/ACCOUNT_ID/agents/AGENT_ID/agent-core/skills/SKILL_NAME/SKILL.md 2>/dev/null && echo "installed" || echo "not installed"
+ls ~/.echo/accounts/ACCOUNT_ID/agents/AGENT_ID/agent-core/skills/SKILL_NAME/SKILL.md 2>/dev/null && echo "installed" || echo "not installed"
 ```
 
 If the skill is not installed, it can be installed via the SDK server API or by downloading from the OSS URL in the cache:
 ```bash
 # The oss field in remote_skills_cache.json contains the download URL
 # Extract it and download:
-OSS_URL=$(cat ~/.octopus/accounts/ACCOUNT_ID/skills/remote_skills_cache.json | \
+OSS_URL=$(cat ~/.echo/accounts/ACCOUNT_ID/skills/remote_skills_cache.json | \
   python3 -c "import json,sys; data=json.load(sys.stdin); [print(s['oss']) for s in data['skills'] if s['name']=='SKILL_NAME']")
 
 # Download and extract to account-level skills directory
 curl -sL "$OSS_URL" -o /tmp/skill.zip && \
-  unzip -o /tmp/skill.zip -d ~/.octopus/accounts/ACCOUNT_ID/skills/SKILL_NAME/ && \
+  unzip -o /tmp/skill.zip -d ~/.echo/accounts/ACCOUNT_ID/skills/SKILL_NAME/ && \
   rm /tmp/skill.zip
 ```
 
@@ -246,8 +246,8 @@ After finding a skill, install it to the **correct directory**.
 
 | Level | Path | Scope |
 |-------|------|-------|
-| **Agent-specific** (default) | `~/.octopus/accounts/{accountId}/agents/{agentId}/agent-core/skills/` | Only this agent |
-| **Account-shared** | `~/.octopus/accounts/{accountId}/skills/` | All agents in the account |
+| **Agent-specific** (default) | `~/.echo/accounts/{accountId}/agents/{agentId}/agent-core/skills/` | Only this agent |
+| **Account-shared** | `~/.echo/accounts/{accountId}/skills/` | All agents in the account |
 
 **Default: Always install to the agent's own directory** unless the user explicitly asks for account-level/global installation.
 
@@ -262,7 +262,7 @@ After finding a skill, install it to the **correct directory**.
 Best for repositories that represent a single skill.
 
 ```bash
-cd ~/.octopus/accounts/{accountId}/agents/{agentId}/agent-core/skills/
+cd ~/.echo/accounts/{accountId}/agents/{agentId}/agent-core/skills/
 git clone --depth 1 https://github.com/<owner>/<repo>.git <skill-name>
 ```
 
@@ -271,7 +271,7 @@ git clone --depth 1 https://github.com/<owner>/<repo>.git <skill-name>
 Use when installing a specific sub-skill from a large monorepo via `npx skills add`.
 
 ```bash
-cd ~/.octopus/accounts/{accountId}/agents/{agentId}/agent-core/skills/
+cd ~/.echo/accounts/{accountId}/agents/{agentId}/agent-core/skills/
 npx skills add <repo> --skill <name> -y
 mv .agents/skills/<name> ./
 rm -rf .agents
@@ -280,7 +280,7 @@ rm -rf .agents
 #### Method 3: clawhub install
 
 ```bash
-clawhub install <slug> --dir ~/.octopus/accounts/{accountId}/agents/{agentId}/agent-core/skills/
+clawhub install <slug> --dir ~/.echo/accounts/{accountId}/agents/{agentId}/agent-core/skills/
 ```
 
 #### Method 4: SkillsMP → GitHub clone
@@ -290,16 +290,16 @@ Extract `githubUrl` from the SkillsMP API response, then use Method 1.
 ### Account-Level Skills (Shared)
 
 Only when user explicitly requests global/shared installation:
-`~/.octopus/accounts/{accountId}/skills/`
+`~/.echo/accounts/{accountId}/skills/`
 
 ### Verification After Installation
 
 ```bash
 # Verify skill directory exists directly under skills/
-ls ~/.octopus/accounts/{accountId}/agents/{agentId}/agent-core/skills/<skill-name>/
+ls ~/.echo/accounts/{accountId}/agents/{agentId}/agent-core/skills/<skill-name>/
 
 # Verify SKILL.md exists
-cat ~/.octopus/accounts/{accountId}/agents/{agentId}/agent-core/skills/<skill-name>/SKILL.md
+cat ~/.echo/accounts/{accountId}/agents/{agentId}/agent-core/skills/<skill-name>/SKILL.md
 ```
 
 ## Platform CLI Quick Reference

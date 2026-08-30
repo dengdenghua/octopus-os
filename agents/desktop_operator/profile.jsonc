@@ -1,7 +1,7 @@
-// Octopus Agent profile · desktop_operator.
+// Echo Agent profile · desktop_operator.
 //
 // DEPRECATED as a standalone persona — desktop control is a *capability*
-// (the `desktop_operator` arm, now folded into Octopus/general). This
+// (the `desktop_operator` arm, now folded into Echo/general). This
 // folder exists for backward compatibility with tests + tooling that
 // still construct the old standalone agent. `make_all_agent_presets`
 // does NOT auto-register this agent; callers who want it must call
@@ -17,6 +17,6 @@
   "avatar": "avatar.png",
   "model": {"provider": "auto", "name": "auto"},
   "runtime": "local",
-  "creator": "octopus",
+  "creator": "echo",
   "defaultProject": {"dir": "project"}
 }

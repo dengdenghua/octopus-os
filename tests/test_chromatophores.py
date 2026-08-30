@@ -8,13 +8,13 @@ from typing import cast
 
 import pytest
 from pydantic import ValidationError
-
 from runtime.platform.models import ArmId
 from runtime.safety.chromatophores import (
     STANDARD_TOPICS,
     TOPIC_ALERT_BUDGET,
     TOPIC_ARM_BUSY,
     TOPIC_ARM_IDLE,
+    TOPIC_ARM_MAILBOX,
     TOPIC_SUCKER_GRABBED,
     BoidsArbitrator,
     ResourceClaim,
@@ -24,8 +24,8 @@ from runtime.safety.chromatophores import (
 
 # ─── SignalBus ─────────────────────────────────────────────
 
-class TestSignalBus:
 
+class TestSignalBus:
     def test_publish_returns_signal_event(self):
         bus = SignalBus()
         ev = bus.publish(TOPIC_ARM_BUSY, {"task_id": "t1"}, publisher="arm:a1")
@@ -136,9 +136,7 @@ class TestSignalBus:
             topic="x",
             payload={},
             publisher="system",
-            ts=__import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            ),
+            ts=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
         )
         with pytest.raises(ValidationError):
             ev.topic = "y"  # type: ignore[misc]
@@ -146,9 +144,10 @@ class TestSignalBus:
     def test_standard_topics_exported(self):
         assert TOPIC_ARM_BUSY in STANDARD_TOPICS
         assert TOPIC_ARM_IDLE in STANDARD_TOPICS
+        assert TOPIC_ARM_MAILBOX in STANDARD_TOPICS
         assert TOPIC_SUCKER_GRABBED in STANDARD_TOPICS
         assert TOPIC_ALERT_BUDGET in STANDARD_TOPICS
-        assert len(STANDARD_TOPICS) == 5
+        assert len(STANDARD_TOPICS) == 6
 
     def test_concurrent_publish(self):
         bus = SignalBus()
@@ -177,8 +176,8 @@ class TestSignalBus:
 
 # ─── BoidsArbitrator ───────────────────────────────────────
 
-class TestBoidsArbitrator:
 
+class TestBoidsArbitrator:
     def test_first_claim_wins(self):
         arb = BoidsArbitrator()
         claim = ResourceClaim(
@@ -346,16 +345,20 @@ class TestBoidsArbitrator:
 
     def test_release_readonly_removes_only_one(self):
         arb = BoidsArbitrator()
-        arb.arbitrate(ResourceClaim(
-            arm_id=ArmId("arm:a1"),
-            resource_uri="readonly:x",
-            priority=50,
-        ))
-        arb.arbitrate(ResourceClaim(
-            arm_id=ArmId("arm:a2"),
-            resource_uri="readonly:x",
-            priority=50,
-        ))
+        arb.arbitrate(
+            ResourceClaim(
+                arm_id=ArmId("arm:a1"),
+                resource_uri="readonly:x",
+                priority=50,
+            )
+        )
+        arb.arbitrate(
+            ResourceClaim(
+                arm_id=ArmId("arm:a2"),
+                resource_uri="readonly:x",
+                priority=50,
+            )
+        )
         arb.release(ArmId("arm:a1"), "readonly:x")
         actives = arb.active_claims()
         assert len(actives) == 1
@@ -388,16 +391,20 @@ class TestBoidsArbitrator:
         seen: list[SignalEvent] = []
         bus.subscribe(TOPIC_SUCKER_GRABBED, seen.append)
         arb = BoidsArbitrator(signal_bus=bus)
-        arb.arbitrate(ResourceClaim(
-            arm_id=ArmId("arm:hi"),
-            resource_uri="file://r",
-            priority=80,
-        ))
-        arb.arbitrate(ResourceClaim(
-            arm_id=ArmId("arm:lo"),
-            resource_uri="file://r",
-            priority=10,
-        ))
+        arb.arbitrate(
+            ResourceClaim(
+                arm_id=ArmId("arm:hi"),
+                resource_uri="file://r",
+                priority=80,
+            )
+        )
+        arb.arbitrate(
+            ResourceClaim(
+                arm_id=ArmId("arm:lo"),
+                resource_uri="file://r",
+                priority=10,
+            )
+        )
         # Implementation note.
         assert len(seen) == 1
 
@@ -413,8 +420,8 @@ class TestBoidsArbitrator:
 
 # Implementation note.
 
-class TestConcurrency:
 
+class TestConcurrency:
     def test_concurrent_claim_single_winner(self):
         arb = BoidsArbitrator()
         uri = "file://hotspot"

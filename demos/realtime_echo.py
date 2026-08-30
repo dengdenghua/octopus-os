@@ -42,42 +42,41 @@ def run() -> None:
     app = FastAPI()
     app.include_router(gateway.router)
 
-    with TestClient(app) as client:
-        with client.websocket_connect("/api/realtime") as ws:
-            ws.send_text(
-                encode_message(
-                    JsonRpcRequest(
-                        id=1,
-                        method="turn/start",
-                        params={
-                            "threadId": "demo-thread",
-                            "input": [{"type": "text", "text": "hello from demo"}],
-                            "approvalPolicy": "on-request",
-                        },
-                    )
+    with TestClient(app) as client, client.websocket_connect("/api/realtime") as ws:
+        ws.send_text(
+            encode_message(
+                JsonRpcRequest(
+                    id=1,
+                    method="turn/start",
+                    params={
+                        "threadId": "demo-thread",
+                        "input": [{"type": "text", "text": "hello from demo"}],
+                        "approvalPolicy": "on-request",
+                    },
                 )
             )
+        )
 
-            while True:
-                msg = decode_message(ws.receive_text())
-                if isinstance(msg, Notification):
-                    print(f"◀ notify  {msg.method:<38} {_compact(msg.params)}")
-                    continue
-                if isinstance(msg, JsonRpcRequest):
-                    print(f"◀ request {msg.method:<38} id={msg.id}")
-                    # Auto-approve in the demo.
-                    ws.send_text(
-                        encode_message(
-                            JsonRpcResponse(id=msg.id, result={"action": "accept"})
-                        )
+        while True:
+            msg = decode_message(ws.receive_text())
+            if isinstance(msg, Notification):
+                print(f"◀ notify  {msg.method:<38} {_compact(msg.params)}")
+                continue
+            if isinstance(msg, JsonRpcRequest):
+                print(f"◀ request {msg.method:<38} id={msg.id}")
+                # Auto-approve in the demo.
+                ws.send_text(
+                    encode_message(
+                        JsonRpcResponse(id=msg.id, result={"action": "accept"})
                     )
-                    continue
-                if isinstance(msg, JsonRpcResponse) and msg.id == 1:
-                    print("◀ response turn/start id=1 — turn completed")
-                    print()
-                    print("Final snapshot:")
-                    print(json.dumps(msg.result, indent=2, ensure_ascii=False))
-                    break
+                )
+                continue
+            if isinstance(msg, JsonRpcResponse) and msg.id == 1:
+                print("◀ response turn/start id=1 — turn completed")
+                print()
+                print("Final snapshot:")
+                print(json.dumps(msg.result, indent=2, ensure_ascii=False))
+                break
 
     print()
     print(f"Persisted to {logs_root / 'demo-thread.jsonl'}")
@@ -91,3 +90,4 @@ def _compact(payload: dict[str, object]) -> str:
 
 if __name__ == "__main__":
     run()
+

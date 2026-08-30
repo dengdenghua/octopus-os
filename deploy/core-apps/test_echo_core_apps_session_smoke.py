@@ -23,6 +23,24 @@ SPEC.loader.exec_module(smoke)
 
 
 class CoreAppsSessionSmokeTests(unittest.TestCase):
+    def test_session_dependencies_do_not_cross_x11_and_wayland_boundaries(self) -> None:
+        common = {
+            smoke.XDG_MIME,
+            smoke.XDG_OPEN,
+            smoke.GIO,
+            smoke.DESKTOP_FILE_VALIDATE,
+            smoke.ZIP,
+        }
+        x11 = set(smoke.required_session_executables("x11"))
+        wayland = set(smoke.required_session_executables("wayland"))
+
+        self.assertEqual(x11, common | {smoke.WMCTRL})
+        self.assertEqual(wayland, common | {smoke.KWIN_BRIDGE})
+        self.assertNotIn(smoke.WMCTRL, wayland)
+        self.assertNotIn(smoke.KWIN_BRIDGE, x11)
+        with self.assertRaisesRegex(smoke.SessionSmokeError, "unsupported"):
+            smoke.required_session_executables("mir")
+
     def test_case_matrix_uses_fixed_desktop_identities(self) -> None:
         self.assertEqual(
             [(case.name, case.desktop_id) for case in smoke.CASES],

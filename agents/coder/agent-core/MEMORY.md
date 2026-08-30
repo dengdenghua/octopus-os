@@ -1,1 +1,1 @@
-- [2026-04-23T20:42:09 · project,deadline,octopus-agent] 项目名称：Octopus-Agent，部署 deadline 是 2026 年 5 月 15 日。
+- [2026-04-23T20:42:09 · project,deadline,echo-agent] 项目名称：Echo Agent，部署 deadline 是 2026 年 5 月 15 日。

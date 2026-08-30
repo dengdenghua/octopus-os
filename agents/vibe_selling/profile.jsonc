@@ -1,4 +1,4 @@
-// Octopus Agent profile · edit this to tune the agent.
+// Echo Agent profile · edit this to tune the agent.
 
 {
   "id": "vibe_selling",
@@ -14,7 +14,7 @@
     "name": "auto"
   },
   "runtime": "local",
-  "creator": "octopus",
+  "creator": "echo",
   "defaultProject": {
     "dir": "project"
   }

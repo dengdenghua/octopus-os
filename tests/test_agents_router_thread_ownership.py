@@ -11,6 +11,7 @@ enforces _require_thread_owner.
 
 The chain is task_id → ActiveTask.thread_id → Thread.metadata["owner_id"].
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,7 +23,6 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.routing import APIRouter  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.core.cerebrum.pause_control import PauseController  # noqa: E402
 from runtime.memory.threads.store import ThreadStateStore  # noqa: E402
 from runtime.safety.auth.identity import Identity, IdentityStore  # noqa: E402
@@ -41,15 +41,18 @@ def _build_minimal_router(
     the actual enforcement logic shape.
     """
     from fastapi import HTTPException
-
     from runtime.sensing.gateway.openai_gateway_router import _resolve_actor
 
     router = APIRouter()
 
     def _auth(request: Request) -> str | None:
         return _resolve_actor(
-            request, identity_store, require_auth,
-            jwt_secret=None, jwt_issuer=None, jwt_audience=None,
+            request,
+            identity_store,
+            require_auth,
+            jwt_secret=None,
+            jwt_issuer=None,
+            jwt_audience=None,
         )
 
     def _require_task_owner(request: Request, task_id: str) -> str | None:
@@ -149,7 +152,8 @@ def setup(tmp_path: Path) -> dict[str, Any]:
         keys[actor] = api_key
 
     pause_ctrl = PauseController(
-        store_path=tmp_path / "pause_state.json", autoload=False,
+        store_path=tmp_path / "pause_state.json",
+        autoload=False,
     )
     thread_store = ThreadStateStore(path=tmp_path / "threads.jsonl")
 
@@ -157,21 +161,27 @@ def setup(tmp_path: Path) -> dict[str, Any]:
     alice_thread = thread_store.create(metadata={"owner_id": "alice"})
     alice_thread_id = alice_thread["thread_id"]
     pause_ctrl.register_active(
-        task_id="task-alice", thread_id=alice_thread_id, agent_id="general",
+        task_id="task-alice",
+        thread_id=alice_thread_id,
+        agent_id="general",
     )
 
     # Create bob's thread + task
     bob_thread = thread_store.create(metadata={"owner_id": "bob"})
     bob_thread_id = bob_thread["thread_id"]
     pause_ctrl.register_active(
-        task_id="task-bob", thread_id=bob_thread_id, agent_id="general",
+        task_id="task-bob",
+        thread_id=bob_thread_id,
+        agent_id="general",
     )
 
     # Create a legacy thread (no owner_id) + its task
     legacy_thread = thread_store.create(metadata={})
     legacy_thread_id = legacy_thread["thread_id"]
     pause_ctrl.register_active(
-        task_id="task-legacy", thread_id=legacy_thread_id, agent_id="general",
+        task_id="task-legacy",
+        thread_id=legacy_thread_id,
+        agent_id="general",
     )
 
     return {
@@ -187,12 +197,14 @@ def setup(tmp_path: Path) -> dict[str, Any]:
 
 def _build_app(setup: dict[str, Any], require_auth: bool = True) -> TestClient:
     app = FastAPI()
-    app.include_router(_build_minimal_router(
-        identity_store=setup["identity_store"],
-        require_auth=require_auth,
-        pause_ctrl=setup["pause_ctrl"],
-        thread_store=setup["thread_store"],
-    ))
+    app.include_router(
+        _build_minimal_router(
+            identity_store=setup["identity_store"],
+            require_auth=require_auth,
+            pause_ctrl=setup["pause_ctrl"],
+            thread_store=setup["thread_store"],
+        )
+    )
     return TestClient(app)
 
 

@@ -51,12 +51,20 @@ def _client(responses: list[dict]) -> tuple[LightweightLlmClient, FakeTransport]
 class TestLightweightLlmClient:
     def test_chat_basic(self):
         """单次 chat：解析 content + usage + finish_reason."""
-        client, _ = _client([{
-            "choices": [{"message": {"content": "hi there", "tool_calls": []},
-                         "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-            "model": "deepseek-chat",
-        }])
+        client, _ = _client(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {"content": "hi there", "tool_calls": []},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+                    "model": "deepseek-chat",
+                }
+            ]
+        )
         resp = client.chat([ChatMessage.user("hello")])
         assert resp.content == "hi there"
         assert resp.usage == TokenUsage(10, 5, 15)
@@ -65,17 +73,35 @@ class TestLightweightLlmClient:
 
     def test_chat_with_tool_calls(self):
         """解析 tool_calls（arguments 是 JSON 字符串 → dict）."""
-        client, _ = _client([{
-            "choices": [{"message": {"content": "", "tool_calls": [
-                {"id": "call_1", "type": "function",
-                 "function": {"name": "android.tap", "arguments": '{"x":540,"y":1200}'}}
-            ]}, "finish_reason": "tool_calls"}],
-            "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
-            "model": "deepseek-chat",
-        }])
-        skills = [ToolCall]   # placeholder
+        client, _ = _client(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call_1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "android.tap",
+                                            "arguments": '{"x":540,"y":1200}',
+                                        },
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
+                    "model": "deepseek-chat",
+                }
+            ]
+        )
         # 实际用 SkillSpec
         from runtime.tentacle.llm import SkillSpec
+
         resp = client.chat(
             [ChatMessage.user("tap")],
             skills=[SkillSpec(name="android.tap", description="click", parameters={})],
@@ -89,31 +115,61 @@ class TestLightweightLlmClient:
 
     def test_chat_empty_arguments_string(self):
         """DeepSeek 偶发返回 arguments='' —— 兜底为 {}."""
-        client, _ = _client([{
-            "choices": [{"message": {"content": "", "tool_calls": [
-                {"id": "c1", "type": "function",
-                 "function": {"name": "android.tap", "arguments": ""}}
-            ]}, "finish_reason": "tool_calls"}],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            "model": "x",
-        }])
+        client, _ = _client(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "c1",
+                                        "type": "function",
+                                        "function": {"name": "android.tap", "arguments": ""},
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "model": "x",
+                }
+            ]
+        )
         from runtime.tentacle.llm import SkillSpec
-        resp = client.chat([ChatMessage.user("x")],
-                           skills=[SkillSpec(name="android.tap", description="", parameters={})])
+
+        resp = client.chat(
+            [ChatMessage.user("x")],
+            skills=[SkillSpec(name="android.tap", description="", parameters={})],
+        )
         assert resp.tool_calls[0].arguments == {}
 
     def test_request_body_format(self):
         """检查请求体格式（OpenAI 兼容）."""
-        client, fake = _client([{
-            "choices": [{"message": {"content": "ok", "tool_calls": []}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            "model": "x",
-        }])
+        client, fake = _client(
+            [
+                {
+                    "choices": [
+                        {"message": {"content": "ok", "tool_calls": []}, "finish_reason": "stop"}
+                    ],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "model": "x",
+                }
+            ]
+        )
         from runtime.tentacle.llm import SkillSpec
+
         client.chat(
             [ChatMessage.system("sys"), ChatMessage.user("hi")],
-            skills=[SkillSpec(name="android.tap", description="click",
-                              parameters={"type": "object", "properties": {"x": {"type": "integer"}}})],
+            skills=[
+                SkillSpec(
+                    name="android.tap",
+                    description="click",
+                    parameters={"type": "object", "properties": {"x": {"type": "integer"}}},
+                )
+            ],
             temperature=0.5,
         )
         body = fake.calls[0]["body"]
@@ -136,27 +192,49 @@ class TestSkillManifestLoader:
         assert len(skills) == 30, f"expected 30 skills, got {len(skills)}"
         names = {s.name for s in skills}
         # 核心移动技能
-        expected = {"android.tap", "android.swipe", "android.input_text",
-                    "android.open_app", "android.finish", "android.get_screen_info",
-                    "android.take_screenshot", "android.wait"}
+        expected = {
+            "android.tap",
+            "android.swipe",
+            "android.input_text",
+            "android.open_app",
+            "android.finish",
+            "android.get_screen_info",
+            "android.take_screenshot",
+            "android.wait",
+        }
         assert expected.issubset(names), f"missing: {expected - names}"
         # 30 个技能名都在（与 runtime/tentacle/mobile/skills/ 对齐）
         required_30 = {
-            "android.tap", "android.swipe", "android.input_text",
-            "android.long_press", "android.system_key",
-            "android.get_screen_info", "android.take_screenshot",
-            "android.find_node", "android.find_text",
-            "android.open_app", "android.install_app",
-            "android.get_installed_apps", "android.wait",
-            "android.scroll_to_find", "android.detect_dialog",
-            "android.find_and_tap", "android.get_current_app",
-            "android.finish", "android.fail",
-            "android.browser.navigate", "android.browser.get_dom",
-            "android.browser.click", "android.browser.type",
-            "android.browser.screenshot", "android.browser.evaluate",
+            "android.tap",
+            "android.swipe",
+            "android.input_text",
+            "android.long_press",
+            "android.system_key",
+            "android.get_screen_info",
+            "android.take_screenshot",
+            "android.find_node",
+            "android.find_text",
+            "android.open_app",
+            "android.install_app",
+            "android.get_installed_apps",
+            "android.wait",
+            "android.scroll_to_find",
+            "android.detect_dialog",
+            "android.find_and_tap",
+            "android.get_current_app",
+            "android.finish",
+            "android.fail",
+            "android.browser.navigate",
+            "android.browser.get_dom",
+            "android.browser.click",
+            "android.browser.type",
+            "android.browser.screenshot",
+            "android.browser.evaluate",
             "android.browser.install_extension",
-            "android.read_file", "android.write_file",
-            "android.get_clipboard", "android.set_clipboard",
+            "android.read_file",
+            "android.write_file",
+            "android.get_clipboard",
+            "android.set_clipboard",
         }
         assert required_30.issubset(names), f"missing: {required_30 - names}"
 
@@ -216,22 +294,41 @@ parameters: {"type": "object", "properties": {"x": {"type": "integer"}}}
 class TestLightweightReAct:
     def _skills(self):
         from runtime.tentacle.llm import SkillSpec
+
         return [SkillSpec(name="android.tap", description="click", parameters={})]
 
     def test_done_in_two_steps(self):
         """2 步：调 1 个工具 → finish."""
-        client, _ = _client([
-            {"choices": [{"message": {"content": "", "tool_calls": [
-                {"id": "tc1", "type": "function",
-                 "function": {"name": "android.tap", "arguments": "{}"}}
-            ]}, "finish_reason": "tool_calls"}],
-             "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
-             "model": "x"},
-            {"choices": [{"message": {"content": "done", "tool_calls": []},
-                          "finish_reason": "stop"}],
-             "usage": {"prompt_tokens": 150, "completion_tokens": 5, "total_tokens": 155},
-             "model": "x"},
-        ])
+        client, _ = _client(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "tc1",
+                                        "type": "function",
+                                        "function": {"name": "android.tap", "arguments": "{}"},
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
+                    "model": "x",
+                },
+                {
+                    "choices": [
+                        {"message": {"content": "done", "tool_calls": []}, "finish_reason": "stop"}
+                    ],
+                    "usage": {"prompt_tokens": 150, "completion_tokens": 5, "total_tokens": 155},
+                    "model": "x",
+                },
+            ]
+        )
         exec_ = _FakeExec()
         react = LightweightReAct(client, exec_, max_steps=5)
         result = react.run("tap something", skills=self._skills())
@@ -245,13 +342,28 @@ class TestLightweightReAct:
     def test_max_steps(self):
         """max_steps=3 时强制停."""
         responses = [
-            {"choices": [{"message": {"content": "", "tool_calls": [
-                {"id": f"tc{i}", "type": "function",
-                 "function": {"name": "android.tap",
-                              "arguments": '{"x":' + str(i) + ',"y":' + str(i) + '}'}}
-            ]}, "finish_reason": "tool_calls"}],
-             "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
-             "model": "x"}
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"tc{i}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "android.tap",
+                                        "arguments": '{"x":' + str(i) + ',"y":' + str(i) + "}",
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
+                "model": "x",
+            }
             for i in range(100)
         ]
         client, _ = _client(responses)
@@ -262,34 +374,70 @@ class TestLightweightReAct:
 
     def test_stuck_detection(self):
         """连续 4 轮同 fingerprint 触发 STUCK."""
-        same = {"choices": [{"message": {"content": "", "tool_calls": [
-            {"id": "tc1", "type": "function",
-             "function": {"name": "android.tap", "arguments": '{"x":540,"y":1200}'}}
-        ]}, "finish_reason": "tool_calls"}],
+        same = {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": "tc1",
+                                "type": "function",
+                                "function": {
+                                    "name": "android.tap",
+                                    "arguments": '{"x":540,"y":1200}',
+                                },
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
             "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
-            "model": "x"}
+            "model": "x",
+        }
         client, _ = _client([same] * 10)
         react = LightweightReAct(client, _FakeExec(), max_steps=10, stuck_window=4)
         result = react.run("stuck", skills=self._skills())
         assert result.outcome == TaskOutcome.STUCK
-        assert result.steps <= 5   # 4 步就触发
+        assert result.steps <= 5  # 4 步就触发
 
     def test_different_args_not_stuck(self):
         """同名工具但参数不同 —— 不是死循环."""
         responses = [
-            {"choices": [{"message": {"content": "", "tool_calls": [
-                {"id": f"tc{i}", "type": "function",
-                 "function": {"name": "android.tap",
-                              "arguments": '{"x":' + str(i) + ',"y":' + str(i + 1) + '}'}}
-            ]}, "finish_reason": "tool_calls"}],
-             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-             "model": "x"}
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"tc{i}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "android.tap",
+                                        "arguments": '{"x":' + str(i) + ',"y":' + str(i + 1) + "}",
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "model": "x",
+            }
             for i in range(10)
         ]
-        responses.append({"choices": [{"message": {"content": "done", "tool_calls": []},
-                                       "finish_reason": "stop"}],
-                          "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                          "model": "x"})
+        responses.append(
+            {
+                "choices": [
+                    {"message": {"content": "done", "tool_calls": []}, "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "model": "x",
+            }
+        )
         client, _ = _client(responses)
         react = LightweightReAct(client, _FakeExec(), max_steps=20, stuck_window=4)
         result = react.run("explore", skills=self._skills())
@@ -297,20 +445,39 @@ class TestLightweightReAct:
 
     def test_callbacks_fire(self):
         """回调函数按预期触发."""
-        client, _ = _client([
-            {"choices": [{"message": {"content": "", "tool_calls": [
-                {"id": "tc1", "type": "function",
-                 "function": {"name": "android.tap", "arguments": "{}"}}
-            ]}, "finish_reason": "tool_calls"}],
-             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-             "model": "x"},
-            {"choices": [{"message": {"content": "ok", "tool_calls": []},
-                          "finish_reason": "stop"}],
-             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-             "model": "x"},
-        ])
+        client, _ = _client(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "tc1",
+                                        "type": "function",
+                                        "function": {"name": "android.tap", "arguments": "{}"},
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "model": "x",
+                },
+                {
+                    "choices": [
+                        {"message": {"content": "ok", "tool_calls": []}, "finish_reason": "stop"}
+                    ],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "model": "x",
+                },
+            ]
+        )
         events: list[str] = []
         from runtime.tentacle.llm import ReActCallbacks
+
         cb = ReActCallbacks(
             on_step_start=lambda s: events.append(f"start:{s}"),
             on_tool_call=lambda tc: events.append(f"tool:{tc.name}"),
@@ -325,14 +492,20 @@ class TestLightweightReAct:
 
     def test_long_history_does_not_crash(self):
         """超长 messages 触发压缩时不崩."""
-        client, _ = _client([{
-            "choices": [{"message": {"content": "ok", "tool_calls": []},
-                         "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            "model": "x",
-        }])
-        react = LightweightReAct(client, _FakeExec(), max_steps=1,
-                                 compress_trigger_ratio=0.01)  # 极低阈值，强制压缩
+        client, _ = _client(
+            [
+                {
+                    "choices": [
+                        {"message": {"content": "ok", "tool_calls": []}, "finish_reason": "stop"}
+                    ],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "model": "x",
+                }
+            ]
+        )
+        react = LightweightReAct(
+            client, _FakeExec(), max_steps=1, compress_trigger_ratio=0.01
+        )  # 极低阈值，强制压缩
         result = react.run("x" * 500, skills=[])
         assert result.outcome == TaskOutcome.DONE
 
@@ -345,7 +518,8 @@ class TestEnd2End:
         """真实 SKILL.md 目录 + 客户端 + ReAct 全链路."""
         # 写一个临时 SKILL.md
         skill = tmp_path / "android.snapshot.md"
-        skill.write_text("""---
+        skill.write_text(
+            """---
 name: android.snapshot
 description: |
   Take a snapshot of current screen state.
@@ -353,7 +527,9 @@ description: |
 risk: low
 parameters: {"type": "object", "properties": {}, "required": []}
 ---
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         loader = SkillManifestLoader()
         skills = loader.load_directory(tmp_path)
         assert len(skills) == 1
@@ -361,18 +537,36 @@ parameters: {"type": "object", "properties": {}, "required": []}
         assert "Take a snapshot" in skills[0].description
 
         # 用这个 SkillSpec 跑一次 ReAct
-        client, _ = _client([
-            {"choices": [{"message": {"content": "", "tool_calls": [
-                {"id": "tc1", "type": "function",
-                 "function": {"name": "android.snapshot", "arguments": "{}"}}
-            ]}, "finish_reason": "tool_calls"}],
-             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-             "model": "x"},
-            {"choices": [{"message": {"content": "ok", "tool_calls": []},
-                          "finish_reason": "stop"}],
-             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-             "model": "x"},
-        ])
+        client, _ = _client(
+            [
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "tc1",
+                                        "type": "function",
+                                        "function": {"name": "android.snapshot", "arguments": "{}"},
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "model": "x",
+                },
+                {
+                    "choices": [
+                        {"message": {"content": "ok", "tool_calls": []}, "finish_reason": "stop"}
+                    ],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "model": "x",
+                },
+            ]
+        )
         exec_ = _FakeExec(content='{"app": "com.x"}')
         react = LightweightReAct(client, exec_, max_steps=5)
         result = react.run("snapshot", skills=skills)

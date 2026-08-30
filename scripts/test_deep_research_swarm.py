@@ -22,7 +22,7 @@ def main():
     # Bootstrap a minimal app to wire ephemeral runner
     from runtime.platform.ui.app import create_app
     print("→ Booting app (wires set_ephemeral_role_runner)...")
-    app = create_app()
+    create_app()
     print("✓ App booted")
 
     # Verify runner is now wired
@@ -36,7 +36,7 @@ def main():
     registry = load_registry()
     topology = next(t for t in registry.values() if t.name == "research_swarm_v1")
     print(f"✓ Topology loaded: {topology.name}")
-    print(f"  Roles: {[str(r) for r in topology.agents.keys()]}")
+    print(f"  Roles: {[str(r) for r in topology.agents]}")
     print()
 
     topic = (

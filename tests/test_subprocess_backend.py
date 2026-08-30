@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from runtime.sensing.server import SubprocessBackend
 
 # Implementation note.
@@ -140,7 +139,8 @@ class TestResourceLimitsUnix:
     def test_memory_limit_configured_no_crash_under_cap(self, tmp_path: Path):
         """Implementation note."""
         backend = SubprocessBackend(
-            timeout_seconds=10.0, max_memory_mb=512,
+            timeout_seconds=10.0,
+            max_memory_mb=512,
         )
         with backend.sandbox(arm_id="test") as box:
             result = box.run_skill("list_cwd", {"path": str(tmp_path)})

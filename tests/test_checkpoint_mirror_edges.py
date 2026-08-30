@@ -8,13 +8,13 @@ two earlier suites:
   it; another failure re-opens with a fresh cooldown.
 * Breaker reopen across many failure waves.
 """
+
 from __future__ import annotations
 
 import sys
 from types import SimpleNamespace
 
 import pytest
-
 from runtime.core.cerebrum.checkpoint_mirror import (
     CheckpointMirror,
     _CircuitBreaker,
@@ -28,7 +28,8 @@ from runtime.core.cerebrum.checkpoint_mirror import (
 
 class TestBuildFromUrlHappyPath:
     def test_returns_mirror_when_redis_available(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Inject a fake `redis` module that exposes Redis.from_url.
         captured: dict[str, str] = {}
@@ -50,15 +51,15 @@ class TestBuildFromUrlHappyPath:
         assert captured["url"] == "redis://test:6379/0"
 
     def test_from_url_raise_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         class _BadRedis:
             @staticmethod
             def from_url(url: str):
                 raise ValueError(f"bad url: {url}")
 
-        monkeypatch.setitem(sys.modules, "redis",
-                            SimpleNamespace(Redis=_BadRedis))
+        monkeypatch.setitem(sys.modules, "redis", SimpleNamespace(Redis=_BadRedis))
         # Must NOT propagate — silent None so cron stays alive.
         assert build_checkpoint_mirror_from_url("redis://broken") is None
 
@@ -74,8 +75,7 @@ class TestBreakerHalfOpen:
         # breaker should be fully closed (subsequent failures need to
         # re-accumulate).
         clock = [0.0]
-        b = _CircuitBreaker(threshold=2, cooldown_s=10,
-                            clock=lambda: clock[0])
+        b = _CircuitBreaker(threshold=2, cooldown_s=10, clock=lambda: clock[0])
         b.record_failure()
         b.record_failure()
         assert b.is_open() is True
@@ -93,8 +93,7 @@ class TestBreakerHalfOpen:
 
     def test_probe_failure_after_cooldown_reopens(self) -> None:
         clock = [0.0]
-        b = _CircuitBreaker(threshold=1, cooldown_s=5,
-                            clock=lambda: clock[0])
+        b = _CircuitBreaker(threshold=1, cooldown_s=5, clock=lambda: clock[0])
         b.record_failure()  # opens immediately (threshold=1)
         assert b.is_open() is True
 
@@ -112,8 +111,7 @@ class TestBreakerHalfOpen:
 
     def test_breaker_holds_open_during_cooldown(self) -> None:
         clock = [0.0]
-        b = _CircuitBreaker(threshold=1, cooldown_s=5,
-                            clock=lambda: clock[0])
+        b = _CircuitBreaker(threshold=1, cooldown_s=5, clock=lambda: clock[0])
         b.record_failure()
         for t in (0.0, 1.0, 2.5, 4.9):
             clock[0] = t
@@ -174,7 +172,8 @@ class _CountingFlakyClient:
 
 class TestBreakerMirrorIntegration:
     def test_breaker_recovers_after_cooldown_and_success(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # 1. Open breaker via consecutive failures.
         # 2. Advance clock past cooldown.

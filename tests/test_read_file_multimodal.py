@@ -10,7 +10,6 @@ import base64
 from pathlib import Path
 
 import pytest
-
 from runtime.execution.suckers import builtins as bm
 from runtime.execution.suckers.builtins import _read_file
 
@@ -56,7 +55,10 @@ class TestImageDispatch:
         ],
     )
     def test_other_image_extensions_route_to_image_handler(
-        self, tmp_path: Path, ext: str, media_type: str,
+        self,
+        tmp_path: Path,
+        ext: str,
+        media_type: str,
     ):
         path = tmp_path / f"img{ext}"
         # The handler does no decode — bytes can be anything for the dispatch test.

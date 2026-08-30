@@ -13,6 +13,7 @@ Contract pinned
 7. Owner destination bypasses PII in all profiles (already contracted)
 8. Audit reasons carry the original judgment for log pipelines
 """
+
 from __future__ import annotations
 
 import pytest
@@ -24,6 +25,7 @@ def _reset():
         reset_profile_for_tests,
         set_judge,
     )
+
     reset_profile_for_tests()
     set_judge(None)
     yield
@@ -34,16 +36,19 @@ def _reset():
 class TestProfileBasics:
     def test_default_strict(self):
         from runtime.safety.validation import get_profile
+
         assert get_profile() == "strict"
 
     def test_set_valid(self):
         from runtime.safety.validation import get_profile, set_profile
+
         for p in ("strict", "normal", "lax"):
             set_profile(p)
             assert get_profile() == p
 
     def test_set_invalid_raises(self):
         from runtime.safety.validation import set_profile
+
         with pytest.raises(ValueError):
             set_profile("paranoid")  # type: ignore[arg-type]
 
@@ -53,6 +58,7 @@ class TestPIIBehavior:
 
     def test_strict_rewrites(self):
         from runtime.safety.validation import check_outbound, set_profile
+
         set_profile("strict")
         v = check_outbound(self.PII_MSG, "channels:x:y")
         assert v.action == "rewrite"
@@ -60,12 +66,14 @@ class TestPIIBehavior:
 
     def test_normal_rewrites(self):
         from runtime.safety.validation import check_outbound, set_profile
+
         set_profile("normal")
         v = check_outbound(self.PII_MSG, "channels:x:y")
         assert v.action == "rewrite"
 
     def test_lax_allows_with_audit(self):
         from runtime.safety.validation import check_outbound, set_profile
+
         set_profile("lax")
         v = check_outbound(self.PII_MSG, "channels:x:y")
         assert v.action == "allow"
@@ -80,6 +88,7 @@ class TestJudgeBehavior:
     def _install_blocking_judge(self):
         from runtime.safety.validation import set_judge
         from runtime.safety.validation.judge import JudgeVerdict
+
         set_judge(
             lambda m, d, s: JudgeVerdict(action="block", reason="policy"),
         )
@@ -87,14 +96,17 @@ class TestJudgeBehavior:
     def _install_escalating_judge(self):
         from runtime.safety.validation import set_judge
         from runtime.safety.validation.judge import JudgeVerdict
+
         set_judge(
             lambda m, d, s: JudgeVerdict(
-                action="human_gate", reason="ambiguous",
+                action="human_gate",
+                reason="ambiguous",
             ),
         )
 
     def test_strict_judge_block_authoritative(self):
         from runtime.safety.validation import check_outbound, set_profile
+
         self._install_blocking_judge()
         set_profile("strict")
         v = check_outbound("clean text", "channels:x:y")
@@ -103,6 +115,7 @@ class TestJudgeBehavior:
 
     def test_normal_judge_block_downgrades(self):
         from runtime.safety.validation import check_outbound, set_profile
+
         self._install_blocking_judge()
         set_profile("normal")
         v = check_outbound("clean text", "channels:x:y")
@@ -112,6 +125,7 @@ class TestJudgeBehavior:
 
     def test_lax_judge_block_downgrades(self):
         from runtime.safety.validation import check_outbound, set_profile
+
         self._install_blocking_judge()
         set_profile("lax")
         v = check_outbound("clean text", "channels:x:y")
@@ -120,6 +134,7 @@ class TestJudgeBehavior:
 
     def test_strict_judge_escalate_authoritative(self):
         from runtime.safety.validation import check_outbound, set_profile
+
         self._install_escalating_judge()
         set_profile("strict")
         v = check_outbound("clean text", "channels:x:y")
@@ -127,6 +142,7 @@ class TestJudgeBehavior:
 
     def test_normal_judge_escalate_downgrades(self):
         from runtime.safety.validation import check_outbound, set_profile
+
         self._install_escalating_judge()
         set_profile("normal")
         v = check_outbound("clean text", "channels:x:y")
@@ -138,6 +154,7 @@ class TestHardFloor:
     def test_secrets_block_in_lax(self):
         """Lax profile still blocks credential leaks · hard floor."""
         from runtime.safety.validation import check_outbound, set_profile
+
         set_profile("lax")
         v = check_outbound(
             "my key is sk-ant-api03-abcdefghijklmnop",
@@ -147,6 +164,7 @@ class TestHardFloor:
 
     def test_secrets_block_in_normal(self):
         from runtime.safety.validation import check_outbound, set_profile
+
         set_profile("normal")
         v = check_outbound(
             "export OPENAI_KEY=sk-abcdef1234567890abcdef1234",
@@ -160,9 +178,11 @@ class TestOwnerBypass:
         """Owner destination already bypasses PII rewrite · verify
         that contract still holds across profiles."""
         from runtime.safety.validation import check_outbound, set_profile
+
         for p in ("strict", "normal", "lax"):
             set_profile(p)
             v = check_outbound(
-                "mail me user@example.com", "owner:ide",
+                "mail me user@example.com",
+                "owner:ide",
             )
             assert v.action == "allow", f"profile={p}"

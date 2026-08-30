@@ -1,0 +1,21 @@
+{
+  "schema": "echo.workbench_app.v1",
+  "id": "intelligence",
+  "name": "订阅",
+  "description": "持续跟踪主题与情报",
+  "route": "/workspace/intelligence?surface=chat",
+  "module_id": "intelligence",
+  "version": "1.0.0",
+  "release_summary": "1.0.0：提供主题订阅、持续跟踪与情报汇总入口。",
+  "host_api": ">=0.2,<0.3",
+  "dependencies": [],
+  "entry": "dist/index.html",
+  "isolation": "iframe",
+  "permissions": [
+    "host.same_origin",
+    "host.navigation",
+    "backend.api",
+    "workspace.storage"
+  ]
+}
+

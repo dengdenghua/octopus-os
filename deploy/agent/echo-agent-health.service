@@ -1,0 +1,14 @@
+[Unit]
+Description=Verify the native Echo Agent runtime and workbench identity
+Documentation=file:/usr/lib/echo-os/image-contract
+Requires=echo-agent.service
+After=echo-agent.service
+Before=boot-complete.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/verify-native-agent-health
+RemainAfterExit=yes
+
+[Install]
+RequiredBy=boot-complete.target

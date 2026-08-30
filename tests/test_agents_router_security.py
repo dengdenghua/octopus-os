@@ -9,6 +9,7 @@ NOTE: agents_router has deep dependencies (pause_controller, journal,
 group_registry). These tests focus on auth checks for mutation endpoints
 only. Read endpoints are tested in integration tests.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -17,12 +18,12 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.routing import APIRouter  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.safety.auth.identity import Identity, IdentityStore  # noqa: E402
 
 
 def _build_minimal_router(
-    identity_store: IdentityStore, require_auth: bool,
+    identity_store: IdentityStore,
+    require_auth: bool,
 ) -> APIRouter:
     """Build minimal router with just _require_admin for mutation tests."""
     from runtime.sensing.gateway.openai_gateway_router import (  # noqa: E402
@@ -35,8 +36,12 @@ def _build_minimal_router(
         if not require_auth or identity_store is None:
             return None
         actor_id = _resolve_actor(
-            request, identity_store, require_auth,
-            jwt_secret=None, jwt_issuer=None, jwt_audience=None,
+            request,
+            identity_store,
+            require_auth,
+            jwt_secret=None,
+            jwt_issuer=None,
+            jwt_audience=None,
         )
         if actor_id is None:
             return None
@@ -44,6 +49,7 @@ def _build_minimal_router(
 
     def _require_admin(request: Request) -> None:
         from fastapi import HTTPException
+
         if not require_auth:
             return
         identity = _resolve_identity(request)
@@ -305,4 +311,3 @@ def test_dev_mode_bypasses_admin_checks() -> None:
     # No auth header — should still work in dev mode
     resp = client.post("/api/agents", json={"agent_id": "dev_agent"})
     assert resp.status_code == 200
-

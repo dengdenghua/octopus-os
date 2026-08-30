@@ -9,7 +9,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-
 MAX_PLUGIN_NAME_LENGTH = 64
 DEFAULT_INSTALL_POLICY = "AVAILABLE"
 DEFAULT_AUTH_POLICY = "ON_INSTALL"
@@ -26,8 +25,7 @@ def normalize_plugin_name(plugin_name: str) -> str:
     normalized = plugin_name.strip().lower()
     normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
     normalized = normalized.strip("-")
-    normalized = re.sub(r"-{2,}", "-", normalized)
-    return normalized
+    return re.sub(r"-{2,}", "-", normalized)
 
 
 def validate_plugin_name(plugin_name: str) -> None:

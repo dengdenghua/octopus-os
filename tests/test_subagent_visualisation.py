@@ -1,6 +1,7 @@
 """Tests for sub-agent visualisation: codenames, role avatars, and
 ``subagent_spawned`` / ``subagent_finished`` lifecycle events.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -40,7 +41,7 @@ def test_avatar_picks_role_emoji() -> None:
     assert bridge._avatar_for_role("architect") == "🏗️"
 
 
-def test_avatar_falls_back_to_octopus_for_unknown() -> None:
+def test_avatar_falls_back_to_echo_for_unknown() -> None:
     assert bridge._avatar_for_role("unknown_role") == "🐙"
     assert bridge._avatar_for_role("") == "🐙"
     assert bridge._avatar_for_role(None) == "🐙"  # type: ignore[arg-type]
@@ -64,7 +65,7 @@ def test_spawn_event_emitted_before_runner_runs() -> None:
     try:
         bridge.call_subagent(
             agent_id="custom_explorer",  # not an ephemeral built-in
-            role="researcher",            # role drives avatar
+            role="researcher",  # role drives avatar
             prompt="explore vendor X",
             event_emitter=_emitter,
         )
@@ -84,10 +85,24 @@ def test_finish_event_emitted_with_stats() -> None:
 
     def _runner(prompt, *, subagent_name, context):
         emitter = context.get("event_emitter")
-        emitter({"type": "sub_tool_end", "skill": "edit_file",
-                 "args": {"path": "a.py"}, "status": "success", "round": 1})
-        emitter({"type": "sub_tool_end", "skill": "edit_file",
-                 "args": {"path": "b.py"}, "status": "success", "round": 2})
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "edit_file",
+                "args": {"path": "a.py"},
+                "status": "success",
+                "round": 1,
+            }
+        )
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "edit_file",
+                "args": {"path": "b.py"},
+                "status": "success",
+                "round": 2,
+            }
+        )
         return "done"
 
     orig = bridge._RUNNER
@@ -140,10 +155,16 @@ def test_tool_events_get_subagent_annotation() -> None:
 
     def _runner(prompt, *, subagent_name, context):
         emitter = context.get("event_emitter")
-        emitter({"type": "sub_tool_start", "skill": "read_file",
-                 "args": {"path": "x"}, "round": 1})
-        emitter({"type": "sub_tool_end", "skill": "read_file",
-                 "args": {"path": "x"}, "status": "success", "round": 1})
+        emitter({"type": "sub_tool_start", "skill": "read_file", "args": {"path": "x"}, "round": 1})
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "read_file",
+                "args": {"path": "x"},
+                "status": "success",
+                "round": 1,
+            }
+        )
         return "done"
 
     orig = bridge._RUNNER

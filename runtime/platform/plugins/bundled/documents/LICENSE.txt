@@ -1,0 +1,29 @@
+MIT License
+
+Copyright (c) 2026 Echo
+
+本插件(documents)为 Echo 独立原创实现:
+
+- 功能范围上对标 OpenAI codex "documents" 插件(创建/编辑/提取 docx 的能力),
+  但全部代码、提示词与文档文本均为原创,不包含、不复制 OpenAI 的任何
+  代码、提示词或素材。
+- 仅使用通用开源库 python-docx 与 lxml,按其各自许可证(MIT/BSD)使用。
+- 本插件与 OpenAI 无任何关联,不依赖 OpenAI 的任何服务或 connector。
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

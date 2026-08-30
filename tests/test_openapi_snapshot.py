@@ -22,7 +22,7 @@ Regenerating the snapshot
 
 When the drift is intentional::
 
-    OCTOPUS_OPENAPI_WRITE=1 pytest tests/test_openapi_snapshot.py
+    ECHO_OPENAPI_WRITE=1 pytest tests/test_openapi_snapshot.py
 
 Then commit the updated ``docs/openapi-snapshot.json`` as part of the
 same PR as the endpoint change · reviewers see both.
@@ -37,9 +37,10 @@ Why snapshot and not stronger schema validation
   (because the path/method entry disappears or reshapes), giving
   a useful signal while the typed-response migration happens
   gradually.
-* OCTOPUS_OPENAPI_WRITE=1 keeps the update loop cheap for
+* ECHO_OPENAPI_WRITE=1 keeps the update loop cheap for
   intentional changes.
 """
+
 from __future__ import annotations
 
 import json
@@ -48,12 +49,9 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from runtime.platform.ui.app import create_app
 
-SNAPSHOT_PATH = (
-    Path(__file__).resolve().parent.parent / "docs" / "openapi-snapshot.json"
-)
+SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "docs" / "openapi-snapshot.json"
 
 
 def _current_schema() -> dict:
@@ -66,9 +64,7 @@ def _current_schema() -> dict:
     app = create_app()
     client = TestClient(app)
     resp = client.get("/openapi.json")
-    assert resp.status_code == 200, (
-        f"openapi.json did not return 200: {resp.status_code}"
-    )
+    assert resp.status_code == 200, f"openapi.json did not return 200: {resp.status_code}"
     return resp.json()
 
 
@@ -89,11 +85,11 @@ def _normalize(schema: dict) -> dict:
 
 
 def test_openapi_snapshot_matches() -> None:
-    """Hard-fail on any drift. Set ``OCTOPUS_OPENAPI_WRITE=1`` to
+    """Hard-fail on any drift. Set ``ECHO_OPENAPI_WRITE=1`` to
     intentionally regenerate."""
     current = _normalize(_current_schema())
 
-    if os.environ.get("OCTOPUS_OPENAPI_WRITE") == "1":
+    if os.environ.get("ECHO_OPENAPI_WRITE") == "1":
         SNAPSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
         SNAPSHOT_PATH.write_text(
             json.dumps(current, indent=2, sort_keys=True, ensure_ascii=False),
@@ -129,7 +125,7 @@ def test_openapi_snapshot_matches() -> None:
             f"OpenAPI path set drifted.\n"
             f"  added: {sorted(added)}\n"
             f"  removed: {sorted(removed)}\n"
-            "Run with OCTOPUS_OPENAPI_WRITE=1 if intentional."
+            "Run with ECHO_OPENAPI_WRITE=1 if intentional."
         )
 
     # Per-path method + schema-ref check. Full dict equality would be
@@ -157,7 +153,7 @@ def test_openapi_snapshot_matches() -> None:
         pytest.fail(
             f"OpenAPI component schemas removed (breaking): "
             f"{sorted(removed_components)}. Run with "
-            "OCTOPUS_OPENAPI_WRITE=1 if intentional."
+            "ECHO_OPENAPI_WRITE=1 if intentional."
         )
 
 
@@ -180,10 +176,7 @@ def test_openapi_response_models_on_config_endpoints() -> None:
     ]
     for path, method, expected_component in checks:
         spec = schema["paths"][path][method]
-        ref = (
-            spec["responses"]["200"]["content"]["application/json"]
-            ["schema"].get("$ref", "")
-        )
+        ref = spec["responses"]["200"]["content"]["application/json"]["schema"].get("$ref", "")
         assert ref.endswith(f"/{expected_component}"), (
             f"{method.upper()} {path} should return {expected_component} · "
             f"got ref={ref!r}. If the model was renamed intentionally, "

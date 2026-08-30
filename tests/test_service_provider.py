@@ -1,7 +1,6 @@
 """Tests for ServiceProvider dependency injection container."""
 
 import pytest
-
 from runtime.platform.process.service_provider import (
     ServiceProvider,
     get_provider,
@@ -94,6 +93,7 @@ class TestServiceProvider:
 
     def test_thread_safety(self):
         import threading
+
         provider = ServiceProvider()
         results = []
 

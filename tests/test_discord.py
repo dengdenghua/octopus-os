@@ -11,7 +11,6 @@ pytest.importorskip("cryptography")
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # noqa: E402
     Ed25519PrivateKey,
 )
-
 from runtime.adapters.channels import (  # noqa: E402
     DiscordChannel,
     DiscordError,
@@ -29,6 +28,7 @@ def _new_keypair() -> tuple[Ed25519PrivateKey, str]:
     """Implementation note."""
     priv = Ed25519PrivateKey.generate()
     from cryptography.hazmat.primitives import serialization
+
     pub_bytes = priv.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
@@ -37,7 +37,10 @@ def _new_keypair() -> tuple[Ed25519PrivateKey, str]:
 
 
 def _sign(
-    priv: Ed25519PrivateKey, *, timestamp: str, body: bytes,
+    priv: Ed25519PrivateKey,
+    *,
+    timestamp: str,
+    body: bytes,
 ) -> str:
     msg = timestamp.encode("utf-8") + body
     return priv.sign(msg).hex()
@@ -113,7 +116,7 @@ class TestSignature:
         sig = _sign(priv, timestamp="1700000000", body=b'{"type":1}')
         with pytest.raises(DiscordSignatureError, match="invalid"):
             ch.verify_signature(
-                body=b'{"type":2}',   # Implementation note.
+                body=b'{"type":2}',  # Implementation note.
                 signature_hex=sig,
                 timestamp="1700000000",
             )
@@ -125,7 +128,9 @@ class TestSignature:
         sig = _sign(priv1, timestamp="1", body=b"{}")
         with pytest.raises(DiscordSignatureError):
             ch.verify_signature(
-                body=b"{}", signature_hex=sig, timestamp="1",
+                body=b"{}",
+                signature_hex=sig,
+                timestamp="1",
             )
 
     def test_missing_headers_raises(self):
@@ -141,7 +146,9 @@ class TestSignature:
         ch = DiscordChannel(bot_token="x", public_key=pub)
         with pytest.raises(DiscordSignatureError, match="bad signature"):
             ch.verify_signature(
-                body=b"{}", signature_hex="xyz-not-hex", timestamp="1",
+                body=b"{}",
+                signature_hex="xyz-not-hex",
+                timestamp="1",
             )
 
 
@@ -171,7 +178,7 @@ class TestWebhookFlow:
         ch = DiscordChannel(bot_token="x", public_key=pub)
         payload = {
             "id": "int_abc",
-            "type": 2,    # APPLICATION_COMMAND
+            "type": 2,  # APPLICATION_COMMAND
             "channel_id": "chan_1",
             "guild_id": "guild_1",
             "member": {
@@ -179,11 +186,13 @@ class TestWebhookFlow:
             },
             "data": {
                 "name": "ask",
-                "options": [{
-                    "name": "query",
-                    "type": 3,    # STRING
-                    "value": "help me refactor",
-                }],
+                "options": [
+                    {
+                        "name": "query",
+                        "type": 3,  # STRING
+                        "value": "help me refactor",
+                    }
+                ],
             },
         }
         body = json.dumps(payload).encode("utf-8")
@@ -229,7 +238,7 @@ class TestWebhookFlow:
             ch.handle_webhook(
                 body=body,
                 headers={
-                    "X-Signature-Ed25519": "deadbeef" * 8,   # Implementation note.
+                    "X-Signature-Ed25519": "deadbeef" * 8,  # Implementation note.
                     "X-Signature-Timestamp": "1",
                 },
             )
@@ -239,7 +248,7 @@ class TestWebhookFlow:
         ch = DiscordChannel(bot_token="x", public_key=pub)
         body = b"{not json"
         ts = "1700000000"
-        sig = _sign(priv, timestamp=ts, body=body)   # Implementation note.
+        sig = _sign(priv, timestamp=ts, body=body)  # Implementation note.
         with pytest.raises(ValueError, match="bad json"):
             ch.handle_webhook(
                 body=body,
@@ -260,13 +269,17 @@ class TestSend:
         _, pub = _new_keypair()
         http = _FakeHttp(_FakeResp(body={"id": "msg42", "content": "ok"}))
         ch = DiscordChannel(
-            bot_token="TOKENxyz", public_key=pub, http_client=http,
+            bot_token="TOKENxyz",
+            public_key=pub,
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="discord",
-            thread_id="123456",
-            content="reply here",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="discord",
+                thread_id="123456",
+                content="reply here",
+            )
+        )
         assert len(http.calls) == 1
         url = http.calls[0]["url"]
         assert "/channels/123456/messages" in url
@@ -277,14 +290,18 @@ class TestSend:
         _, pub = _new_keypair()
         http = _FakeHttp(_FakeResp(body={"id": "x"}))
         ch = DiscordChannel(
-            bot_token="t", public_key=pub, http_client=http,
+            bot_token="t",
+            public_key=pub,
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="discord",
-            thread_id="chan",
-            content="reply",
-            metadata={"message_reference_id": "orig_msg"},
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="discord",
+                thread_id="chan",
+                content="reply",
+                metadata={"message_reference_id": "orig_msg"},
+            )
+        )
         body = http.calls[0]["json"]
         assert body["message_reference"] == {"message_id": "orig_msg"}
 
@@ -292,23 +309,33 @@ class TestSend:
         _, pub = _new_keypair()
         http = _FakeHttp(_FakeResp(body={"id": "x"}))
         ch = DiscordChannel(
-            bot_token="t", public_key=pub, http_client=http,
+            bot_token="t",
+            public_key=pub,
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="discord",
-            thread_id="fallback",
-            content="x",
-            metadata={"discord_channel_id": "actual-chan"},
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="discord",
+                thread_id="fallback",
+                content="x",
+                metadata={"discord_channel_id": "actual-chan"},
+            )
+        )
         assert "/channels/actual-chan/messages" in http.calls[0]["url"]
 
     def test_http_error_raises(self):
         _, pub = _new_keypair()
         http = _FakeHttp(_FakeResp(status_code=401, text="unauthorized"))
         ch = DiscordChannel(
-            bot_token="bad", public_key=pub, http_client=http,
+            bot_token="bad",
+            public_key=pub,
+            http_client=http,
         )
         with pytest.raises(DiscordError, match="HTTP 401"):
-            ch.send(OutboundMessage(
-                channel_id="discord", thread_id="c", content="x",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="discord",
+                    thread_id="c",
+                    content="x",
+                )
+            )
