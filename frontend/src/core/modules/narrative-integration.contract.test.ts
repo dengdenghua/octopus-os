@@ -27,13 +27,18 @@ describe("narrative workbench integration", () => {
   });
 
   it("keeps the workspace page behind the installed remote surface", () => {
-    const routerSource = readFileSync(resolve("src/router.tsx"), "utf8");
-    expect(routerSource).toContain('remoteWorkbenchApp("narrative")');
-    expect(routerSource).toContain(
-      "<RemoteWorkbenchSurface app={NARRATIVE_APP}",
+    // Workspace routes moved out of src/router.tsx when the router was split.
+    const routesSource = readFileSync(
+      resolve("src/app/workspace/workspace-routes.tsx"),
+      "utf8",
     );
-    expect(routerSource).not.toContain(
-      'import("./app/workspace/narrative/page")',
+    expect(routesSource).toContain('remoteWorkbenchApp("narrative")');
+    expect(routesSource).toContain("<RemoteWorkbenchSurface app={NARRATIVE_APP}");
+    // The point of the contract: the page is reached only through the remote
+    // surface, never lazy-imported directly by a route.
+    expect(routesSource).not.toContain("workspace/narrative/page");
+    expect(readFileSync(resolve("src/router.tsx"), "utf8")).not.toContain(
+      "workspace/narrative/page",
     );
   });
 });

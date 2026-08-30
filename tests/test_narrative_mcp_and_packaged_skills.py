@@ -4,20 +4,32 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-from mcp.types import CallToolResult, InitializeResult, Tool
 
-from runtime.execution.suckers.registry import SkillRegistry
-from runtime.platform.plugins.bundled.narrative_studio import NarrativeStudioPlugin
-from runtime.platform.plugins.bundled.narrative_studio.mcp_server import (
+# mcp is an optional extra (pyproject [project.optional-dependencies] mcp).
+# Guard the import so collection degrades to a skip where the extra is absent
+# rather than failing the whole run, matching tests/test_mcp_oauth_router.py.
+_mcp_types = pytest.importorskip("mcp.types")
+CallToolResult = _mcp_types.CallToolResult
+InitializeResult = _mcp_types.InitializeResult
+Tool = _mcp_types.Tool
+
+from runtime.execution.suckers.registry import SkillRegistry  # noqa: E402
+from runtime.platform.plugins.bundled.narrative_studio import (  # noqa: E402
+    NarrativeStudioPlugin,
+)
+from runtime.platform.plugins.bundled.narrative_studio.mcp_server import (  # noqa: E402
     LATEST_PROTOCOL_VERSION,
     MCP_ENDPOINT,
 )
-from runtime.platform.plugins.bundled.narrative_studio.models import ProjectCreate
-from runtime.platform.plugins.plugin_base import ModuleContext
-from runtime.platform.plugins.plugin_hub import PluginHub
-from runtime.safety.auth.principal import CurrentPrincipal
+from runtime.platform.plugins.bundled.narrative_studio.models import (  # noqa: E402
+    ProjectCreate,
+)
+from runtime.platform.plugins.plugin_base import ModuleContext  # noqa: E402
+from runtime.platform.plugins.plugin_hub import PluginHub  # noqa: E402
+from runtime.safety.auth.principal import CurrentPrincipal  # noqa: E402
 
 PLUGIN_DIR = (
     Path(__file__).resolve().parents[1]

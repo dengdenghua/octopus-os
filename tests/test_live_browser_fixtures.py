@@ -6,13 +6,23 @@ from pathlib import Path
 from urllib.request import urlopen
 
 import pytest
-from playwright.sync_api import expect, sync_playwright
 
-from benchmarks.eval_harness import Trajectory
-from benchmarks.fixed_suite_fixtures import prepare_fixture_suite
-from benchmarks.fixture_grading import LiveIsolatedFixture
-from benchmarks.verifier_sandbox import HARDENED_RUNNER_ENV
-from tests.conftest import chromium_launch_kwargs, requires_chromium
+# playwright is an optional extra (pyproject [project.optional-dependencies]
+# browser). Import it through importorskip so collection degrades to a skip
+# where the extra is absent instead of failing the whole run — the same guard
+# tests/test_browser_session_profile.py and the other chromium suites use.
+_playwright_api = pytest.importorskip("playwright.sync_api")
+expect = _playwright_api.expect
+sync_playwright = _playwright_api.sync_playwright
+
+from benchmarks.eval_harness import Trajectory  # noqa: E402
+from benchmarks.fixed_suite_fixtures import prepare_fixture_suite  # noqa: E402
+from benchmarks.fixture_grading import LiveIsolatedFixture  # noqa: E402
+from benchmarks.verifier_sandbox import HARDENED_RUNNER_ENV  # noqa: E402
+from tests.conftest import (  # noqa: E402
+    chromium_launch_kwargs,
+    requires_chromium,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

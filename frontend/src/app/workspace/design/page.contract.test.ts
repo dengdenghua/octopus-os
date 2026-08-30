@@ -7,8 +7,9 @@ const pageSource = readFileSync(
   join(process.cwd(), "src/app/workspace/design/page.tsx"),
   "utf8",
 );
+// Workspace routes live here, not in src/router.tsx, since the router split.
 const routerSource = readFileSync(
-  join(process.cwd(), "src/router.tsx"),
+  join(process.cwd(), "src/app/workspace/workspace-routes.tsx"),
   "utf8",
 );
 const catalogSource = readFileSync(

@@ -18,9 +18,11 @@ const stylesSource = readFileSync(
 
 describe("shared persona theme scope", () => {
   it("uses the same persona theme contract in workspace and AI browser shells", () => {
-    expect(workspaceSource).toContain(
-      'className="persona-shell workspace-shell',
-    );
+    // The workspace shell composes its classes through cn() rather than a
+    // literal className string, so match the class pair itself. What the
+    // contract cares about is that both shells carry persona-shell plus their
+    // own shell class, not which syntax applies them.
+    expect(workspaceSource).toContain("persona-shell workspace-shell");
     expect(workspaceSource).toContain("data-persona-theme={personaThemeId}");
     expect(browserSource).toContain('className="persona-shell browser-shell');
     expect(browserSource).toContain("data-persona-theme={personaThemeId}");

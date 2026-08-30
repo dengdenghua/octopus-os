@@ -6,7 +6,13 @@ import { describe, expect, it } from "vitest";
 const readSource = (path: string) =>
   readFileSync(join(process.cwd(), path), "utf8");
 
+// The top-level router owns /browser; the workspace subtree owns the
+// workspace-relative redirect that sends /workspace/browser back to it. These
+// were one file until the router split, which is why this contract reads both.
 const routerSource = readSource("src/router.tsx");
+const workspaceRoutesSource = readSource(
+  "src/app/workspace/workspace-routes.tsx",
+);
 const browserSource = readSource("src/app/browser/page.tsx");
 const switchSource = readSource(
   "src/components/workspace/workspace-surface-switch.tsx",
@@ -19,8 +25,8 @@ describe("AI browser mode ownership", () => {
     expect(routerSource).toContain(
       '<Route path="/browser" element={<TopBrowserPage />} />',
     );
-    expect(routerSource).toContain(
-      'element={<Navigate to="/browser" replace />}',
+    expect(workspaceRoutesSource).toContain(
+      '<Navigate to="/browser" replace />',
     );
     expect(switchSource).toContain("to: BROWSER_WORKSPACE_ROUTE");
     expect(routingSource).toContain(
