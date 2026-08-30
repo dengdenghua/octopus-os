@@ -23,8 +23,25 @@ from runtime.sensing.gateway.agents_router import create_agents_router
 _GROUPS = ("browser", "browser_act", "computer")
 
 
-def _assert_groups(registry: SkillRegistry, *, present: bool) -> None:
+def _registrable_groups() -> tuple[str, ...]:
+    """Groups whose registrar can actually produce skills in this environment.
+
+    skills_in_group() returns a static manifest, but a registrar may decline
+    entirely when an optional extra is absent — register_browser_skills returns
+    0 without playwright. Asserting manifest presence for such a group tests the
+    extra, not the hot-reload path, so those groups are excluded here.
+    """
+
+    live: list[str] = []
     for group in _GROUPS:
+        probe = SkillRegistry()
+        if register_group(probe, group):
+            live.append(group)
+    return tuple(live)
+
+
+def _assert_groups(registry: SkillRegistry, *, present: bool) -> None:
+    for group in _registrable_groups():
         for skill_id in skills_in_group(group):
             assert registry.has(skill_id) is present, (group, skill_id)
 
@@ -44,6 +61,31 @@ def test_reconcile_removes_and_restores_automation_groups() -> None:
 
     restored = _reconcile_automation_registry(registry, Capabilities.defaults())
     assert restored["registered"]
+    _assert_groups(registry, present=True)
+
+
+def test_reenable_reports_groups_missing_an_optional_extra() -> None:
+    """Re-enabling must not fail because a registrar declined for a missing extra.
+
+    register_browser_skills returns 0 when playwright is absent, while
+    skills_in_group("browser") still reports its static manifest. Treating that
+    gap as a fault made PUT /api/settings/capabilities a permanent 500 on every
+    install without the extra. The group is reported as unavailable instead.
+    """
+
+    registry = SkillRegistry()
+    for group in _GROUPS:
+        register_group(registry, group)
+
+    _reconcile_automation_registry(
+        registry,
+        Capabilities(browser_automation=False, desktop_automation=False),
+    )
+    restored = _reconcile_automation_registry(registry, Capabilities.defaults())
+
+    declined = tuple(g for g in _GROUPS if g not in _registrable_groups())
+    assert restored["unavailable"] == sorted(declined)
+    # Whatever this environment can register is actually registered.
     _assert_groups(registry, present=True)
 
 

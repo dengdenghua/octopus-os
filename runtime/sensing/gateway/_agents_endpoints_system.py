@@ -43,6 +43,10 @@ def _reconcile_automation_registry(registry: Any, caps: Any) -> dict[str, list[s
     disabled = caps.disabled_skill_groups()
     removed: list[str] = []
     registered: list[str] = []
+    # Groups whose registrar produced nothing because an optional dependency is
+    # missing. Reported rather than raised so the operator can tell "enabled but
+    # unavailable here" from "enabled and live".
+    unavailable: list[str] = []
 
     for group in _AUTOMATION_GROUP_ORDER:
         if group not in disabled:
@@ -65,12 +69,23 @@ def _reconcile_automation_registry(registry: Any, caps: Any) -> dict[str, list[s
             registry.unregister(skill_id)
         registered.extend(register_group(registry, group))
         still_missing = sorted(skill_id for skill_id in expected if not registry.has(skill_id))
-        if still_missing:
+        registered_any = any(registry.has(skill_id) for skill_id in expected)
+        if still_missing and registered_any:
+            # Partial registration means the registrar ran and failed midway —
+            # that is a real fault worth surfacing. A group that registers
+            # nothing at all is the ordinary optional-dependency case: the
+            # browser registrar returns 0 when playwright is absent, while
+            # skills_in_group() reports its static manifest regardless. Raising
+            # there would make re-enabling automation a permanent 500 on any
+            # install without the extra, even though the gate itself succeeded.
             raise RuntimeError(f"automation group {group!r} failed to hot-load: {still_missing}")
+        if still_missing:
+            unavailable.append(group)
 
     return {
         "registered": sorted(set(registered)),
         "removed": sorted(set(removed)),
+        "unavailable": sorted(set(unavailable)),
     }
 
 
@@ -161,7 +176,11 @@ def _register_system(router: Any, ctx: _AgentsCtx, auth: _AuthActions) -> None:
 
         app_state = getattr(getattr(request.app, "state", None), "echo_state", None)
         skill_registry = getattr(app_state, "registry", None)
-        reconciliation: dict[str, list[str]] = {"registered": [], "removed": []}
+        reconciliation: dict[str, list[str]] = {
+            "registered": [],
+            "removed": [],
+            "unavailable": [],
+        }
         restart_required = skill_registry is None
         if skill_registry is not None:
             try:
