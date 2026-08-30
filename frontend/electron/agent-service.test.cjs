@@ -34,10 +34,7 @@ async function test(name, fn) {
         healthVerifierPath: HEALTH_VERIFIER,
       },
     ]) {
-      assert.strictEqual(
-        getAgentServiceCapabilities(options).restart,
-        false,
-      );
+      assert.strictEqual(getAgentServiceCapabilities(options).restart, false);
       let executed = false;
       const result = await restartAgentService({
         ...options,
@@ -55,12 +52,18 @@ async function test(name, fn) {
       resolveSystemctlPath((candidate) => candidate === "/bin/systemctl"),
       "/bin/systemctl",
     );
-    assert.strictEqual(resolveSystemctlPath(() => false), null);
+    assert.strictEqual(
+      resolveSystemctlPath(() => false),
+      null,
+    );
     assert.strictEqual(
       resolveHealthVerifierPath((candidate) => candidate === HEALTH_VERIFIER),
       HEALTH_VERIFIER,
     );
-    assert.strictEqual(resolveHealthVerifierPath(() => false), null);
+    assert.strictEqual(
+      resolveHealthVerifierPath(() => false),
+      null,
+    );
   });
 
   await test("重启后必须通过固定 Agent 健康门且不经过 shell", async () => {

@@ -10,14 +10,36 @@ const {
   BrowserWindow,
   dialog,
   ipcMain,
+  net,
+  protocol,
+  safeStorage,
   shell,
   session,
+  systemPreferences,
   webContents,
 } = require("electron");
 const fs = require("fs");
 const fsp = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const { pathToFileURL } = require("url");
+const { spawnBackend, killBackend } = require("./backend-runtime.cjs");
+const desktopUpdater = require("./desktop-updater.cjs");
+const desktopProtocol = require("./desktop-protocol.cjs");
+const shellProfile = require("./shell-profile.cjs");
+const {
+  ensureDesktopConfigFile,
+  ensureDesktopResources,
+} = require("./desktop-config.cjs");
+
+// Existing installations may still launch Echo with the former environment
+// prefix. Promote those values before any module reads process.env.
+const legacyEnvironmentPrefix = "OCTO" + "PUS_";
+for (const [name, value] of Object.entries(process.env)) {
+  if (name.startsWith(legacyEnvironmentPrefix) && value !== undefined) {
+    process.env[`ECHO_${name.slice(legacyEnvironmentPrefix.length)}`] ??= value;
+  }
+}
 
 // 原生 shell(A 路线)系统手层:枚举/启动本地已装应用(freedesktop .desktop)。
 const systemShell = require("./system-shell.cjs");
@@ -29,44 +51,150 @@ const agentService = require("./agent-service.cjs");
 const nativeWindows = require("./native-windows.cjs");
 const rendererReadiness = require("./renderer-readiness.cjs");
 const nativeAppIpcSmoke = require("./native-app-ipc-smoke.cjs");
+const {
+  NativeLiquidGlassController,
+  shouldUseTransparentWindow,
+} = require("./native-liquid-glass.cjs");
+const { resolveDevURL } = require("./dev-url.cjs");
 // `session` 是旧 Cage/kiosk 会话；`desktop` 是目标 C 的 KWin 通用桌面会话。
-const SHELL_MODE = process.env.OCTOPUS_SHELL_MODE || "";
+const SHELL_MODE = process.env.ECHO_SHELL_MODE || "";
 const DESKTOP_SESSION = SHELL_MODE === "desktop";
+// The Echo OS directory package has a distinct immutable executable identity.
+// Bind production behavior to that identity so a missing session environment
+// variable can never make the resource-minimal OS shell try to start the
+// standalone desktop Agent that it intentionally does not contain.
+const PACKAGED_NATIVE_SHELL = shellProfile.isPackagedNativeShell({
+  isPackaged: app.isPackaged,
+  platform: process.platform,
+  execPath: process.execPath,
+  resourcesPath: process.resourcesPath,
+});
 const NATIVE_SHELL =
-  process.env.OCTOPUS_NATIVE_SHELL === "1" ||
+  PACKAGED_NATIVE_SHELL ||
+  process.env.ECHO_NATIVE_SHELL === "1" ||
   SHELL_MODE === "session" ||
   DESKTOP_SESSION;
 const KIOSK_SHELL = NATIVE_SHELL && !DESKTOP_SESSION;
 
-const DEV_URL = process.env.ELECTRON_START_URL || "http://127.0.0.1:3000";
+const DEV_URL = resolveDevURL();
 const DESKTOP_DIR = path.join(os.homedir(), "Desktop");
+const SMOKE_TEST_BACKEND = process.argv.includes("--smoke-test-backend");
+const BUILT_RENDERER_SMOKE =
+  process.argv.includes("--smoke-test") || SMOKE_TEST_BACKEND;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: desktopProtocol.DESKTOP_APP_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+      codeCache: true,
+    },
+  },
+]);
+
+if (process.platform === "win32") {
+  app.setAppUserModelId("ai.echo.desktop");
+}
 
 let mainWindow = null;
+let nativeLiquidGlassController = null;
+let nativeLiquidGlassSmokeLogged = false;
+const BROWSER_PARTITION = "persist:echo-browser";
+
+function browserProfileSession() {
+  return session.fromPartition(BROWSER_PARTITION);
+}
 
 // ── backend URL ────────────────────────────────────────────────
 function resolveBackendBaseURL() {
-  return process.env.OCTOPUS_BACKEND_URL || "http://127.0.0.1:8000";
+  return desktopProtocol.normalizeLoopbackBackendBaseURL(
+    process.env.ECHO_BACKEND_URL || "http://127.0.0.1:8000",
+  );
+}
+
+async function waitForSmokeBackendReady(timeoutMilliseconds = 75000) {
+  const deadline = Date.now() + timeoutMilliseconds;
+  const readyURL = `${resolveBackendBaseURL()}/readyz`;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    const controller = new AbortController();
+    const requestTimer = setTimeout(() => controller.abort(), 2000);
+    try {
+      const response = await net.fetch(readyURL, { signal: controller.signal });
+      if (response.ok) {
+        await response.text();
+        return;
+      }
+      lastError = new Error(
+        `backend readiness returned HTTP ${response.status}`,
+      );
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(requestTimer);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(
+    `desktop backend did not reach /readyz: ${lastError?.message || "timeout"}`,
+  );
+}
+
+function installDesktopRendererProtocol() {
+  const distRoot = path.join(__dirname, "..", "dist");
+  if (!desktopProtocol.resolveDesktopAssetPath(distRoot, "/index.html")) {
+    throw new Error(`desktop renderer entry is missing from ${distRoot}`);
+  }
+  const handler = desktopProtocol.createDesktopProtocolHandler({
+    distRoot,
+    backendBaseURL: resolveBackendBaseURL(),
+    fetchImpl: (url, init) => net.fetch(url, init),
+    onProxyError: (error) =>
+      console.warn("[echo] desktop backend proxy unavailable:", error.message),
+  });
+  protocol.handle(desktopProtocol.DESKTOP_APP_SCHEME, handler);
+}
+
+function backendConfigPath() {
+  return path.join(app.getPath("userData"), "config.yaml");
+}
+
+function backendProgress({ stage, message }) {
+  mainWindow?.webContents.send("backend:bootstrap-progress", {
+    stage,
+    message,
+  });
 }
 
 // ── first-launch config (packaging/desktop/config.desktop.yaml) ──
 function ensureDesktopConfig() {
-  try {
-    const target = path.join(app.getPath("userData"), "config.desktop.yaml");
-    if (fs.existsSync(target)) return;
-    const bundled = app.isPackaged
-      ? path.join(process.resourcesPath, "config.desktop.yaml")
-      : path.join(
-          __dirname,
-          "..",
-          "..",
-          "packaging",
-          "desktop",
-          "config.desktop.yaml",
-        );
-    if (fs.existsSync(bundled)) fs.copyFileSync(bundled, target);
-  } catch (err) {
-    console.warn("[echo] config.desktop.yaml copy failed:", err.message);
-  }
+  const bundled = app.isPackaged
+    ? path.join(process.resourcesPath, "config.desktop.yaml")
+    : path.join(
+        __dirname,
+        "..",
+        "..",
+        "packaging",
+        "desktop",
+        "config.desktop.yaml",
+      );
+  return ensureDesktopConfigFile({
+    bundledPath: bundled,
+    targetPath: backendConfigPath(),
+  });
+}
+
+function ensurePackagedResources() {
+  return ensureDesktopResources({
+    bundledRoot: app.isPackaged
+      ? process.resourcesPath
+      : path.join(__dirname, "..", ".."),
+    targetRoot: path.join(app.getPath("userData"), "resources"),
+  });
 }
 
 // ── desktop organizer (the 桌面助手 backend) ───────────────────
@@ -152,6 +280,9 @@ function wc(webContentsId) {
   const target = webContents.fromId(webContentsId);
   if (!target || target.isDestroyed())
     throw new Error(`webContents ${webContentsId} not found`);
+  if (target.getType() !== "webview") {
+    throw new Error(`webContents ${webContentsId} is not a webview`);
+  }
   return target;
 }
 
@@ -264,28 +395,260 @@ async function getAriaTree(target, opts) {
   }
 }
 
+const passwordVaultFile = () =>
+  path.join(app.getPath("userData"), "browser-passwords.enc.json");
+
+function normalizeHttpOrigin(value) {
+  const parsed = new URL(String(value || ""));
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("only http(s) origins are supported");
+  }
+  return parsed.origin;
+}
+
+function passwordVaultAvailable() {
+  return safeStorage.isEncryptionAvailable();
+}
+
+function readPasswordVault() {
+  if (!passwordVaultAvailable()) return [];
+  try {
+    const envelope = JSON.parse(fs.readFileSync(passwordVaultFile(), "utf8"));
+    if (envelope?.version !== 1 || typeof envelope.payload !== "string") {
+      return [];
+    }
+    const clear = safeStorage.decryptString(
+      Buffer.from(envelope.payload, "base64"),
+    );
+    const entries = JSON.parse(clear);
+    return Array.isArray(entries) ? entries : [];
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      console.warn("[echo] password vault could not be read:", error.message);
+    }
+    return [];
+  }
+}
+
+function writePasswordVault(entries) {
+  if (!passwordVaultAvailable()) {
+    throw new Error("system encryption is unavailable");
+  }
+  const target = passwordVaultFile();
+  const temporary = `${target}.tmp`;
+  const payload = safeStorage
+    .encryptString(JSON.stringify(entries))
+    .toString("base64");
+  fs.writeFileSync(temporary, JSON.stringify({ version: 1, payload }), {
+    mode: 0o600,
+  });
+  fs.renameSync(temporary, target);
+}
+
+function publicPasswordEntry(entry) {
+  return {
+    id: entry.id,
+    origin: entry.origin,
+    username: entry.username,
+    updatedAt: entry.updatedAt,
+  };
+}
+
+const sitePermissionsFile = () =>
+  path.join(app.getPath("userData"), "browser-site-permissions.json");
+
+function readSitePermissions() {
+  try {
+    const entries = JSON.parse(fs.readFileSync(sitePermissionsFile(), "utf8"));
+    return Array.isArray(entries) ? entries : [];
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      console.warn("[echo] site permissions could not be read:", error.message);
+    }
+    return [];
+  }
+}
+
+function writeSitePermissions(entries) {
+  fs.writeFileSync(sitePermissionsFile(), JSON.stringify(entries, null, 2), {
+    mode: 0o600,
+  });
+}
+
+function permissionKey(permission, details = {}) {
+  if (permission === "geolocation") return "location";
+  if (permission === "notifications") return "notifications";
+  if (permission === "clipboard-read") return "clipboard";
+  if (permission !== "media") return null;
+  const mediaTypes = Array.isArray(details.mediaTypes)
+    ? details.mediaTypes
+    : [];
+  const audio = mediaTypes.includes("audio");
+  const video = mediaTypes.includes("video");
+  if (audio && video) return "camera-microphone";
+  if (video) return "camera";
+  if (audio) return "microphone";
+  return null;
+}
+
+const permissionLabels = {
+  camera: "摄像头",
+  microphone: "麦克风",
+  "camera-microphone": "摄像头和麦克风",
+  location: "位置信息",
+  notifications: "通知",
+  clipboard: "剪贴板读取",
+};
+
+function savedSitePermission(origin, permission) {
+  return readSitePermissions().find(
+    (entry) => entry.origin === origin && entry.permission === permission,
+  );
+}
+
+function saveSitePermission(origin, permission, decision) {
+  const entries = readSitePermissions().filter(
+    (entry) => !(entry.origin === origin && entry.permission === permission),
+  );
+  if (decision !== "ask") {
+    entries.unshift({ origin, permission, decision, updatedAt: Date.now() });
+  }
+  writeSitePermissions(entries);
+}
+
+function configureBrowserPermissionRequests(sess) {
+  sess.setPermissionRequestHandler(
+    (contents, permission, callback, details) => {
+      if (contents.getType() !== "webview") {
+        callback(false);
+        return;
+      }
+      const key = permissionKey(permission, details);
+      if (!key) {
+        callback(false);
+        return;
+      }
+      let origin;
+      try {
+        origin = normalizeHttpOrigin(
+          details?.requestingUrl ||
+            details?.securityOrigin ||
+            contents.getURL(),
+        );
+      } catch {
+        callback(false);
+        return;
+      }
+      const saved = savedSitePermission(origin, key);
+      if (saved) {
+        callback(saved.decision === "allow");
+        return;
+      }
+      void dialog
+        .showMessageBox(mainWindow, {
+          type: "question",
+          title: "网站权限请求",
+          message: `${origin} 想要使用${permissionLabels[key]}`,
+          detail:
+            "只在确认网站可信且当前功能确实需要时允许。你可以稍后在“浏览器数据与隐私”中撤销。",
+          buttons: ["允许", "阻止"],
+          defaultId: 1,
+          cancelId: 1,
+          checkboxLabel: "记住此网站的选择",
+          checkboxChecked: false,
+          noLink: true,
+        })
+        .then(({ response, checkboxChecked }) => {
+          const allow = response === 0;
+          if (checkboxChecked) {
+            saveSitePermission(origin, key, allow ? "allow" : "block");
+          }
+          callback(allow);
+        })
+        .catch(() => callback(false));
+    },
+  );
+}
+
+function downloadRisk(filename) {
+  const lower = String(filename || "").toLowerCase();
+  if (
+    /\.(exe|msi|msp|bat|cmd|com|scr|ps1|vbs|vbe|js|jse|wsf|wsh|reg|app|dmg|pkg|deb|rpm|apk)$/i.test(
+      lower,
+    )
+  ) {
+    return "high";
+  }
+  if (/\.(zip|rar|7z|tar|gz|bz2|xz|iso)$/i.test(lower)) return "medium";
+  return "low";
+}
+
 // ── downloads ──────────────────────────────────────────────────
 const downloads = new Map();
 let downloadSeq = 0;
 
 function trackDownloads(sess) {
-  sess.on("will-download", (_event, item) => {
+  sess.on("will-download", (_event, item, sourceContents) => {
     const id = `dl-${++downloadSeq}`;
+    const createdAt = Date.now();
+    const filename = item.getFilename();
+    const risk = downloadRisk(filename);
+    const url = item.getURL();
+    let sourceOrigin = "";
+    try {
+      sourceOrigin = normalizeHttpOrigin(sourceContents?.getURL() || url);
+    } catch {
+      sourceOrigin = "unknown";
+    }
     const send = (state) => {
-      downloads.set(id, { item, path: item.getSavePath() });
+      downloads.set(id, {
+        item,
+        path: item.getSavePath(),
+        url,
+        filename,
+        risk,
+        sourceOrigin,
+        createdAt,
+        send,
+        sourceContents,
+      });
       mainWindow?.webContents.send("browser:download-event", {
         id,
-        filename: item.getFilename(),
-        url: item.getURL(),
-        state,
+        filename,
+        url,
+        sourceOrigin,
+        risk,
+        state: state === "started" ? "progressing" : state,
+        paused: item.isPaused(),
+        canResume: item.canResume(),
         receivedBytes: item.getReceivedBytes(),
         totalBytes: item.getTotalBytes(),
-        path: item.getSavePath(),
+        createdAt,
       });
     };
     send("started");
     item.on("updated", (_e, state) => send(state));
     item.once("done", (_e, state) => send(state));
+    if (risk === "high") {
+      item.pause();
+      send("progressing");
+      void dialog
+        .showMessageBox(mainWindow, {
+          type: "warning",
+          title: "高风险下载",
+          message: `是否保留 ${filename}？`,
+          detail: `此文件可能运行程序或修改设备。来源：${sourceOrigin}`,
+          buttons: ["继续下载", "取消下载"],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true,
+        })
+        .then(({ response }) => {
+          if (response === 0) item.resume();
+          else item.cancel();
+        })
+        .catch(() => item.cancel());
+    }
   });
 }
 
@@ -325,6 +688,66 @@ function registerIpc() {
   handle("app:getVersion", () => app.getVersion());
   handle("app:openExternal", (url) => shell.openExternal(url));
   handle("app:getPlatform", () => process.platform);
+
+  // macOS 26+: only bounded surface geometry crosses this bridge. The renderer
+  // cannot select native classes, filesystem paths or private material flags.
+  ipcMain.handle("nativeGlass:getCapabilities", (event) => {
+    if (event.sender !== mainWindow?.webContents) {
+      return {
+        supported: false,
+        reason: "untrusted-renderer",
+        material: null,
+        backend: null,
+      };
+    }
+    return (
+      nativeLiquidGlassController?.getCapabilities() || {
+        supported: false,
+        reason: "window-unavailable",
+        material: null,
+        backend: null,
+      }
+    );
+  });
+  ipcMain.handle("nativeGlass:sync", async (event, payload) => {
+    if (event.sender !== mainWindow?.webContents) {
+      return {
+        active: false,
+        supported: false,
+        reason: "untrusted-renderer",
+        material: null,
+        backend: null,
+        surfaceCount: 0,
+      };
+    }
+    const result = (await nativeLiquidGlassController?.sync(payload)) || {
+      active: false,
+      supported: false,
+      reason: "window-unavailable",
+      material: null,
+      backend: null,
+      surfaceCount: 0,
+    };
+    if (
+      result.active &&
+      !nativeLiquidGlassSmokeLogged &&
+      process.env.ECHO_NATIVE_GLASS_SMOKE === "1"
+    ) {
+      nativeLiquidGlassSmokeLogged = true;
+      console.log(
+        `ECHO_NATIVE_LIQUID_GLASS_READY ${result.material} ${result.surfaceCount}`,
+      );
+      console.log(
+        "ECHO_NATIVE_LIQUID_GLASS_SCENE",
+        JSON.stringify(nativeLiquidGlassController?.diagnostics || {}),
+      );
+    }
+    return result;
+  });
+  ipcMain.handle("nativeGlass:deactivate", (event) => {
+    if (event.sender !== mainWindow?.webContents) return { active: false };
+    return nativeLiquidGlassController?.deactivate() || { active: false };
+  });
 
   // Echo OS 电源动作：双重限制为原生 Linux 会话 + 固定 systemctl 白名单。
   handle("system:getCapabilities", () =>
@@ -391,7 +814,7 @@ function registerIpc() {
     nativeShell: NATIVE_SHELL,
   });
 
-  // 原生 shell:本地已装应用 枚举/启动(window.octopus.apps.*)
+  // 原生 shell:本地已装应用 枚举/启动(window.echo.apps.*)
   systemShell.registerSystemShellIpc(ipcMain);
 
   // dialog
@@ -407,9 +830,14 @@ function registerIpc() {
   ipcMain.on("backend:getBaseURLSync", (event) => {
     event.returnValue = resolveBackendBaseURL();
   });
-  handle("backend:restart", () =>
-    agentService.restartAgentService({ nativeShell: NATIVE_SHELL }),
-  );
+  handle("backend:restart", async () => {
+    if (NATIVE_SHELL || !app.isPackaged) {
+      return agentService.restartAgentService({ nativeShell: NATIVE_SHELL });
+    }
+    await killBackend();
+    await spawnBackend(backendConfigPath(), backendProgress);
+    return { ok: true };
+  });
 
   // window
   handle("window:setDeviceBounds", (mode, width, height) => {
@@ -441,8 +869,58 @@ function registerIpc() {
     mainWindow?.webContents.openDevTools({ mode: "detach" });
     return { ok: true };
   });
+  handle("window:isFullScreen", () => ({
+    ok: true,
+    fullScreen: mainWindow?.isFullScreen() ?? false,
+  }));
 
   // desktop organizer
+  handle("desktop:getAutomationPermissions", () => {
+    if (process.platform !== "darwin") {
+      return {
+        supported: false,
+        platform: process.platform,
+        screenRecording: "unknown",
+        accessibility: "unknown",
+      };
+    }
+    const screenRecording = systemPreferences.getMediaAccessStatus("screen");
+    return {
+      supported: true,
+      platform: process.platform,
+      screenRecording: ["granted", "denied", "restricted"].includes(
+        screenRecording,
+      )
+        ? screenRecording
+        : "unknown",
+      accessibility: systemPreferences.isTrustedAccessibilityClient(false)
+        ? "granted"
+        : "denied",
+    };
+  });
+  handle("desktop:openAutomationPermission", async (permission) => {
+    if (process.platform !== "darwin") {
+      return { ok: false, error: "macOS only" };
+    }
+    const pane =
+      permission === "screen-recording"
+        ? "Privacy_ScreenCapture"
+        : permission === "accessibility"
+          ? "Privacy_Accessibility"
+          : "";
+    if (!pane) return { ok: false, error: "unknown permission" };
+    try {
+      await shell.openExternal(
+        `x-apple.systempreferences:com.apple.preference.security?${pane}`,
+      );
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
   handle("desktop:listItems", async () => {
     try {
       return {
@@ -591,6 +1069,145 @@ function registerIpc() {
       return { ok: false, error: err.message };
     }
   });
+  handle("browser:clearBrowsingData", async () => {
+    try {
+      const sessions = [session.defaultSession, browserProfileSession()];
+      await Promise.all(
+        sessions.flatMap((browserSession) => [
+          browserSession.clearStorageData(),
+          browserSession.clearCache(),
+          browserSession.clearAuthCache(),
+        ]),
+      );
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  handle("browser:listPasswords", (origin) => {
+    try {
+      const normalized = origin ? normalizeHttpOrigin(origin) : null;
+      const entries = readPasswordVault()
+        .filter((entry) => !normalized || entry.origin === normalized)
+        .map(publicPasswordEntry)
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+      return { ok: true, available: passwordVaultAvailable(), entries };
+    } catch (err) {
+      return {
+        ok: false,
+        available: passwordVaultAvailable(),
+        entries: [],
+        error: err.message,
+      };
+    }
+  });
+  handle("browser:savePassword", (entry) => {
+    try {
+      const origin = normalizeHttpOrigin(entry?.origin);
+      const username = String(entry?.username || "").trim();
+      const password = String(entry?.password || "");
+      if (!username || !password)
+        throw new Error("username and password required");
+      const entries = readPasswordVault();
+      const existing = entries.find(
+        (item) => item.origin === origin && item.username === username,
+      );
+      const next = {
+        id:
+          existing?.id ||
+          `pwd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+        origin,
+        username,
+        password,
+        updatedAt: Date.now(),
+      };
+      writePasswordVault([
+        next,
+        ...entries.filter((item) => item.id !== next.id),
+      ]);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  handle("browser:deletePassword", (id) => {
+    try {
+      const entries = readPasswordVault();
+      const next = entries.filter((entry) => entry.id !== id);
+      if (next.length === entries.length) {
+        return { ok: false, error: "password entry not found" };
+      }
+      writePasswordVault(next);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  handle("browser:fillPassword", async (id, entryId) => {
+    try {
+      const target = wc(id);
+      const currentOrigin = normalizeHttpOrigin(target.getURL());
+      const entry = readPasswordVault().find((item) => item.id === entryId);
+      if (!entry) return { ok: false, error: "password entry not found" };
+      if (entry.origin !== currentOrigin) {
+        return {
+          ok: false,
+          error: "current site does not match password origin",
+        };
+      }
+      const result = await target.executeJavaScript(
+        `(() => {
+          const username = ${JSON.stringify(entry.username)};
+          const password = ${JSON.stringify(entry.password)};
+          const passwordInput = document.querySelector('input[type="password"]');
+          if (!(passwordInput instanceof HTMLInputElement)) {
+            return { ok: false, error: "password field not found" };
+          }
+          const form = passwordInput.form;
+          const scope = form || document;
+          const usernameInput = scope.querySelector(
+            'input[autocomplete="username"], input[type="email"], input[name*="user" i], input[name*="email" i], input[type="text"]'
+          );
+          const setValue = (input, value) => {
+            const setter = Object.getOwnPropertyDescriptor(
+              HTMLInputElement.prototype, "value"
+            )?.set;
+            if (setter) setter.call(input, value); else input.value = value;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          };
+          if (usernameInput instanceof HTMLInputElement) setValue(usernameInput, username);
+          setValue(passwordInput, password);
+          passwordInput.focus();
+          return { ok: true, usernameFilled: usernameInput instanceof HTMLInputElement };
+        })()`,
+        true,
+      );
+      return result?.ok ? { ok: true } : result;
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  handle("browser:listSitePermissions", () => ({
+    ok: true,
+    entries: readSitePermissions().sort((a, b) => b.updatedAt - a.updatedAt),
+  }));
+  handle("browser:setSitePermission", (origin, permission, decision) => {
+    try {
+      const normalized = normalizeHttpOrigin(origin);
+      if (!Object.hasOwn(permissionLabels, permission)) {
+        throw new Error("unsupported site permission");
+      }
+      if (!["ask", "allow", "block"].includes(decision)) {
+        throw new Error("unsupported permission decision");
+      }
+      saveSitePermission(normalized, permission, decision);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   handle("browser:showDownloadInFolder", (id) => {
     const dl = downloads.get(id);
     if (!dl?.path) return { ok: false, error: "download not found" };
@@ -602,6 +1219,57 @@ function registerIpc() {
     if (!dl?.path) return { ok: false, error: "download not found" };
     const error = await shell.openPath(dl.path);
     return error ? { ok: false, error } : { ok: true };
+  });
+
+  handle("browser:pauseDownload", (id) => {
+    const dl = downloads.get(id);
+    if (!dl?.item) return { ok: false, error: "download not found" };
+    try {
+      dl.item.pause();
+      dl.send?.("progressing");
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  handle("browser:resumeDownload", (id) => {
+    const dl = downloads.get(id);
+    if (!dl?.item) return { ok: false, error: "download not found" };
+    try {
+      if (!dl.item.canResume()) {
+        return { ok: false, error: "download cannot be resumed" };
+      }
+      dl.item.resume();
+      dl.send?.("progressing");
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  handle("browser:cancelDownload", (id) => {
+    const dl = downloads.get(id);
+    if (!dl?.item) return { ok: false, error: "download not found" };
+    try {
+      dl.item.cancel();
+      dl.send?.("cancelled");
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  handle("browser:retryDownload", (id) => {
+    const dl = downloads.get(id);
+    if (!dl?.url) return { ok: false, error: "download not found" };
+    try {
+      const source =
+        dl.sourceContents && !dl.sourceContents.isDestroyed()
+          ? dl.sourceContents
+          : mainWindow.webContents;
+      source.downloadURL(dl.url);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   });
 
   // extensions
@@ -674,7 +1342,77 @@ function registerIpc() {
 }
 
 // ── window ─────────────────────────────────────────────────────
+async function createLinuxGlassBackgroundScene(hostWindow, wallpaperPath) {
+  const backgroundWindow = new BrowserWindow({
+    ...hostWindow.getBounds(),
+    title: "Echo Liquid Glass Background",
+    show: false,
+    frame: false,
+    focusable: false,
+    skipTaskbar: true,
+    autoHideMenuBar: true,
+    hasShadow: false,
+    backgroundColor: "#0b1027",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  backgroundWindow.setIgnoreMouseEvents(true);
+  backgroundWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+
+  const syncBounds = () => {
+    if (!hostWindow.isDestroyed() && !backgroundWindow.isDestroyed()) {
+      backgroundWindow.setBounds(hostWindow.getBounds(), false);
+    }
+  };
+  hostWindow.on("move", syncBounds);
+  hostWindow.on("resize", syncBounds);
+
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    hostWindow.removeListener("move", syncBounds);
+    hostWindow.removeListener("resize", syncBounds);
+    if (!backgroundWindow.isDestroyed()) backgroundWindow.destroy();
+  };
+  hostWindow.once("closed", close);
+
+  try {
+    await backgroundWindow.loadURL(pathToFileURL(wallpaperPath).href);
+    await backgroundWindow.webContents.insertCSS(`
+      html, body {
+        width: 100%; height: 100%; margin: 0; overflow: hidden;
+        background: #0b1027 !important;
+      }
+      img {
+        display: block !important; width: 100vw !important;
+        height: 100vh !important; max-width: none !important;
+        max-height: none !important; object-fit: cover !important;
+        object-position: center center !important;
+      }
+    `);
+    syncBounds();
+    backgroundWindow.showInactive();
+    try {
+      hostWindow.moveAbove(backgroundWindow.getMediaSourceId());
+    } catch {
+      // KWin's below rule still keeps both Echo desktop windows under apps.
+    }
+    return {
+      visible: backgroundWindow.isVisible(),
+      close,
+    };
+  } catch (error) {
+    close();
+    throw error;
+  }
+}
+
 function createMainWindow() {
+  const nativeTransparency = shouldUseTransparentWindow();
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -682,6 +1420,9 @@ function createMainWindow() {
     minHeight: 600,
     show: false,
     title: "Echo Desktop",
+    ...(nativeTransparency
+      ? { transparent: true, backgroundColor: "#00000000" }
+      : {}),
     // 旧会话 shell 仍可 kiosk 独占。目标 C 的 desktop 会话必须允许 KWin
     // 在它上方管理真实应用窗口，因此只做无框最大化，不进入 kiosk/fullscreen。
     ...(KIOSK_SHELL
@@ -699,12 +1440,31 @@ function createMainWindow() {
     },
   });
 
+  if (nativeTransparency) win.setBackgroundColor("#00000000");
+  nativeLiquidGlassController = new NativeLiquidGlassController({
+    window: win,
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    createLinuxScene: (wallpaperPath) =>
+      createLinuxGlassBackgroundScene(win, wallpaperPath),
+  });
+  win.once("closed", () => {
+    nativeLiquidGlassController?.deactivate();
+    nativeLiquidGlassController = null;
+  });
+
   win.once("ready-to-show", () => {
     if (DESKTOP_SESSION) {
       win.maximize();
       win.setSkipTaskbar(true);
     }
     win.show();
+  });
+  win.on("enter-full-screen", () => {
+    win.webContents.send("window:fullscreen-changed", { fullScreen: true });
+  });
+  win.on("leave-full-screen", () => {
+    win.webContents.send("window:fullscreen-changed", { fullScreen: false });
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -728,10 +1488,17 @@ function createMainWindow() {
     });
   }
 
-  // 会话 shell 从源码跑时也加载构建好的 dist(设备上不连 vite dev)。
-  const _distIndex = path.join(__dirname, "..", "dist", "index.html");
-  if (app.isPackaged || (NATIVE_SHELL && fs.existsSync(_distIndex))) {
-    win.loadFile(_distIndex);
+  // Packaged/native sessions use a fixed secure origin. API traffic is
+  // proxied narrowly to the loopback backend by desktop-protocol.cjs.
+  const useBuiltRenderer =
+    app.isPackaged || NATIVE_SHELL || BUILT_RENDERER_SMOKE;
+  if (useBuiltRenderer) {
+    const entry = DESKTOP_SESSION
+      ? `${desktopProtocol.DESKTOP_APP_ENTRY_URL}#/desktop`
+      : desktopProtocol.DESKTOP_APP_ENTRY_URL;
+    win.loadURL(entry).catch((error) => {
+      console.error("[echo] desktop renderer failed to load:", error);
+    });
   } else {
     win.loadURL(DEV_URL);
     win.webContents.on("did-fail-load", (_e, code, desc) => {
@@ -763,6 +1530,28 @@ function watchDesktop() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  let backendShutdownStarted = false;
+  let backendShutdownComplete = false;
+  let updaterController = null;
+  const finishAfterBackendShutdown = (completion) => {
+    if (backendShutdownComplete) {
+      completion();
+      return;
+    }
+    if (backendShutdownStarted) return;
+    backendShutdownStarted = true;
+    updaterController?.dispose();
+    void killBackend().finally(() => {
+      backendShutdownComplete = true;
+      completion();
+    });
+  };
+  app.on("before-quit", (event) => {
+    if (backendShutdownComplete) return;
+    event.preventDefault();
+    finishAfterBackendShutdown(() => app.quit());
+  });
+
   app.on("second-instance", () => {
     if (!mainWindow) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -788,22 +1577,106 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
-    if (!app.isPackaged) app.setAsDefaultProtocolClient("octopus");
-    ensureDesktopConfig();
+    if (!app.isPackaged) app.setAsDefaultProtocolClient("echo");
+    try {
+      if (app.isPackaged || NATIVE_SHELL || BUILT_RENDERER_SMOKE) {
+        installDesktopRendererProtocol();
+      }
+      // The standalone desktop owns its private bundled Agent configuration
+      // and resources. A native Echo OS session connects to the immutable
+      // image-baked Agent service and deliberately carries no duplicate Agent
+      // resource tree inside the Electron shell package.
+      if (!NATIVE_SHELL) {
+        ensureDesktopConfig();
+        ensurePackagedResources();
+      }
+    } catch (err) {
+      const message = `无法安全初始化桌面应用：${err.message}`;
+      console.error("[echo] desktop initialization failed:", err);
+      dialog.showErrorBox("Echo 启动失败", message);
+      app.exit(1);
+      return;
+    }
     registerIpc();
+    configureBrowserPermissionRequests(session.defaultSession);
+    configureBrowserPermissionRequests(browserProfileSession());
     trackDownloads(session.defaultSession);
+    trackDownloads(browserProfileSession());
     await loadEnabledExtensions();
     mainWindow = createMainWindow();
-    watchDesktop();
-
-    const standaloneSmoke = process.env.OCTOPUS_SMOKE === "1";
+    const standaloneSmoke = process.env.ECHO_SMOKE === "1";
     const nativeAppSmokeRequested = Boolean(
-      process.env.OCTOPUS_NATIVE_APP_SMOKE_ID,
+      process.env.ECHO_NATIVE_APP_SMOKE_ID,
     );
-    if (standaloneSmoke || nativeAppSmokeRequested) {
-      mainWindow.webContents.once("did-finish-load", () => {
-        void (async () => {
+    // Attach before awaiting the packaged backend. The renderer can finish
+    // loading while the fixed backend is still starting; registering this
+    // listener afterwards made first-launch smoke runs miss the event and
+    // wait until the 90-second timeout.
+    const rendererSmokeReady =
+      standaloneSmoke || nativeAppSmokeRequested
+        ? new Promise((resolve, reject) => {
+            mainWindow.webContents.once("did-finish-load", () => resolve());
+            mainWindow.webContents.once(
+              "did-fail-load",
+              (_event, code, description) =>
+                reject(
+                  new Error(
+                    `desktop renderer failed to load (${code} ${description})`,
+                  ),
+                ),
+            );
+          })
+        : null;
+    // Standalone desktop packages own their bundled Agent process. Echo OS
+    // native sessions instead use the image-baked echo-agent.service; starting
+    // a second packaged backend there would race the system service on port 8000.
+    if ((app.isPackaged && !NATIVE_SHELL) || SMOKE_TEST_BACKEND) {
+      try {
+        await spawnBackend(backendConfigPath(), backendProgress);
+      } catch (err) {
+        const message = `无法启动随应用安装的后端：${err.message}`;
+        console.error("[echo] bundled backend start failed:", err);
+        dialog.showErrorBox("Echo 启动失败", message);
+        app.exit(1);
+        return;
+      }
+    }
+    watchDesktop();
+    const updaterContext = {
+      isPackaged: app.isPackaged,
+      nativeShell: NATIVE_SHELL,
+      smoke: process.env.ECHO_SMOKE === "1",
+      disabled: process.env.ECHO_DISABLE_AUTO_UPDATE === "1",
+      platform: process.platform,
+      isAppImage: Boolean(process.env.APPIMAGE),
+    };
+    if (desktopUpdater.shouldEnableDesktopUpdater(updaterContext)) {
+      try {
+        const { autoUpdater } = require("electron-updater");
+        updaterController = desktopUpdater.configureDesktopUpdater({
+          autoUpdater,
+          dialog,
+          requestQuitAndInstall: () =>
+            finishAfterBackendShutdown(() =>
+              autoUpdater.quitAndInstall(false, true),
+            ),
+        });
+      } catch (error) {
+        console.warn(
+          "[echo] desktop updater unavailable:",
+          desktopUpdater.boundedErrorMessage(error),
+        );
+      }
+    }
+
+    if (rendererSmokeReady) {
+      void rendererSmokeReady
+        .then(async () => {
           if (standaloneSmoke) {
+            // Cold packaged backends can take longer than the renderer.
+            // Publish success and begin the quit hold only after both halves
+            // of the application are genuinely usable.
+            await waitForSmokeBackendReady();
             console.log("SMOKE OK:", mainWindow.webContents.getURL());
           }
           if (nativeAppSmokeRequested) {
@@ -823,7 +1696,7 @@ if (!app.requestSingleInstanceLock()) {
           }
           if (standaloneSmoke) {
             const requestedHold = Number.parseInt(
-              process.env.OCTOPUS_SMOKE_HOLD_MS || "500",
+              process.env.ECHO_SMOKE_HOLD_MS || "500",
               10,
             );
             const holdMilliseconds = Number.isFinite(requestedHold)
@@ -831,8 +1704,11 @@ if (!app.requestSingleInstanceLock()) {
               : 500;
             setTimeout(() => app.quit(), holdMilliseconds);
           }
-        })();
-      });
+        })
+        .catch((error) => {
+          console.error("SMOKE RENDERER FAILED:", error.message);
+          app.exit(1);
+        });
     }
     if (standaloneSmoke) {
       setTimeout(() => {

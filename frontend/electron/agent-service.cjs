@@ -47,7 +47,9 @@ function getAgentServiceCapabilities({
 }
 
 function boundedError(value) {
-  return String(value || "Agent service restart failed").trim().slice(0, 512);
+  return String(value || "Agent service restart failed")
+    .trim()
+    .slice(0, 512);
 }
 
 function restartAgentService({

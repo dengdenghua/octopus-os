@@ -1,8 +1,8 @@
 /**
  * Echo desktop shell — preload bridge.
  *
- * Exposes the compatibility `window.octopus` bridge implementing the
- * OctopusElectronAPI contract
+ * Exposes the `window.echo` bridge implementing the
+ * EchoElectronAPI contract
  * declared in src/types/electron.d.ts. Every method maps 1:1 onto an
  * ipcMain.handle channel in main.cjs.
  */
@@ -22,6 +22,7 @@ const EVENT_CHANNELS = [
   "browser:download-event",
   "desktop:organize-now",
   "desktop:items-changed",
+  "window:fullscreen-changed",
 ];
 
 const api = {
@@ -62,8 +63,19 @@ const api = {
     getAriaTree: invoke("browser:getAriaTree"),
     getCurrentUrl: invoke("browser:getCurrentUrl"),
     clearSiteData: invoke("browser:clearSiteData"),
+    clearBrowsingData: invoke("browser:clearBrowsingData"),
+    listPasswords: invoke("browser:listPasswords"),
+    savePassword: invoke("browser:savePassword"),
+    deletePassword: invoke("browser:deletePassword"),
+    fillPassword: invoke("browser:fillPassword"),
+    listSitePermissions: invoke("browser:listSitePermissions"),
+    setSitePermission: invoke("browser:setSitePermission"),
     showDownloadInFolder: invoke("browser:showDownloadInFolder"),
     openDownload: invoke("browser:openDownload"),
+    pauseDownload: invoke("browser:pauseDownload"),
+    resumeDownload: invoke("browser:resumeDownload"),
+    cancelDownload: invoke("browser:cancelDownload"),
+    retryDownload: invoke("browser:retryDownload"),
   },
 
   dialog: {
@@ -82,6 +94,12 @@ const api = {
     getVersion: invoke("app:getVersion"),
     openExternal: invoke("app:openExternal"),
     getPlatform: invoke("app:getPlatform"),
+  },
+
+  nativeGlass: {
+    getCapabilities: invoke("nativeGlass:getCapabilities"),
+    sync: invoke("nativeGlass:sync"),
+    deactivate: invoke("nativeGlass:deactivate"),
   },
 
   system: {
@@ -111,6 +129,8 @@ const api = {
   },
 
   desktop: {
+    getAutomationPermissions: invoke("desktop:getAutomationPermissions"),
+    openAutomationPermission: invoke("desktop:openAutomationPermission"),
     listItems: invoke("desktop:listItems"),
     openItem: invoke("desktop:openItem"),
     installContextMenu: invoke("desktop:installContextMenu"),
@@ -131,6 +151,7 @@ const api = {
     setTitleBarOverlay: invoke("window:setTitleBarOverlay"),
     setMousePassthrough: invoke("window:setMousePassthrough"),
     openDevTools: invoke("window:openDevTools"),
+    isFullScreen: invoke("window:isFullScreen"),
   },
 
   bridge: {
@@ -148,5 +169,5 @@ const api = {
   },
 };
 
-contextBridge.exposeInMainWorld("octopus", api);
-contextBridge.exposeInMainWorld("__OCTOPUS_DESKTOP__", true);
+contextBridge.exposeInMainWorld("echo", api);
+contextBridge.exposeInMainWorld("__ECHO_DESKTOP__", true);
