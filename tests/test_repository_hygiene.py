@@ -17,9 +17,9 @@ FORBIDDEN_TRACKED_PREFIXES = (
     "env/",
     "build/",
     "dist/",
-    ".octopus/local/",
-    ".octopus/research/",
-    ".octopus/archive/",
+    ".echo/local/",
+    ".echo/research/",
+    ".echo/archive/",
     "frontend/node_modules/",
     "frontend/dist/",
     "frontend/release/",
@@ -49,6 +49,18 @@ ALLOWED_TRACKED_PATHS = {
     "docs/openapi-snapshot.json",
     "docs/auto/index.json",
     "uv.lock",
+    # Dependency lockfiles, same category as uv.lock above: the .lock suffix is
+    # forbidden because runtime writes transaction locks, not because pinned
+    # requirements are unwelcome.
+    "deploy/appliance/build-requirements.lock",
+    "deploy/appliance/runtime-requirements.lock",
+    # Fixtures .gitignore un-ignores on purpose (see the "Versioned
+    # test/benchmark fixtures required by fresh-clone validation" block): a
+    # fresh clone cannot regenerate them, so their .db/.log/.jsonl suffixes are
+    # deliberate exceptions rather than stray runtime artifacts.
+    "benchmarks/fixtures/security.denied-destructive-action/data.db",
+    "benchmarks/fixtures/security.untrusted-instructions/external-contact.log",
+    "frontend/src/core/realtime/__fixtures__/replay-golden.events.jsonl",
 }
 
 
@@ -100,9 +112,9 @@ def test_gitignore_keeps_runtime_artifacts_local() -> None:
         "*.sqlite3",
         "*.db",
         "*.log",
-        ".octopus/*.bak",
-        ".octopus/*.lock",
-        ".octopus/archive/",
+        ".echo/*.bak",
+        ".echo/*.lock",
+        ".echo/archive/",
         "agents/*/workspace/",
         "benchmarks/results/",
         "frontend/release/",

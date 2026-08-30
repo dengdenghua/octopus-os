@@ -126,15 +126,15 @@ lead-side 统计里** —— B2 真实成本约 $0.02-0.03,B3 约 $0.05-0.10。
 
 11 runs · 100% success rate · 0 backend crash · 0 LLM 拒绝(capability assertion 起效)
 
-### 4 · 速度墙不在 Octopus
+### 4 · 速度墙不在 Echo
 
-最慢的 swarm 也是 ~100s,瓶颈在底层 LLM 单次调用的 ~25-30s。Octopus 自身并发 + 黑板调度开销 < 1s。
+最慢的 swarm 也是 ~100s,瓶颈在底层 LLM 单次调用的 ~25-30s。Echo 自身并发 + 黑板调度开销 < 1s。
 
 ### 5 · 跟外部 frontier agent 数量级对照
 
-下表把 Octopus 实测数字跟外部公开 agent 路线披露的数字对齐 · 仅作**参考量级**,不是对标承诺,Octopus 不集成外部产品。
+下表把 Echo 实测数字跟外部公开 agent 路线披露的数字对齐 · 仅作**参考量级**,不是对标承诺,Echo 不集成外部产品。
 
-| 维度 | 外部参考(swarm 路线) | Octopus 实测 | 差距 |
+| 维度 | 外部参考(swarm 路线) | Echo 实测 | 差距 |
 |------|----------------------|-------------|------|
 | Long-horizon 单 turn 步数 | ~千步级 | 实测 20 步 | **数量级差** |
 | Sub-agent 并发数 | 数百级 | 实测 3-8 | **数量级差** |
@@ -171,7 +171,7 @@ lead-side 统计里** —— B2 真实成本约 $0.02-0.03,B3 约 $0.05-0.10。
 **token 数现在真实**(2026-04-24 修完 `ganglia Budget.commit` + `LLMPlanner.last_plan_usage` + `synthesize_reply(usage_out=)` + `_direct_llm_fallback_with_usage` 四条路径):
 - 之前 deep 列是 100/200/400 整数倍(estimation placeholder)
 - 现在 deep 列是 1K-3K+ 的真实 provider 回报 · 三源相加:**planner.plan LLM + executor-step LLMs(Budget)+ synthesize_reply LLM**
-- 每个 octopus metadata 带拆分字段:`input_tokens`(总)/ `executor_input_tokens` / `planner_input_tokens` / `synth_input_tokens`
+- 每个 echo metadata 带拆分字段:`input_tokens`(总)/ `executor_input_tokens` / `planner_input_tokens` / `synth_input_tokens`
 
 ### 关键观察
 
@@ -195,14 +195,14 @@ lead-side 统计里** —— B2 真实成本约 $0.02-0.03,B3 约 $0.05-0.10。
 
 | 项 | 状态 | 落点 |
 |----|------|------|
-| plan path `additional_kwargs.octopus.input_tokens` / `output_tokens` 上报 | ✅ 已上报 | `thread_compat_router.py:1924-1933` + `:4316-4320` + `governance.Budget.tokens_{in,out}_spent` |
+| plan path `additional_kwargs.echo.input_tokens` / `output_tokens` 上报 | ✅ 已上报 | `thread_compat_router.py:1924-1933` + `:4316-4320` + `governance.Budget.tokens_{in,out}_spent` |
 | direct_llm 系列(streaming + non-streaming)token 上报 | ✅ 已上报 | `_direct_llm_fallback_with_usage()` + `_stream_direct_llm_fallback` done tuple 携带 JSON-encoded usage · planner-error fallback 两条路径都补齐 |
 | Tool semantic error(`{ok:false,error:...}`)→ SSE `status=error` | ✅ 已修(2026-04-24) | `tool_bridge._is_semantic_error()` 识别 3 种失败约定(`ok=False` / `error` 字段非空 / `status in (error,failed)`)· 之前只有 Python exception 会标 `is_error=True`,dict 返回的失败静默成功 |
 | plan path 的 token 实际数字 = provider 真实回报 | ✅ **已做**(2026-04-24 · 3 个落点一起修) | `beak/executor.py::_extract_token_usage()` 从 skill output 的 `cost`/`meta`/顶层 `input_tokens`/`output_tokens` 拉真值喂 `CostEntry` · `LLMPlanner.plan()` 存 `self.last_plan_usage` · `synthesize_reply(usage_out=)` 通过 out 参数吐 tokens · `thread_compat_router` 三源求和上报 total + 拆分字段 |
 | `sub_tool_end.duration_ms` 真实 | ✅ 已修 | `ephemeral_runner._emit_sub_tool_event(duration_ms=...)` |
 
 **已知观察性缺口**:
-- `mode=deep` 的 `input/output_tokens` 没写入 `additional_kwargs.octopus` · bench 看到的是 0 · 和 B2 里 `react_direct_llm` 不追 token 是同一类缝隙 · **后续 follow-up**(planner-runtime 内的 LLM 调用要上报 token)
+- `mode=deep` 的 `input/output_tokens` 没写入 `additional_kwargs.echo` · bench 看到的是 0 · 和 B2 里 `react_direct_llm` 不追 token 是同一类缝隙 · **后续 follow-up**(planner-runtime 内的 LLM 调用要上报 token)
 - `bugfix-demo` / `reflection-demo` / `evolution-demo` 三个 CLI 例子都是 plan path,完全没跑过 ReAct · 这是**有意的**——它们演示的就是 DAG 执行本身,不是推理
 - 文档里 "2036 tests · 0 lint" 里 plan-path 的 unit test 是 DAG 构造/执行层面,不是"从自然语言→plan"的端到端 · `tests/test_react_self_evolution_e2e.py` 那类才是端到端,主要压 react path
 
@@ -236,7 +236,7 @@ lead-side 统计里** —— B2 真实成本约 $0.02-0.03,B3 约 $0.05-0.10。
 | B4 · sub_tool_end.duration_ms bug | ephemeral_runner 加 `time.monotonic()` 测时 + thread_compat_router SSE 透传 `duration_ms` · 已修,backend restart 后前端 timeline 的 `XXms` 徽章不再是 0 | `ephemeral_runner.py:309-326` + `thread_compat_router.py:3041-3044` |
 
 **副发现**:
-- `react_direct_llm` 快路径(简短问答)**不追 token** · `additional_kwargs.octopus` 只有 strategy/step_count/success · bench 必须用 tool-calling prompt 才能测到 token
+- `react_direct_llm` 快路径(简短问答)**不追 token** · `additional_kwargs.echo` 只有 strategy/step_count/success · bench 必须用 tool-calling prompt 才能测到 token
 - 多轮对话 input token 不随 history 线性增长 · 说明 backend 每 turn 近乎独立发送 · 对成本友好但**可能影响长对话连贯性**(值得单独测)
 - Tool 通过返回值报告错误(`{ok:false, error:...}`)vs 通过异常报告错误 · SSE 事件的 `status` 只捕获后者 · 前端显示不区分
 
@@ -327,7 +327,7 @@ dry_run 提案无法绕过 safety gate —— 用户必须手动下一轮不加 
 - **Cancel 延迟**:之前实测 170ms,bench 没单独测
 - **Partial recovery**:之前实测可恢复,bench 没单独测  
 - **MCP persistent client 长任务**:bench 用 read_file/write_text_file 不用 mcp_fs(避免之前的子进程泄漏 follow-up)
-- **真实多模型路由**:bench 全用 claude-mirror,没测 Molili / GLM / Kimi 提供商的差异
+- **真实多模型路由**:bench 全用 claude-mirror,没测 GLM / Kimi 提供商的差异
 - **跨会话(多 turn)**:bench 每个 case 用 new thread,没测同一 thread 多 turn 的累计 context 行为
 - **失败路径**:bench 都成功,没主动诱发 tool error / 超时验证 fail-closed
 - **`sub_tool_end.duration_ms` 都是 0**:捕获时机问题(不影响渲染 status,但时间轴的"XXms"徽章会显示 0)· 单独 follow-up

@@ -1,4 +1,4 @@
-# Extending Octopus · community cookbook
+# Extending Echo · community cookbook
 
 This guide walks through the three extension points a third-party
 developer needs to customize agent behavior without forking the
@@ -25,7 +25,7 @@ pass through. Full contract in
 ### Register a hook
 
 ```python
-# ~/.octopus/hooks/my_hooks.py
+# ~/.echo/hooks/my_hooks.py
 from runtime.safety.hooks import (
     HookDecision, PreToolUseEvent, register_hook,
 )
@@ -174,10 +174,10 @@ Familiar to anyone who has used a slash-driven agent runtime.
 ### Directory layout
 
 ```
-~/.octopus/commands/                  # global (all projects)
+~/.echo/commands/                  # global (all projects)
 └── review-pr.md
 
-<project>/.octopus/commands/          # project-local override
+<project>/.echo/commands/          # project-local override
 └── review-pr.md                      # overrides the global one
 ```
 
@@ -271,7 +271,7 @@ The judge catches semantic violations the regex can't reach
 (ransomware requests, phishing drafts, coerced role-play to
 exfil PII). The recommended wiring goes through the
 runtime's `ModelRouter` abstraction — any Anthropic / OpenAI /
-Molili / Mock subclass works, and you get a 60 s TTL cache
+Mock subclass works, and you get a 60 s TTL cache
 for free (chatty agents re-send near-duplicates during tool
 loops · the cache keeps your judge cost bounded):
 

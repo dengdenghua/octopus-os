@@ -1,4 +1,4 @@
-# 模块清单 · octopus-agent
+# 模块清单 · echo-agent
 
 > 本文件列出项目各模块的来源、改造强度、优先级。仅作内部架构参考。
 
@@ -30,12 +30,12 @@
 
 ```bash
 # 1. 拷贝源码（保留目录结构）
-cp -r /e/octopus/backend/packages/harness/octopus/mcp/ /f/octopus-agent/suckers/mcp/
+cp -r /e/echo/backend/packages/harness/echo/mcp/ /f/echo-agent/suckers/mcp/
 
 # 2. 批量替换包名
-cd /f/octopus-agent/suckers/mcp
-grep -rl "from octopus" . | xargs sed -i 's/from octopus/from runtime/g'
-grep -rl "import octopus" . | xargs sed -i 's/import octopus/import runtime/g'
+cd /f/echo-agent/suckers/mcp
+grep -rl "from echo" . | xargs sed -i 's/from echo/from runtime/g'
+grep -rl "import echo" . | xargs sed -i 's/import echo/import runtime/g'
 
 # 3. 移除对 FastAPI / 上层业务的耦合（按需）
 # 4. 在 suckers/__init__.py 注册为 "mcp 吸盘簇"
@@ -242,22 +242,6 @@ grep -rl "import octopus" . | xargs sed -i 's/import octopus/import runtime/g'
 
 ---
 
-## 2026-04 · Molili 网关集成
-
-落地范围：4 个文件 · 改造后 1,110 行（删除 `octopus.auth` 依赖 + 改 sync httpx）
-
-| 文件 | 改造要点 |
-|---|---|
-| `runtime/integrations/molili/config.py` | 移除全局 singleton · 加 `jwt_secret` / `jwt_expire_seconds` / `jwt_issuer` 用于登录签发 |
-| `runtime/integrations/molili/links.py` | 移除配置路径依赖 · 默认路径兜底 `~/.octopus/molili_links.json` |
-| `runtime/integrations/molili/client.py` | 共享 helpers · sync httpx · 注入式 http_client · 测试友好 |
-| `runtime/integrations/molili/router_auth.py` | 换 `IdentityStore` 自动创建 · `encode_jwt_hs256` 签发 · Pydantic 模型挪模块级 |
-| `runtime/integrations/molili/router_account.py` | 保留 link/credits/goods/orders/daily-claim · auth 走 `_resolve_actor` |
-| `runtime/integrations/molili/router_proxy.py` | 同上 · 保留 SSE 流式转发 |
-
-**测试**：`tests/test_molili.py` · 42 个测试 · 覆盖 config / link store / SMS / credits / daily-claim / goods / orders / proxy / create_app wiring。
-
-**前端**：`frontend/src/pages/{Login,Billing}.tsx` + API client `molili.*` + auth localStorage helper + Layout 侧边栏 Credits badge。
 
 ---
 

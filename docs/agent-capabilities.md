@@ -5,16 +5,16 @@
 
 > What this doc covers
 >
-> Octopus is its own runtime — a self-researched biomimetic agent stack.
+> Echo is its own runtime — a self-researched biomimetic agent stack.
 > The architecture is a bionic nervous system:
 > This page maps each capability to the file that implements it and
-> the smoke that verifies it. Audience: engineers integrating Octopus
+> the smoke that verifies it. Audience: engineers integrating Echo
 > or auditing what's actually wired up vs. just claimed. Not a
 > marketing pitch.
 
 ## TL;DR · 一套自研 runtime,三类能力
 
-| 路线 | Octopus 现状 | 关键文件 | 烟测 |
+| 路线 | Echo 现状 | 关键文件 | 烟测 |
 |------|--------------|---------|------|
 | **长 horizon 单 agent**(多步连续)· 灵感来自 GLM 风格深度路线 | ReAct 循环默认 30 轮(research/swarm 100 · goal 10000)· 第 10 / 20 轮自动反思 | `runtime/core/cerebrum/react_loop.py` (`max_iterations` 默认 30 · per-mode 提升)· `runtime/sensing/siphon/tool_bridge.py` (`MAX_TOOL_ROUNDS=30`, `REFLECTION_INTERVAL=10`) | `tmp/smoke_long_no_mcp.py` · 实测 19 calls / 20 rounds / 7 步串行依赖 |
 | **并发 sub-agent + 共享黑板** · 灵感来自 Kimi 风格 swarm 路线 | 8 并发 spawn + turn-scoped blackboard + 嵌套时间轴 | `runtime/memory/blackboard.py`, `runtime/execution/suckers/delegation_skills.py:_call_agent_parallel` | `tmp/smoke_swarm.py` · 实测 3 并发 architect + bb_write/read 闭环 |
@@ -28,7 +28,7 @@
 ### A · 基础执行
 | 能力 | 说明 | 实现 |
 |------|------|------|
-| 多 provider 路由 | Anthropic / OpenAI / Gemini / Molili 都跑得通,自定义模型 UI 注册 | `runtime/sensing/eyes/dispatch_router.py` + `runtime/sensing/siphon/config_router.py` |
+| 多 provider 路由 | Anthropic / OpenAI / Gemini 都跑得通,自定义模型 UI 注册 | `runtime/sensing/eyes/dispatch_router.py` + `runtime/sensing/siphon/config_router.py` |
 | 原生 `tool_use` | Claude/OpenAI/Gemini 各自原生 function-calling 协议 | `runtime/sensing/siphon/tool_bridge.py` |
 | 流式 SSE + cancel | 170ms cancel 延迟实测 | `runtime/sensing/siphon/thread_compat_router.py` + `runtime/adapters/runs_registry.py` |
 | 部分恢复 | 中断后下次回话能看到上一轮的 partial output | thread state eager-flush + `run_status` tag |
@@ -125,7 +125,7 @@ turn 15 (= 3×5) · auto_evolve_tick fires:
 | 能力 | 实现 |
 |------|------|
 | TodoPanel 实时勾选 | `frontend/src/components/workspace/todo-panel.tsx` 读 `todo_write` 的 `input_preview.items` |
-| Token + 时长 + rounds badge | message footer 解析 `octopus.{input_tokens, output_tokens, duration_ms, rounds}` |
+| Token + 时长 + rounds badge | message footer 解析 `echo.{input_tokens, output_tokens, duration_ms, rounds}` |
 | Strategy badge | `react_agentic` / `react_direct_llm` / `react_loop` 等 |
 | ReAct 轨迹折叠 | streamdown markdown,轨迹用 `<details>` 包 |
 | 嵌套 sub-tool 时间轴 | `LiveToolTimeline.ParentWithChildren` |
@@ -144,10 +144,10 @@ turn 15 (= 3×5) · auto_evolve_tick fires:
 
 ## 设计灵感对照
 
-下表把 Octopus 现有能力跟外部 frontier agent 设计中观察到的同类模式做对照,
-**仅作灵感来源标注**;Octopus 不集成、不"融合"、不依赖任何这些产品。
+下表把 Echo 现有能力跟外部 frontier agent 设计中观察到的同类模式做对照,
+**仅作灵感来源标注**;Echo 不集成、不"融合"、不依赖任何这些产品。
 
-| 维度 | 外部参考(GLM 风格) | 外部参考(Kimi 风格) | 外部参考(MiniMax 风格) | Octopus |
+| 维度 | 外部参考(GLM 风格) | 外部参考(Kimi 风格) | 外部参考(MiniMax 风格) | Echo |
 |------|---------------------|---------------------|------------------------|---------|
 | 长 horizon | 千步级深度循环 | — | — | ✅ ReAct 默认 30 轮(per-mode 100/10000)+ 反思 |
 | 并发 sub-agent | — | 数百并发 | — | ✅ 8 并发(可调) |
@@ -160,7 +160,7 @@ turn 15 (= 3×5) · auto_evolve_tick fires:
 | Autonomous evolution | — | — | 多轮 | ✅ `deep_evolve`(dry_run 默认) |
 
 差距主要在**规模**(外部 agent 训练专用模型 + 大规模并发)和**底层模型**;
-Octopus 在通用 chat model 上做架构层面的对齐,数量级追赶留给后续训练自家模型时再说。
+Echo 在通用 chat model 上做架构层面的对齐,数量级追赶留给后续训练自家模型时再说。
 
 ---
 

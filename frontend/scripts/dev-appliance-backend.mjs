@@ -42,8 +42,6 @@ const localJwtSecret =
   process.env.ECHO_LOCAL_JWT_SECRET ||
   persistedApplianceJwtSecret() ||
   randomBytes(48).toString("base64url");
-const moliliJwtSecret =
-  process.env.MOLILI_JWT_SECRET || randomBytes(48).toString("base64url");
 const codexBundleManifest = resolve(
   osRoot,
   "deploy/appliance/agent-codex/echo-codex-bundle.json",
@@ -137,7 +135,6 @@ const child = spawn(
       // Local development gets per-process secrets when the operator has not
       // supplied persistent ones. They are never printed or written to disk.
       ECHO_LOCAL_JWT_SECRET: localJwtSecret,
-      MOLILI_JWT_SECRET: moliliJwtSecret,
       ECHO_PACKAGED_CODEX_VERSION: packagedCodexVersion,
       ECHO_DATA_DIR: dataRoot,
       ECHO_NAS_ROOT: nasRoot,

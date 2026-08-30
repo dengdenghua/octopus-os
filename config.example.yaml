@@ -1,4 +1,4 @@
-# octopus-agent · example configuration
+# echo-agent · example configuration
 # 复制为 config.yaml 后按需修改 · 所有值均可通过 ${ENV_VAR} 引用环境变量
 
 # ─────────────── 预设模板 ─────────────────
@@ -7,7 +7,7 @@
 # 设为 null 则手动配置下方各项
 preset: personal
 
-name: my-octopus
+name: my-echo
 version_compat: "0.2"
 
 # ─────────────── Planner 规划器 ─────────────────
@@ -180,51 +180,6 @@ journal_file: null
 enable_web_skills: true
 default_arm_id: code_arm
 
-# ─────────────── Molili 认证集成 ─────────────────
-# 第三方认证平台集成 · 支持短信验证码登录
-#
-# enabled:    是否启用 Molili 集成
-# base_url:   Molili 对话 API 地址
-# info_url:   Molili 用户信息 API 地址
-# jwt_secret: 签发 JWT 的密钥 ⚠️ 生产必须设为 32+ 字符强随机值
-# jwt_expire_seconds: JWT 过期时间（秒），2592000 = 30 天
-# jwt_issuer: JWT 签发者标识
-#
-# auth.mock_mode:   本地 Mock 模式（跳过真实短信发送）
-# auth.mock_code:   本地 Mock 时的固定验证码
-# auth.sms_send_url / auth.sms_verify_url: 短信服务接口地址
-# auth.send_phone_field / verify_phone_field: 请求体中的手机号字段名
-# auth.code_field:      请求体中的验证码字段名
-# auth.sms_type:        SendSmsCmd.smsType 参数（Swagger 标注必填，实际可省略）
-# auth.user_id_path:   响应中 user_id 的 JSONPath
-# auth.token_path:     响应中 token 的 JSONPath
-# auth.mobile_path:    响应中手机号的 JSONPath
-# auth.credits_path:   响应中积分/配额信息的 JSONPath
-molili:
-  enabled: true
-  base_url: https://molili.8kbl.com/molili-agi/chatApi/v1
-  info_url: https://molili.8kbl.com/molili-agi/userApi/v1/userInfo
-
-  jwt_secret: null
-  jwt_expire_seconds: 2592000
-  jwt_issuer: octopus-agent
-
-  auth:
-    mock_mode: false
-    mock_code: null
-
-    sms_send_url: https://molili.8kbl.com/molili-agi/loginApi/v1/sendSms
-    sms_verify_url: https://molili.8kbl.com/molili-agi/loginApi/v1/loginByMobile
-
-    send_phone_field: mobile
-    verify_phone_field: mobile
-    code_field: verifyCode
-    sms_type: null
-    user_id_path: data.userId
-    token_path: data.token
-    mobile_path: data.userInfo.mobile
-    credits_path: data.userInfo
-
 # ─────────────── Local Auth 本地认证 ─────────────
 # 本地用户名登录 · 不依赖第三方服务
 #
@@ -238,11 +193,11 @@ molili:
 # default_roles:        新用户默认角色
 local_auth:
   enabled: false
-  allow_any_username: true
+  allow_any_username: false
   allowed_usernames: []
   jwt_secret: null
   jwt_expire_seconds: 604800
-  jwt_issuer: octopus-agent
+  jwt_issuer: echo-agent
   actor_prefix: "local:"
   default_roles: [user, local]
 
@@ -253,7 +208,7 @@ local_auth:
 #
 # Two kill-switch layers exist; both are MERGED (union):
 #   * This file (project-level baseline; survives restarts)
-#   * OCTOPUS_DISABLED_GUARDS env var (emergency runtime override;
+#   * ECHO_DISABLED_GUARDS env var (emergency runtime override;
 #     adds to whatever this file already disables)
 #
 # Each entry is a guard's exact label (visible in Final Answer
@@ -277,7 +232,7 @@ safety:
   # tightens an allow. Default off; turn on once the judge batch
   # has accumulated a few weeks of verdict data so the trust
   # score is meaningful. Override at runtime with the env var
-  # OCTOPUS_ENABLE_TRUST_SIGNAL=1 / 0.
+  # ECHO_ENABLE_TRUST_SIGNAL=1 / 0.
   enable_trust_signal: false
 
   # ─── Constitution LLM judge (semantic outbound gate) ──────
@@ -288,7 +243,7 @@ safety:
   # audit-only follows the constitution profile (strict enforces;
   # normal/lax audit-only). Judge failures fail open — the regex
   # rule layer is always the hard floor. Adds ~one Haiku call per
-  # unique outbound message. Env override: OCTOPUS_ENABLE_LLM_JUDGE.
+  # unique outbound message. Env override: ECHO_ENABLE_LLM_JUDGE.
   enable_llm_judge: false
   # Optional judge model override (defaults to a low-latency model):
   # llm_judge_model: claude-haiku-4-5-20251001

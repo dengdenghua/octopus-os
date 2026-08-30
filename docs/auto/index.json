@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generated_at": "2026-06-08T05:35:05+00:00",
+  "generated_at": "2026-08-30T17:22:07+00:00",
   "files_analyzed": 40,
   "tree": [
     {
@@ -208,7 +208,7 @@
             },
             {
               "type": "doc",
-              "title": "🐙 Octopus",
+              "title": "🐙 Echo",
               "path": "20-backend/26-agents/general.md"
             },
             {

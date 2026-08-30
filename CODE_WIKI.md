@@ -1,4 +1,10 @@
-# Octopus-Agent 深度代码 Wiki
+> [!WARNING]
+> 这是独立 `echo-agent` 的历史代码快照，不是当前 Echo OS 的实现说明。文中的
+> `runtime/`、`agents/`、旧工作台路径不属于 OS wheel。当前边界与文档入口请看
+> [docs/README.md](docs/README.md) 和
+> [docs/AGENT_OS_BOUNDARY.md](docs/AGENT_OS_BOUNDARY.md)。
+
+# Echo Agent 深度代码 Wiki
 
 > **版本**: 0.2.0 Beta | **类型**: 仿生学自演化 Agent 操作系统 | **许可**: Apache-2.0
 
@@ -56,7 +62,7 @@
 
 ### 1.1 核心理念
 
-Octopus-Agent 是一个**仿生学自演化 Agent 操作系统**。受章鱼神经系统启发，将经典 Agent 架构映射为生物器官：
+Echo Agent 是一个**仿生学自演化 Agent 操作系统**。受章鱼神经系统启发，将经典 Agent 架构映射为生物器官：
 
 ```
 章鱼生物原理                                   工程实现
@@ -190,7 +196,7 @@ _current_actor: ContextVar[str | None]          # 当前调用者 (legacy)
 ## 3. 目录结构全览
 
 ```
-octopus-agent/
+echo-agent/
 │
 ├── runtime/                          # ★ Python Agent OS 运行时 (核心)
 │   ├── __init__.py
@@ -243,7 +249,6 @@ octopus-agent/
 │   │   ├── eyes/                     # 多模型路由
 │   │   │   ├── models.py             # 模型原语 / Provider 接口
 │   │   │   ├── multi_router.py       # 多模型路由器
-│   │   │   ├── molili_router.py      # Molili 模型路由
 │   │   │   ├── anthropic_provider.py # Anthropic provider
 │   │   │   ├── openai_provider.py    # OpenAI provider
 │   │   │   └── stream.py             # 流式事件处理
@@ -400,7 +405,7 @@ octopus-agent/
 
 ### 4.1 Cerebrum — 规划与 ReAct 循环
 
-**位置**: [runtime/core/cerebrum/](file:///f:/新建文件夹/octopus-agent/runtime/core/cerebrum/)
+**位置**: [runtime/core/cerebrum/](file:///f:/新建文件夹/echo-agent/runtime/core/cerebrum/)
 
 #### 4.1.1 核心类与类型
 
@@ -441,7 +446,7 @@ class ReactState:
 
 #### 4.1.2 `stream_react_loop()` — 主循环
 
-[react_loop.py](file:///f:/新建文件夹/octopus-agent/runtime/core/cerebrum/react_loop.py) 中的核心异步生成器：
+[react_loop.py](file:///f:/新建文件夹/echo-agent/runtime/core/cerebrum/react_loop.py) 中的核心异步生成器：
 
 ```python
 async def stream_react_loop(
@@ -597,7 +602,7 @@ class PauseControl:
 
 ### 4.2 Ganglia — 图执行器与 Swarm 调度
 
-**位置**: [runtime/core/ganglia/runtime.py](file:///f:/新建文件夹/octopus-agent/runtime/core/ganglia/runtime.py)
+**位置**: [runtime/core/ganglia/runtime.py](file:///f:/新建文件夹/echo-agent/runtime/core/ganglia/runtime.py)
 
 ```python
 class GangliaRuntime:
@@ -623,7 +628,7 @@ TaskGraph 执行支持三种策略：
 
 ### 4.3 Hearts — 心跳 / 协调器 / HA
 
-**位置**: [runtime/core/hearts/](file:///f:/新建文件夹/octopus-agent/runtime/core/hearts/)
+**位置**: [runtime/core/hearts/](file:///f:/新建文件夹/echo-agent/runtime/core/hearts/)
 
 ```python
 class Hearts(AbstractContextManager["Hearts"]):
@@ -649,7 +654,7 @@ class Hearts(AbstractContextManager["Hearts"]):
 
 ### 4.4 Spinal Cord — 快速反射路由
 
-**位置**: [runtime/core/spinal_cord/reflex_router.py](file:///f:/新建文件夹/octopus-agent/runtime/core/spinal_cord/reflex_router.py)
+**位置**: [runtime/core/spinal_cord/reflex_router.py](file:///f:/新建文件夹/echo-agent/runtime/core/spinal_cord/reflex_router.py)
 
 三层意图检测正则：
 
@@ -681,7 +686,7 @@ def local_non_tool_reply(goal: str) -> str | None:
 
 ### 4.5 Nerves — 消息总线 / 钩子系统
 
-**位置**: [runtime/core/nerves/hooks.py](file:///f:/新建文件夹/octopus-agent/runtime/core/nerves/hooks.py)
+**位置**: [runtime/core/nerves/hooks.py](file:///f:/新建文件夹/echo-agent/runtime/core/nerves/hooks.py)
 
 ```python
 @dataclass
@@ -711,7 +716,7 @@ class HookError(Exception):
 
 ### 5.1 Arms — 腕足 / Worker Agent
 
-**位置**: [runtime/execution/arms/base.py](file:///f:/新建文件夹/octopus-agent/runtime/execution/arms/base.py)
+**位置**: [runtime/execution/arms/base.py](file:///f:/新建文件夹/echo-agent/runtime/execution/arms/base.py)
 
 ```python
 class Worker:
@@ -733,7 +738,7 @@ class ArmPool:
 
 ### 5.2 Beak — 工具执行引擎
 
-**位置**: [runtime/execution/beak/executor.py](file:///f:/新建文件夹/octopus-agent/runtime/execution/beak/executor.py)
+**位置**: [runtime/execution/beak/executor.py](file:///f:/新建文件夹/echo-agent/runtime/execution/beak/executor.py)
 
 ```python
 class BeakExecutor:
@@ -782,7 +787,7 @@ class BeakExecutor:
 
 ### 5.3 Suckers — 技能注册与发现
 
-**位置**: [runtime/execution/suckers/](file:///f:/新建文件夹/octopus-agent/runtime/execution/suckers/)
+**位置**: [runtime/execution/suckers/](file:///f:/新建文件夹/echo-agent/runtime/execution/suckers/)
 
 ```python
 class Skill(BaseModel):
@@ -837,7 +842,7 @@ parameters:
 
 ### 5.4 Swarm — 多 Agent 集群编排
 
-**位置**: [runtime/execution/swarm/runtime.py](file:///f:/新建文件夹/octopus-agent/runtime/execution/swarm/runtime.py)
+**位置**: [runtime/execution/swarm/runtime.py](file:///f:/新建文件夹/echo-agent/runtime/execution/swarm/runtime.py)
 
 ```python
 @dataclass
@@ -873,7 +878,7 @@ class SwarmRuntime:
 
 ### 6.1 Eyes — 多模型路由
 
-**位置**: [runtime/sensing/eyes/](file:///f:/新建文件夹/octopus-agent/runtime/sensing/eyes/)
+**位置**: [runtime/sensing/eyes/](file:///f:/新建文件夹/echo-agent/runtime/sensing/eyes/)
 
 ```python
 # models.py
@@ -907,16 +912,15 @@ class MultiModelRouter:
 **支持的 Provider**:
 - `anthropic_provider.py` — Anthropic Claude
 - `openai_provider.py` — OpenAI GPT
-- `molili_router.py` — Molili 自定义路由
 - 本地模型 (可扩展)
 
 ### 6.2 Siphon — API 网关层 (60+ 路由)
 
-**位置**: [runtime/sensing/siphon/](file:///f:/新建文件夹/octopus-agent/runtime/sensing/siphon/)
+**位置**: [runtime/sensing/siphon/](file:///f:/新建文件夹/echo-agent/runtime/sensing/siphon/)
 
 #### 6.2.1 Realtime Gateway (核心)
 
-[realtime_gateway.py](file:///f:/新建文件夹/octopus-agent/runtime/sensing/siphon/realtime_gateway.py) 实现了 **JSON-RPC 2.0 over WebSocket** 的生产级传输层:
+[realtime_gateway.py](file:///f:/新建文件夹/echo-agent/runtime/sensing/siphon/realtime_gateway.py) 实现了 **JSON-RPC 2.0 over WebSocket** 的生产级传输层:
 
 ```python
 class RealtimeRuntime(Protocol):
@@ -1018,7 +1022,7 @@ class ApprovalManager:
 
 ### 6.3 Mantle — 多后端沙箱
 
-**位置**: [runtime/sensing/mantle/](file:///f:/新建文件夹/octopus-agent/runtime/sensing/mantle/)
+**位置**: [runtime/sensing/mantle/](file:///f:/新建文件夹/echo-agent/runtime/sensing/mantle/)
 
 ```python
 class MantleProvider(Protocol):
@@ -1045,7 +1049,7 @@ class MantleProvider(Protocol):
 
 ### 7.1 Genome Journal — 事件日志与轨迹
 
-**位置**: [runtime/memory/genome/journal.py](file:///f:/新建文件夹/octopus-agent/runtime/memory/genome/journal.py)
+**位置**: [runtime/memory/genome/journal.py](file:///f:/新建文件夹/echo-agent/runtime/memory/genome/journal.py)
 
 ```python
 # 事件类型 (30+ 种)
@@ -1114,7 +1118,7 @@ class Journal:
 
 ### 7.2 MemoryHub — 统一记忆检索
 
-**位置**: [runtime/memory/hub.py](file:///f:/新建文件夹/octopus-agent/runtime/memory/hub.py)
+**位置**: [runtime/memory/hub.py](file:///f:/新建文件夹/echo-agent/runtime/memory/hub.py)
 
 ```python
 class MemoryRecord:
@@ -1147,8 +1151,8 @@ class MemoryHub:
 | 源 | 位置 | 范围 |
 |----|------|------|
 | `user_store` | 用户事实数据库 | 跨项目用户偏好 |
-| `~/.octopus/MEMORY.md` | 全局记忆文件 | 全局偏好/规则 |
-| `<project>/.octopus/MEMORY.md` | 项目记忆文件 | 项目特定知识 |
+| `~/.echo/MEMORY.md` | 全局记忆文件 | 全局偏好/规则 |
+| `<project>/.echo/MEMORY.md` | 项目记忆文件 | 项目特定知识 |
 | `<project>/teams/<team>/MEMORY.md` | 团队记忆 | 团队协作知识 |
 | `<project>/teams/<team>/agents/<id>/MEMORY.md` | Agent 记忆 | Agent 个人知识 |
 | Planner learned sections | 自动学习 | 运行中积累的规则 |
@@ -1164,7 +1168,7 @@ class MemoryHub:
 
 ### 8.1 CircuitBreaker — 熔断器
 
-**位置**: [runtime/safety/ink/breaker.py](file:///f:/新建文件夹/octopus-agent/runtime/safety/ink/breaker.py)
+**位置**: [runtime/safety/ink/breaker.py](file:///f:/新建文件夹/echo-agent/runtime/safety/ink/breaker.py)
 
 标准三态熔断模式:
 
@@ -1200,7 +1204,7 @@ class CircuitBreaker:
 
 ### 8.2 Immunity — 免疫系统
 
-**位置**: [runtime/safety/immunity/](file:///f:/新建文件夹/octopus-agent/runtime/safety/immunity/)
+**位置**: [runtime/safety/immunity/](file:///f:/新建文件夹/echo-agent/runtime/safety/immunity/)
 
 ```python
 class ImmunityEngine:
@@ -1237,7 +1241,7 @@ TRUST_SYSTEM = 1.0               # 系统无条件信任
 
 ### 8.3 Regeneration — 自演化/技能锻造
 
-**位置**: [runtime/safety/regeneration/](file:///f:/新建文件夹/octopus-agent/runtime/safety/regeneration/) (20 个文件)
+**位置**: [runtime/safety/regeneration/](file:///f:/新建文件夹/echo-agent/runtime/safety/regeneration/) (20 个文件)
 
 #### 核心锻造管道 (skill_forge.py)
 
@@ -1310,7 +1314,7 @@ class ForgedSkillCandidate:
 
 ### 9.1 Models — 核心数据模型
 
-**位置**: [runtime/platform/models/](file:///f:/新建文件夹/octopus-agent/runtime/platform/models/)
+**位置**: [runtime/platform/models/](file:///f:/新建文件夹/echo-agent/runtime/platform/models/)
 
 #### primitives.py — 基础原语
 
@@ -1427,7 +1431,7 @@ class AntigenSignature(BaseModel):
 
 ### 9.2 Session — 会话上下文传递
 
-**位置**: [runtime/platform/session.py](file:///f:/新建文件夹/octopus-agent/runtime/platform/session.py)
+**位置**: [runtime/platform/session.py](file:///f:/新建文件夹/echo-agent/runtime/platform/session.py)
 
 ```python
 @dataclass(slots=True)
@@ -1460,7 +1464,7 @@ def session_scope(session: Session) -> Iterator[Session]:
 
 ### 9.3 Workspaces — 工作区隔离
 
-**位置**: [runtime/platform/workspaces.py](file:///f:/新建文件夹/octopus-agent/runtime/platform/workspaces.py)
+**位置**: [runtime/platform/workspaces.py](file:///f:/新建文件夹/echo-agent/runtime/platform/workspaces.py)
 
 ```python
 @dataclass(frozen=True)
@@ -1532,7 +1536,7 @@ journal:
 
 ### 10.1 JSON-RPC 2.0 Envelope
 
-**位置**: [runtime/protocol/envelope.py](file:///f:/新建文件夹/octopus-agent/runtime/protocol/envelope.py)
+**位置**: [runtime/protocol/envelope.py](file:///f:/新建文件夹/echo-agent/runtime/protocol/envelope.py)
 
 ```python
 # 三种消息类型
@@ -1575,7 +1579,7 @@ decode_message(payload: str) -> Message  # 按 shape 自动分派到 Request/Res
 
 ### 10.2 Item 状态模型 (Turn / Item 体系)
 
-**位置**: [runtime/protocol/items.py](file:///f:/新建文件夹/octopus-agent/runtime/protocol/items.py)
+**位置**: [runtime/protocol/items.py](file:///f:/新建文件夹/echo-agent/runtime/protocol/items.py)
 
 #### Item 生命周期
 
@@ -1681,10 +1685,10 @@ class TurnParams(BaseModel):
 
 ### 12.2 PageAgent Bridge
 
-[page-agent-bridge.ts](file:///f:/新建文件夹/octopus-agent/runtime/../frontend/src/core/page-agent-bridge.ts) — 前端内部的 Agent 框架:
+[page-agent-bridge.ts](file:///f:/新建文件夹/echo-agent/runtime/../frontend/src/core/page-agent-bridge.ts) — 前端内部的 Agent 框架:
 
 ```typescript
-interface OctopusPageAgentBridge {
+interface EchoPageAgentBridge {
     version: string
     snapshot(): PageAgentSnapshot        // 获取当前页面状态快照
     run(action): Promise<RunResult>      // 执行页面操作
@@ -1696,7 +1700,7 @@ interface OctopusPageAgentBridge {
     // - capability(id, input?)  → 触发能力
 }
 
-// 全局注册: window.__octopusPageAgent
+// 全局注册: window.__echoPageAgent
 // 能力注册: registerPageAgentCapability({...})
 ```
 
@@ -1909,7 +1913,7 @@ python -m runtime hub install skill_id
 
 ```bash
 docker compose up -d
-docker compose logs -f octopus-agent
+docker compose logs -f echo-agent
 ```
 
 ### 16.4 Kubernetes

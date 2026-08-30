@@ -4,7 +4,7 @@
 
 | 前端模块 (`src/core/`) | 后端模块 (`runtime/`)                                                | 说明                   |
 | ---------------------- | -------------------------------------------------------------------- | ---------------------- |
-| `account/`             | `adapters/integrations/local_auth/`, `adapters/integrations/molili/` | 账户认证               |
+| `account/`             | `adapters/integrations/local_auth/` | 账户认证               |
 | `agents/`              | `execution/agents/`, `execution/arms/`                               | 代理与腕足             |
 | `api/`                 | `platform/`                                                          | API 客户端 + 类型生成  |
 | `arena/`               | `execution/`                                                         | Agent 竞技场           |
