@@ -43,7 +43,7 @@ it("shows a localized workspace loading state", () => {
   expect(screen.queryByText("Loading workspace")).not.toBeInTheDocument();
 });
 
-it("keeps the complete invite URL when redirecting to login", async () => {
+it("keeps the complete invite URL when returning to the OS login", async () => {
   authState = {
     isLoading: false,
     authStatus: { enabled: true },
@@ -55,7 +55,7 @@ it("keeps the complete invite URL when redirecting to login", async () => {
       <Route element={<ProtectedRoute />}>
         <Route path="/workspace/team/join" element={<div>加入</div>} />
       </Route>
-      <Route path="/login" element={<CurrentLocation />} />
+      <Route path="/desktop" element={<CurrentLocation />} />
     </Routes>,
     {
       initialRoute:
@@ -65,7 +65,7 @@ it("keeps the complete invite URL when redirecting to login", async () => {
 
   expect(
     await screen.findByText(
-      "/login?returnTo=%2Fworkspace%2Fteam%2Fjoin%3Ftoken%3Dsecret-token%26thread%3Dthread-1%23details",
+      "/desktop?returnTo=%2Fworkspace%2Fteam%2Fjoin%3Ftoken%3Dsecret-token%26thread%3Dthread-1%23details",
     ),
   ).toBeInTheDocument();
 });

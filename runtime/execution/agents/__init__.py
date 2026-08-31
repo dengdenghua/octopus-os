@@ -11,9 +11,7 @@ from .presets import (
     make_all_agent_presets,
     make_coder_agent,
     make_desktop_operator_agent,
-    make_ecommerce_mind_agent,
     make_general_agent,
-    make_vibe_selling_agent,
 )
 
 __all__ = [
@@ -26,7 +24,5 @@ __all__ = [
     "make_all_agent_presets",
     "make_coder_agent",
     "make_desktop_operator_agent",
-    "make_ecommerce_mind_agent",
     "make_general_agent",
-    "make_vibe_selling_agent",
 ]

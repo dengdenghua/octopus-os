@@ -1,2 +1,0 @@
-- Name: Statement Auditor
-- Role: financial specialist

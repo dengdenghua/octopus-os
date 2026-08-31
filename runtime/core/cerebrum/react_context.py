@@ -15,17 +15,6 @@ from runtime.core.cerebrum._react_context_attachments import (
     _restore_messages_from_checkpoint,
     _serialize_messages_for_checkpoint,
 )
-from runtime.core.cerebrum._react_context_code import (
-    _build_code_agent_mode_prompt,
-    _build_code_context_prelude,
-    _build_personal_agent_mode_prompt,
-    _build_project_signals_prompt,
-    _build_workflow_preset_prompt,
-    _find_code_context_readme,
-    _find_code_context_style_file,
-    _read_code_context_file,
-    _task_acceptance_context,
-)
 from runtime.core.cerebrum._react_context_helpers import (
     _compress_context,
     _content_to_text,
@@ -45,6 +34,17 @@ from runtime.core.cerebrum._react_context_project import (
     _collect_initial_diagnostics,
     _git_status_summary,
     _load_project_rules,
+)
+from runtime.execution.agents.context_contracts import (
+    _build_code_agent_mode_prompt,
+    _build_code_context_prelude,
+    _build_personal_agent_mode_prompt,
+    _build_project_signals_prompt,
+    _build_workflow_preset_prompt,
+    _find_code_context_readme,
+    _find_code_context_style_file,
+    _read_code_context_file,
+    _task_acceptance_context,
 )
 
 __all__ = [

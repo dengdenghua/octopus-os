@@ -134,6 +134,7 @@ def _scaffold_local_agent_from_registry_asset(asset: Any) -> tuple[str, Path]:
         "tags": tags,
         "model": {"provider": "auto", "name": "auto"},
         "runtime": "local",
+        "capabilities": {"execution_backend": "codex_app_server"},
         "source": "registry",
     }
     _atomic_write_text(

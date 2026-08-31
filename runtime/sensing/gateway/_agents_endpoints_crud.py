@@ -62,11 +62,10 @@ def _register_agents_crud(router: Any, ctx: _AgentsCtx, auth: _AuthActions) -> N
     _auth = auth.auth
     _require_admin = auth.require_admin
 
-    # Agent IDs that should not appear in the agent gallery/picker.
-    # ``admin`` is system-level (code-mode privileged persona) and has its
-    # own dedicated entry point. ``desktop_operator`` IS user-facing since
-    # #22 (CUA productization) — the Raven persona shows in the picker.
-    _AGENT_GALLERY_SKIP_IDS = frozenset({"admin"})  # noqa: N806
+    # System roles remain registered for internal dispatch, but the product
+    # exposes one default persona. Development and desktop operation are Echo
+    # modes/capabilities; administration has its own settings surface.
+    _AGENT_GALLERY_SKIP_IDS = frozenset({"admin", "coder", "desktop_operator"})  # noqa: N806
 
     # The roster is read on every workspace bootstrap and can contain well over
     # one hundred personas.  Building the wire payload repeatedly is wasteful;
@@ -188,7 +187,7 @@ def _register_agents_crud(router: Any, ctx: _AgentsCtx, auth: _AuthActions) -> N
             "runtime": "local",
             "creator": "user",
             "defaultProject": {"dir": "project"},
-            "capabilities": {},
+            "capabilities": {"execution_backend": "codex_app_server"},
         }
 
         profile_path = agent_dir / "profile.jsonc"
@@ -298,24 +297,25 @@ When making changes, first read the surrounding code.
                 500, f"failed to write avatar.svg: {type(exc).__name__}: {exc}"
             ) from exc
 
-        # Write tool-registry.jsonc if tool_groups provided
-        if body.tool_groups:
-            tool_registry = {
-                "arms": list(body.tool_groups),
-                "extra_affinity": [],
-                "private_skills": [],
-            }
-            tool_registry_path = agent_dir / "agent-core" / "tool-registry.jsonc"
-            try:
-                tool_text = "// Tool registry for this agent\n\n" + json.dumps(
-                    tool_registry, ensure_ascii=False, indent=2
-                )
-                atomic_write_text(tool_registry_path, tool_text)
-            except OSError as exc:
-                _cleanup_created_agent_dir(agent_dir, created=created_agent_dir)
-                raise HTTPException(
-                    500, f"failed to write tool-registry.jsonc: {type(exc).__name__}: {exc}"
-                ) from exc
+        # Every loaded Agent needs at least one arm. A caller that does not
+        # choose tool groups gets the narrow read-only baseline instead of a
+        # profile that is guaranteed to fail during the hot-load below.
+        tool_registry = {
+            "arms": list(body.tool_groups or ["web_read"]),
+            "extra_affinity": [],
+            "private_skills": [],
+        }
+        tool_registry_path = agent_dir / "agent-core" / "tool-registry.jsonc"
+        try:
+            tool_text = "// Tool registry for this agent\n\n" + json.dumps(
+                tool_registry, ensure_ascii=False, indent=2
+            )
+            atomic_write_text(tool_registry_path, tool_text)
+        except OSError as exc:
+            _cleanup_created_agent_dir(agent_dir, created=created_agent_dir)
+            raise HTTPException(
+                500, f"failed to write tool-registry.jsonc: {type(exc).__name__}: {exc}"
+            ) from exc
 
         # Hot-load the new agent
         try:
@@ -378,7 +378,9 @@ When making changes, first read the surrounding code.
         if "model" in provided_fields:
             profile["model"] = {"provider": "auto", "name": (body.model or "").strip() or "auto"}
         if "capabilities" in provided_fields:
-            profile["capabilities"] = body.capabilities or {}
+            capabilities = dict(body.capabilities or {})
+            capabilities.setdefault("execution_backend", "codex_app_server")
+            profile["capabilities"] = capabilities
         if "personality_anchors" in provided_fields:
             from runtime.execution.agents.identity import build_identity_profile
 

@@ -11,9 +11,7 @@ from runtime.execution.agents import (
     make_all_agent_presets,
     make_coder_agent,
     make_desktop_operator_agent,
-    make_ecommerce_mind_agent,
     make_general_agent,
-    make_vibe_selling_agent,
 )
 from runtime.execution.agents.base import AgentNotFound
 from runtime.execution.arms import ArmPool, Worker
@@ -27,8 +25,6 @@ class _FakeExecutor:
 AGENT_PRESET_FACTORIES = (
     make_general_agent,
     make_coder_agent,
-    make_vibe_selling_agent,
-    make_ecommerce_mind_agent,
     make_desktop_operator_agent,
 )
 
@@ -91,8 +87,6 @@ class TestPresetAgents:
         rt = _fake_runtime()
         assert make_general_agent(rt).display_name == "Echo"
         assert make_coder_agent(rt).display_name == "Coder"
-        assert make_vibe_selling_agent(rt).display_name == "Growth Marketer"
-        assert make_ecommerce_mind_agent(rt).display_name == "Commerce Strategist"
 
     def test_all_distinct_ids(self):
         agents = make_all_agent_presets(_fake_runtime())
@@ -102,8 +96,7 @@ class TestPresetAgents:
             for factory in (
                 make_general_agent,
                 make_coder_agent,
-                make_vibe_selling_agent,
-                make_ecommerce_mind_agent,
+                make_desktop_operator_agent,
             )
         }
 
@@ -289,7 +282,7 @@ class TestRegistryRouting:
         assert a is not None
         assert a.agent_id == "coder"
 
-    def test_storefront_intent_picks_growth_agent(self):
+    def test_storefront_intent_does_not_require_bundled_specialist(self):
         reg = self._reg()
         intent = ParsedIntent(
             raw="x",
@@ -297,8 +290,7 @@ class TestRegistryRouting:
             normalized_goal="list new products on my shopify storefront",
         )
         a = reg.pick_for_intent(intent)
-        assert a is not None
-        assert a.agent_id in {"vibe_selling", "ecommerce_mind"}
+        assert a is None
 
     def test_unrelated_intent_none_or_weak(self):
         reg = self._reg()
@@ -312,9 +304,7 @@ class TestRegistryRouting:
             assert a.agent_id in {
                 "general",
                 "coder",
-                "vibe_selling",
-                "ecommerce_mind",
-                "market_researcher",
+                "desktop_operator",
             }
 
 

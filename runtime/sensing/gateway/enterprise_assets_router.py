@@ -165,6 +165,7 @@ def _scaffold_local_agent(asset: dict[str, Any]) -> tuple[str, Path]:
         "tags": tags,
         "model": {"provider": "auto", "name": "auto"},
         "runtime": "local",
+        "capabilities": {"execution_backend": "codex_app_server"},
         "source": "enterprise",
     }
     _atomic_write_text(

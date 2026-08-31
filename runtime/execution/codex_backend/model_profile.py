@@ -1,4 +1,4 @@
-"""Server-owned model selection and provider resolution for the Coder role.
+"""Server-owned model selection and provider resolution for Codex-backed roles.
 
 The public UI chooses a policy (follow Echo or use the Codex account) and
 may choose a model id.  It never submits a provider URL or credential.  This
@@ -40,7 +40,7 @@ class CodexModelCompatibilityError(ConfigurationError):
 
 @dataclass(frozen=True, slots=True)
 class CodexModelPreference:
-    """Principal-scoped Coder preference; defaults to Echo inheritance."""
+    """Principal-scoped Codex preference; defaults to Echo inheritance."""
 
     mode: CodexModelMode = "follow_system"
     model: str | None = None

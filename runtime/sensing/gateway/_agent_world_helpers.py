@@ -283,6 +283,45 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "icon": "🧠",
         "featured": False,
     },
+    {
+        "id": "ecommerce_mind",
+        "display_name": "Commerce Strategist",
+        "description": (
+            "E-commerce operations advisor for category strategy, supply chain, traffic, "
+            "conversion, and fulfillment."
+        ),
+        "author": "echo",
+        "category": "specialist",
+        "tags": ["ecommerce", "operations", "strategy"],
+        "icon": "📊",
+        "featured": False,
+    },
+    {
+        "id": "vibe_selling",
+        "display_name": "Growth Marketer",
+        "description": (
+            "E-commerce growth operator for product pages, social posts, campaign briefs, "
+            "and conversion-focused messaging."
+        ),
+        "author": "echo",
+        "category": "creative",
+        "tags": ["growth", "marketing", "conversion"],
+        "icon": "✨",
+        "featured": False,
+    },
+    {
+        "id": "market_researcher",
+        "display_name": "Market Researcher",
+        "description": (
+            "Produces sector and thematic research, competitive landscapes, peer analysis, "
+            "and concise research notes."
+        ),
+        "author": "echo",
+        "category": "researcher",
+        "tags": ["market", "research", "analysis"],
+        "icon": "🔎",
+        "featured": False,
+    },
 ]
 
 
@@ -733,6 +772,8 @@ def _scan_local_agents(root: Path) -> list[dict[str, Any]]:
                 profile = _parse_jsonc(profile_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError, ValueError):
                 continue
+            if profile.get("autoload") is False:
+                continue
             agent_id = str(profile.get("id") or agent_dir.name)
             display_name = str(profile.get("name") or agent_id)
             description = str(profile.get("description") or "")
@@ -786,11 +827,8 @@ def _scan_local_agents(root: Path) -> list[dict[str, Any]]:
             )
             seen.add(agent_id)
 
-    # 本地角色库只保留物理存在于 agents/ 下的默认角色(含 echo 9 角色 + 系统内建
-    # agent),不再把静态模板目录(BUILTIN_TEMPLATES/agency/financial/hardware,
-    # 约 200 余条)当"可装入"项混进来 —— 这批模板已整体发布到公网 registry(见
-    # registry_consumer_router 的 /api/registry/roles,role+twin-role 304 条,
-    # 是模板目录的超集),改走「云端角色」浏览安装,母本本地只默认这 9(+系统)个。
+    # 本地列表只展示物理存在且允许自动加载的角色。专业模板不随 OS 常驻，
+    # 统一通过 registry / Agent Market 浏览并按需安装。
     return agents
 
 

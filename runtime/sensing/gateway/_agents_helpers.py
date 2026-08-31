@@ -40,9 +40,7 @@ _PERSONA_RE = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 
-_BUILTIN_AGENT_IDS = frozenset(
-    {"general", "coder", "vibe_selling", "ecommerce_mind", "admin", "desktop_operator"}
-)
+_BUILTIN_AGENT_IDS = frozenset({"general", "coder", "admin", "desktop_operator"})
 _SAFE_AGENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 
 

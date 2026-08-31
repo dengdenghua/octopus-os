@@ -10,22 +10,14 @@
  */
 
 import {
-  useEffect,
   useLayoutEffect,
   useRef,
   type MouseEventHandler,
-  type PointerEventHandler,
   type ReactNode,
 } from "react";
 
-import { emitLiquidGlassMotion } from "@/appliance/liquid-glass-motion";
-
-// 静息边长(px)、放大峰值、上浮距离与高斯衰减宽度(px)。数值参考
-// 邻近缩放数值按 Echo OS 的玻璃底座和图标密度独立调校。
-const BASE_SIZE = 54;
-const MAX_SCALE = 1.72;
-const LIFT = 19;
-const SIGMA = 76;
+// 应用图标属于稳定的系统识别层，不随鼠标或玻璃模式改变尺寸和基线。
+const BASE_SIZE = 62;
 
 function isDockLayoutChild(element: Element): element is HTMLElement {
   return (
@@ -72,46 +64,6 @@ function measureRestingGlassWidth(nav: HTMLElement): number {
  * would feed that growth back into the next distance calculation and make the
  * magnification feel like a single jumping icon instead of one smooth wave.
  */
-function measureRestingCenters(nav: HTMLElement): number[] {
-  const navStyle = getComputedStyle(nav);
-  const navRect = nav.getBoundingClientRect();
-  const gap = Number.parseFloat(navStyle.columnGap || navStyle.gap) || 0;
-  const paddingLeft = Number.parseFloat(navStyle.paddingLeft) || 0;
-  const borderLeft = Number.parseFloat(navStyle.borderLeftWidth) || 0;
-  let cursor = navRect.left + borderLeft + paddingLeft;
-  const centers: number[] = [];
-
-  Array.from(nav.children)
-    .filter(isDockLayoutChild)
-    .forEach((element) => {
-      const style = getComputedStyle(element);
-      const marginLeft = Number.parseFloat(style.marginLeft) || 0;
-      const marginRight = Number.parseFloat(style.marginRight) || 0;
-      const inner = element.matches(".dock-item")
-        ? element.querySelector<HTMLElement>(".dock-item-inner")
-        : null;
-      const width = inner
-        ? Number.parseFloat(getComputedStyle(inner).width) || BASE_SIZE
-        : Number.parseFloat(style.width) ||
-          element.getBoundingClientRect().width;
-
-      cursor += marginLeft;
-      if (element.matches(".dock-item")) {
-        centers.push(cursor + width / 2);
-      }
-      cursor += width + marginRight + gap;
-    });
-
-  return centers;
-}
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-  );
-}
-
 export function Dock({
   children,
   className,
@@ -120,14 +72,11 @@ export function Dock({
   className?: string;
 }) {
   const navRef = useRef<HTMLElement>(null);
-  const frame = useRef(0);
-  const restingCenters = useRef<number[]>([]);
 
   useLayoutEffect(() => {
     const nav = navRef.current;
     if (!nav) return;
     const syncGlassWidth = () => {
-      restingCenters.current = measureRestingCenters(nav);
       const glassWidth = measureRestingGlassWidth(nav);
       nav.style.setProperty("--dock-glass-width", `${glassWidth}px`);
       const lens = nav.querySelector<HTMLElement>(".mac-dock-lens");
@@ -150,64 +99,8 @@ export function Dock({
     };
   }, [children]);
 
-  const apply = (clientX: number | null) => {
-    const nav = navRef.current;
-    if (!nav) return;
-    const items = nav.querySelectorAll<HTMLElement>(".dock-item");
-    items.forEach((el, index) => {
-      const inner = el.querySelector<HTMLElement>(".dock-item-inner");
-      if (!inner) return;
-
-      const engaged = clientX !== null;
-      el.style.transition = engaged
-        ? "none"
-        : "width 340ms cubic-bezier(0.16, 1, 0.3, 1), height 340ms cubic-bezier(0.16, 1, 0.3, 1)";
-      inner.style.transition = engaged
-        ? "none"
-        : "transform 340ms cubic-bezier(0.16, 1, 0.3, 1)";
-
-      if (clientX === null) {
-        el.style.setProperty("--dock-s", "1");
-        inner.style.setProperty("--dock-lift", "0px");
-        return;
-      }
-      const rect = el.getBoundingClientRect();
-      const center =
-        restingCenters.current[index] ?? rect.left + rect.width / 2;
-      const distance = clientX - center;
-      const proximity = Math.exp(-(distance * distance) / (2 * SIGMA * SIGMA));
-      const scale = 1 + proximity * (MAX_SCALE - 1);
-      el.style.setProperty("--dock-s", scale.toFixed(3));
-      inner.style.setProperty(
-        "--dock-lift",
-        `${(-LIFT * proximity).toFixed(2)}px`,
-      );
-    });
-  };
-
-  const handleMove: PointerEventHandler<HTMLElement> = (event) => {
-    if (prefersReducedMotion()) return;
-    const x = event.clientX;
-    cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => apply(x));
-  };
-
-  const handleLeave = () => {
-    cancelAnimationFrame(frame.current);
-    apply(null);
-  };
-
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
-
   return (
-    <nav
-      ref={navRef}
-      data-desktop-interactive
-      data-liquid-surface="thin"
-      onPointerMove={handleMove}
-      onPointerLeave={handleLeave}
-      className={className}
-    >
+    <nav ref={navRef} data-desktop-interactive className={className}>
       <span className="mac-dock-lens" aria-hidden>
         <img src="/third-party/appletechie-macos/wallpaper-day2.jpg" alt="" />
       </span>
@@ -231,39 +124,12 @@ export function DockItem({
   className?: string;
   running?: boolean;
 }) {
-  const press: PointerEventHandler<HTMLButtonElement> = (event) => {
-    event.currentTarget.dataset.dockPressed = "true";
-    emitLiquidGlassMotion({
-      source: "dock",
-      x: 0,
-      y: 0.42,
-      energy: 0.42,
-      settleMs: 250,
-      layout: false,
-    });
-  };
-  const release: PointerEventHandler<HTMLButtonElement> = (event) => {
-    delete event.currentTarget.dataset.dockPressed;
-    emitLiquidGlassMotion({
-      source: "dock",
-      x: 0,
-      y: -0.26,
-      energy: 0.3,
-      settleMs: 330,
-      layout: false,
-    });
-  };
-
   return (
     <button
       type="button"
       data-liquid-icon
       onClick={onClick}
       onContextMenu={onContextMenu}
-      onPointerDown={press}
-      onPointerUp={release}
-      onPointerCancel={release}
-      onPointerLeave={release}
       title={title}
       aria-label={title}
       className={`dock-item ${className ?? ""}`}

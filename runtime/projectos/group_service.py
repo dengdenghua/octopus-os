@@ -20,34 +20,23 @@ from runtime.sensing.gateway.thread_workspace import ensure_managed_thread_works
 
 _LOG = logging.getLogger(__name__)
 
-_WHITE_GHOST_AGENT_IDS = frozenset(
-    {
-        "general",
-        "coder",
-        "desktop_operator",
-        "vibe_selling",
-        "ecommerce_mind",
-        "market_researcher",
-        "aoi",
-        "admin",
-    }
-)
+_PRODUCT_ENTRY_AGENT_IDS = frozenset({"general"})
 
 
 def _persona_led_agents(agents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep one fixed persona as owner and every other role as a member."""
+    """Keep Echo as owner and treat installed specialist roles as members."""
 
     normalized = [dict(agent) for agent in agents]
     leader_index = next(
         (
             index
             for index, agent in enumerate(normalized)
-            if str(agent.get("id") or "") in _WHITE_GHOST_AGENT_IDS
+            if str(agent.get("id") or "") in _PRODUCT_ENTRY_AGENT_IDS
         ),
         -1,
     )
     if leader_index < 0:
-        normalized.insert(0, {"id": "general", "display_name": "通用助手"})
+        normalized.insert(0, {"id": "general", "display_name": "Echo"})
     elif leader_index > 0:
         normalized.insert(0, normalized.pop(leader_index))
     return normalized

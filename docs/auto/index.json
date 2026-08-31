@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "generated_at": "2026-08-30T17:22:07+00:00",
-  "files_analyzed": 40,
+  "generated_at": "2026-08-31T04:49:10+00:00",
+  "files_analyzed": 27,
   "tree": [
     {
       "type": "doc",
@@ -153,73 +153,8 @@
             },
             {
               "type": "doc",
-              "title": "📊 Commerce Strategist",
-              "path": "20-backend/26-agents/ecommerce_mind.md"
-            },
-            {
-              "type": "doc",
-              "title": "📈 Earnings Reviewer",
-              "path": "20-backend/26-agents/financial_earnings_reviewer.md"
-            },
-            {
-              "type": "doc",
-              "title": "🧾 GL Reconciler",
-              "path": "20-backend/26-agents/financial_gl_reconciler.md"
-            },
-            {
-              "type": "doc",
-              "title": "🛡️ KYC Screener",
-              "path": "20-backend/26-agents/financial_kyc_screener.md"
-            },
-            {
-              "type": "doc",
-              "title": "🔎 Market Researcher",
-              "path": "20-backend/26-agents/financial_market_researcher.md"
-            },
-            {
-              "type": "doc",
-              "title": "📋 Meeting Prep Agent",
-              "path": "20-backend/26-agents/financial_meeting_prep_agent.md"
-            },
-            {
-              "type": "doc",
-              "title": "📊 Model Builder",
-              "path": "20-backend/26-agents/financial_model_builder.md"
-            },
-            {
-              "type": "doc",
-              "title": "🗓️ Month End Closer",
-              "path": "20-backend/26-agents/financial_month_end_closer.md"
-            },
-            {
-              "type": "doc",
-              "title": "💼 Pitch Agent",
-              "path": "20-backend/26-agents/financial_pitch_agent.md"
-            },
-            {
-              "type": "doc",
-              "title": "✅ Statement Auditor",
-              "path": "20-backend/26-agents/financial_statement_auditor.md"
-            },
-            {
-              "type": "doc",
-              "title": "💵 Valuation Reviewer",
-              "path": "20-backend/26-agents/financial_valuation_reviewer.md"
-            },
-            {
-              "type": "doc",
               "title": "🐙 Echo",
               "path": "20-backend/26-agents/general.md"
-            },
-            {
-              "type": "doc",
-              "title": "Agent Market Researcher",
-              "path": "20-backend/26-agents/market_researcher.md"
-            },
-            {
-              "type": "doc",
-              "title": "✨ Growth Marketer",
-              "path": "20-backend/26-agents/vibe_selling.md"
             }
           ]
         }

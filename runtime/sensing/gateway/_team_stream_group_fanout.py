@@ -109,7 +109,7 @@ def _fanout_member_context(ctx: dict[str, Any]) -> tuple[dict[str, Any], str]:
     member_context.pop("agent_roster", None)
     member_context.pop("conversation_messages", None)
 
-    from runtime.core.cerebrum._react_context_code import (
+    from runtime.execution.agents.context_contracts import (
         _build_code_agent_mode_prompt,
         _build_personal_agent_mode_prompt,
         _build_workflow_preset_prompt,

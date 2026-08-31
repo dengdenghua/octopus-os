@@ -160,7 +160,7 @@ export async function mountStandaloneWorkbench(
   createRoot(root).render(
     <MemoryRouter initialEntries={[initialRoute]}>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="system" storageKey="echo-theme">
+        <ThemeProvider>
           <I18nProvider
             initialLocale={initialLocale}
             initialTranslations={translations}

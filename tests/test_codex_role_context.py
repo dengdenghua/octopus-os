@@ -1,4 +1,4 @@
-"""Persona, mode and trusted prompt-skill projection for Coder turns."""
+"""Persona, mode and trusted prompt-skill projection for Codex-backed turns."""
 
 from __future__ import annotations
 
@@ -85,6 +85,8 @@ def test_role_persona_modes_and_only_registry_resolved_skill_content_are_injecte
     assert str(outside) not in instructions
     assert "plugin_action action" not in instructions
     assert "ambient user Codex MCP servers" in instructions
+    assert "this role's execution engine" in instructions
+    assert "this role's coding engine" not in instructions
 
 
 def test_explicit_skill_mentions_must_be_allowed_enabled_and_known(tmp_path: Path) -> None:
@@ -106,4 +108,3 @@ def test_explicit_skill_mentions_must_be_allowed_enabled_and_known(tmp_path: Pat
         agent=_agent("known", "unknown"),
     )
     assert rendered == ""
-

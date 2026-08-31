@@ -208,6 +208,7 @@ def import_agent_from_pack(
             "avatar": "avatar.svg",
             "model": {"provider": "auto", "name": "auto"},
             "runtime": "local",
+            "capabilities": {"execution_backend": "codex_app_server"},
             "creator": f"pack:{plugin_name}",
             "category": "researcher",
             "tags": ["finance", "research", "market", "analysis"],

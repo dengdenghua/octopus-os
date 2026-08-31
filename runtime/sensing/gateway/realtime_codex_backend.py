@@ -230,7 +230,9 @@ def _request_for_turn(
             not isinstance(capabilities, dict)
             or str(capabilities.get("execution_backend") or "").casefold() != "codex_app_server"
         ):
-            raise CodexSecurityError("Codex App Server driver requires an embedded Coder role")
+            raise CodexSecurityError(
+                "Codex App Server driver requires an embedded standard role"
+            )
         command = str(
             capabilities.get("codex_app_server_executable")
             or capabilities.get("codex_executable")
@@ -323,7 +325,7 @@ async def drive_codex_app_server(
 ) -> bool:
     """Run one outer turn through Codex and stream it into native UI items.
 
-    The embedded Coder has no persona/policy-equivalent fallback. Every
+    The embedded standard role has no persona/policy-equivalent fallback. Every
     security failure and every App Server failure is terminal.
     """
 

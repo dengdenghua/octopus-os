@@ -18,6 +18,7 @@ import pytest
 from runtime.execution.agents.loader import (
     AgentTemplate,
     load_agent,
+    load_all_agents,
     parse_template,
 )
 
@@ -87,6 +88,25 @@ def test_parse_template_missing_profile_raises(tmp_path: Path):
         parse_template(tmp_path / "ghost", tmp_path / "_shared")
 
 
+def test_load_all_agents_skips_dormant_market_templates(tmp_path: Path, monkeypatch) -> None:
+    active = _write_agent(tmp_path, "general", {"id": "general"})
+    _write_agent(
+        tmp_path,
+        "specialist",
+        {"id": "specialist", "autoload": False},
+    )
+    loaded: list[str] = []
+
+    def fake_load(agent_dir, _runtime, _shared_dir):
+        loaded.append(agent_dir.name)
+        return agent_dir.name
+
+    monkeypatch.setattr("runtime.execution.agents.loader.load_agent", fake_load)
+
+    assert load_all_agents(object(), tmp_path) == [active.name]
+    assert loaded == ["general"]
+
+
 def test_template_is_frozen(tmp_path: Path):
     agent_dir = _write_agent(tmp_path, "immutable", {"id": "immutable"})
     tmpl = parse_template(agent_dir, tmp_path / "_shared")
@@ -120,4 +140,3 @@ def test_load_agent_composes_parse_and_instantiate(tmp_path: Path, monkeypatch):
     assert result is sentinel_agent
     assert calls["parse"] == (Path("/a/dir"), Path("/shared"))
     assert calls["instantiate"] == (sentinel_template, sentinel_runtime)
-

@@ -52,29 +52,14 @@ def registry_with_presets() -> AgentRegistry:
 
 
 class TestListAgents:
-    def test_lists_all_registered(self, registry_with_presets):
+    def test_product_gallery_exposes_only_echo(self, registry_with_presets):
         app = FastAPI()
         app.include_router(create_agents_router(registry=registry_with_presets))
         r = TestClient(app).get("/api/agents")
         assert r.status_code == 200
         data = r.json()
         assert isinstance(data, list)
-        names = {a["name"] for a in data}
-        # The preset roster grows over time as new agents ship under
-        # agents/. We assert on REQUIRED names being present rather
-        # than exact count so adding a new preset doesn't break the
-        # test. Six core presets must always be there.
-        required = {
-            "general",
-            "coder",
-            "vibe_selling",
-            "ecommerce_mind",
-            "market_researcher",
-            "financial_earnings_reviewer",
-        }
-        missing = required - names
-        assert not missing, f"missing required presets: {missing}"
-        assert len(data) >= len(required)
+        assert [agent["name"] for agent in data] == ["general"]
 
     def test_wire_format_matches_ts_interface(self, registry_with_presets):
         """Implementation note."""
@@ -98,8 +83,7 @@ class TestListAgents:
     def test_tool_groups_are_arm_ids(self, registry_with_presets):
         app = FastAPI()
         app.include_router(create_agents_router(registry=registry_with_presets))
-        data = TestClient(app).get("/api/agents").json()
-        coder = next(a for a in data if a["name"] == "coder")
+        coder = TestClient(app).get("/api/agents/coder").json()
         assert coder["tool_groups"] == [
             "web_read_arm",
             "fs_writer_arm",
@@ -113,7 +97,7 @@ class TestListAgents:
         app.include_router(create_agents_router(registry=AgentRegistry()))
         assert TestClient(app).get("/api/agents").json() == []
 
-    def test_admin_is_hidden_but_desktop_operator_is_user_visible(self):
+    def test_system_roles_are_hidden_from_product_gallery(self):
         registry = AgentRegistry()
         registry.register(
             Agent(
@@ -147,7 +131,7 @@ class TestListAgents:
 
         data = TestClient(app).get("/api/agents").json()
 
-        assert [agent["name"] for agent in data] == ["general", "desktop_operator"]
+        assert [agent["name"] for agent in data] == ["general"]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -187,6 +171,24 @@ class TestAgentDetail:
         app.include_router(create_agents_router(registry=registry_with_presets))
         r = TestClient(app).get("/api/agents/ghost")
         assert r.status_code == 404
+
+    def test_created_agent_defaults_to_codex_execution(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("ECHO_AGENTS_ROOT", str(tmp_path))
+        registry = AgentRegistry()
+        app = FastAPI()
+        app.include_router(create_agents_router(registry=registry, runtime=_rt()))
+
+        response = TestClient(app).post(
+            "/api/agents",
+            json={"name": "new_specialist", "description": "new role"},
+        )
+
+        assert response.status_code == 201, response.text
+        assert registry.get("new_specialist").capabilities == {
+            "execution_backend": "codex_app_server"
+        }
 
     def test_delete_agent_removes_disk_and_registry(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

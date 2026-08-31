@@ -6,7 +6,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   AppWindowIcon,
   ArchiveIcon,
@@ -35,6 +35,8 @@ import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { authReturnToFromSearch } from "@/core/auth/return-to";
+import { useAuth } from "@/providers/AuthProvider";
 import { useDebounce } from "@/hooks";
 import type {
   NativeDesktopItem,
@@ -91,6 +93,7 @@ import {
   AccountSecurityPanel,
   type AccountSecuritySection,
 } from "@/appliance/account-security-panel";
+import type { OsAgentSettingsSection } from "@/components/workspace/settings/system-agent-settings-content";
 import { ApplianceLogin } from "@/appliance/login";
 import { FileManager } from "@/appliance/file-manager";
 import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
@@ -320,6 +323,17 @@ function groupDesktopItems(items: NativeDesktopItem[]) {
 
 export default function DesktopShellPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const {
+    authStatus,
+    isAuthenticated,
+    isLoading: authLoading,
+    retryAuth,
+  } = useAuth();
+  const authenticatedReturnTo = useMemo(() => {
+    if (!new URLSearchParams(location.search).has("returnTo")) return null;
+    return authReturnToFromSearch(location.search);
+  }, [location.search]);
   const [query, setQuery] = useState("");
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [launchpadOpen, setLaunchpadOpen] = useState(false);
@@ -358,6 +372,8 @@ export default function DesktopShellPage() {
   const [accountSecurityOpen, setAccountSecurityOpen] = useState(false);
   const [accountSecuritySection, setAccountSecuritySection] =
     useState<AccountSecuritySection>("account");
+  const [agentSettingsSection, setAgentSettingsSection] =
+    useState<OsAgentSettingsSection>("models");
   const [taskSpaceOpen, setTaskSpaceOpen] = useState(false);
   const [systemCapabilities, setSystemCapabilities] =
     useState<SystemActionCapabilities>(NO_SYSTEM_CAPABILITIES);
@@ -450,8 +466,6 @@ export default function DesktopShellPage() {
   const liquidMotionSampleRef = useRef({ x: 0, y: 0, time: 0 });
   const liquidSurfaceRef = useRef<HTMLElement | null>(null);
   const activeLiquidSurfaceRef = useRef<HTMLElement | null>(null);
-  const liquidIconRef = useRef<HTMLElement | null>(null);
-  const activeLiquidIconRef = useRef<HTMLElement | null>(null);
 
   const debouncedSearch = useDebounce(desktopSearch, 200);
 
@@ -615,6 +629,43 @@ export default function DesktopShellPage() {
   };
   const openSystemSettings = () => openSystemSettingsSection("account");
   const openStorageSettings = () => openSystemSettingsSection("storage");
+  const openSystemAgentSettings = useCallback(
+    (section: OsAgentSettingsSection = "models") => {
+      setAgentSettingsSection(section);
+      setAccountSecuritySection("agent");
+      setAccountSecurityOpen(true);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      const requested =
+        event instanceof CustomEvent &&
+        typeof event.detail?.section === "string"
+          ? event.detail.section
+          : "models";
+      const allowed = new Set<OsAgentSettingsSection>([
+        "models",
+        "tools",
+        "memory",
+        "browserAutomation",
+        "desktopAutomation",
+        "automationSecurity",
+        "conversation",
+        "notification",
+        "appearance",
+        "privacy",
+      ]);
+      openSystemAgentSettings(
+        allowed.has(requested as OsAgentSettingsSection)
+          ? (requested as OsAgentSettingsSection)
+          : "models",
+      );
+    };
+    window.addEventListener("echo:open-system-settings", open);
+    return () => window.removeEventListener("echo:open-system-settings", open);
+  }, [openSystemAgentSettings]);
 
   // 桌面窗口:系统应用直接渲染 React 内容，第三方应用才使用 iframe。
   const [windows, setWindows] = useState<DesktopWindow[]>([]);
@@ -665,6 +716,31 @@ export default function DesktopShellPage() {
       alive = false;
     };
   }, []);
+
+  // The OS session is the single authentication boundary. If its backend
+  // identity expires while the desktop is open, return to the system login
+  // screen instead of letting an embedded workbench render another login.
+  useEffect(() => {
+    if (authLoading || applianceAuthRequired !== true) return;
+    setApplianceAuthed(isAuthenticated);
+  }, [applianceAuthRequired, authLoading, isAuthenticated]);
+
+  // Resume the originally requested workspace only after both the appliance
+  // gate and the shared AuthProvider agree that the system session is valid.
+  useEffect(() => {
+    if (!authenticatedReturnTo || applianceAuthed !== true || authLoading) {
+      return;
+    }
+    if (authStatus?.enabled && !isAuthenticated) return;
+    navigate(authenticatedReturnTo, { replace: true });
+  }, [
+    applianceAuthed,
+    authLoading,
+    authStatus,
+    authenticatedReturnTo,
+    isAuthenticated,
+    navigate,
+  ]);
 
   const refreshSystemControls = useCallback(async () => {
     const controls = window.echo?.systemControls;
@@ -718,7 +794,10 @@ export default function DesktopShellPage() {
   }, []);
 
   useEffect(() => {
-    if (!aboutOpen) return;
+    const updateSurfaceOpen =
+      aboutOpen ||
+      (accountSecurityOpen && accountSecuritySection === "general");
+    if (!updateSurfaceOpen) return;
     void refreshSystemUpdate();
     if (
       !systemUpdateBusy &&
@@ -733,6 +812,8 @@ export default function DesktopShellPage() {
     return () => window.clearInterval(timer);
   }, [
     aboutOpen,
+    accountSecurityOpen,
+    accountSecuritySection,
     refreshSystemUpdate,
     systemUpdateBusy,
     systemUpdateStatus?.state,
@@ -1073,6 +1154,11 @@ export default function DesktopShellPage() {
       subtitle: app.subtitle,
       icon: app.icon,
       gradient: app.color,
+      iconState:
+        app.route === "/workspace/realtime/new" &&
+        (taskProjection?.counts.active ?? 0) > 0
+          ? ("thinking" as const)
+          : undefined,
       running:
         app.route === "/photos"
           ? photosOpen
@@ -1113,7 +1199,6 @@ export default function DesktopShellPage() {
     macShellApps[0]!,
     {
       id: "system:files",
-      // Keep this generic utility name aligned with the menu bar and Dock.
       name: "文件",
       subtitle: "文件",
       icon: FolderIcon,
@@ -1299,6 +1384,13 @@ export default function DesktopShellPage() {
     return () => document.removeEventListener("click", onClick);
   }, []);
 
+  const updateWallpaper = (
+    next: "orbit" | "aurora" | "sunset" | "midnight",
+  ) => {
+    setWallpaperVariant(next);
+    localStorage.setItem("echo:desktop-wallpaper", next);
+  };
+
   const cycleWallpaper = () => {
     const next =
       wallpaperVariant === "orbit"
@@ -1308,8 +1400,7 @@ export default function DesktopShellPage() {
           : wallpaperVariant === "sunset"
             ? "midnight"
             : "orbit";
-    setWallpaperVariant(next);
-    localStorage.setItem("echo:desktop-wallpaper", next);
+    updateWallpaper(next);
     setDesktopMenu(null);
   };
 
@@ -1548,7 +1639,8 @@ export default function DesktopShellPage() {
       <>
         <ApplianceLogin
           onSuccess={() => {
-            void fetchApplianceAuthStatus()
+            void retryAuth()
+              .then(() => fetchApplianceAuthStatus())
               .then((status) => {
                 setApplianceAuthRequired(status.authRequired);
                 setApplianceRole(status.role);
@@ -1673,20 +1765,12 @@ export default function DesktopShellPage() {
           event.target instanceof Element
             ? event.target.closest<HTMLElement>("[data-liquid-surface]")
             : null;
-        liquidIconRef.current =
-          event.target instanceof Element
-            ? event.target.closest<HTMLElement>("[data-liquid-icon]")
-            : null;
         if (liquidPointerFrameRef.current !== null) return;
         const root = event.currentTarget;
         liquidPointerFrameRef.current = window.requestAnimationFrame(() => {
           const surface = liquidSurfaceRef.current;
-          const icon = liquidIconRef.current;
           const hasInteractiveGlass = !!(
-            surface ||
-            icon ||
-            activeLiquidSurfaceRef.current ||
-            activeLiquidIconRef.current
+            surface || activeLiquidSurfaceRef.current
           );
           if (hasInteractiveGlass) {
             root.style.setProperty(
@@ -1779,53 +1863,10 @@ export default function DesktopShellPage() {
             );
           }
 
-          if (activeLiquidIconRef.current !== icon) {
-            activeLiquidIconRef.current?.removeAttribute("data-liquid-active");
-            icon?.setAttribute("data-liquid-active", "true");
-            activeLiquidIconRef.current = icon;
-          }
-          if (icon) {
-            const bounds = icon.getBoundingClientRect();
-            const localX = Math.max(
-              0,
-              Math.min(
-                100,
-                ((liquidPointerRef.current.clientX - bounds.left) /
-                  Math.max(1, bounds.width)) *
-                  100,
-              ),
-            );
-            const localY = Math.max(
-              0,
-              Math.min(
-                100,
-                ((liquidPointerRef.current.clientY - bounds.top) /
-                  Math.max(1, bounds.height)) *
-                  100,
-              ),
-            );
-            icon.style.setProperty(
-              "--mac-icon-shift-x",
-              `${((localX - 50) * 0.12).toFixed(2)}px`,
-            );
-            icon.style.setProperty(
-              "--mac-icon-shift-y",
-              `${((localY - 50) * 0.1).toFixed(2)}px`,
-            );
-            icon.style.setProperty(
-              "--mac-icon-glint-x",
-              `${localX.toFixed(2)}%`,
-            );
-            icon.style.setProperty(
-              "--mac-icon-glint-y",
-              `${localY.toFixed(2)}%`,
-            );
-          }
-
           if (liquidMotionResetTimerRef.current !== null) {
             window.clearTimeout(liquidMotionResetTimerRef.current);
           }
-          if (surface || icon) {
+          if (surface) {
             const movingSurface = surface;
             liquidMotionResetTimerRef.current = window.setTimeout(() => {
               root.style.setProperty("--liquid-motion-x", "0px");
@@ -2385,6 +2426,14 @@ export default function DesktopShellPage() {
                   icon={Icon}
                   gradient={app.color}
                   appId={`echo:${app.route}`}
+                  state={
+                    app.route === "/workspace/realtime/new" &&
+                    (taskProjection?.counts.active ?? 0) > 0
+                      ? "thinking"
+                      : running
+                        ? "active"
+                        : "default"
+                  }
                 />
               </DockItem>
             );
@@ -2416,7 +2465,6 @@ export default function DesktopShellPage() {
               ))}
             </>
           )}
-          {/* 原生 shell:本地已装应用(真实图标,点击 spawn 启动)。web 端 nativeApps 为空。 */}
           {dockNativeApps.length > 0 && (
             <>
               <span className="mac-dock-separator" />
@@ -2759,6 +2807,41 @@ export default function DesktopShellPage() {
         <AccountSecurityPanel
           open={accountSecurityOpen}
           initialSection={accountSecuritySection}
+          initialAgentSection={agentSettingsSection}
+          systemDeviceSettings={{
+            controls: systemControls,
+            wallpaper: wallpaperVariant,
+            notificationCount: nativeNotifications.length,
+            notificationServiceAvailable,
+            updateCapabilities: systemUpdateCapabilities,
+            updateStatus: systemUpdateStatus,
+            updateBusy: systemUpdateBusy,
+            lockAvailable: availableSystemActions.lock,
+            onSetWifiEnabled: (enabled) =>
+              applySystemControl("Wi-Fi", () =>
+                window.echo!.systemControls!.setWifiEnabled(enabled),
+              ),
+            onSetBluetoothEnabled: (enabled) =>
+              applySystemControl("蓝牙", () =>
+                window.echo!.systemControls!.setBluetoothEnabled(enabled),
+              ),
+            onSetAudioVolume: (percentage) =>
+              applySystemControl("音量", () =>
+                window.echo!.systemControls!.setAudioVolume(percentage),
+              ),
+            onSetDisplayBrightness: (percentage) =>
+              applySystemControl("显示器亮度", () =>
+                window.echo!.systemControls!.setDisplayBrightness(percentage),
+              ),
+            onWallpaperChange: updateWallpaper,
+            onOpenNotifications: () => {
+              setAccountSecurityOpen(false);
+              setNotificationsOpen(true);
+            },
+            onLock: () => void lockScreen(),
+            onRefreshUpdate: () => void refreshSystemUpdate(),
+            onApplyUpdate: () => void applySystemUpdate(),
+          }}
           onClose={() => setAccountSecurityOpen(false)}
           onSessionEnded={(message) => {
             setAccountSecurityOpen(false);

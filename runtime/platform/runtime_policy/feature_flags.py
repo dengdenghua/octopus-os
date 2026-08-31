@@ -393,7 +393,7 @@ _BUILTIN: list[FlagSpec] = [
         legacy_env=("ECHO_CODEX_APP_SERVER_ENABLED",),
         description=(
             "Use the isolated Codex App Server backend for a selected local "
-            "Codex coding partner. Production-like deployments additionally "
+            "standard agent role. Production-like deployments additionally "
             "require an explicit non-default enablement and a hard sandbox."
         ),
         experimental=True,

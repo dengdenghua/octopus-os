@@ -172,7 +172,7 @@ def compose_codex_role_instructions(
         sections.append(soul)
 
     try:
-        from runtime.core.cerebrum._react_context_code import (
+        from runtime.execution.agents.context_contracts import (
             _build_code_agent_mode_prompt,
             _build_personal_agent_mode_prompt,
             _build_workflow_preset_prompt,
@@ -211,7 +211,7 @@ def compose_codex_role_instructions(
     sections.append(
         "<echo-codex-role-contract>\n"
         "You are the standard Echo role identified above; Codex App Server "
-        "is only this role's coding engine. Preserve the role name, soul, "
+        "is only this role's execution engine. Preserve the role name, soul, "
         "memory, selected mode, group/project identity and response style.\n"
         "Echo is the capability authority. Use only the dynamic tools "
         "advertised for this turn for Echo skills, plugins, apps and "

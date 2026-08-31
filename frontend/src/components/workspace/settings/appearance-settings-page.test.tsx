@@ -40,7 +40,7 @@ describe("AppearanceSettingsPage · language selector", () => {
     renderWithProviders(<AppearanceSettingsPage />, { locale: "ja-JP" });
 
     expect(
-      screen.getByText(jaJP.settings.appearance.themeTitle),
+      screen.getByText(jaJP.settings.appearance.languageTitle),
     ).toBeInTheDocument();
   });
 
@@ -48,17 +48,19 @@ describe("AppearanceSettingsPage · language selector", () => {
     renderWithProviders(<AppearanceSettingsPage />, { locale: "ko-KR" });
 
     expect(
-      screen.getByText(koKR.settings.appearance.themeTitle),
+      screen.getByText(koKR.settings.appearance.languageTitle),
     ).toBeInTheDocument();
   });
 
-  it("exposes selected themes without mixing conversation controls", () => {
+  it("inherits the system liquid-glass theme without extra theme controls", () => {
     renderWithProviders(<AppearanceSettingsPage />, { locale: "zh-CN" });
 
-    expect(screen.getByRole("button", { name: /跟随系统/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      screen.queryByText(zhCN.settings.appearance.themeTitle),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(zhCN.settings.appearance.paletteTitle),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByLabelText(zhCN.settings.appearance.chatFontSizeTitle),
     ).not.toBeInTheDocument();

@@ -39,22 +39,8 @@ def make_coder_agent(runtime: GraphRuntime) -> Agent:
     return _load_one("coder", runtime)
 
 
-def make_vibe_selling_agent(runtime: GraphRuntime) -> Agent:
-    return _load_one("vibe_selling", runtime)
-
-
-def make_ecommerce_mind_agent(runtime: GraphRuntime) -> Agent:
-    return _load_one("ecommerce_mind", runtime)
-
-
 def make_desktop_operator_agent(runtime: GraphRuntime) -> Agent:
-    """Construct the desktop-operator (Raven) persona agent.
-
-    Since #22 (CUA productization) this is a first-class user-facing
-    persona again and is auto-registered via ``load_all_agents`` from its
-    ``agents/desktop_operator/`` folder. This factory remains for callers
-    that explicitly request the persona by id.
-    """
+    """Construct the hidden desktop-control system agent."""
     return _load_one("desktop_operator", runtime)
 
 
@@ -69,13 +55,12 @@ def make_admin_agent(runtime: GraphRuntime) -> Agent:
 
 
 def make_all_agent_presets(runtime: GraphRuntime) -> list[Agent]:
-    """Load the user-facing local agents from ``agents/``.
+    """Load autostart agents from ``agents/``.
 
-    ``admin`` is a dedicated system persona for code-mode / privileged
-    operations and is intentionally excluded from the default preset
-    roster so normal registry routing is not skewed toward admin.
-    Call ``make_admin_agent()`` explicitly when that persona is needed.
-    ``desktop_operator`` IS part of the roster (first-class CUA persona).
+    Echo (``general``) is the sole product-facing agent. Coder and desktop
+    operator remain hidden execution identities; admin is loaded explicitly
+    only for privileged code-mode operations. Market roles are installed and
+    loaded on demand instead of living in this core roster.
     """
     return [
         agent for agent in load_all_agents(runtime) if getattr(agent, "agent_id", None) != "admin"

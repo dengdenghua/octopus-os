@@ -26,7 +26,6 @@ export type NativeLiquidGlassSurface = Readonly<{
 export const LIQUID_GLASS_SURFACE_SELECTOR = [
   ".mac-calendar-widget",
   ".mac-agent-widget",
-  ".mac-dock",
   ".mac-menu-dropdown",
   ".mac-desktop-context-menu",
   ".mac-spotlight",

@@ -17,7 +17,7 @@
 | `_planner_helpers.py` | Pure helper functions extracted from :mod:`runtime.core.cerebrum.llm_planner`. |
 | `_planner_parse.py` | Plan-JSON extraction + node validation for :class:`LLMPlanner`. |
 | `_react_context_attachments.py` | User-message content assembly (attachments, images, JSONL manifest), message checkpoint (de)serialization helpers, and related-file prefetching. |
-| `_react_context_code.py` | Code-context prelude and mode/workflow/signals prompt builders. |
+| `_react_context_code.py` | Compatibility exports for context builders moved out of the ReAct engine. |
 | `_react_context_helpers.py` | Token estimation, context-compression helpers, and skill-catalog formatting for the ReAct loop. |
 | `_react_context_project.py` | Project rules / git status / project-profile prompt builders. |
 | `_react_execution_dispatch.py` | Tool dispatch / execution helpers for the ReAct loop. |
@@ -114,7 +114,7 @@
 
 ## Who imports this
 
-**61** file(s) reference this package:
+**59** file(s) reference this package:
 
 - **`runtime/cli_code.py/`** · 1 file(s)
   - `runtime/cli_code.py`
@@ -130,13 +130,13 @@
   - `runtime/cli_serve.py`
 - **`runtime/core/`** · 1 file(s)
   - `runtime/core/graph_runtime/runtime.py`
-- **`runtime/execution/`** · 9 file(s)
+- **`runtime/execution/`** · 8 file(s)
   - `runtime/execution/codex_backend/dynamic_tools.py`
-  - `runtime/execution/codex_backend/role_context.py`
   - `runtime/execution/loops/_controller_attempt.py`
   - `runtime/execution/misc/parallel_runner.py`
   - `runtime/execution/parallel_agents/_orchestrator_models.py`
-  - _… and 4 more_
+  - `runtime/execution/parallel_agents/stack_runner.py`
+  - _… and 3 more_
 - **`runtime/memory/`** · 4 file(s)
   - `runtime/memory/cowork/turn_plan.py`
   - `runtime/memory/diagnostics/_trace_store_recovery.py`
@@ -154,13 +154,13 @@
   - `runtime/safety/recovery/gepa_bridge.py`
   - `runtime/safety/recovery/workflow_applier.py`
   - `runtime/safety/validation/trust_signal.py`
-- **`runtime/sensing/`** · 27 file(s)
+- **`runtime/sensing/`** · 26 file(s)
   - `runtime/sensing/gateway/_agents_endpoints.py`
   - `runtime/sensing/gateway/_agents_endpoints_conversations.py`
   - `runtime/sensing/gateway/_agents_endpoints_tasks.py`
   - `runtime/sensing/gateway/_config_endpoints_system.py`
   - `runtime/sensing/gateway/_observability_journal.py`
-  - _… and 22 more_
+  - _… and 21 more_
 - **`runtime/tentacle/`** · 2 file(s)
   - `runtime/tentacle/coordinator.py`
   - `runtime/tentacle/mobile/cerebrum_adapter.py`

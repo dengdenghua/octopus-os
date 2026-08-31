@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   authReturnToFromSearch,
+  desktopLoginPathWithReturnTo,
   loginPathWithReturnTo,
   sanitizeAuthReturnTo,
 } from "./return-to";
@@ -17,6 +18,16 @@ describe("auth returnTo", () => {
     expect(
       authReturnToFromSearch(loginPath.slice(loginPath.indexOf("?"))),
     ).toBe(target);
+  });
+
+  it("routes workspace authentication through the OS desktop", () => {
+    expect(
+      desktopLoginPathWithReturnTo(
+        "/workspace/team/join?token=secret-token#details",
+      ),
+    ).toBe(
+      "/desktop?returnTo=%2Fworkspace%2Fteam%2Fjoin%3Ftoken%3Dsecret-token%23details",
+    );
   });
 
   it("rejects cross-origin and auth-loop redirects", () => {

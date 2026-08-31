@@ -69,7 +69,7 @@ import {
 
 const COPY = {
   zh: {
-    triggerFallback: "Coder 模型",
+    triggerFallback: "Codex 执行引擎",
     followSystem: "跟随系统模型",
     followSystemShort: "系统",
     followSystemDescription:
@@ -79,17 +79,17 @@ const COPY = {
     subscriptionModeShort: "ChatGPT 订阅",
     accountModeDescription:
       "使用你的 ChatGPT 订阅或单独提交的 OpenAI API Key。",
-    loading: "正在读取 Coder 配置…",
-    loadFailed: "暂时无法读取 Coder 模型配置。",
+    loading: "正在读取 Codex 执行配置…",
+    loadFailed: "暂时无法读取 Codex 执行配置。",
     retry: "重试",
     compatible: "可由 Codex 引擎运行",
     incompatible: "当前系统模型与 Codex 不兼容",
     provider: "Provider",
     effectiveModel: "实际模型",
     systemModel: "系统模型",
-    title: "Coder 引擎",
+    title: "Codex 执行引擎",
     subtitle:
-      "Coder 是普通角色；人设、技能和小队规则由 Echo 管理，代码执行由 Codex 引擎完成。",
+      "Echo 负责统一交互、记忆与任务编排；需要执行时由 Codex 引擎完成工作。",
     sourceTitle: "模型来源",
     systemSource: "Echo 模型",
     subscriptionSource: "ChatGPT 订阅",
@@ -136,7 +136,7 @@ const COPY = {
     connectorsHint: "仅启用你明确选择的连接；调用仍需经过 Echo 审批。",
     connectorUnavailable: "当前账号没有可访问的 Connector。",
     accountDetails: "Connector 与用量",
-    saved: "已更新 Coder 模型配置",
+    saved: "已更新 Codex 执行配置",
     loginStarted: "请在授权页面完成登录",
     loginComplete: "Codex 账号已连接",
     loginFailed: "Codex 授权未完成",
@@ -149,7 +149,7 @@ const COPY = {
     technicalDetails: "运行详情",
   },
   en: {
-    triggerFallback: "Coder model",
+    triggerFallback: "Codex execution engine",
     followSystem: "Follow system model",
     followSystemShort: "System",
     followSystemDescription:
@@ -159,17 +159,17 @@ const COPY = {
     subscriptionModeShort: "ChatGPT subscription",
     accountModeDescription:
       "Use your ChatGPT subscription or a separately submitted OpenAI API key.",
-    loading: "Loading Coder configuration…",
-    loadFailed: "The Coder model configuration is unavailable.",
+    loading: "Loading Codex execution configuration…",
+    loadFailed: "The Codex execution configuration is unavailable.",
     retry: "Retry",
     compatible: "Compatible with the Codex engine",
     incompatible: "The system model is not compatible with Codex",
     provider: "Provider",
     effectiveModel: "Effective model",
     systemModel: "System model",
-    title: "Coder engine",
+    title: "Codex execution engine",
     subtitle:
-      "Coder remains a regular role. Echo owns its persona, skills, and team rules; Codex runs the coding work.",
+      "Echo owns the interaction, memory, and orchestration layer; Codex performs execution when work is required.",
     sourceTitle: "Model source",
     systemSource: "Echo models",
     subscriptionSource: "ChatGPT subscription",
@@ -221,7 +221,7 @@ const COPY = {
     connectorUnavailable:
       "No accessible connectors are available for this account.",
     accountDetails: "Connectors and usage",
-    saved: "Coder model configuration updated",
+    saved: "Codex execution configuration updated",
     loginStarted: "Complete sign-in in the authorization page",
     loginComplete: "Codex account connected",
     loginFailed: "Codex authorization did not complete",

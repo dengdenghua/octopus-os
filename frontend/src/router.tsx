@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
@@ -10,8 +10,6 @@ import {
 import { useI18n } from "@/core/i18n/hooks";
 import { createWorkspaceRoute } from "@/app/workspace/workspace-routes";
 
-const LoginPage = lazy(() => import("./app/login/page"));
-const RegisterPage = lazy(() => import("./app/register/page"));
 const AboutPage = lazy(() => import("./app/about/page"));
 const TermsPage = lazy(() => import("./app/terms/page"));
 const PrivacyPage = lazy(() => import("./app/privacy/page"));
@@ -20,6 +18,11 @@ const DesktopPage = lazy(() => import("./app/desktop/page"));
 const TopBrowserPage = lazy(() => import("./app/browser/page"));
 const MediaAppPage = lazy(() => import("./app/apps/media/page"));
 const SLOW_PAGE_LOADING_MS = 8_000;
+
+function LegacyAccountRouteRedirect() {
+  const location = useLocation();
+  return <Navigate to={`/desktop${location.search}`} replace />;
+}
 
 export function PageLoading() {
   const { t } = useI18n();
@@ -86,9 +89,9 @@ export function AppRouter() {
         <ElectronTitleBar />
         <Suspense fallback={<PageLoading />}>
           <Routes>
-            <Route path="/" element={<LoginPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/" element={<Navigate to="/desktop" replace />} />
+            <Route path="/login" element={<LegacyAccountRouteRedirect />} />
+            <Route path="/register" element={<LegacyAccountRouteRedirect />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
@@ -96,13 +99,15 @@ export function AppRouter() {
               guard and workspace shell. The public endpoint already returns
               a bounded, sanitised, read-only projection. */}
             <Route path="/share/:token" element={<PublicThreadSharePage />} />
+            {/* The desktop owns the only login boundary. Workbench routes
+              inherit its HttpOnly session and never render a second login. */}
+            <Route path="/desktop" element={<DesktopPage />} />
 
             <Route element={<ProtectedRoute />}>
               <Route
                 path="/settings"
                 element={<Navigate to="/workspace/settings" replace />}
               />
-              <Route path="/desktop" element={<DesktopPage />} />
               <Route path="/browser" element={<TopBrowserPage />} />
               <Route
                 path="/apps/photos"

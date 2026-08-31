@@ -252,6 +252,7 @@ def test_installs_registry_role_as_local_agent(client: TestClient, tmp_path) -> 
     profile = json.loads((agent_root / "profile.jsonc").read_text(encoding="utf-8"))
     assert profile["source"] == "registry"
     assert profile["name"] == "Researcher"
+    assert profile["capabilities"]["execution_backend"] == "codex_app_server"
     assert (agent_root / "agent-core" / "SOUL.md").read_text(
         encoding="utf-8"
     ) == "You are a careful researcher."
@@ -935,5 +936,4 @@ def test_materialize_skill_rejects_body_only_non_directory_skill_path(tmp_path) 
         materialize_skill(payload, skills)
 
     assert (skills / "research-pack").read_text(encoding="utf-8") == "not a directory"
-
 

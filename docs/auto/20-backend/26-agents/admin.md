@@ -16,7 +16,7 @@
 
 ## Capabilities（能力 flags）
 
-- ✅ `code_mode_unlock`
+- ✅ `execution_backend`
 - ✅ `architect_level`
 - ❌ `team_mode`
 - ✅ `admin_mode`

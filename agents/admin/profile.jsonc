@@ -21,7 +21,7 @@
   },
   // Implementation note.
   "capabilities": {
-    "code_mode_unlock": true,
+    "execution_backend": "codex_app_server",
     "architect_level": "L3",
     "team_mode": false,
     "admin_mode": true,

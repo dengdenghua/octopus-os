@@ -52,6 +52,7 @@ import {
 } from "./settings/settings-sections";
 import { AgentFooter } from "./sidebar-footer";
 import { FileTree } from "./file-tree";
+import { useEchoDesktopWindowChrome } from "./embedded-window-bridge";
 
 const LazySettingsDialog = lazy(() =>
   import("./settings/settings-dialog").then((module) => ({
@@ -455,6 +456,7 @@ export function syncedSidebarPathname(
 
 export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { pathname, search } = useLocation();
+  const embeddedInEchoOs = useEchoDesktopWindowChrome();
   const { t } = useI18n();
   const {
     isMobile,
@@ -544,6 +546,15 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
     (tab?: string) => {
       const next: SettingsSection = normalizeSettingsSection(tab);
 
+      if (embeddedInEchoOs) {
+        window.dispatchEvent(
+          new CustomEvent("echo:open-system-settings", {
+            detail: { section: next },
+          }),
+        );
+        return;
+      }
+
       const openDialog = () => {
         pendingSettingsOpenRef.current = null;
         setSettingsHostActivated(true);
@@ -566,7 +577,7 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       openDialog();
     },
-    [isMobile, openMobile, setOpenMobile],
+    [embeddedInEchoOs, isMobile, openMobile, setOpenMobile],
   );
 
   useEffect(

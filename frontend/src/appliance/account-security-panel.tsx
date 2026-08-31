@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import {
+  BotIcon,
   FoldersIcon,
   FileClockIcon,
   HardDriveIcon,
@@ -20,23 +21,40 @@ import { requestHighRiskApproval } from "@/appliance/approval";
 import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
 import { OmvStorageHealth } from "@/appliance/omv-storage-health";
 import { OmvSharingPanel } from "@/appliance/omv-sharing-panel";
+import {
+  SYSTEM_DEVICE_SETTINGS_ITEMS,
+  SystemDeviceSettings,
+  type SystemDeviceSettingsProps,
+  type SystemDeviceSettingsSection,
+} from "@/appliance/system-device-settings";
+import {
+  OS_AGENT_SETTINGS_ITEMS,
+  SystemAgentSettingsContent,
+  type OsAgentSettingsSection,
+} from "@/components/workspace/settings/system-agent-settings-content";
 
 export type AccountSecuritySection =
   | "account"
+  | "agent"
   | "storage"
   | "sharing"
-  | "audit";
+  | "audit"
+  | SystemDeviceSettingsSection;
 
 export function AccountSecurityPanel({
   open,
   onClose,
   onSessionEnded,
   initialSection = "account",
+  initialAgentSection = "models",
+  systemDeviceSettings,
 }: {
   open: boolean;
   onClose: () => void;
   onSessionEnded: (message: string) => void;
   initialSection?: AccountSecuritySection;
+  initialAgentSection?: OsAgentSettingsSection;
+  systemDeviceSettings?: Omit<SystemDeviceSettingsProps, "section">;
 }) {
   const currentPasswordId = useId();
   const newPasswordId = useId();
@@ -49,6 +67,8 @@ export function AccountSecurityPanel({
   const [revokeOpen, setRevokeOpen] = useState(false);
   const [section, setSection] =
     useState<AccountSecuritySection>(initialSection);
+  const [agentSection, setAgentSection] =
+    useState<OsAgentSettingsSection>(initialAgentSection);
 
   useEffect(() => {
     setCurrentPassword("");
@@ -56,7 +76,8 @@ export function AccountSecurityPanel({
     setConfirmation("");
     setError(null);
     setSection(initialSection);
-  }, [initialSection, open]);
+    setAgentSection(initialAgentSection);
+  }, [initialAgentSection, initialSection, open]);
 
   if (!open) return null;
 
@@ -115,7 +136,7 @@ export function AccountSecurityPanel({
         className="absolute inset-0 cursor-default"
         onClick={() => !busy && onClose()}
       />
-      <section className="relative flex h-[min(560px,calc(100vh-150px))] w-[min(820px,calc(100vw-40px))] overflow-hidden rounded-[22px] border border-white/70 bg-[#f4f4f5]/95 text-slate-900 shadow-[0_30px_90px_rgba(15,23,42,0.38)]">
+      <section className="relative flex h-[min(740px,calc(100vh-96px))] w-[min(1180px,calc(100vw-40px))] overflow-hidden rounded-[22px] border border-white/70 bg-[#f4f4f5]/95 text-slate-900 shadow-[0_30px_90px_rgba(15,23,42,0.38)]">
         <aside className="w-52 shrink-0 border-r border-slate-300/70 bg-white/55 px-3 py-4 backdrop-blur-2xl">
           <div className="mb-5 flex items-center gap-2 px-1">
             <div className="flex gap-2">
@@ -152,6 +173,38 @@ export function AccountSecurityPanel({
           >
             <ShieldCheckIcon className="size-4" />
             账户与安全
+          </button>
+          <div className="my-2 border-t border-slate-300/60" />
+          {SYSTEM_DEVICE_SETTINGS_ITEMS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setSection(item.id)}
+                className={`mt-1 flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-[13px] font-medium ${
+                  section === item.id
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-slate-700 hover:bg-white/70"
+                }`}
+              >
+                <Icon className="size-4" />
+                {item.label}
+              </button>
+            );
+          })}
+          <div className="my-2 border-t border-slate-300/60" />
+          <button
+            type="button"
+            onClick={() => setSection("agent")}
+            className={`mt-1 flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-[13px] font-medium ${
+              section === "agent"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-slate-700 hover:bg-white/70"
+            }`}
+          >
+            <BotIcon className="size-4" />
+            AI 与 Agent
           </button>
           <button
             type="button"
@@ -192,7 +245,62 @@ export function AccountSecurityPanel({
         </aside>
 
         <main className="min-w-0 flex-1 overflow-y-auto px-8 py-7">
-          {section === "storage" ? (
+          {SYSTEM_DEVICE_SETTINGS_ITEMS.some((item) => item.id === section) ? (
+            <>
+              <header>
+                <h1 className="text-[24px] font-semibold tracking-tight">
+                  {
+                    SYSTEM_DEVICE_SETTINGS_ITEMS.find(
+                      (item) => item.id === section,
+                    )?.label
+                  }
+                </h1>
+                <p className="mt-1 text-[13px] text-slate-500">
+                  管理 Echo OS 原生设备与桌面能力
+                </p>
+              </header>
+              <div className="mt-6">
+                <SystemDeviceSettings
+                  {...systemDeviceSettings}
+                  section={section as SystemDeviceSettingsSection}
+                />
+              </div>
+            </>
+          ) : section === "agent" ? (
+            <>
+              <header>
+                <h1 className="text-[24px] font-semibold tracking-tight">
+                  AI 与 Agent
+                </h1>
+                <p className="mt-1 text-[13px] text-slate-500">
+                  统一管理 Echo 的模型、工具、记忆、自动化与执行安全
+                </p>
+              </header>
+              <nav
+                aria-label="AI 与 Agent 设置分类"
+                className="mt-5 flex flex-wrap gap-1.5 border-b border-slate-200 pb-3"
+              >
+                {OS_AGENT_SETTINGS_ITEMS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    aria-current={agentSection === item.id ? "page" : undefined}
+                    onClick={() => setAgentSection(item.id)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                      agentSection === item.id
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-white/70 text-slate-600 hover:bg-white hover:text-slate-900"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+              <section className="mt-5 min-w-0 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm">
+                <SystemAgentSettingsContent section={agentSection} />
+              </section>
+            </>
+          ) : section === "storage" ? (
             <OmvStorageHealth />
           ) : section === "sharing" ? (
             <OmvSharingPanel />

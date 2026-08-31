@@ -34,6 +34,7 @@ Hermetic isolation
 from __future__ import annotations
 
 import io
+import json
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -635,17 +636,17 @@ class TestAgentMarket:
         assert "agency-agents" in data["tags"]
         assert data["category"] == "creative"
 
-    def test_financial_services_agents_are_bundled_in_the_local_os_catalog(
+    def test_financial_services_agents_are_not_preinstalled_in_local_catalog(
         self,
         client: TestClient,
     ) -> None:
-        """The independent OS ships financial-service roles without a registry fetch."""
+        """Specialists stay addressable by market id but do not crowd the local roster."""
         r = client.get("/api/agent-market/store?search=Pitch%20Agent&limit=20")
         assert r.status_code == 200
 
-        agents = r.json()["agents"]
-        by_id = {agent["id"]: agent for agent in agents}
-        assert by_id["financial_pitch_agent"]["author"] == "anthropics/financial-services"
+        assert "financial_pitch_agent" not in {
+            agent["id"] for agent in r.json()["agents"]
+        }
 
     def test_financial_services_agent_detail_uses_catalog_metadata(
         self,
@@ -662,16 +663,18 @@ class TestAgentMarket:
         assert data["key_skills"] == ["kyc-doc-parse", "kyc-rules", "xlsx-author"]
         assert data["available_skills"] == data["key_skills"]
 
-    def test_financial_services_templates_ship_with_local_twins(
+    def test_financial_services_templates_remain_available_for_on_demand_install(
         self,
         client: TestClient,
     ) -> None:
-        """All financial roles are available from the local OS package."""
+        """Dormant templates are installable without appearing as active local agents."""
+        from runtime.sensing.gateway._agent_world_helpers import _template_by_id
+
         r = client.get("/api/agent-market/store?category=financial&limit=50")
         assert r.status_code == 200
+        assert r.json()["agents"] == []
 
-        data = r.json()
-        assert {agent["id"] for agent in data["agents"]} == {
+        expected = {
             "financial_earnings_reviewer",
             "financial_gl_reconciler",
             "financial_kyc_screener",
@@ -683,7 +686,7 @@ class TestAgentMarket:
             "financial_statement_auditor",
             "financial_valuation_reviewer",
         }
-        assert data["total"] == 10
+        assert all(_template_by_id(agent_id) is not None for agent_id in expected)
 
     def test_financial_services_install_carries_key_skills(
         self,
@@ -700,6 +703,8 @@ class TestAgentMarket:
         )
         assert agent_dir is not None
 
+        profile = json.loads((agent_dir / "profile.jsonc").read_text(encoding="utf-8"))
+        assert profile["capabilities"]["execution_backend"] == "codex_app_server"
         tool_registry = agent_dir / "agent-core" / "tool-registry.jsonc"
         data = tool_registry.read_text(encoding="utf-8")
         assert '"pitch-deck"' in data

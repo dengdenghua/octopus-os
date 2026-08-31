@@ -43,9 +43,7 @@ FORBIDDEN_TRACKED_SUFFIXES = (
 ALLOWED_TRACKED_PATHS = {
     "agents/coder/sessions/.gitkeep",
     "agents/desktop_operator/sessions/.gitkeep",
-    "agents/ecommerce_mind/sessions/.gitkeep",
     "agents/general/sessions/.gitkeep",
-    "agents/vibe_selling/sessions/.gitkeep",
     "docs/openapi-snapshot.json",
     "docs/auto/index.json",
     "uv.lock",

@@ -610,11 +610,6 @@ def load_agent(agent_dir: Path, runtime: GraphRuntime, shared_dir: Path) -> Agen
     return instantiate(parse_template(agent_dir, shared_dir), runtime)
 
 
-# No agent ids are skipped from directory auto-registration anymore.
-# `desktop_operator` (the Raven persona) was previously excluded because
-# desktop capability lived as an arm of `general`; since #22 (CUA
-# productization) it is a first-class user-facing persona again and is
-# loaded from its agents/desktop_operator/ folder like any other preset.
 _LOAD_ALL_SKIP_IDS: frozenset[str] = frozenset()
 
 
@@ -641,7 +636,14 @@ def load_all_agents(
             continue
         if entry.name in _LOAD_ALL_SKIP_IDS:
             continue
-        if not (entry / "profile.jsonc").exists():
+        profile_path = entry / "profile.jsonc"
+        if not profile_path.exists():
+            continue
+        try:
+            profile = _parse_jsonc(profile_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            profile = {}
+        if isinstance(profile, dict) and profile.get("autoload") is False:
             continue
         # Per-entry isolation: one malformed profile.jsonc (e.g. mid-
         # write during a watcher refresh, or a bad manual edit) must

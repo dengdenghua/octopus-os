@@ -13,7 +13,7 @@
 
 ## Capabilities（能力 flags）
 
-- ✅ `code_mode_unlock`
+- ✅ `execution_backend`
 
 ## Affinity keywords（路由亲和度）
 

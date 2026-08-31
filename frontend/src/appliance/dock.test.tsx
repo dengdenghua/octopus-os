@@ -1,20 +1,10 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
 import { Dock, DockItem } from "./dock";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe("Dock", () => {
-  it("keeps the resting glass width while icon magnification changes", () => {
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    });
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
-
+  it("keeps icon geometry untouched during pointer movement", () => {
     const renderDock = () => (
       <Dock className="mac-dock">
         <DockItem title="文件">文件</DockItem>
@@ -39,51 +29,24 @@ describe("Dock", () => {
     nav.style.borderLeftWidth = "1px";
     nav.style.borderRightWidth = "1px";
     inners.forEach((inner) => {
-      inner.style.width = "54px";
+      inner.style.width = "62px";
     });
-    items.forEach((item, index) => {
-      vi.spyOn(item, "getBoundingClientRect").mockReturnValue({
-        x: index * 59,
-        y: 0,
-        width: 54,
-        height: 54,
-        top: 0,
-        right: index * 59 + 54,
-        bottom: 54,
-        left: index * 59,
-        toJSON: () => ({}),
-      });
-    });
-
     // Re-run the layout measurement after assigning deterministic jsdom sizes.
     rerender(renderDock());
     const restingGlassWidth = nav.style.getPropertyValue("--dock-glass-width");
 
-    act(() => {
-      fireEvent.pointerMove(nav, { clientX: 27 });
-    });
+    fireEvent.pointerMove(nav, { clientX: 27 });
 
-    expect(
-      Number(items[0]?.style.getPropertyValue("--dock-s")),
-    ).toBeGreaterThan(1);
-    expect(
-      Number(items[1]?.style.getPropertyValue("--dock-s")),
-    ).toBeGreaterThan(1);
-    expect(Number(items[1]?.style.getPropertyValue("--dock-s"))).toBeLessThan(
-      Number(items[0]?.style.getPropertyValue("--dock-s")),
-    );
-    expect(
-      Number(
-        inners[0]?.style.getPropertyValue("--dock-lift").replace("px", ""),
-      ),
-    ).toBeLessThan(0);
+    expect(items[0]?.style.getPropertyValue("--dock-s")).toBe("");
+    expect(items[1]?.style.getPropertyValue("--dock-s")).toBe("");
+    expect(inners[0]?.style.getPropertyValue("--dock-lift")).toBe("");
     expect(nav.style.getPropertyValue("--dock-glass-width")).toBe(
       restingGlassWidth,
     );
-    expect(restingGlassWidth).toBe("129px");
+    expect(restingGlassWidth).toBe("145px");
   });
 
-  it("uses a one-shot press spring instead of a permanent Dock animation", () => {
+  it("keeps icon geometry untouched while pressing", () => {
     render(
       <Dock className="mac-dock">
         <DockItem title="文件" running>
@@ -99,7 +62,7 @@ describe("Dock", () => {
     ).toBeNull();
 
     fireEvent.pointerDown(item);
-    expect(item).toHaveAttribute("data-dock-pressed", "true");
+    expect(item).not.toHaveAttribute("data-dock-pressed");
     expect(item.querySelector(".dock-item-spring")).not.toBeNull();
 
     fireEvent.pointerUp(item);

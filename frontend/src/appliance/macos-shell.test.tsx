@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   MacControlCenter,
+  MacDesktopIcon,
   MacAboutDialog,
   MacAppIcon,
   MacDesktopWallpaperArtwork,
@@ -17,10 +18,7 @@ import {
   MacSystemActionDialog,
   type MacShellApp,
 } from "./macos-shell";
-import {
-  CLEAR_LIQUID_GLASS_TUNING,
-  DEFAULT_LIQUID_GLASS_TUNING,
-} from "./liquid-glass-settings";
+import { DEFAULT_LIQUID_GLASS_TUNING } from "./liquid-glass-settings";
 
 const apps: MacShellApp[] = [
   {
@@ -96,7 +94,48 @@ describe("Echo desktop shell", () => {
     ).toBeInTheDocument();
     expect(
       (icon as HTMLElement).style.getPropertyValue("--echo-app-surface"),
-    ).toBe("#1594d3");
+    ).toBe("#246bfd");
+  });
+
+  it("keeps desktop shortcut artwork independent from glass presets", () => {
+    const { container } = render(<MacDesktopIcon app={apps[0]!} />);
+    const icon = container.querySelector(".mac-app-icon");
+
+    expect(icon).not.toHaveAttribute("data-liquid-backdrop", "true");
+    expect(
+      icon?.querySelector(".mac-app-icon-liquid-backdrop"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("exposes consistent active task and completion icon states", () => {
+    const { container, rerender } = render(
+      <MacAppIcon
+        icon={BotIcon}
+        gradient="linear-gradient(#141820, #020409)"
+        appId="echo:/workspace/realtime/new"
+        state="thinking"
+      />,
+    );
+
+    expect(container.querySelector(".mac-app-icon")).toHaveAttribute(
+      "data-icon-state",
+      "thinking",
+    );
+    expect(
+      container.querySelector(".mac-app-icon-thinking-ring"),
+    ).toBeInTheDocument();
+
+    rerender(
+      <MacAppIcon
+        icon={BotIcon}
+        gradient="linear-gradient(#141820, #020409)"
+        appId="echo:/workspace/realtime/new"
+        state="complete"
+      />,
+    );
+    expect(
+      container.querySelector(".mac-app-icon-complete-badge"),
+    ).toBeInTheDocument();
   });
 
   it("reserves the technology field for telemetry applications", () => {
@@ -660,10 +699,14 @@ describe("Echo desktop shell", () => {
       "aria-pressed",
       "true",
     );
+    expect(screen.getByRole("group", { name: "材质模式" })).toBeVisible();
+    expect(screen.getByRole("group", { name: "动效强度" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "应用净透液态预设" }),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /柔光/ }));
     await user.click(screen.getByRole("button", { name: "沉浸", exact: true }));
     await user.click(screen.getByRole("button", { name: "使用暖金滤镜" }));
-    await user.click(screen.getByRole("button", { name: "应用净透液态预设" }));
     await user.click(
       screen.getByRole("button", { name: "恢复全部默认玻璃设置" }),
     );
@@ -672,10 +715,8 @@ describe("Echo desktop shell", () => {
     });
 
     expect(onStyleChange).toHaveBeenCalledWith("softlight");
-    expect(onIntensityChange).toHaveBeenCalledWith("balanced");
+    expect(onIntensityChange).toHaveBeenCalledWith("strong");
     expect(onTuningChange).toHaveBeenCalledWith({ tint: "#ffe4b8" });
-    expect(onTuningChange).toHaveBeenCalledWith(CLEAR_LIQUID_GLASS_TUNING);
-    expect(onStyleChange).toHaveBeenCalledWith("crystal");
     expect(onTuningChange).toHaveBeenCalledWith({ transparency: 84 });
     expect(onResetTuning).toHaveBeenCalledOnce();
     expect(screen.getByRole("slider", { name: "透明度" })).toHaveValue("72");

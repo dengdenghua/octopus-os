@@ -35,6 +35,19 @@ vi.mock("./omv", () => ({
   fetchOmvStatus: vi.fn(),
 }));
 
+vi.mock(
+  "@/components/workspace/settings/system-agent-settings-content",
+  () => ({
+    OS_AGENT_SETTINGS_ITEMS: [
+      { id: "models", label: "模型与 Codex" },
+      { id: "tools", label: "工具、技能与 MCP" },
+    ],
+    SystemAgentSettingsContent: ({ section }: { section: string }) => (
+      <div data-testid="embedded-agent-settings">{section}</div>
+    ),
+  }),
+);
+
 beforeEach(() => {
   vi.mocked(requestHighRiskApproval).mockResolvedValue({
     approvalToken: "one-shot.signature",
@@ -172,6 +185,30 @@ describe("Echo OS account security settings", () => {
       await screen.findByRole("heading", { name: "存储健康" }),
     ).toBeInTheDocument();
     expect(fetchOmvStatus).toHaveBeenCalledOnce();
+  });
+
+  it("opens model configuration from the OS AI settings section", async () => {
+    const user = userEvent.setup();
+    render(
+      <AccountSecurityPanel
+        open
+        onClose={vi.fn()}
+        onSessionEnded={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "AI 与 Agent" }));
+    expect(
+      screen.getByRole("heading", { name: "AI 与 Agent" }),
+    ).toBeInTheDocument();
+
+    expect(screen.getByTestId("embedded-agent-settings")).toHaveTextContent(
+      "models",
+    );
+    await user.click(screen.getByRole("button", { name: "工具、技能与 MCP" }));
+    expect(screen.getByTestId("embedded-agent-settings")).toHaveTextContent(
+      "tools",
+    );
   });
 
   it("can open directly on storage health from a recovery action", async () => {

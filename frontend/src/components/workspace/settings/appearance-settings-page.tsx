@@ -1,17 +1,7 @@
 import {
-  CheckIcon,
-  MonitorSmartphoneIcon,
-  MoonIcon,
-  SunIcon,
-} from "lucide-react";
-import { useTheme } from "next-themes";
-import {
   useCallback,
-  useMemo,
   useRef,
-  type ComponentType,
   type PointerEvent,
-  type SVGProps,
 } from "react";
 
 import {
@@ -28,14 +18,10 @@ import {
   useAppearance,
   type CornerScale,
   type Density,
-  type Palette,
 } from "@/hooks/use-appearance";
 import { cn } from "@/lib/utils";
 
 import { SettingsSection } from "./settings-section";
-
-/** Palettes with a fixed swatch — excludes "custom", which setPalette rejects. */
-type NamedPalette = Exclude<Palette, "custom">;
 
 const LANGUAGE_OPTIONS = [
   { value: "en-US", label: "English" },
@@ -46,229 +32,15 @@ const LANGUAGE_OPTIONS = [
 
 export default function AppearanceSettingsPage() {
   const { t, locale, changeLocale } = useI18n();
-  const { theme, setTheme, systemTheme } = useTheme();
-  const currentTheme = (theme ?? "system") as "system" | "light" | "dark";
   const {
     cornerScale,
     density,
-    palette,
-    customColor,
     setCornerScale,
     setDensity,
-    setPalette,
-    setCustomColor,
   } = useAppearance();
-
-  // Two groups by character: bright/warm ("柔和") vs low-chroma/deep ("沉稳").
-  // Swatch hexes are the computed light-mode --primary of each [data-theme].
-  const paletteGroups = useMemo(
-    () =>
-      [
-        {
-          id: "soft",
-          label: t.settings.appearance.paletteGroupSoft,
-          options: [
-            {
-              id: "rouge" as NamedPalette,
-              label: t.settings.appearance.paletteRose,
-              description: t.settings.appearance.paletteRoseDescription,
-              swatch: "#d85164",
-            },
-            {
-              id: "apricot" as NamedPalette,
-              label: t.settings.appearance.paletteApricot,
-              description: t.settings.appearance.paletteApricotDescription,
-              swatch: "#bd5223",
-            },
-            {
-              id: "violet" as NamedPalette,
-              label: t.settings.appearance.paletteViolet,
-              description: t.settings.appearance.paletteVioletDescription,
-              swatch: "#9e4eab",
-            },
-            {
-              id: "mint" as NamedPalette,
-              label: t.settings.appearance.paletteMint,
-              description: t.settings.appearance.paletteMintDescription,
-              swatch: "#008557",
-            },
-          ],
-        },
-        {
-          id: "deep",
-          label: t.settings.appearance.paletteGroupDeep,
-          options: [
-            {
-              id: "steel" as NamedPalette,
-              label: t.settings.appearance.paletteSteel,
-              description: t.settings.appearance.paletteSteelDescription,
-              swatch: "#4461be",
-            },
-            {
-              id: "teal" as NamedPalette,
-              label: t.settings.appearance.paletteTeal,
-              description: t.settings.appearance.paletteTealDescription,
-              swatch: "#377684",
-            },
-            {
-              id: "emerald" as NamedPalette,
-              label: t.settings.appearance.paletteEmerald,
-              description: t.settings.appearance.paletteEmeraldDescription,
-              swatch: "#167a69",
-            },
-            {
-              id: "amber" as NamedPalette,
-              label: t.settings.appearance.paletteAmber,
-              description: t.settings.appearance.paletteAmberDescription,
-              swatch: "#af5331",
-            },
-          ],
-        },
-      ] satisfies {
-        id: string;
-        label: string;
-        options: {
-          id: NamedPalette;
-          label: string;
-          description: string;
-          swatch: string;
-        }[];
-      }[],
-    [
-      t.settings.appearance.paletteAmber,
-      t.settings.appearance.paletteAmberDescription,
-      t.settings.appearance.paletteApricot,
-      t.settings.appearance.paletteApricotDescription,
-      t.settings.appearance.paletteEmerald,
-      t.settings.appearance.paletteEmeraldDescription,
-      t.settings.appearance.paletteGroupDeep,
-      t.settings.appearance.paletteGroupSoft,
-      t.settings.appearance.paletteMint,
-      t.settings.appearance.paletteMintDescription,
-      t.settings.appearance.paletteRose,
-      t.settings.appearance.paletteRoseDescription,
-      t.settings.appearance.paletteSteel,
-      t.settings.appearance.paletteSteelDescription,
-      t.settings.appearance.paletteTeal,
-      t.settings.appearance.paletteTealDescription,
-      t.settings.appearance.paletteViolet,
-      t.settings.appearance.paletteVioletDescription,
-    ],
-  );
-
-  const themeOptions = useMemo(
-    () => [
-      {
-        id: "system",
-        label: t.settings.appearance.system,
-        description: t.settings.appearance.systemDescription,
-        icon: MonitorSmartphoneIcon,
-      },
-      {
-        id: "light",
-        label: t.settings.appearance.light,
-        description: t.settings.appearance.lightDescription,
-        icon: SunIcon,
-      },
-      {
-        id: "dark",
-        label: t.settings.appearance.dark,
-        description: t.settings.appearance.darkDescription,
-        icon: MoonIcon,
-      },
-    ],
-    [
-      t.settings.appearance.dark,
-      t.settings.appearance.darkDescription,
-      t.settings.appearance.light,
-      t.settings.appearance.lightDescription,
-      t.settings.appearance.system,
-      t.settings.appearance.systemDescription,
-    ],
-  );
 
   return (
     <div className="space-y-6">
-      <SettingsSection
-        title={t.settings.appearance.themeTitle}
-        description={t.settings.appearance.themeDescription}
-      >
-        <div className="grid grid-cols-3 gap-2">
-          {themeOptions.map((option) => (
-            <ThemePreviewCard
-              key={option.id}
-              icon={option.icon}
-              label={option.label}
-              description={option.description}
-              active={currentTheme === option.id}
-              mode={option.id as "system" | "light" | "dark"}
-              systemTheme={systemTheme}
-              onSelect={(value) => setTheme(value)}
-            />
-          ))}
-        </div>
-      </SettingsSection>
-
-      <Separator className="my-1" />
-
-      <SettingsSection
-        title={t.settings.appearance.paletteTitle}
-        description={t.settings.appearance.paletteDescription}
-      >
-        <div className="space-y-3">
-          {paletteGroups.map((group) => (
-            <div key={group.id} className="flex flex-wrap items-center gap-2">
-              <span className="w-10 shrink-0 text-xs text-muted-foreground">
-                {group.label}
-              </span>
-              {group.options.map((option) => (
-                <PaletteSwatchButton
-                  key={option.id}
-                  label={option.label}
-                  description={option.description}
-                  active={palette === option.id}
-                  swatch={option.swatch}
-                  onSelect={() => setPalette(option.id)}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <PaletteSwatchButton
-            label={t.settings.appearance.paletteCustom}
-            active={palette === "custom"}
-            swatch={customColor}
-            onSelect={() => setCustomColor(customColor)}
-          />
-          <label
-            className={cn(
-              "relative ml-1 inline-flex size-8 shrink-0 cursor-pointer items-center",
-              "justify-center rounded-full border border-dashed text-muted-foreground",
-              "transition-colors hover:border-primary/50 hover:text-foreground",
-            )}
-            title={t.settings.appearance.paletteCustomHint}
-          >
-            <input
-              type="color"
-              aria-label={t.settings.appearance.paletteCustom}
-              className="absolute inset-0 cursor-pointer opacity-0"
-              value={customColor}
-              onChange={(event) => setCustomColor(event.target.value)}
-            />
-            <span aria-hidden="true" className="font-mono text-xs leading-none">
-              +
-            </span>
-          </label>
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {t.settings.appearance.paletteCustomHint}
-          <span className="ml-1.5 font-mono uppercase">{customColor}</span>
-        </p>
-      </SettingsSection>
-
-      <Separator className="my-1" />
-
       {/* Language remains a general application preference. Conversation
           density now has its own destination in Settings. */}
       <div className="divide-y rounded-lg border">
@@ -407,48 +179,6 @@ function SettingRow({
       </div>
       <div className="shrink-0">{children}</div>
     </div>
-  );
-}
-
-/** Compact palette picker: a color dot with a check when active. */
-function PaletteSwatchButton({
-  label,
-  description,
-  active,
-  swatch,
-  onSelect,
-}: {
-  label: string;
-  description?: string;
-  active: boolean;
-  swatch: string;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={active}
-      aria-label={label}
-      title={description ? `${label} · ${description}` : label}
-      className={cn(
-        "relative inline-flex size-8 shrink-0 items-center justify-center rounded-full",
-        "border transition-all hover:scale-105",
-        active
-          ? "border-primary ring-2 ring-primary/35 ring-offset-1 ring-offset-background"
-          : "border-black/10 hover:border-primary/40 dark:border-white/15",
-      )}
-      style={{ backgroundColor: swatch }}
-    >
-      {active ? (
-        <CheckIcon
-          aria-hidden="true"
-          className="size-4 text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.45)]"
-          strokeWidth={3}
-        />
-      ) : null}
-      <span className="sr-only">{label}</span>
-    </button>
   );
 }
 
@@ -623,138 +353,5 @@ function AppearanceStepSlider<TValue extends AppearanceStepValue>({
         ))}
       </div>
     </div>
-  );
-}
-
-function ThemePreviewCard({
-  icon: Icon,
-  label,
-  description,
-  active,
-  mode,
-  systemTheme,
-  onSelect,
-}: {
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-  label: string;
-  description: string;
-  active: boolean;
-  mode: "system" | "light" | "dark";
-  systemTheme?: string;
-  onSelect: (mode: "system" | "light" | "dark") => void;
-}) {
-  const previewMode =
-    mode === "system" ? (systemTheme === "dark" ? "dark" : "light") : mode;
-  const previewIsDark = previewMode === "dark";
-  const previewFrameClass =
-    previewMode === "dark"
-      ? "border-neutral-800 bg-neutral-950 text-neutral-200"
-      : "border-border bg-white text-foreground";
-  const previewTopbarClass =
-    previewMode === "dark"
-      ? "border-white/10 bg-neutral-900"
-      : "border-border bg-muted";
-  const previewSidebarClass =
-    previewMode === "dark"
-      ? "border-white/10 bg-[linear-gradient(180deg,#171717_0%,#101010_100%)]"
-      : "border-border bg-muted/85";
-  const previewCanvasClass =
-    previewMode === "dark" ? "bg-neutral-900" : "bg-white";
-  const activeDotClass = previewMode === "dark" ? "bg-success" : "bg-success";
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(mode)}
-      aria-pressed={active}
-      className={cn(
-        "group flex h-full min-w-0 flex-col gap-2 rounded-lg border p-2 text-left transition-all sm:p-3",
-        active
-          ? "border-primary ring-primary/30 shadow-[var(--shadow-xs)] ring-2"
-          : "hover:border-border hover:shadow-[var(--shadow-xs)]",
-      )}
-    >
-      <div className="flex min-w-0 items-center gap-1.5 sm:items-start sm:gap-3">
-        <div className="hidden rounded-lg bg-muted p-1.5 sm:block">
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0 space-y-1">
-          <div className="truncate text-xs font-semibold leading-none sm:text-sm">
-            {label}
-          </div>
-          <p className="hidden text-xs leading-snug text-muted-foreground sm:block">
-            {description}
-          </p>
-        </div>
-      </div>
-      <div
-        className={cn(
-          "relative aspect-[4/3] overflow-hidden rounded-md border text-xs transition-colors sm:aspect-auto sm:rounded-lg",
-          previewFrameClass,
-        )}
-      >
-        <div
-          className={cn(
-            "flex items-center gap-1 border-b px-1.5 py-1.5 sm:gap-2 sm:px-3 sm:py-2",
-            previewTopbarClass,
-          )}
-        >
-          <div className={cn("h-2 w-2 rounded-full", activeDotClass)} />
-          <div className="h-2 w-10 rounded-md bg-current/20" />
-          <div className="h-2 w-6 rounded-md bg-current/15" />
-        </div>
-        <div className="grid h-full grid-cols-[18px_minmax(0,1fr)] sm:grid-cols-[32px_minmax(0,1fr)]">
-          <div
-            className={cn(
-              "flex min-h-12 flex-col gap-1 border-r px-1 py-1.5 sm:min-h-[72px] sm:gap-1.5 sm:px-2 sm:py-2",
-              previewSidebarClass,
-            )}
-          >
-            <div
-              className={cn("size-2 rounded-full sm:size-3", activeDotClass)}
-            />
-            <div className="h-2 w-4 rounded-full bg-current/18" />
-            <div className="h-2 w-4 rounded-full bg-current/14" />
-            <div className="mt-auto h-2 w-4 rounded-full bg-current/12" />
-          </div>
-          <div
-            className={cn(
-              "grid grid-cols-1 gap-1 p-1.5 sm:grid-cols-[1fr_76px] sm:gap-2 sm:px-2.5 sm:py-2.5",
-              previewCanvasClass,
-            )}
-          >
-            <div className="space-y-2">
-              <div className="h-2.5 w-3/4 rounded-md bg-current/15" />
-              <div className="h-2.5 w-1/2 rounded-md bg-current/10" />
-              <div
-                className={cn(
-                  "h-6 rounded-md border bg-current/5 sm:h-9 sm:rounded-lg",
-                  previewIsDark
-                    ? "border-white/10 bg-white/[0.03]"
-                    : "border-border bg-white",
-                )}
-              />
-            </div>
-            <div className="hidden space-y-2 sm:block">
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-lg bg-current/10" />
-                <div className="space-y-2">
-                  <div className="h-2 w-10 rounded-md bg-current/15" />
-                  <div className="h-2 w-7 rounded-md bg-current/10" />
-                </div>
-              </div>
-              <div
-                className={cn(
-                  "flex flex-col gap-1 rounded-lg border border-dashed p-2",
-                  previewIsDark ? "border-white/10" : "border-border",
-                )}
-              >
-                <div className="h-2 w-3/5 rounded-md bg-current/15" />
-                <div className="h-2 w-2/5 rounded-md bg-current/10" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </button>
   );
 }

@@ -1,11 +1,11 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { LoadingState } from "@/components/ui/state";
-import { loginPathWithReturnTo } from "@/core/auth/return-to";
+import { desktopLoginPathWithReturnTo } from "@/core/auth/return-to";
 import { useI18n } from "@/core/i18n/hooks";
 import { useAuth } from "@/providers/AuthProvider";
 
 /**
- * Route guard that redirects unauthenticated users to /login.
+ * Route guard that returns unauthenticated users to the OS login screen.
  *
  * When auth is disabled on the backend (authStatus.enabled === false),
  * all users are allowed through — matching the backend's behavior.
@@ -30,7 +30,7 @@ export function ProtectedRoute() {
   // Auth enabled requires a real authenticated account.
   if (!isAuthenticated) {
     const returnTo = `${location.pathname}${location.search}${location.hash}`;
-    return <Navigate to={loginPathWithReturnTo(returnTo)} replace />;
+    return <Navigate to={desktopLoginPathWithReturnTo(returnTo)} replace />;
   }
 
   return <Outlet />;

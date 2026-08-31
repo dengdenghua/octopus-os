@@ -31,6 +31,12 @@ function authPathWithReturnTo(path: "/login" | "/register", returnTo: string) {
   return `${path}?returnTo=${encodeURIComponent(safeReturnTo)}`;
 }
 
+/** Route an expired workspace session back through the OS login screen. */
+export function desktopLoginPathWithReturnTo(returnTo: string): string {
+  const safeReturnTo = sanitizeAuthReturnTo(returnTo);
+  return `/desktop?returnTo=${encodeURIComponent(safeReturnTo)}`;
+}
+
 export function loginPathWithReturnTo(returnTo: string): string {
   return authPathWithReturnTo("/login", returnTo);
 }

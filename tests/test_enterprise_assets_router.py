@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -137,7 +138,8 @@ def test_scaffold_writes_minimal_agent(monkeypatch, tmp_path):
         }
     )
     assert agent_id == "academic_anthropologist"
-    assert (agent_root / "profile.jsonc").is_file()
+    profile = json.loads((agent_root / "profile.jsonc").read_text(encoding="utf-8"))
+    assert profile["capabilities"]["execution_backend"] == "codex_app_server"
     soul = (agent_root / "agent-core" / "SOUL.md").read_text(encoding="utf-8")
     assert "Observe cultures" in soul  # persona body 进了 SOUL
     assert (agent_root / "agent-core" / "IDENTITY.md").is_file()
@@ -253,4 +255,3 @@ def test_install_rejects_unsafe_asset_id_before_http(monkeypatch, tmp_path):
     assert resp.status_code == 400
     assert called is False
     assert not any(tmp_path.iterdir())
-

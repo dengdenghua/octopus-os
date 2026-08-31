@@ -14,7 +14,10 @@ import {
   nativeLiquidGlassOwnsOptics,
   roundedSuperellipseDistance,
 } from "./liquid-glass-webgl";
-import { calculateDockGlassBounds } from "./liquid-glass-surfaces";
+import {
+  calculateDockGlassBounds,
+  visibleLiquidGlassSurfaces,
+} from "./liquid-glass-surfaces";
 
 describe("Liquid Glass WebGL geometry", () => {
   it("matches CSS cover/center when the viewport is taller than the image", () => {
@@ -163,6 +166,22 @@ describe("Liquid Glass WebGL geometry", () => {
       height: tray.height,
       bottom: tray.bottom,
     }).toEqual({ x: 124, y: 701, width: 552, height: 68, bottom: 769 });
+  });
+
+  it("keeps the Dock outside compositor refraction", () => {
+    const root = document.createElement("div");
+    const dock = document.createElement("nav");
+    const widget = document.createElement("aside");
+    dock.className = "mac-dock";
+    widget.className = "mac-calendar-widget";
+    dock.getBoundingClientRect = () => new DOMRect(0, 0, 600, 78);
+    widget.getBoundingClientRect = () => new DOMRect(0, 0, 200, 200);
+    root.append(dock, widget);
+    document.body.append(root);
+
+    expect(visibleLiquidGlassSurfaces(root)).toEqual([widget]);
+
+    root.remove();
   });
 
   it("keeps the SVG/CSS path active when WebGL2 is unavailable", () => {

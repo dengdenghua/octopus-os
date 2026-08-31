@@ -35,7 +35,7 @@ async function bootstrap() {
   createRoot(document.getElementById("root")!).render(
     <HashRouter>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="system" storageKey="echo-theme">
+        <ThemeProvider>
           <I18nProvider
             initialLocale={initialLocale}
             initialTranslations={initialTranslations}

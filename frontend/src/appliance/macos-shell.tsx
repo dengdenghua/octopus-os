@@ -46,7 +46,6 @@ import type {
   SystemUpdateStatus,
 } from "@/types/electron";
 import {
-  CLEAR_LIQUID_GLASS_TUNING,
   LIQUID_GLASS_TINTS,
   type LiquidGlassTuning,
 } from "@/appliance/liquid-glass-settings";
@@ -73,20 +72,20 @@ function echoSolidPalette(
 }
 
 const ECHO_SIGNAL_GLASS = {
-  carbon: echoSolidPalette("#061522", "#b9e6ff", "rgba(60, 170, 255, .52)"),
-  cobalt: echoSolidPalette("#087ff5", "#effeff", "rgba(0, 145, 255, .54)"),
-  marine: echoSolidPalette("#08a982", "#effff8", "rgba(0, 207, 151, .5)"),
-  oxide: echoSolidPalette("#f06431", "#fff7ee", "rgba(255, 102, 42, .5)"),
-  sonar: echoSolidPalette("#00a6c7", "#f2ffff", "rgba(0, 194, 229, .52)"),
-  orbital: echoSolidPalette("#4867e2", "#f7faff", "rgba(73, 106, 255, .5)"),
-  amber: echoSolidPalette("#f2a20d", "#fffdf5", "rgba(255, 174, 20, .5)"),
-  command: echoSolidPalette("#3e59d7", "#f5f8ff", "rgba(58, 89, 235, .5)"),
-  signal: echoSolidPalette("#06231e", "#79f7c5", "rgba(54, 246, 177, .5)"),
-  gunmetal: echoSolidPalette("#58778d", "#ffffff", "rgba(73, 157, 215, .44)"),
-  azure: echoSolidPalette("#1594d3", "#f4fdff", "rgba(0, 161, 235, .52)"),
-  titanium: echoSolidPalette("#bfd5e4", "#ffffff", "rgba(86, 163, 218, .38)"),
-  slate: echoSolidPalette("#5267d3", "#ffffff", "rgba(78, 104, 239, .5)"),
-  glacier: echoSolidPalette("#bfd3df", "#ffffff", "rgba(67, 151, 207, .4)"),
+  carbon: echoSolidPalette("#111318", "#4a96ff", "rgba(36, 107, 253, .52)"),
+  cobalt: echoSolidPalette("#246bfd", "#f8fbff", "rgba(36, 107, 253, .5)"),
+  marine: echoSolidPalette("#22c55e", "#f5fff8", "rgba(34, 197, 94, .46)"),
+  oxide: echoSolidPalette("#ff6b6b", "#fff8f8", "rgba(255, 107, 107, .46)"),
+  sonar: echoSolidPalette("#246bfd", "#f8fbff", "rgba(36, 107, 253, .5)"),
+  orbital: echoSolidPalette("#7b61ff", "#fbfaff", "rgba(123, 97, 255, .48)"),
+  amber: echoSolidPalette("#f59e0b", "#fffdf5", "rgba(245, 158, 11, .46)"),
+  command: echoSolidPalette("#7b61ff", "#fbfaff", "rgba(123, 97, 255, .48)"),
+  signal: echoSolidPalette("#22c55e", "#f5fff8", "rgba(34, 197, 94, .46)"),
+  gunmetal: echoSolidPalette("#8b95a5", "#ffffff", "rgba(139, 149, 165, .4)"),
+  azure: echoSolidPalette("#246bfd", "#f8fbff", "rgba(36, 107, 253, .5)"),
+  titanium: echoSolidPalette("#f7f8fa", "#8b95a5", "rgba(139, 149, 165, .28)"),
+  slate: echoSolidPalette("#7b61ff", "#fbfaff", "rgba(123, 97, 255, .48)"),
+  glacier: echoSolidPalette("#f7f8fa", "#8b95a5", "rgba(139, 149, 165, .28)"),
 } as const;
 
 const ECHO_APP_ICON_PALETTES: Record<string, EchoAppIconPalette> = {
@@ -125,9 +124,12 @@ export type MacShellApp = {
   gradient: string;
   iconUrl?: string;
   running?: boolean;
+  iconState?: MacAppIconState;
   muted?: boolean;
   onOpen: () => void;
 };
+
+export type MacAppIconState = "default" | "active" | "thinking" | "complete";
 
 /**
  * Echo artwork for the built-in shell apps.
@@ -180,10 +182,10 @@ function MacAppArtwork({ appId }: { appId?: string }): ReactNode {
             strokeWidth="1.1"
           />
           {[
-            [21, 21, "#62d9ff"],
-            [43, 21, "#e1ad4c"],
-            [21, 43, "#67cdb2"],
-            [43, 43, "#7189a7"],
+            [21, 21, "#22c55e"],
+            [43, 21, "#f59e0b"],
+            [21, 43, "#246bfd"],
+            [43, 43, "#7b61ff"],
           ].map(([cx, cy, fill]) => (
             <rect
               key={`${cx}-${cy}`}
@@ -689,6 +691,7 @@ export function MacAppIcon({
   appId,
   className,
   liquidBackdrop = false,
+  state = "default",
 }: {
   icon: MacIcon;
   gradient: string;
@@ -696,6 +699,7 @@ export function MacAppIcon({
   appId?: string;
   className?: string;
   liquidBackdrop?: boolean;
+  state?: MacAppIconState;
 }) {
   const appArtwork = iconUrl ? null : MacAppArtwork({ appId });
   const echoPalette = appId ? ECHO_APP_ICON_PALETTES[appId] : undefined;
@@ -716,6 +720,7 @@ export function MacAppIcon({
       data-icon-source={iconUrl ? "image" : appArtwork ? "art" : "glyph"}
       data-echo-family={echoPalette ? "true" : undefined}
       data-liquid-backdrop={liquidBackdrop ? "true" : undefined}
+      data-icon-state={state}
       aria-hidden
     >
       {liquidBackdrop && <MacIconLiquidBackdrop />}
@@ -737,12 +742,20 @@ export function MacAppIcon({
       <span className="mac-app-icon-gloss" />
       <span className="mac-app-icon-specular" />
       {echoPalette && <span className="mac-app-icon-optical-rim" />}
+      {echoPalette && state === "thinking" && (
+        <span className="mac-app-icon-thinking-ring" />
+      )}
       {iconUrl ? (
         <img src={iconUrl} alt="" className="mac-app-icon-image" />
       ) : appArtwork ? (
         appArtwork
       ) : (
         <Icon className="mac-app-icon-glyph" strokeWidth={1.8} />
+      )}
+      {echoPalette && state === "complete" && (
+        <span className="mac-app-icon-complete-badge">
+          <CheckCircle2Icon />
+        </span>
       )}
     </span>
   );
@@ -1161,12 +1174,12 @@ const GLASS_STYLE_OPTIONS: Array<{
   {
     value: "crystal",
     label: "晶透",
-    description: "清透折射 · 镜面高光",
+    description: "清晰折射 · 镜面高光",
   },
   {
     value: "softlight",
     label: "柔光",
-    description: "雾化扩散 · 沉浸光场",
+    description: "柔和扩散 · 低眩光",
   },
 ];
 
@@ -1282,26 +1295,8 @@ export function MacLiquidGlassPanel({
           <small>{style === "crystal" ? "Crystal Flow" : "Soft Aurora"}</small>
         </div>
 
-        <button
-          type="button"
-          className="mac-glass-clear-preset"
-          onClick={() => {
-            onStyleChange("crystal");
-            onIntensityChange("balanced");
-            onTuningChange(CLEAR_LIQUID_GLASS_TUNING);
-          }}
-          aria-label="应用净透液态预设"
-        >
-          <DropletsIcon />
-          <span>
-            <strong>净透液态</strong>
-            <small>低底色 · 清晰折射 · 轻磨砂</small>
-          </span>
-          <ChevronRightIcon />
-        </button>
-
         <fieldset className="mac-glass-fieldset">
-          <legend>材质风格</legend>
+          <legend>材质模式</legend>
           <div className="mac-glass-style-options">
             {GLASS_STYLE_OPTIONS.map((option) => (
               <button
@@ -1319,7 +1314,7 @@ export function MacLiquidGlassPanel({
         </fieldset>
 
         <fieldset className="mac-glass-fieldset">
-          <legend>动态光感</legend>
+          <legend>动效强度</legend>
           <div className="mac-glass-intensity-options">
             {GLASS_INTENSITY_OPTIONS.map((option) => (
               <button
@@ -1456,7 +1451,7 @@ export function MacDesktopIcon({ app }: { app: MacShellApp }) {
         gradient={app.gradient}
         iconUrl={app.iconUrl}
         appId={app.id}
-        liquidBackdrop
+        state={app.iconState ?? (app.running ? "active" : "default")}
       />
       <span className="mac-desktop-icon-label">{app.name}</span>
     </button>
@@ -1715,6 +1710,7 @@ export function MacSpotlight({
                   gradient={app.gradient}
                   iconUrl={app.iconUrl}
                   appId={app.id}
+                  state={app.iconState ?? (app.running ? "active" : "default")}
                 />
                 <span>
                   <strong>{app.name}</strong>
@@ -1796,6 +1792,7 @@ export function MacLaunchpad({
               gradient={app.gradient}
               iconUrl={app.iconUrl}
               appId={app.id}
+              state={app.iconState ?? (app.running ? "active" : "default")}
             />
             <span>{app.name}</span>
           </button>

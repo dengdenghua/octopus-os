@@ -17,5 +17,8 @@
   "creator": "echo",
   "defaultProject": {
     "dir": "project"
+  },
+  "capabilities": {
+    "execution_backend": "codex_app_server"
   }
 }

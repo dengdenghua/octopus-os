@@ -335,4 +335,5 @@ description: Compare competitors
     assert registry["arms"] == ["web_read", "fs_writer"]
     assert registry["private_skills"] == ["competitive-analysis", "sector-overview"]
     assert (skills_root / "sector-overview" / "SKILL.md").is_file()
-    assert (agent_root / "profile.jsonc").is_file()
+    profile = json.loads((agent_root / "profile.jsonc").read_text(encoding="utf-8"))
+    assert profile["capabilities"]["execution_backend"] == "codex_app_server"

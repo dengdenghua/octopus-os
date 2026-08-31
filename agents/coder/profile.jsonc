@@ -20,6 +20,6 @@
     "dir": "project"
   },
   "capabilities": {
-    "code_mode_unlock": true
+    "execution_backend": "codex_app_server"
   }
 }
