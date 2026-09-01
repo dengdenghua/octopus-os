@@ -117,8 +117,11 @@ if ! is_done octopus-src; then
     fi
     git clone --depth 1 --branch "$OS_BRANCH" "$OS_REPO" "$OS_DIR"
   else
+    # 已有仓库时对齐 bundle/远程快照。注意:fetch 只更新 origin/$BRANCH,
+    # checkout 不会让本地分支快进(bundle 场景实测 HEAD 停留在旧提交),
+    # 必须 reset --hard 对齐;工作区脏文件会被覆盖,本脚本即被覆盖源。
     git -C "$OS_DIR" fetch --depth 1 origin "$OS_BRANCH"
-    git -C "$OS_DIR" checkout "$OS_BRANCH"
+    git -C "$OS_DIR" reset --hard FETCH_HEAD
   fi
   done_mark octopus-src
 else skip octopus-src; fi
