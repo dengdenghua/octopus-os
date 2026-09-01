@@ -88,6 +88,7 @@ export function RightPanelMenu({
   return (
     <Button
       type="button"
+      variant="ghost"
       aria-label={panelToggleLabel}
       aria-pressed={Boolean(activePage)}
       data-state={activePage ? "open" : "closed"}

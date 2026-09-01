@@ -707,6 +707,10 @@ function ConnectDialog({
         const res = await connectCapability(capability.id, {
           tokens: Object.keys(tokens).length ? tokens : undefined,
           run_cli: isCli && Object.keys(tokens).length === 0,
+          grant_permissions:
+            isModelProvider && capability.permission_review_required
+              ? capability.permissions
+              : undefined,
         });
         const isCurrentOperation =
           operationEpochRef.current === operationEpoch &&
@@ -1272,7 +1276,9 @@ function PermissionReviewDialog({
           </DialogTitle>
           <DialogDescription className="text-xs leading-5">
             {mode === "install"
-              ? "先核对签名包会使用的能力；确认后才安装并启用。"
+              ? capability.model_provider
+                ? "先核对签名包会使用的能力；安装后继续配置模型服务凭据。"
+                : "先核对签名包会使用的能力；确认后才安装并启用。"
               : "该插件已经安装，但仍处于停用状态。确认权限后才会进入运行时。"}
           </DialogDescription>
         </DialogHeader>
@@ -1292,7 +1298,11 @@ function PermissionReviewDialog({
               </div>
               <div className="flex justify-between gap-3">
                 <span className="text-muted-foreground">安装结果</span>
-                <span>验证签名 · 写入技能 · 默认停用</span>
+                <span>
+                  {capability.model_provider
+                    ? "验证签名 · 写入适配器 · 等待配置"
+                    : "验证签名 · 写入技能 · 默认停用"}
+                </span>
               </div>
             </div>
 
@@ -1368,7 +1378,11 @@ function PermissionReviewDialog({
             onClick={onConfirm}
           >
             {busy ? <Loader2 className="mr-1 size-3 animate-spin" /> : null}
-            {mode === "install" ? "确认并启用" : "确认权限并启用"}
+            {mode === "install"
+              ? capability.model_provider
+                ? "确认并配置"
+                : "确认并启用"
+              : "确认权限并启用"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1672,7 +1686,10 @@ export function CapabilityMarketPanel({
             : c,
         ),
       );
-      if (reviewedPlan) {
+      const needsModelProviderConnection = Boolean(
+        reviewedPlan && cap.model_provider,
+      );
+      if (reviewedPlan && !needsModelProviderConnection) {
         await setCapabilityEnabled(cap.id, true, permissions);
         enabledAfterInstall = true;
         setItems((prev) =>
@@ -1709,7 +1726,19 @@ export function CapabilityMarketPanel({
       void queryClient.invalidateQueries({
         queryKey: CAPABILITY_SURFACE_QUERY_KEY,
       });
-      if (reviewedPlan) setPermissionReview(null);
+      if (reviewedPlan) {
+        setPermissionReview(null);
+        if (needsModelProviderConnection) {
+          setConnectTarget({
+            ...cap,
+            installed: true,
+            enabled: false,
+            permissions,
+            permission_review_required: permissions.length > 0,
+            permission_active: false,
+          });
+        }
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (reviewedPlan) {
@@ -1806,6 +1835,10 @@ export function CapabilityMarketPanel({
 
   const onToggleEnabled = async (cap: CapabilityInfo) => {
     if (!cap.enabled && cap.permission_review_required) {
+      if (cap.model_provider) {
+        await openConnect(cap);
+        return;
+      }
       await openPermissionReview(cap, "enable");
       return;
     }
@@ -2317,6 +2350,9 @@ export function CapabilityMarketPanel({
                         title={
                           cap.enabled
                             ? "禁用"
+                            : cap.model_provider &&
+                                cap.permission_review_required
+                              ? "配置模型服务并确认权限"
                             : cap.permission_review_required
                               ? "查看并确认签名权限"
                               : "启用"
@@ -2326,42 +2362,52 @@ export function CapabilityMarketPanel({
                           <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                         ) : cap.enabled ? (
                           <PlugZap className="mr-1 h-3 w-3 text-emerald-500" />
+                        ) : cap.model_provider &&
+                          cap.permission_review_required ? (
+                          <KeyRound className="mr-1 h-3 w-3" />
                         ) : (
                           <Plug className="mr-1 h-3 w-3" />
                         )}
                         {cap.enabled
                           ? "启用中"
+                          : cap.model_provider &&
+                              cap.permission_review_required
+                            ? "配置并启用"
                           : cap.permission_review_required
                             ? "确认权限"
                             : "已禁用"}
                       </Button>
-                      <Button
-                        size="sm"
-                        variant={connected ? "outline" : "secondary"}
-                        className="h-7 rounded-sm px-3 text-xs"
-                        disabled={busy || cap.permission_review_required}
-                        onClick={() =>
-                          connected
-                            ? void onDisconnect(cap)
-                            : void openConnect(cap)
-                        }
-                        title={
-                          cap.permission_review_required
-                            ? "请先确认权限并启用"
-                            : connected
-                              ? "断开并清除凭据"
-                              : "连接/认证"
-                        }
-                      >
-                        {busy ? (
-                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                        ) : connected ? (
-                          <Unplug className="mr-1 h-3 w-3" />
-                        ) : (
-                          <KeyRound className="mr-1 h-3 w-3" />
-                        )}
-                        {connected ? "断开" : "连接"}
-                      </Button>
+                      {!(
+                        cap.model_provider && cap.permission_review_required
+                      ) ? (
+                        <Button
+                          size="sm"
+                          variant={connected ? "outline" : "secondary"}
+                          className="h-7 rounded-sm px-3 text-xs"
+                          disabled={busy || cap.permission_review_required}
+                          onClick={() =>
+                            connected
+                              ? void onDisconnect(cap)
+                              : void openConnect(cap)
+                          }
+                          title={
+                            cap.permission_review_required
+                              ? "请先确认权限并启用"
+                              : connected
+                                ? "断开并清除凭据"
+                                : "连接/认证"
+                          }
+                        >
+                          {busy ? (
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          ) : connected ? (
+                            <Unplug className="mr-1 h-3 w-3" />
+                          ) : (
+                            <KeyRound className="mr-1 h-3 w-3" />
+                          )}
+                          {connected ? "断开" : "连接"}
+                        </Button>
+                      ) : null}
                       <Button
                         size="sm"
                         variant="ghost"

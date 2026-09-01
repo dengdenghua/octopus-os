@@ -1,6 +1,7 @@
 {
   "schema": "echo.workbench_app.v1",
   "id": "paper-trading",
+  "catalog_id": "workbench_paper-trading",
   "name": "模拟炒股",
   "description": "策略验证与模拟交易",
   "route": "/workspace/paper-trading",
@@ -21,4 +22,3 @@
     "network.quotes"
   ]
 }
-

@@ -42,6 +42,7 @@ describe("RightPanelMenu header toggle", () => {
     const toggle = screen.getByRole("button", { name: "打开右侧窗口" });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
     expect(toggle).toHaveAttribute("data-state", "closed");
+    expect(toggle).toHaveAttribute("data-variant", "ghost");
 
     await user.click(toggle);
     expect(actions.onOpenAgent).toHaveBeenCalledTimes(1);

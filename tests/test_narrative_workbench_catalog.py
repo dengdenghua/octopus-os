@@ -145,6 +145,28 @@ def test_official_narrative_descriptor_overrides_catalog_collision(
     assert matches[0]["kind"] == "workbench"
 
 
+def test_official_narrative_descriptor_removes_stale_package_id_collision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog, _plugin_root = _catalog(tmp_path, monkeypatch)
+    catalog._store = {
+        "items": [
+            {
+                "id": "workbench_narrative_studio",
+                "plugin": "narrative_studio",
+                "kind": "workbench",
+            }
+        ]
+    }
+
+    matches = [
+        item for item in catalog.items() if item.get("plugin") == "narrative_studio"
+    ]
+
+    assert [item["id"] for item in matches] == ["workbench_narrative"]
+    assert matches[0]["runtime_plugin"] == "narrative_studio"
+
+
 def test_remote_install_materializes_frontend_and_backend_and_uninstall_keeps_works(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -387,4 +409,3 @@ def test_invalid_update_never_replaces_last_good_generation(
 
     assert "remote narrative" in target_page.read_text("utf-8")
     assert catalog.plugin_statuses()["narrative_studio"]["lifecycle_state"] == "enabled"
-

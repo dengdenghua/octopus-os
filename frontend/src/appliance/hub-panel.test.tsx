@@ -513,7 +513,11 @@ describe("Echo Hub panel", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "安装" }));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes("/api/appliance/hub/plans/install"),
+      ),
+    ).toBe(false);
   });
 
   it("shows truthful integration state and filters the featured catalog", async () => {
@@ -593,6 +597,36 @@ describe("Echo Hub panel", () => {
     expect(
       screen.queryByRole("button", { name: "接入中" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("explains when the preview is not connected to an Echo OS app service", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ...catalog([runtimeOfflineApp]),
+            runtime: {
+              available: false,
+              error:
+                "direct Docker socket access is disabled in appliance mode; configure ECHO_DOCKER_HOST",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    render(<HubPanel open onClose={vi.fn()} />);
+
+    expect(
+      await screen.findByText(
+        "当前预览未连接 Echo OS 设备应用服务；部署到设备或配置受限容器代理后即可安装。",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("explains fixed ports, storage access and retention in one detail sheet", async () => {
@@ -952,12 +986,12 @@ describe("Echo Hub panel", () => {
     expect(screen.getByText("演示应用")).toBeInTheDocument();
     expect(screen.getByText("待更新应用")).toBeInTheDocument();
     expect(screen.queryByText("智能相册")).not.toBeInTheDocument();
-    expect(screen.getByText(/2\/3 个精选应用/)).toBeInTheDocument();
+    expect(screen.getByText(/2\/3 个应用/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "可更新 1" }));
     expect(screen.getByText("待更新应用")).toBeInTheDocument();
     expect(screen.queryByText("演示应用")).not.toBeInTheDocument();
-    expect(screen.getByText(/1\/3 个精选应用/)).toBeInTheDocument();
+    expect(screen.getByText(/1\/3 个应用/)).toBeInTheDocument();
   });
 
   it("reviews a deterministic plan, requires password approval, then applies it", async () => {
@@ -1484,7 +1518,7 @@ describe("Echo Hub panel", () => {
     );
   });
 
-  it("shows the existing Agent catalog as a separate owned surface", async () => {
+  it("unifies standalone and workbench apps while keeping Agent capabilities separate", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/api/appliance/hub/catalog")) {
@@ -1596,27 +1630,26 @@ describe("Echo Hub panel", () => {
       return new Response(null, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
-    const onOpenAgentAssets = vi.fn();
     const user = userEvent.setup();
-    render(
-      <HubPanel open onClose={vi.fn()} onOpenAgentAssets={onOpenAgentAssets} />,
-    );
+    render(<HubPanel open onClose={vi.fn()} />);
 
-    await user.click(await screen.findByRole("button", { name: "Agent 能力" }));
     expect(await screen.findByText("文档助手")).toBeInTheDocument();
+    expect(screen.getByText("智能相册")).toBeInTheDocument();
+    expect(screen.getAllByText("独立窗口").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("工作台内嵌").length).toBeGreaterThan(0);
+    expect(screen.queryByText("企业微信")).not.toBeInTheDocument();
     expect(screen.getByText("可更新")).toBeInTheDocument();
     expect(screen.getByText("可回滚")).toBeInTheDocument();
     expect(screen.getByText("2 个恢复点")).toBeInTheDocument();
     expect(screen.getByText("发布者已验证")).toBeInTheDocument();
     expect(screen.getByText("当前兼容")).toBeInTheDocument();
-    expect(screen.getAllByText("2 项权限")).toHaveLength(2);
-    expect(screen.getAllByText("需认证")).toHaveLength(2);
-    expect(screen.getAllByText("1 个依赖")).toHaveLength(2);
+    expect(screen.getByText("2 项权限")).toBeInTheDocument();
+    expect(screen.getByText("需认证")).toBeInTheDocument();
+    expect(screen.getByText("1 个依赖")).toBeInTheDocument();
     expect(screen.getByText("版本说明（已验证）")).toBeInTheDocument();
-    expect(screen.getByText("目录版本说明")).toBeInTheDocument();
     expect(screen.getByTitle("1.1.0：新增受信版本说明。")).toBeInTheDocument();
     expect(screen.getByTitle("需要 Agent >=0.2,<0.3")).toBeInTheDocument();
-    expect(screen.getByText(/目录归 Agent 所有/)).toBeInTheDocument();
+    expect(screen.getByText(/同一生命周期/)).toBeInTheDocument();
 
     await user.click(
       screen.getByRole("button", { name: "查看“文档助手”详情" }),
@@ -1634,21 +1667,11 @@ describe("Echo Hub panel", () => {
       within(detail).getByRole("button", { name: "关闭 Agent 能力详情" }),
     );
 
-    await user.click(
-      screen.getByRole("button", {
-        name: "在 Agent 中管理“文档助手”",
-      }),
-    );
-    expect(onOpenAgentAssets).toHaveBeenCalledOnce();
-    expect(onOpenAgentAssets).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "workbench:documents",
-        installId: "documents",
-        kind: "workbench",
-        installed: true,
-        lifecycleState: "update_available",
-      }),
-    );
+    await user.click(screen.getByRole("button", { name: "Agent 能力" }));
+    expect(await screen.findByText("企业微信")).toBeInTheDocument();
+    expect(screen.queryByText("文档助手")).not.toBeInTheDocument();
+    expect(screen.getByText("目录版本说明")).toBeInTheDocument();
+    expect(screen.getByText(/能力目录归 Agent 所有/)).toBeInTheDocument();
   });
 
   it("installs a connector inside Hub through a reviewed Agent plan", async () => {

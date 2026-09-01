@@ -225,6 +225,61 @@ class TestInstalledPlugins:
         assert "tencent-docs" not in got  # 未安装的连接器不标
         assert got == sorted(got)
 
+    def test_source_checkout_installs_connector_without_unpublished_release_archive(
+        self, tmp_path, monkeypatch
+    ):
+        repo = tmp_path / "repo"
+        source = repo / "extensions" / "workbuddy-connectors" / "connectors" / "opencode-zen"
+        source.mkdir(parents=True)
+        (repo / ".git").mkdir()
+        (source / "README.md").write_text("OpenCode Zen\n", encoding="utf-8")
+
+        plugin_root = tmp_path / "plugins"
+        skills_root = tmp_path / "skills"
+        connector_state = tmp_path / "connectors" / "state.json"
+        capability_state = tmp_path / "capabilities" / "state.json"
+        monkeypatch.setattr(cloud_catalog, "REPO", repo)
+        monkeypatch.setattr(CloudCatalog, "PLUGIN_INSTALL_ROOT", plugin_root)
+        monkeypatch.setattr(CloudCatalog, "SKILLS_ROOT", skills_root)
+        monkeypatch.setattr(CloudCatalog, "CONNECTOR_STATE_FILE", connector_state)
+        monkeypatch.setattr(CloudCatalog, "CAPABILITY_STATE_FILE", capability_state)
+
+        catalog = CloudCatalog("plugins", use_remote=False, use_cache=False)
+        catalog._store = {
+            "items": [
+                {
+                    "id": "wb_opencode-zen",
+                    "plugin": "opencode-zen",
+                    "kind": "connector",
+                    "source": "workbuddy",
+                    "type": "api",
+                    "auth_mode": "token",
+                    "version": "2.0.0",
+                    "download_url": "https://example.invalid/unpublished.tar.gz",
+                }
+            ]
+        }
+        monkeypatch.setattr(
+            catalog,
+            "_package_archive",
+            lambda *_args, **_kwargs: pytest.fail("source checkout must not download the archive"),
+        )
+
+        installed = catalog.install_plugin("opencode-zen", plugin_kind="connector")
+
+        manifest = json.loads(
+            (
+                plugin_root / "connector" / "opencode-zen" / ".echo-connector" / "manifest.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert installed["installed"] is True
+        assert manifest["id"] == "opencode-zen"
+        assert manifest["version"] == "2.0.0"
+        assert manifest["permissions"] == [
+            "account.credentials",
+            "network.remote",
+        ]
+
     def test_cloud_catalog_exposes_workbench_apps(self):
         cat = CloudCatalog("plugins", use_remote=False, use_cache=False)
         ids = {item["id"] for item in cat.items()}
@@ -391,6 +446,3 @@ class TestSyncCodexCache:
         # 幂等:重复同步不再复制
         n2 = codex_discovery.sync_codex_cache_to_echo(source=legacy, dest=dest)
         assert n2 == 0
-
-
-

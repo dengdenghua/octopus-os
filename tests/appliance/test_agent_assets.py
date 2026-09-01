@@ -17,11 +17,11 @@ class _Catalog:
         self.fail = fail
 
     def list(self, **kwargs: object) -> dict:
-        assert kwargs == {"limit": 80}
+        assert kwargs in ({"limit": 80}, {"kind": "workbench", "limit": 80})
         if self.fail:
             raise RuntimeError("catalog unavailable")
         if self.kind == "plugins":
-            return {
+            result = {
                 "items": [
                     {
                         "id": "documents",
@@ -42,6 +42,9 @@ class _Catalog:
                     }
                 ]
             }
+            if kwargs.get("kind") == "workbench":
+                return result
+            return result
         return {"items": [{"name": "photo-organizer", "description": "整理照片"}]}
 
     def installed_plugins(self) -> list[str]:
@@ -210,8 +213,10 @@ def test_agent_assets_keeps_catalog_when_plugin_lifecycle_projection_is_offline(
 def test_agent_assets_projects_only_bounded_public_fields_and_deduplicates() -> None:
     class UnsafeCatalog(_Catalog):
         def list(self, **kwargs: object) -> dict:
-            assert kwargs == {"limit": 80}
+            assert kwargs in ({"limit": 80}, {"kind": "workbench", "limit": 80})
             if self.kind == "plugins":
+                if kwargs.get("kind") == "workbench":
+                    return {"items": []}
                 return {
                     "items": [
                         {
@@ -264,6 +269,41 @@ def test_agent_assets_projects_only_bounded_public_fields_and_deduplicates() -> 
     assert "agent-private-token" not in serialized
     assert "agent.sqlite" not in serialized
     assert "internalState" not in serialized
+
+
+def test_agent_assets_reserves_bounded_catalog_space_for_workbench_apps() -> None:
+    class LateWorkbenchCatalog(_Catalog):
+        def list(self, **kwargs: object) -> dict:
+            if self.kind != "plugins":
+                return {"items": []}
+            if kwargs.get("kind") == "workbench":
+                return {
+                    "items": [
+                        {
+                            "id": "workbench_design",
+                            "plugin": "design",
+                            "kind": "workbench",
+                            "name_zh": "设计画布",
+                        }
+                    ]
+                }
+            return {
+                "items": [
+                    {"id": f"plugin-{index}", "plugin": f"plugin-{index}"} for index in range(80)
+                ]
+            }
+
+        def installed_plugins(self) -> list[str]:
+            return []
+
+        def plugin_statuses(self) -> dict[str, dict]:
+            return {}
+
+    result = AgentAssetCatalogService(lambda kind: LateWorkbenchCatalog(kind)).catalog()
+
+    assert len(result["plugins"]) == 80
+    assert result["plugins"][0]["plugin"] == "design"
+    assert result["plugins"][0]["kind"] == "workbench"
 
 
 def test_agent_assets_downgrades_malformed_trust_without_losing_lifecycle() -> None:

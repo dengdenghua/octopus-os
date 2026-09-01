@@ -25,16 +25,18 @@ from pathlib import Path
 from typing import Any
 
 from runtime.platform.io import JsonMutation, mutate_json_file, read_json_file
-from runtime.platform.process.paths import resources_root
+from runtime.platform.process.paths import app_paths, resources_root
 
 # ── 默认路径 ────────────────────────────────────────────────
-# Codex 格式插件统一放在我们 echo 名下(~/.echo/plugins/codex),
-# 不再直接读 Codex 的 ~/.codex/plugins/cache;旧缓存由 codex_discovery 一次性同步。
-CODEX_PLUGIN_CACHE = Path.home() / ".echo" / "plugins" / "codex"
-CONNECTOR_ROOT = Path(os.path.expanduser("~/.echo/connectors"))
+# Mutable capability state belongs to the active Echo data directory. This is
+# normally the project/appliance data root and follows ECHO_DATA_DIR in local
+# previews, so the registry observes the same generation CloudCatalog commits.
+_APP_DATA = app_paths().data_dir
+CODEX_PLUGIN_CACHE = _APP_DATA / "plugins" / "codex"
+CONNECTOR_ROOT = _APP_DATA / "connectors"
 CONNECTOR_STATE_FILE = CONNECTOR_ROOT / "state.json"
-CAPABILITY_STATE_FILE = Path(os.path.expanduser("~/.echo/capabilities/state.json"))
-SKILLS_ROOT = Path(os.path.expanduser("~/.echo/skills"))
+CAPABILITY_STATE_FILE = _APP_DATA / "capabilities" / "state.json"
+SKILLS_ROOT = _APP_DATA / "skills"
 REPO_ROOT = resources_root()
 NATIVE_PLUGIN_ICON_ROOT = REPO_ROOT / ".echo" / "plugins" / "codex"
 WORKBUDDY_CONNECTOR_ICON_ROOT = REPO_ROOT / "extensions" / "workbuddy-connectors" / "icons"

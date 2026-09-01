@@ -28,6 +28,7 @@ describe("built-in workbench apps", () => {
       cloudId: "workbench_narrative",
       packageId: "narrative_studio",
       runtimePlugin: "narrative_studio",
+      presentation: "workbench",
     });
   });
 

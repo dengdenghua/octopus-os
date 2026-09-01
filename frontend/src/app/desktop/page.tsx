@@ -100,6 +100,7 @@ import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
 import { HubPanel } from "@/appliance/hub-panel";
 import { EmbeddedAgentWorkspace } from "@/appliance/embedded-agent-workspace";
 import type { HubApp } from "@/appliance/hub";
+import { OPEN_ECHO_HUB_EVENT } from "@/core/apps/app-presentation";
 import { PhotosPanel } from "@/appliance/photos-panel";
 import { StorageCenterPanel } from "@/appliance/storage-center-panel";
 import { DeviceLinkPanel } from "@/appliance/device-link-panel";
@@ -1061,12 +1062,18 @@ export default function DesktopShellPage() {
       app.id !== nativeFileManagerApp?.id &&
       !isNativeSystemSettingsApp(app),
   );
-  const openAppStore = () => {
+  const openAppStore = useCallback(() => {
     setPhotosOpen(false);
     setStorageCenterOpen(false);
     setDeviceLinkOpen(false);
     setHubOpen(true);
-  };
+  }, []);
+  useEffect(() => {
+    const openHubFromCatalog = () => openAppStore();
+    window.addEventListener(OPEN_ECHO_HUB_EVENT, openHubFromCatalog);
+    return () =>
+      window.removeEventListener(OPEN_ECHO_HUB_EVENT, openHubFromCatalog);
+  }, [openAppStore]);
   const openFinder = () => {
     if (nativeFileManagerApp) {
       openNativeApp(nativeFileManagerApp);

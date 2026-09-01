@@ -365,6 +365,121 @@ describe("CapabilityMarketPanel", () => {
     }
   });
 
+  it("installs a model adapter before requesting its API key", async () => {
+    const permissions = ["account.credentials", "network.remote"];
+    mocks.listCapabilities.mockResolvedValue({
+      capabilities: [
+        {
+          ...openCodeZen,
+          installed: false,
+          enabled: false,
+          permissions,
+          permission_review_required: false,
+        },
+      ],
+      total: 1,
+    });
+    mocks.getCapabilityInstallPlan.mockResolvedValue({
+      schema: "echo.capability_install_plan.v1",
+      capability_id: "opencode-zen",
+      kind: "connector",
+      version: "2.0.0",
+      host_api: ">=0.2,<0.3",
+      permissions,
+      auth_modes: ["token"],
+      dependencies: [],
+      runtime_dependencies: [],
+      changes: ["verify_publisher_signature"],
+      permission_review_required: true,
+      can_install: true,
+      blockers: [],
+      plan_id: "plan:opencode-zen",
+    });
+    mocks.installCapability.mockResolvedValue({
+      installed: true,
+      enabled: false,
+      permissions,
+      permission_review_required: true,
+    });
+    mocks.connectCapability.mockResolvedValue({
+      connected: true,
+      message: "已接入 2 个免费模型。",
+    });
+
+    renderWithProviders(<CapabilityMarketPanel />, { locale: "zh-CN" });
+    fireEvent.click(await screen.findByRole("button", { name: "安装" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "确认并配置" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "连接 · OpenCode Zen 模型适配器",
+      }),
+    ).toBeInTheDocument();
+    expect(mocks.setCapabilityEnabled).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("OpenCode Zen API Key"), {
+      target: { value: "zen-test-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "验证并接入免费模型" }));
+
+    await waitFor(() =>
+      expect(mocks.connectCapability).toHaveBeenCalledWith("opencode-zen", {
+        tokens: { api_key: "zen-test-key" },
+        run_cli: false,
+        grant_permissions: permissions,
+      }),
+    );
+  });
+
+  it("configures an installed model adapter while granting pending permissions", async () => {
+    const permissions = ["account.credentials", "network.remote"];
+    mocks.listCapabilities.mockResolvedValue({
+      capabilities: [
+        {
+          ...openCodeZen,
+          installed: true,
+          enabled: false,
+          permissions,
+          permission_review_required: true,
+        },
+      ],
+      total: 1,
+    });
+    mocks.connectCapability.mockResolvedValue({ connected: true });
+
+    renderWithProviders(<CapabilityMarketPanel />, { locale: "zh-CN" });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "配置并启用" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "连接 · OpenCode Zen 模型适配器",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", {
+        name: "确认插件权限 · OpenCode Zen 模型适配器",
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("OpenCode Zen API Key"), {
+      target: { value: "zen-test-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "验证并接入免费模型" }));
+
+    await waitFor(() =>
+      expect(mocks.connectCapability).toHaveBeenCalledWith("opencode-zen", {
+        tokens: { api_key: "zen-test-key" },
+        run_cli: false,
+        grant_permissions: permissions,
+      }),
+    );
+    expect(mocks.setCapabilityEnabled).not.toHaveBeenCalled();
+  });
+
   it("分页加载全部应用，首屏不再请求完整目录", async () => {
     const firstPage = Array.from({ length: 60 }, (_, index) => ({
       ...browserPlugin,

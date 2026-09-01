@@ -1,6 +1,7 @@
 {
   "schema": "echo.workbench_app.v1",
   "id": "community",
+  "catalog_id": "workbench_community",
   "name": "发现社区",
   "description": "发现并复用社区工作流",
   "route": "/workspace/community",
@@ -18,4 +19,3 @@
     "workspace.storage"
   ]
 }
-

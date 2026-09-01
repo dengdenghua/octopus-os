@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from "react";
 
+import type { AppPresentation } from "@/core/apps/app-presentation";
+
 export type WorkbenchBuiltinIcon =
   | "projects"
   | "trading"
@@ -24,6 +26,8 @@ export interface WorkbenchBuiltinApp {
   packageId?: string;
   /** Runtime ModulePlugin name when this surface has a live plugin lifecycle. */
   runtimePlugin?: string;
+  /** How the installed app is presented to the user. */
+  presentation: AppPresentation;
 }
 
 /** Native EchoAI pages that can also live in the browser desktop and Dock. */
@@ -37,6 +41,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
     launchUrl: "echo://workspace/projects",
     icon: "projects",
     delivery: "core",
+    presentation: "workbench",
   },
   {
     id: "paper-trading",
@@ -50,6 +55,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
     cloudId: "workbench_paper-trading",
     packageId: "paper-trading",
     runtimePlugin: "paper_trading",
+    presentation: "workbench",
   },
   {
     id: "design",
@@ -62,6 +68,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
     delivery: "remote",
     cloudId: "workbench_design",
     packageId: "design",
+    presentation: "workbench",
   },
   {
     id: "narrative",
@@ -75,6 +82,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
     cloudId: "workbench_narrative",
     packageId: "narrative_studio",
     runtimePlugin: "narrative_studio",
+    presentation: "workbench",
   },
   {
     id: "evolution",
@@ -87,6 +95,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
     delivery: "remote",
     cloudId: "workbench_self-evolution",
     packageId: "self_evolution",
+    presentation: "workbench",
   },
   {
     id: "intelligence",
@@ -99,6 +108,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
     delivery: "remote",
     cloudId: "workbench_intelligence",
     packageId: "intelligence",
+    presentation: "workbench",
   },
   {
     id: "community",
@@ -111,6 +121,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
     delivery: "remote",
     cloudId: "workbench_community",
     packageId: "community",
+    presentation: "workbench",
   },
 ];
 

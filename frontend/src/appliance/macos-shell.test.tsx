@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { BotIcon, FolderIcon } from "lucide-react";
+import { BotIcon, FolderIcon, GlobeIcon } from "lucide-react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -47,20 +47,20 @@ const unverifiedAgentHealth = {
 };
 
 describe("Echo desktop shell", () => {
-  it("uses layered original artwork for built-in shell apps", () => {
+  it("uses familiar system glyphs for built-in shell apps", () => {
     const { container } = render(
       <MacAppIcon
-        icon={BotIcon}
+        icon={GlobeIcon}
         gradient="linear-gradient(#55c7ff, #087bd8)"
         appId="echo:/browser"
         liquidBackdrop
       />,
     );
 
-    const icon = container.querySelector('[data-icon-source="art"]');
+    const icon = container.querySelector('[data-icon-source="glyph"]');
     expect(icon).toBeInTheDocument();
-    expect(icon?.querySelector("svg")).toBeInTheDocument();
-    expect(icon?.querySelector("circle")).toBeInTheDocument();
+    expect(icon?.querySelector(".mac-app-icon-glyph")).toBeInTheDocument();
+    expect(icon?.querySelector(".mac-app-icon-art")).not.toBeInTheDocument();
     expect(icon?.querySelector(".mac-app-icon-specular")).toBeInTheDocument();
     expect(
       icon?.querySelector(".mac-app-icon-liquid-backdrop > img"),
@@ -84,7 +84,7 @@ describe("Echo desktop shell", () => {
 
     const icon = container.querySelector('[data-app-id="system:finder"]');
     expect(icon).toHaveAttribute("data-echo-family", "true");
-    expect(icon).toHaveAttribute("data-icon-source", "art");
+    expect(icon).toHaveAttribute("data-icon-source", "glyph");
     expect(icon?.querySelector(".mac-app-icon-tech-field")).toBeNull();
     expect(
       icon?.querySelector(".mac-app-icon-echo-signal"),

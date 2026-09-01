@@ -35,8 +35,11 @@ from runtime.platform.plugins.catalog_provenance import (
     verify_marketplace_catalog,
 )
 from runtime.platform.plugins.marketplace_package import (
+    CONNECTOR_MANIFEST_RELATIVE_PATH,
+    CONNECTOR_MANIFEST_SCHEMA,
     CONNECTOR_RELEASE_SUMMARY,
     compute_marketplace_content_provenance,
+    derive_connector_package_requirements,
     verify_marketplace_package_trust,
 )
 from runtime.platform.plugins.workbench_activation import (
@@ -369,11 +372,20 @@ class CloudCatalog:
             )
             if allow_dev_defaults:
                 # First-party descriptors are authoritative in a source/local
-                # catalog. Replace any colliding unsigned catalog row instead
-                # of leaving a shadow package ahead of the official workbench.
+                # catalog. Replace collisions by both catalog id and package id
+                # so a stale generated id cannot shadow the official package.
                 by_id = {str(item.get("id") or ""): item for item in items}
                 for official in (*_REMOTE_SURFACE_PLUGINS, *_WORKBENCH_APPS):
-                    by_id[str(official["id"])] = dict(official)
+                    official_id = str(official["id"])
+                    official_plugin = str(official.get("plugin") or "")
+                    for item_id, item in list(by_id.items()):
+                        if (
+                            item_id != official_id
+                            and official_plugin
+                            and str(item.get("plugin") or "") == official_plugin
+                        ):
+                            by_id.pop(item_id, None)
+                    by_id[official_id] = dict(official)
                 items = list(by_id.values())
         return items
 
@@ -1598,12 +1610,18 @@ class CloudCatalog:
             dev_source = (
                 REPO / "extensions" / "workbench-apps" / safe
                 if plugin_kind == "workbench"
+                else REPO / "extensions" / "workbuddy-connectors" / "connectors" / safe
+                if plugin_kind == "connector"
                 else REPO / "extensions" / "codex-plugins" / safe
             )
             dev_install = (
-                plugin_kind in {"workbench", "codex"}
+                plugin_kind in {"workbench", "codex", "connector"}
                 and (REPO / ".git").exists()
                 and dev_source.is_dir()
+                and (
+                    plugin_kind != "connector"
+                    or bool(str((catalog_item or {}).get("download_url") or "").strip())
+                )
             )
             if dev_install:
                 extracted = Path(tmp) / safe
@@ -1625,6 +1643,35 @@ class CloudCatalog:
                     shutil.copytree(dev_source, extracted, dirs_exist_ok=True)
                 else:
                     shutil.copytree(dev_source, extracted)
+                if plugin_kind == "connector":
+                    assert catalog_item is not None
+                    connector_manifest = extracted / CONNECTOR_MANIFEST_RELATIVE_PATH
+                    connector_manifest.parent.mkdir(parents=True, exist_ok=True)
+                    version = str(catalog_item.get("version") or "1.0.0")
+                    release_summary = (
+                        CONNECTOR_RELEASE_SUMMARY
+                        if version == "1.0.0"
+                        else f"{version}：纳入 Echo 受信连接器内容包。"
+                    )
+                    connector_manifest.write_text(
+                        json.dumps(
+                            {
+                                "schema": CONNECTOR_MANIFEST_SCHEMA,
+                                "id": safe,
+                                "version": version,
+                                "release_summary": release_summary,
+                                **derive_connector_package_requirements(
+                                    catalog_item,
+                                    package_dir=extracted,
+                                ),
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                            sort_keys=True,
+                        )
+                        + "\n",
+                        encoding="utf-8",
+                    )
             else:
                 extracted = self._extract_member(
                     self._package_archive(

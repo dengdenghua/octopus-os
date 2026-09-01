@@ -1,6 +1,7 @@
 {
   "schema": "echo.workbench_app.v1",
   "id": "self_evolution",
+  "catalog_id": "workbench_self-evolution",
   "name": "自进化",
   "description": "双螺旋、候选基因、治理与审计",
   "route": "/workspace/evolution",
@@ -18,4 +19,3 @@
     "workspace.storage"
   ]
 }
-

@@ -1,6 +1,7 @@
 {
   "schema": "echo.workbench_app.v1",
   "id": "design",
+  "catalog_id": "workbench_design",
   "name": "设计画布",
   "description": "视觉创作、素材编排与设计工作流",
   "route": "/workspace/design",
@@ -18,4 +19,3 @@
     "workspace.storage"
   ]
 }
-

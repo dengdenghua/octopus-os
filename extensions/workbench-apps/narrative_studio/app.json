@@ -1,6 +1,7 @@
 {
   "schema": "echo.workbench_app.v1",
   "id": "narrative_studio",
+  "catalog_id": "workbench_narrative",
   "name": "叙事工坊",
   "description": "角色、世界观、剧情分支与正典协作",
   "route": "/workspace/narrative",
@@ -20,4 +21,3 @@
   ],
   "data_paths": ["narrative-studio"]
 }
-

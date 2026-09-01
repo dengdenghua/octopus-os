@@ -224,9 +224,10 @@ def scan_workbench_apps() -> list[dict]:
         except (OSError, json.JSONDecodeError):
             continue
         app_id = str(meta.get("id") or app_json.parent.name)
+        catalog_id = str(meta.get("catalog_id") or f"workbench_{app_id}")
         out.append(
             {
-                "id": f"workbench_{app_id}",
+                "id": catalog_id,
                 "plugin": app_id,
                 "source": "echo",
                 "kind": "workbench",
@@ -244,6 +245,7 @@ def scan_workbench_apps() -> list[dict]:
                 "auth_modes": list(meta.get("auth_modes") or []),
                 "dependencies": list(meta.get("dependencies") or []),
                 "runtime_dependencies": list(meta.get("runtime_dependencies") or []),
+                "runtime_plugin": str(meta.get("runtime_plugin") or "") or None,
                 "download_url": CONTENT_PLUGINS_URL,
                 "install": {"kind": "workbench", "app_id": app_id},
             }

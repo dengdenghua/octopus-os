@@ -991,9 +991,8 @@ function RealtimePageContent({
   // 同源修正存量数据。
   const effectiveAgentId = isNewThread
     ? activeAgentId
-    : (threadId === "echo-assistant"
-        ? "echo"
-        : resolvedThreadOwnerAgentId) || activeAgentId;
+    : (threadId === "echo-assistant" ? "echo" : resolvedThreadOwnerAgentId) ||
+      activeAgentId;
 
   // A bound project owns the right-hand surface. Otherwise the persona's
   // preset is the default, with the user's last manual tab remembered per
@@ -1833,8 +1832,7 @@ function RealtimePageContent({
       }
     };
     window.addEventListener("echo:workdir-selected", handler);
-    return () =>
-      window.removeEventListener("echo:workdir-selected", handler);
+    return () => window.removeEventListener("echo:workdir-selected", handler);
   }, [
     effectiveWorkDir,
     handleWorkDirChange,
@@ -4096,6 +4094,7 @@ function RealtimePageContent({
                         {headerEchoShare}
                         <Button
                           type="button"
+                          variant="ghost"
                           aria-label="自动化与订阅"
                           title="自动化与订阅"
                           onClick={toggleAutomationPanel}

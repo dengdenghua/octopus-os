@@ -86,6 +86,11 @@ import {
 } from "@/appliance/hub";
 import { cn } from "@/lib/utils";
 import { copyTextToClipboard } from "@/core/clipboard";
+import {
+  APP_PRESENTATION_LABELS,
+  isWorkbenchApplication,
+  type AppPresentation,
+} from "@/core/apps/app-presentation";
 
 const CATEGORY_LABELS: Record<string, string> = {
   all: "全部",
@@ -107,7 +112,6 @@ type AgentAssetFilter =
   | "all"
   | "installed"
   | "updates"
-  | "workbench"
   | "plugin"
   | "connector"
   | "skill";
@@ -116,11 +120,18 @@ const AGENT_ASSET_FILTERS: AgentAssetFilter[] = [
   "all",
   "installed",
   "updates",
-  "workbench",
   "plugin",
   "connector",
   "skill",
 ];
+
+type AppCatalogFilter =
+  | "all"
+  | "standalone"
+  | "workbench"
+  | "installed"
+  | "updates"
+  | string;
 
 const AGENT_ASSET_LABELS: Record<AgentHubAsset["kind"], string> = {
   workbench: "工作台",
@@ -217,6 +228,17 @@ const OPERATION_LABELS: Record<HubOperation["operation"], string> = {
   stop: "停止",
   restart: "安全重启",
 };
+
+function runtimeUnavailableMessage(error: string | null) {
+  const detail = String(error || "").toLowerCase();
+  if (
+    detail.includes("configure echo_docker_host") ||
+    detail.includes("docker socket not found")
+  ) {
+    return "当前预览未连接 Echo OS 设备应用服务；部署到设备或配置受限容器代理后即可安装。";
+  }
+  return "应用目录可浏览，但设备安装服务暂时离线。";
+}
 
 function operationProgressLabel(operation: HubOperation) {
   const progress = operation.progress;
@@ -362,6 +384,9 @@ function AppCard({
               )}
             >
               {status.label}
+            </span>
+            <span className="shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700">
+              {APP_PRESENTATION_LABELS.standalone}
             </span>
           </div>
           <p className="mt-0.5 truncate text-[11px] text-slate-400">
@@ -1274,10 +1299,16 @@ function AgentAssetCard({
   asset,
   onManage,
   onDetails,
+  presentation,
+  primaryBusy = false,
+  onPrimaryAction,
 }: {
   asset: AgentHubAsset;
   onManage?: (asset: AgentHubAsset) => void;
   onDetails: (asset: AgentHubAsset) => void;
+  presentation?: AppPresentation;
+  primaryBusy?: boolean;
+  onPrimaryAction?: (asset: AgentHubAsset) => void;
 }) {
   const Icon =
     asset.kind === "workbench"
@@ -1348,6 +1379,11 @@ function AgentAssetCard({
                 )}
               >
                 {stateBadge.label}
+              </span>
+            )}
+            {presentation && (
+              <span className="shrink-0 rounded-full bg-fuchsia-50 px-2 py-0.5 text-[10px] font-medium text-fuchsia-700">
+                {APP_PRESENTATION_LABELS[presentation]}
               </span>
             )}
           </div>
@@ -1459,15 +1495,47 @@ function AgentAssetCard({
           >
             详情
           </button>
-          <button
-            type="button"
-            onClick={() => onManage?.(asset)}
-            disabled={!onManage}
-            aria-label={`在 Agent 中管理“${asset.name}”`}
-            className="h-8 rounded-full bg-slate-100 px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-200 disabled:cursor-default disabled:opacity-50"
-          >
-            Agent 中管理
-          </button>
+          {onPrimaryAction ? (
+            <button
+              type="button"
+              onClick={() => onPrimaryAction(asset)}
+              disabled={primaryBusy}
+              aria-label={`${
+                asset.lifecycleState === "update_available"
+                  ? "更新"
+                  : !asset.installed
+                    ? "安装"
+                    : asset.permissionReviewRequired
+                      ? "确认权限"
+                      : asset.enabled
+                        ? "打开"
+                        : "启用"
+              }“${asset.name}”`}
+              className="h-8 rounded-full bg-slate-900 px-3 text-[11px] font-semibold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-50"
+            >
+              {primaryBusy
+                ? "处理中…"
+                : asset.lifecycleState === "update_available"
+                  ? "更新"
+                  : !asset.installed
+                    ? "安装"
+                    : asset.permissionReviewRequired
+                      ? "确认权限"
+                      : asset.enabled
+                        ? "打开"
+                        : "启用"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onManage?.(asset)}
+              disabled={!onManage}
+              aria-label={`在 Agent 中管理“${asset.name}”`}
+              className="h-8 rounded-full bg-slate-100 px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-200 disabled:cursor-default disabled:opacity-50"
+            >
+              Agent 中管理
+            </button>
+          )}
         </div>
       </div>
     </article>
@@ -2031,7 +2099,7 @@ export function HubPanel({
   const [error, setError] = useState<string | null>(null);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useState<AppCatalogFilter>("all");
   const [agentKind, setAgentKind] = useState<AgentAssetFilter>("all");
   const [planningAppId, setPlanningAppId] = useState<string | null>(null);
   const [pendingPlan, setPendingPlan] = useState<PendingOperation | null>(null);
@@ -2209,10 +2277,10 @@ export function HubPanel({
   }, [canManageDevice, open, refreshOperations]);
 
   useEffect(() => {
-    if (open && view === "agent" && agentCatalog === null && !agentLoading) {
+    if (open && agentCatalog === null && !agentLoading) {
       refreshAgentCatalog();
     }
-  }, [agentCatalog, agentLoading, open, view]);
+  }, [agentCatalog, agentLoading, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -2246,6 +2314,8 @@ export function HubPanel({
     const present = new Set(catalog?.apps.map((app) => app.category) ?? []);
     return [
       "all",
+      "standalone",
+      "workbench",
       "installed",
       "updates",
       ...Object.keys(CATEGORY_LABELS).filter(
@@ -2258,11 +2328,33 @@ export function HubPanel({
   const deviceCounts = useMemo(
     () => ({
       installed:
-        catalog?.apps.filter((app) => app.installation.installed).length ?? 0,
-      updates: catalog?.apps.filter((app) => app.updateAvailable).length ?? 0,
+        (catalog?.apps.filter((app) => app.installation.installed).length ??
+          0) +
+        (agentCatalog?.assets.filter(
+          (asset) => isWorkbenchApplication(asset) && asset.installed,
+        ).length ?? 0),
+      updates:
+        (catalog?.apps.filter((app) => app.updateAvailable).length ?? 0) +
+        (agentCatalog?.assets.filter(
+          (asset) =>
+            isWorkbenchApplication(asset) &&
+            asset.lifecycleState === "update_available",
+        ).length ?? 0),
     }),
-    [catalog],
+    [agentCatalog, catalog],
   );
+
+  const agentCapabilityCounts = useMemo(() => {
+    const capabilities = (agentCatalog?.assets ?? []).filter(
+      (asset) => !isWorkbenchApplication(asset),
+    );
+    return {
+      installed: capabilities.filter((asset) => asset.installed).length,
+      updates: capabilities.filter(
+        (asset) => asset.lifecycleState === "update_available",
+      ).length,
+    };
+  }, [agentCatalog]);
 
   const activeOperationAppIds = useMemo(
     () =>
@@ -2279,10 +2371,11 @@ export function HubPanel({
   const visibleApps = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
     return (catalog?.apps ?? []).filter((app) => {
+      if (category === "workbench") return false;
       if (category === "installed" && !app.installation.installed) return false;
       if (category === "updates" && !app.updateAvailable) return false;
       if (
-        !["all", "installed", "updates"].includes(category) &&
+        !["all", "standalone", "installed", "updates"].includes(category) &&
         app.category !== category
       )
         return false;
@@ -2293,9 +2386,27 @@ export function HubPanel({
     });
   }, [catalog, category, search]);
 
+  const visibleWorkbenchApps = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase();
+    return (agentCatalog?.assets ?? []).filter((asset) => {
+      if (!isWorkbenchApplication(asset)) return false;
+      if (category === "standalone") return false;
+      if (category === "installed" && !asset.installed) return false;
+      if (category === "updates" && asset.lifecycleState !== "update_available")
+        return false;
+      if (!["all", "workbench", "installed", "updates"].includes(category))
+        return false;
+      if (!needle) return true;
+      return `${asset.name} ${asset.description} ${asset.source}`
+        .toLocaleLowerCase()
+        .includes(needle);
+    });
+  }, [agentCatalog, category, search]);
+
   const visibleAgentAssets = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
     return (agentCatalog?.assets ?? []).filter((asset) => {
+      if (isWorkbenchApplication(asset)) return false;
       if (agentKind === "installed" && !asset.installed) return false;
       if (
         agentKind === "updates" &&
@@ -2316,7 +2427,10 @@ export function HubPanel({
 
   const refreshActiveView = () => {
     if (view === "agent") refreshAgentCatalog();
-    else refresh();
+    else {
+      refresh();
+      refreshAgentCatalog();
+    }
   };
 
   const beginInstall = async (app: HubApp) => {
@@ -2597,6 +2711,19 @@ export function HubPanel({
     refreshAgentCatalog();
   };
 
+  const handleWorkbenchAppAction = (asset: AgentHubAsset) => {
+    if (!asset.installed || asset.lifecycleState === "update_available") {
+      void beginAgentLifecycle("install", asset);
+      return;
+    }
+    if (asset.permissionReviewRequired || !asset.enabled) {
+      void authorizeAgent(asset);
+      return;
+    }
+    if (onOpenAgentAssets) onOpenAgentAssets(asset);
+    else setAgentDetailTarget(asset);
+  };
+
   if (!open) return null;
 
   return (
@@ -2656,21 +2783,19 @@ export function HubPanel({
                   ) : (
                     <BotIcon className="size-3.5" />
                   )}
-                  {view === "device"
-                    ? "为 Echo OS 精选"
-                    : "复用 Agent 能力目录"}
+                  {view === "device" ? "统一应用目录" : "复用 Agent 能力目录"}
                 </div>
                 <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
                   {view === "device"
-                    ? "让家庭数据服务即装即用"
+                    ? "安装一次，选择最合适的打开方式"
                     : "把插件与技能带进系统工作流"}
                 </h1>
                 <p className="mt-1.5 max-w-xl text-[13px] leading-5 text-slate-500">
                   {!canManageDevice
                     ? "你可以浏览设备与 Agent 目录，并连接自己的账户；安装、更新和设备控制由管理员完成。"
                     : view === "device"
-                      ? "统一检查架构、端口、目录权限与运行状态。只有通过 Echo 安全合同的版本才会开放安装。"
-                      : "直接读取 Agent 已有目录与安装状态，不复制私有数据库，也不在系统层重写插件安装逻辑。"}
+                      ? "应用共用同一套安装、权限、更新与卸载状态；独立窗口应用提供完整 Web 界面，工作台应用直接嵌入当前任务。"
+                      : "插件、连接器和技能复用 Agent 目录；应用不再混入能力列表。"}
                 </p>
               </div>
               <label className="flex h-10 w-full items-center gap-2 rounded-full bg-white/82 px-4 shadow-[inset_0_0_0_1px_rgba(148,163,184,.28),0_5px_18px_rgba(51,65,85,.06)] lg:w-72">
@@ -2679,7 +2804,7 @@ export function HubPanel({
                   value={search}
                   onChange={(event) => setSearch(event.currentTarget.value)}
                   placeholder={
-                    view === "device" ? "搜索应用" : "搜索插件与技能"
+                    view === "device" ? "搜索全部应用" : "搜索插件与技能"
                   }
                   aria-label="搜索 Hub 应用"
                   className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
@@ -2703,7 +2828,7 @@ export function HubPanel({
                   )}
                 >
                   <ShoppingBagIcon className="size-3.5" />
-                  设备应用
+                  应用
                 </button>
                 <button
                   type="button"
@@ -2744,7 +2869,13 @@ export function HubPanel({
                       )}
                     >
                       {view === "device"
-                        ? `${CATEGORY_LABELS[key] ?? key}${
+                        ? `${
+                            key === "standalone"
+                              ? APP_PRESENTATION_LABELS.standalone
+                              : key === "workbench"
+                                ? APP_PRESENTATION_LABELS.workbench
+                                : (CATEGORY_LABELS[key] ?? key)
+                          }${
                             key === "installed" || key === "updates"
                               ? ` ${deviceCounts[key]}`
                               : ""
@@ -2752,16 +2883,14 @@ export function HubPanel({
                         : key === "all"
                           ? "全部"
                           : key === "installed"
-                            ? `已安装 ${agentCatalog?.installed ?? 0}`
+                            ? `已安装 ${agentCapabilityCounts.installed}`
                             : key === "updates"
-                              ? `可更新 ${agentCatalog?.updates ?? 0}`
-                              : key === "workbench"
-                                ? "工作台"
-                                : key === "plugin"
-                                  ? "插件"
-                                  : key === "connector"
-                                    ? "连接器"
-                                    : "技能"}
+                              ? `可更新 ${agentCapabilityCounts.updates}`
+                              : key === "plugin"
+                                ? "插件"
+                                : key === "connector"
+                                  ? "连接器"
+                                  : "技能"}
                     </button>
                   ),
                 )}
@@ -2776,10 +2905,19 @@ export function HubPanel({
               <div className="mx-6 mb-4 flex shrink-0 items-center gap-3 rounded-2xl bg-amber-50/90 px-4 py-3 text-amber-800">
                 <UnplugIcon className="size-4 shrink-0" />
                 <p className="text-xs">
-                  应用目录可浏览，但设备安装服务暂时离线。
+                  {runtimeUnavailableMessage(catalog.runtime.error)}
                 </p>
               </div>
             )}
+
+          {view === "device" && agentError && (
+            <div className="mx-6 mb-4 flex shrink-0 items-center gap-3 rounded-2xl bg-amber-50/90 px-4 py-3 text-amber-800">
+              <UnplugIcon className="size-4 shrink-0" />
+              <p className="text-xs">
+                工作台内嵌应用目录暂时不可用：{agentError}
+              </p>
+            </div>
+          )}
 
           {view === "device" && operations.length > 0 && (
             <div className="mx-6 mb-4 shrink-0 rounded-2xl bg-white/66 px-4 py-3 shadow-[inset_0_0_0_1px_rgba(148,163,184,.16)]">
@@ -2879,14 +3017,14 @@ export function HubPanel({
                   ))}
                 </div>
               )
-            ) : loading && !catalog ? (
+            ) : loading && !catalog && agentLoading && !agentCatalog ? (
               <div className="grid h-56 place-items-center text-sm text-slate-400">
                 <span className="flex items-center gap-2">
                   <Loader2Icon className="size-4 animate-spin" />
-                  正在校验精选目录…
+                  正在校验统一应用目录…
                 </span>
               </div>
-            ) : error ? (
+            ) : error && !agentCatalog ? (
               <div className="grid h-56 place-items-center text-center">
                 <div>
                   <UnplugIcon className="mx-auto size-8 text-slate-300" />
@@ -2902,7 +3040,8 @@ export function HubPanel({
                   </button>
                 </div>
               </div>
-            ) : visibleApps.length === 0 ? (
+            ) : visibleApps.length === 0 &&
+              visibleWorkbenchApps.length === 0 ? (
               <div className="grid h-56 place-items-center text-sm text-slate-400">
                 没有找到匹配的应用
               </div>
@@ -2930,6 +3069,16 @@ export function HubPanel({
                     onDetails={openDetails}
                   />
                 ))}
+                {visibleWorkbenchApps.map((asset) => (
+                  <AgentAssetCard
+                    key={asset.id}
+                    asset={asset}
+                    presentation="workbench"
+                    primaryBusy={agentActionId === asset.id}
+                    onPrimaryAction={handleWorkbenchAppAction}
+                    onDetails={setAgentDetailTarget}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -2938,10 +3087,10 @@ export function HubPanel({
             <span>
               {view === "agent"
                 ? agentCatalog
-                  ? `${agentCatalog.workbenches} 个工作台 · ${agentCatalog.plugins} 个插件 · ${agentCatalog.connectors} 个连接器 · ${agentCatalog.skills} 个技能 · 已安装 ${agentCatalog.installed}${agentCatalog.updates ? ` · 可更新 ${agentCatalog.updates}` : ""}`
+                  ? `${agentCatalog.plugins} 个插件 · ${agentCatalog.connectors} 个连接器 · ${agentCatalog.skills} 个技能 · 已安装 ${agentCapabilityCounts.installed}${agentCapabilityCounts.updates ? ` · 可更新 ${agentCapabilityCounts.updates}` : ""}`
                   : "Agent 能力目录"
                 : catalog
-                  ? `${visibleApps.length}/${catalog.total} 个精选应用 · ${catalog.architecture}`
+                  ? `${visibleApps.length + visibleWorkbenchApps.length}/${catalog.total + (agentCatalog?.workbenches ?? 0)} 个应用 · ${catalog.architecture}`
                   : "Echo 受信目录"}
             </span>
             <span className="flex items-center gap-1.5">
@@ -2953,8 +3102,8 @@ export function HubPanel({
                 <ShieldCheckIcon className="size-3 text-slate-400" />
               )}
               {view === "agent"
-                ? "目录归 Agent 所有，Echo Hub 只做统一入口"
-                : "安装前再次校验并需要管理员确认"}
+                ? "能力目录归 Agent 所有，Echo Hub 只做统一入口"
+                : "同一生命周期 · 两种应用呈现方式"}
             </span>
           </footer>
         </section>

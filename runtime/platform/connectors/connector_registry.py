@@ -27,7 +27,7 @@ from typing import Any
 from runtime.platform.io import JsonMutation, mutate_json_file, read_json_file
 from runtime.platform.process.paths import app_paths, resources_root
 
-CONNECTOR_ROOT = Path(os.path.expanduser("~/.echo/connectors"))
+CONNECTOR_ROOT = app_paths().data_dir / "connectors"
 STATE_FILE = CONNECTOR_ROOT / "state.json"
 _SLUG_RE = re.compile(r"[^a-z0-9_-]+", re.I)
 
@@ -146,7 +146,7 @@ class ConnectorRegistry:
         self._installed_root = Path(
             installed_root or (app_paths().data_dir / "plugins" / "connector")
         )
-        self._skills_root = Path(skills_root or Path(os.path.expanduser("~/.echo/skills")))
+        self._skills_root = Path(skills_root or (app_paths().data_dir / "skills"))
         self._state_file = Path(state_file or STATE_FILE)
         if permission_store is None:
             from runtime.platform.capabilities.permission_grants import (

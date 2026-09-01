@@ -113,6 +113,8 @@ import {
 import { AgentCard } from "./agent-card";
 import { AgentWorldCard } from "./agent-world-card";
 import { CapabilityMarketPanel } from "@/components/store/capability-market-panel";
+import { StandaloneAppDirectory } from "@/components/store/standalone-app-directory";
+import { APP_PRESENTATION_LABELS } from "@/core/apps/app-presentation";
 import { DEFAULT_FEATURED_APP_IDS } from "@/components/store/app-marketplace-panel";
 import { CloudSkillsPanel } from "@/components/store/cloud-skills-panel";
 import { WorkBuddyCloudStorePanel } from "@/components/store/workbuddy-cloud-store-panel";
@@ -1790,8 +1792,16 @@ export function AgentWorldUnified() {
                 <h2 id="application-library-title" className="sr-only">
                   应用中心
                 </h2>
+                <StandaloneAppDirectory searchQuery={searchQuery} />
                 <div className="mb-6">
-                  <h3 className="mb-2 text-sm font-semibold">应用</h3>
+                  <div className="mb-2">
+                    <h3 className="text-sm font-semibold">
+                      {APP_PRESENTATION_LABELS.workbench}应用
+                    </h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      安装后直接进入当前工作台，复用任务、项目与上下文。
+                    </p>
+                  </div>
                   <div className="grid gap-x-8 sm:grid-cols-2">
                     {WORKBENCH_BUILTIN_APPS.map((app) => {
                       const Icon = BUILTIN_APP_ICONS[app.icon];
@@ -1877,6 +1887,9 @@ export function AgentWorldUnified() {
                               </span>
                               <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                                 {app.description}
+                              </span>
+                              <span className="mt-0.5 block text-micro text-fuchsia-600 dark:text-fuchsia-300">
+                                {APP_PRESENTATION_LABELS[app.presentation]}
                               </span>
                               {isBroken || isIncompatible ? (
                                 <span className="mt-0.5 block text-micro text-destructive">

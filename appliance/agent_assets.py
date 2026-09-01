@@ -374,8 +374,22 @@ class AgentAssetCatalogService:
         for kind in ("plugins", "skills"):
             try:
                 catalog = self._catalog_factory(kind)
+                listing = catalog.list(limit=limit)
+                if kind == "plugins":
+                    # Workbench applications are part of the unified app
+                    # directory, not an accidental tail of the much larger
+                    # plugin list. Reserve catalog space for them so a bounded
+                    # page cannot make the two Hub surfaces disagree.
+                    workbench_listing = catalog.list(kind="workbench", limit=limit)
+                    workbench_items = (
+                        workbench_listing.get("items", [])
+                        if isinstance(workbench_listing, dict)
+                        else []
+                    )
+                    regular_items = listing.get("items", []) if isinstance(listing, dict) else []
+                    listing = {"items": [*workbench_items, *regular_items]}
                 items[kind] = _bounded_items(
-                    catalog.list(limit=limit),
+                    listing,
                     kind=kind,
                     limit=limit,
                 )
