@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.safety.budget_breaker import BreakerModelRouter, CircuitBreaker, CircuitOpen
 from runtime.sensing.model_router import (
     Message,
@@ -38,7 +37,8 @@ def clock():
 def patched_time(clock, monkeypatch):
     """Implementation note."""
     monkeypatch.setattr(
-        "runtime.safety.budget_breaker.breaker.time.monotonic", clock,
+        "runtime.safety.budget_breaker.breaker.time.monotonic",
+        clock,
     )
     return clock
 
@@ -56,7 +56,8 @@ class TestClosedState:
 
     def test_record_stays_closed_under_threshold(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=60.0, max_calls_per_window=10,
+            window_seconds=60.0,
+            max_calls_per_window=10,
         )
         for _ in range(5):
             b.check()
@@ -72,7 +73,8 @@ class TestClosedState:
 class TestTrips:
     def test_max_calls_trip(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=60.0, max_calls_per_window=3,
+            window_seconds=60.0,
+            max_calls_per_window=3,
             cooldown_seconds=30.0,
         )
         # Implementation note.
@@ -86,7 +88,8 @@ class TestTrips:
 
     def test_max_cost_trip(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=60.0, max_cost_usd_per_window=0.10,
+            window_seconds=60.0,
+            max_cost_usd_per_window=0.10,
         )
         b.check()
         b.record(success=True, cost_usd=0.15)  # Implementation note.
@@ -94,7 +97,8 @@ class TestTrips:
 
     def test_max_errors_trip(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=60.0, max_errors_per_window=2,
+            window_seconds=60.0,
+            max_errors_per_window=2,
         )
         for _ in range(3):
             b.check()
@@ -103,7 +107,8 @@ class TestTrips:
 
     def test_circuit_open_carries_reason(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=60.0, max_errors_per_window=0,
+            window_seconds=60.0,
+            max_errors_per_window=0,
             cooldown_seconds=5.0,
         )
         b.check()
@@ -123,7 +128,8 @@ class TestTrips:
 class TestSlidingWindow:
     def test_old_events_pruned(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=10.0, max_calls_per_window=3,
+            window_seconds=10.0,
+            max_calls_per_window=3,
         )
         for _ in range(3):
             b.check()
@@ -148,7 +154,8 @@ class TestSlidingWindow:
 class TestHalfOpen:
     def test_cooldown_transitions_to_half_open(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=60.0, max_errors_per_window=0,
+            window_seconds=60.0,
+            max_errors_per_window=0,
             cooldown_seconds=5.0,
         )
         b.check()
@@ -167,7 +174,8 @@ class TestHalfOpen:
 
     def test_half_open_probe_success_resets(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=60.0, max_errors_per_window=0,
+            window_seconds=60.0,
+            max_errors_per_window=0,
             cooldown_seconds=5.0,
         )
         b.check()
@@ -180,7 +188,8 @@ class TestHalfOpen:
 
     def test_half_open_probe_failure_re_opens(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=60.0, max_errors_per_window=0,
+            window_seconds=60.0,
+            max_errors_per_window=0,
             cooldown_seconds=5.0,
         )
         b.check()
@@ -196,7 +205,8 @@ class TestHalfOpen:
     def test_half_open_rejects_concurrent_probes(self, patched_time):
         """Implementation note."""
         b = CircuitBreaker(
-            window_seconds=60.0, max_errors_per_window=0,
+            window_seconds=60.0,
+            max_errors_per_window=0,
             cooldown_seconds=5.0,
         )
         b.check()
@@ -215,7 +225,8 @@ class TestHalfOpen:
 class TestReset:
     def test_reset_clears_state(self, patched_time):
         b = CircuitBreaker(
-            window_seconds=60.0, max_calls_per_window=1,
+            window_seconds=60.0,
+            max_calls_per_window=1,
         )
         b.check()
         b.record(success=True)
@@ -244,7 +255,8 @@ class _FailingInner(ModelRouter):
 
 def _req() -> ModelRequest:
     return ModelRequest(
-        model="x", messages=[Message(role="user", content="hi")],
+        model="x",
+        messages=[Message(role="user", content="hi")],
     )
 
 
@@ -261,7 +273,8 @@ class TestBreakerModelRouter:
     def test_inner_failures_trip_breaker(self, patched_time):
         inner = _FailingInner()
         breaker = CircuitBreaker(
-            window_seconds=60.0, max_errors_per_window=2,
+            window_seconds=60.0,
+            max_errors_per_window=2,
             cooldown_seconds=10.0,
         )
         router = BreakerModelRouter(inner=inner, breaker=breaker)
@@ -280,7 +293,8 @@ class TestBreakerModelRouter:
     def test_cost_accumulates_from_response(self, patched_time):
         inner = MockModelRouter(response="x" * 100)
         breaker = CircuitBreaker(
-            window_seconds=60.0, max_cost_usd_per_window=1e-5,
+            window_seconds=60.0,
+            max_cost_usd_per_window=1e-5,
             cooldown_seconds=10.0,
         )
         router = BreakerModelRouter(inner=inner, breaker=breaker)
@@ -298,7 +312,8 @@ class TestBreakerModelRouter:
         """Implementation note."""
         inner = MockModelRouter(response="ok")
         breaker = CircuitBreaker(
-            window_seconds=60.0, max_calls_per_window=1,
+            window_seconds=60.0,
+            max_calls_per_window=1,
             cooldown_seconds=5.0,
         )
         router = BreakerModelRouter(inner=inner, breaker=breaker)

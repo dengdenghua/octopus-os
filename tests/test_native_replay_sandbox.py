@@ -9,14 +9,16 @@ from runtime.safety.recovery.native_replay_sandbox import run_sandbox_replay
 
 
 def _positive_dataset() -> EvolutionDataset:
-    return EvolutionDataset(train=[
-        EvolutionExample(
-            task_input="edit src/app.py",
-            expected_behavior="Preserve read/edit/test behavior.",
-            source="journal_success",
-            metadata={"action_chain": ["read_file", "edit_file", "run_tests"]},
-        ),
-    ])
+    return EvolutionDataset(
+        train=[
+            EvolutionExample(
+                task_input="edit src/app.py",
+                expected_behavior="Preserve read/edit/test behavior.",
+                source="journal_success",
+                metadata={"action_chain": ["read_file", "edit_file", "run_tests"]},
+            ),
+        ]
+    )
 
 
 def test_sandbox_replay_materializes_probe_artifacts(tmp_path) -> None:
@@ -27,12 +29,14 @@ def test_sandbox_replay_materializes_probe_artifacts(tmp_path) -> None:
         ),
         task_scores=[0.8],
     )
-    failures = [{
-        "goal": "finish truncated report",
-        "failure_cluster": "length_limit:output truncated",
-        "failure_source": "length_limit",
-        "last_error": "output truncated",
-    }]
+    failures = [
+        {
+            "goal": "finish truncated report",
+            "failure_cluster": "length_limit:output truncated",
+            "failure_source": "length_limit",
+            "last_error": "output truncated",
+        }
+    ]
 
     report = run_sandbox_replay(
         [candidate],
@@ -70,9 +74,7 @@ def test_sandbox_replay_penalizes_success_regression() -> None:
 
     assert report.candidates[0].candidate_id == safe.candidate_id
     risky_report = next(
-        candidate
-        for candidate in report.candidates
-        if candidate.candidate_id == risky.candidate_id
+        candidate for candidate in report.candidates if candidate.candidate_id == risky.candidate_id
     )
     assert risky_report.passed is False
     assert risky_report.case_results[0].score < 0.2

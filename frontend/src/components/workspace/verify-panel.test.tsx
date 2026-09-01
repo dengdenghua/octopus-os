@@ -3,7 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "@/test/harness";
 
-import { VerifyPanel, type AutoVerifySummary, type VerifyResult } from "./verify-panel";
+import {
+  VerifyPanel,
+  type AutoVerifySummary,
+  type VerifyResult,
+} from "./verify-panel";
 
 describe("<VerifyPanel /> auto verification", () => {
   afterEach(() => {
@@ -36,14 +40,16 @@ describe("<VerifyPanel /> auto verification", () => {
 
     renderWithProviders(
       <VerifyPanel
-        workDir="F:/octopus-agent"
+        workDir="F:/echo-agent"
         initialResult={result}
         autoSummary={autoSummary}
       />,
     );
 
     expect(screen.getByText("Auto verify attempt 2")).toBeInTheDocument();
-    expect(screen.getByText("Attempt 2. Auto-fix limit reached (2/2)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Attempt 2. Auto-fix limit reached (2/2)"),
+    ).toBeInTheDocument();
     expect(screen.getByText("typecheck")).toBeInTheDocument();
     expect(screen.getByText("0/1")).toBeInTheDocument();
   });
@@ -51,7 +57,7 @@ describe("<VerifyPanel /> auto verification", () => {
   it("shows pending files awaiting verification", () => {
     renderWithProviders(
       <VerifyPanel
-        workDir="F:/octopus-agent"
+        workDir="F:/echo-agent"
         pendingFiles={["src/App.tsx", "src/App.css"]}
       />,
     );
@@ -85,7 +91,7 @@ describe("<VerifyPanel /> auto verification", () => {
 
     renderWithProviders(
       <VerifyPanel
-        workDir="F:/octopus-agent"
+        workDir="F:/echo-agent"
         pendingFiles={["src/App.tsx"]}
         browserRegressionEnabled
         browserRegressionPreviewUrl="http://localhost:3000/preview"
@@ -98,7 +104,7 @@ describe("<VerifyPanel /> auto verification", () => {
     await waitFor(() => expect(onResult).toHaveBeenCalledWith(payload));
     const request = vi.mocked(globalThis.fetch).mock.calls[0];
     expect(JSON.parse(String(request[1]?.body))).toMatchObject({
-      workspace: "F:/octopus-agent",
+      workspace: "F:/echo-agent",
       browser_regression_enabled: true,
       browser_regression_mode: "human_cursor",
       browser_regression_preview_url: "http://localhost:3000/preview",

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from runtime.execution.suckers import computer_skills
 from runtime.execution.suckers.computer_use_loop import (
     MockVisionPlanner,
@@ -80,6 +79,7 @@ def fake_pyautogui(monkeypatch):
     monkeypatch.setattr(computer_skills, "PYAUTOGUI_AVAILABLE", True)
     # Implementation note.
     from runtime.execution.suckers import computer_use_loop
+
     monkeypatch.setattr(computer_use_loop, "PYAUTOGUI_AVAILABLE", True)
     return fake
 
@@ -91,10 +91,12 @@ def fake_pyautogui(monkeypatch):
 
 class TestMockPlanner:
     def test_returns_scripted_actions_in_order(self):
-        p = MockVisionPlanner(actions=[
-            {"action": "click", "x": 10, "y": 20},
-            {"action": "done", "summary": "ok"},
-        ])
+        p = MockVisionPlanner(
+            actions=[
+                {"action": "click", "x": 10, "y": 20},
+                {"action": "done", "summary": "ok"},
+            ]
+        )
         a1 = p.next_action(goal="g", screenshot_path="/tmp/x.png", history=[])
         a2 = p.next_action(goal="g", screenshot_path="/tmp/x.png", history=[{}])
         assert a1["action"] == "click"
@@ -115,9 +117,11 @@ class TestMockPlanner:
 
 class TestLoop:
     def test_done_exits_success(self, fake_pyautogui, tmp_path: Path):
-        planner = MockVisionPlanner(actions=[
-            {"action": "done", "summary": "goal satisfied"},
-        ])
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "done", "summary": "goal satisfied"},
+            ]
+        )
         r = _run_computer_use_loop(
             goal="find the button",
             planner=planner,
@@ -133,10 +137,12 @@ class TestLoop:
         assert len(r["screenshots"]) == 1
 
     def test_click_then_done(self, fake_pyautogui, tmp_path: Path):
-        planner = MockVisionPlanner(actions=[
-            {"action": "click", "x": 500, "y": 400},
-            {"action": "done", "summary": "done"},
-        ])
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "click", "x": 500, "y": 400},
+                {"action": "done", "summary": "done"},
+            ]
+        )
         r = _run_computer_use_loop(
             goal="click it",
             planner=planner,
@@ -152,10 +158,12 @@ class TestLoop:
         assert fake_pyautogui.clicks[0]["x"] == 500
 
     def test_type_action(self, fake_pyautogui, tmp_path: Path):
-        planner = MockVisionPlanner(actions=[
-            {"action": "type", "text": "hello"},
-            {"action": "done", "summary": "typed"},
-        ])
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "type", "text": "hello"},
+                {"action": "done", "summary": "typed"},
+            ]
+        )
         _run_computer_use_loop(
             goal="type stuff",
             planner=planner,
@@ -168,10 +176,12 @@ class TestLoop:
         assert fake_pyautogui.writes == [("hello", 0.01)]
 
     def test_key_combo(self, fake_pyautogui, tmp_path: Path):
-        planner = MockVisionPlanner(actions=[
-            {"action": "key", "keys": ["ctrl", "a"]},
-            {"action": "done", "summary": "selected"},
-        ])
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "key", "keys": ["ctrl", "a"]},
+                {"action": "done", "summary": "selected"},
+            ]
+        )
         _run_computer_use_loop(
             goal="select all",
             planner=planner,
@@ -185,10 +195,13 @@ class TestLoop:
 
     def test_wait_action_sleeps(self, fake_pyautogui, tmp_path: Path):
         import time as _t
-        planner = MockVisionPlanner(actions=[
-            {"action": "wait", "ms": 50},
-            {"action": "done", "summary": "x"},
-        ])
+
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "wait", "ms": 50},
+                {"action": "done", "summary": "x"},
+            ]
+        )
         t0 = _t.monotonic()
         r = _run_computer_use_loop(
             goal="sleep",
@@ -205,9 +218,11 @@ class TestLoop:
         assert dt >= 0.04
 
     def test_fail_action_exits(self, fake_pyautogui, tmp_path: Path):
-        planner = MockVisionPlanner(actions=[
-            {"action": "fail", "reason": "cannot find button"},
-        ])
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "fail", "reason": "cannot find button"},
+            ]
+        )
         r = _run_computer_use_loop(
             goal="x",
             planner=planner,
@@ -221,9 +236,12 @@ class TestLoop:
         assert "cannot find" in r["reason"]
 
     def test_max_iterations_exit(self, fake_pyautogui, tmp_path: Path):
-        planner = MockVisionPlanner(actions=[
-            {"action": "click", "x": 10, "y": 10},
-        ] * 10)  # Implementation note.
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "click", "x": 10, "y": 10},
+            ]
+            * 10
+        )  # Implementation note.
         r = _run_computer_use_loop(
             goal="infinite",
             planner=planner,
@@ -238,10 +256,12 @@ class TestLoop:
         assert len(fake_pyautogui.clicks) == 3
 
     def test_stop_on_error_exits(self, fake_pyautogui, tmp_path: Path):
-        planner = MockVisionPlanner(actions=[
-            {"action": "click", "x": -1, "y": -1},   # Implementation note.
-            {"action": "done", "summary": "never"},
-        ])
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "click", "x": -1, "y": -1},  # Implementation note.
+                {"action": "done", "summary": "never"},
+            ]
+        )
         r = _run_computer_use_loop(
             goal="bad click",
             planner=planner,
@@ -257,11 +277,13 @@ class TestLoop:
 
     def test_continue_on_error(self, fake_pyautogui, tmp_path: Path):
         """Implementation note."""
-        planner = MockVisionPlanner(actions=[
-            {"action": "click", "x": -1, "y": -1},   # error
-            {"action": "click", "x": 500, "y": 400}, # recover
-            {"action": "done", "summary": "recovered"},
-        ])
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "click", "x": -1, "y": -1},  # error
+                {"action": "click", "x": 500, "y": 400},  # recover
+                {"action": "done", "summary": "recovered"},
+            ]
+        )
         r = _run_computer_use_loop(
             goal="recover",
             planner=planner,
@@ -275,9 +297,11 @@ class TestLoop:
         assert r["iterations"] == 3
 
     def test_unknown_action_rejected(self, fake_pyautogui, tmp_path: Path):
-        planner = MockVisionPlanner(actions=[
-            {"action": "explode"},
-        ])
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "explode"},
+            ]
+        )
         r = _run_computer_use_loop(
             goal="x",
             planner=planner,
@@ -308,11 +332,13 @@ class TestLoop:
         assert "planner raised" in r["reason"]
 
     def test_history_passed_to_planner(self, fake_pyautogui, tmp_path: Path):
-        planner = MockVisionPlanner(actions=[
-            {"action": "click", "x": 10, "y": 10},
-            {"action": "type", "text": "hi"},
-            {"action": "done", "summary": "x"},
-        ])
+        planner = MockVisionPlanner(
+            actions=[
+                {"action": "click", "x": 10, "y": 10},
+                {"action": "type", "text": "hi"},
+                {"action": "done", "summary": "x"},
+            ]
+        )
         _run_computer_use_loop(
             goal="x",
             planner=planner,
@@ -343,7 +369,9 @@ class TestSkillFactory:
         assert "error" in r
 
     def test_skill_reject_bad_max_iterations(
-        self, fake_pyautogui, tmp_path: Path,
+        self,
+        fake_pyautogui,
+        tmp_path: Path,
     ):
         planner = MockVisionPlanner(actions=[{"action": "done", "summary": ""}])
         skill = make_computer_use_loop_skill(
@@ -356,10 +384,12 @@ class TestSkillFactory:
 
     def test_registers_into_registry(self, fake_pyautogui, tmp_path: Path):
         from runtime.execution.suckers import SkillRegistry
+
         planner = MockVisionPlanner(actions=[{"action": "done", "summary": ""}])
         reg = SkillRegistry()
         n = register_computer_use_loop(
-            reg, planner,
+            reg,
+            planner,
             default_screenshot_dir=str(tmp_path / "shots"),
             default_sandbox_dir=str(tmp_path),
         )
@@ -370,6 +400,7 @@ class TestSkillFactory:
         """Implementation note."""
         from runtime.execution.suckers import SkillRegistry
         from runtime.execution.suckers.builtins import register_all
+
         reg = SkillRegistry()
         register_all(reg)
         assert not reg.has("computer_use_loop")
@@ -387,15 +418,11 @@ class TestAnthropicPlannerParsing:
         assert a["x"] == 1
 
     def test_json_in_code_fence(self):
-        a = _parse_action_text(
-            "here you go:\n```json\n{\"action\":\"done\",\"summary\":\"x\"}\n```"
-        )
+        a = _parse_action_text('here you go:\n```json\n{"action":"done","summary":"x"}\n```')
         assert a["action"] == "done"
 
     def test_json_with_surrounding_prose(self):
-        a = _parse_action_text(
-            "Thinking... I should click. {\"action\":\"click\",\"x\":5,\"y\":6}"
-        )
+        a = _parse_action_text('Thinking... I should click. {"action":"click","x":5,"y":6}')
         assert a["action"] == "click"
 
     def test_malformed_json_becomes_fail(self):
@@ -420,7 +447,9 @@ class TestModelRouterVisionPlanner:
         )
         p = ModelRouterVisionPlanner(router=router, model="x")
         r = p.next_action(
-            goal="g", screenshot_path=str(shot), history=[],
+            goal="g",
+            screenshot_path=str(shot),
+            history=[],
         )
         assert r["action"] == "click"
 
@@ -447,11 +476,15 @@ class TestModelRouterVisionPlanner:
 
     def test_screenshot_read_failure(self):
         from runtime.sensing.model_router import MockModelRouter
+
         p = ModelRouterVisionPlanner(
-            router=MockModelRouter(response="{}"), model="x",
+            router=MockModelRouter(response="{}"),
+            model="x",
         )
         r = p.next_action(
-            goal="g", screenshot_path="/nonexistent/missing.png", history=[],
+            goal="g",
+            screenshot_path="/nonexistent/missing.png",
+            history=[],
         )
         assert r["action"] == "fail"
         assert "screenshot read" in r["reason"]

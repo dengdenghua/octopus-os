@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from runtime.safety.recovery import gepa_bridge
 from runtime.safety.recovery.optimizer_backends import (
     OptimizerRunConfig,

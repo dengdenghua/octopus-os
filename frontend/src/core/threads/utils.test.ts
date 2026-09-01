@@ -10,7 +10,9 @@ describe("pathOfThread", () => {
 
 describe("textOfMessage", () => {
   it("returns string content directly", () => {
-    expect(textOfMessage({ type: "human", content: "hello" } as any)).toBe("hello");
+    expect(textOfMessage({ type: "human", content: "hello" } as any)).toBe(
+      "hello",
+    );
   });
 
   it("extracts text from complex content array", () => {

@@ -41,7 +41,7 @@ const buckets = {
   "as Record<...>": [],
   "as unknown as <T> (DOUBLE CAST)": [],
   "as any": [],
-  "other": [],
+  other: [],
 };
 
 for await (const f of walk(SRC)) {
@@ -57,7 +57,8 @@ for await (const f of walk(SRC)) {
       let bucket = "other";
       if (/^const\b/.test(after)) bucket = "as const";
       else if (/^any\b/.test(after)) bucket = "as any";
-      else if (/^unknown\s+as\b/.test(after)) bucket = "as unknown as <T> (DOUBLE CAST)";
+      else if (/^unknown\s+as\b/.test(after))
+        bucket = "as unknown as <T> (DOUBLE CAST)";
       else if (/^Record\s*</.test(after)) bucket = "as Record<...>";
       else if (/^[A-Z][A-Za-z0-9_]*\b/.test(after)) bucket = "as <known-type>";
       const text = line.trim();

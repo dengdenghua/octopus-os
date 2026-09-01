@@ -1,10 +1,8 @@
-import type { AIMessage, Message } from "@/core/api/types";
+import type { Message } from "@/core/api/types";
 
 import {
   extractContentFromMessage,
-  extractReasoningContentFromMessage,
   hasContent,
-  hasToolCalls,
   stripUploadedFilesTag,
 } from "../messages/utils";
 
@@ -15,13 +13,6 @@ function formatMessageContent(message: Message): string {
   const text = extractContentFromMessage(message);
   if (!text) return "";
   return stripUploadedFilesTag(text);
-}
-
-function formatToolCalls(message: Message): string {
-  if (message.type !== "ai" || !hasToolCalls(message)) return "";
-  const aiMsg = message as AIMessage;
-  const calls = aiMsg.tool_calls ?? [];
-  return calls.map((call) => `- **Tool:** \`${call.name}\``).join("\n");
 }
 
 export function formatThreadAsMarkdown(
@@ -49,29 +40,11 @@ export function formatThreadAsMarkdown(
         lines.push(`## 🧑 User`, "", content, "", "---", "");
       }
     } else if (message.type === "ai") {
-      const reasoning = extractReasoningContentFromMessage(message);
       const content = formatMessageContent(message);
-      const toolCalls = formatToolCalls(message);
 
-      if (!content && !toolCalls && !reasoning) continue;
+      if (!content) continue;
 
       lines.push(`## 🤖 Assistant`);
-
-      if (reasoning) {
-        lines.push(
-          "",
-          "<details>",
-          "<summary>Thinking</summary>",
-          "",
-          reasoning,
-          "",
-          "</details>",
-        );
-      }
-
-      if (toolCalls) {
-        lines.push("", toolCalls);
-      }
 
       if (content && hasContent(message)) {
         lines.push("", content);
@@ -93,14 +66,13 @@ export function formatThreadAsJSON(
     thread_id: thread.thread_id,
     created_at: thread.created_at,
     exported_at: new Date().toISOString(),
-    messages: messages.map((msg) => ({
-      type: msg.type,
-      id: msg.id,
-      content: msg.content,
-      ...(msg.type === "ai" && (msg as AIMessage).tool_calls?.length
-        ? { tool_calls: (msg as AIMessage).tool_calls }
-        : {}),
-    })),
+    messages: messages
+      .map((msg) => ({
+        type: msg.type,
+        id: msg.id,
+        content: formatMessageContent(msg),
+      }))
+      .filter((msg) => msg.content),
   };
   return JSON.stringify(exportData, null, 2);
 }
@@ -142,4 +114,3 @@ export function exportThreadAsJSON(thread: AgentThread, messages: Message[]) {
   const filename = `${sanitizeFilename(titleOfThread(thread))}.json`;
   downloadAsFile(json, filename, "application/json;charset=utf-8");
 }
-

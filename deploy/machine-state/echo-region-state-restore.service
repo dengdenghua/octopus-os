@@ -1,0 +1,15 @@
+[Unit]
+Description=Restore persistent Echo OS locale, keymap and timezone
+Documentation=file:/usr/share/doc/echo-os/machine-state.md
+Requires=dbus.service
+After=local-fs.target dbus.service
+Before=echo-oem-setup.service sddm.service echo-desktop.service
+RequiresMountsFor=/var/lib/echo-os
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/lib/echo-os/echo-region-state --restore-or-initialize
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -7,14 +7,14 @@ from runtime.platform.process.paths import app_paths, project_root, resources_ro
 
 def _make_project(root: Path) -> Path:
     (root / "runtime").mkdir(parents=True)
-    (root / "pyproject.toml").write_text("[project]\nname = 'octopus-agent'\n", encoding="utf-8")
+    (root / "pyproject.toml").write_text("[project]\nname = 'echo-agent'\n", encoding="utf-8")
     return root
 
 
-def test_app_paths_follow_octopus_data_dir(monkeypatch, tmp_path):
-    data_dir = tmp_path / "octopus-data"
-    monkeypatch.setenv("OCTOPUS_DATA_DIR", str(data_dir))
-    monkeypatch.delenv("OCTOPUS_HOME", raising=False)
+def test_app_paths_follow_echo_data_dir(monkeypatch, tmp_path):
+    data_dir = tmp_path / "echo-data"
+    monkeypatch.setenv("ECHO_DATA_DIR", str(data_dir))
+    monkeypatch.delenv("ECHO_HOME", raising=False)
 
     paths = app_paths()
 
@@ -25,11 +25,11 @@ def test_app_paths_follow_octopus_data_dir(monkeypatch, tmp_path):
     assert paths.permissions_path == data_dir.resolve() / "permissions.json"
 
 
-def test_octopus_data_dir_wins_over_octopus_home(monkeypatch, tmp_path):
+def test_echo_data_dir_wins_over_echo_home(monkeypatch, tmp_path):
     data_dir = tmp_path / "data-dir"
     home = tmp_path / "home"
-    monkeypatch.setenv("OCTOPUS_DATA_DIR", str(data_dir))
-    monkeypatch.setenv("OCTOPUS_HOME", str(home))
+    monkeypatch.setenv("ECHO_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("ECHO_HOME", str(home))
 
     paths = app_paths()
 
@@ -37,10 +37,10 @@ def test_octopus_data_dir_wins_over_octopus_home(monkeypatch, tmp_path):
     assert paths.data_dir == data_dir.resolve()
 
 
-def test_app_paths_follow_octopus_home_when_data_dir_missing(monkeypatch, tmp_path):
-    home = tmp_path / "octopus-home"
-    monkeypatch.delenv("OCTOPUS_DATA_DIR", raising=False)
-    monkeypatch.setenv("OCTOPUS_HOME", str(home))
+def test_app_paths_follow_echo_home_when_data_dir_missing(monkeypatch, tmp_path):
+    home = tmp_path / "echo-home"
+    monkeypatch.delenv("ECHO_DATA_DIR", raising=False)
+    monkeypatch.setenv("ECHO_HOME", str(home))
 
     paths = app_paths()
 
@@ -54,8 +54,8 @@ def test_project_root_discovers_repo_from_child_directory(monkeypatch, tmp_path)
     child = repo / "runtime" / "platform"
     child.mkdir(parents=True)
     monkeypatch.chdir(child)
-    monkeypatch.delenv("OCTOPUS_DATA_DIR", raising=False)
-    monkeypatch.delenv("OCTOPUS_HOME", raising=False)
+    monkeypatch.delenv("ECHO_DATA_DIR", raising=False)
+    monkeypatch.delenv("ECHO_HOME", raising=False)
 
     assert project_root() == repo.resolve()
     assert app_paths().root == repo.resolve()
@@ -66,8 +66,8 @@ def test_project_root_falls_back_to_cwd_without_sentinels(monkeypatch, tmp_path)
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     monkeypatch.chdir(scratch)
-    monkeypatch.delenv("OCTOPUS_DATA_DIR", raising=False)
-    monkeypatch.delenv("OCTOPUS_HOME", raising=False)
+    monkeypatch.delenv("ECHO_DATA_DIR", raising=False)
+    monkeypatch.delenv("ECHO_HOME", raising=False)
 
     assert project_root() == scratch.resolve()
     assert app_paths().data_dir == scratch.resolve() / "data"
@@ -76,21 +76,22 @@ def test_project_root_falls_back_to_cwd_without_sentinels(monkeypatch, tmp_path)
 def test_resources_root_honours_env(monkeypatch, tmp_path):
     # The Docker image pip-installs the code and runs from /data, so
     # project_root() can't find bundled skills/prompts/protocols. The
-    # image sets OCTOPUS_RESOURCES_DIR=/app/resources; resources_root()
+    # image sets ECHO_RESOURCES_DIR=/app/resources; resources_root()
     # must honour it so the 87+ file-backed skills actually load.
     res = tmp_path / "resources"
     res.mkdir()
-    monkeypatch.setenv("OCTOPUS_RESOURCES_DIR", str(res))
+    monkeypatch.setenv("ECHO_RESOURCES_DIR", str(res))
     assert resources_root() == res.resolve()
 
 
-def test_resources_root_falls_back_to_project_root(monkeypatch, tmp_path):
+def test_resources_root_falls_back_to_packaged_source_root(monkeypatch, tmp_path):
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     monkeypatch.chdir(scratch)
-    monkeypatch.delenv("OCTOPUS_RESOURCES_DIR", raising=False)
-    monkeypatch.delenv("OCTOPUS_DATA_DIR", raising=False)
-    monkeypatch.delenv("OCTOPUS_HOME", raising=False)
-    # No env, no sentinels → same as project_root (dev/editable installs
-    # are unchanged).
-    assert resources_root() == project_root()
+    monkeypatch.delenv("ECHO_RESOURCES_DIR", raising=False)
+    monkeypatch.delenv("ECHO_DATA_DIR", raising=False)
+    monkeypatch.delenv("ECHO_HOME", raising=False)
+    # Resource discovery is independent of the launch cwd in an editable
+    # install, while project_root() intentionally remains scratch-local.
+    assert project_root() == scratch.resolve()
+    assert resources_root() == Path(__file__).resolve().parents[1]

@@ -1,5 +1,5 @@
 import React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   GitBranchIcon,
   ArrowUpIcon,
@@ -12,33 +12,36 @@ import { toast } from "sonner";
 
 import {
   useLedger,
-  useFitness,
-  useDrift,
   useCanary,
   useRollbackCanary,
 } from "@/core/evolution/hooks";
-import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
-import type { LedgerRecord, CanaryState } from "@/core/evolution/api";
+import type { LedgerRecord } from "@/core/evolution/api";
 
 const STATUS_DOT_COLOR: Record<string, string> = {
-  applied: "bg-emerald-500",
-  pending: "bg-amber-500",
-  rolled_back: "bg-red-500",
-  rejected: "bg-zinc-400 dark:bg-zinc-500",
+  applied: "bg-success",
+  pending: "bg-warning",
+  rolled_back: "bg-destructive",
+  rejected: "bg-muted-foreground",
 };
 
 const CANARY_PHASE_STYLE: Record<string, string> = {
-  shadow: "bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30",
-  canary_5: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
-  canary_25: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
-  canary_50: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
-  full: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
-  rolled_back: "bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30",
+  shadow: "bg-info/15 text-info dark:text-info border-info/30",
+  canary_5:
+    "bg-warning/15 text-warning border-warning/30",
+  canary_25:
+    "bg-warning/15 text-warning border-warning/30",
+  canary_50:
+    "bg-warning/15 text-warning border-warning/30",
+  full: "bg-success/15 text-success border-success/30",
+  rolled_back: "bg-destructive/15 text-destructive border-destructive/30",
 };
 
 function canaryPhaseStyle(phase: string): string {
-  return CANARY_PHASE_STYLE[phase] ?? "bg-zinc-500/15 text-zinc-700 dark:text-zinc-300 border-zinc-500/30";
+  return (
+    CANARY_PHASE_STYLE[phase] ??
+    "bg-muted text-muted-foreground border-border"
+  );
 }
 
 function numberOrZero(value: unknown): number {
@@ -53,7 +56,7 @@ function CanaryStatusBadge({ phase }: { phase: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium",
+        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium",
         canaryPhaseStyle(phase),
       )}
     >
@@ -70,17 +73,19 @@ function FitnessDiffCard({ before, after }: { before: number; after: number }) {
   const maxVal = Math.max(safeBefore, safeAfter, 0.01);
 
   return (
-    <div className="flex items-center gap-3 text-[10px]">
+    <div className="flex items-center gap-3 text-xs">
       <div className="flex-1 space-y-1">
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground w-9 shrink-0">Before</span>
           <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
             <div
-              className="h-full rounded-full bg-zinc-400 dark:bg-zinc-500"
+              className="h-full rounded-full bg-muted-foreground"
               style={{ width: `${Math.max((safeBefore / maxVal) * 100, 2)}%` }}
             />
           </div>
-          <span className="tabular-nums w-10 text-right shrink-0">{fixed(safeBefore, 2)}</span>
+          <span className="tabular-nums w-10 text-right shrink-0">
+            {fixed(safeBefore, 2)}
+          </span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground w-9 shrink-0">After</span>
@@ -88,12 +93,14 @@ function FitnessDiffCard({ before, after }: { before: number; after: number }) {
             <div
               className={cn(
                 "h-full rounded-full",
-                improved ? "bg-emerald-500" : "bg-red-500",
+                improved ? "bg-success" : "bg-destructive",
               )}
               style={{ width: `${Math.max((safeAfter / maxVal) * 100, 2)}%` }}
             />
           </div>
-          <span className="tabular-nums w-10 text-right shrink-0">{fixed(safeAfter, 2)}</span>
+          <span className="tabular-nums w-10 text-right shrink-0">
+            {fixed(safeAfter, 2)}
+          </span>
         </div>
       </div>
     </div>
@@ -111,44 +118,58 @@ function TimelineNode({
   onRollback?: () => void;
   isRollingBack?: boolean;
 }) {
-  const dotColor = STATUS_DOT_COLOR[record.status] ?? "bg-zinc-400 dark:bg-zinc-500";
+  const dotColor =
+    STATUS_DOT_COLOR[record.status] ?? "bg-muted-foreground";
   const isCanaryKind =
     record.kind.toLowerCase().includes("canary") ||
     record.kind.toLowerCase().includes("skill");
-  const hasFitness = record.fitness_before != null && record.fitness_after != null;
-  const delta = hasFitness ? record.fitness_after! - record.fitness_before! : null;
+  const hasFitness =
+    record.fitness_before != null && record.fitness_after != null;
+  const delta = hasFitness
+    ? record.fitness_after! - record.fitness_before!
+    : null;
   const improved = delta != null ? delta >= 0 : null;
 
   return (
     <div className="relative flex gap-3 pb-6 last:pb-0">
       <div className="flex flex-col items-center">
-        <div className={cn("size-3 rounded-full shrink-0 ring-2 ring-background", dotColor)} />
+        <div
+          className={cn(
+            "size-3 rounded-full shrink-0 ring-2 ring-background",
+            dotColor,
+          )}
+        />
         <div className="flex-1 w-px bg-border/60 mt-1" />
       </div>
       <div className="flex-1 min-w-0">
         <div
           className={cn(
-            "rounded-md border border-border/40 bg-muted/30 px-3 py-2",
-            "hover:border-border/80 transition-colors",
+            "rounded-md border border-border-subtle bg-muted/30 px-3 py-2",
+            "hover:border-border-strong transition-colors",
           )}
         >
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="inline-flex items-center gap-1 rounded-md bg-foreground/5 px-1.5 py-0.5 text-[10px] font-medium">
+            <span className="inline-flex items-center gap-1 rounded-md bg-foreground/5 px-1.5 py-0.5 text-xs font-medium">
               <GitBranchIcon className="size-3" />
               {record.kind}
             </span>
             {canaryPhase && <CanaryStatusBadge phase={canaryPhase} />}
             {record.status === "rolled_back" && (
-              <AlertTriangleIcon className="size-3 text-red-500" />
+              <AlertTriangleIcon className="size-3 text-destructive" />
             )}
-            <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+            <span className="ml-auto text-xs text-muted-foreground tabular-nums">
               {new Date(record.ts).toLocaleString()}
             </span>
           </div>
-          <p className="text-[11px] leading-relaxed break-words">{record.description}</p>
+          <p className="text-xs leading-relaxed break-words">
+            {record.description}
+          </p>
           {hasFitness && (
             <div className="mt-2">
-              <FitnessDiffCard before={record.fitness_before!} after={record.fitness_after!} />
+              <FitnessDiffCard
+                before={record.fitness_before!}
+                after={record.fitness_after!}
+              />
             </div>
           )}
           {record.status === "applied" && isCanaryKind && onRollback && (
@@ -158,12 +179,14 @@ function TimelineNode({
                 onClick={onRollback}
                 disabled={isRollingBack}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]",
+                  "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs",
                   "text-muted-foreground hover:bg-destructive/10 hover:text-destructive",
                   "disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
                 )}
               >
-                <RotateCcwIcon className={cn("size-3", isRollingBack && "animate-spin")} />
+                <RotateCcwIcon
+                  className={cn("size-3", isRollingBack && "animate-spin")}
+                />
                 Rollback
               </button>
             </div>
@@ -173,10 +196,10 @@ function TimelineNode({
       {delta != null && (
         <div
           className={cn(
-            "shrink-0 flex items-center gap-0.5 text-[11px] font-medium tabular-nums pt-2",
+            "shrink-0 flex items-center gap-0.5 text-xs font-medium tabular-nums pt-2",
             improved
-              ? "text-emerald-600 dark:text-emerald-400"
-              : "text-red-600 dark:text-red-400",
+              ? "text-success"
+              : "text-destructive",
           )}
         >
           {improved ? (
@@ -193,7 +216,6 @@ function TimelineNode({
 }
 
 export function EvolutionTimeline() {
-  const { t } = useI18n();
   const qc = useQueryClient();
   const ledgerQuery = useLedger();
   const canaryQuery = useCanary();
@@ -236,7 +258,7 @@ export function EvolutionTimeline() {
 
   if (ledgerQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center py-8 text-muted-foreground text-[12px]">
+      <div className="flex items-center justify-center py-8 text-muted-foreground text-xs">
         <RotateCcwIcon className="size-4 mr-2 animate-spin" />
         Loading timeline...
       </div>
@@ -247,7 +269,7 @@ export function EvolutionTimeline() {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <GitBranchIcon className="size-8 mb-2 opacity-40" />
-        <p className="text-[12px]">No evolution events recorded yet</p>
+        <p className="text-xs">No evolution events recorded yet</p>
       </div>
     );
   }
@@ -256,7 +278,9 @@ export function EvolutionTimeline() {
     <div>
       {sorted.map((record) => {
         const canarySkill = findCanarySkill(record);
-        const canaryPhase = canarySkill ? canaryPhaseMap.get(canarySkill) : undefined;
+        const canaryPhase = canarySkill
+          ? canaryPhaseMap.get(canarySkill)
+          : undefined;
         return (
           <TimelineNode
             key={record.id}

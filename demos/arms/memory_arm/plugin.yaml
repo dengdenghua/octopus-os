@@ -1,0 +1,9 @@
+name: memory_arm
+kind: arm
+version: 0.1.0
+description: "Reference execution arm — registers a memory-recall skill that consumes the `memory` service from the composition layer."
+author: Echo
+provides:
+  - memory_arm.skills
+consumes:
+  - memory

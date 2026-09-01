@@ -5,6 +5,7 @@ additions. The model is a small declarative rule set that absorbs
 the common case so the UI-backed fallback provider only sees the
 genuinely ambiguous calls.
 """
+
 from __future__ import annotations
 
 from runtime.safety.approval.approval_gate import (
@@ -127,9 +128,7 @@ class _CountingFallback(ApprovalProvider):
         self.inner = inner
         self.calls = 0
 
-    def request(
-        self, req: ApprovalRequest, *, timeout: float = 120.0
-    ) -> ApprovalDecision:
+    def request(self, req: ApprovalRequest, *, timeout: float = 120.0) -> ApprovalDecision:
         self.calls += 1
         return self.inner.request(req, timeout=timeout)
 

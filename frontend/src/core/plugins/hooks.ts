@@ -9,11 +9,12 @@ import type { PluginInfo, HubPluginInfo } from "./types";
  * Used by the chat input box's `/plugin` slash command picker.
  * Refetches on window focus so newly installed plugins show up.
  */
-export function usePlugins() {
+export function usePlugins(options?: { enabled?: boolean }) {
   const { data, isLoading, error, refetch } = useQuery<PluginInfo[]>({
     queryKey: ["plugins"],
     queryFn: listPlugins,
     staleTime: 30_000,
+    enabled: options?.enabled ?? true,
   });
   return {
     plugins: data ?? [],

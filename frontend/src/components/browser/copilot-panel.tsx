@@ -111,20 +111,23 @@ const RECORDER_PROTOCOL = `\
 
 export function CopilotPanel({ webviewHandle }: Props) {
   const { t } = useI18n();
-  const { activeTab, state, setCopilotOpen, setCopilotWidth } = useBrowserStore();
+  const { activeTab, state, setCopilotOpen, setCopilotWidth } =
+    useBrowserStore();
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [pendingConfirmations, setPendingConfirmations] = useState<PendingConfirmation[]>([]);
+  const [pendingConfirmations, setPendingConfirmations] = useState<
+    PendingConfirmation[]
+  >([]);
   const [recorderMode, setRecorderMode] = useState(() => {
     if (typeof window === "undefined") return false;
-    return localStorage.getItem("octopus:browser-recorder-mode") === "1";
+    return localStorage.getItem("echo:browser-recorder-mode") === "1";
   });
   const [researchGoal, setResearchGoal] = useState("");
   const [researchLog, setResearchLog] = useState<ResearchLogEntry[]>(() => {
     if (typeof window === "undefined") return [];
     try {
-      const raw = sessionStorage.getItem("octopus:browser-research-log");
+      const raw = sessionStorage.getItem("echo:browser-research-log");
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
@@ -181,14 +184,22 @@ export function CopilotPanel({ webviewHandle }: Props) {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem("octopus:browser-recorder-mode", recorderMode ? "1" : "0");
+    localStorage.setItem(
+      "echo:browser-recorder-mode",
+      recorderMode ? "1" : "0",
+    );
   }, [recorderMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      sessionStorage.setItem("octopus:browser-research-log", JSON.stringify(researchLog.slice(0, 80)));
-    } catch (e) { swallow(e); }
+      sessionStorage.setItem(
+        "echo:browser-research-log",
+        JSON.stringify(researchLog.slice(0, 80)),
+      );
+    } catch (e) {
+      swallow(e);
+    }
   }, [researchLog]);
 
   useEffect(() => {
@@ -218,22 +229,27 @@ export function CopilotPanel({ webviewHandle }: Props) {
     });
   }, [sendMessage, threadId]);
 
-  const addPendingConfirmation = useCallback((action: AgentAction, result: ActionResult) => {
-    const detail =
-      result.detail && typeof result.detail === "object"
-        ? (result.detail as Record<string, unknown>)
-        : undefined;
-    setPendingConfirmations((prev) => [
-      ...prev.filter((item) => actionIdentity(item.action) !== actionIdentity(action)),
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        action,
-        error: result.error,
-        detail,
-        createdAt: Date.now(),
-      },
-    ]);
-  }, []);
+  const addPendingConfirmation = useCallback(
+    (action: AgentAction, result: ActionResult) => {
+      const detail =
+        result.detail && typeof result.detail === "object"
+          ? (result.detail as Record<string, unknown>)
+          : undefined;
+      setPendingConfirmations((prev) => [
+        ...prev.filter(
+          (item) => actionIdentity(item.action) !== actionIdentity(action),
+        ),
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          action,
+          error: result.error,
+          detail,
+          createdAt: Date.now(),
+        },
+      ]);
+    },
+    [],
+  );
 
   // Implementation note.
   // Implementation note.
@@ -262,7 +278,9 @@ export function CopilotPanel({ webviewHandle }: Props) {
       typeof last.content === "string"
         ? last.content
         : last.content
-            .filter((c): c is { type: "text"; text: string } => c.type === "text")
+            .filter(
+              (c): c is { type: "text"; text: string } => c.type === "text",
+            )
             .map((c) => c.text)
             .join("");
     const actions = parseActions(text);
@@ -275,7 +293,7 @@ export function CopilotPanel({ webviewHandle }: Props) {
     }
     lastProcessedAiIdRef.current = aiId;
 
-    if (webviewHandle && !window.octopus) {
+    if (webviewHandle && !window.echo) {
       if (loopCountRef.current >= MAX_AGENT_LOOP) {
         void sendMessage(threadId, {
           text: `[已达到最大 agent 循环 ${MAX_AGENT_LOOP} 次,自动停止防止失控]`,
@@ -339,7 +357,7 @@ export function CopilotPanel({ webviewHandle }: Props) {
       return;
     }
 
-    const api = window.octopus;
+    const api = window.echo;
     const wcId = webviewHandle?.getWebContentsId();
     if (!api || wcId == null) {
       void sendMessage(threadId, {
@@ -418,6 +436,7 @@ export function CopilotPanel({ webviewHandle }: Props) {
     threadId,
     webviewHandle,
     addPendingConfirmation,
+    t,
   ]);
 
   const confirmPendingAction = useCallback(
@@ -432,7 +451,9 @@ export function CopilotPanel({ webviewHandle }: Props) {
           }),
           pending.action.type,
         );
-        setPendingConfirmations((prev) => prev.filter((item) => item.id !== pending.id));
+        setPendingConfirmations((prev) =>
+          prev.filter((item) => item.id !== pending.id),
+        );
         const pageInfo = await withActionTimeout(
           webviewHandle.extractText(),
           "extractText",
@@ -465,7 +486,9 @@ export function CopilotPanel({ webviewHandle }: Props) {
   // Implementation note.
   const buildOutgoingText = useCallback(
     (raw: string): string => {
-      const recorderHeader = recorderMode ? `${RECORDER_PROTOCOL}\n\n---\n\n` : "";
+      const recorderHeader = recorderMode
+        ? `${RECORDER_PROTOCOL}\n\n---\n\n`
+        : "";
       if (!autoBrowse) return `${recorderHeader}${raw}`;
       if (protocolInjectedRef.current.has(threadId)) return raw;
       protocolInjectedRef.current.add(threadId);
@@ -494,7 +517,10 @@ export function CopilotPanel({ webviewHandle }: Props) {
     [input, send],
   );
 
-  const researchBrief = useMemo(() => buildResearchBrief(researchLog), [researchLog]);
+  const researchBrief = useMemo(
+    () => buildResearchBrief(researchLog),
+    [researchLog],
+  );
 
   const buildRecorderTask = useCallback((goal: string) => {
     const trimmed = goal.trim();
@@ -506,7 +532,10 @@ export function CopilotPanel({ webviewHandle }: Props) {
       trimmed,
       "",
       "[外部平台分工]",
-      ...platforms.map((platform, index) => `${index + 1}. ${platform.name}: ${platform.hint} (${platform.url})`),
+      ...platforms.map(
+        (platform, index) =>
+          `${index + 1}. ${platform.name}: ${platform.hint} (${platform.url})`,
+      ),
       "",
       "[执行要求]",
       "- 先打开第一个平台并输入适合该平台的 prompt。",
@@ -523,27 +552,23 @@ export function CopilotPanel({ webviewHandle }: Props) {
     setRecorderMode(true);
     setAutoBrowse(true);
     const platforms = RESEARCH_PLATFORMS;
-    setResearchLog((prev) => [
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        createdAt: Date.now(),
-        platform: "调度",
-        title: "开始外部 AI 调研",
-        note: `${goal}\n平台: ${platforms.map((p) => p.name).join(", ")}`,
-        url: activeTab?.url,
-      },
-      ...prev,
-    ].slice(0, 80));
+    setResearchLog((prev) =>
+      [
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          createdAt: Date.now(),
+          platform: "调度",
+          title: "开始外部 AI 调研",
+          note: `${goal}\n平台: ${platforms.map((p) => p.name).join(", ")}`,
+          url: activeTab?.url,
+        },
+        ...prev,
+      ].slice(0, 80),
+    );
     send(buildRecorderTask(goal));
     setResearchGoal("");
     setInput("");
-  }, [
-    activeTab?.url,
-    buildRecorderTask,
-    input,
-    researchGoal,
-    send,
-  ]);
+  }, [activeTab?.url, buildRecorderTask, input, researchGoal, send]);
 
   const addPageToResearchLog = useCallback(async () => {
     setBusy(true);
@@ -553,17 +578,19 @@ export function CopilotPanel({ webviewHandle }: Props) {
       const title = page?.title || activeTab?.title || "当前页面";
       const url = page?.url || activeTab?.url;
       const text = page?.text ?? "";
-      setResearchLog((prev) => [
-        {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          createdAt: Date.now(),
-          platform: guessPlatformName(url),
-          title,
-          note: text ? text.slice(0, 600) : "已记录当前页面。",
-          url,
-        },
-        ...prev,
-      ].slice(0, 80));
+      setResearchLog((prev) =>
+        [
+          {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            createdAt: Date.now(),
+            platform: guessPlatformName(url),
+            title,
+            note: text ? text.slice(0, 600) : "已记录当前页面。",
+            url,
+          },
+          ...prev,
+        ].slice(0, 80),
+      );
     } catch (err) {
       swallow(err);
       setErrorMsg(err instanceof Error ? err.message : String(err));
@@ -586,7 +613,9 @@ export function CopilotPanel({ webviewHandle }: Props) {
 
   const downloadResearchBrief = useCallback(() => {
     if (!researchBrief) return;
-    const blob = new Blob([researchBrief], { type: "text/markdown;charset=utf-8" });
+    const blob = new Blob([researchBrief], {
+      type: "text/markdown;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
@@ -599,7 +628,7 @@ export function CopilotPanel({ webviewHandle }: Props) {
   // Implementation note.
   const askWithPage = useCallback(
     async (instruction: string) => {
-      if (webviewHandle && !window.octopus) {
+      if (webviewHandle && !window.echo) {
         setBusy(true);
         setErrorMsg(null);
         try {
@@ -617,7 +646,7 @@ export function CopilotPanel({ webviewHandle }: Props) {
         }
         return;
       }
-      if (!webviewHandle || !window.octopus) {
+      if (!webviewHandle || !window.echo) {
         setErrorMsg("Need Electron · 当前在浏览器(非 Electron)里运行");
         return;
       }
@@ -629,7 +658,7 @@ export function CopilotPanel({ webviewHandle }: Props) {
       setBusy(true);
       setErrorMsg(null);
       try {
-        const page = await window.octopus.browser.extractText(wcId);
+        const page = await window.echo.browser.extractText(wcId);
         const prefix = `[当前页面]\nURL: ${page.url}\n标题: ${page.title}\n\n${page.text}\n${page.truncated ? `\n[已截断 · 完整 ${page.textLength} 字符]` : ""}`;
         send(`${prefix}\n\n${instruction}`);
       } catch (err) {
@@ -748,13 +777,17 @@ export function CopilotPanel({ webviewHandle }: Props) {
         <QuickAction
           icon={FileTextIcon}
           label={t.browser.copilot.summarizePage}
-          onClick={() => askWithPage("请用中文简明总结这个页面的核心内容,3-5 个要点。")}
+          onClick={() =>
+            askWithPage("请用中文简明总结这个页面的核心内容,3-5 个要点。")
+          }
           disabled={busy}
         />
         <QuickAction
           icon={ListIcon}
           label={t.browser.copilot.extractKeyPoints}
-          onClick={() => askWithPage("从这个页面提取所有事实性要点,以有序列表给出。")}
+          onClick={() =>
+            askWithPage("从这个页面提取所有事实性要点,以有序列表给出。")
+          }
           disabled={busy}
         />
         <QuickAction
@@ -787,7 +820,11 @@ export function CopilotPanel({ webviewHandle }: Props) {
             <button
               type="button"
               onClick={startRecorderResearch}
-              disabled={busy || thread.isLoading || (!researchGoal.trim() && !input.trim())}
+              disabled={
+                busy ||
+                thread.isLoading ||
+                (!researchGoal.trim() && !input.trim())
+              }
               className="rounded bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-40"
             >
               {t.browser.copilot.start}
@@ -820,7 +857,9 @@ export function CopilotPanel({ webviewHandle }: Props) {
                 className="inline-flex items-center justify-center gap-1 rounded border border-border bg-background px-2 py-1 text-[10px] font-medium text-muted-foreground hover:bg-muted"
               >
                 <ClipboardCheckIcon className="size-3" />
-                {briefCopied ? t.browser.copilot.copied : t.browser.copilot.copyBrief}
+                {briefCopied
+                  ? t.browser.copilot.copied
+                  : t.browser.copilot.copyBrief}
               </button>
               <button
                 type="button"
@@ -918,7 +957,10 @@ export function CopilotPanel({ webviewHandle }: Props) {
             typeof m.content === "string"
               ? m.content
               : m.content
-                  .filter((c): c is { type: "text"; text: string } => c.type === "text")
+                  .filter(
+                    (c): c is { type: "text"; text: string } =>
+                      c.type === "text",
+                  )
                   .map((c) => c.text)
                   .join("");
           return (
@@ -987,56 +1029,86 @@ async function runBrowserHandleAction(
       case "snapshot":
         return { ...base, ok: true, detail: await handle.capturePage() };
       case "click":
-        return browserActionResult(base, await handle.runAction("click", {
-          selector: action.selector,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("click", {
+            selector: action.selector,
+          }),
+        );
       case "type":
-        return browserActionResult(base, await handle.runAction("type", {
-          selector: action.selector,
-          text: action.text,
-          clear: action.clear,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("type", {
+            selector: action.selector,
+            text: action.text,
+            clear: action.clear,
+          }),
+        );
       case "hover":
-        return browserActionResult(base, await handle.runAction("hover", {
-          selector: action.selector,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("hover", {
+            selector: action.selector,
+          }),
+        );
       case "scroll":
-        return browserActionResult(base, await handle.runAction("scroll", {
-          selector: action.selector,
-          deltaX: action.deltaX,
-          deltaY: action.deltaY,
-          y: action.deltaY,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("scroll", {
+            selector: action.selector,
+            deltaX: action.deltaX,
+            deltaY: action.deltaY,
+            y: action.deltaY,
+          }),
+        );
       case "wait":
-        return browserActionResult(base, await handle.runAction("wait", {
-          selector: action.selector,
-          timeout: action.timeout,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("wait", {
+            selector: action.selector,
+            timeout: action.timeout,
+          }),
+        );
       case "press":
-        return browserActionResult(base, await handle.runAction("press", {
-          key: action.key,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("press", {
+            key: action.key,
+          }),
+        );
       case "pageAction":
-        return browserActionResult(base, await handle.runAction("pageAction", {
-          id: action.id,
-          confirm: options.confirmDangerous === true,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("pageAction", {
+            id: action.id,
+            confirm: options.confirmDangerous === true,
+          }),
+        );
       case "pageInput":
-        return browserActionResult(base, await handle.runAction("pageInput", {
-          id: action.id,
-          text: action.text,
-          clear: action.clear,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("pageInput", {
+            id: action.id,
+            text: action.text,
+            clear: action.clear,
+          }),
+        );
       case "pageCapability":
-        return browserActionResult(base, await handle.runAction("pageCapability", {
-          id: action.id,
-          input: action.input,
-          confirm: options.confirmDangerous === true,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("pageCapability", {
+            id: action.id,
+            input: action.input,
+            confirm: options.confirmDangerous === true,
+          }),
+        );
       case "aria":
-        return browserActionResult(base, await handle.runAction("aria", {
-          maxDepth: action.maxDepth,
-        }));
+        return browserActionResult(
+          base,
+          await handle.runAction("aria", {
+            maxDepth: action.maxDepth,
+          }),
+        );
       default:
         return { ...base, ok: false, error: "unknown action type" };
     }
@@ -1053,13 +1125,27 @@ async function runBrowserHandleAction(
 function needsUserConfirmation(result: ActionResult): boolean {
   if (result.ok) return false;
   if (!result.detail || typeof result.detail !== "object") return false;
-  return (result.detail as Record<string, unknown>).requiresConfirmation === true;
+  return (
+    (result.detail as Record<string, unknown>).requiresConfirmation === true
+  );
 }
 
 const SENSITIVE_ACTION_RE =
   /(submit|confirm|delete|remove|pay|payment|checkout|order|purchase|buy|login|signin|sign-in|logout|post|publish|send|save|upload|授权|确认|提交|删除|移除|支付|付款|下单|购买|登录|登出|发布|发送|保存|上传)/i;
 
-function confirmationPreflight(action: AgentAction, t: { browser: { copilot: { confirmInputContent: string; confirmSubmitForm: string; confirmSensitiveClick: string; confirmSensitiveAction: string } } }): ActionResult | null {
+function confirmationPreflight(
+  action: AgentAction,
+  t: {
+    browser: {
+      copilot: {
+        confirmInputContent: string;
+        confirmSubmitForm: string;
+        confirmSensitiveClick: string;
+        confirmSensitiveAction: string;
+      };
+    };
+  },
+): ActionResult | null {
   const reasons: string[] = [];
   if (action.type === "type" || action.type === "pageInput") {
     reasons.push(t.browser.copilot.confirmInputContent);
@@ -1084,7 +1170,7 @@ function confirmationPreflight(action: AgentAction, t: { browser: { copilot: { c
     detail: {
       requiresConfirmation: true,
       riskReasons: reasons,
-      source: "octopus-preflight",
+      source: "echo-preflight",
     },
   };
 }
@@ -1104,7 +1190,9 @@ function actionIdentity(action: AgentAction): string {
 function describePendingAction(pending: PendingConfirmation): string {
   const action = pending.action;
   const reasons = Array.isArray(pending.detail?.riskReasons)
-    ? pending.detail.riskReasons.filter((item): item is string => typeof item === "string")
+    ? pending.detail.riskReasons.filter(
+        (item): item is string => typeof item === "string",
+      )
     : [];
   const target =
     action.type === "pageCapability"
@@ -1127,7 +1215,7 @@ function describePendingAction(pending: PendingConfirmation): string {
         ? ` · text=${action.text.slice(0, 80)}`
         : action.type === "type"
           ? ` · text=${action.text.slice(0, 80)}`
-      : "";
+          : "";
   const reasonText = reasons.length ? ` · risk=${reasons.join(", ")}` : "";
   return `${target}${input}${reasonText}`;
 }
@@ -1181,7 +1269,10 @@ function buildResearchBrief(entries: ResearchLogEntry[]): string {
     lines.push(`- 时间: ${new Date(entry.createdAt).toLocaleString()}`);
     if (entry.url) lines.push(`- URL: ${entry.url}`);
     lines.push("- 记录:");
-    for (const line of entry.note.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)) {
+    for (const line of entry.note
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)) {
       lines.push(`  - ${line}`);
     }
     lines.push("");
@@ -1245,7 +1336,9 @@ function AgentPicker({
   const select = (name: string) => {
     try {
       window.localStorage.setItem(ACTIVE_AGENT_KEY, name);
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
     window.dispatchEvent(
       new CustomEvent(ACTIVE_AGENT_EVENT, { detail: { name } }),
     );

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Subagent streaming test client.
 
-Run this against a live octopus backend to see SSE events flow in
+Run this against a live echo backend to see SSE events flow in
 real time. Useful for debugging the cowork pane and verifying
 streaming infrastructure end-to-end.
 
@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import sys
 import time
-
 import urllib.request
 
 

@@ -1,6 +1,11 @@
 # 原生 shell(A 路线)· Electron 当会话 shell
 
-> 目标:让 octopus-os 成为**真正的设备 OS**——开机即进原生 agent 桌面(无浏览器壳、
+> **历史方案：目标 C 已不再把本路线作为主桌面架构。** Cage 单客户端无法承载
+> 通用原生多窗口；新的 KWin 通用桌面路线与验收门见
+> [GENERAL_DESKTOP_PLAN.md](./GENERAL_DESKTOP_PLAN.md)。本文件保留为 appliance/kiosk
+> 设备模式说明。
+
+> 目标:让 echo-os 成为**真正的设备 OS**——开机即进原生 agent 桌面(无浏览器壳、
 > 无底层桌面环境),而不是"浏览器里的网页桌面"。选定 **A 路线:Electron 当会话**
 > (复用现有 React 桌面,主进程拿真实系统手),而非自研 Wayland 合成器(B,留待要
 > 合成真实原生程序窗口时)。
@@ -30,7 +35,7 @@ Debian 薄镜像
 后端 + 应用仍 Docker:agent/appliance 容器 + 第三方 NAS 应用容器
 ```
 
-`OCTOPUS_NATIVE_SHELL=1`(或 `OCTOPUS_SHELL_MODE=session`)→ Electron 窗口
+`ECHO_NATIVE_SHELL=1`(或 `ECHO_SHELL_MODE=session`)→ Electron 窗口
 fullscreen + frame:false + kiosk 独占屏幕。
 
 ## 3. 能力边界(已对用户确认)
@@ -52,11 +57,11 @@ fullscreen + frame:false + kiosk 独占屏幕。
   `listApplications()` 安全返回 `[]`(无 XDG 目录,不崩)。
 - `electron/main.cjs`:require 系统手 + 注册 IPC + `NATIVE_SHELL` 会话 shell 窗口
   (fullscreen/frameless/kiosk)。
-- `electron/preload.cjs`:暴露 `window.octopus.apps.{list,launch}`。
+- `electron/preload.cjs`:暴露 `window.echo.apps.{list,launch}`。
 - `src/types/electron.d.ts`:`NativeApp` 类型 + `apps` 契约。
 
 ### 待做
-- **Dock/启动器渲染真实应用**(前端):`window.octopus.apps.list()` + Docker app_registry
+- **Dock/启动器渲染真实应用**(前端):`window.echo.apps.list()` + Docker app_registry
   合并;图标显示(主进程加 `apps:icon` 返回 dataURL 或自定义 file 协议)。Linux 上验证。
 - **整机镜像**(镜像层,需 Linux/VM):`debootstrap` 薄 Debian + plymouth 主题 + cage +
   自动登录 systemd unit + Electron 打包(electron-builder)+ docker 随机启动 agent/appliance。

@@ -1,41 +1,212 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon, PlusIcon, SparklesIcon } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
-
-import { useAuth } from "@/providers/AuthProvider";
-import { toast } from "sonner";
+import { useMemo, useState, type ReactNode } from "react";
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { jsonAuthHeaders } from "@/core/auth/api";
-import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
-import { useProvider } from "@/core/models/providers";
-import { useMoliliLink } from "@/core/molili";
+import type { Translations } from "@/core/i18n/locales/types";
+import { DEFAULT_CONTEXT_WINDOW_TOKENS } from "@/core/models/context-window";
 import type { ReasoningEffort } from "@/core/threads";
 import { cn } from "@/lib/utils";
 
-/**
- * Official LLM endpoint baked in here as a fallback for one-click enabling.
- * The visible official model catalog itself comes from the backend.
- */
-const MOLILI_LLM_BASE_URL =
-  "https://molili.8kbl.com/molili-agi/chatApi/v1";
-
 /** Minimal slice of the backend model shape used by the picker. */
 export interface PickerModel {
+  id?: string | null;
   name: string;
   display_name?: string | null;
+  source_display_name?: string | null;
   description?: string | null;
+  entry_id?: string | null;
+  selection_id?: string | null;
   model?: string | null;
   supports_thinking?: boolean;
   supports_vision?: boolean;
+  supports_tool_use?: boolean;
+  supports_reasoning_effort?: boolean;
+  /** UI effort tiers this model genuinely accepts. undefined/null = full
+   *  default set; [] = no meaningful effort control (picker hides it). */
+  reasoning_efforts?: ReasoningEffort[] | null;
+  context_window?: number | null;
+  context_profile?: string | null;
   [key: string]: unknown;
+}
+
+function selectionValue(model: PickerModel): string {
+  return model.selection_id || model.entry_id || model.name;
+}
+
+function isOpenCodeZenFreeModel(model: PickerModel | undefined): boolean {
+  return model?.entry_id === "opencode-zen";
+}
+
+function deduplicatePickerModels(models: PickerModel[]): PickerModel[] {
+  const seen = new Set<string>();
+  return models.filter((model) => {
+    if (model.context_profile === "1m") return false;
+    const key = selectionValue(model);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function longContextSelectionValue(model: PickerModel): string {
+  // Older catalogs have no selection_id; their routable 1M alias is the
+  // ``variant::1m`` name, not the entry id (which means the default profile).
+  return model.selection_id || model.name;
+}
+
+function modelFamilyKey(model: PickerModel): string {
+  if (model.entry_id && model.model) {
+    return `${model.entry_id}\u0000${model.model}`;
+  }
+  return model.name.replace(/::1m$/, "");
+}
+
+function modelMatchesValue(
+  model: PickerModel,
+  value: string | null | undefined,
+): boolean {
+  if (!value) return false;
+  return [
+    model.selection_id,
+    model.entry_id,
+    model.name,
+    model.model,
+    model.id,
+  ].includes(value);
+}
+
+function contextSelectionValue(model: PickerModel): string {
+  return model.context_profile === "1m"
+    ? longContextSelectionValue(model)
+    : selectionValue(model);
+}
+
+function contextWindowTokens(model: PickerModel): number {
+  const explicit = Number(model.context_window);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+  return model.context_profile === "1m"
+    ? 1_000_000
+    : DEFAULT_CONTEXT_WINDOW_TOKENS;
+}
+
+function formatContextWindow(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    const millions = tokens / 1_000_000;
+    return `${Number.isInteger(millions) ? millions : millions.toFixed(1)}M`;
+  }
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+  return tokens.toLocaleString();
+}
+
+export function ModelContextSetting({
+  models,
+  selected,
+  value,
+  disabled,
+  onChange,
+  className,
+}: {
+  models: PickerModel[];
+  selected: PickerModel | undefined;
+  value?: string | null;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const { t } = useI18n();
+  const options = useMemo(() => {
+    if (!selected) return [];
+    const family = modelFamilyKey(selected);
+    const seen = new Set<string>();
+    return models
+      .filter((model) => modelFamilyKey(model) === family)
+      .filter((model) => {
+        const key = contextSelectionValue(model);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort(
+        (left, right) => contextWindowTokens(left) - contextWindowTokens(right),
+      );
+  }, [models, selected]);
+
+  // This is a quick *choice*, not a model-spec readout. Keep the existing
+  // picker unchanged for models that only expose one context window.
+  if (!selected || options.length < 2) return null;
+
+  const current =
+    options.find((model) => modelMatchesValue(model, value)) ??
+    options.find(
+      (model) => model.context_profile === selected.context_profile,
+    ) ??
+    options[0]!;
+  const currentTokens = contextWindowTokens(current);
+  return (
+    <section
+      data-testid="model-context-setting"
+      className={cn("space-y-1", className)}
+    >
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="font-medium text-muted-foreground/80">
+          {t.modelPicker.contextLength}
+        </span>
+        <span className="tabular-nums text-foreground/80">
+          {formatContextWindow(currentTokens)}
+        </span>
+      </div>
+      <div
+        role="radiogroup"
+        aria-label={t.modelPicker.contextLength}
+        className="grid gap-0.5 rounded-md bg-muted/40 p-0.5"
+        style={{
+          gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {options.map((model) => {
+          const optionValue = contextSelectionValue(model);
+          const optionTokens = contextWindowTokens(model);
+          const optionExpanded = model.context_profile === "1m";
+          const optionSelected = model === current;
+          const profileLabel = optionExpanded
+            ? t.modelPicker.contextMax
+            : t.modelPicker.contextStandard;
+          const formatted = formatContextWindow(optionTokens);
+          return (
+            <button
+              key={optionValue}
+              type="button"
+              role="radio"
+              aria-label={`${profileLabel} · ${formatted}`}
+              aria-checked={optionSelected}
+              disabled={disabled}
+              onClick={(event) => {
+                event.preventDefault();
+                if (!optionSelected) onChange(optionValue);
+              }}
+              className={cn(
+                "flex h-7 min-w-0 items-center justify-center gap-1 rounded px-1.5 text-xs transition-colors",
+                optionSelected
+                  ? "bg-background text-foreground shadow-[var(--shadow-xs)]"
+                  : "text-muted-foreground hover:text-foreground",
+                "disabled:cursor-not-allowed disabled:opacity-45",
+              )}
+            >
+              <span className="truncate">{profileLabel}</span>
+              <span className="shrink-0 tabular-nums text-[11px] opacity-70">
+                {formatted}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 interface OfficialMeta {
@@ -46,97 +217,132 @@ interface OfficialMeta {
   recommended: boolean;
 }
 
-interface OfficialCatalogModel {
-  id: string;
-  display_name?: string | null;
-  multiplier?: string | null;
-  recommended?: boolean;
-}
-
-function metaFromCatalog(m: OfficialCatalogModel): OfficialMeta {
-  return {
-    key: m.id,
-    id: m.id,
-    displayName: m.display_name || m.id,
-    multiplier: m.multiplier || "1.0x",
-    recommended: Boolean(m.recommended),
-  };
-}
-
 /**
- * Very small helper — given a custom model, derive a short right-column
- * label (provider hint). Falls back to the backend `model` field, then
- * to nothing.
+ * Echo Mix — the built-in mixture-of-agents virtual model. Surfaces in the
+ * Official tab when the backend advertises ``echo-mix`` via /api/llm-models.
  */
-function rightHint(m: PickerModel): string {
-  const probe = `${m.name} ${m.model ?? ""} ${m.display_name ?? ""}`.toLowerCase();
-  for (const [needle, label] of [
-    ["claude", "Claude"],
-    ["gpt", "OpenAI"],
-    ["openai", "OpenAI"],
-    ["gemini", "Gemini"],
-    ["mistral", "Mistral"],
-    ["llama", "Llama"],
-  ] as const) {
-    if (probe.includes(needle)) return label;
-  }
-  return m.model || "";
-}
+const MIX_META: OfficialMeta = {
+  key: "echo-mix",
+  id: "echo-mix",
+  displayName: "mix",
+  multiplier: "Mix",
+  recommended: true,
+};
 
 const REASONING_EFFORT_OPTIONS: ReasoningEffort[] = [
+  "off",
   "low",
   "medium",
   "high",
   "xhigh",
 ];
 
-function reasoningEffortLabel(effort: ReasoningEffort, locale: string): string {
-  const zh = locale === "zh-CN";
+/** Rough strength scale used to map an unsupported effort onto the nearest
+ *  tier a provider genuinely accepts (the wire value may differ). */
+const EFFORT_STRENGTH: Record<ReasoningEffort, number> = {
+  off: 0,
+  minimal: 1,
+  low: 2,
+  medium: 3,
+  high: 4,
+  xhigh: 5,
+  max: 6,
+};
+
+function resolveEffectiveEffort(
+  current: ReasoningEffort,
+  offered: ReasoningEffort[],
+): ReasoningEffort {
+  if (offered.includes(current)) return current;
+  const base = EFFORT_STRENGTH[current] ?? 0;
+  // Prefer the smallest offered tier at or above the selection (the backend
+  // promotes below-high efforts for DeepSeek-style providers); otherwise the
+  // largest offered tier.
+  let candidate: ReasoningEffort | undefined;
+  for (const tier of offered) {
+    if ((EFFORT_STRENGTH[tier] ?? 0) >= base) {
+      candidate = tier;
+      break;
+    }
+  }
+  if (candidate) return candidate;
+  return offered[offered.length - 1] ?? "high";
+}
+
+function reasoningEffortLabel(
+  effort: ReasoningEffort,
+  t: Translations,
+): string {
   switch (effort) {
+    case "off":
+      return t.inputBox.reasoningEffortOff;
     case "minimal":
-      return zh ? "极低" : "Minimal";
+      return t.inputBox.reasoningEffortMinimal;
     case "low":
-      return zh ? "低" : "Low";
+      return t.inputBox.reasoningEffortLow;
     case "medium":
-      return zh ? "中" : "Medium";
+      return t.inputBox.reasoningEffortMedium;
     case "high":
-      return zh ? "高" : "High";
+      return t.inputBox.reasoningEffortHigh;
     case "xhigh":
-      return zh ? "超高" : "Ultra";
+      return t.inputBox.reasoningEffortXHigh;
+    case "max":
+      return t.inputBox.reasoningEffortMax;
   }
 }
 
 function ReasoningEffortSetting({
   value,
-  locale,
   disabled,
+  efforts,
   onChange,
 }: {
   value?: ReasoningEffort;
-  locale: string;
   disabled?: boolean;
+  efforts?: ReasoningEffort[] | null;
   onChange: (effort: ReasoningEffort) => void;
 }) {
-  const current = value ?? "medium";
-  const title = locale === "zh-CN" ? "推理等级" : "Reasoning effort";
+  const { t } = useI18n();
+  const rawCurrent = value === "max" ? "xhigh" : (value ?? "medium");
+  // An explicitly empty set means this model has no meaningful effort control
+  // (adaptive / unsupported thinking) — hide it rather than show fake tiers.
+  if (efforts && efforts.length === 0) return null;
+  const offered =
+    efforts && efforts.length > 0 ? efforts : REASONING_EFFORT_OPTIONS;
+  const effective = resolveEffectiveEffort(rawCurrent, offered);
+  const mapped = effective !== rawCurrent;
+  const title = t.inputBox.reasoningEffort;
 
   return (
-    <div className="mx-1 mt-1 border-t border-border/60 pt-1">
+    <div className="mx-1 mt-1 border-t border-border-default pt-1">
       <div className="mb-0.5 flex items-center justify-between px-1">
-        <span className="text-[10px] font-medium text-muted-foreground/70">
+        <span className="text-xs font-medium text-muted-foreground/70">
           {title}
         </span>
-        <span className="text-[10px] text-muted-foreground">
-          {reasoningEffortLabel(current, locale)}
+        <span className="text-xs text-muted-foreground">
+          {t.inputBox.reasoningEffortCurrent(
+            reasoningEffortLabel(effective, t),
+          )}
         </span>
       </div>
+      {mapped && (
+        <div className="mb-1 px-1 text-[11px] text-muted-foreground/70">
+          {t.inputBox.reasoningEffortMapped(
+            reasoningEffortLabel(rawCurrent, t),
+            reasoningEffortLabel(effective, t),
+          )}
+        </div>
+      )}
       <div
         role="radiogroup"
         aria-label={title}
-        className="grid grid-cols-4 gap-0.5 rounded-md bg-muted/35 p-0.5"
+        className="grid gap-0.5 rounded-md bg-muted/35 p-0.5"
+        style={{
+          gridTemplateColumns: `repeat(${offered.length}, minmax(0, 1fr))`,
+        }}
       >
-        {REASONING_EFFORT_OPTIONS.map((effort) => {
-          const selected = effort === current;
+        {offered.map((effort) => {
+          const selected = effort === effective;
           return (
             <button
               key={effort}
@@ -149,14 +355,14 @@ function ReasoningEffortSetting({
                 onChange(effort);
               }}
               className={cn(
-                "h-5 rounded-[5px] px-1 text-[10px] transition-colors",
+                "h-5 rounded-md px-1 text-xs transition-colors",
                 selected
-                  ? "bg-background text-foreground shadow-sm"
+                  ? "bg-background text-foreground shadow-[var(--shadow-xs)]"
                   : "text-muted-foreground hover:text-foreground",
                 "disabled:cursor-not-allowed disabled:opacity-45",
               )}
             >
-              {reasoningEffortLabel(effort, locale)}
+              {reasoningEffortLabel(effort, t)}
             </button>
           );
         })}
@@ -165,10 +371,15 @@ function ReasoningEffortSetting({
   );
 }
 
-/** Single row in the list. `right` is the trailing muted text. */
+/**
+ * Single row in the list. The primary action and any trailing action are
+ * sibling buttons so each option remains valid, independently focusable HTML.
+ * `right` is reserved for passive content that belongs to the primary action.
+ */
 function PickerRow({
   label,
   right,
+  trailingAction,
   badge,
   selected,
   disabled,
@@ -176,22 +387,20 @@ function PickerRow({
 }: {
   label: ReactNode;
   right?: ReactNode;
+  trailingAction?: ReactNode;
   badge?: ReactNode;
   selected?: boolean;
   disabled?: boolean;
   onSelect: () => void;
 }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onSelect}
+    <div
       className={cn(
         // Match sidebar NavRow language: h-8, opacity-based emphasis,
         // monochrome. No color accent — selection reads via opacity and
         // a 2px leading bar the way active nav items do.
-        "group/row relative flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-[12px] opacity-75 transition-[opacity,background-color] duration-150",
-        "hover:opacity-100 hover:bg-muted/40",
+        "group/row relative flex h-7 w-full items-stretch rounded-md text-xs opacity-75 transition-[opacity,background-color]",
+        "hover:bg-muted/40 hover:opacity-100 focus-within:bg-muted/40 focus-within:opacity-100",
         disabled &&
           "cursor-not-allowed opacity-35 hover:opacity-35 hover:bg-transparent",
         selected &&
@@ -199,16 +408,30 @@ function PickerRow({
           "opacity-100 bg-[color:color-mix(in_oklch,var(--sidebar-accent)_55%,transparent)] before:absolute before:left-0 before:top-1 before:bottom-1 before:w-[2px] before:rounded-r before:bg-primary/70",
       )}
     >
-      <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
-        <span className="truncate">{label}</span>
-        {badge}
-      </span>
-      {right !== undefined && (
-        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/70 group-hover/row:text-muted-foreground transition-colors">
-          {right}
+      <button
+        type="button"
+        disabled={disabled}
+        aria-pressed={selected}
+        onClick={onSelect}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+          trailingAction && "rounded-r-none pr-1",
+          disabled && "cursor-not-allowed",
+        )}
+      >
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+          <span className="truncate">{label}</span>
+          {badge}
         </span>
-      )}
-    </button>
+        {right !== undefined && (
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70 transition-colors group-hover/row:text-muted-foreground">
+            {right}
+          </span>
+        )}
+      </button>
+      {trailingAction}
+    </div>
   );
 }
 
@@ -236,13 +459,7 @@ export function ModelPicker({
   open: controlledOpen,
   onOpenChange,
 }: ModelPickerProps) {
-  const navigate = useNavigate();
-  // Guest mode keeps official models visible but disabled.
-  // Custom models remain fully selectable before login. The custom tab
-  // stays visible and fully functional so guests can BYOK against
-  // OpenAI / Kimi / any OpenAI-compat endpoint.
-  const { isGuest } = useAuth();
-  const { locale, t } = useI18n();
+  const { t } = useI18n();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
@@ -251,50 +468,52 @@ export function ModelPicker({
   // ModelRouter middleware pick per-task". We resolve it to a synthetic
   // PickerModel so the trigger + highlighted row can render a label.
   const isAutoMode = (value ?? "").trim().toLowerCase() === "auto";
-  const AUTO_MODEL: PickerModel = {
-    name: "auto",
-    display_name: t.modelPicker.autoModelLabel,
-    description: t.modelPicker.autoModelDescription,
-  };
-  const selected = useMemo(
-    () =>
-      isAutoMode
-        ? AUTO_MODEL
-        : (models.find((m) => m.name === value) ?? models[0]),
-    [isAutoMode, value, models],
-  );
-
-  const [moliliPack, setMoliliPack] = useState<OfficialCatalogModel[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetch(`${getBackendBaseURL()}/api/molili/openai/v1/catalog`);
-        if (!r.ok) return;
-        const j = (await r.json()) as { data?: OfficialCatalogModel[] };
-        if (cancelled) return;
-        const data = Array.isArray(j?.data) ? j.data : [];
-        setMoliliPack(
-          data.filter(
-            (m): m is OfficialCatalogModel =>
-              !!m.id && !/^(auto|molili)$/i.test(m.id),
-          ),
-        );
-      } catch (err) {
-        if (!cancelled) {
-          console.warn("[model-picker] official model catalog unavailable:", err);
+  const selected = useMemo(() => {
+    if (isAutoMode) {
+      return {
+        name: "auto",
+        display_name: t.modelPicker.autoModelLabel,
+        description: t.modelPicker.autoModelDescription,
+      };
+    }
+    if (value) {
+      const matched = models.find(
+        (m) =>
+          m.name === value ||
+          m.model === value ||
+          ("id" in m && m.id === value) ||
+          m.entry_id === value ||
+          m.selection_id === value,
+      );
+      // A stored selection the current catalog no longer advertises (a
+      // removed/renamed custom model, or the list still loading) must stay
+      // visible as-is — silently snapping to the first row (Mix) would make
+      // the picker lie about what the thread actually uses after a reload.
+      return (
+        matched ?? {
+          name: value,
+          display_name: value,
+          unavailable: true,
         }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      );
+    }
+    return models[0];
+  }, [
+    isAutoMode,
+    value,
+    models,
+    t.modelPicker.autoModelLabel,
+    t.modelPicker.autoModelDescription,
+  ]);
 
-  const officialMetas = useMemo(
-    () => moliliPack.map(metaFromCatalog),
-    [moliliPack],
-  );
+  const officialMetas = useMemo(() => {
+    // Surface the built-in Mix model in the Official tab only when the
+    // backend actually advertises it (via /api/llm-models).
+    const hasMix = models.some(
+      (m) => m.name === MIX_META.id || m.model === MIX_META.id,
+    );
+    return hasMix ? [MIX_META] : [];
+  }, [models]);
 
   const selectedMeta = useMemo(() => {
     if (!selected) return null;
@@ -308,113 +527,24 @@ export function ModelPicker({
     );
   }, [officialMetas, selected]);
 
-  const [officialEntries, customEntries] = useMemo(() => {
-    const official: {
-      meta: OfficialMeta;
-      model: PickerModel;
-      // True when the local /api/models has no matching entry — we'll
-      // deep-link to the settings page instead of dispatching a run.
-      unconfigured: boolean;
-    }[] = [];
-    const custom: PickerModel[] = [];
-    const consumedMetaKeys = new Set<string>();
-    for (const m of models) {
-      const meta = officialMetas.find(
-        (x) =>
-          x.id === m.name ||
-          x.id === m.model ||
-          x.displayName === m.display_name,
-      );
-      if (meta && !consumedMetaKeys.has(meta.key)) {
-        consumedMetaKeys.add(meta.key);
-        official.push({ meta, model: m, unconfigured: false });
-      } else {
-        custom.push(m);
-      }
-    }
-    for (const meta of officialMetas) {
-      if (consumedMetaKeys.has(meta.key)) continue;
-      consumedMetaKeys.add(meta.key);
-      official.push({
-        meta,
-        model: { name: meta.id, display_name: meta.displayName },
-        unconfigured: true,
-      });
-    }
-    return [official, custom];
-  }, [models, officialMetas]);
+  /**
+   * One flat list, in the order the backend returned.
+   *
+   * The dropdown used to split Official / Custom across tabs. With a handful
+   * of configured endpoints that cost two clicks to reach a neighbouring
+   * model and hid the selected row behind whichever tab opened by default.
+   * Unconfigured official rows are dropped here rather than rendered grey —
+   * they are a settings concern, and a column of unclickable placeholders is
+   * the bulk of what made this panel feel heavy.
+   *
+   * ``::1m`` variants are folded into the selected model's context-length
+   * control, so one model still occupies one line without hiding Max mode.
+   */
+  const flatEntries = useMemo(() => deduplicatePickerModels(models), [models]);
 
   const handleSelect = (name: string) => {
     onChange(name);
     setOpen(false);
-  };
-
-  useEffect(() => {
-    if (!isGuest || !selected || customEntries.length === 0) return;
-    if (selectedMeta) {
-      const fallback = customEntries[0];
-      if (fallback) onChange(fallback.name);
-    }
-  }, [customEntries, isGuest, onChange, selected, selectedMeta]);
-
-  const moliliLink = useMoliliLink();
-  const queryClient = useQueryClient();
-  const [enabling, setEnabling] = useState<string | null>(null);
-
-  /* Implementation note. */
-  const handleSelectUnconfigured = async (
-    meta: OfficialMeta,
-    upstreamId: string,
-  ) => {
-    const moliliUserId = moliliLink.data?.molili_user_id;
-    if (!moliliUserId) {
-      setOpen(false);
-      toast.message(t.modelPicker.bindMoliliFirst, {
-        description: t.modelPicker.bindMoliliDesc,
-      });
-      navigate("/login");
-      return;
-    }
-    setEnabling(meta.key);
-    try {
-      const r = await fetch(`${getBackendBaseURL()}/api/models`, {
-        method: "POST",
-        headers: jsonAuthHeaders(),
-        body: JSON.stringify({
-          name: upstreamId,
-          model: upstreamId,
-          display_name: meta.displayName,
-          api_key: moliliUserId,
-          base_url: MOLILI_LLM_BASE_URL,
-          max_tokens: 8192,
-          temperature: 0.7,
-          supports_thinking: false,
-          supports_vision: false,
-        }),
-      });
-      if (r.status === 409) {
-        // Already exists from a parallel click — that's fine.
-      } else if (!r.ok) {
-        const body = (await r.json().catch(() => null)) as {
-          detail?: string;
-        } | null;
-        throw new Error(body?.detail ?? `POST /api/models → ${r.status}`);
-      }
-      // Refresh the local model list so the picker drops the disabled
-      // chip on next render.
-      await queryClient.invalidateQueries({ queryKey: ["models"] });
-      toast.success(t.modelPicker.modelEnabled(meta.displayName));
-      onChange(upstreamId);
-      setOpen(false);
-    } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? t.modelPicker.enableFailedWithMessage(err.message)
-          : t.modelPicker.enableFailed,
-      );
-    } finally {
-      setEnabling(null);
-    }
   };
 
   // Clean up model name: remove trailing question marks and whitespace
@@ -428,28 +558,36 @@ export function ModelPicker({
   // red-box duplicates that got removed). The Auto toggle now lives
   // exclusively on the Auto row at the top of the dropdown panel
   // — one control, one backing state, two visible surfaces.
+  const selectedDisplayLabel = isAutoMode
+    ? t.modelPicker.autoModelLabel
+    : cleanModelName(selectedMeta?.displayName) ||
+      cleanModelName(selected?.display_name) ||
+      cleanModelName(selected?.name) ||
+      t.modelPicker.selectModel;
+
   const triggerButton = (
     <button
       type="button"
+      data-testid="model-picker-trigger"
       className={cn(
-        "inline-flex min-w-0 items-center gap-1 rounded-lg border border-transparent",
+        "inline-flex h-8 min-w-0 items-center gap-1 rounded-lg border border-transparent",
         "bg-transparent px-2 py-1 text-xs text-muted-foreground transition outline-none",
-        "hover:border-border/60 hover:bg-muted/60 hover:text-foreground",
+        "hover:border-border-default hover:bg-muted/60 hover:text-foreground",
         "data-[state=open]:bg-muted data-[state=open]:text-foreground",
       )}
       aria-label={t.modelPicker.selectModel}
-      title={t.modelPicker.selectModel}
+      title={selectedDisplayLabel}
     >
-      {isAutoMode && (
-        <SparklesIcon className="size-3 shrink-0 text-blue-500" />
-      )}
-      <span className="truncate max-w-[140px]">
-        {isAutoMode
-          ? t.modelPicker.autoModelLabel
-          : (cleanModelName(selectedMeta?.displayName) ||
-              cleanModelName(selected?.display_name) ||
-              cleanModelName(selected?.name) ||
-              t.modelPicker.selectModel)}
+      {isAutoMode && <SparklesIcon className="size-3 shrink-0 text-info" />}
+      <span className="truncate max-w-[var(--text-truncate-md)]">
+        <span
+          className={cn(
+            isOpenCodeZenFreeModel(selected) &&
+              "text-emerald-600 dark:text-emerald-400",
+          )}
+        >
+          {selectedDisplayLabel}
+        </span>
       </span>
       <ChevronDownIcon className="size-3 opacity-60" />
     </button>
@@ -464,15 +602,6 @@ export function ModelPicker({
     <DropdownMenuTrigger asChild>{triggerButton}</DropdownMenuTrigger>
   );
 
-  // Guests can inspect official models, but only custom models are
-  // selectable before login, so land them on Custom when possible.
-  const defaultTab =
-    isGuest && customEntries.length > 0
-      ? "custom"
-      : officialEntries.length > 0
-        ? "official"
-        : "custom";
-
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       {renderTrigger ? (
@@ -483,6 +612,7 @@ export function ModelPicker({
         defaultTriggerContainer
       )}
       <DropdownMenuContent
+        data-testid="model-picker-menu"
         align="end"
         side="top"
         sideOffset={6}
@@ -497,12 +627,12 @@ export function ModelPicker({
           <PickerRow
             label={
               <span className="inline-flex items-center gap-1.5">
-                <SparklesIcon className="size-3 shrink-0 text-blue-500" />
+                <SparklesIcon className="size-3 shrink-0 text-info" />
                 {t.modelPicker.autoModelLabel}
               </span>
             }
             right={
-              <span className="rounded border border-blue-500/40 px-1 py-0 text-[10px] text-blue-500">
+              <span className="rounded border border-info/40 px-1 py-0 text-xs text-info">
                 {t.modelPicker.autoModelBadge}
               </span>
             }
@@ -514,186 +644,80 @@ export function ModelPicker({
         {onReasoningEffortChange && (
           <ReasoningEffortSetting
             value={reasoningEffort}
-            locale={locale}
             disabled={reasoningEffortDisabled}
+            efforts={selected?.reasoning_efforts}
             onChange={onReasoningEffortChange}
           />
         )}
+        <ModelContextSetting
+          models={models}
+          selected={selected}
+          value={value}
+          disabled={reasoningEffortDisabled}
+          onChange={onChange}
+          className="mx-1 mt-1 border-t border-border-default px-0.5 pt-1"
+        />
 
-        <Tabs defaultValue={defaultTab} className="gap-0">
-          <TabsList className="mx-1 mt-1 h-6 w-auto bg-transparent p-0 flex gap-1">
-            {/* Official tab. Guests can see it, but rows are
-                disabled until they sign in. */}
-            <TabsTrigger
-              value="official"
-              disabled={officialEntries.length === 0}
-              className={cn(
-                // Match sidebar section labels: opacity-based emphasis,
-                // monochrome. Active state is just the text going full
-                // opacity + muted underline — no violet accent.
-                "flex-1 rounded-md text-[10px] font-medium uppercase tracking-wider transition-[opacity,color] duration-150",
-                "text-muted-foreground/60 hover:text-foreground",
-                "data-[state=active]:text-foreground data-[state=active]:opacity-100",
-              )}
-            >
-              <span>{t.modelPicker.tabOfficial}</span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="custom"
-              disabled={
-                customEntries.length === 0 && !isGuest && officialEntries.length > 0
-              }
-              className={cn(
-                "flex-1 rounded-md text-[10px] font-medium uppercase tracking-wider transition-[opacity,color] duration-150",
-                "text-muted-foreground/60 hover:text-foreground",
-                "data-[state=active]:text-foreground data-[state=active]:opacity-100",
-              )}
-            >
-              {t.modelPicker.tabCustom}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="official" className="p-1 pt-0.5">
-            {officialEntries.length === 0 ? (
+        <div className="p-1 pt-0.5">
+          <div className="flex flex-col gap-0.5">
+            {flatEntries.length === 0 ? (
               <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                {t.modelPicker.officialDisabled}
+                {t.modelPicker.noCustomModels}
               </div>
             ) : (
-              <div className="flex flex-col gap-0.5">
-                {officialEntries.map(({ meta, model, unconfigured }) => {
-                  const isEnabling = enabling === meta.key;
-                  return (
-                    <PickerRow
-                      key={model.name}
-                      label={
-                        <span
-                          className={cn(
-                            unconfigured && "text-muted-foreground/70",
-                          )}
-                        >
-                          {meta.displayName}
-                        </span>
-                      }
-                      right={
-                        isGuest ? (
-                          <span className="text-[10px] text-muted-foreground/70">
-                            {t.modelPicker.loginRequired}
-                          </span>
-                        ) : isEnabling ? (
-                          <span className="text-[10px] text-muted-foreground">
-                            {t.modelPicker.enabling}
-                          </span>
-                        ) : unconfigured ? (
-                          <span className="text-[10px] text-muted-foreground/70">
-                            {t.modelPicker.clickToEnable}
-                          </span>
-                        ) : (
-                          meta.multiplier
-                        )
-                      }
-                      badge={
-                        !isGuest && meta.recommended ? (
-                          <span
-                            title={t.modelPicker.recommended}
-                            className="inline-block size-1 shrink-0 rounded-full bg-primary/70"
-                          />
-                        ) : undefined
-                      }
-                      selected={model.name === value && !unconfigured && !isGuest}
-                      disabled={isGuest}
-                      onSelect={() =>
-                        isGuest
-                          ? undefined
-                          : unconfigured
-                          ? handleSelectUnconfigured(meta, model.name)
-                          : handleSelect(model.name)
-                      }
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="custom" className="p-1 pt-0.5">
-            <div className="flex flex-col gap-0.5">
-              {customEntries.length === 0 ? (
-                <div className="px-2 py-4 text-center text-xs text-muted-foreground">
-                  {t.modelPicker.noCustomModels}
-                </div>
-              ) : (
-                customEntries.map((m) => (
+              flatEntries.map((m) => {
+                // selection_id identifies endpoint + upstream variant +
+                // context profile. Legacy catalogs fall back to entry/name.
+                const selectKey = selectionValue(m);
+                const selectedFamily =
+                  !isAutoMode &&
+                  selected &&
+                  modelFamilyKey(m) === modelFamilyKey(selected);
+                return (
                   <PickerRow
-                    key={m.name}
-                    label={m.display_name || m.name}
-                    right={rightHint(m)}
-                    selected={m.name === value}
-                    onSelect={() => handleSelect(m.name)}
+                    key={selectKey}
+                    label={
+                      <span
+                        className={cn(
+                          isOpenCodeZenFreeModel(m) &&
+                            "text-emerald-600 dark:text-emerald-400",
+                        )}
+                      >
+                        {m.display_name || m.name}
+                      </span>
+                    }
+                    selected={Boolean(selectedFamily)}
+                    onSelect={() => handleSelect(selectKey)}
                   />
-                ))
+                );
+              })
+            )}
+          </div>
+          <div className="mt-1.5 border-t pt-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                // Settings dialog hosts the "models" page where the
+                // user manages api_base / api_key entries.
+                window.dispatchEvent(
+                  new CustomEvent("echo:open-settings", {
+                    detail: { tab: "models" },
+                  }),
+                );
+              }}
+              className={cn(
+                "flex w-full items-center justify-center gap-1.5 rounded-md",
+                "px-2 py-1.5 text-xs text-muted-foreground transition",
+                "hover:bg-accent hover:text-foreground",
               )}
-            </div>
-            <div className="mt-1.5 border-t pt-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  // Settings dialog hosts the "models" page where the
-                  // user manages api_base / api_key entries.
-                  window.dispatchEvent(
-                    new CustomEvent("octopus:open-settings", {
-                      detail: { tab: "models" },
-                    }),
-                  );
-                }}
-                className={cn(
-                  "flex w-full items-center justify-center gap-1.5 rounded-md",
-                  "px-2 py-1.5 text-xs text-muted-foreground transition",
-                  "hover:bg-accent hover:text-foreground",
-                )}
-              >
-                <PlusIcon className="size-3.5" />
-                {t.modelPicker.addModel}
-              </button>
-            </div>
-          </TabsContent>
-        </Tabs>
+            >
+              <PlusIcon className="size-3.5" />
+              {t.modelPicker.addModel}
+            </button>
+          </div>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-/**
- * Capability badges shown under the selected model in the picker.
- * Reads `GET /api/providers` (cached for 5 min via react-query) and
- * renders ⚡ / 🖼 / 🔧 / ⚠ tags so the user sees at a glance what the
- * provider can do BEFORE they send a message. Silent no-op if the
- * provider isn't found (e.g. non-mapped custom id) — picker still
- * works, just no badges.
- */
-function SelectedProviderBadges({ providerName }: { providerName?: string }) {
-  const caps = useProvider(providerName ?? null);
-  if (!caps) return null;
-  const chips: Array<{ icon: string; label: string; good: boolean }> = [
-    { icon: "🖼", label: "vision",    good: caps.supports_vision },
-    { icon: "🔧", label: "tools",     good: caps.supports_tool_use },
-    { icon: "⚡", label: "cache",     good: caps.supports_prompt_cache },
-    { icon: "📦", label: "structured", good: caps.supports_structured_output },
-  ];
-  const supported = chips.filter((c) => c.good);
-  if (supported.length === 0) return null;
-  return (
-    <div className="mt-1 flex flex-wrap gap-1 px-1 text-[10px] text-muted-foreground/70">
-      {supported.map((c) => (
-        <span
-          key={c.label}
-          className="inline-flex items-center gap-0.5 rounded-sm bg-muted/40 px-1 py-0 leading-4"
-          title={`${caps.name} · supports ${c.label}`}
-        >
-          <span>{c.icon}</span>
-          <span className="tracking-tight">{c.label}</span>
-        </span>
-      ))}
-    </div>
   );
 }

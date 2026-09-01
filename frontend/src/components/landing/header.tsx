@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { EchoMark } from "@/components/brand/echo-mark";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { swallow } from "@/core/utils/log";
 import { GITHUB_URL } from "@/core/config";
@@ -45,19 +46,9 @@ export function Header({ className, homeURL }: HeaderProps) {
           className="group/logo flex items-center gap-2 transition-opacity hover:opacity-80"
         >
           <div className="flex size-7 items-center justify-center rounded-lg border border-white/12 bg-white/[0.04] text-white/80 shadow-sm">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 512 512"
-              fill="none"
-            >
-              <path
-                d="M256 32C167.6 32 96 103.6 96 192c0 52.8 25.6 99.6 65.2 128.8C128 348 96 404 96 448c0 17.7 14.3 32 32 32s32-14.3 32-32c0-28 16-68 40-96 8 4 16.4 7.2 25.2 9.6-4 26.4-9.2 56-9.2 86.4 0 17.7 14.3 32 32 32s32-14.3 32-32c0-26.4 4-52 8-76 12-2.4 23.6-6 34.8-11.2C348 384 368 420 368 448c0 17.7 14.3 32 32 32s32-14.3 32-32c0-48-36-108-72-147.2C399.6 271.6 416 233.6 416 192c0-88.4-71.6-160-160-160zm0 64c53 0 96 43 96 96s-43 96-96 96-96-43-96-96 43-96 96-96z"
-                fill="currentColor"
-              />
-            </svg>
+            <EchoMark tone="light" className="size-4" />
           </div>
-          <h1 className="text-xl font-bold text-white/90">Octopus</h1>
+          <h1 className="text-xl font-bold text-white/90">Echo</h1>
         </a>
       </div>
       <nav className="mr-8 ml-auto flex items-center gap-8 text-sm font-medium">
@@ -79,15 +70,12 @@ export function Header({ className, homeURL }: HeaderProps) {
           asChild
           className="group relative z-10"
         >
-          <a
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
             <GitHubLogoIcon className="size-4" />
             Star on GitHub
-            {env.STATIC_WEBSITE_ONLY &&
-              env.GITHUB_OAUTH_TOKEN && <StarCounter />}
+            {env.STATIC_WEBSITE_ONLY && env.GITHUB_OAUTH_TOKEN && (
+              <StarCounter />
+            )}
           </a>
         </Button>
       </div>
@@ -106,7 +94,7 @@ function StarCounter() {
     (async () => {
       try {
         const response = await fetch(
-          "https://api.github.com/repos/octopus/octopus",
+          "https://api.github.com/repos/dengdenghua/echo-os",
           {
             headers: env.GITHUB_OAUTH_TOKEN
               ? {
@@ -121,7 +109,9 @@ function StarCounter() {
         if (!cancelled && typeof data?.stargazers_count === "number") {
           setStars(data.stargazers_count);
         }
-      } catch (e) { swallow(e); }
+      } catch (e) {
+        swallow(e);
+      }
     })();
     return () => {
       cancelled = true;

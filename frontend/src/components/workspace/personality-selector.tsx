@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from "react";
 import { UserIcon, Loader2Icon } from "lucide-react";
 import { toast } from "sonner";
@@ -81,13 +80,21 @@ export function PersonalitySelector({
       setApplying(name);
       try {
         const url = `${getBackendBaseURL()}/api/personality/templates/${name}/apply${agentName ? `?agent_name=${agentName}` : ""}`;
-        const res = await fetch(url, { method: "POST", headers: authHeaders() });
+        const res = await fetch(url, {
+          method: "POST",
+          headers: authHeaders(),
+        });
         if (res.ok) {
-          toast.success(t.personality?.applySuccess?.(name) ?? `Template "${name}" applied successfully`);
+          toast.success(
+            t.personality?.applySuccess?.(name) ??
+              `Template "${name}" applied successfully`,
+          );
         } else {
           const err = await res.json().catch(() => ({}));
           toast.error(
-            (err as { detail?: string }).detail || t.personality?.applyFailed || "Failed to apply template",
+            (err as { detail?: string }).detail ||
+              t.personality?.applyFailed ||
+              "Failed to apply template",
           );
         }
       } catch {
@@ -110,6 +117,7 @@ export function PersonalitySelector({
         {templates.map((tpl) => (
           <button
             key={tpl.name}
+            type="button"
             onClick={() => void applyTemplate(tpl.name)}
             disabled={applying !== null}
             className={cn(
@@ -121,7 +129,7 @@ export function PersonalitySelector({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-medium">{localizeName(tpl)}</span>
-                <span className="text-muted-foreground rounded bg-muted px-1 py-0.5 text-[10px]">
+                <span className="text-muted-foreground rounded bg-muted px-1 py-0.5 text-xs">
                   {localizeCategory(tpl)}
                 </span>
               </div>

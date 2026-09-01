@@ -1,7 +1,16 @@
 import { getBackendBaseURL } from "@/core/config";
 import { authHeaders, jsonAuthHeaders } from "@/core/auth/api";
 
-import type { CapabilityInfo, PluginInfo } from "./types";
+import type {
+  CapabilityInfo,
+  PluginMigrationReadiness,
+  PluginInfo,
+  PluginLifecycleHistory,
+  PluginRuntimeProfile,
+  PluginRegistryUpdates,
+  PluginSmokeSummary,
+  PluginPublisherTrustReport,
+} from "./types";
 import type { HubPluginInfo, DiscoveredPlugin } from "./types";
 
 // ── Legacy API (Codex plugins) ────────────────────────────
@@ -22,13 +31,163 @@ export async function getPlugin(pluginId: string): Promise<PluginInfo> {
   return (await res.json()) as PluginInfo;
 }
 
-export async function listCapabilities(type?: string): Promise<CapabilityInfo[]> {
+export async function listCapabilities(
+  type?: string,
+): Promise<CapabilityInfo[]> {
   const params = type ? `?type=${encodeURIComponent(type)}` : "";
-  const res = await fetch(`${getBackendBaseURL()}/api/plugins/capabilities${params}`, {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/plugins/capabilities${params}`,
+    {
+      headers: authHeaders(),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to list capabilities: ${res.statusText}`);
+  return (await res.json()) as CapabilityInfo[];
+}
+
+export async function fetchPluginSmokeSummary(): Promise<PluginSmokeSummary> {
+  const res = await fetch(`${getBackendBaseURL()}/api/plugins/smoke-summary`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error(`Failed to list capabilities: ${res.statusText}`);
-  return (await res.json()) as CapabilityInfo[];
+  if (!res.ok) {
+    throw new Error(`Failed to get plugin smoke summary: ${res.statusText}`);
+  }
+  return (await res.json()) as PluginSmokeSummary;
+}
+
+export async function fetchPluginMigrationReadiness(): Promise<PluginMigrationReadiness> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/plugins/migration-readiness`,
+    {
+      headers: authHeaders(),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(
+      `Failed to get plugin migration readiness: ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as PluginMigrationReadiness;
+}
+
+export async function fetchPluginPublisherTrust(): Promise<PluginPublisherTrustReport> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/plugins/publisher-trust`,
+    {
+      headers: authHeaders(),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to get publisher trust: ${res.statusText}`);
+  }
+  return (await res.json()) as PluginPublisherTrustReport;
+}
+
+export async function fetchPluginLifecycleHistory(): Promise<PluginLifecycleHistory> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/plugins/lifecycle/history`,
+    {
+      headers: authHeaders(),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(
+      `Failed to get plugin lifecycle history: ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as PluginLifecycleHistory;
+}
+
+export async function fetchPluginRegistryUpdates(): Promise<PluginRegistryUpdates> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/plugins/registry/updates`,
+    {
+      headers: authHeaders(),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to get plugin registry updates: ${res.statusText}`);
+  }
+  return (await res.json()) as PluginRegistryUpdates;
+}
+
+export async function installPluginFromRegistry(
+  pluginId: string,
+): Promise<{ plugin_id: string; status: string; version: string }> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/plugins/registry/install`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ plugin_id: pluginId, confirm_install: true }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to install registry plugin: ${res.statusText}`);
+  }
+  return res.json() as Promise<{
+    plugin_id: string;
+    status: string;
+    version: string;
+  }>;
+}
+
+export async function rotatePluginPublisherKey(input: {
+  publisher_id: string;
+  previous_key_id?: string;
+  new_key_id: string;
+  new_public_key: string;
+  reason: string;
+}): Promise<{ status: string; trust: PluginPublisherTrustReport }> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/plugins/publisher-trust/rotate`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ ...input, confirm_rotation: true }),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to rotate publisher key: ${res.statusText}`);
+  return res.json() as Promise<{
+    status: string;
+    trust: PluginPublisherTrustReport;
+  }>;
+}
+
+export async function revokePluginPublisherKey(input: {
+  publisher_id: string;
+  key_id: string;
+  reason: string;
+}): Promise<{ status: string; trust: PluginPublisherTrustReport }> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/plugins/publisher-trust/revoke`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ ...input, confirm_revocation: true }),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to revoke publisher key: ${res.statusText}`);
+  return res.json() as Promise<{
+    status: string;
+    trust: PluginPublisherTrustReport;
+  }>;
+}
+
+export async function getPluginRuntime(
+  pluginId: string,
+): Promise<PluginRuntimeProfile> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/plugins/${encodeURIComponent(pluginId)}/runtime`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to get plugin runtime: ${res.statusText}`);
+  }
+  return (await res.json()) as PluginRuntimeProfile;
 }
 
 // ── PluginHub API (new pluggable module architecture) ─────
@@ -101,7 +260,8 @@ export async function hubGetPluginConfig(
     `${HUB_BASE}/plugins/${encodeURIComponent(name)}/config`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw new Error(`Failed to get plugin config: ${res.statusText}`);
+  if (!res.ok)
+    throw new Error(`Failed to get plugin config: ${res.statusText}`);
   return res.json() as Promise<Record<string, unknown>>;
 }
 
@@ -118,18 +278,17 @@ export async function hubUpdatePluginConfig(
       body: JSON.stringify(config),
     },
   );
-  if (!res.ok) throw new Error(`Failed to update plugin config: ${res.statusText}`);
+  if (!res.ok)
+    throw new Error(`Failed to update plugin config: ${res.statusText}`);
   return res.json() as Promise<{ ok: boolean }>;
 }
 
 /** Get full details for a single plugin. */
-export async function hubGetPlugin(
-  name: string,
-): Promise<HubPluginInfo> {
-  const res = await fetch(
-    `${HUB_BASE}/plugins/${encodeURIComponent(name)}`,
-    { headers: authHeaders() },
-  );
-  if (!res.ok) throw new Error(`Failed to get plugin detail: ${res.statusText}`);
+export async function hubGetPlugin(name: string): Promise<HubPluginInfo> {
+  const res = await fetch(`${HUB_BASE}/plugins/${encodeURIComponent(name)}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok)
+    throw new Error(`Failed to get plugin detail: ${res.statusText}`);
   return res.json() as Promise<HubPluginInfo>;
 }

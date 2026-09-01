@@ -1,0 +1,199 @@
+name: Real OMV x86
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [os-main, main]
+    paths:
+      - appliance/approval.py
+      - appliance/omv_*.py
+      - deploy/omv/**
+      - tests/appliance/test_omv_*.py
+      - .github/workflows/omv-real-x86.yml
+  push:
+    branches: [os-main, main]
+    paths:
+      - appliance/approval.py
+      - appliance/omv_*.py
+      - deploy/omv/**
+      - tests/appliance/test_omv_*.py
+      - .github/workflows/omv-real-x86.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    name: OMV source contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout the exact Echo OS source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Validate the real OMV probe tooling
+        run: |
+          python -m py_compile \
+            deploy/omv/real_omv_account_probe.py \
+            deploy/omv/real_omv_nfs_probe.py \
+            deploy/omv/verify-real-omv-x86-evidence.py
+          sh -n deploy/omv/verify-real-omv-x86-ci.sh
+
+  omv-real-x86:
+    name: Real OMV 8 / x86_64
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+    needs: source-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Checkout the exact Echo OS source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Require the native x86 runner
+        run: test "$(uname -m)" = x86_64
+      - name: Build the exact native OMV plugin under test
+        run: python deploy/omv/plugin_package.py build --output-directory dist
+      - name: Build disposable Debian 13 systemd host
+        run: >-
+          docker build
+          --file deploy/omv/real-omv-x86-ci.Dockerfile
+          --tag echo-real-omv-x86-ci:${{ github.sha }}
+          .
+      - name: Start isolated systemd host
+        run: |
+          docker run --detach \
+            --name echo-real-omv-x86-ci \
+            --hostname echo-omv-x86 \
+            --privileged \
+            --cgroupns=host \
+            --pids-limit 4096 \
+            --memory 6g \
+            --tmpfs /run:rw,nosuid,nodev,mode=755 \
+            --tmpfs /run/lock:rw,nosuid,nodev,noexec,mode=755 \
+            --volume /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            --mount "type=bind,source=$PWD,target=/source,readonly" \
+            --env ECHO_REAL_OMV_CI=1 \
+            --env GITHUB_ACTIONS=true \
+            --env GITHUB_SHA="${GITHUB_SHA}" \
+            "echo-real-omv-x86-ci:${GITHUB_SHA}"
+          for attempt in $(seq 1 60); do
+            state=$(docker exec echo-real-omv-x86-ci \
+              systemctl is-system-running 2>/dev/null || true)
+            case "$state" in
+              running|degraded) break ;;
+            esac
+            if [ "$attempt" -eq 60 ]; then
+              echo "Disposable systemd host did not become ready: $state" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+      - name: Install real OMV and verify Echo lifecycle
+        run: |
+          plugin_package=(dist/openmediavault-echo-os_*_all.deb)
+          test "${#plugin_package[@]}" -eq 1
+          docker exec echo-real-omv-x86-ci \
+            /bin/sh /source/deploy/omv/verify-real-omv-x86-ci.sh \
+            "/source/${plugin_package[0]}" \
+            /tmp/echo-real-omv-x86-evidence.json
+          docker cp \
+            echo-real-omv-x86-ci:/tmp/echo-real-omv-x86-evidence.json \
+            dist/echo-real-omv-x86-evidence.json
+          python deploy/omv/verify-real-omv-x86-evidence.py \
+            "$PWD/dist/echo-real-omv-x86-evidence.json" \
+            --plugin-package "$PWD/${plugin_package[0]}" \
+            --expected-source-revision "$GITHUB_SHA" \
+            > dist/echo-real-omv-x86-evidence.verification.json
+          python -m json.tool dist/echo-real-omv-x86-evidence.verification.json
+          (
+            cd dist
+            sha256sum --check openmediavault-echo-os_*_all.deb.sha256
+            python -m json.tool openmediavault-echo-os_*_all.spdx.json >/dev/null
+          )
+          cp deploy/omv/verify-real-omv-x86-evidence.py \
+            dist/verify-real-omv-x86-evidence.py
+          (
+            cd dist
+            sha256sum \
+              openmediavault-echo-os_*_all.deb \
+              openmediavault-echo-os_*_all.deb.sha256 \
+              openmediavault-echo-os_*_all.spdx.json \
+              echo-real-omv-x86-evidence.json \
+              echo-real-omv-x86-evidence.verification.json \
+              verify-real-omv-x86-evidence.py \
+              > echo-real-omv-x86-artifact-set.sha256
+          )
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          docker ps --all --filter name=echo-real-omv-x86-ci
+          docker logs echo-real-omv-x86-ci 2>&1 || true
+          docker exec echo-real-omv-x86-ci \
+            journalctl --no-pager --lines=300 2>&1 || true
+      - name: Stop and remove disposable host
+        if: always()
+        run: docker rm --force echo-real-omv-x86-ci || true
+
+      - name: Attest the real x86-verified plugin package
+        if: >-
+          success() && github.event_name != 'pull_request' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/openmediavault-echo-os_*_all.deb
+
+      - name: Attest the plugin SBOM after real x86 verification
+        if: >-
+          success() && github.event_name != 'pull_request' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/openmediavault-echo-os_*_all.deb
+          sbom-path: dist/openmediavault-echo-os_*_all.spdx.json
+
+      - name: Attest the verified real x86 evidence set
+        if: >-
+          success() && github.event_name != 'pull_request' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/echo-real-omv-x86-evidence.json
+            dist/echo-real-omv-x86-evidence.verification.json
+            dist/echo-real-omv-x86-artifact-set.sha256
+            dist/verify-real-omv-x86-evidence.py
+
+      - name: Upload verified real OMV x86 evidence
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: echo-real-omv-x86-evidence
+          path: |
+            dist/openmediavault-echo-os_*_all.deb
+            dist/openmediavault-echo-os_*_all.deb.sha256
+            dist/openmediavault-echo-os_*_all.spdx.json
+            dist/echo-real-omv-x86-evidence.json
+            dist/echo-real-omv-x86-evidence.verification.json
+            dist/echo-real-omv-x86-artifact-set.sha256
+            dist/verify-real-omv-x86-evidence.py
+          if-no-files-found: error

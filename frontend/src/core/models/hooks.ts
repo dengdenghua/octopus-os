@@ -19,4 +19,3 @@ export function useModels({ enabled = true }: { enabled?: boolean } = {}) {
   });
   return { models: data ?? [], isLoading, error };
 }
-

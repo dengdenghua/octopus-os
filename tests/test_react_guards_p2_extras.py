@@ -14,6 +14,7 @@ Same conventions as the §19 / §20 test files: build small ReActStep
 fixtures, assert the guard returns either ``None`` (silent) or a
 non-empty string (fired).
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -156,62 +157,117 @@ class TestStepChangedPublicSignature:
 class TestSignatureChangedWithoutTypecheckGuard:
     def test_non_code_mode_silent(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})',
+            ),
         ]
-        assert _signature_changed_without_typecheck_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _signature_changed_without_typecheck_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_signature_change_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _signature_changed_without_typecheck_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _signature_changed_without_typecheck_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_signature_change_no_typecheck_fires(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})',
+            ),
         ]
         msg = _signature_changed_without_typecheck_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "typecheck" in msg.lower()
 
     def test_signature_change_with_mypy_silent(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})',
+            ),
             _step(2, action='exec_shell({"command": "mypy runtime/foo.py"})'),
         ]
-        assert _signature_changed_without_typecheck_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _signature_changed_without_typecheck_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_signature_change_with_pyright_silent(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})',
+            ),
             _step(2, action='exec_shell({"command": "pyright runtime/"})'),
         ]
-        assert _signature_changed_without_typecheck_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _signature_changed_without_typecheck_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_ruff_alone_does_not_count(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})',
+            ),
             _step(2, action='exec_shell({"command": "ruff check runtime/foo.py"})'),
         ]
-        assert _signature_changed_without_typecheck_guard(
-            steps, "done", is_code_mode=True,
-        ) is not None
+        assert (
+            _signature_changed_without_typecheck_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is not None
+        )
 
     def test_help_request_short_circuits(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "def f(a):", "new_string": "def f(a, b):"})',
+            ),
         ]
-        assert _signature_changed_without_typecheck_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _signature_changed_without_typecheck_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -278,54 +334,107 @@ class TestStepEditsWireSchema:
 class TestWireSchemaGuard:
     def test_non_code_mode_silent(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})',
+            ),
         ]
-        assert _wire_schema_change_without_compat_test_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _wire_schema_change_without_compat_test_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_wire_edit_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _wire_schema_change_without_compat_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _wire_schema_change_without_compat_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_wire_edit_no_contract_test_fires(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})',
+            ),
         ]
         msg = _wire_schema_change_without_compat_test_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "wire-shape" in msg.lower() or "wire" in msg.lower()
 
     def test_wire_edit_with_contract_test_silent(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})'),
-            _step(2, action='write_text_file({"path": "tests/test_anthropic_compat.py", "content": "def test_x():\\n    pass\\n"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})',
+            ),
+            _step(
+                2,
+                action='write_text_file({"path": "tests/test_anthropic_compat.py", "content": "def test_x():\\n    pass\\n"})',
+            ),
         ]
-        assert _wire_schema_change_without_compat_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _wire_schema_change_without_compat_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_wire_edit_with_random_test_still_fires(self) -> None:
         # Editing a non-wire test is not enough — must be a contract test.
         steps = [
-            _step(1, action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})'),
-            _step(2, action='write_text_file({"path": "tests/test_random.py", "content": "def test_y():\\n    pass\\n"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})',
+            ),
+            _step(
+                2,
+                action='write_text_file({"path": "tests/test_random.py", "content": "def test_y():\\n    pass\\n"})',
+            ),
         ]
-        assert _wire_schema_change_without_compat_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is not None
+        assert (
+            _wire_schema_change_without_compat_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is not None
+        )
 
     def test_help_request_short_circuits(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/protocol/items.py", "old_string": "x", "new_string": "y"})',
+            ),
         ]
-        assert _wire_schema_change_without_compat_test_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _wire_schema_change_without_compat_test_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -361,7 +470,9 @@ class TestNewThirdPartyImportsInPayload:
 
     def test_dotted_collapses(self) -> None:
         # ``from langfuse.client import X`` → top-level is ``langfuse``.
-        assert _new_third_party_imports_in_payload("from langfuse.client import X\n") == {"langfuse"}
+        assert _new_third_party_imports_in_payload("from langfuse.client import X\n") == {
+            "langfuse"
+        }
 
     def test_stdlib_excluded(self) -> None:
         assert _new_third_party_imports_in_payload("import os\nfrom typing import Any\n") == set()
@@ -437,15 +548,30 @@ class TestNewThirdPartyImportWithoutDepGuard:
                 ),
             ),
         ]
-        assert _new_third_party_import_without_dep_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _new_third_party_import_without_dep_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_new_imports_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _new_third_party_import_without_dep_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _new_third_party_import_without_dep_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_new_import_no_manifest_fires(self) -> None:
         steps = [
@@ -458,7 +584,9 @@ class TestNewThirdPartyImportWithoutDepGuard:
             ),
         ]
         msg = _new_third_party_import_without_dep_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "requests" in msg
@@ -477,9 +605,14 @@ class TestNewThirdPartyImportWithoutDepGuard:
                 action='edit_file({"path": "pyproject.toml", "old_string": "deps = []", "new_string": "deps = [\\"requests\\"]"})',
             ),
         ]
-        assert _new_third_party_import_without_dep_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _new_third_party_import_without_dep_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_first_party_import_silent(self) -> None:
         steps = [
@@ -491,9 +624,14 @@ class TestNewThirdPartyImportWithoutDepGuard:
                 ),
             ),
         ]
-        assert _new_third_party_import_without_dep_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _new_third_party_import_without_dep_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_help_request_short_circuits(self) -> None:
         steps = [
@@ -505,6 +643,11 @@ class TestNewThirdPartyImportWithoutDepGuard:
                 ),
             ),
         ]
-        assert _new_third_party_import_without_dep_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _new_third_party_import_without_dep_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )

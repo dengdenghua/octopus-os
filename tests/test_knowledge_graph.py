@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
-
 from runtime.memory.journal import InMemoryJournal
 from runtime.memory.knowledge_graph import KnowledgeGraph, Triple
 from runtime.platform.models import (
@@ -329,12 +328,14 @@ class TestKGUpdater:
     def test_failed_trajectory_yields_nothing(self):
         j = InMemoryJournal()
         kg = KnowledgeGraph()
-        j.write_trajectory(Trajectory(
-            task_id=TaskId(uuid4()),
-            arm_id=ArmId("x"),
-            steps=[],
-            outcome=TrajectoryOutcome(success=False),
-        ))
+        j.write_trajectory(
+            Trajectory(
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("x"),
+                steps=[],
+                outcome=TrajectoryOutcome(success=False),
+            )
+        )
         report = KGUpdater(journal=j, kg=kg).update()
         assert report.triples_proposed == 0
 
@@ -342,20 +343,24 @@ class TestKGUpdater:
         j = InMemoryJournal()
         kg = KnowledgeGraph()
         task_id = TaskId(uuid4())
-        j.write_trajectory(Trajectory(
-            task_id=task_id,
-            arm_id=ArmId("code_arm"),
-            strategy_id="default",
-            steps=[],
-            outcome=TrajectoryOutcome(success=True),
-        ))
-        j.write_trajectory(Trajectory(
-            task_id=task_id,
-            arm_id=ArmId("swarm"),
-            strategy_id="swarm",
-            steps=[],
-            outcome=TrajectoryOutcome(success=True),
-        ))
+        j.write_trajectory(
+            Trajectory(
+                task_id=task_id,
+                arm_id=ArmId("code_arm"),
+                strategy_id="default",
+                steps=[],
+                outcome=TrajectoryOutcome(success=True),
+            )
+        )
+        j.write_trajectory(
+            Trajectory(
+                task_id=task_id,
+                arm_id=ArmId("swarm"),
+                strategy_id="swarm",
+                steps=[],
+                outcome=TrajectoryOutcome(success=True),
+            )
+        )
 
         report = KGUpdater(journal=j, kg=kg).update()
         assert report.triples_proposed == 1

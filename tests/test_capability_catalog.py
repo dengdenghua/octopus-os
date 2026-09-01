@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from runtime.execution.arms.tool_registry import ToolRegistry
 from runtime.execution.misc.capability_catalog import (
     build_capability_catalog,

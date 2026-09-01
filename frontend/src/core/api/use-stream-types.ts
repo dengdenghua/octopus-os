@@ -43,4 +43,3 @@ export interface UseStreamResult<TState extends Record<string, unknown>> {
 export type BaseStream<
   TState extends Record<string, unknown> = Record<string, unknown>,
 > = UseStreamResult<TState>;
-

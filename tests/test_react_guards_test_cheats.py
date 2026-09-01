@@ -11,6 +11,7 @@ These all assume the agent passed §20 (test-coverage) and §42
 (weak-test) — the cheats they catch are subtler ways to satisfy those
 gates while delivering no real coverage.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -88,8 +89,7 @@ class TestDetectMockOnlyTestsInPayload:
 
     def test_mix(self) -> None:
         payload = (
-            "def test_a():\n    assert mock.called\n\n"
-            "def test_b():\n    assert real_value == 42\n"
+            "def test_a():\n    assert mock.called\n\ndef test_b():\n    assert real_value == 42\n"
         )
         assert _detect_mock_only_tests_in_payload(payload) == ["test_a"]
 
@@ -126,9 +126,14 @@ class TestMockOnlyTestGuard:
                 action='write_text_file({"path": "tests/test_x.py", "content": "def test_x():\\n    assert mock.called\\n"})',
             ),
         ]
-        assert _mock_only_test_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _mock_only_test_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_mock_only_silent(self) -> None:
         steps = [
@@ -137,9 +142,14 @@ class TestMockOnlyTestGuard:
                 action='write_text_file({"path": "tests/test_x.py", "content": "def test_x():\\n    assert result == 42\\n"})',
             ),
         ]
-        assert _mock_only_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _mock_only_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_mock_only_fires(self) -> None:
         steps = [
@@ -149,7 +159,9 @@ class TestMockOnlyTestGuard:
             ),
         ]
         msg = _mock_only_test_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "test_x" in msg
@@ -162,9 +174,14 @@ class TestMockOnlyTestGuard:
                 action='write_text_file({"path": "tests/test_x.py", "content": "def test_x():\\n    assert mock.called\\n"})',
             ),
         ]
-        assert _mock_only_test_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _mock_only_test_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -275,15 +292,30 @@ class TestUndocumentedSkipGuard:
                 ),
             ),
         ]
-        assert _undocumented_skip_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _undocumented_skip_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_skip_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "tests/test_x.py", "old_string": "x", "new_string": "y"})')]
-        assert _undocumented_skip_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "tests/test_x.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _undocumented_skip_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_skip_no_reason_fires(self) -> None:
         steps = [
@@ -297,7 +329,9 @@ class TestUndocumentedSkipGuard:
             ),
         ]
         msg = _undocumented_skip_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "tests/test_x.py" in msg
@@ -313,9 +347,14 @@ class TestUndocumentedSkipGuard:
                 ),
             ),
         ]
-        assert _undocumented_skip_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _undocumented_skip_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -390,15 +429,30 @@ class TestDeletedTestGuard:
                 ),
             ),
         ]
-        assert _deleted_test_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _deleted_test_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_deletion_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "tests/test_x.py", "old_string": "x", "new_string": "y"})')]
-        assert _deleted_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "tests/test_x.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _deleted_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_deletion_fires(self) -> None:
         steps = [
@@ -412,7 +466,9 @@ class TestDeletedTestGuard:
             ),
         ]
         msg = _deleted_test_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "test_b" in msg
@@ -429,6 +485,11 @@ class TestDeletedTestGuard:
                 ),
             ),
         ]
-        assert _deleted_test_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _deleted_test_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )

@@ -16,7 +16,7 @@ nerves/
 2. **感觉神经**（上行）：Eyes / Skin → Hemolymph → Cerebrum
 3. **横向神经**（腕间）：Arm ↔ Chromatophores ↔ Arm
 
-## Graph 扩展节点/边（相对 octopus 原版）
+## Graph 扩展节点/边（相对 echo 原版）
 
 | 新增 | 类型 | 作用 |
 |---|---|---|

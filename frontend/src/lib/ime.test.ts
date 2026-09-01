@@ -6,14 +6,14 @@ function fakeEvent(overrides: {
   isComposing?: boolean;
   keyCode?: number;
   nativeIsComposing?: boolean;
-}): any {
+}): Parameters<typeof isIMEComposing>[0] {
   return {
     isComposing: overrides.isComposing ?? false,
     keyCode: overrides.keyCode ?? 13,
     nativeEvent: {
       isComposing: overrides.nativeIsComposing ?? false,
     },
-  };
+  } as unknown as Parameters<typeof isIMEComposing>[0];
 }
 
 describe("isIMEComposing", () => {

@@ -1,11 +1,11 @@
-# Getting Started · octopus-agent
+# Getting Started · echo-agent
 
 > 从 0 到会跑 · 真新人三分钟上手 · 然后知道去哪找细节。
 
 ## 装 · 跑
 
 ```bash
-git clone <repo> && cd octopus-agent
+git clone <repo> && cd echo-agent
 pip install -e ".[dev]"
 
 # 可选依赖（按需装）
@@ -324,7 +324,7 @@ register_mcp_tools_as_skills(registry, client)
 
 ---
 
-## 能力盘点 · `octopus-agent status`
+## 能力盘点 · `echo-agent status`
 
 ```bash
 $ python -m runtime status

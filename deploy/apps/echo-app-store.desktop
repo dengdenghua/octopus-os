@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Echo App Store
+Name[zh_CN]=Echo 应用商店
+GenericName=Sandboxed Application Center
+GenericName[zh_CN]=沙箱应用中心
+Comment=Install and update applications that persist across Echo OS upgrades
+Comment[zh_CN]=安装和更新在 Echo OS 升级后仍保留的应用
+Exec=/usr/bin/plasma-discover --backends flatpak %U
+TryExec=/usr/bin/plasma-discover
+Icon=plasmadiscover
+StartupWMClass=plasma-discover
+Categories=System;PackageManager;
+Keywords=flatpak;flathub;store;apps;
+StartupNotify=true
+SingleMainWindow=true

@@ -13,17 +13,19 @@ from runtime.safety.recovery.evolution_dataset import EvolutionDatasetBuilder
 def test_evolution_dataset_builder_normalizes_failures_and_synthetic_variants() -> None:
     dataset = EvolutionDatasetBuilder(
         synthetic_variants_per_failure=1,
-    ).build_from_failure_samples([
-        {
-            "goal": "write a report",
-            "last_error": "length limit",
-            "step_count": 7,
-            "source": "proposal_ledger",
-            "failure_source": "length_finish",
-            "turn_id": "turn-1",
-        },
-        {"goal": "", "last_error": "ignored"},
-    ])
+    ).build_from_failure_samples(
+        [
+            {
+                "goal": "write a report",
+                "last_error": "length limit",
+                "step_count": 7,
+                "source": "proposal_ledger",
+                "failure_source": "length_finish",
+                "turn_id": "turn-1",
+            },
+            {"goal": "", "last_error": "ignored"},
+        ]
+    )
 
     examples = dataset.all_examples
     assert len(examples) == 2
@@ -46,11 +48,15 @@ def test_evolution_constraint_validator_rejects_unsafe_prompt() -> None:
 
 def test_evolution_dataset_round_trips_golden_jsonl(tmp_path) -> None:
     builder = EvolutionDatasetBuilder(synthetic_variants_per_failure=0)
-    dataset = builder.build_from_failure_samples([{
-        "goal": "review a patch",
-        "last_error": "missed regression",
-        "source": "golden",
-    }])
+    dataset = builder.build_from_failure_samples(
+        [
+            {
+                "goal": "review a patch",
+                "last_error": "missed regression",
+                "source": "golden",
+            }
+        ]
+    )
     golden_path = dataset.save_jsonl(tmp_path / "golden.jsonl")
 
     reloaded = builder.build_from_golden_jsonl(golden_path)
@@ -63,23 +69,25 @@ def test_evolution_dataset_round_trips_golden_jsonl(tmp_path) -> None:
 def test_evolution_dataset_clusters_repeated_failure_modes() -> None:
     builder = EvolutionDatasetBuilder()
 
-    annotated = builder.annotate_failure_clusters([
-        {
-            "goal": "write report",
-            "last_error": "length limit after 3172 chars",
-            "failure_source": "length_finish",
-        },
-        {
-            "goal": "write another report",
-            "last_error": "length limit after 4096 chars",
-            "failure_source": "length_finish",
-        },
-        {
-            "goal": "edit file",
-            "last_error": "permission denied",
-            "failure_source": "tool_error",
-        },
-    ])
+    annotated = builder.annotate_failure_clusters(
+        [
+            {
+                "goal": "write report",
+                "last_error": "length limit after 3172 chars",
+                "failure_source": "length_finish",
+            },
+            {
+                "goal": "write another report",
+                "last_error": "length limit after 4096 chars",
+                "failure_source": "length_finish",
+            },
+            {
+                "goal": "edit file",
+                "last_error": "permission denied",
+                "failure_source": "tool_error",
+            },
+        ]
+    )
 
     assert annotated[0]["failure_cluster"] == annotated[1]["failure_cluster"]
     assert annotated[0]["failure_cluster_count"] == 2
@@ -96,10 +104,12 @@ def test_evolution_dataset_mines_unique_success_tool_chains() -> None:
             SimpleNamespace(action=SimpleNamespace(sucker_id="edit_file")),
         ],
     )
-    journal = SimpleNamespace(read_by_type=lambda _event_type: [
-        SimpleNamespace(trajectory=trajectory),
-        SimpleNamespace(trajectory=trajectory),
-    ])
+    journal = SimpleNamespace(
+        read_by_type=lambda _event_type: [
+            SimpleNamespace(trajectory=trajectory),
+            SimpleNamespace(trajectory=trajectory),
+        ]
+    )
 
     dataset = EvolutionDatasetBuilder().build_from_journal_successes(journal)
 
@@ -143,14 +153,18 @@ def test_evolution_dataset_merges_positive_examples(tmp_path) -> None:
         proposer="realtime_cerebrum",
         metadata={"goal": "write report"},
     )
-    journal = SimpleNamespace(read_by_type=lambda _event_type: [
-        SimpleNamespace(trajectory=SimpleNamespace(
-            trajectory_id="trajectory-1",
-            recipe_id="planner/main",
-            outcome=SimpleNamespace(success=True),
-            steps=[SimpleNamespace(action=SimpleNamespace(sucker_id="read_file"))],
-        )),
-    ])
+    journal = SimpleNamespace(
+        read_by_type=lambda _event_type: [
+            SimpleNamespace(
+                trajectory=SimpleNamespace(
+                    trajectory_id="trajectory-1",
+                    recipe_id="planner/main",
+                    outcome=SimpleNamespace(success=True),
+                    steps=[SimpleNamespace(action=SimpleNamespace(sucker_id="read_file"))],
+                )
+            ),
+        ]
+    )
 
     dataset = EvolutionDatasetBuilder().build_positive_examples(
         journal=journal,

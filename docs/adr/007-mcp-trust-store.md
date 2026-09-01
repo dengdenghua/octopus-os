@@ -12,7 +12,7 @@ Today's flow:
    `PUT /api/mcp/config`.
 2. The router spawns the binary (e.g. `npx -y @page-agent/mcp`).
 3. `register_mcp_tools_as_skills(registry, client)` enumerates
-   the server's tools and registers each as an Octopus `Skill`.
+   the server's tools and registers each as an Echo `Skill`.
 4. The planner sees those skills indistinguishably from built-in
    ones and may call them.
 
@@ -24,14 +24,14 @@ arbitrary code in the user's process space.
 
 Modern agent runtimes mitigate this by demanding **explicit user
 approval** before an MCP server's tools become callable. We
-needed the same for Octopus.
+needed the same for Echo.
 
 ## Decision
 
 Add a persistent, per-user trust store at
 `runtime.adapters.mcp_client.trust.MCPTrustStore`, backed by a
-JSON file (`$OCTOPUS_HOME/mcp_trust.json`, default
-`~/.octopus/mcp_trust.json`).
+JSON file (`$ECHO_HOME/mcp_trust.json`, default
+`~/.echo/mcp_trust.json`).
 
 ### Trust entry
 
@@ -116,9 +116,9 @@ Settings → MCP page (frontend surface added separately).
 
 **Neutral**
 
-* Tests must monkeypatch `OCTOPUS_HOME` and call
+* Tests must monkeypatch `ECHO_HOME` and call
   `reset_trust_store_for_tests()` to avoid touching the real
-  user's `~/.octopus`. Documented in the test fixture.
+  user's `~/.echo`. Documented in the test fixture.
 
 ## References
 

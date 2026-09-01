@@ -1,4 +1,4 @@
-# Octopus 核心路径地图
+# Echo 核心路径地图
 
 新人阅读顺序：这 5 个走主路径，再看 3 个治理，其余按需。
 
@@ -33,7 +33,7 @@ HTTP request
 └─────────┘
 ```
 
-**读这 5 个**，就理解了 Octopus 怎么把"用户一句话"变成"tool 调用 + 返回"。
+**读这 5 个**，就理解了 Echo 怎么把"用户一句话"变成"tool 调用 + 返回"。
 
 ---
 
@@ -58,7 +58,7 @@ Beak 每次 `execute_step` 都会经过这 3 个关卡：
 | **SpinalCord** | 想优化首字节延迟 · 80% 请求不走 LLM 的短路 |
 | **Regeneration** | 想理解自演化闭环 · 含 6 个反思生产者 |
 | **Camouflage** | 想跑 A/B 策略对照 · 实现上挂在 Regeneration 下 |
-| **Eyes** | 新增 LLM 供应商 · Anthropic / OpenAI / Gemini / Molili |
+| **Eyes** | 新增 LLM 供应商 · Anthropic / OpenAI / Gemini |
 | **Mantle** | 加沙箱策略 · Local / Subprocess / Docker / SSH / K8s |
 
 ---

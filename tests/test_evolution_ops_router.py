@@ -9,7 +9,6 @@ from uuid import uuid4  # noqa: E402
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.execution.suckers import (  # noqa: E402
     Skill,
     SkillRegistry,
@@ -626,18 +625,20 @@ def test_evolution_overview_reflects_intelligence_reports(
     tmp_path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path))
+    monkeypatch.setenv("ECHO_HOME", str(tmp_path))
     (tmp_path / "intelligence.json").write_text(
-        json.dumps({
-            "subscriptions": [
-                {"id": "sub-enabled", "enabled": True},
-                {"id": "sub-disabled", "enabled": False},
-            ],
-            "reports": [
-                {"id": "r1", "created_at": "2026-04-28T00:00:00+00:00"},
-                {"id": "r2", "created_at": "2026-04-29T00:00:00+00:00"},
-            ],
-        }),
+        json.dumps(
+            {
+                "subscriptions": [
+                    {"id": "sub-enabled", "enabled": True},
+                    {"id": "sub-disabled", "enabled": False},
+                ],
+                "reports": [
+                    {"id": "r1", "created_at": "2026-04-28T00:00:00+00:00"},
+                    {"id": "r2", "created_at": "2026-04-29T00:00:00+00:00"},
+                ],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -647,9 +648,7 @@ def test_evolution_overview_reflects_intelligence_reports(
     assert overview["proactive_learning"]["subscriptions"] == 2
     assert overview["proactive_learning"]["enabled_subscriptions"] == 1
     assert overview["proactive_learning"]["total_reports"] == 2
-    assert overview["proactive_learning"]["last_report_at"] == (
-        "2026-04-29T00:00:00+00:00"
-    )
+    assert overview["proactive_learning"]["last_report_at"] == ("2026-04-29T00:00:00+00:00")
     assert overview["learning_events"] >= 2
 
 
@@ -728,9 +727,7 @@ def test_skillforge_proposals_can_be_promoted_or_rejected(tmp_path) -> None:
         forged_skill_dir=tmp_path,
     )
 
-    proposals = client.get(
-        "/api/intel-evolution/skills/proposals?status=pending"
-    ).json()
+    proposals = client.get("/api/intel-evolution/skills/proposals?status=pending").json()
     assert len(proposals) == 1
     proposal = proposals[0]
     assert proposal["topic"] == "SkillForge"
@@ -751,10 +748,7 @@ def test_skillforge_proposals_can_be_promoted_or_rejected(tmp_path) -> None:
     assert len(decision_events) == 1
     assert isinstance(decision_events[0], SkillProposalDecisionEvent)
     assert decision_events[0].decision == "promoted"
-    assert (
-        client.get("/api/intel-evolution/skills/proposals?status=pending").json()
-        == []
-    )
+    assert client.get("/api/intel-evolution/skills/proposals?status=pending").json() == []
 
     loaded_registry = SkillRegistry()
     loaded_registry.register(registry.get("source_value"), verify_tests=False)
@@ -766,9 +760,7 @@ def test_skillforge_proposals_can_be_promoted_or_rejected(tmp_path) -> None:
     assert loaded_result["composite_output"]["n1"]["content"] == "HELLO"
 
     client, registry, journal = _client_with_forge_candidate()
-    proposal = client.get(
-        "/api/intel-evolution/skills/proposals?status=pending"
-    ).json()[0]
+    proposal = client.get("/api/intel-evolution/skills/proposals?status=pending").json()[0]
     rejected = client.post(
         "/api/intel-evolution/skills/proposals/reject",
         json={"name": proposal["name"]},
@@ -778,17 +770,9 @@ def test_skillforge_proposals_can_be_promoted_or_rejected(tmp_path) -> None:
     assert not registry.has(proposal["name"])
     decision_events = journal.read_by_type("skill_proposal_decision")
     assert decision_events[-1].decision == "rejected"
-    assert (
-        client.get("/api/intel-evolution/skills/proposals?status=pending").json()
-        == []
-    )
+    assert client.get("/api/intel-evolution/skills/proposals?status=pending").json() == []
     restarted_client = _client_for_existing_runtime(journal, registry)
-    assert (
-        restarted_client.get(
-            "/api/intel-evolution/skills/proposals?status=pending"
-        ).json()
-        == []
-    )
+    assert restarted_client.get("/api/intel-evolution/skills/proposals?status=pending").json() == []
 
 
 def test_curriculum_goals_are_derived_from_failures_and_decisions_persist() -> None:
@@ -822,17 +806,14 @@ def test_curriculum_goals_are_derived_from_failures_and_decisions_persist() -> N
     assert decision_events[0].status == "in_progress"
 
     assert client.get("/api/evolution/curriculum/goals?status=pending").json() == []
-    in_progress = client.get(
-        "/api/evolution/curriculum/goals?status=in_progress"
-    ).json()
+    in_progress = client.get("/api/evolution/curriculum/goals?status=in_progress").json()
     assert len(in_progress) == 1
     assert in_progress[0]["id"] == goal["id"]
 
     restarted = _client_for_existing_runtime(journal, SkillRegistry())
     assert restarted.get("/api/evolution/curriculum/goals?status=pending").json() == []
     assert (
-        restarted.get("/api/evolution/curriculum/goals?status=in_progress")
-        .json()[0]["id"]
+        restarted.get("/api/evolution/curriculum/goals?status=in_progress").json()[0]["id"]
         == goal["id"]
     )
 
@@ -902,14 +883,9 @@ def test_mcp_proposals_are_derived_from_capability_gaps_and_vetted() -> None:
 def test_protocol_drift_and_repair_are_derived_from_contract_failures() -> None:
     client, journal = _client_with_protocol_drift()
 
-    events = client.get(
-        "/api/intel-evolution/protocols/drift?acknowledged=false"
-    ).json()
+    events = client.get("/api/intel-evolution/protocols/drift?acknowledged=false").json()
     assert len(events) >= 1
-    drift = next(
-        event for event in events
-        if event["protocol_id"] == "http_api_contract"
-    )
+    drift = next(event for event in events if event["protocol_id"] == "http_api_contract")
     assert drift["protocol_id"] == "http_api_contract"
     assert drift["acknowledged"] is False
     assert drift["failure_count"] == 2
@@ -920,13 +896,8 @@ def test_protocol_drift_and_repair_are_derived_from_contract_failures() -> None:
     assert scan["events"] == len(events)
     assert scan["source"] == "journal"
 
-    repairs = client.get(
-        "/api/intel-evolution/protocols/repair/proposals?status=pending"
-    ).json()
-    repair = next(
-        row for row in repairs
-        if row["drift_event_id"] == drift["id"]
-    )
+    repairs = client.get("/api/intel-evolution/protocols/repair/proposals?status=pending").json()
+    repair = next(row for row in repairs if row["drift_event_id"] == drift["id"])
     assert repair["protocol_id"] == "http_api_contract"
     assert "endpoint" in repair["suggested_diff"].lower()
 
@@ -948,13 +919,9 @@ def test_protocol_drift_and_repair_are_derived_from_contract_failures() -> None:
     assert decision_events[0].drift_id == drift["id"]
     assert decision_events[0].status == "acknowledged"
 
-    remaining = client.get(
-        "/api/intel-evolution/protocols/drift?acknowledged=false"
-    ).json()
+    remaining = client.get("/api/intel-evolution/protocols/drift?acknowledged=false").json()
     assert all(row["id"] != drift["id"] for row in remaining)
-    acknowledged = client.get(
-        "/api/intel-evolution/protocols/drift?acknowledged=true"
-    ).json()
+    acknowledged = client.get("/api/intel-evolution/protocols/drift?acknowledged=true").json()
     assert any(row["id"] == drift["id"] for row in acknowledged)
 
     restarted = _client_for_existing_runtime(journal, SkillRegistry())

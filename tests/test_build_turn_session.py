@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for ``build_turn_session`` Â· the helper that merges request
 context + persisted thread metadata into a ``Session`` object.
 
@@ -7,6 +7,7 @@ The scope resolver is only as correct as the session metadata it gets, so silent
 Tests pin each metadata-priority case + the silent-degradation
 path when the thread store doesn't know the thread yet.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -75,7 +76,9 @@ class TestBodyContextWins:
         state first."""
         store = _StubStore({"t1": {"metadata": {"mode": "chat"}}})
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="t1",
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t1",
             body={"context": {"mode": "team", "team_id": "t_alpha"}},
             store=store,
         )
@@ -83,11 +86,11 @@ class TestBodyContextWins:
         assert sess.metadata["team_id"] == "t_alpha"
 
     def test_body_team_id_overrides_stored(self):
-        store = _StubStore(
-            {"t1": {"metadata": {"team_id": "old_team"}}}
-        )
+        store = _StubStore({"t1": {"metadata": {"team_id": "old_team"}}})
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="t1",
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t1",
             body={"context": {"team_id": "new_team"}},
             store=store,
         )
@@ -98,7 +101,9 @@ class TestBodyContextWins:
         ``identity_lock_override=False`` key that the
         identity_filter checks."""
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="t1",
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t1",
             body={"context": {"raw_identity": True}},
             store=_StubStore(),
         )
@@ -108,7 +113,9 @@ class TestBodyContextWins:
         """Only the truthy case sets the key â€” absent = use
         whatever the filter's default is."""
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="t1",
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t1",
             body={"context": {"raw_identity": False}},
             store=_StubStore(),
         )
@@ -124,8 +131,11 @@ class TestStoredMetadataFallback:
     def test_stored_mode_used_when_body_empty(self):
         store = _StubStore({"t1": {"metadata": {"mode": "code"}}})
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="t1",
-            body={}, store=store,
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t1",
+            body={},
+            store=store,
         )
         assert sess.metadata["mode"] == "code"
 
@@ -133,38 +143,53 @@ class TestStoredMetadataFallback:
         """``extra_workspaces`` only lives on the persisted thread Â·
         body.context never carries it (would be annoying to resend
         every turn). Scope resolver reads it from session.metadata."""
-        store = _StubStore({
-            "t1": {"metadata": {
-                "mode": "code",
-                "extra_workspaces": ["/opt/proj", "/home/data"],
-            }},
-        })
+        store = _StubStore(
+            {
+                "t1": {
+                    "metadata": {
+                        "mode": "code",
+                        "extra_workspaces": ["/opt/proj", "/home/data"],
+                    }
+                },
+            }
+        )
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="t1",
-            body={}, store=store,
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t1",
+            body={},
+            store=store,
         )
         assert sess.metadata["extra_workspaces"] == [
-            "/opt/proj", "/home/data",
+            "/opt/proj",
+            "/home/data",
         ]
 
     def test_extra_workspaces_invalid_entries_filtered(self):
         """A stale/corrupt entry (non-string, empty string) must
         not crash the caller â€” silently drop. Scope resolver does
         a second filter pass but defense in depth here."""
-        store = _StubStore({
-            "t1": {"metadata": {
-                "extra_workspaces": [
-                    "/ok",
-                    "",            # empty dropped
-                    None,          # non-string dropped
-                    123,           # non-string dropped
-                    "/also_ok",
-                ],
-            }},
-        })
+        store = _StubStore(
+            {
+                "t1": {
+                    "metadata": {
+                        "extra_workspaces": [
+                            "/ok",
+                            "",  # empty dropped
+                            None,  # non-string dropped
+                            123,  # non-string dropped
+                            "/also_ok",
+                        ],
+                    }
+                },
+            }
+        )
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="t1",
-            body={}, store=store,
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t1",
+            body={},
+            store=store,
         )
         assert sess.metadata["extra_workspaces"] == ["/ok", "/also_ok"]
 
@@ -179,8 +204,11 @@ class TestStoreMissThread:
         """New threads Â· the store returns None Â· session still
         builds with sensible defaults."""
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="brand_new",
-            body={}, store=_StubStore(),  # empty
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="brand_new",
+            body={},
+            store=_StubStore(),  # empty
         )
         assert sess.metadata["mode"] == "chat"
 
@@ -193,7 +221,9 @@ class TestStoreMissThread:
                 raise KeyError(tid)
 
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="t",
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t",
             body={"context": {"mode": "team", "team_id": "t_x"}},
             store=_RaisingStore(),
         )
@@ -208,9 +238,10 @@ class TestStoreMissThread:
             pass
 
         sess = build_turn_session(
-            actor="u", agent=_StubAgent(), thread_id="t",
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t",
             body={"context": {"mode": "chat"}},
             store=_BrokenStore(),
         )
         assert sess.metadata["mode"] == "chat"
-

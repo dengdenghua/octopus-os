@@ -31,11 +31,11 @@ interface QuickTemplatesProps {
 }
 
 const categoryColors: Record<string, string> = {
-  website: "bg-sky-500/10 text-sky-600",
-  app: "bg-violet-500/10 text-violet-600",
-  tool: "bg-emerald-500/10 text-emerald-600",
-  game: "bg-amber-500/10 text-amber-600",
-  data: "bg-rose-500/10 text-rose-600",
+  website: "bg-info/10 text-info",
+  app: "bg-chart-1/10 text-chart-1",
+  tool: "bg-success/10 text-success",
+  game: "bg-warning/10 text-warning",
+  data: "bg-destructive/10 text-destructive",
 };
 
 export function QuickTemplates({ onSelect, className }: QuickTemplatesProps) {
@@ -112,7 +112,7 @@ export function QuickTemplates({ onSelect, className }: QuickTemplatesProps) {
   return (
     <div className={cn("flex flex-col h-full", className)}>
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border-default">
         <LayoutTemplateIcon className="size-4 text-primary" />
         <span className="text-sm font-medium">{t.quickTemplates.title}</span>
       </div>
@@ -125,15 +125,15 @@ export function QuickTemplates({ onSelect, className }: QuickTemplatesProps) {
               key={template.id}
               onClick={() => onSelect(template)}
               className={cn(
-                "group flex items-start gap-3 p-3 rounded-lg border border-border/50",
-                "hover:border-primary/30 hover:bg-primary/5 transition-all duration-200",
-                "text-left"
+                "group flex items-start gap-3 p-3 rounded-lg border border-border-default",
+                "hover:border-primary/30 hover:bg-primary/5 transition-colors duration-base",
+                "text-left",
               )}
             >
               <div
                 className={cn(
                   "flex size-8 items-center justify-center rounded-lg shrink-0",
-                  categoryColors[template.category]
+                  categoryColors[template.category],
                 )}
               >
                 {template.icon}
@@ -155,8 +155,8 @@ export function QuickTemplates({ onSelect, className }: QuickTemplatesProps) {
       </div>
 
       {/* Footer hint */}
-      <div className="px-3 py-2 border-t border-border/50">
-        <p className="text-[10px] text-muted-foreground/60 text-center">
+      <div className="px-3 py-2 border-t border-border-default">
+        <p className="text-xs text-muted-foreground/60 text-center">
           {t.quickTemplates.hint}
         </p>
       </div>

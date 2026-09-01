@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from runtime.execution.suckers.browser_skills import (
     BROWSER_SKILL_NAMES,
     _browser_click,
@@ -89,7 +88,10 @@ class _FakePage:
         self.presses.append((selector, key))
 
     def wait_for_selector(
-        self, selector: str, state: str = "visible", timeout: int = 0,
+        self,
+        selector: str,
+        state: str = "visible",
+        timeout: int = 0,
     ) -> None:
         if self._wait_raises is not None:
             raise self._wait_raises
@@ -146,7 +148,9 @@ class TestClick:
     def test_click_records_selector(self):
         page = _FakePage()
         r = _browser_click(
-            url="https://a/", selector="#btn", page=page,
+            url="https://a/",
+            selector="#btn",
+            page=page,
         )
         assert "error" not in r
         assert r["clicked"] == "#btn"
@@ -160,7 +164,9 @@ class TestClick:
     def test_click_raises_reports_error(self):
         page = _FakePage(click_raises=RuntimeError("not clickable"))
         r = _browser_click(
-            url="https://a/", selector="#btn", page=page,
+            url="https://a/",
+            selector="#btn",
+            page=page,
         )
         assert "error" in r
         assert "click_error" in r["error"]
@@ -168,7 +174,10 @@ class TestClick:
     def test_wait_after_ms(self):
         page = _FakePage()
         _browser_click(
-            url="https://a/", selector="#btn", page=page, wait_after_ms=100,
+            url="https://a/",
+            selector="#btn",
+            page=page,
+            wait_after_ms=100,
         )
         assert 100 in page.wait_ms_calls
 
@@ -182,7 +191,10 @@ class TestType:
     def test_fills_input(self):
         page = _FakePage()
         r = _browser_type(
-            url="https://a/", selector="#user", text="alice", page=page,
+            url="https://a/",
+            selector="#user",
+            text="alice",
+            page=page,
         )
         assert "error" not in r
         assert r["filled"] == "#user"
@@ -193,29 +205,41 @@ class TestType:
     def test_clear_first_false_skips_clear(self):
         page = _FakePage()
         _browser_type(
-            url="https://a/", selector="#user", text="bob",
-            clear_first=False, page=page,
+            url="https://a/",
+            selector="#user",
+            text="bob",
+            clear_first=False,
+            page=page,
         )
         assert page.fills == [("#user", "bob")]
 
     def test_press_enter(self):
         page = _FakePage()
         _browser_type(
-            url="https://a/", selector="#q", text="query",
-            press_enter=True, page=page,
+            url="https://a/",
+            selector="#q",
+            text="query",
+            press_enter=True,
+            page=page,
         )
         assert page.presses == [("#q", "Enter")]
 
     def test_missing_selector(self):
         r = _browser_type(
-            url="https://a/", selector="", text="x", page=_FakePage(),
+            url="https://a/",
+            selector="",
+            text="x",
+            page=_FakePage(),
         )
         assert "error" in r
 
     def test_fill_raises_reports_error(self):
         page = _FakePage(fill_raises=RuntimeError("readonly"))
         r = _browser_type(
-            url="https://a/", selector="#x", text="y", page=page,
+            url="https://a/",
+            selector="#x",
+            text="y",
+            page=page,
         )
         assert "error" in r
         assert "type_error" in r["error"]
@@ -230,7 +254,9 @@ class TestScroll:
     def test_scroll_to_selector(self):
         page = _FakePage()
         r = _browser_scroll(
-            url="https://a/", to_selector="#footer", page=page,
+            url="https://a/",
+            to_selector="#footer",
+            page=page,
         )
         assert "error" not in r
         assert r["scrolled_to"] == {"selector": "#footer"}
@@ -247,7 +273,10 @@ class TestScroll:
         r = _browser_scroll(url="https://a/", page=_FakePage())
         assert "error" in r
         r = _browser_scroll(
-            url="https://a/", to_selector="#x", to_y=100, page=_FakePage(),
+            url="https://a/",
+            to_selector="#x",
+            to_y=100,
+            page=_FakePage(),
         )
         assert "error" in r
 
@@ -261,7 +290,10 @@ class TestWait:
     def test_wait_for_visible(self):
         page = _FakePage()
         r = _browser_wait(
-            url="https://a/", selector="#ready", state="visible", page=page,
+            url="https://a/",
+            selector="#ready",
+            state="visible",
+            page=page,
         )
         assert "error" not in r
         assert r["waited_for"] == "#ready"
@@ -271,13 +303,19 @@ class TestWait:
     def test_wait_for_hidden(self):
         page = _FakePage()
         _browser_wait(
-            url="https://a/", selector=".spinner", state="hidden", page=page,
+            url="https://a/",
+            selector=".spinner",
+            state="hidden",
+            page=page,
         )
         assert page.waits == [(".spinner", "hidden")]
 
     def test_invalid_state_rejected(self):
         r = _browser_wait(
-            url="https://a/", selector="#x", state="floating", page=_FakePage(),
+            url="https://a/",
+            selector="#x",
+            state="floating",
+            page=_FakePage(),
         )
         assert "error" in r
 
@@ -288,7 +326,9 @@ class TestWait:
     def test_timeout_returns_flag(self):
         page = _FakePage(wait_raises=TimeoutError("element never appeared"))
         r = _browser_wait(
-            url="https://a/", selector="#never", page=page,
+            url="https://a/",
+            selector="#never",
+            page=page,
         )
         assert r.get("timed_out") is True
 
@@ -303,8 +343,10 @@ class TestScreenshot:
         out = tmp_path / "shot.png"
         page = _FakePage()
         r = _browser_screenshot(
-            url="https://a/", path=str(out),
-            sandbox_dir=str(tmp_path), page=page,
+            url="https://a/",
+            path=str(out),
+            sandbox_dir=str(tmp_path),
+            page=page,
         )
         assert "error" not in r
         assert r["size_bytes"] > 0
@@ -314,15 +356,19 @@ class TestScreenshot:
     def test_full_page_flag_forwarded(self, tmp_path: Path):
         page = _FakePage()
         _browser_screenshot(
-            url="https://a/", path=str(tmp_path / "s.png"),
+            url="https://a/",
+            path=str(tmp_path / "s.png"),
             full_page=True,
-            sandbox_dir=str(tmp_path), page=page,
+            sandbox_dir=str(tmp_path),
+            page=page,
         )
         assert page.screenshots[0]["full_page"] is True
 
     def test_missing_path(self):
         r = _browser_screenshot(
-            url="https://a/", path="", page=_FakePage(),
+            url="https://a/",
+            path="",
+            page=_FakePage(),
         )
         assert "error" in r
 
@@ -332,7 +378,8 @@ class TestScreenshot:
         sandbox = tmp_path / "sandbox"
         sandbox.mkdir()
         r = _browser_screenshot(
-            url="https://a/", path=str(other / "s.png"),
+            url="https://a/",
+            path=str(other / "s.png"),
             sandbox_dir=str(sandbox),
             page=_FakePage(),
         )
@@ -359,7 +406,8 @@ class TestSSRFGuard:
 
     def test_file_scheme_rejected(self):
         r = _browser_click(
-            url="file:///etc/passwd", selector="#x",
+            url="file:///etc/passwd",
+            selector="#x",
         )
         assert "error" in r
         assert r.get("blocked") is True
@@ -373,8 +421,12 @@ class TestSSRFGuard:
 class TestRegistration:
     def test_all_new_skills_listed(self):
         for name in [
-            "browser_navigate", "browser_click", "browser_type",
-            "browser_scroll", "browser_wait", "browser_screenshot",
+            "browser_navigate",
+            "browser_click",
+            "browser_type",
+            "browser_scroll",
+            "browser_wait",
+            "browser_screenshot",
         ]:
             assert name in BROWSER_SKILL_NAMES
 
@@ -384,6 +436,7 @@ class TestRegistration:
         from runtime.execution.suckers.browser_skills import (
             register_browser_skills,
         )
+
         reg = SkillRegistry()
         n = register_browser_skills(reg)
         # The browser skill family expanded over time (browser_find /

@@ -1,0 +1,15 @@
+{
+  "name": "参考图重绘",
+  "description": "使用 ComfyUI 核心节点编码参考图，并以可调重绘强度生成变体。",
+  "tags": ["图生图", "重绘", "核心节点"],
+  "workflow": {
+    "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "选择本机模型.safetensors"}},
+    "2": {"class_type": "LoadImage", "inputs": {"image": "选择参考图.png", "upload": "image"}},
+    "3": {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["1", 2]}},
+    "4": {"class_type": "CLIPTextEncode", "inputs": {"text": "preserve composition, refined materials", "clip": ["1", 1]}},
+    "5": {"class_type": "CLIPTextEncode", "inputs": {"text": "distortion, text artifacts, watermark", "clip": ["1", 1]}},
+    "6": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 24, "cfg": 6.5, "sampler_name": "euler", "scheduler": "normal", "denoise": 0.55, "model": ["1", 0], "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["3", 0]}},
+    "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": ["1", 2]}},
+    "8": {"class_type": "SaveImage", "inputs": {"filename_prefix": "Echo/image-remix", "images": ["7", 0]}}
+  }
+}

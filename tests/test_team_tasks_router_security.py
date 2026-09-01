@@ -6,6 +6,7 @@ Validates:
 - Concurrency cap on /run endpoint (429 after limit)
 - Broadcast signature adapter correctness
 """
+
 from __future__ import annotations
 
 import time
@@ -17,7 +18,6 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.safety.auth.identity import Identity, IdentityStore  # noqa: E402
 from runtime.safety.organization.team_runner import (  # noqa: E402
     RoleOutput,
@@ -339,9 +339,7 @@ def test_run_endpoint_concurrency_cap(tmp_path: Path) -> None:
     """
     _BlockingRunner.reset()
     try:
-        client, _, keys = _build_app(
-            tmp_path, _BlockingRunner, max_concurrent_runs=2
-        )
+        client, _, keys = _build_app(tmp_path, _BlockingRunner, max_concurrent_runs=2)
         _create_room(client, keys, "room-alpha", owner="alice")
 
         task_ids = []

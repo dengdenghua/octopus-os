@@ -93,15 +93,11 @@ class PPTXSchemaValidator(BaseSchemaValidator):
                     for attr, value in elem.attrib.items():
                         # Check if this is an ID attribute
                         attr_name = attr.split("}")[-1].lower()
-                        if attr_name == "id" or attr_name.endswith("id"):
-                            # Check if value looks like a UUID (has the right length and pattern structure)
-                            if self._looks_like_uuid(value):
-                                # Validate that it contains only hex characters in the right positions
-                                if not uuid_pattern.match(value):
-                                    errors.append(
-                                        f"  {xml_file.relative_to(self.unpacked_dir)}: "
-                                        f"Line {elem.sourceline}: ID '{value}' appears to be a UUID but contains invalid hex characters"
-                                    )
+                        if (attr_name == "id" or attr_name.endswith("id")) and self._looks_like_uuid(value) and not uuid_pattern.match(value):
+                            errors.append(
+                                f"  {xml_file.relative_to(self.unpacked_dir)}: "
+                                f"Line {elem.sourceline}: ID '{value}' appears to be a UUID but contains invalid hex characters"
+                            )
 
             except (lxml.etree.XMLSyntaxError, Exception) as e:
                 errors.append(
@@ -113,10 +109,9 @@ class PPTXSchemaValidator(BaseSchemaValidator):
             for error in errors:
                 print(error)
             return False
-        else:
-            if self.verbose:
-                print("PASSED - All UUID-like IDs contain valid hex values")
-            return True
+        if self.verbose:
+            print("PASSED - All UUID-like IDs contain valid hex values")
+        return True
 
     def _looks_like_uuid(self, value):
         """Check if a value has the general structure of a UUID."""
@@ -195,10 +190,9 @@ class PPTXSchemaValidator(BaseSchemaValidator):
                 "Remove invalid references or add missing slide layouts to the relationships file."
             )
             return False
-        else:
-            if self.verbose:
-                print("PASSED - All slide layout IDs reference valid slide layouts")
-            return True
+        if self.verbose:
+            print("PASSED - All slide layout IDs reference valid slide layouts")
+        return True
 
     def validate_no_duplicate_slide_layouts(self):
         """Validate that each slide has exactly one slideLayout reference."""
@@ -235,10 +229,9 @@ class PPTXSchemaValidator(BaseSchemaValidator):
             for error in errors:
                 print(error)
             return False
-        else:
-            if self.verbose:
-                print("PASSED - All slides have exactly one slideLayout reference")
-            return True
+        if self.verbose:
+            print("PASSED - All slides have exactly one slideLayout reference")
+        return True
 
     def validate_notes_slide_references(self):
         """Validate that each notesSlide file is referenced by only one slide."""
@@ -294,7 +287,7 @@ class PPTXSchemaValidator(BaseSchemaValidator):
                 errors.append(
                     f"  Notes slide '{target}' is referenced by multiple slides: {', '.join(slide_names)}"
                 )
-                for slide_name, rels_file in references:
+                for _slide_name, rels_file in references:
                     errors.append(f"    - {rels_file.relative_to(self.unpacked_dir)}")
 
         if errors:
@@ -305,10 +298,9 @@ class PPTXSchemaValidator(BaseSchemaValidator):
                 print(error)
             print("Each slide may optionally have its own slide file.")
             return False
-        else:
-            if self.verbose:
-                print("PASSED - All notes slide references are unique")
-            return True
+        if self.verbose:
+            print("PASSED - All notes slide references are unique")
+        return True
 
 
 if __name__ == "__main__":

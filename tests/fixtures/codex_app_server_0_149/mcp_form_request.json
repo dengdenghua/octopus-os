@@ -1,0 +1,24 @@
+{
+  "id": 9,
+  "method": "mcpServer/elicitation/request",
+  "params": {
+    "threadId": "thr_123",
+    "turnId": "turn_123",
+    "serverName": "codex_apps",
+    "mode": "form",
+    "_meta": null,
+    "message": "Allow this request?",
+    "requestedSchema": {
+      "type": "object",
+      "properties": {
+        "confirmed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "confirmed"
+      ]
+    }
+  }
+}
+

@@ -1,8 +1,16 @@
 import { useMemo, useRef } from "react";
 
-import type { FileTreeEvent } from "@/components/workspace/file-tree";
-import type { WorkbenchSnapshotV2 } from "@/core/realtime/items";
-import { deriveAgentPhases, type AgentPhase } from "./agent-phases";
+import type {
+  EvidenceReference,
+  WorkbenchSnapshotV2,
+} from "@/core/realtime/items";
+import {
+  businessAgentPhaseKey,
+  deriveAgentPhases,
+  normalizeAgentPhaseTitle,
+  normalizeBusinessPhaseKey,
+  type AgentPhase,
+} from "./agent-phases";
 import type { LiveToolEvent } from "./live-tool-timeline";
 import {
   normalizeEventsForSettledDisplay,
@@ -15,14 +23,15 @@ import {
   type DiffEntry,
   agentEventGroupId,
   diffEntriesFromBlocks,
-  fileEventsFromBlocks,
   inferWorkbenchCwd,
   workspaceFocusTabFromEvents,
 } from "./agent-workbench-utils";
+import { IncrementalSnapshotCalculator } from "./incremental-snapshot-calculator";
 
 export type AgentWorkbenchSnapshotOptions = {
   deriveAgentTiles: (events: LiveToolEvent[]) => AgentTile[];
   hasAnswer?: boolean;
+  isLoading?: boolean;
   paused?: boolean;
   runFailed?: boolean;
   runSettled?: boolean;
@@ -37,12 +46,12 @@ export type AgentWorkbenchSnapshot = {
   deferOutputSurfaces: boolean;
   diffEntries: DiffEntry[];
   displayEvents: LiveToolEvent[];
+  evidence: EvidenceReference[];
   fingerprint: string;
   focusedTab: AgentWorkbenchTabId | null;
   hasContent: boolean;
   inferredWorkDir?: string;
   phases: AgentPhase[];
-  recentFileEvents: FileTreeEvent[];
   version: number;
   visibleDiffEntries: DiffEntry[];
 };
@@ -58,8 +67,52 @@ export function useAgentWorkbenchSnapshot(
   options: AgentWorkbenchSnapshotOptions,
 ): AgentWorkbenchSnapshot {
   const previousRef = useRef<AgentWorkbenchSnapshot | null>(null);
+  const calculatorRef = useRef<IncrementalSnapshotCalculator | null>(null);
+
+  // 特性开关：启用增量计算
+  const useIncremental = typeof window !== "undefined" &&
+    localStorage.getItem("echo:incremental-snapshot") === "1";
+
+  const {
+    deriveAgentTiles,
+    hasAnswer,
+    isLoading,
+    paused,
+    runFailed,
+    runSettled,
+    workDir,
+  } = options;
+
   return useMemo(() => {
-    const candidate = buildAgentWorkbenchSnapshot(events, options);
+    let candidate: AgentWorkbenchSnapshot;
+
+    if (useIncremental) {
+      // 增量计算路径
+      if (!calculatorRef.current) {
+        calculatorRef.current = new IncrementalSnapshotCalculator();
+      }
+      candidate = calculatorRef.current.compute(events, {
+        deriveAgentTiles,
+        hasAnswer,
+        isLoading,
+        paused,
+        runFailed,
+        runSettled,
+        workDir,
+      });
+    } else {
+      // 全量计算路径（原始逻辑）
+      candidate = buildAgentWorkbenchSnapshot(events, {
+        deriveAgentTiles,
+        hasAnswer,
+        isLoading,
+        paused,
+        runFailed,
+        runSettled,
+        workDir,
+      });
+    }
+
     const previous = previousRef.current;
     if (previous && previous.fingerprint === candidate.fingerprint) {
       return previous;
@@ -72,12 +125,14 @@ export function useAgentWorkbenchSnapshot(
     return next;
   }, [
     events,
-    options.deriveAgentTiles,
-    options.hasAnswer,
-    options.paused,
-    options.runFailed,
-    options.runSettled,
-    options.workDir,
+    deriveAgentTiles,
+    hasAnswer,
+    isLoading,
+    paused,
+    runFailed,
+    runSettled,
+    workDir,
+    useIncremental,
   ]);
 }
 
@@ -93,16 +148,24 @@ export function buildAgentWorkbenchSnapshot(
     displayEvents,
     blocks,
   );
-  const phases =
+  const phases = reconcileTodoPhases(
     serverSnapshotToAgentPhases(
       serverSnapshot,
       blocks,
       options,
       observedPhaseBlockIds,
-    ) ?? derived.phases;
+    ),
+    derived.phases,
+  );
+  const optimisticPhase =
+    phases.length === 0 && isLiveRunInProgress(options)
+      ? optimisticPlanningPhase()
+      : null;
+  const visiblePhases = optimisticPhase ? [optimisticPhase] : phases;
   const currentPhase =
-    currentPhaseFromServerSnapshot(serverSnapshot, phases) ??
-    derived.currentPhase;
+    currentPhaseFromServerSnapshot(serverSnapshot, visiblePhases, options) ??
+    derived.currentPhase ??
+    optimisticPhase;
   const currentBlocks = currentPhase
     ? blocks.filter((block) => currentPhase.blockIds.includes(block.id))
     : blocks;
@@ -126,20 +189,89 @@ export function buildAgentWorkbenchSnapshot(
     deferOutputSurfaces,
     diffEntries,
     displayEvents,
+    evidence: serverSnapshot?.evidence ?? [],
     fingerprint: "",
     focusedTab:
       tabFromServerWorkbenchSnapshot(serverSnapshot) ??
       workspaceFocusTabFromEvents(displayEvents),
-    hasContent: Boolean(currentPhase && phases.length > 0 && blocks.length > 0),
+    hasContent: Boolean(
+      currentPhase && visiblePhases.length > 0 && blocks.length > 0,
+    ),
     inferredWorkDir: inferWorkbenchCwd(blocks, options.workDir),
-    phases,
-    recentFileEvents: fileEventsFromBlocks(blocks),
+    phases: visiblePhases,
     version: 0,
     visibleDiffEntries,
   };
   return {
     ...snapshot,
     fingerprint: fingerprintWorkbenchSnapshot(snapshot, options),
+  };
+}
+
+/**
+ * The todo_write payload is the state shown by the inline checklist and is
+ * updated more frequently than the optional workbench snapshot embedded in
+ * the same event stream. Keep the snapshot's block associations, but let the
+ * newest todo payload own item order and status so the two surfaces cannot
+ * disagree (for example inline 4/7 complete while the workbench still says
+ * 0/7).
+ */
+function reconcileTodoPhases(
+  serverPhases: AgentPhase[] | null,
+  derivedPhases: AgentPhase[],
+): AgentPhase[] {
+  if (!serverPhases) return derivedPhases;
+  if (
+    derivedPhases.length === 0 ||
+    !derivedPhases.every((phase) => phase.id.startsWith("todo-phase:"))
+  ) {
+    return serverPhases;
+  }
+
+  const unusedServerPhases = new Set(serverPhases);
+  return derivedPhases.map((phase, index) => {
+    const normalizedTitle = normalizeAgentPhaseTitle(
+      phase.title,
+    ).toLocaleLowerCase();
+    const matchingServerPhase =
+      serverPhases.find((candidate) => candidate.id === phase.id) ??
+      serverPhases.find(
+        (candidate) =>
+          unusedServerPhases.has(candidate) &&
+          normalizeAgentPhaseTitle(candidate.title).toLocaleLowerCase() ===
+            normalizedTitle,
+      ) ??
+      serverPhases[index];
+    if (matchingServerPhase) unusedServerPhases.delete(matchingServerPhase);
+    return {
+      ...matchingServerPhase,
+      ...phase,
+      detail: phase.detail ?? matchingServerPhase?.detail,
+      blockIds: uniqueBlockIds([
+        ...(matchingServerPhase?.blockIds ?? []),
+        ...phase.blockIds,
+      ]),
+    };
+  });
+}
+
+function isLiveRunInProgress(options: AgentWorkbenchSnapshotOptions): boolean {
+  return Boolean(
+    options.isLoading &&
+    !options.runSettled &&
+    !options.runFailed &&
+    !options.paused &&
+    !options.hasAnswer,
+  );
+}
+
+function optimisticPlanningPhase(): AgentPhase {
+  return {
+    id: "optimistic:planning",
+    title: "规划中",
+    businessKey: "planning",
+    status: "running",
+    blockIds: [],
   };
 }
 
@@ -163,10 +295,13 @@ function serverSnapshotToAgentPhases(
 ): AgentPhase[] | null {
   if (!snapshot || snapshot.phases.length === 0) return null;
   const blockIds = new Set(blocks.map((block) => block.id));
+  const acceptsCurrentItem = snapshotHasActionableCurrentItem(snapshot);
   return snapshot.phases.map((phase, index) => {
     const activeItemId =
       phase.activeItemId ??
-      (phase.id === snapshot.currentPhaseId ? snapshot.currentItemId : null);
+      (acceptsCurrentItem && phase.id === snapshot.currentPhaseId
+        ? snapshot.currentItemId
+        : null);
     const activeBlockIds =
       activeItemId && blockIds.has(activeItemId)
         ? [activeItemId]
@@ -184,7 +319,11 @@ function serverSnapshotToAgentPhases(
       ?.filter((blockId) => blockIds.has(blockId));
     return {
       id: phase.id || `server-phase:${index}`,
-      title: phase.title,
+      title: normalizeAgentPhaseTitle(phase.title),
+      businessKey:
+        normalizeBusinessPhaseKey(phase.phaseKind) ??
+        businessAgentPhaseKey(phase.title) ??
+        undefined,
       detail: phase.detail ?? undefined,
       status: serverPhaseStatus(phase.status, options),
       blockIds: uniqueBlockIds([
@@ -212,6 +351,7 @@ function observedPhaseBlockIdsFromSnapshots(
     if (
       snapshot.currentPhaseId &&
       snapshot.currentItemId &&
+      snapshotHasActionableCurrentItem(snapshot) &&
       blockIds.has(snapshot.currentItemId)
     ) {
       appendPhaseBlockId(
@@ -253,8 +393,17 @@ function uniqueBlockIds(blockIds: string[]): string[] {
 function currentPhaseFromServerSnapshot(
   snapshot: WorkbenchSnapshotV2 | null,
   phases: AgentPhase[],
+  options: AgentWorkbenchSnapshotOptions,
 ): AgentPhase | null {
   if (!snapshot || phases.length === 0) return null;
+  if (
+    options.runSettled &&
+    options.hasAnswer &&
+    !options.runFailed &&
+    phases.every((phase) => phase.status === "done")
+  ) {
+    return phases[phases.length - 1] ?? null;
+  }
   if (snapshot.currentPhaseId) {
     const explicit = phases.find(
       (phase) => phase.id === snapshot.currentPhaseId,
@@ -262,6 +411,7 @@ function currentPhaseFromServerSnapshot(
     if (explicit) return explicit;
   }
   return (
+    phases.find((phase) => phase.status === "waiting_approval") ??
     phases.find((phase) => phase.status === "running") ??
     phases.find((phase) => phase.status === "error") ??
     phases.find((phase) => phase.status === "pending") ??
@@ -274,8 +424,16 @@ function currentBlockFromServerSnapshot(
   snapshot: WorkbenchSnapshotV2 | null,
   blocks: WorkBlock[],
 ): WorkBlock | null {
-  if (!snapshot?.currentItemId) return null;
+  if (!snapshot?.currentItemId || !snapshotHasActionableCurrentItem(snapshot)) {
+    return null;
+  }
   return blocks.find((block) => block.id === snapshot.currentItemId) ?? null;
+}
+
+function snapshotHasActionableCurrentItem(
+  snapshot: WorkbenchSnapshotV2,
+): boolean {
+  return ["running", "waiting_approval", "error"].includes(snapshot.status);
 }
 
 function tabFromServerWorkbenchSnapshot(
@@ -286,7 +444,7 @@ function tabFromServerWorkbenchSnapshot(
   if (view === "browser") return null;
   if (view === "terminal") return "terminal";
   if (view === "diff") return "diff";
-  if (view === "file") return "files";
+  if (view === "file") return "agent";
   if (view === "artifact" || view === "image") return "agent";
   if (view === "subagent") return "subagents";
   return "agent";
@@ -294,16 +452,14 @@ function tabFromServerWorkbenchSnapshot(
 
 function serverPhaseStatus(
   status: WorkbenchSnapshotV2["phases"][number]["status"],
-  options: AgentWorkbenchSnapshotOptions,
+  _options: AgentWorkbenchSnapshotOptions,
 ): AgentPhase["status"] {
   if (status === "done") return "done";
   if (status === "error") return "error";
-  if (status === "running" || status === "waiting_approval") {
-    if (options.runSettled && options.hasAnswer && !options.runFailed) {
-      return "done";
-    }
-    return "running";
-  }
+  // Workbench snapshots already carry the authoritative task state. A final
+  // answer must not manufacture completion for pending/running plan rows.
+  if (status === "waiting_approval") return "waiting_approval";
+  if (status === "running") return "running";
   return "pending";
 }
 
@@ -393,7 +549,8 @@ function fingerprintWorkbenchSnapshot(
       block.id,
       block.kind,
       block.status,
-      block.title,
+      block.actionKey,
+      JSON.stringify(block.title),
       block.subtitle,
       block.startedAt,
       block.event.finishedAt,
@@ -419,20 +576,46 @@ function fingerprintWorkbenchSnapshot(
       workDir: options.workDir ?? "",
     },
     focusedTab: snapshot.focusedTab,
+    evidence: snapshot.evidence.map((item) => [
+      item.id,
+      item.kind,
+      item.title,
+      item.uri ?? "",
+      item.status,
+      item.sourceItemId ?? "",
+      item.phaseId ?? "",
+    ]),
     phases: snapshot.phases.map((phase) => [
       phase.id,
       phase.title,
+      phase.businessKey ?? "",
       phase.status,
       phase.blockIds,
     ]),
   });
 }
 
+// Object payload identities are stable across streaming frames (the realtime
+// adapter memoizes LiveToolEvent input/output), so cache their compact
+// fingerprint per identity instead of re-running the full stableStringify on
+// every delta frame. Strings keep the cheap slice fast path below.
+const compactObjectCache = new WeakMap<object, string>();
+
 function compactUnknown(value: unknown): string {
   if (value === undefined || value === null) return "";
+  if (typeof value === "string") {
+    return value.length <= 500 ? value : value.slice(0, 500);
+  }
+  const cacheKey = typeof value === "object" ? (value as object) : null;
+  if (cacheKey) {
+    const cached = compactObjectCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+  }
   try {
-    const text = typeof value === "string" ? value : stableStringify(value);
-    return text.length <= 500 ? text : text.slice(0, 500);
+    const text = stableStringify(value);
+    const compact = text.length <= 500 ? text : text.slice(0, 500);
+    if (cacheKey) compactObjectCache.set(cacheKey, compact);
+    return compact;
   } catch {
     return String(value).slice(0, 500);
   }

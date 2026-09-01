@@ -1,9 +1,4 @@
-
-import {
-  CheckCircle2Icon,
-  ShieldAlertIcon,
-  XCircleIcon,
-} from "lucide-react";
+import { CheckCircle2Icon, ShieldAlertIcon, XCircleIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 
@@ -24,7 +19,9 @@ function parseApprovalRequest(content: string): ToolApprovalRequest | null {
   try {
     const match = content.match(/\[APPROVAL REQUIRED\]/);
     if (!match) return null;
-    const jsonMatch = content.match(/\{[\s\S]*"type"\s*:\s*"tool_approval_request"[\s\S]*\}/);
+    const jsonMatch = content.match(
+      /\{[\s\S]*"type"\s*:\s*"tool_approval_request"[\s\S]*\}/,
+    );
     if (!jsonMatch) return null;
     return JSON.parse(jsonMatch[0]) as ToolApprovalRequest;
   } catch (e) {
@@ -57,13 +54,15 @@ export function getApprovalData(
   return parseApprovalRequest(content);
 }
 
-const TOOL_LABELS: Record<string, { label: string; color: string }> = {
-  bash: { label: "Terminal", color: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
-  write_file: { label: "Write File", color: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
-  str_replace: { label: "Edit File", color: "bg-purple-500/10 text-purple-600 dark:text-purple-400" },
-  git_commit: { label: "Git Commit", color: "bg-green-500/10 text-green-600 dark:text-green-400" },
-  schedule_cron: { label: "Cron Job", color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" },
-  remote_trigger: { label: "Webhook", color: "bg-red-500/10 text-red-600 dark:text-red-400" },
+// Colors stay here (styling); the human-readable label comes from i18n
+// (t.toolApproval.tools) so a beginner sees "运行命令"/"改文件", not "bash".
+const TOOL_COLORS: Record<string, string> = {
+  bash: "bg-chart-7/10 text-chart-7 dark:text-chart-7",
+  write_file: "bg-info/10 text-info dark:text-info",
+  str_replace: "bg-chart-1/10 text-chart-1 dark:text-chart-1",
+  git_commit: "bg-success/10 text-success",
+  schedule_cron: "bg-warning/10 text-warning",
+  remote_trigger: "bg-destructive/10 text-destructive",
 };
 
 export function ToolApprovalCard({
@@ -78,7 +77,9 @@ export function ToolApprovalCard({
   onReject?: (approvalData: ToolApprovalRequest) => void;
 }) {
   const { t } = useI18n();
-  const [status, setStatus] = useState<"pending" | "approved" | "rejected">("pending");
+  const [status, setStatus] = useState<"pending" | "approved" | "rejected">(
+    "pending",
+  );
   const approvalData = getApprovalData(content, additional_kwargs);
 
   const handleApprove = useCallback(() => {
@@ -99,22 +100,31 @@ export function ToolApprovalCard({
 
   if (!approvalData) return null;
 
-  const toolInfo = TOOL_LABELS[approvalData.tool_name] ?? {
-    label: approvalData.tool_name,
-    color: "bg-gray-500/10 text-gray-600 dark:text-gray-400",
-  };
+  const toolLabel =
+    (t.toolApproval.tools as Record<string, string>)[approvalData.tool_name] ??
+    approvalData.tool_name;
+  const toolColor =
+    TOOL_COLORS[approvalData.tool_name] ??
+    "bg-muted-foreground/10 text-muted-foreground";
 
   return (
-    <div className={cn(
-      "border rounded-lg p-3 space-y-3 transition-colors",
-      status === "approved" && "border-green-500/30 bg-green-500/5",
-      status === "rejected" && "border-red-500/30 bg-red-500/5",
-      status === "pending" && "border-yellow-500/30 bg-yellow-500/5",
-    )}>
+    <div
+      className={cn(
+        "border rounded-lg p-3 space-y-3 transition-colors",
+        status === "approved" && "border-success/30 bg-success/5",
+        status === "rejected" && "border-destructive/30 bg-destructive/5",
+        status === "pending" && "border-warning/30 bg-warning/5",
+      )}
+    >
       <div className="flex items-center gap-2">
-        <ShieldAlertIcon className="size-4 text-yellow-600 dark:text-yellow-400" />
-        <span className={cn("text-xs font-medium px-2 py-0.5 rounded-lg", toolInfo.color)}>
-          {toolInfo.label}
+        <ShieldAlertIcon className="size-4 text-warning" />
+        <span
+          className={cn(
+            "text-xs font-medium px-2 py-0.5 rounded-lg",
+            toolColor,
+          )}
+        >
+          {toolLabel}
         </span>
         <span className="text-muted-foreground text-xs">
           {t.toolApproval.requiresApproval}
@@ -152,11 +162,13 @@ export function ToolApprovalCard({
           </Button>
         </div>
       ) : (
-        <div className={cn(
-          "flex items-center gap-1.5 text-xs font-medium",
-          status === "approved" && "text-green-600 dark:text-green-400",
-          status === "rejected" && "text-red-600 dark:text-red-400",
-        )}>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 text-xs font-medium",
+            status === "approved" && "text-success",
+            status === "rejected" && "text-destructive",
+          )}
+        >
           {status === "approved" ? (
             <>
               <CheckCircle2Icon className="size-3.5" />

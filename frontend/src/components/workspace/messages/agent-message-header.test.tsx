@@ -29,11 +29,16 @@ describe("AgentMessageHeader", () => {
 
   it("renders avatar image when avatarUrl is provided", () => {
     renderWithProviders(
-      <AgentMessageHeader agentDisplayName="Coder" avatarUrl="/api/agents/coder/avatar" />,
+      <AgentMessageHeader
+        agentDisplayName="Coder"
+        avatarUrl="/api/agents/coder/avatar"
+      />,
     );
     const img = screen.getByRole("img", { name: "Coder" });
     expect(img).toBeInTheDocument();
-    expect(img.getAttribute("src")).toBe("http://localhost:8001/api/agents/coder/avatar");
+    expect(img.getAttribute("src")).toBe(
+      "http://localhost:8001/api/agents/coder/avatar",
+    );
   });
 
   it("renders TL badge when role is tl", () => {
@@ -51,9 +56,7 @@ describe("AgentMessageHeader", () => {
   });
 
   it("does not render TL badge when role is undefined", () => {
-    renderWithProviders(
-      <AgentMessageHeader agentDisplayName="Worker" />,
-    );
+    renderWithProviders(<AgentMessageHeader agentDisplayName="Worker" />);
     expect(screen.queryByText("TL")).not.toBeInTheDocument();
   });
 });

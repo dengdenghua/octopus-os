@@ -17,7 +17,12 @@
 
 import { SUPPORTED_LOCALES } from "./locale";
 
-export type TraceKind = "thought" | "action" | "observation" | "finalAnswer";
+export type TraceKind =
+  | "thought"
+  | "update"
+  | "action"
+  | "observation"
+  | "finalAnswer";
 
 /**
  * Per-locale canonical spelling of each marker, indexed by TraceKind.
@@ -28,6 +33,15 @@ export type TraceKind = "thought" | "action" | "observation" | "finalAnswer";
  */
 export const LLM_TRACE_MARKERS: Record<TraceKind, ReadonlyArray<string>> = {
   thought: ["Thought", "思考", "考え", "생각"],
+  update: [
+    "Update",
+    "Progress",
+    "进展",
+    "進捗",
+    "アップデート",
+    "업데이트",
+    "진행",
+  ],
   action: ["Action", "行动", "行動", "アクション", "행동"],
   observation: ["Observation", "观察", "観察", "オブザベーション", "관찰"],
   finalAnswer: [
@@ -42,6 +56,7 @@ export const LLM_TRACE_MARKERS: Record<TraceKind, ReadonlyArray<string>> = {
 /** Static set of supported marker categories. */
 export const TRACE_KINDS: ReadonlyArray<TraceKind> = [
   "thought",
+  "update",
   "action",
   "observation",
   "finalAnswer",
@@ -170,7 +185,10 @@ function escapeAlternation(values: ReadonlyArray<string>): string {
   return values.map(escapeRegex).join("|");
 }
 
-const MENTIONS_DELIVERED_RE = new RegExp(`(?:${escapeAlternation(DELIVERED_KEYWORDS)})`, "i");
+const MENTIONS_DELIVERED_RE = new RegExp(
+  `(?:${escapeAlternation(DELIVERED_KEYWORDS)})`,
+  "i",
+);
 const MENTIONS_COMPLETION_RE = new RegExp(
   `(?:${escapeAlternation(COMPLETION_KEYWORDS)})`,
   "i",

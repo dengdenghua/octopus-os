@@ -59,10 +59,7 @@ describe("persisted tool events", () => {
 
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.status).toBe("done");
-    expect(state.phases.map((phase) => phase.status)).toEqual([
-      "done",
-      "done",
-    ]);
+    expect(state.phases.map((phase) => phase.status)).toEqual(["done", "done"]);
     expect(progressForPhases(state.phases, state.currentPhase!)).toEqual({
       current: 2,
       total: 2,

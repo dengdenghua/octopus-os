@@ -1,6 +1,6 @@
 /**
  * Remote Backends Panel · register + health-check remote
- * octopus-agent runtimes.
+ * echo-agent runtimes.
  *
  * Surfaces the ``/api/remote-backends`` CRUD. Operator adds an
  * endpoint, pings to confirm reachability, and can remove entries.
@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   useRemoteBackends,
@@ -62,12 +63,15 @@ export function RemoteBackendsPanel({ baseUrl }: RemoteBackendsPanelProps) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="text-base">
           {t.remoteBackendsPanel.title}
         </CardTitle>
         {!enabled && (
-          <Badge variant="outline" aria-label={t.remoteBackendsPanel.disabledAria}>
+          <Badge
+            variant="outline"
+            aria-label={t.remoteBackendsPanel.disabledAria}
+          >
             {t.remoteBackendsPanel.disabled}
           </Badge>
         )}
@@ -81,7 +85,7 @@ export function RemoteBackendsPanel({ baseUrl }: RemoteBackendsPanelProps) {
 
         {enabled && (
           <form
-            className="border-border/50 flex flex-col gap-2 rounded-md border p-3"
+            className="border-border-default flex flex-col gap-2 rounded-md border p-3"
             onSubmit={onSubmit}
             aria-label={t.remoteBackendsPanel.addBackendAria}
           >
@@ -109,7 +113,9 @@ export function RemoteBackendsPanel({ baseUrl }: RemoteBackendsPanelProps) {
                 size="sm"
                 disabled={adding || !name.trim() || !url.trim()}
               >
-                {adding ? t.remoteBackendsPanel.adding : t.remoteBackendsPanel.add}
+                {adding
+                  ? t.remoteBackendsPanel.adding
+                  : t.remoteBackendsPanel.add}
               </Button>
             </div>
             {addError && (
@@ -159,6 +165,7 @@ interface BackendRowProps {
 
 function BackendRow({ backend, disabled, onPing, onRemove }: BackendRowProps) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [pinging, setPinging] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -172,6 +179,14 @@ function BackendRow({ backend, disabled, onPing, onRemove }: BackendRowProps) {
   };
 
   const handleRemove = async () => {
+    if (
+      !(await confirm({
+        title: t.remoteBackendsPanel.removeConfirmTitle(backend.name),
+        description: t.remoteBackendsPanel.removeConfirmDescription,
+        confirmLabel: t.remoteBackendsPanel.remove,
+      }))
+    )
+      return;
     setRemoving(true);
     try {
       await onRemove();
@@ -193,9 +208,7 @@ function BackendRow({ backend, disabled, onPing, onRemove }: BackendRowProps) {
                 : backend.health_detail || t.remoteBackendsPanel.error}
           </Badge>
           {backend.ssh && (
-            <Badge variant="outline">
-              ssh {backend.ssh.host}
-            </Badge>
+            <Badge variant="outline">ssh {backend.ssh.host}</Badge>
           )}
         </div>
         <code className="text-muted-foreground text-xs">{backend.url}</code>
@@ -222,6 +235,7 @@ function BackendRow({ backend, disabled, onPing, onRemove }: BackendRowProps) {
             : t.remoteBackendsPanel.remove}
         </Button>
       </div>
+      {confirmDialog}
     </li>
   );
 }

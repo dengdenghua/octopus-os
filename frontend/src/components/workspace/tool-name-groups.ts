@@ -7,7 +7,14 @@ export const READ_TOOL_NAMES = new Set([
   "ls",
   "list_cwd",
   "glob",
+  // Tool providers use a few aliases for the same file-discovery operation.
+  // Keep these in the canonical group so the conversation never falls back
+  // to rendering an implementation name such as `glob_files`.
+  "glob_files",
+  "find_files",
+  "file_glob",
   "grep",
+  "grep_files",
   "search_files",
   "find",
   "tree",

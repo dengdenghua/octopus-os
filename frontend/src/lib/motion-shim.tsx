@@ -72,38 +72,39 @@ function stripMotionProps(props: MotionProps) {
 }
 
 function createMotionComponent(tag: ElementType | string) {
-  return forwardRef<HTMLElement, MotionProps & { className?: string; style?: CSSProperties }>(
-    function MotionShimComponent(props, ref) {
-      const cleanProps = stripMotionProps(props);
-      const duration =
-        typeof props.transition?.duration === "number"
-          ? props.transition.duration
-          : 0.18;
-      const delay =
-        typeof props.transition?.delay === "number" ? props.transition.delay : 0;
+  return forwardRef<
+    HTMLElement,
+    MotionProps & { className?: string; style?: CSSProperties }
+  >(function MotionShimComponent(props, ref) {
+    const cleanProps = stripMotionProps(props);
+    const duration =
+      typeof props.transition?.duration === "number"
+        ? props.transition.duration
+        : 0.18;
+    const delay =
+      typeof props.transition?.delay === "number" ? props.transition.delay : 0;
 
-      useEffect(() => {
-        if (!props.onAnimationComplete) return;
-        const complete = props.onAnimationComplete;
-        const timeout = window.setTimeout(
-          complete,
-          Math.max(0, (duration + delay) * 1000),
-        );
-        return () => window.clearTimeout(timeout);
-      }, [delay, duration, props.onAnimationComplete]);
+    useEffect(() => {
+      if (!props.onAnimationComplete) return;
+      const complete = props.onAnimationComplete;
+      const timeout = window.setTimeout(
+        complete,
+        Math.max(0, (duration + delay) * 1000),
+      );
+      return () => window.clearTimeout(timeout);
+    }, [delay, duration, props.onAnimationComplete]);
 
-      return createElement(tag, {
-        ...cleanProps,
-        ref,
-        style: {
-          ...styleFromMotionProps(props),
-          ...(props.style && typeof props.style === "object"
-            ? (props.style as CSSProperties)
-            : {}),
-        },
-      });
-    },
-  );
+    return createElement(tag, {
+      ...cleanProps,
+      ref,
+      style: {
+        ...styleFromMotionProps(props),
+        ...(props.style && typeof props.style === "object"
+          ? (props.style as CSSProperties)
+          : {}),
+      },
+    });
+  });
 }
 
 export const AnimatePresence = ({
@@ -111,9 +112,7 @@ export const AnimatePresence = ({
 }: {
   children?: ReactNode;
   mode?: string;
-}) => (
-  <Fragment>{children}</Fragment>
-);
+}) => <Fragment>{children}</Fragment>;
 
 export function useInView(
   ref: React.RefObject<Element | null>,
@@ -175,10 +174,18 @@ export function useSpring(value: MotionValue, _options?: unknown): MotionValue {
   return value;
 }
 
-type MotionComponent = ComponentType<MotionProps & { className?: string; style?: CSSProperties } & Record<string, unknown>>;
+type MotionComponent = ComponentType<
+  MotionProps & { className?: string; style?: CSSProperties } & Record<
+      string,
+      unknown
+    >
+>;
 
 type MotionFactory = {
-  create: (component: ElementType | string, _options?: unknown) => MotionComponent;
+  create: (
+    component: ElementType | string,
+    _options?: unknown,
+  ) => MotionComponent;
   div: MotionComponent;
   button: MotionComponent;
   h1: MotionComponent;

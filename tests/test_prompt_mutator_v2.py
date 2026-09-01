@@ -6,7 +6,6 @@ import json
 from uuid import uuid4
 
 import pytest
-
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config
 from runtime.platform.models import (
     ArmId,
@@ -34,13 +33,18 @@ from runtime.sensing.model_router import ModelRequest, ModelResponse, ModelRoute
 
 @pytest.fixture
 def stack():
-    cfg = AgentConfig(planner=PlannerConfig(
-        type="llm", model="mock/mv2",
-        mock_response=json.dumps({
-            "reasoning": "r",
-            "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
-        }),
-    ))
+    cfg = AgentConfig(
+        planner=PlannerConfig(
+            type="llm",
+            model="mock/mv2",
+            mock_response=json.dumps(
+                {
+                    "reasoning": "r",
+                    "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
+                }
+            ),
+        )
+    )
     return build_from_config(cfg)
 
 
@@ -57,9 +61,12 @@ class _ProgrammableRouter(ModelRouter):
         text = self.responses[min(self.idx, len(self.responses) - 1)]
         self.idx += 1
         return ModelResponse(
-            text=text, input_tokens=20, output_tokens=20,
+            text=text,
+            input_tokens=20,
+            output_tokens=20,
             cost=CostEntry(usd=0.002),
-            model=request.model, provider="mock",
+            model=request.model,
+            provider="mock",
         )
 
 
@@ -67,50 +74,64 @@ def _seed_failed_trajectories(stack, recipe_hash: str, n: int = 3):
     """Implementation note."""
     for i in range(n):
         call1 = ToolCall(
-            caller="arms/a", sucker_id="read_file",
+            caller="arms/a",
+            sucker_id="read_file",
             args={"path": f"/tmp/file_{i}.txt"},
         )
         step1 = Step(
-            step_id=0, node_id="n0", action=call1,
+            step_id=0,
+            node_id="n0",
+            action=call1,
             result=ExecutionResult(
-                call_id=call1.call_id, status="success",
+                call_id=call1.call_id,
+                status="success",
                 output={"content": "short"},
             ),
         )
         call2 = ToolCall(
-            caller="arms/a", sucker_id="edit_file",
+            caller="arms/a",
+            sucker_id="edit_file",
             args={"path": f"/tmp/file_{i}.txt", "content": "new"},
         )
         step2 = Step(
-            step_id=1, node_id="n1", action=call2,
+            step_id=1,
+            node_id="n1",
+            action=call2,
             result=ExecutionResult(
-                call_id=call2.call_id, status="failed",
+                call_id=call2.call_id,
+                status="failed",
                 error_type="timeout",
             ),
         )
-        stack.journal.write_trajectory(Trajectory(
-            task_id=TaskId(uuid4()), arm_id=ArmId("a"),
-            recipe_id=recipe_hash,
-            steps=[step1, step2],
-            outcome=TrajectoryOutcome(
-                success=False,
-                cost=CostEntry(tokens_in=50, tokens_out=30, usd=0.003),
-            ),
-        ))
+        stack.journal.write_trajectory(
+            Trajectory(
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a"),
+                recipe_id=recipe_hash,
+                steps=[step1, step2],
+                outcome=TrajectoryOutcome(
+                    success=False,
+                    cost=CostEntry(tokens_in=50, tokens_out=30, usd=0.003),
+                ),
+            )
+        )
 
 
 def _seed_winning(stack, recipe_hash: str, n: int = 10):
     """Implementation note."""
     for _ in range(n):
-        stack.journal.write_trajectory(Trajectory(
-            task_id=TaskId(uuid4()), arm_id=ArmId("a"),
-            recipe_id=recipe_hash,
-            steps=[],
-            outcome=TrajectoryOutcome(
-                success=True,
-                cost=CostEntry(tokens_in=10, tokens_out=10, usd=0.0001),
-            ),
-        ))
+        stack.journal.write_trajectory(
+            Trajectory(
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a"),
+                recipe_id=recipe_hash,
+                steps=[],
+                outcome=TrajectoryOutcome(
+                    success=True,
+                    cost=CostEntry(tokens_in=10, tokens_out=10, usd=0.0001),
+                ),
+            )
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -123,9 +144,7 @@ class TestRichFailureSamples:
         from runtime.safety.experiments.prompt_optimizer import PromptVariant as V
 
         _seed_failed_trajectories(stack, "some_recipe", n=2)
-        router = _ProgrammableRouter(
-            ["<suffix>check file size before edit</suffix>"]
-        )
+        router = _ProgrammableRouter(["<suffix>check file size before edit</suffix>"])
         mutator = PromptMutator(router=router, model="mock/m")
         proposal = mutator.propose(base=V(name="baseline"), journal=stack.journal)
 
@@ -153,10 +172,7 @@ class TestRichFailureSamples:
         router = _ProgrammableRouter(["<suffix>ok</suffix>"])
         mutator = PromptMutator(router=router, model="mock/m")
         mutator.propose(base=V(name="baseline"), journal=stack.journal)
-        sys_msg = next(
-            m.content for m in router.last_request.messages
-            if m.role == "system"
-        )
+        sys_msg = next(m.content for m in router.last_request.messages if m.role == "system")
         # Implementation note.
         assert "observed failures" in sys_msg or "speculate" in sys_msg
 
@@ -175,28 +191,32 @@ class TestRichFailureSamples:
                 error_type="timeout",
             ),
         )
-        stack.journal.write_trajectory(Trajectory(
-            task_id=task_id,
-            arm_id=ArmId("a"),
-            recipe_id="r",
-            strategy_id="default",
-            steps=[failed_step],
-            outcome=TrajectoryOutcome(
-                success=False,
-                cost=CostEntry(tokens_in=10, tokens_out=5, usd=0.001),
-            ),
-        ))
-        stack.journal.write_trajectory(Trajectory(
-            task_id=task_id,
-            arm_id=ArmId("swarm"),
-            recipe_id="r",
-            strategy_id="swarm",
-            steps=[failed_step],
-            outcome=TrajectoryOutcome(
-                success=False,
-                cost=CostEntry(tokens_in=10, tokens_out=5, usd=0.001),
-            ),
-        ))
+        stack.journal.write_trajectory(
+            Trajectory(
+                task_id=task_id,
+                arm_id=ArmId("a"),
+                recipe_id="r",
+                strategy_id="default",
+                steps=[failed_step],
+                outcome=TrajectoryOutcome(
+                    success=False,
+                    cost=CostEntry(tokens_in=10, tokens_out=5, usd=0.001),
+                ),
+            )
+        )
+        stack.journal.write_trajectory(
+            Trajectory(
+                task_id=task_id,
+                arm_id=ArmId("swarm"),
+                recipe_id="r",
+                strategy_id="swarm",
+                steps=[failed_step],
+                outcome=TrajectoryOutcome(
+                    success=False,
+                    cost=CostEntry(tokens_in=10, tokens_out=5, usd=0.001),
+                ),
+            )
+        )
 
         router = _ProgrammableRouter(["<suffix>ok</suffix>"])
         mutator = PromptMutator(router=router, model="mock/m")
@@ -232,10 +252,9 @@ class TestProposeMerge:
     def test_merge_produces_new_variant(self):
         a = PromptVariant(name="A", system_prompt_suffix="Be careful.")
         b = PromptVariant(name="B", system_prompt_suffix="Prefer short plans.")
-        router = _ProgrammableRouter([
-            "<reason>combine both</reason>\n"
-            "<suffix>Be careful AND prefer short plans.</suffix>"
-        ])
+        router = _ProgrammableRouter(
+            ["<reason>combine both</reason>\n<suffix>Be careful AND prefer short plans.</suffix>"]
+        )
         mutator = PromptMutator(router=router, model="mock/m")
         proposal = mutator.propose_merge(a, b)
         assert proposal is not None
@@ -270,10 +289,7 @@ class TestProposeMerge:
         router = _ProgrammableRouter(["<suffix>merged</suffix>"])
         mutator = PromptMutator(router=router, model="mock/m")
         mutator.propose_merge(a, b)
-        sys_msg = next(
-            m.content for m in router.last_request.messages
-            if m.role == "system"
-        )
+        sys_msg = next(m.content for m in router.last_request.messages if m.role == "system")
         assert "synthesize" in sys_msg.lower()
         assert "both" in sys_msg.lower()
 
@@ -286,10 +302,13 @@ class TestProposeMerge:
 class TestEvolverCrossover:
     def test_crossover_adds_new_variant(self, stack):
         # Implementation note.
-        opt = PromptOptimizer(stack, [
-            PromptVariant(name="A", system_prompt_suffix="A-suffix"),
-            PromptVariant(name="B", system_prompt_suffix="B-suffix"),
-        ])
+        opt = PromptOptimizer(
+            stack,
+            [
+                PromptVariant(name="A", system_prompt_suffix="A-suffix"),
+                PromptVariant(name="B", system_prompt_suffix="B-suffix"),
+            ],
+        )
         _seed_winning(stack, opt.planner_for("A").recipe_hash(), n=10)
         _seed_winning(stack, opt.planner_for("B").recipe_hash(), n=10)
         opt._splitter.stats["A"].assignments = 10
@@ -297,17 +316,23 @@ class TestEvolverCrossover:
         opt._splitter.stats["B"].assignments = 10
         opt._splitter.stats["B"].successes = 10
 
-        router = _ProgrammableRouter([
-            "<suffix>mutated-one</suffix>",       # propose mutation
-            "<suffix>crossover-ab</suffix>",      # propose_merge crossover
-        ])
+        router = _ProgrammableRouter(
+            [
+                "<suffix>mutated-one</suffix>",  # propose mutation
+                "<suffix>crossover-ab</suffix>",  # propose_merge crossover
+            ]
+        )
         mutator = PromptMutator(router=router, model="mock/m")
-        evolver = PromptEvolver(opt, mutator, EvolutionPolicy(
-            retire_on_losing=False,
-            mutate_each_step=True,
-            crossover_each_step=True,
-            max_total_variants=10,
-        ))
+        evolver = PromptEvolver(
+            opt,
+            mutator,
+            EvolutionPolicy(
+                retire_on_losing=False,
+                mutate_each_step=True,
+                crossover_each_step=True,
+                max_total_variants=10,
+            ),
+        )
         step = evolver.step()
 
         # Implementation note.
@@ -316,62 +341,82 @@ class TestEvolverCrossover:
         assert "Merge of" in step.crossover.variant.description
 
     def test_crossover_skipped_when_only_one_winner(self, stack):
-        opt = PromptOptimizer(stack, [
-            PromptVariant(name="A", system_prompt_suffix="A"),
-            PromptVariant(name="B", system_prompt_suffix="B"),
-        ])
+        opt = PromptOptimizer(
+            stack,
+            [
+                PromptVariant(name="A", system_prompt_suffix="A"),
+                PromptVariant(name="B", system_prompt_suffix="B"),
+            ],
+        )
         _seed_winning(stack, opt.planner_for("A").recipe_hash(), n=10)
         # Implementation note.
         _seed_failed_trajectories(stack, opt.planner_for("B").recipe_hash(), n=8)
-        stack.journal.write_trajectory(Trajectory(
-            task_id=TaskId(uuid4()), arm_id=ArmId("a"),
-            recipe_id=opt.planner_for("B").recipe_hash(),
-            steps=[],
-            outcome=TrajectoryOutcome(success=True),
-        ))
+        stack.journal.write_trajectory(
+            Trajectory(
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a"),
+                recipe_id=opt.planner_for("B").recipe_hash(),
+                steps=[],
+                outcome=TrajectoryOutcome(success=True),
+            )
+        )
         opt._splitter.stats["A"].assignments = 10
         opt._splitter.stats["B"].assignments = 9
 
-        router = _ProgrammableRouter([
-            "<suffix>x</suffix>",
-            "<suffix>y</suffix>",
-        ])
+        router = _ProgrammableRouter(
+            [
+                "<suffix>x</suffix>",
+                "<suffix>y</suffix>",
+            ]
+        )
         mutator = PromptMutator(router=router, model="mock/m")
-        evolver = PromptEvolver(opt, mutator, EvolutionPolicy(
-            retire_on_losing=False,
-            mutate_each_step=False,
-            crossover_each_step=True,
-            crossover_requires_winning=True,
-        ))
+        evolver = PromptEvolver(
+            opt,
+            mutator,
+            EvolutionPolicy(
+                retire_on_losing=False,
+                mutate_each_step=False,
+                crossover_each_step=True,
+                crossover_requires_winning=True,
+            ),
+        )
         step = evolver.step()
         assert step.crossover is None
         assert "need_2_winners" in step.crossover_skipped_reason
 
     def test_crossover_pool_full_skipped(self, stack):
-        opt = PromptOptimizer(stack, [
-            PromptVariant(name=f"v{i}", system_prompt_suffix=f"s{i}")
-            for i in range(5)
-        ])
-        router = _ProgrammableRouter([
-            "<suffix>new-mut</suffix>",
-            "<suffix>new-x</suffix>",
-        ])
+        opt = PromptOptimizer(
+            stack, [PromptVariant(name=f"v{i}", system_prompt_suffix=f"s{i}") for i in range(5)]
+        )
+        router = _ProgrammableRouter(
+            [
+                "<suffix>new-mut</suffix>",
+                "<suffix>new-x</suffix>",
+            ]
+        )
         mutator = PromptMutator(router=router, model="mock/m")
-        evolver = PromptEvolver(opt, mutator, EvolutionPolicy(
-            retire_on_losing=False,
-            mutate_each_step=False,
-            crossover_each_step=True,
-            max_total_variants=5,  # Implementation note.
-        ))
+        evolver = PromptEvolver(
+            opt,
+            mutator,
+            EvolutionPolicy(
+                retire_on_losing=False,
+                mutate_each_step=False,
+                crossover_each_step=True,
+                max_total_variants=5,  # Implementation note.
+            ),
+        )
         step = evolver.step()
         assert step.crossover is None
         assert "pool_full" in step.crossover_skipped_reason
 
     def test_crossover_disabled_by_default_policy_flag(self, stack):
-        opt = PromptOptimizer(stack, [
-            PromptVariant(name="A", system_prompt_suffix="A"),
-            PromptVariant(name="B", system_prompt_suffix="B"),
-        ])
+        opt = PromptOptimizer(
+            stack,
+            [
+                PromptVariant(name="A", system_prompt_suffix="A"),
+                PromptVariant(name="B", system_prompt_suffix="B"),
+            ],
+        )
         _seed_winning(stack, opt.planner_for("A").recipe_hash(), n=10)
         _seed_winning(stack, opt.planner_for("B").recipe_hash(), n=10)
         opt._splitter.stats["A"].assignments = 10
@@ -379,16 +424,22 @@ class TestEvolverCrossover:
         opt._splitter.stats["B"].assignments = 10
         opt._splitter.stats["B"].successes = 10
 
-        router = _ProgrammableRouter([
-            "<suffix>m</suffix>",  # Implementation note.
-        ])
+        router = _ProgrammableRouter(
+            [
+                "<suffix>m</suffix>",  # Implementation note.
+            ]
+        )
         mutator = PromptMutator(router=router, model="mock/m")
         # Implementation note.
-        evolver = PromptEvolver(opt, mutator, EvolutionPolicy(
-            retire_on_losing=False,
-            mutate_each_step=True,
-            crossover_each_step=False,
-        ))
+        evolver = PromptEvolver(
+            opt,
+            mutator,
+            EvolutionPolicy(
+                retire_on_losing=False,
+                mutate_each_step=True,
+                crossover_each_step=False,
+            ),
+        )
         step = evolver.step()
         assert step.crossover is None
         # Implementation note.

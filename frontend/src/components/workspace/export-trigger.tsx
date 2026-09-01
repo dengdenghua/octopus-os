@@ -1,4 +1,3 @@
-
 import { Download, FileJson, FileText } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
@@ -57,9 +56,10 @@ export function ExportTrigger({ threadId }: { threadId: string }) {
       <Tooltip content={t.common.export}>
         <DropdownMenuTrigger asChild>
           <Button
-            className="size-8 rounded-lg border border-transparent text-muted-foreground transition-all hover:border-border/50 hover:bg-muted/60 hover:text-foreground"
+            className="size-8 rounded-lg border border-transparent text-muted-foreground transition-colors hover:border-border-default hover:bg-muted/60 hover:text-foreground"
             variant="ghost"
             size="icon"
+            aria-label="Export"
           >
             <Download className="size-4" />
           </Button>
@@ -78,4 +78,3 @@ export function ExportTrigger({ threadId }: { threadId: string }) {
     </DropdownMenu>
   );
 }
-

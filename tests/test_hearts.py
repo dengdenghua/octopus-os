@@ -5,7 +5,6 @@ from __future__ import annotations
 import threading
 
 import pytest
-
 from runtime.adapters.scheduler import BackgroundRunner
 from runtime.core.hearts import Hearts, HeartsSnapshot
 from runtime.safety.budget_breaker import CircuitBreaker
@@ -34,7 +33,8 @@ def clock():
 @pytest.fixture
 def patched_breaker_time(clock, monkeypatch):
     monkeypatch.setattr(
-        "runtime.safety.budget_breaker.breaker.time.monotonic", clock,
+        "runtime.safety.budget_breaker.breaker.time.monotonic",
+        clock,
     )
     return clock
 
@@ -254,7 +254,8 @@ class TestHealthy:
         """Implementation note."""
         b_llm = CircuitBreaker(window_seconds=60.0)
         b_mcp = CircuitBreaker(
-            window_seconds=60.0, max_errors_per_window=0,
+            window_seconds=60.0,
+            max_errors_per_window=0,
             cooldown_seconds=5.0,
         )
         h = Hearts(branchial={"llm": b_llm, "mcp": b_mcp})

@@ -1,22 +1,27 @@
-
-import { useLocation } from "react-router-dom";
+import { useEffect } from "react";
 import { ThemeProvider as NextThemesProvider } from "next-themes";
 
-const THEME_LIST = ["light", "dark", "apple"];
+function SystemLiquidGlassTheme() {
+  useEffect(() => {
+    document.documentElement.classList.add("apple");
+    return () => document.documentElement.classList.remove("apple");
+  }, []);
+
+  return null;
+}
 
 export function ThemeProvider({
   children,
-  ...props
 }: React.ComponentProps<typeof NextThemesProvider>) {
-  const { pathname } = useLocation();
   return (
     <NextThemesProvider
-      {...props}
       attribute="class"
-      forcedTheme={pathname === "/" ? "dark" : undefined}
-      themes={THEME_LIST}
+      defaultTheme="system"
       enableSystem
+      storageKey="echo-system-theme"
+      themes={["light", "dark"]}
     >
+      <SystemLiquidGlassTheme />
       {children}
     </NextThemesProvider>
   );

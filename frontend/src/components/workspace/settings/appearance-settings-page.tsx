@@ -1,7 +1,8 @@
-
-import { MonitorSmartphoneIcon, MoonIcon, SunIcon } from "lucide-react";
-import { useTheme } from "next-themes";
-import { useMemo, type ComponentType, type SVGProps } from "react";
+import {
+  useCallback,
+  useRef,
+  type PointerEvent,
+} from "react";
 
 import {
   Select,
@@ -10,312 +11,347 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Separator } from "@/components/ui/separator";
-import { isLocale, type Locale } from "@/core/i18n";
+import { isLocale, type Locale } from "@/core/i18n/locale";
 import { useI18n } from "@/core/i18n/hooks";
-import { useLocalSettings } from "@/core/settings";
-import { useAppearance, type CornerScale, type Density } from "@/hooks/use-appearance";
+import {
+  useAppearance,
+  type CornerScale,
+  type Density,
+} from "@/hooks/use-appearance";
 import { cn } from "@/lib/utils";
 
 import { SettingsSection } from "./settings-section";
 
-const languageOptions: { value: Locale; label: string }[] = [
+const LANGUAGE_OPTIONS = [
   { value: "en-US", label: "English" },
-  { value: "zh-CN", label: "Chinese (Simplified)" },
-];
-
-function AppleIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <path d="M12 2c1.5 0 2.7.6 3.5 1.5.8.9 1.2 2 1.2 3.2 0 .3 0 .6-.1.9.3-.1.6-.1.9-.1 1.2 0 2.3.4 3.2 1.2.9.8 1.3 1.8 1.3 3 0 1.8-.9 3.4-2.7 4.8-.6.5-1.2.9-1.7 1.2-.3.2-.5.3-.7.5-.2.2-.3.4-.3.7 0 .3.1.5.3.7.2.2.5.4.8.6.5.3 1.1.7 1.7 1.2 1.2 1 2.1 2 2.6 3.2.3.6.4 1.2.4 1.9 0 1.1-.4 2-1.2 2.7-.8.7-1.8 1-3 1-.8 0-1.5-.2-2.2-.5-.7-.3-1.3-.8-1.8-1.3-.3-.3-.5-.5-.7-.7-.2-.2-.4-.3-.6-.3-.2 0-.4.1-.6.3-.2.2-.5.5-.8.8-.6.6-1.2 1-1.9 1.3-.7.3-1.4.4-2.2.4-1.2 0-2.2-.4-3-1.1C4.4 20 4 19.1 4 18c0-.7.2-1.3.5-1.9.3-.6.8-1.2 1.4-1.7.6-.5 1.1-.9 1.6-1.2.3-.2.5-.4.7-.6.2-.2.3-.4.3-.7 0-.3-.1-.5-.3-.7-.2-.2-.4-.3-.7-.5-.5-.3-1.1-.7-1.7-1.2C4 8.1 3.1 6.5 3.1 4.7c0-1.2.5-2.2 1.3-3C5.2 1 6.3.6 7.5.6c.3 0 .6 0 .9.1-.1-.3-.1-.6-.1-.9" />
-    </svg>
-  );
-}
+  { value: "zh-CN", label: "简体中文" },
+  { value: "ja-JP", label: "日本語" },
+  { value: "ko-KR", label: "한국어" },
+] satisfies { value: Locale; label: string }[];
 
 export default function AppearanceSettingsPage() {
   const { t, locale, changeLocale } = useI18n();
-  const { theme, setTheme, systemTheme } = useTheme();
-  const currentTheme = (theme ?? "system") as "system" | "light" | "dark" | "apple";
-  const [settings, setSetting] = useLocalSettings();
-  const { cornerScale, density, setCornerScale, setDensity } = useAppearance();
-
-  const themeOptions = useMemo(
-    () => [
-      {
-        id: "system",
-        label: t.settings.appearance.system,
-        description: t.settings.appearance.systemDescription,
-        icon: MonitorSmartphoneIcon,
-      },
-      {
-        id: "light",
-        label: t.settings.appearance.light,
-        description: t.settings.appearance.lightDescription,
-        icon: SunIcon,
-      },
-      {
-        id: "dark",
-        label: t.settings.appearance.dark,
-        description: t.settings.appearance.darkDescription,
-        icon: MoonIcon,
-      },
-      {
-        id: "apple",
-        label: t.settings.appearance.apple,
-        description: t.settings.appearance.appleDescription,
-        icon: AppleIcon,
-      },
-    ],
-    [
-      t.settings.appearance.dark,
-      t.settings.appearance.darkDescription,
-      t.settings.appearance.light,
-      t.settings.appearance.lightDescription,
-      t.settings.appearance.system,
-      t.settings.appearance.systemDescription,
-      t.settings.appearance.apple,
-      t.settings.appearance.appleDescription,
-    ],
-  );
+  const {
+    cornerScale,
+    density,
+    setCornerScale,
+    setDensity,
+  } = useAppearance();
 
   return (
-    <div className="space-y-8">
-      <SettingsSection
-        title={t.settings.appearance.themeTitle}
-        description={t.settings.appearance.themeDescription}
-      >
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          {themeOptions.map((option) => (
-            <ThemePreviewCard
-              key={option.id}
-              icon={option.icon}
-              label={option.label}
-              description={option.description}
-              active={currentTheme === option.id}
-              mode={option.id as "system" | "light" | "dark" | "apple"}
-              systemTheme={systemTheme}
-              onSelect={(value) => setTheme(value)}
-            />
-          ))}
-        </div>
-      </SettingsSection>
-
-      <Separator />
-
-      <SettingsSection
-        title={t.settings.appearance.languageTitle}
-        description={t.settings.appearance.languageDescription}
-      >
-        <Select
-          value={locale}
-          onValueChange={(value) => {
-            if (isLocale(value)) {
-              changeLocale(value);
-            }
-          }}
+    <div className="space-y-6">
+      {/* Language remains a general application preference. Conversation
+          density now has its own destination in Settings. */}
+      <div className="divide-y rounded-lg border">
+        <SettingRow
+          title={t.settings.appearance.languageTitle}
+          description={t.settings.appearance.languageDescription}
         >
-          <SelectTrigger className="w-[220px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {languageOptions.map((item) => (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </SettingsSection>
+          <Select
+            value={locale}
+            onValueChange={(value) => {
+              if (isLocale(value)) {
+                changeLocale(value);
+              }
+            }}
+          >
+            <SelectTrigger
+              aria-label={t.settings.appearance.languageTitle}
+              className="w-full sm:w-[200px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LANGUAGE_OPTIONS.map((item) => (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+      </div>
 
       <Separator />
 
-      <SettingsSection
-        title={t.settings.appearance.chatFontSizeTitle}
-        description={t.settings.appearance.chatFontSizeDescription}
-      >
-        <Select
-          value={settings.display.chat_font_size}
-          onValueChange={(value) => {
-            if (value === "small" || value === "medium" || value === "large") {
-              setSetting("display", { chat_font_size: value });
-            }
-          }}
+      {/* Both step sliders sit side by side on wide screens. */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <SettingsSection
+          title={t.settings.appearance.cornerRadiusTitle}
+          description={t.settings.appearance.cornerRadiusDescription}
         >
-          <SelectTrigger className="w-[220px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="small">
-              {t.settings.appearance.chatFontSizeSmall}
-            </SelectItem>
-            <SelectItem value="medium">
-              {t.settings.appearance.chatFontSizeMedium}
-            </SelectItem>
-            <SelectItem value="large">
-              {t.settings.appearance.chatFontSizeLarge}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </SettingsSection>
+          <AppearanceStepSlider<CornerScale>
+            label={t.settings.appearance.cornerRadiusTitle}
+            value={cornerScale}
+            onChange={setCornerScale}
+            showHeader={false}
+            options={[
+              {
+                value: 0.5,
+                label: t.settings.appearance.cornerCrisp,
+                preview: "0.25rem",
+              },
+              {
+                value: 0.75,
+                label: t.settings.appearance.cornerSoft,
+                preview: "0.375rem",
+              },
+              {
+                value: 1,
+                label: t.settings.appearance.cornerDefault,
+                preview: "0.5rem",
+              },
+              {
+                value: 1.25,
+                label: t.settings.appearance.cornerRound,
+                preview: "0.625rem",
+              },
+              {
+                value: 1.5,
+                label: t.settings.appearance.cornerPill,
+                preview: "0.75rem",
+              },
+            ]}
+          />
+        </SettingsSection>
 
-      <Separator />
-
-      <SettingsSection
-        title={t.settings.appearance.cornerRadiusTitle}
-        description={t.settings.appearance.cornerRadiusDescription}
-      >
-        <SegmentedControl<CornerScale>
-          aria-label={t.settings.appearance.cornerRadiusTitle}
-          value={cornerScale}
-          onChange={setCornerScale}
-          options={[
-            { value: 0.5, label: t.settings.appearance.cornerCrisp, preview: "0.25rem" },
-            { value: 0.75, label: t.settings.appearance.cornerSoft, preview: "0.375rem" },
-            { value: 1, label: t.settings.appearance.cornerDefault, preview: "0.5rem" },
-            { value: 1.25, label: t.settings.appearance.cornerRound, preview: "0.625rem" },
-            { value: 1.5, label: t.settings.appearance.cornerPill, preview: "0.75rem" },
-          ]}
-        />
-      </SettingsSection>
-
-      <Separator />
-
-      <SettingsSection
-        title={t.settings.appearance.uiDensityTitle}
-        description={t.settings.appearance.uiDensityDescription}
-      >
-        <SegmentedControl<Density>
-          aria-label={t.settings.appearance.uiDensityTitle}
-          value={density}
-          onChange={setDensity}
-          options={[
-            { value: "comfortable", label: t.settings.appearance.densityComfortable, preview: "15px" },
-            { value: "compact", label: t.settings.appearance.densityCompact, preview: "14px" },
-          ]}
-        />
-      </SettingsSection>
+        <SettingsSection
+          title={t.settings.appearance.uiDensityTitle}
+          description={t.settings.appearance.uiDensityDescription}
+        >
+          <AppearanceStepSlider<Density>
+            label={t.settings.appearance.uiDensityTitle}
+            value={density}
+            onChange={setDensity}
+            showHeader={false}
+            options={[
+              {
+                value: "relaxed",
+                label: t.settings.appearance.densityRelaxed,
+                preview: "16px",
+              },
+              {
+                value: "comfortable",
+                label: t.settings.appearance.densityComfortable,
+                preview: "15px",
+              },
+              {
+                value: "compact",
+                label: t.settings.appearance.densityCompact,
+                preview: "14px",
+              },
+              {
+                value: "dense",
+                label: t.settings.appearance.densityDense,
+                preview: "13px",
+              },
+              {
+                value: "ultradense",
+                label: t.settings.appearance.densityUltraDense,
+                preview: "12.5px",
+              },
+            ]}
+          />
+        </SettingsSection>
+      </div>
     </div>
   );
 }
 
-function ThemePreviewCard({
-  icon: Icon,
-  label,
+/** One-line setting: label + description on the left, control on the right. */
+function SettingRow({
+  title,
   description,
-  active,
-  mode,
-  systemTheme,
-  onSelect,
+  children,
 }: {
-  icon: ComponentType<SVGProps<SVGSVGElement>>;
-  label: string;
+  title: string;
   description: string;
-  active: boolean;
-  mode: "system" | "light" | "dark" | "apple";
-  systemTheme?: string;
-  onSelect: (mode: "system" | "light" | "dark" | "apple") => void;
+  children: React.ReactNode;
 }) {
-  const previewMode =
-    mode === "system" ? (systemTheme === "dark" ? "dark" : "light") : mode;
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(mode)}
-      className={cn(
-        "group flex h-full flex-col gap-3 rounded-lg border p-4 text-left transition-all",
-        active
-          ? "border-primary ring-primary/30 shadow-sm ring-2"
-          : "hover:border-border hover:shadow-sm",
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <div className="bg-muted rounded-lg p-2">
-          <Icon className="size-4" />
+    <div className="flex flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-sm font-medium">{title}</div>
+        <p className="text-xs leading-snug text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+type AppearanceStepValue = string | number;
+
+type AppearanceStepOption<TValue extends AppearanceStepValue> = {
+  value: TValue;
+  label: string;
+  description?: string;
+  preview?: string;
+};
+
+function AppearanceStepSlider<TValue extends AppearanceStepValue>({
+  label,
+  onChange,
+  options,
+  showHeader = true,
+  value,
+}: {
+  label: string;
+  onChange: (value: TValue) => void;
+  options: AppearanceStepOption<TValue>[];
+  showHeader?: boolean;
+  value: TValue;
+}) {
+  const activeIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  );
+  const fallbackOption: AppearanceStepOption<TValue> = {
+    value,
+    label,
+    description: "",
+  };
+  const active = options[activeIndex] ?? options[0] ?? fallbackOption;
+  const activeDetail = active.description ?? active.preview ?? "";
+  const progress =
+    options.length > 1 ? (activeIndex / (options.length - 1)) * 100 : 0;
+  const trackRef = useRef<HTMLDivElement>(null);
+  const updateFromIndex = useCallback(
+    (index: number) => {
+      const next = options[index];
+      if (next) onChange(next.value);
+    },
+    [onChange, options],
+  );
+  const updateFromInputValue = (rawValue: string) => {
+    updateFromIndex(Number(rawValue));
+  };
+  const updateFromPointer = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const track = trackRef.current;
+      if (!track || options.length < 1) return;
+
+      const rect = track.getBoundingClientRect();
+      const ratio = Math.min(
+        1,
+        Math.max(0, (event.clientX - rect.left) / rect.width),
+      );
+      updateFromIndex(Math.round(ratio * (options.length - 1)));
+    },
+    [options, updateFromIndex],
+  );
+
+  return (
+    <div className="rounded-lg border bg-muted/20 px-4 py-3">
+      {showHeader ? (
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-medium">{label}</div>
+            {activeDetail ? (
+              <div className="mt-1 text-xs text-muted-foreground">
+                {activeDetail}
+              </div>
+            ) : null}
+          </div>
+          <div className="rounded-full border bg-background/75 px-2.5 py-1 text-xs font-medium shadow-[var(--shadow-xs)]">
+            <span>{active.label}</span>
+            {active.preview ? (
+              <span className="ml-1 text-muted-foreground">
+                {active.preview}
+              </span>
+            ) : null}
+          </div>
         </div>
-        <div className="space-y-1">
-          <div className="text-sm leading-none font-semibold">{label}</div>
-          <p className="text-muted-foreground text-xs leading-snug">
-            {description}
-          </p>
+      ) : null}
+      <div
+        className="relative px-1"
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          updateFromPointer(event);
+        }}
+        onPointerMove={(event) => {
+          if (event.buttons === 1) updateFromPointer(event);
+        }}
+        ref={trackRef}
+      >
+        <input
+          aria-label={label}
+          className="octo-appearance-step-slider"
+          aria-valuetext={[active.label, activeDetail]
+            .filter(Boolean)
+            .join(": ")}
+          max={options.length - 1}
+          min={0}
+          onChange={(event) => updateFromInputValue(event.currentTarget.value)}
+          onInput={(event) => updateFromInputValue(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Home") {
+              event.preventDefault();
+              updateFromIndex(0);
+            }
+            if (event.key === "End") {
+              event.preventDefault();
+              updateFromIndex(options.length - 1);
+            }
+            if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+              event.preventDefault();
+              updateFromIndex(Math.max(0, activeIndex - 1));
+            }
+            if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+              event.preventDefault();
+              updateFromIndex(Math.min(options.length - 1, activeIndex + 1));
+            }
+          }}
+          step={1}
+          style={{
+            background: `linear-gradient(90deg, color-mix(in oklch, var(--primary) 72%, white 18%) 0 ${progress}%, color-mix(in oklch, var(--muted) 72%, transparent) ${progress}% 100%)`,
+          }}
+          type="range"
+          value={activeIndex}
+        />
+        <div className="pointer-events-none absolute inset-x-1 top-1/2 flex -translate-y-1/2 justify-between">
+          {options.map((option, index) => (
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-2.5 rounded-full border border-background shadow-[var(--shadow-xs)]",
+                index <= activeIndex ? "bg-primary" : "bg-muted-foreground/30",
+              )}
+              key={option.value}
+            />
+          ))}
         </div>
       </div>
       <div
-        className={cn(
-          "relative overflow-hidden rounded-lg border text-xs transition-colors",
-          previewMode === "dark"
-            ? "border-neutral-800 bg-neutral-900 text-neutral-200"
-            : previewMode === "apple"
-              ? "border-slate-200/80 bg-white text-slate-800 shadow-sm"
-              : "border-slate-200 bg-white text-slate-900",
-        )}
+        className="mt-2 grid gap-1 text-xs"
+        style={{
+          gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
+        }}
       >
-        <div className={cn(
-          "flex items-center gap-2 border-b px-3 py-2",
-          previewMode === "apple"
-            ? "border-slate-100 bg-slate-50/50"
-            : "border-border/50",
-        )}>
-          <div
+        {options.map((option, index) => (
+          <button
+            aria-pressed={index === activeIndex}
             className={cn(
-              "h-2 w-2 rounded-full",
-              previewMode === "dark"
-                ? "bg-emerald-400"
-                : previewMode === "apple"
-                  ? "bg-blue-500"
-                  : "bg-emerald-500",
+              "min-w-0 rounded-md px-1 py-1 text-center leading-none transition-colors",
+              index === activeIndex
+                ? "bg-primary/12 text-primary"
+                : "text-muted-foreground hover:bg-muted/55 hover:text-foreground",
             )}
-          />
-          <div className="h-2 w-10 rounded-md bg-current/20" />
-          <div className="h-2 w-6 rounded-md bg-current/15" />
-        </div>
-        <div className="grid grid-cols-[1fr_240px] gap-3 px-3 py-3">
-          <div className="space-y-2">
-            <div className="h-3 w-3/4 rounded-md bg-current/15" />
-            <div className="h-3 w-1/2 rounded-md bg-current/10" />
-            <div className={cn(
-              "h-[90px] rounded-xl border bg-current/5",
-              previewMode === "apple"
-                ? "border-slate-200 shadow-sm"
-                : "border-current/10",
-            )} />
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className={cn(
-                "h-8 w-8 rounded-lg",
-                previewMode === "apple"
-                  ? "bg-blue-500/10 rounded-xl"
-                  : "bg-current/10",
-              )} />
-              <div className="space-y-2">
-                <div className="h-2 w-14 rounded-md bg-current/15" />
-                <div className="h-2 w-10 rounded-md bg-current/10" />
-              </div>
-            </div>
-            <div className={cn(
-              "flex flex-col gap-1 rounded-lg border border-dashed p-2",
-              previewMode === "apple"
-                ? "border-slate-300/40 rounded-xl"
-                : "border-current/15",
-            )}>
-              <div className="h-2 w-3/5 rounded-md bg-current/15" />
-              <div className="h-2 w-2/5 rounded-md bg-current/10" />
-            </div>
-          </div>
-        </div>
+            key={option.value}
+            onClick={() => updateFromIndex(index)}
+            type="button"
+          >
+            <span className="block truncate">{option.label}</span>
+            {option.preview ? (
+              <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
+                {option.preview}
+              </span>
+            ) : null}
+          </button>
+        ))}
       </div>
-    </button>
+    </div>
   );
 }

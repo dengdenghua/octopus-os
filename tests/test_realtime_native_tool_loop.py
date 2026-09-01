@@ -77,7 +77,7 @@ def test_native_tool_loop_enabled_for_tool_capable_router():
     assert _should_use_native_tool_loop(stack, intent, planning_mode=False)
 
 
-def test_native_tool_loop_disabled_for_chat_and_planning():
+def test_native_tool_loop_disabled_for_chat_but_enabled_for_planning():
     router = SimpleNamespace(
         capabilities=SimpleNamespace(supports_tool_use=True),
         call_stream=lambda _request: iter(()),
@@ -91,7 +91,9 @@ def test_native_tool_loop_disabled_for_chat_and_planning():
     react = _intent("先给方案", "react")
 
     assert not _should_use_native_tool_loop(stack, chat, planning_mode=False)
-    assert not _should_use_native_tool_loop(stack, react, planning_mode=True)
+    # Planning mode is a plan-first prompt policy, not a plan-only execution
+    # tier; capable models should retain structured native tools.
+    assert _should_use_native_tool_loop(stack, react, planning_mode=True)
 
 
 def test_complex_turn_defaults_to_planning_mode_when_not_explicit():
@@ -108,18 +110,22 @@ def test_complex_turn_defaults_to_planning_mode_when_not_explicit():
 def test_explicit_planning_false_and_chat_mode_do_not_default():
     from runtime.protocol.items import TurnParams
 
-    explicit = TurnParams.model_validate({
-        "threadId": "t1",
-        "input": [{"type": "input_text", "text": "请完整实现这个功能并测试"}],
-        "planningMode": False,
-    })
+    explicit = TurnParams.model_validate(
+        {
+            "threadId": "t1",
+            "input": [{"type": "input_text", "text": "请完整实现这个功能并测试"}],
+            "planningMode": False,
+        }
+    )
     chat = TurnParams(
         threadId="t1",
-        input=[{
-            "type": "input_text",
-            "text": "请完整实现这个功能并测试",
-            "metadata": {"context": {"mode": "chat"}},
-        }],
+        input=[
+            {
+                "type": "input_text",
+                "text": "请完整实现这个功能并测试",
+                "metadata": {"context": {"mode": "chat"}},
+            }
+        ],
     )
 
     assert not _should_default_planning_mode("请完整实现这个功能并测试", explicit)

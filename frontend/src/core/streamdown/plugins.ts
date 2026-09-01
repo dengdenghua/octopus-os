@@ -3,6 +3,7 @@ import type { StreamdownProps } from "streamdown";
 
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
@@ -38,8 +39,16 @@ const BASE_PLUGINS: StreamdownPluginBundle = {
     remarkGfm,
     [remarkMath, { singleDollarTextMath: true }],
   ] as StreamdownProps["remarkPlugins"],
+  // Security (audit R-01): agent-authored content flows through this
+  // bundle in the wiki / workbench / memory / artifact panels, and an
+  // agent can echo attacker-controlled HTML (e.g. a malicious page it
+  // fetched). `rehype-sanitize` MUST sit between `rehype-raw` (which
+  // parses raw HTML into the tree) and `rehype-katex` — after raw so
+  // injected markup is stripped, before katex so math output survives.
+  // The chat chain in `core/rehype/index.ts` keeps the same order.
   rehypePlugins: [
     rehypeRaw,
+    rehypeSanitize,
     [rehypeKatex, { output: "html" }],
   ] as StreamdownProps["rehypePlugins"],
 };

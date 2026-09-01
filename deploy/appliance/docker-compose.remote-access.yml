@@ -1,0 +1,67 @@
+# Optional private-network remote access for Echo OS.
+# Start only through start-remote-access.sh so the DNS name and one-time auth
+# key are validated before Compose creates or changes containers.
+
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.102.3@sha256:8c42c4574ab066384fcb72f69e086a2ff1dd3652eb6f56856cee34bcf0d2f680
+    container_name: echo-tailscale
+    hostname: ${ECHO_TAILSCALE_HOSTNAME:-echo-os}
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: file:/run/secrets/tailscale-auth-key
+      TS_AUTH_ONCE: "true"
+      TS_ACCEPT_DNS: "false"
+      TS_USERSPACE: "true"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SOCKET: /tmp/tailscaled.sock
+      TS_SERVE_CONFIG: /etc/echo-tailscale/serve.json
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: 0.0.0.0:9002
+    secrets:
+      - tailscale-auth-key
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./remote-access/tailscale-serve.json:/etc/echo-tailscale/serve.json:ro
+    tmpfs:
+      - /tmp:mode=0700,noexec,nosuid,nodev
+    networks:
+      remote-access:
+        ipv4_address: ${ECHO_TAILSCALE_PROXY_IP:-172.30.91.2}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s
+    labels:
+      sh.echo.hide: "1"
+      sh.echo.control-protected: "true"
+      sh.echo.remote-access-provider: tailscale
+
+  echo-os:
+    environment:
+      ECHO_REMOTE_ACCESS_PROVIDER: tailscale-sidecar
+      ECHO_REMOTE_ACCESS_URL: https://${ECHO_TAILSCALE_DNS_NAME:?set ECHO_TAILSCALE_DNS_NAME}
+      FORWARDED_ALLOW_IPS: ${ECHO_TAILSCALE_PROXY_IP:-172.30.91.2}
+    networks:
+      remote-access: {}
+
+secrets:
+  tailscale-auth-key:
+    file: ${ECHO_TAILSCALE_AUTHKEY_FILE:?set ECHO_TAILSCALE_AUTHKEY_FILE}
+
+volumes:
+  tailscale-state:
+
+networks:
+  remote-access:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${ECHO_TAILSCALE_SUBNET:-172.30.91.0/24}

@@ -10,13 +10,13 @@ logs/
 data/
 ura-artifacts/
 _outer_preflatten_*/
-.octopus/*.json
-.octopus/*.jsonl
-.octopus/*.bak
-.octopus/*.lock
-.octopus/local/
-.octopus/research/
-.octopus/archive/
+.echo/*.json
+.echo/*.jsonl
+.echo/*.bak
+.echo/*.lock
+.echo/local/
+.echo/research/
+.echo/archive/
 test-results/
 
 # Python build/cache output
@@ -56,10 +56,18 @@ docs/
 
 # Local deployment sources excluded from runtime image
 deploy/
-# 例外:prepare-*.sh 预构建的投喂产物必须进构建上下文(P1 agent wheel、
-# P2 同机 agent webui)。BuildKit 按顺序应用,这两条负向规则覆盖上面的 deploy/。
-!deploy/appliance/agent-dist
-!deploy/appliance/agent-webui
+# 例外:只放行经过同源清单校验的 Echo Agent 镜像输入与校验器。
+!deploy/
+!deploy/appliance/
+deploy/appliance/*
+!deploy/appliance/agent_bundle.py
+!deploy/appliance/agent-bundle.json
+!deploy/appliance/agent-dist/
+!deploy/appliance/agent-dist/**
+!deploy/appliance/agent-resources/
+!deploy/appliance/agent-resources/**
+!deploy/appliance/agent-codex/
+!deploy/appliance/agent-codex/**
 docker-compose*.yml
 Dockerfile
 .dockerignore

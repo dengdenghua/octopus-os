@@ -1,4 +1,3 @@
-
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -117,6 +116,7 @@ export type ChainOfThoughtStepProps = ComponentProps<"div"> & {
   label: ReactNode;
   description?: ReactNode;
   status?: "complete" | "active" | "pending";
+  showConnector?: boolean;
 };
 
 export const ChainOfThoughtStep = memo(
@@ -126,6 +126,7 @@ export const ChainOfThoughtStep = memo(
     label,
     description,
     status = "complete",
+    showConnector = true,
     children,
     ...props
   }: ChainOfThoughtStepProps) => {
@@ -152,7 +153,12 @@ export const ChainOfThoughtStep = memo(
       >
         <div className="relative mt-0.5">
           {isValidElement(Icon) ? Icon : <Icon className="size-4" />}
-          <div className="bg-border absolute top-7 bottom-0 left-1/2 -mx-px w-px" />
+          {showConnector && (
+            <div
+              className="bg-border absolute top-7 bottom-0 left-1/2 -mx-px w-px"
+              data-cot-connector="true"
+            />
+          )}
         </div>
         <div className="flex-1 space-y-1.5 overflow-hidden">
           <div>{label}</div>
@@ -243,4 +249,3 @@ ChainOfThoughtSearchResults.displayName = "ChainOfThoughtSearchResults";
 ChainOfThoughtSearchResult.displayName = "ChainOfThoughtSearchResult";
 ChainOfThoughtContent.displayName = "ChainOfThoughtContent";
 ChainOfThoughtImage.displayName = "ChainOfThoughtImage";
-

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.suckers.write_skills import (
     _BACKGROUND_PROCESSES,
@@ -57,7 +56,9 @@ class TestWriteTextFile:
     def test_size_cap_rejects_big_content(self, tmp_path: Path):
         p = tmp_path / "big.txt"
         r = _write_text_file(
-            path=str(p), content="x" * 1000, max_bytes=100,
+            path=str(p),
+            content="x" * 1000,
+            max_bytes=100,
         )
         assert "error" in r
         assert not p.exists()
@@ -70,7 +71,8 @@ class TestWriteTextFile:
 
     def test_sandbox_dir_allows_inner(self, tmp_path: Path):
         r = _write_text_file(
-            path="inner.txt", content="x",
+            path="inner.txt",
+            content="x",
             sandbox_dir=str(tmp_path),
         )
         assert "error" not in r
@@ -79,7 +81,8 @@ class TestWriteTextFile:
     def test_sandbox_dir_blocks_escape(self, tmp_path: Path):
         outside = tmp_path.parent / f"escape_{tmp_path.name}.txt"
         r = _write_text_file(
-            path=str(outside), content="pwned",
+            path=str(outside),
+            content="pwned",
             sandbox_dir=str(tmp_path),
         )
         assert "error" in r
@@ -112,7 +115,9 @@ class TestAppendTextFile:
     def test_size_cap(self, tmp_path: Path):
         p = tmp_path / "a.log"
         r = _append_text_file(
-            path=str(p), content="x" * 1000, max_bytes=100,
+            path=str(p),
+            content="x" * 1000,
+            max_bytes=100,
         )
         assert "error" in r
         assert not p.exists()
@@ -152,7 +157,9 @@ class TestEditTextFile:
 
     def test_missing_file_error(self, tmp_path: Path):
         r = _edit_text_file(
-            path=str(tmp_path / "nope"), find="a", replace="b",
+            path=str(tmp_path / "nope"),
+            find="a",
+            replace="b",
         )
         assert "error" in r
         assert "not found" in r["error"]
@@ -233,6 +240,7 @@ class TestExecShell:
     def test_simple_str_command_platform_neutral(self):
         """Implementation note."""
         import sys
+
         # Implementation note.
         r = _exec_shell(command=f"{sys.executable} --version")
         if "error" in r:
@@ -244,6 +252,7 @@ class TestExecShell:
 
     def test_argv_list(self):
         import sys
+
         r = _exec_shell(command=[sys.executable, "-c", "print(2+2)"])
         assert "error" not in r
         assert "4" in r["stdout"]
@@ -251,12 +260,14 @@ class TestExecShell:
 
     def test_nonzero_exit_returned(self):
         import sys
+
         r = _exec_shell(command=[sys.executable, "-c", "import sys; sys.exit(3)"])
         assert "error" not in r
         assert r["exit_code"] == 3
 
     def test_timeout(self):
         import sys
+
         r = _exec_shell(
             command=[sys.executable, "-c", "import time; time.sleep(5)"],
             timeout_s=0.3,
@@ -284,6 +295,7 @@ class TestExecShell:
     def test_no_shell_injection(self, tmp_path: Path):
         """Implementation note."""
         import sys
+
         # Implementation note.
         r = _exec_shell(
             command=[sys.executable, "-c", "print('safe')"],
@@ -346,7 +358,7 @@ class TestBackgroundExec:
         import sys
         import time
 
-        monkeypatch.setenv("OCTOPUS_DATA_DIR", str(tmp_path / "data"))
+        monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path / "data"))
         started = _background_exec(
             command=[
                 sys.executable,
@@ -436,9 +448,7 @@ class TestRegistration:
         register_all(reg)
         for name in WRITE_SKILL_NAMES:
             assert reg.has(name), f"{name} should be in register_all"
-        assert not reg.has(EXEC_SKILL_NAME), (
-            "exec_shell must NOT be auto-registered · opt-in only"
-        )
+        assert not reg.has(EXEC_SKILL_NAME), "exec_shell must NOT be auto-registered · opt-in only"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -470,7 +480,8 @@ class TestEndToEnd:
         )
         tid = TaskId(uuid4())
         step = executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={
                 "path": "out.txt",
@@ -478,7 +489,8 @@ class TestEndToEnd:
                 "sandbox_dir": str(tmp_path),
             },
             caller="arms/x",
-            task_id=tid, arm_id=ArmId("x"),
+            task_id=tid,
+            arm_id=ArmId("x"),
             budget=Budget(task_id=tid, limits=BudgetLimits(tokens=1000, usd=0.01)),
         )
         assert step.success

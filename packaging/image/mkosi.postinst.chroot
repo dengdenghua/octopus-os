@@ -1,0 +1,707 @@
+#!/usr/bin/env bash
+# Final product identity and permissions inside the generated image.
+set -euo pipefail
+
+DESKTOP_ROOT=/opt/echo-os
+DESKTOP_BINARY="$DESKTOP_ROOT/frontend/release/linux-unpacked/echo-os-desktop"
+CHROME_SANDBOX="$DESKTOP_ROOT/frontend/release/linux-unpacked/chrome-sandbox"
+UPDATE_COMMAND=/usr/bin/echo-os-update
+UPDATE_CHANNEL_COMMAND=/usr/bin/echo-os-update-channel
+UPDATE_APPLY_HELPER=/usr/lib/echo-os/echo-os-update-apply
+UPDATE_CHANNEL_CLIENT=/usr/lib/echo-os/echo_update_channel.py
+UPDATE_STATUS_TOOL=/usr/lib/echo-os/echo_update_status.py
+UPDATE_TRUST_TOOL=/usr/lib/echo-os/echo_update_trust.py
+UPDATE_TRUST_POLICY=/usr/lib/echo-os/update-trust-policy.json
+UPDATE_CHANNEL_CONFIG=/usr/lib/echo-os/update-channel
+UPDATE_FETCH_SERVICE=/usr/lib/systemd/system/echo-os-update-fetch.service
+UPDATE_FETCH_TIMER=/usr/lib/systemd/system/echo-os-update-fetch.timer
+UPDATE_TRUST_SERVICE=/usr/lib/systemd/system/echo-update-trust-promote.service
+UPDATE_POLICY=/usr/share/polkit-1/actions/org.echoos.update.policy
+UPDATE_VERIFIER=/usr/lib/echo-os/verify-update-bundle.py
+VERITY_VERIFIER=/usr/lib/echo-os/verify-verity-set.py
+VERITY_CERTIFICATE=/usr/lib/echo-os/verity-certificate.pem
+UPDATE_KEYRING=/usr/lib/echo-os/update-keyring.gpg
+KEYRING_VERIFIER=/usr/lib/echo-os/verify-public-keyring.py
+DATA_PROTECTION=/usr/lib/echo-os/echo-data-protection
+PCR_POLICY_PUBLIC_KEY=/usr/lib/systemd/tpm2-pcr-public-key.pem
+SYSUPDATE_BINARY=/usr/lib/systemd/systemd-sysupdate
+OEM_SETUP=/usr/lib/echo-os/echo-oem-setup
+LOGIN_VERIFIER=/usr/lib/echo-os/verify-login-boot.sh
+APP_CATALOG=/usr/lib/echo-os/echo-app-catalog
+MACHINE_ID_VERIFIER=/usr/lib/echo-os/verify-machine-identity.sh
+NETWORK_STATE_PREPARE=/usr/lib/echo-os/echo-network-state-prepare
+REGION_STATE_TOOL=/usr/lib/echo-os/echo-region-state
+SESSION_LOCK=/usr/lib/echo-os/echo-session-lock
+SCREEN_LOCKER=/usr/lib/echo-os/echo-screen-locker
+LOCK_PAM=/etc/pam.d/echo-lock
+KWIN_WINDOW_BRIDGE=/usr/lib/echo-os/echo-kwin-window-bridge
+NOTIFICATION_SERVICE=/usr/lib/echo-os/echo-notification-service
+NOTIFICATION_STORE=/usr/lib/echo-os/echo_notification_store.py
+CLIPBOARD_HOST=/usr/lib/echo-os/echo-clipboard-host
+CLIPBOARD_CONFIG=/etc/xdg/klipperrc
+CLIPBOARD_QML_PLUGIN=/usr/lib/x86_64-linux-gnu/qt6/qml/org/kde/plasma/private/clipboard/libklipperplugin.so
+CLIPBOARD_LIBRARY=/usr/lib/x86_64-linux-gnu/libklipper.so.6
+CLIPBOARD_SQLITE_DRIVER=/usr/lib/x86_64-linux-gnu/qt6/plugins/sqldrivers/libqsqlite.so
+ACCESSIBILITY_BUS=/usr/libexec/at-spi-bus-launcher
+ACCESSIBILITY_REGISTRY=/usr/libexec/at-spi2-registryd
+ACCESSIBILITY_SERVICE=/usr/lib/systemd/user/at-spi-dbus-bus.service
+ACCESSIBILITY_PROBE=/usr/lib/echo-os/echo-accessibility-smoke.py
+WAYLAND_IPC_WINDOW_HELPER=/usr/lib/echo-os/verify-wayland-native-app-ipc.py
+SCREEN_READER=/usr/bin/orca
+SCREEN_READER_DESKTOP=/usr/local/share/applications/echo-screen-reader.desktop
+SDDM_ACCESSIBILITY=/usr/lib/echo-os/echo-sddm-accessibility
+SDDM_XSETUP=/usr/lib/echo-os/echo-sddm-xsetup
+SDDM_XSTOP=/usr/lib/echo-os/echo-sddm-xstop
+SDDM_CONFIG=/etc/sddm.conf.d/10-echo-os.conf
+INPUT_METHOD=/usr/bin/fcitx5
+INPUT_METHOD_REMOTE=/usr/bin/fcitx5-remote
+INPUT_METHOD_CONFIG=/usr/bin/fcitx5-config-qt
+INPUT_METHOD_KCM=/usr/lib/x86_64-linux-gnu/qt6/plugins/plasma/kcms/systemsettings/kcm_fcitx5.so
+INPUT_METHOD_PINYIN=/usr/share/fcitx5/inputmethod/pinyin.conf
+INPUT_METHOD_DEFAULT_ZH=/usr/share/fcitx5/default/zh_CN
+COREDUMP_HANDLER=/usr/lib/systemd/systemd-coredump
+COREDUMP_SOCKET=/usr/lib/systemd/system/systemd-coredump.socket
+COREDUMP_CONFIG=/etc/systemd/coredump.conf.d/60-echo-os.conf
+CRASH_HEALTH=/usr/lib/echo-os/echo-crash-health
+CRASH_HEALTH_SERVICE=/usr/lib/systemd/system/echo-crash-health.service
+FIREWALL_CONFIG=/etc/firewalld/firewalld.conf
+FIREWALL_ZONE=/usr/lib/firewalld/zones/echo-public.xml
+FIREWALL_POLICY=/usr/lib/echo-os/echo-firewall-policy.py
+FIREWALL_HEALTH=/usr/lib/echo-os/echo-firewall-health
+FIREWALL_HEALTH_SERVICE=/usr/lib/systemd/system/echo-firewall-health.service
+FIREWALL_DOCUMENTATION=/usr/share/doc/echo-os/host-firewall.md
+FIREWALL_KCM=/usr/lib/x86_64-linux-gnu/qt6/plugins/plasma/kcms/systemsettings/kcm_firewall.so
+FIREWALL_BACKEND=/usr/lib/x86_64-linux-gnu/qt6/plugins/kf6/plasma_firewall/firewalldbackend.so
+REMOVABLE_STORAGE_HEALTH=/usr/lib/echo-os/echo-removable-storage-health
+REMOVABLE_STORAGE_SERVICE=/usr/lib/systemd/system/echo-removable-storage-health.service
+REMOVABLE_STORAGE_DOCUMENTATION=/usr/share/doc/echo-os/removable-storage.md
+UDISKS_DAEMON=/usr/libexec/udisks2/udisksd
+UDISKS_SERVICE=/usr/lib/systemd/system/udisks2.service
+UDISKS_POLICY=/usr/share/polkit-1/actions/org.freedesktop.UDisks2.policy
+KIO_MTP=/usr/lib/x86_64-linux-gnu/qt6/plugins/kf6/kio/mtp.so
+KIO_MTP_ACTION=/usr/share/solid/actions/solid_mtp.desktop
+PRINTING_CONFIG=/etc/cups/cupsd.conf
+IPP_USB_CONFIG=/etc/ipp-usb/ipp-usb.conf
+PRINTING_POLICY=/usr/lib/echo-os/echo-printing-policy.py
+PRINTING_HEALTH=/usr/lib/echo-os/echo-printing-health
+PRINTING_SERVICE=/usr/lib/systemd/system/echo-printing-health.service
+PRINTING_DOCUMENTATION=/usr/share/doc/echo-os/printing.md
+PRINTING_KCM=/usr/lib/x86_64-linux-gnu/qt6/plugins/plasma/kcms/systemsettings/kcm_printer_manager.so
+PRINTING_KDED=/usr/lib/x86_64-linux-gnu/qt6/plugins/kf6/kded/printmanager.so
+CUPS_PK_HELPER=/usr/libexec/cups-pk-helper-mechanism
+CUPS_PK_POLICY=/usr/share/polkit-1/actions/org.opensuse.cupspkhelper.mechanism.policy
+SCANNING_CONFIG=/etc/sane.d/airscan.conf
+SCANNING_POLICY=/usr/lib/echo-os/echo-scanning-policy.py
+SCANNING_HEALTH=/usr/lib/echo-os/echo-scanning-health
+SCANNING_SERVICE=/usr/lib/systemd/system/echo-scanning-health.service
+SCANNING_DOCUMENTATION=/usr/share/doc/echo-os/scanning.md
+SANE_LIBRARY=/usr/lib/x86_64-linux-gnu/libsane.so.1
+AIRSCAN_BACKEND=/usr/lib/x86_64-linux-gnu/sane/libsane-airscan.so.1
+CORE_APPS_CONFIG=/etc/xdg/mimeapps.list
+CORE_APPS_POLICY=/usr/lib/echo-os/echo-core-apps-policy.py
+CORE_APPS_HEALTH=/usr/lib/echo-os/echo-core-apps-health
+CORE_APPS_SESSION_SMOKE=/usr/lib/echo-os/echo-core-apps-session-smoke.py
+CORE_APPS_SERVICE=/usr/lib/systemd/system/echo-core-apps-health.service
+CORE_APPS_DOCUMENTATION=/usr/share/doc/echo-os/core-apps.md
+KWIN_BRIDGE_METADATA=/usr/share/kwin/scripts/org.echoos.windowbridge/metadata.json
+KWIN_BRIDGE_SCRIPT=/usr/share/kwin/scripts/org.echoos.windowbridge/contents/code/main.js
+KWIN_LIQUID_GLASS_PLUGIN=/usr/lib/x86_64-linux-gnu/qt6/plugins/kwin/effects/plugins/org.echoos.liquidglass.so
+WAYLAND_SESSION="$DESKTOP_ROOT/deploy/desktop-session/echo-wayland-session.sh"
+WAYLAND_SHELL_SESSION="$DESKTOP_ROOT/deploy/desktop-session/echo-wayland-shell-session.sh"
+WAYLAND_DESKTOP=/usr/share/wayland-sessions/echo-wayland.desktop
+KSCREENLOCKER_CONFIG=/etc/xdg/kscreenlockerrc
+AGENT_ROOT=/opt/echo-agent
+AGENT_MANIFEST="$AGENT_ROOT/agent-bundle.json"
+AGENT_RUNTIME_MANIFEST="$AGENT_ROOT/native-runtime.json"
+AGENT_CODEX="$AGENT_ROOT/codex/bin/codex"
+AGENT_SERVICE=/usr/lib/systemd/system/echo-agent.service
+AGENT_HEALTH_SERVICE=/usr/lib/systemd/system/echo-agent-health.service
+AGENT_HEALTH_VERIFIER=/usr/lib/echo-os/verify-native-agent-health
+AGENT_RUNTIME_VERIFIER=/usr/lib/echo-os/verify-native-agent-runtime.py
+BACKUP_COMMAND=/usr/bin/echo-os-backup
+BACKUP_SERVICE=/usr/lib/systemd/system/echo-user-backup.service
+BACKUP_DOCUMENTATION=/usr/share/doc/echo-os/user-backup.md
+RESTORE_TRANSACTION=/usr/lib/echo-os/echo-restore-transaction.py
+RESTORE_TRANSACTION_HEALTH=/usr/lib/systemd/system/echo-restore-transaction-health.service
+RESTIC=/usr/bin/restic
+FINDMNT=/usr/bin/findmnt
+OS_SOURCE_VERIFIER=/usr/lib/echo-os/os-source-identity.py
+OS_SOURCE_MANIFEST=/usr/lib/echo-os/os-source-identity.json
+OS_SOURCE_READER=/usr/lib/echo-os/echo-os-source-identity
+
+[[ -x "$DESKTOP_BINARY" ]] || {
+  echo "Echo Desktop binary is missing from the image" >&2
+  exit 1
+}
+[[ -f "$CHROME_SANDBOX" ]] || {
+  echo "Electron chrome-sandbox is missing from the image" >&2
+  exit 1
+}
+[[ -x "$SYSUPDATE_BINARY" ]] || {
+  echo "systemd-sysupdate is missing from the image" >&2
+  exit 1
+}
+[[ -f "$UPDATE_COMMAND" && -f "$UPDATE_VERIFIER" && \
+   -f "$VERITY_VERIFIER" && -f "$VERITY_CERTIFICATE" && \
+   -f "$UPDATE_KEYRING" && -f "$KEYRING_VERIFIER" ]] || {
+  echo "Echo OS update client is incomplete" >&2
+  exit 1
+}
+[[ -f "$UPDATE_CHANNEL_COMMAND" && -f "$UPDATE_APPLY_HELPER" && \
+   -f "$UPDATE_CHANNEL_CLIENT" && -f "$UPDATE_STATUS_TOOL" && \
+   -f "$UPDATE_TRUST_TOOL" && -f "$UPDATE_TRUST_POLICY" && \
+   -f "$UPDATE_CHANNEL_CONFIG" && -f "$UPDATE_FETCH_SERVICE" && \
+   -f "$UPDATE_FETCH_TIMER" && -f "$UPDATE_TRUST_SERVICE" && \
+   -f "$UPDATE_POLICY" && -x /usr/bin/pkexec && -x /bin/bash && \
+   -s /etc/ssl/certs/ca-certificates.crt && \
+   -x /usr/bin/gpgv ]] || {
+  echo "Echo OS signed HTTPS update channel is incomplete" >&2
+  exit 1
+}
+grep -Eq '^https://[^/?#[:space:]]+/[^?#[:space:]]+$' "$UPDATE_CHANNEL_CONFIG" || {
+  echo "Echo OS system update channel is not an HTTPS directory" >&2
+  exit 1
+}
+# mkosi extra trees may originate from an unprivileged release workspace.
+# Normalize the dynamic trust inputs before the verifier requires root owner.
+chown root:root "$UPDATE_KEYRING" "$UPDATE_TRUST_POLICY"
+chmod 0644 "$UPDATE_KEYRING" "$UPDATE_TRUST_POLICY"
+/usr/bin/python3 "$KEYRING_VERIFIER" "$UPDATE_KEYRING"
+/usr/bin/python3 "$UPDATE_TRUST_TOOL" verify-system \
+  --system-policy "$UPDATE_TRUST_POLICY" \
+  --system-keyring "$UPDATE_KEYRING" \
+  --verifier "$KEYRING_VERIFIER"
+/usr/bin/python3 - "$UPDATE_POLICY" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+actions = root.findall("action")
+if len(actions) != 1 or actions[0].get("id") != "org.echoos.update.apply":
+    raise SystemExit("Echo OS update PolicyKit action is invalid")
+action = actions[0]
+annotations = {
+    node.get("key"): (node.text or "").strip()
+    for node in action.findall("annotate")
+}
+if annotations != {
+    "org.freedesktop.policykit.exec.path": "/bin/bash",
+    "org.freedesktop.policykit.exec.argv1": "/usr/lib/echo-os/echo-os-update-apply",
+}:
+    raise SystemExit("Echo OS update PolicyKit executable binding is invalid")
+defaults = action.find("defaults")
+if defaults is None or {
+    child.tag: (child.text or "").strip()
+    for child in defaults
+} != {"allow_any": "no", "allow_inactive": "no", "allow_active": "auth_admin_keep"}:
+    raise SystemExit("Echo OS update PolicyKit authorization defaults are invalid")
+PY
+[[ -f "$DATA_PROTECTION" && -x /usr/sbin/cryptsetup && \
+   -x /usr/bin/systemd-cryptenroll && -f "$PCR_POLICY_PUBLIC_KEY" && \
+   ! -L "$PCR_POLICY_PUBLIC_KEY" ]] || {
+  echo "Echo OS data-protection enrollment runtime is incomplete" >&2
+  exit 1
+}
+/usr/bin/python3 "$DATA_PROTECTION" check-tpm2-public-key \
+  "$PCR_POLICY_PUBLIC_KEY"
+[[ -f "$OEM_SETUP" && -f "$LOGIN_VERIFIER" && -x /usr/bin/sddm ]] || {
+  echo "Echo OS OEM/login chain is incomplete" >&2
+  exit 1
+}
+[[ -x /usr/bin/flatpak && -x /usr/bin/plasma-discover && -f "$APP_CATALOG" ]] || {
+  echo "Echo OS persistent application layer is incomplete" >&2
+  exit 1
+}
+for control_tool in /usr/bin/nmcli /usr/bin/bluetoothctl /usr/bin/wpctl /usr/bin/brightnessctl; do
+  [[ -x "$control_tool" ]] || {
+    echo "Echo OS native hardware control is missing: $control_tool" >&2
+    exit 1
+  }
+done
+[[ -x /usr/bin/systemsettings && \
+   -x /usr/lib/x86_64-linux-gnu/libexec/polkit-kde-authentication-agent-1 && \
+   -x /usr/lib/x86_64-linux-gnu/libexec/org_kde_powerdevil && \
+   -f /usr/lib/systemd/user/plasma-powerdevil.service && \
+   -f /usr/lib/systemd/system/upower.service && \
+   -f /usr/lib/systemd/system/power-profiles-daemon.service && \
+   -f /usr/share/dbus-1/system-services/org.freedesktop.UPower.service && \
+   -f /usr/share/dbus-1/system-services/net.hadess.PowerProfiles.service && \
+   -f /usr/share/applications/systemsettings.desktop && \
+   -f /usr/share/applications/kcm_networkmanagement.desktop && \
+   -f /usr/share/applications/kcm_bluetooth.desktop && \
+   -f /usr/share/applications/kcm_pulseaudio.desktop && \
+   -f /usr/share/applications/kcm_kscreen.desktop && \
+   -f /usr/share/applications/kcm_powerdevilprofilesconfig.desktop ]] || {
+  echo "Echo OS native system-settings, authorization or power-management chain is incomplete" >&2
+  exit 1
+}
+desktop-file-validate /usr/local/share/applications/echo-app-store.desktop
+[[ -f "$MACHINE_ID_VERIFIER" ]] || {
+  echo "Echo OS persistent machine-identity chain is incomplete" >&2
+  exit 1
+}
+[[ -f "$NETWORK_STATE_PREPARE" && \
+   -f /etc/NetworkManager/conf.d/20-echo-persistent-connections.conf ]] || {
+  echo "Echo OS persistent NetworkManager state chain is incomplete" >&2
+  exit 1
+}
+[[ -f "$REGION_STATE_TOOL" && -x /usr/bin/localectl && -x /usr/bin/timedatectl && \
+   -f /etc/locale.gen ]] || {
+  echo "Echo OS persistent regional-state chain is incomplete" >&2
+  exit 1
+}
+[[ -f "$SESSION_LOCK" && -f "$SCREEN_LOCKER" && -f "$LOCK_PAM" && \
+   -x /usr/bin/xss-lock && -x /usr/bin/xsecurelock && \
+   -f /etc/pam.d/common-auth && -f /etc/pam.d/common-account ]] || {
+  echo "Echo OS PAM screen-lock chain is incomplete" >&2
+  exit 1
+}
+[[ -f "$KWIN_WINDOW_BRIDGE" && -f "$KWIN_BRIDGE_METADATA" && \
+   -f "$KWIN_BRIDGE_SCRIPT" && -f "$WAYLAND_SESSION" && \
+   -f "$WAYLAND_SHELL_SESSION" && -f "$WAYLAND_DESKTOP" && \
+   -f "$KSCREENLOCKER_CONFIG" && -f "$KWIN_LIQUID_GLASS_PLUGIN" && \
+   -x /usr/bin/kwin_wayland && \
+   -x /usr/bin/kwin_wayland_wrapper && \
+   -x /usr/bin/Xwayland ]] || {
+  echo "Echo OS compositor-native KWin bridge is incomplete" >&2
+  exit 1
+}
+[[ -f "$NOTIFICATION_SERVICE" && -f "$NOTIFICATION_STORE" ]] || {
+  echo "Echo OS native notification service is incomplete" >&2
+  exit 1
+}
+[[ -f "$CLIPBOARD_HOST" && -f "$CLIPBOARD_CONFIG" && \
+   -f "$CLIPBOARD_QML_PLUGIN" && -f "$CLIPBOARD_LIBRARY" && \
+   -f "$CLIPBOARD_SQLITE_DRIVER" && -x /usr/bin/xclip && \
+   -x /usr/bin/wl-copy && -x /usr/bin/wl-paste && \
+   -x /usr/bin/gdbus ]] || {
+  echo "Echo OS system clipboard chain is incomplete" >&2
+  exit 1
+}
+grep -Fxq 'KeepClipboardContents=false' "$CLIPBOARD_CONFIG" && \
+  grep -Fxq 'NoEmptyClipboard=true' "$CLIPBOARD_CONFIG" && \
+  grep -Fxq 'IgnoreSelection=true' "$CLIPBOARD_CONFIG" && \
+  grep -Fxq 'IgnoreImages=false' "$CLIPBOARD_CONFIG" && \
+  grep -Fxq 'MaxClipItems=20' "$CLIPBOARD_CONFIG" || {
+    echo "Echo OS clipboard privacy and retention policy is incomplete" >&2
+    exit 1
+  }
+[[ -x "$ACCESSIBILITY_BUS" && -x "$ACCESSIBILITY_REGISTRY" && \
+   -f "$ACCESSIBILITY_SERVICE" && -f /etc/environment.d/90qt-a11y.conf && \
+   -f "$ACCESSIBILITY_PROBE" && -x "$SCREEN_READER" && \
+   -x /usr/bin/spd-say && -x /usr/bin/espeak-ng && \
+   -f "$SCREEN_READER_DESKTOP" && -f "$SDDM_ACCESSIBILITY" && \
+   -f "$SDDM_XSETUP" && -f "$SDDM_XSTOP" && -f "$SDDM_CONFIG" && \
+   -x /usr/share/sddm/scripts/Xsetup && -x /usr/share/sddm/scripts/Xstop ]] || {
+  echo "Echo OS AT-SPI, screen-reader or speech chain is incomplete" >&2
+  exit 1
+}
+grep -Fxq 'QT_ACCESSIBILITY=1' /etc/environment.d/90qt-a11y.conf || {
+  echo "Echo OS Qt accessibility environment is not enabled" >&2
+  exit 1
+}
+desktop-file-validate "$SCREEN_READER_DESKTOP"
+grep -Fxq \
+  'GreeterEnvironment=QT_ACCESSIBILITY=1,ACCESSIBILITY_ENABLED=1,NO_AT_BRIDGE=0' \
+  "$SDDM_CONFIG" && \
+  grep -Fxq 'DisplayCommand=/usr/lib/echo-os/echo-sddm-xsetup' "$SDDM_CONFIG" && \
+  grep -Fxq 'DisplayStopCommand=/usr/lib/echo-os/echo-sddm-xstop' "$SDDM_CONFIG" || {
+    echo "Echo OS SDDM greeter accessibility policy is incomplete" >&2
+    exit 1
+  }
+[[ -x "$INPUT_METHOD" && -x "$INPUT_METHOD_REMOTE" && \
+   -x "$INPUT_METHOD_CONFIG" && -f "$INPUT_METHOD_KCM" && \
+   -f "$INPUT_METHOD_PINYIN" && -f "$INPUT_METHOD_DEFAULT_ZH" && \
+   -x /usr/bin/dbus-update-activation-environment && \
+   -f /usr/lib/x86_64-linux-gnu/gtk-3.0/3.0.0/immodules/im-fcitx5.so && \
+   -f /usr/lib/x86_64-linux-gnu/gtk-4.0/4.0.0/immodules/libim-fcitx5.so && \
+   -f /usr/lib/x86_64-linux-gnu/qt5/plugins/platforminputcontexts/libfcitx5platforminputcontextplugin.so && \
+   -f /usr/lib/x86_64-linux-gnu/qt6/plugins/platforminputcontexts/libfcitx5platforminputcontextplugin.so ]] || {
+  echo "Echo OS multilingual input-method chain is incomplete" >&2
+  exit 1
+}
+grep -Fxq '0=pinyin' "$INPUT_METHOD_DEFAULT_ZH" || {
+  echo "Echo OS zh_CN locale has no deterministic default Pinyin input" >&2
+  exit 1
+}
+[[ -x "$COREDUMP_HANDLER" && -f "$COREDUMP_SOCKET" && \
+   -f "$COREDUMP_CONFIG" && -f "$CRASH_HEALTH" && \
+   -f "$CRASH_HEALTH_SERVICE" ]] || {
+  echo "Echo OS bounded local crash collection is incomplete" >&2
+  exit 1
+}
+[[ -x /usr/bin/firewall-cmd && -x /usr/sbin/nft && \
+   -f /usr/lib/systemd/system/firewalld.service && \
+   -f "$FIREWALL_CONFIG" && -f "$FIREWALL_ZONE" && \
+   -f "$FIREWALL_POLICY" && -f "$FIREWALL_HEALTH" && \
+   -f "$FIREWALL_HEALTH_SERVICE" && -f "$FIREWALL_DOCUMENTATION" && \
+   -f "$FIREWALL_KCM" && -f "$FIREWALL_BACKEND" && \
+   -f /usr/share/applications/kcm_firewall.desktop ]] || {
+  echo "Echo OS nftables/firewalld/KDE firewall chain is incomplete" >&2
+  exit 1
+}
+chown root:root "$FIREWALL_CONFIG" "$FIREWALL_ZONE" "$FIREWALL_POLICY" \
+  "$FIREWALL_HEALTH" "$FIREWALL_HEALTH_SERVICE" "$FIREWALL_DOCUMENTATION"
+chmod 0644 "$FIREWALL_CONFIG" "$FIREWALL_ZONE" \
+  "$FIREWALL_HEALTH_SERVICE" "$FIREWALL_DOCUMENTATION"
+chmod 0755 "$FIREWALL_POLICY" "$FIREWALL_HEALTH"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 "$FIREWALL_POLICY" verify-baseline
+[[ -x /usr/bin/udisksctl && -x "$UDISKS_DAEMON" && \
+   -f "$UDISKS_SERVICE" && -f "$UDISKS_POLICY" && \
+   -f /usr/share/dbus-1/system-services/org.freedesktop.UDisks2.service && \
+   -f /usr/share/dbus-1/system.d/org.freedesktop.UDisks2.conf && \
+   -f /usr/lib/udev/rules.d/80-udisks2.rules && \
+   -x /usr/sbin/mkfs.vfat && -x /usr/sbin/fsck.vfat && \
+   -x /usr/sbin/mkfs.exfat && -x /usr/sbin/fsck.exfat && \
+   -x /usr/bin/ntfs-3g && -x /usr/sbin/mkfs.ntfs && \
+   -x /usr/sbin/mkfs.ext4 && -x /usr/sbin/fsck.ext4 && \
+   -x /usr/sbin/mkfs.btrfs && -x /usr/bin/btrfs && \
+   -x /usr/sbin/mkfs.xfs && -x /usr/sbin/xfs_repair && \
+   -f "$KIO_MTP" && -f "$KIO_MTP_ACTION" && -x /usr/bin/dolphin && \
+   -f "$REMOVABLE_STORAGE_HEALTH" && -f "$REMOVABLE_STORAGE_SERVICE" && \
+   -f "$REMOVABLE_STORAGE_DOCUMENTATION" ]] || {
+  echo "Echo OS UDisks2/removable-storage chain is incomplete" >&2
+  exit 1
+}
+chown root:root "$REMOVABLE_STORAGE_HEALTH" "$REMOVABLE_STORAGE_SERVICE" \
+  "$REMOVABLE_STORAGE_DOCUMENTATION"
+chmod 0755 "$REMOVABLE_STORAGE_HEALTH"
+chmod 0644 "$REMOVABLE_STORAGE_SERVICE" "$REMOVABLE_STORAGE_DOCUMENTATION"
+[[ -x /usr/sbin/cupsd && -x /usr/bin/lpstat && -x /usr/bin/lp && \
+   -x /usr/bin/cancel && -x /usr/sbin/lpadmin && \
+   -x /usr/lib/cups/backend/ipp && -x /usr/lib/cups/backend/ipps && \
+   -x /usr/lib/cups/filter/pdftopdf && -x /usr/lib/cups/filter/pdftoraster && \
+   -x "$CUPS_PK_HELPER" && -f "$CUPS_PK_POLICY" && \
+   -f /etc/dbus-1/system.d/org.opensuse.CupsPkHelper.Mechanism.conf && \
+   -f /usr/share/dbus-1/system-services/org.opensuse.CupsPkHelper.Mechanism.service && \
+   -x /usr/sbin/ipp-usb && -f /usr/lib/systemd/system/ipp-usb.service && \
+   -f /usr/lib/udev/rules.d/71-ipp-usb.rules && \
+   -x /usr/sbin/avahi-daemon && -f /usr/lib/systemd/system/avahi-daemon.service && \
+   -f /usr/lib/systemd/system/avahi-daemon.socket && \
+   -f /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service && \
+   -f /usr/share/dbus-1/system.d/avahi-dbus.conf && \
+   -f /usr/lib/systemd/system/cups.service && \
+   -f /usr/lib/systemd/system/cups.socket && -f /usr/lib/systemd/system/cups.path && \
+   -x /usr/bin/kde-add-printer && -x /usr/bin/configure-printer && \
+   -x /usr/bin/kde-print-queue && -f "$PRINTING_KCM" && -f "$PRINTING_KDED" && \
+   -f /usr/share/applications/kcm_printer_manager.desktop && \
+   -f "$PRINTING_CONFIG" && -f "$IPP_USB_CONFIG" && \
+   -f "$PRINTING_POLICY" && -f "$PRINTING_HEALTH" && \
+   -f "$PRINTING_SERVICE" && -f "$PRINTING_DOCUMENTATION" ]] || {
+  echo "Echo OS CUPS/KDE/PolicyKit/driverless printing chain is incomplete" >&2
+  exit 1
+}
+chown root:root "$PRINTING_CONFIG" "$IPP_USB_CONFIG" "$PRINTING_POLICY" \
+  "$PRINTING_HEALTH" "$PRINTING_SERVICE" "$PRINTING_DOCUMENTATION"
+chmod 0644 "$PRINTING_CONFIG" "$IPP_USB_CONFIG" \
+  "$PRINTING_SERVICE" "$PRINTING_DOCUMENTATION"
+chmod 0755 "$PRINTING_POLICY" "$PRINTING_HEALTH"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 "$PRINTING_POLICY"
+/usr/sbin/cupsd -t -c "$PRINTING_CONFIG"
+[[ -x /usr/bin/scanimage && -x /usr/bin/sane-find-scanner && \
+   -x /usr/bin/airscan-discover && -x /usr/bin/skanpage && \
+   -f "$SANE_LIBRARY" && -f "$AIRSCAN_BACKEND" && \
+   -f /etc/sane.d/dll.conf && -f /etc/sane.d/dll.d/airscan && \
+   -f /usr/lib/udev/rules.d/60-libsane1.rules && \
+   -f /usr/lib/udev/rules.d/99-libsane1.rules && \
+   -f /usr/share/applications/org.kde.skanpage.desktop && \
+   -f /usr/lib/systemd/system/saned.service && \
+   -f /usr/lib/systemd/system/saned.socket && \
+   -f /usr/lib/systemd/system/saned@.service && \
+   -x /usr/sbin/ipp-usb && -f /usr/lib/systemd/system/ipp-usb.service && \
+   -f /usr/lib/udev/rules.d/71-ipp-usb.rules && \
+   -x /usr/sbin/avahi-daemon && \
+   -f /usr/lib/systemd/system/avahi-daemon.service && \
+   -f /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service && \
+   -f "$SCANNING_CONFIG" && -f "$SCANNING_POLICY" && \
+   -f "$SCANNING_HEALTH" && -f "$SCANNING_SERVICE" && \
+   -f "$SCANNING_DOCUMENTATION" ]] || {
+  echo "Echo OS SANE/KDE/USB/AirScan scanning chain is incomplete" >&2
+  exit 1
+}
+grep -Fxq airscan /etc/sane.d/dll.d/airscan || {
+  echo "Echo OS AirScan backend is not registered with SANE" >&2
+  exit 1
+}
+getent group scanner >/dev/null || {
+  echo "Echo OS scanner authorization group is missing" >&2
+  exit 1
+}
+chown root:root "$SCANNING_CONFIG" "$SCANNING_POLICY" \
+  "$SCANNING_HEALTH" "$SCANNING_SERVICE" "$SCANNING_DOCUMENTATION"
+chmod 0644 "$SCANNING_CONFIG" "$SCANNING_SERVICE" "$SCANNING_DOCUMENTATION"
+chmod 0755 "$SCANNING_POLICY" "$SCANNING_HEALTH"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 "$SCANNING_POLICY"
+CORE_APP_EXECUTABLES=(
+  /usr/bin/xdg-mime
+  /usr/bin/xdg-open
+  /usr/bin/gio
+  /usr/bin/desktop-file-validate
+  /usr/bin/dolphin
+  /usr/bin/konsole
+  /usr/bin/firefox-esr
+  /usr/bin/kate
+  /usr/bin/okular
+  /usr/bin/gwenview
+  /usr/bin/ark
+  /usr/bin/haruna
+  /usr/bin/spectacle
+  /usr/bin/kcalc
+  /usr/bin/7z
+  /usr/bin/bzip2
+  /usr/bin/unar
+  /usr/bin/unzip
+  /usr/bin/zip
+)
+CORE_APP_DESKTOPS=(
+  /usr/share/applications/org.kde.dolphin.desktop
+  /usr/share/applications/org.kde.konsole.desktop
+  /usr/share/applications/firefox-esr.desktop
+  /usr/share/applications/org.kde.kate.desktop
+  /usr/share/applications/org.kde.okular.desktop
+  /usr/share/applications/org.kde.gwenview.desktop
+  /usr/share/applications/org.kde.ark.desktop
+  /usr/share/applications/org.kde.haruna.desktop
+  /usr/share/applications/org.kde.spectacle.desktop
+  /usr/share/applications/org.kde.kcalc.desktop
+)
+for core_app in "${CORE_APP_EXECUTABLES[@]}"; do
+  [[ -x "$core_app" ]] || {
+    echo "Echo OS core application executable is missing: $core_app" >&2
+    exit 1
+  }
+done
+for desktop_file in "${CORE_APP_DESKTOPS[@]}"; do
+  [[ -f "$desktop_file" ]] || {
+    echo "Echo OS core application desktop entry is missing: $desktop_file" >&2
+    exit 1
+  }
+  /usr/bin/desktop-file-validate "$desktop_file"
+done
+[[ -f "$CORE_APPS_CONFIG" && -f "$CORE_APPS_POLICY" && \
+   -f "$CORE_APPS_HEALTH" && -f "$CORE_APPS_SESSION_SMOKE" && \
+   -f "$CORE_APPS_SERVICE" && \
+   -f "$CORE_APPS_DOCUMENTATION" ]] || {
+  echo "Echo OS core application/default-handler chain is incomplete" >&2
+  exit 1
+}
+chown root:root "$CORE_APPS_CONFIG" "$CORE_APPS_POLICY" \
+  "$CORE_APPS_HEALTH" "$CORE_APPS_SESSION_SMOKE" \
+  "$CORE_APPS_SERVICE" "$CORE_APPS_DOCUMENTATION"
+chmod 0644 "$CORE_APPS_CONFIG" "$CORE_APPS_SERVICE" "$CORE_APPS_DOCUMENTATION"
+chmod 0755 "$CORE_APPS_POLICY" "$CORE_APPS_HEALTH" "$CORE_APPS_SESSION_SMOKE"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 "$CORE_APPS_POLICY"
+[[ -d "$AGENT_ROOT" && ! -L "$AGENT_ROOT" && \
+   -f "$AGENT_MANIFEST" && -f "$AGENT_RUNTIME_MANIFEST" && \
+   -x "$AGENT_CODEX" && -f "$AGENT_SERVICE" && \
+   -f "$AGENT_HEALTH_SERVICE" && -f "$AGENT_HEALTH_VERIFIER" && \
+   -f "$AGENT_RUNTIME_VERIFIER" ]] || {
+  echo "Echo OS native Agent runtime/startup chain is incomplete" >&2
+  exit 1
+}
+[[ -f "$BACKUP_COMMAND" && -f "$BACKUP_SERVICE" && \
+   -f "$BACKUP_DOCUMENTATION" && -f "$RESTORE_TRANSACTION" && \
+   -f "$RESTORE_TRANSACTION_HEALTH" && -x "$RESTIC" && -x "$FINDMNT" && \
+   -x /usr/bin/getfacl && -x /usr/bin/setfacl && \
+   -x /usr/bin/getfattr && -x /usr/bin/setfattr ]] || {
+  echo "Echo OS encrypted user-backup chain is incomplete" >&2
+  exit 1
+}
+[[ -f "$OS_SOURCE_VERIFIER" && ! -L "$OS_SOURCE_VERIFIER" && \
+   -f "$OS_SOURCE_MANIFEST" && ! -L "$OS_SOURCE_MANIFEST" && \
+   -f "$OS_SOURCE_READER" && ! -L "$OS_SOURCE_READER" ]] || {
+  echo "Echo OS immutable source-identity chain is incomplete" >&2
+  exit 1
+}
+/usr/bin/python3 "$OS_SOURCE_VERIFIER" verify --manifest "$OS_SOURCE_MANIFEST"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$BACKUP_COMMAND"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$RESTORE_TRANSACTION"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$UPDATE_CHANNEL_CLIENT"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$UPDATE_TRUST_TOOL"
+/usr/bin/python3 "$AGENT_RUNTIME_VERIFIER" "$AGENT_ROOT" --import-runtime
+AGENT_SOURCE_ID="$(/usr/bin/python3 - "$AGENT_MANIFEST" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    print(json.load(handle)["source"]["source_id"])
+PY
+)"
+[[ "$AGENT_SOURCE_ID" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "release image requires a clean, commit-addressed Agent source" >&2
+  exit 1
+}
+KSCREENLOCKER_GREETERS=(/usr/lib/*-linux-gnu/libexec/kscreenlocker_greet)
+[[ "${#KSCREENLOCKER_GREETERS[@]}" -eq 1 && \
+   -x "${KSCREENLOCKER_GREETERS[0]}" && -f /usr/lib/pam.d/kde ]] || {
+  echo "Echo OS KScreenLocker greeter/PAM chain is incomplete" >&2
+  exit 1
+}
+desktop-file-validate "$WAYLAND_DESKTOP"
+/usr/bin/python3 -c 'import dbus; from gi.repository import GLib'
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/usr/lib/echo-os \
+  /usr/bin/python3 -c 'import echo_notification_store'
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'from PyQt6.QtQml import QQmlApplicationEngine; from PyQt6.QtWidgets import QApplication'
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$CLIPBOARD_HOST"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pyatspi; assert pyatspi.Registry'
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'from Xlib import X, XK, display; assert X.KeyPress and XK.string_to_keysym("s")'
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$ACCESSIBILITY_PROBE"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$WAYLAND_IPC_WINDOW_HELPER"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$FIREWALL_POLICY"
+/usr/bin/bash -n "$REMOVABLE_STORAGE_HEALTH"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$PRINTING_POLICY"
+/usr/bin/bash -n "$PRINTING_HEALTH"
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  "$SDDM_ACCESSIBILITY"
+/usr/bin/bash -n "$SDDM_XSETUP" "$SDDM_XSTOP"
+getent group sudo >/dev/null || {
+  echo "local administrator group is missing" >&2
+  exit 1
+}
+
+chown root:root "$CHROME_SANDBOX"
+chmod 4755 "$CHROME_SANDBOX"
+chmod 0755 "$DESKTOP_ROOT/deploy/desktop-session/echo-desktop-session.sh"
+chmod 0755 "$WAYLAND_SESSION" "$WAYLAND_SHELL_SESSION"
+chmod 0755 /usr/lib/echo-os/verify-desktop-boot.sh
+chmod 0755 "$OEM_SETUP" "$LOGIN_VERIFIER"
+chown root:root "$OS_SOURCE_VERIFIER" "$OS_SOURCE_MANIFEST" "$OS_SOURCE_READER"
+chmod 0755 "$OS_SOURCE_VERIFIER" "$OS_SOURCE_READER"
+chmod 0444 "$OS_SOURCE_MANIFEST"
+chmod 0755 "$APP_CATALOG"
+chmod 0755 "$MACHINE_ID_VERIFIER"
+chown root:root "$PCR_POLICY_PUBLIC_KEY"
+chmod 0644 "$PCR_POLICY_PUBLIC_KEY"
+chmod 0755 "$NETWORK_STATE_PREPARE"
+chmod 0755 "$REGION_STATE_TOOL"
+chown root:root "$SESSION_LOCK" "$SCREEN_LOCKER" "$KWIN_WINDOW_BRIDGE" \
+  "$NOTIFICATION_SERVICE" "$NOTIFICATION_STORE" "$CLIPBOARD_HOST" \
+  "$CLIPBOARD_CONFIG" "$ACCESSIBILITY_PROBE" "$WAYLAND_IPC_WINDOW_HELPER" \
+  "$SCREEN_READER_DESKTOP" \
+  "$SDDM_ACCESSIBILITY" "$SDDM_XSETUP" "$SDDM_XSTOP" "$SDDM_CONFIG" \
+  "$KWIN_BRIDGE_METADATA" "$KWIN_BRIDGE_SCRIPT" \
+  "$KWIN_LIQUID_GLASS_PLUGIN"
+chmod 0755 "$SESSION_LOCK" "$SCREEN_LOCKER"
+chmod 0755 "$KWIN_WINDOW_BRIDGE"
+chmod 0755 "$NOTIFICATION_SERVICE"
+chmod 0644 "$NOTIFICATION_STORE"
+chmod 0755 "$CLIPBOARD_HOST"
+chmod 0644 "$CLIPBOARD_CONFIG"
+chmod 0755 "$ACCESSIBILITY_PROBE"
+chmod 0755 "$WAYLAND_IPC_WINDOW_HELPER"
+chmod 0644 "$SCREEN_READER_DESKTOP"
+chmod 0755 "$SDDM_ACCESSIBILITY" "$SDDM_XSETUP" "$SDDM_XSTOP"
+chmod 0644 "$SDDM_CONFIG"
+install -d -o root -g root -m 0755 /etc/echo-os
+chown root:root "$COREDUMP_CONFIG" "$CRASH_HEALTH" "$CRASH_HEALTH_SERVICE"
+chmod 0644 "$COREDUMP_CONFIG" "$CRASH_HEALTH_SERVICE"
+chmod 0755 "$CRASH_HEALTH"
+chown root:root "$FIREWALL_CONFIG" "$FIREWALL_ZONE" "$FIREWALL_POLICY" \
+  "$FIREWALL_HEALTH" "$FIREWALL_HEALTH_SERVICE" "$FIREWALL_DOCUMENTATION"
+chmod 0644 "$FIREWALL_CONFIG" "$FIREWALL_ZONE" \
+  "$FIREWALL_HEALTH_SERVICE" "$FIREWALL_DOCUMENTATION"
+chmod 0755 "$FIREWALL_POLICY" "$FIREWALL_HEALTH"
+chown root:root "$REMOVABLE_STORAGE_HEALTH" "$REMOVABLE_STORAGE_SERVICE" \
+  "$REMOVABLE_STORAGE_DOCUMENTATION"
+chmod 0755 "$REMOVABLE_STORAGE_HEALTH"
+chmod 0644 "$REMOVABLE_STORAGE_SERVICE" "$REMOVABLE_STORAGE_DOCUMENTATION"
+chmod 0644 "$KWIN_BRIDGE_METADATA" "$KWIN_BRIDGE_SCRIPT" \
+  "$KWIN_LIQUID_GLASS_PLUGIN"
+chown root:root "$WAYLAND_SESSION" "$WAYLAND_SHELL_SESSION" \
+  "$WAYLAND_DESKTOP" "$KSCREENLOCKER_CONFIG"
+chmod 0644 "$WAYLAND_DESKTOP" "$KSCREENLOCKER_CONFIG"
+chown root:root "$LOCK_PAM"
+chmod 0644 "$LOCK_PAM"
+chown root:root "$UPDATE_COMMAND" "$UPDATE_VERIFIER" \
+  "$VERITY_VERIFIER" "$VERITY_CERTIFICATE" "$UPDATE_KEYRING" \
+  "$KEYRING_VERIFIER" "$DATA_PROTECTION" "$UPDATE_CHANNEL_COMMAND" \
+  "$UPDATE_APPLY_HELPER" "$UPDATE_CHANNEL_CLIENT" "$UPDATE_STATUS_TOOL" \
+  "$UPDATE_TRUST_TOOL" "$UPDATE_TRUST_POLICY" \
+  "$UPDATE_CHANNEL_CONFIG" "$UPDATE_FETCH_SERVICE" "$UPDATE_FETCH_TIMER" \
+  "$UPDATE_TRUST_SERVICE" "$UPDATE_POLICY"
+chmod 0755 "$UPDATE_COMMAND" "$UPDATE_VERIFIER" "$VERITY_VERIFIER" \
+  "$KEYRING_VERIFIER" "$UPDATE_CHANNEL_COMMAND" "$UPDATE_APPLY_HELPER" \
+  "$UPDATE_CHANNEL_CLIENT" "$UPDATE_STATUS_TOOL" "$UPDATE_TRUST_TOOL"
+chmod 0755 "$DATA_PROTECTION"
+chmod 0644 "$VERITY_CERTIFICATE" "$UPDATE_KEYRING" "$UPDATE_CHANNEL_CONFIG" \
+  "$UPDATE_TRUST_POLICY" "$UPDATE_FETCH_SERVICE" "$UPDATE_FETCH_TIMER" \
+  "$UPDATE_TRUST_SERVICE" "$UPDATE_POLICY"
+/usr/bin/python3 -m py_compile "$UPDATE_STATUS_TOOL"
+chown -R root:root "$AGENT_ROOT"
+chown root:root "$AGENT_SERVICE" "$AGENT_HEALTH_SERVICE" \
+  "$AGENT_HEALTH_VERIFIER" "$AGENT_RUNTIME_VERIFIER"
+chmod 0644 "$AGENT_SERVICE" "$AGENT_HEALTH_SERVICE"
+chmod 0755 "$AGENT_HEALTH_VERIFIER" "$AGENT_RUNTIME_VERIFIER" "$AGENT_CODEX"
+chown root:root "$BACKUP_COMMAND" "$BACKUP_SERVICE" "$BACKUP_DOCUMENTATION" \
+  "$RESTORE_TRANSACTION" "$RESTORE_TRANSACTION_HEALTH"
+chmod 0755 "$BACKUP_COMMAND" "$RESTORE_TRANSACTION"
+chmod 0644 "$BACKUP_SERVICE" "$BACKUP_DOCUMENTATION" \
+  "$RESTORE_TRANSACTION_HEALTH"
+
+# These paths must already exist in the finished raw image: test harnesses and
+# first-boot services write into the persistent /var partition before tmpfiles
+# is guaranteed to have run.
+install -d -m 0700 -o root -g root /var/lib/echo-os
+install -d -m 0755 -o root -g root /var/lib/systemd/coredump
+install -d -m 0710 -o root -g lp /var/spool/cups
+install -d -m 0755 -o root -g root /var/lib/flatpak
+install -d -m 0700 -o root -g root /var/cache/echo-os/updates
+install -d -m 0700 -o root -g root \
+  /var/lib/NetworkManager/system-connections
+
+# Compile the curated first-release locale set. C.UTF-8 remains the neutral
+# generic-image default and does not require an entry in locale.gen.
+locale-gen
+
+# A cloned generic image must not ship one device's identity. The separately
+# built systemd initrd binds the per-device copy from persistent /var before
+# the verified root is switched into systemd PID 1.
+: >/etc/machine-id
+chmod 0444 /etc/machine-id
+
+systemctl set-default graphical.target
+
+IMAGE_VERSION="${IMAGE_VERSION:-0.2.0}"
+[[ "$IMAGE_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+:~_-]*$ ]] || {
+  echo "invalid Echo OS image version: $IMAGE_VERSION" >&2
+  exit 1
+}
+sed -i \
+  -e "s/^PRETTY_NAME=.*/PRETTY_NAME=\"Echo OS $IMAGE_VERSION (Debian 13)\"/" \
+  -e "s/^VERSION_ID=.*/VERSION_ID=\"$IMAGE_VERSION\"/" \
+  -e "s/^VERSION=.*/VERSION=\"$IMAGE_VERSION (Trixie)\"/" \
+  -e "s/^IMAGE_VERSION=.*/IMAGE_VERSION=$IMAGE_VERSION/" \
+  /usr/lib/os-release
+
+install -d -m 0755 /usr/lib/echo-os
+cat >/usr/lib/echo-os/image-contract <<EOF
+IMAGE_ID=echo-os
+IMAGE_VERSION=$IMAGE_VERSION
+DESKTOP_PROVIDER=ewmh-x11
+DESKTOP_SERVICE=echo-desktop.service
+AGENT_SERVICE=echo-agent.service
+AGENT_SOURCE_ID=$AGENT_SOURCE_ID
+BUILD_SNAPSHOT=20260825T000000Z
+EOF

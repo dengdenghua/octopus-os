@@ -25,7 +25,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from runtime.execution.suckers.ephemeral_agents import BUILTIN_ROLES
 
 # Repo root is two levels up from this file: tests/test_doc_reality_alignment.py
@@ -87,9 +86,7 @@ def _iter_project_md_files() -> list[Path]:
 
 
 @pytest.mark.parametrize("banned_phrase, reason", BANNED_PHRASES)
-def test_no_verified_false_claims_in_docs(
-    banned_phrase: str, reason: str
-) -> None:
+def test_no_verified_false_claims_in_docs(banned_phrase: str, reason: str) -> None:
     """Project docs must not assert features the code does not implement."""
     offenders: list[str] = []
     for md_path in _iter_project_md_files():

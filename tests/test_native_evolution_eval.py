@@ -21,14 +21,16 @@ def test_native_score_promotes_balanced_candidate() -> None:
         avg_score=0.85,
         born_at_iter=1,
     )
-    positives = EvolutionDataset(train=[
-        EvolutionExample(
-            task_input="Preserve successful recipe: read_file -> edit_file",
-            expected_behavior="keep it",
-            source="journal_success",
-            metadata={"action_chain": ["read_file", "edit_file"]},
-        )
-    ])
+    positives = EvolutionDataset(
+        train=[
+            EvolutionExample(
+                task_input="Preserve successful recipe: read_file -> edit_file",
+                expected_behavior="keep it",
+                source="journal_success",
+                metadata={"action_chain": ["read_file", "edit_file"]},
+            )
+        ]
+    )
 
     score = score_candidate_native(
         candidate,
@@ -36,10 +38,12 @@ def test_native_score_promotes_balanced_candidate() -> None:
             "When length_finish appears, continue carefully and preserve "
             "successful tool paths. Keep reports complete."
         ),
-        failures=[{
-            "goal": "write report",
-            "failure_cluster": "length_finish:length limit after <n> chars",
-        }],
+        failures=[
+            {
+                "goal": "write report",
+                "failure_cluster": "length_finish:length limit after <n> chars",
+            }
+        ],
         positive_dataset=positives,
     )
 
@@ -68,14 +72,16 @@ def test_native_score_penalizes_success_path_regression() -> None:
         task_scores=[0.8],
         avg_score=0.8,
     )
-    positives = EvolutionDataset(train=[
-        EvolutionExample(
-            task_input="Preserve successful recipe: read_file",
-            expected_behavior="keep it",
-            source="journal_success",
-            metadata={"action_chain": ["read_file"]},
-        )
-    ])
+    positives = EvolutionDataset(
+        train=[
+            EvolutionExample(
+                task_input="Preserve successful recipe: read_file",
+                expected_behavior="keep it",
+                source="journal_success",
+                metadata={"action_chain": ["read_file"]},
+            )
+        ]
+    )
 
     score = score_candidate_native(candidate, positive_dataset=positives)
 

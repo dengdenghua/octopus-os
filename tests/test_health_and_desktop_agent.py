@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.execution.agents import AgentRegistry, make_desktop_operator_agent
 from runtime.execution.arms.presets import make_desktop_operator_arm
@@ -67,15 +66,17 @@ class TestDesktopOperatorAgent:
         # Implementation note.
         assert agent.can_use("read_file")
 
-    def test_not_in_default_preset_list(self):
-        """Implementation note."""
-        from runtime.execution.agents import AGENT_PRESET_FACTORIES
-        factory_names = {f.__name__ for f in AGENT_PRESET_FACTORIES}
-        assert "make_desktop_operator_agent" not in factory_names
+    def test_in_default_directory_roster(self):
+        """The desktop operator is a first-class, directory-backed persona."""
+        from runtime.execution.agents import make_all_agent_presets
+
+        agent_ids = {str(agent.agent_id) for agent in make_all_agent_presets(_rt())}
+        assert "desktop_operator" in agent_ids
 
     def test_general_agent_has_desktop_arm(self):
         """Implementation note."""
         from runtime.execution.agents import make_general_agent
+
         agent = make_general_agent(_rt())
         arm_ids = [str(a.arm_id) for a in agent.arms]
         assert "desktop_operator_arm" in arm_ids
@@ -88,7 +89,6 @@ class TestDesktopOperatorAgent:
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.platform.ui import create_app  # noqa: E402
 
 
@@ -108,6 +108,7 @@ class TestHealthEndpoint:
 
     def test_reports_agents_count_when_registered(self, tmp_path: Path):
         from runtime.execution.agents import make_all_agent_presets
+
         presets = make_all_agent_presets(_rt())
         reg = AgentRegistry()
         reg.register_all(presets)
@@ -132,13 +133,19 @@ class TestHealthEndpoint:
         class _Fake(Channel):
             channel_id = "fake_x"
 
-            def start(self): pass
-            def stop(self): pass
-            def send(self, msg: OutboundMessage): pass
+            def start(self):
+                pass
+
+            def stop(self):
+                pass
+
+            def send(self, msg: OutboundMessage):
+                pass
 
         # Implementation note.
         class _S:
             pass
+
         s = _S()
         s.planner = None
         s.runtime = None

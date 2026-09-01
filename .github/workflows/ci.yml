@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [os-main, main]
   pull_request:
-    branches: [main]
+    branches: [os-main, main]
 
 permissions:
   contents: read
@@ -14,261 +14,578 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint-and-test:
-    name: Lint + Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+  workflow-contract:
+    name: GitHub Actions workflow contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      ACTIONLINT_LINUX_AMD64_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate workflow syntax, expressions and runner labels
+        run: |
+          actionlint_archive="$RUNNER_TEMP/actionlint.tar.gz"
+          actionlint_directory="$RUNNER_TEMP/actionlint"
+          curl --fail --silent --show-error --location \
+            --proto '=https' --tlsv1.2 --retry 3 --retry-all-errors \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            --output "$actionlint_archive"
+          printf '%s  %s\n' \
+            "$ACTIONLINT_LINUX_AMD64_SHA256" "$actionlint_archive" | \
+            sha256sum --check --strict
+          install -d -m 0700 "$actionlint_directory"
+          tar -xzf "$actionlint_archive" -C "$actionlint_directory" actionlint
+          "$actionlint_directory/actionlint" -shellcheck= -pyflakes=
+
+  public-source-contract:
+    name: Public source contract (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11.9", "3.12.11"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      - name: Setup pinned uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v6.6.1
+        with:
+          version: "0.11.25"
+
+      - name: Install public OS development dependencies
+        run: uv sync --locked --python ${{ matrix.python-version }} --extra dev --extra serve
+
+      - name: Verify the unified Echo source policy
+        run: uv run python deploy/appliance/test_unified_echo_workflow_policy.py
+
+      - name: Ruff check and format
+        run: |
+          uv run ruff check appliance/ tests/appliance/ deploy/appliance/agent_bundle.py \
+            deploy/appliance/delivery_source_preflight.py \
+            deploy/appliance/external_storage.py \
+            deploy/appliance/hub_oci_storage.py \
+            deploy/appliance/nas_data_backup.py \
+            deploy/appliance/bare_metal_recovery_lab.py \
+            deploy/appliance/hub_lifecycle_lab.py \
+            deploy/appliance/paperless_functional_lab.py \
+            deploy/appliance/physical_acceptance.py \
+            deploy/appliance/physical_acceptance_capture.py \
+            deploy/appliance/product_delivery_bundle.py \
+            deploy/appliance/release_candidate_preflight.py \
+            deploy/appliance/release_evidence_index.py \
+            deploy/appliance/dependency_lock.py deploy/appliance/image_release.py \
+            deploy/appliance/operations_bundle.py \
+            deploy/appliance/operations_systemd.py \
+            deploy/appliance/operations_systemd_lab.py \
+            deploy/appliance/protocol_interoperability_lab.py \
+            deploy/appliance/device_endurance_lab.py \
+            deploy/appliance/storage_recovery_lab.py \
+            deploy/appliance/verify_operations_systemd_units.py \
+            deploy/appliance/verify-running-appliance.py \
+            deploy/appliance/test_unified_echo_workflow_policy.py \
+            deploy/appliance/run_public_source_tests.py \
+            deploy/omv/echo_omv_host.py deploy/omv/host_bundle.py \
+            deploy/omv/platform_preflight.py deploy/omv/plugin_package.py \
+            deploy/omv/real_omv_nfs_probe.py deploy/omv/verify-real-omv-x86-evidence.py
+          uv run ruff format --check appliance/ tests/appliance/ \
+            deploy/appliance/agent_bundle.py \
+            deploy/appliance/delivery_source_preflight.py \
+            deploy/appliance/external_storage.py \
+            deploy/appliance/hub_oci_storage.py \
+            deploy/appliance/nas_data_backup.py \
+            deploy/appliance/bare_metal_recovery_lab.py \
+            deploy/appliance/hub_lifecycle_lab.py \
+            deploy/appliance/paperless_functional_lab.py \
+            deploy/appliance/physical_acceptance.py \
+            deploy/appliance/physical_acceptance_capture.py \
+            deploy/appliance/product_delivery_bundle.py \
+            deploy/appliance/release_candidate_preflight.py \
+            deploy/appliance/release_evidence_index.py \
+            deploy/appliance/dependency_lock.py \
+            deploy/appliance/image_release.py deploy/appliance/operations_bundle.py \
+            deploy/appliance/operations_systemd.py \
+            deploy/appliance/operations_systemd_lab.py \
+            deploy/appliance/protocol_interoperability_lab.py \
+            deploy/appliance/device_endurance_lab.py \
+            deploy/appliance/storage_recovery_lab.py \
+            deploy/appliance/verify_operations_systemd_units.py \
+            deploy/appliance/verify-running-appliance.py \
+            deploy/appliance/test_unified_echo_workflow_policy.py \
+            deploy/appliance/run_public_source_tests.py \
+            deploy/omv/echo_omv_host.py deploy/omv/host_bundle.py \
+            deploy/omv/platform_preflight.py deploy/omv/plugin_package.py \
+            deploy/omv/real_omv_nfs_probe.py deploy/omv/verify-real-omv-x86-evidence.py
+
+      - name: Test the OS-owned release and delivery contracts
+        run: uv run python deploy/appliance/run_public_source_tests.py
+
+  frontend:
+    name: Frontend quality and production build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+        with:
+          version: 10.26.2
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend production dependency audit
+        working-directory: frontend
+        run: pnpm audit --prod
+
+      - name: Verify frontend source quality
+        working-directory: frontend
+        run: |
+          pnpm format
+          pnpm lint
+          pnpm typecheck
+
+      - name: Run frontend and Electron contracts
+        working-directory: frontend
+        run: pnpm test
+
+      - name: Build production frontend
+        working-directory: frontend
+        run: pnpm build
+
+  lint-and-test:
+    name: Lint + Test (Python ${{ matrix.python-version }})
+    if: github.event_name != 'pull_request'
+    needs: public-source-contract
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11.9", "3.12.11"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Setup pinned uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v6.6.1
+        with:
+          version: "0.11.25"
+
       - name: Install package
-        run: pip install -e ".[dev,web,serve,discord]"
-
-      - name: Invariant lint (LINT-01..10)
-        run: python -m tools.lint.invariant_check runtime/ tests/
-
-      - name: Skill package dedup
-        run: python tools/lint/skill_dedup_check.py --strict
-
-      - name: Skill cross-dir dedup (all_skills vs skills/public ratchet)
-        run: python tools/lint/skill_cross_dir_check.py --strict
-
-      - name: Protocol method drift (ServerMethod ↔ reducer.ts)
-        run: python tools/lint/protocol_method_drift.py --strict
-
-      - name: "Exception audit (no NEW unjustified silent except: pass)"
-        run: python tools/lint/exception_audit.py --strict
-
-      - name: God-file check (no NEW files ≥1000 lines)
-        run: python tools/lint/god_file_check.py --strict
-
-      - name: Import-direction ratchet (no NEW kernel→sensing/web imports)
-        run: python tools/lint/import_direction_check.py --strict
-
-      - name: Orphan-module ratchet (no NEW exported-but-unimported modules)
-        run: python tools/lint/orphan_module_check.py --strict
-
-      - name: Root hygiene (matches ROOT_LAYOUT.md allow-list)
-        run: python tools/lint/root_hygiene.py --strict
-
-      - name: Repo URL consistency (matches pyproject.toml source of truth)
-        run: python tools/lint/repo_url_check.py --strict
-
-      - name: Test-count freshness (no stale "3800+" in roadmap)
-        run: python tools/lint/count_tests.py --check
-
-      - name: Doc-claim drift (organ/protocol counts match filesystem)
-        run: python tools/lint/doc_claims_check.py --strict
-
-      - name: Auth-actor ratchet (no NEW bare _auth calls)
-        run: python tools/lint/auth_actor_check.py --strict
-
-      - name: Root hygiene (prevent foreign Electron scaffolds)
-        run: python tools/lint/root_hygiene_check.py --strict
-
-      - name: Hardcoded user paths (block per-user absolute paths in source)
-        run: python tools/lint/hardcoded_path_check.py --strict
+        run: uv sync --locked --python ${{ matrix.python-version }} --extra dev --extra serve
 
       - name: Ruff check
-        run: ruff check runtime/ tests/ tools/
+        run: >-
+          uv run ruff check appliance/ tests/appliance/ deploy/appliance/agent_bundle.py
+          deploy/appliance/delivery_source_preflight.py
+          deploy/appliance/external_storage.py
+          deploy/appliance/nas_data_backup.py
+          deploy/appliance/bare_metal_recovery_lab.py
+          deploy/appliance/hub_lifecycle_lab.py
+          deploy/appliance/paperless_functional_lab.py
+          deploy/appliance/physical_acceptance.py
+          deploy/appliance/physical_acceptance_capture.py
+          deploy/appliance/product_delivery_bundle.py
+          deploy/appliance/release_candidate_preflight.py
+          deploy/appliance/release_evidence_index.py
+          deploy/appliance/dependency_lock.py deploy/appliance/image_release.py
+          deploy/appliance/operations_bundle.py
+          deploy/appliance/operations_systemd.py
+          deploy/appliance/operations_systemd_lab.py
+          deploy/appliance/protocol_interoperability_lab.py
+          deploy/appliance/device_endurance_lab.py
+          deploy/appliance/storage_recovery_lab.py
+          deploy/appliance/verify_operations_systemd_units.py
+          deploy/appliance/verify-running-appliance.py
+          deploy/omv/echo_omv_host.py deploy/omv/host_bundle.py
+          deploy/omv/platform_preflight.py deploy/omv/plugin_package.py
+          deploy/omv/real_omv_nfs_probe.py
+          deploy/omv/verify-real-omv-x86-evidence.py
 
       - name: Ruff format check
-        run: ruff format --check runtime/ tests/ tools/
+        run: >-
+          uv run ruff format --check appliance/ tests/appliance/ deploy/appliance/agent_bundle.py
+          deploy/appliance/delivery_source_preflight.py
+          deploy/appliance/external_storage.py
+          deploy/appliance/nas_data_backup.py
+          deploy/appliance/bare_metal_recovery_lab.py
+          deploy/appliance/hub_lifecycle_lab.py
+          deploy/appliance/paperless_functional_lab.py
+          deploy/appliance/physical_acceptance.py
+          deploy/appliance/physical_acceptance_capture.py
+          deploy/appliance/product_delivery_bundle.py
+          deploy/appliance/release_candidate_preflight.py
+          deploy/appliance/release_evidence_index.py
+          deploy/appliance/dependency_lock.py deploy/appliance/image_release.py
+          deploy/appliance/operations_bundle.py
+          deploy/appliance/operations_systemd.py
+          deploy/appliance/operations_systemd_lab.py
+          deploy/appliance/protocol_interoperability_lab.py
+          deploy/appliance/device_endurance_lab.py
+          deploy/appliance/storage_recovery_lab.py
+          deploy/appliance/verify_operations_systemd_units.py
+          deploy/appliance/verify-running-appliance.py
+          deploy/omv/echo_omv_host.py deploy/omv/host_bundle.py
+          deploy/omv/platform_preflight.py deploy/omv/plugin_package.py
+          deploy/omv/real_omv_nfs_probe.py
+          deploy/omv/verify-real-omv-x86-evidence.py
 
-      - name: pytest (with coverage)
-        run: pytest --cov=runtime --cov=tools --cov-report=term --cov-fail-under=60
+      - name: pytest
+        run: uv run pytest --cov=appliance --cov-report=term --cov-fail-under=40
 
-      - name: Golden-path gate (plan→execute→replan→verify, incl. parallel/recovery)
-        run: pytest tests/test_golden_path_e2e.py tests/test_ganglia_runtime.py -v --tb=short
+      - name: Static-only readiness checks (not release proof)
+        env:
+          ECHO_READINESS_HOME: ${{ runner.temp }}/echo-readiness
+          ECHO_READINESS_DATA_DIR: ${{ runner.temp }}/echo-readiness/data
+          ECHO_READINESS_REVIEW_QUEUE: ${{ runner.temp }}/echo-readiness/review_queue.json
+          ECHO_READINESS_REPORT: ${{ runner.temp }}/echo-readiness/readiness_static.json
+        run: make production-readiness-static
 
-      - name: Delegation regression gate (timeout/fallback/retry/smart-budget)
-        run: pytest tests/test_delegation_enhancements.py tests/test_delegation_smart_budget.py -v --tb=short
+      - name: Upload static readiness report (not release proof)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-readiness-static-report-${{ github.sha }}-${{ matrix.python-version }}
+          path: ${{ runner.temp }}/echo-readiness/readiness_static.json
+          if-no-files-found: error
 
-      - name: Security regression gate (team_tasks authorization)
-        run: pytest tests/test_team_tasks_router_security.py -v --tb=short
+      - name: Run full-stack smoke proof
+        if: matrix.python-version == '3.11.9'
+        env:
+          ECHO_VERIFY_SKIP_PRODUCTION_GATE: "1"
+        run: bash scripts/verify_local.sh --full-stack-only
 
-      - name: Security regression gate (team_rooms authorization)
-        run: pytest tests/test_team_rooms_router_security.py -v --tb=short
+      - name: Upload full-stack smoke proof
+        if: matrix.python-version == '3.11.9'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: full-stack-smoke-proof-${{ github.sha }}
+          path: test-results/local-verify-state
+          if-no-files-found: error
 
-      - name: Security regression gate (parallel_agents ownership)
-        run: pytest tests/test_parallel_agents_router_security.py -v --tb=short
+      - name: Large-corpus replay latency gate
+        run: >-
+          uv run python -m runtime.safety.evolution.replay_latency_budget
+          --corpus-size 2000
+          --candidate-count 16
+          --max-latency-ms 3000
+          --max-evaluation-us 250
+          --output test-results/replay-latency-budget.json
 
-      - name: Security regression gate (channels admin)
-        run: pytest tests/test_channels_router_security.py -v --tb=short
-
-      - name: Security regression gate (agents admin)
-        run: pytest tests/test_agents_router_security.py -v --tb=short
-
-      - name: Security regression gate (thread ownership)
-        run: pytest tests/test_agents_router_thread_ownership.py -v --tb=short
-
-      - name: Security regression gate (LocalPartner admin + alias)
-        run: pytest tests/test_agents_router_local_partner_security.py -v --tb=short
+      - name: Upload replay latency proof
+        if: matrix.python-version == '3.11.9'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: replay-latency-proof
+          path: test-results/replay-latency-budget.json
+          if-no-files-found: error
 
       - name: Upload coverage
-        if: matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.11.9'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-report
           path: .coverage
 
   pytest-cross-platform:
-    # Catches path-separator, encoding, and permission bugs that only
-    # surface off-Linux. Runs the test suite (no lint, no coverage)
-    # on Windows + macOS as a sanity floor. Tagged ``not slow`` to
-    # keep the matrix runtime sane — full battery still gates on
-    # the linux ``lint-and-test`` job above.
-    name: pytest (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    name: Cross-platform pytest (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
-        python-version: ["3.11"]
+        os: [windows-2025, macos-15]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-      - name: Install package
-        run: pip install -e ".[dev,web,serve]"
-      - name: pytest (fast subset)
-        run: pytest -m "not slow and not integration" --tb=short -q
+          python-version: "3.11.9"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v6.6.1
+        with:
+          version: "0.11.25"
+      - name: Sync locked test dependencies
+        run: uv sync --locked --python 3.11.9 --extra dev --extra serve
+      - name: Run portable runtime contracts
+        run: >-
+          uv run pytest -q
+          tests/test_cli.py
+          tests/test_config.py
+          tests/test_desktop_config_packaging.py
+          tests/test_production_readiness_gate.py
 
   security-scan:
     name: Security scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.11"
           cache: pip
-      - run: pip install bandit pip-audit
-      - name: Bandit SAST
-        run: bandit -r runtime/ -ll -ii
-      - name: pip-audit
-        run: pip install -e ".[dev,web,serve]" && pip-audit
+      - name: Setup pinned uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v6.6.1
+        with:
+          version: "0.11.25"
 
-  frontend:
-    name: Frontend lint + build
-    runs-on: ubuntu-latest
+      - name: Install public OS and security tools
+        run: uv sync --locked --python 3.12.11 --extra dev --extra serve
+
+      - name: Bandit SAST
+        run: >-
+          uv run bandit -r appliance/ deploy/appliance/verify-running-appliance.py
+          deploy/appliance/delivery_source_preflight.py
+          deploy/appliance/external_storage.py
+          deploy/appliance/nas_data_backup.py
+          deploy/appliance/bare_metal_recovery_lab.py
+          deploy/appliance/hub_lifecycle_lab.py
+          deploy/appliance/paperless_functional_lab.py
+          deploy/appliance/physical_acceptance.py
+          deploy/appliance/physical_acceptance_capture.py
+          deploy/appliance/product_delivery_bundle.py
+          deploy/appliance/release_candidate_preflight.py
+          deploy/appliance/release_evidence_index.py
+          deploy/appliance/dependency_lock.py deploy/appliance/image_release.py
+          deploy/appliance/operations_bundle.py
+          deploy/appliance/operations_systemd.py
+          deploy/appliance/operations_systemd_lab.py
+          deploy/appliance/protocol_interoperability_lab.py
+          deploy/appliance/device_endurance_lab.py
+          deploy/appliance/storage_recovery_lab.py
+          deploy/appliance/verify_operations_systemd_units.py
+          deploy/omv/echo_omv_host.py deploy/omv/host_bundle.py
+          deploy/omv/platform_preflight.py deploy/omv/plugin_package.py
+          deploy/omv/real_omv_nfs_probe.py
+          deploy/omv/verify-real-omv-x86-evidence.py
+          -ll -ii
+      - name: pip-audit
+        run: uv run pip-audit
+
+  omv-host-bundle:
+    name: OMV host artifacts
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          version: 10.26.2
-      - uses: actions/setup-node@v4
+          python-version: "3.12.11"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v6.6.1
         with:
-          node-version: "20"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - name: Install dependencies
-        working-directory: frontend
-        run: pnpm install --frozen-lockfile
-      - name: ESLint
-        working-directory: frontend
-        # No `|| true`: the gate must fail on real errors. The tree is
-        # error-clean today (179 pre-existing warnings don't gate —
-        # eslint exits 0 on warnings-only). Add `--max-warnings N` later
-        # to ratchet the warning debt down.
-        run: pnpm exec eslint . --ext .ts,.tsx
-      - name: Typecheck
-        working-directory: frontend
-        run: pnpm typecheck
-      - name: Build
-        working-directory: frontend
-        run: pnpm build
+          version: "0.11.25"
+      - name: Sync locked dependencies
+        run: uv sync --locked --python 3.12.11 --extra dev
+      - name: Build and verify deterministic host bundle
+        run: uv run python deploy/omv/host_bundle.py build --output-directory dist
+      - name: Build and verify native OMV plugin package
+        run: |
+          uv run python deploy/omv/plugin_package.py build --output-directory dist
+          dpkg-deb --info dist/openmediavault-echo-os_*_all.deb
+          dpkg-deb --contents dist/openmediavault-echo-os_*_all.deb
+      - name: Verify native plugin Debian 13 package lifecycle
+        run: |
+          plugin_package=(dist/openmediavault-echo-os_*_all.deb)
+          test "${#plugin_package[@]}" -eq 1
+          docker run --rm --network none --pids-limit 256 --memory 512m \
+            --security-opt no-new-privileges \
+            --mount "type=bind,source=$PWD,target=/source,readonly" \
+            python:3.13-slim-trixie@sha256:7e3a6aca9d74f93cca21a91d86a8dad8c34749afd5b4a98ee481c9c47b9f5ed4 \
+            /bin/sh /source/deploy/omv/verify-plugin-package-lifecycle.sh \
+            "/source/${plugin_package[0]}"
+      - name: Attest build provenance
+        if: >-
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/echo-omv-host-*.tar.gz
+      - name: Attest SPDX SBOM
+        if: >-
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/echo-omv-host-*.tar.gz
+          sbom-path: dist/echo-omv-host-*.spdx.json
+      - name: Attest native plugin provenance
+        if: >-
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/openmediavault-echo-os_*_all.deb
+      - name: Attest native plugin SPDX SBOM
+        if: >-
+          github.event_name == 'push' &&
+          (github.ref == 'refs/heads/os-main' || github.ref == 'refs/heads/main')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/openmediavault-echo-os_*_all.deb
+          sbom-path: dist/openmediavault-echo-os_*_all.spdx.json
+      - name: Upload host bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: echo-omv-host
+          path: |
+            dist/echo-omv-host-*.tar.gz
+            dist/echo-omv-host-*.tar.gz.sha256
+            dist/echo-omv-host-*.spdx.json
+            dist/openmediavault-echo-os_*_all.deb
+            dist/openmediavault-echo-os_*_all.deb.sha256
+            dist/openmediavault-echo-os_*_all.spdx.json
+          if-no-files-found: error
 
   docker-build:
     name: Docker build test
-    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    needs: public-source-contract
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - name: Build Docker image
-        run: docker build -t octopus-agent-ci .
-
-  tracing-smoke:
-    name: Tracing smoke test (with OTel installed)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
-      - run: pip install -e ".[dev,tracing]"
-      - run: pytest tests/test_tracing.py -v
-
-  cli-smoke:
-    name: CLI argparse wiring smoke
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
-      - run: pip install -e ".[dev,serve,web,discord]"
-      - name: CLI --help for every subcommand
-        run: pytest tests/test_cli_smoke.py -v
-
-  demos:
-    name: End-to-end demos (bugfix/reflection/evolution)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
-      - run: pip install -e ".[dev,web,serve]"
-      - name: Git identity for commit demos
-        run: |
-          git config --global user.email "ci@octopus-agent.test"
-          git config --global user.name "octopus-ci"
-      - name: Run demo tests
-        run: pytest tests/test_bugfix_demo.py tests/test_reflection_demo.py tests/test_evolution_demo.py -v
-
-  openapi-contract:
-    name: OpenAPI schema + TS types contract gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12.11"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v6.6.1
+        with:
+          version: "0.11.25"
+      - name: Sync locked dependencies
+        run: uv sync --locked --python 3.12.11 --extra dev --extra serve
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
         with:
           version: 10.26.2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-      - run: pip install -e ".[dev,serve]"
-
-      - name: Regenerate OpenAPI snapshot
-        run: OCTOPUS_OPENAPI_WRITE=1 pytest tests/test_openapi_snapshot.py -q
-
-      - name: Assert snapshot is committed
+      - name: Prepare and verify the unified Echo bundle
+        run: ./deploy/appliance/prepare-agent-bundle.sh
+      - name: Build Docker image
+        run: docker build -t echo-os-ci -t echo-os:latest .
+      - name: Generate isolated TLS smoke certificate
         run: |
-          if ! git diff --exit-code docs/openapi-snapshot.json; then
-            echo "::error::docs/openapi-snapshot.json is stale · run 'make openapi-snapshot' locally and commit the diff"
-            exit 1
-          fi
-
-      - name: Regenerate TS types
-        working-directory: frontend
-        run: pnpm exec openapi-typescript ../docs/openapi-snapshot.json -o src/core/api/openapi-types.ts
-
-      - name: Assert TS types are committed
+          openssl req -x509 -newkey rsa:2048 -nodes -days 30 \
+            -subj '/CN=Echo TLS smoke CA' \
+            -addext 'basicConstraints=critical,CA:TRUE' \
+            -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+            -keyout /tmp/echo-tls-ca.key \
+            -out /tmp/echo-tls-ca.crt
+          openssl req -newkey rsa:2048 -nodes \
+            -subj '/CN=127.0.0.1' \
+            -keyout deploy/appliance/tls/echo.key \
+            -out /tmp/echo-tls-server.csr
+          printf '%s\n' \
+            'subjectAltName=IP:127.0.0.1' \
+            'basicConstraints=critical,CA:FALSE' \
+            'keyUsage=critical,digitalSignature,keyEncipherment' \
+            'extendedKeyUsage=serverAuth' \
+            > /tmp/echo-tls-server.ext
+          openssl x509 -req -days 30 \
+            -in /tmp/echo-tls-server.csr \
+            -CA /tmp/echo-tls-ca.crt \
+            -CAkey /tmp/echo-tls-ca.key \
+            -CAcreateserial \
+            -extfile /tmp/echo-tls-server.ext \
+            -out /tmp/echo-tls-server.crt
+          cp /tmp/echo-tls-server.crt deploy/appliance/tls/echo.crt
+          cat /tmp/echo-tls-ca.crt >> deploy/appliance/tls/echo.crt
+          chmod 0600 deploy/appliance/tls/echo.key
+          ECHO_TLS_HOST=127.0.0.1 \
+            ./deploy/appliance/tls/verify-tls-assets.sh
+      - name: Validate Compose models
+        env:
+          ECHO_BIND_ADDRESS: 127.0.0.1
+          ECHO_APPLIANCE_TRUSTED_HOSTS: 127.0.0.1
+          ECHO_APPLIANCE_TRUSTED_ORIGINS: https://127.0.0.1
         run: |
-          if ! git diff --exit-code frontend/src/core/api/openapi-types.ts; then
-            echo "::error::frontend/src/core/api/openapi-types.ts is stale · run 'make frontend-types' locally and commit the diff"
-            exit 1
-          fi
+          docker compose config --quiet
+          docker compose -f deploy/appliance/docker-compose.yml config --quiet
+          docker compose \
+            -f deploy/appliance/docker-compose.yml \
+            -f deploy/appliance/docker-compose.tls.yml \
+            config --quiet
+      - name: Start appliance with real Docker socket
+        env:
+          ECHO_ADMIN_PASSWORD: echo-ci-appliance-password
+          PUID: "1000"
+          PGID: "1000"
+        run: >-
+          docker compose -f deploy/appliance/docker-compose.yml
+          up -d --no-build
+      - name: Verify running appliance security contract
+        env:
+          ECHO_ADMIN_PASSWORD: echo-ci-appliance-password
+        run: >-
+          python deploy/appliance/verify-running-appliance.py
+          --expected-uid 1000 --expected-gid 1000 --require-clean-bundle
+      - name: Stop HTTP baseline before TLS smoke
+        run: docker compose -f deploy/appliance/docker-compose.yml down --remove-orphans
+      - name: Start appliance behind the TLS gateway
+        env:
+          ECHO_TLS_HOST: 127.0.0.1
+          ECHO_ADMIN_PASSWORD: echo-ci-appliance-password
+          PUID: "1000"
+          PGID: "1000"
+        run: ./deploy/appliance/start-tls.sh --no-build
+      - name: Verify TLS gateway, loopback backend, and secure appliance contract
+        env:
+          ECHO_TLS_HOST: 127.0.0.1
+          ECHO_ADMIN_PASSWORD: echo-ci-appliance-password
+          SSL_CERT_FILE: /tmp/echo-tls-ca.crt
+        run: |
+          test "$(docker port echo-os 8000/tcp)" = '127.0.0.1:8000'
+          test "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' echo-tls-gateway)" = true
+          test "$(docker inspect -f '{{json .HostConfig.CapDrop}}' echo-tls-gateway)" = '["ALL"]'
+          docker exec echo-tls-gateway sh -eu -c \
+            "grep -q '^CapEff:[[:space:]]*0000000000000000$' /proc/1/status && grep -q '^NoNewPrivs:[[:space:]]*1$' /proc/1/status"
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1/desktop)" = 308
+          test "$(curl --silent --show-error --cacert deploy/appliance/tls/echo.crt --output /dev/null --write-out '%{http_code}' https://127.0.0.1/gateway-health)" = 204
+          python deploy/appliance/verify-running-appliance.py \
+            --base-url https://127.0.0.1 \
+            --expected-uid 1000 --expected-gid 1000 --require-clean-bundle
+      - name: Show appliance logs after failure
+        if: failure()
+        env:
+          ECHO_BIND_ADDRESS: 127.0.0.1
+          ECHO_APPLIANCE_TRUSTED_HOSTS: 127.0.0.1
+          ECHO_APPLIANCE_TRUSTED_ORIGINS: https://127.0.0.1
+        run: >-
+          docker compose
+          -f deploy/appliance/docker-compose.yml
+          -f deploy/appliance/docker-compose.tls.yml
+          logs --no-color
+      - name: Stop appliance
+        if: always()
+        env:
+          ECHO_BIND_ADDRESS: 127.0.0.1
+          ECHO_APPLIANCE_TRUSTED_HOSTS: 127.0.0.1
+          ECHO_APPLIANCE_TRUSTED_ORIGINS: https://127.0.0.1
+        run: >-
+          docker compose
+          -f deploy/appliance/docker-compose.yml
+          -f deploy/appliance/docker-compose.tls.yml
+          down --remove-orphans

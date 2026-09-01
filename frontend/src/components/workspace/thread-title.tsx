@@ -12,20 +12,25 @@ export function ThreadTitle({
   className,
   threadId,
   thread,
+  title,
 }: {
   className?: string;
   threadId: string;
   thread: BaseStream<AgentThreadState>;
+  /** Already-resolved thread title (from metadata / first user message).
+   * The realtime stream state never carries a ``title`` (the adapter maps
+   * the live turn stream, which has no title field), so without this the
+   * browser tab falls back to the generic "untitled" even when the thread
+   * has a proper derived title. */
+  title?: string;
 }) {
   const { t } = useI18n();
   const { isNewThread } = useThreadChat();
+  const resolvedTitle = title || thread.values?.title || "";
   useEffect(() => {
-    let _title = t.pages.untitled;
-
-    if (thread.values?.title) {
-      _title = thread.values.title;
-    } else if (isNewThread) {
-      _title = t.pages.newChat;
+    let _title = resolvedTitle;
+    if (!_title) {
+      _title = isNewThread ? t.pages.newChat : t.pages.untitled;
     }
     if (thread.isThreadLoading) {
       document.title = `Loading... - ${t.pages.appName}`;
@@ -33,26 +38,26 @@ export function ThreadTitle({
       document.title = `${_title} - ${t.pages.appName}`;
     }
   }, [
+    resolvedTitle,
     isNewThread,
     t.pages.newChat,
     t.pages.untitled,
     t.pages.appName,
     thread.isThreadLoading,
-    thread.values,
   ]);
 
   // Fallback: show a muted placeholder on new/untitled threads so the
   // header has an anchor on the left side (otherwise justify-between
   // throws the right-side actions hard to one edge and the header looks
   // Implementation note.
-  const fallback = isNewThread
-    ? t.pages.newChat
-    : thread.values?.title
-      ? null
+  const fallback = resolvedTitle
+    ? null
+    : isNewThread
+      ? t.pages.newChat
       : t.pages.untitled;
-  const displayTitle = thread.values?.title ?? fallback;
+  const displayTitle = resolvedTitle || fallback;
   if (!displayTitle) return null;
-  const isPlaceholder = !thread.values?.title;
+  const isPlaceholder = !resolvedTitle;
   return (
     <FlipDisplay
       uniqueKey={threadId}

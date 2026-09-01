@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { swallow } from "@/core/utils/log";
 import { getBackendBaseURL } from "@/core/config";
+import { openSseStream } from "@/core/streaming/sse";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
@@ -128,7 +129,10 @@ function isApprovalEvent(event: RunReviewEvent): boolean {
 }
 
 function isFileEvent(event: RunReviewEvent): boolean {
-  return Boolean(event.path) || /file_op|write_file|read_file|patch/i.test(eventKind(event));
+  return (
+    Boolean(event.path) ||
+    /file_op|write_file|read_file|patch/i.test(eventKind(event))
+  );
 }
 
 function isArtifactEvent(event: RunReviewEvent): boolean {
@@ -136,7 +140,10 @@ function isArtifactEvent(event: RunReviewEvent): boolean {
 }
 
 function isErrorEvent(event: RunReviewEvent): boolean {
-  return event.is_error === true || /error|failed|immune_reject|reject/i.test(eventKind(event));
+  return (
+    event.is_error === true ||
+    /error|failed|immune_reject|reject/i.test(eventKind(event))
+  );
 }
 
 function riskForEvent(event: RunReviewEvent): string | null {
@@ -173,8 +180,10 @@ export function deriveRunReviews(events: RunReviewEvent[]): RunReview[] {
       const kind = eventKind(event);
       const name = toolName(event);
       if (name) toolCounts.set(name, (toolCounts.get(name) ?? 0) + 1);
-      if (event.tool_call_id && /start/i.test(kind)) runningToolIds.add(event.tool_call_id);
-      if (event.tool_call_id && /end|done|finish/i.test(kind)) closedToolIds.add(event.tool_call_id);
+      if (event.tool_call_id && /start/i.test(kind))
+        runningToolIds.add(event.tool_call_id);
+      if (event.tool_call_id && /end|done|finish/i.test(kind))
+        closedToolIds.add(event.tool_call_id);
       if (isApprovalEvent(event)) approvalCount += 1;
       if (isFileEvent(event)) {
         fileCount += 1;
@@ -252,10 +261,10 @@ function StatusBadge({ status }: { status: RunReview["status"] }) {
     <Badge
       variant="outline"
       className={cn(
-        "text-[10px]",
-        status === "running" && "border-blue-500/30 text-blue-600",
-        status === "error" && "border-red-500/30 text-red-600",
-        status === "done" && "border-emerald-500/30 text-emerald-600",
+        "text-xs",
+        status === "running" && "border-info/30 text-info",
+        status === "error" && "border-destructive/30 text-destructive",
+        status === "done" && "border-success/30 text-success",
       )}
     >
       {status === "running" ? (
@@ -280,8 +289,8 @@ function SummaryTile({
   value: string;
 }) {
   return (
-    <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
-      <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+    <div className="rounded-lg border border-border-default bg-muted/20 p-3">
+      <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
         <Icon className="size-3.5" />
         {label}
       </div>
@@ -297,17 +306,20 @@ export function RunReviewPanel() {
   const [paused, setPaused] = useState(false);
 
   useEffect(() => {
-    const es = new EventSource(`${getBackendBaseURL()}/api/stream`);
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
-    es.onmessage = (msg) => {
-      if (paused) return;
-      try {
-        const event = JSON.parse(msg.data) as RunReviewEvent;
-        setEvents((prev) => [...prev, event].slice(-600));
-      } catch (e) { swallow(e); }
-    };
-    return () => es.close();
+    return openSseStream({
+      url: `${getBackendBaseURL()}/api/stream`,
+      onOpen: () => setConnected(true),
+      onReconnecting: () => setConnected(false),
+      onEvent: (msg) => {
+        if (paused) return;
+        try {
+          const event = JSON.parse(msg.data) as RunReviewEvent;
+          setEvents((prev) => [...prev, event].slice(-600));
+        } catch (e) {
+          swallow(e);
+        }
+      },
+    });
   }, [paused]);
 
   const reviews = useMemo(() => deriveRunReviews(events), [events]);
@@ -337,14 +349,16 @@ export function RunReviewPanel() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
                 <span
                   className={cn(
                     "size-2 rounded-full",
-                    connected ? "bg-emerald-500" : "bg-muted",
+                    connected ? "bg-success" : "bg-muted",
                   )}
                 />
-                {connected ? t.observabilityPage.connected : t.observabilityPage.idle}
+                {connected
+                  ? t.observabilityPage.connected
+                  : t.observabilityPage.idle}
               </span>
               <Button
                 size="sm"
@@ -356,7 +370,9 @@ export function RunReviewPanel() {
                 ) : (
                   <PauseIcon className="mr-1.5 size-3" />
                 )}
-                {paused ? t.observabilityPage.resume : t.observabilityPage.pause}
+                {paused
+                  ? t.observabilityPage.resume
+                  : t.observabilityPage.pause}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setEvents([])}>
                 {t.observabilityPage.clear}
@@ -422,26 +438,33 @@ export function RunReviewPanel() {
                         {run.id}
                       </span>
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <ClockIcon className="size-3" />
                         {formatTime(run.startedAt)} ·{" "}
                         {formatDuration(run.startedAt, run.lastAt)}
                       </span>
-                      <span>{t.observabilityPage.runReviewEvents(run.eventCount)}</span>
-                      <span>{t.observabilityPage.runReviewCostLine(run.tokens, run.usd)}</span>
+                      <span>
+                        {t.observabilityPage.runReviewEvents(run.eventCount)}
+                      </span>
+                      <span>
+                        {t.observabilityPage.runReviewCostLine(
+                          run.tokens,
+                          run.usd,
+                        )}
+                      </span>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-xs">
                       <WrenchIcon className="mr-1 size-3" />
                       {run.toolCount}
                     </Badge>
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-xs">
                       <ShieldCheckIcon className="mr-1 size-3" />
                       {run.approvalCount}
                     </Badge>
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-xs">
                       <FileTextIcon className="mr-1 size-3" />
                       {run.fileCount}
                     </Badge>
@@ -451,7 +474,7 @@ export function RunReviewPanel() {
               <CardContent className="space-y-3 px-4">
                 {run.tools.length > 0 && (
                   <div>
-                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       {t.observabilityPage.runReviewToolSummary}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -459,7 +482,7 @@ export function RunReviewPanel() {
                         <Badge
                           key={tool.name}
                           variant="outline"
-                          className="font-mono text-[10px]"
+                          className="font-mono text-xs"
                         >
                           {tool.name} · {tool.count}
                         </Badge>
@@ -470,14 +493,14 @@ export function RunReviewPanel() {
 
                 {run.files.length > 0 && (
                   <div>
-                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       {t.observabilityPage.runReviewFiles}
                     </div>
                     <div className="grid gap-1 md:grid-cols-2">
                       {run.files.map((file) => (
                         <div
                           key={file}
-                          className="truncate rounded-md border border-border/50 bg-muted/20 px-2 py-1 font-mono text-[11px]"
+                          className="truncate rounded-md border border-border-default bg-muted/20 px-2 py-1 font-mono text-xs"
                           title={file}
                         >
                           {file}
@@ -488,8 +511,8 @@ export function RunReviewPanel() {
                 )}
 
                 {run.risks.length > 0 && (
-                  <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2">
-                    <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                  <div className="rounded-lg border border-warning/25 bg-warning/5 px-3 py-2">
+                    <div className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-warning">
                       <AlertTriangleIcon className="size-3" />
                       {t.observabilityPage.runReviewLearningSignals}
                     </div>
@@ -498,7 +521,7 @@ export function RunReviewPanel() {
                         <Badge
                           key={risk}
                           variant="outline"
-                          className="border-amber-500/30 text-[10px] text-amber-700 dark:text-amber-300"
+                          className="border-warning/30 text-xs text-warning"
                         >
                           {risk}
                         </Badge>

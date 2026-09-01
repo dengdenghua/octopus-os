@@ -43,23 +43,25 @@ interface WorkingSetPanelProps {
   className?: string;
 }
 
-const getPhaseConfig = (t: { workingSet?: { understand?: string; execute?: string; verify?: string } }) => ({
+const getPhaseConfig = (t: {
+  workingSet?: { understand?: string; execute?: string; verify?: string };
+}) => ({
   understand: {
     label: t.workingSet?.understand,
-    color: "text-sky-600 dark:text-sky-400",
-    bg: "bg-sky-500/10",
+    color: "text-info dark:text-info",
+    bg: "bg-info/10",
     icon: EyeIcon,
   },
   execute: {
     label: t.workingSet?.execute,
-    color: "text-violet-600 dark:text-violet-400",
-    bg: "bg-violet-500/10",
+    color: "text-chart-1 dark:text-chart-1",
+    bg: "bg-chart-1/10",
     icon: PencilIcon,
   },
   verify: {
     label: t.workingSet?.verify,
-    color: "text-emerald-600 dark:text-emerald-400",
-    bg: "bg-emerald-500/10",
+    color: "text-success",
+    bg: "bg-success/10",
     icon: FileCodeIcon,
   },
 });
@@ -73,27 +75,30 @@ function FileItem({ file }: { file: WorkingSetFile }) {
       className={cn(
         "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors",
         isEditing
-          ? "bg-violet-500/5 border border-violet-500/20"
+          ? "bg-chart-1/5 border border-chart-1/20"
           : "bg-muted/30 border border-transparent",
       )}
     >
       {isEditing ? (
-        <PencilIcon className="size-3 shrink-0 text-violet-500" />
+        <PencilIcon className="size-3 shrink-0 text-chart-1" />
       ) : (
         <FileCodeIcon className="size-3 shrink-0 text-muted-foreground/60" />
       )}
       <span
         className={cn(
           "truncate font-mono",
-          isEditing ? "text-violet-700 dark:text-violet-400" : "text-muted-foreground",
+          isEditing
+            ? "text-chart-1 dark:text-chart-1"
+            : "text-muted-foreground",
         )}
         title={file.path}
       >
         {shortPath}
       </span>
       {file.tokens_estimated > 0 && (
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/50 tabular-nums">
-          ~{file.tokens_estimated > 1000
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground/50 tabular-nums">
+          ~
+          {file.tokens_estimated > 1000
             ? `${Math.round(file.tokens_estimated / 1000)}k`
             : file.tokens_estimated}
         </span>
@@ -104,12 +109,18 @@ function FileItem({ file }: { file: WorkingSetFile }) {
 
 function ThinkingStepIcon({ status }: { status?: ThinkingPlanStepStatus }) {
   if (status === "completed") {
-    return <CheckCircle2Icon className="mt-0.5 size-3 shrink-0 text-emerald-500" />;
+    return (
+      <CheckCircle2Icon className="mt-0.5 size-3 shrink-0 text-success" />
+    );
   }
   if (status === "in_progress") {
-    return <Loader2Icon className="mt-0.5 size-3 shrink-0 animate-spin text-primary" />;
+    return (
+      <Loader2Icon className="mt-0.5 size-3 shrink-0 animate-spin text-primary" />
+    );
   }
-  return <CircleIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground/45" />;
+  return (
+    <CircleIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground/45" />
+  );
 }
 
 const TEMPLATE_THINKING_STEP_PATTERNS = [
@@ -147,16 +158,21 @@ function ThinkingPlanMini({ plan }: { plan: ThinkingPlanSnapshot }) {
     typeof plan.current_step_index === "number"
       ? Math.max(0, Math.min(steps.length - 1, plan.current_step_index))
       : steps.findIndex((step) => step.status === "in_progress");
-  const currentStep = steps[currentIndex >= 0 ? currentIndex : Math.min(completed, steps.length - 1)];
+  const currentStep =
+    steps[
+      currentIndex >= 0 ? currentIndex : Math.min(completed, steps.length - 1)
+    ];
 
   return (
-    <div className="border-b border-border/50 px-3 py-2">
+    <div className="border-b border-border-default px-3 py-2">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <BrainIcon className="size-3.5 shrink-0 text-primary" />
-          <span className="truncate text-xs font-medium">Thinking progress</span>
+          <span className="truncate text-xs font-medium">
+            Thinking progress
+          </span>
         </div>
-        <span className="shrink-0 text-[10px] text-muted-foreground/60 tabular-nums">
+        <span className="shrink-0 text-xs text-muted-foreground/60 tabular-nums">
           {completed}/{steps.length}
         </span>
       </div>
@@ -169,20 +185,20 @@ function ThinkingPlanMini({ plan }: { plan: ThinkingPlanSnapshot }) {
         role="progressbar"
       >
         <div
-          className="h-full rounded-full bg-primary/70 transition-all duration-300"
+          className="h-full rounded-full bg-primary/70 transition-all duration-slow"
           style={{ width: `${Math.round(progress * 100)}%` }}
         />
       </div>
       {currentStep && (
         <div className="mt-2 rounded-md bg-muted/40 px-2 py-1.5">
-          <div className="text-[10px] font-medium uppercase text-muted-foreground/55">
+          <div className="text-xs font-medium uppercase text-muted-foreground/55">
             Current
           </div>
           <div className="mt-0.5 truncate text-xs" title={currentStep.title}>
             {currentStep.title}
           </div>
           {currentStep.detail && (
-            <div className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground/65">
+            <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground/65">
               {currentStep.detail}
             </div>
           )}
@@ -190,7 +206,10 @@ function ThinkingPlanMini({ plan }: { plan: ThinkingPlanSnapshot }) {
       )}
       <ol className="mt-2 space-y-1">
         {steps.map((step, index) => (
-          <li key={`${step.title}-${index}`} className="flex min-w-0 gap-1.5 text-[11px]">
+          <li
+            key={`${step.title}-${index}`}
+            className="flex min-w-0 gap-1.5 text-xs"
+          >
             <ThinkingStepIcon status={step.status} />
             <span
               className={cn(
@@ -218,7 +237,9 @@ export function WorkingSetPanel({
 }: WorkingSetPanelProps) {
   const { t } = useI18n();
   const PHASE_CONFIG = getPhaseConfig(t);
-  const phaseCfg = PHASE_CONFIG[currentPhase as keyof typeof PHASE_CONFIG] ?? PHASE_CONFIG.understand;
+  const phaseCfg =
+    PHASE_CONFIG[currentPhase as keyof typeof PHASE_CONFIG] ??
+    PHASE_CONFIG.understand;
   const PhaseIcon = phaseCfg.icon;
 
   const editingFiles = files.filter((f) => f.relevance === "editing");
@@ -226,20 +247,26 @@ export function WorkingSetPanel({
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
-      <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+      <div className="flex items-center justify-between border-b border-border-default px-3 py-2">
         <div className="flex items-center gap-2">
           <FolderOpenIcon className="size-4 text-primary" />
           <span className="text-sm font-medium">{t.workingSet?.title}</span>
         </div>
-        <div className={cn("flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium", phaseCfg.bg, phaseCfg.color)}>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium",
+            phaseCfg.bg,
+            phaseCfg.color,
+          )}
+        >
           <PhaseIcon className="size-3" />
           <span>{phaseCfg.label}</span>
         </div>
       </div>
 
       {progressSummary && (
-        <div className="border-b border-border/50 px-3 py-1.5">
-          <p className="text-[11px] text-muted-foreground/70 line-clamp-2">
+        <div className="border-b border-border-default px-3 py-1.5">
+          <p className="text-xs text-muted-foreground/70 line-clamp-2">
             {progressSummary}
           </p>
         </div>
@@ -257,10 +284,12 @@ export function WorkingSetPanel({
           <div className="space-y-3">
             {editingFiles.length > 0 && (
               <div>
-                <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-violet-600/70 dark:text-violet-400/70">
+                <div className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-chart-1/70 dark:text-chart-1/70">
                   <PencilIcon className="size-2.5" />
                   <span>{t.workingSet?.editing}</span>
-                  <span className="text-muted-foreground/40">({editingFiles.length})</span>
+                  <span className="text-muted-foreground/40">
+                    ({editingFiles.length})
+                  </span>
                 </div>
                 <div className="space-y-0.5">
                   {editingFiles.map((f) => (
@@ -271,10 +300,12 @@ export function WorkingSetPanel({
             )}
             {readingFiles.length > 0 && (
               <div>
-                <div className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/50">
+                <div className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground/50">
                   <EyeIcon className="size-2.5" />
                   <span>{t.workingSet?.reading}</span>
-                  <span className="text-muted-foreground/40">({readingFiles.length})</span>
+                  <span className="text-muted-foreground/40">
+                    ({readingFiles.length})
+                  </span>
                 </div>
                 <div className="space-y-0.5">
                   {readingFiles.map((f) => (
@@ -288,10 +319,19 @@ export function WorkingSetPanel({
       </div>
 
       {files.length > 0 && (
-        <div className="border-t border-border/50 px-3 py-1.5">
-          <div className="flex items-center justify-between text-[10px] text-muted-foreground/50">
-            <span>{editingFiles.length} {t.workingSet?.editing} · {readingFiles.length} {t.workingSet?.reading}</span>
-            <span>~{Math.round(files.reduce((sum, f) => sum + f.tokens_estimated, 0) / 1000)}k tokens</span>
+        <div className="border-t border-border-default px-3 py-1.5">
+          <div className="flex items-center justify-between text-xs text-muted-foreground/50">
+            <span>
+              {editingFiles.length} {t.workingSet?.editing} ·{" "}
+              {readingFiles.length} {t.workingSet?.reading}
+            </span>
+            <span>
+              ~
+              {Math.round(
+                files.reduce((sum, f) => sum + f.tokens_estimated, 0) / 1000,
+              )}
+              k tokens
+            </span>
           </div>
         </div>
       )}

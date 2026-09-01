@@ -1,14 +1,19 @@
-
 import { Suspense, lazy } from "react";
 
-import { aboutMarkdown } from "./about-content";
+import { useI18n } from "@/core/i18n/hooks";
+
+import { getAboutMarkdown } from "./about-content";
 import { BundleInfo } from "./bundle-info";
+import { CodexUpdateRadar } from "./codex-update-radar";
 
 const LazyStreamdown = lazy(
   () => import("@/components/ai-elements/streamdown-host"),
 );
 
 export default function AboutSettingsPage() {
+  const { locale } = useI18n();
+  const aboutMarkdown = getAboutMarkdown(locale);
+
   return (
     <div>
       <Suspense
@@ -19,6 +24,7 @@ export default function AboutSettingsPage() {
         <LazyStreamdown>{aboutMarkdown}</LazyStreamdown>
       </Suspense>
       <BundleInfo />
+      <CodexUpdateRadar />
     </div>
   );
 }

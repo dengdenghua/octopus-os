@@ -1,12 +1,13 @@
 import type { AnchorHTMLAttributes } from "react";
 
+import { RoutedWebLink } from "@/components/ui/routed-web-link";
+import {
+  artifactRefFromMarkdownHref,
+  dispatchOpenArtifact,
+} from "@/core/artifacts/open-artifact";
 import { cn } from "@/lib/utils";
 
 import { CitationLink } from "./citation-link";
-
-function isExternalUrl(href: string | undefined): boolean {
-  return !!href && /^https?:\/\//.test(href);
-}
 
 /** Link renderer for artifact markdown: citation: prefix → CitationLink, otherwise underlined text. */
 export function ArtifactLink(props: AnchorHTMLAttributes<HTMLAnchorElement>) {
@@ -17,18 +18,24 @@ export function ArtifactLink(props: AnchorHTMLAttributes<HTMLAnchorElement>) {
       return <CitationLink {...props}>{text}</CitationLink>;
     }
   }
-  const { className, target, rel, ...rest } = props;
-  const external = isExternalUrl(props.href);
+  const { className, onClick, ...rest } = props;
   return (
-    <a
+    <RoutedWebLink
       {...rest}
+      openTargetSource="artifact-markdown"
+      onClick={(event) => {
+        onClick?.(event);
+        if (event.defaultPrevented || !props.href) return;
+        const artifactRef = artifactRefFromMarkdownHref(props.href);
+        if (artifactRef && dispatchOpenArtifact(artifactRef)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       className={cn(
         "text-primary decoration-primary/30 hover:decoration-primary/60 underline underline-offset-2 transition-colors",
         className,
       )}
-      target={target ?? (external ? "_blank" : undefined)}
-      rel={rel ?? (external ? "noopener noreferrer" : undefined)}
     />
   );
 }
-

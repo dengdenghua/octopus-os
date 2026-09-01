@@ -21,6 +21,7 @@
 
 ```bash
 # 我复核用的命令
+make production-readiness-static
 python -m pytest tests/ -q
 python -m tools.lint.invariant_check runtime/ tests/
 ```
@@ -43,7 +44,7 @@ python -m tools.lint.invariant_check runtime/ tests/
 - [ ] Channel adapter 的 `send()` 走了 constitution gate(看 CONTRIBUTING 里的样板)
 - [ ] 新 Skill 按 affinity / cost_profile / trusted_source 填齐
 - [ ] 改了 `BASE_SKILL_IDS` / `ATOMIC_SKILL_NAMES` → 两处都改
-- [ ] 动了 fork 自 octopus 的模块 → 更新 [forklist.md](../docs/forklist.md)
+- [ ] 动了 fork 自 echo 的模块 → 更新 [forklist.md](../docs/forklist.md)
 
 ## Related
 

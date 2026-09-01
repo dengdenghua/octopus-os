@@ -64,11 +64,11 @@ const TASK_TYPE_ICONS: Record<
   string,
   { icon: typeof CodeIcon; color: string }
 > = {
-  coding: { icon: CodeIcon, color: "text-blue-500" },
-  reasoning: { icon: BrainCircuitIcon, color: "text-purple-500" },
-  creative: { icon: PaletteIcon, color: "text-pink-500" },
-  simple: { icon: ZapIcon, color: "text-green-500" },
-  math: { icon: CalculatorIcon, color: "text-amber-500" },
+  coding: { icon: CodeIcon, color: "text-info" },
+  reasoning: { icon: BrainCircuitIcon, color: "text-chart-1" },
+  creative: { icon: PaletteIcon, color: "text-chart-3" },
+  simple: { icon: ZapIcon, color: "text-success" },
+  math: { icon: CalculatorIcon, color: "text-warning" },
 };
 
 // ---------------------------------------------------------------------------
@@ -159,7 +159,8 @@ export function ModelRouterIndicator({
     icon: MessageSquareIcon,
     color: "text-muted-foreground",
   };
-  const taskLabel = TASK_TYPE_LABELS[routingDecision.task_type] ?? routingDecision.task_type;
+  const taskLabel =
+    TASK_TYPE_LABELS[routingDecision.task_type] ?? routingDecision.task_type;
   const TaskIcon = taskIconCfg.icon;
 
   const displayModel = shortModelName(routingDecision.selected_model);
@@ -175,18 +176,18 @@ export function ModelRouterIndicator({
             className={cn(
               "text-muted-foreground hover:text-foreground flex cursor-pointer items-center gap-1 rounded-lg px-1.5 py-0.5 text-xs transition-colors",
               "hover:bg-accent/50",
-              isAutoRouted && "border border-dashed border-border/60",
+              isAutoRouted && "border border-dashed border-border-default",
             )}
           >
             <RotateCcwIcon size={12} className="shrink-0 opacity-60" />
-            <span className="truncate max-w-[140px]">
+            <span className="truncate max-w-[var(--text-truncate-md)]">
               {isAutoRouted ? t.modelRouter.auto : t.modelRouter.manual}:{" "}
               <span className="font-medium">{displayModel}</span>
             </span>
             <Badge
               variant="outline"
               className={cn(
-                "ml-0.5 h-4 px-1 text-[10px] font-normal leading-none",
+                "ml-0.5 h-4 px-1 text-xs font-normal leading-none",
                 taskIconCfg.color,
               )}
             >
@@ -211,14 +212,14 @@ export function ModelRouterIndicator({
       {expanded && (
         <div
           className={cn(
-            "bg-popover text-popover-foreground absolute bottom-full left-0 z-50 mb-1 w-72 rounded-lg border p-3 shadow-lg",
-            "animate-in fade-in-0 slide-in-from-bottom-2 duration-200",
+            "bg-popover text-popover-foreground absolute bottom-full left-0 z-50 mb-1 w-72 rounded-lg border p-3 shadow-[var(--shadow-md)]",
+            "animate-in fade-in-0 slide-in-from-bottom-2 duration-base",
           )}
         >
           {/* Header */}
           <div className="mb-2 flex items-center justify-between">
             <h4 className="text-xs font-semibold">{t.modelRouter.title}</h4>
-            <Badge variant="secondary" className="h-4 text-[10px]">
+            <Badge variant="secondary" className="h-4 text-xs">
               {routingDecision.preference}
             </Badge>
           </div>
@@ -226,26 +227,40 @@ export function ModelRouterIndicator({
           {/* Decision summary */}
           <div className="mb-2 space-y-1 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">{t.modelRouter.taskType}</span>
-              <span className={cn("flex items-center gap-1 font-medium", taskIconCfg.color)}>
+              <span className="text-muted-foreground">
+                {t.modelRouter.taskType}
+              </span>
+              <span
+                className={cn(
+                  "flex items-center gap-1 font-medium",
+                  taskIconCfg.color,
+                )}
+              >
                 <TaskIcon size={12} />
                 {taskLabel}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">{t.modelRouter.selectedModel}</span>
+              <span className="text-muted-foreground">
+                {t.modelRouter.selectedModel}
+              </span>
               <span className="font-medium">{displayModel}</span>
             </div>
-            {routingDecision.original_model !== routingDecision.selected_model && (
+            {routingDecision.original_model !==
+              routingDecision.selected_model && (
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">{t.modelRouter.originalModel}</span>
+                <span className="text-muted-foreground">
+                  {t.modelRouter.originalModel}
+                </span>
                 <span className="text-muted-foreground line-through">
                   {shortModelName(routingDecision.original_model)}
                 </span>
               </div>
             )}
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">{t.modelRouter.score}</span>
+              <span className="text-muted-foreground">
+                {t.modelRouter.score}
+              </span>
               <span className="font-mono font-medium">
                 {formatScore(routingDecision.score)}
               </span>
@@ -255,12 +270,15 @@ export function ModelRouterIndicator({
           {/* Score breakdown */}
           {sortedScores.length > 0 && (
             <div className="mb-2">
-              <h5 className="text-muted-foreground mb-1 text-[10px] font-medium uppercase tracking-wider">
+              <h5 className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-wider">
                 {t.modelRouter.modelScores}
               </h5>
               <div className="space-y-0.5">
                 {sortedScores.map(([model, score]) => (
-                  <div key={model} className="flex items-center gap-2 text-[11px]">
+                  <div
+                    key={model}
+                    className="flex items-center gap-2 text-xs"
+                  >
                     <span
                       className={cn(
                         "flex-1 truncate",
@@ -282,7 +300,7 @@ export function ModelRouterIndicator({
                         style={{ width: `${Math.min(100, score * 100)}%` }}
                       />
                     </div>
-                    <span className="w-8 text-right font-mono text-[10px]">
+                    <span className="w-8 text-right font-mono text-xs">
                       {formatScore(score)}
                     </span>
                   </div>
@@ -294,7 +312,7 @@ export function ModelRouterIndicator({
           {/* Recent history */}
           {history.length > 0 && (
             <div>
-              <h5 className="text-muted-foreground mb-1 text-[10px] font-medium uppercase tracking-wider">
+              <h5 className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-wider">
                 {t.modelRouter.recentRouting}
               </h5>
               <div className="max-h-24 space-y-0.5 overflow-y-auto">
@@ -304,7 +322,7 @@ export function ModelRouterIndicator({
                   return (
                     <div
                       key={`${d.timestamp}-${i}`}
-                      className="flex items-center gap-1.5 text-[10px] text-muted-foreground"
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground"
                     >
                       <Icon size={10} className={meta?.color ?? ""} />
                       <span className="truncate flex-1">
@@ -319,7 +337,7 @@ export function ModelRouterIndicator({
           )}
 
           {loadingHistory && (
-            <p className="text-muted-foreground text-center text-[10px]">
+            <p className="text-muted-foreground text-center text-xs">
               {t.modelRouter.loadingHistory}
             </p>
           )}

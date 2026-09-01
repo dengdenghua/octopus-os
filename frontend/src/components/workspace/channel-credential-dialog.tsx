@@ -10,6 +10,8 @@ import { useI18n } from "@/core/i18n/hooks";
 import type { Translations } from "@/core/i18n/locales/types";
 
 import { Button } from "@/components/ui/button";
+import { RoutedWebLink } from "@/components/ui/routed-web-link";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -491,6 +493,7 @@ export function ChannelCredentialDialog({
   const [showSecret, setShowSecret] = useState<Record<string, boolean>>({});
   const [masked, setMasked] = useState<Record<string, string> | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { confirm: confirmAction, confirmDialog } = useConfirmDialog();
 
   useEffect(() => {
     if (!open) return;
@@ -503,9 +506,12 @@ export function ChannelCredentialDialog({
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(`${getBackendBaseURL()}/api/channels/credentials`, {
-          headers: authHeaders(),
-        });
+        const r = await fetch(
+          `${getBackendBaseURL()}/api/channels/credentials`,
+          {
+            headers: authHeaders(),
+          },
+        );
         if (!r.ok) throw new Error(r.statusText);
         const data = (await r.json()) as {
           credentials: Record<string, Record<string, string>>;
@@ -531,11 +537,14 @@ export function ChannelCredentialDialog({
     }
     setSubmitting(true);
     try {
-      const r = await fetch(`${getBackendBaseURL()}/api/channels/credentials/${platform}`, {
-        method: "POST",
-        headers: jsonAuthHeaders(),
-        body: JSON.stringify(values),
-      });
+      const r = await fetch(
+        `${getBackendBaseURL()}/api/channels/credentials/${platform}`,
+        {
+          method: "POST",
+          headers: jsonAuthHeaders(),
+          body: JSON.stringify(values),
+        },
+      );
       if (!r.ok) {
         const detail = await r.text();
         throw new Error(detail || r.statusText);
@@ -544,25 +553,37 @@ export function ChannelCredentialDialog({
       onSaved();
       onOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.channelCredential.saveFailed);
+      toast.error(
+        e instanceof Error ? e.message : t.channelCredential.saveFailed,
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm(t.channelCredential.confirmDisconnect(displayName))) return;
+    const ok = await confirmAction({
+      title: t.channelCredential.disconnect,
+      description: t.channelCredential.confirmDisconnect(displayName),
+      confirmLabel: t.channelCredential.disconnect,
+    });
+    if (!ok) return;
     try {
-      const r = await fetch(`${getBackendBaseURL()}/api/channels/credentials/${platform}`, {
-        method: "DELETE",
-        headers: authHeaders(),
-      });
+      const r = await fetch(
+        `${getBackendBaseURL()}/api/channels/credentials/${platform}`,
+        {
+          method: "DELETE",
+          headers: authHeaders(),
+        },
+      );
       if (!r.ok) throw new Error(r.statusText);
       toast.success(`${displayName} ${t.channelCredential.disconnected}`);
       onDeleted();
       onOpenChange(false);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.channelCredential.deleteFailed);
+      toast.error(
+        e instanceof Error ? e.message : t.channelCredential.deleteFailed,
+      );
     }
   }
 
@@ -571,32 +592,36 @@ export function ChannelCredentialDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-base">
-            {hasExisting ? t.channelCredential.editCredential : t.channelCredential.setCredential} {displayName} {t.channelCredential.botSuffix}
+            {hasExisting
+              ? t.channelCredential.editCredential
+              : t.channelCredential.setCredential}{" "}
+            {displayName} {t.channelCredential.botSuffix}
           </DialogTitle>
-          <DialogDescription className="text-[12px]">
+          <DialogDescription className="text-xs">
             {t.channelCredential.credentialLocalHint}
             {helpUrl && (
               <>
                 {" "}
-                <a
+                <RoutedWebLink
                   href={helpUrl}
-                  target="_blank"
-                  rel="noreferrer"
+                  openTargetSource="channel-credential-help"
                   className="text-primary underline underline-offset-2"
                 >
                   {t.channelCredential.howToConnect}
-                </a>
+                </RoutedWebLink>
               </>
             )}
           </DialogDescription>
         </DialogHeader>
 
         {!supported ? (
-          <div className="rounded-lg border border-dashed border-border/60 px-4 py-8 text-center text-[12px] text-muted-foreground">
-            <div className="mb-2 font-medium">{t.channelCredential.comingSoon}</div>
+          <div className="rounded-lg border border-dashed border-border-default px-4 py-8 text-center text-xs text-muted-foreground">
+            <div className="mb-2 font-medium">
+              {t.channelCredential.comingSoon}
+            </div>
             <div>
               {displayName} {t.channelCredential.unsupportedPlatformDesc1}
-              <code className="mx-1 rounded bg-muted/60 px-1 py-0.5 text-[11px]">
+              <code className="mx-1 rounded bg-muted/60 px-1 py-0.5 text-xs">
                 config.yaml
               </code>
               {t.channelCredential.unsupportedPlatformDesc2}
@@ -613,14 +638,14 @@ export function ChannelCredentialDialog({
         ) : (
           <>
             {hasExisting && masked && (
-              <div className="rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground space-y-0.5">
+              <div className="rounded-lg border border-border-subtle bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-0.5">
                 <div className="mb-1 font-medium text-foreground">
                   {t.channelCredential.currentConfigured}
                 </div>
                 {fields.map((f) => (
                   <div key={f.key} className="flex justify-between gap-2">
                     <span>{f.label}</span>
-                    <span className="font-mono truncate max-w-[220px]">
+                    <span className="font-mono truncate max-w-[var(--text-truncate-xl)]">
                       {masked[f.key] ?? "—"}
                     </span>
                   </div>
@@ -634,10 +659,10 @@ export function ChannelCredentialDialog({
                 const shown = showSecret[f.key];
                 return (
                   <div key={f.key} className="space-y-1">
-                    <label className="text-[12px] font-medium">
+                    <label className="text-xs font-medium">
                       {f.label}
                       {f.required && (
-                        <span className="ml-1 text-rose-500">*</span>
+                        <span className="ml-1 text-destructive">*</span>
                       )}
                     </label>
                     <div className="relative">
@@ -654,8 +679,8 @@ export function ChannelCredentialDialog({
                         autoComplete="off"
                         spellCheck={false}
                         className={cn(
-                          "w-full rounded-md border border-border/60 bg-background/70",
-                          "px-2.5 py-1.5 text-[12px] font-mono outline-none",
+                          "w-full rounded-md border border-border-default bg-background/70",
+                          "px-2.5 py-1.5 text-xs font-mono outline-none",
                           "placeholder:text-muted-foreground/40",
                           "focus:border-primary/50 focus:ring-2 focus:ring-primary/10",
                           isSecret && "pr-9",
@@ -671,7 +696,11 @@ export function ChannelCredentialDialog({
                             }))
                           }
                           className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
-                          title={shown ? t.channelCredential.hide : t.channelCredential.show}
+                          title={
+                            shown
+                              ? t.channelCredential.hide
+                              : t.channelCredential.show
+                          }
                         >
                           {shown ? (
                             <EyeOffIcon className="size-3.5" />
@@ -682,7 +711,7 @@ export function ChannelCredentialDialog({
                       )}
                     </div>
                     {f.hint && (
-                      <div className="text-[10px] text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         {f.hint}
                       </div>
                     )}
@@ -701,7 +730,7 @@ export function ChannelCredentialDialog({
                 variant="ghost"
                 size="sm"
                 onClick={handleDelete}
-                className="text-[12px] text-muted-foreground hover:text-destructive"
+                className="text-xs text-muted-foreground hover:text-destructive"
               >
                 <XIcon className="mr-1.5 size-3" />
                 {t.channelCredential.disconnect}
@@ -714,7 +743,7 @@ export function ChannelCredentialDialog({
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              className="h-8 text-[12px]"
+              className="h-8 text-xs"
             >
               {t.common.cancel}
             </Button>
@@ -724,21 +753,24 @@ export function ChannelCredentialDialog({
                 size="sm"
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="h-8 text-[12px]"
+                className="h-8 text-xs"
               >
-                {submitting ? t.channelCredential.saving : t.channelCredential.saveAndConnect}
+                {submitting
+                  ? t.channelCredential.saving
+                  : t.channelCredential.saveAndConnect}
               </Button>
             )}
           </div>
         </div>
       </DialogContent>
+      {confirmDialog}
     </Dialog>
   );
 }
 
-
 function WeChatQRForm({
-  displayName, onConfirmed,
+  displayName,
+  onConfirmed,
 }: {
   displayName: string;
   onConfirmed: () => void;
@@ -747,7 +779,13 @@ function WeChatQRForm({
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [qrImg, setQrImg] = useState<string | null>(null);
   const [status, setStatus] = useState<
-    "idle" | "pending" | "scanned" | "confirmed" | "expired" | "rejected" | "error"
+    | "idle"
+    | "pending"
+    | "scanned"
+    | "confirmed"
+    | "expired"
+    | "rejected"
+    | "error"
   >("idle");
   const [errMsg, setErrMsg] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -756,10 +794,13 @@ function WeChatQRForm({
     setStarting(true);
     setErrMsg(null);
     try {
-      const r = await fetch(`${getBackendBaseURL()}/api/channels/wechat/qr/start`, {
-        method: "POST",
-        headers: jsonAuthHeaders(),
-      });
+      const r = await fetch(
+        `${getBackendBaseURL()}/api/channels/wechat/qr/start`,
+        {
+          method: "POST",
+          headers: jsonAuthHeaders(),
+        },
+      );
       if (!r.ok) throw new Error(await r.text());
       const data = (await r.json()) as {
         qrcode: string;
@@ -770,7 +811,9 @@ function WeChatQRForm({
       setStatus("pending");
     } catch (e) {
       swallow(e);
-      setErrMsg(e instanceof Error ? e.message : t.channelCredential.qrCodeFailed);
+      setErrMsg(
+        e instanceof Error ? e.message : t.channelCredential.qrCodeFailed,
+      );
       setStatus("error");
     } finally {
       setStarting(false);
@@ -785,14 +828,18 @@ function WeChatQRForm({
     let errorCount = 0;
     const tick = async () => {
       try {
-        const r = await fetch(`${getBackendBaseURL()}/api/channels/wechat/qr/poll`, {
-          method: "POST",
-          headers: jsonAuthHeaders(),
-          body: JSON.stringify({ qrcode: qrCode }),
-        });
+        const r = await fetch(
+          `${getBackendBaseURL()}/api/channels/wechat/qr/poll`,
+          {
+            method: "POST",
+            headers: jsonAuthHeaders(),
+            body: JSON.stringify({ qrcode: qrCode }),
+          },
+        );
         if (!r.ok) throw new Error(await r.text());
         const data = (await r.json()) as {
-          status: string; confirmed: boolean;
+          status: string;
+          confirmed: boolean;
         };
         if (cancelled) return;
         errorCount = 0;
@@ -807,7 +854,9 @@ function WeChatQRForm({
         if (cancelled) return;
         errorCount++;
         if (errorCount >= 3) {
-          setErrMsg(e instanceof Error ? e.message : t.channelCredential.pollFailed);
+          setErrMsg(
+            e instanceof Error ? e.message : t.channelCredential.pollFailed,
+          );
           setStatus("error");
         }
       }
@@ -818,12 +867,12 @@ function WeChatQRForm({
       cancelled = true;
       clearInterval(id);
     };
-  }, [qrCode, status, displayName, onConfirmed]);
+  }, [qrCode, status, displayName, onConfirmed, t]);
 
   if (!qrCode) {
     return (
-      <div className="rounded-lg border border-dashed border-border/60 px-4 py-8 text-center">
-        <p className="mb-3 text-[12px] text-muted-foreground">
+      <div className="rounded-lg border border-dashed border-border-default px-4 py-8 text-center">
+        <p className="mb-3 text-xs text-muted-foreground">
           {t.channelCredential.wechatScanInstruction}
         </p>
         <Button
@@ -831,13 +880,13 @@ function WeChatQRForm({
           size="sm"
           onClick={startQr}
           disabled={starting}
-          className="h-8 text-[12px]"
+          className="h-8 text-xs"
         >
-          {starting ? t.channelCredential.requesting : t.channelCredential.getQrCode}
+          {starting
+            ? t.channelCredential.requesting
+            : t.channelCredential.getQrCode}
         </Button>
-        {errMsg && (
-          <p className="mt-3 text-[11px] text-rose-600">{errMsg}</p>
-        )}
+        {errMsg && <p className="mt-3 text-xs text-destructive">{errMsg}</p>}
       </div>
     );
   }
@@ -855,14 +904,9 @@ function WeChatQRForm({
   return (
     <div className="flex flex-col items-center py-4">
       {qrImg && (
-        <div className="rounded-lg border border-border/40 bg-background p-2">
+        <div className="rounded-lg border border-border-subtle bg-background p-2">
           {qrImg.startsWith("http") ? (
-            <QRCodeSVG
-              value={qrImg}
-              size={192}
-              level="M"
-              marginSize={2}
-            />
+            <QRCodeSVG value={qrImg} size={192} level="M" marginSize={2} />
           ) : (
             <img
               src={
@@ -876,15 +920,21 @@ function WeChatQRForm({
           )}
         </div>
       )}
-      <div className={cn(
-        "mt-3 text-[12px] tabular-nums",
-        status === "confirmed" && "text-emerald-600",
-        (status === "expired" || status === "rejected" || status === "error")
-          && "text-rose-600",
-      )}>
+      <div
+        className={cn(
+          "mt-3 text-xs tabular-nums",
+          status === "confirmed" && "text-success",
+          (status === "expired" ||
+            status === "rejected" ||
+            status === "error") &&
+            "text-destructive",
+        )}
+      >
         {statusLabel[status]}
       </div>
-      {(status === "expired" || status === "rejected" || status === "error") && (
+      {(status === "expired" ||
+        status === "rejected" ||
+        status === "error") && (
         <Button
           type="button"
           variant="outline"
@@ -895,14 +945,12 @@ function WeChatQRForm({
             setStatus("idle");
             setErrMsg(null);
           }}
-          className="mt-3 h-8 text-[12px]"
+          className="mt-3 h-8 text-xs"
         >
           {t.channelCredential.refreshQr}
         </Button>
       )}
-      {errMsg && (
-        <p className="mt-2 text-[11px] text-rose-600">{errMsg}</p>
-      )}
+      {errMsg && <p className="mt-2 text-xs text-destructive">{errMsg}</p>}
     </div>
   );
 }

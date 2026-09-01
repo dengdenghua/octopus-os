@@ -13,12 +13,12 @@ the modules' INTEGRATION is healthy, not to re-cover their unit
 behaviour. If this test passes, we have high confidence the full
 chain wires up correctly when an operator turns on every knob.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
 from runtime.safety.evolution.guard_judge import GuardJudgeVerdict
 from runtime.safety.evolution.guard_judge_batch import run_judge_batch
 from runtime.safety.evolution.guard_telemetry import GuardTelemetry
@@ -30,7 +30,9 @@ from runtime.safety.validation.trust_signal import (
 
 
 def _seed_security_hits(
-    sink: GuardTelemetry, label: str, n: int,
+    sink: GuardTelemetry,
+    label: str,
+    n: int,
 ) -> None:
     for _ in range(n):
         sink.record(label, "security")
@@ -42,6 +44,7 @@ def _judge_all(
     verdict: str,
 ) -> None:
     """Convenience: judge every unjudged hit with a fixed verdict."""
+
     def fixed(_label, _msg, _traj):
         return GuardJudgeVerdict(action=verdict)
 
@@ -60,7 +63,8 @@ def empty_sink(tmp_path: Path) -> GuardTelemetry:
 
 class TestHappyAgentPath:
     def test_low_tp_high_trust_gate_passes_clean_message(
-        self, empty_sink: GuardTelemetry,
+        self,
+        empty_sink: GuardTelemetry,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Seed 10 secret-leak hits, all judged FALSE positive
@@ -76,8 +80,8 @@ class TestHappyAgentPath:
 
         # Wire trust into the gate (mirrors what production wiring does).
         from runtime.safety.validation import trust_signal
-        monkeypatch.setattr(trust_signal, "fetch_current_trust_score",
-                            lambda **_: score)
+
+        monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: score)
 
         verdict = gate.check_outbound(
             "Hello team, here's the status update.",
@@ -95,7 +99,8 @@ class TestHappyAgentPath:
 
 class TestSuspectAgentPath:
     def test_high_tp_low_trust_gate_escalates_clean_message(
-        self, empty_sink: GuardTelemetry,
+        self,
+        empty_sink: GuardTelemetry,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Seed 10 secret-leak hits, all judged TRUE positive
@@ -110,8 +115,8 @@ class TestSuspectAgentPath:
         assert classify_trust_score(score) == "suspect"
 
         from runtime.safety.validation import trust_signal
-        monkeypatch.setattr(trust_signal, "fetch_current_trust_score",
-                            lambda **_: score)
+
+        monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: score)
 
         verdict = gate.check_outbound(
             "Status update.",
@@ -123,7 +128,8 @@ class TestSuspectAgentPath:
         assert "trust_signal_escalate" in verdict.reason
 
     def test_suspect_blocks_relaxing_evolver_mutation(
-        self, empty_sink: GuardTelemetry,
+        self,
+        empty_sink: GuardTelemetry,
     ) -> None:
         # Same setup: agent is suspect.
         _seed_security_hits(empty_sink, "secret-leak guard", 10)
@@ -162,7 +168,8 @@ class TestSuspectAgentPath:
 
 class TestFullChainIntegration:
     def test_end_to_end_chain_no_mocks(
-        self, empty_sink: GuardTelemetry,
+        self,
+        empty_sink: GuardTelemetry,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Step 1: ReAct loop (simulated) records hits.
@@ -182,7 +189,8 @@ class TestFullChainIntegration:
         )
         assert result.total_judged == 10
         assert result.by_action == {
-            "true_positive": 5, "false_positive": 5,
+            "true_positive": 5,
+            "false_positive": 5,
         }
 
         # Step 3: digest computes per-label precision.
@@ -197,11 +205,12 @@ class TestFullChainIntegration:
 
         # Step 5: gate consults trust signal — neutral → no escalation.
         from runtime.safety.validation import trust_signal
-        monkeypatch.setattr(trust_signal, "fetch_current_trust_score",
-                            lambda **_: score)
+
+        monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: score)
 
         verdict = gate.check_outbound(
-            "ok", destination="channels:slack:c1",
+            "ok",
+            destination="channels:slack:c1",
             enable_trust_signal=True,
         )
         assert verdict.action == "allow"
@@ -211,6 +220,7 @@ class TestFullChainIntegration:
             EvolutionPolicy,
             PromptEvolver,
         )
+
         ev = PromptEvolver.__new__(PromptEvolver)
         ev._guard_digest_provider = lambda: digest
         ev._trust_score_provider = lambda: score

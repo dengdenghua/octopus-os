@@ -1,4 +1,3 @@
-
 import {
   createContext,
   useCallback,
@@ -53,11 +52,7 @@ export function I18nProvider({
     [locale, t, handleSetLocale],
   );
 
-  return (
-    <I18nContext.Provider value={value}>
-      {children}
-    </I18nContext.Provider>
-  );
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
 export function useI18nContext() {

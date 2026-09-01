@@ -1,0 +1,73 @@
+#!/usr/bin/env dash
+set -eu
+
+require_supported_host() {
+  os_release=/usr/lib/os-release
+  if [ ! -r "$os_release" ]; then
+    echo "Echo OS requires readable /usr/lib/os-release." >&2
+    exit 1
+  fi
+
+  distribution=
+  distribution_version=
+  while IFS='=' read -r key value; do
+    value=${value#\"}
+    value=${value%\"}
+    value=${value#\'}
+    value=${value%\'}
+    case "$key" in
+      ID) distribution=$value ;;
+      VERSION_ID) distribution_version=$value ;;
+    esac
+  done < "$os_release"
+
+  if [ "$distribution" != debian ] || [ "$distribution_version" != 13 ]; then
+    echo "Echo OS supports only Debian 13 with OpenMediaVault 8." >&2
+    exit 1
+  fi
+
+  if ! omv_version=$(/usr/bin/dpkg-query -W -f='${Version}' openmediavault 2>/dev/null); then
+    echo "OpenMediaVault is not installed." >&2
+    exit 1
+  fi
+  omv_upstream=${omv_version#*:}
+  case "$omv_upstream" in
+    8|8.*) ;;
+    *)
+      echo "Echo OS supports only OpenMediaVault 8 (found $omv_version)." >&2
+      exit 1
+    ;;
+  esac
+}
+
+manual_state=/var/lib/echo-os/omv-host/install-state.json
+manual_unit=/etc/systemd/system/echo-omv-bridge.service
+manual_code=/usr/lib/echo-os/omv-bridge/appliance/omv_bridge.py
+
+case "$1" in
+  install|upgrade)
+    require_supported_host
+    if [ -e "$manual_state" ] || [ -L "$manual_state" ]; then
+      echo "The manually managed Echo OMV bridge is still installed." >&2
+      echo "Uninstall it with echo_omv_host.py before installing this package." >&2
+      exit 1
+    fi
+    if [ -z "${2:-}" ]; then
+      for path in "$manual_unit" "$manual_code"; do
+        if [ -e "$path" ] || [ -L "$path" ]; then
+          echo "Unmanaged Echo OMV bridge files already exist at $path." >&2
+          echo "Refusing to overwrite them with the native plugin package." >&2
+          exit 1
+        fi
+      done
+    fi
+  ;;
+  abort-upgrade)
+  ;;
+  *)
+    echo "preinst called with unknown argument '$1'" >&2
+    exit 1
+  ;;
+esac
+
+exit 0

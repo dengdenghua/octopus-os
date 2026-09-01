@@ -9,7 +9,11 @@ interface SelectionEditorProps {
   className?: string;
 }
 
-export function SelectionEditor({ onSubmit, isLoading, className }: SelectionEditorProps) {
+export function SelectionEditor({
+  onSubmit,
+  isLoading,
+  className,
+}: SelectionEditorProps) {
   const { t } = useI18n();
   const [isVisible, setIsVisible] = useState(false);
   const [selection, setSelection] = useState("");
@@ -21,13 +25,13 @@ export function SelectionEditor({ onSubmit, isLoading, className }: SelectionEdi
   // Handle text selection
   const handleSelectionChange = useCallback(() => {
     const selectedText = window.getSelection()?.toString() || "";
-    
+
     if (selectedText.length > 0) {
       const selectionObj = window.getSelection();
       if (selectionObj && selectionObj.rangeCount > 0) {
         const range = selectionObj.getRangeAt(0);
         const rect = range.getBoundingClientRect();
-        
+
         // Position the editor below the selection
         setPosition({
           x: rect.left + rect.width / 2,
@@ -39,7 +43,7 @@ export function SelectionEditor({ onSubmit, isLoading, className }: SelectionEdi
     } else {
       // Don't hide immediately to allow clicking the editor
       setTimeout(() => {
-        if (!containerRef.current?.matches(':hover')) {
+        if (!containerRef.current?.matches(":hover")) {
           setIsVisible(false);
           setInstruction("");
         }
@@ -49,7 +53,8 @@ export function SelectionEditor({ onSubmit, isLoading, className }: SelectionEdi
 
   useEffect(() => {
     document.addEventListener("selectionchange", handleSelectionChange);
-    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+    return () =>
+      document.removeEventListener("selectionchange", handleSelectionChange);
   }, [handleSelectionChange]);
 
   useEffect(() => {
@@ -73,15 +78,18 @@ export function SelectionEditor({ onSubmit, isLoading, className }: SelectionEdi
     window.getSelection()?.removeAllRanges();
   }, []);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-    if (e.key === "Escape") {
-      handleClose();
-    }
-  }, [handleSubmit, handleClose]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handleSubmit();
+      }
+      if (e.key === "Escape") {
+        handleClose();
+      }
+    },
+    [handleSubmit, handleClose],
+  );
 
   if (!isVisible) return null;
 
@@ -89,8 +97,8 @@ export function SelectionEditor({ onSubmit, isLoading, className }: SelectionEdi
     <div
       ref={containerRef}
       className={cn(
-        "fixed z-50 animate-in fade-in zoom-in-95 duration-200",
-        className
+        "fixed z-50 animate-in fade-in zoom-in-95 duration-base",
+        className,
       )}
       style={{
         left: position.x,
@@ -98,8 +106,8 @@ export function SelectionEditor({ onSubmit, isLoading, className }: SelectionEdi
         transform: "translateX(-50%)",
       }}
     >
-      <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-popover shadow-lg px-3 py-2 min-w-[280px]">
-        <SparklesIcon className="size-4 text-violet-500 shrink-0" />
+      <div className="flex items-center gap-2 rounded-lg border border-border-default bg-popover shadow-[var(--shadow-md)] px-3 py-2 min-w-[280px]">
+        <SparklesIcon className="size-4 text-chart-1 shrink-0" />
         <input
           ref={inputRef}
           type="text"
@@ -111,7 +119,7 @@ export function SelectionEditor({ onSubmit, isLoading, className }: SelectionEdi
           disabled={isLoading}
         />
         {isLoading ? (
-          <Loader2Icon className="size-4 animate-spin text-violet-500 shrink-0" />
+          <Loader2Icon className="size-4 animate-spin text-chart-1 shrink-0" />
         ) : (
           <button
             onClick={handleClose}
@@ -122,7 +130,7 @@ export function SelectionEditor({ onSubmit, isLoading, className }: SelectionEdi
         )}
       </div>
       {/* Arrow */}
-      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-popover border-l border-t border-border/50 rotate-45" />
+      <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-popover border-l border-t border-border-default rotate-45" />
     </div>
   );
 }

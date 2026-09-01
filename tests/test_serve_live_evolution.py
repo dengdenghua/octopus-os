@@ -10,7 +10,6 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config  # noqa: E402
 from runtime.safety.experiments import PromptOptimizer, PromptVariant  # noqa: E402
 from runtime.sensing.gateway import create_openai_router  # noqa: E402
@@ -33,8 +32,7 @@ def _write_cfg(tmp_path: Path, planner: str = "llm") -> Path:
         )
     else:
         path.write_text(
-            "planner:\n  type: static\n"
-            "budget:\n  max_tokens: 5000\n  max_usd: 0.05\n",
+            "planner:\n  type: static\nbudget:\n  max_tokens: 5000\n  max_usd: 0.05\n",
             encoding="utf-8",
         )
     return path
@@ -62,84 +60,109 @@ def _write_variants(tmp_path: Path) -> Path:
 
 class TestGatewayWithOptimizer:
     def test_response_includes_variant_name(self, tmp_path):
-        cfg = AgentConfig(planner=PlannerConfig(
-            type="llm", model="mock/g",
-            mock_response=json.dumps({
-                "reasoning": "r",
-                "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
-            }),
-        ))
+        cfg = AgentConfig(
+            planner=PlannerConfig(
+                type="llm",
+                model="mock/g",
+                mock_response=json.dumps(
+                    {
+                        "reasoning": "r",
+                        "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
+                    }
+                ),
+            )
+        )
         stack = build_from_config(cfg)
-        opt = PromptOptimizer(stack, [
-            PromptVariant(name="A", system_prompt_suffix="", weight=1.0),
-            PromptVariant(name="B", system_prompt_suffix="X.", weight=1.0),
-        ])
+        opt = PromptOptimizer(
+            stack,
+            [
+                PromptVariant(name="A", system_prompt_suffix="", weight=1.0),
+                PromptVariant(name="B", system_prompt_suffix="X.", weight=1.0),
+            ],
+        )
 
         app = FastAPI()
         app.include_router(create_openai_router(stack, prompt_optimizer=opt))
         client = TestClient(app)
 
-        r = client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "list"}],
-        })
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "list"}],
+            },
+        )
         assert r.status_code == 200
         data = r.json()
-        assert "variant" in data["octopus"]
-        assert data["octopus"]["variant"] in {"A", "B"}
+        assert "variant" in data["echo"]
+        assert data["echo"]["variant"] in {"A", "B"}
 
     def test_variant_stats_accumulate(self, tmp_path):
-        cfg = AgentConfig(planner=PlannerConfig(
-            type="llm", model="mock/g",
-            mock_response=json.dumps({
-                "reasoning": "r",
-                "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
-            }),
-        ))
+        cfg = AgentConfig(
+            planner=PlannerConfig(
+                type="llm",
+                model="mock/g",
+                mock_response=json.dumps(
+                    {
+                        "reasoning": "r",
+                        "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
+                    }
+                ),
+            )
+        )
         stack = build_from_config(cfg)
-        opt = PromptOptimizer(stack, [
-            PromptVariant(name="A", system_prompt_suffix="", weight=1.0),
-            PromptVariant(name="B", system_prompt_suffix="X.", weight=1.0),
-        ])
+        opt = PromptOptimizer(
+            stack,
+            [
+                PromptVariant(name="A", system_prompt_suffix="", weight=1.0),
+                PromptVariant(name="B", system_prompt_suffix="X.", weight=1.0),
+            ],
+        )
 
         app = FastAPI()
         app.include_router(create_openai_router(stack, prompt_optimizer=opt))
         client = TestClient(app)
 
         for i in range(10):
-            client.post("/v1/chat/completions", json={
-                "messages": [{"role": "user", "content": f"task-{i}"}],
-            })
+            client.post(
+                "/v1/chat/completions",
+                json={
+                    "messages": [{"role": "user", "content": f"task-{i}"}],
+                },
+            )
 
-        total = sum(
-            opt._splitter.stats[n].assignments for n in opt.variant_names
-        )
+        total = sum(opt._splitter.stats[n].assignments for n in opt.variant_names)
         assert total == 10
         # Implementation note.
-        hit = [
-            n for n in opt.variant_names
-            if opt._splitter.stats[n].assignments > 0
-        ]
+        hit = [n for n in opt.variant_names if opt._splitter.stats[n].assignments > 0]
         assert len(hit) >= 1  # Implementation note.
 
     def test_optimizer_none_no_variant_field(self):
-        cfg = AgentConfig(planner=PlannerConfig(
-            type="llm", model="mock/g",
-            mock_response=json.dumps({
-                "reasoning": "r",
-                "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
-            }),
-        ))
+        cfg = AgentConfig(
+            planner=PlannerConfig(
+                type="llm",
+                model="mock/g",
+                mock_response=json.dumps(
+                    {
+                        "reasoning": "r",
+                        "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
+                    }
+                ),
+            )
+        )
         stack = build_from_config(cfg)
         app = FastAPI()
         app.include_router(create_openai_router(stack))  # Implementation note.
         client = TestClient(app)
 
-        r = client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "list"}],
-        })
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "list"}],
+            },
+        )
         assert r.status_code == 200
         # Implementation note.
-        assert "variant" not in r.json()["octopus"]
+        assert "variant" not in r.json()["echo"]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -151,14 +174,14 @@ class TestServePromptEvolution:
     def test_variants_yaml_missing_gracefully(self, tmp_path, monkeypatch, capsys):
         """Implementation note."""
         import uvicorn
-
         from runtime.cli import run_serve
 
         monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)
 
         rc = run_serve(
             config_path=_write_cfg(tmp_path),
-            host="127.0.0.1", port=8000,
+            host="127.0.0.1",
+            port=8000,
             learn_interval_s=0,
             prompt_variants_path=tmp_path / "nope.yaml",
             evolve_interval_s=0,
@@ -169,18 +192,16 @@ class TestServePromptEvolution:
         out = capsys.readouterr().out
         assert "not found" in out or "skipping" in out
 
-    def test_static_planner_skips_evolution_gracefully(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_static_planner_skips_evolution_gracefully(self, tmp_path, monkeypatch, capsys):
         import uvicorn
-
         from runtime.cli import run_serve
 
         monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)
 
         rc = run_serve(
             config_path=_write_cfg(tmp_path, planner="static"),
-            host="127.0.0.1", port=8000,
+            host="127.0.0.1",
+            port=8000,
             learn_interval_s=0,
             prompt_variants_path=_write_variants(tmp_path),
             evolve_interval_s=60,
@@ -192,11 +213,8 @@ class TestServePromptEvolution:
         # Implementation note.
         assert "LLMPlanner" in out or "skipping" in out
 
-    def test_evolve_interval_registers_scheduler_task(
-        self, tmp_path, monkeypatch
-    ):
+    def test_evolve_interval_registers_scheduler_task(self, tmp_path, monkeypatch):
         import uvicorn
-
         from runtime import scheduler
         from runtime.cli import run_serve
 
@@ -213,7 +231,8 @@ class TestServePromptEvolution:
 
         run_serve(
             config_path=_write_cfg(tmp_path),
-            host="127.0.0.1", port=8000,
+            host="127.0.0.1",
+            port=8000,
             learn_interval_s=0,
             prompt_variants_path=_write_variants(tmp_path),
             evolve_interval_s=3600,
@@ -222,12 +241,9 @@ class TestServePromptEvolution:
         )
         assert "prompt_evolve" in captured["r"].task_names()
 
-    def test_variants_only_no_evolver_skipped(
-        self, tmp_path, monkeypatch
-    ):
+    def test_variants_only_no_evolver_skipped(self, tmp_path, monkeypatch):
         """Implementation note."""
         import uvicorn
-
         from runtime import scheduler
         from runtime.cli import run_serve
 
@@ -244,7 +260,8 @@ class TestServePromptEvolution:
 
         run_serve(
             config_path=_write_cfg(tmp_path),
-            host="127.0.0.1", port=8000,
+            host="127.0.0.1",
+            port=8000,
             learn_interval_s=0,
             prompt_variants_path=_write_variants(tmp_path),
             evolve_interval_s=0,  # Implementation note.
@@ -253,18 +270,16 @@ class TestServePromptEvolution:
         )
         assert "prompt_evolve" not in captured["r"].task_names()
 
-    def test_serve_output_shows_variants(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_serve_output_shows_variants(self, tmp_path, monkeypatch, capsys):
         import uvicorn
-
         from runtime.cli import run_serve
 
         monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)
 
         run_serve(
             config_path=_write_cfg(tmp_path),
-            host="127.0.0.1", port=8000,
+            host="127.0.0.1",
+            port=8000,
             learn_interval_s=0,
             prompt_variants_path=_write_variants(tmp_path),
             evolve_interval_s=0,

@@ -6,7 +6,6 @@ import threading
 import time
 
 import pytest
-
 from runtime.adapters.scheduler import BackgroundRunner
 
 # ═══════════════════════════════════════════════════════════
@@ -39,7 +38,7 @@ class TestConcurrentExecution:
         b_done = threading.Event()
 
         def slow_a():
-            barrier.wait()      # Implementation note.
+            barrier.wait()  # Implementation note.
             time.sleep(0.08)
             a_done.set()
 

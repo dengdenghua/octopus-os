@@ -1,4 +1,4 @@
-﻿# Octopus Mobile · 技能体系
+﻿# Echo Mobile · 技能体系
 
 > **30+ 移动技能 · SKILL.md 驱动 · 自进化可热加载**
 
@@ -76,7 +76,7 @@
 | `android.get_clipboard` | 读剪贴板 | 获取当前剪贴板内容 |
 | `android.set_clipboard` | 写剪贴板 | 设置剪贴板内容 |
 
-**总计 30 个技能**（与 Octopus Mobile 现有 30 个 BaseTool 一一对应）。
+**总计 30 个技能**（与 Echo Mobile 现有 30 个 BaseTool 一一对应）。
 
 ---
 
@@ -136,7 +136,7 @@ parameters:
 
 ### 3.2 `android.get_screen_info` · 获取屏幕信息
 
-这是**最常用**的技能，**类似 Octopus Mobile 的同款**。
+这是**最常用**的技能，**类似 Echo Mobile 的同款**。
 
 **返回结构**：
 ```json
@@ -176,7 +176,7 @@ parameters:
 }
 ```
 
-**关键优化**（参考 Octopus Mobile）：
+**关键优化**（参考 Echo Mobile）：
 1. **过滤空节点**（无 text/desc/不可交互）
 2. **类名简化**（`android.widget.TextView` → `TextView`）
 3. **不可见节点不递归子节点**
@@ -335,9 +335,9 @@ android.<app>_<动作>            # 远程推送的专用技能
 
 ---
 
-## 6. 技能 vs Octopus Mobile BaseTool 的映射
+## 6. 技能 vs Echo Mobile BaseTool 的映射
 
-| SKILL.md 技能 | Octopus Mobile BaseTool | 实现 |
+| SKILL.md 技能 | Echo Mobile BaseTool | 实现 |
 |---|---|---|
 | `android.tap` | `TapTool.java` | ClawAccessibilityService.dispatchGesture |
 | `android.swipe` | `SwipeTool.java` | ClawAccessibilityService.dispatchGesture |

@@ -38,6 +38,7 @@ templates against the live ``outputs`` dict using
 Tests below pin both the new strategy and the MVP fallback for
 trajectories without templates.
 """
+
 from __future__ import annotations
 
 from runtime.execution.suckers import Skill, SkillRegistry
@@ -121,20 +122,24 @@ class TestTemplateReplay:
         registry = SkillRegistry()
         # Register two tolerant handlers so _make_candidate's
         # golden-test generation doesn't try to validate shapes.
-        registry.register(Skill(
-            name=SkillId("read"),
-            description="r",
-            handler=lambda **kw: {"content": "x"},
-            idempotent=True,
-            trusted_source="skill://public/read",
-        ))
-        registry.register(Skill(
-            name=SkillId("parse"),
-            description="p",
-            handler=lambda **kw: {"parsed": True},
-            idempotent=True,
-            trusted_source="skill://public/parse",
-        ))
+        registry.register(
+            Skill(
+                name=SkillId("read"),
+                description="r",
+                handler=lambda **kw: {"content": "x"},
+                idempotent=True,
+                trusted_source="skill://public/read",
+            )
+        )
+        registry.register(
+            Skill(
+                name=SkillId("parse"),
+                description="p",
+                handler=lambda **kw: {"parsed": True},
+                idempotent=True,
+                trusted_source="skill://public/parse",
+            )
+        )
 
         forge = SkillForge(
             journal=_DummyJournal(trajs=[]),
@@ -142,20 +147,26 @@ class TestTemplateReplay:
             config=ForgeConfig(min_hits=1, min_success_rate=0.0),
         )
 
-        traj = _mk_trajectory([
-            _mk_step(
-                0, "n0", "read",
-                args={"path": "/sample"},
-                args_template={"path": "/sample"},
-                output={"content": "original"},
-            ),
-            _mk_step(
-                1, "n1", "parse",
-                args={"content": "original"},  # resolved
-                args_template={"content": "{n0.content}"},  # raw
-                output={"parsed": True},
-            ),
-        ])
+        traj = _mk_trajectory(
+            [
+                _mk_step(
+                    0,
+                    "n0",
+                    "read",
+                    args={"path": "/sample"},
+                    args_template={"path": "/sample"},
+                    output={"content": "original"},
+                ),
+                _mk_step(
+                    1,
+                    "n1",
+                    "parse",
+                    args={"content": "original"},  # resolved
+                    args_template={"content": "{n0.content}"},  # raw
+                    output={"parsed": True},
+                ),
+            ]
+        )
 
         cand = forge._make_candidate(
             signature="read→parse",
@@ -184,20 +195,24 @@ class TestTemplateReplay:
             return {"parsed_len": len(content)}
 
         registry = SkillRegistry()
-        registry.register(Skill(
-            name=SkillId("read"),
-            description="r",
-            handler=_read,
-            idempotent=True,
-            trusted_source="skill://public/read",
-        ))
-        registry.register(Skill(
-            name=SkillId("parse"),
-            description="p",
-            handler=_parse,
-            idempotent=True,
-            trusted_source="skill://public/parse",
-        ))
+        registry.register(
+            Skill(
+                name=SkillId("read"),
+                description="r",
+                handler=_read,
+                idempotent=True,
+                trusted_source="skill://public/read",
+            )
+        )
+        registry.register(
+            Skill(
+                name=SkillId("parse"),
+                description="p",
+                handler=_parse,
+                idempotent=True,
+                trusted_source="skill://public/parse",
+            )
+        )
 
         forge = SkillForge(
             journal=_DummyJournal(trajs=[]),
@@ -215,8 +230,8 @@ class TestTemplateReplay:
             source_sample_count=1,
             source_success_rate=1.0,
             step_templates=[
-                {"path": "/sample/seed"},         # step 0
-                {"content": "{n0.content}"},      # step 1
+                {"path": "/sample/seed"},  # step 0
+                {"content": "{n0.content}"},  # step 1
             ],
         )
 
@@ -245,14 +260,24 @@ class TestTemplateReplay:
             return {"consumed": kw.get("value")}
 
         registry = SkillRegistry()
-        registry.register(Skill(
-            name=SkillId("prod"), description="p", handler=_producer,
-            idempotent=True, trusted_source="skill://public/prod",
-        ))
-        registry.register(Skill(
-            name=SkillId("cons"), description="c", handler=_consumer,
-            idempotent=True, trusted_source="skill://public/cons",
-        ))
+        registry.register(
+            Skill(
+                name=SkillId("prod"),
+                description="p",
+                handler=_producer,
+                idempotent=True,
+                trusted_source="skill://public/prod",
+            )
+        )
+        registry.register(
+            Skill(
+                name=SkillId("cons"),
+                description="c",
+                handler=_consumer,
+                idempotent=True,
+                trusted_source="skill://public/cons",
+            )
+        )
 
         candidate = ForgedSkillCandidate(
             candidate_id="cand-pc12",
@@ -268,7 +293,8 @@ class TestTemplateReplay:
             ],
         )
         forge = SkillForge(
-            journal=_DummyJournal(trajs=[]), registry=registry,
+            journal=_DummyJournal(trajs=[]),
+            registry=registry,
         )
         meta = forge._build_meta_handler(candidate)
         meta(seed="user_seed", unrelated="should_not_propagate")
@@ -315,21 +341,37 @@ class TestErrorHaltFidelity:
             return {"reached": True}
 
         registry = SkillRegistry()
-        registry.register(Skill(
-            name=SkillId("ok"), description="", handler=_ok,
-            idempotent=True, trusted_source="skill://public/ok",
-        ))
-        registry.register(Skill(
-            name=SkillId("boom"), description="", handler=_boom,
-            idempotent=True, trusted_source="skill://public/boom",
-        ))
-        registry.register(Skill(
-            name=SkillId("never"), description="", handler=_never,
-            idempotent=True, trusted_source="skill://public/never",
-        ))
+        registry.register(
+            Skill(
+                name=SkillId("ok"),
+                description="",
+                handler=_ok,
+                idempotent=True,
+                trusted_source="skill://public/ok",
+            )
+        )
+        registry.register(
+            Skill(
+                name=SkillId("boom"),
+                description="",
+                handler=_boom,
+                idempotent=True,
+                trusted_source="skill://public/boom",
+            )
+        )
+        registry.register(
+            Skill(
+                name=SkillId("never"),
+                description="",
+                handler=_never,
+                idempotent=True,
+                trusted_source="skill://public/never",
+            )
+        )
 
         forge = SkillForge(
-            journal=_DummyJournal(trajs=[]), registry=registry,
+            journal=_DummyJournal(trajs=[]),
+            registry=registry,
         )
         candidate = ForgedSkillCandidate(
             candidate_id="ok_boom_never",
@@ -363,23 +405,28 @@ class TestErrorHaltFidelity:
         error · lets operators diagnose schema drift separately
         from handler bugs."""
         registry = SkillRegistry()
-        registry.register(Skill(
-            name=SkillId("prod"),
-            description="",
-            handler=lambda **kw: {"wrong_key": "surprise"},  # no ``value``
-            idempotent=True,
-            trusted_source="skill://public/prod",
-        ))
-        registry.register(Skill(
-            name=SkillId("cons"),
-            description="",
-            handler=lambda value=None: {"consumed": value},
-            idempotent=True,
-            trusted_source="skill://public/cons",
-        ))
+        registry.register(
+            Skill(
+                name=SkillId("prod"),
+                description="",
+                handler=lambda **kw: {"wrong_key": "surprise"},  # no ``value``
+                idempotent=True,
+                trusted_source="skill://public/prod",
+            )
+        )
+        registry.register(
+            Skill(
+                name=SkillId("cons"),
+                description="",
+                handler=lambda value=None: {"consumed": value},
+                idempotent=True,
+                trusted_source="skill://public/cons",
+            )
+        )
 
         forge = SkillForge(
-            journal=_DummyJournal(trajs=[]), registry=registry,
+            journal=_DummyJournal(trajs=[]),
+            registry=registry,
         )
         candidate = ForgedSkillCandidate(
             candidate_id="prod_cons_bad",
@@ -408,19 +455,28 @@ class TestErrorHaltFidelity:
         still get tagged ``success=True`` and ``steps`` matches
         ``total_steps``."""
         registry = SkillRegistry()
-        registry.register(Skill(
-            name=SkillId("a"), description="",
-            handler=lambda **kw: {"ok": 1}, idempotent=True,
-            trusted_source="skill://public/a",
-        ))
-        registry.register(Skill(
-            name=SkillId("b"), description="",
-            handler=lambda **kw: {"ok": 2}, idempotent=True,
-            trusted_source="skill://public/b",
-        ))
+        registry.register(
+            Skill(
+                name=SkillId("a"),
+                description="",
+                handler=lambda **kw: {"ok": 1},
+                idempotent=True,
+                trusted_source="skill://public/a",
+            )
+        )
+        registry.register(
+            Skill(
+                name=SkillId("b"),
+                description="",
+                handler=lambda **kw: {"ok": 2},
+                idempotent=True,
+                trusted_source="skill://public/b",
+            )
+        )
 
         forge = SkillForge(
-            journal=_DummyJournal(trajs=[]), registry=registry,
+            journal=_DummyJournal(trajs=[]),
+            registry=registry,
         )
         candidate = ForgedSkillCandidate(
             candidate_id="a_b_happy",
@@ -458,14 +514,24 @@ class TestMVPFallback:
             return {"out2": True}
 
         registry = SkillRegistry()
-        registry.register(Skill(
-            name=SkillId("h1"), description="", handler=_h1,
-            idempotent=True, trusted_source="skill://public/h1",
-        ))
-        registry.register(Skill(
-            name=SkillId("h2"), description="", handler=_h2,
-            idempotent=True, trusted_source="skill://public/h2",
-        ))
+        registry.register(
+            Skill(
+                name=SkillId("h1"),
+                description="",
+                handler=_h1,
+                idempotent=True,
+                trusted_source="skill://public/h1",
+            )
+        )
+        registry.register(
+            Skill(
+                name=SkillId("h2"),
+                description="",
+                handler=_h2,
+                idempotent=True,
+                trusted_source="skill://public/h2",
+            )
+        )
 
         candidate = ForgedSkillCandidate(
             candidate_id="cand-xyz1",
@@ -478,7 +544,8 @@ class TestMVPFallback:
             step_templates=[],  # no templates
         )
         forge = SkillForge(
-            journal=_DummyJournal(trajs=[]), registry=registry,
+            journal=_DummyJournal(trajs=[]),
+            registry=registry,
         )
         meta = forge._build_meta_handler(candidate)
         meta(x="user_x")
@@ -497,14 +564,24 @@ class TestMVPFallback:
             return {"ok": True}
 
         registry = SkillRegistry()
-        registry.register(Skill(
-            name=SkillId("a"), description="", handler=_h,
-            idempotent=True, trusted_source="skill://public/a",
-        ))
-        registry.register(Skill(
-            name=SkillId("b"), description="", handler=_h,
-            idempotent=True, trusted_source="skill://public/b",
-        ))
+        registry.register(
+            Skill(
+                name=SkillId("a"),
+                description="",
+                handler=_h,
+                idempotent=True,
+                trusted_source="skill://public/a",
+            )
+        )
+        registry.register(
+            Skill(
+                name=SkillId("b"),
+                description="",
+                handler=_h,
+                idempotent=True,
+                trusted_source="skill://public/b",
+            )
+        )
 
         candidate = ForgedSkillCandidate(
             candidate_id="cand-xyz1",
@@ -517,7 +594,8 @@ class TestMVPFallback:
             step_templates=[{}, {}],
         )
         forge = SkillForge(
-            journal=_DummyJournal(trajs=[]), registry=registry,
+            journal=_DummyJournal(trajs=[]),
+            registry=registry,
         )
         meta = forge._build_meta_handler(candidate)
         meta(a="b")

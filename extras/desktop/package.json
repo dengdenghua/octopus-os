@@ -1,104 +1,23 @@
 {
-  "name": "octopus-desktop",
+  "name": "echo-desktop-build-bridge",
   "version": "0.2.0",
-  "description": "Octopus desktop shell · optional Electron wrapper around the web frontend",
+  "description": "Retired desktop shell; keeps only the Windows PyInstaller helper and delegates to frontend/electron",
   "private": true,
-  "main": "electron/main.cjs",
   "scripts": {
-    "icons:generate": "node generate-icons.cjs",
-    "desktop:agents": "node prepare-desktop-agents.cjs",
     "backend:build:win": "node build-backend-win.cjs",
-    "electron": "electron electron/main.cjs",
-    "electron:dev": "concurrently -k -n BACKEND,VITE,ELECTRON -c green,blue,magenta \"python -m runtime serve --config ../../config.local.yaml --port 8000\" \"pnpm --dir ../../frontend dev\" \"wait-on http-get://localhost:8000/api/health && wait-on http://localhost:3000 && cross-env NODE_ENV=development electron electron/main.cjs --no-sandbox\"",
-    "electron:prod": "cross-env NODE_ENV=production electron electron/main.cjs --no-sandbox",
-    "electron:build": "pnpm icons:generate && pnpm desktop:agents && pnpm --dir ../../frontend build && electron-builder",
-    "electron:build:win": "pnpm icons:generate && pnpm desktop:agents && pnpm backend:build:win && pnpm --dir ../../frontend build && electron-builder --win",
-    "electron:build:mac": "pnpm icons:generate && pnpm desktop:agents && pnpm --dir ../../frontend build && electron-builder --mac",
-    "electron:build:linux": "pnpm icons:generate && pnpm desktop:agents && pnpm --dir ../../frontend build && electron-builder --linux"
-  },
-  "devDependencies": {
-    "concurrently": "^9.1.0",
-    "cross-env": "^7.0.3",
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8",
-    "electron-icon-builder": "^2.0.1",
-    "electron-updater": "^6.3.9",
-    "wait-on": "^8.0.1"
-  },
-  "build": {
-    "appId": "ai.octopus.desktop",
-    "productName": "Octopus",
-    "copyright": "Copyright © 2026 Octopus AI",
-    "asar": true,
-    "directories": {
-      "output": "release",
-      "buildResources": "build"
-    },
-    "files": [
-      "electron/**/*",
-      "../../frontend/dist/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "build/backend",
-        "to": "backend",
-        "filter": [
-          "octopus-backend.exe"
-        ]
-      },
-      {
-        "from": "build/agents",
-        "to": "agents"
-      },
-      {
-        "from": "../../packaging/desktop/config.desktop.yaml",
-        "to": "config.desktop.yaml"
-      }
-    ],
-    "publish": {
-      "provider": "github",
-      "owner": "octopus-agent",
-      "repo": "octopus-agent"
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "icon": "build/icon.ico"
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "icon": "build/icon.icns",
-      "category": "public.app-category.developer-tools",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "icon": "build/icon.png",
-      "category": "Development"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "shortcutName": "Octopus"
-    }
+    "backend:build:mac": "node build-backend-mac.cjs",
+    "backend:build:linux": "node build-backend-linux.cjs",
+    "codex:prepare:win": "node prepare-codex-win.cjs",
+    "codex:prepare:mac": "node prepare-codex-mac.cjs",
+    "codex:prepare:linux": "node prepare-codex-linux.cjs",
+    "electron": "pnpm --dir ../../frontend electron",
+    "electron:dev": "pnpm --dir ../../frontend electron:dev",
+    "electron:build": "node -e \"console.error('Desktop release builds are platform-specific; use electron:build:win, electron:build:mac, electron:build:mac:x64 or electron:build:linux');process.exit(1)\"",
+    "electron:build:win": "pnpm backend:build:win && pnpm --dir ../../frontend build && pnpm --dir ../../frontend electron:build:win",
+    "electron:build:mac": "pnpm backend:build:mac && pnpm --dir ../../frontend build && pnpm --dir ../../frontend electron:build:mac",
+    "electron:build:mac:x64": "ECHO_MAC_ARCH=x64 pnpm backend:build:mac && pnpm --dir ../../frontend build && pnpm --dir ../../frontend electron:build:mac:x64",
+    "electron:build:linux": "pnpm backend:build:linux && pnpm --dir ../../frontend build && pnpm --dir ../../frontend electron:build:linux"
   },
   "packageManager": "pnpm@10.26.2"
 }
+

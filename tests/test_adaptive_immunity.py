@@ -133,9 +133,7 @@ class TestTrustEngineIntegration:
         # Build a baseline, then probe with a wild outlier.
         for _ in range(30):
             engine.learn(_call(latency=100, tokens=200), latency_ms=100, tokens=200)
-        report = engine.check(
-            _call(latency=8000, tokens=9000), _sig("skill://public/run_sql")
-        )
+        report = engine.check(_call(latency=8000, tokens=9000), _sig("skill://public/run_sql"))
         assert report.verdict == "quarantine"
         assert report.strategy_used == "adaptive"
         assert report.risk is not None
@@ -144,9 +142,7 @@ class TestTrustEngineIntegration:
         engine = self._engine()
         for _ in range(30):
             engine.learn(_call(latency=100, tokens=200), latency_ms=100, tokens=200)
-        report = engine.check(
-            _call(latency=102, tokens=201), _sig("skill://public/run_sql")
-        )
+        report = engine.check(_call(latency=102, tokens=201), _sig("skill://public/run_sql"))
         assert report.verdict == "allow"
         assert report.strategy_used == "innate"
 
@@ -167,7 +163,5 @@ class TestTrustEngineIntegration:
         # I4: with no baseline (score 0.5 < 0.7), a trusted source is
         # allowed, not quarantined.
         engine = self._engine(quarantine_threshold=0.7)
-        report = engine.check(
-            _call(latency=9999, tokens=9999), _sig("skill://public/run_sql")
-        )
+        report = engine.check(_call(latency=9999, tokens=9999), _sig("skill://public/run_sql"))
         assert report.verdict == "allow"

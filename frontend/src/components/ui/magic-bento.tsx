@@ -1,4 +1,4 @@
-import { gsap } from "gsap";
+import { gsap, type Tween } from "@/lib/gsap-compat";
 import React, { useRef, useEffect, useCallback, useState } from "react";
 import "./magic-bento.css";
 
@@ -102,7 +102,7 @@ const ParticleCard: React.FC<{
   const isHoveredRef = useRef(false);
   const memoizedParticles = useRef<HTMLDivElement[]>([]);
   const particlesInitialized = useRef(false);
-  const magnetismAnimationRef = useRef<gsap.core.Tween | null>(null);
+  const magnetismAnimationRef = useRef<Tween | null>(null);
 
   const initializeParticles = useCallback(() => {
     if (particlesInitialized.current || !cardRef.current) return;
@@ -374,6 +374,8 @@ const GlobalSpotlight: React.FC<{
         transparent 70%
       );
       z-index: 200;
+      left: 0px;
+      top: 0px;
       opacity: 0;
       transform: translate(-50%, -50%);
       mix-blend-mode: screen;
@@ -711,4 +713,3 @@ const MagicBento: React.FC<BentoProps> = ({
 };
 
 export default MagicBento;
-

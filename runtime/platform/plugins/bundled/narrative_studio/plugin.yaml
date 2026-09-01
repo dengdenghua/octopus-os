@@ -1,0 +1,103 @@
+name: narrative_studio
+display_name: 叙事工坊
+delivery: remote
+version: 0.2.0
+description: 通用 AI 叙事引擎：结构化世界、来源上下文、候选流水线、人工评审投票与不可变正典快照；所有 Agent 写入仍为候选。
+author: Echo
+tags:
+  - narrative
+  - novel
+  - worldbuilding
+  - writing
+  - echo
+provides:
+  - narrative_studio.api
+  - narrative_studio.page
+  - narrative_studio.skills
+  - narrative_studio.mcp
+config:
+  data_dir: ""
+  echo_source_path: ""
+  echo_max_files: 500
+  echo_max_chars_per_file: 24000
+  echo_max_bytes_per_file: 2097152
+  review_quorum: 2
+  approval_ratio: 0.67
+  context_max_chars: 60000
+  context_max_items: 200
+  history_max_snapshot_bytes: 16777216
+  history_max_revisions_per_record: 500
+  history_max_entries_per_project: 20000
+config_schema:
+  type: object
+  properties:
+    data_dir:
+      type: string
+      title: 叙事数据目录
+      description: 项目和候选资料的原子 JSON 存储目录；留空时跟随 Echo 统一应用数据根目录
+    echo_source_path:
+      type: string
+      title: ECHO 宇宙目录
+      description: 可选，只读导入 echo-universe-engine 的路径；也可使用 ECHO_UNIVERSE_ROOT，留空会自动发现同级工作区，缺失时插件继续正常工作
+    echo_max_files:
+      type: integer
+      title: ECHO 单次最大导入文件数
+      minimum: 1
+      maximum: 5000
+      default: 500
+    echo_max_chars_per_file:
+      type: integer
+      title: 每份资料最大导入字符数
+      minimum: 256
+      maximum: 200000
+      default: 24000
+    echo_max_bytes_per_file:
+      type: integer
+      title: ECHO 单文件最大字节数
+      description: 超过上限的文件会跳过，避免异常大文件占用内存
+      minimum: 1024
+      maximum: 20971520
+      default: 2097152
+    review_quorum:
+      type: integer
+      title: 正典评审最少投票人数
+      minimum: 1
+      maximum: 100
+      default: 2
+    approval_ratio:
+      type: number
+      title: 正典评审最低通过率
+      exclusiveMinimum: 0
+      maximum: 1
+      default: 0.67
+    context_max_chars:
+      type: integer
+      title: 单个上下文包字符硬上限
+      minimum: 256
+      maximum: 2000000
+      default: 60000
+    context_max_items:
+      type: integer
+      title: 单个上下文包来源条目硬上限
+      minimum: 1
+      maximum: 10000
+      default: 200
+    history_max_snapshot_bytes:
+      type: integer
+      title: 单个候选稿历史快照字节上限
+      description: 防止异常大的版本历史条目占满磁盘
+      minimum: 1024
+      maximum: 67108864
+      default: 16777216
+    history_max_revisions_per_record:
+      type: integer
+      title: 每章节或场景最大历史版本数
+      minimum: 1
+      maximum: 10000
+      default: 500
+    history_max_entries_per_project:
+      type: integer
+      title: 单项目最大历史条目数
+      minimum: 1
+      maximum: 1000000
+      default: 20000

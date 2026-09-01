@@ -1,0 +1,30 @@
+{
+  "id": "mcp-approval-149",
+  "method": "mcpServer/elicitation/request",
+  "params": {
+    "threadId": "inner-thread",
+    "turnId": "inner-turn",
+    "serverName": "codex_apps",
+    "mode": "form",
+    "_meta": {
+      "codex_request_type": "approval_request",
+      "codex_approval_kind": "mcp_tool_call",
+      "codex_strict_auto_review": true,
+      "connector_id": "calendar",
+      "_codex_apps": {
+        "call_id": "call-calendar-confirm",
+        "connected_account_email": "calendar-owner@example.com"
+      },
+      "tool_name": "calendar_confirm_action",
+      "tool_params": {
+        "request_nonce": "strict-review-0"
+      }
+    },
+    "message": "Strict automated review #0",
+    "requestedSchema": {
+      "type": "object",
+      "properties": {}
+    }
+  }
+}
+

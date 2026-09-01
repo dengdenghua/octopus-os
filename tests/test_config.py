@@ -26,9 +26,9 @@ from runtime.platform.config import (
 class TestSchemaDefaults:
     def test_empty_config_valid(self):
         cfg = AgentConfig()
-        assert cfg.name == "octopus-agent"
+        assert cfg.name == "echo-agent"
         assert cfg.planner.type == "static"
-        assert cfg.budget.max_tokens == 50_000
+        assert cfg.budget.max_tokens == 100_000
         assert cfg.immunity.unknown_policy == "quarantine"
         assert cfg.local_auth.allow_any_username is False
         assert cfg.intel_sources == []
@@ -47,7 +47,7 @@ class TestSchemaDefaults:
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            PlannerConfig(type="weird")   # type: ignore[arg-type]
+            PlannerConfig(type="weird")  # type: ignore[arg-type]
 
     def test_budget_must_be_positive(self):
         from pydantic import ValidationError
@@ -83,14 +83,14 @@ class TestLoadFromDict:
         assert cfg.planner.type == "static"  # default
 
     def test_full_config(self):
-        cfg = load_from_dict({
-            "name": "x",
-            "planner": {"type": "llm", "model": "mock/test"},
-            "budget": {"max_tokens": 1000, "max_usd": 0.05},
-            "intel_sources": [
-                {"source_id": "s1", "query": "q1"}
-            ],
-        })
+        cfg = load_from_dict(
+            {
+                "name": "x",
+                "planner": {"type": "llm", "model": "mock/test"},
+                "budget": {"max_tokens": 1000, "max_usd": 0.05},
+                "intel_sources": [{"source_id": "s1", "query": "q1"}],
+            }
+        )
         assert cfg.planner.type == "llm"
         assert cfg.budget.max_tokens == 1000
         assert len(cfg.intel_sources) == 1
@@ -104,27 +104,48 @@ class TestLoadFromDict:
 class TestEnvInterpolation:
     def test_env_var_substituted(self, monkeypatch):
         monkeypatch.setenv("MY_KEY", "sk-secret")
-        cfg = load_from_dict({
-            "planner": {
-                "type": "llm",
-                "model": "claude-haiku-4-5",
-                "anthropic_api_key": "${MY_KEY}",
+        cfg = load_from_dict(
+            {
+                "planner": {
+                    "type": "llm",
+                    "model": "claude-haiku-4-5",
+                    "anthropic_api_key": "${MY_KEY}",
+                }
             }
-        })
+        )
         assert cfg.planner.anthropic_api_key == "sk-secret"
 
     def test_missing_env_becomes_empty(self, monkeypatch):
         monkeypatch.delenv("NOT_SET_12345", raising=False)
-        cfg = load_from_dict({
-            "planner": {"type": "llm", "mock_response": "${NOT_SET_12345}"}
-        })
+        cfg = load_from_dict({"planner": {"type": "llm", "mock_response": "${NOT_SET_12345}"}})
         assert cfg.planner.mock_response == ""
+
+    def test_bare_env_var_substituted_only_as_complete_scalar(self, monkeypatch):
+        monkeypatch.setenv("MY_KEY", "sk-secret")
+        cfg = load_from_dict({"planner": {"type": "llm", "anthropic_api_key": "$MY_KEY"}})
+        assert cfg.planner.anthropic_api_key == "sk-secret"
+
+    def test_bcrypt_hash_is_not_corrupted_by_env_interpolation(self, monkeypatch):
+        monkeypatch.delenv("KWFHX0", raising=False)
+        password_hash = "bcrypt:$2b$04$KWFHX0cmIsgqSTQ23AnuouwO21q.Yz8ZP017wkIhGLfDU6Yg4ruoW"
+        cfg = load_from_dict(
+            {
+                "local_auth": {
+                    "enabled": True,
+                    "users": {"release-smoke": password_hash},
+                }
+            }
+        )
+        assert cfg.local_auth.users["release-smoke"] == password_hash
+
+    def test_braced_env_var_can_still_be_embedded(self, monkeypatch):
+        monkeypatch.setenv("REGION", "cn-east")
+        cfg = load_from_dict({"planner": {"type": "llm", "mock_response": "region=${REGION}"}})
+        assert cfg.planner.mock_response == "region=cn-east"
 
     def test_nested_list_interpolation(self, monkeypatch):
         monkeypatch.setenv("TRUST", "mcp://fs/*")
-        cfg = load_from_dict({
-            "immunity": {"trusted_sources": ["skill://public/*", "${TRUST}"]}
-        })
+        cfg = load_from_dict({"immunity": {"trusted_sources": ["skill://public/*", "${TRUST}"]}})
         assert cfg.immunity.trusted_sources[1] == "mcp://fs/*"
 
 
@@ -137,10 +158,7 @@ class TestLoadFromYaml:
     def test_valid_yaml_file(self, tmp_path: Path):
         path = tmp_path / "cfg.yaml"
         path.write_text(
-            "name: test-yaml\n"
-            "planner:\n"
-            "  type: llm\n"
-            "  model: mock/test\n",
+            "name: test-yaml\nplanner:\n  type: llm\n  model: mock/test\n",
             encoding="utf-8",
         )
         cfg = load_from_yaml(path)
@@ -167,7 +185,7 @@ class TestLoadFromYaml:
         path = tmp_path / "empty.yaml"
         path.write_text("", encoding="utf-8")
         cfg = load_from_yaml(path)
-        assert cfg.name == "octopus-agent"
+        assert cfg.name == "echo-agent"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -180,30 +198,35 @@ class TestBuildFromConfig:
         stack = build_from_config(AgentConfig())
         # 5 builtins + web (httpx available) + maybe mcp
         assert len(stack.registry) >= 5
-        assert not stack.is_llm_planner   # default static
+        assert not stack.is_llm_planner  # default static
 
     def test_llm_planner_stack(self):
         cfg = AgentConfig(
-            planner=PlannerConfig(
-                type="llm", model="mock/test", mock_response='{"nodes":[]}'
-            )
+            planner=PlannerConfig(type="llm", model="mock/test", mock_response='{"nodes":[]}')
         )
         stack = build_from_config(cfg)
         assert stack.is_llm_planner
 
-    def test_molili_llm_stack_without_anthropic_key(self, monkeypatch, tmp_path: Path):
+    def test_unknown_model_llm_stack_without_anthropic_key(
+        self, monkeypatch, tmp_path: Path
+    ):
+        """An unrecognised planner model still builds and keeps a live router.
+
+        The model name is deliberately not an Anthropic preset, so this covers
+        the fallback path taken when no Anthropic credentials are present.
+        """
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
-        monkeypatch.setenv("OCTOPUS_DATA_DIR", str(tmp_path / "data"))
-        cfg = load_from_dict({
-            "planner": {"type": "llm", "model": "molili"},
-            "molili": {"enabled": True},
-        })
+        monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path / "data"))
+        cfg = load_from_dict(
+            {"planner": {"type": "llm", "model": "vendor-hosted-model"}}
+        )
 
         stack = build_from_config(cfg)
 
         assert stack.is_llm_planner
-        assert getattr(stack.planner.router, "default_model", None) == "molili"
+        assert stack.planner.planner_model == "vendor-hosted-model"
+        assert stack.planner.router.has("chatgpt")
 
     def test_static_stack_routes_research_to_web_search(self):
         cfg = AgentConfig(
@@ -215,9 +238,7 @@ class TestBuildFromConfig:
 
         from runtime.platform.models import ParsedIntent
 
-        graph = stack.planner.plan(
-            ParsedIntent(raw=goal, intent_type="task", normalized_goal=goal)
-        )
+        graph = stack.planner.plan(ParsedIntent(raw=goal, intent_type="task", normalized_goal=goal))
 
         assert graph.strategy == "research_web_search"
         assert graph.nodes[0].skill_ref == "web_search"
@@ -279,9 +300,7 @@ class TestExampleYamlFile:
         example = Path(__file__).parent.parent / "config.example.yaml"
         if not example.exists():
             pytest.skip("config.example.yaml not shipped")
-        text = example.read_text(encoding="utf-8").replace(
-            "claude-haiku-4-5-20251001", "mock/test"
-        )
+        text = example.read_text(encoding="utf-8").replace("claude-haiku-4-5-20251001", "mock/test")
         patched = tmp_path / "patched.yaml"
         patched.write_text(text, encoding="utf-8")
         cfg = load_from_yaml(patched)
@@ -309,10 +328,15 @@ class TestCLIConfigFlag:
             "  max_usd: 0.05\n",
             encoding="utf-8",
         )
-        rc = main([
-            "--no-color", "run", "list files",
-            "--config", str(cfg_path),
-        ])
+        rc = main(
+            [
+                "--no-color",
+                "run",
+                "list files",
+                "--config",
+                str(cfg_path),
+            ]
+        )
         assert rc in (0, 1)  # Implementation note.
         out = capsys.readouterr().out
         assert "config-driven" in out

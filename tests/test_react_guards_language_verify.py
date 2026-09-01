@@ -6,6 +6,7 @@ edit) and then claims completion. The legacy ``_has_code_verification``
 returns True for *any* verifier — this guard cross-checks the
 verifier's language against the languages actually written.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -105,42 +106,70 @@ class TestLanguageMismatchedVerificationGuard:
             _step(1, action='write_text_file({"path": "Bar.tsx", "content": "x"})'),
             _step(2, action='exec_shell({"command": "pytest"})'),
         ]
-        assert _language_mismatched_verification_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _language_mismatched_verification_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_writes_silent(self) -> None:
         steps = [_step(1, action='read_file({"path": "Bar.tsx"})')]
-        assert _language_mismatched_verification_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _language_mismatched_verification_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_unknown_language_silent(self) -> None:
         # Markdown edit — guard has nothing to enforce.
         steps = [
             _step(1, action='write_text_file({"path": "README.md", "content": "x"})'),
         ]
-        assert _language_mismatched_verification_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _language_mismatched_verification_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_python_edit_python_verify_silent(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            ),
             _step(2, action='exec_shell({"command": "ruff check runtime/foo.py"})'),
         ]
-        assert _language_mismatched_verification_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _language_mismatched_verification_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_typescript_edit_no_typescript_verify_fires(self) -> None:
         # The exact bug: edited Bar.tsx but only ran pytest.
         steps = [
-            _step(1, action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})',
+            ),
             _step(2, action='exec_shell({"command": "pytest tests/"})'),
         ]
         msg = _language_mismatched_verification_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "typescript" in msg.lower()
@@ -149,22 +178,38 @@ class TestLanguageMismatchedVerificationGuard:
 
     def test_typescript_edit_with_tsc_silent(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})',
+            ),
             _step(2, action='exec_shell({"command": "npx tsc --noEmit"})'),
         ]
-        assert _language_mismatched_verification_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _language_mismatched_verification_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_multi_language_partial_verify_fires(self) -> None:
         # Edited both Python and TS but only ran pytest — TS still unverified.
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "a", "new_string": "b"})'),
-            _step(2, action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "a", "new_string": "b"})',
+            ),
+            _step(
+                2,
+                action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})',
+            ),
             _step(3, action='exec_shell({"command": "pytest"})'),
         ]
         msg = _language_mismatched_verification_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "typescript" in msg.lower()
@@ -173,32 +218,59 @@ class TestLanguageMismatchedVerificationGuard:
 
     def test_multi_language_both_verified_silent(self) -> None:
         steps = [
-            _step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "a", "new_string": "b"})'),
-            _step(2, action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "a", "new_string": "b"})',
+            ),
+            _step(
+                2,
+                action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})',
+            ),
             _step(3, action='exec_shell({"command": "pytest"})'),
             _step(4, action='exec_shell({"command": "pnpm typecheck"})'),
         ]
-        assert _language_mismatched_verification_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _language_mismatched_verification_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_help_request_short_circuits(self) -> None:
         # If the agent is punting (missing API key, etc.), don't pile on.
         steps = [
-            _step(1, action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})',
+            ),
         ]
         final = "I cannot continue — please provide the API key."
-        assert _language_mismatched_verification_guard(
-            steps, final, is_code_mode=True,
-        ) is None
+        assert (
+            _language_mismatched_verification_guard(
+                steps,
+                final,
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_old_unverified_write_outside_window_silent(self) -> None:
         # Write happened > _LANG_MISMATCH_LOOKBACK steps ago — assume
         # the agent already verified or moved on.
         steps = [
-            _step(1, action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "frontend/Bar.tsx", "old_string": "x", "new_string": "y"})',
+            ),
         ] + [_step(i, action='read_file({"path": "x.py"})') for i in range(2, 20)]
         # Window default is 12 — last 12 steps don't include the .tsx write.
-        assert _language_mismatched_verification_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _language_mismatched_verification_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )

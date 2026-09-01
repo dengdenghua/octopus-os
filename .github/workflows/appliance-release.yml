@@ -1,0 +1,212 @@
+name: Echo appliance release
+
+on:
+  push:
+    tags:
+      - "echo-appliance-v*"
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: echo-appliance-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish amd64 + arm64 appliance
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout Echo OS release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Reject malformed release and verify the unified Echo source
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from deploy.appliance.image_release import preflight_release_source
+
+          version, agent = preflight_release_source(
+              release_tag=os.environ["GITHUB_REF_NAME"],
+              source_repository=os.environ["GITHUB_REPOSITORY"],
+              source_ref=os.environ["GITHUB_REF"],
+              source_sha=os.environ["GITHUB_SHA"],
+          )
+          print(json.dumps({"version": version, "agentSource": agent}, sort_keys=True))
+          PY
+
+      - name: Verify Hub OCI storage attestations
+        run: python deploy/appliance/hub_oci_storage.py
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.11.25"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Prepare and verify the unified Echo bundle
+        run: ./deploy/appliance/prepare-agent-bundle.sh
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: amd64,arm64
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Set lowercase GHCR image identity
+        run: |
+          image_name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/echo-os"
+          echo "ECHO_IMAGE=$image_name" >> "$GITHUB_ENV"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate immutable image metadata
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.ECHO_IMAGE }}
+          tags: |
+            type=match,pattern=echo-appliance-v(.*),group=1
+            type=raw,value=${{ github.ref_name }}
+            type=sha,format=long,prefix=sha-
+          labels: |
+            org.opencontainers.image.title=Echo OS
+            org.opencontainers.image.description=Echo OS NAS appliance
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build and push signed-source appliance index
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          annotations: ${{ steps.metadata.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Inspect index and extract platform SPDX SBOMs
+        env:
+          ECHO_INDEX_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p dist
+          immutable_ref="${ECHO_IMAGE}@${ECHO_INDEX_DIGEST}"
+          docker buildx imagetools inspect "$immutable_ref" --raw \
+            > dist/echo-appliance-index.json
+          docker buildx imagetools inspect "$immutable_ref" \
+            --format '{{ json (index .SBOM "linux/amd64").SPDX }}' \
+            > dist/echo-appliance-linux-amd64.spdx.json
+          docker buildx imagetools inspect "$immutable_ref" \
+            --format '{{ json (index .SBOM "linux/arm64").SPDX }}' \
+            > dist/echo-appliance-linux-arm64.spdx.json
+
+      - name: Bind image, source, Agent, schema, and SBOM identities
+        env:
+          ECHO_INDEX_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cp deploy/appliance/build-requirements.lock dist/build-requirements.lock
+          cp deploy/appliance/runtime-requirements.lock dist/runtime-requirements.lock
+          cp deploy/appliance/python-dependency-lock.json dist/python-dependency-lock.json
+          cp deploy/appliance/operations_bundle.py dist/operations_bundle.py
+          chmod 0755 dist/operations_bundle.py
+          python deploy/appliance/operations_bundle.py build \
+            --source-root . \
+            --output-directory dist \
+            --image-reference "$ECHO_IMAGE@$ECHO_INDEX_DIGEST"
+          python deploy/appliance/image_release.py \
+            --image "$ECHO_IMAGE" \
+            --digest "$ECHO_INDEX_DIGEST" \
+            --release-tag "$GITHUB_REF_NAME" \
+            --source-repository "$GITHUB_REPOSITORY" \
+            --source-ref "$GITHUB_REF" \
+            --source-sha "$GITHUB_SHA" \
+            --index-json dist/echo-appliance-index.json \
+            --sbom-amd64 dist/echo-appliance-linux-amd64.spdx.json \
+            --sbom-arm64 dist/echo-appliance-linux-arm64.spdx.json \
+            --build-lock dist/build-requirements.lock \
+            --runtime-lock dist/runtime-requirements.lock \
+            --dependency-lock-metadata dist/python-dependency-lock.json \
+            --operations-bundle dist/echo-appliance-operations.tar.gz \
+            --operations-checksum dist/echo-appliance-operations.tar.gz.sha256 \
+            --operations-sbom dist/echo-appliance-operations.spdx.json \
+            --operations-verifier dist/operations_bundle.py
+
+      - name: Attest pushed OCI image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.ECHO_IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest release evidence provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
+
+      - name: Upload immutable release evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: echo-appliance-${{ github.ref_name }}
+          path: |
+            dist/echo-appliance-index.json
+            dist/echo-appliance-linux-amd64.spdx.json
+            dist/echo-appliance-linux-arm64.spdx.json
+            dist/echo-appliance-release.json
+            dist/echo-appliance-release.json.sha256
+            dist/echo-release.env
+            dist/build-requirements.lock
+            dist/runtime-requirements.lock
+            dist/python-dependency-lock.json
+            dist/echo-appliance-operations.tar.gz
+            dist/echo-appliance-operations.tar.gz.sha256
+            dist/echo-appliance-operations.spdx.json
+            dist/operations_bundle.py
+          if-no-files-found: error
+
+      - name: Publish upgrade reference in job summary
+        env:
+          ECHO_INDEX_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "## Echo OS appliance"
+            echo
+            echo "Immutable image: \`${ECHO_IMAGE}@${ECHO_INDEX_DIGEST}\`"
+            echo
+            echo "Download the uploaded operations bundle for verified installation, upgrade, backup and recovery."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -26,17 +26,19 @@ const TOOL_COLORS: Record<string, string> = {
   create_file: "text-primary",
   git_commit: "text-primary",
   notebook_edit: "text-primary",
-  bash: "text-amber-500",
-  execute: "text-amber-500",
-  task: "text-amber-500",
-  route_agents: "text-amber-500",
-  run: "text-amber-500",
-  web_search: "text-cyan-500",
-  browse: "text-cyan-500",
-  fetch: "text-cyan-500",
+  bash: "text-chart-8",
+  execute: "text-chart-8",
+  task: "text-chart-6",
+  route_agents: "text-chart-6",
+  run: "text-chart-8",
+  web_search: "text-chart-7",
+  browse: "text-chart-7",
+  fetch: "text-chart-7",
 };
 
-function getToolLabels(t: { executionPanel: Record<string, string | undefined> }): Record<string, string> {
+function getToolLabels(t: {
+  executionPanel: Record<string, string | undefined>;
+}): Record<string, string> {
   return {
     read_file: t.executionPanel.readFile ?? "Read File",
     glob: t.executionPanel.searchFiles ?? "Search Files",
@@ -95,31 +97,31 @@ export function ExecutionPanel({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-all duration-300",
+        "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors duration-slow",
         isLoading
           ? "border-primary/15 bg-primary/[0.03] text-primary/70"
-          : "border-border/50 bg-muted/20 text-muted-foreground",
+          : "border-border-default bg-muted/20 text-muted-foreground",
         className,
       )}
     >
       {isLoading ? (
         <Loader2Icon className="size-3 animate-spin shrink-0" />
       ) : (
-        <CheckCircle2Icon className="size-3 text-green-500 shrink-0" />
+        <CheckCircle2Icon className="size-3 text-success shrink-0" />
       )}
 
       <div className="flex items-center gap-2">
         {hasMetrics ? (
-        <div className="flex items-center gap-1">
-          <ActivityIcon className="size-3" />
-          <span>{t.streaming.iteration(metrics!.iteration!)}</span>
-        </div>
+          <div className="flex items-center gap-1">
+            <ActivityIcon className="size-3" />
+            <span>{t.streaming.iteration(metrics!.iteration!)}</span>
+          </div>
         ) : isLoading && showPrimaryStatus ? (
-        // Localized + single-source — the message body also renders a
-        // reasoning spinner in its header, so we don't want a second
-        // English "Thinking..." duplicate. Using i18n keeps this label
-        // in sync with the streaming indicator next to us.
-        <span className="text-muted-foreground">{t.streaming.thinking}</span>
+          // Localized + single-source — the message body also renders a
+          // reasoning spinner in its header, so we don't want a second
+          // English "Thinking..." duplicate. Using i18n keeps this label
+          // in sync with the streaming indicator next to us.
+          <span className="text-muted-foreground">{t.streaming.thinking}</span>
         ) : null}
 
         {(metrics?.tool_calls_count ?? 0) > 0 && (
@@ -136,7 +138,7 @@ export function ExecutionPanel({
             <span
               key={`${tool}-${i}`}
               className={cn(
-                "rounded-lg bg-background/60 px-2 py-0.5 text-[10px] font-medium border border-border/30",
+                "rounded-lg bg-background/60 px-2 py-0.5 text-xs font-medium border border-border-subtle",
                 getToolColor(tool),
               )}
             >

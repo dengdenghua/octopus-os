@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const REASONING_EFFORT_OPTIONS: ReasoningEffort[] = [
+  "off",
   "low",
   "medium",
   "high",
@@ -20,6 +21,8 @@ const REASONING_EFFORT_OPTIONS: ReasoningEffort[] = [
 function effortLabel(effort: ReasoningEffort, locale: string): string {
   const zh = locale === "zh-CN";
   switch (effort) {
+    case "off":
+      return zh ? "关闭" : "Off";
     case "minimal":
       return zh ? "极低" : "Minimal";
     case "low":
@@ -30,6 +33,8 @@ function effortLabel(effort: ReasoningEffort, locale: string): string {
       return zh ? "高" : "High";
     case "xhigh":
       return zh ? "超高" : "Ultra";
+    default:
+      return effort;
   }
 }
 
@@ -58,7 +63,7 @@ export function ReasoningEffortPicker({
           className={cn(
             "inline-flex h-7 min-w-0 items-center gap-1 rounded-lg border border-transparent",
             "bg-transparent px-2 text-xs text-muted-foreground outline-none transition",
-            "hover:border-border/60 hover:bg-muted/60 hover:text-foreground",
+            "hover:border-border-default hover:bg-muted/60 hover:text-foreground",
             "data-[state=open]:bg-muted data-[state=open]:text-foreground",
             "disabled:cursor-not-allowed disabled:opacity-45",
           )}
@@ -76,7 +81,7 @@ export function ReasoningEffortPicker({
         sideOffset={6}
         className="w-36 p-1"
       >
-        <DropdownMenuLabel className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground">
+        <DropdownMenuLabel className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
           {locale === "zh-CN" ? "推理" : "Reasoning"}
         </DropdownMenuLabel>
         {REASONING_EFFORT_OPTIONS.map((effort) => {
@@ -86,7 +91,7 @@ export function ReasoningEffortPicker({
               key={effort}
               onClick={() => onChange?.(effort)}
               className={cn(
-                "flex h-8 items-center justify-between rounded-md text-[13px]",
+                "flex h-8 items-center justify-between rounded-md text-sm",
                 selected && "bg-muted/60 text-foreground",
               )}
             >

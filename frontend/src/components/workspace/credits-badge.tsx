@@ -1,7 +1,6 @@
 import { Coins } from "lucide-react";
 
-import { useMoliliLink } from "@/core/molili";
-import { useAuth } from "@/providers/AuthProvider";
+import { useOctLink } from "@/core/oct/hooks";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/core/i18n/hooks";
 
@@ -15,19 +14,20 @@ function formatCredits(n: number | undefined | null): string | null {
 
 export function CreditsBadge({ className }: { className?: string }) {
   const { t } = useI18n();
-  const { isGuest } = useAuth();
-  const { data } = useMoliliLink();
+  const { data } = useOctLink();
   const remaining = data?.credits?.surplusCredits;
   const formatted = formatCredits(remaining);
 
-  if (isGuest || formatted === null) return null;
+  if (formatted === null) return null;
 
   return (
     <button
       type="button"
       onClick={() => {
         window.dispatchEvent(
-          new CustomEvent("octopus:open-settings", { detail: { tab: "account" } }),
+          new CustomEvent("echo:open-settings", {
+            detail: { tab: "account" },
+          }),
         );
       }}
       title={
@@ -37,7 +37,7 @@ export function CreditsBadge({ className }: { className?: string }) {
       }
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full",
-        "bg-muted/60 px-2.5 py-1 text-[11px] font-medium text-foreground/70",
+        "bg-muted/60 px-2.5 py-1 text-xs font-medium text-foreground/70",
         "transition hover:bg-muted hover:text-foreground",
         className,
       )}

@@ -18,6 +18,7 @@ Contract pinned
    - trusted server → returns full list
    - server_name explicit param overrides tool.server_name
 """
+
 from __future__ import annotations
 
 import json
@@ -28,10 +29,11 @@ import pytest
 
 @pytest.fixture
 def trust_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path))
+    monkeypatch.setenv("ECHO_HOME", str(tmp_path))
     from runtime.adapters.mcp_client.trust import (
         reset_trust_store_for_tests,
     )
+
     reset_trust_store_for_tests()
     yield tmp_path
     reset_trust_store_for_tests()
@@ -45,6 +47,7 @@ def trust_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 class TestTrustStore:
     def test_empty_store_nothing_approved(self, trust_home: Path):
         from runtime.adapters.mcp_client.trust import get_trust_store
+
         store = get_trust_store()
         assert store.is_approved("anything") is False
         assert store.list_all() == []
@@ -54,6 +57,7 @@ class TestTrustStore:
             MCPTrustStore,
             get_trust_store,
         )
+
         store = get_trust_store()
         store.approve("fs-mcp", ["read_file", "write_file"], note="trusted")
         assert store.is_approved("fs-mcp") is True
@@ -67,17 +71,23 @@ class TestTrustStore:
 
     def test_digest_pinning_catches_mutation(self, trust_home: Path):
         from runtime.adapters.mcp_client.trust import get_trust_store
+
         store = get_trust_store()
         store.approve("weather", ["get_forecast"])
         # Same tools → still approved
         assert store.is_approved("weather", ["get_forecast"]) is True
         # Mutation → digest miss → NOT approved
-        assert store.is_approved(
-            "weather", ["get_forecast", "exec_shell"],
-        ) is False
+        assert (
+            store.is_approved(
+                "weather",
+                ["get_forecast", "exec_shell"],
+            )
+            is False
+        )
 
     def test_digest_order_insensitive(self, trust_home: Path):
         from runtime.adapters.mcp_client.trust import get_trust_store
+
         store = get_trust_store()
         store.approve("srv", ["b", "a", "c"])
         assert store.is_approved("srv", ["c", "a", "b"]) is True
@@ -89,22 +99,31 @@ class TestTrustStore:
             MCPTrustStore,
             _trust_store_path,
         )
+
         path = _trust_store_path()
-        path.write_text(json.dumps({
-            "version": 1,
-            "entries": [{
-                "server_name": "legacy",
-                "approved": True,
-                "added_ts": 1.0,
-                "tool_digest": "",
-                "note": "",
-            }],
-        }), encoding="utf-8")
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "entries": [
+                        {
+                            "server_name": "legacy",
+                            "approved": True,
+                            "added_ts": 1.0,
+                            "tool_digest": "",
+                            "note": "",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
         store = MCPTrustStore()
         assert store.is_approved("legacy", ["anything"]) is True
 
     def test_revoke_flips_approved(self, trust_home: Path):
         from runtime.adapters.mcp_client.trust import get_trust_store
+
         store = get_trust_store()
         store.approve("srv", ["t"])
         assert store.revoke("srv") is True
@@ -114,6 +133,7 @@ class TestTrustStore:
 
     def test_forget_removes_entry(self, trust_home: Path):
         from runtime.adapters.mcp_client.trust import get_trust_store
+
         store = get_trust_store()
         store.approve("srv", ["t"])
         assert store.forget("srv") is True
@@ -125,6 +145,7 @@ class TestTrustStore:
             MCPTrustStore,
             _trust_store_path,
         )
+
         _trust_store_path().write_text("not json {", encoding="utf-8")
         # Should not raise
         store = MCPTrustStore()
@@ -156,6 +177,7 @@ class _FakeClient:
             output = {}
             error = None
             latency_ms = 0.0
+
         return _R()
 
 
@@ -167,10 +189,12 @@ class TestBridgeTrustGate:
         from runtime.execution.suckers import SkillRegistry
 
         reg = SkillRegistry()
-        client = _FakeClient([
-            _FakeTool("read", server="spooky-srv"),
-            _FakeTool("write", server="spooky-srv"),
-        ])
+        client = _FakeClient(
+            [
+                _FakeTool("read", server="spooky-srv"),
+                _FakeTool("write", server="spooky-srv"),
+            ]
+        )
         registered = register_mcp_tools_as_skills(reg, client)
         assert registered == []
         assert not reg.has("read")
@@ -184,17 +208,23 @@ class TestBridgeTrustGate:
 
         get_trust_store().approve("good-srv", ["read", "write"])
         reg = SkillRegistry()
-        client = _FakeClient([
-            _FakeTool("read", server="good-srv"),
-            _FakeTool("write", server="good-srv"),
-        ])
+        client = _FakeClient(
+            [
+                _FakeTool("read", server="good-srv"),
+                _FakeTool("write", server="good-srv"),
+            ]
+        )
         registered = register_mcp_tools_as_skills(
-            reg, client, require_trust=True, name_prefix="",
+            reg,
+            client,
+            require_trust=True,
+            name_prefix="",
         )
         assert set(registered) == {"read", "write"}
 
     def test_explicit_server_name_overrides_tool_attr(
-        self, trust_home: Path,
+        self,
+        trust_home: Path,
     ):
         """When caller passes server_name, it's used for trust lookup
         regardless of what tool.server_name says — useful when the
@@ -209,7 +239,11 @@ class TestBridgeTrustGate:
         reg = SkillRegistry()
         client = _FakeClient([_FakeTool("t1", server="inner-name")])
         registered = register_mcp_tools_as_skills(
-            reg, client, require_trust=True, server_name="outer-name", name_prefix="",
+            reg,
+            client,
+            require_trust=True,
+            server_name="outer-name",
+            name_prefix="",
         )
         assert registered == ["t1"]
 
@@ -224,7 +258,9 @@ class TestBridgeTrustGate:
         reg = SkillRegistry()
         client = _FakeClient([_FakeTool("t1", server="unknown")])
         registered = register_mcp_tools_as_skills(
-            reg, client, require_trust=False,
+            reg,
+            client,
+            require_trust=False,
         )
         assert registered == ["mcp_unknown_t1"]
 
@@ -249,9 +285,7 @@ class TestBridgeTrustGate:
 
         assert registered == ["mcp_shell_srv_exec_shell"]
         assert reg.get("exec_shell").trusted_source == "builtin://exec_shell"
-        assert reg.get("mcp_shell_srv_exec_shell").trusted_source == (
-            "mcp://shell-srv/exec_shell"
-        )
+        assert reg.get("mcp_shell_srv_exec_shell").trusted_source == ("mcp://shell-srv/exec_shell")
 
     def test_explicit_unprefixed_collision_is_rejected(self, trust_home: Path):
         from runtime.adapters.mcp_client.bridge import register_mcp_tools_as_skills
@@ -269,7 +303,10 @@ class TestBridgeTrustGate:
         client = _FakeClient([_FakeTool("exec_shell", server="unknown")])
 
         registered = register_mcp_tools_as_skills(
-            reg, client, require_trust=False, name_prefix="",
+            reg,
+            client,
+            require_trust=False,
+            name_prefix="",
         )
 
         assert registered == []

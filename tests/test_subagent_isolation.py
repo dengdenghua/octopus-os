@@ -11,6 +11,7 @@ These fields complement the existing ``output`` (Final Answer text)
 and ``success`` flag. Together they give the caller everything it
 needs to decide what to do next, without polluting parent context.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -51,23 +52,43 @@ def test_files_touched_captured_via_emitter(monkeypatch) -> None:
         emitter = context.get("event_emitter")
         # Simulate three tool calls: read_file (not write), write_text_file,
         # then edit_file (success), then read_file again
-        emitter({
-            "type": "sub_tool_end", "skill": "read_file",
-            "args": {"path": "src/a.py"}, "status": "success", "round": 1,
-        })
-        emitter({
-            "type": "sub_tool_end", "skill": "write_text_file",
-            "args": {"path": "out/report.md"}, "status": "success", "round": 2,
-        })
-        emitter({
-            "type": "sub_tool_end", "skill": "edit_file",
-            "args": {"path": "src/a.py"}, "status": "success", "round": 3,
-        })
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "read_file",
+                "args": {"path": "src/a.py"},
+                "status": "success",
+                "round": 1,
+            }
+        )
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "write_text_file",
+                "args": {"path": "out/report.md"},
+                "status": "success",
+                "round": 2,
+            }
+        )
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "edit_file",
+                "args": {"path": "src/a.py"},
+                "status": "success",
+                "round": 3,
+            }
+        )
         # A failed write should NOT be counted
-        emitter({
-            "type": "sub_tool_end", "skill": "edit_file",
-            "args": {"path": "src/b.py"}, "status": "failed", "round": 4,
-        })
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "edit_file",
+                "args": {"path": "src/b.py"},
+                "status": "failed",
+                "round": 4,
+            }
+        )
         return "Final Answer: done."
 
     orig = bridge._RUNNER
@@ -88,14 +109,24 @@ def test_files_touched_dedups(monkeypatch) -> None:
 
     def _runner(prompt, *, subagent_name, context):
         emitter = context.get("event_emitter")
-        emitter({
-            "type": "sub_tool_end", "skill": "edit_file",
-            "args": {"path": "x.py"}, "status": "success", "round": 1,
-        })
-        emitter({
-            "type": "sub_tool_end", "skill": "edit_file",
-            "args": {"path": "x.py"}, "status": "success", "round": 2,
-        })
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "edit_file",
+                "args": {"path": "x.py"},
+                "status": "success",
+                "round": 1,
+            }
+        )
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "edit_file",
+                "args": {"path": "x.py"},
+                "status": "success",
+                "round": 2,
+            }
+        )
         return "ok"
 
     orig = bridge._RUNNER
@@ -139,15 +170,24 @@ def test_external_emitter_still_called(monkeypatch) -> None:
 
     def _runner(prompt, *, subagent_name, context):
         emitter = context.get("event_emitter")
-        emitter({"type": "sub_tool_end", "skill": "read_file",
-                 "args": {"path": "x"}, "status": "success", "round": 1})
+        emitter(
+            {
+                "type": "sub_tool_end",
+                "skill": "read_file",
+                "args": {"path": "x"},
+                "status": "success",
+                "round": 1,
+            }
+        )
         return "ok"
 
     orig = bridge._RUNNER
     bridge._RUNNER = _runner
     try:
         bridge.call_subagent(
-            agent_id="x", prompt="p", event_emitter=_emitter,
+            agent_id="x",
+            prompt="p",
+            event_emitter=_emitter,
         )
         # Bridge now emits subagent_spawned (before run) + the runner's
         # sub_tool_end + subagent_finished (after run). The user-supplied
@@ -177,11 +217,15 @@ def test_parent_message_count_unchanged(monkeypatch) -> None:
         emitter = context.get("event_emitter")
         # 20 rounds of internal tool calls
         for i in range(20):
-            emitter({
-                "type": "sub_tool_end", "skill": "read_file",
-                "args": {"path": f"f{i}.py"}, "status": "success",
-                "round": i + 1,
-            })
+            emitter(
+                {
+                    "type": "sub_tool_end",
+                    "skill": "read_file",
+                    "args": {"path": f"f{i}.py"},
+                    "status": "success",
+                    "round": i + 1,
+                }
+            )
         return "Synthesised summary."
 
     orig = bridge._RUNNER

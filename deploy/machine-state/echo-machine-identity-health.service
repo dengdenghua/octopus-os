@@ -1,0 +1,14 @@
+[Unit]
+Description=Verify the Echo OS persistent machine identity
+Documentation=file:/usr/share/doc/echo-os/machine-state.md
+After=local-fs.target
+Before=sddm.service echo-desktop.service
+RequiresMountsFor=/var/lib/echo-os
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/verify-machine-identity.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -10,6 +10,7 @@ Three layers:
 * Digest precision — TP/FP counts feed per-label precision, and the
   tuning_candidates list filters out guards proven noisy.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -89,8 +90,11 @@ class TestVerdictStorage:
         sink = GuardTelemetry(path=tmp_path / "hits.jsonl")
         sink.record("magic-number guard", "code-smell")
         sink.record_verdict(
-            "magic-number guard", "1970-01-01T00:00:00",
-            "false_positive", reason="misfire", confidence=0.8,
+            "magic-number guard",
+            "1970-01-01T00:00:00",
+            "false_positive",
+            reason="misfire",
+            confidence=0.8,
         )
         text = (tmp_path / "hits.jsonl").read_text(encoding="utf-8")
         assert "kind" in text
@@ -125,7 +129,10 @@ class TestVerdictStorage:
         hits = sink._read_all()  # type: ignore[attr-defined]
         b_hit = next(h for h in hits if h.label == "guard-b")
         sink.record_verdict(
-            "guard-b", b_hit.ts, "false_positive", hit_seq=b_hit.seq,
+            "guard-b",
+            b_hit.ts,
+            "false_positive",
+            hit_seq=b_hit.seq,
         )
         unjudged = sink.unjudged_hits()
         # b is now judged; a and c remain.
@@ -183,7 +190,8 @@ class TestDigestPrecision:
         assert abs(prec["precision"] - 2 / 3) < 1e-3
 
     def test_uncertain_excluded_from_precision_denominator(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         sink = GuardTelemetry(path=tmp_path / "hits.jsonl")
         for _ in range(3):
@@ -200,7 +208,8 @@ class TestDigestPrecision:
         assert prec["precision"] == 1.0  # 1 TP out of 1 graded (TP+FP)
 
     def test_noisy_guard_filtered_from_tuning_candidates(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         sink = GuardTelemetry(path=tmp_path / "hits.jsonl")
         # Noisy guard fires 30 times, all judged false_positive.
@@ -221,7 +230,8 @@ class TestDigestPrecision:
         assert "noisy-guard" not in labels  # filtered: precision 0.0
 
     def test_unjudged_high_freq_guard_kept_in_tuning(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # Absence of evidence != evidence of absence — precision=None
         # guards still appear in tuning_candidates so the evolver

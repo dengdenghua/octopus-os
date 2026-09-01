@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>叙事工坊</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "PingFang SC", system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; color: #eef2ff; background: radial-gradient(circle at 70% -10%, #283060 0, #0c1023 38%, #060812 75%); }
+    main { width: min(1080px, calc(100% - 40px)); margin: 0 auto; padding: 48px 0 80px; }
+    header { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 30px; }
+    .eyebrow { color: #9fa9ff; letter-spacing: .18em; text-transform: uppercase; font-size: 12px; }
+    h1 { margin: 8px 0 5px; font-weight: 520; font-size: clamp(32px, 5vw, 58px); letter-spacing: -.04em; }
+    p { color: #9ea8c6; line-height: 1.7; }
+    .pill { border: 1px solid #48517a; border-radius: 999px; padding: 9px 14px; color: #b8c1ff; background: #11162baa; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .card { min-height: 150px; border: 1px solid #293252; border-radius: 18px; padding: 20px; background: linear-gradient(150deg, #14192cdd, #0b0e1bdd); box-shadow: 0 20px 60px #0005; }
+    .label { color: #8f99ba; font-size: 13px; }
+    .value { display: block; margin-top: 18px; font-size: 30px; }
+    .wide { grid-column: span 3; min-height: auto; }
+    .ok { color: #7cf1bf; } .warn { color: #ffca72; }
+    code { color: #c6cdff; overflow-wrap: anywhere; }
+    ul { margin: 16px 0 0; padding-left: 20px; color: #aeb7d5; columns: 2; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } .wide { grid-column: auto; } header { align-items: start; flex-direction: column; } ul { columns: 1; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><div class="eyebrow">Echo · Narrative Studio v2</div><h1>叙事工坊</h1><p>结构化世界、来源上下文、候选流水线与人工正典治理。</p></div>
+      <div class="pill">AGENTS · CANDIDATE ONLY · HUMAN GOVERNANCE</div>
+    </header>
+    <section class="grid">
+      <article class="card"><span class="label">服务状态</span><strong class="value" id="service">检查中</strong></article>
+      <article class="card"><span class="label">叙事项目</span><strong class="value" id="projects">—</strong></article>
+      <article class="card"><span class="label">ECHO 世界源</span><strong class="value" id="echo">检查中</strong></article>
+      <article class="card wide"><span class="label">能力</span><ul id="caps"></ul></article>
+      <article class="card wide"><span class="label">数据位置</span><p><code id="data-dir">—</code></p><p id="reason"></p></article>
+    </section>
+  </main>
+  <script>
+    const base = '/api/plugins/narrative-studio';
+    fetch(base + '/status', {credentials: 'same-origin'}).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(s => {
+      const service = document.querySelector('#service'); service.textContent = s.ok ? '运行中' : '异常'; service.className = 'value ' + (s.ok ? 'ok' : 'warn');
+      document.querySelector('#projects').textContent = s.project_count;
+      const echo = document.querySelector('#echo'); echo.textContent = s.echo.available ? '已连接' : '未配置'; echo.className = 'value ' + (s.echo.available ? 'ok' : 'warn');
+      document.querySelector('#data-dir').textContent = s.data_dir;
+      document.querySelector('#reason').textContent = s.echo.available ? `${s.echo.inventory.total_files} 份资料可只读导入` : s.echo.reason;
+      document.querySelector('#caps').innerHTML = s.capabilities.map(x => `<li>${x.replaceAll('_', ' ')}</li>`).join('');
+    }).catch(err => { const el = document.querySelector('#service'); el.textContent = '无法连接'; el.className = 'value warn'; document.querySelector('#reason').textContent = err.message; });
+  </script>
+</body>
+</html>

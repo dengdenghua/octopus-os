@@ -1,0 +1,11 @@
+[Unit]
+Description=Capture changed Echo OS local-account state for the next A/B root
+After=local-fs.target echo-local-account.service
+ConditionPathExists=/var/lib/echo-os/oem-complete.json
+ConditionPathExists=/var/lib/echo-os/local-account.shadow
+ConditionCredential=!echo.os.ci-session
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/lib/echo-os/echo-oem-setup --capture
+Nice=10

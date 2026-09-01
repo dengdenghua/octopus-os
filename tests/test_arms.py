@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.execution.arms import (
     Arm,
@@ -163,10 +162,12 @@ class TestCanHandle:
             allowed_skills=[SkillId("read_file"), SkillId("count_words")],
             runtime=runtime,
         )
-        task = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
-            TaskNode(node_id="n1", skill_ref=SkillId("count_words")),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
+                TaskNode(node_id="n1", skill_ref=SkillId("count_words")),
+            ]
+        )
         assert arm.can_handle(task) is True
 
     def test_skill_not_in_whitelist_rejected(self, runtime):
@@ -177,11 +178,13 @@ class TestCanHandle:
             allowed_skills=[SkillId("read_file")],
             runtime=runtime,
         )
-        task = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
-            # Implementation note.
-            TaskNode(node_id="n1", skill_ref=SkillId("exec_shell")),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
+                # Implementation note.
+                TaskNode(node_id="n1", skill_ref=SkillId("exec_shell")),
+            ]
+        )
         assert arm.can_handle(task) is False
 
     def test_node_without_skill_ref_ignored(self, runtime):
@@ -192,10 +195,12 @@ class TestCanHandle:
             allowed_skills=[SkillId("read_file")],
             runtime=runtime,
         )
-        task = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
-            TaskNode(node_id="n1", kind="validator", skill_ref=None),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
+                TaskNode(node_id="n1", kind="validator", skill_ref=None),
+            ]
+        )
         assert arm.can_handle(task) is True
 
     def test_empty_whitelist_rejects_non_atomic(self, runtime):
@@ -206,15 +211,19 @@ class TestCanHandle:
             allowed_skills=[],
             runtime=runtime,
         )
-        task_atomic = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
-        ])
+        task_atomic = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
+            ]
+        )
         # Implementation note.
         assert arm.can_handle(task_atomic) is True
 
-        task_role = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("exec_shell")),
-        ])
+        task_role = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("exec_shell")),
+            ]
+        )
         # Implementation note.
         assert arm.can_handle(task_role) is False
 
@@ -232,13 +241,15 @@ class TestHandleSuccess:
             allowed_skills=[SkillId("read_file")],
             runtime=runtime,
         )
-        task = _make_assignment([
-            TaskNode(
-                node_id="n0",
-                skill_ref=SkillId("read_file"),
-                args_template={"path": "a.py"},
-            ),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(
+                    node_id="n0",
+                    skill_ref=SkillId("read_file"),
+                    args_template={"path": "a.py"},
+                ),
+            ]
+        )
         result = arm.handle(task, budget)
         assert result.status == "success"
         assert result.arm_id == "code_arm"
@@ -255,18 +266,20 @@ class TestHandleSuccess:
             allowed_skills=[SkillId("read_file"), SkillId("count_words")],
             runtime=runtime,
         )
-        task = _make_assignment([
-            TaskNode(
-                node_id="n0",
-                skill_ref=SkillId("read_file"),
-                args_template={"path": "x.py"},
-            ),
-            TaskNode(
-                node_id="n1",
-                skill_ref=SkillId("count_words"),
-                args_template={"text": "hello world"},
-            ),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(
+                    node_id="n0",
+                    skill_ref=SkillId("read_file"),
+                    args_template={"path": "x.py"},
+                ),
+                TaskNode(
+                    node_id="n1",
+                    skill_ref=SkillId("count_words"),
+                    args_template={"text": "hello world"},
+                ),
+            ]
+        )
         result = arm.handle(task, budget)
         assert result.status == "success"
         assert "n0" in result.outputs
@@ -283,9 +296,11 @@ class TestHandleRejection:
             runtime=runtime,
         )
         # Implementation note.
-        task = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("exec_shell")),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("exec_shell")),
+            ]
+        )
         result = arm.handle(task, budget)
         assert result.status == "failed"
         assert "not in allowed_skills" in result.reason
@@ -302,9 +317,11 @@ class TestHandleFailure:
             allowed_skills=[SkillId("boom_skill")],
             runtime=runtime,
         )
-        task = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("boom_skill")),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("boom_skill")),
+            ]
+        )
         result = arm.handle(task, budget)
         # Implementation note.
         assert result.status == "failed"
@@ -330,9 +347,11 @@ class TestArmPool:
         pool = ArmPool([code, file_])
 
         # Implementation note.
-        task = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("list_dir")),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("list_dir")),
+            ]
+        )
         picked = pool.pick_for(task)
         assert picked is file_
 
@@ -358,10 +377,12 @@ class TestArmPool:
             runtime=runtime,
         )
         pool = ArmPool([narrow, wide2])
-        task = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("list_dir")),
-            TaskNode(node_id="n1", skill_ref=SkillId("boom_skill")),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("list_dir")),
+                TaskNode(node_id="n1", skill_ref=SkillId("boom_skill")),
+            ]
+        )
         picked = pool.pick_for(task)
         # Implementation note.
         assert picked is wide2
@@ -369,16 +390,20 @@ class TestArmPool:
     def test_pick_for_returns_none_when_no_match(self, runtime):
         pool = ArmPool([make_code_arm(runtime)])
         # Implementation note.
-        task = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("web_search")),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("web_search")),
+            ]
+        )
         assert pool.pick_for(task) is None
 
     def test_pick_for_empty_pool_returns_none(self, runtime):
         pool = ArmPool([])
-        task = _make_assignment([
-            TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(node_id="n0", skill_ref=SkillId("read_file")),
+            ]
+        )
         assert pool.pick_for(task) is None
 
     def test_iter_exposes_arms(self, runtime):
@@ -449,13 +474,15 @@ class TestSpecialized:
 
     def test_code_arm_handles_code_task(self, runtime, budget):
         arm = make_code_arm(runtime)
-        task = _make_assignment([
-            TaskNode(
-                node_id="n0",
-                skill_ref=SkillId("read_file"),
-                args_template={"path": "foo.py"},
-            ),
-        ])
+        task = _make_assignment(
+            [
+                TaskNode(
+                    node_id="n0",
+                    skill_ref=SkillId("read_file"),
+                    args_template={"path": "foo.py"},
+                ),
+            ]
+        )
         assert arm.can_handle(task)
         result = arm.handle(task, budget)
         assert result.status == "success"

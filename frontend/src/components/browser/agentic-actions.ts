@@ -1,7 +1,15 @@
 /* Implementation note. */
 
 import { swallow } from "@/core/utils/log";
-import type { OctopusElectronAPI } from "@/types/electron";
+import {
+  controlInterruptionDetail,
+  runControlSessionAction,
+  type ControlIndicatorMode,
+  type ControlSessionOptions,
+  type ControlStopReason,
+} from "@/core/control-session";
+import type { EchoElectronAPI } from "@/types/electron";
+import type { WebviewTabHandle } from "./webview-tab";
 
 export type AgentAction =
   | { type: "click"; selector: string }
@@ -32,6 +40,10 @@ export interface ActionResult {
   attempt?: number;
 }
 
+export type BrowserControlIndicatorMode = ControlIndicatorMode;
+
+export type BrowserControlOptions = ControlSessionOptions;
+
 const ACTION_BLOCK_RE = /```action\s*\n([\s\S]*?)```/g;
 
 /* Implementation note. */
@@ -50,7 +62,9 @@ export function parseActions(text: string): AgentAction[] {
         if (parsed && typeof parsed.type === "string") {
           out.push(parsed);
         }
-      } catch (e) { swallow(e); }
+      } catch (e) {
+        swallow(e);
+      }
     }
   }
   return out;
@@ -58,7 +72,7 @@ export function parseActions(text: string): AgentAction[] {
 
 /* Implementation note. */
 export async function runAction(
-  api: OctopusElectronAPI,
+  api: EchoElectronAPI,
   webContentsId: number,
   action: AgentAction,
   helpers: {
@@ -111,7 +125,8 @@ export async function runAction(
         return {
           ...base,
           ok: false,
-          error: "page agent actions are only available in the browser relay path",
+          error:
+            "page agent actions are only available in the browser relay path",
         };
       }
       case "navigate": {
@@ -155,7 +170,7 @@ export async function runAction(
 }
 
 // A wedged webview IPC channel leaves action promises pending forever,
-// which froze the copilot loop in `busy` with only a manual Stop as
+// which froze the assistant loop in `busy` with only a manual Stop as
 // the way out. Racing every action against a deadline turns the hang
 // into a normal failed result: the loop's catch/finally path reports
 // it and unfreezes.
@@ -174,7 +189,9 @@ export async function withActionTimeout<T>(
         timer = setTimeout(
           () =>
             reject(
-              new Error(`action timeout (${Math.round(timeoutMs / 1000)}s): ${label}`),
+              new Error(
+                `action timeout (${Math.round(timeoutMs / 1000)}s): ${label}`,
+              ),
             ),
           timeoutMs,
         );
@@ -187,7 +204,7 @@ export async function withActionTimeout<T>(
 
 /* Implementation note. */
 export async function runActionWithRetry(
-  api: OctopusElectronAPI,
+  api: EchoElectronAPI,
   webContentsId: number,
   action: AgentAction,
   helpers: { navigate?: (url: string) => void } = {},
@@ -204,13 +221,43 @@ export async function runActionWithRetry(
   return { ...last, attempt: maxAttempts - 1 };
 }
 
+function interruptedActionResult(
+  action: AgentAction,
+  reason: ControlStopReason,
+  control?: BrowserControlOptions,
+): ActionResult {
+  return {
+    action,
+    ok: false,
+    error: `browser control interrupted: ${reason}`,
+    detail: {
+      ...controlInterruptionDetail(reason, control),
+      code: "browser_control_interrupted",
+    },
+  };
+}
+
+export async function runBrowserActionWithControl(
+  action: AgentAction,
+  run: () => Promise<ActionResult>,
+  control: BrowserControlOptions = {},
+): Promise<ActionResult> {
+  return runControlSessionAction(action, run, {
+    control,
+    interrupted: (reason) => interruptedActionResult(action, reason, control),
+  });
+}
+
 /* Implementation note. */
-export function formatResults(results: ActionResult[], pageInfo?: {
-  url: string;
-  title: string;
-  text: string;
-  pageAgent?: unknown;
-}): string {
+export function formatResults(
+  results: ActionResult[],
+  pageInfo?: {
+    url: string;
+    title: string;
+    text: string;
+    pageAgent?: unknown;
+  },
+): string {
   const lines: string[] = ["[操作执行结果]"];
   for (const r of results) {
     const tag = r.ok ? "✓" : "✗";
@@ -237,7 +284,9 @@ export function formatResults(results: ActionResult[], pageInfo?: {
       }
       return r.detail != null ? String(r.detail) : "ok";
     })();
-    lines.push(`${tag} ${r.action.type}${r.attempt ? ` (retry x${r.attempt})` : ""}: ${summary}`);
+    lines.push(
+      `${tag} ${r.action.type}${r.attempt ? ` (retry x${r.attempt})` : ""}: ${summary}`,
+    );
   }
   if (pageInfo) {
     lines.push("", "[当前页面]");
@@ -248,7 +297,9 @@ export function formatResults(results: ActionResult[], pageInfo?: {
       lines.push(`摘要: ${snippet}${pageInfo.text.length > 1500 ? "…" : ""}`);
     }
     if (pageInfo.pageAgent) {
-      lines.push(`pageAgent: ${JSON.stringify(pageInfo.pageAgent).slice(0, 6000)}`);
+      lines.push(
+        `pageAgent: ${JSON.stringify(pageInfo.pageAgent).slice(0, 6000)}`,
+      );
     }
   }
   return lines.join("\n");
@@ -256,7 +307,7 @@ export function formatResults(results: ActionResult[], pageInfo?: {
 
 /* Implementation note. */
 export const BROWSER_ACTION_PROTOCOL = `\
-[Octopus AI 浏览器协议]
+[Echo AI 浏览器协议]
 你不只是回答问题,还可以**直接操作当前网页**。需要操作时,在回复里
 包含 \`\`\`action ... \`\`\` 代码块,块里每行一条 JSON 指令:
 
@@ -282,3 +333,135 @@ export const BROWSER_ACTION_PROTOCOL = `\
 任务完成时,**正常回答用户**(不要再发 action 块),loop 自动停止。
 最大连续 action 轮次 8 轮,超过会强停。每条 action 简洁、明确、可验证。\
 `;
+
+// Run an AgentAction against a WebviewTabHandle (the React webview component's
+// imperative handle), as opposed to runAction() above which drives the Electron
+// browser by webContentsId. Shared here so BOTH the standalone browser assistant
+// and the embedded browser-preview surface drive their webview through one
+// dispatcher (the embedded preview's webview was previously uncontrollable).
+export async function runBrowserHandleAction(
+  handle: WebviewTabHandle,
+  action: AgentAction,
+  options: { confirmDangerous?: boolean } = {},
+): Promise<ActionResult> {
+  const base: ActionResult = { action, ok: false };
+  try {
+    switch (action.type) {
+      case "navigate":
+        handle.loadURL(action.url);
+        return { ...base, ok: true, detail: { url: action.url } };
+      case "extract":
+        return { ...base, ok: true, detail: await handle.extractText() };
+      case "snapshot":
+        return { ...base, ok: true, detail: await handle.capturePage() };
+      case "click":
+        return browserActionResult(
+          base,
+          await handle.runAction("click", { selector: action.selector }),
+        );
+      case "type":
+        return browserActionResult(
+          base,
+          await handle.runAction("type", {
+            selector: action.selector,
+            text: action.text,
+            clear: action.clear,
+          }),
+        );
+      case "hover":
+        return browserActionResult(
+          base,
+          await handle.runAction("hover", { selector: action.selector }),
+        );
+      case "scroll":
+        return browserActionResult(
+          base,
+          await handle.runAction("scroll", {
+            selector: action.selector,
+            deltaX: action.deltaX,
+            deltaY: action.deltaY,
+            y: action.deltaY,
+          }),
+        );
+      case "wait":
+        return browserActionResult(
+          base,
+          await handle.runAction("wait", {
+            selector: action.selector,
+            timeout: action.timeout,
+          }),
+        );
+      case "press":
+        return browserActionResult(
+          base,
+          await handle.runAction("press", { key: action.key }),
+        );
+      case "pageAction":
+        return browserActionResult(
+          base,
+          await handle.runAction("pageAction", {
+            id: action.id,
+            confirm: options.confirmDangerous === true,
+          }),
+        );
+      case "pageInput":
+        return browserActionResult(
+          base,
+          await handle.runAction("pageInput", {
+            id: action.id,
+            text: action.text,
+            clear: action.clear,
+          }),
+        );
+      case "pageCapability":
+        return browserActionResult(
+          base,
+          await handle.runAction("pageCapability", {
+            id: action.id,
+            input: action.input,
+            confirm: options.confirmDangerous === true,
+          }),
+        );
+      case "aria":
+        return browserActionResult(
+          base,
+          await handle.runAction("aria", { maxDepth: action.maxDepth }),
+        );
+      default:
+        return { ...base, ok: false, error: "unknown action type" };
+    }
+  } catch (e) {
+    swallow(e);
+    return {
+      ...base,
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+export async function runBrowserHandleActionWithControl(
+  handle: WebviewTabHandle,
+  action: AgentAction,
+  options: {
+    confirmDangerous?: boolean;
+    control?: BrowserControlOptions;
+  } = {},
+): Promise<ActionResult> {
+  return runBrowserActionWithControl(
+    action,
+    () =>
+      runBrowserHandleAction(handle, action, {
+        confirmDangerous: options.confirmDangerous,
+      }),
+    options.control,
+  );
+}
+
+function browserActionResult(
+  base: ActionResult,
+  detail: Record<string, unknown>,
+): ActionResult {
+  const error = typeof detail.error === "string" ? detail.error : undefined;
+  return { ...base, ok: detail.ok !== false, detail, error };
+}

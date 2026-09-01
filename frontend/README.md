@@ -1,80 +1,45 @@
-# octopus-agent · Web UI
+# Echo OS 前端
 
-Vite + React 19 + TypeScript + Tailwind。支持浏览器开发与 Electron 打包，生产产物由 FastAPI 挂载到 `/ui/`。
+Vite + React 19 + TypeScript 的 Echo OS 唯一用户界面，同时支持浏览器、Electron 和
+原生整机镜像。桌面、系统设置、文件/照片、Hub 以及内建 Agent 工作台共用同一
+路由树和构建产物。
 
 ## 开发
 
 ```bash
 corepack enable
-make frontend-install   # 或 cd frontend && pnpm install --frozen-lockfile
-make frontend-dev       # vite dev server · localhost:3000
-# 另开终端起后端：
-#   octopus-agent serve --port 8000
-# /api/* 和 /v1/* 自动代理到 8000
+make frontend-install
+cd frontend && pnpm dev:with-agent
 ```
 
-## 生产 build
+`dev:with-agent` 同时启动 Agent 后端和 Echo OS 前端：
+
+- Agent API：`127.0.0.1:8000`；
+- Echo OS：`http://127.0.0.1:3000/#/desktop`。
+
+工作台是 OS 内建 React 内容，没有第二个 Agent UI 服务。开发时 `/api/*` 由
+Vite 代理到 Agent 后端。
+
+## 质量门
 
 ```bash
-make frontend-build
-# 产出 frontend/dist/
-# 后端 create_app 会自动探测并挂到 /ui/
-# 或设环境变量 OCTOPUS_WEBUI_DIST 指定路径
+pnpm format
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
-## Docker
+生产构建输出 `frontend/dist/`，容器和原生镜像将该目录作为 OS 界面。
 
-`Dockerfile` 是三阶段 · 自动：
-1. `node:20-alpine` build frontend → /webui/dist
-2. `python:3.12-slim` pip install
-3. runtime · COPY --from=webui-builder → /app/webui
-   · 设 `OCTOPUS_WEBUI_DIST=/app/webui` · WebUI 自动挂载
+## 主要产品面
 
-## 路由
+- `/desktop`：桌面、Dock、窗口和系统入口；
+- `/workspace/realtime/:threadId`：内建 Agent 对话与任务执行；
+- `/workspace/tasks`：任务投影与中断恢复；
+- `/workspace/capabilities`：Agent 能力目录和状态；
+- `/workspace/observability`：运行日志与可观测信息；
+- `/workspace/storage`：文件智能入口。
 
-所有业务页面在 `/workspace` layout 下，由 `src/router.tsx` 统一注册。
-当前产品入口已经收敛到 realtime-first workspace：
-
-- `/workspace` 默认进入 `/workspace/realtime/new`。
-- `/workspace/realtime/:threadId` 是单人对话 / 任务执行主界面，使用 `/api/realtime` WebSocket JSON-RPC item protocol。
-- `/workspace/chats/:threadId` 保留为旧链接兼容入口，但渲染同一个 `ChatPage`，不再代表独立 SSE chat transport。
-- `/workspace/code*` 保留为旧链接兼容入口，并重定向到 realtime；coding 是 thread/runtime 内的工作模式，不是独立页面产品面。
-- `/workspace/team*` 是团队模式，独立于单人 realtime 对话。
-
-| 页面 | 路径 | 后端 API |
-|---|---|---|
-| Landing | `/` | — |
-| Login / Register | `/login`, `/register` | `/api/auth/*` |
-| Realtime conversation | `/workspace/realtime/:threadId` | `/api/realtime` WebSocket |
-| Legacy chat link | `/workspace/chats/:threadId` | 同 `Realtime conversation` |
-| Legacy code link | `/workspace/code*` | 重定向到 `/workspace/realtime/*` |
-| Team | `/workspace/team*` | `/api/teams/*` |
-| Agents | `/workspace/agents` | `/api/agents` |
-| Skills | `/workspace/skills` | `/api/skills` |
-| Channels | `/workspace/channels` | `/api/channels` |
-| MCP | `/workspace/mcp` | `/api/mcp/*` |
-| Browser | `/workspace/browser` | `/api/browser/*` |
-| Computer | `/workspace/computer` | `/api/computer/*` |
-| Observability | `/workspace/observability` | `/api/stream` `/api/journal` `/api/kg` `/api/reflect` |
-| Workflows | `/workspace/workflows` | `/api/workflows/*` |
-| Intelligence | `/workspace/intelligence` | `/api/intel/*` |
-| Swarm | `/workspace/swarm` | `/api/swarm/*` |
-| Knowledge | `/workspace/knowledge` | `/api/kg/*` |
-| Evolution | `/workspace/evolution` | `/api/evolution/*` |
-| Reflex | `/workspace/reflex` | `/api/reflex/*` |
-| Architecture | `/workspace/architecture` | — (纯前端可视化) |
-| Realtime dev index | `/realtime` | `/api/realtime` WebSocket |
-| Desktop | `/desktop` | — (Electron 专用) |
-
-## 设计
-
-- **Dark only**（短期）· 配色 ink（深蓝灰）+ cephalo（紫）+ sucker（cyan）
-- **Radix 原语 + Tailwind 组合**（无 MUI / antd）· 轻量 headless 基础 + 自定义样式
-- **TypeScript 严格**（`strict: true`）
-- **后端契约** → `src/core/api/openapi-types.ts`（openapi-typescript 自动生成）· 后端改请同步 `npm run generate-types`
-
-## Size 预算
-
-使用 `vite build --reportCompressedSize` 查看最新产物体积。
-构建配置中 `chunkSizeWarningLimit: 1400 KB`，超出会告警。
-主要 vendor chunk 按 react / radix / codemirror / tanstack-query 拆分。
+OS 业务页不直接依赖 Agent 私有前端实现；它们只通过 OS 维护的窄 API 客户端
+消费 Agent 能力。

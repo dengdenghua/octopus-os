@@ -62,6 +62,12 @@ describe("tryLocalSlash", () => {
     expect(onModeChange).toHaveBeenCalledWith("react");
   });
 
+  test("/mode code is a valid project/code reasoning mode", () => {
+    const onModeChange = vi.fn();
+    expect(tryLocalSlash("/mode code", { onModeChange })).toBe(true);
+    expect(onModeChange).toHaveBeenCalledWith("code");
+  });
+
   test("/mode rejects unknown values rather than guessing", () => {
     const onModeChange = vi.fn();
     expect(tryLocalSlash("/mode bogus", { onModeChange })).toBe(false);
@@ -127,26 +133,39 @@ describe("tryLocalSlash", () => {
     expect(onSwitchPanel).toHaveBeenLastCalledWith("teach-repeat");
   });
 
-  test("/skills, /pack, /meta open the 能力包 catalog inside the Plugins page", () => {
+  test("/skills, /pack, /meta open the skill catalog inside Hub", () => {
     // window.location.hash is the navigation channel — verify it
     // changes for both arg-less and arg forms. JSDOM gives us a
     // working location object.
     const original = window.location.hash;
     try {
       expect(tryLocalSlash("/skills", {})).toBe(true);
-      expect(window.location.hash).toBe("#/workspace/plugins?tab=packs");
+      expect(window.location.hash).toBe(
+        "#/workspace/agents?surface=chat&tab=skills",
+      );
       expect(tryLocalSlash("/pack bug-hunt", {})).toBe(true);
       expect(window.location.hash).toBe(
-        "#/workspace/plugins?tab=packs&q=bug-hunt",
+        "#/workspace/agents?surface=chat&tab=skills&q=bug-hunt",
       );
       expect(tryLocalSlash("/meta security audit", {})).toBe(true);
       // Spaces in args are URL-encoded — picker hands the rest of
       // the line through verbatim, the tab reads it back.
       expect(window.location.hash).toBe(
-        "#/workspace/plugins?tab=packs&q=security%20audit",
+        "#/workspace/agents?surface=chat&tab=skills&q=security%20audit",
       );
     } finally {
       window.location.hash = original;
+    }
+  });
+
+  test("/settings opens the unified settings dialog", () => {
+    const openSettings = vi.fn();
+    window.addEventListener("echo:open-settings", openSettings);
+    try {
+      expect(tryLocalSlash("/settings", {})).toBe(true);
+      expect(openSettings).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener("echo:open-settings", openSettings);
     }
   });
 

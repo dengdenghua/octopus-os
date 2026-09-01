@@ -15,7 +15,7 @@ describe("Card", () => {
     render(
       <Card>
         <CardContent>Card content</CardContent>
-      </Card>
+      </Card>,
     );
     expect(screen.getByText("Card content")).toBeInTheDocument();
   });
@@ -29,7 +29,7 @@ describe("Card", () => {
         </CardHeader>
         <CardContent>Main content</CardContent>
         <CardFooter>Footer content</CardFooter>
-      </Card>
+      </Card>,
     );
 
     expect(screen.getByText("Card Title")).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe("Card", () => {
           </CardAction>
         </CardHeader>
         <CardContent>Content</CardContent>
-      </Card>
+      </Card>,
     );
 
     expect(screen.getByRole("button", { name: "Action" })).toBeInTheDocument();
@@ -63,7 +63,7 @@ describe("Card", () => {
     render(
       <Card>
         <CardHeader className="custom-header">Header</CardHeader>
-      </Card>
+      </Card>,
     );
     expect(screen.getByText("Header")).toHaveClass("custom-header");
   });
@@ -74,7 +74,7 @@ describe("Card", () => {
         <CardHeader>
           <CardTitle className="custom-title">Title</CardTitle>
         </CardHeader>
-      </Card>
+      </Card>,
     );
     expect(screen.getByText("Title")).toHaveClass("custom-title");
   });
@@ -85,7 +85,7 @@ describe("Card", () => {
         <CardHeader>
           <CardDescription className="custom-desc">Description</CardDescription>
         </CardHeader>
-      </Card>
+      </Card>,
     );
     expect(screen.getByText("Description")).toHaveClass("custom-desc");
   });
@@ -94,7 +94,7 @@ describe("Card", () => {
     render(
       <Card>
         <CardContent className="custom-content">Content</CardContent>
-      </Card>
+      </Card>,
     );
     expect(screen.getByText("Content")).toHaveClass("custom-content");
   });
@@ -103,7 +103,7 @@ describe("Card", () => {
     render(
       <Card>
         <CardFooter className="custom-footer">Footer</CardFooter>
-      </Card>
+      </Card>,
     );
     expect(screen.getByText("Footer")).toHaveClass("custom-footer");
   });

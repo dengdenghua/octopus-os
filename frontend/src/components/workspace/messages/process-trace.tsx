@@ -18,11 +18,24 @@ import {
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 import { DotProgress } from "@/components/workspace/swarm/dot-progress";
-
-import { deriveAgentPhases, progressForPhases } from "../agent-phases";
 import { emitAgentWorkbenchFocus } from "../agent-workbench-events";
+
+import {
+  agentPhaseDisplayTitle,
+  deriveAgentPhases,
+  progressForPhases,
+} from "../agent-phases";
+import {
+  type AgentRunState,
+  agentRunAvatarAnimationClass,
+  agentRunHue,
+  agentRunIconClass,
+  agentRunPanelClass,
+  agentRunProgressBarClass,
+} from "../agent-run-status";
 import { LiveToolTimeline, type LiveToolEvent } from "../live-tool-timeline";
 import { getProcessTraceEvents } from "../process-trace-events";
+import { effectiveToolInput } from "./action-display";
 
 import {
   type ProcessTraceMode,
@@ -33,13 +46,18 @@ type MessageAgentRow = {
   id: string;
   name: string;
   label: string;
-  status: "running" | "done" | "pending" | "error";
+  status: AgentRunState;
   task: string;
   prompt?: string;
   role?: string;
   avatar?: string;
   currentTool?: string;
   eventCount: number;
+  /** Failure cause for a lane that ended in error. Without it a failed lane
+   * was only a red tint, leaving no way to tell a network drop from a round
+   * cap from a refused route. */
+  error?: string;
+  summary?: string;
 };
 
 type TraceSectionKind = "thinking" | "action" | "verification";
@@ -51,6 +69,14 @@ type TraceSection = {
   events: LiveToolEvent[];
   openByDefault: boolean;
 };
+
+type TraceDisplayItem =
+  | { kind: "event"; event: LiveToolEvent }
+  | {
+      kind: "delegation-summary";
+      events: LiveToolEvent[];
+      target: string;
+    };
 
 export function ProcessTrace({
   events,
@@ -86,8 +112,11 @@ export function ProcessTrace({
     live || shouldOpenProcessTraceByDefault(visibleEvents, hasAnswer, mode),
   );
   const [rawDetailsOpen, setRawDetailsOpen] = useState(false);
-  const shouldOpen =
-    live || shouldOpenProcessTraceByDefault(visibleEvents, hasAnswer, mode);
+  const shouldOpen = shouldOpenProcessTraceByDefault(
+    visibleEvents,
+    hasAnswer,
+    mode,
+  );
   const doneCount = useMemo(
     () => visibleEvents.filter((e) => e.status === "done").length,
     [visibleEvents],
@@ -97,7 +126,13 @@ export function ProcessTrace({
     ? progressForPhases(phaseState.phases, phaseState.currentPhase)
     : null;
   const showAgents = parallelAgents.length > 0;
-  const showProcessBody = live || open;
+  const completedAgentCount = parallelAgents.filter(
+    (agent) => agent.status === "done",
+  ).length;
+  const failedAgentCount = parallelAgents.filter(
+    (agent) => agent.status === "error",
+  ).length;
+  const showProcessBody = open;
   const hasSectionCards = sections.length > 0;
 
   useEffect(() => {
@@ -111,10 +146,10 @@ export function ProcessTrace({
   return (
     <div
       className={cn(
-        "border-l px-3 py-1.5",
+        "px-1 py-1.5",
         live
           ? "mb-3 border-primary/35"
-          : "mb-2 border-border/55 text-muted-foreground",
+          : "mb-2 border-border-default text-muted-foreground",
       )}
     >
       <button
@@ -132,7 +167,11 @@ export function ProcessTrace({
         </span>
         <span className="shrink-0 text-xs text-muted-foreground">
           {showAgents
-            ? t.dispatchCard.parallelTasks(parallelAgents.length)
+            ? t.message.agentProgressSummary(
+                parallelAgents.length,
+                completedAgentCount,
+                failedAgentCount,
+              )
             : progress
               ? `${progress.current}/${progress.total}`
               : `${doneCount}/${totalCount}`}
@@ -151,6 +190,7 @@ export function ProcessTrace({
               agents={parallelAgents.slice(0, open ? 12 : 4)}
               statusLabels={{
                 running: t.message.statusViewing,
+                waiting: t.message.statusWaiting,
                 done: t.message.statusCompleted,
                 error: t.message.statusError,
                 pending: t.message.statusWaiting,
@@ -167,9 +207,11 @@ export function ProcessTrace({
                 className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
               >
                 {phase.status === "running" ? (
-                  <Loader2Icon className="size-3.5 shrink-0 animate-spin text-foreground" />
+                  <Loader2Icon className="size-3.5 shrink-0 animate-spin text-success" />
+                ) : phase.status === "waiting_approval" ? (
+                  <CircleIcon className="size-3.5 shrink-0 text-warning" />
                 ) : phase.status === "done" ? (
-                  <CheckCircle2Icon className="size-3.5 shrink-0 text-emerald-500" />
+                  <CheckCircle2Icon className="size-3.5 shrink-0 text-success" />
                 ) : (
                   <CircleIcon className="size-3.5 shrink-0 text-muted-foreground/45" />
                 )}
@@ -180,8 +222,9 @@ export function ProcessTrace({
                       ? "text-muted-foreground"
                       : "text-foreground",
                   )}
+                  title={phase.title}
                 >
-                  {phase.title}
+                  {agentPhaseDisplayTitle(phase, t.agentPhases)}
                 </span>
               </div>
             ))
@@ -189,11 +232,11 @@ export function ProcessTrace({
         </div>
       )}
       {open && visibleEvents.length > 0 && (
-        <div className="mt-2 border-t border-border/35 pt-2">
+        <div className="mt-2 border-t border-border-subtle pt-2">
           <button
             type="button"
             onClick={() => setRawDetailsOpen((value) => !value)}
-            className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted/35 hover:text-foreground"
+            className="flex w-full items-center gap-2 rounded-md px-1 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/35 hover:text-foreground"
             aria-expanded={rawDetailsOpen}
           >
             <ChevronDownIcon
@@ -204,12 +247,16 @@ export function ProcessTrace({
             />
             <span className="font-medium">{t.message.processDetails}</span>
             <span className="ml-auto tabular-nums">
-              {visibleEvents.length} 项
+              {t.message.processRecords(visibleEvents.length)}
             </span>
           </button>
           {rawDetailsOpen && (
             <div className="pt-2">
-              <LiveToolTimeline events={visibleEvents} showAll />
+              <LiveToolTimeline
+                events={visibleEvents}
+                showAll
+                compactDelegations
+              />
             </div>
           )}
         </div>
@@ -226,12 +273,7 @@ function AgentClusterCard({
   statusLabels: Record<MessageAgentRow["status"], string>;
 }) {
   return (
-    <div className="rounded-xl border border-border/55 bg-background/85 px-3 py-2.5 shadow-sm">
-      <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-        <NetworkIcon className="size-4 shrink-0 text-sky-500" />
-        <span className="font-medium text-foreground">Agent 集群</span>
-        <span className="ml-auto tabular-nums">{agents.length} 个并行任务</span>
-      </div>
+    <div className="px-1 py-1">
       <div className="space-y-2">
         {agents.map((agent) => (
           <AgentClusterRow
@@ -252,22 +294,27 @@ function AgentClusterRow({
   agent: MessageAgentRow;
   statusLabel: string;
 }) {
-  const active = agent.status === "running";
-  const failed = agent.status === "error";
+  const expanded = agent.status === "error";
   const progress = agentProgress(agent);
-  const progressHue = failed ? 8 : 118;
+  const progressHue = agentRunHue(agent.status);
   return (
     <div className="group/agent-row relative">
       <button
         type="button"
-        onClick={() => emitAgentWorkbenchFocus({ agentId: agent.id })}
-        className="flex w-full items-center gap-2 rounded-lg bg-muted/35 px-2.5 py-2 text-left text-sm transition-colors hover:bg-muted/60"
+        onClick={() =>
+          emitAgentWorkbenchFocus({
+            agentId: agent.id,
+            tab: "agent",
+            view: "screen",
+          })
+        }
+        aria-label={`${agent.name} · ${statusLabel}`}
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted/45"
       >
         <span
           className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-md border bg-background",
-            active && "border-emerald-500/35 bg-emerald-500/10",
-            failed && "border-destructive/35 bg-destructive/10",
+            "flex size-6 shrink-0 items-center justify-center bg-transparent",
+            agentRunPanelClass(agent.status),
           )}
         >
           {agent.avatar ? (
@@ -276,121 +323,76 @@ function AgentClusterRow({
             </span>
           ) : (
             <BotIcon
-              className={cn(
-                "size-4",
-                active
-                  ? "text-emerald-600 dark:text-emerald-300"
-                  : "text-muted-foreground",
-                failed && "text-destructive",
-              )}
+              className={cn("size-4", agentRunIconClass(agent.status))}
             />
           )}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {agent.label}
+            </span>
             <span className="truncate font-medium text-foreground">
               {agent.name}
             </span>
-            {agent.role && (
-              <span className="hidden truncate text-xs text-muted-foreground sm:inline">
-                {agent.role}
-              </span>
-            )}
+            {agent.role &&
+              agent.role.trim().toLowerCase() !==
+                agent.name.trim().toLowerCase() && (
+                <span className="hidden truncate text-xs text-muted-foreground sm:inline">
+                  {agent.role}
+                </span>
+              )}
+            <DotProgress
+              progress={progress}
+              hue={progressHue}
+              cols={12}
+              rows={2}
+              className={cn(
+                "ml-1 shrink-0",
+                agentRunAvatarAnimationClass(agent.status),
+              )}
+            />
             <span
               className={cn(
-                "ml-auto rounded-full px-2 py-0.5 text-[10px]",
-                active
-                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                  : failed
-                    ? "bg-destructive/10 text-destructive"
-                    : agent.status === "done"
-                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                      : "bg-muted text-muted-foreground",
+                "ml-auto shrink-0 text-xs",
+                agent.status === "error"
+                  ? "text-destructive"
+                  : agent.status === "done"
+                    ? "text-success"
+                    : "text-muted-foreground",
               )}
             >
               {statusLabel}
             </span>
           </div>
-          <div className="mt-1 flex items-end gap-2">
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-              {agent.task}
+          <div className="mt-1 flex items-center gap-2">
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-xs",
+                // Show the cause in place of the task once a lane fails: the
+                // task was already stated at dispatch, while the reason is the
+                // only thing that tells the user what to do next.
+                agent.error ? "text-destructive" : "text-muted-foreground",
+              )}
+              title={agent.error ?? undefined}
+            >
+              {expanded && agent.error
+                ? agent.task
+                : (agent.error ?? agent.task)}
             </span>
-            <div className="flex shrink-0 flex-col items-end gap-1">
-              <span className="font-mono text-xs leading-none text-foreground">
-                {agent.label}
-              </span>
-              <DotProgress
-                progress={progress}
-                hue={progressHue}
-                cols={16}
-                rows={3}
-                className={cn(active && "animate-pulse")}
-              />
-            </div>
           </div>
+          {agent.error ? (
+            <div
+              className={cn(
+                "mt-2 whitespace-pre-wrap break-words rounded-md bg-muted/35 px-3 py-2 text-xs leading-5",
+                agent.error ? "text-destructive" : "text-foreground/80",
+              )}
+            >
+              {agent.error}
+            </div>
+          ) : null}
         </div>
-        {active ? (
-          <Loader2Icon className="size-3.5 shrink-0 animate-spin text-foreground" />
-        ) : agent.status === "done" ? (
-          <CheckCircle2Icon className="size-3.5 shrink-0 text-emerald-500" />
-        ) : failed ? (
-          <XCircleIcon className="size-3.5 shrink-0 text-destructive" />
-        ) : (
-          <CircleIcon className="size-3.5 shrink-0 text-muted-foreground/45" />
-        )}
       </button>
-      <AgentHoverPreview agent={agent} statusLabel={statusLabel} />
-    </div>
-  );
-}
-
-function AgentHoverPreview({
-  agent,
-  statusLabel,
-}: {
-  agent: MessageAgentRow;
-  statusLabel: string;
-}) {
-  const body = agent.prompt || agent.task || "暂无任务说明";
-  return (
-    <div
-      className="pointer-events-none absolute left-8 top-[calc(100%+0.5rem)] z-40 hidden w-[min(42rem,calc(100vw-5rem))] rounded-xl border border-border/60 bg-background/95 p-4 text-left shadow-2xl shadow-black/15 backdrop-blur-xl group-hover/agent-row:block"
-      role="tooltip"
-    >
-      <div className="flex items-start gap-3">
-        <span className="flex size-14 shrink-0 items-center justify-center rounded-full border border-border/55 bg-muted/35 text-2xl">
-          {agent.avatar || <BotIcon className="size-7 text-muted-foreground" />}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-lg font-semibold text-foreground">
-                {agent.name}
-              </div>
-              <div className="truncate text-sm text-muted-foreground">
-                {agent.role || "Subagent"}
-              </div>
-            </div>
-            <span className="font-mono text-sm text-foreground">
-              {agent.label}
-            </span>
-          </div>
-          <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>{statusLabel}</span>
-            <span>·</span>
-            <span>{agent.eventCount} 条过程记录</span>
-            {agent.currentTool && (
-              <>
-                <span>·</span>
-                <span className="truncate">最近工具：{agent.currentTool}</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 max-h-80 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-muted/35 p-3 text-sm leading-6 text-foreground">
-        {body}
-      </div>
     </div>
   );
 }
@@ -409,28 +411,33 @@ function TraceSectionCard({ section }: { section: TraceSection }) {
       : section.kind === "action"
         ? NetworkIcon
         : SquareActivityIcon;
-  const status = section.events.some(
-    (event) =>
-      event.status === "running" || event.status === "waiting_approval",
-  )
-    ? "running"
-    : section.events.some((event) => event.status === "error")
-      ? "error"
+  const status = section.events.some((event) => event.status === "error")
+    ? "error"
+    : section.events.some((event) => event.status === "waiting_approval")
+      ? "waiting"
+      : section.events.some((event) => event.status === "running")
+        ? "running"
       : "done";
+  const displayItems = useMemo(
+    () => compactTraceEvents(section.events),
+    [section.events],
+  );
 
   return (
-    <div className="rounded-xl border border-border/55 bg-background/85 px-3 py-2 shadow-sm">
+    <div className="px-1 py-1.5">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         className="flex w-full items-center gap-2 text-left"
       >
         {status === "running" ? (
-          <Loader2Icon className="size-4 shrink-0 animate-spin text-primary" />
+          <Loader2Icon className="size-4 shrink-0 animate-spin text-success" />
+        ) : status === "waiting" ? (
+          <CircleIcon className="size-4 shrink-0 text-warning" />
         ) : status === "error" ? (
           <XCircleIcon className="size-4 shrink-0 text-destructive" />
         ) : (
-          <CheckCircle2Icon className="size-4 shrink-0 text-emerald-500" />
+          <CheckCircle2Icon className="size-4 shrink-0 text-success" />
         )}
         <Icon className="size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
@@ -438,7 +445,7 @@ function TraceSectionCard({ section }: { section: TraceSection }) {
             <span className="text-sm font-medium text-foreground">
               {section.title}
             </span>
-            <span className="ml-auto text-[11px] text-muted-foreground">
+            <span className="ml-auto text-xs text-muted-foreground">
               {section.summary}
             </span>
           </div>
@@ -446,7 +453,7 @@ function TraceSectionCard({ section }: { section: TraceSection }) {
             <div
               className={cn(
                 "h-full transition-all",
-                status === "error" ? "bg-destructive" : "bg-foreground/55",
+                agentRunProgressBarClass(status),
               )}
               style={{ width: `${section.events.length > 0 ? 100 : 0}%` }}
             />
@@ -460,9 +467,9 @@ function TraceSectionCard({ section }: { section: TraceSection }) {
         />
       </button>
       {open && (
-        <div className="mt-3 space-y-1.5 border-l border-border/45 pl-3">
-          {section.events.map((event) => (
-            <TraceEventLine key={event.id} event={event} />
+        <div className="mt-2 space-y-1.5 pl-1">
+          {displayItems.map((item) => (
+            <TraceDisplayLine key={traceDisplayItemKey(item)} item={item} />
           ))}
         </div>
       )}
@@ -470,7 +477,109 @@ function TraceSectionCard({ section }: { section: TraceSection }) {
   );
 }
 
+function traceDisplayItemKey(item: TraceDisplayItem): string {
+  if (item.kind === "event") return item.event.id;
+  return `delegation-summary:${item.target}`;
+}
+
+function compactTraceEvents(events: LiveToolEvent[]): TraceDisplayItem[] {
+  const items: TraceDisplayItem[] = [];
+  const delegationBuckets = new Map<
+    string,
+    Extract<TraceDisplayItem, { kind: "delegation-summary" }>
+  >();
+
+  for (const event of events) {
+    if (!isDelegationEvent(event)) {
+      items.push({ kind: "event", event });
+      continue;
+    }
+
+    const target = delegationTarget(event);
+    const existing = delegationBuckets.get(target);
+    if (existing) {
+      existing.events.push(event);
+      continue;
+    }
+
+    const summary = { kind: "delegation-summary" as const, events: [event], target };
+    delegationBuckets.set(target, summary);
+    items.push(summary);
+  }
+
+  return items.flatMap((item) => {
+    if (item.kind === "event" || item.events.length > 1) return [item];
+    return [{ kind: "event" as const, event: item.events[0]! }];
+  });
+}
+
+function isDelegationEvent(event: LiveToolEvent): boolean {
+  if (event.lifecycle) return false;
+  return /agent|delegate|orchestrat/i.test(event.name);
+}
+
+function delegationTarget(event: LiveToolEvent): string {
+  const input = effectiveToolInput(event.input);
+  return (
+    firstString(input, [
+      "agent_id",
+      "subagent_id",
+      "subagent_name",
+      "role",
+      "agent",
+      "name",
+    ]) ||
+    event.subAgentRole ||
+    event.agentName ||
+    "other"
+  );
+}
+
+function TraceDisplayLine({ item }: { item: TraceDisplayItem }) {
+  if (item.kind === "event") return <TraceEventLine event={item.event} />;
+  return <DelegationSummaryLine events={item.events} target={item.target} />;
+}
+
+function DelegationSummaryLine({
+  events,
+  target,
+}: {
+  events: LiveToolEvent[];
+  target: string;
+}) {
+  const { t } = useI18n();
+  const hasRunning = events.some((event) => event.status === "running");
+  const hasError = events.some((event) => event.status === "error");
+  const status = hasRunning ? "running" : hasError ? "error" : "done";
+  const statusLabel =
+    status === "running"
+      ? t.message.statusViewing
+      : status === "error"
+        ? t.message.statusError
+        : t.message.statusCompleted;
+
+  return (
+    <div className="flex items-center gap-2 py-1.5 text-xs text-muted-foreground">
+      {status === "running" ? (
+        <Loader2Icon className="size-3.5 shrink-0 animate-spin text-success" />
+      ) : status === "error" ? (
+        <XCircleIcon className="size-3.5 shrink-0 text-destructive" />
+      ) : (
+        <CheckCircle2Icon className="size-3.5 shrink-0 text-success" />
+      )}
+      <NetworkIcon className="size-3.5 shrink-0 text-chart-6" />
+      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+        {t.messageGrouping.callTeammate} · {target}
+      </span>
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+        {events.length}× · {statusLabel}
+      </span>
+    </div>
+  );
+}
+
 function TraceEventLine({ event }: { event: LiveToolEvent }) {
+  const { t } = useI18n();
   const Icon =
     event.name === "read_file"
       ? FileTextIcon
@@ -479,42 +588,134 @@ function TraceEventLine({ event }: { event: LiveToolEvent }) {
         : event.name === "web_search"
           ? GlobeIcon
           : MonitorIcon;
-  const target = firstString(event.input, [
-    "path",
-    "file_path",
-    "filepath",
-    "filename",
-    "command",
-    "query",
-    "url",
-    "target",
-  ]);
-  const label =
-    typeof event.thought === "string" && event.thought.trim()
-      ? event.thought.trim()
-      : typeof event.observation === "string" && event.observation.trim()
-        ? event.observation.trim()
-        : target
-          ? `${event.name.replace(/[_-]+/g, " ")} ${target}`
-          : event.name.replace(/[_-]+/g, " ");
+  const { label, detail } = publicTraceEventLabel(event, {
+    callTeammate: t.messageGrouping.callTeammate,
+    executeCommand: t.messageGrouping.executeCommand,
+    readFile: t.messageGrouping.readFile,
+    readWebpage: t.messageGrouping.readWebpage,
+    runAction: t.messageGrouping.runAction,
+    searchSources: t.messageGrouping.searchSources,
+    updateFile: t.messageGrouping.updateFile,
+  });
   return (
-    <div className="flex items-start gap-2 text-[12px] text-muted-foreground">
+    <div className="flex items-start gap-2 text-xs text-muted-foreground">
       {event.status === "running" ? (
-        <Loader2Icon className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary" />
+        <Loader2Icon className="mt-0.5 size-3.5 shrink-0 animate-spin text-success" />
+      ) : event.status === "waiting_approval" ? (
+        <CircleIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
       ) : event.status === "error" ? (
         <XCircleIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
       ) : (
-        <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+        <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0 text-success" />
       )}
       <Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-foreground">{label}</div>
-        <div className="truncate text-[11px] text-muted-foreground">
-          {event.name.replace(/[_-]+/g, " ")}
-        </div>
+        {detail && (
+          <div className="truncate text-xs text-muted-foreground">{detail}</div>
+        )}
       </div>
     </div>
   );
+}
+
+type TraceEventLabelBag = {
+  callTeammate: string;
+  executeCommand: string;
+  readFile: string;
+  readWebpage: string;
+  runAction: string;
+  searchSources: string;
+  updateFile: string;
+};
+
+const DEFAULT_TRACE_LABELS: TraceEventLabelBag = {
+  callTeammate: "Call teammate",
+  executeCommand: "Run command",
+  readFile: "Read file",
+  readWebpage: "Read webpage",
+  runAction: "Run operation",
+  searchSources: "Search sources",
+  updateFile: "Update file",
+};
+
+const TRACE_UNSAFE_TEXT_RE =
+  /(?:sk-[\w-]+|bearer\s+[a-z0-9._-]+|api[_-]?key|token|secret|credential|password|passwd|id_rsa|id_ed25519|\.pem\b|\.key\b|<[/]?(?:tool|tool_call|function|thinking|thought|TextBlock|ReasoningBlock|ToolCallBlock|ToolResultBlock)\b|```|\b(?:Action|Observation|Thought|Final Answer)\s*:|\b(?:read_file|exec_shell|shell_command|run_command|todo_write|apply_patch)\b)/i;
+
+function compactPublicTraceText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text || text.length > 220 || TRACE_UNSAFE_TEXT_RE.test(text)) return "";
+  return text;
+}
+
+function safeTraceTarget(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const text = value.trim();
+  if (!text || TRACE_UNSAFE_TEXT_RE.test(text)) return "";
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      return new URL(text).hostname;
+    } catch {
+      return "";
+    }
+  }
+  if (/[\\/]/.test(text)) {
+    const parts = text.split(/[\\/]/).filter(Boolean);
+    return parts.at(-1) ?? "";
+  }
+  return text.length > 80 ? `${text.slice(0, 79).trimEnd()}…` : text;
+}
+
+function firstSafeTarget(input: Record<string, unknown> | undefined): string {
+  if (!input) return "";
+  for (const key of [
+    "path",
+    "file_path",
+    "filepath",
+    "filename",
+    "url",
+    "query",
+    "target",
+  ]) {
+    const target = safeTraceTarget(input[key]);
+    if (target) return target;
+  }
+  return "";
+}
+
+export function publicTraceEventLabel(
+  event: LiveToolEvent,
+  labels: TraceEventLabelBag = DEFAULT_TRACE_LABELS,
+): { label: string; detail: string } {
+  const narrative =
+    compactPublicTraceText(event.thought) ||
+    compactPublicTraceText(event.observation);
+  if (narrative) return { label: narrative, detail: "" };
+
+  const name = event.name.toLowerCase();
+  const target = firstSafeTarget(effectiveToolInput(event.input));
+  const label =
+    name.includes("search") || name.includes("grep") || name.includes("glob")
+      ? labels.searchSources
+      : name.includes("web") ||
+          name.includes("fetch") ||
+          name.includes("browser")
+        ? labels.readWebpage
+        : name.includes("read") || name === "ls" || name === "list_cwd"
+          ? labels.readFile
+          : name.includes("write") ||
+              name.includes("edit") ||
+              name.includes("patch")
+            ? labels.updateFile
+            : name.includes("shell") ||
+                name.includes("exec") ||
+                name.includes("command")
+              ? labels.executeCommand
+              : name.includes("agent") || name.includes("delegate")
+                ? labels.callTeammate
+                : labels.runAction;
+  return { label, detail: target };
 }
 
 function mergeSectionEvents(
@@ -573,8 +774,8 @@ function buildTraceSections(
   if (action.length > 0) {
     sections.push({
       kind: "action",
-      title: "执行",
-      summary: `${action.length} 项动作`,
+      title: t.message.execution,
+      summary: t.message.actionCount(action.length),
       events: action,
       openByDefault: true,
     });
@@ -582,17 +783,17 @@ function buildTraceSections(
   if (verification.length > 0) {
     sections.push({
       kind: "verification",
-      title: "验证",
-      summary: `${verification.length} 项检查`,
+      title: t.message.verification,
+      summary: t.message.checkCount(verification.length),
       events: verification,
-      openByDefault: false,
+      openByDefault: verification.some((event) => event.status === "error"),
     });
   }
   if (sections.length === 0 && remainder.length > 0) {
     sections.push({
       kind: "action",
-      title: "过程",
-      summary: `${remainder.length} 项记录`,
+      title: t.message.process,
+      summary: t.message.processRecords(remainder.length),
       events: remainder,
       openByDefault: true,
     });
@@ -601,10 +802,20 @@ function buildTraceSections(
 }
 
 function deriveMessageAgentRows(events: LiveToolEvent[]): MessageAgentRow[] {
+  // Lifecycle markers often carry a runtime UUID while subsequent activity
+  // carries the role/codename. Resolve every record to one stable human
+  // identity so one spawned agent cannot become two cards.
+  const runtimeIdToStableId = new Map<string, string>();
+  for (const event of events) {
+    if (!event.agentId || event.agentId === "__main__") continue;
+    const stableId = event.subagentCodename || event.subAgentRole;
+    if (stableId) runtimeIdToStableId.set(event.agentId, stableId);
+  }
   const byId = new Map<string, MessageAgentRow>();
   for (const event of events) {
     const id =
-      event.agentId ??
+      (event.agentId ? runtimeIdToStableId.get(event.agentId) : undefined) ??
+      event.subagentCodename ??
       (event.parentToolUseId && event.subAgentRole
         ? `${event.parentToolUseId}:${event.subAgentRole}`
         : undefined) ??
@@ -617,14 +828,34 @@ function deriveMessageAgentRows(events: LiveToolEvent[]): MessageAgentRow[] {
         ? "error"
         : event.status === "done"
           ? "done"
-          : event.status === "running" || event.status === "waiting_approval"
-            ? "running"
-            : "pending";
+          : event.status === "waiting_approval"
+            ? "waiting"
+            : event.status === "running"
+              ? "running"
+              : "pending";
     const prompt =
-      firstString(event.input, ["prompt", "task", "description", "query"]) ||
+      firstString(effectiveToolInput(event.input), [
+        "prompt",
+        "task",
+        "description",
+        "query",
+      ]) ||
       event.thought ||
       existing?.prompt ||
       "";
+    const output =
+      typeof event.output === "string"
+        ? event.output
+        : firstString(event.output as Record<string, unknown> | undefined, [
+            "summary",
+            "result",
+            "output",
+            "answer",
+            "content",
+          ]);
+    const summary =
+      output || event.observation || event.thought || existing?.summary;
+    const terminalStatus = status === "done" || status === "error";
     byId.set(id, {
       id,
       name:
@@ -634,13 +865,21 @@ function deriveMessageAgentRows(events: LiveToolEvent[]): MessageAgentRow[] {
         event.subAgentRole ??
         id,
       label: existing?.label ?? String(byId.size + 1).padStart(2, "0"),
-      status: existing?.status === "running" ? existing.status : status,
+      status: terminalStatus
+        ? status
+        : existing?.status === "done" || existing?.status === "error"
+          ? existing.status
+          : status,
       task: existing?.task || prompt || event.name.replace(/[_-]+/g, " "),
       prompt: prompt || existing?.prompt,
       role: event.subAgentRole ?? existing?.role,
       avatar: event.subagentAvatar ?? existing?.avatar,
       currentTool: event.name.replace(/[_-]+/g, " "),
       eventCount: (existing?.eventCount ?? 0) + 1,
+      // Keep the first cause seen: later events for the same lane (a spawn
+      // echo, a trailing tool call) carry no error and would erase it.
+      error: event.error ?? existing?.error,
+      summary,
     });
   }
   if (byId.size > 0) return Array.from(byId.values()).slice(0, 12);

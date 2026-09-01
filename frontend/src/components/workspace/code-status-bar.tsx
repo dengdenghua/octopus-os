@@ -1,5 +1,11 @@
-
-import { GitBranchIcon, FolderIcon, ZapIcon, CircleDotIcon, LockIcon, LockOpenIcon } from "lucide-react";
+import {
+  GitBranchIcon,
+  FolderIcon,
+  ZapIcon,
+  CircleDotIcon,
+  LockIcon,
+  LockOpenIcon,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 import { swallow } from "@/core/utils/log";
 import { authHeaders } from "@/core/auth/api";
@@ -76,7 +82,9 @@ export function CodeStatusBar({
             setGitBranch(branch);
             try {
               sessionStorage.setItem(`git-branch:${workDir}`, branch);
-            } catch (e) { swallow(e, "storage"); }
+            } catch (e) {
+              swallow(e, "storage");
+            }
           }
         })
         .catch(() => {
@@ -95,7 +103,7 @@ export function CodeStatusBar({
   return (
     <div
       className={cn(
-        "flex items-center justify-between border-t border-border/50 workspace-panel-subtle px-3 py-0.5 font-mono text-[10px] text-muted-foreground",
+        "flex items-center justify-between border-t border-border-default workspace-panel-subtle px-3 py-0.5 font-mono text-xs text-muted-foreground",
         className,
       )}
     >
@@ -125,10 +133,10 @@ export function CodeStatusBar({
                 "flex items-center gap-1 font-semibold tabular-nums",
                 isLoading
                   ? fastElapsedSec > 60
-                    ? "text-amber-600 dark:text-amber-400"
+                    ? "text-warning"
                     : "text-primary"
                   : fastElapsedSec <= 60
-                    ? "text-emerald-600 dark:text-emerald-400"
+                    ? "text-success"
                     : "text-muted-foreground",
               )}
               title={
@@ -142,7 +150,9 @@ export function CodeStatusBar({
               <ZapIcon
                 className={cn("size-2.5", isLoading && "animate-pulse")}
               />
-              {isLoading ? t.codeMode.fastProgress(fastElapsedSec) : t.codeMode.fastDone(fastElapsedSec)}
+              {isLoading
+                ? t.codeMode.fastProgress(fastElapsedSec)
+                : t.codeMode.fastDone(fastElapsedSec)}
             </span>
             {onToggleFastHardTimeout && (
               <button
@@ -156,7 +166,7 @@ export function CodeStatusBar({
                 className={cn(
                   "flex items-center justify-center rounded-md p-0.5 transition-colors",
                   fastHardTimeout
-                    ? "text-red-600 hover:text-red-700 dark:text-red-400"
+                    ? "text-destructive hover:text-destructive"
                     : "text-muted-foreground/60 hover:text-foreground",
                 )}
               >
@@ -179,7 +189,9 @@ export function CodeStatusBar({
           <ZapIcon className="size-2.5" />
           {codeMode}
         </span>
-        <span className="text-muted-foreground/50">{modelName || t.codeMode.defaultModel}</span>
+        <span className="text-muted-foreground/50">
+          {modelName || t.codeMode.defaultModel}
+        </span>
       </div>
     </div>
   );

@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -188,7 +187,8 @@ def test_sanitize_turn_params_preserves_auto_approval_when_enabled(tmp_path: Pat
 
 
 class _BlockingRuntime:
-    def __init__(self) -> None:
+    def __init__(self, logs_root: Path) -> None:
+        self._logs_root = logs_root
         self.release = threading.Event()
         self.started: list[str] = []
         self._lock = threading.Lock()
@@ -288,9 +288,7 @@ def test_turn_lifecycle_with_approval_accept(gateway_client: Any) -> None:
 
     # Agent message deltas accumulate to the input text.
     deltas = [
-        n.params["delta"]
-        for n in outcome["notifications"]
-        if n.method == "item/agentMessage/delta"
+        n.params["delta"] for n in outcome["notifications"] if n.method == "item/agentMessage/delta"
     ]
     assert "".join(deltas) == "hello world"
 
@@ -367,21 +365,38 @@ def test_realtime_rejects_unauthenticated_when_required(
         pass
 
 
-def test_realtime_accepts_query_token_when_required(
+def test_realtime_accepts_authorization_header_when_required(
     authenticated_gateway_client: Any,
 ) -> None:
     client, _ = authenticated_gateway_client
-    with client.websocket_connect("/api/realtime?token=sk-alice") as ws:
+    with client.websocket_connect(
+        "/api/realtime",
+        headers={"authorization": "Bearer sk-alice"},
+    ) as ws:
         outcome = _drive_turn(ws, thread_id="auth_th", text="hello auth")
 
     assert outcome["response"].result["turn"]["status"] == "completed"
+
+
+def test_realtime_rejects_query_token_when_required(
+    authenticated_gateway_client: Any,
+) -> None:
+    client, _ = authenticated_gateway_client
+    assert WebSocketDisconnect is not None
+    with pytest.raises(WebSocketDisconnect), client.websocket_connect(
+        "/api/realtime?token=sk-alice"
+    ):
+        pass
 
 
 def test_realtime_thread_resume_rejects_other_actor(
     two_actor_gateway_client: Any,
 ) -> None:
     client, _ = two_actor_gateway_client
-    with client.websocket_connect("/api/realtime?token=sk-alice") as ws:
+    with client.websocket_connect(
+        "/api/realtime",
+        headers={"authorization": "Bearer sk-alice"},
+    ) as ws:
         _drive_turn(
             ws,
             thread_id="auth_owner_thread",
@@ -389,7 +404,10 @@ def test_realtime_thread_resume_rejects_other_actor(
             approval_policy="never",
         )
 
-    with client.websocket_connect("/api/realtime?token=sk-bob") as ws:
+    with client.websocket_connect(
+        "/api/realtime",
+        headers={"authorization": "Bearer sk-bob"},
+    ) as ws:
         _send(
             ws,
             JsonRpcRequest(
@@ -408,10 +426,10 @@ def test_realtime_thread_resume_rejects_other_actor(
     }
 
 
-def test_in_flight_request_limit_rejects_extra_turns() -> None:
+def test_in_flight_request_limit_rejects_extra_turns(tmp_path: Path) -> None:
     from runtime.sensing.gateway.realtime_gateway import RealtimeGateway
 
-    runtime = _BlockingRuntime()
+    runtime = _BlockingRuntime(tmp_path / "threads")
     gateway = RealtimeGateway(
         runtime=runtime,
         max_in_flight_requests_per_connection=1,
@@ -454,10 +472,10 @@ def test_in_flight_request_limit_rejects_extra_turns() -> None:
         assert msg.result["turn"]["status"] == "completed"
 
 
-def test_same_thread_turns_are_serialized() -> None:
+def test_same_thread_concurrent_turn_is_rejected(tmp_path: Path) -> None:
     from runtime.sensing.gateway.realtime_gateway import RealtimeGateway
 
-    runtime = _BlockingRuntime()
+    runtime = _BlockingRuntime(tmp_path / "threads")
     gateway = RealtimeGateway(
         runtime=runtime,
         max_in_flight_requests_per_connection=2,
@@ -466,34 +484,41 @@ def test_same_thread_turns_are_serialized() -> None:
     app.include_router(gateway.router)
 
     with TestClient(app) as client, client.websocket_connect("/api/realtime") as ws:
-        for req_id in (1, 2):
-            _send(
-                ws,
-                JsonRpcRequest(
-                    id=req_id,
-                    method="turn/start",
-                    params={"threadId": "same-thread", "input": []},
-                ),
-            )
-
+        _send(
+            ws,
+            JsonRpcRequest(
+                id=1,
+                method="turn/start",
+                params={"threadId": "same-thread", "input": []},
+            ),
+        )
         first = _recv(ws)
         assert isinstance(first, Notification)
         assert first.method == "turn/started"
-        time.sleep(0.1)
         assert runtime.started == ["same-thread"]
 
-        runtime.release.set()
-        saw_second_started = False
-        saw_responses: set[int] = set()
-        while saw_responses != {1, 2}:
-            msg = _recv(ws)
-            if isinstance(msg, Notification) and msg.method == "turn/started":
-                saw_second_started = True
-            if isinstance(msg, JsonRpcResponse):
-                saw_responses.add(int(msg.id))
+        _send(
+            ws,
+            JsonRpcRequest(
+                id=2,
+                method="turn/start",
+                params={"threadId": "same-thread", "input": []},
+            ),
+        )
+        conflict = _recv(ws)
+        assert isinstance(conflict, JsonRpcResponse)
+        assert conflict.id == 2
+        assert conflict.error is not None
+        assert conflict.error.code == JsonRpcErrorCode.SERVER_BUSY
 
-        assert saw_second_started
-        assert runtime.started == ["same-thread", "same-thread"]
+        runtime.release.set()
+        while True:
+            msg = _recv(ws)
+            if isinstance(msg, JsonRpcResponse) and msg.id == 1:
+                break
+
+        assert msg.result["turn"]["status"] == "completed"
+        assert runtime.started == ["same-thread"]
 
 
 def test_resume_reconstructs_turns(gateway_client: Any) -> None:
@@ -816,7 +841,7 @@ def test_turn_interrupt_unknown_turn_returns_success_but_noop(gateway_client: An
         )
         msg = _recv(ws)
     assert isinstance(msg, JsonRpcResponse)
-    assert msg.result == {"turnId": "trn_nonexistent", "interrupted": True}
+    assert msg.result == {"turnId": "trn_nonexistent", "interrupted": False}
 
 
 def test_turn_interrupt_missing_turn_id_is_invalid_params(gateway_client: Any) -> None:
@@ -868,14 +893,17 @@ class TestCreateAppApprovalBypassDefault:
         )
         cfg = AgentConfig(
             planner=PlannerConfig(
-                type="llm", model="mock/ob",
+                type="llm",
+                model="mock/ob",
                 mock_response='{"reasoning":"r","nodes":[]}',
             ),
             safety=safety,
         )
         stack = build_from_config(cfg)
         return create_app(
-            journal=stack.journal, registry=stack.registry, stack=stack,
+            journal=stack.journal,
+            registry=stack.registry,
+            stack=stack,
         )
 
     def test_secure_default_is_no_bypass(self, tmp_path: Path, monkeypatch: Any):

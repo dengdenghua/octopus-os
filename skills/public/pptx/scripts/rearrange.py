@@ -10,6 +10,7 @@ Slides can be repeated (e.g., 34 appears twice).
 """
 
 import argparse
+import contextlib
 import shutil
 import sys
 from copy import deepcopy
@@ -101,14 +102,14 @@ def duplicate_slide(pres, index):
         # Using the element's own xpath method without namespaces argument
         blips = new_el.xpath(".//a:blip[@r:embed]")
         for blip in blips:
-            old_rId = blip.get(
+            old_rId = blip.get(  # noqa: N806
                 "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
             )
             if old_rId in image_rels:
                 # Create a new relationship in the destination slide for this image
                 old_rel = image_rels[old_rId]
                 # get_or_add returns the rId directly, or adds and returns new rId
-                new_rId = new_slide.part.rels.get_or_add(
+                new_rId = new_slide.part.rels.get_or_add(  # noqa: N806
                     old_rel.reltype, old_rel._target
                 )
                 # Update the blip's embed reference to use the new relationship ID
@@ -118,18 +119,16 @@ def duplicate_slide(pres, index):
                 )
 
     # Copy any additional image/media relationships that might be referenced elsewhere
-    for rel_id, rel in image_rels.items():
-        try:
+    for _rel_id, rel in image_rels.items():
+        with contextlib.suppress(Exception):
             new_slide.part.rels.get_or_add(rel.reltype, rel._target)
-        except Exception:
-            pass  # Relationship might already exist
 
     return new_slide
 
 
 def delete_slide(pres, index):
     """Delete a slide from the presentation."""
-    rId = pres.slides._sldIdLst[index].rId
+    rId = pres.slides._sldIdLst[index].rId  # noqa: N806
     pres.part.drop_rel(rId)
     del pres.slides._sldIdLst[index]
 

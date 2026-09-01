@@ -7,15 +7,15 @@ Covers:
 * Final-answer auto-purge — last-write-wins payload + index removal.
 * Fail-soft — a misbehaving client never raises out of any method.
 * env-var build path returns None when the URL is empty / unset.
-* react_loop integration — when ``OCTOPUS_CHECKPOINT_MIRROR_URL`` is
+* react_loop integration — when ``ECHO_CHECKPOINT_MIRROR_URL`` is
   unset, the loop's ``_checkpoint_mirror()`` returns None (off).
 """
+
 from __future__ import annotations
 
 import json
 
 import pytest
-
 from runtime.core.cerebrum.checkpoint_mirror import (
     CHECKPOINT_KEY_PREFIX,
     TASKS_INDEX_KEY,
@@ -213,10 +213,12 @@ class TestBuildFromUrl:
         assert build_checkpoint_mirror_from_url("   ") is None
 
     def test_no_redis_package_returns_none(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Force the import inside build_checkpoint_mirror_from_url to fail.
         import sys
+
         original = sys.modules.get("redis")
         sys.modules["redis"] = None  # type: ignore[assignment]
         try:
@@ -235,35 +237,41 @@ class TestBuildFromUrl:
 
 class TestReactLoopIntegration:
     def test_singleton_off_by_default(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("OCTOPUS_CHECKPOINT_MIRROR_URL", raising=False)
+        monkeypatch.delenv("ECHO_CHECKPOINT_MIRROR_URL", raising=False)
         from runtime.core.cerebrum.react_loop import (
             _checkpoint_mirror,
             _reset_checkpoint_mirror_for_tests,
         )
+
         _reset_checkpoint_mirror_for_tests()
         assert _checkpoint_mirror() is None
 
     def test_singleton_off_for_blank_url(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("OCTOPUS_CHECKPOINT_MIRROR_URL", "   ")
+        monkeypatch.setenv("ECHO_CHECKPOINT_MIRROR_URL", "   ")
         from runtime.core.cerebrum.react_loop import (
             _checkpoint_mirror,
             _reset_checkpoint_mirror_for_tests,
         )
+
         _reset_checkpoint_mirror_for_tests()
         assert _checkpoint_mirror() is None
 
     def test_mirror_call_swallows_when_off(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("OCTOPUS_CHECKPOINT_MIRROR_URL", raising=False)
+        monkeypatch.delenv("ECHO_CHECKPOINT_MIRROR_URL", raising=False)
         from runtime.core.cerebrum.react_loop import (
             _mirror_checkpoint,
             _reset_checkpoint_mirror_for_tests,
         )
+
         _reset_checkpoint_mirror_for_tests()
         # Must not raise even when no mirror is configured.
         _mirror_checkpoint("task-x", {"iteration_completed": 1})

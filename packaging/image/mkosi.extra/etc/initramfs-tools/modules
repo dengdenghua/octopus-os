@@ -1,0 +1,2 @@
+# Echo OS requires overlayfs before PID 1 so mutable /etc stays on encrypted var.
+overlay

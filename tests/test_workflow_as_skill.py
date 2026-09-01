@@ -1,4 +1,5 @@
 """Implementation note."""
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,7 @@ def wf_dir(tmp_path: Path, monkeypatch) -> Path:
     """Implementation note."""
     d = tmp_path / "workflows"
     d.mkdir()
-    monkeypatch.setenv("OCTOPUS_WORKFLOWS_DIR", str(d))
+    monkeypatch.setenv("ECHO_WORKFLOWS_DIR", str(d))
     return d
 
 
@@ -210,9 +211,7 @@ def test_visual_to_task_graph_skips_start_end_nodes(wf_dir: Path) -> None:
     )
 
     wf = _minimal_workflow()
-    graph = _visual_to_task_graph_obj(
-        wf["definition"]["nodes"], wf["definition"]["edges"]
-    )
+    graph = _visual_to_task_graph_obj(wf["definition"]["nodes"], wf["definition"]["edges"])
     # Implementation note.
     assert len(graph.nodes) == 1
     assert graph.nodes[0].node_id == "tool-1"

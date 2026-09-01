@@ -25,6 +25,7 @@ The gate is the seam between "LLM just said something" and "it's
 about to go on a wire". Blocking correctness here is mouth-of-dam
 important — everything downstream trusts the verdict.
 """
+
 from __future__ import annotations
 
 from runtime.safety.validation import Verdict, check_outbound
@@ -73,7 +74,8 @@ class TestPIIScrub:
     def test_clean_message_allowed_unchanged(self):
         msg = "Hello from the agent · here is a summary of today's tasks."
         verdict = check_outbound(
-            message=msg, destination="channels:slack:chan",
+            message=msg,
+            destination="channels:slack:chan",
         )
         assert verdict.action == "allow"
         assert verdict.sanitized_text == msg
@@ -99,9 +101,7 @@ class TestSecretBlock:
 
     def test_anthropic_api_key_blocked(self):
         verdict = check_outbound(
-            message=(
-                "ANTHROPIC_API_KEY=sk-ant-abcdefghijklmnopqrstuvwxyz0123456789abcd"
-            ),
+            message=("ANTHROPIC_API_KEY=sk-ant-abcdefghijklmnopqrstuvwxyz0123456789abcd"),
             destination="channels:weixin:bot-1",
         )
         assert verdict.action == "block"
@@ -194,7 +194,8 @@ class TestGateNeverRaises:
 
     def test_very_long_message(self):
         verdict = check_outbound(
-            message="x" * 100_000, destination="channels:x:y",
+            message="x" * 100_000,
+            destination="channels:x:y",
         )
         assert isinstance(verdict, Verdict)
 

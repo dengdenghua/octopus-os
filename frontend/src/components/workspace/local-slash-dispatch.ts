@@ -34,6 +34,7 @@ export interface LocalSlashContext {
 
 const VALID_MODES: ReadonlySet<ReasoningMode> = new Set([
   "chat",
+  "code",
   "react",
   "deep",
   "flash",
@@ -115,9 +116,9 @@ export function tryLocalSlash(text: string, ctx: LocalSlashContext): boolean {
       return true;
 
     case "settings":
-      // Anchor-based navigation — always available, no callback.
+      // Open the unified settings dialog through the workspace event bridge.
       if (typeof window !== "undefined") {
-        window.location.hash = "#settings";
+        window.dispatchEvent(new Event("echo:open-settings"));
       }
       return true;
 
@@ -125,16 +126,12 @@ export function tryLocalSlash(text: string, ctx: LocalSlashContext): boolean {
     case "pack":
     case "packs":
     case "meta": {
-      // Open the 能力包 / Skill Pack catalog inside the Plugins page.
-      // With no arg the user lands on the packs tab; with an arg we
-      // deep-link to a pre-filtered query that the tab reads from the
-      // URL hash. Both paths are pure client-side navigation — the
-      // backend is not hit until the tab itself asks for
-      // /api/meta-skills.
+      // Open the unified Hub skill catalog. With an arg, keep the query
+      // so the Hub can pre-filter the skill list.
       if (typeof window !== "undefined") {
         const target = arg
-          ? `#/workspace/plugins?tab=packs&q=${encodeURIComponent(arg)}`
-          : "#/workspace/plugins?tab=packs";
+          ? `#/workspace/agents?surface=chat&tab=skills&q=${encodeURIComponent(arg)}`
+          : "#/workspace/agents?surface=chat&tab=skills";
         window.location.hash = target;
       }
       return true;

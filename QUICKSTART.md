@@ -1,4 +1,4 @@
-# Octopus-Agent 快速上手
+# Echo Agent 快速上手
 
 这份文档只回答三个问题：
 
@@ -175,7 +175,7 @@ python -m pytest tests/test_cli_status.py tests/test_cli_smoke.py -q
 cp .env.example .env
 cp config.example.yaml config.yaml
 docker compose up -d
-docker compose logs -f octopus-agent
+docker compose logs -f echo-agent
 ```
 
 服务地址：

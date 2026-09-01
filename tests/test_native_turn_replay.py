@@ -9,23 +9,25 @@ from runtime.safety.recovery.native_turn_replay import (
 
 
 def test_build_turn_replay_cases_classifies_recent_failures() -> None:
-    cases = build_turn_replay_cases(failures=[
-        {
-            "goal": "输出完整调研报告",
-            "failure_cluster": "length_limit:output truncated",
-            "last_error": "finish_reason length",
-        },
-        {
-            "goal": "默认 agent 调用搜索技能",
-            "failure_source": "tool permission confusion",
-            "last_error": "无法调用工具",
-        },
-        {
-            "goal": "报告已输出但最后一步仍转圈",
-            "failure_source": "final step stuck",
-            "last_error": "progress in_progress",
-        },
-    ])
+    cases = build_turn_replay_cases(
+        failures=[
+            {
+                "goal": "输出完整调研报告",
+                "failure_cluster": "length_limit:output truncated",
+                "last_error": "finish_reason length",
+            },
+            {
+                "goal": "默认 agent 调用搜索技能",
+                "failure_source": "tool permission confusion",
+                "last_error": "无法调用工具",
+            },
+            {
+                "goal": "报告已输出但最后一步仍转圈",
+                "failure_source": "final step stuck",
+                "last_error": "progress in_progress",
+            },
+        ]
+    )
 
     assert [case.kind for case in cases] == [
         "report_truncation",
@@ -79,9 +81,7 @@ def test_turn_replay_prefers_prompt_that_covers_real_turn_failures() -> None:
     assert report.candidates[0].candidate_id == good.candidate_id
     assert report.candidates[0].passed is True
     bad_report = next(
-        candidate
-        for candidate in report.candidates
-        if candidate.candidate_id == bad.candidate_id
+        candidate for candidate in report.candidates if candidate.candidate_id == bad.candidate_id
     )
     assert bad_report.passed is False
     assert bad_report.total < 0.5

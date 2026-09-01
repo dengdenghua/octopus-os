@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.execution.agents import (
     Agent,
@@ -48,10 +47,13 @@ class TestAgentGroupDataclass:
 class TestRegistryCRUD:
     def test_create_and_get(self):
         r = AgentGroupRegistry()
-        r.create(AgentGroup(
-            group_id="ecom", display_name="Ecom",
-            members=["vibe_selling", "ecommerce_mind"],
-        ))
+        r.create(
+            AgentGroup(
+                group_id="ecom",
+                display_name="Ecom",
+                members=["vibe_selling", "ecommerce_mind"],
+            )
+        )
         g = r.get("ecom")
         assert g.display_name == "Ecom"
         assert g.members == ["vibe_selling", "ecommerce_mind"]
@@ -77,7 +79,7 @@ class TestRegistryCRUD:
         r.create(AgentGroup(group_id="x", display_name="old", description="d"))
         new = r.update("x", display_name="new")
         assert new.display_name == "new"
-        assert new.description == "d"   # Implementation note.
+        assert new.description == "d"  # Implementation note.
 
     def test_update_unknown_raises(self):
         r = AgentGroupRegistry()
@@ -156,7 +158,8 @@ class TestMembership:
 class TestEffectiveGroups:
     def test_static_only(self):
         result = effective_groups_for_agent(
-            agent_id="alice", static_groups=["team_a", "team_b"],
+            agent_id="alice",
+            static_groups=["team_a", "team_b"],
         )
         assert result == ["team_a", "team_b"]
 
@@ -164,7 +167,9 @@ class TestEffectiveGroups:
         r = AgentGroupRegistry()
         r.create(AgentGroup(group_id="team_a", members=["alice"]))
         result = effective_groups_for_agent(
-            agent_id="alice", static_groups=[], registry=r,
+            agent_id="alice",
+            static_groups=[],
+            registry=r,
         )
         assert result == ["team_a"]
 
@@ -197,7 +202,6 @@ class TestEffectiveGroups:
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.sensing.gateway.agents_router import create_agents_router  # noqa: E402
 
 
@@ -208,10 +212,12 @@ def _build_app(
 ) -> FastAPI:
     agents = agents or AgentRegistry()
     app = FastAPI()
-    app.include_router(create_agents_router(
-        registry=agents,
-        group_registry=groups,
-    ))
+    app.include_router(
+        create_agents_router(
+            registry=agents,
+            group_registry=groups,
+        )
+    )
     return app
 
 
@@ -233,12 +239,15 @@ class TestGroupHTTPCRUD:
         groups = AgentGroupRegistry()
         app = _build_app(agents=agents_reg, groups=groups)
         client = TestClient(app)
-        r = client.post("/api/groups", json={
-            "group_id": "ecom",
-            "display_name": "Ecom Team",
-            "description": "E-commerce specialists",
-            "members": ["vibe_selling", "ecommerce_mind"],
-        })
+        r = client.post(
+            "/api/groups",
+            json={
+                "group_id": "ecom",
+                "display_name": "Ecom Team",
+                "description": "E-commerce specialists",
+                "members": ["vibe_selling", "ecommerce_mind"],
+            },
+        )
         assert r.status_code == 201
         data = r.json()
         assert data["group_id"] == "ecom"
@@ -253,7 +262,8 @@ class TestGroupHTTPCRUD:
         groups.create(AgentGroup(group_id="ecom"))
         app = _build_app(agents=agents_reg, groups=groups)
         r = TestClient(app).post(
-            "/api/groups", json={"group_id": "ecom"},
+            "/api/groups",
+            json={"group_id": "ecom"},
         )
         assert r.status_code == 409
 
@@ -261,15 +271,20 @@ class TestGroupHTTPCRUD:
         groups = AgentGroupRegistry()
         app = _build_app(agents=agents_reg, groups=groups)
         r = TestClient(app).post(
-            "/api/groups", json={"group_id": ""},
+            "/api/groups",
+            json={"group_id": ""},
         )
         assert r.status_code == 400
 
     def test_get_detail(self, agents_reg):
         groups = AgentGroupRegistry()
-        groups.create(AgentGroup(
-            group_id="ecom", display_name="Ecom", members=["vibe_selling"],
-        ))
+        groups.create(
+            AgentGroup(
+                group_id="ecom",
+                display_name="Ecom",
+                members=["vibe_selling"],
+            )
+        )
         app = _build_app(agents=agents_reg, groups=groups)
         r = TestClient(app).get("/api/groups/ecom")
         assert r.status_code == 200
@@ -282,12 +297,17 @@ class TestGroupHTTPCRUD:
 
     def test_put_update(self, agents_reg):
         groups = AgentGroupRegistry()
-        groups.create(AgentGroup(
-            group_id="ecom", display_name="old", description="keep",
-        ))
+        groups.create(
+            AgentGroup(
+                group_id="ecom",
+                display_name="old",
+                description="keep",
+            )
+        )
         app = _build_app(agents=agents_reg, groups=groups)
         r = TestClient(app).put(
-            "/api/groups/ecom", json={"display_name": "new"},
+            "/api/groups/ecom",
+            json={"display_name": "new"},
         )
         assert r.status_code == 200
         assert r.json()["display_name"] == "new"
@@ -296,7 +316,8 @@ class TestGroupHTTPCRUD:
     def test_put_unknown_404(self, agents_reg):
         app = _build_app(agents=agents_reg, groups=AgentGroupRegistry())
         r = TestClient(app).put(
-            "/api/groups/ghost", json={"display_name": "x"},
+            "/api/groups/ghost",
+            json={"display_name": "x"},
         )
         assert r.status_code == 404
 
@@ -389,14 +410,22 @@ class TestByAgent:
         # Implementation note.
         rt = _rt()
         arm = Worker(
-            arm_id=ArmId("a"), affinity=[], allowed_skills=[], runtime=rt,
+            arm_id=ArmId("a"),
+            affinity=[],
+            allowed_skills=[],
+            runtime=rt,
         )
         ar = AgentRegistry()
-        ar.register(Agent(
-            agent_id="alice", display_name="A",
-            description="", soul="", arms=ArmPool([arm]),
-            groups=["static_one"],
-        ))
+        ar.register(
+            Agent(
+                agent_id="alice",
+                display_name="A",
+                description="",
+                soul="",
+                arms=ArmPool([arm]),
+                groups=["static_one"],
+            )
+        )
         groups = AgentGroupRegistry()
         groups.create(AgentGroup(group_id="dynamic_one", members=["alice"]))
 

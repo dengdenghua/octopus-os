@@ -47,7 +47,8 @@ def _graph(n: int, skill: str = "list_cwd") -> TaskGraph:
     return TaskGraph(
         nodes=[
             TaskNode(
-                node_id=f"n{i}", skill_ref=SkillId(skill),
+                node_id=f"n{i}",
+                skill_ref=SkillId(skill),
                 args_template={"path": "."},
             )
             for i in range(n)
@@ -111,9 +112,12 @@ class TestResumeInfoBasics:
         for i in range(2):
             call = ToolCall(caller="arms/a", sucker_id="list_cwd", args={})
             step = Step(
-                step_id=i, node_id=f"n{i}", action=call,
+                step_id=i,
+                node_id=f"n{i}",
+                action=call,
                 result=ExecutionResult(
-                    call_id=call.call_id, status="success",
+                    call_id=call.call_id,
+                    status="success",
                     output={"path": f"/tmp/{i}"},
                 ),
             )
@@ -137,12 +141,15 @@ class TestResumeInfoBasics:
         def _mk(i, ok):
             call = ToolCall(caller="arms/a", sucker_id="list_cwd", args={})
             return Step(
-                step_id=i, node_id=f"n{i}", action=call,
+                step_id=i,
+                node_id=f"n{i}",
+                action=call,
                 result=ExecutionResult(
                     call_id=call.call_id,
                     status="success" if ok else "failed",
                 ),
             )
+
         # step0 success · step1 failed
         j.write_step(tid, ArmId("a"), _mk(0, True))
         j.write_step(tid, ArmId("a"), _mk(1, False))
@@ -240,7 +247,10 @@ class TestGraphRuntimeResume:
             limits=BudgetLimits(tokens=10_000, usd=0.10),
         )
         traj = rt.run(
-            graph, budget=budget, caller="arms/x", arm_id=ArmId("x"),
+            graph,
+            budget=budget,
+            caller="arms/x",
+            arm_id=ArmId("x"),
             resume_from=2,
             outputs_seed={
                 "n0": {"path": "/preloaded/0"},
@@ -257,12 +267,13 @@ class TestGraphRuntimeResume:
         rt = GraphRuntime(executor=executor, journal=journal)
         graph = TaskGraph(
             nodes=[
-                TaskNode(node_id="n0", skill_ref=SkillId("list_cwd"),
-                         args_template={"path": "."}),
-                TaskNode(node_id="n1", skill_ref=SkillId("list_cwd"),
-                         args_template={"path": "."}),
-                TaskNode(node_id="n2", skill_ref=SkillId("count_words"),
-                         args_template={"text": "{n0.path}"}),
+                TaskNode(node_id="n0", skill_ref=SkillId("list_cwd"), args_template={"path": "."}),
+                TaskNode(node_id="n1", skill_ref=SkillId("list_cwd"), args_template={"path": "."}),
+                TaskNode(
+                    node_id="n2",
+                    skill_ref=SkillId("count_words"),
+                    args_template={"text": "{n0.path}"},
+                ),
             ],
             edges=[],
             budget=BudgetSpec(tokens=10_000, usd=0.10),
@@ -272,7 +283,10 @@ class TestGraphRuntimeResume:
             limits=BudgetLimits(tokens=10_000, usd=0.10),
         )
         traj = rt.run(
-            graph, budget=budget, caller="arms/x", arm_id=ArmId("x"),
+            graph,
+            budget=budget,
+            caller="arms/x",
+            arm_id=ArmId("x"),
             resume_from=2,
             outputs_seed={
                 "n0": {"path": "hello world"},
@@ -301,7 +315,7 @@ def _write_cfg(tmp_path: Path, *, single_node: bool = True) -> Path:
             '{"reasoning":"r","nodes":['
             '{"skill":"list_cwd","args":{"path":"."}},'
             '{"skill":"list_cwd","args":{"path":"."}}'
-            ']}'
+            "]}"
         )
     path.write_text(
         "planner:\n"
@@ -327,9 +341,12 @@ def _crashed_journal(tmp_path: Path, *, total_nodes: int, completed: int) -> tup
     for i in range(completed):
         call = ToolCall(caller="arms/a", sucker_id="list_cwd", args={"path": "."})
         step = Step(
-            step_id=i, node_id=f"n{i}", action=call,
+            step_id=i,
+            node_id=f"n{i}",
+            action=call,
             result=ExecutionResult(
-                call_id=call.call_id, status="success",
+                call_id=call.call_id,
+                status="success",
                 output={"path": f"/fake/{i}", "items": [], "count": 0},
             ),
         )
@@ -345,8 +362,12 @@ class TestCLIResume:
         from runtime.cli import run_resume
 
         rc = run_resume(
-            task_id=str(tid), journal_path=jpath,
-            goal="list cwd", config_path=cfg, dry_run=True, color=False,
+            task_id=str(tid),
+            journal_path=jpath,
+            goal="list cwd",
+            config_path=cfg,
+            dry_run=True,
+            color=False,
         )
         assert rc == 0
         out = capsys.readouterr().out
@@ -367,7 +388,10 @@ class TestCLIResume:
         rc = run_resume(
             task_id=str(uuid4()),  # Implementation note.
             journal_path=jpath,
-            goal="x", config_path=cfg, dry_run=True, color=False,
+            goal="x",
+            config_path=cfg,
+            dry_run=True,
+            color=False,
         )
         assert rc == 2
         assert "no events" in capsys.readouterr().err
@@ -379,7 +403,10 @@ class TestCLIResume:
         rc = run_resume(
             task_id=str(uuid4()),
             journal_path=tmp_path / "nope.jsonl",
-            goal="x", config_path=cfg, dry_run=True, color=False,
+            goal="x",
+            config_path=cfg,
+            dry_run=True,
+            color=False,
         )
         assert rc == 2
 
@@ -391,8 +418,12 @@ class TestCLIResume:
         from runtime.cli import run_resume
 
         rc = run_resume(
-            task_id=str(tid), journal_path=jpath,
-            goal="list cwd", config_path=cfg, dry_run=False, color=False,
+            task_id=str(tid),
+            journal_path=jpath,
+            goal="list cwd",
+            config_path=cfg,
+            dry_run=False,
+            color=False,
         )
         # Implementation note.
         assert rc == 0
@@ -424,8 +455,12 @@ class TestCLIResume:
         from runtime.cli import run_resume
 
         rc = run_resume(
-            task_id=str(graph.task_id), journal_path=path,
-            goal="list", config_path=cfg, dry_run=False, color=False,
+            task_id=str(graph.task_id),
+            journal_path=path,
+            goal="list",
+            config_path=cfg,
+            dry_run=False,
+            color=False,
         )
         assert rc == 0
         out_text = capsys.readouterr().out
@@ -440,7 +475,7 @@ class TestCLIResume:
             '{"reasoning":"r","nodes":['
             '{"skill":"list_cwd","args":{"path":"./other"}},'
             '{"skill":"count_words","args":{"text":"hello"}}'
-            ']}'
+            "]}"
         )
         cfg.write_text(
             "planner:\n"

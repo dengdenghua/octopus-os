@@ -21,7 +21,7 @@ class TestParseQueryArray:
         assert _parse_query_array('["a", "b", "c"]') == ["a", "b", "c"]
 
     def test_json_array_in_prose(self):
-        raw = "Sure, here you go:\n[\"q1\", \"q2\"]\nGood luck!"
+        raw = 'Sure, here you go:\n["q1", "q2"]\nGood luck!'
         assert _parse_query_array(raw) == ["q1", "q2"]
 
     def test_strips_and_skips_empty(self):
@@ -106,9 +106,7 @@ class TestRewriteQueryLLM:
         assert r.queries[0] == "latest GPT models"
 
     def test_llm_json_response(self):
-        mock = MockModelRouter(
-            response='["AAPL stock price today", "Apple Q1 2026 earnings"]'
-        )
+        mock = MockModelRouter(response='["AAPL stock price today", "Apple Q1 2026 earnings"]')
         r = rewrite_query("苹果股票最近怎么样", router=mock, n=3)
         assert r.backend == "llm"
         # original preserved first

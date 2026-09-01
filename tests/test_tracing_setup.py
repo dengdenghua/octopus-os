@@ -13,7 +13,7 @@ def test_noop_when_sdk_absent(monkeypatch):
     # Force the "SDK not installed" branch regardless of the env.
     monkeypatch.setattr(tracing, "OTEL_AVAILABLE", False)
     monkeypatch.setattr(tracing, "_TRACING_CONFIGURED", False)
-    monkeypatch.setenv("OCTOPUS_OTEL_CONSOLE", "1")
+    monkeypatch.setenv("ECHO_OTEL_CONSOLE", "1")
     assert maybe_setup_tracing() is False
 
 
@@ -23,14 +23,14 @@ def test_noop_when_unconfigured(monkeypatch):
     monkeypatch.setattr(tracing, "OTEL_AVAILABLE", True)
     monkeypatch.setattr(tracing, "_TRACING_CONFIGURED", False)
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
-    monkeypatch.delenv("OCTOPUS_OTEL_CONSOLE", raising=False)
+    monkeypatch.delenv("ECHO_OTEL_CONSOLE", raising=False)
     assert maybe_setup_tracing() is False
 
 
 def test_idempotent_after_configured(monkeypatch):
     monkeypatch.setattr(tracing, "OTEL_AVAILABLE", True)
     monkeypatch.setattr(tracing, "_TRACING_CONFIGURED", True)  # already set up
-    monkeypatch.setenv("OCTOPUS_OTEL_CONSOLE", "1")
+    monkeypatch.setenv("ECHO_OTEL_CONSOLE", "1")
     assert maybe_setup_tracing() is False
 
 
@@ -39,7 +39,7 @@ def test_setup_failure_is_swallowed(monkeypatch):
     # False, never raise (startup must not break on a tracing misconfig).
     monkeypatch.setattr(tracing, "OTEL_AVAILABLE", True)
     monkeypatch.setattr(tracing, "_TRACING_CONFIGURED", False)
-    monkeypatch.setenv("OCTOPUS_OTEL_CONSOLE", "1")
+    monkeypatch.setenv("ECHO_OTEL_CONSOLE", "1")
     # OTEL_AVAILABLE forced True but the SDK isn't installed here, so the
     # inner import raises and must be swallowed. Whatever the env, the
     # call must return a bool and never propagate.

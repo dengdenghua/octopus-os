@@ -11,13 +11,14 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHROMIUM_SRC="${1:-$HOME/chromium/src}"
 TARGET_CPU="${2:-arm64}"
 TARGET_OS="${TARGET_OS:-android}"
 BUILD_TYPE="${BUILD_TYPE:-Release}"
 
 echo "============================================================"
-echo "🔨 Octopus Mobile · Chromium WebView 编译"
+echo "🔨 Echo Mobile · Chromium WebView 编译"
 echo "============================================================"
 echo ""
 echo "源码目录：$CHROMIUM_SRC"
@@ -65,12 +66,12 @@ echo "  ✓ NDK：$ANDROID_NDK_ROOT"
 echo ""
 echo "⚙️ 配 GN args（target_os=android, target_cpu=$TARGET_CPU）..."
 
-OUT_DIR="out/OctopusWebView_$TARGET_CPU"
+OUT_DIR="out/EchoWebView_$TARGET_CPU"
 mkdir -p "$OUT_DIR"
 
 # 关键：只编 webview + content，节省 80% 时间
 cat > "$OUT_DIR/args.gn" <<EOF
-# Octopus Mobile WebView Build Config
+# Echo Mobile WebView Build Config
 target_os = "$TARGET_OS"
 target_cpu = "$TARGET_CPU"
 is_debug = $([ "$BUILD_TYPE" = "Debug" ] && echo "true" || echo "false")
@@ -161,5 +162,5 @@ echo "📁 产物目录：$OUT_DIR/lib.unstripped/"
 echo ""
 echo "下一步："
 echo "  cd $CHROMIUM_SRC"
-echo "  $CHROMIUM_SRC/../octopus-agent/docs/mobile/chromium-build/build_scripts/build_aar.sh $OUT_DIR"
+echo "  $SCRIPT_DIR/build_aar.sh $OUT_DIR"
 echo ""

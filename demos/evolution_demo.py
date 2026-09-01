@@ -8,22 +8,22 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from runtime.execution.tool_engine import ToolExecutor
 from runtime.core.graph_runtime import GraphRuntime
+from runtime.execution.suckers import SkillRegistry
+from runtime.execution.suckers.builtins import register_all
+from runtime.execution.suckers.write_skills import register_exec_skill
+from runtime.execution.tool_engine import ToolExecutor
 from runtime.memory.journal import JSONLJournal
-from runtime.safety.auth import TrustEngine
 from runtime.platform.models import (
     ArmId,
     Budget,
     BudgetLimits,
 )
+from runtime.safety.auth import TrustEngine
 from runtime.safety.recovery import (
     ForgeConfig,
     SkillForge,
 )
-from runtime.execution.suckers import SkillRegistry
-from runtime.execution.suckers.builtins import register_all
-from runtime.execution.suckers.write_skills import register_exec_skill
 
 from .bugfix_demo import build_bugfix_graph, setup_buggy_project
 
@@ -107,6 +107,7 @@ def _forge_and_promote(
         "candidates_total": result.candidates_total,
         "promoted": list(result.promoted),
         "shadow_failed": list(result.shadow_failed),
+        "quarantined": list(result.quarantined),
         "retired": list(result.retired),
         "reports": {k: v.overall_passed for k, v in result.reports.items()},
     }
@@ -150,7 +151,7 @@ def run_demo(
 
     tmp_ctx = None
     if workdir is None:
-        tmp_ctx = tempfile.TemporaryDirectory(prefix="octopus-evolve-")
+        tmp_ctx = tempfile.TemporaryDirectory(prefix="echo-evolve-")
         root = Path(tmp_ctx.name)
     else:
         root = Path(workdir)
@@ -159,7 +160,7 @@ def run_demo(
     try:
         if verbose:
             print(c.bold("╭─────────────────────────────────────────────────╮"))
-            print(c.bold("│ octopus-agent · Self-Evolution Demo              │"))
+            print(c.bold("│ Echo Agent · Self-Evolution Demo                 │"))
             print(c.bold("╰─────────────────────────────────────────────────╯"))
             print()
             print(c.dim(f"  workdir: {root}"))
@@ -214,7 +215,7 @@ def run_demo(
         # Implementation note.
         skills_after = set(registry.all_names())
         new_skills = skills_after - skills_before
-        forged_still_in_registry = new_skills & set(forge_result["promoted"])
+        new_skills & set(forge_result["promoted"])
         if verbose:
             print(c.bold(f"  ▸ after:  {len(skills_after)} skills in registry"))
             print(
@@ -250,12 +251,17 @@ def run_demo(
             print(c.dim(f"  persisted .md files: {persisted}"))
             print()
 
-        # Implementation note.
+        # A run is "successful evolution" if the forge proposed at least one
+        # candidate AND took a definite action on it — promoted it, rejected
+        # it on shadow tests, or quarantined it for approval because it wraps
+        # dangerous primitives. All three exercise the forge end-to-end; only
+        # "no candidate proposed" is a non-result.
         success = (
             forge_result["candidates_total"] >= 1
             and (
                 len(forge_result["promoted"]) >= 1
                 or len(forge_result["shadow_failed"]) >= 1
+                or len(forge_result.get("quarantined", [])) >= 1
             )
         )
         if verbose:
@@ -263,6 +269,12 @@ def run_demo(
                 print(c.green(c.bold(
                     f"  ✓ self-evolution verified: forged + promoted "
                     f"{len(forge_result['promoted'])} new skill(s) into registry",
+                )))
+            elif forge_result.get("quarantined"):
+                print(c.yellow(c.bold(
+                    f"  ⚠ forge proposed {forge_result['candidates_total']} "
+                    f"candidate(s) · quarantined for approval (wraps dangerous "
+                    "primitives) · the immune gate worked",
                 )))
             elif forge_result["shadow_failed"]:
                 print(c.yellow(c.bold(

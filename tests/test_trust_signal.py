@@ -8,6 +8,7 @@ Covers:
 * classify_trust_score buckets
 * fetch_current_trust_score swallows telemetry failures
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -48,7 +49,10 @@ class TestComputeTrustScore:
         hits = sink._read_all()  # type: ignore[attr-defined]
         for h in hits:
             sink.record_verdict(
-                "secret-leak guard", h.ts, "true_positive", hit_seq=h.seq,
+                "secret-leak guard",
+                h.ts,
+                "true_positive",
+                hit_seq=h.seq,
             )
         digest = sink.digest()
         # 3 TP < 5 → neutral.
@@ -61,7 +65,10 @@ class TestComputeTrustScore:
         hits = sink._read_all()  # type: ignore[attr-defined]
         for h in hits:
             sink.record_verdict(
-                "secret-leak guard", h.ts, "true_positive", hit_seq=h.seq,
+                "secret-leak guard",
+                h.ts,
+                "true_positive",
+                hit_seq=h.seq,
             )
         digest = sink.digest()
         # 10/10 TP → trust = 1 - 1.0 = 0.0
@@ -74,7 +81,10 @@ class TestComputeTrustScore:
         hits = sink._read_all()  # type: ignore[attr-defined]
         for h in hits:
             sink.record_verdict(
-                "secret-leak guard", h.ts, "false_positive", hit_seq=h.seq,
+                "secret-leak guard",
+                h.ts,
+                "false_positive",
+                hit_seq=h.seq,
             )
         digest = sink.digest()
         # 0/10 TP → trust = 1.0
@@ -87,11 +97,17 @@ class TestComputeTrustScore:
         hits = sink._read_all()  # type: ignore[attr-defined]
         for h in hits[:7]:
             sink.record_verdict(
-                "secret-leak guard", h.ts, "true_positive", hit_seq=h.seq,
+                "secret-leak guard",
+                h.ts,
+                "true_positive",
+                hit_seq=h.seq,
             )
         for h in hits[7:]:
             sink.record_verdict(
-                "secret-leak guard", h.ts, "false_positive", hit_seq=h.seq,
+                "secret-leak guard",
+                h.ts,
+                "false_positive",
+                hit_seq=h.seq,
             )
         digest = sink.digest()
         # 7/10 TP → trust = 1 - 0.7 = 0.3
@@ -105,11 +121,17 @@ class TestComputeTrustScore:
         hits = sink._read_all()  # type: ignore[attr-defined]
         for h in hits[:5]:
             sink.record_verdict(
-                "secret-leak guard", h.ts, "true_positive", hit_seq=h.seq,
+                "secret-leak guard",
+                h.ts,
+                "true_positive",
+                hit_seq=h.seq,
             )
         for h in hits[5:]:
             sink.record_verdict(
-                "secret-leak guard", h.ts, "uncertain", hit_seq=h.seq,
+                "secret-leak guard",
+                h.ts,
+                "uncertain",
+                hit_seq=h.seq,
             )
         digest = sink.digest()
         # min_judged check uses tp+fp+uncertain (judged=10) so passes.
@@ -124,7 +146,10 @@ class TestComputeTrustScore:
         hits = sink._read_all()  # type: ignore[attr-defined]
         for h in hits:
             sink.record_verdict(
-                "magic-number guard", h.ts, "true_positive", hit_seq=h.seq,
+                "magic-number guard",
+                h.ts,
+                "true_positive",
+                hit_seq=h.seq,
             )
         digest = sink.digest()
         # Default category=security; no security hits → neutral.
@@ -137,7 +162,10 @@ class TestComputeTrustScore:
         hits = sink._read_all()  # type: ignore[attr-defined]
         for h in hits:
             sink.record_verdict(
-                "magic-number guard", h.ts, "true_positive", hit_seq=h.seq,
+                "magic-number guard",
+                h.ts,
+                "true_positive",
+                hit_seq=h.seq,
             )
         digest = sink.digest()
         # Target code-smell category instead.
@@ -182,7 +210,10 @@ class TestRender:
         hits = sink._read_all()  # type: ignore[attr-defined]
         for h in hits:
             sink.record_verdict(
-                "secret-leak guard", h.ts, "false_positive", hit_seq=h.seq,
+                "secret-leak guard",
+                h.ts,
+                "false_positive",
+                hit_seq=h.seq,
             )
         digest = sink.digest()
         out = render_trust_summary(digest)

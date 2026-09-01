@@ -3,6 +3,7 @@ import { ExternalLinkIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { RoutedWebLink } from "@/components/ui/routed-web-link";
 import {
   HoverCard,
   HoverCardContent,
@@ -28,10 +29,9 @@ export function CitationLink({
   return (
     <HoverCard closeDelay={0} openDelay={0}>
       <HoverCardTrigger asChild>
-        <a
+        <RoutedWebLink
           href={href}
-          target="_blank"
-          rel="noopener noreferrer"
+          openTargetSource="citation"
           className="inline-flex items-center"
           onClick={(e) => e.stopPropagation()}
           {...props}
@@ -43,7 +43,7 @@ export function CitationLink({
             {displayText}
             <ExternalLinkIcon className="size-3" />
           </Badge>
-        </a>
+        </RoutedWebLink>
       </HoverCardTrigger>
       <HoverCardContent className={cn("relative w-80 p-0", props.className)}>
         <div className="p-3">
@@ -59,15 +59,14 @@ export function CitationLink({
               </p>
             )}
           </div>
-          <a
+          <RoutedWebLink
             href={href}
-            target="_blank"
-            rel="noopener noreferrer"
+            openTargetSource="citation-preview"
             className="text-primary mt-2 inline-flex items-center gap-1 text-xs hover:underline"
           >
             Visit source
             <ExternalLinkIcon className="size-3" />
-          </a>
+          </RoutedWebLink>
         </div>
       </HoverCardContent>
     </HoverCard>
@@ -82,4 +81,3 @@ function extractDomain(url: string): string {
     return url;
   }
 }
-

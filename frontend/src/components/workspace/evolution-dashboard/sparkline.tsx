@@ -103,11 +103,7 @@ export function Sparkline({
       aria-hidden="true"
     >
       {showArea && areaPath && (
-        <path
-          d={areaPath}
-          fill={resolvedFill}
-          opacity={0.12}
-        />
+        <path d={areaPath} fill={resolvedFill} opacity={0.12} />
       )}
       <polyline
         points={points}

@@ -8,7 +8,7 @@
 
 ## 2026 learning-curve amendment
 
-Octopus keeps the biomimetic kernel names, but public onboarding must now use a
+Echo keeps the biomimetic kernel names, but public onboarding must now use a
 three-layer language rule:
 
 1. **Users** see outcome language first: goal, run, approve, inspect, recover.

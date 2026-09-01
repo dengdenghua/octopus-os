@@ -20,8 +20,8 @@ def test_extracts_explicit_chinese_memory() -> None:
 def test_merge_dedupes_case_insensitively() -> None:
     assert merge_profile_memories(
         ["I prefer concise answers"],
-        ["i prefer concise answers", "My project is octopus-agent"],
-    ) == ["I prefer concise answers", "My project is octopus-agent"]
+        ["i prefer concise answers", "My project is echo-agent"],
+    ) == ["I prefer concise answers", "My project is echo-agent"]
 
 
 def test_render_profile_section() -> None:

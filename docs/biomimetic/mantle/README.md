@@ -5,7 +5,7 @@
 ## 职责
 沙箱与安全边界。每条 Arm 默认进入独立 Mantle，互不污染。
 
-## 四种 Provider（全部 fork 自 octopus）
+## 四种 Provider（全部 fork 自 echo）
 
 | 目录 | 场景 |
 |---|---|

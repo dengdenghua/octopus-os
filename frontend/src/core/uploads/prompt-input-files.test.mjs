@@ -11,10 +11,12 @@ async function loadModule() {
 test("exports the prompt-input file conversion helper", async () => {
   const loaded = await loadModule();
 
-  expect(!("error" in loaded),
+  expect(
+    !("error" in loaded),
     loaded.error instanceof Error
       ? loaded.error.message
-      : "prompt-input-files module is missing",).toBeTruthy();
+      : "prompt-input-files module is missing",
+  ).toBeTruthy();
   expect(typeof loaded.promptInputFilePartToFile).toBe("function");
 });
 

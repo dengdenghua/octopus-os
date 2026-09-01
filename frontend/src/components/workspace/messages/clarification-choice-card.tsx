@@ -95,7 +95,7 @@ export function parseClarificationChoices(
 
 function submitQuickReply(text: string, messageId?: string) {
   window.dispatchEvent(
-    new CustomEvent("octopus:quick-reply", {
+    new CustomEvent("echo:quick-reply", {
       detail: { text, sourceMessageId: messageId },
     }),
   );
@@ -123,10 +123,12 @@ export function ClarificationChoiceCard({
   );
   const [secondsLeft, setSecondsLeft] = useState(AUTO_SUBMIT_SECONDS);
   const [submitted, setSubmitted] = useState(false);
+  const [otherText, setOtherText] = useState("");
 
   useEffect(() => {
     setSecondsLeft(AUTO_SUBMIT_SECONDS);
     setSubmitted(false);
+    setOtherText("");
   }, [messageId, content]);
 
   useEffect(() => {
@@ -160,10 +162,17 @@ export function ClarificationChoiceCard({
 
   if (!parsed) return null;
 
+  const submitOther = () => {
+    const text = otherText.trim();
+    if (!text) return;
+    setSubmitted(true);
+    submitQuickReply(text, messageId);
+  };
+
   return (
     <div
       className={cn(
-        "mt-3 rounded-lg border border-border/70 bg-muted/25 p-3",
+        "mt-3 rounded-lg border border-border-default bg-muted/25 p-3",
         className,
       )}
     >
@@ -177,7 +186,7 @@ export function ClarificationChoiceCard({
       <div className="grid gap-2 sm:grid-cols-2">
         {parsed.choices.map((choice, index) => (
           <Button
-            key={choice.key}
+            key={`${choice.key}-${index}`}
             type="button"
             variant={index === 0 ? "default" : "outline"}
             className="h-auto justify-start gap-2 rounded-md px-3 py-2 text-left"
@@ -192,12 +201,34 @@ export function ClarificationChoiceCard({
               <span className="block text-xs font-semibold">
                 {choice.label}
               </span>
-              <span className="block truncate text-[11px] opacity-80">
+              <span className="block truncate text-xs opacity-80">
                 {choice.detail}
               </span>
             </span>
           </Button>
         ))}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          type="text"
+          value={otherText}
+          disabled={submitted}
+          onChange={(event) => setOtherText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") submitOther();
+          }}
+          placeholder={t.conversation.clarificationOtherPlaceholder}
+          className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+        <Button
+          type="button"
+          size="sm"
+          disabled={submitted || !otherText.trim()}
+          onClick={submitOther}
+          className="size-9 shrink-0 p-0"
+        >
+          <SendIcon className="size-4" />
+        </Button>
       </div>
     </div>
   );

@@ -1,24 +1,23 @@
-"""Octopus Mobile 集成检查脚本 —— 方案 F Kotlin 端自检.
+"""Echo Mobile 集成检查脚本 —— 方案 F Kotlin 端自检.
 
 在跑 `./gradlew test` 之前用这个脚本做静态检查：
   1. 30 SKILL.md 都同步到 assets/
-  2. octopus_mobile/ 9 个 Kotlin 文件齐全
+  2. echo_mobile/ 9 个 Kotlin 文件齐全
   3. 3 个 test 文件齐全
   4. build.gradle.kts 加了 testImplementation 依赖
   5. libs.versions.toml 有 mockwebserver / coroutines-test / robolectric
   6. ClawApplication 引用了 BrainModeSelector
-  7. KVUtils 提供了 octopus 相关方法
+  7. KVUtils 提供了 echo 相关方法
 
 跑法：``python examples/verify_apkclaw_setup.py``
 """
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parent.parent
-_APK = _REPO.parent / "octopus-mobile"
+_APK = _REPO.parent / "echo-mobile"
 _OK = "\033[92m✓\033[0m"
 _FAIL = "\033[91m✗\033[0m"
 
@@ -96,16 +95,16 @@ def main() -> int:
             print(f"    源独有: {src_ids - asset_ids}")
             print(f"    assets 独有: {asset_ids - src_ids}")
 
-    # ── 2. octopus_mobile/ Kotlin 文件 ──────────────────────
-    section("2. octopus_mobile/ 核心 Kotlin 文件")
-    om_dir = _APK / "app/src/main/java/com/apk/claw/android/octopus_mobile"
+    # ── 2. echo_mobile/ Kotlin 文件 ──────────────────────
+    section("2. echo_mobile/ 核心 Kotlin 文件")
+    om_dir = _APK / "app/src/main/java/com/apk/claw/android/echo_mobile"
     required_main = [
         "LightweightLlmClient.kt",
         "LightweightReAct.kt",
         "SkillManifest.kt",
         "BrainModeSelector.kt",
         "ChatTypes.kt",
-        "OctopusMobileClient.kt",
+        "EchoMobileClient.kt",
         "Protocol.kt",
         "StartupMode.kt",
     ]
@@ -121,7 +120,7 @@ def main() -> int:
 
     # ── 3. 测试文件 ─────────────────────────────────────
     section("3. test/ Kotlin 测试文件")
-    test_dir = _APK / "app/src/test/java/com/apk/claw/android/octopus_mobile"
+    test_dir = _APK / "app/src/test/java/com/apk/claw/android/echo_mobile"
     required_tests = [
         "SkillManifestTest.kt",
         "LightweightLlmClientTest.kt",
@@ -152,21 +151,21 @@ def main() -> int:
     app = _APK / "app/src/main/java/com/apk/claw/android/ClawApplication.kt"
     app_text = app.read_text(encoding="utf-8") if app.exists() else ""
     check("BrainModeSelector" in app_text, "ClawApplication 引用 BrainModeSelector", errors)
-    check("OctopusMobileClient" in app_text, "ClawApplication 引用 OctopusMobileClient", errors)
-    check("initOctopusMobile" in app_text, "ClawApplication 调 initOctopusMobile()", errors)
+    check("EchoMobileClient" in app_text, "ClawApplication 引用 EchoMobileClient", errors)
+    check("initEchoMobile" in app_text, "ClawApplication 调 initEchoMobile()", errors)
     check("SkillManifest.loadFromAssets" in app_text, "启动时加载 30 SKILL.md", errors)
     check("brainSelector.start" in app_text, "启动 30s 健康检查", errors)
     check('companion object' in app_text, "brainSelector 暴露成 companion 单例", errors)
 
-    # ── 7. KVUtils octopus 方法 ───────────────────────
-    section("7. KVUtils octopus 配置方法")
+    # ── 7. KVUtils echo 方法 ───────────────────────
+    section("7. KVUtils echo 配置方法")
     kv = _APK / "app/src/main/java/com/apk/claw/android/utils/KVUtils.kt"
     kv_text = kv.read_text(encoding="utf-8") if kv.exists() else ""
-    check("KEY_OCTOPUS_RPC_URL" in kv_text, "KEY_OCTOPUS_RPC_URL 定义", errors)
-    check("KEY_OCTOPUS_AUTH_TOKEN" in kv_text, "KEY_OCTOPUS_AUTH_TOKEN 定义", errors)
-    check("getOctopusRpcUrl()" in kv_text, "getOctopusRpcUrl() 方法", errors)
-    check("setOctopusRpcUrl(value" in kv_text, "setOctopusRpcUrl(...) setter", errors)
-    check("getOctopusAuthToken()" in kv_text, "getOctopusAuthToken() 方法", errors)
+    check("KEY_ECHO_RPC_URL" in kv_text, "KEY_ECHO_RPC_URL 定义", errors)
+    check("KEY_ECHO_AUTH_TOKEN" in kv_text, "KEY_ECHO_AUTH_TOKEN 定义", errors)
+    check("getEchoRpcUrl()" in kv_text, "getEchoRpcUrl() 方法", errors)
+    check("setEchoRpcUrl(value" in kv_text, "setEchoRpcUrl(...) setter", errors)
+    check("getEchoAuthToken()" in kv_text, "getEchoAuthToken() 方法", errors)
 
     # ── 总结 ─────────────────────────────────────────
     print()
@@ -176,7 +175,7 @@ def main() -> int:
         for e in errors:
             print(f"  - {e}")
         return 1
-    print(f"\033[92m✅ 所有检查通过（0 个问题）\033[0m")
+    print("\033[92m✅ 所有检查通过（0 个问题）\033[0m")
     return 0
 
 

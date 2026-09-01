@@ -8,4 +8,3 @@ export function extractTitleFromMarkdown(markdown: string) {
   }
   return undefined;
 }
-

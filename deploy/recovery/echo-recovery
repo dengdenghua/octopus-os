@@ -1,0 +1,670 @@
+#!/usr/bin/env bash
+# Echo Recovery: read-only diagnostics by default, explicit confirmation for writes.
+set -euo pipefail
+
+ACTION="${1:-status}"
+TARGET="${2:-}"
+CONFIRMATION="${3:-}"
+REPART_DEFINITIONS=/usr/lib/echo-os/recovery-repart.d
+DATA_PROTECTION=/usr/lib/echo-os/echo-data-protection
+PCR_POLICY_PUBLIC_KEY=/usr/lib/systemd/tpm2-pcr-public-key.pem
+VERITY_VERIFIER=/usr/lib/echo-os/verify-verity-set.py
+VERITY_CERTIFICATE=/usr/lib/echo-os/verity-certificate.pem
+RESTORE_TRANSACTION=/usr/lib/echo-os/echo-restore-transaction.py
+SOURCE_IDENTITY_COMMAND=/usr/lib/echo-os/echo-os-source-identity
+
+# The installed Recovery image always uses the immutable paths above. The
+# privileged whole-disk lifecycle smoke may exercise this exact source script
+# against an ephemeral NBD disk without staging files over the CI host only
+# when the explicit source-runtime sentinel is present.
+if [[ "${ECHO_RECOVERY_SOURCE_SMOKE:-}" == USE-SOURCE-RUNTIME ]]; then
+  REPART_DEFINITIONS="${ECHO_RECOVERY_REPART_DEFINITIONS:-$REPART_DEFINITIONS}"
+  DATA_PROTECTION="${ECHO_RECOVERY_DATA_PROTECTION:-$DATA_PROTECTION}"
+  PCR_POLICY_PUBLIC_KEY="${ECHO_RECOVERY_PCR_POLICY_PUBLIC_KEY:-$PCR_POLICY_PUBLIC_KEY}"
+  VERITY_VERIFIER="${ECHO_RECOVERY_VERITY_VERIFIER:-$VERITY_VERIFIER}"
+  VERITY_CERTIFICATE="${ECHO_RECOVERY_VERITY_CERTIFICATE:-$VERITY_CERTIFICATE}"
+  RESTORE_TRANSACTION="${ECHO_RECOVERY_RESTORE_TRANSACTION:-$RESTORE_TRANSACTION}"
+  SOURCE_IDENTITY_COMMAND="${ECHO_RECOVERY_SOURCE_IDENTITY_COMMAND:-$SOURCE_IDENTITY_COMMAND}"
+fi
+for recovery_runtime_path in \
+  "$REPART_DEFINITIONS" "$DATA_PROTECTION" "$PCR_POLICY_PUBLIC_KEY" \
+  "$VERITY_VERIFIER" "$VERITY_CERTIFICATE" "$RESTORE_TRANSACTION" \
+  "$SOURCE_IDENTITY_COMMAND"; do
+  [[ "$recovery_runtime_path" == /* ]] || {
+    echo "Recovery runtime paths must be absolute" >&2
+    exit 1
+  }
+done
+readonly REPART_DEFINITIONS DATA_PROTECTION PCR_POLICY_PUBLIC_KEY \
+  VERITY_VERIFIER VERITY_CERTIFICATE RESTORE_TRANSACTION SOURCE_IDENTITY_COMMAND
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  echo-recovery status
+  echo-recovery check-root ROOT_PARTITION
+  echo-recovery restore-plan WHOLE_DISK
+  echo-recovery restore-status WHOLE_DISK
+  echo-recovery restore-promote WHOLE_DISK PROMOTE-ECHO-RESTORE-<TRANSACTION>
+  echo-recovery restore-rollback WHOLE_DISK ROLLBACK-ECHO-RESTORE-<TRANSACTION>
+  echo-recovery restore-commit WHOLE_DISK COMMIT-ECHO-RESTORE-<TRANSACTION>
+  echo-recovery rotate-recovery-key WHOLE_DISK ROTATE-ECHO-RECOVERY-KEY
+  echo-recovery rebind-tpm2 WHOLE_DISK REBIND-ECHO-TPM2
+  echo-recovery factory-reset WHOLE_DISK ERASE-ECHO-DATA
+
+status and check-root are read-only. check-root authenticates the release
+certificate and verifies the matching dm-verity hash tree; signed roots are
+never repaired in place. rotate-recovery-key replaces a compromised recovery
+key without erasing data. rebind-tpm2 restores automatic unlock after a TPM
+reset or board replacement. factory-reset recreates encrypted echo-var,
+echo-swap and echo-home. Every write action requires its exact confirmation
+phrase. restore-plan is read-only and binds the selected fully checked staging
+tree to one transaction token. restore-promote retains the old Home and Agent
+state for a trial boot. An interrupted transaction blocks normal login and can
+be resumed or rolled back here. restore-commit is the only step that deletes
+the retained old trees.
+
+To install a signed Echo OS bundle onto a different whole disk, first run:
+  echo-os-installer plan BUNDLE_DIRECTORY WHOLE_DISK
+The plan prints a per-disk confirmation string and never writes the target.
+EOF
+}
+
+product_version() {
+  local image_version=unknown
+  if [[ -r /usr/lib/os-release ]]; then
+    # shellcheck disable=SC1091 # Generated recovery product identity.
+    . /usr/lib/os-release
+    image_version="${IMAGE_VERSION:-unknown}"
+  fi
+  printf '%s\n' "$image_version"
+}
+
+product_source_commit() {
+  local source_commit
+  [[ -x "$SOURCE_IDENTITY_COMMAND" && ! -L "$SOURCE_IDENTITY_COMMAND" ]] || {
+    echo "Recovery immutable source identity reader is unavailable" >&2
+    return 1
+  }
+  source_commit="$("$SOURCE_IDENTITY_COMMAND" --commit)"
+  [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "Recovery immutable source identity is invalid" >&2
+    return 1
+  }
+  printf '%s\n' "$source_commit"
+}
+
+partition_label() {
+  lsblk -dnro PARTLABEL "$1" 2>/dev/null | head -n 1
+}
+
+require_unmounted_echo_root() {
+  local device="$1"
+  [[ -b "$device" && "$(lsblk -dnro TYPE "$device")" == "part" ]] || {
+    echo "not a block partition: $device" >&2
+    exit 1
+  }
+  local label
+  label="$(partition_label "$device")"
+  [[ "$label" == echo-root-* && "$label" != *-verity && \
+     "$label" != *-verity-sig ]] || {
+    echo "partition is not an Echo OS versioned root: $device ($label)" >&2
+    exit 1
+  }
+  if findmnt -rn --source "$device" >/dev/null; then
+    echo "refusing to inspect or modify mounted partition: $device" >&2
+    exit 1
+  fi
+}
+
+resolve_verity_siblings() {
+  local root_device="$1"
+  local root_label parent_name parent_device sibling
+  root_label="$(partition_label "$root_device")"
+  parent_name="$(lsblk -dnro PKNAME "$root_device" 2>/dev/null | head -n 1)"
+  [[ -n "$parent_name" ]] || {
+    echo "cannot identify the disk containing $root_device" >&2
+    exit 1
+  }
+  if [[ "$parent_name" == /dev/* ]]; then
+    parent_device="$parent_name"
+  else
+    parent_device="/dev/$parent_name"
+  fi
+  mapfile -t VERITY_PARTITIONS < <(
+    lsblk -nrpo PATH,TYPE,PARTLABEL "$parent_device" |
+      awk -v wanted="${root_label}-verity" \
+        '$2 == "part" && $3 == wanted { print $1 }'
+  )
+  mapfile -t VERITY_SIGNATURE_PARTITIONS < <(
+    lsblk -nrpo PATH,TYPE,PARTLABEL "$parent_device" |
+      awk -v wanted="${root_label}-verity-sig" \
+        '$2 == "part" && $3 == wanted { print $1 }'
+  )
+  [[ "${#VERITY_PARTITIONS[@]}" -eq 1 && \
+     "${#VERITY_SIGNATURE_PARTITIONS[@]}" -eq 1 ]] || {
+    echo "matching verity hash/signature partitions are missing or ambiguous" >&2
+    exit 1
+  }
+  VERITY_PARTITION="${VERITY_PARTITIONS[0]}"
+  VERITY_SIGNATURE_PARTITION="${VERITY_SIGNATURE_PARTITIONS[0]}"
+  for sibling in "$VERITY_PARTITION" "$VERITY_SIGNATURE_PARTITION"; do
+    [[ -b "$sibling" && "$(lsblk -dnro TYPE "$sibling")" == part ]] || {
+      echo "verity sibling is not a block partition: $sibling" >&2
+      exit 1
+    }
+    if findmnt -rn --source "$sibling" >/dev/null; then
+      echo "refusing to inspect mounted verity sibling: $sibling" >&2
+      exit 1
+    fi
+  done
+}
+
+require_unmounted_echo_data_disk() {
+  local target="$1"
+  [[ -b "$target" && "$(lsblk -dnro TYPE "$target")" == "disk" ]] || {
+    echo "data-protection target is not a whole disk: $target" >&2
+    exit 1
+  }
+  mapfile -t DATA_PARTITIONS < <(
+    lsblk -nrpo PATH,PARTLABEL "$target" |
+      awk '$2 == "echo-var" || $2 == "echo-swap" || $2 == "echo-home" {
+        print $1 " " $2
+      }'
+  )
+  [[ "${#DATA_PARTITIONS[@]}" -eq 3 ]] || {
+    echo "target must contain exactly echo-var, echo-swap and echo-home" >&2
+    exit 1
+  }
+  local expected_data_labels=(echo-var echo-swap echo-home)
+  local index partition partition_label mapping
+  for index in "${!expected_data_labels[@]}"; do
+    read -r partition partition_label <<<"${DATA_PARTITIONS[$index]}"
+    [[ "$partition_label" == "${expected_data_labels[$index]}" ]] || {
+      echo "target mutable partition order is invalid" >&2
+      exit 1
+    }
+    if findmnt -rn --source "$partition" >/dev/null; then
+      echo "refusing to modify mounted partition: $partition" >&2
+      exit 1
+    fi
+    mapfile -t partition_tree < <(lsblk -nrpo PATH,TYPE "$partition")
+    [[ "${#partition_tree[@]}" -eq 1 ]] || {
+      echo "refusing to modify a partition with active holders: $partition" >&2
+      exit 1
+    }
+    mapping="/dev/mapper/${partition_label}"
+    [[ ! -e "$mapping" ]] || {
+      echo "refusing to modify an open encrypted mapping: $mapping" >&2
+      exit 1
+    }
+  done
+}
+
+require_data_protection_runtime() {
+  [[ -x "$DATA_PROTECTION" && -f "$PCR_POLICY_PUBLIC_KEY" && \
+     ! -L "$PCR_POLICY_PUBLIC_KEY" ]] || {
+    echo "Recovery data-protection runtime is incomplete" >&2
+    exit 1
+  }
+  [[ "$(stat -c '%u:%g' "$PCR_POLICY_PUBLIC_KEY")" == 0:0 ]] || {
+    echo "signed-PCR public key must be root-owned" >&2
+    exit 1
+  }
+  local pcr_policy_mode
+  pcr_policy_mode="$(stat -c '%a' "$PCR_POLICY_PUBLIC_KEY")"
+  (( (8#$pcr_policy_mode & 8#022) == 0 )) || {
+    echo "signed-PCR public key must not be group/other writable" >&2
+    exit 1
+  }
+  "$DATA_PROTECTION" check-tpm2-public-key "$PCR_POLICY_PUBLIC_KEY"
+}
+
+install_private_recovery_key() {
+  local input="$1"
+  local output="$2"
+  local context="$3"
+  [[ -f "$input" && ! -L "$input" ]] || {
+    echo "$context must be a non-symlink file" >&2
+    exit 1
+  }
+  local resolved mode
+  resolved="$(realpath "$input")"
+  [[ -f "$resolved" && "$(stat -c '%u:%g' "$resolved")" == 0:0 ]] || {
+    echo "$context must be a root-owned regular file" >&2
+    exit 1
+  }
+  mode="$(stat -c '%a' "$resolved")"
+  (( (8#$mode & 8#077) == 0 )) || {
+    echo "$context must be private" >&2
+    exit 1
+  }
+  install -m 0600 "$resolved" "$output"
+  "$DATA_PROTECTION" check-recovery-key "$output" >/dev/null
+}
+
+install_tpm2_device_key() {
+  local input="$1"
+  local output="$2"
+  local context="$3"
+  [[ -f "$input" && ! -L "$input" ]] || {
+    echo "$context must be a non-symlink file" >&2
+    exit 1
+  }
+  local resolved mode
+  resolved="$(realpath "$input")"
+  [[ -f "$resolved" && "$(stat -c '%u:%g' "$resolved")" == 0:0 ]] || {
+    echo "$context must be a root-owned regular file" >&2
+    exit 1
+  }
+  mode="$(stat -c '%a' "$resolved")"
+  (( (8#$mode & 8#022) == 0 )) || {
+    echo "$context must not be group/other writable" >&2
+    exit 1
+  }
+  install -m 0644 "$resolved" "$output"
+}
+
+require_physical_console() {
+  [[ -r /dev/tty && -w /dev/tty ]] || {
+    echo "a physical console is required for recovery-key handling" >&2
+    exit 1
+  }
+}
+
+read_recovery_key_from_console() {
+  local output="$1"
+  local prompt="$2"
+  local recovery_value
+  require_physical_console
+  printf '%s' "$prompt" >/dev/tty
+  IFS= read -r -s recovery_value </dev/tty
+  printf '\n' >/dev/tty
+  printf '%s' "$recovery_value" >"$output"
+  unset recovery_value
+  chmod 0600 "$output"
+  "$DATA_PROTECTION" check-recovery-key "$output" >/dev/null
+}
+
+present_recovery_key_on_console() {
+  local recovery_key="$1"
+  local context="$2"
+  local recovery_ack
+  require_physical_console
+  {
+    echo
+    echo "New Echo OS recovery key — store this away from the device:"
+    tr -d '\n' <"$recovery_key"
+    echo
+    echo "Type RECOVERY-KEY-SAVED after recording it:"
+  } >/dev/tty
+  IFS= read -r recovery_ack </dev/tty
+  [[ "$recovery_ack" == RECOVERY-KEY-SAVED ]] || {
+    echo "$context stopped before recovery-key acknowledgement" >&2
+    exit 1
+  }
+  unset recovery_ack
+}
+
+prepare_restore_mounts() {
+  local mount_mode="$1"
+  [[ "$mount_mode" == ro || "$mount_mode" == rw ]] || {
+    echo "invalid restore mount mode" >&2
+    exit 1
+  }
+  [[ -x "$RESTORE_TRANSACTION" ]] || {
+    echo "Recovery restore transaction runtime is incomplete" >&2
+    exit 1
+  }
+  TARGET="$(realpath "$TARGET")"
+  require_unmounted_echo_data_disk "$TARGET"
+  RESTORE_TEMP="$(mktemp -d /run/echo-restore-transaction.XXXXXX)"
+  RESTORE_KEY="$RESTORE_TEMP/recovery.key"
+  RESTORE_VAR_MOUNT="$RESTORE_TEMP/var"
+  RESTORE_HOME_MOUNT="$RESTORE_TEMP/home"
+  RESTORE_VAR_MAPPING="echo-recovery-var-$BASHPID"
+  RESTORE_HOME_MAPPING="echo-recovery-home-$BASHPID"
+  mkdir -m 0700 "$RESTORE_VAR_MOUNT" "$RESTORE_HOME_MOUNT"
+
+  cleanup_restore_mounts() {
+    local exit_code="$1"
+    trap - EXIT INT TERM
+    set +e
+    sync
+    if findmnt -rn --mountpoint "$RESTORE_HOME_MOUNT" >/dev/null 2>&1; then
+      umount "$RESTORE_HOME_MOUNT"
+    fi
+    if findmnt -rn --mountpoint "$RESTORE_VAR_MOUNT" >/dev/null 2>&1; then
+      umount "$RESTORE_VAR_MOUNT"
+    fi
+    if [[ -e "/dev/mapper/$RESTORE_HOME_MAPPING" ]]; then
+      cryptsetup close "$RESTORE_HOME_MAPPING"
+    fi
+    if [[ -e "/dev/mapper/$RESTORE_VAR_MAPPING" ]]; then
+      cryptsetup close "$RESTORE_VAR_MAPPING"
+    fi
+    if [[ "$RESTORE_TEMP" == /run/echo-restore-transaction.* ]]; then
+      rm -rf -- "$RESTORE_TEMP"
+    fi
+    exit "$exit_code"
+  }
+  trap 'cleanup_restore_mounts $?' EXIT INT TERM
+
+  if [[ -n "${ECHO_RECOVERY_RESTORE_KEY_FILE:-}" ]]; then
+    [[ "${ECHO_RECOVERY_SOURCE_SMOKE:-}" == USE-SOURCE-RUNTIME ]] || {
+      echo "noninteractive restore keys require the source-smoke sentinel" >&2
+      exit 1
+    }
+    install_private_recovery_key \
+      "$ECHO_RECOVERY_RESTORE_KEY_FILE" "$RESTORE_KEY" \
+      "restore recovery-key input"
+  else
+    read_recovery_key_from_console \
+      "$RESTORE_KEY" "Echo OS recovery key for staged restore: "
+  fi
+
+  local partition label var_partition= home_partition=
+  for record in "${DATA_PARTITIONS[@]}"; do
+    read -r partition label <<<"$record"
+    case "$label" in
+      echo-var) var_partition="$partition" ;;
+      echo-home) home_partition="$partition" ;;
+    esac
+  done
+  [[ -b "$var_partition" && -b "$home_partition" ]] || {
+    echo "restore requires exactly one closed echo-var and echo-home" >&2
+    exit 1
+  }
+
+  cryptsetup open --type luks2 --key-file "$RESTORE_KEY" \
+    "$var_partition" "$RESTORE_VAR_MAPPING"
+  cryptsetup open --type luks2 --key-file "$RESTORE_KEY" \
+    "$home_partition" "$RESTORE_HOME_MAPPING"
+  [[ "$(blkid -s TYPE -o value "/dev/mapper/$RESTORE_VAR_MAPPING")" == ext4 && \
+     "$(blkid -s TYPE -o value "/dev/mapper/$RESTORE_HOME_MAPPING")" == ext4 ]] || {
+    echo "restore transaction requires the installed ext4 var and home filesystems" >&2
+    exit 1
+  }
+
+  local options
+  if [[ "$mount_mode" == rw ]]; then
+    local fsck_status
+    set +e
+    e2fsck -pf "/dev/mapper/$RESTORE_VAR_MAPPING"
+    fsck_status=$?
+    set -e
+    (( fsck_status <= 1 )) || {
+      echo "echo-var requires manual filesystem repair before restore migration" >&2
+      exit 1
+    }
+    set +e
+    e2fsck -pf "/dev/mapper/$RESTORE_HOME_MAPPING"
+    fsck_status=$?
+    set -e
+    (( fsck_status <= 1 )) || {
+      echo "echo-home requires manual filesystem repair before restore migration" >&2
+      exit 1
+    }
+    options=rw,nodev,nosuid,noexec
+  else
+    options=ro,noload,nodev,nosuid,noexec
+  fi
+  mount -t ext4 -o "$options" "/dev/mapper/$RESTORE_VAR_MAPPING" "$RESTORE_VAR_MOUNT"
+  mount -t ext4 -o "$options" "/dev/mapper/$RESTORE_HOME_MAPPING" "$RESTORE_HOME_MOUNT"
+}
+
+run_restore_transaction() {
+  local transaction_action="$1"
+  shift
+  python3 "$RESTORE_TRANSACTION" "$transaction_action" \
+    --home-root "$RESTORE_HOME_MOUNT" \
+    --var-root "$RESTORE_VAR_MOUNT" \
+    "$@"
+}
+
+case "$ACTION" in
+  status)
+    [[ $# -eq 0 || $# -eq 1 ]] || { usage; exit 2; }
+    echo "Echo Recovery $(product_version)"
+    echo "Detected disks and Echo partitions:"
+    lsblk -o NAME,PATH,TYPE,SIZE,FSTYPE,PARTLABEL,MOUNTPOINTS
+    echo
+    bootctl status --no-pager 2>/dev/null || true
+    if [[ -x /usr/bin/echo-os-installer ]]; then
+      if [[ -s /etc/echo-os/install-keyring.gpg || \
+            -s /usr/lib/echo-os/install-keyring.gpg ]]; then
+        echo "Installer: signed-bundle plan/install command is available"
+      else
+        echo "Installer: command present, but no release trust key is provisioned"
+      fi
+      echo "  echo-os-installer plan BUNDLE_DIRECTORY WHOLE_DISK"
+    fi
+    if ! SOURCE_COMMIT="$(product_source_commit)"; then
+      exit 1
+    fi
+    echo "ECHO_RECOVERY_READY version=$(product_version) os=$SOURCE_COMMIT"
+    ;;
+
+  check-root)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    TARGET="$(realpath "$TARGET")"
+    require_unmounted_echo_root "$TARGET"
+    [[ -f "$VERITY_VERIFIER" && ! -L "$VERITY_VERIFIER" && \
+       -f "$VERITY_CERTIFICATE" && ! -L "$VERITY_CERTIFICATE" ]] || {
+      echo "Recovery verity trust runtime is incomplete" >&2
+      exit 1
+    }
+    resolve_verity_siblings "$TARGET"
+    python3 "$VERITY_VERIFIER" \
+      "$TARGET" "$VERITY_PARTITION" "$VERITY_SIGNATURE_PARTITION" \
+      "$VERITY_CERTIFICATE"
+    ;;
+
+  restore-plan)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    prepare_restore_mounts ro
+    run_restore_transaction plan
+    ;;
+
+  restore-status)
+    [[ $# -eq 2 ]] || { usage; exit 2; }
+    prepare_restore_mounts ro
+    run_restore_transaction status
+    ;;
+
+  restore-promote)
+    [[ $# -eq 3 && "$CONFIRMATION" == PROMOTE-ECHO-RESTORE-* ]] || {
+      echo "restore promotion requires the exact token printed by restore-plan" >&2
+      exit 2
+    }
+    prepare_restore_mounts rw
+    run_restore_transaction promote "$CONFIRMATION"
+    sync
+    ;;
+
+  restore-rollback)
+    [[ $# -eq 3 && "$CONFIRMATION" == ROLLBACK-ECHO-RESTORE-* ]] || {
+      echo "restore rollback requires the exact token printed by restore-status" >&2
+      exit 2
+    }
+    prepare_restore_mounts rw
+    run_restore_transaction rollback "$CONFIRMATION"
+    sync
+    ;;
+
+  restore-commit)
+    [[ $# -eq 3 && "$CONFIRMATION" == COMMIT-ECHO-RESTORE-* ]] || {
+      echo "restore commit requires the exact token printed after a trial promotion" >&2
+      exit 2
+    }
+    prepare_restore_mounts rw
+    run_restore_transaction commit "$CONFIRMATION"
+    sync
+    ;;
+
+  repair-root)
+    echo "signed root repair is forbidden; install an authenticated release or boot the other verified slot" >&2
+    exit 1
+    ;;
+
+  rotate-recovery-key)
+    [[ $# -eq 3 && "$CONFIRMATION" == "ROTATE-ECHO-RECOVERY-KEY" ]] || {
+      echo "recovery-key rotation requires ROTATE-ECHO-RECOVERY-KEY" >&2
+      exit 2
+    }
+    TARGET="$(realpath "$TARGET")"
+    require_unmounted_echo_data_disk "$TARGET"
+    require_data_protection_runtime
+    KEY_LIFECYCLE_TEMP="$(mktemp -d /run/echo-key-lifecycle.XXXXXX)"
+    OLD_RECOVERY_KEY="$KEY_LIFECYCLE_TEMP/old-recovery.key"
+    NEW_RECOVERY_KEY="$KEY_LIFECYCLE_TEMP/new-recovery.key"
+    cleanup_key_lifecycle() {
+      rm -rf -- "$KEY_LIFECYCLE_TEMP"
+    }
+    trap cleanup_key_lifecycle EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    if [[ -n "${ECHO_RECOVERY_ROTATE_OLD_KEY_FILE:-}" || \
+          -n "${ECHO_RECOVERY_ROTATE_NEW_KEY_FILE:-}" ]]; then
+      [[ "${ECHO_RECOVERY_SOURCE_SMOKE:-}" == USE-SOURCE-RUNTIME && \
+         -n "${ECHO_RECOVERY_ROTATE_OLD_KEY_FILE:-}" && \
+         -n "${ECHO_RECOVERY_ROTATE_NEW_KEY_FILE:-}" ]] || {
+        echo "noninteractive rotation keys require the source-smoke sentinel and both files" >&2
+        exit 1
+      }
+      install_private_recovery_key \
+        "$ECHO_RECOVERY_ROTATE_OLD_KEY_FILE" "$OLD_RECOVERY_KEY" \
+        "old recovery-key input"
+      install_private_recovery_key \
+        "$ECHO_RECOVERY_ROTATE_NEW_KEY_FILE" "$NEW_RECOVERY_KEY" \
+        "new recovery-key input"
+    else
+      read_recovery_key_from_console \
+        "$OLD_RECOVERY_KEY" "Current Echo OS recovery key: "
+      "$DATA_PROTECTION" generate-recovery-key "$NEW_RECOVERY_KEY" >/dev/null
+      present_recovery_key_on_console "$NEW_RECOVERY_KEY" "recovery-key rotation"
+    fi
+
+    "$DATA_PROTECTION" rotate-recovery \
+      "$TARGET" "$OLD_RECOVERY_KEY" "$NEW_RECOVERY_KEY"
+    sync
+    echo "ECHO_RECOVERY_KEY_ROTATION_COMPLETE target=$TARGET old=revoked new=verified tpm2=preserved"
+    echo "Recovery key rotated without erasing device data"
+    ;;
+
+  rebind-tpm2)
+    [[ $# -eq 3 && "$CONFIRMATION" == "REBIND-ECHO-TPM2" ]] || {
+      echo "TPM2 rebind requires the exact confirmation phrase REBIND-ECHO-TPM2" >&2
+      exit 2
+    }
+    TARGET="$(realpath "$TARGET")"
+    require_unmounted_echo_data_disk "$TARGET"
+    require_data_protection_runtime
+    KEY_LIFECYCLE_TEMP="$(mktemp -d /run/echo-key-lifecycle.XXXXXX)"
+    RECOVERY_KEY="$KEY_LIFECYCLE_TEMP/recovery.key"
+    TPM2_ARGS=(--tpm2-public-key "$PCR_POLICY_PUBLIC_KEY")
+    TPM2_REBIND_MODE=live-unseal
+    cleanup_key_lifecycle() {
+      rm -rf -- "$KEY_LIFECYCLE_TEMP"
+    }
+    trap cleanup_key_lifecycle EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    if [[ -n "${ECHO_RECOVERY_REBIND_KEY_FILE:-}" ]]; then
+      [[ "${ECHO_RECOVERY_SOURCE_SMOKE:-}" == USE-SOURCE-RUNTIME ]] || {
+        echo "noninteractive TPM2 rebind requires the source-smoke sentinel" >&2
+        exit 1
+      }
+      install_private_recovery_key \
+        "$ECHO_RECOVERY_REBIND_KEY_FILE" "$RECOVERY_KEY" \
+        "TPM2 rebind recovery-key input"
+    else
+      read_recovery_key_from_console \
+        "$RECOVERY_KEY" "Echo OS recovery key for TPM2 rebind: "
+    fi
+
+    if [[ -n "${ECHO_RECOVERY_REBIND_TPM2_DEVICE_KEY:-}" ]]; then
+      [[ "${ECHO_RECOVERY_SOURCE_SMOKE:-}" == USE-SOURCE-RUNTIME ]] || {
+        echo "offline TPM2 rebind is available only to the source-smoke harness" >&2
+        exit 1
+      }
+      TPM2_DEVICE_KEY="$KEY_LIFECYCLE_TEMP/tpm2-device-key.public"
+      install_tpm2_device_key \
+        "$ECHO_RECOVERY_REBIND_TPM2_DEVICE_KEY" "$TPM2_DEVICE_KEY" \
+        "TPM2 rebind device key"
+      TPM2_ARGS+=(--tpm2-device-key "$TPM2_DEVICE_KEY")
+      TPM2_REBIND_MODE=offline-srk
+    fi
+
+    "$DATA_PROTECTION" rebind-tpm2 "${TPM2_ARGS[@]}" \
+      "$TARGET" "$RECOVERY_KEY"
+    "$DATA_PROTECTION" verify "${TPM2_ARGS[@]}" \
+      "$TARGET" "$RECOVERY_KEY"
+    sync
+    echo "ECHO_TPM2_REBIND_COMPLETE target=$TARGET data=luks2-tpm2-signed-pcr11-recovery mode=$TPM2_REBIND_MODE"
+    echo "TPM2 automatic unlock was rebound; reboot the device"
+    ;;
+
+  factory-reset)
+    [[ $# -eq 3 && "$CONFIRMATION" == "ERASE-ECHO-DATA" ]] || {
+      echo "factory reset requires the exact confirmation phrase ERASE-ECHO-DATA" >&2
+      exit 2
+    }
+    TARGET="$(realpath "$TARGET")"
+    require_unmounted_echo_data_disk "$TARGET"
+    [[ -d "$REPART_DEFINITIONS" ]] || {
+      echo "factory-reset partition definitions are missing" >&2
+      exit 1
+    }
+    require_data_protection_runtime
+
+    RESET_TEMP="$(mktemp -d /run/echo-factory-reset.XXXXXX)"
+    RECOVERY_KEY="$RESET_TEMP/recovery.key"
+    TPM2_ARGS=(--tpm2-public-key "$PCR_POLICY_PUBLIC_KEY")
+    cleanup_reset() {
+      rm -rf -- "$RESET_TEMP"
+    }
+    trap cleanup_reset EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    if [[ -n "${ECHO_FACTORY_RESET_RECOVERY_KEY_FILE:-}" ]]; then
+      install_private_recovery_key \
+        "$ECHO_FACTORY_RESET_RECOVERY_KEY_FILE" "$RECOVERY_KEY" \
+        "factory-reset recovery-key input"
+    else
+      "$DATA_PROTECTION" generate-recovery-key "$RECOVERY_KEY" >/dev/null
+      present_recovery_key_on_console "$RECOVERY_KEY" "factory reset"
+    fi
+
+    if [[ -n "${ECHO_FACTORY_RESET_TPM2_DEVICE_KEY:-}" ]]; then
+      TPM2_DEVICE_KEY="$RESET_TEMP/tpm2-device-key.public"
+      install_tpm2_device_key \
+        "$ECHO_FACTORY_RESET_TPM2_DEVICE_KEY" "$TPM2_DEVICE_KEY" \
+        "factory-reset TPM2 device key"
+      TPM2_ARGS+=(--tpm2-device-key "$TPM2_DEVICE_KEY")
+    fi
+
+    systemd-repart \
+      --dry-run=no \
+      --factory-reset=yes \
+      --key-file="$RECOVERY_KEY" \
+      --definitions="$REPART_DEFINITIONS" \
+      "$TARGET"
+    udevadm settle --timeout=30
+    "$DATA_PROTECTION" enroll-recovery "${TPM2_ARGS[@]}" \
+      "$TARGET" "$RECOVERY_KEY"
+    "$DATA_PROTECTION" verify "${TPM2_ARGS[@]}" \
+      "$TARGET" "$RECOVERY_KEY"
+    sync
+    echo "ECHO_FACTORY_RESET_COMPLETE target=$TARGET data=luks2-tpm2-signed-pcr11-recovery"
+    echo "Factory reset recreated encrypted var, swap and home; reboot the device"
+    ;;
+
+  *)
+    usage
+    exit 2
+    ;;
+esac

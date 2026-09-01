@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.sensing.gateway.uploads_router import create_uploads_router
 
 
@@ -15,11 +14,13 @@ class _ThreadStore:
 
 def _client(workspace_root: Path, legacy_root: Path | None = None) -> TestClient:
     app = FastAPI()
-    app.include_router(create_uploads_router(
-        thread_store=_ThreadStore(),
-        workspace_root=workspace_root,
-        legacy_upload_root=legacy_root,
-    ))
+    app.include_router(
+        create_uploads_router(
+            thread_store=_ThreadStore(),
+            workspace_root=workspace_root,
+            legacy_upload_root=legacy_root,
+        )
+    )
     return TestClient(app)
 
 

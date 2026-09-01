@@ -1,0 +1,1457 @@
+[
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "task_started",
+    "owner_actor_id": null,
+    "recipe_hash": null,
+    "schema_version": 1,
+    "source": null,
+    "strategy": "bug_fix_demo",
+    "task_type": "bugfix",
+    "tenant_id": null,
+    "total_nodes": 8
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "node_started",
+    "node_id": "n0",
+    "node_index": 0,
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "skill_ref": "list_cwd",
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "immune",
+    "owner_actor_id": null,
+    "reason": "matched trusted_sources",
+    "schema_version": 1,
+    "signature": {
+      "entity_id": "skill://public/list_cwd",
+      "entity_type": "skill",
+      "first_seen": "{ts}",
+      "origin": "public",
+      "provider_sig": null
+    },
+    "source": null,
+    "tenant_id": null,
+    "verdict": "allow"
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "cost": {
+      "tokens_in": 100,
+      "tokens_out": 100,
+      "usd": 0.001
+    },
+    "event_type": "budget_commit",
+    "owner_actor_id": null,
+    "reason": "",
+    "schema_version": 1,
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "step",
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "source": null,
+    "step": {
+      "action": {
+        "args": {
+          "path": "{workdir}/demo_project"
+        },
+        "caller": "demos/bugfix",
+        "predicted_cost": null,
+        "sucker_id": "list_cwd"
+      },
+      "args_template": {},
+      "context_hash": null,
+      "immune_verdict": "allow",
+      "node_id": "n0",
+      "result": {
+        "cost": {
+          "tokens_in": 100,
+          "tokens_out": 100,
+          "usd": 0.001
+        },
+        "effect_receipt": {
+          "effect_class": "read_only",
+          "emitted_by": "tool_executor",
+          "handler_entered": true,
+          "retry_safe": false,
+          "schema": "echo.tool.effect_receipt.v1",
+          "sealed": true,
+          "state": "committed",
+          "tool_name": "list_cwd"
+        },
+        "error_type": null,
+        "execution_source": "registered_noncanonical",
+        "exit_code": null,
+        "files_modified": [],
+        "network_egress_bytes": 0,
+        "output": {
+          "count": 2,
+          "items": [
+            {
+              "is_dir": false,
+              "name": "add.py",
+              "size": 104
+            },
+            {
+              "is_dir": false,
+              "name": "test_add.py",
+              "size": 150
+            }
+          ],
+          "path": "{workdir}/demo_project"
+        },
+        "status": "success",
+        "stderr_tags": [],
+        "trusted_execution": false
+      },
+      "step_id": 0
+    },
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "node_started",
+    "node_id": "n1",
+    "node_index": 1,
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "skill_ref": "read_file",
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "immune",
+    "owner_actor_id": null,
+    "reason": "matched trusted_sources",
+    "schema_version": 1,
+    "signature": {
+      "entity_id": "skill://public/read_file",
+      "entity_type": "skill",
+      "first_seen": "{ts}",
+      "origin": "public",
+      "provider_sig": null
+    },
+    "source": null,
+    "tenant_id": null,
+    "verdict": "allow"
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "cost": {
+      "tokens_in": 100,
+      "tokens_out": 100,
+      "usd": 0.001
+    },
+    "event_type": "budget_commit",
+    "owner_actor_id": null,
+    "reason": "",
+    "schema_version": 1,
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "step",
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "source": null,
+    "step": {
+      "action": {
+        "args": {
+          "path": "{workdir}/demo_project/test_add.py"
+        },
+        "caller": "demos/bugfix",
+        "predicted_cost": null,
+        "sucker_id": "read_file"
+      },
+      "args_template": {},
+      "context_hash": null,
+      "immune_verdict": "allow",
+      "node_id": "n1",
+      "result": {
+        "cost": {
+          "tokens_in": 100,
+          "tokens_out": 100,
+          "usd": 0.001
+        },
+        "effect_receipt": {
+          "effect_class": "read_only",
+          "emitted_by": "tool_executor",
+          "handler_entered": true,
+          "retry_safe": false,
+          "schema": "echo.tool.effect_receipt.v1",
+          "sealed": true,
+          "state": "committed",
+          "tool_name": "read_file"
+        },
+        "error_type": null,
+        "execution_source": "registered_noncanonical",
+        "exit_code": null,
+        "files_modified": [],
+        "network_egress_bytes": 0,
+        "output": {
+          "content": "from add import add\n\ndef test_add():\n    result = add(2, 3)\n    assert result == 5, f\"expected 5, got {result}\"\n    print(\"test_add: OK\")\n\ntest_add()\n",
+          "path": "{workdir}/demo_project/test_add.py",
+          "size": 150,
+          "truncated": false
+        },
+        "status": "success",
+        "stderr_tags": [],
+        "trusted_execution": false
+      },
+      "step_id": 1
+    },
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "node_started",
+    "node_id": "n2",
+    "node_index": 2,
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "skill_ref": "exec_shell",
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "immune",
+    "owner_actor_id": null,
+    "reason": "matched trusted_sources",
+    "schema_version": 1,
+    "signature": {
+      "entity_id": "skill://public/exec_shell",
+      "entity_type": "skill",
+      "first_seen": "{ts}",
+      "origin": "public",
+      "provider_sig": null
+    },
+    "source": null,
+    "tenant_id": null,
+    "verdict": "allow"
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "cost": {
+      "tokens_in": 100,
+      "tokens_out": 100,
+      "usd": 0.001
+    },
+    "event_type": "budget_commit",
+    "owner_actor_id": null,
+    "reason": "",
+    "schema_version": 1,
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "step",
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "source": null,
+    "step": {
+      "action": {
+        "args": {
+          "command": [
+            "{python}",
+            "-B",
+            "test_add.py"
+          ],
+          "cwd": "{workdir}/demo_project",
+          "timeout_s": 15.0
+        },
+        "caller": "demos/bugfix",
+        "predicted_cost": null,
+        "sucker_id": "exec_shell"
+      },
+      "args_template": {},
+      "context_hash": null,
+      "immune_verdict": "allow",
+      "node_id": "n2",
+      "result": {
+        "cost": {
+          "tokens_in": 100,
+          "tokens_out": 100,
+          "usd": 0.001
+        },
+        "effect_receipt": {
+          "effect_class": "external_or_unknown",
+          "emitted_by": "tool_executor",
+          "handler_entered": true,
+          "retry_safe": false,
+          "schema": "echo.tool.effect_receipt.v1",
+          "sealed": true,
+          "state": "indeterminate",
+          "tool_name": "exec_shell"
+        },
+        "error_type": "semantic_error",
+        "execution_source": "canonical_builtin",
+        "exit_code": null,
+        "files_modified": [],
+        "network_egress_bytes": 0,
+        "output": {
+          "argv": [
+            "{python}",
+            "-B",
+            "test_add.py"
+          ],
+          "execution_policy": {
+            "allow_network": false,
+            "backend": "direct",
+            "cwd": "{workdir}/demo_project",
+            "env_mode": "custom",
+            "hard": false,
+            "process_group": true,
+            "process_tree_kill": true,
+            "result": {
+              "cancelled": false,
+              "exit_code": 1,
+              "killed": false,
+              "output_truncated": false,
+              "status": "failed",
+              "stderr_truncated": false,
+              "stdout_truncated": false,
+              "timed_out": false
+            },
+            "sandbox_requested": false,
+            "schema": "echo.execution_policy.v1",
+            "timeout_s": 15.0,
+            "workspace": null
+          },
+          "exit_code": 1,
+          "sandbox_backend": "direct",
+          "sandbox_hard": false,
+          "stderr": "Traceback (most recent call last):\n  File \"{workdir}/demo_project/test_add.py\", line 8, in <module>\n    test_add()\n  File \"{workdir}/demo_project/test_add.py\", line 5, in test_add\n    assert result == 5, f\"expected 5, got {result}\"\n           ^^^^^^^^^^^\nAssertionError: expected 5, got -1\n",
+          "stderr_truncated": false,
+          "stdout": "",
+          "stdout_truncated": false
+        },
+        "status": "failed",
+        "stderr_tags": [
+          "semantic_error"
+        ],
+        "trusted_execution": true
+      },
+      "step_id": 2
+    },
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "node_started",
+    "node_id": "n3",
+    "node_index": 3,
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "skill_ref": "read_file",
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "immune",
+    "owner_actor_id": null,
+    "reason": "matched trusted_sources",
+    "schema_version": 1,
+    "signature": {
+      "entity_id": "skill://public/read_file",
+      "entity_type": "skill",
+      "first_seen": "{ts}",
+      "origin": "public",
+      "provider_sig": null
+    },
+    "source": null,
+    "tenant_id": null,
+    "verdict": "allow"
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "cost": {
+      "tokens_in": 100,
+      "tokens_out": 100,
+      "usd": 0.001
+    },
+    "event_type": "budget_commit",
+    "owner_actor_id": null,
+    "reason": "",
+    "schema_version": 1,
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "step",
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "source": null,
+    "step": {
+      "action": {
+        "args": {
+          "path": "{workdir}/demo_project/add.py"
+        },
+        "caller": "demos/bugfix",
+        "predicted_cost": null,
+        "sucker_id": "read_file"
+      },
+      "args_template": {},
+      "context_hash": null,
+      "immune_verdict": "allow",
+      "node_id": "n3",
+      "result": {
+        "cost": {
+          "tokens_in": 100,
+          "tokens_out": 100,
+          "usd": 0.001
+        },
+        "effect_receipt": {
+          "effect_class": "read_only",
+          "emitted_by": "tool_executor",
+          "handler_entered": true,
+          "retry_safe": false,
+          "schema": "echo.tool.effect_receipt.v1",
+          "sealed": true,
+          "state": "committed",
+          "tool_name": "read_file"
+        },
+        "error_type": null,
+        "execution_source": "registered_noncanonical",
+        "exit_code": null,
+        "files_modified": [],
+        "network_egress_bytes": 0,
+        "output": {
+          "content": "\"\"\"Arithmetic utils. There is one bug.\"\"\"\n\ndef add(a, b):\n    return a - b     # BUG: should be `a + b`\n",
+          "path": "{workdir}/demo_project/add.py",
+          "size": 104,
+          "truncated": false
+        },
+        "status": "success",
+        "stderr_tags": [],
+        "trusted_execution": false
+      },
+      "step_id": 3
+    },
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "node_started",
+    "node_id": "n4",
+    "node_index": 4,
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "skill_ref": "edit_text_file",
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "immune",
+    "owner_actor_id": null,
+    "reason": "matched trusted_sources",
+    "schema_version": 1,
+    "signature": {
+      "entity_id": "skill://public/edit_text_file",
+      "entity_type": "skill",
+      "first_seen": "{ts}",
+      "origin": "public",
+      "provider_sig": null
+    },
+    "source": null,
+    "tenant_id": null,
+    "verdict": "allow"
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "cost": {
+      "tokens_in": 100,
+      "tokens_out": 100,
+      "usd": 0.001
+    },
+    "event_type": "budget_commit",
+    "owner_actor_id": null,
+    "reason": "",
+    "schema_version": 1,
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "action": "edit",
+    "actor": null,
+    "agent_id": null,
+    "bytes_delta": 0,
+    "diff": "--- a/{workdir}/demo_project/add.py\n+++ b/{workdir}/demo_project/add.py\n@@ -1,4 +1,4 @@\n \"\"\"Arithmetic utils. There is one bug.\"\"\"\n \n def add(a, b):\n-    return a - b     # BUG: should be `a + b`\n+    return a + b     # BUG: should be `a + b`\n",
+    "event_type": "file_op",
+    "new_size": 104,
+    "old_size": 104,
+    "owner_actor_id": null,
+    "path": "{workdir}/demo_project/add.py",
+    "rollback": {
+      "action": "write",
+      "after_sha256": "9f0ce13c6aad23e7152d64e3215d7f8af6b2cc95c23a62b783e6cc299a72bf98",
+      "before_sha256": "0bb0f32d6103eabfd3b3db435a718a6a2abcd5062364400f42736d94afd9d4a5",
+      "content": "\"\"\"Arithmetic utils. There is one bug.\"\"\"\n\ndef add(a, b):\n    return a - b     # BUG: should be `a + b`\n",
+      "expected_current_sha256": "9f0ce13c6aad23e7152d64e3215d7f8af6b2cc95c23a62b783e6cc299a72bf98",
+      "path": "{workdir}/demo_project/add.py",
+      "reversible": true
+    },
+    "schema_version": 1,
+    "source": null,
+    "sucker_id": "edit_text_file",
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "step",
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "source": null,
+    "step": {
+      "action": {
+        "args": {
+          "find": "return a - b",
+          "path": "{workdir}/demo_project/add.py",
+          "replace": "return a + b"
+        },
+        "caller": "demos/bugfix",
+        "predicted_cost": null,
+        "sucker_id": "edit_text_file"
+      },
+      "args_template": {},
+      "context_hash": null,
+      "immune_verdict": "allow",
+      "node_id": "n4",
+      "result": {
+        "cost": {
+          "tokens_in": 100,
+          "tokens_out": 100,
+          "usd": 0.001
+        },
+        "effect_receipt": {
+          "effect_class": "external_or_unknown",
+          "emitted_by": "tool_executor",
+          "handler_entered": true,
+          "retry_safe": false,
+          "schema": "echo.tool.effect_receipt.v1",
+          "sealed": true,
+          "state": "indeterminate",
+          "tool_name": "edit_text_file"
+        },
+        "error_type": null,
+        "execution_source": "registered_noncanonical",
+        "exit_code": null,
+        "files_modified": [],
+        "network_egress_bytes": 0,
+        "output": {
+          "diff_preview": "--- a/{workdir}/demo_project/add.py\n+++ b/{workdir}/demo_project/add.py\n@@ -1,4 +1,4 @@\n \"\"\"Arithmetic utils. There is one bug.\"\"\"\n \n def add(a, b):\n-    return a - b     # BUG: should be `a + b`\n+    return a + b     # BUG: should be `a + b`\n",
+          "new_size": 104,
+          "occurrences": 1,
+          "path": "{workdir}/demo_project/add.py",
+          "replaced": 1,
+          "verified": true
+        },
+        "status": "success",
+        "stderr_tags": [],
+        "trusted_execution": false
+      },
+      "step_id": 4
+    },
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "node_started",
+    "node_id": "n5",
+    "node_index": 5,
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "skill_ref": "exec_shell",
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "immune",
+    "owner_actor_id": null,
+    "reason": "matched trusted_sources",
+    "schema_version": 1,
+    "signature": {
+      "entity_id": "skill://public/exec_shell",
+      "entity_type": "skill",
+      "first_seen": "{ts}",
+      "origin": "public",
+      "provider_sig": null
+    },
+    "source": null,
+    "tenant_id": null,
+    "verdict": "allow"
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "cost": {
+      "tokens_in": 100,
+      "tokens_out": 100,
+      "usd": 0.001
+    },
+    "event_type": "budget_commit",
+    "owner_actor_id": null,
+    "reason": "",
+    "schema_version": 1,
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "step",
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "source": null,
+    "step": {
+      "action": {
+        "args": {
+          "command": [
+            "{python}",
+            "-B",
+            "test_add.py"
+          ],
+          "cwd": "{workdir}/demo_project",
+          "timeout_s": 15.0
+        },
+        "caller": "demos/bugfix",
+        "predicted_cost": null,
+        "sucker_id": "exec_shell"
+      },
+      "args_template": {},
+      "context_hash": null,
+      "immune_verdict": "allow",
+      "node_id": "n5",
+      "result": {
+        "cost": {
+          "tokens_in": 100,
+          "tokens_out": 100,
+          "usd": 0.001
+        },
+        "effect_receipt": {
+          "effect_class": "external_or_unknown",
+          "emitted_by": "tool_executor",
+          "handler_entered": true,
+          "retry_safe": false,
+          "schema": "echo.tool.effect_receipt.v1",
+          "sealed": true,
+          "state": "indeterminate",
+          "tool_name": "exec_shell"
+        },
+        "error_type": null,
+        "execution_source": "canonical_builtin",
+        "exit_code": null,
+        "files_modified": [],
+        "network_egress_bytes": 0,
+        "output": {
+          "argv": [
+            "{python}",
+            "-B",
+            "test_add.py"
+          ],
+          "execution_policy": {
+            "allow_network": false,
+            "backend": "direct",
+            "cwd": "{workdir}/demo_project",
+            "env_mode": "custom",
+            "hard": false,
+            "process_group": true,
+            "process_tree_kill": true,
+            "result": {
+              "cancelled": false,
+              "exit_code": 0,
+              "killed": false,
+              "output_truncated": false,
+              "status": "completed",
+              "stderr_truncated": false,
+              "stdout_truncated": false,
+              "timed_out": false
+            },
+            "sandbox_requested": false,
+            "schema": "echo.execution_policy.v1",
+            "timeout_s": 15.0,
+            "workspace": null
+          },
+          "exit_code": 0,
+          "sandbox_backend": "direct",
+          "sandbox_hard": false,
+          "stderr": "",
+          "stderr_truncated": false,
+          "stdout": "test_add: OK\n",
+          "stdout_truncated": false
+        },
+        "status": "success",
+        "stderr_tags": [],
+        "trusted_execution": true
+      },
+      "step_id": 5
+    },
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "node_started",
+    "node_id": "n6",
+    "node_index": 6,
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "skill_ref": "git_add",
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "immune",
+    "owner_actor_id": null,
+    "reason": "matched trusted_sources",
+    "schema_version": 1,
+    "signature": {
+      "entity_id": "skill://public/git_add",
+      "entity_type": "skill",
+      "first_seen": "{ts}",
+      "origin": "public",
+      "provider_sig": null
+    },
+    "source": null,
+    "tenant_id": null,
+    "verdict": "allow"
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "cost": {
+      "tokens_in": 100,
+      "tokens_out": 100,
+      "usd": 0.001
+    },
+    "event_type": "budget_commit",
+    "owner_actor_id": null,
+    "reason": "",
+    "schema_version": 1,
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "step",
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "source": null,
+    "step": {
+      "action": {
+        "args": {
+          "paths": [
+            "add.py"
+          ],
+          "repo_dir": "{workdir}/demo_project"
+        },
+        "caller": "demos/bugfix",
+        "predicted_cost": null,
+        "sucker_id": "git_add"
+      },
+      "args_template": {},
+      "context_hash": null,
+      "immune_verdict": "allow",
+      "node_id": "n6",
+      "result": {
+        "cost": {
+          "tokens_in": 100,
+          "tokens_out": 100,
+          "usd": 0.001
+        },
+        "effect_receipt": {
+          "effect_class": "external_or_unknown",
+          "emitted_by": "tool_executor",
+          "handler_entered": true,
+          "retry_safe": false,
+          "schema": "echo.tool.effect_receipt.v1",
+          "sealed": true,
+          "state": "indeterminate",
+          "tool_name": "git_add"
+        },
+        "error_type": null,
+        "execution_source": "registered_noncanonical",
+        "exit_code": null,
+        "files_modified": [],
+        "network_egress_bytes": 0,
+        "output": {
+          "added": [
+            "add.py"
+          ],
+          "exit_code": 0
+        },
+        "status": "success",
+        "stderr_tags": [],
+        "trusted_execution": false
+      },
+      "step_id": 6
+    },
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "node_started",
+    "node_id": "n7",
+    "node_index": 7,
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "skill_ref": "git_commit",
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "immune",
+    "owner_actor_id": null,
+    "reason": "matched trusted_sources",
+    "schema_version": 1,
+    "signature": {
+      "entity_id": "skill://public/git_commit",
+      "entity_type": "skill",
+      "first_seen": "{ts}",
+      "origin": "public",
+      "provider_sig": null
+    },
+    "source": null,
+    "tenant_id": null,
+    "verdict": "allow"
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "cost": {
+      "tokens_in": 100,
+      "tokens_out": 100,
+      "usd": 0.001
+    },
+    "event_type": "budget_commit",
+    "owner_actor_id": null,
+    "reason": "",
+    "schema_version": 1,
+    "source": null,
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "step",
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "source": null,
+    "step": {
+      "action": {
+        "args": {
+          "message": "fix(add): use + instead of - (demo auto-fix)",
+          "repo_dir": "{workdir}/demo_project"
+        },
+        "caller": "demos/bugfix",
+        "predicted_cost": null,
+        "sucker_id": "git_commit"
+      },
+      "args_template": {},
+      "context_hash": null,
+      "immune_verdict": "allow",
+      "node_id": "n7",
+      "result": {
+        "cost": {
+          "tokens_in": 100,
+          "tokens_out": 100,
+          "usd": 0.001
+        },
+        "effect_receipt": {
+          "effect_class": "external_or_unknown",
+          "emitted_by": "tool_executor",
+          "handler_entered": true,
+          "retry_safe": false,
+          "schema": "echo.tool.effect_receipt.v1",
+          "sealed": true,
+          "state": "indeterminate",
+          "tool_name": "git_commit"
+        },
+        "error_type": null,
+        "execution_source": "registered_noncanonical",
+        "exit_code": null,
+        "files_modified": [],
+        "network_egress_bytes": 0,
+        "output": {
+          "stderr": "",
+          "stdout": "[{branch} {sha}] fix(add): use + instead of - (demo auto-fix)\n 1 file changed, 1 insertion(+), 1 deletion(-)\n"
+        },
+        "status": "success",
+        "stderr_tags": [],
+        "trusted_execution": false
+      },
+      "step_id": 7
+    },
+    "tenant_id": null
+  },
+  {
+    "actor": null,
+    "agent_id": null,
+    "event_type": "trajectory",
+    "owner_actor_id": null,
+    "schema_version": 1,
+    "source": null,
+    "tenant_id": null,
+    "trajectory": {
+      "completed_at": "{ts}",
+      "outcome": {
+        "cost": {
+          "tokens_in": 0,
+          "tokens_out": 0,
+          "usd": 0.0
+        },
+        "degraded": false,
+        "disposition": "completed",
+        "success": true,
+        "user_rating": null
+      },
+      "recipe_id": null,
+      "started_at": "{ts}",
+      "steps": [
+        {
+          "action": {
+            "args": {
+              "path": "{workdir}/demo_project"
+            },
+            "caller": "demos/bugfix",
+            "predicted_cost": null,
+            "sucker_id": "list_cwd"
+          },
+          "args_template": {
+            "path": "{workdir}/demo_project"
+          },
+          "context_hash": null,
+          "immune_verdict": "allow",
+          "node_id": "n0",
+          "result": {
+            "cost": {
+              "tokens_in": 100,
+              "tokens_out": 100,
+              "usd": 0.001
+            },
+            "effect_receipt": {
+              "effect_class": "read_only",
+              "emitted_by": "tool_executor",
+              "handler_entered": true,
+              "retry_safe": false,
+              "schema": "echo.tool.effect_receipt.v1",
+              "sealed": true,
+              "state": "committed",
+              "tool_name": "list_cwd"
+            },
+            "error_type": null,
+            "execution_source": "registered_noncanonical",
+            "exit_code": null,
+            "files_modified": [],
+            "network_egress_bytes": 0,
+            "output": {
+              "count": 2,
+              "items": [
+                {
+                  "is_dir": false,
+                  "name": "add.py",
+                  "size": 104
+                },
+                {
+                  "is_dir": false,
+                  "name": "test_add.py",
+                  "size": 150
+                }
+              ],
+              "path": "{workdir}/demo_project"
+            },
+            "status": "success",
+            "stderr_tags": [],
+            "trusted_execution": false
+          },
+          "step_id": 0
+        },
+        {
+          "action": {
+            "args": {
+              "path": "{workdir}/demo_project/test_add.py"
+            },
+            "caller": "demos/bugfix",
+            "predicted_cost": null,
+            "sucker_id": "read_file"
+          },
+          "args_template": {
+            "path": "{workdir}/demo_project/test_add.py"
+          },
+          "context_hash": null,
+          "immune_verdict": "allow",
+          "node_id": "n1",
+          "result": {
+            "cost": {
+              "tokens_in": 100,
+              "tokens_out": 100,
+              "usd": 0.001
+            },
+            "effect_receipt": {
+              "effect_class": "read_only",
+              "emitted_by": "tool_executor",
+              "handler_entered": true,
+              "retry_safe": false,
+              "schema": "echo.tool.effect_receipt.v1",
+              "sealed": true,
+              "state": "committed",
+              "tool_name": "read_file"
+            },
+            "error_type": null,
+            "execution_source": "registered_noncanonical",
+            "exit_code": null,
+            "files_modified": [],
+            "network_egress_bytes": 0,
+            "output": {
+              "content": "from add import add\n\ndef test_add():\n    result = add(2, 3)\n    assert result == 5, f\"expected 5, got {result}\"\n    print(\"test_add: OK\")\n\ntest_add()\n",
+              "path": "{workdir}/demo_project/test_add.py",
+              "size": 150,
+              "truncated": false
+            },
+            "status": "success",
+            "stderr_tags": [],
+            "trusted_execution": false
+          },
+          "step_id": 1
+        },
+        {
+          "action": {
+            "args": {
+              "command": [
+                "{python}",
+                "-B",
+                "test_add.py"
+              ],
+              "cwd": "{workdir}/demo_project",
+              "timeout_s": 15.0
+            },
+            "caller": "demos/bugfix",
+            "predicted_cost": null,
+            "sucker_id": "exec_shell"
+          },
+          "args_template": {
+            "command": [
+              "{python}",
+              "-B",
+              "test_add.py"
+            ],
+            "cwd": "{workdir}/demo_project",
+            "timeout_s": 15.0
+          },
+          "context_hash": null,
+          "immune_verdict": "allow",
+          "node_id": "n2",
+          "result": {
+            "cost": {
+              "tokens_in": 100,
+              "tokens_out": 100,
+              "usd": 0.001
+            },
+            "effect_receipt": {
+              "effect_class": "external_or_unknown",
+              "emitted_by": "tool_executor",
+              "handler_entered": true,
+              "retry_safe": false,
+              "schema": "echo.tool.effect_receipt.v1",
+              "sealed": true,
+              "state": "indeterminate",
+              "tool_name": "exec_shell"
+            },
+            "error_type": "semantic_error",
+            "execution_source": "canonical_builtin",
+            "exit_code": null,
+            "files_modified": [],
+            "network_egress_bytes": 0,
+            "output": {
+              "argv": [
+                "{python}",
+                "-B",
+                "test_add.py"
+              ],
+              "execution_policy": {
+                "allow_network": false,
+                "backend": "direct",
+                "cwd": "{workdir}/demo_project",
+                "env_mode": "custom",
+                "hard": false,
+                "process_group": true,
+                "process_tree_kill": true,
+                "result": {
+                  "cancelled": false,
+                  "exit_code": 1,
+                  "killed": false,
+                  "output_truncated": false,
+                  "status": "failed",
+                  "stderr_truncated": false,
+                  "stdout_truncated": false,
+                  "timed_out": false
+                },
+                "sandbox_requested": false,
+                "schema": "echo.execution_policy.v1",
+                "timeout_s": 15.0,
+                "workspace": null
+              },
+              "exit_code": 1,
+              "sandbox_backend": "direct",
+              "sandbox_hard": false,
+              "stderr": "Traceback (most recent call last):\n  File \"{workdir}/demo_project/test_add.py\", line 8, in <module>\n    test_add()\n  File \"{workdir}/demo_project/test_add.py\", line 5, in test_add\n    assert result == 5, f\"expected 5, got {result}\"\n           ^^^^^^^^^^^\nAssertionError: expected 5, got -1\n",
+              "stderr_truncated": false,
+              "stdout": "",
+              "stdout_truncated": false
+            },
+            "status": "failed",
+            "stderr_tags": [
+              "semantic_error"
+            ],
+            "trusted_execution": true
+          },
+          "step_id": 2
+        },
+        {
+          "action": {
+            "args": {
+              "path": "{workdir}/demo_project/add.py"
+            },
+            "caller": "demos/bugfix",
+            "predicted_cost": null,
+            "sucker_id": "read_file"
+          },
+          "args_template": {
+            "path": "{workdir}/demo_project/add.py"
+          },
+          "context_hash": null,
+          "immune_verdict": "allow",
+          "node_id": "n3",
+          "result": {
+            "cost": {
+              "tokens_in": 100,
+              "tokens_out": 100,
+              "usd": 0.001
+            },
+            "effect_receipt": {
+              "effect_class": "read_only",
+              "emitted_by": "tool_executor",
+              "handler_entered": true,
+              "retry_safe": false,
+              "schema": "echo.tool.effect_receipt.v1",
+              "sealed": true,
+              "state": "committed",
+              "tool_name": "read_file"
+            },
+            "error_type": null,
+            "execution_source": "registered_noncanonical",
+            "exit_code": null,
+            "files_modified": [],
+            "network_egress_bytes": 0,
+            "output": {
+              "content": "\"\"\"Arithmetic utils. There is one bug.\"\"\"\n\ndef add(a, b):\n    return a - b     # BUG: should be `a + b`\n",
+              "path": "{workdir}/demo_project/add.py",
+              "size": 104,
+              "truncated": false
+            },
+            "status": "success",
+            "stderr_tags": [],
+            "trusted_execution": false
+          },
+          "step_id": 3
+        },
+        {
+          "action": {
+            "args": {
+              "find": "return a - b",
+              "path": "{workdir}/demo_project/add.py",
+              "replace": "return a + b"
+            },
+            "caller": "demos/bugfix",
+            "predicted_cost": null,
+            "sucker_id": "edit_text_file"
+          },
+          "args_template": {
+            "find": "return a - b",
+            "path": "{workdir}/demo_project/add.py",
+            "replace": "return a + b"
+          },
+          "context_hash": null,
+          "immune_verdict": "allow",
+          "node_id": "n4",
+          "result": {
+            "cost": {
+              "tokens_in": 100,
+              "tokens_out": 100,
+              "usd": 0.001
+            },
+            "effect_receipt": {
+              "effect_class": "external_or_unknown",
+              "emitted_by": "tool_executor",
+              "handler_entered": true,
+              "retry_safe": false,
+              "schema": "echo.tool.effect_receipt.v1",
+              "sealed": true,
+              "state": "indeterminate",
+              "tool_name": "edit_text_file"
+            },
+            "error_type": null,
+            "execution_source": "registered_noncanonical",
+            "exit_code": null,
+            "files_modified": [],
+            "network_egress_bytes": 0,
+            "output": {
+              "diff_preview": "--- a/{workdir}/demo_project/add.py\n+++ b/{workdir}/demo_project/add.py\n@@ -1,4 +1,4 @@\n \"\"\"Arithmetic utils. There is one bug.\"\"\"\n \n def add(a, b):\n-    return a - b     # BUG: should be `a + b`\n+    return a + b     # BUG: should be `a + b`\n",
+              "new_size": 104,
+              "occurrences": 1,
+              "path": "{workdir}/demo_project/add.py",
+              "replaced": 1,
+              "verified": true
+            },
+            "status": "success",
+            "stderr_tags": [],
+            "trusted_execution": false
+          },
+          "step_id": 4
+        },
+        {
+          "action": {
+            "args": {
+              "command": [
+                "{python}",
+                "-B",
+                "test_add.py"
+              ],
+              "cwd": "{workdir}/demo_project",
+              "timeout_s": 15.0
+            },
+            "caller": "demos/bugfix",
+            "predicted_cost": null,
+            "sucker_id": "exec_shell"
+          },
+          "args_template": {
+            "command": [
+              "{python}",
+              "-B",
+              "test_add.py"
+            ],
+            "cwd": "{workdir}/demo_project",
+            "timeout_s": 15.0
+          },
+          "context_hash": null,
+          "immune_verdict": "allow",
+          "node_id": "n5",
+          "result": {
+            "cost": {
+              "tokens_in": 100,
+              "tokens_out": 100,
+              "usd": 0.001
+            },
+            "effect_receipt": {
+              "effect_class": "external_or_unknown",
+              "emitted_by": "tool_executor",
+              "handler_entered": true,
+              "retry_safe": false,
+              "schema": "echo.tool.effect_receipt.v1",
+              "sealed": true,
+              "state": "indeterminate",
+              "tool_name": "exec_shell"
+            },
+            "error_type": null,
+            "execution_source": "canonical_builtin",
+            "exit_code": null,
+            "files_modified": [],
+            "network_egress_bytes": 0,
+            "output": {
+              "argv": [
+                "{python}",
+                "-B",
+                "test_add.py"
+              ],
+              "execution_policy": {
+                "allow_network": false,
+                "backend": "direct",
+                "cwd": "{workdir}/demo_project",
+                "env_mode": "custom",
+                "hard": false,
+                "process_group": true,
+                "process_tree_kill": true,
+                "result": {
+                  "cancelled": false,
+                  "exit_code": 0,
+                  "killed": false,
+                  "output_truncated": false,
+                  "status": "completed",
+                  "stderr_truncated": false,
+                  "stdout_truncated": false,
+                  "timed_out": false
+                },
+                "sandbox_requested": false,
+                "schema": "echo.execution_policy.v1",
+                "timeout_s": 15.0,
+                "workspace": null
+              },
+              "exit_code": 0,
+              "sandbox_backend": "direct",
+              "sandbox_hard": false,
+              "stderr": "",
+              "stderr_truncated": false,
+              "stdout": "test_add: OK\n",
+              "stdout_truncated": false
+            },
+            "status": "success",
+            "stderr_tags": [],
+            "trusted_execution": true
+          },
+          "step_id": 5
+        },
+        {
+          "action": {
+            "args": {
+              "paths": [
+                "add.py"
+              ],
+              "repo_dir": "{workdir}/demo_project"
+            },
+            "caller": "demos/bugfix",
+            "predicted_cost": null,
+            "sucker_id": "git_add"
+          },
+          "args_template": {
+            "paths": [
+              "add.py"
+            ],
+            "repo_dir": "{workdir}/demo_project"
+          },
+          "context_hash": null,
+          "immune_verdict": "allow",
+          "node_id": "n6",
+          "result": {
+            "cost": {
+              "tokens_in": 100,
+              "tokens_out": 100,
+              "usd": 0.001
+            },
+            "effect_receipt": {
+              "effect_class": "external_or_unknown",
+              "emitted_by": "tool_executor",
+              "handler_entered": true,
+              "retry_safe": false,
+              "schema": "echo.tool.effect_receipt.v1",
+              "sealed": true,
+              "state": "indeterminate",
+              "tool_name": "git_add"
+            },
+            "error_type": null,
+            "execution_source": "registered_noncanonical",
+            "exit_code": null,
+            "files_modified": [],
+            "network_egress_bytes": 0,
+            "output": {
+              "added": [
+                "add.py"
+              ],
+              "exit_code": 0
+            },
+            "status": "success",
+            "stderr_tags": [],
+            "trusted_execution": false
+          },
+          "step_id": 6
+        },
+        {
+          "action": {
+            "args": {
+              "message": "fix(add): use + instead of - (demo auto-fix)",
+              "repo_dir": "{workdir}/demo_project"
+            },
+            "caller": "demos/bugfix",
+            "predicted_cost": null,
+            "sucker_id": "git_commit"
+          },
+          "args_template": {
+            "message": "fix(add): use + instead of - (demo auto-fix)",
+            "repo_dir": "{workdir}/demo_project"
+          },
+          "context_hash": null,
+          "immune_verdict": "allow",
+          "node_id": "n7",
+          "result": {
+            "cost": {
+              "tokens_in": 100,
+              "tokens_out": 100,
+              "usd": 0.001
+            },
+            "effect_receipt": {
+              "effect_class": "external_or_unknown",
+              "emitted_by": "tool_executor",
+              "handler_entered": true,
+              "retry_safe": false,
+              "schema": "echo.tool.effect_receipt.v1",
+              "sealed": true,
+              "state": "indeterminate",
+              "tool_name": "git_commit"
+            },
+            "error_type": null,
+            "execution_source": "registered_noncanonical",
+            "exit_code": null,
+            "files_modified": [],
+            "network_egress_bytes": 0,
+            "output": {
+              "stderr": "",
+              "stdout": "[{branch} {sha}] fix(add): use + instead of - (demo auto-fix)\n 1 file changed, 1 insertion(+), 1 deletion(-)\n"
+            },
+            "status": "success",
+            "stderr_tags": [],
+            "trusted_execution": false
+          },
+          "step_id": 7
+        }
+      ],
+      "strategy_id": "bug_fix_demo",
+      "thread_id": null,
+      "trajectory_id": "{uuid}"
+    }
+  }
+]
+

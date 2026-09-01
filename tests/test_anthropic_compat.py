@@ -7,7 +7,6 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.sensing.gateway.anthropic_compat import create_anthropic_compat_router  # noqa: E402
 
 _BETA = {"anthropic-beta": "managed-agents-2026-04-01"}
@@ -64,23 +63,27 @@ def test_event_adapter_maps_text_delta() -> None:
 def test_event_adapter_maps_tool_start_and_end() -> None:
     from runtime.sensing.gateway.anthropic_compat.event_adapter import adapt_react_event
 
-    start = adapt_react_event({
-        "kind": "tool_start",
-        "tool_name": "exec_shell",
-        "tool_call_id": "tc_1",
-        "input_preview": {"command": "ls"},
-    })
+    start = adapt_react_event(
+        {
+            "kind": "tool_start",
+            "tool_name": "exec_shell",
+            "tool_call_id": "tc_1",
+            "input_preview": {"command": "ls"},
+        }
+    )
     assert len(start) == 1
     assert start[0].type == "agent.tool_use"
     assert start[0].tool_name == "exec_shell"
     assert start[0].tool_use_id == "tc_1"
 
-    end = adapt_react_event({
-        "kind": "tool_end",
-        "tool_call_id": "tc_1",
-        "status": "success",
-        "output_preview": "file1.txt\n",
-    })
+    end = adapt_react_event(
+        {
+            "kind": "tool_end",
+            "tool_call_id": "tc_1",
+            "status": "success",
+            "output_preview": "file1.txt\n",
+        }
+    )
     assert len(end) == 1
     assert end[0].type == "agent.tool_result"
     assert end[0].tool_use_id == "tc_1"
@@ -89,12 +92,14 @@ def test_event_adapter_maps_tool_start_and_end() -> None:
 def test_event_adapter_approval_emits_requires_action() -> None:
     from runtime.sensing.gateway.anthropic_compat.event_adapter import adapt_react_event
 
-    out = adapt_react_event({
-        "kind": "tool_approval_request",
-        "tool_name": "delete_file",
-        "tool_call_id": "tc_2",
-        "args_preview": "path=/etc/passwd",
-    })
+    out = adapt_react_event(
+        {
+            "kind": "tool_approval_request",
+            "tool_name": "delete_file",
+            "tool_call_id": "tc_2",
+            "args_preview": "path=/etc/passwd",
+        }
+    )
     # custom_tool_use + session.status_idle with requires_action
     assert len(out) == 2
     assert out[0].type == "agent.custom_tool_use"

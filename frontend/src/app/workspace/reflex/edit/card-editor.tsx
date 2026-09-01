@@ -1,14 +1,16 @@
 /* Implementation note. */
 
 import { swallow } from "@/core/utils/log";
-import { getBackendBaseURL } from "@/core/config";
 import { LockIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
+
+import { reflexFetch } from "../api";
 
 type TriggerMode = "exact" | "contains" | "regex";
 type PriorityBand = "low" | "medium" | "high";
@@ -119,7 +121,7 @@ const HUB_PRESETS: HubPreset[] = [
     label: "Node-RED · 自定义流",
     forMode: "webhook",
     apply: () => ({
-      url: "http://nodered.local:1880/octopus/light",
+      url: "http://nodered.local:1880/echo/light",
       method: "POST",
       headers: {},
       body: { action: "off", room: "living_room" },
@@ -176,8 +178,11 @@ export function ReflexCardEditor({ onSwitchToYaml, onSavedExternally }: Props) {
   const [cards, setCards] = useState<CardModel[] | null>(null);
   const [origIds, setOrigIds] = useState<Set<string>>(new Set());
   const [mtime, setMtime] = useState<number>(0);
-  const [workflows, setWorkflows] = useState<WorkflowItem[]>([]);
-  const [status, setStatus] = useState<{ kind: "idle" | "ok" | "err"; msg: string }>({
+  const [workflows, _setWorkflows] = useState<WorkflowItem[]>([]);
+  const [status, setStatus] = useState<{
+    kind: "idle" | "ok" | "err";
+    msg: string;
+  }>({
     kind: "idle",
     msg: "",
   });
@@ -185,7 +190,9 @@ export function ReflexCardEditor({ onSwitchToYaml, onSavedExternally }: Props) {
 
   const load = useCallback(async () => {
     try {
-      const r: CardsResp = await fetch(`${getBackendBaseURL()}/api/reflex/rules-cards`).then((r) => r.json());
+      const r: CardsResp = await reflexFetch<CardsResp>(
+        "/api/reflex/rules-cards",
+      );
       if (!r.ok || !r.cards) {
         setStatus({ kind: "err", msg: r.error ?? "load failed" });
         return;
@@ -221,9 +228,15 @@ export function ReflexCardEditor({ onSwitchToYaml, onSavedExternally }: Props) {
     });
   };
 
-  const deleteCard = (idx: number) => {
+  const { confirm, confirmDialog } = useConfirmDialog();
+
+  const deleteCard = async (idx: number) => {
     if (!cards) return;
-    if (!window.confirm(t.reflexEditor.cardConfirmDelete)) return;
+    const ok = await confirm({
+      title: t.common.delete,
+      description: t.reflexEditor.cardConfirmDelete,
+    });
+    if (!ok) return;
     setCards(cards.filter((_, i) => i !== idx));
   };
 
@@ -266,8 +279,8 @@ export function ReflexCardEditor({ onSwitchToYaml, onSavedExternally }: Props) {
     const currentIds = new Set(cards.map((c) => c.id));
     const deletes = Array.from(origIds).filter((id) => !currentIds.has(id));
     try {
-      const r: CardSaveResp = await fetch(
-        `${getBackendBaseURL()}/api/reflex/rules-cards`,
+      const r: CardSaveResp = await reflexFetch<CardSaveResp>(
+        "/api/reflex/rules-cards",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -278,7 +291,7 @@ export function ReflexCardEditor({ onSwitchToYaml, onSavedExternally }: Props) {
             deletes,
           }),
         },
-      ).then((r) => r.json());
+      );
       if (!r.ok) {
         setStatus({ kind: "err", msg: r.error ?? "save failed" });
         return;
@@ -323,8 +336,8 @@ export function ReflexCardEditor({ onSwitchToYaml, onSavedExternally }: Props) {
           <span
             className={cn(
               "ml-auto rounded-md px-2.5 py-1 font-mono text-xs",
-              status.kind === "ok" && "bg-emerald-500/15 text-emerald-300",
-              status.kind === "err" && "bg-rose-500/15 text-rose-300",
+              status.kind === "ok" && "bg-success/15 text-success",
+              status.kind === "err" && "bg-destructive/15 text-destructive",
               status.kind === "idle" && "bg-muted/40 text-muted-foreground",
             )}
           >
@@ -334,7 +347,7 @@ export function ReflexCardEditor({ onSwitchToYaml, onSavedExternally }: Props) {
       </div>
 
       {cards.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border/60 px-4 py-12 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border-default px-4 py-12 text-center text-sm text-muted-foreground">
           {t.reflexEditor.cardEmpty}
         </div>
       ) : (
@@ -345,11 +358,12 @@ export function ReflexCardEditor({ onSwitchToYaml, onSavedExternally }: Props) {
               card={c}
               workflows={workflows}
               onChange={(p) => updateCard(i, p)}
-              onDelete={() => deleteCard(i)}
+              onDelete={() => void deleteCard(i)}
             />
           ))}
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }
@@ -418,7 +432,7 @@ function RuleCard({
   return (
     <Card
       className={cn(
-        "rounded-2xl border-white/40 shadow-none dark:border-white/10",
+        "rounded-lg border-white/40 shadow-none dark:border-white/10",
         readOnly && "opacity-70",
       )}
     >
@@ -429,10 +443,11 @@ function RuleCard({
             disabled={readOnly}
             onChange={(e) => onChange({ id: e.target.value })}
             placeholder={t.reflexEditor.cardField_id}
-            className="flex-1 rounded-md border border-border/60 bg-background px-3 py-1.5 font-mono text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
+            aria-label={t.reflexEditor.cardField_id}
+            className="flex-1 rounded-md border border-border-default bg-background px-3 py-1.5 font-mono text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
           />
           {readOnly && (
-            <span className="flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
+            <span className="flex items-center gap-1 rounded-md bg-warning/15 px-2 py-0.5 text-xs text-warning">
               <LockIcon className="size-3" />
               {t.reflexEditor.cardAdvancedBadge}
             </span>
@@ -442,7 +457,7 @@ function RuleCard({
             variant="ghost"
             onClick={onDelete}
             disabled={readOnly}
-            className="text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
             <Trash2Icon className="size-4" />
           </Button>
@@ -459,16 +474,19 @@ function RuleCard({
               onChange={(e) =>
                 onChange({ trigger_mode: e.target.value as TriggerMode })
               }
-              className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
+              className="rounded-md border border-border-default bg-background px-2 py-1.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
             >
               <option value="exact">{t.reflexEditor.triggerMode_exact}</option>
-              <option value="contains">{t.reflexEditor.triggerMode_contains}</option>
+              <option value="contains">
+                {t.reflexEditor.triggerMode_contains}
+              </option>
               <option value="regex">{t.reflexEditor.triggerMode_regex}</option>
             </select>
             <input
               value={card.trigger_text}
               disabled={readOnly}
               onChange={(e) => onChange({ trigger_text: e.target.value })}
+              aria-label={t.reflexEditor.cardField_trigger}
               placeholder={
                 card.trigger_mode === "regex"
                   ? "^开(灯|空调)$"
@@ -476,7 +494,7 @@ function RuleCard({
                     ? "天气"
                     : "你好"
               }
-              className="flex-1 rounded-md border border-border/60 bg-background px-3 py-1.5 font-mono text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
+              className="flex-1 rounded-md border border-border-default bg-background px-3 py-1.5 font-mono text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
             />
           </div>
         </div>
@@ -486,7 +504,7 @@ function RuleCard({
             <label className="text-xs text-muted-foreground">
               {t.reflexEditor.cardField_replySource}
             </label>
-            <div className="inline-flex rounded-md border border-border/60 p-0.5">
+            <div className="inline-flex rounded-md border border-border-default p-0.5">
               {(["text", "workflow"] as ReplySource[]).map((s) => (
                 <button
                   key={s}
@@ -504,7 +522,7 @@ function RuleCard({
               ))}
             </div>
             {card.reply_source === "workflow" && (
-              <span className="rounded-md bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-300">
+              <span className="rounded-md bg-warning/15 px-2 py-0.5 text-xs text-warning">
                 {t.reflexEditor.replySource_slowHint}
               </span>
             )}
@@ -516,17 +534,21 @@ function RuleCard({
               onChange={(e) => onChange({ reply: e.target.value })}
               rows={2}
               placeholder={t.reflexEditor.cardField_reply}
-              className="rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
+              className="rounded-md border border-border-default bg-background px-3 py-1.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
             />
           ) : (
             <div className="grid gap-1">
               <select
                 value={card.delegate_to_workflow}
                 disabled={readOnly}
-                onChange={(e) => onChange({ delegate_to_workflow: e.target.value })}
-                className="rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
+                onChange={(e) =>
+                  onChange({ delegate_to_workflow: e.target.value })
+                }
+                className="rounded-md border border-border-default bg-background px-3 py-1.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
               >
-                <option value="">{t.reflexEditor.cardField_workflowPick}</option>
+                <option value="">
+                  {t.reflexEditor.cardField_workflowPick}
+                </option>
                 {workflows.map((w) => (
                   <option key={w.id} value={w.id}>
                     {(w.name || w.id) +
@@ -540,7 +562,7 @@ function RuleCard({
                 onChange={(e) => onChange({ reply: e.target.value })}
                 rows={1}
                 placeholder={t.reflexEditor.cardField_workflowFallback}
-                className="rounded-md border border-border/60 bg-background px-3 py-1.5 text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
+                className="rounded-md border border-border-default bg-background px-3 py-1.5 text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
               />
             </div>
           )}
@@ -602,7 +624,8 @@ function RuleCard({
               disabled={readOnly}
               onChange={(e) => onChange({ reply_on_failure: e.target.value })}
               placeholder={t.reflexEditor.cardField_replyOnFailurePlaceholder}
-              className="rounded-md border border-border/60 bg-background px-3 py-1.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
+              aria-label={t.reflexEditor.cardField_replyOnFailure}
+              className="rounded-md border border-border-default bg-background px-3 py-1.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed"
             />
           </div>
         )}
@@ -628,7 +651,7 @@ function ActionEditor({
 }) {
   const { t } = useI18n();
   return (
-    <div className="grid gap-2 rounded-lg border border-border/40 bg-muted/10 p-3">
+    <div className="grid gap-2 rounded-lg border border-border-subtle bg-muted/10 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">
           {t.reflexEditor.cardField_action}
@@ -657,7 +680,7 @@ function ActionEditor({
               if (p) onPreset(p);
               e.target.value = "";
             }}
-            className="ml-auto rounded-md border border-border/60 bg-background px-2 py-1 text-xs outline-none disabled:cursor-not-allowed"
+            className="ml-auto rounded-md border border-border-default bg-background px-2 py-1 text-xs outline-none disabled:cursor-not-allowed"
           >
             <option value="">{t.reflexEditor.cardField_hubPreset}</option>
             {HUB_PRESETS.filter((p) => p.forMode === action.mode).map((p) => (
@@ -716,7 +739,7 @@ function WebhookFields({
           value={cfg.method}
           disabled={readOnly}
           onChange={(e) => onChange({ method: e.target.value })}
-          className="rounded-md border border-border/60 bg-background px-2 py-1.5 font-mono text-xs outline-none disabled:cursor-not-allowed"
+          className="rounded-md border border-border-default bg-background px-2 py-1.5 font-mono text-xs outline-none disabled:cursor-not-allowed"
         >
           <option value="GET">GET</option>
           <option value="POST">POST</option>
@@ -728,7 +751,8 @@ function WebhookFields({
           disabled={readOnly}
           onChange={(e) => onChange({ url: e.target.value })}
           placeholder="http://homeassistant.local:8123/api/services/light/turn_off"
-          className="flex-1 rounded-md border border-border/60 bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
+          aria-label="URL"
+          className="flex-1 rounded-md border border-border-default bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
         />
       </div>
       <div className="grid gap-1">
@@ -748,7 +772,8 @@ function WebhookFields({
                   onChange({ headers: next });
                 }}
                 placeholder="Authorization"
-                className="w-44 rounded-md border border-border/60 bg-background px-2 py-1 font-mono text-xs outline-none disabled:cursor-not-allowed"
+                aria-label="Header name"
+                className="w-44 rounded-md border border-border-default bg-background px-2 py-1 font-mono text-xs outline-none disabled:cursor-not-allowed"
               />
               <input
                 value={v}
@@ -757,28 +782,34 @@ function WebhookFields({
                   onChange({ headers: { ...cfg.headers, [k]: e.target.value } })
                 }
                 placeholder="Bearer ..."
-                className="flex-1 rounded-md border border-border/60 bg-background px-2 py-1 font-mono text-xs outline-none disabled:cursor-not-allowed"
+                aria-label="Header value"
+                className="flex-1 rounded-md border border-border-default bg-background px-2 py-1 font-mono text-xs outline-none disabled:cursor-not-allowed"
               />
-              <button
+              <Button
+                size="sm"
+                variant="ghost"
                 disabled={readOnly}
                 onClick={() => {
                   const next = { ...cfg.headers };
                   delete next[k];
                   onChange({ headers: next });
                 }}
-                className="rounded-md px-2 text-xs text-rose-400 hover:bg-rose-500/10 disabled:cursor-not-allowed"
+                aria-label="Delete header"
+                className="rounded-md px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed"
               >
                 ×
-              </button>
+              </Button>
             </div>
           ))}
-          <button
+          <Button
+            size="sm"
+            variant="outline"
             disabled={readOnly}
             onClick={() => onChange({ headers: { ...cfg.headers, "": "" } })}
-            className="self-start rounded-md border border-dashed border-border/60 px-2 py-1 text-xs text-muted-foreground hover:bg-muted/30 disabled:cursor-not-allowed"
+            className="self-start border-dashed text-xs text-muted-foreground hover:bg-muted/30 disabled:cursor-not-allowed"
           >
             + {t.reflexEditor.cardField_addHeader}
-          </button>
+          </Button>
         </div>
       </div>
       <div className="grid gap-1">
@@ -803,7 +834,7 @@ function WebhookFields({
             }
           }}
           placeholder='{"entity_id":"light.living_room"}'
-          className="rounded-md border border-border/60 bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
+          className="rounded-md border border-border-default bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
         />
       </div>
     </div>
@@ -827,14 +858,16 @@ function MqttFields({
           disabled={readOnly}
           onChange={(e) => onChange({ broker: e.target.value })}
           placeholder="192.168.1.10"
-          className="flex-1 rounded-md border border-border/60 bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
+          aria-label="MQTT broker"
+          className="flex-1 rounded-md border border-border-default bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
         />
         <input
           type="number"
           value={cfg.port}
           disabled={readOnly}
           onChange={(e) => onChange({ port: Number(e.target.value) || 1883 })}
-          className="w-24 rounded-md border border-border/60 bg-background px-2 py-1.5 font-mono text-xs outline-none disabled:cursor-not-allowed"
+          aria-label="Port"
+          className="w-24 rounded-md border border-border-default bg-background px-2 py-1.5 font-mono text-xs outline-none disabled:cursor-not-allowed"
         />
       </div>
       <input
@@ -842,14 +875,16 @@ function MqttFields({
         disabled={readOnly}
         onChange={(e) => onChange({ topic: e.target.value })}
         placeholder="zigbee2mqtt/living_room_light/set"
-        className="rounded-md border border-border/60 bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
+        aria-label="Topic"
+        className="rounded-md border border-border-default bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
       />
       <input
         value={cfg.payload}
         disabled={readOnly}
         onChange={(e) => onChange({ payload: e.target.value })}
         placeholder='{"state":"OFF"} 或 OFF'
-        className="rounded-md border border-border/60 bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
+        aria-label="Payload"
+        className="rounded-md border border-border-default bg-background px-3 py-1.5 font-mono text-xs outline-none focus:border-primary disabled:cursor-not-allowed"
       />
       <div className="flex gap-3 text-xs text-muted-foreground">
         <label className="flex items-center gap-1">
@@ -858,7 +893,7 @@ function MqttFields({
             value={cfg.qos}
             disabled={readOnly}
             onChange={(e) => onChange({ qos: Number(e.target.value) })}
-            className="rounded-md border border-border/60 bg-background px-2 py-0.5 font-mono text-xs disabled:cursor-not-allowed"
+            className="rounded-md border border-border-default bg-background px-2 py-0.5 font-mono text-xs disabled:cursor-not-allowed"
           >
             <option value={0}>0</option>
             <option value={1}>1</option>
@@ -871,6 +906,7 @@ function MqttFields({
             checked={cfg.retain}
             disabled={readOnly}
             onChange={(e) => onChange({ retain: e.target.checked })}
+            aria-label="Retain"
           />
           retain
         </label>

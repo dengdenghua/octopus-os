@@ -1,0 +1,24 @@
+{
+  "schema": "echo.workbench_app.v1",
+  "id": "paper-trading",
+  "catalog_id": "workbench_paper-trading",
+  "name": "模拟炒股",
+  "description": "策略验证与模拟交易",
+  "route": "/workspace/paper-trading",
+  "module_id": "paper.trading",
+  "version": "1.0.0",
+  "release_summary": "1.0.0：提供模拟交易、行情观察与策略验证工作台。",
+  "host_api": ">=0.2,<0.3",
+  "dependencies": [],
+  "entry": "dist/index.html",
+  "runtime_plugin": "paper_trading",
+  "isolation": "iframe",
+  "data_paths": ["paper_trading"],
+  "permissions": [
+    "host.same_origin",
+    "host.navigation",
+    "backend.api",
+    "workspace.storage",
+    "network.quotes"
+  ]
+}

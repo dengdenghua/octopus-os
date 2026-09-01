@@ -10,7 +10,6 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from runtime.adapters.channels import (
     Attachment,
     BlueBubblesChannel,
@@ -74,30 +73,53 @@ class _FakeHttpClient:
         self.resp = resp or _FakeHttpResp()
         self.calls: list[dict] = []
 
-    def post(self, url, json=None, headers=None, data=None, content=None, params=None, files=None, **_kw):
-        self.calls.append({
-            "method": "post", "url": url, "json": json,
-            "headers": headers, "data": data, "content": content,
-            "params": params, "files": files,
-        })
+    def post(
+        self, url, json=None, headers=None, data=None, content=None, params=None, files=None, **_kw
+    ):
+        self.calls.append(
+            {
+                "method": "post",
+                "url": url,
+                "json": json,
+                "headers": headers,
+                "data": data,
+                "content": content,
+                "params": params,
+                "files": files,
+            }
+        )
         return self.resp
 
     def put(self, url, json=None, headers=None, **_kw):
-        self.calls.append({
-            "method": "put", "url": url, "json": json, "headers": headers,
-        })
+        self.calls.append(
+            {
+                "method": "put",
+                "url": url,
+                "json": json,
+                "headers": headers,
+            }
+        )
         return self.resp
 
     def patch(self, url, json=None, headers=None, **_kw):
-        self.calls.append({
-            "method": "patch", "url": url, "json": json, "headers": headers,
-        })
+        self.calls.append(
+            {
+                "method": "patch",
+                "url": url,
+                "json": json,
+                "headers": headers,
+            }
+        )
         return self.resp
 
     def get(self, url, headers=None, **_kw):
-        self.calls.append({
-            "method": "get", "url": url, "headers": headers,
-        })
+        self.calls.append(
+            {
+                "method": "get",
+                "url": url,
+                "headers": headers,
+            }
+        )
         return self.resp
 
 
@@ -112,6 +134,7 @@ def _whatsapp_sig(secret: str, body: bytes) -> str:
 
 def _sms_sig(auth_token: str, url: str, body: bytes) -> str:
     from urllib.parse import parse_qs
+
     params = parse_qs(body.decode("utf-8"), keep_blank_values=True)
     sorted_params = sorted(params.items())
     data = url
@@ -119,7 +142,9 @@ def _sms_sig(auth_token: str, url: str, body: bytes) -> str:
         for value in values:
             data += key + value
     mac = hmac.new(
-        auth_token.encode("utf-8"), data.encode("utf-8"), hashlib.sha1,
+        auth_token.encode("utf-8"),
+        data.encode("utf-8"),
+        hashlib.sha1,
     ).digest()
     return base64.b64encode(mac).decode("utf-8")
 
@@ -131,7 +156,9 @@ def _line_sig(secret: str, body: bytes) -> str:
 
 def _webhooks_sig(secret: str, data: bytes) -> str:
     return hmac.new(
-        secret.encode("utf-8"), data, hashlib.sha256,
+        secret.encode("utf-8"),
+        data,
+        hashlib.sha256,
     ).hexdigest()
 
 
@@ -169,9 +196,13 @@ class TestSignalChannel:
     def test_send_posts_to_v2_send(self):
         http = _FakeHttpClient()
         ch = SignalChannel(phone_number="+1234", http_client=http)
-        ch.send(OutboundMessage(
-            channel_id="signal", thread_id="+5678:1", content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="signal",
+                thread_id="+5678:1",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"].endswith("/v2/send")
@@ -183,23 +214,29 @@ class TestSignalChannel:
         http = _FakeHttpClient(_FakeHttpResp(status_code=500, body={"error": "x"}))
         ch = SignalChannel(phone_number="+1234", http_client=http)
         with pytest.raises(SignalError, match="HTTP 500"):
-            ch.send(OutboundMessage(
-                channel_id="signal", thread_id="+5678:1", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="signal",
+                    thread_id="+5678:1",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_parses_envelope(self):
         ch = SignalChannel(phone_number="+1234", webhook_secret="s3cret")
-        payload = json.dumps({
-            "envelope": {
-                "source": "+5678",
-                "sourceNumber": "+5678",
-                "sourceName": "Alice",
-                "dataMessage": {
-                    "message": "hello agent",
-                    "timestamp": 1700000000000,
+        payload = json.dumps(
+            {
+                "envelope": {
+                    "source": "+5678",
+                    "sourceNumber": "+5678",
+                    "sourceName": "Alice",
+                    "dataMessage": {
+                        "message": "hello agent",
+                        "timestamp": 1700000000000,
+                    },
                 },
-            },
-        }).encode()
+            }
+        ).encode()
         headers = {"X-Signal-Secret": "s3cret"}
         msg = ch.handle_webhook(body=payload, headers=headers)
         assert msg is not None
@@ -210,12 +247,14 @@ class TestSignalChannel:
 
     def test_handle_webhook_bad_secret(self):
         ch = SignalChannel(phone_number="+1234", webhook_secret="s3cret")
-        payload = json.dumps({
-            "envelope": {
-                "source": "+5678",
-                "dataMessage": {"message": "hi", "timestamp": 1},
-            },
-        }).encode()
+        payload = json.dumps(
+            {
+                "envelope": {
+                    "source": "+5678",
+                    "dataMessage": {"message": "hi", "timestamp": 1},
+                },
+            }
+        ).encode()
         headers = {"X-Signal-Secret": "wrong"}
         with pytest.raises(SignalSignatureError, match="mismatch"):
             ch.handle_webhook(body=payload, headers=headers)
@@ -240,7 +279,9 @@ class TestWhatsAppChannel:
     def test_constructor(self):
         http = _FakeHttpClient()
         ch = WhatsAppChannel(
-            phone_number_id="pid", access_token="at", http_client=http,
+            phone_number_id="pid",
+            access_token="at",
+            http_client=http,
         )
         assert ch.channel_id == "whatsapp"
 
@@ -255,11 +296,17 @@ class TestWhatsAppChannel:
     def test_send_posts_to_messages(self):
         http = _FakeHttpClient()
         ch = WhatsAppChannel(
-            phone_number_id="pid123", access_token="at", http_client=http,
+            phone_number_id="pid123",
+            access_token="at",
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="whatsapp", thread_id="+5678:msg1", content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="whatsapp",
+                thread_id="+5678:msg1",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert "/pid123/messages" in call["url"]
@@ -269,39 +316,56 @@ class TestWhatsAppChannel:
         assert call["headers"]["Authorization"] == "Bearer at"
 
     def test_send_api_error_raises(self):
-        http = _FakeHttpClient(_FakeHttpResp(body={
-            "error": {"message": "bad request"},
-        }))
+        http = _FakeHttpClient(
+            _FakeHttpResp(
+                body={
+                    "error": {"message": "bad request"},
+                }
+            )
+        )
         ch = WhatsAppChannel(
-            phone_number_id="pid", access_token="at", http_client=http,
+            phone_number_id="pid",
+            access_token="at",
+            http_client=http,
         )
         with pytest.raises(WhatsAppError, match="bad request"):
-            ch.send(OutboundMessage(
-                channel_id="whatsapp", thread_id="+5678:msg1", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="whatsapp",
+                    thread_id="+5678:msg1",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_verifies_signature(self):
         secret = "app_secret_123"
         ch = WhatsAppChannel(
-            phone_number_id="pid", access_token="at",
+            phone_number_id="pid",
+            access_token="at",
             app_secret=secret,
         )
         payload_dict = {
             "object": "whatsapp_business_account",
-            "entry": [{
-                "changes": [{
-                    "value": {
-                        "messages": [{
-                            "type": "text",
-                            "text": {"body": "hello"},
-                            "from": "+5678",
-                            "id": "wamid1",
-                            "timestamp": "1700000000",
-                        }],
-                        "contacts": [{"wa_id": "+5678"}],
-                    },
-                }],
-            }],
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "type": "text",
+                                        "text": {"body": "hello"},
+                                        "from": "+5678",
+                                        "id": "wamid1",
+                                        "timestamp": "1700000000",
+                                    }
+                                ],
+                                "contacts": [{"wa_id": "+5678"}],
+                            },
+                        }
+                    ],
+                }
+            ],
         }
         body = json.dumps(payload_dict).encode()
         sig = _whatsapp_sig(secret, body)
@@ -312,33 +376,44 @@ class TestWhatsAppChannel:
 
     def test_handle_webhook_bad_signature(self):
         ch = WhatsAppChannel(
-            phone_number_id="pid", access_token="at", app_secret="secret",
+            phone_number_id="pid",
+            access_token="at",
+            app_secret="secret",
         )
         body = json.dumps({"object": "whatsapp_business_account"}).encode()
         with pytest.raises(WhatsAppSignatureError, match="mismatch"):
             ch.handle_webhook(
-                body=body, headers={"X-Hub-Signature-256": "sha256=bad"},
+                body=body,
+                headers={"X-Hub-Signature-256": "sha256=bad"},
             )
 
     def test_verify_webhook_get(self):
         ch = WhatsAppChannel(
-            phone_number_id="pid", access_token="at", verify_token="vtok",
+            phone_number_id="pid",
+            access_token="at",
+            verify_token="vtok",
         )
         result = ch.verify_webhook(
-            mode="subscribe", token="vtok", challenge="ch123",
+            mode="subscribe",
+            token="vtok",
+            challenge="ch123",
         )
         assert result == "ch123"
 
     def test_verify_webhook_bad_mode(self):
         ch = WhatsAppChannel(
-            phone_number_id="pid", access_token="at", verify_token="vtok",
+            phone_number_id="pid",
+            access_token="at",
+            verify_token="vtok",
         )
         with pytest.raises(WhatsAppSignatureError, match="hub.mode"):
             ch.verify_webhook(mode="unsubscribe", token="vtok", challenge="c")
 
     def test_verify_webhook_bad_token(self):
         ch = WhatsAppChannel(
-            phone_number_id="pid", access_token="at", verify_token="vtok",
+            phone_number_id="pid",
+            access_token="at",
+            verify_token="vtok",
         )
         with pytest.raises(WhatsAppSignatureError, match="mismatch"):
             ch.verify_webhook(mode="subscribe", token="wrong", challenge="c")
@@ -352,44 +427,62 @@ class TestWhatsAppChannel:
 class TestEmailChannel:
     def test_constructor(self):
         ch = EmailChannel(
-            smtp_host="smtp.example.com", imap_host="imap.example.com",
-            username="u", password="p", from_address="f@a.com",
+            smtp_host="smtp.example.com",
+            imap_host="imap.example.com",
+            username="u",
+            password="p",
+            from_address="f@a.com",
         )
         assert ch.channel_id == "email"
 
     def test_constructor_requires_smtp_host(self):
         with pytest.raises(ValueError, match="smtp_host"):
             EmailChannel(
-                smtp_host="", imap_host="imap", username="u",
-                password="p", from_address="f@a.com",
+                smtp_host="",
+                imap_host="imap",
+                username="u",
+                password="p",
+                from_address="f@a.com",
             )
 
     def test_constructor_requires_imap_host(self):
         with pytest.raises(ValueError, match="imap_host"):
             EmailChannel(
-                smtp_host="smtp", imap_host="", username="u",
-                password="p", from_address="f@a.com",
+                smtp_host="smtp",
+                imap_host="",
+                username="u",
+                password="p",
+                from_address="f@a.com",
             )
 
     def test_constructor_requires_username(self):
         with pytest.raises(ValueError, match="username"):
             EmailChannel(
-                smtp_host="smtp", imap_host="imap", username="",
-                password="p", from_address="f@a.com",
+                smtp_host="smtp",
+                imap_host="imap",
+                username="",
+                password="p",
+                from_address="f@a.com",
             )
 
     def test_constructor_requires_password(self):
         with pytest.raises(ValueError, match="password"):
             EmailChannel(
-                smtp_host="smtp", imap_host="imap", username="u",
-                password="", from_address="f@a.com",
+                smtp_host="smtp",
+                imap_host="imap",
+                username="u",
+                password="",
+                from_address="f@a.com",
             )
 
     def test_constructor_requires_from_address(self):
         with pytest.raises(ValueError, match="from_address"):
             EmailChannel(
-                smtp_host="smtp", imap_host="imap", username="u",
-                password="p", from_address="",
+                smtp_host="smtp",
+                imap_host="imap",
+                username="u",
+                password="p",
+                from_address="",
             )
 
     @patch("runtime.adapters.channels.email.smtplib.SMTP")
@@ -398,14 +491,20 @@ class TestEmailChannel:
         mock_smtp_cls.return_value.__enter__ = MagicMock(return_value=mock_server)
         mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
         ch = EmailChannel(
-            smtp_host="smtp.example.com", imap_host="imap.example.com",
-            username="u", password="p", from_address="f@a.com",
+            smtp_host="smtp.example.com",
+            imap_host="imap.example.com",
+            username="u",
+            password="p",
+            from_address="f@a.com",
         )
-        ch.send(OutboundMessage(
-            channel_id="email", thread_id="<msg123@a.com>",
-            content="hello",
-            metadata={"recipient": "to@b.com", "subject": "Re: test"},
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="email",
+                thread_id="<msg123@a.com>",
+                content="hello",
+                metadata={"recipient": "to@b.com", "subject": "Re: test"},
+            )
+        )
         mock_smtp_cls.assert_called_once_with("smtp.example.com", 587)
         mock_server.starttls.assert_called_once()
         mock_server.login.assert_called_once_with("u", "p")
@@ -418,13 +517,20 @@ class TestEmailChannel:
         )
         mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
         ch = EmailChannel(
-            smtp_host="smtp", imap_host="imap",
-            username="u", password="p", from_address="f@a.com",
+            smtp_host="smtp",
+            imap_host="imap",
+            username="u",
+            password="p",
+            from_address="f@a.com",
         )
         with pytest.raises(EmailError, match="smtp send failed"):
-            ch.send(OutboundMessage(
-                channel_id="email", thread_id="t", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="email",
+                    thread_id="t",
+                    content="hi",
+                )
+            )
 
     @patch("runtime.adapters.channels.email.imaplib.IMAP4_SSL")
     def test_poll_uses_imap(self, mock_imap_cls):
@@ -442,8 +548,11 @@ class TestEmailChannel:
         mock_imap.search.return_value = ("OK", [b"1"])
         mock_imap.fetch.return_value = ("OK", [(None, raw_email)])
         ch = EmailChannel(
-            smtp_host="smtp", imap_host="imap",
-            username="u", password="p", from_address="f@a.com",
+            smtp_host="smtp",
+            imap_host="imap",
+            username="u",
+            password="p",
+            from_address="f@a.com",
         )
         ch._imap = mock_imap
         msgs = ch.poll()
@@ -464,8 +573,10 @@ class TestSmsChannel:
     def test_constructor(self):
         http = _FakeHttpClient()
         ch = SmsChannel(
-            account_sid="sid", auth_token="tok",
-            from_number="+1234", http_client=http,
+            account_sid="sid",
+            auth_token="tok",
+            from_number="+1234",
+            http_client=http,
         )
         assert ch.channel_id == "sms"
 
@@ -484,12 +595,18 @@ class TestSmsChannel:
     def test_send_posts_form_data(self):
         http = _FakeHttpClient()
         ch = SmsChannel(
-            account_sid="sid", auth_token="tok",
-            from_number="+1234", http_client=http,
+            account_sid="sid",
+            auth_token="tok",
+            from_number="+1234",
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="sms", thread_id="+5678:SM123", content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="sms",
+                thread_id="+5678:SM123",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert "sid/Messages.json" in call["url"]
@@ -501,25 +618,34 @@ class TestSmsChannel:
     def test_send_http_error_raises(self):
         http = _FakeHttpClient(_FakeHttpResp(status_code=500, body={}))
         ch = SmsChannel(
-            account_sid="sid", auth_token="tok",
-            from_number="+1234", http_client=http,
+            account_sid="sid",
+            auth_token="tok",
+            from_number="+1234",
+            http_client=http,
         )
         with pytest.raises(SmsError, match="HTTP 500"):
-            ch.send(OutboundMessage(
-                channel_id="sms", thread_id="+5678:SM123", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="sms",
+                    thread_id="+5678:SM123",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_verifies_signature(self):
         webhook_url = "https://example.com/webhook"
         ch = SmsChannel(
-            account_sid="sid", auth_token="tok123",
-            from_number="+1234", webhook_url=webhook_url,
+            account_sid="sid",
+            auth_token="tok123",
+            from_number="+1234",
+            webhook_url=webhook_url,
         )
         body_str = "Body=hello&From=%2B5678&MessageSid=SM123&MessageDate=2024-01-01T00%3A00%3A00"
         body = body_str.encode("utf-8")
         sig = _sms_sig("tok123", webhook_url, body)
         msg = ch.handle_webhook(
-            body=body, headers={"X-Twilio-Signature": sig},
+            body=body,
+            headers={"X-Twilio-Signature": sig},
         )
         assert msg is not None
         assert msg.content == "hello"
@@ -527,13 +653,16 @@ class TestSmsChannel:
 
     def test_handle_webhook_bad_signature(self):
         ch = SmsChannel(
-            account_sid="sid", auth_token="tok",
-            from_number="+1234", webhook_url="https://example.com/webhook",
+            account_sid="sid",
+            auth_token="tok",
+            from_number="+1234",
+            webhook_url="https://example.com/webhook",
         )
         body = b"Body=hello&From=%2B5678&MessageSid=SM123"
         with pytest.raises(SmsSignatureError, match="mismatch"):
             ch.handle_webhook(
-                body=body, headers={"X-Twilio-Signature": "bad_sig"},
+                body=body,
+                headers={"X-Twilio-Signature": "bad_sig"},
             )
 
 
@@ -546,7 +675,8 @@ class TestMattermostChannel:
     def test_constructor(self):
         http = _FakeHttpClient()
         ch = MattermostChannel(
-            bot_token="bt", server_url="https://mm.example.com",
+            bot_token="bt",
+            server_url="https://mm.example.com",
             http_client=http,
         )
         assert ch.channel_id == "mattermost"
@@ -565,12 +695,17 @@ class TestMattermostChannel:
     def test_send_posts_to_api_v4_posts(self):
         http = _FakeHttpClient()
         ch = MattermostChannel(
-            bot_token="bt", server_url="https://mm.example.com",
+            bot_token="bt",
+            server_url="https://mm.example.com",
             http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="mattermost", thread_id="ch1:post1", content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="mattermost",
+                thread_id="ch1:post1",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"] == "https://mm.example.com/api/v4/posts"
@@ -582,25 +717,33 @@ class TestMattermostChannel:
     def test_send_http_error_raises(self):
         http = _FakeHttpClient(_FakeHttpResp(status_code=403, body={}))
         ch = MattermostChannel(
-            bot_token="bt", server_url="https://mm.example.com",
+            bot_token="bt",
+            server_url="https://mm.example.com",
             http_client=http,
         )
         with pytest.raises(MattermostError, match="HTTP 403"):
-            ch.send(OutboundMessage(
-                channel_id="mattermost", thread_id="ch1:p1", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="mattermost",
+                    thread_id="ch1:p1",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_verifies_token(self):
         ch = MattermostChannel(
-            bot_token="bt", server_url="https://mm.example.com",
+            bot_token="bt",
+            server_url="https://mm.example.com",
         )
-        payload = json.dumps({
-            "token": "bt",
-            "text": "hello",
-            "user_id": "u1",
-            "channel_id": "ch1",
-            "post_id": "p1",
-        }).encode()
+        payload = json.dumps(
+            {
+                "token": "bt",
+                "text": "hello",
+                "user_id": "u1",
+                "channel_id": "ch1",
+                "post_id": "p1",
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "hello"
@@ -608,25 +751,32 @@ class TestMattermostChannel:
 
     def test_handle_webhook_bad_token(self):
         ch = MattermostChannel(
-            bot_token="bt", server_url="https://mm.example.com",
+            bot_token="bt",
+            server_url="https://mm.example.com",
         )
-        payload = json.dumps({
-            "token": "wrong", "text": "hi",
-            "channel_id": "ch1",
-        }).encode()
+        payload = json.dumps(
+            {
+                "token": "wrong",
+                "text": "hi",
+                "channel_id": "ch1",
+            }
+        ).encode()
         with pytest.raises(MattermostSignatureError, match="mismatch"):
             ch.handle_webhook(body=payload, headers={})
 
     def test_edit_posts_to_api_v4_posts_id(self):
         http = _FakeHttpClient()
         ch = MattermostChannel(
-            bot_token="bt", server_url="https://mm.example.com",
+            bot_token="bt",
+            server_url="https://mm.example.com",
             http_client=http,
         )
         msg = OutboundMessage(
-            channel_id="mattermost", thread_id="ch1:p1", content="edited",
+            channel_id="mattermost",
+            thread_id="ch1:p1",
+            content="edited",
         )
-        ch.edit("post123", msg)
+        ch.edit(msg, "post123")
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"] == "https://mm.example.com/api/v4/posts/post123"
@@ -634,14 +784,16 @@ class TestMattermostChannel:
 
     def test_send_typing_is_noop(self):
         ch = MattermostChannel(
-            bot_token="bt", server_url="https://mm.example.com",
+            bot_token="bt",
+            server_url="https://mm.example.com",
         )
         ch.send_typing("ch1:p1")
 
     def test_add_reaction_posts_to_reactions(self):
         http = _FakeHttpClient()
         ch = MattermostChannel(
-            bot_token="bt", server_url="https://mm.example.com",
+            bot_token="bt",
+            server_url="https://mm.example.com",
             http_client=http,
         )
         ch.add_reaction("ch1:p1", "post1", "+1")
@@ -662,7 +814,8 @@ class TestMatrixChannel:
         http = _FakeHttpClient()
         ch = MatrixChannel(
             homeserver_url="https://matrix.org",
-            access_token="at", http_client=http,
+            access_token="at",
+            http_client=http,
         )
         assert ch.channel_id == "matrix"
         assert ch.supports_edit is True
@@ -681,11 +834,16 @@ class TestMatrixChannel:
         http = _FakeHttpClient()
         ch = MatrixChannel(
             homeserver_url="https://matrix.org",
-            access_token="at", http_client=http,
+            access_token="at",
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="matrix", thread_id="!room1:event1", content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="matrix",
+                thread_id="!room1:event1",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["method"] == "put"
@@ -698,28 +856,38 @@ class TestMatrixChannel:
         http = _FakeHttpClient(_FakeHttpResp(status_code=403, body={}))
         ch = MatrixChannel(
             homeserver_url="https://matrix.org",
-            access_token="at", http_client=http,
+            access_token="at",
+            http_client=http,
         )
         with pytest.raises(MatrixError, match="HTTP 403"):
-            ch.send(OutboundMessage(
-                channel_id="matrix", thread_id="!room1:e1", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="matrix",
+                    thread_id="!room1:e1",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_verifies_as_token(self):
         ch = MatrixChannel(
-            homeserver_url="https://matrix.org", access_token="at",
+            homeserver_url="https://matrix.org",
+            access_token="at",
         )
-        payload = json.dumps({
-            "as_token": "at",
-            "events": [{
-                "type": "m.room.message",
-                "content": {"msgtype": "m.text", "body": "hello"},
-                "sender": "@alice:matrix.org",
-                "room_id": "!room1:matrix.org",
-                "event_id": "$event1",
-                "origin_server_ts": 1700000000000,
-            }],
-        }).encode()
+        payload = json.dumps(
+            {
+                "as_token": "at",
+                "events": [
+                    {
+                        "type": "m.room.message",
+                        "content": {"msgtype": "m.text", "body": "hello"},
+                        "sender": "@alice:matrix.org",
+                        "room_id": "!room1:matrix.org",
+                        "event_id": "$event1",
+                        "origin_server_ts": 1700000000000,
+                    }
+                ],
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "hello"
@@ -728,12 +896,15 @@ class TestMatrixChannel:
 
     def test_handle_webhook_bad_as_token(self):
         ch = MatrixChannel(
-            homeserver_url="https://matrix.org", access_token="at",
+            homeserver_url="https://matrix.org",
+            access_token="at",
         )
-        payload = json.dumps({
-            "as_token": "wrong",
-            "events": [],
-        }).encode()
+        payload = json.dumps(
+            {
+                "as_token": "wrong",
+                "events": [],
+            }
+        ).encode()
         with pytest.raises(MatrixSignatureError, match="mismatch"):
             ch.handle_webhook(body=payload, headers={})
 
@@ -741,12 +912,15 @@ class TestMatrixChannel:
         http = _FakeHttpClient()
         ch = MatrixChannel(
             homeserver_url="https://matrix.org",
-            access_token="at", http_client=http,
+            access_token="at",
+            http_client=http,
         )
         msg = OutboundMessage(
-            channel_id="matrix", thread_id="!room1:e1", content="edited",
+            channel_id="matrix",
+            thread_id="!room1:e1",
+            content="edited",
         )
-        ch.edit("!room1:$event1", msg)
+        ch.edit(msg, "!room1:$event1")
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["method"] == "put"
@@ -757,7 +931,8 @@ class TestMatrixChannel:
         http = _FakeHttpClient()
         ch = MatrixChannel(
             homeserver_url="https://matrix.org",
-            access_token="at", http_client=http,
+            access_token="at",
+            http_client=http,
         )
         ch._user_id = "@bot:matrix.org"
         ch.send_typing("!room1:e1")
@@ -771,7 +946,8 @@ class TestMatrixChannel:
         http = _FakeHttpClient()
         ch = MatrixChannel(
             homeserver_url="https://matrix.org",
-            access_token="at", http_client=http,
+            access_token="at",
+            http_client=http,
         )
         ch.add_reaction("!room1:e1", "$event1", "👍")
         assert len(http.calls) == 1
@@ -790,8 +966,11 @@ class TestMatrixChannel:
 class TestWeComChannel:
     def test_constructor(self):
         ch = WeComChannel(
-            corp_id="c1", agent_id="a1", secret="s1",
-            token="t1", encoding_aes_key="key123",
+            corp_id="c1",
+            agent_id="a1",
+            secret="s1",
+            token="t1",
+            encoding_aes_key="key123",
         )
         assert ch.channel_id == "wecom"
         assert ch.supports_edit is True
@@ -799,42 +978,60 @@ class TestWeComChannel:
     def test_constructor_requires_corp_id(self):
         with pytest.raises(ValueError, match="corp_id"):
             WeComChannel(
-                corp_id="", agent_id="a", secret="s",
-                token="t", encoding_aes_key="k",
+                corp_id="",
+                agent_id="a",
+                secret="s",
+                token="t",
+                encoding_aes_key="k",
             )
 
     def test_constructor_requires_agent_id(self):
         with pytest.raises(ValueError, match="agent_id"):
             WeComChannel(
-                corp_id="c", agent_id="", secret="s",
-                token="t", encoding_aes_key="k",
+                corp_id="c",
+                agent_id="",
+                secret="s",
+                token="t",
+                encoding_aes_key="k",
             )
 
     def test_constructor_requires_secret(self):
         with pytest.raises(ValueError, match="secret"):
             WeComChannel(
-                corp_id="c", agent_id="a", secret="",
-                token="t", encoding_aes_key="k",
+                corp_id="c",
+                agent_id="a",
+                secret="",
+                token="t",
+                encoding_aes_key="k",
             )
 
     def test_constructor_requires_token(self):
         with pytest.raises(ValueError, match="token"):
             WeComChannel(
-                corp_id="c", agent_id="a", secret="s",
-                token="", encoding_aes_key="k",
+                corp_id="c",
+                agent_id="a",
+                secret="s",
+                token="",
+                encoding_aes_key="k",
             )
 
     def test_constructor_requires_encoding_aes_key(self):
         with pytest.raises(ValueError, match="encoding_aes_key"):
             WeComChannel(
-                corp_id="c", agent_id="a", secret="s",
-                token="t", encoding_aes_key="",
+                corp_id="c",
+                agent_id="a",
+                secret="s",
+                token="t",
+                encoding_aes_key="",
             )
 
     def test_handle_webhook_xml_parsing(self):
         ch = WeComChannel(
-            corp_id="c1", agent_id="a1", secret="s1",
-            token="t1", encoding_aes_key="key123",
+            corp_id="c1",
+            agent_id="a1",
+            secret="s1",
+            token="t1",
+            encoding_aes_key="key123",
         )
         decrypted_xml = (
             "<xml>"
@@ -845,8 +1042,10 @@ class TestWeComChannel:
             "<MsgType>text</MsgType>"
             "</xml>"
         )
-        with patch.object(ch, "_verify_signature"), \
-             patch.object(ch, "_decrypt_message", return_value=decrypted_xml):
+        with (
+            patch.object(ch, "_verify_signature"),
+            patch.object(ch, "_decrypt_message", return_value=decrypted_xml),
+        ):
             body = (
                 b"<xml>"
                 b"<MsgSignature>sig</MsgSignature>"
@@ -864,8 +1063,11 @@ class TestWeComChannel:
 
     def test_handle_webhook_no_encrypt(self):
         ch = WeComChannel(
-            corp_id="c1", agent_id="a1", secret="s1",
-            token="t1", encoding_aes_key="key123",
+            corp_id="c1",
+            agent_id="a1",
+            secret="s1",
+            token="t1",
+            encoding_aes_key="key123",
         )
         body = b"<xml><MsgSignature>s</MsgSignature><TimeStamp>t</TimeStamp><Nonce>n</Nonce></xml>"
         msg = ch.handle_webhook(body=body, headers={})
@@ -874,14 +1076,19 @@ class TestWeComChannel:
     def test_edit_posts_to_message_update(self):
         http = _FakeHttpClient()
         ch = WeComChannel(
-            corp_id="c1", agent_id="a1", secret="s1",
-            token="t1", encoding_aes_key="key123",
+            corp_id="c1",
+            agent_id="a1",
+            secret="s1",
+            token="t1",
+            encoding_aes_key="key123",
             http_client=http,
         )
         ch._access_token = "fake_token"
         ch._access_token_expires_at = time.time() + 7200
         msg = OutboundMessage(
-            channel_id="wecom", thread_id="user1:msg1", content="edited",
+            channel_id="wecom",
+            thread_id="user1:msg1",
+            content="edited",
             metadata={"touser": "user1"},
         )
         ch.edit(msg, "orig_msg_id")
@@ -901,7 +1108,9 @@ class TestQQBotChannel:
     def test_constructor(self):
         http = _FakeHttpClient()
         ch = QQBotChannel(
-            app_id="aid", app_secret="asec", http_client=http,
+            app_id="aid",
+            app_secret="asec",
+            http_client=http,
         )
         assert ch.channel_id == "qqbot"
         assert ch.supports_edit is True
@@ -915,11 +1124,18 @@ class TestQQBotChannel:
             QQBotChannel(app_id="a", app_secret="")
 
     def test_token_caching(self):
-        http = _FakeHttpClient(_FakeHttpResp(body={
-            "access_token": "tok123", "expires_in": 7200,
-        }))
+        http = _FakeHttpClient(
+            _FakeHttpResp(
+                body={
+                    "access_token": "tok123",
+                    "expires_in": 7200,
+                }
+            )
+        )
         ch = QQBotChannel(
-            app_id="aid", app_secret="asec", http_client=http,
+            app_id="aid",
+            app_secret="asec",
+            http_client=http,
         )
         token1 = ch._ensure_token()
         assert token1 == "tok123"
@@ -931,15 +1147,20 @@ class TestQQBotChannel:
     def test_send_posts_to_channels_messages(self):
         http = _FakeHttpClient(_FakeHttpResp(body={"id": "msg1"}))
         ch = QQBotChannel(
-            app_id="aid", app_secret="asec", http_client=http,
+            app_id="aid",
+            app_secret="asec",
+            http_client=http,
         )
         ch._access_token = "tok"
         ch._token_expires_at = time.time() + 3600
-        ch.send(OutboundMessage(
-            channel_id="qqbot", thread_id="ch1",
-            content="hi",
-            metadata={"qq_channel_id": "ch1"},
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="qqbot",
+                thread_id="ch1",
+                content="hi",
+                metadata={"qq_channel_id": "ch1"},
+            )
+        )
         send_calls = [c for c in http.calls if "/channels/ch1/messages" in c["url"]]
         assert len(send_calls) == 1
         call = send_calls[0]
@@ -949,25 +1170,34 @@ class TestQQBotChannel:
     def test_send_error_raises(self):
         http = _FakeHttpClient(_FakeHttpResp(body={"error": "bad"}))
         ch = QQBotChannel(
-            app_id="aid", app_secret="asec", http_client=http,
+            app_id="aid",
+            app_secret="asec",
+            http_client=http,
         )
         ch._access_token = "tok"
         ch._token_expires_at = time.time() + 3600
         with pytest.raises(QQBotError, match="unexpected"):
-            ch.send(OutboundMessage(
-                channel_id="qqbot", thread_id="ch1",
-                content="hi", metadata={"qq_channel_id": "ch1"},
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="qqbot",
+                    thread_id="ch1",
+                    content="hi",
+                    metadata={"qq_channel_id": "ch1"},
+                )
+            )
 
     def test_edit_patches_message(self):
         http = _FakeHttpClient(_FakeHttpResp(body={"id": "msg1"}))
         ch = QQBotChannel(
-            app_id="aid", app_secret="asec", http_client=http,
+            app_id="aid",
+            app_secret="asec",
+            http_client=http,
         )
         ch._access_token = "tok"
         ch._token_expires_at = time.time() + 3600
         msg = OutboundMessage(
-            channel_id="qqbot", thread_id="ch1:old",
+            channel_id="qqbot",
+            thread_id="ch1:old",
             content="edited",
         )
         ch.edit(msg, "orig_id")
@@ -988,7 +1218,9 @@ class TestTeamsChannel:
     def test_constructor(self):
         http = _FakeHttpClient()
         ch = TeamsChannel(
-            app_id="aid", app_password="apw", http_client=http,
+            app_id="aid",
+            app_password="apw",
+            http_client=http,
         )
         assert ch.channel_id == "teams"
 
@@ -1004,11 +1236,18 @@ class TestTeamsChannel:
 
     @patch("runtime.adapters.channels.teams.HTTPX_AVAILABLE", True)
     def test_token_caching_via_oauth2(self):
-        http = _FakeHttpClient(_FakeHttpResp(body={
-            "access_token": "tok123", "expires_in": 3600,
-        }))
+        http = _FakeHttpClient(
+            _FakeHttpResp(
+                body={
+                    "access_token": "tok123",
+                    "expires_in": 3600,
+                }
+            )
+        )
         ch = TeamsChannel(
-            app_id="aid", app_password="apw", http_client=http,
+            app_id="aid",
+            app_password="apw",
+            http_client=http,
         )
         token1 = ch._ensure_token()
         assert token1 == "tok123"
@@ -1020,15 +1259,17 @@ class TestTeamsChannel:
     @patch("runtime.adapters.channels.teams.HTTPX_AVAILABLE", True)
     def test_handle_webhook_parses_activity(self):
         ch = TeamsChannel(app_id="aid", app_password="apw")
-        payload = json.dumps({
-            "type": "message",
-            "text": "hello agent",
-            "from": {"id": "user1"},
-            "conversation": {"id": "conv1"},
-            "id": "act1",
-            "timestamp": "2024-01-01T00:00:00Z",
-            "serviceUrl": "https://s.botframework.com",
-        }).encode()
+        payload = json.dumps(
+            {
+                "type": "message",
+                "text": "hello agent",
+                "from": {"id": "user1"},
+                "conversation": {"id": "conv1"},
+                "id": "act1",
+                "timestamp": "2024-01-01T00:00:00Z",
+                "serviceUrl": "https://s.botframework.com",
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "hello agent"
@@ -1061,7 +1302,8 @@ class TestLineChannel:
     def test_constructor(self):
         http = _FakeHttpClient()
         ch = LineChannel(
-            channel_access_token="cat", channel_secret="cs",
+            channel_access_token="cat",
+            channel_secret="cs",
             http_client=http,
         )
         assert ch.channel_id == "line"
@@ -1078,13 +1320,15 @@ class TestLineChannel:
         secret = "my_secret"
         ch = LineChannel(channel_access_token="cat", channel_secret=secret)
         payload_dict = {
-            "events": [{
-                "type": "message",
-                "replyToken": "rt123",
-                "source": {"userId": "U123", "type": "user"},
-                "message": {"type": "text", "text": "hello", "id": "msg1"},
-                "timestamp": 1700000000000,
-            }],
+            "events": [
+                {
+                    "type": "message",
+                    "replyToken": "rt123",
+                    "source": {"userId": "U123", "type": "user"},
+                    "message": {"type": "text", "text": "hello", "id": "msg1"},
+                    "timestamp": 1700000000000,
+                }
+            ],
         }
         body = json.dumps(payload_dict).encode()
         sig = _line_sig(secret, body)
@@ -1099,7 +1343,8 @@ class TestLineChannel:
         body = json.dumps({"events": []}).encode()
         with pytest.raises(LineSignatureError, match="mismatch"):
             ch.handle_webhook(
-                body=body, headers={"X-Line-Signature": "bad_sig"},
+                body=body,
+                headers={"X-Line-Signature": "bad_sig"},
             )
 
     def test_handle_webhook_missing_signature(self):
@@ -1111,13 +1356,18 @@ class TestLineChannel:
     def test_send_uses_reply(self):
         http = _FakeHttpClient()
         ch = LineChannel(
-            channel_access_token="cat", channel_secret="cs",
+            channel_access_token="cat",
+            channel_secret="cs",
             http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="line", thread_id="U123:msg1", content="hi",
-            metadata={"replyToken": "rt123"},
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="line",
+                thread_id="U123:msg1",
+                content="hi",
+                metadata={"replyToken": "rt123"},
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert "/v2/bot/message/reply" in call["url"]
@@ -1127,12 +1377,17 @@ class TestLineChannel:
     def test_send_uses_push(self):
         http = _FakeHttpClient()
         ch = LineChannel(
-            channel_access_token="cat", channel_secret="cs",
+            channel_access_token="cat",
+            channel_secret="cs",
             http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="line", thread_id="U123:msg1", content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="line",
+                thread_id="U123:msg1",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert "/v2/bot/message/push" in call["url"]
@@ -1142,13 +1397,18 @@ class TestLineChannel:
     def test_send_push_no_target_raises(self):
         http = _FakeHttpClient()
         ch = LineChannel(
-            channel_access_token="cat", channel_secret="cs",
+            channel_access_token="cat",
+            channel_secret="cs",
             http_client=http,
         )
         with pytest.raises(LineError, match="no target"):
-            ch.send(OutboundMessage(
-                channel_id="line", thread_id=":msg1", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="line",
+                    thread_id=":msg1",
+                    content="hi",
+                )
+            )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1161,7 +1421,8 @@ class TestHomeAssistantChannel:
         http = _FakeHttpClient()
         ch = HomeAssistantChannel(
             ha_url="http://ha.local:8123",
-            long_lived_token="llt", http_client=http,
+            long_lived_token="llt",
+            http_client=http,
         )
         assert ch.channel_id == "homeassistant"
 
@@ -1177,12 +1438,16 @@ class TestHomeAssistantChannel:
         http = _FakeHttpClient()
         ch = HomeAssistantChannel(
             ha_url="http://ha.local:8123",
-            long_lived_token="llt", http_client=http,
+            long_lived_token="llt",
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="homeassistant", thread_id="ha:entity1",
-            content="alert!",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="homeassistant",
+                thread_id="ha:entity1",
+                content="alert!",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"] == "http://ha.local:8123/api/services/notify/persistent_notification"
@@ -1193,23 +1458,31 @@ class TestHomeAssistantChannel:
         http = _FakeHttpClient(_FakeHttpResp(status_code=401, body={}))
         ch = HomeAssistantChannel(
             ha_url="http://ha.local:8123",
-            long_lived_token="llt", http_client=http,
+            long_lived_token="llt",
+            http_client=http,
         )
         with pytest.raises(HomeAssistantError, match="HTTP 401"):
-            ch.send(OutboundMessage(
-                channel_id="homeassistant", thread_id="t", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="homeassistant",
+                    thread_id="t",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_parses_json(self):
         ch = HomeAssistantChannel(
-            ha_url="http://ha.local:8123", long_lived_token="llt",
+            ha_url="http://ha.local:8123",
+            long_lived_token="llt",
         )
-        payload = json.dumps({
-            "message": "door opened",
-            "entity_id": "binary_sensor.front_door",
-            "user_id": "user1",
-            "timestamp": 1700000000,
-        }).encode()
+        payload = json.dumps(
+            {
+                "message": "door opened",
+                "entity_id": "binary_sensor.front_door",
+                "user_id": "user1",
+                "timestamp": 1700000000,
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "door opened"
@@ -1227,7 +1500,8 @@ class TestBlueBubblesChannel:
         http = _FakeHttpClient()
         ch = BlueBubblesChannel(
             server_url="http://bb.local:3000",
-            api_key="ak", http_client=http,
+            api_key="ak",
+            http_client=http,
         )
         assert ch.channel_id == "bluebubbles"
 
@@ -1243,12 +1517,16 @@ class TestBlueBubblesChannel:
         http = _FakeHttpClient(_FakeHttpResp(body={"status": 200}))
         ch = BlueBubblesChannel(
             server_url="http://bb.local:3000",
-            api_key="ak", http_client=http,
+            api_key="ak",
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="bluebubbles", thread_id="chatGuid1:msg1",
-            content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="bluebubbles",
+                thread_id="chatGuid1:msg1",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"] == "http://bb.local:3000/api/v1/message/text"
@@ -1257,34 +1535,47 @@ class TestBlueBubblesChannel:
         assert call["headers"]["Authorization"] == "Bearer ak"
 
     def test_send_error_raises(self):
-        http = _FakeHttpClient(_FakeHttpResp(body={
-            "status": 500, "message": "server error",
-        }))
+        http = _FakeHttpClient(
+            _FakeHttpResp(
+                body={
+                    "status": 500,
+                    "message": "server error",
+                }
+            )
+        )
         ch = BlueBubblesChannel(
             server_url="http://bb.local:3000",
-            api_key="ak", http_client=http,
+            api_key="ak",
+            http_client=http,
         )
         with pytest.raises(BlueBubblesError, match="server error"):
-            ch.send(OutboundMessage(
-                channel_id="bluebubbles", thread_id="cg1:m1", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="bluebubbles",
+                    thread_id="cg1:m1",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_parses_message(self):
         ch = BlueBubblesChannel(
-            server_url="http://bb.local:3000", api_key="ak",
+            server_url="http://bb.local:3000",
+            api_key="ak",
         )
-        payload = json.dumps({
-            "data": {
-                "message": {
-                    "guid": "msg-guid-1",
-                    "text": "hello from iMessage",
-                    "isFromMe": False,
-                    "chats": [{"guid": "chat-guid-1"}],
-                    "sender": "sender1",
-                    "dateCreated": 1700000000000,
+        payload = json.dumps(
+            {
+                "data": {
+                    "message": {
+                        "guid": "msg-guid-1",
+                        "text": "hello from iMessage",
+                        "isFromMe": False,
+                        "chats": [{"guid": "chat-guid-1"}],
+                        "sender": "sender1",
+                        "dateCreated": 1700000000000,
+                    },
                 },
-            },
-        }).encode()
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "hello from iMessage"
@@ -1293,17 +1584,21 @@ class TestBlueBubblesChannel:
 
     def test_handle_webhook_from_me_filtered(self):
         ch = BlueBubblesChannel(
-            server_url="http://bb.local:3000", api_key="ak",
+            server_url="http://bb.local:3000",
+            api_key="ak",
         )
-        payload = json.dumps({
-            "data": {
-                "message": {
-                    "guid": "msg1", "text": "hi",
-                    "isFromMe": True,
-                    "chats": [{"guid": "cg1"}],
+        payload = json.dumps(
+            {
+                "data": {
+                    "message": {
+                        "guid": "msg1",
+                        "text": "hi",
+                        "isFromMe": True,
+                        "chats": [{"guid": "cg1"}],
+                    },
                 },
-            },
-        }).encode()
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is None
 
@@ -1327,33 +1622,44 @@ class TestNtfyChannel:
         http = _FakeHttpClient()
         ch = NtfyChannel(
             server_url="https://ntfy.example.com",
-            topic="alerts", http_client=http,
+            topic="alerts",
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="ntfy", thread_id="ntfy:alerts", content="fire!",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="ntfy",
+                thread_id="ntfy:alerts",
+                content="fire!",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"] == "https://ntfy.example.com/alerts"
         assert call["content"] == "fire!"
-        assert call["headers"]["Title"] == "Octopus Agent"
+        assert call["headers"]["Title"] == "Echo Agent"
 
     def test_send_http_error_raises(self):
         http = _FakeHttpClient(_FakeHttpResp(status_code=500, body={}))
         ch = NtfyChannel(topic="t", http_client=http)
         with pytest.raises(NtfyError, match="HTTP 500"):
-            ch.send(OutboundMessage(
-                channel_id="ntfy", thread_id="ntfy:t", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="ntfy",
+                    thread_id="ntfy:t",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_parses_json(self):
         ch = NtfyChannel(topic="alerts")
-        payload = json.dumps({
-            "message": "server down",
-            "topic": "alerts",
-            "title": "Alert",
-            "time": 1700000000,
-        }).encode()
+        payload = json.dumps(
+            {
+                "message": "server down",
+                "topic": "alerts",
+                "title": "Alert",
+                "time": 1700000000,
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "server down"
@@ -1378,9 +1684,13 @@ class TestWebhooksChannel:
             outbound_url="http://hook.example.com/incoming",
             http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="webhooks", thread_id="webhook:id1", content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="webhooks",
+                thread_id="webhook:id1",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"] == "http://hook.example.com/incoming"
@@ -1388,18 +1698,24 @@ class TestWebhooksChannel:
         raw_body = call["content"]
         parsed = json.loads(raw_body)
         assert parsed["text"] == "hi"
-        assert parsed["source"] == "octopus-agent"
+        assert parsed["source"] == "echo-agent"
         expected_sig = _webhooks_sig("s3cret", raw_body)
         assert call["headers"]["X-Webhook-Signature"] == expected_sig
 
     def test_send_no_outbound_url_is_noop(self):
         http = _FakeHttpClient()
         ch = WebhooksChannel(
-            webhook_secret="s3cret", outbound_url="", http_client=http,
+            webhook_secret="s3cret",
+            outbound_url="",
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="webhooks", thread_id="t", content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="webhooks",
+                thread_id="t",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 0
 
     def test_handle_webhook_verifies_signature(self):
@@ -1459,27 +1775,31 @@ class TestGoogleChatChannel:
             GoogleChatChannel(service_account_key="/nonexistent/path.json")
 
     def test_handle_webhook_parses_event(self):
-        ch = GoogleChatChannel(service_account_key={
-            "client_email": "test@test.iam.gserviceaccount.com",
-            "private_key": "dummy",
-        })
-        payload = json.dumps({
-            "event": {
-                "type": "MESSAGE",
-                "message": {
-                    "text": "hello chat",
-                    "name": "spaces/AAA/messages/BBB",
+        ch = GoogleChatChannel(
+            service_account_key={
+                "client_email": "test@test.iam.gserviceaccount.com",
+                "private_key": "dummy",
+            }
+        )
+        payload = json.dumps(
+            {
+                "event": {
+                    "type": "MESSAGE",
+                    "message": {
+                        "text": "hello chat",
+                        "name": "spaces/AAA/messages/BBB",
+                    },
+                    "sender": {
+                        "name": "users/123",
+                        "displayName": "Alice",
+                    },
+                    "space": {
+                        "name": "spaces/AAA",
+                    },
+                    "eventTime": "2024-01-01T00:00:00Z",
                 },
-                "sender": {
-                    "name": "users/123",
-                    "displayName": "Alice",
-                },
-                "space": {
-                    "name": "spaces/AAA",
-                },
-                "eventTime": "2024-01-01T00:00:00Z",
-            },
-        }).encode()
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "hello chat"
@@ -1488,13 +1808,17 @@ class TestGoogleChatChannel:
         assert msg.metadata["google_chat_sender_display"] == "Alice"
 
     def test_handle_webhook_non_message_event(self):
-        ch = GoogleChatChannel(service_account_key={
-            "client_email": "test@test.iam.gserviceaccount.com",
-            "private_key": "dummy",
-        })
-        payload = json.dumps({
-            "event": {"type": "ADDED_TO_SPACE"},
-        }).encode()
+        ch = GoogleChatChannel(
+            service_account_key={
+                "client_email": "test@test.iam.gserviceaccount.com",
+                "private_key": "dummy",
+            }
+        )
+        payload = json.dumps(
+            {
+                "event": {"type": "ADDED_TO_SPACE"},
+            }
+        ).encode()
         result = ch.handle_webhook(body=payload, headers={})
         assert result is None
 
@@ -1513,9 +1837,13 @@ class TestSimpleXChannel:
     def test_send_posts_to_v1_chat_item(self):
         http = _FakeHttpClient()
         ch = SimpleXChannel(http_client=http)
-        ch.send(OutboundMessage(
-            channel_id="simplex", thread_id="contact1:item1", content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="simplex",
+                thread_id="contact1:item1",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"].endswith("/v1/chat/item")
@@ -1526,33 +1854,39 @@ class TestSimpleXChannel:
         http = _FakeHttpClient(_FakeHttpResp(status_code=500, body={}))
         ch = SimpleXChannel(http_client=http)
         with pytest.raises(SimpleXError, match="HTTP 500"):
-            ch.send(OutboundMessage(
-                channel_id="simplex", thread_id="c1:i1", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="simplex",
+                    thread_id="c1:i1",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_parses_event(self):
         ch = SimpleXChannel()
-        payload = json.dumps({
-            "chatInfo": {
-                "contact": {
-                    "displayName": "Bob",
-                    "contactId": "c1",
-                },
-            },
-            "chatItem": {
-                "content": {
-                    "msg": {
-                        "content": {
-                            "text": "hello simplex",
-                        },
+        payload = json.dumps(
+            {
+                "chatInfo": {
+                    "contact": {
+                        "displayName": "Bob",
+                        "contactId": "c1",
                     },
                 },
-                "meta": {
-                    "itemId": "item1",
-                    "createdAt": 1700000000,
+                "chatItem": {
+                    "content": {
+                        "msg": {
+                            "content": {
+                                "text": "hello simplex",
+                            },
+                        },
+                    },
+                    "meta": {
+                        "itemId": "item1",
+                        "createdAt": 1700000000,
+                    },
                 },
-            },
-        }).encode()
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "hello simplex"
@@ -1571,7 +1905,8 @@ class TestOpenWebUIChannel:
         http = _FakeHttpClient()
         ch = OpenWebUIChannel(
             base_url="http://owui.local:8080",
-            api_key="ak", http_client=http,
+            api_key="ak",
+            http_client=http,
         )
         assert ch.channel_id == "open_webui"
 
@@ -1587,16 +1922,20 @@ class TestOpenWebUIChannel:
         http = _FakeHttpClient()
         ch = OpenWebUIChannel(
             base_url="http://owui.local:8080",
-            api_key="ak", http_client=http,
+            api_key="ak",
+            http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="open_webui", thread_id="webui:chat1",
-            content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="open_webui",
+                thread_id="webui:chat1",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"] == "http://owui.local:8080/api/chat/completions"
-        assert call["json"]["model"] == "octopus-agent"
+        assert call["json"]["model"] == "echo-agent"
         assert call["json"]["messages"][0]["content"] == "hi"
         assert call["json"]["stream"] is False
         assert call["headers"]["Authorization"] == "Bearer ak"
@@ -1605,21 +1944,28 @@ class TestOpenWebUIChannel:
         http = _FakeHttpClient(_FakeHttpResp(status_code=500, body={}))
         ch = OpenWebUIChannel(
             base_url="http://owui.local:8080",
-            api_key="ak", http_client=http,
+            api_key="ak",
+            http_client=http,
         )
         with pytest.raises(OpenWebUIError, match="HTTP 500"):
-            ch.send(OutboundMessage(
-                channel_id="open_webui", thread_id="t", content="hi",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="open_webui",
+                    thread_id="t",
+                    content="hi",
+                )
+            )
 
     def test_handle_webhook_parses_messages(self):
         ch = OpenWebUIChannel(base_url="http://owui.local:8080", api_key="ak")
-        payload = json.dumps({
-            "messages": [{"role": "user", "content": "hello webui"}],
-            "chat_id": "chat1",
-            "user": {"id": "user1"},
-            "timestamp": 1700000000,
-        }).encode()
+        payload = json.dumps(
+            {
+                "messages": [{"role": "user", "content": "hello webui"}],
+                "chat_id": "chat1",
+                "user": {"id": "user1"},
+                "timestamp": 1700000000,
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "hello webui"
@@ -1636,7 +1982,9 @@ class TestYuanbaoChannel:
     def test_constructor(self):
         http = _FakeHttpClient()
         ch = YuanbaoChannel(
-            bot_id="bot1", bot_token="bt", http_client=http,
+            bot_id="bot1",
+            bot_token="bt",
+            http_client=http,
         )
         assert ch.channel_id == "yuanbao"
         assert ch.supports_edit is True
@@ -1651,14 +1999,16 @@ class TestYuanbaoChannel:
 
     def test_handle_webhook_verifies_token(self):
         ch = YuanbaoChannel(bot_id="bot1", bot_token="bt")
-        payload = json.dumps({
-            "token": "bt",
-            "content": {"type": "text", "text": "hello yuanbao"},
-            "from_user": {"openid": "user1"},
-            "chat_id": "chat1",
-            "message_id": "msg1",
-            "create_time": 1700000000000,
-        }).encode()
+        payload = json.dumps(
+            {
+                "token": "bt",
+                "content": {"type": "text", "text": "hello yuanbao"},
+                "from_user": {"openid": "user1"},
+                "chat_id": "chat1",
+                "message_id": "msg1",
+                "create_time": 1700000000000,
+            }
+        ).encode()
         msg = ch.handle_webhook(body=payload, headers={})
         assert msg is not None
         assert msg.content == "hello yuanbao"
@@ -1667,21 +2017,27 @@ class TestYuanbaoChannel:
 
     def test_handle_webhook_bad_token(self):
         ch = YuanbaoChannel(bot_id="bot1", bot_token="bt")
-        payload = json.dumps({
-            "token": "wrong",
-            "content": {"type": "text", "text": "hi"},
-            "chat_id": "chat1",
-        }).encode()
+        payload = json.dumps(
+            {
+                "token": "wrong",
+                "content": {"type": "text", "text": "hi"},
+                "chat_id": "chat1",
+            }
+        ).encode()
         with pytest.raises(YuanbaoSignatureError, match="mismatch"):
             ch.handle_webhook(body=payload, headers={})
 
     def test_edit_posts_to_api_bot_message_mid(self):
         http = _FakeHttpClient()
         ch = YuanbaoChannel(
-            bot_id="bot1", bot_token="bt", http_client=http,
+            bot_id="bot1",
+            bot_token="bt",
+            http_client=http,
         )
         msg = OutboundMessage(
-            channel_id="yuanbao", thread_id="chat1:msg1", content="edited",
+            channel_id="yuanbao",
+            thread_id="chat1:msg1",
+            content="edited",
         )
         ch.edit(msg, "orig_mid")
         assert len(http.calls) == 1
@@ -1693,10 +2049,14 @@ class TestYuanbaoChannel:
     def test_edit_error_raises(self):
         http = _FakeHttpClient(_FakeHttpResp(body={"code": 1, "msg": "fail"}))
         ch = YuanbaoChannel(
-            bot_id="bot1", bot_token="bt", http_client=http,
+            bot_id="bot1",
+            bot_token="bt",
+            http_client=http,
         )
         msg = OutboundMessage(
-            channel_id="yuanbao", thread_id="c1:m1", content="x",
+            channel_id="yuanbao",
+            thread_id="c1:m1",
+            content="x",
         )
         with pytest.raises(YuanbaoError, match="yuanbao edit failed"):
             ch.edit(msg, "mid1")
@@ -1737,7 +2097,9 @@ class TestChannelBaseFeatures:
     def test_edit_falls_back_to_send_when_not_supported(self):
         ch = _FakeChannel()
         msg = OutboundMessage(
-            channel_id="fake", thread_id="t1", content="hi",
+            channel_id="fake",
+            thread_id="t1",
+            content="hi",
         )
         ch.edit(msg, "original_id")
         assert len(ch.sent) == 1
@@ -1754,11 +2116,14 @@ class TestChannelBaseFeatures:
     def test_manager_edit_on_channel_falls_back_to_send(self):
         ch = _FakeChannel("test_ch")
         m = ChannelManager(
-            stack=MagicMock(), agent_registry=MagicMock(),
+            stack=MagicMock(),
+            agent_registry=MagicMock(),
         )
         m.register(ch)
         msg = OutboundMessage(
-            channel_id="test_ch", thread_id="t1", content="edited",
+            channel_id="test_ch",
+            thread_id="t1",
+            content="edited",
         )
         m.edit_on_channel("test_ch", msg, "orig_id")
         assert len(ch.sent) == 1
@@ -1767,7 +2132,8 @@ class TestChannelBaseFeatures:
     def test_manager_deliver_cron_result_sends_via_channel(self):
         ch = _FakeChannel("cron_ch")
         m = ChannelManager(
-            stack=MagicMock(), agent_registry=MagicMock(),
+            stack=MagicMock(),
+            agent_registry=MagicMock(),
         )
         m.register(ch)
         m.deliver_cron_result("cron_ch", "thread1", "cron output")
@@ -1778,7 +2144,8 @@ class TestChannelBaseFeatures:
     def test_manager_channel_supports_edit_returns_correct_bool(self):
         ch = _FakeChannel("no_edit")
         m = ChannelManager(
-            stack=MagicMock(), agent_registry=MagicMock(),
+            stack=MagicMock(),
+            agent_registry=MagicMock(),
         )
         m.register(ch)
         assert m.channel_supports_edit("no_edit") is False
@@ -1787,11 +2154,14 @@ class TestChannelBaseFeatures:
     def test_manager_channel_supports_edit_true_for_edit_channel(self):
         http = _FakeHttpClient()
         ch = MattermostChannel(
-            bot_token="bt", server_url="https://mm.example.com",
-            http_client=http, channel_id="mm_edit",
+            bot_token="bt",
+            server_url="https://mm.example.com",
+            http_client=http,
+            channel_id="mm_edit",
         )
         m = ChannelManager(
-            stack=MagicMock(), agent_registry=MagicMock(),
+            stack=MagicMock(),
+            agent_registry=MagicMock(),
         )
         m.register(ch)
         assert m.channel_supports_edit("mm_edit") is True

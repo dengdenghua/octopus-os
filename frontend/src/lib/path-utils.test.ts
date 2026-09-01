@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { basename, isAbsolutePath, joinPath, normalizePath } from "./path-utils";
+import {
+  basename,
+  isAbsolutePath,
+  joinPath,
+  normalizePath,
+} from "./path-utils";
 
 describe("joinPath", () => {
   it("joins base and relative with forward slash", () => {
@@ -13,13 +18,17 @@ describe("joinPath", () => {
   });
 
   it("strips trailing backslashes from base", () => {
-    expect(joinPath("C:\\Users\\test\\", "file.txt")).toBe("C:\\Users\\test/file.txt");
+    expect(joinPath("C:\\Users\\test\\", "file.txt")).toBe(
+      "C:\\Users\\test/file.txt",
+    );
   });
 });
 
 describe("normalizePath", () => {
   it("converts backslashes to forward slashes", () => {
-    expect(normalizePath("C:\\Users\\test\\file.txt")).toBe("C:/Users/test/file.txt");
+    expect(normalizePath("C:\\Users\\test\\file.txt")).toBe(
+      "C:/Users/test/file.txt",
+    );
   });
 
   it("leaves forward slashes unchanged", () => {
@@ -27,7 +36,9 @@ describe("normalizePath", () => {
   });
 
   it("handles mixed separators", () => {
-    expect(normalizePath("C:\\Users/test\\file.txt")).toBe("C:/Users/test/file.txt");
+    expect(normalizePath("C:\\Users/test\\file.txt")).toBe(
+      "C:/Users/test/file.txt",
+    );
   });
 });
 

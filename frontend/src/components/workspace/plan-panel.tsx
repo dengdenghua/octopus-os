@@ -1,4 +1,3 @@
-
 import {
   CheckCircle2Icon,
   ChevronDownIcon,
@@ -12,6 +11,7 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { type Message, hasToolCalls } from "@/core/api/types";
 import { useI18n } from "@/core/i18n/hooks";
+import { taskPlanItemId } from "@/core/todos/task-plan";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,7 +41,9 @@ function extractPlanFromMessages(messages: Message[]): PlanStep[] {
         ? msg.content
         : Array.isArray(msg.content)
           ? msg.content
-              .map((p: string | { type?: string; text?: string }) => (typeof p === "string" ? p : p?.text ?? ""))
+              .map((p: string | { type?: string; text?: string }) =>
+                typeof p === "string" ? p : (p?.text ?? ""),
+              )
               .join("")
           : "";
 
@@ -103,7 +105,14 @@ function extractPlanFromMessages(messages: Message[]): PlanStep[] {
 }
 
 function extractTodosAsSteps(
-  todos: Array<{ content: string; status: string; activeForm?: string }> | undefined,
+  todos:
+    | Array<{
+        id?: string;
+        content: string;
+        status: string;
+        activeForm?: string;
+      }>
+    | undefined,
   labels?: { completed: string; inProgress: string; pending: string },
 ): PlanStep[] {
   if (!todos || todos.length === 0) return [];
@@ -113,18 +122,28 @@ function extractTodosAsSteps(
   // suppresses the expand chevron for minimal {content, status} todos
   // (which is what the backend write_todos middleware emits today).
   const statusLabel = (s: string) =>
-    s === "completed" ? (labels?.completed ?? "completed") : s === "in_progress" ? (labels?.inProgress ?? "in_progress") : (labels?.pending ?? "pending");
-  return todos.map((todo, i) => ({
-    id: `todo-${i}`,
-    description: todo.content,
-    status:
-      todo.status === "completed"
-        ? "completed"
-        : todo.status === "in_progress"
-          ? "in_progress"
-          : "pending",
-    detail: todo.activeForm || `${statusLabel(todo.status)} · ${todo.content}`,
-  }));
+    s === "completed"
+      ? (labels?.completed ?? "completed")
+      : s === "in_progress"
+        ? (labels?.inProgress ?? "in_progress")
+        : (labels?.pending ?? "pending");
+  const occurrences = new Map<string, number>();
+  return todos.map((todo) => {
+    const occurrence = occurrences.get(todo.content) ?? 0;
+    occurrences.set(todo.content, occurrence + 1);
+    return {
+      id: `todo-${taskPlanItemId(todo as unknown as Record<string, unknown>, occurrence)}`,
+      description: todo.content,
+      status:
+        todo.status === "completed"
+          ? "completed"
+          : todo.status === "in_progress"
+            ? "in_progress"
+            : "pending",
+      detail:
+        todo.activeForm || `${statusLabel(todo.status)} · ${todo.content}`,
+    };
+  });
 }
 
 /**
@@ -134,7 +153,12 @@ function extractTodosAsSteps(
  */
 export function computePlanSteps(
   messages: Message[],
-  todos?: Array<{ content: string; status: string; activeForm?: string }>,
+  todos?: Array<{
+    id?: string;
+    content: string;
+    status: string;
+    activeForm?: string;
+  }>,
   labels?: { completed: string; inProgress: string; pending: string },
 ): PlanStep[] {
   const todoSteps = extractTodosAsSteps(todos, labels);
@@ -160,11 +184,15 @@ function PlanStepItem({
   return (
     <div
       className={cn(
-        "rounded-lg border px-3 py-2 transition-colors duration-200",
-        step.status === "completed" && "border-green-200/60 bg-green-50/50 dark:border-green-900/30 dark:bg-green-950/20",
-        step.status === "in_progress" && "border-primary/30 bg-primary/5 shadow-sm shadow-primary/5",
-        step.status === "failed" && "border-red-200/60 bg-red-50/50 dark:border-red-900/30 dark:bg-red-950/20",
-        step.status === "pending" && "border-border/60 bg-muted/20 hover:bg-muted/30",
+        "rounded-lg border px-3 py-2 transition-colors",
+        step.status === "completed" &&
+          "border-success/30/60 bg-success/5 dark:border-success/30",
+        step.status === "in_progress" &&
+          "border-primary/30 bg-primary/5 shadow-[var(--shadow-xs)] shadow-primary/5",
+        step.status === "failed" &&
+          "border-destructive/30/60 bg-destructive/5 dark:border-destructive/30",
+        step.status === "pending" &&
+          "border-border-default bg-muted/20 hover:bg-muted/30",
       )}
     >
       <button
@@ -174,11 +202,11 @@ function PlanStepItem({
         {/* Status icon */}
         <div className="mt-0.5 shrink-0">
           {step.status === "completed" ? (
-            <CheckCircle2Icon className="size-3.5 text-green-500" />
+            <CheckCircle2Icon className="size-3.5 text-success" />
           ) : step.status === "in_progress" ? (
             <Loader2Icon className="size-3.5 animate-spin text-primary" />
           ) : step.status === "failed" ? (
-            <XIcon className="size-3.5 text-red-500" />
+            <XIcon className="size-3.5 text-destructive" />
           ) : (
             <CircleDotIcon className="size-3.5 text-muted-foreground/40" />
           )}
@@ -187,13 +215,14 @@ function PlanStepItem({
         {/* Content */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground/50 text-[10px] font-mono">
+            <span className="text-muted-foreground/50 text-xs font-mono">
               {index + 1}
             </span>
             <span
               className={cn(
                 "text-xs",
-                step.status === "completed" && "text-muted-foreground line-through",
+                step.status === "completed" &&
+                  "text-muted-foreground line-through",
                 step.status === "in_progress" && "text-foreground font-medium",
                 step.status === "pending" && "text-muted-foreground",
               )}
@@ -204,25 +233,24 @@ function PlanStepItem({
         </div>
 
         {/* Expand arrow */}
-        {(step.detail || step.toolCalls) && (
-          expanded ? (
+        {(step.detail || step.toolCalls) &&
+          (expanded ? (
             <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
           ) : (
             <ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
-          )
-        )}
+          ))}
       </button>
 
       {/* Detail */}
       {expanded && (step.detail || step.toolCalls) && (
-        <div className="mt-1.5 pl-6 text-[10px] text-muted-foreground">
+        <div className="mt-1.5 pl-6 text-xs text-muted-foreground">
           {step.detail && <div>{step.detail}</div>}
           {step.toolCalls && step.toolCalls.length > 0 && (
             <div className="mt-0.5 flex flex-wrap gap-1">
               {step.toolCalls.map((tc, i) => (
                 <span
                   key={i}
-                  className="rounded bg-muted/70 px-1 py-0.5 font-mono text-[9px]"
+                  className="rounded bg-muted/70 px-1 py-0.5 font-mono text-xs"
                 >
                   {tc}
                 </span>
@@ -252,22 +280,22 @@ export function PlanButton({
   isActive: boolean;
   className?: string;
 }) {
-
+  const { t } = useI18n();
   return (
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-200",
+        "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium shadow-[var(--shadow-xs)] transition-colors transition-shadow duration-base",
         isActive
           ? "border-primary/60 bg-primary/10 text-primary shadow-primary/10"
-          : "border-border/60 bg-background/80 text-muted-foreground hover:text-foreground hover:border-foreground/20 hover:bg-muted/50",
+          : "border-border-default bg-background/80 text-muted-foreground hover:text-foreground hover:border-foreground/20 hover:bg-muted/50",
         className,
       )}
     >
       <ClipboardListIcon className="size-3.5" />
-      <span>Plan</span>
+      <span>{t.planPanel.title}</span>
       {stepCount > 0 && (
-        <span className="rounded-lg bg-muted/80 px-1.5 py-0.5 text-[10px] tabular-nums">
+        <span className="rounded-lg bg-muted/80 px-1.5 py-0.5 text-xs tabular-nums">
           {completedCount}/{stepCount}
         </span>
       )}
@@ -283,7 +311,12 @@ export function PlanPanel({
   className,
 }: {
   messages: Message[];
-  todos?: Array<{ content: string; status: string; activeForm?: string }>;
+  todos?: Array<{
+    id?: string;
+    content: string;
+    status: string;
+    activeForm?: string;
+  }>;
   open: boolean;
   onClose: () => void;
   className?: string;
@@ -291,16 +324,26 @@ export function PlanPanel({
   const { t } = useI18n();
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
 
-  const planLabels = { completed: t.planPanel.completed, inProgress: t.planPanel.inProgress, pending: t.planPanel.pending };
-
   // Extract plan steps from messages and/or todos
   const steps = useMemo(
-    () => computePlanSteps(messages, todos, planLabels),
-    [messages, todos, t],
+    () =>
+      computePlanSteps(messages, todos, {
+        completed: t.planPanel.completed,
+        inProgress: t.planPanel.inProgress,
+        pending: t.planPanel.pending,
+      }),
+    [
+      messages,
+      todos,
+      t.planPanel.completed,
+      t.planPanel.inProgress,
+      t.planPanel.pending,
+    ],
   );
 
   const completedCount = steps.filter((s) => s.status === "completed").length;
-  const progressPct = steps.length > 0 ? (completedCount / steps.length) * 100 : 0;
+  const progressPct =
+    steps.length > 0 ? (completedCount / steps.length) * 100 : 0;
 
   const toggleStep = (id: string) => {
     setExpandedSteps((prev) => {
@@ -316,20 +359,20 @@ export function PlanPanel({
   return (
     <div
       className={cn(
-        "w-80 rounded-lg border border-border/60 bg-popover shadow-xl shadow-black/5",
-        "animate-in slide-in-from-bottom-2 fade-in duration-200",
+        "w-80 rounded-lg border border-border-default bg-popover shadow-xl shadow-black/5",
+        "animate-in slide-in-from-bottom-2 fade-in duration-base",
         className,
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border/50 px-4 py-2.5">
+      <div className="flex items-center justify-between border-b border-border-default px-4 py-2.5">
         <div className="flex items-center gap-2">
           <div className="flex size-6 items-center justify-center rounded-lg bg-primary/10">
             <ClipboardListIcon className="text-primary size-3.5" />
           </div>
-          <span className="text-sm font-semibold">Plan</span>
-          <span className="text-muted-foreground text-[10px]">
-            {completedCount}/{steps.length} steps
+          <span className="text-sm font-semibold">{t.planPanel.title}</span>
+          <span className="text-muted-foreground text-xs">
+            {t.planPanel.steps(completedCount, steps.length)}
           </span>
         </div>
         <button
@@ -344,7 +387,7 @@ export function PlanPanel({
       <div className="px-4 pt-2">
         <div className="h-1 overflow-hidden rounded-lg bg-muted">
           <div
-            className="bg-primary h-full rounded-lg transition-all duration-500"
+            className="bg-primary h-full rounded-lg transition-[width] duration-slow"
             style={{ width: `${progressPct}%` }}
           />
         </div>
@@ -360,7 +403,7 @@ export function PlanPanel({
             <p className="text-muted-foreground/50 text-xs">
               No plan detected yet.
             </p>
-            <p className="text-muted-foreground/40 text-[10px]">
+            <p className="text-muted-foreground/40 text-xs">
               The plan will appear when the agent starts working.
             </p>
           </div>

@@ -25,53 +25,66 @@ graph LR
   sensing[sensing]
   adapters[adapters]
   platform[platform]
-  sensing -- 63 --> platform
-  memory -- 37 --> platform
-  execution -- 36 --> platform
-  sensing -- 35 --> memory
-  safety -- 34 --> platform
-  sensing -- 29 --> execution
-  sensing -- 26 --> safety
-  core -- 23 --> platform
-  execution -- 18 --> safety
-  sensing -- 15 --> core
-  sensing -- 14 --> adapters
-  execution -- 13 --> core
-  platform -- 13 --> execution
-  safety -- 12 --> adapters
-  safety -- 12 --> memory
-  execution -- 11 --> memory
-  platform -- 11 --> safety
-  core -- 10 --> safety
-  platform -- 10 --> core
-  platform -- 9 --> memory
-  core -- 8 --> execution
-  core -- 8 --> memory
-  platform -- 8 --> sensing
-  core -- 7 --> sensing
-  execution -- 7 --> adapters
-  safety -- 7 --> sensing
-  execution -- 6 --> sensing
-  memory -- 6 --> safety
-  platform -- 6 --> adapters
-  safety -- 6 --> core
-  cli.py -- 5 --> platform
+  sensing -- 168 --> platform
+  sensing -- 129 --> safety
+  execution -- 118 --> platform
+  safety -- 98 --> platform
+  sensing -- 95 --> memory
+  sensing -- 80 --> execution
+  execution -- 75 --> safety
+  memory -- 60 --> platform
+  core -- 58 --> platform
+  platform -- 50 --> safety
+  sensing -- 46 --> protocol
+  platform -- 39 --> execution
+  sensing -- 37 --> adapters
+  sensing -- 33 --> core
+  execution -- 32 --> memory
+  core -- 30 --> execution
+  core -- 27 --> safety
+  memory -- 24 --> safety
+  safety -- 22 --> memory
+  platform -- 21 --> sensing
+  execution -- 19 --> core
+  platform -- 16 --> memory
+  sensing -- 16 --> projectos
+  core -- 14 --> memory
+  platform -- 14 --> core
+  safety -- 14 --> adapters
+  platform -- 11 --> adapters
+  safety -- 11 --> execution
+  adapters -- 10 --> safety
+  adapters -- 9 --> platform
+  execution -- 9 --> adapters
+  projectos -- 7 --> safety
+  safety -- 7 --> core
+  memory -- 6 --> execution
+  memory -- 6 --> protocol
+  _cli_commands.py -- 5 --> memory
+  _cli_commands.py -- 5 --> platform
+  cli_serve.py -- 5 --> safety
   core -- 5 --> adapters
-  safety -- 5 --> execution
-  sensing -- 5 --> protocol
-  adapters -- 4 --> platform
+  memory -- 5 --> core
   adapters -- 4 --> sensing
   cli_core.py -- 4 --> execution
   cli_run.py -- 4 --> execution
+  cli_serve.py -- 4 --> adapters
+  cli_serve.py -- 4 --> platform
+  execution -- 4 --> protocol
+  platform -- 4 --> tentacle
   research -- 4 --> platform
-  adapters -- 3 --> safety
-  cli.py -- 3 --> memory
+  cli.py -- 3 --> platform
+  cli_core.py -- 3 --> core
   cli_reflect.py -- 3 --> platform
   cli_run.py -- 3 --> platform
-  cli_serve.py -- 3 --> adapters
-  cli_serve.py -- 3 --> platform
-  memory -- 3 --> protocol
+  execution -- 3 --> sensing
+  platform -- 3 --> cli
+  projectos -- 3 --> execution
+  projectos -- 3 --> memory
+  projectos -- 3 --> platform
+  sensing -- 3 --> workspace
   tour.py -- 3 --> core
   tour.py -- 3 --> safety
+  workspace -- 3 --> platform
 ```
 

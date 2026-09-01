@@ -6,7 +6,6 @@ import json
 from uuid import uuid4
 
 import pytest
-
 from runtime.core.cerebrum import LLMPlanner
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.memory.hemolymph import ContextComposer
@@ -49,9 +48,7 @@ def composer(registry) -> ContextComposer:
 @pytest.fixture
 def planner(registry, composer) -> LLMPlanner:
     router = MockModelRouter(
-        response=json.dumps(
-            {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-        )
+        response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
     )
     return LLMPlanner(router=router, registry=registry, composer=composer)
 
@@ -70,9 +67,7 @@ def _mk_traj(
         steps=[],
         outcome=TrajectoryOutcome(
             success=success,
-            cost=CostEntry(
-                tokens_in=tokens // 2, tokens_out=tokens // 2, usd=cost_usd
-            ),
+            cost=CostEntry(tokens_in=tokens // 2, tokens_out=tokens // 2, usd=cost_usd),
         ),
     )
 
@@ -140,9 +135,7 @@ class TestRecipeSelfAssessmentPromptInjection:
     def _plan_and_get_system(self, planner) -> str:
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="y")
         planner.plan(intent)
-        return next(
-            m.content for m in planner.router.call_log[-1].messages if m.role == "system"
-        )
+        return next(m.content for m in planner.router.call_log[-1].messages if m.role == "system")
 
     def test_losing_injects_warning(self, planner):
         my_hash = planner.recipe_hash()
@@ -199,9 +192,7 @@ class TestConfigDrivenRecipeAssess:
         # Implementation note.
         # Implementation note.
         cfg = AgentConfig(
-            planner=PlannerConfig(
-                type="llm", model="mock/p", mock_response='{"nodes":[]}'
-            ),
+            planner=PlannerConfig(type="llm", model="mock/p", mock_response='{"nodes":[]}'),
             learn=LearnConfig(),
         )
         peek = build_from_config(cfg)
@@ -217,9 +208,7 @@ class TestConfigDrivenRecipeAssess:
 
         # Implementation note.
         cfg2 = AgentConfig(
-            planner=PlannerConfig(
-                type="llm", model="mock/p", mock_response='{"nodes":[]}'
-            ),
+            planner=PlannerConfig(type="llm", model="mock/p", mock_response='{"nodes":[]}'),
             learn=LearnConfig(assess_recipe_from_journal=str(path)),
         )
         stack = build_from_config(cfg2)
@@ -237,9 +226,7 @@ class TestConfigDrivenRecipeAssess:
         )
 
         cfg = AgentConfig(
-            planner=PlannerConfig(
-                type="llm", model="mock/p", mock_response='{"nodes":[]}'
-            ),
+            planner=PlannerConfig(type="llm", model="mock/p", mock_response='{"nodes":[]}'),
             learn=LearnConfig(assess_recipe_from_journal=str(tmp_path / "nope.jsonl")),
         )
         stack = build_from_config(cfg)

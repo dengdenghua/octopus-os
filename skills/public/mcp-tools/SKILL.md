@@ -30,7 +30,7 @@ MCPManager.callTool(toolName, mergedArgs)
 MCPClientImpl.callTool (stdio / HTTP JSON-RPC)
   │  JSON-RPC: tools/call { name, arguments }
   ▼
-MCP Server (octopus-agent-mcp)
+MCP Server (echo-agent-mcp)
 ```
 
 Key points:

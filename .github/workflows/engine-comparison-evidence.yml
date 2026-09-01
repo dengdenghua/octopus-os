@@ -1,0 +1,645 @@
+name: Hardened engine comparison evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Approved 40-character commit SHA to evaluate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: engine-comparison-evidence-${{ inputs.target_sha }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  engine-comparison-evidence:
+    name: Same-service native vs Codex AB/BA evidence
+    runs-on: [self-hosted, Linux, X64, hardened-verifier]
+    environment: engine-comparison-evidence
+    timeout-minutes: 720
+    env:
+      TARGET_SHA: ${{ inputs.target_sha }}
+      ECHO_EVAL_CONFIG: ${{ vars.ECHO_ENGINE_CONFIG_PATH }}
+      ECHO_EVAL_EXPECTED_CONFIG_SHA256: ${{ vars.ECHO_ENGINE_CONFIG_SHA256 }}
+      ECHO_EVAL_MODEL: ${{ vars.ECHO_ENGINE_MODEL }}
+      ECHO_EVAL_NATIVE_AGENT: ${{ vars.ECHO_ENGINE_NATIVE_AGENT }}
+      ECHO_EVAL_CODEX_AGENT: ${{ vars.ECHO_ENGINE_CODEX_AGENT }}
+      ECHO_CODEX_EXECUTABLE: ${{ vars.ECHO_ENGINE_CODEX_EXECUTABLE }}
+      ECHO_EVAL_EXPECTED_CODEX_SHA256: ${{ vars.ECHO_ENGINE_CODEX_SHA256 }}
+      ECHO_CODEX_SOURCE_HOME: ${{ vars.ECHO_ENGINE_CODEX_SOURCE_HOME }}
+      ECHO_HARDENED_VERIFIER_RUNNER: ${{ vars.ECHO_HARDENED_ATTESTATION_PATH }}
+      ECHO_HARDENED_EXPECTED_SHA256: ${{ vars.ECHO_HARDENED_ATTESTATION_SHA256 }}
+      ECHO_HARDENED_LAUNCHER_PYTHON: ${{ vars.ECHO_HARDENED_LAUNCHER_PYTHON_PATH }}
+      ECHO_HARDENED_LAUNCHER_PYTHON_SHA256: ${{ vars.ECHO_HARDENED_LAUNCHER_PYTHON_SHA256 }}
+      ECHO_HARDENED_LAUNCHER_MODULE: ${{ vars.ECHO_HARDENED_LAUNCHER_MODULE_PATH }}
+      ECHO_HARDENED_LAUNCHER_MODULE_SHA256: ${{ vars.ECHO_HARDENED_LAUNCHER_MODULE_SHA256 }}
+      ECHO_HOME: ${{ runner.temp }}/echo-engine-${{ github.run_id }}-${{ github.run_attempt }}
+      ECHO_DATA_DIR: ${{ runner.temp }}/echo-engine-${{ github.run_id }}-${{ github.run_attempt }}/data
+      ECHO_CODEX_STATE_DIR: ${{ runner.temp }}/echo-engine-${{ github.run_id }}-${{ github.run_attempt }}/codex-state
+      ECHO_EVAL_SERVER_LOG: ${{ runner.temp }}/echo-engine-${{ github.run_id }}-${{ github.run_attempt }}/server.log
+      ECHO_PROTECTED_IDENTITY_BASELINE: ${{ runner.temp }}/echo-protected-identities-${{ github.run_id }}-${{ github.run_attempt }}
+      UV_PYTHON_DOWNLOADS: never
+
+    steps:
+      - name: Check out the exact approved revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Fail closed unless protected runner identities are complete
+        env:
+          ECHO_ENGINE_EVIDENCE_GUARD: ${{ secrets.ECHO_ENGINE_EVIDENCE_GUARD }}
+          ECHO_API_TOKEN: ${{ secrets.ECHO_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${TARGET_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::target_sha must be an immutable lowercase 40-character commit SHA."
+            exit 1
+          fi
+          actual_sha="$(git rev-parse HEAD)"
+          if [[ "${actual_sha}" != "${TARGET_SHA}" ]]; then
+            echo "::error::Checkout ${actual_sha} does not match approved target ${TARGET_SHA}."
+            exit 1
+          fi
+          if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+            echo "::error::Exact-SHA checkout is not clean before evaluation."
+            exit 1
+          fi
+          if [[ -z "${ECHO_ENGINE_EVIDENCE_GUARD}" || -z "${ECHO_API_TOKEN}" ]]; then
+            echo "::error::Protected evidence environment and API token are required."
+            exit 1
+          fi
+          required_values=(
+            ECHO_EVAL_CONFIG
+            ECHO_EVAL_EXPECTED_CONFIG_SHA256
+            ECHO_EVAL_MODEL
+            ECHO_EVAL_NATIVE_AGENT
+            ECHO_EVAL_CODEX_AGENT
+            ECHO_CODEX_EXECUTABLE
+            ECHO_EVAL_EXPECTED_CODEX_SHA256
+            ECHO_CODEX_SOURCE_HOME
+            ECHO_HARDENED_VERIFIER_RUNNER
+            ECHO_HARDENED_EXPECTED_SHA256
+            ECHO_HARDENED_LAUNCHER_PYTHON
+            ECHO_HARDENED_LAUNCHER_PYTHON_SHA256
+            ECHO_HARDENED_LAUNCHER_MODULE
+            ECHO_HARDENED_LAUNCHER_MODULE_SHA256
+          )
+          for name in "${required_values[@]}"; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Protected environment value ${name} is required."
+              exit 1
+            fi
+          done
+          for name in \
+            ECHO_EVAL_EXPECTED_CONFIG_SHA256 \
+            ECHO_EVAL_EXPECTED_CODEX_SHA256 \
+            ECHO_HARDENED_EXPECTED_SHA256 \
+            ECHO_HARDENED_LAUNCHER_PYTHON_SHA256 \
+            ECHO_HARDENED_LAUNCHER_MODULE_SHA256; do
+            if [[ ! "${!name}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::${name} must be a lowercase SHA-256 digest."
+              exit 1
+            fi
+          done
+          for name in \
+            ECHO_EVAL_CONFIG \
+            ECHO_CODEX_EXECUTABLE \
+            ECHO_HARDENED_VERIFIER_RUNNER \
+            ECHO_HARDENED_LAUNCHER_PYTHON \
+            ECHO_HARDENED_LAUNCHER_MODULE; do
+            path="${!name}"
+            if [[ "${path}" != /* || ! -f "${path}" || -L "${path}" ]]; then
+              echo "::error::${name} must identify an absolute regular non-symlink file."
+              exit 1
+            fi
+          done
+          if [[ ! -x "${ECHO_CODEX_EXECUTABLE}" || \
+                ! -x "${ECHO_HARDENED_LAUNCHER_PYTHON}" ]]; then
+            echo "::error::Codex and hardened launcher Python paths must be executable."
+            exit 1
+          fi
+          if [[ "${ECHO_CODEX_SOURCE_HOME}" != /* || \
+                ! -d "${ECHO_CODEX_SOURCE_HOME}" || \
+                -L "${ECHO_CODEX_SOURCE_HOME}" ]]; then
+            echo "::error::Codex source home must be a protected absolute directory."
+            exit 1
+          fi
+
+          config_sha="$(sha256sum "${ECHO_EVAL_CONFIG}" | awk '{print $1}')"
+          codex_sha="$(sha256sum "${ECHO_CODEX_EXECUTABLE}" | awk '{print $1}')"
+          attestation_sha="$(sha256sum "${ECHO_HARDENED_VERIFIER_RUNNER}" | awk '{print $1}')"
+          launcher_python_sha="$(sha256sum "${ECHO_HARDENED_LAUNCHER_PYTHON}" | awk '{print $1}')"
+          launcher_module_sha="$(sha256sum "${ECHO_HARDENED_LAUNCHER_MODULE}" | awk '{print $1}')"
+          [[ "${config_sha}" == "${ECHO_EVAL_EXPECTED_CONFIG_SHA256}" ]]
+          [[ "${codex_sha}" == "${ECHO_EVAL_EXPECTED_CODEX_SHA256}" ]]
+          [[ "${attestation_sha}" == "${ECHO_HARDENED_EXPECTED_SHA256}" ]]
+          [[ "${launcher_python_sha}" == "${ECHO_HARDENED_LAUNCHER_PYTHON_SHA256}" ]]
+          [[ "${launcher_module_sha}" == "${ECHO_HARDENED_LAUNCHER_MODULE_SHA256}" ]]
+
+          auth_path="${ECHO_CODEX_SOURCE_HOME}/auth.json"
+          if [[ ! -f "${auth_path}" || -L "${auth_path}" ]]; then
+            echo "::error::Protected Codex auth state is unavailable."
+            exit 1
+          fi
+
+          for protected_path in \
+            "${ECHO_EVAL_CONFIG}" \
+            "${ECHO_CODEX_EXECUTABLE}" \
+            "${ECHO_CODEX_SOURCE_HOME}" \
+            "${auth_path}" \
+            "${ECHO_HARDENED_VERIFIER_RUNNER}" \
+            "${ECHO_HARDENED_LAUNCHER_PYTHON}" \
+            "${ECHO_HARDENED_LAUNCHER_MODULE}"; do
+            current="${protected_path}"
+            while true; do
+              owner="$(stat -c '%u' "${current}")"
+              mode="$(stat -c '%a' "${current}")"
+              if [[ -L "${current}" || "${owner}" != "0" ]] || \
+                 (( (8#${mode} & 8#022) != 0 )); then
+                echo "::error::Hardened identities and ancestry must be root-owned and non-writable."
+                exit 1
+              fi
+              [[ "${current}" == "/" ]] && break
+              current="$(dirname "${current}")"
+            done
+          done
+
+          if [[ -e "${ECHO_PROTECTED_IDENTITY_BASELINE}" || \
+                -L "${ECHO_PROTECTED_IDENTITY_BASELINE}" ]]; then
+            echo "::error::Protected identity baseline path is not fresh."
+            exit 1
+          fi
+          emit_file_identity() {
+            local label="$1"
+            local path="$2"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+              "${label}" \
+              "$(stat -c '%d' "${path}")" \
+              "$(stat -c '%i' "${path}")" \
+              "$(stat -c '%a' "${path}")" \
+              "$(stat -c '%u' "${path}")" \
+              "$(sha256sum "${path}" | awk '{print $1}')"
+          }
+          emit_directory_identity() {
+            local label="$1"
+            local path="$2"
+            printf '%s\t%s\t%s\t%s\t%s\tdirectory\n' \
+              "${label}" \
+              "$(stat -c '%d' "${path}")" \
+              "$(stat -c '%i' "${path}")" \
+              "$(stat -c '%a' "${path}")" \
+              "$(stat -c '%u' "${path}")"
+          }
+          umask 077
+          {
+            emit_file_identity eval_config "${ECHO_EVAL_CONFIG}"
+            emit_file_identity codex_executable "${ECHO_CODEX_EXECUTABLE}"
+            emit_directory_identity codex_source_home "${ECHO_CODEX_SOURCE_HOME}"
+            emit_file_identity codex_auth "${auth_path}"
+            emit_file_identity hardened_attestation "${ECHO_HARDENED_VERIFIER_RUNNER}"
+            emit_file_identity launcher_python "${ECHO_HARDENED_LAUNCHER_PYTHON}"
+            emit_file_identity launcher_module "${ECHO_HARDENED_LAUNCHER_MODULE}"
+          } > "${ECHO_PROTECTED_IDENTITY_BASELINE}"
+
+          mkdir -p benchmarks/results
+          "${ECHO_HARDENED_LAUNCHER_PYTHON}" -I \
+            "${ECHO_HARDENED_LAUNCHER_MODULE}" validate \
+            --attestation "${ECHO_HARDENED_VERIFIER_RUNNER}" \
+            > benchmarks/results/hardened-runner.json
+          checkout_launcher_sha="$(sha256sum benchmarks/linux_hardened_verifier.py | awk '{print $1}')"
+          checkout_contract_sha="$(sha256sum benchmarks/trusted_verifier_contract.py | awk '{print $1}')"
+          checkout_controller_sha="$(sha256sum benchmarks/trusted_verifier_controller.py | awk '{print $1}')"
+          checkout_worker_sha="$(sha256sum benchmarks/trusted_verifier_worker.py | awk '{print $1}')"
+          jq --exit-status \
+            --arg target "${TARGET_SHA}" \
+            --arg launcher_python "${ECHO_HARDENED_LAUNCHER_PYTHON_SHA256}" \
+            --arg launcher_module "${ECHO_HARDENED_LAUNCHER_MODULE_SHA256}" \
+            --arg checkout_launcher "${checkout_launcher_sha}" \
+            --arg checkout_contract "${checkout_contract_sha}" \
+            --arg checkout_controller "${checkout_controller_sha}" \
+            --arg checkout_worker "${checkout_worker_sha}" \
+            '.authorization == true and
+             .schema == "echo.hardened_verifier_runner.v2" and
+             .candidate_api_isolation_schema == "echo.candidate_api_process.v1" and
+             .git_sha == $target and
+             .sources.launcher_executable_sha256 == $launcher_python and
+             .sources.launcher_module_sha256 == $launcher_module and
+             .sources.launcher_module_sha256 == $checkout_launcher and
+             .sources.contract_sha256 == $checkout_contract and
+             .sources.controller_sha256 == $checkout_controller and
+             .sources.worker_sha256 == $checkout_worker' \
+            benchmarks/results/hardened-runner.json >/dev/null
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.25"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked comparison dependencies
+        run: uv sync --locked --python 3.11.9 --extra dev --extra serve --extra web
+
+      - name: Verify the checkout stayed source-clean
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${TARGET_SHA}" ]]
+          git diff --exit-code
+          git diff --cached --exit-code
+
+      - name: Bind the selected Codex agent to the approved executable
+        run: |
+          set -euo pipefail
+          .venv/bin/python - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          from runtime.platform.process.utils import parse_jsonc
+
+          agents = Path("agents")
+          native_id = os.environ["ECHO_EVAL_NATIVE_AGENT"]
+          codex_id = os.environ["ECHO_EVAL_CODEX_AGENT"]
+          for agent_id in (native_id, codex_id):
+              if not agent_id or Path(agent_id).name != agent_id:
+                  raise SystemExit("protected agent ID is not a single safe path component")
+              if not (agents / agent_id / "profile.jsonc").is_file():
+                  raise SystemExit(f"selected agent profile is unavailable: {agent_id}")
+
+          profile = parse_jsonc(
+              (agents / codex_id / "profile.jsonc").read_text(encoding="utf-8")
+          )
+          capabilities = profile.get("capabilities")
+          if not isinstance(capabilities, dict):
+              raise SystemExit("selected Codex agent has no capabilities object")
+          if capabilities.get("local_partner_id") != "codex-cli":
+              raise SystemExit("selected Codex agent is not the Codex CLI partner")
+          command = str(
+              capabilities.get("local_partner_executable")
+              or capabilities.get("local_partner_command")
+              or ""
+          ).strip()
+          approved = Path(os.environ["ECHO_CODEX_EXECUTABLE"]).resolve(strict=True)
+          if Path(command).is_absolute():
+              resolved = Path(command).resolve(strict=True)
+          else:
+              search_path = str(approved.parent) + os.pathsep + os.environ.get("PATH", "")
+              found = shutil.which(command, path=search_path)
+              resolved = Path(found).resolve(strict=True) if found else None
+          if resolved != approved:
+              raise SystemExit("selected Codex agent is not bound to the approved executable")
+          PY
+
+      - name: Run real Linux hardened-verifier attacks before model access
+        env:
+          ECHO_RUN_HARDENED_VERIFIER_ATTACKS: "1"
+        run: |
+          set -euo pipefail
+          mkdir -p benchmarks/results
+          .venv/bin/pytest -q tests/test_linux_hardened_verifier_attacks.py \
+            --junitxml=benchmarks/results/hardened-verifier-attacks.junit.xml \
+            2>&1 | tee benchmarks/results/hardened-verifier-attacks.log
+          .venv/bin/python - <<'PY'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("benchmarks/results/hardened-verifier-attacks.junit.xml")
+          root = ET.parse(report).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root.findall("./testsuite"))
+          counts = {
+              name: sum(int(suite.attrib.get(name, "0")) for suite in suites)
+              for name in ("errors", "failures", "skipped", "tests")
+          }
+          if (
+              not suites
+              or counts["tests"] <= 0
+              or counts["errors"] != 0
+              or counts["failures"] != 0
+              or counts["skipped"] != 0
+          ):
+              raise SystemExit(f"real Linux hardened attack suite did not fully pass: {counts}")
+          PY
+
+      - name: Start one isolated Echo control plane
+        env:
+          ECHO_API_TOKEN: ${{ secrets.ECHO_API_TOKEN }}
+          ECHO_CODEX_APP_SERVER_ENABLED: "true"
+        run: |
+          set -euo pipefail
+          export PATH="$(dirname "${ECHO_CODEX_EXECUTABLE}"):${PATH}"
+          mkdir -p "${ECHO_DATA_DIR}" "${ECHO_CODEX_STATE_DIR}"
+          .venv/bin/python -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 18080)); s.close()'
+          .venv/bin/python -m runtime serve \
+            --config "${ECHO_EVAL_CONFIG}" \
+            --host 127.0.0.1 \
+            --port 18080 \
+            >"${ECHO_EVAL_SERVER_LOG}" 2>&1 &
+          backend_pid=$!
+          echo "ECHO_EVAL_BACKEND_PID=${backend_pid}" >> "${GITHUB_ENV}"
+          ready=0
+          for _ in {1..90}; do
+            if ! kill -0 "${backend_pid}" 2>/dev/null; then
+              tail -n 200 "${ECHO_EVAL_SERVER_LOG}" || true
+              echo "::error::Echo control plane exited during startup."
+              exit 1
+            fi
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:18080/readyz >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "${ready}" != "1" ]]; then
+            tail -n 200 "${ECHO_EVAL_SERVER_LOG}" || true
+            echo "::error::Echo control plane did not become healthy."
+            exit 1
+          fi
+
+      - name: Run seeded native and Codex AB/BA trials on the same service
+        env:
+          ECHO_API_TOKEN: ${{ secrets.ECHO_API_TOKEN }}
+          ECHO_CODEX_APP_SERVER_ENABLED: "true"
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m benchmarks.run_engine_comparison \
+            --backend native \
+            --backend codex \
+            --case coding.concurrent-cache \
+            --case coding.path-boundary \
+            --native-agent "${ECHO_EVAL_NATIVE_AGENT}" \
+            --codex-agent "${ECHO_EVAL_CODEX_AGENT}" \
+            --model "${ECHO_EVAL_MODEL}" \
+            --k 3 \
+            --schedule-seed "engine-comparison:${TARGET_SHA}" \
+            --timeout 900 \
+            --echo-url ws://127.0.0.1:18080/api/realtime \
+            --output benchmarks/results/engine-comparison.json
+
+      - name: Revalidate protected identities before provenance
+        if: always()
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${TARGET_SHA}" ]]
+          git diff --exit-code
+          git diff --cached --exit-code
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+          auth_path="${ECHO_CODEX_SOURCE_HOME}/auth.json"
+          if [[ ! -f "${ECHO_PROTECTED_IDENTITY_BASELINE}" || \
+                -L "${ECHO_PROTECTED_IDENTITY_BASELINE}" ]]; then
+            echo "::error::Protected identity baseline is unavailable."
+            exit 1
+          fi
+          for protected_path in \
+            "${ECHO_EVAL_CONFIG}" \
+            "${ECHO_CODEX_EXECUTABLE}" \
+            "${ECHO_CODEX_SOURCE_HOME}" \
+            "${auth_path}" \
+            "${ECHO_HARDENED_VERIFIER_RUNNER}" \
+            "${ECHO_HARDENED_LAUNCHER_PYTHON}" \
+            "${ECHO_HARDENED_LAUNCHER_MODULE}"; do
+            current="${protected_path}"
+            while true; do
+              owner="$(stat -c '%u' "${current}")"
+              mode="$(stat -c '%a' "${current}")"
+              if [[ -L "${current}" || "${owner}" != "0" ]] || \
+                 (( (8#${mode} & 8#022) != 0 )); then
+                echo "::error::Protected identity or ancestry changed during evaluation."
+                exit 1
+              fi
+              [[ "${current}" == "/" ]] && break
+              current="$(dirname "${current}")"
+            done
+          done
+          emit_file_identity() {
+            local label="$1"
+            local path="$2"
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+              "${label}" \
+              "$(stat -c '%d' "${path}")" \
+              "$(stat -c '%i' "${path}")" \
+              "$(stat -c '%a' "${path}")" \
+              "$(stat -c '%u' "${path}")" \
+              "$(sha256sum "${path}" | awk '{print $1}')"
+          }
+          emit_directory_identity() {
+            local label="$1"
+            local path="$2"
+            printf '%s\t%s\t%s\t%s\t%s\tdirectory\n' \
+              "${label}" \
+              "$(stat -c '%d' "${path}")" \
+              "$(stat -c '%i' "${path}")" \
+              "$(stat -c '%a' "${path}")" \
+              "$(stat -c '%u' "${path}")"
+          }
+          current_identity="${ECHO_PROTECTED_IDENTITY_BASELINE}.current"
+          trap 'rm -f -- "${current_identity}"' EXIT
+          umask 077
+          {
+            emit_file_identity eval_config "${ECHO_EVAL_CONFIG}"
+            emit_file_identity codex_executable "${ECHO_CODEX_EXECUTABLE}"
+            emit_directory_identity codex_source_home "${ECHO_CODEX_SOURCE_HOME}"
+            emit_file_identity codex_auth "${auth_path}"
+            emit_file_identity hardened_attestation "${ECHO_HARDENED_VERIFIER_RUNNER}"
+            emit_file_identity launcher_python "${ECHO_HARDENED_LAUNCHER_PYTHON}"
+            emit_file_identity launcher_module "${ECHO_HARDENED_LAUNCHER_MODULE}"
+          } > "${current_identity}"
+          if ! cmp --silent \
+            "${ECHO_PROTECTED_IDENTITY_BASELINE}" "${current_identity}"; then
+            echo "::error::Protected input identity changed during evaluation."
+            exit 1
+          fi
+          [[ "$(sha256sum "${ECHO_EVAL_CONFIG}" | awk '{print $1}')" == \
+             "${ECHO_EVAL_EXPECTED_CONFIG_SHA256}" ]]
+          [[ "$(sha256sum "${ECHO_CODEX_EXECUTABLE}" | awk '{print $1}')" == \
+             "${ECHO_EVAL_EXPECTED_CODEX_SHA256}" ]]
+          [[ "$(sha256sum "${ECHO_HARDENED_VERIFIER_RUNNER}" | awk '{print $1}')" == \
+             "${ECHO_HARDENED_EXPECTED_SHA256}" ]]
+          [[ "$(sha256sum "${ECHO_HARDENED_LAUNCHER_PYTHON}" | awk '{print $1}')" == \
+             "${ECHO_HARDENED_LAUNCHER_PYTHON_SHA256}" ]]
+          [[ "$(sha256sum "${ECHO_HARDENED_LAUNCHER_MODULE}" | awk '{print $1}')" == \
+             "${ECHO_HARDENED_LAUNCHER_MODULE_SHA256}" ]]
+
+      - name: Build exact-SHA provenance envelope
+        env:
+          GITHUB_WORKFLOW_REF_VALUE: ${{ github.workflow_ref }}
+          GITHUB_WORKFLOW_SHA_VALUE: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          cp "${ECHO_EVAL_SERVER_LOG}" benchmarks/results/server.log
+          .venv/bin/python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          results = Path("benchmarks/results")
+          attack_source_path = Path("tests/test_linux_hardened_verifier_attacks.py")
+          attack_junit_path = results / "hardened-verifier-attacks.junit.xml"
+          attack_log_path = results / "hardened-verifier-attacks.log"
+          comparison_path = results / "engine-comparison.json"
+          runner_path = results / "hardened-runner.json"
+          attack_root = ET.parse(attack_junit_path).getroot()
+          attack_suites = (
+              [attack_root]
+              if attack_root.tag == "testsuite"
+              else list(attack_root.findall("./testsuite"))
+          )
+          if not attack_suites:
+              raise SystemExit("hardened attack report contains no test suite")
+          attack_counts = {
+              name: sum(int(suite.attrib.get(name, "0")) for suite in attack_suites)
+              for name in ("errors", "failures", "skipped", "tests")
+          }
+          if (
+              attack_counts["tests"] <= 0
+              or attack_counts["errors"] != 0
+              or attack_counts["failures"] != 0
+              or attack_counts["skipped"] != 0
+          ):
+              raise SystemExit("hardened attack report is not an all-pass real-Linux run")
+          comparison = json.loads(comparison_path.read_text(encoding="utf-8"))
+          runner = json.loads(runner_path.read_text(encoding="utf-8"))
+          target = os.environ["TARGET_SHA"]
+          if comparison.get("run_validity", {}).get("valid") is not True:
+              raise SystemExit("comparison artifact is infrastructure-invalid")
+          revision = comparison.get("source_revision", {})
+          if revision != {"git_commit": target, "worktree_dirty": False}:
+              raise SystemExit("comparison source revision is not the exact clean target")
+          schedule = comparison.get("configuration", {}).get("execution_schedule", {})
+          if schedule.get("planned") != schedule.get("actual"):
+              raise SystemExit("AB/BA execution schedule was not completed exactly")
+          if runner.get("git_sha") != target or runner.get("authorization") is not True:
+              raise SystemExit("hardened runner is not bound to the target commit")
+          if runner.get("candidate_api_isolation_schema") != "echo.candidate_api_process.v1":
+              raise SystemExit("hardened runner does not attest the isolated candidate API")
+          source_manifest = comparison.get("controller_source_manifest", {})
+          source_files = {
+              row["path"]: row["sha256"] for row in source_manifest.get("files", [])
+          }
+          trusted_sources = runner.get("sources", {})
+          expected_sources = {
+              "launcher_module_sha256": "benchmarks/linux_hardened_verifier.py",
+              "contract_sha256": "benchmarks/trusted_verifier_contract.py",
+              "controller_sha256": "benchmarks/trusted_verifier_controller.py",
+              "worker_sha256": "benchmarks/trusted_verifier_worker.py",
+          }
+          for binding, relative_path in expected_sources.items():
+              if trusted_sources.get(binding) != source_files.get(relative_path):
+                  raise SystemExit(
+                      f"attested {binding} does not match exact-SHA controller source"
+                  )
+
+          def digest(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          envelope = {
+              "schema": "echo.engine_comparison_evidence.v1",
+              "target_sha": target,
+              "workflow": {
+                  "ref": os.environ["GITHUB_WORKFLOW_REF_VALUE"],
+                  "sha": os.environ["GITHUB_WORKFLOW_SHA_VALUE"],
+                  "run_id": os.environ["GITHUB_RUN_ID"],
+                  "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              },
+              "control_plane": {
+                  "endpoint": "ws://127.0.0.1:18080/api/realtime",
+                  "config_sha256": os.environ["ECHO_EVAL_EXPECTED_CONFIG_SHA256"],
+              },
+              "codex_executable_sha256": os.environ["ECHO_EVAL_EXPECTED_CODEX_SHA256"],
+              "hardened_attestation_sha256": os.environ[
+                  "ECHO_HARDENED_EXPECTED_SHA256"
+              ],
+              "hardened_launcher_python_sha256": os.environ[
+                  "ECHO_HARDENED_LAUNCHER_PYTHON_SHA256"
+              ],
+              "candidate_api_isolation_schema": runner[
+                  "candidate_api_isolation_schema"
+              ],
+              "hardened_attack_suite": {
+                  "junit_sha256": digest(attack_junit_path),
+                  "log_sha256": digest(attack_log_path),
+                  "opt_in": "ECHO_RUN_HARDENED_VERIFIER_ATTACKS=1",
+                  "source_sha256": digest(attack_source_path),
+                  "tests": attack_counts["tests"],
+              },
+              "trusted_source_sha256": {
+                  name: trusted_sources[name] for name in sorted(expected_sources)
+              },
+              "comparison_sha256": digest(comparison_path),
+              "runner_public_sha256": digest(runner_path),
+              "controller_source_manifest_sha256": source_manifest["sha256"],
+          }
+          (results / "evidence-provenance.json").write_text(
+              json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+              + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Install pinned cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.6.1
+
+      - name: Sign and verify the provenance-bound evidence
+        env:
+          CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --output-signature benchmarks/results/evidence-provenance.sig \
+            --output-certificate benchmarks/results/evidence-provenance.pem \
+            benchmarks/results/evidence-provenance.json
+          cosign verify-blob \
+            --certificate benchmarks/results/evidence-provenance.pem \
+            --signature benchmarks/results/evidence-provenance.sig \
+            --certificate-identity "${CERTIFICATE_IDENTITY}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            benchmarks/results/evidence-provenance.json \
+            > benchmarks/results/cosign-verification.txt 2>&1
+
+      - name: Upload signed exact-SHA comparison evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-comparison-evidence-${{ inputs.target_sha }}
+          path: |
+            benchmarks/results/engine-comparison.json
+            benchmarks/results/hardened-verifier-attacks.junit.xml
+            benchmarks/results/hardened-verifier-attacks.log
+            benchmarks/results/hardened-runner.json
+            benchmarks/results/evidence-provenance.json
+            benchmarks/results/evidence-provenance.sig
+            benchmarks/results/evidence-provenance.pem
+            benchmarks/results/cosign-verification.txt
+            benchmarks/results/server.log
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Stop the isolated Echo control plane
+        if: always()
+        run: |
+          if [[ -n "${ECHO_EVAL_BACKEND_PID:-}" ]] && \
+             kill -0 "${ECHO_EVAL_BACKEND_PID}" 2>/dev/null; then
+            kill "${ECHO_EVAL_BACKEND_PID}" || true
+            wait "${ECHO_EVAL_BACKEND_PID}" || true
+          fi
+          rm -f -- "${ECHO_PROTECTED_IDENTITY_BASELINE}"

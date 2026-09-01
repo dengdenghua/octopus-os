@@ -1,0 +1,5 @@
+# Blocking calls inside async control flow, captured by
+# tools/lint/async_blocking_check.py. Each line is '<relpath>:<lineno>'.
+# Awaited it / moved it to an executor? Delete its line to lock in the fix.
+# Regenerate with --write-baseline.
+

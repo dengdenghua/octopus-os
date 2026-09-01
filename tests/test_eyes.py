@@ -36,9 +36,7 @@ class TestResponseFn:
 
 class TestByModel:
     def test_routes_by_model_name(self):
-        r = MockModelRouter(
-            responses_by_model={"haiku": "fast", "sonnet": "smart"}
-        )
+        r = MockModelRouter(responses_by_model={"haiku": "fast", "sonnet": "smart"})
         assert r.call(_req("x", model="haiku")).text == "fast"
         assert r.call(_req("x", model="sonnet")).text == "smart"
 

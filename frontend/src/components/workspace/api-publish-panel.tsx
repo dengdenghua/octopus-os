@@ -31,6 +31,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { swallow } from "@/core/utils/log";
 import { authHeaders, jsonAuthHeaders } from "@/core/auth/api";
 import { copyTextToClipboard } from "@/core/clipboard";
@@ -112,13 +113,17 @@ interface Agent {
 
 const apiClient = {
   async listPublished(): Promise<PublishedAPI[]> {
-    const res = await fetch(`${getBackendBaseURL()}/api/publish`, { headers: authHeaders() });
+    const res = await fetch(`${getBackendBaseURL()}/api/publish`, {
+      headers: authHeaders(),
+    });
     if (!res.ok) throw new Error(`Failed: ${res.statusText}`);
     return res.json();
   },
 
   async getPublished(apiId: string): Promise<PublishedAPI> {
-    const res = await fetch(`${getBackendBaseURL()}/api/publish/${apiId}`, { headers: authHeaders() });
+    const res = await fetch(`${getBackendBaseURL()}/api/publish/${apiId}`, {
+      headers: authHeaders(),
+    });
     if (!res.ok) throw new Error(`Failed: ${res.statusText}`);
     return res.json();
   },
@@ -167,10 +172,7 @@ const apiClient = {
     if (!res.ok) throw new Error(`Delete failed: ${res.statusText}`);
   },
 
-  async createKey(
-    apiId: string,
-    name: string,
-  ): Promise<APIKeyCreated> {
+  async createKey(apiId: string, name: string): Promise<APIKeyCreated> {
     const res = await fetch(
       `${getBackendBaseURL()}/api/publish/${apiId}/keys`,
       {
@@ -219,7 +221,9 @@ const apiClient = {
   },
 
   async listAgents(): Promise<{ agents: Agent[] }> {
-    const res = await fetch(`${getBackendBaseURL()}/api/agents`, { headers: authHeaders() });
+    const res = await fetch(`${getBackendBaseURL()}/api/agents`, {
+      headers: authHeaders(),
+    });
     if (!res.ok) throw new Error(`Failed: ${res.statusText}`);
     return res.json();
   },
@@ -321,14 +325,16 @@ function PublishForm({
 
   return (
     <div className="space-y-3 border-b p-4">
-      <div className="text-sm font-medium">{t.apiPublish.publishAgentAsApi}</div>
+      <div className="text-sm font-medium">
+        {t.apiPublish.publishAgentAsApi}
+      </div>
 
-      {error && (
-        <div className="text-xs text-red-500">{error}</div>
-      )}
+      {error && <div className="text-xs text-destructive">{error}</div>}
 
       <div className="space-y-2">
-        <label className="block text-xs font-medium">{t.apiPublish.apiName}</label>
+        <label className="block text-xs font-medium">
+          {t.apiPublish.apiName}
+        </label>
         <input
           className="bg-muted/50 border-border w-full rounded border px-2 py-1.5 text-xs"
           placeholder="My Agent API"
@@ -338,7 +344,9 @@ function PublishForm({
       </div>
 
       <div className="space-y-2">
-        <label className="block text-xs font-medium">{t.apiPublish.agent}</label>
+        <label className="block text-xs font-medium">
+          {t.apiPublish.agent}
+        </label>
         <select
           className="bg-muted/50 border-border w-full rounded border px-2 py-1.5 text-xs"
           value={agentName}
@@ -376,7 +384,9 @@ function PublishForm({
       </div>
 
       <div className="space-y-2">
-        <label className="block text-xs font-medium">{t.skillsMarket.description}</label>
+        <label className="block text-xs font-medium">
+          {t.skillsMarket.description}
+        </label>
         <textarea
           className="bg-muted/50 border-border w-full rounded border px-2 py-1.5 text-xs"
           rows={2}
@@ -388,7 +398,9 @@ function PublishForm({
 
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-1">
-          <label className="block text-xs font-medium">{t.apiPublish.rpmLimit}</label>
+          <label className="block text-xs font-medium">
+            {t.apiPublish.rpmLimit}
+          </label>
           <input
             type="number"
             className="bg-muted/50 border-border w-full rounded border px-2 py-1.5 text-xs"
@@ -399,7 +411,9 @@ function PublishForm({
           />
         </div>
         <div className="space-y-1">
-          <label className="block text-xs font-medium">{t.apiPublish.dailyLimit}</label>
+          <label className="block text-xs font-medium">
+            {t.apiPublish.dailyLimit}
+          </label>
           <input
             type="number"
             className="bg-muted/50 border-border w-full rounded border px-2 py-1.5 text-xs"
@@ -450,6 +464,7 @@ function APIDetailView({
   onRefresh: () => void;
 }) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirmDialog();
   type Tab = "keys" | "snippets" | "logs" | "stats" | "test";
   const [tab, setTab] = useState<Tab>("snippets");
   const [keys, setKeys] = useState<APIKey[]>([]);
@@ -474,21 +489,27 @@ function APIDetailView({
     try {
       const data = await apiClient.listKeys(api.api_id);
       setKeys(data);
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   }, [api.api_id]);
 
   const fetchLogs = useCallback(async () => {
     try {
       const data = await apiClient.getLogs(api.api_id);
       setLogs(data);
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   }, [api.api_id]);
 
   const fetchStats = useCallback(async () => {
     try {
       const data = await apiClient.getStats(api.api_id);
       setStats(data);
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   }, [api.api_id]);
 
   useEffect(() => {
@@ -507,23 +528,37 @@ function APIDetailView({
       setCreatedKey(created);
       setShowRawKey(true);
       fetchKeys();
-    } catch (e) { swallow(e); } finally {
+    } catch (e) {
+      swallow(e);
+    } finally {
       setLoading(false);
     }
   };
 
   const handleRevokeKey = async (keyId: string) => {
+    if (
+      !(await confirm({
+        title: t.apiPublish.revokeKeyConfirmTitle,
+        description: t.apiPublish.revokeKeyConfirmDescription,
+        confirmLabel: t.apiPublish.revoke,
+      }))
+    )
+      return;
     try {
       await apiClient.revokeKey(api.api_id, keyId);
       fetchKeys();
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   };
 
   const handleToggle = async () => {
     try {
       await apiClient.update(api.api_id, { enabled: !api.enabled });
       onRefresh();
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   };
 
   const handleTest = async () => {
@@ -606,6 +641,7 @@ while (true) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {confirmDialog}
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <button
@@ -617,7 +653,7 @@ while (true) {
         </button>
         <div className="flex-1 truncate">
           <div className="truncate text-sm font-semibold">{api.name}</div>
-          <div className="text-muted-foreground truncate text-[10px]">
+          <div className="text-muted-foreground truncate text-xs">
             {api.agent_name}
           </div>
         </div>
@@ -628,7 +664,7 @@ while (true) {
               className={cn(
                 "rounded p-1 transition-colors",
                 api.enabled
-                  ? "text-green-500 hover:text-green-600"
+                  ? "text-success hover:text-success"
                   : "text-muted-foreground hover:text-foreground",
               )}
               onClick={handleToggle}
@@ -644,13 +680,11 @@ while (true) {
 
       {/* Endpoint URL */}
       <div className="border-b px-3 py-2">
-        <div className="text-muted-foreground mb-1 text-[10px] font-medium uppercase">
+        <div className="text-muted-foreground mb-1 text-xs font-medium uppercase">
           {t.apiPublish.endpoint}
         </div>
         <div className="bg-muted/50 flex items-center gap-1.5 rounded px-2 py-1.5">
-          <code className="flex-1 truncate text-[11px]">
-            {endpointUrl}/run
-          </code>
+          <code className="flex-1 truncate text-xs">{endpointUrl}/run</code>
           <CopyButton text={`${endpointUrl}/run`} />
         </div>
       </div>
@@ -662,7 +696,7 @@ while (true) {
             key={key}
             type="button"
             className={cn(
-              "flex flex-1 items-center justify-center gap-1 py-2 text-[10px] font-medium transition-colors",
+              "flex flex-1 items-center justify-center gap-1 py-2 text-xs font-medium transition-colors",
               tab === key
                 ? "border-primary text-primary border-b-2"
                 : "text-muted-foreground hover:text-foreground",
@@ -726,12 +760,12 @@ while (true) {
 
             {/* Show created key (once) */}
             {createdKey && showRawKey && (
-              <div className="rounded border border-yellow-500/30 bg-yellow-500/5 p-2">
-                <div className="mb-1 text-[10px] font-medium text-yellow-600">
+              <div className="rounded border border-warning/30 bg-warning/5 p-2">
+                <div className="mb-1 text-xs font-medium text-warning">
                   {t.apiPublish.copyKeyWarning}
                 </div>
                 <div className="flex items-center gap-1">
-                  <code className="flex-1 break-all text-[11px]">
+                  <code className="flex-1 break-all text-xs">
                     {createdKey.raw_key}
                   </code>
                   <CopyButton text={createdKey.raw_key} />
@@ -763,7 +797,7 @@ while (true) {
                       <div className="truncate text-xs font-medium">
                         {k.name}
                       </div>
-                      <div className="text-muted-foreground text-[10px]">
+                      <div className="text-muted-foreground text-xs">
                         {k.key_prefix} | Created{" "}
                         {new Date(k.created_at).toLocaleDateString()}
                         {k.last_used_at &&
@@ -774,13 +808,15 @@ while (true) {
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          className="text-muted-foreground hover:text-red-500 rounded p-0.5"
+                          className="text-muted-foreground hover:text-destructive rounded p-0.5"
                           onClick={() => handleRevokeKey(k.key_id)}
                         >
                           <Trash2Icon className="size-3" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent side="left">{t.apiPublish.revoke}</TooltipContent>
+                      <TooltipContent side="left">
+                        {t.apiPublish.revoke}
+                      </TooltipContent>
                     </Tooltip>
                   </div>
                 ))}
@@ -793,7 +829,7 @@ while (true) {
         {tab === "logs" && (
           <div className="p-3">
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-muted-foreground text-[10px]">
+              <span className="text-muted-foreground text-xs">
                 {t.apiPublish.recentCalls(logs.length)}
               </span>
               <button
@@ -835,7 +871,9 @@ while (true) {
         {tab === "test" && (
           <div className="space-y-3 p-3">
             <div className="space-y-2">
-              <label className="block text-xs font-medium">{t.apiPublish.apiKey}</label>
+              <label className="block text-xs font-medium">
+                {t.apiPublish.apiKey}
+              </label>
               <input
                 type="password"
                 className="bg-muted/50 border-border w-full rounded border px-2 py-1.5 text-xs"
@@ -845,7 +883,9 @@ while (true) {
               />
             </div>
             <div className="space-y-2">
-              <label className="block text-xs font-medium">{t.apiPublish.inputLabel}</label>
+              <label className="block text-xs font-medium">
+                {t.apiPublish.inputLabel}
+              </label>
               <textarea
                 className="bg-muted/50 border-border w-full rounded border px-2 py-1.5 text-xs"
                 rows={3}
@@ -871,10 +911,10 @@ while (true) {
             </button>
             {testResponse && (
               <div className="space-y-1">
-                <div className="text-muted-foreground text-[10px] font-medium">
+                <div className="text-muted-foreground text-xs font-medium">
                   {t.apiPublish.response}
                 </div>
-                <pre className="bg-muted/50 max-h-48 overflow-auto rounded p-2 text-[11px]">
+                <pre className="bg-muted/50 max-h-48 overflow-auto rounded p-2 text-xs">
                   {testResponse}
                 </pre>
               </div>
@@ -901,12 +941,12 @@ function SnippetBlock({
   return (
     <div>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-muted-foreground text-[10px] font-medium">
+        <span className="text-muted-foreground text-xs font-medium">
           {title}
         </span>
         <CopyButton text={code} />
       </div>
-      <pre className="bg-muted/50 overflow-x-auto rounded p-2 text-[11px] leading-relaxed">
+      <pre className="bg-muted/50 overflow-x-auto rounded p-2 text-xs leading-relaxed">
         {code}
       </pre>
     </div>
@@ -921,47 +961,55 @@ function LogEntry({ log }: { log: CallLog }) {
   const [expanded, setExpanded] = useState(false);
   const statusColor =
     log.status === "success"
-      ? "text-green-500"
+      ? "text-success"
       : log.status === "rate_limited"
-        ? "text-yellow-500"
-        : "text-red-500";
+        ? "text-warning"
+        : "text-destructive";
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
       className="cursor-pointer rounded border px-2.5 py-1.5 transition-colors hover:bg-accent/30"
       onClick={() => setExpanded(!expanded)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        setExpanded(!expanded);
+      }}
     >
       <div className="flex items-center gap-2">
-        <span className={cn("text-[10px] font-medium", statusColor)}>
+        <span className={cn("text-xs font-medium", statusColor)}>
           {log.status}
         </span>
-        <span className="text-muted-foreground flex-1 truncate text-[10px]">
+        <span className="text-muted-foreground flex-1 truncate text-xs">
           {log.input_text.slice(0, 60)}
           {log.input_text.length > 60 ? "..." : ""}
         </span>
-        <span className="text-muted-foreground text-[10px]">
+        <span className="text-muted-foreground text-xs">
           {log.latency_ms.toFixed(0)}ms
         </span>
       </div>
-      <div className="text-muted-foreground mt-0.5 text-[9px]">
+      <div className="text-muted-foreground mt-0.5 text-xs">
         {new Date(log.timestamp).toLocaleString()}
         {log.tokens_used > 0 && ` | ${log.tokens_used} tokens`}
       </div>
       {expanded && (
         <div className="mt-2 space-y-1.5">
           <div>
-            <div className="text-muted-foreground text-[9px] font-medium">
+            <div className="text-muted-foreground text-xs font-medium">
               Input
             </div>
-            <pre className="bg-muted/50 mt-0.5 overflow-x-auto rounded p-1.5 text-[10px]">
+            <pre className="bg-muted/50 mt-0.5 max-w-full overflow-x-auto rounded p-1.5 text-xs">
               {log.input_text}
             </pre>
           </div>
           <div>
-            <div className="text-muted-foreground text-[9px] font-medium">
+            <div className="text-muted-foreground text-xs font-medium">
               Output
             </div>
-            <pre className="bg-muted/50 mt-0.5 max-h-32 overflow-auto rounded p-1.5 text-[10px]">
+            <pre className="bg-muted/50 mt-0.5 max-h-32 overflow-auto rounded p-1.5 text-xs">
               {log.output_text || log.error_message || "(empty)"}
             </pre>
           </div>
@@ -1006,19 +1054,19 @@ function StatsView({ stats }: { stats: UsageStats }) {
         <StatCard
           label={t.apiPublish.success}
           value={stats.successful_calls.toLocaleString()}
-          color="text-green-500"
+          color="text-success"
         />
         <StatCard
           label={t.apiPublish.errors}
           value={stats.error_calls.toLocaleString()}
-          color="text-red-500"
+          color="text-destructive"
         />
       </div>
 
       {/* Simple bar chart */}
       {stats.daily_counts.length > 0 && (
         <div>
-          <div className="text-muted-foreground mb-2 text-[10px] font-medium">
+          <div className="text-muted-foreground mb-2 text-xs font-medium">
             {t.apiPublish.dailyCalls}
           </div>
           <div className="flex items-end gap-px" style={{ height: 80 }}>
@@ -1033,7 +1081,7 @@ function StatsView({ stats }: { stats: UsageStats }) {
                   />
                 </TooltipTrigger>
                 <TooltipContent side="top">
-                  <div className="text-[10px]">
+                  <div className="text-xs">
                     <div>{d.date}</div>
                     <div>
                       {d.count} calls | {d.avg_latency_ms.toFixed(0)}ms avg
@@ -1060,7 +1108,7 @@ function StatCard({
 }) {
   return (
     <div className="rounded border p-2">
-      <div className="text-muted-foreground text-[9px] uppercase">{label}</div>
+      <div className="text-muted-foreground text-xs uppercase">{label}</div>
       <div className={cn("text-sm font-semibold", color)}>{value}</div>
     </div>
   );
@@ -1081,25 +1129,32 @@ function APIListItem({
 }) {
   return (
     <div
+      role="button"
+      tabIndex={0}
       className="hover:bg-accent/30 flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2.5 transition-colors"
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onClick();
+      }}
     >
       <div
         className={cn(
           "size-2 shrink-0 rounded-lg",
-          api.enabled ? "bg-green-500" : "bg-muted-foreground/40",
+          api.enabled ? "bg-success" : "bg-muted-foreground/40",
         )}
       />
       <div className="flex-1 min-w-0">
         <div className="truncate text-xs font-medium">{api.name}</div>
-        <div className="text-muted-foreground truncate text-[10px]">
+        <div className="text-muted-foreground truncate text-xs">
           /{api.endpoint_path} | {api.agent_name}
           {api.key_count > 0 && ` | ${api.key_count} keys`}
         </div>
       </div>
       <button
         type="button"
-        className="text-muted-foreground hover:text-red-500 rounded p-0.5 transition-colors"
+        className="text-muted-foreground hover:text-destructive rounded p-0.5 transition-colors"
         onClick={(e) => {
           e.stopPropagation();
           onDelete();
@@ -1117,6 +1172,7 @@ function APIListItem({
 
 export function APIPublishPanel({ className }: { className?: string }) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [apis, setApis] = useState<PublishedAPI[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1142,7 +1198,9 @@ export function APIPublishPanel({ className }: { className?: string }) {
     try {
       const data = await apiClient.listAgents();
       setAgents(data.agents);
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   }, []);
 
   useEffect(() => {
@@ -1156,11 +1214,21 @@ export function APIPublishPanel({ className }: { className?: string }) {
   );
 
   const handleDelete = async (apiId: string) => {
+    if (
+      !(await confirm({
+        title: t.apiPublish.deleteApiConfirmTitle,
+        description: t.apiPublish.deleteApiConfirmDescription,
+        confirmLabel: t.common.delete,
+      }))
+    )
+      return;
     try {
       await apiClient.unpublish(apiId);
       setApis((prev) => prev.filter((a) => a.api_id !== apiId));
       if (selectedId === apiId) setSelectedId(null);
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
   };
 
   // Detail view
@@ -1178,6 +1246,7 @@ export function APIPublishPanel({ className }: { className?: string }) {
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
+      {confirmDialog}
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
@@ -1198,7 +1267,9 @@ export function APIPublishPanel({ className }: { className?: string }) {
                 />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">{t.apiPublish.refreshTooltip}</TooltipContent>
+            <TooltipContent side="bottom">
+              {t.apiPublish.refreshTooltip}
+            </TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1215,7 +1286,9 @@ export function APIPublishPanel({ className }: { className?: string }) {
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {showPublish ? t.apiPublish.cancel : t.apiPublish.publishAgentAsApi}
+              {showPublish
+                ? t.apiPublish.cancel
+                : t.apiPublish.publishAgentAsApi}
             </TooltipContent>
           </Tooltip>
         </div>
@@ -1223,7 +1296,7 @@ export function APIPublishPanel({ className }: { className?: string }) {
 
       {/* Error banner */}
       {error && (
-        <div className="flex items-center gap-2 border-b bg-red-500/5 px-4 py-2 text-xs text-red-500">
+        <div className="flex items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-xs text-destructive">
           <AlertCircleIcon className="size-3.5 shrink-0" />
           <span className="truncate">{error}</span>
         </div>
@@ -1282,7 +1355,7 @@ export function APIPublishSheet({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[420px] p-0 sm:w-[480px]">
+      <SheetContent side="right" className="w-[var(--dialog-lg)] p-0 sm:w-[var(--dialog-lg)]">
         <SheetHeader className="sr-only">
           <SheetTitle>API Publish</SheetTitle>
         </SheetHeader>

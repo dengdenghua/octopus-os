@@ -1,0 +1,1 @@
+{"facts":[{"id":"sec-critical-a","text":"Option A has one unresolved critical issue."},{"id":"sec-critical-b","text":"Option B has no unresolved critical issues."},{"id":"sec-risk-b","text":"Option B increases vendor lock-in risk."}]}

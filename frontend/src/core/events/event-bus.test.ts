@@ -2,8 +2,9 @@
  * Tests for EventBus type-safe event system.
  */
 
+import { renderHook } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { eventBus } from "./event-bus";
+import { eventBus, useEvent } from "./event-bus";
 
 describe("EventBus", () => {
   beforeEach(() => {
@@ -138,5 +139,27 @@ describe("EventBus", () => {
 
     eventBus.emit("react:step", payload);
     expect(handler).toHaveBeenCalledWith(payload);
+  });
+
+  it("delivers events to the latest render without forcing a resubscribe", () => {
+    const received: string[] = [];
+    const { rerender, unmount } = renderHook(
+      ({ label }) => {
+        useEvent("ui:open-settings", ({ tab }) => {
+          received.push(`${label}:${tab ?? "appearance"}`);
+        });
+      },
+      { initialProps: { label: "closed" } },
+    );
+
+    eventBus.emit("ui:open-settings", { tab: "models" });
+    rerender({ label: "mobile-open" });
+    eventBus.emit("ui:open-settings", { tab: "privacy" });
+
+    expect(received).toEqual(["closed:models", "mobile-open:privacy"]);
+    expect(eventBus.listenerCount("ui:open-settings")).toBe(1);
+
+    unmount();
+    expect(eventBus.listenerCount("ui:open-settings")).toBe(0);
   });
 });

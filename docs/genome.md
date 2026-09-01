@@ -22,7 +22,7 @@
 ## Genome 数据模型
 
 ```python
-OctopusGenome = {
+EchoGenome = {
     "genome_id": uuid,              # 每个版本独立 id
     "parent_ids": list[uuid],       # 支持交叉（可多亲本）
     "created_at": datetime,

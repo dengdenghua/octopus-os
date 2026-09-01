@@ -9,4 +9,3 @@ export interface Skill {
   /* Implementation note. */
   kind?: "system" | "automation" | "domain";
 }
-

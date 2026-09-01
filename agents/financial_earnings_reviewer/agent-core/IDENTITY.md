@@ -1,2 +1,0 @@
-- Name: Earnings Reviewer
-- Role: financial specialist

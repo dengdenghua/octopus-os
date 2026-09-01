@@ -1,2 +1,0 @@
-- Name: GL Reconciler
-- Role: financial specialist

@@ -140,9 +140,7 @@ class TestErrors:
     def test_missing_handler(self, tmp_path: Path):
         _write_skill_md(
             tmp_path,
-            frontmatter=(
-                "name: x\ntrusted_source: skill://public/x\n"
-            ),
+            frontmatter=("name: x\ntrusted_source: skill://public/x\n"),
         )
         with pytest.raises(SkillLoadError, match="missing 'handler'"):
             load_skill_from_md(tmp_path / "reverse.md")
@@ -151,10 +149,7 @@ class TestErrors:
         _write_handler_py(tmp_path)
         _write_skill_md(
             tmp_path,
-            frontmatter=(
-                "trusted_source: skill://public/x\n"
-                "handler: ./h.py:handler\n"
-            ),
+            frontmatter=("trusted_source: skill://public/x\nhandler: ./h.py:handler\n"),
         )
         with pytest.raises(SkillLoadError, match="missing required field 'name'"):
             load_skill_from_md(tmp_path / "reverse.md")
@@ -162,10 +157,7 @@ class TestErrors:
     def test_bad_handler_format(self, tmp_path: Path):
         _write_skill_md(
             tmp_path,
-            frontmatter=(
-                "name: x\ntrusted_source: skill://public/x\n"
-                "handler: no_colon_here\n"
-            ),
+            frontmatter=("name: x\ntrusted_source: skill://public/x\nhandler: no_colon_here\n"),
         )
         with pytest.raises(SkillLoadError, match="must be '<module>:<func>'"):
             load_skill_from_md(tmp_path / "reverse.md")
@@ -173,10 +165,7 @@ class TestErrors:
     def test_unknown_module(self, tmp_path: Path):
         _write_skill_md(
             tmp_path,
-            frontmatter=(
-                "name: x\ntrusted_source: skill://public/x\n"
-                "handler: no.such.module:f\n"
-            ),
+            frontmatter=("name: x\ntrusted_source: skill://public/x\nhandler: no.such.module:f\n"),
         )
         with pytest.raises(SkillLoadError, match="cannot import"):
             load_skill_from_md(tmp_path / "reverse.md")
@@ -186,8 +175,7 @@ class TestErrors:
         _write_skill_md(
             tmp_path,
             frontmatter=(
-                "name: x\ntrusted_source: skill://public/x\n"
-                "handler: ./h.py:no_such_func\n"
+                "name: x\ntrusted_source: skill://public/x\nhandler: ./h.py:no_such_func\n"
             ),
         )
         with pytest.raises(SkillLoadError, match="has no attribute"):
@@ -198,8 +186,7 @@ class TestErrors:
         _write_skill_md(
             tmp_path,
             frontmatter=(
-                "name: x\ntrusted_source: skill://public/x\n"
-                "handler: ./h.py:NOT_CALLABLE\n"
+                "name: x\ntrusted_source: skill://public/x\nhandler: ./h.py:NOT_CALLABLE\n"
             ),
         )
         with pytest.raises(SkillLoadError, match="not callable"):
@@ -222,10 +209,7 @@ class TestPathSecurity:
         _write_skill_md(
             md_dir,
             filename="x.md",
-            frontmatter=(
-                "name: x\ntrusted_source: skill://public/x\n"
-                "handler: ../evil.py:bad\n"
-            ),
+            frontmatter=("name: x\ntrusted_source: skill://public/x\nhandler: ../evil.py:bad\n"),
         )
         with pytest.raises(SkillLoadError, match="escapes base dir"):
             load_skill_from_md(md_dir / "x.md")
@@ -234,10 +218,7 @@ class TestPathSecurity:
         (tmp_path / "h.txt").write_text("def f(): return 1", encoding="utf-8")
         _write_skill_md(
             tmp_path,
-            frontmatter=(
-                "name: x\ntrusted_source: skill://public/x\n"
-                "handler: ./h.txt:f\n"
-            ),
+            frontmatter=("name: x\ntrusted_source: skill://public/x\nhandler: ./h.txt:f\n"),
         )
         with pytest.raises(SkillLoadError, match="must be .py"):
             load_skill_from_md(tmp_path / "reverse.md")
@@ -271,18 +252,14 @@ class TestBulkLoad:
         # Implementation note.
         _write_handler_py(sub, filename="h.py")
         _write_skill_md(
-            tmp_path, filename="top.md",
-            frontmatter=(
-                "name: top\ntrusted_source: skill://public/t\n"
-                "handler: ./h.py:handler\n"
-            ),
+            tmp_path,
+            filename="top.md",
+            frontmatter=("name: top\ntrusted_source: skill://public/t\nhandler: ./h.py:handler\n"),
         )
         _write_skill_md(
-            sub, filename="deep.md",
-            frontmatter=(
-                "name: deep\ntrusted_source: skill://public/d\n"
-                "handler: ./h.py:handler\n"
-            ),
+            sub,
+            filename="deep.md",
+            frontmatter=("name: deep\ntrusted_source: skill://public/d\nhandler: ./h.py:handler\n"),
         )
         flat = load_skills_from_dir(tmp_path)  # Implementation note.
         assert {s.name for s in flat} == {"top"}
@@ -292,15 +269,14 @@ class TestBulkLoad:
     def test_skip_errors_ignores_bad(self, tmp_path: Path):
         _write_handler_py(tmp_path)
         _write_skill_md(
-            tmp_path, filename="good.md",
-            frontmatter=(
-                "name: good\ntrusted_source: skill://public/g\n"
-                "handler: ./h.py:handler\n"
-            ),
+            tmp_path,
+            filename="good.md",
+            frontmatter=("name: good\ntrusted_source: skill://public/g\nhandler: ./h.py:handler\n"),
         )
         # Implementation note.
         _write_skill_md(
-            tmp_path, filename="bad.md",
+            tmp_path,
+            filename="bad.md",
             frontmatter="name: bad\ntrusted_source: skill://public/b\n",
         )
         with pytest.raises(SkillLoadError):

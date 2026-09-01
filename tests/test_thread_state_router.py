@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from runtime.memory.threads import ThreadStateStore
+from runtime.memory.threads import ThreadPermanentlyDeletedError, ThreadStateStore
 from runtime.memory.threads.event_log import EventLog, list_threads
 from runtime.sensing.gateway.thread_state_router import create_thread_state_router
 
@@ -70,7 +71,9 @@ def test_thread_delete_archives_realtime_event_log(tmp_path) -> None:
     response = client.delete("/api/threads/th-realtime")
 
     assert response.status_code == 204
-    assert store.get("th-realtime") is None
+    assert store.is_permanently_deleted("th-realtime") is True
+    with pytest.raises(ThreadPermanentlyDeletedError):
+        store.get("th-realtime")
     summaries = list_threads(logs_root)
     assert len(summaries) == 1
     assert summaries[0].thread_id == "th-realtime"

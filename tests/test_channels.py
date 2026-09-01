@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from runtime.adapters.channels import (
     Channel,
     ChannelManager,
@@ -82,7 +81,7 @@ class TestStore:
         s = ThreadConversationStore(path=path)
         cid = s.get_or_create("slack", "T")
         assert s.delete("slack", "T") is True
-        assert s.delete("slack", "T") is False   # Implementation note.
+        assert s.delete("slack", "T") is False  # Implementation note.
         # Implementation note.
         s2 = ThreadConversationStore(path=path)
         assert s2.get("slack", "T") is None
@@ -156,6 +155,7 @@ def _build_stack(tmp_path: Path):
 
     class _S:
         pass
+
     s = _S()
     s.planner = planner
     s.runtime = runtime
@@ -184,7 +184,8 @@ def agent_reg():
 class TestManagerLifecycle:
     def test_register_and_listing(self, stack, agent_reg):
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         m.register(_FakeChannel("a"))
@@ -195,7 +196,8 @@ class TestManagerLifecycle:
 
     def test_duplicate_channel_rejected(self, stack, agent_reg):
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
         )
         m.register(_FakeChannel("x"))
         with pytest.raises(ValueError, match="duplicate"):
@@ -203,14 +205,16 @@ class TestManagerLifecycle:
 
     def test_empty_channel_id_rejected(self, stack, agent_reg):
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
         )
         with pytest.raises(ValueError, match="channel_id"):
             m.register(_FakeChannel(""))
 
     def test_start_stop_proxies(self, stack, agent_reg):
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         ch = _FakeChannel("x")
@@ -225,16 +229,21 @@ class TestManagerProcessInbound:
     def test_happy_path_default_agent(self, stack, agent_reg, tmp_path):
         store = ThreadConversationStore(path=tmp_path / "s.jsonl")
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
             store=store,
         )
         ch = _FakeChannel("slack")
         m.register(ch)
 
-        out = m.process_inbound(InboundMessage(
-            channel_id="slack", thread_id="C:1.0", content="list files",
-        ))
+        out = m.process_inbound(
+            InboundMessage(
+                channel_id="slack",
+                thread_id="C:1.0",
+                content="list files",
+            )
+        )
         assert isinstance(out, OutboundMessage)
         assert out.channel_id == "slack"
         assert out.thread_id == "C:1.0"
@@ -244,93 +253,135 @@ class TestManagerProcessInbound:
         assert ch.sent[0].content
 
     def test_conversation_id_stable_across_messages(
-        self, stack, agent_reg, tmp_path,
+        self,
+        stack,
+        agent_reg,
+        tmp_path,
     ):
         store = ThreadConversationStore(path=tmp_path / "s.jsonl")
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
             store=store,
         )
         m.register(_FakeChannel("slack"))
-        out1 = m.process_inbound(InboundMessage(
-            channel_id="slack", thread_id="T", content="a",
-        ))
-        out2 = m.process_inbound(InboundMessage(
-            channel_id="slack", thread_id="T", content="b",
-        ))
+        out1 = m.process_inbound(
+            InboundMessage(
+                channel_id="slack",
+                thread_id="T",
+                content="a",
+            )
+        )
+        out2 = m.process_inbound(
+            InboundMessage(
+                channel_id="slack",
+                thread_id="T",
+                content="b",
+            )
+        )
         # Implementation note.
         assert out1.metadata["conversation_id"] == out2.metadata["conversation_id"]
 
     def test_metadata_agent_overrides_default(
-        self, stack, agent_reg, tmp_path,
+        self,
+        stack,
+        agent_reg,
+        tmp_path,
     ):
         from runtime.execution.agents import make_coder_agent
+
         agent_reg.register(make_coder_agent(_rt()))
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         m.register(_FakeChannel("slack"))
         # Implementation note.
-        out = m.process_inbound(InboundMessage(
-            channel_id="slack", thread_id="T",
-            content="read a file",
-            metadata={"agent_id": "coder"},
-        ))
+        out = m.process_inbound(
+            InboundMessage(
+                channel_id="slack",
+                thread_id="T",
+                content="read a file",
+                metadata={"agent_id": "coder"},
+            )
+        )
         assert out.metadata["agent_id"] == "coder"
 
     def test_metadata_unknown_agent_raises(
-        self, stack, agent_reg,
+        self,
+        stack,
+        agent_reg,
     ):
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         m.register(_FakeChannel("slack"))
         with pytest.raises(ChannelRoutingError, match="agent_id"):
-            m.process_inbound(InboundMessage(
-                channel_id="slack", thread_id="T",
-                content="x",
-                metadata={"agent_id": "ghost"},
-            ))
+            m.process_inbound(
+                InboundMessage(
+                    channel_id="slack",
+                    thread_id="T",
+                    content="x",
+                    metadata={"agent_id": "ghost"},
+                )
+            )
 
     def test_unknown_channel_raises(self, stack, agent_reg):
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         with pytest.raises(ChannelRoutingError, match="unknown"):
-            m.process_inbound(InboundMessage(
-                channel_id="nope", thread_id="T", content="x",
-            ))
+            m.process_inbound(
+                InboundMessage(
+                    channel_id="nope",
+                    thread_id="T",
+                    content="x",
+                )
+            )
 
     def test_empty_content_rejected(self, stack, agent_reg):
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         m.register(_FakeChannel("slack"))
         with pytest.raises(ChannelRoutingError, match="empty"):
-            m.process_inbound(InboundMessage(
-                channel_id="slack", thread_id="T", content="   ",
-            ))
+            m.process_inbound(
+                InboundMessage(
+                    channel_id="slack",
+                    thread_id="T",
+                    content="   ",
+                )
+            )
 
     def test_no_default_no_match_raises(self, stack):
         """Implementation note."""
         empty_reg = AgentRegistry()
         m = ChannelManager(
-            stack=stack, agent_registry=empty_reg,
+            stack=stack,
+            agent_registry=empty_reg,
         )
         m.register(_FakeChannel("slack"))
         with pytest.raises(ChannelRoutingError, match="no agent matches"):
-            m.process_inbound(InboundMessage(
-                channel_id="slack", thread_id="T",
-                content="something unrelated to any affinity",
-            ))
+            m.process_inbound(
+                InboundMessage(
+                    channel_id="slack",
+                    thread_id="T",
+                    content="something unrelated to any affinity",
+                )
+            )
 
     def test_planner_failure_yields_explanatory_reply(
-        self, stack, agent_reg,
+        self,
+        stack,
+        agent_reg,
     ):
         """A PlannerError must NOT escape · channel users see a
         readable fallback rather than an unhandled exception."""
@@ -338,25 +389,33 @@ class TestManagerProcessInbound:
         class _BoomPlanner:
             def plan(self, intent, **kwargs):
                 from runtime.core.cerebrum.planner import PlannerError
+
                 raise PlannerError("simulated · no rule matched")
 
         stack.planner = _BoomPlanner()
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         ch = _FakeChannel("slack")
         m.register(ch)
-        out = m.process_inbound(InboundMessage(
-            channel_id="slack", thread_id="T", content="something",
-        ))
+        out = m.process_inbound(
+            InboundMessage(
+                channel_id="slack",
+                thread_id="T",
+                content="something",
+            )
+        )
         assert "无法为该请求生成执行计划" in out.content
         assert "PlannerError" in out.content
         # The fallback must still flow through the channel.send path.
         assert len(ch.sent) == 1
 
     def test_empty_graph_yields_explanatory_reply(
-        self, stack, agent_reg,
+        self,
+        stack,
+        agent_reg,
     ):
         """LLM planner returning an empty node list shouldn't surface
         as a silent ``(task success · no output content)`` reply."""
@@ -374,25 +433,33 @@ class TestManagerProcessInbound:
 
         stack.planner = _EmptyGraphPlanner()
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         ch = _FakeChannel("slack")
         m.register(ch)
-        out = m.process_inbound(InboundMessage(
-            channel_id="slack", thread_id="T", content="hello",
-        ))
+        out = m.process_inbound(
+            InboundMessage(
+                channel_id="slack",
+                thread_id="T",
+                content="hello",
+            )
+        )
         assert "计划器未生成任何执行步骤" in out.content
         assert "no output content" not in out.content
 
     def test_steps_without_text_payload_render_summary(
-        self, stack, agent_reg,
+        self,
+        stack,
+        agent_reg,
     ):
         """When skills produce only structured output (no
         ``content``/``text`` field), the reply should still show what
         ran — not the cryptic ``(task success · no output content)``."""
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         ch = _FakeChannel("slack")
@@ -401,9 +468,13 @@ class TestManagerProcessInbound:
         # ``list_cwd`` returns a dict shaped like {"items": [...]} —
         # no "content" key — so the old code emitted a JSON dump or
         # the no-output sentinel. New code emits a step summary line.
-        out = m.process_inbound(InboundMessage(
-            channel_id="slack", thread_id="T", content="list files",
-        ))
+        out = m.process_inbound(
+            InboundMessage(
+                channel_id="slack",
+                thread_id="T",
+                content="list files",
+            )
+        )
         # Either the skill happens to expose a text payload (then
         # it rides the content-pass) or we fall back to the summary
         # pass, which always carries a status tag.
@@ -437,13 +508,16 @@ class TestSlackSignature:
         # Implementation note.
         with pytest.raises(SlackSignatureError, match="signature"):
             ch.verify_signature(
-                body=b'{"type":"evil"}', timestamp=ts, signature=sig,
+                body=b'{"type":"evil"}',
+                timestamp=ts,
+                signature=sig,
                 now=int(ts),
             )
 
     def test_expired_rejected(self):
         ch = SlackChannel(
-            bot_token="t", signing_secret="s",
+            bot_token="t",
+            signing_secret="s",
             max_age_seconds=300,
         )
         ts = "1700000000"
@@ -452,7 +526,9 @@ class TestSlackSignature:
         # Implementation note.
         with pytest.raises(SlackSignatureError, match="too old"):
             ch.verify_signature(
-                body=body, timestamp=ts, signature=sig,
+                body=body,
+                timestamp=ts,
+                signature=sig,
                 now=int(ts) + 600,
             )
 
@@ -460,7 +536,9 @@ class TestSlackSignature:
         ch = SlackChannel(bot_token="t", signing_secret="s")
         with pytest.raises(SlackSignatureError, match="bad timestamp"):
             ch.verify_signature(
-                body=b"", timestamp="not-a-number", signature="v0=...",
+                body=b"",
+                timestamp="not-a-number",
+                signature="v0=...",
             )
 
     def test_missing_headers(self):
@@ -479,16 +557,18 @@ class TestSlackSignature:
 class TestSlackParseEvent:
     def test_message_event(self):
         ch = SlackChannel(bot_token="t", signing_secret="s")
-        msg = ch.parse_event({
-            "type": "event_callback",
-            "event": {
-                "type": "message",
-                "channel": "C01",
-                "ts": "1700000000.000100",
-                "user": "U42",
-                "text": "hello agent",
-            },
-        })
+        msg = ch.parse_event(
+            {
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "channel": "C01",
+                    "ts": "1700000000.000100",
+                    "user": "U42",
+                    "text": "hello agent",
+                },
+            }
+        )
         assert msg is not None
         assert msg.channel_id == "slack"
         assert msg.thread_id == "C01:1700000000.000100"
@@ -498,47 +578,66 @@ class TestSlackParseEvent:
 
     def test_threaded_reply_uses_thread_ts(self):
         ch = SlackChannel(bot_token="t", signing_secret="s")
-        msg = ch.parse_event({
-            "type": "event_callback",
-            "event": {
-                "type": "message",
-                "channel": "C01",
-                "ts": "1700000005.000200",
-                "thread_ts": "1700000000.000100",
-                "user": "U42",
-                "text": "reply in thread",
-            },
-        })
+        msg = ch.parse_event(
+            {
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "channel": "C01",
+                    "ts": "1700000005.000200",
+                    "thread_ts": "1700000000.000100",
+                    "user": "U42",
+                    "text": "reply in thread",
+                },
+            }
+        )
         assert msg is not None
         # Implementation note.
         assert msg.thread_id == "C01:1700000000.000100"
 
     def test_bot_message_filtered(self):
         ch = SlackChannel(bot_token="t", signing_secret="s")
-        msg = ch.parse_event({
-            "type": "event_callback",
-            "event": {
-                "type": "message", "channel": "C", "ts": "1", "user": "U",
-                "text": "hi", "bot_id": "B01",
-            },
-        })
+        msg = ch.parse_event(
+            {
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "channel": "C",
+                    "ts": "1",
+                    "user": "U",
+                    "text": "hi",
+                    "bot_id": "B01",
+                },
+            }
+        )
         assert msg is None
 
     def test_url_verification_returns_none(self):
         ch = SlackChannel(bot_token="t", signing_secret="s")
-        assert ch.parse_event({
-            "type": "url_verification", "challenge": "abc",
-        }) is None
+        assert (
+            ch.parse_event(
+                {
+                    "type": "url_verification",
+                    "challenge": "abc",
+                }
+            )
+            is None
+        )
 
     def test_empty_text_returns_none(self):
         ch = SlackChannel(bot_token="t", signing_secret="s")
-        msg = ch.parse_event({
-            "type": "event_callback",
-            "event": {
-                "type": "message", "channel": "C", "ts": "1",
-                "user": "U", "text": "   ",
-            },
-        })
+        msg = ch.parse_event(
+            {
+                "type": "event_callback",
+                "event": {
+                    "type": "message",
+                    "channel": "C",
+                    "ts": "1",
+                    "user": "U",
+                    "text": "   ",
+                },
+            }
+        )
         assert msg is None
 
 
@@ -571,14 +670,17 @@ class TestSlackSend:
     def test_post_to_slack_api(self):
         http = _FakeHttpClient()
         ch = SlackChannel(
-            bot_token="xoxb-test", signing_secret="s",
+            bot_token="xoxb-test",
+            signing_secret="s",
             http_client=http,
         )
-        ch.send(OutboundMessage(
-            channel_id="slack",
-            thread_id="C01:1700000000.000100",
-            content="hi",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="slack",
+                thread_id="C01:1700000000.000100",
+                content="hi",
+            )
+        )
         assert len(http.calls) == 1
         call = http.calls[0]
         assert call["url"].endswith("/chat.postMessage")
@@ -591,17 +693,25 @@ class TestSlackSend:
         http = _FakeHttpClient(_FakeHttpResp(body={"ok": False, "error": "channel_not_found"}))
         ch = SlackChannel(bot_token="t", signing_secret="s", http_client=http)
         with pytest.raises(RuntimeError, match="channel_not_found"):
-            ch.send(OutboundMessage(
-                channel_id="slack", thread_id="C:1", content="x",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="slack",
+                    thread_id="C:1",
+                    content="x",
+                )
+            )
 
     def test_http_error_raises(self):
         http = _FakeHttpClient(_FakeHttpResp(status_code=500, body={"ok": False}))
         ch = SlackChannel(bot_token="t", signing_secret="s", http_client=http)
         with pytest.raises(RuntimeError, match="HTTP 500"):
-            ch.send(OutboundMessage(
-                channel_id="slack", thread_id="C:1", content="x",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="slack",
+                    thread_id="C:1",
+                    content="x",
+                )
+            )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -613,10 +723,13 @@ class TestEndToEnd:
     def test_slack_inbound_to_reply(self, stack, agent_reg):
         http = _FakeHttpClient()
         slack = SlackChannel(
-            bot_token="t", signing_secret="s", http_client=http,
+            bot_token="t",
+            signing_secret="s",
+            http_client=http,
         )
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         m.register(slack)
@@ -625,8 +738,10 @@ class TestEndToEnd:
         event_payload = {
             "type": "event_callback",
             "event": {
-                "type": "message", "channel": "C_test",
-                "ts": "1700000000.000100", "user": "U_user",
+                "type": "message",
+                "channel": "C_test",
+                "ts": "1700000000.000100",
+                "user": "U_user",
                 "text": "list files please",
             },
         }
@@ -642,25 +757,28 @@ class TestEndToEnd:
     def test_journal_tagged_with_conv_and_agent(self, stack, agent_reg):
         """Implementation note."""
         slack = SlackChannel(
-            bot_token="t", signing_secret="s",
+            bot_token="t",
+            signing_secret="s",
             http_client=_FakeHttpClient(),
         )
         m = ChannelManager(
-            stack=stack, agent_registry=agent_reg,
+            stack=stack,
+            agent_registry=agent_reg,
             default_agent_id="general",
         )
         m.register(slack)
-        out = m.process_inbound(InboundMessage(
-            channel_id="slack", thread_id="T", content="list",
-        ))
+        out = m.process_inbound(
+            InboundMessage(
+                channel_id="slack",
+                thread_id="T",
+                content="list",
+            )
+        )
         # Implementation note.
         events = stack.journal.read_all()
         assert events
         # Implementation note.
         agent_events = [e for e in events if e.agent_id == "general"]
-        conv_events = [
-            e for e in events
-            if e.conversation_id == out.metadata["conversation_id"]
-        ]
+        conv_events = [e for e in events if e.conversation_id == out.metadata["conversation_id"]]
         assert agent_events, "no events tagged agent_id=general"
         assert conv_events, "no events with conversation_id"

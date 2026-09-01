@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from runtime.execution.suckers import computer_skills
 from runtime.execution.suckers.computer_skills import (
     COMPUTER_SKILL_NAMES,
@@ -65,9 +64,7 @@ class _FakePyAutoGUI:
     def click(self, x=0, y=0, clicks=1, button="left", duration=0.0):
         if "click" in self.raise_on:
             raise RuntimeError("failsafe")
-        self.clicks.append(
-            {"x": x, "y": y, "clicks": clicks, "button": button}
-        )
+        self.clicks.append({"x": x, "y": y, "clicks": clicks, "button": button})
 
     def moveTo(self, x=0, y=0, duration=0.0):  # noqa: N802 — pyautogui shim
         self.moves.append({"x": x, "y": y, "duration": duration})
@@ -110,6 +107,7 @@ class TestScreenInfo:
     def test_not_installed(self, monkeypatch):
         monkeypatch.setattr(computer_skills, "pyautogui", None)
         monkeypatch.setattr(computer_skills, "PYAUTOGUI_AVAILABLE", False)
+        monkeypatch.setattr(computer_skills.computer_macos, "MACOS_NATIVE_AVAILABLE", False)
         r = _screen_info()
         assert "error" in r
         assert "pyautogui" in r["error"]
@@ -129,7 +127,8 @@ class TestScreenCapture:
     def test_full_screen(self, fake_pyautogui, tmp_path: Path):
         out = tmp_path / "shot.png"
         r = _screen_capture(
-            path=str(out), sandbox_dir=str(tmp_path),
+            path=str(out),
+            sandbox_dir=str(tmp_path),
         )
         assert "error" not in r
         assert r["size_bytes"] > 0
@@ -139,7 +138,8 @@ class TestScreenCapture:
     def test_region_forwarded(self, fake_pyautogui, tmp_path: Path):
         out = tmp_path / "crop.png"
         r = _screen_capture(
-            path=str(out), sandbox_dir=str(tmp_path),
+            path=str(out),
+            sandbox_dir=str(tmp_path),
             region=[100, 100, 200, 200],
         )
         assert "error" not in r
@@ -164,15 +164,17 @@ class TestScreenCapture:
     def test_region_bad_shape(self, fake_pyautogui, tmp_path: Path):
         out = tmp_path / "x.png"
         r = _screen_capture(
-            path=str(out), sandbox_dir=str(tmp_path),
-            region=[1, 2, 3],   # Implementation note.
+            path=str(out),
+            sandbox_dir=str(tmp_path),
+            region=[1, 2, 3],  # Implementation note.
         )
         assert "error" in r
 
     def test_region_negative_rejected(self, fake_pyautogui, tmp_path: Path):
         out = tmp_path / "x.png"
         r = _screen_capture(
-            path=str(out), sandbox_dir=str(tmp_path),
+            path=str(out),
+            sandbox_dir=str(tmp_path),
             region=[-1, 0, 100, 100],
         )
         assert "error" in r
@@ -180,7 +182,8 @@ class TestScreenCapture:
     def test_region_zero_size_rejected(self, fake_pyautogui, tmp_path: Path):
         out = tmp_path / "x.png"
         r = _screen_capture(
-            path=str(out), sandbox_dir=str(tmp_path),
+            path=str(out),
+            sandbox_dir=str(tmp_path),
             region=[0, 0, 0, 100],
         )
         assert "error" in r
@@ -337,12 +340,14 @@ class TestRegistration:
             assert n not in names, f"{n} should not be auto-registered"
 
     def test_register_computer_skills_returns_all_when_available(
-        self, fake_pyautogui,
+        self,
+        fake_pyautogui,
     ):
         from runtime.execution.suckers import SkillRegistry
         from runtime.execution.suckers.computer_skills import (
             register_computer_skills,
         )
+
         reg = SkillRegistry()
         n = register_computer_skills(reg)
         assert n == len(COMPUTER_SKILL_NAMES)
@@ -351,9 +356,11 @@ class TestRegistration:
 
     def test_register_returns_0_when_not_installed(self, monkeypatch):
         monkeypatch.setattr(computer_skills, "PYAUTOGUI_AVAILABLE", False)
+        monkeypatch.setattr(computer_skills.computer_macos, "MACOS_NATIVE_AVAILABLE", False)
         from runtime.execution.suckers import SkillRegistry
         from runtime.execution.suckers.computer_skills import (
             register_computer_skills,
         )
+
         reg = SkillRegistry()
         assert register_computer_skills(reg) == 0

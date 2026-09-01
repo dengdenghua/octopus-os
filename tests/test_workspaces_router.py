@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.sensing.gateway.workspaces_router import create_workspaces_router
 
 
@@ -23,7 +22,7 @@ def test_workspace_info_creates_standard_layout(tmp_path: Path) -> None:
     data = response.json()
     root = Path(data["root"])
     assert root == tmp_path.resolve() / "th-1"
-    assert data["manifest"]["schema"] == "octopus.workspace.v1"
+    assert data["manifest"]["schema"] == "echo.workspace.v1"
     assert data["manifest"]["thread_id"] == "th-1"
     assert {entry["key"] for entry in data["dirs"]} == {
         "upload",
@@ -46,7 +45,7 @@ def test_thread_workspace_alias_matches_primary_route(tmp_path: Path) -> None:
 
     assert alias["root"] == primary["root"]
     assert alias["paths"] == primary["paths"]
-    assert alias["manifest"]["schema"] == "octopus.workspace.v1"
+    assert alias["manifest"]["schema"] == "echo.workspace.v1"
 
 
 def test_workspace_outputs_list_and_serve_final_files(tmp_path: Path) -> None:

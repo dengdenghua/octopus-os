@@ -41,7 +41,12 @@ export function isSubtaskActive(status: SubtaskStatus): boolean {
 }
 
 export function isSubtaskTerminal(status: SubtaskStatus): boolean {
-  return status === "completed" || status === "failed" || status === "cancelled" || status === "timed_out";
+  return (
+    status === "completed" ||
+    status === "failed" ||
+    status === "cancelled" ||
+    status === "timed_out"
+  );
 }
 
 export interface Subtask {
@@ -62,4 +67,10 @@ export interface Subtask {
   skills?: string[];
   tokenUsed?: number;
   tokenBudget?: number;
+  /** Number of iterations this subagent has completed */
+  iterationCount?: number;
+  /** Files touched/modified by this subagent */
+  filesTouched?: string[];
+  /** Duration in milliseconds */
+  duration?: number;
 }

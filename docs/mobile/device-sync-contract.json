@@ -1,0 +1,72 @@
+{
+  "schema": "echo.device-sync.v1",
+  "protocolVersion": 1,
+  "minimumClientProtocolVersion": 1,
+  "authentication": {
+    "scheme": "EchoDevice",
+    "credentialSource": "per-device pairing invitation",
+    "headers": {
+      "Authorization": "EchoDevice <device credential>",
+      "X-Echo-Device-ID": "<paired tentacle_id>",
+      "X-Echo-Sync-Version": "1"
+    }
+  },
+  "bootstrap": {
+    "deepLink": "echo://join?ws=<tentacle-url>&token=<device-credential>&sync=<device-sync-base-url>",
+    "baseUrlQueryParameter": "sync",
+    "lanTransport": "http on a trusted RFC1918 LAN",
+    "remoteTransport": "private Tailscale HTTPS"
+  },
+  "capabilities": {
+    "resumableUpload": true,
+    "sha256Verification": true,
+    "conflictPolicy": "keep-both",
+    "ownDeviceCursor": true,
+    "maxChunkBytes": 8388608,
+    "maxChangePage": 500
+  },
+  "endpoints": {
+    "status": {
+      "method": "GET",
+      "path": "/api/appliance/device-sync"
+    },
+    "changes": {
+      "method": "GET",
+      "path": "/api/appliance/device-sync/changes?cursor={cursor}&limit={limit}"
+    },
+    "preflight": {
+      "method": "POST",
+      "path": "/api/appliance/device-sync/assets/preflight",
+      "decisions": [
+        "upload",
+        "resume",
+        "skip"
+      ]
+    },
+    "uploadStatus": {
+      "method": "GET",
+      "path": "/api/appliance/device-sync/upload-sessions/{sessionId}"
+    },
+    "appendChunk": {
+      "method": "PUT",
+      "path": "/api/appliance/device-sync/upload-sessions/{sessionId}/chunk",
+      "contentType": "application/octet-stream",
+      "offsetHeader": "X-Echo-Upload-Offset"
+    },
+    "complete": {
+      "method": "POST",
+      "path": "/api/appliance/device-sync/upload-sessions/{sessionId}/complete"
+    },
+    "cancel": {
+      "method": "DELETE",
+      "path": "/api/appliance/device-sync/upload-sessions/{sessionId}"
+    }
+  },
+  "compatibility": {
+    "unsupportedVersionStatus": 426,
+    "serverVersionResponseHeader": "X-Echo-Sync-Version",
+    "revokedCredentialStatus": 401,
+    "disabledScopeStatus": 403,
+    "offsetMismatchStatus": 409
+  }
+}

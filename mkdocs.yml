@@ -1,9 +1,9 @@
-site_name: Octopus-Agent
-site_description: "Agent OS for planning, scheduling, memory, safety, and self-improving agents"
-site_url: https://octopus-agent.github.io/
-repo_url: https://github.com/octopus-agent/octopus-agent
-repo_name: octopus-agent/octopus-agent
-copyright: "Apache-2.0 · octopus-agent contributors"
+site_name: Echo OS
+site_description: "家庭服务器 AI Agent 设备层（NAS 桌面 / 启动器 / 文件）"
+site_url: https://echo-agent.github.io/
+repo_url: https://github.com/dengdenghua/echo-os
+repo_name: echo-agent/echo-os
+copyright: "Apache-2.0 · echo-os contributors"
 
 theme:
   name: material
@@ -100,6 +100,8 @@ nav:
       - 宪法: constitution.md
   - 能力与基准:
       - Agent 能力: agent-capabilities.md
+      - ECHO 系统能力契约: ECHO_CAPABILITY_CONTRACT.md
+      - ECHO 任务投影: ECHO_TASK_PROJECTION.md
       - 基准: benchmarks.md
       - 评审地图: review-map-capability-parity.md
   - ADR:
@@ -137,6 +139,6 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/octopus-agent/octopus-agent
+      link: https://github.com/dengdenghua/echo-os
   version:
     provider: mike

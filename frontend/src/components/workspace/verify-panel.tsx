@@ -87,9 +87,11 @@ export function VerifyPanel({
           workspace: workDir,
           timeout: 60,
           browser_regression_enabled: browserRegressionEnabled,
-          browser_regression_mode: browserRegressionEnabled ? "human_cursor" : "off",
+          browser_regression_mode: browserRegressionEnabled
+            ? "human_cursor"
+            : "off",
           browser_regression_preview_url: browserRegressionEnabled
-            ? browserRegressionPreviewUrl ?? undefined
+            ? (browserRegressionPreviewUrl ?? undefined)
             : undefined,
           browser_regression_requires_visible_cursor: browserRegressionEnabled,
         }),
@@ -99,26 +101,35 @@ export function VerifyPanel({
         setResult(next);
         onResult?.(next);
       }
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
     setRunning(false);
-  }, [browserRegressionEnabled, browserRegressionPreviewUrl, workDir, onResult]);
+  }, [
+    browserRegressionEnabled,
+    browserRegressionPreviewUrl,
+    workDir,
+    onResult,
+  ]);
 
   const passedCount = result?.results.filter((r) => r.passed).length ?? 0;
   const totalCount = result?.results.length ?? 0;
 
   return (
     <div className={cn("flex flex-col h-full", className)}>
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border-default">
         <div className="flex items-center gap-2">
           <ShieldCheckIcon className="size-4 text-primary" />
           <span className="text-sm font-medium">{t.codeMode.verify}</span>
           {result && (
-            <span className={cn(
-              "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-              result.passed
-                ? "bg-emerald-500/10 text-emerald-600"
-                : "bg-rose-500/10 text-rose-600",
-            )}>
+            <span
+              className={cn(
+                "rounded-full px-1.5 py-0.5 text-xs font-medium",
+                result.passed
+                  ? "bg-success/10 text-success"
+                  : "bg-destructive/10 text-destructive",
+              )}
+            >
               {passedCount}/{totalCount}
             </span>
           )}
@@ -145,22 +156,30 @@ export function VerifyPanel({
 
       <div className="flex-1 overflow-auto px-3 py-2">
         {autoSummary && (
-          <div className={cn(
-            "mb-2 rounded-md border px-2.5 py-2 text-xs",
-            autoSummary.exhausted
-              ? "border-rose-500/25 bg-rose-500/8 text-rose-700 dark:text-rose-300"
-              : autoSummary.autoFixQueued
-                ? "border-amber-500/25 bg-amber-500/8 text-amber-700 dark:text-amber-300"
-                : "border-emerald-500/25 bg-emerald-500/8 text-emerald-700 dark:text-emerald-300",
-          )}>
+          <div
+            className={cn(
+              "mb-2 rounded-md border px-2.5 py-2 text-xs",
+              autoSummary.exhausted
+                ? "border-destructive/25 bg-destructive/8 text-destructive"
+                : autoSummary.autoFixQueued
+                  ? "border-warning/25 bg-warning/8 text-warning"
+                  : "border-success/25 bg-success/8 text-success",
+            )}
+          >
             <div className="font-medium">
               {t.codeMode.autoVerifyAttempt(autoSummary.attempt)}
             </div>
-            <div className="mt-0.5 text-[11px] opacity-80">
+            <div className="mt-0.5 text-xs opacity-80">
               {autoSummary.autoFixQueued
-                ? t.codeMode.queuedAutoFix(autoSummary.retryCount, autoSummary.maxRetries)
+                ? t.codeMode.queuedAutoFix(
+                    autoSummary.retryCount,
+                    autoSummary.maxRetries,
+                  )
                 : autoSummary.exhausted
-                  ? t.codeMode.autoFixLimitReached(autoSummary.attempt, autoSummary.maxRetries)
+                  ? t.codeMode.autoFixLimitReached(
+                      autoSummary.attempt,
+                      autoSummary.maxRetries,
+                    )
                   : result?.passed
                     ? t.codeMode.latestTurnPassed
                     : t.codeMode.noAutoFixQueued}
@@ -169,13 +188,15 @@ export function VerifyPanel({
         )}
 
         {(pendingFiles.length > 0 || autoRunning) && (
-          <div className="mb-2 rounded-md border border-sky-500/25 bg-sky-500/8 px-2.5 py-2 text-xs text-sky-700 dark:text-sky-300">
+          <div className="mb-2 rounded-md border border-info/25 bg-info/8 px-2.5 py-2 text-xs text-info dark:text-info">
             <div className="flex items-center gap-1.5 font-medium">
               {autoRunning && <Loader2Icon className="size-3 animate-spin" />}
-              {autoRunning ? t.codeMode.autoVerifyRunning : t.codeMode.changesAwaitingVerify}
+              {autoRunning
+                ? t.codeMode.autoVerifyRunning
+                : t.codeMode.changesAwaitingVerify}
             </div>
             {pendingFiles.length > 0 && (
-              <div className="mt-1 max-h-20 space-y-0.5 overflow-auto text-[10px] opacity-80">
+              <div className="mt-1 max-h-20 space-y-0.5 overflow-auto text-xs opacity-80">
                 {pendingFiles.slice(0, 8).map((file) => (
                   <div key={file} className="truncate font-mono" title={file}>
                     {file}
@@ -193,7 +214,7 @@ export function VerifyPanel({
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground/50">
             <ShieldCheckIcon className="size-8 mb-2 opacity-30" />
             <span className="text-xs">{t.codeMode.clickRunChecksToVerify}</span>
-            <span className="text-[10px] mt-1 opacity-60">{workDir}</span>
+            <span className="text-xs mt-1 opacity-60">{workDir}</span>
           </div>
         )}
 
@@ -206,55 +227,62 @@ export function VerifyPanel({
 
         {result && (
           <div className="space-y-1">
-            <div className="text-[10px] text-muted-foreground mb-2">
+            <div className="text-xs text-muted-foreground mb-2">
               {t.codeMode.projectLabel}: {result.kind}
             </div>
             {result.results.map((check) => (
-              <div key={check.name} className="rounded-md border border-border/40">
+              <div
+                key={check.name}
+                className="rounded-md border border-border-subtle"
+              >
                 <button
                   type="button"
-                  onClick={() => setExpandedCheck(
-                    expandedCheck === check.name ? null : check.name,
-                  )}
+                  onClick={() =>
+                    setExpandedCheck(
+                      expandedCheck === check.name ? null : check.name,
+                    )
+                  }
                   className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/50"
                 >
                   {check.passed ? (
-                    <CheckCircle2Icon className="size-3.5 text-emerald-500 shrink-0" />
+                    <CheckCircle2Icon className="size-3.5 text-success shrink-0" />
                   ) : (
-                    <XCircleIcon className="size-3.5 text-rose-500 shrink-0" />
+                    <XCircleIcon className="size-3.5 text-destructive shrink-0" />
                   )}
-                  <span className="text-xs font-medium flex-1">{check.name}</span>
-                  <span className="text-[10px] text-muted-foreground font-mono">
+                  <span className="text-xs font-medium flex-1">
+                    {check.name}
+                  </span>
+                  <span className="text-xs text-muted-foreground font-mono">
                     {check.duration_ms < 1000
                       ? `${check.duration_ms}ms`
                       : `${(check.duration_ms / 1000).toFixed(1)}s`}
                   </span>
                 </button>
                 {expandedCheck === check.name && (
-                  <div className="border-t border-border/30 px-2.5 py-2">
+                  <div className="border-t border-border-subtle px-2.5 py-2">
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-[10px] text-muted-foreground font-mono">
+                      <div className="text-xs text-muted-foreground font-mono">
                         $ {check.command}
                       </div>
                       <div className="flex items-center gap-1">
                         {!check.passed && (check.stderr || check.stdout) && (
                           <button
-                          type="button"
-                          onClick={() => {
-                            const errorText = `Verification check "${check.name}" failed:\n\`\`\`\n$ ${check.command}\n${check.stderr || check.stdout}\n\`\`\`\nPlease fix the errors above.`;
-                            window.dispatchEvent(
-                              new CustomEvent("octopus:edit-message", {
-                                detail: { text: errorText },
-                              }),
-                            );
-                            toast.success("Error sent to input");
-                          }}
-                          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10"
-                          title={t.codeMode.sendErrorToAI}
-                        >
-                          <MessageCircleIcon className="size-3" />
-                          {t.codeMode.fix}
-                        </button>
+                            type="button"
+                            onClick={() => {
+                              const errorText = `Verification check "${check.name}" failed:\n\`\`\`\n$ ${check.command}\n${check.stderr || check.stdout}\n\`\`\`\nPlease fix the errors above.`;
+                              window.dispatchEvent(
+                                new CustomEvent("echo:edit-message", {
+                                  detail: { text: errorText },
+                                }),
+                              );
+                              toast.success("Error sent to input");
+                            }}
+                            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+                            title={t.codeMode.sendErrorToAI}
+                          >
+                            <MessageCircleIcon className="size-3" />
+                            {t.codeMode.fix}
+                          </button>
                         )}
                         <button
                           type="button"
@@ -262,9 +290,11 @@ export function VerifyPanel({
                             const text = `$ ${check.command}\n${check.stdout}${check.stderr ? `\n${check.stderr}` : ""}`;
                             void copyTextToClipboard(text)
                               .then(() => toast.success("Copied"))
-                              .catch(() => toast.error("Failed to copy output"));
+                              .catch(() =>
+                                toast.error("Failed to copy output"),
+                              );
                           }}
-                          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted"
+                          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
                           title={t.codeMode.copyOutput}
                         >
                           <ClipboardCopyIcon className="size-3" />
@@ -272,12 +302,12 @@ export function VerifyPanel({
                       </div>
                     </div>
                     {check.stdout && (
-                      <pre className="text-[10px] font-mono leading-snug whitespace-pre-wrap break-all max-h-[200px] overflow-auto text-muted-foreground/80">
+                      <pre className="text-xs font-mono leading-snug whitespace-pre-wrap break-all max-h-[200px] overflow-auto text-muted-foreground/80">
                         {check.stdout}
                       </pre>
                     )}
                     {check.stderr && (
-                      <pre className="text-[10px] font-mono leading-snug whitespace-pre-wrap break-all max-h-[200px] overflow-auto text-rose-600/80 dark:text-rose-400/80 mt-1">
+                      <pre className="text-xs font-mono leading-snug whitespace-pre-wrap break-all max-h-[200px] overflow-auto text-destructive/80 dark:text-destructive/80 mt-1">
                         {check.stderr}
                       </pre>
                     )}

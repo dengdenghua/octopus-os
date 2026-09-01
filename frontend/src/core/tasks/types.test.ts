@@ -42,12 +42,21 @@ describe("isSubtaskTerminal", () => {
 describe("SUBTASK_STATUS_LABELS", () => {
   test("has a label for every status", () => {
     const statuses: string[] = [
-      "pending", "reasoning", "iterating", "generating",
-      "analyzing", "summarizing", "in_progress", "completed", "failed",
+      "pending",
+      "reasoning",
+      "iterating",
+      "generating",
+      "analyzing",
+      "summarizing",
+      "in_progress",
+      "completed",
+      "failed",
     ];
     for (const s of statuses) {
-      expect(s in SUBTASK_STATUS_LABELS,
-        `Missing label for status: ${s}`,).toBeTruthy();
+      expect(
+        s in SUBTASK_STATUS_LABELS,
+        `Missing label for status: ${s}`,
+      ).toBeTruthy();
     }
   });
 });

@@ -49,15 +49,29 @@ _未引用代码路径_
 - `runtime/safety/constitution/profiles.py`
 - `tests/test_constitution_profiles.py`
 
-### [ADR-008 · Octopus Mobile（移动触手 / 跨端编排）](../../adr/008-octopus-mobile.md) · *Accepted*
+### [ADR-008 · Echo Mobile（移动触手 / 跨端编排）](../../adr/008-echo-mobile.md) · *Accepted*
 
 - `runtime/execution/arms/presets.py`
 - `runtime/tentacle/`
+
+### [ADR-009 · OKF as the knowledge substrate](../../adr/009-okf-knowledge-substrate.md) · *Proposed*
+
+- `docs/architecture*`
+- `docs/auto`
+- `docs/auto/`
+- `runtime/safety/recovery/scheduler.py`
+- `scripts/gen_wiki.py`
+- `tests/test_auto_docs_fresh.py`
+- `tests/test_repo_context.py`
+- `tests/test_wiki_qa.py`
 
 ## Per file
 
 - `agents/<id>/workspace/<thread_id>/` ← [002-mode-gated-scope](../../adr/002-mode-gated-scope.md)
 - `docs/agent-capabilities.md` ← [005-agent-capabilities](../../adr/005-agent-capabilities.md)
+- `docs/architecture*` ← [009-okf-knowledge-substrate](../../adr/009-okf-knowledge-substrate.md)
+- `docs/auto` ← [009-okf-knowledge-substrate](../../adr/009-okf-knowledge-substrate.md)
+- `docs/auto/` ← [009-okf-knowledge-substrate](../../adr/009-okf-knowledge-substrate.md)
 - `docs/biomimetic/*` ← [001-bionic-naming](../../adr/001-bionic-naming.md)
 - `docs/invariants.md` ← [001-bionic-naming](../../adr/001-bionic-naming.md)
 - `docs/naming.md` ← [001-bionic-naming](../../adr/001-bionic-naming.md)
@@ -68,14 +82,19 @@ _未引用代码路径_
 - `runtime/adapters/mcp_client/trust.py` ← [007-mcp-trust-store](../../adr/007-mcp-trust-store.md)
 - `runtime/core/cerebrum/` ← [001-bionic-naming](../../adr/001-bionic-naming.md)
 - `runtime/core/hearts/` ← [001-bionic-naming](../../adr/001-bionic-naming.md)
-- `runtime/execution/arms/presets.py` ← [008-octopus-mobile](../../adr/008-octopus-mobile.md)
+- `runtime/execution/arms/presets.py` ← [008-echo-mobile](../../adr/008-echo-mobile.md)
 - `runtime/execution/suckers/` ← [001-bionic-naming](../../adr/001-bionic-naming.md)
 - `runtime/safety/constitution/gate.py` ← [008-constitution-profiles](../../adr/008-constitution-profiles.md)
 - `runtime/safety/constitution/profiles.py` ← [008-constitution-profiles](../../adr/008-constitution-profiles.md)
 - `runtime/safety/hooks/{events,registry,runner}.py` ← [006-lifecycle-hooks](../../adr/006-lifecycle-hooks.md)
-- `runtime/tentacle/` ← [008-octopus-mobile](../../adr/008-octopus-mobile.md)
+- `runtime/safety/recovery/scheduler.py` ← [009-okf-knowledge-substrate](../../adr/009-okf-knowledge-substrate.md)
+- `runtime/tentacle/` ← [008-echo-mobile](../../adr/008-echo-mobile.md)
+- `scripts/gen_wiki.py` ← [009-okf-knowledge-substrate](../../adr/009-okf-knowledge-substrate.md)
+- `tests/test_auto_docs_fresh.py` ← [009-okf-knowledge-substrate](../../adr/009-okf-knowledge-substrate.md)
 - `tests/test_constitution_profiles.py` ← [008-constitution-profiles](../../adr/008-constitution-profiles.md)
 - `tests/test_mcp_trust.py` ← [007-mcp-trust-store](../../adr/007-mcp-trust-store.md)
+- `tests/test_repo_context.py` ← [009-okf-knowledge-substrate](../../adr/009-okf-knowledge-substrate.md)
 - `tests/test_safety_hooks.py` ← [006-lifecycle-hooks](../../adr/006-lifecycle-hooks.md)
 - `tests/test_scope.py` ← [002-mode-gated-scope](../../adr/002-mode-gated-scope.md)
+- `tests/test_wiki_qa.py` ← [009-okf-knowledge-substrate](../../adr/009-okf-knowledge-substrate.md)
 

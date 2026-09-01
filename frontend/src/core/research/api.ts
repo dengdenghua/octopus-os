@@ -1,6 +1,7 @@
 import { swallow } from "@/core/utils/log";
 import { jsonAuthHeaders } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
+import type { SubagentRouteDecision } from "@/core/parallel-agents/api";
 
 export type ResearchDepth = "quick" | "standard" | "deep";
 
@@ -94,6 +95,7 @@ export interface ResearchStep {
   source_ids: string[];
   expected_searches: number;
   prompt: string;
+  route_decision?: SubagentRouteDecision | null;
 }
 
 export interface ResearchJob {
@@ -109,6 +111,7 @@ export interface ResearchJob {
   sources: ResearchSource[];
   evidence: ResearchEvidence[];
   prefetch_logs: ResearchPrefetchLog[];
+  route_decisions?: SubagentRouteDecision[];
   roles: ResearchRole[];
   steps: ResearchStep[];
   max_searches: number;
@@ -135,10 +138,14 @@ export interface DeepResearchRequest {
   max_searches?: number;
   include_thread_uploads?: boolean;
   prefetch_sources?: boolean;
+  task_risk_level?: "low" | "medium" | "high" | "critical" | null;
   final_report_format?: "markdown" | "brief" | "slides_outline";
 }
 
-async function postResearch(path: string, body: DeepResearchRequest): Promise<ResearchJob> {
+async function postResearch(
+  path: string,
+  body: DeepResearchRequest,
+): Promise<ResearchJob> {
   const res = await fetch(`${getBackendBaseURL()}${path}`, {
     method: "POST",
     headers: jsonAuthHeaders(),
@@ -146,24 +153,35 @@ async function postResearch(path: string, body: DeepResearchRequest): Promise<Re
   });
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { detail?: string };
-    throw new Error(err.detail ?? `Deep research request failed: ${res.status}`);
+    throw new Error(
+      err.detail ?? `Deep research request failed: ${res.status}`,
+    );
   }
   return (await res.json()) as ResearchJob;
 }
 
-export function planDeepResearch(body: DeepResearchRequest): Promise<ResearchJob> {
+export function planDeepResearch(
+  body: DeepResearchRequest,
+): Promise<ResearchJob> {
   return postResearch("/api/research/deep/plan", body);
 }
 
-export function startDeepResearch(body: DeepResearchRequest): Promise<ResearchJob> {
+export function startDeepResearch(
+  body: DeepResearchRequest,
+): Promise<ResearchJob> {
   return postResearch("/api/research/deep/start", body);
 }
 
-export async function fetchDeepResearchJob(jobId: string): Promise<ResearchJob | null> {
+export async function fetchDeepResearchJob(
+  jobId: string,
+): Promise<ResearchJob | null> {
   try {
-    const res = await fetch(`${getBackendBaseURL()}/api/research/deep/jobs/${jobId}`, {
-      headers: jsonAuthHeaders(),
-    });
+    const res = await fetch(
+      `${getBackendBaseURL()}/api/research/deep/jobs/${jobId}`,
+      {
+        headers: jsonAuthHeaders(),
+      },
+    );
     if (!res.ok) return null;
     return (await res.json()) as ResearchJob;
   } catch (e) {

@@ -18,7 +18,7 @@ The product pattern worth learning is:
 6. Execute locally with reporting and artifact upload.
 7. Render the experience as a friendly agent/session timeline, not as raw developer logs.
 
-For Octopus, the closest next step is not "copy Coze", but build a safer "Local Device Hub": device identity, permissions, heartbeat, command inbox, preview-confirm-execute actions, and a novice-friendly execution timeline.
+For Echo, the closest next step is not "copy Coze", but build a safer "Local Device Hub": device identity, permissions, heartbeat, command inbox, preview-confirm-execute actions, and a novice-friendly execution timeline.
 
 ## Evidence Inventory
 
@@ -70,7 +70,7 @@ Risk level: medium.
 
 Reason: the posture is good, but any future iframe/top-level origin bug around trusted URL detection could become high impact because the bridge can reach local file and command handlers.
 
-Octopus implication:
+Echo implication:
 
 - Keep our page-agent and Electron bridge split by trust zone.
 - Every bridge call that can affect local state should include sender validation, route/origin validation, and a user-visible reason.
@@ -103,7 +103,7 @@ Risk level: medium.
 
 Reason: the protocol handler is a central trust boundary. File path normalization looks deliberate, but API proxy behavior makes the desktop shell part of the auth and CORS model.
 
-Octopus implication:
+Echo implication:
 
 - If we add a packaged desktop protocol, it should keep static serving, API proxying, and local command bridge as separate modules with separate logs and tests.
 
@@ -121,7 +121,7 @@ Risk level: high if mis-scoped, otherwise expected for a desktop shell.
 
 Reason: this bridge has the authority to turn a local renderer API request into an authenticated Coze web request. Any renderer XSS or IPC trust bug could amplify into account-scoped API access. I did not extract or print any cookie/token values.
 
-Octopus implication:
+Echo implication:
 
 - Do not make auth-context injection a generic helper.
 - Keep auth proxying domain-scoped and method-scoped.
@@ -159,7 +159,7 @@ Risk level: high.
 
 Reason: this is the remote-to-local control plane. It is product-critical, but it deserves a dedicated threat model: replay, confused deputy, path scope, command injection, stale device assignment, and auditability.
 
-Octopus implication:
+Echo implication:
 
 - Our current preview-confirm-execute pattern in `/api/computer` is safer for high-risk UI actions.
 - For remote/local command inbox, every command should carry a human-readable intent, requested scope, expiration, and visible approval status.
@@ -193,7 +193,7 @@ Risk level: high.
 
 Reason: file commands and connect-agent are high impact. Coze has validation and some whitelist controls, but the model still centers on cloud-controlled commands reaching a local desktop runtime.
 
-Octopus implication:
+Echo implication:
 
 - Prefer capability-scoped grants over path strings.
 - File read/write/upload should share one explicit permission model.
@@ -214,7 +214,7 @@ Risk level: medium.
 
 Reason: normal for commercial desktop apps, but from a privacy/compliance perspective these should be listed in a data-flow inventory.
 
-Octopus implication:
+Echo implication:
 
 - For our app, surface telemetry/offline mode clearly.
 - Logs should avoid device IDs, command payloads, file content, and secrets unless debug mode is explicitly enabled.
@@ -407,11 +407,11 @@ Avoid:
 - Letting "artifact generated" appear before the report/content stream feels done.
 - Mixing dev terms with user-facing status.
 
-## 4. Octopus Comparison And Action Plan
+## 4. Echo Comparison And Action Plan
 
-### 4.1 What Octopus Already Has
+### 4.1 What Echo Already Has
 
-Octopus has several primitives that can support a safer Coze-like desktop agent:
+Echo has several primitives that can support a safer Coze-like desktop agent:
 
 - Realtime JSON-RPC over WebSocket: `runtime/sensing/siphon/realtime_gateway.py`
 - Per-connection approval manager for server-initiated user approval.
@@ -443,11 +443,11 @@ FS router, terminal, computer actions, page-agent bridge, and tool execution eac
 
 Gap 3: Command inbox is not a product object.
 
-Coze has `desktop/get_command` and `report_command_result`. Octopus has realtime approvals and tool events, but not a persistent local-command inbox with statuses like queued/running/succeeded/failed/timed out/reported.
+Coze has `desktop/get_command` and `report_command_result`. Echo has realtime approvals and tool events, but not a persistent local-command inbox with statuses like queued/running/succeeded/failed/timed out/reported.
 
 Gap 4: Local bridge install/connect is not productized.
 
-Coze uses `npx -y coze-bridge@latest` / `@coze/bridge@latest` with a connect-agent path. Octopus should have an explicit `octopus-bridge` install/repair flow if we want cloud-to-local workflows.
+Coze uses `npx -y coze-bridge@latest` / `@coze/bridge@latest` with a connect-agent path. Echo should have an explicit `echo-bridge` install/repair flow if we want cloud-to-local workflows.
 
 Gap 5: UX still feels too developer-facing in some execution surfaces.
 
@@ -503,9 +503,9 @@ P1: Command Inbox And Audit Journal
 - Persist audit log locally and in thread journal.
 - Let users replay what happened without exposing raw prompt/tool noise by default.
 
-P1: Octopus Bridge
+P1: Echo Bridge
 
-- Ship a dedicated `octopus-bridge` CLI/package.
+- Ship a dedicated `echo-bridge` CLI/package.
 - Connect flow:
   1. generate pairing code
   2. verify account/workspace
@@ -532,7 +532,7 @@ P2: Developer/Power User Mode
 - Keep raw command logs, headers, tool payloads, timing charts, and event streams behind "开发者详情".
 - Default view stays simple.
 
-### 4.4 Security Requirements For Octopus Before Coze-Like Local Control
+### 4.4 Security Requirements For Echo Before Coze-Like Local Control
 
 Minimum bar:
 
@@ -581,7 +581,7 @@ Minimum bar:
 
 Coze Desktop's strongest pattern is making a cloud agent feel attached to a real local computer. Its riskiest pattern is also that same bridge: cloud-originated commands eventually run locally.
 
-Octopus can copy the product value without copying the risk by making the local device bridge explicit, permissioned, replayable, and user-readable.
+Echo can copy the product value without copying the risk by making the local device bridge explicit, permissioned, replayable, and user-readable.
 
 The highest leverage product move is:
 

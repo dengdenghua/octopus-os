@@ -5,6 +5,7 @@ These exercise the public seam (renderer + _build_user_prompt + the
 evolver's defensive _fetch_guard_digest) without spinning up the full
 mutator LLM call — that's exercised in the camouflage suite.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -75,9 +76,7 @@ class TestRenderGuardDigest:
             "total_hits": 999,
             "dominant_category": "code-smell",
             "by_category": {"code-smell": 999},
-            "tuning_candidates": [
-                {"label": f"guard-{i}", "count": 100} for i in range(10)
-            ],
+            "tuning_candidates": [{"label": f"guard-{i}", "count": 100} for i in range(10)],
             "tuning_threshold": 20,
         }
         out = _render_guard_digest_for_prompt(d)
@@ -178,6 +177,7 @@ class TestEvolverFetchDigest:
         ev.mutator = _FakeMutator()  # type: ignore[assignment]
         ev.history = []
         from runtime.safety.experiments.prompt_evolver import EvolutionPolicy
+
         ev.policy = EvolutionPolicy()
         ev._guard_digest_provider = provider
         return ev
@@ -189,6 +189,7 @@ class TestEvolverFetchDigest:
     def test_provider_raises_returns_none(self) -> None:
         def boom() -> dict:
             raise RuntimeError("telemetry down")
+
         ev = self._make(boom)
         assert ev._fetch_guard_digest() is None
 

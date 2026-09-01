@@ -6,7 +6,6 @@ import json
 from typing import Any
 
 import pytest
-
 from runtime.adapters.channels import (
     InboundMessage,
     OutboundMessage,
@@ -65,18 +64,20 @@ class TestConstruct:
 class TestSecretVerification:
     def test_matching_secret_accepted(self):
         ch = TelegramChannel(
-            bot_token="123:abc", webhook_secret="my-secret",
+            bot_token="123:abc",
+            webhook_secret="my-secret",
         )
         body = json.dumps({"update_id": 1}).encode("utf-8")
         result = ch.handle_webhook(
             body=body,
             headers={"X-Telegram-Bot-Api-Secret-Token": "my-secret"},
         )
-        assert result is None   # Implementation note.
+        assert result is None  # Implementation note.
 
     def test_mismatching_secret_raises(self):
         ch = TelegramChannel(
-            bot_token="123:abc", webhook_secret="my-secret",
+            bot_token="123:abc",
+            webhook_secret="my-secret",
         )
         body = json.dumps({"update_id": 1}).encode("utf-8")
         with pytest.raises(TelegramSecretMismatch):
@@ -87,7 +88,8 @@ class TestSecretVerification:
 
     def test_missing_secret_header_rejected(self):
         ch = TelegramChannel(
-            bot_token="123:abc", webhook_secret="my-secret",
+            bot_token="123:abc",
+            webhook_secret="my-secret",
         )
         body = json.dumps({"update_id": 1}).encode("utf-8")
         with pytest.raises(TelegramSecretMismatch):
@@ -101,7 +103,8 @@ class TestSecretVerification:
 
     def test_secret_header_case_insensitive(self):
         ch = TelegramChannel(
-            bot_token="123:abc", webhook_secret="s",
+            bot_token="123:abc",
+            webhook_secret="s",
         )
         body = json.dumps({"update_id": 1}).encode("utf-8")
         # Implementation note.
@@ -124,24 +127,26 @@ def _text_update(
     is_bot: bool = False,
     chat_type: str = "private",
 ) -> bytes:
-    return json.dumps({
-        "update_id": 100,
-        "message": {
-            "message_id": message_id,
-            "from": {
-                "id": 777,
-                "is_bot": is_bot,
-                "first_name": "Alice",
-                "username": "alice_tg",
+    return json.dumps(
+        {
+            "update_id": 100,
+            "message": {
+                "message_id": message_id,
+                "from": {
+                    "id": 777,
+                    "is_bot": is_bot,
+                    "first_name": "Alice",
+                    "username": "alice_tg",
+                },
+                "chat": {
+                    "id": chat_id,
+                    "type": chat_type,
+                },
+                "date": 1700000000,
+                "text": text,
             },
-            "chat": {
-                "id": chat_id,
-                "type": chat_type,
-            },
-            "date": 1700000000,
-            "text": text,
-        },
-    }).encode("utf-8")
+        }
+    ).encode("utf-8")
 
 
 class TestMessageParse:
@@ -161,21 +166,24 @@ class TestMessageParse:
     def test_bot_sender_filtered(self):
         ch = TelegramChannel(bot_token="t")
         result = ch.handle_webhook(
-            body=_text_update(is_bot=True), headers={},
+            body=_text_update(is_bot=True),
+            headers={},
         )
         assert result is None
 
     def test_empty_text_ignored(self):
         ch = TelegramChannel(bot_token="t")
         result = ch.handle_webhook(
-            body=_text_update(text="   "), headers={},
+            body=_text_update(text="   "),
+            headers={},
         )
         assert result is None
 
     def test_group_chat_parsed(self):
         ch = TelegramChannel(bot_token="t")
         msg = ch.handle_webhook(
-            body=_text_update(chat_type="group"), headers={},
+            body=_text_update(chat_type="group"),
+            headers={},
         )
         assert isinstance(msg, InboundMessage)
         assert msg.metadata["chat_type"] == "group"
@@ -183,33 +191,39 @@ class TestMessageParse:
     def test_callback_query_ignored(self):
         """Implementation note."""
         ch = TelegramChannel(bot_token="t")
-        body = json.dumps({
-            "update_id": 5,
-            "callback_query": {"data": "x"},
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "update_id": 5,
+                "callback_query": {"data": "x"},
+            }
+        ).encode("utf-8")
         assert ch.handle_webhook(body=body, headers={}) is None
 
     def test_edited_message_ignored(self):
         """Implementation note."""
         ch = TelegramChannel(bot_token="t")
-        body = json.dumps({
-            "update_id": 6,
-            "edited_message": {"message_id": 1, "text": "edited"},
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "update_id": 6,
+                "edited_message": {"message_id": 1, "text": "edited"},
+            }
+        ).encode("utf-8")
         assert ch.handle_webhook(body=body, headers={}) is None
 
     def test_non_text_message_with_photo_returns_attachment(self):
         ch = TelegramChannel(bot_token="t")
-        body = json.dumps({
-            "update_id": 7,
-            "message": {
-                "message_id": 1,
-                "from": {"id": 1, "is_bot": False},
-                "chat": {"id": 1, "type": "private"},
-                "date": 1700000000,
-                "photo": [{"file_id": "x"}],
-            },
-        }).encode("utf-8")
+        body = json.dumps(
+            {
+                "update_id": 7,
+                "message": {
+                    "message_id": 1,
+                    "from": {"id": 1, "is_bot": False},
+                    "chat": {"id": 1, "type": "private"},
+                    "date": 1700000000,
+                    "photo": [{"file_id": "x"}],
+                },
+            }
+        ).encode("utf-8")
         result = ch.handle_webhook(body=body, headers={})
         assert result is not None
         assert len(result.attachments) == 1
@@ -231,11 +245,13 @@ class TestSend:
     def test_send_hits_bot_url(self):
         http = _FakeHttp()
         ch = TelegramChannel(bot_token="TOKEN:abc", http_client=http)
-        ch.send(OutboundMessage(
-            channel_id="telegram",
-            thread_id="12345:1",
-            content="reply text",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="telegram",
+                thread_id="12345:1",
+                content="reply text",
+            )
+        )
         assert len(http.calls) == 1
         url = http.calls[0]["url"]
         assert "/botTOKEN:abc/sendMessage" in url
@@ -247,15 +263,17 @@ class TestSend:
     def test_metadata_overrides_thread_id(self):
         http = _FakeHttp()
         ch = TelegramChannel(bot_token="t", http_client=http)
-        ch.send(OutboundMessage(
-            channel_id="telegram",
-            thread_id="999:fallback",
-            content="x",
-            metadata={
-                "chat_id": 88,
-                "reply_to_message_id": 42,
-            },
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="telegram",
+                thread_id="999:fallback",
+                content="x",
+                metadata={
+                    "chat_id": 88,
+                    "reply_to_message_id": 42,
+                },
+            )
+        )
         body = http.calls[0]["json"]
         assert str(body["chat_id"]) == "88"
         assert body["reply_to_message_id"] == 42
@@ -263,32 +281,46 @@ class TestSend:
     def test_send_without_reply_to(self):
         http = _FakeHttp()
         ch = TelegramChannel(bot_token="t", http_client=http)
-        ch.send(OutboundMessage(
-            channel_id="telegram",
-            thread_id="100",    # Implementation note.
-            content="x",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="telegram",
+                thread_id="100",  # Implementation note.
+                content="x",
+            )
+        )
         body = http.calls[0]["json"]
         assert "reply_to_message_id" not in body
 
     def test_telegram_api_error_raises(self):
-        http = _FakeHttp(_FakeResp(body={
-            "ok": False,
-            "description": "chat not found",
-        }))
+        http = _FakeHttp(
+            _FakeResp(
+                body={
+                    "ok": False,
+                    "description": "chat not found",
+                }
+            )
+        )
         ch = TelegramChannel(bot_token="t", http_client=http)
         with pytest.raises(TelegramError, match="chat not found"):
-            ch.send(OutboundMessage(
-                channel_id="telegram", thread_id="c:1", content="x",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="telegram",
+                    thread_id="c:1",
+                    content="x",
+                )
+            )
 
     def test_http_error_raises(self):
         http = _FakeHttp(_FakeResp(status_code=500, text="upstream"))
         ch = TelegramChannel(bot_token="t", http_client=http)
         with pytest.raises(TelegramError, match="HTTP 500"):
-            ch.send(OutboundMessage(
-                channel_id="telegram", thread_id="c:1", content="x",
-            ))
+            ch.send(
+                OutboundMessage(
+                    channel_id="telegram",
+                    thread_id="c:1",
+                    content="x",
+                )
+            )
 
 
 # ═══════════════════════════════════════════════════════════

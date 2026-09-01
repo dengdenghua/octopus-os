@@ -21,12 +21,15 @@ import {
   CpuIcon,
   GridIcon,
   LayoutListIcon,
+  ListChecksIcon,
   Loader2Icon,
   MaximizeIcon,
   MinimizeIcon,
   PauseCircleIcon,
   RefreshCwIcon,
+  RotateCcwIcon,
   SearchIcon,
+  ShieldCheckIcon,
   SquareIcon,
   TimerIcon,
   XCircleIcon,
@@ -40,11 +43,14 @@ import {
   cancelAll as apiCancelAll,
   cancelTask as apiCancelTask,
   fetchBatch as apiFetchBatch,
+  fetchBatchRecoverySnapshot as apiFetchBatchRecoverySnapshot,
   fetchOrchestratorStatus as apiFetchOrchestratorStatus,
   STATUS_BG,
   STATUS_TEXT_COLOR as STATUS_COLORS,
+  type BatchRecoverySnapshot,
   type BatchResult,
   type OrchestratorStatus,
+  type ParallelBatchCoordinationSummary,
   type TaskResult,
 } from "@/core/parallel-agents/api";
 import { cn } from "@/lib/utils";
@@ -79,11 +85,209 @@ function getStatusIcon(status: string, className?: string) {
   }
 }
 
+function batchStatusDotClass(status: string): string {
+  switch (status) {
+    case "running":
+      return "bg-info";
+    case "completed":
+      return "bg-success";
+    case "failed":
+    case "timed_out":
+      return "bg-destructive";
+    case "cancelled":
+      return "bg-warning";
+    case "partial":
+      return "bg-warning";
+    default:
+      return "bg-muted-foreground";
+  }
+}
+
+function pickFocusBatchId(batches: Record<string, string>): string | null {
+  const entries = Object.entries(batches);
+  const running = entries.find(([, status]) => status === "running");
+  return (running ?? entries[0])?.[0] ?? null;
+}
+
+function parallelStatusLabel(status: string, labels: Record<string, string>) {
+  return (
+    labels[status] ??
+    labels[status.replace(/_([a-z])/g, (_, c) => c.toUpperCase())] ??
+    status
+  );
+}
+
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return "--";
   if (seconds < 1) return `${(seconds * 1000).toFixed(0)}ms`;
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
   return `${(seconds / 60).toFixed(1)}m`;
+}
+
+function hasCoordinationSignal(
+  summary: ParallelBatchCoordinationSummary | undefined,
+): summary is ParallelBatchCoordinationSummary {
+  if (!summary) return false;
+  return Boolean(
+    summary.recommended_next_action ||
+      summary.primary_task_id ||
+      summary.failed_task_ids?.length ||
+      summary.cancelled_task_ids?.length ||
+      summary.dependency_blocked_task_ids?.length ||
+      summary.conflict_count ||
+      summary.contract_issue_count ||
+      summary.contract_warning_count,
+  );
+}
+
+function formatCoordinationAction(action: string): string {
+  if (!action) return "";
+  return action
+    .replace(/^use_/, "use ")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function CoordinationSummaryNotice({
+  summary,
+}: {
+  summary: ParallelBatchCoordinationSummary | undefined;
+}) {
+  const { t } = useI18n();
+  if (!hasCoordinationSignal(summary)) return null;
+
+  const labels = t.parallelAgents;
+  const checkpoint = summary.checkpoint?.after_sequence;
+  const failedTaskIds = summary.failed_task_ids ?? [];
+  const cancelledTaskIds = summary.cancelled_task_ids ?? [];
+  const dependencyBlockedTaskIds = summary.dependency_blocked_task_ids ?? [];
+  const warningCount =
+    (summary.conflict_count ?? 0) +
+    (summary.contract_issue_count ?? 0) +
+    (summary.contract_warning_count ?? 0);
+
+  return (
+    <div className="border-b bg-muted/20 px-4 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="inline-flex items-center gap-1 font-medium text-foreground">
+          <ListChecksIcon className="size-3.5 text-muted-foreground" />
+          {labels.coordinationSummary}
+        </span>
+        <span
+          className={cn(
+            "font-medium",
+            summary.ready
+              ? "text-success"
+              : "text-warning",
+          )}
+        >
+          {labels.coordinationAction(
+            formatCoordinationAction(summary.recommended_next_action),
+          )}
+        </span>
+        {summary.primary_task_id && (
+          <span className="text-muted-foreground font-mono">
+            {labels.primaryTask(summary.primary_task_id)}
+          </span>
+        )}
+        {failedTaskIds.length > 0 && (
+          <span className="text-destructive">
+            {labels.failedTasks(failedTaskIds.length)}
+          </span>
+        )}
+        {cancelledTaskIds.length > 0 && (
+          <span className="text-warning">
+            {labels.cancelledTasks(cancelledTaskIds.length)}
+          </span>
+        )}
+        {dependencyBlockedTaskIds.length > 0 && (
+          <span className="text-warning">
+            {labels.dependencyBlocked(dependencyBlockedTaskIds.length)}
+          </span>
+        )}
+        {warningCount > 0 && (
+          <span className="inline-flex items-center gap-1 text-warning">
+            <AlertTriangleIcon className="size-3" />
+            {labels.coordinationWarnings(warningCount)}
+          </span>
+        )}
+        {typeof checkpoint === "number" && (
+          <span className="text-muted-foreground font-mono">
+            {labels.checkpointSequence(checkpoint)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecoverySnapshotNotice({
+  snapshot,
+}: {
+  snapshot: BatchRecoverySnapshot | null;
+}) {
+  const { t } = useI18n();
+  if (!snapshot) return null;
+
+  const labels = t.parallelAgents;
+  const rerunnable = snapshot.recovery_hints.rerunnable_task_ids ?? [];
+  const failed = snapshot.recovery_hints.failed_task_ids ?? [];
+  const blocked = snapshot.recovery_hints.blocked_by_dependency ?? [];
+  const afterSequence = snapshot.recovery_hints.checkpoint?.after_sequence;
+  const rawOutputsIncluded =
+    snapshot.safety.raw_subagent_outputs_included === true ||
+    snapshot.safety.event_payloads_included === true ||
+    snapshot.safety.owner_id_included === true;
+
+  if (
+    !snapshot.resume_available &&
+    failed.length === 0 &&
+    blocked.length === 0
+  ) {
+    return null;
+  }
+
+  return (
+    <div className="border-b bg-warning/5 px-4 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="inline-flex items-center gap-1 font-medium text-warning">
+          <RotateCcwIcon className="size-3.5" />
+          {labels.recoveryReady}
+        </span>
+        {rerunnable.length > 0 && (
+          <span className="text-muted-foreground">
+            {labels.rerunnableTasks(rerunnable.length)}
+          </span>
+        )}
+        {failed.length > 0 && (
+          <span className="text-destructive">
+            {labels.failedTasks(failed.length)}
+          </span>
+        )}
+        {blocked.length > 0 && (
+          <span className="text-warning">
+            {labels.dependencyBlocked(blocked.length)}
+          </span>
+        )}
+        {typeof afterSequence === "number" && (
+          <span className="text-muted-foreground font-mono">
+            {labels.checkpointSequence(afterSequence)}
+          </span>
+        )}
+        <span
+          className={cn(
+            "inline-flex items-center gap-1",
+            rawOutputsIncluded
+              ? "text-destructive"
+              : "text-success",
+          )}
+        >
+          <ShieldCheckIcon className="size-3" />
+          {rawOutputsIncluded ? labels.recoveryUnsafe : labels.recoverySafe}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +333,7 @@ function ProgressRing({
         strokeDasharray={circumference}
         strokeDashoffset={circumference * (1 - successPct)}
         strokeLinecap="round"
-        className="text-green-500 transition-all duration-500"
+        className="text-success transition-colors duration-slow"
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
       />
       {/* Failed arc */}
@@ -144,7 +348,7 @@ function ProgressRing({
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - failPct)}
           strokeLinecap="round"
-          className="text-red-500 transition-all duration-500"
+          className="text-destructive transition-colors duration-slow"
           transform={`rotate(${-90 + successPct * 360} ${size / 2} ${size / 2})`}
         />
       )}
@@ -154,7 +358,7 @@ function ProgressRing({
         y={size / 2}
         textAnchor="middle"
         dominantBaseline="central"
-        className="fill-foreground text-[10px] font-bold"
+        className="fill-foreground text-xs font-bold"
       >
         {completed}/{total}
       </text>
@@ -194,7 +398,7 @@ function AgentCard({
         type="button"
         onClick={onClick}
         className={cn(
-          "flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-all hover:shadow-sm",
+          "flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors transition-shadow hover:shadow-[var(--shadow-xs)]",
           STATUS_BG[task.status] ?? "bg-card",
         )}
       >
@@ -204,16 +408,16 @@ function AgentCard({
             <span className="truncate text-xs font-medium">
               {task.subagent_name || `Agent-${index}`}
             </span>
-            <span className="text-muted-foreground font-mono text-[9px]">
+            <span className="text-muted-foreground font-mono text-xs">
               #{String(index).padStart(2, "0")}
             </span>
           </div>
-          <p className="text-muted-foreground truncate text-[10px]">
+          <p className="text-muted-foreground truncate text-xs">
             {task.result?.slice(0, 60) ?? task.error ?? "Pending..."}
           </p>
         </div>
         {task.duration_seconds !== null && (
-          <span className="text-muted-foreground text-[10px]">
+          <span className="text-muted-foreground text-xs">
             {formatDuration(task.duration_seconds)}
           </span>
         )}
@@ -224,7 +428,7 @@ function AgentCard({
   return (
     <div
       className={cn(
-        "rounded-lg border transition-all",
+        "rounded-lg border transition-colors",
         STATUS_BG[task.status] ?? "bg-card",
       )}
     >
@@ -234,12 +438,12 @@ function AgentCard({
           <div
             className={cn(
               "flex h-10 w-10 items-center justify-center rounded-lg",
-              task.status === "running" ? "bg-blue-500/15" : "bg-muted",
+              task.status === "running" ? "bg-info/15" : "bg-muted",
             )}
           >
             <BotIcon className="text-muted-foreground size-5" />
           </div>
-          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-lg bg-foreground text-[8px] font-bold text-background">
+          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-lg bg-foreground text-micro font-bold text-background">
             {String(index).padStart(2, "0")}
           </span>
         </div>
@@ -253,14 +457,17 @@ function AgentCard({
             {getStatusIcon(task.status)}
             <span
               className={cn(
-                "text-[10px] font-medium",
+                "text-xs font-medium",
                 STATUS_COLORS[task.status],
               )}
             >
-              {(t.parallelAgents.statusLabels as Record<string, string>)[task.status] ?? task.status}
+              {parallelStatusLabel(
+                task.status,
+                t.parallelAgents.statusLabels as Record<string, string>,
+              )}
             </span>
             {task.duration_seconds !== null && (
-              <span className="text-muted-foreground ml-auto flex items-center gap-0.5 text-[10px]">
+              <span className="text-muted-foreground ml-auto flex items-center gap-0.5 text-xs">
                 <TimerIcon className="size-2.5" />
                 {formatDuration(task.duration_seconds)}
               </span>
@@ -268,7 +475,7 @@ function AgentCard({
           </div>
 
           {/* Task ID */}
-          <p className="text-muted-foreground mt-0.5 font-mono text-[10px]">
+          <p className="text-muted-foreground mt-0.5 font-mono text-xs">
             {task.task_id}
           </p>
 
@@ -280,7 +487,7 @@ function AgentCard({
             </p>
           )}
           {task.error && (
-            <p className="mt-1.5 line-clamp-2 text-xs text-red-500">
+            <p className="mt-1.5 line-clamp-2 text-xs text-destructive">
               {task.error}
             </p>
           )}
@@ -291,7 +498,7 @@ function AgentCard({
               {Array.from({ length: 8 }).map((_, i) => (
                 <span
                   key={i}
-                  className="size-[5px] rounded-lg bg-blue-500"
+                  className="size-[5px] rounded-lg bg-info"
                   style={{
                     opacity: 0.25,
                     animation: `dotPulse 1.2s ease-in-out ${i * 0.12}s infinite`,
@@ -310,7 +517,7 @@ function AgentCard({
               e.stopPropagation();
               onCancel(task.task_id);
             }}
-            className="text-muted-foreground hover:text-red-500 shrink-0 rounded p-1 transition-colors"
+            className="text-muted-foreground hover:text-destructive shrink-0 rounded p-1 transition-colors"
           >
             <XIcon className="size-3.5" />
           </button>
@@ -340,11 +547,14 @@ function AggregatedResultsView({
         <button
           type="button"
           onClick={onBack}
+          aria-label={t.common.back}
           className="text-muted-foreground hover:text-foreground"
         >
           <ChevronLeftIcon className="size-4" />
         </button>
-        <span className="text-sm font-semibold">{t.parallelAgents.aggregatedResults}</span>
+        <span className="text-sm font-semibold">
+          {t.parallelAgents.aggregatedResults}
+        </span>
         <span className="text-muted-foreground text-xs">
           {batch.aggregation_strategy}
         </span>
@@ -353,33 +563,37 @@ function AggregatedResultsView({
             type="button"
             onClick={() => setShowRaw(!showRaw)}
             className={cn(
-              "rounded px-2 py-0.5 text-[10px] font-medium transition-colors",
+              "rounded px-2 py-0.5 text-xs font-medium transition-colors",
               showRaw
                 ? "bg-foreground/10 text-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {showRaw ? t.parallelAgents.aggregated : t.parallelAgents.rawResults}
+            {showRaw
+              ? t.parallelAgents.aggregated
+              : t.parallelAgents.rawResults}
           </button>
         </div>
       </div>
 
       {/* Conflicts banner */}
       {batch.conflicts.length > 0 && (
-        <div className="border-b bg-amber-500/5 px-4 py-2">
-          <div className="flex items-center gap-1.5 text-amber-600">
+        <div className="border-b bg-warning/5 px-4 py-2">
+          <div className="flex items-center gap-1.5 text-warning">
             <AlertTriangleIcon className="size-3.5" />
             <span className="text-xs font-medium">
               {t.parallelAgents.conflictsDetected(batch.conflicts.length)}
             </span>
           </div>
           {batch.conflicts.map((c, i) => (
-            <p key={i} className="text-muted-foreground mt-1 text-[11px]">
+            <p key={i} className="text-muted-foreground mt-1 text-xs">
               {c}
             </p>
           ))}
         </div>
       )}
+
+      <CoordinationSummaryNotice summary={batch.coordination_summary} />
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {showRaw ? (
@@ -392,7 +606,7 @@ function AggregatedResultsView({
                   </span>
                   {getStatusIcon(r.status)}
                   {r.duration_seconds !== null && (
-                    <span className="text-muted-foreground text-[10px]">
+                    <span className="text-muted-foreground text-xs">
                       {formatDuration(r.duration_seconds)}
                     </span>
                   )}
@@ -417,14 +631,12 @@ function AggregatedResultsView({
 // Main Panel
 // ---------------------------------------------------------------------------
 
-export function ParallelAgentsPanel({
-  className,
-}: {
-  className?: string;
-}) {
+export function ParallelAgentsPanel({ className }: { className?: string }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<OrchestratorStatus | null>(null);
   const [activeBatch, setActiveBatch] = useState<BatchResult | null>(null);
+  const [recoverySnapshot, setRecoverySnapshot] =
+    useState<BatchRecoverySnapshot | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [collapsed, setCollapsed] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -440,7 +652,14 @@ export function ParallelAgentsPanel({
   // Fetch batch details for active batches
   const fetchBatch = useCallback(async (batchId: string) => {
     const data = await apiFetchBatch(batchId);
-    if (data) setActiveBatch(data);
+    if (!data) return;
+    setActiveBatch(data);
+    if (data.status === "running") {
+      setRecoverySnapshot(null);
+      return;
+    }
+    const snapshot = await apiFetchBatchRecoverySnapshot(batchId);
+    setRecoverySnapshot(snapshot);
   }, []);
 
   useEffect(() => {
@@ -451,16 +670,21 @@ export function ParallelAgentsPanel({
     };
   }, [fetchStatus]);
 
-  // Auto-fetch the first running batch
+  // Auto-fetch the first running batch, or keep the latest terminal batch
+  // visible so failed/cancelled evidence is not hidden behind an empty state.
   useEffect(() => {
     if (!status) return;
-    const runningBatch = Object.entries(status.batches).find(
-      ([, s]) => s === "running",
-    );
-    if (runningBatch) {
-      fetchBatch(runningBatch[0]);
+    const nextBatchId = pickFocusBatchId(status.batches);
+    if (!nextBatchId) return;
+    const nextBatchStatus = status.batches[nextBatchId];
+    if (
+      nextBatchStatus === "running" ||
+      nextBatchId !== activeBatch?.batch_id ||
+      nextBatchStatus !== activeBatch?.status
+    ) {
+      fetchBatch(nextBatchId);
     }
-  }, [status, fetchBatch]);
+  }, [activeBatch?.batch_id, activeBatch?.status, status, fetchBatch]);
 
   // Cancel handlers
   const cancelTask = useCallback(
@@ -498,18 +722,18 @@ export function ParallelAgentsPanel({
       {/* Header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <ZapIcon className="size-4 text-amber-500" />
+          <ZapIcon className="size-4 text-warning" />
           {t.parallelAgents.title}
         </div>
         <div className="flex items-center gap-2">
           {isActive && (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-600">
-              <span className="size-1.5 animate-pulse rounded-lg bg-blue-500" />
+            <span className="inline-flex items-center gap-1 rounded-lg bg-info/10 px-2 py-0.5 text-xs font-medium text-info">
+              <span className="size-1.5 animate-pulse rounded-lg bg-info" />
               {totalActive} {t.parallelAgents.active}
             </span>
           )}
           {status && (
-            <span className="text-muted-foreground text-[10px]">
+            <span className="text-muted-foreground text-xs">
               {t.parallelAgents.max}: {status.max_concurrency}
             </span>
           )}
@@ -559,23 +783,23 @@ export function ParallelAgentsPanel({
               <ProgressRing
                 completed={activeBatch.completed_tasks}
                 total={activeBatch.total_tasks}
-                failed={activeBatch.failed_tasks}
+                failed={activeBatch.failed_tasks + activeBatch.cancelled_tasks}
                 size={36}
               />
             )}
             <div className="min-w-0 flex-1">
               {status && (
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]">
-                  <span className="text-green-500">
+                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
+                  <span className="text-success">
                     {status.completed_count} {t.parallelAgents.completed}
                   </span>
                   {status.failed_count > 0 && (
-                    <span className="text-red-500">
+                    <span className="text-destructive">
                       {status.failed_count} {t.parallelAgents.failed}
                     </span>
                   )}
                   {status.cancelled_count > 0 && (
-                    <span className="text-yellow-500">
+                    <span className="text-warning">
                       {status.cancelled_count} {t.parallelAgents.cancelled}
                     </span>
                   )}
@@ -619,7 +843,10 @@ export function ParallelAgentsPanel({
               {/* Refresh */}
               <button
                 type="button"
-                onClick={fetchStatus}
+                onClick={() => {
+                  fetchStatus();
+                  if (activeBatch) fetchBatch(activeBatch.batch_id);
+                }}
                 className="text-muted-foreground hover:text-foreground rounded p-1"
               >
                 <RefreshCwIcon className="size-3.5" />
@@ -630,13 +857,21 @@ export function ParallelAgentsPanel({
                 <button
                   type="button"
                   onClick={cancelAll}
-                  className="text-muted-foreground hover:text-red-500 rounded p-1"
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                 >
                   <SquareIcon className="size-3.5" />
                 </button>
               )}
             </div>
           </div>
+
+          <RecoverySnapshotNotice snapshot={recoverySnapshot} />
+          <CoordinationSummaryNotice
+            summary={
+              recoverySnapshot?.coordination_summary ??
+              activeBatch?.coordination_summary
+            }
+          />
 
           {/* Filter bar */}
           {activeBatch && activeBatch.results.length > 5 && (
@@ -691,7 +926,7 @@ export function ParallelAgentsPanel({
           {/* Batch selector (if multiple batches) */}
           {batchCount > 1 && status && (
             <div className="flex items-center gap-1.5 border-t px-3 py-2">
-              <span className="text-muted-foreground text-[10px]">
+              <span className="text-muted-foreground text-xs">
                 {t.parallelAgents.batches}
               </span>
               {Object.entries(status.batches).map(([bid, bstatus]) => (
@@ -700,7 +935,7 @@ export function ParallelAgentsPanel({
                   type="button"
                   onClick={() => fetchBatch(bid)}
                   className={cn(
-                    "rounded-lg px-2 py-0.5 text-[10px] font-medium transition-colors",
+                    "rounded-lg px-2 py-0.5 text-xs font-medium transition-colors",
                     activeBatch?.batch_id === bid
                       ? "bg-foreground/10 text-foreground"
                       : "text-muted-foreground hover:text-foreground",
@@ -710,13 +945,7 @@ export function ParallelAgentsPanel({
                   <span
                     className={cn(
                       "ml-1 inline-block size-1.5 rounded-lg",
-                      bstatus === "running"
-                        ? "bg-blue-500"
-                        : bstatus === "completed"
-                          ? "bg-green-500"
-                          : bstatus === "failed"
-                            ? "bg-red-500"
-                            : "bg-muted-foreground",
+                      batchStatusDotClass(bstatus),
                     )}
                   />
                 </button>

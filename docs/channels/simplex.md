@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过 SimpleX Chat 的 SMP 协议和 XFTP 将 Octopus-Agent 接入 SimpleX，实现完全去中心化、无用户标识的隐私智能对话。
+通过 SimpleX Chat 的 SMP 协议和 XFTP 将 Echo Agent 接入 SimpleX，实现完全去中心化、无用户标识的隐私智能对话。
 
 ## 剽置条件
 
@@ -29,7 +29,7 @@
 3. 获取机器人的 Connection Address（用于用户连接）
 4. 记录 API 端口和密码
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 Simplex，填写以下字段：
 
@@ -39,7 +39,7 @@
 | API 密钥 | Agent API 认证密钥 | `your-api-key` |
 | 自动接受联系 | 是否自动接受联系人请求 | `true` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -53,7 +53,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -73,7 +73,7 @@ octopus serve
 
 ## Webhook 配置
 
-SimpleX Chat 使用 Agent Client API（基于 WebSocket）接收事件，无需配置传统 Webhook。Octopus-Agent 启动后会通过 WebSocket 连接 SimpleX Chat Agent API 并监听新消息事件。
+SimpleX Chat 使用 Agent Client API（基于 WebSocket）接收事件，无需配置传统 Webhook。Echo Agent 启动后会通过 WebSocket 连接 SimpleX Chat Agent API 并监听新消息事件。
 
 如需使用自定义 SMP 服务器，可在 SimpleX Chat 配置中指定：
 
@@ -95,7 +95,7 @@ A: 1) 确认 simplex-chat 进程正在运行且端口正确；2) 检查 API 密�
 A: 用户需要获取机器人的 Connection Address（通过二维码或链接），在 SimpleX 客户端中添加联系人。如果开启了 `auto_accept_contacts`，机器人会自动接受连接请求。
 
 ### Q: SimpleX 的隐私优势是什么？
-A: SimpleX 不使用用户标识（无用户 ID、无手机号），所有通信通过一次性地址路由，服务器无法知道谁在和谁通信。Octopus-Agent 不会存储任何用户身份信息。
+A: SimpleX 不使用用户标识（无用户 ID、无手机号），所有通信通过一次性地址路由，服务器无法知道谁在和谁通信。Echo Agent 不会存储任何用户身份信息。
 
 ## 相关链接
 
@@ -103,4 +103,4 @@ A: SimpleX 不使用用户标识（无用户 ID、无手机号），所有通信
 - [SimpleX Chat GitHub](https://github.com/simplex-chat/simplex-chat)
 - [SimpleX 协议文档](https://github.com/simplex-chat/simplex-chat/blob/stable/protocol.md)
 - [SimpleX Agent Client API](https://github.com/simplex-chat/simplex-chat/blob/stable/docs/AGENT.md)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/simplex)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/simplex)

@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过企业微信自建应用将 Octopus-Agent 接入企业微信，支持在单聊和群聊中与企业成员进行智能对话。
+通过企业微信自建应用将 Echo Agent 接入企业微信，支持在单聊和群聊中与企业成员进行智能对话。
 
 ## 前置条件
 
@@ -20,7 +20,7 @@
 4. 在应用的「接收消息」设置中配置回调 URL
 5. 在「网页授权及 JS-SDK」中设置可信域名
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择企业微信，填写以下字段：
 
@@ -32,7 +32,7 @@
 | Token | 回调 Token | `your_token` |
 | Encoding AES Key | 回调加密密钥 | `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -47,7 +47,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -71,7 +71,7 @@ octopus serve
 
 Webhook URL 格式：`https://your-domain.com/api/channels/wecom/webhook`
 
-企业微信会向该 URL 发送 GET 验证请求（包含 `msg_signature`、`timestamp`、`nonce`、`echostr` 参数），Octopus-Agent 会自动使用 Token 和 Encoding AES Key 完成验证并返回解密后的 echostr。
+企业微信会向该 URL 发送 GET 验证请求（包含 `msg_signature`、`timestamp`、`nonce`、`echostr` 参数），Echo Agent 会自动使用 Token 和 Encoding AES Key 完成验证并返回解密后的 echostr。
 
 ## 常见问题
 
@@ -82,11 +82,11 @@ A: 1) 确认服务器公网可访问；2) 确认 Token 和 Encoding AES Key 与�
 A: 1) 确认 Secret 正确且应用已发布；2) 检查 access_token 是否有效（有效期 7200 秒）；3) 确认接收消息的用户在应用的可见范围内。
 
 ### Q: 如何发送 Markdown 消息？
-A: 企业微信支持 Markdown 格式消息（msgtype 为 `markdown`），Octopus-Agent 会自动将 AI 回复转换为 Markdown 格式发送。注意企业微信的 Markdown 支持有限，仅支持部分语法。
+A: 企业微信支持 Markdown 格式消息（msgtype 为 `markdown`），Echo Agent 会自动将 AI 回复转换为 Markdown 格式发送。注意企业微信的 Markdown 支持有限，仅支持部分语法。
 
 ## 相关链接
 
 - [企业微信管理后台](https://work.weixin.qq.com/wework_admin/frame)
 - [企业微信 API 文档](https://developer.work.weixin.qq.com/document/)
 - [企业微信回调配置指南](https://developer.work.weixin.qq.com/document/path/90930)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/wecom)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/wecom)

@@ -1,0 +1,290 @@
+name: Echo delivery release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_revision:
+        description: Full OS commit currently at os-main
+        required: true
+        type: string
+      release_tag:
+        description: Exact echo-appliance-v<semver> tag
+        required: true
+        type: string
+      os_image_run_id:
+        description: Successful Echo OS image run ID
+        required: true
+        type: string
+      ab_update_run_id:
+        description: Successful A/B update smoke run ID
+        required: true
+        type: string
+      real_omv_x86_run_id:
+        description: Successful Real OMV x86 run ID
+        required: true
+        type: string
+      appliance_run_id:
+        description: Successful appliance tag release run ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+concurrency:
+  group: echo-delivery-release-candidate-${{ inputs.source_revision }}
+  cancel-in-progress: false
+
+jobs:
+  bind-candidate:
+    name: Bind verified release evidence
+    if: github.ref == 'refs/heads/os-main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ECHO_SOURCE_REVISION: ${{ inputs.source_revision }}
+      ECHO_RELEASE_TAG: ${{ inputs.release_tag }}
+      ECHO_OS_IMAGE_RUN_ID: ${{ inputs.os_image_run_id }}
+      ECHO_AB_UPDATE_RUN_ID: ${{ inputs.ab_update_run_id }}
+      ECHO_REAL_OMV_X86_RUN_ID: ${{ inputs.real_omv_x86_run_id }}
+      ECHO_APPLIANCE_RUN_ID: ${{ inputs.appliance_run_id }}
+
+    steps:
+      - name: Checkout the exact os-main candidate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: os-main
+          fetch-depth: 1
+
+      - name: Prove this trusted workflow itself runs at the candidate source
+        run: |
+          test "$GITHUB_REF" = refs/heads/os-main
+          test "$GITHUB_SHA" = "$ECHO_SOURCE_REVISION"
+          test "$(git branch --show-current)" = os-main
+          test "$(git rev-parse HEAD)" = "$ECHO_SOURCE_REVISION"
+
+      - name: Run the online clean-source gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist/release-candidate
+          python3 deploy/appliance/delivery_source_preflight.py --compact \
+            > dist/release-candidate/echo-delivery-source-preflight.json
+
+      - name: Download the exact raw-image evidence run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: echo-os-x86-64-release-evidence
+          path: evidence/os-image
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.os_image_run_id }}
+
+      - name: Download the exact A/B lifecycle evidence run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: echo-os-ab-update-release-evidence
+          path: evidence/ab-update
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ab_update_run_id }}
+
+      - name: Download the exact real OMV x86 evidence run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: echo-real-omv-x86-evidence
+          path: evidence/omv
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.real_omv_x86_run_id }}
+
+      - name: Download the exact immutable appliance release run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: echo-appliance-${{ inputs.release_tag }}
+          path: evidence/appliance
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.appliance_run_id }}
+
+      - name: Verify run identities, OIDC provenance and the unified evidence index
+        run: |
+          shopt -s nullglob
+          plugin_packages=(evidence/omv/openmediavault-echo-os_*_all.deb)
+          test "${#plugin_packages[@]}" -eq 1
+          plugin_package="${plugin_packages[0]}"
+
+          python3 deploy/appliance/release_candidate_preflight.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-revision "$ECHO_SOURCE_REVISION" \
+            --release-tag "$ECHO_RELEASE_TAG" \
+            --os-image-run-id "$ECHO_OS_IMAGE_RUN_ID" \
+            --ab-update-run-id "$ECHO_AB_UPDATE_RUN_ID" \
+            --real-omv-x86-run-id "$ECHO_REAL_OMV_X86_RUN_ID" \
+            --appliance-run-id "$ECHO_APPLIANCE_RUN_ID" \
+            --os-image-manifest evidence/os-image/echo-os-image-evidence.json \
+            --os-image-signature evidence/os-image/echo-os-image-evidence.json.gpg \
+            --os-image-keyring evidence/os-image/echo-install-keyring.gpg \
+            --ab-manifest evidence/ab-update/echo-ab-update-evidence.json \
+            --ab-signature evidence/ab-update/echo-ab-update-evidence.json.gpg \
+            --ab-keyring evidence/ab-update/echo-update-keyring.gpg \
+            --omv-evidence evidence/omv/echo-real-omv-x86-evidence.json \
+            --omv-verification evidence/omv/echo-real-omv-x86-evidence.verification.json \
+            --omv-plugin "$plugin_package" \
+            --appliance-manifest evidence/appliance/echo-appliance-release.json \
+            --output dist/release-candidate/echo-release-candidate-preflight.json
+
+          python3 deploy/appliance/release_evidence_index.py \
+            --source-preflight \
+              dist/release-candidate/echo-delivery-source-preflight.json \
+            --candidate-preflight \
+              dist/release-candidate/echo-release-candidate-preflight.json \
+            --os-image-evidence evidence/os-image/echo-os-image-evidence.json \
+            --os-image-signature evidence/os-image/echo-os-image-evidence.json.gpg \
+            --os-image-keyring evidence/os-image/echo-install-keyring.gpg \
+            --ab-evidence evidence/ab-update/echo-ab-update-evidence.json \
+            --ab-signature evidence/ab-update/echo-ab-update-evidence.json.gpg \
+            --ab-keyring evidence/ab-update/echo-update-keyring.gpg \
+            --omv-verification evidence/omv/echo-real-omv-x86-evidence.verification.json \
+            --omv-evidence evidence/omv/echo-real-omv-x86-evidence.json \
+            --omv-plugin-package "$plugin_package" \
+            --appliance-release evidence/appliance/echo-appliance-release.json \
+            --output dist/release-candidate/echo-delivery-release-evidence-index.json
+
+      - name: Package the offline candidate audit contract
+        run: |
+          shopt -s nullglob
+          plugin_packages=(evidence/omv/openmediavault-echo-os_*_all.deb)
+          test "${#plugin_packages[@]}" -eq 1
+          plugin_package="${plugin_packages[0]}"
+          mkdir -p dist/release-candidate/inputs
+          cp deploy/appliance/delivery_source_preflight.py \
+            dist/release-candidate/delivery_source_preflight.py
+          cp deploy/appliance/hub_lifecycle_lab.py \
+            dist/release-candidate/hub_lifecycle_lab.py
+          cp deploy/appliance/lan_discovery_functional_lab.py \
+            dist/release-candidate/lan_discovery_functional_lab.py
+          cp deploy/appliance/paperless_functional_lab.py \
+            dist/release-candidate/paperless_functional_lab.py
+          cp deploy/appliance/physical_acceptance.py \
+            dist/release-candidate/physical_acceptance.py
+          cp deploy/appliance/physical_acceptance_capture.py \
+            dist/release-candidate/physical_acceptance_capture.py
+          cp deploy/appliance/product_delivery_bundle.py \
+            dist/release-candidate/product_delivery_bundle.py
+          cp deploy/appliance/release_candidate_preflight.py \
+            dist/release-candidate/release_candidate_preflight.py
+          cp deploy/appliance/release_evidence_index.py \
+            dist/release-candidate/release_evidence_index.py
+          cp deploy/installer/verify_public_keyring.py \
+            dist/release-candidate/verify_public_keyring.py
+          cp deploy/appliance/verify-release-candidate-bundle.sh \
+            dist/release-candidate/verify-release-candidate-bundle.sh
+          cp packaging/image/verify-os-image-evidence-release.sh \
+            dist/release-candidate/verify-os-image-evidence-release.sh
+          cp evidence/os-image/echo-os-image-evidence.json \
+            dist/release-candidate/inputs/os-image-evidence.json
+          cp evidence/os-image/echo-os-image-evidence.json.gpg \
+            dist/release-candidate/inputs/os-image-evidence.json.gpg
+          cp evidence/os-image/echo-install-keyring.gpg \
+            dist/release-candidate/inputs/os-image-keyring.gpg
+          cp evidence/ab-update/echo-ab-update-evidence.json \
+            dist/release-candidate/inputs/ab-update-evidence.json
+          cp evidence/ab-update/echo-ab-update-evidence.json.gpg \
+            dist/release-candidate/inputs/ab-update-evidence.json.gpg
+          cp evidence/ab-update/echo-update-keyring.gpg \
+            dist/release-candidate/inputs/ab-update-keyring.gpg
+          cp evidence/omv/echo-real-omv-x86-evidence.json \
+            dist/release-candidate/inputs/omv-evidence.json
+          cp evidence/omv/echo-real-omv-x86-evidence.verification.json \
+            dist/release-candidate/inputs/omv-verification.json
+          cp "$plugin_package" \
+            dist/release-candidate/inputs/openmediavault-echo-os.deb
+          cp evidence/appliance/echo-appliance-release.json \
+            dist/release-candidate/inputs/appliance-release.json
+          (
+            cd dist/release-candidate
+            sha256sum \
+              echo-delivery-source-preflight.json \
+              echo-release-candidate-preflight.json \
+              echo-delivery-release-evidence-index.json \
+              delivery_source_preflight.py \
+              hub_lifecycle_lab.py \
+              lan_discovery_functional_lab.py \
+              paperless_functional_lab.py \
+              physical_acceptance.py \
+              physical_acceptance_capture.py \
+              product_delivery_bundle.py \
+              release_candidate_preflight.py \
+              release_evidence_index.py \
+              verify_public_keyring.py \
+              verify-os-image-evidence-release.sh \
+              verify-release-candidate-bundle.sh \
+              inputs/os-image-evidence.json \
+              inputs/os-image-evidence.json.gpg \
+              inputs/os-image-keyring.gpg \
+              inputs/ab-update-evidence.json \
+              inputs/ab-update-evidence.json.gpg \
+              inputs/ab-update-keyring.gpg \
+              inputs/omv-evidence.json \
+              inputs/omv-verification.json \
+              inputs/openmediavault-echo-os.deb \
+              inputs/appliance-release.json \
+              > echo-delivery-release-candidate.sha256
+          )
+
+      - name: Replay the packaged candidate without repository source
+        run: ./dist/release-candidate/verify-release-candidate-bundle.sh
+
+      - name: Attest the complete release-candidate decision
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/release-candidate/*.json
+            dist/release-candidate/*.sha256
+            dist/release-candidate/*.py
+            dist/release-candidate/*.sh
+            dist/release-candidate/inputs/*
+
+      - name: Upload the verified release-candidate decision
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: echo-delivery-release-candidate-${{ inputs.release_tag }}
+          path: dist/release-candidate/**
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish the immutable candidate identity
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path("dist/release-candidate/echo-delivery-release-evidence-index.json")
+              .read_text(encoding="utf-8")
+          )
+          print("## Echo delivery release candidate")
+          print(f"- OS source: `{report['source']['commit']}`")
+          print(f"- Agent source: `{report['source']['agentCommit']}`")
+          print(f"- Evidence index: `{report['indexId']}`")
+          print("- CI release candidate: **ready**")
+          print("- NAS product delivery: **physical gates still required**")
+          print("- After offline replay, generate the candidate-bound six-gate lab plan:")
+          print(
+              "  `python3 physical_acceptance_capture.py plan "
+              "--candidate-index echo-delivery-release-evidence-index.json "
+              "--output ../echo-physical-acceptance-lab-plan.json`"
+          )
+          print(
+              "  `python3 physical_acceptance_capture.py verify-plan "
+              "--candidate-index echo-delivery-release-evidence-index.json "
+              "--plan ../echo-physical-acceptance-lab-plan.json`"
+          )
+          PY

@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.adapters.instrumentation import (
-    OCTOPUS_ATTR_STAGE,
-    OCTOPUS_ATTR_TASK_ID,
+    ECHO_ATTR_STAGE,
+    ECHO_ATTR_TASK_ID,
     OTEL_AVAILABLE,
     get_tracer,
     record_gen_ai_cost,
@@ -93,7 +92,7 @@ class TestOtelPath:
         assert len(spans) == 1
         s = spans[0]
         assert s.name == "unit.fn"
-        assert s.attributes.get(OCTOPUS_ATTR_STAGE) == "execute"
+        assert s.attributes.get(ECHO_ATTR_STAGE) == "execute"
 
     def test_trace_stage_emits_with_attributes(self, in_memory_exporter):
         with trace_stage("test.stage", stage="classify", task_id="abc-123"):
@@ -101,8 +100,8 @@ class TestOtelPath:
 
         spans = in_memory_exporter.get_finished_spans()
         assert len(spans) == 1
-        assert spans[0].attributes.get(OCTOPUS_ATTR_STAGE) == "classify"
-        assert spans[0].attributes.get(OCTOPUS_ATTR_TASK_ID) == "abc-123"
+        assert spans[0].attributes.get(ECHO_ATTR_STAGE) == "classify"
+        assert spans[0].attributes.get(ECHO_ATTR_TASK_ID) == "abc-123"
 
     def test_exception_recorded_on_span(self, in_memory_exporter):
         @traced(span_name="unit.bad")

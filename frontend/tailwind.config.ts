@@ -6,7 +6,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Octopus palette: deep blue-purple base with cyan and violet accents, matching the embedded dashboard.
+        // Echo palette: deep blue-purple base with cyan and violet accents, matching the embedded dashboard.
         ink: {
           950: "#070a10",
           900: "#0a0e14",
@@ -16,7 +16,7 @@ const config: Config = {
           500: "#2a3444",
         },
         cephalo: {
-          // Octopus violet.
+          // Echo violet.
           50: "#f3f0ff",
           100: "#e9e4ff",
           200: "#d4caff",

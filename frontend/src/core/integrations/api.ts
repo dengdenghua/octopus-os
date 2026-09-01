@@ -43,8 +43,12 @@ export interface TestConnectionResult {
 }
 
 // Providers
-export async function listProviders(providerType?: string): Promise<ProviderInfo[]> {
-  const qs = providerType ? `?provider_type=${encodeURIComponent(providerType)}` : "";
+export async function listProviders(
+  providerType?: string,
+): Promise<ProviderInfo[]> {
+  const qs = providerType
+    ? `?provider_type=${encodeURIComponent(providerType)}`
+    : "";
   const res = await fetch(
     `${getBackendBaseURL()}/api/integrations/auth/providers${qs}`,
     { headers: authHeaders() },
@@ -53,12 +57,15 @@ export async function listProviders(providerType?: string): Promise<ProviderInfo
   return res.json();
 }
 
-export async function getProviderTypes(): Promise<Array<{ value: string; label: string }>> {
+export async function getProviderTypes(): Promise<
+  Array<{ value: string; label: string }>
+> {
   const res = await fetch(
     `${getBackendBaseURL()}/api/integrations/auth/providers/types`,
     { headers: authHeaders() },
   );
-  if (!res.ok) throw new Error(`Failed to get provider types: ${res.statusText}`);
+  if (!res.ok)
+    throw new Error(`Failed to get provider types: ${res.statusText}`);
   return res.json();
 }
 
@@ -76,7 +83,8 @@ export async function listAuthorizations(): Promise<Authorization[]> {
   const res = await fetch(`${getBackendBaseURL()}/api/integrations/auth`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error(`Failed to list authorizations: ${res.statusText}`);
+  if (!res.ok)
+    throw new Error(`Failed to list authorizations: ${res.statusText}`);
   return res.json();
 }
 
@@ -86,14 +94,24 @@ export async function createApiKeyAuth(
   displayName?: string,
   scopes: string[] = [],
 ): Promise<Authorization> {
-  const res = await fetch(`${getBackendBaseURL()}/api/integrations/auth/api-key`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-    body: JSON.stringify({ provider, api_key: apiKey, display_name: displayName, scopes }),
-  });
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/integrations/auth/api-key`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({
+        provider,
+        api_key: apiKey,
+        display_name: displayName,
+        scopes,
+      }),
+    },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Failed to create authorization: ${res.statusText}`);
+    throw new Error(
+      err.detail || `Failed to create authorization: ${res.statusText}`,
+    );
   }
   return res.json();
 }
@@ -104,14 +122,24 @@ export async function createTokenAuth(
   displayName?: string,
   scopes: string[] = [],
 ): Promise<Authorization> {
-  const res = await fetch(`${getBackendBaseURL()}/api/integrations/auth/token`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-    body: JSON.stringify({ provider, token, display_name: displayName, scopes }),
-  });
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/integrations/auth/token`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({
+        provider,
+        token,
+        display_name: displayName,
+        scopes,
+      }),
+    },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Failed to create authorization: ${res.statusText}`);
+    throw new Error(
+      err.detail || `Failed to create authorization: ${res.statusText}`,
+    );
   }
   return res.json();
 }
@@ -121,14 +149,23 @@ export async function createCookieAuth(
   cookieValue: string,
   displayName?: string,
 ): Promise<Authorization> {
-  const res = await fetch(`${getBackendBaseURL()}/api/integrations/auth/cookie`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-    body: JSON.stringify({ provider, cookie_value: cookieValue, display_name: displayName }),
-  });
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/integrations/auth/cookie`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({
+        provider,
+        cookie_value: cookieValue,
+        display_name: displayName,
+      }),
+    },
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Failed to create authorization: ${res.statusText}`);
+    throw new Error(
+      err.detail || `Failed to create authorization: ${res.statusText}`,
+    );
   }
   return res.json();
 }
@@ -148,16 +185,24 @@ export async function initOAuthFlow(providerId: string): Promise<{
   return res.json();
 }
 
-export async function deleteAuthorization(authId: string): Promise<{ deleted: boolean }> {
-  const res = await fetch(`${getBackendBaseURL()}/api/integrations/auth/${authId}`, {
-    method: "DELETE",
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to delete authorization: ${res.statusText}`);
+export async function deleteAuthorization(
+  authId: string,
+): Promise<{ deleted: boolean }> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/integrations/auth/${authId}`,
+    {
+      method: "DELETE",
+      headers: authHeaders(),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to delete authorization: ${res.statusText}`);
   return res.json();
 }
 
-export async function testAuthorization(authId: string): Promise<TestConnectionResult> {
+export async function testAuthorization(
+  authId: string,
+): Promise<TestConnectionResult> {
   const res = await fetch(
     `${getBackendBaseURL()}/api/integrations/auth/${authId}/test`,
     {
@@ -165,7 +210,8 @@ export async function testAuthorization(authId: string): Promise<TestConnectionR
       headers: authHeaders(),
     },
   );
-  if (!res.ok) throw new Error(`Failed to test authorization: ${res.statusText}`);
+  if (!res.ok)
+    throw new Error(`Failed to test authorization: ${res.statusText}`);
   return res.json();
 }
 
@@ -191,7 +237,9 @@ export async function startBrowserCapture(
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Failed to start browser capture: ${res.statusText}`);
+    throw new Error(
+      err.detail || `Failed to start browser capture: ${res.statusText}`,
+    );
   }
   return res.json();
 }
@@ -222,7 +270,9 @@ export async function cancelBrowserCapture(
   return res.json();
 }
 
-export async function refreshAuthorization(authId: string): Promise<Authorization> {
+export async function refreshAuthorization(
+  authId: string,
+): Promise<Authorization> {
   const res = await fetch(
     `${getBackendBaseURL()}/api/integrations/auth/${authId}/refresh`,
     {
@@ -230,6 +280,7 @@ export async function refreshAuthorization(authId: string): Promise<Authorizatio
       headers: authHeaders(),
     },
   );
-  if (!res.ok) throw new Error(`Failed to refresh authorization: ${res.statusText}`);
+  if (!res.ok)
+    throw new Error(`Failed to refresh authorization: ${res.statusText}`);
   return res.json();
 }

@@ -5,7 +5,6 @@ from __future__ import annotations
 import threading
 
 import pytest
-
 from runtime.core.nerves import (
     AgentAdded,
     BudgetPressure,
@@ -29,21 +28,29 @@ class TestSubscribe:
     def test_subscribe_same_handler_twice_is_idempotent(self):
         bus = TypedEventBus()
 
-        def h(e): pass
+        def h(e):
+            pass
+
         bus.subscribe(SkillRegistered, h)
         bus.subscribe(SkillRegistered, h)
         assert bus.subscriber_count(SkillRegistered) == 1
 
     def test_unsubscribe_returns_true_when_present(self):
         bus = TypedEventBus()
-        def h(e): pass
+
+        def h(e):
+            pass
+
         bus.subscribe(SkillRegistered, h)
         assert bus.unsubscribe(SkillRegistered, h) is True
         assert bus.subscriber_count(SkillRegistered) == 0
 
     def test_unsubscribe_returns_false_when_absent(self):
         bus = TypedEventBus()
-        def h(e): pass
+
+        def h(e):
+            pass
+
         assert bus.unsubscribe(SkillRegistered, h) is False
 
     def test_subscribe_non_event_type_rejected(self):
@@ -100,12 +107,14 @@ class TestPublish:
         bus = TypedEventBus()
         received: list[SkillRegistered] = []
         bus.subscribe(SkillRegistered, lambda e: received.append(e))
-        bus.publish(SkillRegistered(
-            skill_name="demo",
-            trusted_source="skill://forged/abc",
-            forged=True,
-            candidate_id="sig1",
-        ))
+        bus.publish(
+            SkillRegistered(
+                skill_name="demo",
+                trusted_source="skill://forged/abc",
+                forged=True,
+                candidate_id="sig1",
+            )
+        )
         assert received[0].skill_name == "demo"
         assert received[0].forged is True
         assert received[0].candidate_id == "sig1"
@@ -121,8 +130,11 @@ class TestCrashResilience:
         bus = TypedEventBus(crash_resilient=True)
         called = []
 
-        def bad(e): raise RuntimeError("boom")
-        def good(e): called.append(e)
+        def bad(e):
+            raise RuntimeError("boom")
+
+        def good(e):
+            called.append(e)
 
         bus.subscribe(SkillRegistered, bad)
         bus.subscribe(SkillRegistered, good)

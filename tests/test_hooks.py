@@ -5,7 +5,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-
 from runtime.core.nerves import (
     HookContext,
     HookError,
@@ -54,11 +53,13 @@ def _run_once(executor, journal, sucker="greet", args=None):
     tid = TaskId(uuid4())
     budget = Budget(task_id=tid, limits=BudgetLimits(tokens=10_000, usd=0.10))
     return executor.execute_step(
-        step_id=0, node_id="n0",
+        step_id=0,
+        node_id="n0",
         sucker_id=SkillId(sucker),
         args=args or {"name": "Alice"},
         caller="arms/x",
-        task_id=tid, arm_id=ArmId("x"),
+        task_id=tid,
+        arm_id=ArmId("x"),
         budget=budget,
     )
 
@@ -114,13 +115,16 @@ class TestPreHookAudit:
 class TestPreHookReplace:
     def test_pre_hook_replaces_result(self):
         hm = HookManager()
-        hm.add_pre("mock_greet", lambda ctx: HookResult(
-            replace_with=ExecutionResult(
-                call_id=ctx.call.call_id,
-                status="success",
-                output={"msg": "MOCKED"},
-            )
-        ))
+        hm.add_pre(
+            "mock_greet",
+            lambda ctx: HookResult(
+                replace_with=ExecutionResult(
+                    call_id=ctx.call.call_id,
+                    status="success",
+                    output={"msg": "MOCKED"},
+                )
+            ),
+        )
 
         handler_calls = 0
 
@@ -130,11 +134,14 @@ class TestPreHookReplace:
             return {"msg": "real"}
 
         reg = SkillRegistry()
-        reg.register(Skill(
-            name="greet",
-            trusted_source="skill://public/greet",
-            handler=real_handler,
-        ), verify_tests=False)
+        reg.register(
+            Skill(
+                name="greet",
+                trusted_source="skill://public/greet",
+                handler=real_handler,
+            ),
+            verify_tests=False,
+        )
 
         journal = InMemoryJournal()
         executor = ToolExecutor(
@@ -165,16 +172,17 @@ class TestPreHookBlock:
             return {}
 
         reg = SkillRegistry()
-        reg.register(Skill(
-            name="greet",
-            trusted_source="skill://public/greet",
-            handler=real,
-        ), verify_tests=False)
+        reg.register(
+            Skill(
+                name="greet",
+                trusted_source="skill://public/greet",
+                handler=real,
+            ),
+            verify_tests=False,
+        )
 
         hm = HookManager()
-        hm.add_pre("deny", lambda ctx: (_ for _ in ()).throw(
-            HookError("permission denied")
-        ))
+        hm.add_pre("deny", lambda ctx: (_ for _ in ()).throw(HookError("permission denied")))
 
         journal = InMemoryJournal()
         executor = ToolExecutor(
@@ -200,9 +208,10 @@ class TestPreHookBlock:
 class TestPostHookRewrite:
     def test_post_redacts_output(self):
         hm = HookManager()
-        hm.add_post("redact", lambda ctx: HookResult(
-            replace_with=ctx.result.model_copy(update={"output": "***"})
-        ))
+        hm.add_post(
+            "redact",
+            lambda ctx: HookResult(replace_with=ctx.result.model_copy(update={"output": "***"})),
+        )
 
         reg, journal, executor = _stack(hooks=hm)
         step = _run_once(executor, journal)
@@ -230,18 +239,26 @@ class TestPostHookRewrite:
 class TestHookChaining:
     def test_pre_first_replace_wins(self):
         hm = HookManager()
-        hm.add_pre("first", lambda ctx: HookResult(
-            replace_with=ExecutionResult(
-                call_id=ctx.call.call_id, status="success",
-                output={"msg": "FIRST"},
-            )
-        ))
-        hm.add_pre("second", lambda ctx: HookResult(
-            replace_with=ExecutionResult(
-                call_id=ctx.call.call_id, status="success",
-                output={"msg": "SECOND"},
-            )
-        ))
+        hm.add_pre(
+            "first",
+            lambda ctx: HookResult(
+                replace_with=ExecutionResult(
+                    call_id=ctx.call.call_id,
+                    status="success",
+                    output={"msg": "FIRST"},
+                )
+            ),
+        )
+        hm.add_pre(
+            "second",
+            lambda ctx: HookResult(
+                replace_with=ExecutionResult(
+                    call_id=ctx.call.call_id,
+                    status="success",
+                    output={"msg": "SECOND"},
+                )
+            ),
+        )
 
         reg, journal, executor = _stack(hooks=hm)
         step = _run_once(executor, journal)
@@ -250,16 +267,22 @@ class TestHookChaining:
     def test_post_chained_updates(self):
         """Implementation note."""
         hm = HookManager()
-        hm.add_post("add_a", lambda ctx: HookResult(
-            replace_with=ctx.result.model_copy(update={
-                "output": {"stage": (ctx.result.output or {}).get("stage", "") + "A"}
-            })
-        ))
-        hm.add_post("add_b", lambda ctx: HookResult(
-            replace_with=ctx.result.model_copy(update={
-                "output": {"stage": (ctx.result.output or {}).get("stage", "") + "B"}
-            })
-        ))
+        hm.add_post(
+            "add_a",
+            lambda ctx: HookResult(
+                replace_with=ctx.result.model_copy(
+                    update={"output": {"stage": (ctx.result.output or {}).get("stage", "") + "A"}}
+                )
+            ),
+        )
+        hm.add_post(
+            "add_b",
+            lambda ctx: HookResult(
+                replace_with=ctx.result.model_copy(
+                    update={"output": {"stage": (ctx.result.output or {}).get("stage", "") + "B"}}
+                )
+            ),
+        )
 
         reg, journal, executor = _stack(hooks=hm)
         step = _run_once(executor, journal)

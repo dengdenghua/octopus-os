@@ -1,5 +1,8 @@
 export * from "./api";
 export * from "./hooks";
+export * from "./agent-list";
+export * from "./mobile-devices";
+export * from "./persona-policy";
 export {
   type Agent,
   type CreateAgentRequest,

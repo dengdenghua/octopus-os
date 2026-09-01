@@ -6,7 +6,6 @@ import time
 from typing import Any
 
 import pytest
-
 from runtime.core.hearts.coordinator import Lease
 from runtime.core.hearts.etcd_coordinator import EtcdCoordinator
 
@@ -38,7 +37,7 @@ class _Cmp:
     """Simulate etcd3 transactions comparison objects."""
 
     def __init__(self, kind: str, key: str, expected: Any = None):
-        self.kind = kind   # "create" | "value"
+        self.kind = kind  # "create" | "value"
         self.key = key
         self.expected = expected
 
@@ -77,7 +76,9 @@ class _FakeTransactions:
 
 class _FakeEtcd:
     def __init__(self):
-        self._store: dict[str, tuple[bytes, int, int | None]] = {}  # key → (value, mod_rev, lease_id)
+        self._store: dict[
+            str, tuple[bytes, int, int | None]
+        ] = {}  # key → (value, mod_rev, lease_id)
         self._revision = 0
         self._leases: dict[int, _FakeLease] = {}
         self.transactions = _FakeTransactions()
@@ -228,7 +229,11 @@ class TestRenew:
 
     def test_renew_no_active_lease(self, coord: EtcdCoordinator):
         fake = Lease(
-            scope="nope", holder_id="A", acquired_at=0, expires_at=0, fencing_token=1,
+            scope="nope",
+            holder_id="A",
+            acquired_at=0,
+            expires_at=0,
+            fencing_token=1,
         )
         assert coord.renew_lease(fake, ttl=10) is None
 
@@ -284,6 +289,7 @@ class TestDuckTyping:
             pass
 
         from runtime.core.hearts import etcd_coordinator as ec
+
         if not ec.ETCD3_AVAILABLE:
             # Implementation note.
             with pytest.raises(ImportError):

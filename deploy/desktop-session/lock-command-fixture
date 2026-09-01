@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ -n "${ECHO_LOCK_TEST_LOG:-}" ]] || exit 2
+{
+  printf '%s' "$(basename "$0")"
+  if (( $# > 0 )); then printf ' <%s>' "$@"; fi
+  printf ' pam=%s display=%s\n' \
+    "${XSECURELOCK_PAM_SERVICE:-}" "${DISPLAY:-}"
+  if [[ "$(basename "$0")" == xsecurelock && -n "${XSS_SLEEP_LOCK_FD:-}" ]]; then
+    if [[ -e "/dev/fd/$XSS_SLEEP_LOCK_FD" ]]; then
+      printf 'sleep-lock-fd=open\n'
+    else
+      printf 'sleep-lock-fd=closed\n'
+    fi
+  fi
+} >>"$ECHO_LOCK_TEST_LOG"
+if [[ "$(basename "$0")" == xsecurelock ]]; then sleep 0.2; fi

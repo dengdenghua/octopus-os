@@ -5,7 +5,6 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.sensing.gateway.intelligence_router import (
     _subscription_due,
     create_intelligence_router,
@@ -58,7 +57,7 @@ def test_intelligence_subscription_draft_from_goal(tmp_path: Path) -> None:
 
     response = client.post(
         "/api/intelligence/subscriptions/draft",
-        json={"goal": "每天关注 Octopus Agent 的 GitHub release 和 issue 变化"},
+        json={"goal": "每天关注 Echo Agent 的 GitHub release 和 issue 变化"},
     )
 
     assert response.status_code == 200
@@ -68,7 +67,7 @@ def test_intelligence_subscription_draft_from_goal(tmp_path: Path) -> None:
     assert draft["schedule_time"] == "09:00"
     assert draft["schedule_day"] == "1"
     assert draft["timezone"] == "Asia/Shanghai"
-    assert "Octopus" in draft["keywords"]
+    assert "Echo" in draft["keywords"]
 
 
 def test_intelligence_subscription_schedule_fields_persist(tmp_path: Path) -> None:
@@ -132,10 +131,13 @@ def test_subscription_due_uses_fixed_shanghai_fallback_without_tzdata(monkeypatc
         "last_run": None,
     }
 
-    assert router._subscription_due(
-        subscription,
-        now=datetime(2026, 6, 3, 2, 30, tzinfo=UTC),
-    ) is True
+    assert (
+        router._subscription_due(
+            subscription,
+            now=datetime(2026, 6, 3, 2, 30, tzinfo=UTC),
+        )
+        is True
+    )
 
 
 def test_intelligence_subscription_run_creates_report(tmp_path: Path) -> None:
@@ -146,8 +148,8 @@ def test_intelligence_subscription_run_creates_report(tmp_path: Path) -> None:
             "results": [
                 {
                     "title": f"{query} release",
-                    "url": "https://example.com/octopus-release",
-                    "snippet": "Octopus agent release adds browser automation.",
+                    "url": "https://example.com/echo-release",
+                    "snippet": "Echo agent release adds browser automation.",
                 },
                 {
                     "title": f"{query} paper",

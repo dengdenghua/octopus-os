@@ -29,7 +29,10 @@ from runtime.safety.recovery import (
 
 
 def _mk_rule(
-    name: str, seq: list[str], *, priority: int = 10,
+    name: str,
+    seq: list[str],
+    *,
+    priority: int = 10,
     keywords: list[str] | None = None,
 ) -> Rule:
     return Rule(
@@ -85,9 +88,7 @@ def _traj(steps: list[Step], *, success: bool | None = None) -> Trajectory:
 class TestThresholds:
     def test_low_confidence_skipped(self):
         rules = [_mk_rule("r1", ["a"])]
-        p = _mk_proposal(
-            target_rule_name="r1", confidence=0.3, kind="lower_rule_priority"
-        )
+        p = _mk_proposal(target_rule_name="r1", confidence=0.3, kind="lower_rule_priority")
         result = apply_proposals_to_rules(rules, [p], min_confidence=0.7)
         assert result.applied_count == 0
         assert result.outcomes[0].action == "skipped_threshold"
@@ -95,18 +96,14 @@ class TestThresholds:
 
     def test_low_severity_skipped(self):
         rules = [_mk_rule("r1", ["a"])]
-        p = _mk_proposal(
-            target_rule_name="r1", severity="low", kind="lower_rule_priority"
-        )
+        p = _mk_proposal(target_rule_name="r1", severity="low", kind="lower_rule_priority")
         result = apply_proposals_to_rules(rules, [p], min_severity="mid")
         assert result.applied_count == 0
         assert result.outcomes[0].action == "skipped_threshold"
 
     def test_high_severity_passes_even_at_mid_threshold(self):
         rules = [_mk_rule("r1", ["a"])]
-        p = _mk_proposal(
-            target_rule_name="r1", severity="high", kind="lower_rule_priority"
-        )
+        p = _mk_proposal(target_rule_name="r1", severity="high", kind="lower_rule_priority")
         result = apply_proposals_to_rules(rules, [p], min_severity="mid")
         assert result.applied_count == 1
 
@@ -153,7 +150,8 @@ class TestRemoveDegradedStep:
     def test_missing_index_skipped(self):
         rules = [_mk_rule("r1", ["a"])]
         p = _mk_proposal(
-            kind="remove_degraded_step", target_rule_name="r1",
+            kind="remove_degraded_step",
+            target_rule_name="r1",
         )
         result = apply_proposals_to_rules(rules, [p])
         assert result.outcomes[0].action == "skipped_invalid"
@@ -167,32 +165,20 @@ class TestRemoveDegradedStep:
 class TestLowerRulePriority:
     def test_subtract_policy_default(self):
         rules = [_mk_rule("r1", ["a"], priority=10)]
-        p = _mk_proposal(
-            kind="lower_rule_priority", target_rule_name="r1"
-        )
-        result = apply_proposals_to_rules(
-            rules, [p], priority_policy="subtract", priority_step=3
-        )
+        p = _mk_proposal(kind="lower_rule_priority", target_rule_name="r1")
+        result = apply_proposals_to_rules(rules, [p], priority_policy="subtract", priority_step=3)
         assert result.rules[0].priority == 7
 
     def test_halve_policy(self):
         rules = [_mk_rule("r1", ["a"], priority=10)]
-        p = _mk_proposal(
-            kind="lower_rule_priority", target_rule_name="r1"
-        )
-        result = apply_proposals_to_rules(
-            rules, [p], priority_policy="halve"
-        )
+        p = _mk_proposal(kind="lower_rule_priority", target_rule_name="r1")
+        result = apply_proposals_to_rules(rules, [p], priority_policy="halve")
         assert result.rules[0].priority == 5
 
     def test_never_below_zero(self):
         rules = [_mk_rule("r1", ["a"], priority=2)]
-        p = _mk_proposal(
-            kind="lower_rule_priority", target_rule_name="r1"
-        )
-        result = apply_proposals_to_rules(
-            rules, [p], priority_policy="subtract", priority_step=10
-        )
+        p = _mk_proposal(kind="lower_rule_priority", target_rule_name="r1")
+        result = apply_proposals_to_rules(rules, [p], priority_policy="subtract", priority_step=10)
         assert result.rules[0].priority == 0
 
     def test_result_resorted_by_priority(self):
@@ -201,12 +187,8 @@ class TestLowerRulePriority:
             _mk_rule("high", ["a"], priority=20),
             _mk_rule("low", ["b"], priority=5),
         ]
-        p = _mk_proposal(
-            kind="lower_rule_priority", target_rule_name="high"
-        )
-        result = apply_proposals_to_rules(
-            rules, [p], priority_policy="subtract", priority_step=18
-        )
+        p = _mk_proposal(kind="lower_rule_priority", target_rule_name="high")
+        result = apply_proposals_to_rules(rules, [p], priority_policy="subtract", priority_step=18)
         # Implementation note.
         assert [r.name for r in result.rules] == ["low", "high"]
 
@@ -244,9 +226,7 @@ class TestProposeNewRule:
 
     def test_empty_skill_sequence_skipped(self):
         rules: list = []
-        p = _mk_proposal(
-            kind="propose_new_rule", suggested_skill_sequence=[]
-        )
+        p = _mk_proposal(kind="propose_new_rule", suggested_skill_sequence=[])
         result = apply_proposals_to_rules(rules, [p])
         assert result.outcomes[0].action == "skipped_invalid"
 
@@ -269,27 +249,21 @@ class TestProposeNewRule:
 class TestMergeAdjacent:
     def test_dedup_adjacent_duplicates(self):
         rules = [_mk_rule("r1", ["a", "a", "b", "c", "c", "c"])]
-        p = _mk_proposal(
-            kind="merge_redundant_adjacent", target_rule_name="r1"
-        )
+        p = _mk_proposal(kind="merge_redundant_adjacent", target_rule_name="r1")
         result = apply_proposals_to_rules(rules, [p])
         assert result.applied_count == 1
         assert list(result.rules[0].skill_sequence) == ["a", "b", "c"]
 
     def test_no_adjacent_dups_skipped(self):
         rules = [_mk_rule("r1", ["a", "b", "c"])]
-        p = _mk_proposal(
-            kind="merge_redundant_adjacent", target_rule_name="r1"
-        )
+        p = _mk_proposal(kind="merge_redundant_adjacent", target_rule_name="r1")
         result = apply_proposals_to_rules(rules, [p])
         assert result.outcomes[0].action == "skipped_invalid"
 
     def test_non_adjacent_dups_preserved(self):
         """Implementation note."""
         rules = [_mk_rule("r1", ["a", "b", "a"])]
-        p = _mk_proposal(
-            kind="merge_redundant_adjacent", target_rule_name="r1"
-        )
+        p = _mk_proposal(kind="merge_redundant_adjacent", target_rule_name="r1")
         result = apply_proposals_to_rules(rules, [p])
         assert result.outcomes[0].action == "skipped_invalid"
         assert list(result.rules[0].skill_sequence) == ["a", "b", "a"]
@@ -308,19 +282,23 @@ class TestMixedBatch:
         ]
         ps = [
             _mk_proposal(
-                kind="lower_rule_priority", target_rule_name="r1",
+                kind="lower_rule_priority",
+                target_rule_name="r1",
                 confidence=0.9,
             ),
             _mk_proposal(
-                kind="merge_redundant_adjacent", target_rule_name="r2",
+                kind="merge_redundant_adjacent",
+                target_rule_name="r2",
                 confidence=0.9,
             ),
             _mk_proposal(
-                kind="lower_rule_priority", target_rule_name="nonexistent",
+                kind="lower_rule_priority",
+                target_rule_name="nonexistent",
                 confidence=0.9,
             ),
             _mk_proposal(
-                kind="lower_rule_priority", target_rule_name="r1",
+                kind="lower_rule_priority",
+                target_rule_name="r1",
                 confidence=0.3,  # Implementation note.
             ),
         ]
@@ -341,9 +319,7 @@ class TestStaticPlannerIntegration:
             rules=[_mk_rule("r1", ["a"], priority=10)],
             default_budget=BudgetSpec(tokens=1000, usd=0.01),
         )
-        p = _mk_proposal(
-            kind="lower_rule_priority", target_rule_name="r1"
-        )
+        p = _mk_proposal(kind="lower_rule_priority", target_rule_name="r1")
         result = planner.apply_rewrite_proposals([p])
         assert result.applied_count == 1
         assert planner.rules[0].priority < 10
@@ -352,18 +328,14 @@ class TestStaticPlannerIntegration:
         """Implementation note."""
         journal = InMemoryJournal()
         for _ in range(5):  # Implementation note.
-            journal.write_trajectory(
-                _traj([_step(0, "read_file"), _step(1, "hash_text")])
-            )
+            journal.write_trajectory(_traj([_step(0, "read_file"), _step(1, "hash_text")]))
 
         planner = StaticPlanner(
             rules=[],
             default_budget=BudgetSpec(tokens=1000, usd=0.01),
         )
         result = planner.rewrite_from_journal(journal)
-        applied_kinds = [
-            o.kind for o in result.outcomes if o.action == "applied"
-        ]
+        applied_kinds = [o.kind for o in result.outcomes if o.action == "applied"]
         assert "propose_new_rule" in applied_kinds
         assert len(planner.rules) >= 1
 
@@ -395,9 +367,7 @@ class TestConfigDrivenRewrite:
         path = tmp_path / "rw.jsonl"
         fj = JSONLJournal(path)
         for _ in range(5):
-            fj.write_trajectory(
-                _traj([_step(0, "list_cwd"), _step(1, "count_words")])
-            )
+            fj.write_trajectory(_traj([_step(0, "list_cwd"), _step(1, "count_words")]))
 
         cfg = AgentConfig(
             planner=PlannerConfig(type="static"),

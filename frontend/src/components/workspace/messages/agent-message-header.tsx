@@ -1,7 +1,7 @@
-
 import { Badge } from "@/components/ui/badge";
 import { getBackendBaseURL } from "@/core/config";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
 
 interface AgentMessageHeaderProps {
   agentDisplayName: string;
@@ -27,22 +27,30 @@ export function AgentAvatar({
       ? avatarUrl
       : `${backendBase}${avatarUrl}`
     : null;
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setFailedAvatarUrl(null);
+  }, [fullAvatarUrl]);
+  const showImage = Boolean(fullAvatarUrl && failedAvatarUrl !== fullAvatarUrl);
   const emoji = icon?.trim() || "";
   const initial = (agentDisplayName || "?").trim().charAt(0).toUpperCase();
 
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center justify-center overflow-hidden border border-border/60 bg-muted text-[13px] leading-none",
-        !fullAvatarUrl && !emoji && "text-[11px] font-semibold text-muted-foreground",
+        "flex shrink-0 items-center justify-center overflow-hidden border border-border-default bg-muted text-sm leading-none",
+        !showImage &&
+          !emoji &&
+          "text-xs font-semibold text-muted-foreground",
         className,
       )}
     >
-      {fullAvatarUrl ? (
+      {showImage && fullAvatarUrl ? (
         <img
           src={fullAvatarUrl}
           alt={agentDisplayName}
           className="h-full w-full object-cover"
+          onError={() => setFailedAvatarUrl(fullAvatarUrl)}
         />
       ) : emoji ? (
         emoji
@@ -70,7 +78,7 @@ export function AgentMessageHeader({
       {role === "tl" && (
         <Badge
           variant="outline"
-          className="border-emerald-500/50 bg-emerald-500/10 text-emerald-600 px-1.5 py-0 text-[10px] leading-4 dark:text-emerald-400"
+          className="border-success/50 bg-success/10 text-success px-1.5 py-0 text-xs leading-4 dark:text-success"
         >
           TL
         </Badge>

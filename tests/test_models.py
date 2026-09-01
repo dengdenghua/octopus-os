@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-
 from runtime.platform.models import (
     DEFAULT_TRUST_BY_TYPE,
     TRUST_INFERENCE_CAP,

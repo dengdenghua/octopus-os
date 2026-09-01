@@ -28,6 +28,78 @@ export interface MemoryFact {
   sourceError?: string | null;
 }
 
+export type MemoryAssetType =
+  | "conversation"
+  | "atom"
+  | "scenario"
+  | "persona"
+  | "skill"
+  | "wiki"
+  | "code_graph"
+  | "media";
+
+export type MemoryLayer = "L0" | "L1" | "L2" | "L3";
+export type MemoryVisibility = "private" | "team" | "restricted" | "agent";
+export type MemoryAssetStatus = "draft" | "active" | "archived" | "rejected";
+
+export interface MemoryProvenance {
+  source_type: string;
+  source_id: string;
+  source_uri: string;
+  captured_at: string;
+  parent_ids: string[];
+  evidence: string;
+}
+
+export interface MemoryAsset {
+  id: string;
+  asset_type: MemoryAssetType;
+  layer: MemoryLayer;
+  title: string;
+  content: string;
+  owner: string;
+  visibility: MemoryVisibility;
+  status: MemoryAssetStatus;
+  version: number;
+  scope: string;
+  confidence: number;
+  created_at: string;
+  updated_at: string;
+  team_id: string;
+  agent_id: string;
+  project: string;
+  allowed_users: string[];
+  allowed_roles: string[];
+  allowed_agents: string[];
+  tags: string[];
+  provenance: MemoryProvenance;
+}
+
+export interface MemoryAssetList {
+  items: MemoryAsset[];
+  count: number;
+}
+
+export interface MemoryAssetTrace {
+  asset_id: string;
+  layer: MemoryLayer;
+  source: MemoryProvenance;
+  parent_ids: string[];
+  trace_complete: boolean;
+}
+
+export interface MemoryAssetQuery {
+  q?: string;
+  asset_type?: MemoryAssetType | "";
+  layer?: MemoryLayer | "";
+  status?: MemoryAssetStatus | "";
+  visibility?: MemoryVisibility | "";
+  team_id?: string;
+  agent_id?: string;
+  roles?: string;
+  limit?: number;
+}
+
 export interface MemoryData {
   version: string;
   lastUpdated: string;
@@ -80,6 +152,14 @@ export interface FactCreateRequest {
   scope?: "global" | "agent" | "project" | string;
   agent_id?: string;
   project?: string;
+  title?: string;
+  tags?: string[];
+  visibility?: MemoryVisibility;
+  team_id?: string;
+  allowed_users?: string[];
+  allowed_roles?: string[];
+  allowed_agents?: string[];
+  provenance?: Partial<MemoryProvenance>;
 }
 
 export type MemoryFactInput = FactCreateRequest;
@@ -91,6 +171,17 @@ export interface FactPatchRequest {
   scope?: "global" | "agent" | "project" | string;
   agent_id?: string;
   project?: string;
+  title?: string;
+  tags?: string[];
+  asset_type?: MemoryAssetType;
+  layer?: MemoryLayer;
+  visibility?: MemoryVisibility;
+  status?: MemoryAssetStatus;
+  team_id?: string;
+  allowed_users?: string[];
+  allowed_roles?: string[];
+  allowed_agents?: string[];
+  provenance?: Partial<MemoryProvenance>;
 }
 
 export type MemoryFactPatchInput = FactPatchRequest;

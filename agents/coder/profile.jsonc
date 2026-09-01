@@ -1,4 +1,4 @@
-// Octopus Agent profile · Coder
+// Echo Agent profile · Coder
 // Implementation note.
 
 {
@@ -15,11 +15,11 @@
     "name": "auto"
   },
   "runtime": "local",
-  "creator": "octopus",
+  "creator": "echo",
   "defaultProject": {
     "dir": "project"
   },
   "capabilities": {
-    "code_mode_unlock": true
+    "execution_backend": "codex_app_server"
   }
 }

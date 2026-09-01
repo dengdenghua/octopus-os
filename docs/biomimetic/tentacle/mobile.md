@@ -2,7 +2,7 @@
 
 > **章鱼伸向 Android 设备的物理触手**
 
-Mobile Tentacle 是 Octopus Mobile 的一等公民。它让章鱼的中枢（Cerebrum）能
+Mobile Tentacle 是 Echo Mobile 的一等公民。它让章鱼的中枢（Cerebrum）能
 **真实操控** Android 手机——点屏幕、滑屏幕、装 App、读屏幕、自动化任何
 用户操作。
 
@@ -13,7 +13,7 @@ Mobile Tentacle 是 Octopus Mobile 的一等公民。它让章鱼的中枢（Cer
 │                       手机触手生命周期                            │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  1. 安装    Octopus Mobile APK 安装到 Android 设备                      │
+│  1. 安装    Echo Mobile APK 安装到 Android 设备                      │
 │  2. 启动    ClawApplication 启动 → 决策启动模式（LOCAL/RPC/DUAL）│
 │  3. 注册    手机通过 WebSocket 注册到 Runtime                    │
 │  4. 心跳    30s 一次心跳（在线状态、电量、当前 App）             │
@@ -62,7 +62,7 @@ Mobile Tentacle 是 Octopus Mobile 的一等公民。它让章鱼的中枢（Cer
 3. **设备锁必须互斥**：同一时刻一根触手只允许一个 Arm 操作
 4. **失败必须可降级**：Runtime 不可达时无缝降级到 LOCAL 模式
 
-详见 [ADR-008](../../adr/008-octopus-mobile.md) 第 "关键不变量" 节。
+详见 [ADR-008](../../adr/008-echo-mobile.md) 第 "关键不变量" 节。
 
 ## 启动模式详解
 
@@ -91,7 +91,7 @@ Mobile Tentacle 是 Octopus Mobile 的一等公民。它让章鱼的中枢（Cer
 
 ## 与 Android 客户端的关系
 
-| Android 客户端现状 | Octopus Mobile 改造 |
+| Android 客户端现状 | Echo Mobile 改造 |
 |---|---|
 | 内置 `DefaultAgentService`（含 LLM 调用循环）| 保留为 LOCAL 模式，**不被删** |
 | 6 个 IM 渠道（DingTalk/WeChat/Feishu/QQ/Discord/Telegram）| 全部保留 |
@@ -99,18 +99,18 @@ Mobile Tentacle 是 Octopus Mobile 的一等公民。它让章鱼的中枢（Cer
 | MMKV 配置存储 | 升级为 MMKV（兜底）+ Runtime KV（主）双写 |
 | LAN 配置（9527 端口）| 保留作为本地调试入口 |
 
-**Android 客户端的所有现有代码 100% 保留**，Octopus Mobile 只是**新增**了
-`octopus_mobile/` 子包 + 启动模式决策逻辑。
+**Android 客户端的所有现有代码 100% 保留**，Echo Mobile 只是**新增**了
+`echo_mobile/` 子包 + 启动模式决策逻辑。
 
 ## 实现细节
 
 详见 [architecture.md](../../mobile/architecture.md) 第 3 节。
 
-关键文件（在同级 checkout `../octopus-mobile/app/src/main/java/com/apk/claw/android/octopus_mobile/`）：
+关键文件（在同级 checkout `../echo-mobile/app/src/main/java/com/apk/claw/android/echo_mobile/`）：
 
 | 文件 | 职责 |
 |---|---|
-| `OctopusMobileClient.kt` | WebSocket 客户端（OkHttp）|
+| `EchoMobileClient.kt` | WebSocket 客户端（OkHttp）|
 | `Protocol.kt` | JSON-RPC envelope Kotlin data class |
 | `HeartbeatReporter.kt` | 心跳上报（30s 周期）|
 | `ScreenStreamer.kt` | 屏幕状态增量上报 |
@@ -123,7 +123,7 @@ Mobile Tentacle 是 Octopus Mobile 的一等公民。它让章鱼的中枢（Cer
 
 - **单元测试**（`tests/test_tentacle_mobile.py`）—— Mock Android 设备，验证协议
 - **集成测试**（`tests/test_mobile_e2e.py`）—— 真机或模拟器（slow test，CI 不强制）
-- **兼容性测试**（`tests/test_octopus_mobile_compat.py`）—— Octopus Mobile 30 个 BaseTool 100% 兼容
+- **兼容性测试**（`tests/test_echo_mobile_compat.py`）—— Echo Mobile 30 个 BaseTool 100% 兼容
 
 ---
 

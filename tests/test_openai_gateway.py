@@ -9,7 +9,6 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config  # noqa: E402
 from runtime.platform.models import ParsedIntent  # noqa: E402
 from runtime.sensing.gateway import create_openai_router  # noqa: E402
@@ -28,11 +27,14 @@ from runtime.sensing.model_router.models import ModelResponse, ModelStreamEvent 
 def stack():
     cfg = AgentConfig(
         planner=PlannerConfig(
-            type="llm", model="mock/gw",
-            mock_response=json.dumps({
-                "reasoning": "r",
-                "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
-            }),
+            type="llm",
+            model="mock/gw",
+            mock_response=json.dumps(
+                {
+                    "reasoning": "r",
+                    "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
+                }
+            ),
         ),
     )
     return build_from_config(cfg)
@@ -68,13 +70,13 @@ class TestListModels:
 
         # Implementation note.
         ids = {m["id"] for m in data["data"]}
-        assert "octopus-agent" in ids
+        assert "echo-agent" in ids
 
     def test_list_includes_registered_skills(self, client):
         data = client.get("/v1/models").json()
         ids = {m["id"] for m in data["data"]}
         # Implementation note.
-        assert "octopus-agent/list_cwd" in ids
+        assert "echo-agent/list_cwd" in ids
 
 
 # ═══════════════════════════════════════════════════════════
@@ -84,12 +86,13 @@ class TestListModels:
 
 class TestChatCompletionsNonStream:
     def test_happy_path(self, client):
-        r = client.post("/v1/chat/completions", json={
-            "model": "octopus-agent",
-            "messages": [
-                {"role": "user", "content": "list cwd"}
-            ],
-        })
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "echo-agent",
+                "messages": [{"role": "user", "content": "list cwd"}],
+            },
+        )
         assert r.status_code == 200
         data = r.json()
 
@@ -97,7 +100,7 @@ class TestChatCompletionsNonStream:
         assert data["object"] == "chat.completion"
         assert "id" in data and data["id"].startswith("chatcmpl-")
         assert "created" in data
-        assert data["model"] == "octopus-agent"
+        assert data["model"] == "echo-agent"
         assert isinstance(data["choices"], list) and len(data["choices"]) == 1
 
         choice = data["choices"][0]
@@ -112,66 +115,80 @@ class TestChatCompletionsNonStream:
             assert k in data["usage"]
 
         # Implementation note.
-        assert "octopus" in data
-        assert "task_id" in data["octopus"]
-        assert "step_count" in data["octopus"]
+        assert "echo" in data
+        assert "task_id" in data["echo"]
+        assert "step_count" in data["echo"]
 
     def test_multimodal_content_text_extracted(self, client):
-        r = client.post("/v1/chat/completions", json={
-            "model": "octopus-agent",
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "list the current directory"},
-                    {"type": "image_url", "image_url": "data:..."},  # Implementation note.
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "echo-agent",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "list the current directory"},
+                            {"type": "image_url", "image_url": "data:..."},  # Implementation note.
+                        ],
+                    }
                 ],
-            }],
-        })
+            },
+        )
         assert r.status_code == 200
         # Implementation note.
 
     def test_last_user_message_wins(self, client):
         """Implementation note."""
-        r = client.post("/v1/chat/completions", json={
-            "messages": [
-                {"role": "user", "content": "old question"},
-                {"role": "assistant", "content": "old answer"},
-                {"role": "user", "content": "the real goal"},
-            ],
-        })
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [
+                    {"role": "user", "content": "old question"},
+                    {"role": "assistant", "content": "old answer"},
+                    {"role": "user", "content": "the real goal"},
+                ],
+            },
+        )
         assert r.status_code == 200
 
     def test_full_history_reaches_planner_context(self, client, stack):
         """The gateway should keep the last user message as the goal
         while still passing prior turns into the planner prompt."""
-        r = client.post("/v1/chat/completions", json={
-            "messages": [
-                {"role": "system", "content": "Always prefer concise plans."},
-                {"role": "user", "content": "My project is octopus-agent."},
-                {"role": "assistant", "content": "Noted."},
-                {"role": "user", "content": "Use that context now."},
-            ],
-        })
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [
+                    {"role": "system", "content": "Always prefer concise plans."},
+                    {"role": "user", "content": "My project is echo-agent."},
+                    {"role": "assistant", "content": "Noted."},
+                    {"role": "user", "content": "Use that context now."},
+                ],
+            },
+        )
         assert r.status_code == 200
 
         planner_request = stack.planner.router.call_log[0]
         planner_user_prompt = planner_request.messages[-1].content
         assert "CONVERSATION HISTORY" in planner_user_prompt
         assert "[system] Always prefer concise plans." in planner_user_prompt
-        assert "[user] My project is octopus-agent." in planner_user_prompt
+        assert "[user] My project is echo-agent." in planner_user_prompt
         assert "[assistant] Noted." in planner_user_prompt
         assert "USER GOAL: Use that context now." in planner_user_prompt
 
     def test_explicit_profile_memory_reaches_planner_context(self, client, stack):
-        r = client.post("/v1/chat/completions", json={
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "remember that I prefer concise Chinese answers",
-                },
-                {"role": "user", "content": "Use my preference now."},
-            ],
-        })
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "remember that I prefer concise Chinese answers",
+                    },
+                    {"role": "user", "content": "Use my preference now."},
+                ],
+            },
+        )
         assert r.status_code == 200
 
         planner_request = stack.planner.router.call_log[0]
@@ -192,9 +209,9 @@ class TestChatCompletionsErrors:
         assert r.status_code == 400
 
     def test_only_system_no_user_400(self, client):
-        r = client.post("/v1/chat/completions", json={
-            "messages": [{"role": "system", "content": "you are x"}]
-        })
+        r = client.post(
+            "/v1/chat/completions", json={"messages": [{"role": "system", "content": "you are x"}]}
+        )
         assert r.status_code == 400
         assert "no user message" in r.json()["detail"]
 
@@ -206,9 +223,12 @@ class TestChatCompletionsErrors:
         app.include_router(create_openai_router(stack))
         client = TestClient(app)
 
-        r = client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "no rules"}],
-        })
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "no rules"}],
+            },
+        )
         assert r.status_code == 200
         payload = r.json()
         assert payload["object"] == "chat.completion"
@@ -219,19 +239,21 @@ def test_custom_model_ignores_configured_max_tokens(tmp_path, monkeypatch):
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     (data_dir / "custom_models.json").write_text(
-        json.dumps({
-            "mimo2.5": {
-                "model": "mimo-v2.5-pro",
-                "max_tokens": 8192000,
-                "supports_thinking": True,
-                # Non-openai-compat custom models clamp to the gateway
-                # default (131072). Openai-compat is exercised below.
-                "provider": "anthropic",
+        json.dumps(
+            {
+                "mimo2.5": {
+                    "model": "mimo-v2.5-pro",
+                    "max_tokens": 8192000,
+                    "supports_thinking": True,
+                    # Non-openai-compat custom models clamp to the gateway
+                    # default (131072). Openai-compat is exercised below.
+                    "provider": "anthropic",
+                }
             }
-        }),
+        ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("OCTOPUS_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("ECHO_DATA_DIR", str(data_dir))
 
     supports_thinking, max_tokens = _model_runtime_options(
         "mimo2.5",
@@ -246,16 +268,18 @@ def test_custom_model_without_max_tokens_uses_unbounded_default(tmp_path, monkey
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     (data_dir / "custom_models.json").write_text(
-        json.dumps({
-            "mimo2.5": {
-                "model": "mimo-v2.5-pro",
-                "supports_thinking": True,
-                "provider": "anthropic",
+        json.dumps(
+            {
+                "mimo2.5": {
+                    "model": "mimo-v2.5-pro",
+                    "supports_thinking": True,
+                    "provider": "anthropic",
+                }
             }
-        }),
+        ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("OCTOPUS_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("ECHO_DATA_DIR", str(data_dir))
 
     supports_thinking, max_tokens = _model_runtime_options(
         "mimo2.5",
@@ -275,16 +299,18 @@ def test_custom_openai_compat_model_returns_unbounded(tmp_path, monkeypatch):
     data_dir = tmp_path / "data"
     data_dir.mkdir()
     (data_dir / "custom_models.json").write_text(
-        json.dumps({
-            "mimo2.5": {
-                "model": "mimo-v2.5-pro",
-                "supports_thinking": True,
-                "provider": "openai-compatible",
+        json.dumps(
+            {
+                "mimo2.5": {
+                    "model": "mimo-v2.5-pro",
+                    "supports_thinking": True,
+                    "provider": "openai-compatible",
+                }
             }
-        }),
+        ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("OCTOPUS_DATA_DIR", str(data_dir))
+    monkeypatch.setenv("ECHO_DATA_DIR", str(data_dir))
 
     supports_thinking, max_tokens = _model_runtime_options(
         "mimo2.5",
@@ -303,7 +329,8 @@ def test_custom_openai_compat_model_returns_unbounded(tmp_path, monkeypatch):
 class TestChatCompletionsStream:
     def test_stream_returns_event_stream(self, client):
         with client.stream(
-            "POST", "/v1/chat/completions",
+            "POST",
+            "/v1/chat/completions",
             json={
                 "stream": True,
                 "messages": [{"role": "user", "content": "list"}],
@@ -325,7 +352,7 @@ class TestChatCompletionsStream:
             # Implementation note.
             for line in body.splitlines():
                 if line.startswith("data: ") and "[DONE]" not in line:
-                    payload = line[len("data: "):]
+                    payload = line[len("data: ") :]
                     parsed = json.loads(payload)
                     assert parsed["object"] == "chat.completion.chunk"
                     assert "choices" in parsed
@@ -378,9 +405,14 @@ class TestChatCompletionsStream:
             },
         )
 
-        events = list(_stream_direct_llm_fallback(
-            _Stack(), intent, agent=None, model="glm-test",
-        ))
+        events = list(
+            _stream_direct_llm_fallback(
+                _Stack(),
+                intent,
+                agent=None,
+                model="glm-test",
+            )
+        )
 
         assert events
         assert not any(kind == "reasoning" for kind, _delta, _final in events)
@@ -408,9 +440,12 @@ class TestMountOnUIApp:
         assert client.get("/v1/models").status_code == 200
 
         # Implementation note.
-        r = client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "list"}],
-        })
+        r = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "list"}],
+            },
+        )
         assert r.status_code == 200
 
 
@@ -422,9 +457,12 @@ class TestMountOnUIApp:
 class TestOpenAISDKCompat:
     def test_response_matches_chatcompletion_model(self, client):
         """Implementation note."""
-        data = client.post("/v1/chat/completions", json={
-            "messages": [{"role": "user", "content": "list"}],
-        }).json()
+        data = client.post(
+            "/v1/chat/completions",
+            json={
+                "messages": [{"role": "user", "content": "list"}],
+            },
+        ).json()
 
         # Implementation note.
         required = {"id", "object", "created", "model", "choices", "usage"}

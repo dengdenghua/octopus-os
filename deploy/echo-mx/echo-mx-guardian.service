@@ -1,0 +1,39 @@
+[Unit]
+Description=Echo MX small Agnes vision operations agent
+After=network-online.target echo-mx-bridge.service
+Wants=network-online.target
+Requires=echo-mx-bridge.service
+Before=echo-mx-collector.service
+
+[Service]
+Type=simple
+User=echo-mx
+Group=echo-mx
+WorkingDirectory=/opt/echo-mx
+Environment=PYTHONUNBUFFERED=1
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/echo-mx/ms-playwright
+Environment=MX_SESSION_FILE=/var/lib/echo-mx/session.json
+Environment=MX_SESSION_STATE_FILE=/var/lib/echo-mx/session-state.json
+Environment=MX_CREDENTIAL_FILE=/var/lib/echo-mx/credentials.json
+Environment=MX_VISION_FILE=/var/lib/echo-mx/vision.json
+Environment=MX_BROWSER_PROXY_SERVER=socks5://127.0.0.1:18084
+Environment=MX_GUARDIAN_INTERVAL=900
+Environment=MX_AUTO_LOGIN_ENABLED=false
+Environment=MX_CAPTCHA_ATTEMPTS=2
+Environment=MX_CAPTCHA_RENDERER=/usr/bin/rsvg-convert
+Environment=MX_CAPTCHA_TESSERACT=/usr/bin/tesseract
+ExecStart=/opt/echo-mx/.venv/bin/python /opt/echo-mx/mx_ops_agent.py
+Restart=always
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/echo-mx
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
+

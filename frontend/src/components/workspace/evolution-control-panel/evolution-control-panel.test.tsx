@@ -10,7 +10,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("@/core/config", () => ({
   getBackendBaseURL: () => "",
-  getOctopusBaseURL: () => "/api",
+  getEchoBaseURL: () => "/api",
 }));
 vi.mock("@/core/auth/api", () => ({
   authHeaders: () => ({ Authorization: "Bearer test-token" }),
@@ -104,7 +104,9 @@ describe("EvolutionControlPanel — component", () => {
       expect(global.fetch).toHaveBeenCalledWith(
         "/api/evolution/budget/snapshot",
         expect.objectContaining({
-          headers: expect.objectContaining({ Authorization: "Bearer test-token" }),
+          headers: expect.objectContaining({
+            Authorization: "Bearer test-token",
+          }),
         }),
       );
     });
@@ -116,7 +118,9 @@ describe("EvolutionControlPanel — component", () => {
     fireEvent.click(screen.getByRole("button", { name: "MCP" }));
 
     expect(await screen.findByText("MCP 提案")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "审核全部待定" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "审核全部待定" }),
+    ).toBeInTheDocument();
     expect(await screen.findByText("暂无 MCP 提案。")).toBeInTheDocument();
 
     await waitFor(() => {
@@ -142,15 +146,22 @@ describe("EvolutionControlPanel — component", () => {
     ["技能提案", "来自情报的技能提案", "暂无待处理的技能提案。"],
     ["模型", "模型提案", "尚未发现模型提案。"],
     ["课程", "课程目标", "暂无待处理的课程目标。是否已积累足够失败可聚类？"],
-    ["框架", "框架基准测试", "尚未运行任何基准测试。请注册策略并 POST 到 /frameworks/benchmarks/run。"],
+    [
+      "框架",
+      "框架基准测试",
+      "尚未运行任何基准测试。请注册策略并 POST 到 /frameworks/benchmarks/run。",
+    ],
     ["漂移", "协议漂移与修复", "未检测到漂移事件。"],
     ["A/B 分发", "真实流量 A/B 分发", "暂无进行中的 A/B 分配。"],
-  ])("tab %s renders its Chinese title and empty state", async (tab, title, empty) => {
-    renderPanel();
-    fireEvent.click(screen.getByRole("button", { name: tab }));
-    expect(await screen.findByText(title)).toBeInTheDocument();
-    expect(await screen.findByText(empty)).toBeInTheDocument();
-  });
+  ])(
+    "tab %s renders its Chinese title and empty state",
+    async (tab, title, empty) => {
+      renderPanel();
+      fireEvent.click(screen.getByRole("button", { name: tab }));
+      expect(await screen.findByText(title)).toBeInTheDocument();
+      expect(await screen.findByText(empty)).toBeInTheDocument();
+    },
+  );
 
   it("marks the active tab with the primary styling", async () => {
     renderPanel();

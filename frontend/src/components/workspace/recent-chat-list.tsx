@@ -1,4 +1,3 @@
-
 import {
   ChevronDownIcon,
   Download,
@@ -24,6 +23,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -51,9 +51,12 @@ import {
 import { getAPIClient } from "@/core/api";
 import { useActiveAgentId } from "@/core/agents/active";
 import { copyTextToClipboard } from "@/core/clipboard";
+import { emitAgentChanged } from "@/core/events";
 import { useI18n } from "@/core/i18n/hooks";
 import {
+  type Project,
   useDeleteProject,
+  useEnsureProjectHome,
   useMoveThreadToProject,
   useProjects,
   useThreadMap,
@@ -68,13 +71,11 @@ import {
   useThreads,
 } from "@/core/threads/hooks";
 import type { AgentThread, AgentThreadState } from "@/core/threads/types";
-import { pathOfThread, titleOfThread } from "@/core/threads/utils";
+import { titleOfThread } from "@/core/threads/utils";
 import { env } from "@/env";
 import { isIMEComposing } from "@/lib/ime";
 
 import { CreateProjectDialog } from "./create-project-dialog";
-
-type Project = { id: string; name: string; icon?: string };
 
 type ThreadGroup = {
   key: string;
@@ -84,33 +85,83 @@ type ThreadGroup = {
   threads: AgentThread[];
 };
 
+function routeForThread(thread: AgentThread) {
+  return `/workspace/realtime/${encodeURIComponent(thread.thread_id)}`;
+}
+
+function ownerAgentForThread(thread: AgentThread): string {
+  const meta = (thread.metadata ?? {}) as Record<string, unknown>;
+  const values = (thread.values ?? {}) as Record<string, unknown>;
+  const candidates = [
+    meta["agent"],
+    meta["agent_name"],
+    meta["agent_id"],
+    meta["lead_agent_name"],
+    meta["current_agent"],
+    values["current_speaker"],
+    values["agent_name"],
+  ];
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function workspacePathForThread(thread: AgentThread): string {
+  const path = thread.metadata?.workspace_path;
+  return typeof path === "string" ? path.trim() : "";
+}
+
 export function RecentChatList() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const params = useParams();
   const threadIdFromPath = params.threadId ?? params.thread_id;
-  const currentMode = pathname.startsWith("/workspace/team")
-      ? ("team" as const)
-      : undefined; // chat shows ALL threads (including those without mode tag)
+  const currentMode = pathname.startsWith("/workspace/realtime")
+    ? ("code" as const)
+    : undefined; // non-task chat surfaces show this agent's chat/react/deep history
 
-  // Scope by active agent when in chat mode · code/team have their own
-  // persona routing (code picks by agentMode, team by leader), so we
-  // only filter by active-agent on the chat path.
+  // Scope personal chat/code history by active agent. Without this, switching
+  // a historical conversation can show the wrong persona avatar/header while
+  // the list still contains another agent.
   const activeAgentId = useActiveAgentId();
-  const agentFilter = currentMode === undefined ? activeAgentId : null;
-  const { data: threads = [] } = useThreads(undefined, currentMode, agentFilter);
+  const agentFilter = activeAgentId;
+  const { data: threads = [] } = useThreads(
+    undefined,
+    currentMode,
+    agentFilter,
+  );
   const { data: projects = [] } = useProjects();
   const { data: threadProjectMap = {} } = useThreadMap();
   const { mutate: deleteThread } = useDeleteThread();
   const { mutate: renameThread } = useRenameThread();
   const { mutate: moveThreadToProject } = useMoveThreadToProject();
-  const { mutate: deleteProject } = useDeleteProject();
+  const ensureProjectHome = useEnsureProjectHome();
+  const { mutate: deleteProject, isPending: isDeletingProject } =
+    useDeleteProject();
 
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameThreadId, setRenameThreadId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [threadToDelete, setThreadToDelete] = useState<AgentThread | null>(
+    null,
+  );
+
+  const handleOpenProject = useCallback(
+    (project: Project) => {
+      ensureProjectHome.mutate(project, {
+        onSuccess: ({ threadId }) =>
+          navigate(`/workspace/realtime/${encodeURIComponent(threadId)}`, {
+            state: { openProjectWorkbench: true },
+          }),
+        onError: () => toast.error("项目工作群打开失败，请重试"),
+      });
+    },
+    [ensureProjectHome, navigate],
+  );
 
   const handleDelete = useCallback(
     (threadId: string) => {
@@ -149,9 +200,22 @@ export function RecentChatList() {
     }
   }, [renameThread, renameThreadId, renameValue]);
 
+  const handleProjectDelete = useCallback(() => {
+    if (!projectToDelete) return;
+    deleteProject(projectToDelete.id, {
+      onSuccess: () => setProjectToDelete(null),
+    });
+  }, [deleteProject, projectToDelete]);
+
+  const handleThreadDelete = useCallback(() => {
+    if (!threadToDelete) return;
+    handleDelete(threadToDelete.thread_id);
+    setThreadToDelete(null);
+  }, [handleDelete, threadToDelete]);
+
   const handleShare = useCallback(
     async (threadId: string) => {
-      const VERCEL_URL = "https://octopus-v2.vercel.app";
+      const VERCEL_URL = "https://echo-v2.vercel.app";
       const isLocalhost =
         window.location.hostname === "localhost" ||
         window.location.hostname === "127.0.0.1";
@@ -193,7 +257,7 @@ export function RecentChatList() {
   );
 
   // Group threads by project (mode-filtered).
-  // Chat mode: flat Recents. Code/Team mode: per-project groups
+  // Chat mode: flat Recents. Code/collaboration work: per-project groups
   // plus uncategorized Recents.
   const groups = useMemo<ThreadGroup[]>(() => {
     const recentsLabel = !env.STATIC_WEBSITE_ONLY
@@ -221,15 +285,16 @@ export function RecentChatList() {
       }
     }
 
-    const projectGroups: ThreadGroup[] = projects
-      .filter((p) => byProject.has(p.id))
-      .map((p) => ({
-        key: `project:${p.id}`,
-        label: p.name,
-        icon: p.icon,
-        project: p,
-        threads: byProject.get(p.id)!,
-      }));
+    // Keep empty projects visible. Otherwise a freshly created project vanishes
+    // from the sidebar until its first task is moved into it, which looks like
+    // the create action failed.
+    const projectGroups: ThreadGroup[] = projects.map((p) => ({
+      key: `project:${p.id}`,
+      label: p.name,
+      icon: p.icon,
+      project: p,
+      threads: byProject.get(p.id) ?? [],
+    }));
 
     const result: ThreadGroup[] = [...projectGroups];
     if (uncategorized.length > 0 || projectGroups.length === 0) {
@@ -243,16 +308,22 @@ export function RecentChatList() {
   }, [currentMode, threads, projects, threadProjectMap, t]);
 
   const renderThreadItem = (thread: AgentThread) => {
-    const isActive = pathOfThread(thread.thread_id) === pathname;
+    const href = routeForThread(thread);
+    const isActive = href === pathname;
     return (
-      <SidebarMenuItem
-        key={thread.thread_id}
-        className="group/side-menu-item"
-      >
+      <SidebarMenuItem key={thread.thread_id} className="group/side-menu-item">
         <SidebarMenuButton isActive={isActive} asChild>
           <Link
-            to={pathOfThread(thread.thread_id)}
+            to={href}
+            state={{
+              threadOwnerAgentId: ownerAgentForThread(thread) || undefined,
+              workspacePath: workspacePathForThread(thread) || undefined,
+            }}
             title={titleOfThread(thread)}
+            onMouseDown={() => {
+              const owner = ownerAgentForThread(thread);
+              if (owner) emitAgentChanged(owner, "thread");
+            }}
           >
             <span>{titleOfThread(thread)}</span>
           </Link>
@@ -281,9 +352,7 @@ export function RecentChatList() {
                 <Pencil className="text-muted-foreground" />
                 <span>{t.common.rename}</span>
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => handleShare(thread.thread_id)}
-              >
+              <DropdownMenuItem onSelect={() => handleShare(thread.thread_id)}>
                 <Share2 className="text-muted-foreground" />
                 <span>{t.common.share}</span>
               </DropdownMenuItem>
@@ -338,9 +407,10 @@ export function RecentChatList() {
               </DropdownMenuSub>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onSelect={() => handleDelete(thread.thread_id)}
+                variant="destructive"
+                onSelect={() => setThreadToDelete(thread)}
               >
-                <Trash2 className="text-muted-foreground" />
+                <Trash2 />
                 <span>{t.common.delete}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -363,15 +433,14 @@ export function RecentChatList() {
           <Collapsible
             defaultOpen
             key={group.key}
-            className={
-              group.project
-                ? "group/project-group"
-                : "group/recent"
-            }
+            className={group.project ? "group/project-group" : "group/recent"}
           >
             <SidebarGroup className="pt-0">
-              <SidebarGroupLabel className="flex h-6 items-center justify-between px-1.5 text-[11px]">
-                <CollapsibleTrigger className="flex items-center gap-1">
+              <SidebarGroupLabel className="flex h-6 items-center gap-1 px-1.5 text-xs">
+                <CollapsibleTrigger
+                  className="flex size-5 shrink-0 items-center justify-center rounded hover:bg-muted"
+                  aria-label={`${group.label} 展开或收起`}
+                >
                   <ChevronDownIcon
                     className={
                       group.project
@@ -379,16 +448,31 @@ export function RecentChatList() {
                         : "size-3 transition-transform group-data-[state=closed]/recent:-rotate-90"
                     }
                   />
-                  <span className="flex items-center gap-1">
+                </CollapsibleTrigger>
+                {group.project ? (
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-1 text-left hover:text-foreground disabled:opacity-60"
+                    onClick={() => handleOpenProject(group.project!)}
+                    disabled={
+                      ensureProjectHome.isPending &&
+                      ensureProjectHome.variables?.id === group.project.id
+                    }
+                    title={`打开项目工作群：${group.label}`}
+                  >
                     {group.icon && <span>{group.icon}</span>}
                     <span className="truncate">{group.label}</span>
-                  </span>
-                </CollapsibleTrigger>
+                  </button>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                )}
                 {showNewProjectButton && (
                   <button
+                    type="button"
                     onClick={() => setCreateProjectDialogOpen(true)}
                     className="text-muted-foreground hover:text-foreground transition-colors"
                     title={t.sidebar.newProject}
+                    aria-label={t.sidebar.newProject}
                   >
                     <PlusIcon className="size-4" />
                   </button>
@@ -397,18 +481,20 @@ export function RecentChatList() {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
+                        type="button"
                         className="text-muted-foreground hover:text-foreground transition-colors"
                         title={t.common.more}
+                        aria-label={`${t.common.more}: ${group.label}`}
                       >
                         <MoreHorizontal className="size-4" />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" side="right">
                       <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => deleteProject(group.project!.id)}
+                        variant="destructive"
+                        onSelect={() => setProjectToDelete(group.project!)}
                       >
-                        <Trash2 className="mr-2 size-4" />
+                        <Trash2 />
                         {t.common.delete}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -430,7 +516,7 @@ export function RecentChatList() {
       })}
 
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[var(--dialog-md)]">
           <DialogHeader>
             <DialogTitle>{t.common.rename}</DialogTitle>
           </DialogHeader>
@@ -455,6 +541,58 @@ export function RecentChatList() {
               {t.common.cancel}
             </Button>
             <Button onClick={handleRenameSubmit}>{t.common.save}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={projectToDelete !== null}
+        onOpenChange={(open) => !open && setProjectToDelete(null)}
+      >
+        <DialogContent className="sm:max-w-[var(--dialog-md)]">
+          <DialogHeader>
+            <DialogTitle>{t.sidebar.confirmDeleteProjectTitle}</DialogTitle>
+            <DialogDescription>
+              {projectToDelete
+                ? t.sidebar.confirmDeleteProject(projectToDelete.name)
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProjectToDelete(null)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleProjectDelete}
+              disabled={isDeletingProject}
+            >
+              {t.common.delete}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={threadToDelete !== null}
+        onOpenChange={(open) => !open && setThreadToDelete(null)}
+      >
+        <DialogContent className="sm:max-w-[var(--dialog-md)]">
+          <DialogHeader>
+            <DialogTitle>{t.common.delete}</DialogTitle>
+            <DialogDescription>
+              {threadToDelete
+                ? t.sidebar.confirmDeleteThread(titleOfThread(threadToDelete))
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setThreadToDelete(null)}>
+              {t.common.cancel}
+            </Button>
+            <Button variant="destructive" onClick={handleThreadDelete}>
+              {t.common.delete}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -26,11 +26,12 @@ Usage:
     doc.save()
 """
 
+import contextlib
 import html
 import random
 import shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from defusedxml import minidom
@@ -80,10 +81,8 @@ class DocxXMLEditor(XMLEditor):
             for elem in elements:
                 change_id = elem.getAttribute("w:id")
                 if change_id:
-                    try:
+                    with contextlib.suppress(ValueError):
                         max_id = max(max_id, int(change_id))
-                    except ValueError:
-                        pass
         return max_id + 1
 
     def _ensure_w16du_namespace(self):
@@ -127,9 +126,9 @@ class DocxXMLEditor(XMLEditor):
         Args:
             nodes: List of DOM nodes to process
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         def is_inside_deletion(elem):
             """Check if element is inside a w:del element."""
@@ -200,9 +199,8 @@ class DocxXMLEditor(XMLEditor):
                 and elem.firstChild.nodeType == elem.firstChild.TEXT_NODE
             ):
                 text = elem.firstChild.data
-                if text and (text[0].isspace() or text[-1].isspace()):
-                    if not elem.hasAttribute("xml:space"):
-                        elem.setAttribute("xml:space", "preserve")
+                if text and (text[0].isspace() or text[-1].isspace()) and not elem.hasAttribute("xml:space"):
+                    elem.setAttribute("xml:space", "preserve")
 
         for node in nodes:
             if node.nodeType != node.ELEMENT_NODE:
@@ -427,8 +425,7 @@ class DocxXMLEditor(XMLEditor):
         # Return based on input type
         if is_single_del and created_insertion:
             return [elem, created_insertion]
-        else:
-            return [elem]
+        return [elem]
 
     @staticmethod
     def suggest_paragraph(xml_content: str) -> str:
@@ -447,22 +444,22 @@ class DocxXMLEditor(XMLEditor):
         para = doc.getElementsByTagName("w:p")[0]
 
         # Ensure w:pPr exists
-        pPr_list = para.getElementsByTagName("w:pPr")
+        pPr_list = para.getElementsByTagName("w:pPr")  # noqa: N806
         if not pPr_list:
-            pPr = doc.createElement("w:pPr")
+            pPr = doc.createElement("w:pPr")  # noqa: N806
             para.insertBefore(
                 pPr, para.firstChild
             ) if para.firstChild else para.appendChild(pPr)
         else:
-            pPr = pPr_list[0]
+            pPr = pPr_list[0]  # noqa: N806
 
         # Ensure w:rPr exists in w:pPr
-        rPr_list = pPr.getElementsByTagName("w:rPr")
+        rPr_list = pPr.getElementsByTagName("w:rPr")  # noqa: N806
         if not rPr_list:
-            rPr = doc.createElement("w:rPr")
+            rPr = doc.createElement("w:rPr")  # noqa: N806
             pPr.appendChild(rPr)
         else:
-            rPr = rPr_list[0]
+            rPr = rPr_list[0]  # noqa: N806
 
         # Add <w:ins/> to w:rPr
         ins_marker = doc.createElement("w:ins")
@@ -531,25 +528,25 @@ class DocxXMLEditor(XMLEditor):
 
             return del_wrapper
 
-        elif elem.nodeName == "w:p":
+        if elem.nodeName == "w:p":
             # Check for existing tracked changes
             if elem.getElementsByTagName("w:ins") or elem.getElementsByTagName("w:del"):
                 raise ValueError("w:p element already contains tracked changes")
 
             # Check if it's a numbered list item
-            pPr_list = elem.getElementsByTagName("w:pPr")
+            pPr_list = elem.getElementsByTagName("w:pPr")  # noqa: N806
             is_numbered = pPr_list and pPr_list[0].getElementsByTagName("w:numPr")
 
             if is_numbered:
                 # Add <w:del/> to w:rPr in w:pPr
-                pPr = pPr_list[0]
-                rPr_list = pPr.getElementsByTagName("w:rPr")
+                pPr = pPr_list[0]  # noqa: N806  # noqa: N806
+                rPr_list = pPr.getElementsByTagName("w:rPr")  # noqa: N806  # noqa: N806
 
                 if not rPr_list:
-                    rPr = self.dom.createElement("w:rPr")
+                    rPr = self.dom.createElement("w:rPr")  # noqa: N806
                     pPr.appendChild(rPr)
                 else:
-                    rPr = rPr_list[0]
+                    rPr = rPr_list[0]  # noqa: N806  # noqa: N806
 
                 # Add <w:del/> marker
                 del_marker = self.dom.createElement("w:del")
@@ -589,8 +586,7 @@ class DocxXMLEditor(XMLEditor):
 
             return elem
 
-        else:
-            raise ValueError(f"Element must be w:r or w:p, got {elem.nodeName}")
+        raise ValueError(f"Element must be w:r or w:p, got {elem.nodeName}")
 
 
 def _generate_hex_id() -> str:
@@ -730,7 +726,7 @@ class Document:
         comment_id = self.next_comment_id
         para_id = _generate_hex_id()
         durable_id = _generate_hex_id()
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Add comment ranges to document.xml immediately
         self._document.insert_before(start, self._comment_range_start_xml(comment_id))
@@ -787,7 +783,7 @@ class Document:
         comment_id = self.next_comment_id
         para_id = _generate_hex_id()
         durable_id = _generate_hex_id()
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Add comment ranges to document.xml immediately
         parent_start_elem = self._document.get_node(
@@ -895,10 +891,8 @@ class Document:
         for comment_elem in editor.dom.getElementsByTagName("w:comment"):
             comment_id = comment_elem.getAttribute("w:id")
             if comment_id:
-                try:
+                with contextlib.suppress(ValueError):
                     max_id = max(max_id, int(comment_id))
-                except ValueError:
-                    pass
         return max_id + 1
 
     def _load_existing_comments(self):

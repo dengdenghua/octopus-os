@@ -1,7 +1,7 @@
 /* Feature discovery · track which features the user has opened
    so the sidebar can hide one-time "NEW" badges once visited.
 
-   Storage key convention: `octopus.seen.<feature>` · boolean
+   Storage key convention: `echo.seen.<feature>` · boolean
 */
 
 import { useEffect } from "react";
@@ -16,7 +16,7 @@ export type SeenFeature =
   | "mcp"
   | "store";
 
-const STORAGE_PREFIX = "octopus.seen.";
+const STORAGE_PREFIX = "echo.seen.";
 
 export function useFeatureSeen(
   feature: SeenFeature,

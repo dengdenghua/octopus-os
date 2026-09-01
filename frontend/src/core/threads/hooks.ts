@@ -1,5 +1,3 @@
-import { swallow } from "@/core/utils/log";
-import type { Message } from "@/core/api/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -9,7 +7,9 @@ import type { LocalSettings } from "../settings";
 import type { LiveToolEvent } from "@/components/workspace/live-tool-timeline";
 
 import type { AgentThread, AgentThreadState } from "./types";
+import { threadVisibleInPersonaHistory } from "./persona-history";
 import { useThreadStreamRealtime } from "./use-thread-stream-realtime";
+import { isPrimaryPersonaAgentId } from "@/core/agents/persona-policy";
 
 export type ToolEndEvent = {
   name: string;
@@ -25,10 +25,6 @@ export type ThreadStreamOptions = {
   onStart?: (threadId: string) => void;
   onFinish?: (state: AgentThreadState) => void;
   onToolEnd?: (event: ToolEndEvent) => void;
-};
-
-type SendMessageOptions = {
-  additionalKwargs?: Record<string, unknown>;
 };
 
 export function upsertLiveToolEvent(
@@ -66,7 +62,11 @@ function stringValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value))) {
+  if (
+    typeof value === "string" &&
+    value.trim() &&
+    !Number.isNaN(Number(value))
+  ) {
     return Number(value);
   }
   return undefined;
@@ -77,6 +77,17 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
   if (Array.isArray(value)) return { items: value };
   if (typeof value === "string" && value.trim()) return { input: value };
   return undefined;
+}
+
+function parseCapabilityDisabled(
+  value: unknown,
+): { group: string; config_flag: string } | undefined {
+  if (!isRecord(value)) return undefined;
+  const group = stringValue(value.group);
+  const configFlag =
+    stringValue(value.config_flag) ?? stringValue(value.configFlag);
+  if (!group || !configFlag) return undefined;
+  return { group, config_flag: configFlag };
 }
 
 function terminalToolStatus(value: unknown): LiveToolEvent["status"] {
@@ -124,22 +135,34 @@ export function normalizeCustomToolEvent(
     event.input_preview ?? event.input ?? event.args ?? event.arguments,
   );
   const output =
-    event.output_preview ??
-    event.output ??
-    event.result ??
-    event.observation;
+    event.output_preview ?? event.output ?? event.result ?? event.observation;
+  const subAgentRole =
+    stringValue(event.sub_agent_role) ?? stringValue(event.subAgentRole);
+  const subagentCodename =
+    stringValue(event.subagent_codename) ??
+    stringValue(event.subagentCodename) ??
+    stringValue(event.codename);
+  const rawAgentId = stringValue(event.agent_id) ?? stringValue(event.agentId);
+  const agentId =
+    stringValue(event.requested_agent_id) ??
+    stringValue(event.requestedAgentId) ??
+    (rawAgentId && rawAgentId !== subAgentRole
+      ? rawAgentId
+      : (subagentCodename ?? rawAgentId));
 
   return {
     id: rawId,
     name,
-    status: isStart ? "running" : terminalToolStatus(event.status ?? event.is_error),
+    status: isStart
+      ? "running"
+      : terminalToolStatus(event.status ?? event.is_error),
     startedAt,
     finishedAt,
     durationMs: isStart
       ? undefined
       : numberValue(event.duration_ms ?? event.durationMs),
     iteration: numberValue(event.iteration) ?? 0,
-    agentId: stringValue(event.agent_id) ?? stringValue(event.agentId),
+    agentId,
     agentName:
       stringValue(event.agent_name) ??
       stringValue(event.agentName) ??
@@ -150,103 +173,16 @@ export function normalizeCustomToolEvent(
     parentToolUseId:
       stringValue(event.parent_tool_use_id) ??
       stringValue(event.parentToolUseId),
-    subAgentRole:
-      stringValue(event.sub_agent_role) ?? stringValue(event.subAgentRole),
+    subAgentRole,
+    subagentCodename,
+    subagentAvatar:
+      stringValue(event.subagent_avatar) ??
+      stringValue(event.subagentAvatar) ??
+      stringValue(event.avatar),
     thought: stringValue(event.thought),
     observation: stringValue(event.observation),
+    capabilityDisabled: parseCapabilityDisabled(event.capability_disabled),
   };
-}
-
-function recoveryToolEventId(runId?: string): string {
-  return `stream-recovery:${runId || "current"}`;
-}
-
-function upsertStreamRecoveryEvent(
-  events: LiveToolEvent[],
-  next: {
-    runId?: string;
-    status: LiveToolEvent["status"];
-    input?: Record<string, unknown>;
-    output?: unknown;
-  },
-): LiveToolEvent[] {
-  const id = recoveryToolEventId(next.runId);
-  const existing = events.find((event) => event.id === id);
-  const startedAt = existing?.startedAt ?? Date.now();
-  const finishedAt =
-    next.status === "running" || next.status === "waiting_approval"
-      ? undefined
-      : Date.now();
-  return upsertLiveToolEvent(events, {
-    id,
-    name: "stream_recovery",
-    status: next.status,
-    startedAt,
-    finishedAt,
-    durationMs:
-      finishedAt !== undefined ? Math.max(0, finishedAt - startedAt) : undefined,
-    iteration: existing?.iteration ?? 0,
-    input: next.input ?? existing?.input,
-    output: next.output,
-  });
-}
-
-function upsertModelReasoningEvent(
-  events: LiveToolEvent[],
-  next: {
-    delta?: string;
-    status?: LiveToolEvent["status"];
-    iteration?: number;
-  },
-): LiveToolEvent[] {
-  const id = "model-reasoning:current";
-  const existing = events.find((event) => event.id === id);
-  const startedAt = existing?.startedAt ?? Date.now();
-  const previousOutput = isRecord(existing?.output) ? existing.output : {};
-  const previousContent =
-    typeof previousOutput.content === "string" ? previousOutput.content : "";
-  const content = `${previousContent}${next.delta ?? ""}`;
-  const status = next.status ?? "running";
-  const finishedAt =
-    status === "running" || status === "waiting_approval" ? undefined : Date.now();
-
-  return upsertLiveToolEvent(events, {
-    id,
-    name: "model_reasoning",
-    status,
-    startedAt,
-    finishedAt,
-    durationMs:
-      finishedAt !== undefined ? Math.max(0, finishedAt - startedAt) : undefined,
-    iteration: next.iteration ?? existing?.iteration ?? 0,
-    output: { content },
-  });
-}
-
-function upsertAgentThoughtEvent(
-  events: LiveToolEvent[],
-  next: {
-    thought?: string;
-    observation?: string;
-    iteration?: number;
-  },
-): LiveToolEvent[] {
-  const iteration = next.iteration ?? 0;
-  const id = `agent-thought:${iteration}`;
-  const existing = events.find((event) => event.id === id);
-  const startedAt = existing?.startedAt ?? Date.now();
-  const finishedAt = Date.now();
-  return upsertLiveToolEvent(events, {
-    id,
-    name: "agent_thought",
-    status: "done",
-    startedAt,
-    finishedAt,
-    durationMs: Math.max(0, finishedAt - startedAt),
-    iteration,
-    thought: next.thought ?? existing?.thought,
-    observation: next.observation ?? existing?.observation,
-  });
 }
 
 export function finalizeLiveToolEvents(
@@ -267,71 +203,6 @@ export function finalizeLiveToolEvents(
       output: event.output ?? output,
     };
   });
-}
-
-function completeActiveTodoItems(input: LiveToolEvent["input"]): LiveToolEvent["input"] {
-  if (!input) return input;
-  const nextInput = { ...input };
-  const normalizeItems = (value: unknown): unknown => {
-    if (Array.isArray(value)) {
-      return value.map((item) => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) {
-          return item;
-        }
-        const record = item as Record<string, unknown>;
-        if (record.status !== "in_progress") return item;
-        return { ...record, status: "completed" };
-      });
-    }
-    if (typeof value === "string" && value.trim()) {
-      try {
-        return JSON.stringify(normalizeItems(JSON.parse(value)));
-      } catch (e) {
-        swallow(e);
-        return value;
-      }
-    }
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      const record = value as Record<string, unknown>;
-      if ("todos" in record) {
-        return { ...record, todos: normalizeItems(record.todos) };
-      }
-      if ("items" in record) {
-        return { ...record, items: normalizeItems(record.items) };
-      }
-    }
-    return value;
-  };
-
-  if ("todos" in nextInput) {
-    nextInput.todos = normalizeItems(nextInput.todos);
-  }
-  if ("items" in nextInput) {
-    nextInput.items = normalizeItems(nextInput.items);
-  }
-  return nextInput;
-}
-
-function completeLatestTodoWriteOnSuccess(
-  events: LiveToolEvent[],
-  nextStatus: Extract<LiveToolEvent["status"], "done" | "error">,
-): LiveToolEvent[] {
-  if (nextStatus !== "done") return events;
-  let latestIndex = -1;
-  let latestStartedAt = -Infinity;
-  events.forEach((event, index) => {
-    if (event.name !== "todo_write" || !event.input) return;
-    if (event.startedAt >= latestStartedAt) {
-      latestStartedAt = event.startedAt;
-      latestIndex = index;
-    }
-  });
-  if (latestIndex < 0) return events;
-  return events.map((event, index) =>
-    index === latestIndex
-      ? { ...event, input: completeActiveTodoItems(event.input) }
-      : event,
-  );
 }
 
 function buildRunLifecycleEvents(
@@ -381,11 +252,15 @@ export function finalizeTurnHistory(
   nextStatus: Extract<LiveToolEvent["status"], "done" | "error">,
   output: unknown,
 ): LiveToolEvent[] {
-  const lifecycleEvents = buildRunLifecycleEvents(runStartedAt, nextStatus, output);
-  const finalizedEvents = completeLatestTodoWriteOnSuccess(
-    finalizeLiveToolEvents(events, nextStatus, output),
+  const lifecycleEvents = buildRunLifecycleEvents(
+    runStartedAt,
     nextStatus,
+    output,
   );
+  // Finalize the tool event lifecycle, but never rewrite checklist item
+  // statuses. The checklist is model/runtime-authored task state; receiving a
+  // final answer is not evidence that its active or pending rows completed.
+  const finalizedEvents = finalizeLiveToolEvents(events, nextStatus, output);
   const lifecycleIds = new Set(lifecycleEvents.map((event) => event.id));
   const lifecycleNames = new Set(lifecycleEvents.map((event) => event.name));
   return [
@@ -421,7 +296,6 @@ export function useThreadStream({
   });
 }
 
-
 export function useThreads(
   params: Record<string, unknown> = {
     limit: 50,
@@ -432,6 +306,8 @@ export function useThreads(
   mode?: "chat" | "code" | "team",
   agent?: string | null,
 ) {
+  const personaHistoryAgent =
+    agent && isPrimaryPersonaAgentId(agent) ? agent : null;
   // Compose metadata filter from the optional mode + agent arguments.
   // The backend's ThreadStateStore.search() ANDs together every metadata
   // key-value pair we send, so `{mode:"chat", agent:"coder"}` yields
@@ -440,17 +316,17 @@ export function useThreads(
   // Skipping the `agent` clause entirely (null/undefined) shows all
   // threads; used by search dialogs and admin views that want the
   // full cross-agent history.
-  if (mode || agent) {
+  if (mode || (agent && !personaHistoryAgent)) {
     const metadata = {
       ...((params.metadata as Record<string, unknown>) || {}),
     } as Record<string, unknown>;
     if (mode) metadata.mode = mode;
-    if (agent) metadata.agent = agent;
+    if (agent && !personaHistoryAgent) metadata.agent = agent;
     params = { ...params, metadata };
   }
   const apiClient = getAPIClient();
   return useQuery<AgentThread[]>({
-    queryKey: ["threads", "search", params],
+    queryKey: ["threads", "search", params, personaHistoryAgent],
     queryFn: async () => {
       const maxResults = params.limit as number | undefined;
       const initialOffset = (params.offset ?? 0) as number;
@@ -460,7 +336,12 @@ export function useThreads(
       // delegate to a single search call with the original parameters.
       if (maxResults !== undefined && maxResults <= 0) {
         const response = await apiClient.threads.search(params);
-        return response as AgentThread[];
+        const result = response as AgentThread[];
+        return personaHistoryAgent
+          ? result.filter((thread) =>
+              threadVisibleInPersonaHistory(thread, personaHistoryAgent),
+            )
+          : result;
       }
 
       const pageSize =
@@ -494,7 +375,13 @@ export function useThreads(
           offset,
         })) as AgentThread[];
 
-        threads.push(...response);
+        threads.push(
+          ...(personaHistoryAgent
+            ? response.filter((thread) =>
+                threadVisibleInPersonaHistory(thread, personaHistoryAgent),
+              )
+            : response),
+        );
 
         if (response.length < currentLimit) {
           break;
@@ -506,6 +393,9 @@ export function useThreads(
       return threads;
     },
     refetchOnWindowFocus: false,
+    staleTime: 5 * 60_000, // 5 min — thread list changes infrequently; avoids
+    // re-fetching every time the drawer opens. Mutations (delete, rename)
+    // invalidate via onSettled/onSuccess.
   });
 }
 
@@ -566,9 +456,9 @@ export function useRenameThread() {
       threadId: string;
       title: string;
     }) => {
-      await apiClient.threads.updateState(threadId, {
-        values: { title },
-      });
+      // dsh session-title semantics: a user rename pins the title against
+      // automatic regeneration (source=user + title_pinned on the record).
+      await apiClient.threads.renameTitle(threadId, title);
     },
     onSuccess(_, { threadId, title }) {
       queryClient.setQueriesData(
@@ -592,6 +482,26 @@ export function useRenameThread() {
           });
         },
       );
+    },
+  });
+}
+
+export function useForkThread() {
+  const queryClient = useQueryClient();
+  const apiClient = getAPIClient();
+  return useMutation({
+    mutationFn: ({
+      threadId,
+      atMessageIndex,
+    }: {
+      threadId: string;
+      atMessageIndex?: number;
+    }) => apiClient.threads.forkThread(threadId, atMessageIndex),
+    onSuccess() {
+      queryClient.invalidateQueries({
+        queryKey: ["threads", "search"],
+        exact: false,
+      });
     },
   });
 }

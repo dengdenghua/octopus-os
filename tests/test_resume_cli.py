@@ -1,4 +1,5 @@
 """Tests for the ReAct resume CLI."""
+
 from __future__ import annotations
 
 import json
@@ -6,7 +7,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from runtime.core.cerebrum import resume_cli
 
 
@@ -61,12 +61,18 @@ class TestArgParsing:
         assert args.task_id == "task-123"
 
     def test_resume_subcommand_options(self) -> None:
-        args = resume_cli._parse_args([
-            "resume", "task-123",
-            "--planner-type", "llm",
-            "--planner-model", "gpt-test",
-            "--max-iterations", "9",
-        ])
+        args = resume_cli._parse_args(
+            [
+                "resume",
+                "task-123",
+                "--planner-type",
+                "llm",
+                "--planner-model",
+                "gpt-test",
+                "--max-iterations",
+                "9",
+            ]
+        )
         assert args.cmd == "resume"
         assert args.task_id == "task-123"
         assert args.planner_type == "llm"
@@ -74,9 +80,13 @@ class TestArgParsing:
         assert args.max_iterations == 9
 
     def test_journal_path_override(self, tmp_path: Path) -> None:
-        args = resume_cli._parse_args([
-            "--journal-path", str(tmp_path / "j.jsonl"), "list",
-        ])
+        args = resume_cli._parse_args(
+            [
+                "--journal-path",
+                str(tmp_path / "j.jsonl"),
+                "list",
+            ]
+        )
         assert args.journal_path == tmp_path / "j.jsonl"
 
     def test_no_subcommand_errors(self) -> None:
@@ -103,9 +113,7 @@ class TestLoadAndGroup:
     def test_skips_garbage_lines(self, tmp_path: Path) -> None:
         path = tmp_path / "j.jsonl"
         path.write_text(
-            json.dumps(_ckpt("a")) + "\n"
-            "this is not json\n"
-            + json.dumps(_ckpt("b")) + "\n",
+            json.dumps(_ckpt("a")) + "\nthis is not json\n" + json.dumps(_ckpt("b")) + "\n",
             encoding="utf-8",
         )
         events = resume_cli._load_journal_events(path)
@@ -192,10 +200,12 @@ class TestRender:
         assert "No resumable" in out
 
     def test_list_includes_each_task(self) -> None:
-        out = resume_cli._render_list([
-            ("task-aaa", _ckpt("task-aaa", iteration=3, max_iter=20, phase="design")),
-            ("task-bbb", _ckpt("task-bbb", iteration=8, max_iter=20)),
-        ])
+        out = resume_cli._render_list(
+            [
+                ("task-aaa", _ckpt("task-aaa", iteration=3, max_iter=20, phase="design")),
+                ("task-bbb", _ckpt("task-bbb", iteration=8, max_iter=20)),
+            ]
+        )
         assert "task-aaa" in out
         assert "task-bbb" in out
         assert "Resumable react tasks: 2" in out
@@ -208,14 +218,15 @@ class TestRender:
     def test_show_full_detail(self) -> None:
         ckpt = _ckpt(
             "tid",
-            iteration=7, max_iter=50,
+            iteration=7,
+            max_iter=50,
             phase="implement",
             summary="Read file foo.py.\nIdentified bug at line 42.",
             steps=[
                 {
                     "iteration": 7,
                     "thought": "Need to verify the fix.",
-                    "action": "exec_shell({\"command\": \"pytest\"})",
+                    "action": 'exec_shell({"command": "pytest"})',
                     "observation": "===== 5 passed =====",
                 },
             ],
@@ -233,8 +244,7 @@ class TestRender:
         long_action = "x" * 500
         ckpt = _ckpt(
             "tid",
-            steps=[{"iteration": 1, "thought": "", "action": long_action,
-                    "observation": ""}],
+            steps=[{"iteration": 1, "thought": "", "action": long_action, "observation": ""}],
         )
         out = resume_cli._render_show("tid", ckpt)
         # 120-char cap on action line ensures no full 500-char dump
@@ -247,7 +257,9 @@ class TestRender:
 
 class TestMain:
     def test_list_runs_clean(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         path = tmp_path / "j.jsonl"
         _write_jsonl(path, [_ckpt("alive")])
@@ -257,40 +269,61 @@ class TestMain:
         assert "alive" in out
 
     def test_show_runs_clean(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         path = tmp_path / "j.jsonl"
         _write_jsonl(path, [_ckpt("hot", iteration=42)])
-        rc = resume_cli.main([
-            "--journal-path", str(path), "show", "hot",
-        ])
+        rc = resume_cli.main(
+            [
+                "--journal-path",
+                str(path),
+                "show",
+                "hot",
+            ]
+        )
         assert rc == 0
         out = capsys.readouterr().out
         assert "Task: hot" in out
         assert "42" in out
 
     def test_show_unknown_task(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         path = tmp_path / "j.jsonl"
         _write_jsonl(path, [_ckpt("real")])
-        rc = resume_cli.main([
-            "--journal-path", str(path), "show", "fake",
-        ])
+        rc = resume_cli.main(
+            [
+                "--journal-path",
+                str(path),
+                "show",
+                "fake",
+            ]
+        )
         assert rc == 0
         assert "No checkpoint" in capsys.readouterr().out
 
     def test_missing_journal_handled_gracefully(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
-        rc = resume_cli.main([
-            "--journal-path", str(tmp_path / "missing.jsonl"), "list",
-        ])
+        rc = resume_cli.main(
+            [
+                "--journal-path",
+                str(tmp_path / "missing.jsonl"),
+                "list",
+            ]
+        )
         assert rc == 0
         assert "No resumable" in capsys.readouterr().out
 
     def test_top_level_exception_returns_1(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
@@ -307,7 +340,9 @@ class TestMain:
 
 class TestResumeTask:
     def test_missing_task_returns_3(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         path = tmp_path / "j.jsonl"
         _write_jsonl(path, [_ckpt("real")])
@@ -324,7 +359,9 @@ class TestResumeTask:
         assert "No checkpoints" in capsys.readouterr().out
 
     def test_final_task_returns_3(
-        self, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         path = tmp_path / "j.jsonl"
         _write_jsonl(path, [_ckpt("done", has_final=True)])
@@ -341,12 +378,16 @@ class TestResumeTask:
         assert "already has a final answer" in capsys.readouterr().out
 
     def test_resume_wraps_cli_stack_and_passes_resume_task_id(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         path = tmp_path / "j.jsonl"
-        _write_jsonl(path, [
-            _ckpt("task-123", summary="Keep going from here."),
-        ])
+        _write_jsonl(
+            path,
+            [
+                _ckpt("task-123", summary="Keep going from here."),
+            ],
+        )
         captured: dict[str, object] = {}
 
         def fake_stack_builder(**kwargs):

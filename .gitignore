@@ -50,6 +50,14 @@ test-results/
 *.sqlite3
 *.db
 *.log
+.echo/*.bak
+.echo/*.lock
+.echo/archive/
+
+# Versioned test/benchmark fixtures required by fresh-clone validation.
+!benchmarks/fixtures/security.denied-destructive-action/data.db
+!benchmarks/fixtures/security.untrusted-instructions/external-contact.log
+!frontend/src/core/realtime/__fixtures__/replay-golden.events.jsonl
 
 # Environment files
 .env
@@ -74,20 +82,38 @@ config.local.yaml
 /tmp/
 scratch/
 
-# Local Octopus state / reversible cleanup archives.
-# Do not ignore .octopus/plugins wholesale: bundled release plugins may live there.
-.octopus/*.json
-.octopus/*.jsonl
-.octopus/*.bak
-.octopus/*.lock
+# Runtime-owned Agent state must never enter source snapshots or release
+# provenance. Keep the bundled plugin catalog under .echo/plugins visible.
+/.echo-home/
+/.echo-tmp/
+/.echo/*
+!/.echo/plugins/
+!/.echo/plugins/**
+/.echo/plugins/**/__pycache__/
+/.echo/plugins/**/*.py[cod]
+agents/**/agent-core/tenants/
+agents/**/agent-core/sessions/
+agents/**/agent-core/workspace/
+agents/**/agent-core/.scores.jsonl
+agents/**/agent-core/*.transaction.lock
+
+# Pre-Echo local state / reversible cleanup archives.
+# Keep legacy local state ignored during migration without making it canonical.
+.octo[p]us/*.json
+.octo[p]us/*.jsonl
+.octo[p]us/*.bak
+.octo[p]us/*.lock
 # tool-registry hot-reload artifacts under agents/
 agents/**/*.jsonc.bak
 agents/**/*.jsonc.lock
-.octopus/local/
-.octopus/research/
-# (.octopus-browser-relay/ used to live at root; moved to
-# extensions/octopus-browser-relay/ — committed product surface)
-.octopus/archive/
+.octo[p]us/local/
+.octo[p]us/research/
+# (.echo/ is handled above by /.echo/* plus the !/.echo/plugins/ negations,
+# which keep the bundled plugin catalog tracked. Do not re-ignore it here: a
+# later .echo/plugins/ rule would silently defeat that negation.)
+# (.echo-browser-relay/ used to live at root; moved to
+# extensions/echo-browser-relay/ — committed product surface)
+.octo[p]us/archive/
 agents/*/workspace/
 benchmarks/results/
 skills_backup_*/
@@ -110,7 +136,7 @@ frontend/output/
 .playwright-cli/
 evidence/
 
-# Android — 正式 Android 端在同级 ../octopus-mobile/，主仓库不跟踪
+# Android — 正式 Android 端在同级 ../echo-mobile/，主仓库不跟踪
 /mobile/
 
 # Frontend local artifacts
@@ -160,7 +186,7 @@ frontend/.next/
 
 # Local agent runtime artifacts (Phase B cleanup)
 .codex-runlogs/
-.octopus/
+.octo[p]us/
 # Third-party plugin source (use as reference, not as committed deps)
 _external/
 # Local reverse-engineering captures
@@ -186,4 +212,27 @@ evidence/
 deploy/appliance/agent-dist/
 
 # P2 同机 webui 投喂:预构建的 agent 前端(投喂 Docker,不入库)
+
+# Echo Agent 同源资源包与完整构建清单(均由 prepare-agent-bundle.sh 生成)
+deploy/appliance/agent-resources/
+deploy/appliance/agent-codex/
+deploy/appliance/agent-bundle.json
+
+# Runtime-generated auth credentials (must never be committed)
+appliance-auth.json
+*.echo-backup
+deploy/appliance/backups/
+deploy/appliance/restore/
+deploy/appliance/echo-release.env
+deploy/appliance/appliance.env
+deploy/appliance/.echo-upgrade.lock
+
+# 镜像构建产物（mkosi agent runtime 第三方依赖，不入库）
+packaging/image/mkosi.agent-runtime/
 deploy/appliance/agent-webui/
+
+# Connector CLI download caches. Each connector's cli.json installs its CLI at
+# init time (npm install -g / pip install), so these archives are reproducible
+# local caches, not delivery artifacts — ~100 MB that would be permanent in
+# history. Mode 0600 on disk confirms they are downloads, not repo assets.
+extensions/workbuddy-connectors/connectors/*/vendor/

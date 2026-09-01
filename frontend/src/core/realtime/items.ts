@@ -5,34 +5,32 @@
 // Item with stable id and tagged ``type``. The realtime reducer rebuilds
 // Conversation state from item/* notifications keyed on ``id``.
 
-export type ItemStatus =
-  | "inProgress"
-  | "completed"
-  | "failed"
-  | "interrupted"
-  | "declined";
-
-export type ItemType =
-  | "userMessage"
-  | "steeringUserMessage"
-  | "agentMessage"
-  | "reasoning"
-  | "plan"
-  | "todo-list"
-  | "commandExecution"
-  | "fileChange"
-  | "mcpToolCall"
-  | "subagent"
-  | "approval"
-  | "verification"
-  | "artifact"
-  | "error";
+// Audit A-04: enums are generated from runtime/protocol/items.py by
+// scripts/gen_realtime_protocol_enums.py — the source of truth is the
+// Python definitions; this file imports them for its interfaces and
+// re-exports them for consumers.
+import {
+  ITEM_STATUSES,
+  ITEM_TYPES,
+  TURN_STATUSES,
+} from "./protocol-enums.generated";
+import type {
+  ItemStatus,
+  ItemType,
+  TurnStatus,
+} from "./protocol-enums.generated";
+export { ITEM_STATUSES, ITEM_TYPES, TURN_STATUSES };
+export type { ItemStatus, ItemType, TurnStatus };
 
 export interface ItemBase {
   id: string;
   type: ItemType;
   status: ItemStatus;
   createdAt: string;
+  /** Stable causal position inside one turn. Older persisted items may omit it. */
+  timelineSequence?: number | null;
+  parentItemId?: string | null;
+  phaseId?: string | null;
 }
 
 export interface UserMessageItem extends ItemBase {
@@ -45,17 +43,31 @@ export interface SteeringUserMessageItem extends ItemBase {
   type: "steeringUserMessage";
   text: string;
   targetTurnId: string | null;
+  source?: "user" | "subagent_report";
 }
 
 export interface AgentMessageItem extends ItemBase {
   type: "agentMessage";
   text: string;
+  messageKind?: "answer" | "commentary";
+  progressSequence?: number;
+  /** Per-message speaker identity (group/team rooms). When set, the bubble
+   *  renders this member's avatar + name instead of the turn leader's. */
+  agentDisplayName?: string;
+  agentAvatarUrl?: string;
+  agentIcon?: string;
+  /** ③ @因果链：本气泡回应/反驳的成员 display name。 */
+  replyTo?: string;
 }
 
 export interface ReasoningItem extends ItemBase {
   type: "reasoning";
   summary: string[];
   content: string;
+  // Wall-clock thinking time from first reasoning_delta to item completion.
+  // Filled by the backend on item/completed; null for legacy data and
+  // streams that never received a completion event.
+  durationMs: number | null;
 }
 
 export interface PlanItem extends ItemBase {
@@ -72,6 +84,8 @@ export interface TodoListItem extends ItemBase {
   type: "todo-list";
   explanation: string | null;
   plan: TodoEntry[];
+  objectiveId?: string | null;
+  taskId?: string | null;
 }
 
 export interface AgentPhaseSnapshot {
@@ -82,6 +96,10 @@ export interface AgentPhaseSnapshot {
   detail?: string | null;
   status: "pending" | "running" | "done" | "error" | "waiting_approval";
   activeItemId?: string | null;
+  /** Backend-mapped business phase (planning/exploring/implementing/testing/
+   * deploying/other). Optional — older backends omit it and the frontend
+   * falls back to mapping the title locally. */
+  phaseKind?: string | null;
 }
 
 export type WorkspaceFocusView =
@@ -103,6 +121,18 @@ export interface WorkspaceFocus {
   previewUrl?: string | null;
 }
 
+export interface EvidenceReference {
+  id: string;
+  kind: "file" | "web" | "verification" | "artifact";
+  title: string;
+  uri?: string | null;
+  status: "observed" | "pending" | "passed" | "failed";
+  origin: "grounding" | "tool" | "verification" | "artifact";
+  sourceItemId?: string | null;
+  phaseId?: string | null;
+  detail?: string | null;
+}
+
 export interface WorkbenchSnapshotV2 {
   schemaVersion: 2;
   version: number;
@@ -111,6 +141,7 @@ export interface WorkbenchSnapshotV2 {
   currentPhaseId?: string | null;
   currentItemId?: string | null;
   workspaceFocus?: WorkspaceFocus | null;
+  evidence?: EvidenceReference[];
   updatedAt: string;
 }
 
@@ -123,6 +154,15 @@ export interface CommandExecutionItem extends ItemBase {
   exitCode: number | null;
   processId: string | null;
   networkAccess: boolean;
+  effectReceipt?: ToolEffectSignal | null;
+}
+
+export interface ToolEffectSignal {
+  effectKey: string;
+  callId: string;
+  state: "indeterminate";
+  reason: string;
+  fencingToken: number;
 }
 
 export interface FileHunk {
@@ -183,7 +223,6 @@ export interface SubagentItem extends ItemBase {
   name: string | null;
   codename: string | null;
   avatar: string | null;
-  parentItemId: string | null;
   summary: string | null;
   error: string | null;
   iterationCount: number | null;
@@ -210,6 +249,22 @@ export interface VerificationItem extends ItemBase {
   stderrTail: string | null;
   relatedFiles: string[];
   relatedChangeItemIds: string[];
+}
+
+/** One decision point inside a visibility (capability routing / delegation /
+ * skill-catalog) snapshot. Snapshot-only — no incremental deltas. */
+export interface VisibilityStep {
+  decision_point: string;
+  conclusion: string;
+  basis: string;
+  ts: number;
+  details?: Record<string, unknown>;
+}
+
+export interface VisibilityItem extends ItemBase {
+  type: "visibility";
+  summary: string;
+  steps: VisibilityStep[];
 }
 
 export interface ArtifactItem extends ItemBase {
@@ -256,10 +311,9 @@ export type Item =
   | SubagentItem
   | ApprovalItem
   | VerificationItem
+  | VisibilityItem
   | ArtifactItem
   | ErrorItem;
-
-export type TurnStatus = "inProgress" | "completed" | "interrupted" | "failed";
 
 /** Soft hand-off hint payload from ``turn/metaSkill/hint``.
  *
@@ -279,6 +333,34 @@ export interface MetaSkillHint {
   dismissed?: boolean;
 }
 
+/** One codebase source the agent grounded a turn on.
+ *
+ * ``kind: "doc"`` is a project-wiki page (``title`` is its heading);
+ * ``kind: "source"`` is a source-file chunk (``path`` carries ``file:line``).
+ * Emitted via ``turn/grounding`` when a code/project turn folds relevant wiki
+ * pages + source chunks into the prompt. Faithful: exactly what was injected.
+ */
+export interface GroundingSource {
+  kind: "doc" | "source";
+  title: string;
+  path: string;
+}
+
+/**
+ * Defense in depth for historic turns produced before backend prompt-scope
+ * isolation. Agent profile pages must never be shown as ordinary project
+ * evidence under another agent's response.
+ */
+export function isPrivateAgentGroundingSource(
+  source: GroundingSource,
+): boolean {
+  const path = source.path
+    .replaceAll("\\", "/")
+    .replace(/^\.\/?/, "")
+    .toLowerCase();
+  return path.startsWith("agents/") || path.startsWith("20-backend/26-agents/");
+}
+
 export interface Turn {
   id: string;
   threadId: string;
@@ -288,9 +370,36 @@ export interface Turn {
   items: Item[];
   error: Record<string, unknown> | null;
   metaSkillHint?: MetaSkillHint;
+  /** Project docs/chunks this turn was grounded on (``turn/grounding``).
+   * The realtime adapter folds it onto the AI reply's
+   * ``additional_kwargs.grounding`` so the chat renders a grounding chip. */
+  grounding?: GroundingSource[];
   phases?: AgentPhaseSnapshot[];
   workspaceFocus?: WorkspaceFocus | null;
   workbenchSnapshot?: WorkbenchSnapshotV2 | null;
+  /** Human-readable reason the turn was interrupted (null if not interrupted). */
+  interruptReason?: string | null;
+  objectiveId?: string | null;
+  taskId?: string | null;
+  checkpointId?: number | null;
+  outcomeReason?: string | null;
+  /** Canonical semantic completion result from the runtime. Unlike the
+   * transport status, this distinguishes partial and warning deliveries. */
+  completionDecision?: {
+    outcome:
+      | "completed"
+      | "completed_with_warning"
+      | "partial"
+      | "blocked_on_user"
+      | "paused"
+      | "cancelled"
+      | "failed";
+    reason: string;
+    success: boolean;
+    terminal: boolean;
+    resumable: boolean;
+    retryable: boolean;
+  } | null;
 }
 
 // Lightweight thread metadata for ``thread/list`` responses. Keeps the
@@ -319,6 +428,24 @@ export interface Conversation {
    * `loadOlderTurns()`.
    */
   hasMoreTurns: boolean;
+  /**
+   * Workflow (multi-agent orchestration) completion notifications pushed
+   * over the realtime channel via `workflow/completed`. Kept bounded —
+   * the UI shows the most recent one as a banner/chip.
+   */
+  workflowNotifications: WorkflowNotification[];
+}
+
+export interface WorkflowNotification {
+  threadId: string;
+  workflowName: string;
+  workflowDescription: string;
+  runId: string;
+  stopReason: string;
+  success: boolean;
+  agentsStarted: number;
+  error?: string | null;
+  receivedAt: string;
 }
 
 export interface PendingApproval {
@@ -336,5 +463,6 @@ export function emptyConversation(threadId: string): Conversation {
     tokenUsage: null,
     resumeState: "needsResume",
     hasMoreTurns: false,
+    workflowNotifications: [],
   };
 }

@@ -60,9 +60,12 @@ describe("<WorkingSetPanel /> thinking progress", () => {
 
     expect(screen.getByText("Thinking progress")).toBeInTheDocument();
     expect(screen.getByText("2/3")).toBeInTheDocument();
-    expect(screen.getAllByText("验证真实 thinking_delta 保留").length).toBeGreaterThan(0);
-    expect(screen.getByRole("progressbar", { name: "Thinking progress" }))
-      .toHaveAttribute("aria-valuenow", "40");
+    expect(
+      screen.getAllByText("验证真实 thinking_delta 保留").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("progressbar", { name: "Thinking progress" }),
+    ).toHaveAttribute("aria-valuenow", "40");
   });
 
   it("ignores malformed plan steps without crashing", () => {

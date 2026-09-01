@@ -19,7 +19,6 @@ import {
   isFileMutationToolName,
   isReadToolName,
   isShellToolName,
-  shellCommandFromInput,
 } from "../tool-name-groups";
 
 // `import type` is erased at build time so there is no runtime dependency
@@ -77,11 +76,15 @@ export function extractThinkingText(content: MessageContent): string {
   if (!Array.isArray(content)) return "";
   return content
     .filter(isThinkingContentPart)
-    .map((c) => c.thinking ?? "")
+    .map((c) => (c as unknown as ThinkingContentPart).thinking ?? "")
     .join("\n")
     .trim();
 }
 
+// First-person plan narration ("我将先检查目录结构…", "接下来我会查看
+// config") reads as user-facing prose — the model is telling the user what
+// it is about to do. True chain-of-thought ("用户可能期望 X 但 Y 成本更高")
+// has no first-person action intro and stays collapsible. Deliberately
 function classifyToolCall(name: string): ActivityKind | "passthrough" {
   if (PASSTHROUGH_TOOLS.has(name)) return "passthrough";
   if (isPlanTool(name)) return "plan";
@@ -186,6 +189,41 @@ function extractLineCounts(
 }
 
 /**
+ * Extract the raw unified diffs produced by a file-mutation tool call so
+ * the activity view can render the +/- lines (red/green) mid-turn, like
+ * Claude's edit blocks. Sources, in order:
+ *
+ *   1. ``args.changes[].diff`` — edit_file's structured changes carry the
+ *      full unified diff per file (same source MessageOutputSummary uses).
+ *   2. The tool result JSON's ``changes[].diff`` — fallback for tools that
+ *      echo the changes back in their result.
+ *
+ * Returns one entry per file; empty when no diff is available.
+ */
+function extractToolCallDiffs(
+  args: Record<string, unknown>,
+  result: string | undefined,
+): string[] {
+  const out: string[] = [];
+  const pushFrom = (source: unknown): void => {
+    if (!source || typeof source !== "object") return;
+    const changes = (source as Record<string, unknown>).changes;
+    if (!Array.isArray(changes)) return;
+    for (const raw of changes) {
+      if (!raw || typeof raw !== "object") continue;
+      const diff = (raw as Record<string, unknown>).diff;
+      if (typeof diff === "string" && diff.trim()) out.push(diff);
+    }
+  };
+  pushFrom(args);
+  if (!out.length && result) {
+    const parsed = parseResultJSON(result);
+    if (parsed && typeof parsed === "object") pushFrom(parsed);
+  }
+  return out;
+}
+
+/**
  * Shape of the label bag consumers pass to localize activity labels.
  * Mirrors the `messageGrouping` section of the Translations interface.
  * When the label bag is omitted we fall back to English hardcodes so
@@ -203,6 +241,9 @@ export interface MessageGroupingLabels {
   executeCommandWith: (cmd: string) => string;
   planStep: string;
   think: string;
+  searchSources?: string;
+  readFile?: string;
+  readWebpage?: string;
 }
 
 const DEFAULT_LABELS: MessageGroupingLabels = {
@@ -213,10 +254,13 @@ const DEFAULT_LABELS: MessageGroupingLabels = {
   editFileAddRemove: (f, added, removed) => `Edit ${f} (+${added} -${removed})`,
   editFileAdded: (f, added) => `Edit ${f} +${added} lines`,
   editFileRemoved: (f, removed) => `Edit ${f} -${removed} lines`,
-  executeCommand: "Run command",
-  executeCommandWith: (cmd) => `Run ${cmd}`,
+  executeCommand: "Run checks",
+  executeCommandWith: () => "Run checks",
   planStep: "Plan step",
   think: "Thinking",
+  searchSources: "Search sources",
+  readFile: "Read file",
+  readWebpage: "Read webpage",
 };
 
 function buildFileOpLabel(
@@ -256,18 +300,43 @@ function buildShellLabel(
   args: Record<string, unknown>,
   labels: MessageGroupingLabels,
 ): string {
-  const command = shellCommandFromInput(
-    args,
-    typeof args.tool === "string" ? args.tool : undefined,
-  );
-  if (!command) return labels.executeCommand;
-  const single = command.replace(/\s+/g, " ").trim();
-  return labels.executeCommandWith(truncate(single, 40));
+  const explicitSummary =
+    typeof args.description === "string"
+      ? args.description.trim()
+      : typeof args.label === "string"
+        ? args.label.trim()
+        : typeof args.title === "string"
+          ? args.title.trim()
+          : "";
+  return explicitSummary
+    ? labels.executeCommandWith(truncate(explicitSummary, 40))
+    : labels.executeCommand;
 }
 
-function buildReadLabel(name: string, args: Record<string, unknown>): string {
+const SENSITIVE_LABEL_VALUE_RE =
+  /(sk-[\w-]+|token|secret|credential|password|passwd|api[_-]?key|bearer\s+[a-z0-9._-]+|id_rsa|id_ed25519|\.pem\b|\.key\b)/i;
+
+function safeTargetLabel(value: string): string {
+  const text = value.trim();
+  if (!text || SENSITIVE_LABEL_VALUE_RE.test(text)) return "";
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      return new URL(text).hostname || text;
+    } catch {
+      return truncate(text, 48);
+    }
+  }
+  if (/[\\/]/.test(text)) return basename(text);
+  return truncate(text, 48);
+}
+
+function buildReadLabel(
+  name: string,
+  args: Record<string, unknown>,
+  labels: MessageGroupingLabels,
+): string {
   // First string-ish arg (path / pattern / query).
-  const keys = ["path", "pattern", "query", "filepath", "file_path"];
+  const keys = ["path", "url", "pattern", "query", "filepath", "file_path"];
   let value: string | undefined;
   for (const key of keys) {
     const v = args[key];
@@ -276,15 +345,18 @@ function buildReadLabel(name: string, args: Record<string, unknown>): string {
       break;
     }
   }
-  if (!value) {
-    const firstString = Object.values(args).find(
-      (v) => typeof v === "string" && v.length > 0,
-    );
-    if (typeof firstString === "string") value = firstString;
-  }
-  const short = value ? truncate(value, 48) : "";
-  if (short) return `${name} ${short}`;
-  return name;
+  const target = value ? safeTargetLabel(value) : "";
+  const lower = name.toLowerCase();
+  const action =
+    lower.includes("search") ||
+    lower.includes("grep") ||
+    lower.includes("glob") ||
+    lower === "find"
+      ? (labels.searchSources ?? DEFAULT_LABELS.searchSources!)
+      : lower.includes("web") || lower.includes("fetch")
+        ? (labels.readWebpage ?? DEFAULT_LABELS.readWebpage!)
+        : (labels.readFile ?? DEFAULT_LABELS.readFile!);
+  return target ? `${action}: ${target}` : action;
 }
 
 function buildPlanLabel(
@@ -386,6 +458,11 @@ function toActivityItem(
   if (classification === "file_ops") {
     const counts = extractLineCounts(args, resultText);
     const label = buildFileOpLabel(toolCall.name, args, counts, labels);
+    // Carry the raw unified diffs (from the tool-call args, e.g.
+    // edit_file's `changes[].diff`) so the activity view can render the
+    // +/- lines in red/green mid-turn, like Claude's edit blocks. Each
+    // entry is one file's diff.
+    const diffs = extractToolCallDiffs(args, resultText);
     return {
       item: {
         id,
@@ -395,6 +472,7 @@ function toActivityItem(
           tool_name: toolCall.name,
           lines_added: counts.added ?? 0,
           lines_removed: counts.removed ?? 0,
+          ...(diffs.length ? { diffs } : {}),
         },
       },
       kind: "file_ops",
@@ -418,7 +496,7 @@ function toActivityItem(
   if (isShellToolName(toolCall.name)) {
     label = buildShellLabel(args, labels);
   } else {
-    label = buildReadLabel(toolCall.name, args);
+    label = buildReadLabel(toolCall.name, args, labels);
   }
   return {
     item: {
@@ -566,7 +644,10 @@ export function groupActivities(
       (!aiMsg.tool_calls || aiMsg.tool_calls.length === 0);
 
     if (isThinkOnly) {
-      // Aggregate think items.
+      const text = extractThinkingText(aiMsg.content);
+      // A thinking content block remains reasoning regardless of wording.
+      // Public progress must arrive through the commentary protocol; text
+      // such as "接下来我会…" is not evidence of public visibility.
       if (!currentActivity || currentActivity.kind !== "think") {
         flushActivity();
         flushPassthrough();
@@ -577,7 +658,6 @@ export function groupActivities(
           id: aiMsg.id ?? `think-${i}`,
         };
       }
-      const text = extractThinkingText(aiMsg.content);
       currentActivity.items.push({
         id: aiMsg.id ?? `think-${i}`,
         label: truncate(text || labels.think, 80),

@@ -7,6 +7,10 @@
  */
 
 import type { DevicePreset } from "@/components/workspace/embedded-browser/browser-context";
+import type {
+  NativeLiquidGlassSurface,
+  NativeLiquidGlassWallpaper,
+} from "@/appliance/liquid-glass-surfaces";
 
 export interface BrowserExtensionInfo {
   id: string;
@@ -38,10 +42,84 @@ export interface NativeApp {
   /** 图标 data URL(渲染端 <img> 直接用);读不了/过大/非 png-svg 为 null。 */
   iconDataUrl: string | null;
   categories: string[];
-  source: "native";
+  startupWmClass?: string | null;
+  source: "native" | "flatpak";
 }
 
-export interface OctopusElectronAPI {
+export interface NativeApplicationLaunchResult {
+  ok: boolean;
+  pid?: number;
+  error?: string;
+}
+
+export interface NativeWindow {
+  id: string;
+  title: string;
+  wmClass: string;
+  pid?: number | null;
+  active?: boolean;
+}
+
+export interface NativeNotification {
+  id: number;
+  appName: string;
+  summary: string;
+  body: string;
+  updatedAt: number;
+}
+
+export interface SystemActionCapabilities {
+  nativeShell: boolean;
+  lock: boolean;
+  logout: boolean;
+  suspend: boolean;
+  restart: boolean;
+  shutdown: boolean;
+  reason?: string;
+}
+
+export interface SystemControlState {
+  nativeShell: boolean;
+  wifi: { available: boolean; enabled: boolean | null; connection: string | null };
+  bluetooth: {
+    available: boolean;
+    present: boolean;
+    enabled: boolean | null;
+    controller: string | null;
+  };
+  audio: { available: boolean; volume: number | null; muted: boolean | null };
+  display: { available: boolean; brightness: number | null };
+  battery: {
+    available: boolean;
+    present: boolean;
+    percentage: number | null;
+    state: string | null;
+  };
+  reason?: string;
+}
+
+export interface SystemUpdateCapabilities {
+  nativeShell: boolean;
+  status: boolean;
+  apply: boolean;
+  reason?: string;
+}
+
+export interface SystemUpdateStatus {
+  schema: number;
+  state:
+    | "idle"
+    | "checking"
+    | "ready"
+    | "installing"
+    | "reboot-required"
+    | "failed"
+    | "unavailable";
+  version?: string;
+  error?: string;
+}
+
+export interface EchoElectronAPI {
   isElectron: true;
   platform: NodeJS.Platform;
   /** Synchronous backend URL injected by Electron preload for packaged builds. */
@@ -55,7 +133,28 @@ export interface OctopusElectronAPI {
     /** 枚举本地已装应用(原生 .desktop;Docker 应用仍走后端 app_registry)。 */
     list: () => Promise<NativeApp[]>;
     /** 启动一个应用(传 exec)。 */
-    launch: (exec: string) => Promise<{ ok: boolean; pid?: number; error?: string }>;
+    launch: (appId: string) => Promise<NativeApplicationLaunchResult>;
+  };
+
+  windows?: {
+    getCapabilities: () => Promise<{
+      nativeShell: boolean;
+      provider?: string | null;
+      list: boolean;
+      focus: boolean;
+      minimize: boolean;
+      close: boolean;
+      reason?: string;
+    }>;
+    list: () => Promise<{
+      ok: boolean;
+      provider?: string | null;
+      windows: NativeWindow[];
+      error?: string;
+    }>;
+    focus: (id: string) => Promise<{ ok: boolean; error?: string }>;
+    minimize: (id: string) => Promise<{ ok: boolean; error?: string }>;
+    close: (id: string) => Promise<{ ok: boolean; error?: string }>;
   };
 
   browser: {
@@ -136,10 +235,63 @@ export interface OctopusElectronAPI {
     clearSiteData: (
       webContentsId: number,
     ) => Promise<{ ok: boolean; origin?: string; error?: string }>;
+    clearBrowsingData: () => Promise<{ ok: boolean; error?: string }>;
+    listPasswords: (origin?: string) => Promise<{
+      ok: boolean;
+      available: boolean;
+      entries: Array<{
+        id: string;
+        origin: string;
+        username: string;
+        updatedAt: number;
+      }>;
+      error?: string;
+    }>;
+    savePassword: (entry: {
+      origin: string;
+      username: string;
+      password: string;
+    }) => Promise<{ ok: boolean; error?: string }>;
+    deletePassword: (id: string) => Promise<{ ok: boolean; error?: string }>;
+    fillPassword: (
+      webContentsId: number,
+      id: string,
+    ) => Promise<{ ok: boolean; error?: string }>;
+    listSitePermissions: () => Promise<{
+      ok: boolean;
+      entries: Array<{
+        origin: string;
+        permission:
+          | "camera"
+          | "microphone"
+          | "camera-microphone"
+          | "location"
+          | "notifications"
+          | "clipboard";
+        decision: "allow" | "block";
+        updatedAt: number;
+      }>;
+      error?: string;
+    }>;
+    setSitePermission: (
+      origin: string,
+      permission:
+        | "camera"
+        | "microphone"
+        | "camera-microphone"
+        | "location"
+        | "notifications"
+        | "clipboard",
+      decision: "ask" | "allow" | "block",
+    ) => Promise<{ ok: boolean; error?: string }>;
     showDownloadInFolder: (
       id: string,
     ) => Promise<{ ok: boolean; error?: string }>;
     openDownload: (id: string) => Promise<{ ok: boolean; error?: string }>;
+    pauseDownload: (id: string) => Promise<{ ok: boolean; error?: string }>;
+    resumeDownload: (id: string) => Promise<{ ok: boolean; error?: string }>;
+    cancelDownload: (id: string) => Promise<{ ok: boolean; error?: string }>;
+    retryDownload: (id: string) => Promise<{ ok: boolean; error?: string }>;
   };
 
   dialog: {
@@ -180,7 +332,66 @@ export interface OctopusElectronAPI {
     getPlatform: () => Promise<NodeJS.Platform>;
   };
 
+  nativeGlass?: {
+    getCapabilities: () => Promise<{
+      supported: boolean;
+      backend?: string;
+      reason?: string;
+    }>;
+    sync: (payload: {
+      wallpaper: NativeLiquidGlassWallpaper;
+      surfaces: NativeLiquidGlassSurface[];
+    }) => Promise<{
+      active: boolean;
+      material?: string;
+      backend?: string;
+      surfaceCount: number;
+    }>;
+    deactivate: () => Promise<{ ok: boolean; error?: string }>;
+  };
+
+  system?: {
+    getCapabilities: () => Promise<SystemActionCapabilities>;
+    runAction: (
+      action: "lock" | "logout" | "suspend" | "restart" | "shutdown",
+    ) => Promise<{ ok: boolean; action?: string; error?: string }>;
+  };
+
+  updates?: {
+    getCapabilities: () => Promise<SystemUpdateCapabilities>;
+    getStatus: () => Promise<SystemUpdateStatus>;
+    apply: () => Promise<{ ok: boolean; cancelled?: boolean; error?: string }>;
+  };
+
+  systemControls?: {
+    getState: () => Promise<SystemControlState>;
+    setWifiEnabled: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>;
+    setBluetoothEnabled: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>;
+    setAudioVolume: (percentage: number) => Promise<{ ok: boolean; error?: string }>;
+    setDisplayBrightness: (percentage: number) => Promise<{ ok: boolean; error?: string }>;
+  };
+
+  notifications?: {
+    getCapabilities: () => Promise<{ ok: boolean; reason?: string }>;
+    list: () => Promise<{
+      ok: boolean;
+      notifications: NativeNotification[];
+      error?: string;
+    }>;
+    close: (id: number) => Promise<{ ok: boolean; error?: string }>;
+    clear: () => Promise<{ ok: boolean; error?: string }>;
+  };
+
   desktop: {
+    getAutomationPermissions: () => Promise<{
+      supported: boolean;
+      platform: NodeJS.Platform;
+      screenRecording: "granted" | "denied" | "restricted" | "unknown";
+      accessibility: "granted" | "denied" | "unknown";
+    }>;
+    openAutomationPermission: (
+      permission: "screen-recording" | "accessibility",
+    ) => Promise<{ ok: boolean; error?: string }>;
     listItems: () => Promise<{
       ok: boolean;
       desktopPath?: string;
@@ -257,6 +468,21 @@ export interface OctopusElectronAPI {
     /** Open DevTools for the host renderer (used by the preview panel's
      * inspector button so the user can examine runtime errors). */
     openDevTools: () => Promise<{ ok: boolean; error?: string }>;
+    isFullScreen: () => Promise<{ ok: boolean; fullScreen?: boolean }>;
+  };
+
+  /** Optional compatibility hook. Echo OS does not bundle the legacy pet
+   * sidecar; callers must degrade to a no-op when this bridge is absent. */
+  pet?: {
+    sendEvent: (
+      state:
+        | "idle"
+        | "thinking"
+        | "working"
+        | "waiting_user"
+        | "success"
+        | "error",
+    ) => Promise<{ ok: boolean; running?: boolean; reason?: string }>;
   };
 
   /* Implementation note. */
@@ -274,15 +500,16 @@ export interface OctopusElectronAPI {
       | "browser:keyboard-shortcut"
       | "browser:download-event"
       | "desktop:organize-now"
-      | "desktop:items-changed",
+      | "desktop:items-changed"
+      | "window:fullscreen-changed",
     listener: (...args: unknown[]) => void,
   ) => () => void;
 }
 
 declare global {
   interface Window {
-    octopus?: OctopusElectronAPI;
-    __OCTOPUS_DESKTOP__?: boolean;
+    echo?: EchoElectronAPI;
+    __ECHO_DESKTOP__?: boolean;
   }
 
   // Implementation note.

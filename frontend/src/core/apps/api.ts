@@ -1,13 +1,13 @@
 import { getBackendBaseURL } from "@/core/config";
 
-export interface OctopusAppAction {
+export interface EchoAppAction {
   name: string;
   description?: string;
   input_schema?: Record<string, unknown>;
   requires_confirmation?: boolean;
 }
 
-export interface OctopusApp {
+export interface EchoApp {
   id: string;
   name: string;
   description?: string;
@@ -22,19 +22,19 @@ export interface OctopusApp {
   schema_version?: string | null;
   connector_id?: string | null;
   permissions?: string[];
-  actions?: OctopusAppAction[];
+  actions?: EchoAppAction[];
   action_count?: number;
 }
 
-export async function listApps(): Promise<OctopusApp[]> {
+export async function listApps(): Promise<EchoApp[]> {
   const res = await fetch(`${getBackendBaseURL()}/api/apps`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error(`Failed to load apps: ${res.statusText}`);
-  return res.json() as Promise<OctopusApp[]>;
+  return res.json() as Promise<EchoApp[]>;
 }
 
 function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem("octopus:token");
+  const token = localStorage.getItem("echo:token");
   return token ? { Authorization: `Bearer ${token}` } : {};
 }

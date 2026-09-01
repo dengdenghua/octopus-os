@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.research.citations import SourceEntry
 from runtime.research.rerank import (
     _bm25_scores,
@@ -33,9 +32,7 @@ class TestTokenize:
         assert toks == ["python", "列", "表", "sort"]
 
     def test_punctuation_stripped(self):
-        assert _tokenize("hello, world! -- foo.bar") == [
-            "hello", "world", "foo", "bar"
-        ]
+        assert _tokenize("hello, world! -- foo.bar") == ["hello", "world", "foo", "bar"]
 
     def test_empty_input(self):
         assert _tokenize("") == []
@@ -49,22 +46,18 @@ class TestTokenize:
 class TestBM25Scoring:
     def test_ranks_relevant_doc_first_en(self):
         srcs = [
-            SourceEntry(url="a", title="Python list sort",
-                        content="Use sorted() to order a list."),
+            SourceEntry(url="a", title="Python list sort", content="Use sorted() to order a list."),
             SourceEntry(url="b", title="Gardening", content="Plant tomatoes."),
-            SourceEntry(url="c", title="Python dict iteration",
-                        content="Iterate with .items()."),
+            SourceEntry(url="c", title="Python dict iteration", content="Iterate with .items()."),
         ]
         scores = _bm25_scores("python list sort", srcs)
         assert scores[0] > scores[2] > scores[1]
 
     def test_ranks_relevant_doc_first_cn(self):
         srcs = [
-            SourceEntry(url="1", title="Python 列表排序",
-                        content="使用 sorted 按 key 排序"),
+            SourceEntry(url="1", title="Python 列表排序", content="使用 sorted 按 key 排序"),
             SourceEntry(url="2", title="番茄种植", content="番茄需要阳光"),
-            SourceEntry(url="3", title="Python 字典遍历",
-                        content="用 items 遍历"),
+            SourceEntry(url="3", title="Python 字典遍历", content="用 items 遍历"),
         ]
         scores = _bm25_scores("python 列表怎么排序", srcs)
         assert scores[0] == max(scores)
@@ -112,10 +105,7 @@ class TestRerankPublic:
         assert [h.rank for h in r.hits] == [0, 1, 2]
 
     def test_top_k_truncates(self):
-        srcs = [
-            SourceEntry(url=str(i), title=f"doc {i}", content="python")
-            for i in range(10)
-        ]
+        srcs = [SourceEntry(url=str(i), title=f"doc {i}", content="python") for i in range(10)]
         r = rerank("python", srcs, top_k=3, backend="bm25")
         assert len(r.hits) == 3
 
@@ -133,8 +123,7 @@ class TestRerankPublic:
         assert r.backend == "bm25"
 
     def test_sources_property(self):
-        srcs = [SourceEntry(url="a", title="python"),
-                SourceEntry(url="b", title="ruby")]
+        srcs = [SourceEntry(url="a", title="python"), SourceEntry(url="b", title="ruby")]
         r = rerank("python", srcs, backend="bm25")
         assert [s.url for s in r.sources] == [h.source.url for h in r.hits]
 
@@ -164,8 +153,7 @@ class TestBackendRouting:
         monkeypatch.setenv("COHERE_API_KEY", "fake")
         # No client supplied → cohere call would fail network, but we pass
         # backend="bm25" explicitly, which must bypass cohere entirely.
-        srcs = [SourceEntry(url="a", title="python"),
-                SourceEntry(url="b", title="ruby")]
+        srcs = [SourceEntry(url="a", title="python"), SourceEntry(url="b", title="ruby")]
         r = rerank("python", srcs, backend="bm25")
         assert r.backend == "bm25"
 
@@ -213,18 +201,18 @@ class TestCohereBackend:
         # Cohere returns results with (index, relevance_score). We invert the
         # natural bm25 order to verify the rerank actually respects Cohere.
         client = _MockClient(
-            post_response=_MockResponse(json_data={
-                "results": [
-                    {"index": 0, "relevance_score": 0.1},
-                    {"index": 1, "relevance_score": 0.9},
-                ]
-            })
+            post_response=_MockResponse(
+                json_data={
+                    "results": [
+                        {"index": 0, "relevance_score": 0.1},
+                        {"index": 1, "relevance_score": 0.9},
+                    ]
+                }
+            )
         )
         srcs = [
-            SourceEntry(url="a", title="python list sort",
-                        content="sorted() usage"),
-            SourceEntry(url="b", title="gardening",
-                        content="tomato planting"),
+            SourceEntry(url="a", title="python list sort", content="sorted() usage"),
+            SourceEntry(url="b", title="gardening", content="tomato planting"),
         ]
         r = rerank("python list sort", srcs, client=client, backend="cohere")
         assert r.backend == "cohere"
@@ -241,9 +229,7 @@ class TestCohereBackend:
 
     def test_cohere_sends_auth_header_and_query(self, monkeypatch):
         monkeypatch.setenv("COHERE_API_KEY", "secret")
-        client = _MockClient(
-            post_response=_MockResponse(json_data={"results": []})
-        )
+        client = _MockClient(post_response=_MockResponse(json_data={"results": []}))
         srcs = [SourceEntry(url="a", title="t", content="c")]
         rerank("q", srcs, client=client, backend="cohere")
         assert len(client.calls) == 1

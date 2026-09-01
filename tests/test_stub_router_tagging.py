@@ -1,10 +1,10 @@
 """Implementation note."""
+
 from __future__ import annotations
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.sensing.gateway.stub_router import create_stub_router
 
 
@@ -28,8 +28,8 @@ def test_intelligence_post_has_stub_tag(client: TestClient) -> None:
     body = r.json()
     assert body.get("_stub") is True, f"missing _stub tag · body={body}"
     assert body.get("_stub_reason") == "compatibility_fallback"
-    assert r.headers["X-Octopus-Stub"] == "true"
-    assert r.headers["X-Octopus-Stub-Reason"] == "compatibility_fallback"
+    assert r.headers["X-Echo-Stub"] == "true"
+    assert r.headers["X-Echo-Stub-Reason"] == "compatibility_fallback"
 
 
 def test_intelligence_patch_has_stub_tag(client: TestClient) -> None:
@@ -81,7 +81,7 @@ def test_list_only_response_is_not_mutated(client: TestClient) -> None:
     # /api/alerts returns a list at top level
     r = client.get("/api/alerts")
     assert r.status_code == 200
-    assert r.headers["X-Octopus-Stub"] == "true"
+    assert r.headers["X-Echo-Stub"] == "true"
     body = r.json()
     # Implementation note.
     assert isinstance(body, list)
@@ -128,7 +128,7 @@ def test_stub_router_can_be_disabled() -> None:
 
 
 def test_stub_router_can_be_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OCTOPUS_DISABLE_STUB_API", "1")
+    monkeypatch.setenv("ECHO_DISABLE_STUB_API", "1")
     app = FastAPI()
     app.include_router(create_stub_router())
     disabled_client = TestClient(app)

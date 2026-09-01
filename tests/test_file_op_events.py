@@ -1,4 +1,5 @@
 """Implementation note."""
+
 from __future__ import annotations
 
 import hashlib
@@ -9,7 +10,6 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.execution.misc.file_write_leases import authorize_file_write_handoff
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.execution.tool_engine import ToolExecutor
@@ -32,7 +32,8 @@ from runtime.sensing.gateway.streaming_journal import StreamingJournal
 
 @pytest.fixture
 def isolated_cwd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[Path]:
     monkeypatch.chdir(tmp_path)
     yield tmp_path
@@ -42,27 +43,36 @@ def isolated_cwd(
 
 
 def _make_executor(
-    *, file_write_handler, other_handler=None,
+    *,
+    file_write_handler,
+    other_handler=None,
 ) -> tuple[ToolExecutor, InMemoryJournal, SkillRegistry]:
     reg = SkillRegistry()
-    reg.register(Skill(
-        name="write_text_file",
-        description="write",
-        trusted_source="builtin://write_text_file",
-        affinity=["file", "write"],
-        handler=file_write_handler,
-    ), verify_tests=False)
+    reg.register(
+        Skill(
+            name="write_text_file",
+            description="write",
+            trusted_source="builtin://write_text_file",
+            affinity=["file", "write"],
+            handler=file_write_handler,
+        ),
+        verify_tests=False,
+    )
     if other_handler is not None:
-        reg.register(Skill(
-            name="echo_text",
-            description="no file",
-            trusted_source="builtin://echo_text",
-            affinity=["compute"],
-            handler=other_handler,
-        ), verify_tests=False)
+        reg.register(
+            Skill(
+                name="echo_text",
+                description="no file",
+                trusted_source="builtin://echo_text",
+                affinity=["compute"],
+                handler=other_handler,
+            ),
+            verify_tests=False,
+        )
     journal = InMemoryJournal()
     executor = ToolExecutor(
-        registry=reg, immunity=TrustEngine(unknown_policy="allow"),
+        registry=reg,
+        immunity=TrustEngine(unknown_policy="allow"),
         journal=journal,
     )
     return executor, journal, reg
@@ -76,22 +86,22 @@ def _mk_budget() -> Budget:
 
 
 class TestBeakAutoEmitsFileOp:
-
     def test_successful_file_write_emits_file_op(self) -> None:
         def _write(path: str, content: str) -> dict:
             return {"bytes_written": len(content.encode("utf-8"))}
 
         executor, journal, _ = _make_executor(file_write_handler=_write)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={"path": "hello.txt", "content": "hi"},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
-        file_ops = [
-            e for e in journal.read_all() if isinstance(e, FileOpEvent)
-        ]
+        file_ops = [e for e in journal.read_all() if isinstance(e, FileOpEvent)]
         assert len(file_ops) == 1
         ev = file_ops[0]
         assert ev.path == "hello.txt"
@@ -100,22 +110,27 @@ class TestBeakAutoEmitsFileOp:
         assert ev.new_size == 2  # "hi" utf8
 
     def test_non_file_skill_does_not_emit(self) -> None:
-        def _write(**kw) -> None: return None  # noqa: ANN003, ARG001
-        def _echo(**kw) -> str: return "x"  # noqa: ANN003, ARG001
+        def _write(**kw) -> None:
+            return None  # noqa: ANN003, ARG001
+
+        def _echo(**kw) -> str:
+            return "x"  # noqa: ANN003, ARG001
 
         executor, journal, _ = _make_executor(
-            file_write_handler=_write, other_handler=_echo,
+            file_write_handler=_write,
+            other_handler=_echo,
         )
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("echo_text"),
             args={"text": "hi"},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
-        file_ops = [
-            e for e in journal.read_all() if isinstance(e, FileOpEvent)
-        ]
+        file_ops = [e for e in journal.read_all() if isinstance(e, FileOpEvent)]
         assert file_ops == []
 
     def test_file_skill_handler_failure_does_not_emit(self) -> None:
@@ -124,19 +139,21 @@ class TestBeakAutoEmitsFileOp:
 
         executor, journal, _ = _make_executor(file_write_handler=_boom)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={"path": "/forbidden", "content": "x"},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
-        file_ops = [
-            e for e in journal.read_all() if isinstance(e, FileOpEvent)
-        ]
+        file_ops = [e for e in journal.read_all() if isinstance(e, FileOpEvent)]
         assert file_ops == [], "失败的 file skill 不应 emit file_op"
 
     def test_file_write_lease_blocks_second_owner_in_same_turn(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "state.txt"
         calls: list[str] = []
@@ -160,19 +177,25 @@ class TestBeakAutoEmitsFileOp:
 
         with session_scope(session):
             first = executor.execute_step(
-                step_id=1, node_id="n0",
+                step_id=1,
+                node_id="n0",
                 sucker_id=SkillId("write_text_file"),
                 args={"path": str(target), "content": "agent-a\n"},
-                caller="t", task_id=TaskId(uuid4()),
-                arm_id=ArmId("a1"), budget=_mk_budget(),
+                caller="t",
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a1"),
+                budget=_mk_budget(),
                 actor="agent-a",
             )
             second = executor.execute_step(
-                step_id=2, node_id="n0",
+                step_id=2,
+                node_id="n0",
                 sucker_id=SkillId("write_text_file"),
                 args={"path": str(target), "content": "agent-b\n"},
-                caller="t", task_id=TaskId(uuid4()),
-                arm_id=ArmId("a2"), budget=_mk_budget(),
+                caller="t",
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a2"),
+                budget=_mk_budget(),
                 actor="agent-b",
             )
 
@@ -186,7 +209,8 @@ class TestBeakAutoEmitsFileOp:
         assert len(file_ops) == 1
 
     def test_file_write_lease_allows_same_owner_reentry(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "state.txt"
 
@@ -208,19 +232,25 @@ class TestBeakAutoEmitsFileOp:
 
         with session_scope(session):
             first = executor.execute_step(
-                step_id=1, node_id="n0",
+                step_id=1,
+                node_id="n0",
                 sucker_id=SkillId("write_text_file"),
                 args={"path": str(target), "content": "one\n"},
-                caller="t", task_id=TaskId(uuid4()),
-                arm_id=ArmId("a1"), budget=_mk_budget(),
+                caller="t",
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a1"),
+                budget=_mk_budget(),
                 actor="agent-a",
             )
             second = executor.execute_step(
-                step_id=2, node_id="n0",
+                step_id=2,
+                node_id="n0",
                 sucker_id=SkillId("write_text_file"),
                 args={"path": str(target), "content": "two\n"},
-                caller="t", task_id=TaskId(uuid4()),
-                arm_id=ArmId("a1"), budget=_mk_budget(),
+                caller="t",
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a1"),
+                budget=_mk_budget(),
                 actor="agent-a",
             )
 
@@ -231,7 +261,8 @@ class TestBeakAutoEmitsFileOp:
         assert len(file_ops) == 2
 
     def test_file_write_lease_allows_explicit_owner_handoff(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "state.txt"
 
@@ -253,11 +284,14 @@ class TestBeakAutoEmitsFileOp:
 
         with session_scope(session):
             first = executor.execute_step(
-                step_id=1, node_id="n0",
+                step_id=1,
+                node_id="n0",
                 sucker_id=SkillId("write_text_file"),
                 args={"path": str(target), "content": "agent-a\n"},
-                caller="t", task_id=TaskId(uuid4()),
-                arm_id=ArmId("a1"), budget=_mk_budget(),
+                caller="t",
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a1"),
+                budget=_mk_budget(),
                 actor="agent-a",
             )
             authorize_file_write_handoff(
@@ -267,11 +301,14 @@ class TestBeakAutoEmitsFileOp:
                 to_owner="agent-b",
             )
             second = executor.execute_step(
-                step_id=2, node_id="n0",
+                step_id=2,
+                node_id="n0",
                 sucker_id=SkillId("write_text_file"),
                 args={"path": str(target), "content": "agent-b\n"},
-                caller="t", task_id=TaskId(uuid4()),
-                arm_id=ArmId("a2"), budget=_mk_budget(),
+                caller="t",
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a2"),
+                budget=_mk_budget(),
                 actor="agent-b",
             )
 
@@ -279,15 +316,14 @@ class TestBeakAutoEmitsFileOp:
         assert second.result.status == "success"
         assert target.read_text(encoding="utf-8") == "agent-b\n"
         assert session.metadata["_file_write_lease_handoffs"] == {}
-        lease = session.metadata["_file_write_leases"][
-            str(target.resolve(strict=False)).casefold()
-        ]
+        lease = session.metadata["_file_write_leases"][str(target.resolve(strict=False)).casefold()]
         assert lease["owner"] == "agent-b"
         file_ops = [e for e in journal.read_all() if isinstance(e, FileOpEvent)]
         assert len(file_ops) == 2
 
     def test_diff_captured_when_file_preexists(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Implementation note."""
         target = tmp_path / "greeting.txt"
@@ -299,21 +335,22 @@ class TestBeakAutoEmitsFileOp:
 
         executor, journal, _ = _make_executor(file_write_handler=_overwrite)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
-            args={"path": str(target), "content": "hello\nworld\nOctopus\n"},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            args={"path": str(target), "content": "hello\nworld\nEcho\n"},
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
-        file_ops = [
-            e for e in journal.read_all() if isinstance(e, FileOpEvent)
-        ]
+        file_ops = [e for e in journal.read_all() if isinstance(e, FileOpEvent)]
         assert len(file_ops) == 1
         ev = file_ops[0]
         assert ev.diff is not None
-        assert "+Octopus" in ev.diff
+        assert "+Echo" in ev.diff
         assert ev.old_size == len(b"hello\nworld\n")
-        assert ev.new_size == len(b"hello\nworld\nOctopus\n")
+        assert ev.new_size == len(b"hello\nworld\nEcho\n")
         # Implementation note.
         assert ev.diff.startswith(f"--- a/{target}") or f"a/{target}" in ev.diff
         assert ev.rollback is not None
@@ -322,7 +359,8 @@ class TestBeakAutoEmitsFileOp:
         assert ev.rollback["content"] == "hello\nworld\n"
 
     def test_file_rollback_ledger_restores_latest_write(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "state.txt"
         target.write_text("before\n", encoding="utf-8")
@@ -333,11 +371,14 @@ class TestBeakAutoEmitsFileOp:
 
         executor, journal, _ = _make_executor(file_write_handler=_overwrite)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={"path": str(target), "content": "after\n"},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
 
         result = apply_file_rollback_ledger(
@@ -350,7 +391,8 @@ class TestBeakAutoEmitsFileOp:
         assert target.read_text(encoding="utf-8") == "before\n"
 
     def test_file_rollback_ledger_deletes_created_file(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "created.txt"
 
@@ -360,11 +402,14 @@ class TestBeakAutoEmitsFileOp:
 
         executor, journal, _ = _make_executor(file_write_handler=_create)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={"path": str(target), "content": "new\n"},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
 
         result = apply_file_rollback_ledger(
@@ -377,7 +422,8 @@ class TestBeakAutoEmitsFileOp:
         assert not target.exists()
 
     def test_file_rollback_ledger_skips_when_file_changed_after_event(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "state.txt"
         target.write_text("before\n", encoding="utf-8")
@@ -388,11 +434,14 @@ class TestBeakAutoEmitsFileOp:
 
         executor, journal, _ = _make_executor(file_write_handler=_overwrite)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={"path": str(target), "content": "after\n"},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
         target.write_text("user edit\n", encoding="utf-8")
 
@@ -408,7 +457,8 @@ class TestBeakAutoEmitsFileOp:
         assert target.read_text(encoding="utf-8") == "user edit\n"
 
     def test_diff_for_new_file_is_all_additions(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Implementation note."""
         target = tmp_path / "new.txt"
@@ -420,21 +470,23 @@ class TestBeakAutoEmitsFileOp:
 
         executor, journal, _ = _make_executor(file_write_handler=_create)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={"path": str(target), "content": "fresh line\n"},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
-        ev = [
-            e for e in journal.read_all() if isinstance(e, FileOpEvent)
-        ][0]
+        ev = [e for e in journal.read_all() if isinstance(e, FileOpEvent)][0]
         assert ev.diff is not None
         assert "+fresh line" in ev.diff
         assert ev.old_size is None  # Implementation note.
 
     def test_diff_is_none_when_content_unchanged(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Implementation note."""
         target = tmp_path / "same.txt"
@@ -446,19 +498,21 @@ class TestBeakAutoEmitsFileOp:
 
         executor, journal, _ = _make_executor(file_write_handler=_noop)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={"path": str(target), "content": content},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
-        ev = [
-            e for e in journal.read_all() if isinstance(e, FileOpEvent)
-        ][0]
+        ev = [e for e in journal.read_all() if isinstance(e, FileOpEvent)][0]
         assert ev.diff is None
 
     def test_large_diff_gets_truncated(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Implementation note."""
         target = tmp_path / "big.txt"
@@ -472,34 +526,38 @@ class TestBeakAutoEmitsFileOp:
 
         executor, journal, _ = _make_executor(file_write_handler=_overwrite)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={"path": str(target), "content": long_content},
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
-        ev = [
-            e for e in journal.read_all() if isinstance(e, FileOpEvent)
-        ][0]
+        ev = [e for e in journal.read_all() if isinstance(e, FileOpEvent)][0]
         assert ev.diff is not None
         assert "truncated" in ev.diff
         assert len(ev.diff) < 25_000
 
     def test_no_path_in_args_skips_emit(self) -> None:
         """Implementation note."""
-        def _write_noop(**kw) -> None: return None  # noqa: ANN003, ARG001
+
+        def _write_noop(**kw) -> None:
+            return None  # noqa: ANN003, ARG001
 
         executor, journal, _ = _make_executor(file_write_handler=_write_noop)
         executor.execute_step(
-            step_id=1, node_id="n0",
+            step_id=1,
+            node_id="n0",
             sucker_id=SkillId("write_text_file"),
             args={},  # Implementation note.
-            caller="t", task_id=TaskId(uuid4()),
-            arm_id=ArmId("a1"), budget=_mk_budget(),
+            caller="t",
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a1"),
+            budget=_mk_budget(),
         )
-        file_ops = [
-            e for e in journal.read_all() if isinstance(e, FileOpEvent)
-        ]
+        file_ops = [e for e in journal.read_all() if isinstance(e, FileOpEvent)]
         assert file_ops == []
 
 
@@ -508,26 +566,39 @@ class TestBeakAutoEmitsFileOp:
 
 @pytest.fixture
 def client(isolated_cwd: Path) -> TestClient:
-    cfg = AgentConfig(planner=PlannerConfig(
-        type="llm", model="mock/file", mock_response='{"reasoning":"r","nodes":[]}',
-    ))
+    cfg = AgentConfig(
+        planner=PlannerConfig(
+            type="llm",
+            model="mock/file",
+            mock_response='{"reasoning":"r","nodes":[]}',
+        )
+    )
     stack = build_from_config(cfg)
+
     # Implementation note.
     def _w(path: str = "", content: str = "") -> dict:  # noqa: ARG001
         return {"bytes_written": len(content.encode("utf-8"))}
-    stack.registry.register(Skill(
-        name="write_text_file",
-        description="test",
-        trusted_source="builtin://write_text_file",
-        affinity=["file", "write"],
-        handler=_w,
-    ), verify_tests=False, replace=True)
+
+    stack.registry.register(
+        Skill(
+            name="write_text_file",
+            description="test",
+            trusted_source="builtin://write_text_file",
+            affinity=["file", "write"],
+            handler=_w,
+        ),
+        verify_tests=False,
+        replace=True,
+    )
     app = create_app(
-        journal=stack.journal, registry=stack.registry, stack=stack,
+        journal=stack.journal,
+        registry=stack.registry,
+        stack=stack,
     )
     # Implementation note.
     stack.journal.write_file_op(
-        path="pre.txt", action="create",
+        path="pre.txt",
+        action="create",
         sucker_id="write_text_file",
         new_size=5,
     )
@@ -538,7 +609,7 @@ class TestFileStreamEndpoints:
     """Implementation note."""
 
     def test_files_stream_route_registered(self, client: TestClient) -> None:
-        routes = {r.path for r in client.app.routes}
+        routes = set(client.app.openapi()["paths"])
         assert "/api/files/stream" in routes
         assert "/api/stream" in routes
 
@@ -564,9 +635,9 @@ def _rollback_client(journal: InMemoryJournal) -> TestClient:
 
 
 class TestFileRollbackApi:
-
     def test_rollback_preview_filters_task_and_redacts_content(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         journal = InMemoryJournal()
         task_id = TaskId(uuid4())
@@ -617,7 +688,8 @@ class TestFileRollbackApi:
         assert target.read_text(encoding="utf-8") == "after\n"
 
     def test_rollback_apply_restores_files_for_task(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         journal = InMemoryJournal()
         task_id = TaskId(uuid4())
@@ -653,7 +725,8 @@ class TestFileRollbackApi:
         assert target.read_text(encoding="utf-8") == "before\n"
 
     def test_rollback_apply_writes_audit_event(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         journal = InMemoryJournal()
         task_id = TaskId(uuid4())
@@ -694,7 +767,8 @@ class TestFileRollbackApi:
         assert event.errors == []
 
     def test_rollback_history_lists_recent_audit_events(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         journal = InMemoryJournal()
         task_id = TaskId(uuid4())
@@ -734,7 +808,8 @@ class TestFileRollbackApi:
         assert item["paths"] == [str(target)]
 
     def test_rollback_apply_can_target_single_file_op_event(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         journal = InMemoryJournal()
         task_id = TaskId(uuid4())

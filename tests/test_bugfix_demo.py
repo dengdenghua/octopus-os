@@ -16,7 +16,8 @@ from demos.bugfix_demo import (
 )
 
 pytestmark = pytest.mark.skipif(
-    shutil.which("git") is None, reason="git not on PATH",
+    shutil.which("git") is None,
+    reason="git not on PATH",
 )
 
 
@@ -30,7 +31,7 @@ class TestSetupBuggyProject:
         proj = setup_buggy_project(tmp_path)
         assert proj.is_dir()
         src = (proj / "add.py").read_text(encoding="utf-8")
-        assert "return a - b" in src    # Implementation note.
+        assert "return a - b" in src  # Implementation note.
         assert "return a + b" not in src
 
     def test_test_script_fails_on_buggy_code(self, tmp_path: Path):
@@ -39,7 +40,8 @@ class TestSetupBuggyProject:
         r = subprocess.run(
             [sys.executable, "test_add.py"],
             cwd=str(proj),
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert r.returncode != 0
         assert "AssertionError" in r.stderr or "AssertionError" in r.stdout
@@ -48,7 +50,9 @@ class TestSetupBuggyProject:
         proj = setup_buggy_project(tmp_path)
         r = subprocess.run(
             ["git", "-C", str(proj), "rev-list", "--count", "HEAD"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         assert r.stdout.strip() == "1"
 
@@ -63,7 +67,7 @@ class TestPlan:
         proj = setup_buggy_project(tmp_path)
         graph = build_bugfix_graph(proj)
         assert len(graph.nodes) == 8
-        assert len(graph.edges) == 7   # linear = n-1 edges
+        assert len(graph.edges) == 7  # linear = n-1 edges
         # Implementation note.
         skills = [n.skill_ref for n in graph.nodes]
         assert str(skills[0]) == "list_cwd"
@@ -109,7 +113,9 @@ class TestRunDemoE2E:
         proj = Path(result["project_dir"])
         r = subprocess.run(
             ["git", "-C", str(proj), "log", "--pretty=format:%s"],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         commits = r.stdout.strip().splitlines()
         assert len(commits) == 2
@@ -117,9 +123,14 @@ class TestRunDemoE2E:
         assert "fix" in commits[0].lower()
 
     def test_all_steps_succeeded(self, tmp_path: Path):
-        """Implementation note."""
+        """Every step except the intentional red-phase test succeeds."""
         result = run_demo(workdir=tmp_path, color=False, verbose=False)
         for step in result["steps"]:
+            if step.node_id == "n2":
+                assert not step.success
+                assert step.result.error_type == "semantic_error"
+                assert step.result.output["exit_code"] != 0
+                continue
             assert step.success, (
                 f"step {step.node_id} failed · "
                 f"skill={step.action.sucker_id} · "
@@ -130,8 +141,8 @@ class TestRunDemoE2E:
         run_demo(workdir=tmp_path, color=False, verbose=False)
         journal_path = tmp_path / "events.jsonl"
         assert journal_path.exists()
-        lines = [line for line in journal_path.read_text(
-            encoding="utf-8"
-        ).splitlines() if line.strip()]
+        lines = [
+            line for line in journal_path.read_text(encoding="utf-8").splitlines() if line.strip()
+        ]
         # Implementation note.
         assert len(lines) >= 9

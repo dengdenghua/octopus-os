@@ -1,4 +1,3 @@
-
 import { unifiedMergeView } from "@codemirror/merge";
 import type { Extension } from "@codemirror/state";
 import { useTheme } from "next-themes";

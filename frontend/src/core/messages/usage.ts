@@ -14,7 +14,8 @@ function getUsageMetadata(message: Message): TokenUsage | null {
   if (message.type !== "ai") {
     return null;
   }
-  const usage = (message as unknown as Record<string, unknown>).usage_metadata as
+  const usage = (message as unknown as Record<string, unknown>)
+    .usage_metadata as
     | { input_tokens?: number; output_tokens?: number; total_tokens?: number }
     | undefined;
   if (!usage) {
@@ -58,4 +59,3 @@ export function formatTokenCount(count: number): string {
   }
   return `${(count / 1000).toFixed(1)}K`;
 }
-

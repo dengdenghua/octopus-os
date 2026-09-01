@@ -1,11 +1,6 @@
 /* Implementation note. */
 
-import {
-  createContext,
-  useContext,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 
 export type DevicePreset = "desktop" | "tablet" | "mobile";
 

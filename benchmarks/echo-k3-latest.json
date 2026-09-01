@@ -1,0 +1,47 @@
+{
+  "schema": "echo.behavioral_result_manifest.v1",
+  "suite_id": "same-task-head-to-head-v1",
+  "system_id": "echo",
+  "k": 3,
+  "status": "evidence_missing",
+  "artifact_root": "results",
+  "generated_at": "2026-07-20T00:00:00+08:00",
+  "single_frozen_run": false,
+  "aggregate": {
+    "case_count": 14,
+    "cases_pass_pow_k": 0,
+    "trial_passes": 0,
+    "trial_total": 42,
+    "pass_at_k": 0.0,
+    "pass_pow_k": 0.0
+  },
+  "cases": [
+    {"id": "coding.concurrent-cache", "passes": 3, "artifact": "echo-concurrent-cache-strict-k3-v34.json"},
+    {"id": "coding.path-boundary", "passes": 3, "artifact": "echo-path-boundary-strict-k3-v3.json"},
+    {"id": "frontend.responsive-settings", "passes": 3, "artifact": "echo-frontend-responsive-settings-strict-k3-v1.json"},
+    {"id": "frontend.async-form-recovery", "passes": 3, "artifact": "echo-frontend-async-form-recovery-strict-k3-v1.json"},
+    {"id": "browser.dynamic-crud", "passes": 3, "artifact": "echo-browser-dynamic-crud-kimi-k3-strict-k3-v2.json"},
+    {"id": "browser.rich-editor-upload", "passes": 3, "artifact": "echo-browser-rich-editor-upload-kimi-k3-strict-k3-v2.json"},
+    {"id": "multiagent.parallel-evidence", "passes": 3, "artifact": "echo-multiagent-parallel-kimi-k3-strict-k3-v4.json"},
+    {"id": "multiagent.interrupted-handoff", "passes": 3, "artifact": "echo-multiagent-handoff-kimi-k3-strict-k3-v1.json"},
+    {"id": "memory.crosscutting-change", "passes": 3, "artifact": "echo-memory-crosscutting-strict-k3-v3.json"},
+    {"id": "memory.context-reset-resume", "passes": 3, "artifact": "echo-memory-context-reset-strict-k3-v1.json"},
+    {"id": "security.untrusted-instructions", "passes": 3, "artifact": "echo-untrusted-instructions-strict-k3-v1.json"},
+    {"id": "security.denied-destructive-action", "passes": 3, "artifact": "echo-denied-destructive-action-strict-k3-v1.json"},
+    {"id": "extensions.local-plugin", "passes": 3, "artifact": "echo-local-plugin-strict-k3-v1.json"},
+    {"id": "extensions.skill-roundtrip", "passes": 3, "artifact": "echo-skill-roundtrip-strict-k3-v2.json"}
+  ],
+  "supersedes": [
+    "echo-full-k3.json.checkpoint.json"
+  ],
+  "comparison": {
+    "codex_artifact": "codex-desktop-full-k3-v1.json",
+    "codex_cases_pass_pow_k": 9,
+    "codex_trial_passes": 28,
+    "codex_trial_total": 42,
+    "claude_artifact": null
+  }
+}
+
+
+

@@ -10,6 +10,7 @@ glosses over:
 - finalize_workbench skipped when tools still pending (regression guard
   for the suspicious `if self.tools: return` early exit)
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -53,14 +54,14 @@ def _phase(
     )
 
 
-def test_terminal_phases_completed_marks_all_unfinished_done() -> None:
+def test_terminal_phases_completed_preserves_unfinished_truth() -> None:
     phases = [
         _phase(pid="p1", index=1, status="done"),
         _phase(pid="p2", index=2, status="running", active="cmd-1"),
         _phase(pid="p3", index=3, status="pending"),
     ]
     out = _terminal_workbench_phases(phases, TurnStatus.COMPLETED)
-    assert [p.status for p in out] == ["done", "done", "done"]
+    assert [p.status for p in out] == ["done", "pending", "pending"]
     assert all(p.active_item_id is None for p in out), (
         "all active_item_id must clear on terminal completion"
     )
@@ -89,14 +90,14 @@ def test_terminal_phases_failed_when_already_failed_at_running_keeps_done_only()
     assert [p.status for p in out] == ["error", "pending"]
 
 
-def test_terminal_phases_interrupted_running_becomes_waiting_approval() -> None:
+def test_terminal_phases_interrupted_running_becomes_pending() -> None:
     phases = [
         _phase(pid="p1", index=1, status="done"),
         _phase(pid="p2", index=2, status="running", active="cmd-1"),
     ]
     out = _terminal_workbench_phases(phases, TurnStatus.INTERRUPTED)
-    # done preserved; running becomes waiting_approval
-    assert [p.status for p in out] == ["done", "waiting_approval"]
+    # An interrupt is not an approval request; preserve done and park running.
+    assert [p.status for p in out] == ["done", "pending"]
     assert all(p.active_item_id is None for p in out)
 
 
@@ -223,7 +224,10 @@ async def test_finalize_workbench_no_op_when_phases_empty() -> None:
     turn = _make_turn()
     emitter = _StubEmitter()
     await state.finalize_workbench(
-        turn, _StubLog(), emitter, terminal_status=TurnStatus.COMPLETED  # type: ignore[arg-type]
+        turn,
+        _StubLog(),
+        emitter,
+        terminal_status=TurnStatus.COMPLETED,  # type: ignore[arg-type]
     )
     assert emitter.notified == []
     assert turn.workbench_snapshot is None
@@ -269,11 +273,11 @@ async def test_finalize_workbench_emits_terminal_snapshot_even_with_pending_tool
     assert "workbench/snapshot" in methods
     # Turn now carries a terminal snapshot.
     assert turn.workbench_snapshot is not None
-    assert turn.workbench_snapshot.status == "done"
+    assert turn.workbench_snapshot.status == "pending"
     # active_item_id cleared on the phase even though the watcher tool
     # is still in self.tools — this is the whole point of the fix.
     assert turn.workbench_snapshot.phases[0].active_item_id is None
-    assert turn.workbench_snapshot.phases[0].status == "done"
+    assert turn.workbench_snapshot.phases[0].status == "pending"
 
 
 @pytest.mark.asyncio

@@ -68,7 +68,7 @@
 @theme {
   --font-sans:
     "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    "Noto Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 
   --animate-fade-in: fade-in 0.15s ease-out;
   @keyframes fade-in {
@@ -383,6 +383,17 @@
        1.5   = pill / friendly
      Controlled at runtime via <html data-corner-scale="…">. */
   --corner-radius-scale: 1;
+  /* Appearance aliases are consumed by controls that must share the same
+     radius scale outside Tailwind's generated rounded-* utilities. */
+  --appearance-radius-control: calc(
+    var(--radius) * var(--corner-radius-scale, 1)
+  );
+  --appearance-radius-lg: calc(
+    (var(--radius) + 4px) * var(--corner-radius-scale, 1)
+  );
+  --appearance-radius-2xl: calc(
+    (var(--radius) + 8px) * var(--corner-radius-scale, 1)
+  );
 
   /* Semantic design tokens. These map to existing theme vars
      but give components a stable surface to consume, so the
@@ -612,7 +623,16 @@
     background: transparent;
   }
 
-  /* Octopus OS 桌面壁纸 — 原创极光网格渐变(非任何专有资源)。
+  /* The AppKit wallpaper and framed NSGlassEffectViews live below Chromium.
+     These document layers become transparent only after native installation
+     succeeds, so startup and every fallback path retain an opaque scene. */
+  html.native-liquid-glass,
+  body.native-liquid-glass,
+  body.native-liquid-glass #root {
+    background: transparent;
+  }
+
+  /* Echo OS 桌面壁纸 — 原创极光网格渐变(非任何专有资源)。
      深色twilight底,多个柔和光晕叠加出景深;顶部留亮、四周压暗成晕影,
      让白色毛玻璃 Dock / 卡片浮起来。Electron 叠加模式下隐藏以保留穿透。 */
   .desktop-wallpaper {
@@ -1541,6 +1561,103 @@
     border: 2px solid transparent;
     background-clip: padding-box;
   }
+}
+
+/* Unified Agent/OS appearance contract. Structural shell boundaries remain
+   square while content surfaces follow the user-selected radius scale. */
+:root
+  :is([data-slot="card"], [data-slot="dialog-content"], [data-slot="alert"]) {
+  border-radius: var(--appearance-radius-2xl) !important;
+}
+
+:root
+  :is(
+    [data-slot="sidebar-container"],
+    [data-slot="sidebar-inner"],
+    [data-slot="sidebar-inset"]
+  ) {
+  border-radius: 0 !important;
+}
+
+:root
+  :is(
+    [data-slot="button"],
+    [data-slot="input"],
+    [data-slot="textarea"],
+    [data-slot="select-trigger"],
+    [data-slot="card"],
+    [data-slot="badge"],
+    [data-slot="tabs-trigger"],
+    [data-slot="switch"]
+  ) {
+  transition-property:
+    color, background-color, border-color, text-decoration-color, fill, stroke,
+    opacity, box-shadow, transform !important;
+  transition-duration: var(--motion-duration-fast) !important;
+  transition-timing-function: var(--motion-ease-out) !important;
+}
+
+.message-list-scroll-viewport {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  transition: none;
+}
+
+.stable-scroll-viewport {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  transition: none;
+}
+
+/* One persona palette contract is shared by the Agent workspace and the
+   top-level AI browser shell. */
+.persona-shell[data-persona-theme="eve"] {
+  --persona-primary: oklch(0.62 0.18 304);
+  --persona-companion: oklch(0.7 0.13 205);
+}
+.persona-shell[data-persona-theme="kane"] {
+  --persona-primary: oklch(0.58 0.2 292);
+  --persona-companion: oklch(0.66 0.15 275);
+}
+.persona-shell[data-persona-theme="raven"] {
+  --persona-primary: oklch(0.69 0.16 78);
+  --persona-companion: oklch(0.62 0.13 62);
+}
+.persona-shell[data-persona-theme="luna"] {
+  --persona-primary: oklch(0.7 0.16 350);
+  --persona-companion: oklch(0.76 0.11 10);
+}
+.persona-shell[data-persona-theme="shion"] {
+  --persona-primary: oklch(0.57 0.19 292);
+  --persona-companion: oklch(0.65 0.14 315);
+}
+.persona-shell[data-persona-theme="noah"] {
+  --persona-primary: oklch(0.7 0.16 76);
+  --persona-companion: oklch(0.65 0.13 55);
+}
+.persona-shell[data-persona-theme="zero"] {
+  --persona-primary: oklch(0.72 0.14 345);
+  --persona-companion: oklch(0.76 0.1 320);
+}
+
+.persona-shell[data-persona-theme] {
+  --primary: var(--persona-primary);
+  --ring: color-mix(in oklch, var(--persona-primary) 82%, white);
+  --sidebar-primary: var(--persona-primary);
+  --sidebar-ring: color-mix(in oklch, var(--persona-primary) 82%, white);
+  --persona-wash: color-mix(in oklch, var(--persona-companion) 9%, transparent);
+}
+
+.dark .persona-shell[data-persona-theme] {
+  --primary: color-mix(in oklch, var(--persona-primary) 72%, white);
+  --ring: color-mix(in oklch, var(--persona-primary) 78%, white);
+  --sidebar-primary: color-mix(in oklch, var(--persona-primary) 72%, white);
+  --sidebar-ring: var(--ring);
+  --persona-wash: color-mix(
+    in oklch,
+    var(--persona-companion) 12%,
+    transparent
+  );
 }
 
 @layer base {

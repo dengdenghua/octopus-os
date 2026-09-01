@@ -15,16 +15,6 @@ export type ToolActionKind =
   | "plan"
   | "other";
 
-export type ToolActionStatus =
-  | "running"
-  | "done"
-  | "error"
-  | "waiting_approval";
-
-export function isChineseText(text: string): boolean {
-  return /[\u4e00-\u9fff]/.test(text);
-}
-
 export function isSkillToolName(name: string): boolean {
   const normalized = name.toLowerCase();
   return (
@@ -142,79 +132,11 @@ export function inferToolActionKindFromText(text: string): ToolActionKind {
   if (/列出|list/i.test(trimmed)) return "list";
   if (/执行|run|bash|shell/i.test(trimmed)) return "run";
   if (/调用|call|invoke/i.test(trimmed)) return "call";
-  if (/\u89c4\u5212|\u4e0b\u4e00\u6b65|\bplanning\b|\bplan next\b|\bmake a plan\b/i.test(trimmed)) return "plan";
+  if (
+    /\u89c4\u5212|\u4e0b\u4e00\u6b65|\bplanning\b|\bplan next\b|\bmake a plan\b/i.test(
+      trimmed,
+    )
+  )
+    return "plan";
   return "other";
-}
-
-export function isRunningStatus(status: ToolActionStatus | boolean): boolean {
-  return status === true || status === "running" || status === "waiting_approval";
-}
-
-export function actionStateLabel(
-  kind: ToolActionKind,
-  status: ToolActionStatus | boolean,
-  languageProbe: string,
-): string {
-  const zh = isChineseText(languageProbe);
-  const zhLabels: Record<ToolActionKind, [string, string]> = {
-    search: ["正在搜索", "已搜索"],
-    read: ["正在读取", "已读取"],
-    call: ["正在调用", "已调用"],
-    skill: ["正在应用技能", "已应用技能"],
-    create: ["正在创建文件", "已创建文件"],
-    write: ["正在写入文件", "已写入文件"],
-    edit: ["正在编辑文件", "已编辑文件"],
-    list: ["正在浏览目录", "已浏览目录"],
-    run: ["正在运行命令", "已运行命令"],
-    browse: ["正在浏览网页", "已浏览网页"],
-    fetch: ["正在获取网页", "已获取网页"],
-    update: ["正在更新", "已更新"],
-    learn: ["正在学习技能", "已学习技能"],
-    plan: ["正在规划下一步", "已规划下一步"],
-    other: ["正在执行", "已执行"],
-  };
-  const enLabels: Record<ToolActionKind, [string, string]> = {
-    search: ["Searching", "Searched"],
-    read: ["Reading", "Read"],
-    call: ["Calling", "Called"],
-    skill: ["Applying skill", "Applied skill"],
-    create: ["Creating file", "Created file"],
-    write: ["Writing file", "Wrote file"],
-    edit: ["Editing file", "Edited file"],
-    list: ["Browsing directory", "Browsed directory"],
-    run: ["Running command", "Ran command"],
-    browse: ["Browsing web", "Browsed web"],
-    fetch: ["Fetching page", "Fetched page"],
-    update: ["Updating", "Updated"],
-    learn: ["Learning skill", "Learned skill"],
-    plan: ["Planning next step", "Planned next step"],
-    other: ["Executing", "Executed"],
-  };
-  const [running, done] = zh ? zhLabels[kind] : enLabels[kind];
-  return isRunningStatus(status) ? running : done;
-}
-
-export function actionLabelWithTarget(
-  kind: ToolActionKind,
-  status: ToolActionStatus | boolean,
-  languageProbe: string,
-  target?: string,
-): string {
-  const label = actionStateLabel(kind, status, languageProbe);
-  return target ? `${label} ${target}` : label;
-}
-
-export function reasoningStateLabel(
-  summary: string,
-  active: boolean,
-  languageProbe: string,
-): string {
-  const zh = isChineseText(languageProbe);
-  const planning = /规划|下一步|plan/i.test(summary);
-  if (zh) {
-    if (planning) return active ? "正在规划下一步" : "已规划下一步";
-    return active ? "思考中" : "思考";
-  }
-  if (planning) return active ? "Planning next step" : "Planned next step";
-  return active ? "Thinking" : "Thought";
 }

@@ -79,22 +79,24 @@ class TestDumpLoad:
 
 
 def _minimal_planner(
-    *, rules_path=None, memories_path=None,
-    initial_rules: str = "", initial_memories: str = "",
+    *,
+    rules_path=None,
+    memories_path=None,
+    initial_rules: str = "",
+    initial_memories: str = "",
 ):
     reg = SkillRegistry()
     reg.register(
         Skill(
-            name="list_cwd", trusted_source="skill://public/list_cwd",
+            name="list_cwd",
+            trusted_source="skill://public/list_cwd",
             handler=lambda **kw: {"path": "."},
         ),
         verify_tests=False,
     )
     return LLMPlanner(
         router=MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "list_cwd", "args": {}}]}
-            ),
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "list_cwd", "args": {}}]}),
         ),
         registry=reg,
         composer=ContextComposer(registry=reg, journal=InMemoryJournal()),
@@ -113,14 +115,18 @@ def _seeded_journal_with_failures():
     def _mk_failed():
         call = ToolCall(caller="arms/a", sucker_id="list_cwd", args={})
         step = Step(
-            step_id=0, node_id="n0", action=call,
+            step_id=0,
+            node_id="n0",
+            action=call,
             result=ExecutionResult(
-                call_id=call.call_id, status="failed",
+                call_id=call.call_id,
+                status="failed",
                 error_type="timeout",
             ),
         )
         return Trajectory(
-            task_id=TaskId(uuid4()), arm_id=ArmId("a"),
+            task_id=TaskId(uuid4()),
+            arm_id=ArmId("a"),
             steps=[step],
             outcome=TrajectoryOutcome(success=False),
         )
@@ -155,14 +161,18 @@ class TestPlannerAutoPersist:
         # Implementation note.
         j = InMemoryJournal()
         for _ in range(5):
-            j.write_trajectory(Trajectory(
-                task_id=TaskId(uuid4()), arm_id=ArmId("a"),
-                strategy_id="s", steps=[],
-                outcome=TrajectoryOutcome(
-                    success=True,
-                    cost=CostEntry(tokens_in=10, tokens_out=10, usd=0.0001),
-                ),
-            ))
+            j.write_trajectory(
+                Trajectory(
+                    task_id=TaskId(uuid4()),
+                    arm_id=ArmId("a"),
+                    strategy_id="s",
+                    steps=[],
+                    outcome=TrajectoryOutcome(
+                        success=True,
+                        cost=CostEntry(tokens_in=10, tokens_out=10, usd=0.0001),
+                    ),
+                )
+            )
 
         path = tmp_path / "memories.txt"
         planner = _minimal_planner(memories_path=path)
@@ -223,7 +233,8 @@ class TestConfigDrivenPersistence:
         memories_path = tmp_path / "mem.txt"
         cfg = AgentConfig(
             planner=PlannerConfig(
-                type="llm", model="mock/cp",
+                type="llm",
+                model="mock/cp",
                 mock_response=json.dumps({"nodes": []}),
             ),
             learn=LearnConfig(
@@ -238,7 +249,8 @@ class TestConfigDrivenPersistence:
     def test_builder_without_paths_no_persist(self):
         cfg = AgentConfig(
             planner=PlannerConfig(
-                type="llm", model="mock/x",
+                type="llm",
+                model="mock/x",
                 mock_response=json.dumps({"nodes": []}),
             ),
         )

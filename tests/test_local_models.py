@@ -34,6 +34,7 @@ Design notes
   ``{"ok": False}`` without one, which is the path we exercise.
   The persistence side is what matters here.
 """
+
 from __future__ import annotations
 
 import json
@@ -44,7 +45,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from runtime.platform.ui.app import create_app
 
 # ─── Fixtures ─────────────────────────────────────────────
@@ -52,7 +52,8 @@ from runtime.platform.ui.app import create_app
 
 @pytest.fixture
 def isolated_cwd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     """Redirect CWD so ``Path("data/custom_models.json")`` lands in
     a scratch dir. Same pattern as the other config endpoint tests."""
@@ -121,7 +122,8 @@ def stub_openai_server() -> Iterator[str]:
 
 
 def test_scan_with_no_reachable_services_returns_empty(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """With the default candidate list pointed at dead ports, the
     response is well-formed (200) but contains no entries — we
@@ -131,7 +133,7 @@ def test_scan_with_no_reachable_services_returns_empty(
     # any flake from a real local service appearing mid-test.
     monkeypatch.setattr(
         "runtime.sensing.gateway.config_router.os.environ",
-        {**__import__("os").environ, "OCTOPUS_TEST_NO_REACH": "1"},
+        {**__import__("os").environ, "ECHO_TEST_NO_REACH": "1"},
         raising=False,
     )
     # Use the targets override to point all candidates at a
@@ -150,7 +152,8 @@ def test_scan_with_no_reachable_services_returns_empty(
 
 
 def test_scan_with_targets_override_discovers_service(
-    client: TestClient, stub_openai_server: str,
+    client: TestClient,
+    stub_openai_server: str,
 ) -> None:
     """Pointing the scanner at a stub OpenAI-compat server
     surfaces one service with the expected model list."""
@@ -169,7 +172,8 @@ def test_scan_with_targets_override_discovers_service(
 
 
 def test_scan_reports_empty_status_when_no_models_listed(
-    client: TestClient, stub_openai_server: str,
+    client: TestClient,
+    stub_openai_server: str,
 ) -> None:
     """A service that responds 200 but with an empty ``data`` list
     is surfaced with status=empty rather than status=ok, so the UI

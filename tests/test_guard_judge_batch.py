@@ -10,12 +10,12 @@ Covers:
 * Dry-run plans without writing
 * Trajectory provider injection works
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
 from runtime.safety.evolution.guard_judge import (
     GuardJudgeVerdict,
     null_guard_judge,
@@ -86,13 +86,15 @@ class TestHappyPath:
 
     def test_mixed_verdicts_aggregate(self, sink: GuardTelemetry) -> None:
         _seed_hits(sink, 5)
-        verdicts = iter([
-            GuardJudgeVerdict(action="true_positive"),
-            GuardJudgeVerdict(action="false_positive"),
-            GuardJudgeVerdict(action="true_positive"),
-            GuardJudgeVerdict(action="uncertain"),
-            GuardJudgeVerdict(action="false_positive"),
-        ])
+        verdicts = iter(
+            [
+                GuardJudgeVerdict(action="true_positive"),
+                GuardJudgeVerdict(action="false_positive"),
+                GuardJudgeVerdict(action="true_positive"),
+                GuardJudgeVerdict(action="uncertain"),
+                GuardJudgeVerdict(action="false_positive"),
+            ]
+        )
 
         def judge(label: str, msg: str, traj: str) -> GuardJudgeVerdict:
             return next(verdicts)
@@ -100,7 +102,9 @@ class TestHappyPath:
         result = run_judge_batch(sink=sink, judge=judge)
         assert result.total_judged == 5
         assert result.by_action == {
-            "true_positive": 2, "false_positive": 2, "uncertain": 1,
+            "true_positive": 2,
+            "false_positive": 2,
+            "uncertain": 1,
         }
 
 
@@ -123,7 +127,8 @@ class TestBudgetCap:
         assert len(seen) == 10
 
     def test_second_run_picks_up_remaining(
-        self, sink: GuardTelemetry,
+        self,
+        sink: GuardTelemetry,
     ) -> None:
         _seed_hits(sink, 10)
 
@@ -155,7 +160,8 @@ class TestBudgetCap:
 
 class TestFailOpen:
     def test_judge_exception_records_uncertain(
-        self, sink: GuardTelemetry,
+        self,
+        sink: GuardTelemetry,
     ) -> None:
         _seed_hits(sink, 2)
 
@@ -163,7 +169,9 @@ class TestFailOpen:
             raise RuntimeError("LLM down")
 
         result = run_judge_batch(
-            sink=sink, judge=boom, failure_streak_limit=99,
+            sink=sink,
+            judge=boom,
+            failure_streak_limit=99,
         )
         # Both hits produce uncertain verdicts (fail-open).
         assert result.errors == 2
@@ -176,43 +184,57 @@ class TestFailOpen:
             raise RuntimeError("LLM down")
 
         result = run_judge_batch(
-            sink=sink, judge=boom, failure_streak_limit=3,
+            sink=sink,
+            judge=boom,
+            failure_streak_limit=3,
         )
         assert result.aborted_failure_streak is True
         # Should have judged at most ~3 before bailing.
         assert result.total_judged <= 4
 
     def test_router_error_uncertain_counts_to_streak(
-        self, sink: GuardTelemetry,
+        self,
+        sink: GuardTelemetry,
     ) -> None:
         _seed_hits(sink, 10)
 
         def fake_router_failure(
-            label: str, msg: str, traj: str,
+            label: str,
+            msg: str,
+            traj: str,
         ) -> GuardJudgeVerdict:
             return GuardJudgeVerdict(
-                action="uncertain", reason="router_error",
+                action="uncertain",
+                reason="router_error",
             )
 
         result = run_judge_batch(
-            sink=sink, judge=fake_router_failure, failure_streak_limit=3,
+            sink=sink,
+            judge=fake_router_failure,
+            failure_streak_limit=3,
         )
         assert result.aborted_failure_streak is True
 
     def test_genuine_uncertain_does_not_count_to_streak(
-        self, sink: GuardTelemetry,
+        self,
+        sink: GuardTelemetry,
     ) -> None:
         _seed_hits(sink, 10)
 
         def all_uncertain(
-            label: str, msg: str, traj: str,
+            label: str,
+            msg: str,
+            traj: str,
         ) -> GuardJudgeVerdict:
             return GuardJudgeVerdict(
-                action="uncertain", reason="ambiguous_trajectory",
+                action="uncertain",
+                reason="ambiguous_trajectory",
             )
 
         result = run_judge_batch(
-            sink=sink, judge=all_uncertain, failure_streak_limit=3,
+            sink=sink,
+            judge=all_uncertain,
+            failure_streak_limit=3,
         )
         # Genuine uncertain (not router_error) shouldn't trip the streak.
         assert result.aborted_failure_streak is False
@@ -237,7 +259,8 @@ class TestDryRun:
         assert result.total_judged == 0
 
     def test_dry_run_does_not_write_verdicts(
-        self, sink: GuardTelemetry,
+        self,
+        sink: GuardTelemetry,
     ) -> None:
         _seed_hits(sink, 4)
 
@@ -250,7 +273,8 @@ class TestDryRun:
 
 class TestTrajectoryProvider:
     def test_provider_value_passed_to_judge(
-        self, sink: GuardTelemetry,
+        self,
+        sink: GuardTelemetry,
     ) -> None:
         sink.record("guard-a", "security")
         captured: dict[str, str] = {}
@@ -263,12 +287,15 @@ class TestTrajectoryProvider:
             return f"trajectory for {hit.label}"
 
         run_judge_batch(
-            sink=sink, judge=judge, trajectory_provider=provider,
+            sink=sink,
+            judge=judge,
+            trajectory_provider=provider,
         )
         assert captured["traj"] == "trajectory for guard-a"
 
     def test_provider_exception_falls_back_empty(
-        self, sink: GuardTelemetry,
+        self,
+        sink: GuardTelemetry,
     ) -> None:
         sink.record("guard-a", "security")
         captured: dict[str, str] = {}
@@ -281,7 +308,9 @@ class TestTrajectoryProvider:
             raise RuntimeError("journal unavailable")
 
         run_judge_batch(
-            sink=sink, judge=judge, trajectory_provider=boom_provider,
+            sink=sink,
+            judge=judge,
+            trajectory_provider=boom_provider,
         )
         # Defaults to empty string; judge still got called.
         assert captured["traj"] == ""
@@ -315,11 +344,13 @@ class TestDeterminism:
 class TestRender:
     def test_no_op_render(self) -> None:
         from runtime.safety.evolution.guard_judge_batch import BatchResult
+
         out = render_batch_result(BatchResult(skipped_no_judge=True))
         assert "no judge" in out.lower()
 
     def test_dry_run_render(self) -> None:
         from runtime.safety.evolution.guard_judge_batch import BatchResult
+
         r = BatchResult(dry_run=True, candidates_seen=42)
         out = render_batch_result(r)
         assert "dry run" in out.lower()
@@ -345,7 +376,8 @@ class TestRender:
 class TestGuardMessageResolution:
     def test_metadata_message_used_first(self, sink: GuardTelemetry) -> None:
         sink.record(
-            "guard-a", "security",
+            "guard-a",
+            "security",
             metadata={"guard_message": "you leaked a key"},
         )
         captured: dict[str, str] = {}
@@ -358,7 +390,8 @@ class TestGuardMessageResolution:
         assert captured["msg"] == "you leaked a key"
 
     def test_provider_used_when_metadata_missing(
-        self, sink: GuardTelemetry,
+        self,
+        sink: GuardTelemetry,
     ) -> None:
         sink.record("guard-a", "security")
         captured: dict[str, str] = {}
@@ -371,13 +404,15 @@ class TestGuardMessageResolution:
             return f"[reconstructed for {hit.label}]"
 
         run_judge_batch(
-            sink=sink, judge=judge,
+            sink=sink,
+            judge=judge,
             guard_message_provider=provider,
         )
         assert "reconstructed" in captured["msg"]
 
     def test_placeholder_when_nothing_available(
-        self, sink: GuardTelemetry,
+        self,
+        sink: GuardTelemetry,
     ) -> None:
         sink.record("guard-a", "security")
         captured: dict[str, str] = {}

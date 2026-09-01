@@ -1,0 +1,40 @@
+version: "1.0"
+type: component
+data:
+  name: omv-services-echo-os-form-page
+  type: formPage
+  config:
+    hints:
+      - type: info
+        text: _("Echo OS uses a constrained local Unix-socket bridge. Storage remains managed by OpenMediaVault; only empty-group and restricted family-account creation are delegated. Format, RAID, account updates/deletion, password reset, file ACL and shared-folder deletion remain in OpenMediaVault.")
+        dismissible: false
+    fields:
+      - type: textInput
+        name: status
+        label: _("Integration")
+        value: _("Installed")
+        disabled: true
+        submitValue: false
+      - type: textInput
+        name: socket
+        label: _("Bridge socket")
+        value: "/run/echo-omv/omv.sock"
+        disabled: true
+        submitValue: false
+      - type: textInput
+        name: group
+        label: _("Socket group")
+        value: "echo-omv"
+        disabled: true
+        submitValue: false
+      - type: textInput
+        name: scope
+        label: _("Controlled writes")
+        value: _("Simple shared folders, one existing user/group share privilege, private SMB/NFS rules, and filesystem user/group hard quotas")
+        disabled: true
+        submitValue: false
+    buttons:
+      - template: cancel
+        execute:
+          type: url
+          url: "/services"

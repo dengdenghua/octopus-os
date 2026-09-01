@@ -22,6 +22,7 @@ Contract pinned
 11. The ephemeral call does NOT go through the legacy ``_RUNNER``
    even if one is set
 """
+
 from __future__ import annotations
 
 import pytest
@@ -30,6 +31,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _reset_runners():
     from runtime.execution.suckers import ephemeral_agents, sub_agent
+
     ephemeral_agents.set_ephemeral_role_runner(None)
     sub_agent.set_sub_agent_runner(None)
     yield
@@ -40,6 +42,7 @@ def _reset_runners():
 class TestCatalog:
     def test_builtin_roles_populated(self):
         from runtime.execution.suckers.ephemeral_agents import BUILTIN_ROLES
+
         assert len(BUILTIN_ROLES) >= 6
         for role_id, role in BUILTIN_ROLES.items():
             assert role.id == role_id
@@ -49,6 +52,7 @@ class TestCatalog:
 
     def test_synthesizer_prompt_does_not_force_summary_template(self):
         from runtime.execution.suckers.ephemeral_agents import BUILTIN_ROLES
+
         prompt = BUILTIN_ROLES["synthesizer"].system_prompt
         assert "topology-specific instructions" in prompt
         assert "Do not invent a generic summary format" in prompt
@@ -56,9 +60,10 @@ class TestCatalog:
 
     def test_is_ephemeral_role_lookup(self):
         from runtime.execution.suckers.ephemeral_agents import is_ephemeral_role
+
         assert is_ephemeral_role("reviewer") is True
         assert is_ephemeral_role("researcher") is True
-        assert is_ephemeral_role("coder") is False      # registered agent dir
+        assert is_ephemeral_role("coder") is False  # registered agent dir
         assert is_ephemeral_role("__nope__") is False
         assert is_ephemeral_role("") is False
 
@@ -96,9 +101,7 @@ class TestDispatch:
         assert result["output"].startswith("ephemeral reply for reviewer")
         assert result.get("ephemeral") is True
         assert eph_called["hit"] is True
-        assert legacy_called["hit"] is False, (
-            "ephemeral role must NOT trigger the legacy runner"
-        )
+        assert legacy_called["hit"] is False, "ephemeral role must NOT trigger the legacy runner"
 
     def test_routes_registered_id_to_legacy_path(self):
         """Unknown / non-catalog agent_id falls through to legacy."""
@@ -121,6 +124,7 @@ class TestDispatch:
 class TestRunnerStub:
     def test_unknown_role_returns_error(self):
         from runtime.execution.suckers.ephemeral_agents import run_ephemeral_role
+
         r = run_ephemeral_role("does-not-exist", "hi")
         assert r["success"] is False
         assert "unknown ephemeral role" in r["error"]
@@ -129,6 +133,7 @@ class TestRunnerStub:
         """Default runner raises · wrapper turns it into structured
         ``success=False`` · no crash."""
         from runtime.execution.suckers.ephemeral_agents import run_ephemeral_role
+
         r = run_ephemeral_role("reviewer", "hi")
         assert r["success"] is False
         assert "not configured" in r["error"]
@@ -156,6 +161,7 @@ class TestContextSharing:
 
     def _make_session_with_messages(self, messages):
         from runtime.platform.process.session import Session
+
         # Session is a slotted dataclass · no arbitrary attr
         # assignment. ``metadata`` is the intended extension surface;
         # ``_collect_caller_context`` reads ``recent_messages`` from
@@ -181,10 +187,12 @@ class TestContextSharing:
 
         set_ephemeral_role_runner(capture)
 
-        sess = self._make_session_with_messages([
-            {"type": "human", "content": "fix the login bug"},
-            {"type": "ai", "content": "let me investigate auth.py"},
-        ])
+        sess = self._make_session_with_messages(
+            [
+                {"type": "human", "content": "fix the login bug"},
+                {"type": "ai", "content": "let me investigate auth.py"},
+            ]
+        )
         run_ephemeral_role("reviewer", "review recent work", session=sess)
 
         prompt = captured["prompt"]
@@ -203,6 +211,7 @@ class TestContextSharing:
             run_ephemeral_role,
             set_ephemeral_role_runner,
         )
+
         original = BUILTIN_ROLES["researcher"]
         BUILTIN_ROLES["researcher"] = replace(original, share_context=False)
         try:
@@ -213,9 +222,11 @@ class TestContextSharing:
                 return "ok"
 
             set_ephemeral_role_runner(capture)
-            sess = self._make_session_with_messages([
-                {"type": "human", "content": "secret phrase: banana-123"},
-            ])
+            sess = self._make_session_with_messages(
+                [
+                    {"type": "human", "content": "secret phrase: banana-123"},
+                ]
+            )
             run_ephemeral_role("researcher", "what is X", session=sess)
             assert "banana-123" not in captured["prompt"]
         finally:
@@ -257,10 +268,7 @@ class TestContextSharing:
             "synthesizer",
             "merge findings",
             context={
-                "system_addendum": (
-                    "Produce the complete final report, not an executive "
-                    "summary."
-                ),
+                "system_addendum": ("Produce the complete final report, not an executive summary."),
             },
         )
 
@@ -315,15 +323,10 @@ class TestToolAllowlist:
             },
         )
 
-        # `read_file` is already in researcher's role tool_allowlist,
-        # so the merge dedupes — only `bb_write` should land as new.
-        assert captured["tools"] == [
-            *list(BUILTIN_ROLES["researcher"].tool_allowlist),
-            "bb_write",
-        ]
-        assert captured["sources"]["role"] == list(
-            BUILTIN_ROLES["researcher"].tool_allowlist
-        )
+        # Both grants are already part of the researcher's current role.
+        # Dynamic provenance is retained, while the effective list dedupes.
+        assert captured["tools"] == list(BUILTIN_ROLES["researcher"].tool_allowlist)
+        assert captured["sources"]["role"] == list(BUILTIN_ROLES["researcher"].tool_allowlist)
         assert captured["sources"]["dynamic"] == ["read_file", "bb_write"]
         assert "Granted Skills" in captured["system"]
         assert "Skill packs: research" in captured["system"]

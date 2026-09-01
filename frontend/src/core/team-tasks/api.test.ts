@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { createTask, deleteTask, listTasks, runTask, updateTask } from "./api";
+import {
+  createTask,
+  deleteTask,
+  getTaskProcessTimeline,
+  listTasks,
+  runTask,
+  updateTask,
+} from "./api";
 import type { TeamTask } from "./types";
 
 const fetchMock = vi.fn();
@@ -103,6 +110,51 @@ describe("team task api", () => {
         body: JSON.stringify({}),
       },
     ]);
+  });
+
+  test("loads the persisted process timeline by task id", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        timeline: {
+          schema: "echo.team_task_process_timeline.v1",
+          task_id: "task/1",
+          room_id: "room-1",
+          overview: {
+            title: "Draft plan",
+            status: "done",
+            event_count: 3,
+            artifact_count: 1,
+            assignee_count: 2,
+          },
+          assignees: [],
+          artifacts: [],
+          timeline: [
+            {
+              id: "run-started",
+              lane: "workflow",
+              kind: "run_started",
+              ts: "2026-06-05T00:00:00Z",
+              title: "Run started",
+            },
+          ],
+          safety: {
+            raw_messages_included: false,
+            artifact_content_truncated: true,
+            process_events_persisted: true,
+            process_event_limit: 300,
+          },
+        },
+      }),
+    );
+
+    const timeline = await getTaskProcessTimeline("task/1");
+
+    expect(timeline.schema).toBe("echo.team_task_process_timeline.v1");
+    expect(timeline.timeline[0].kind).toBe("run_started");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/team-tasks/task%2F1/process-timeline",
+      { headers: {} },
+    );
   });
 
   test("throws response details on failure", async () => {

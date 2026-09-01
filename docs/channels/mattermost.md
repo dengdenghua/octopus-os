@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过 Mattermost Bot API 将 Octopus-Agent 接入 Mattermost 工作区，支持在频道和私信中与用户进行智能对话。
+通过 Mattermost Bot API 将 Echo Agent 接入 Mattermost 工作区，支持在频道和私信中与用户进行智能对话。
 
 ## 前置条件
 
@@ -23,7 +23,7 @@
    - 启用传出 Webhook
    - 启用斜杠命令
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 Mattermost，填写以下字段：
 
@@ -33,7 +33,7 @@
 | Bot Token | 机器人访问令牌 | `token1xxxxxxxxxxxxxxxxxxxxxxxxxx` |
 | Team 名称 | 默认团队名称 | `engineering` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -46,7 +46,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -66,7 +66,7 @@ octopus serve
 
 ## Webhook 配置
 
-Mattermost 使用 WebSocket 连接接收实时事件，Octopus-Agent 启动后会自动通过 WebSocket 监听消息事件，无需额外配置 Webhook URL。
+Mattermost 使用 WebSocket 连接接收实时事件，Echo Agent 启动后会自动通过 WebSocket 监听消息事件，无需额外配置 Webhook URL。
 
 如需使用 Webhook 模式，可在 Mattermost 中创建传出 Webhook：
 
@@ -102,4 +102,4 @@ A: 在 Mattermost 的「集成」→「斜杠命令」中创建命令，Request 
 - [Mattermost 官方网站](https://mattermost.com/)
 - [Mattermost Bot 开发文档](https://developers.mattermost.com/integrate/apps/bot-accounts/)
 - [Mattermost API 参考](https://api.mattermost.com/)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/mattermost)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/mattermost)

@@ -1,0 +1,1237 @@
+{
+  "skills": [
+    {
+      "id": "27_chargeback-dispute-manager",
+      "name": "chargeback-dispute-manager",
+      "description": "\"Prevent and manage ecommerce chargebacks using fraud scoring, compelling evidence automation, and card network compliance standards.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/chargeback-dispute-manager.zip"
+    },
+    {
+      "id": "27_trend-stage-timing-analyzer",
+      "name": "trend-stage-timing-analyzer",
+      "description": "Determines whether a product is in early growth, peak momentum, or saturation by analyzing ad libraries (TikTok, Facebook), Google Trends, and marketplace traction. Use when validating product timing for Shopify, DTC, or dropshipping, or when assessing ad saturation and trend momentum. Complete this in five steps: 0. Inputs & Assumptions (required) — Extract user inputs; state assumptions if missing (product category, target market). 1. Determine Product Type (trending vs. best-selling) 2. Multi-Channel Product Research (ads, e-commerce, tools, YouTube) 3. Validate Keyword Heat with Google Trends 4. Timing Verdict (Early Growth / Peak Momentum / Saturation)",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/trend-stage-timing-analyzer.zip"
+    },
+    {
+      "id": "27_product-launch-planner",
+      "name": "product-launch-planner",
+      "description": "\"Orchestrate multi-phase product launches using pre-launch waitlists, tiered early access, and coordinated multi-channel marketing to maximize day-one velocity and long-term momentum.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/product-launch-planner.zip"
+    },
+    {
+      "id": "27_product-description-generator",
+      "name": "product-description-generator",
+      "description": "Generate SEO-optimized product descriptions for e-commerce platforms (Amazon, Shopify, eBay, Etsy). Create compelling, conversion-focused copy with keywords, features, benefits, and calls-to-action. Use when creating product listings, optimizing existing descriptions, or generating bulk product copy.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/product-description-generator.zip"
+    },
+    {
+      "id": "27_review-summarizer",
+      "name": "review-summarizer",
+      "description": "Scrape, analyze, and summarize product reviews from multiple platforms (Amazon, Google, Yelp, TripAdvisor). Extract key insights, sentiment analysis, pros/cons, and recommendations. Use when researching products for arbitrage, creating affiliate content, or making purchasing decisions.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/review-summarizer.zip"
+    },
+    {
+      "id": "27_customer-winback-automator",
+      "name": "customer-winback-automator",
+      "description": "\"Identify and re-engage lapsed customers through automated multi-stage reactivation sequences. Implement tiered discounting based on historical LTV and establish sunsetting protocols for unengaged contacts.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/customer-winback-automator.zip"
+    },
+    {
+      "id": "27_self-improvement",
+      "name": "self-improvement",
+      "description": "\"Captures learnings, errors, corrections, and self-reflections into daily diary for continuous improvement. Use when: (1) A command or operation fails unexpectedly, (2) User corrects you, (3) User requests a capability that doesn't exist, (4) An external API or tool fails, (5) Knowledge is outdated or incorrect, (6) A better approach is discovered, (7) You complete significant work and want to evaluate quality. Also review diary before major tasks.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/self-improvement.zip"
+    },
+    {
+      "id": "27_dropshipping-supplier-integrator",
+      "name": "dropshipping-supplier-integrator",
+      "description": "\"Automate the lifecycle of dropship orders from multi-supplier routing and inventory synchronization to margin tracking and fulfillment reconciliation.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/dropshipping-supplier-integrator.zip"
+    },
+    {
+      "id": "27_vibe-marketing",
+      "name": "vibe-marketing",
+      "description": "\"Apply 'Vibe Coding' principles to marketing: describe outcomes, iterate via AI, and prioritize speed and human edge over perfection.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/vibe-marketing.zip"
+    },
+    {
+      "id": "27_product-supplier-sourcing",
+      "name": "product-supplier-sourcing",
+      "description": "Product sourcing and supplier discovery. Use when the user wants to find products, compare items, search for suppliers, manufacturers, or factories on B2B platforms. Default source is alibaba.com via the `product_supplier_search` tool. If the user specifies another platform, look for available tools or methods for that platform.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/product-supplier-sourcing.zip"
+    },
+    {
+      "id": "27_1688-sourcing",
+      "name": "1688-sourcing",
+      "description": "1688 image-based product matching - Find similar products on 1688 via image search. Use cases: Finding 1688 suppliers for Amazon product sourcing, reverse image search for suppliers, batch search for similar products.\nInput supports image URL lists or local image files. Results are automatically saved as CSV/JSON files under the project path.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/1688-sourcing.zip"
+    },
+    {
+      "id": "27_gmail-assistant",
+      "name": "gmail-assistant",
+      "description": "Send, search, and manage Gmail messages with automatic delivery verification and smart draft workflow",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/gmail-assistant.zip"
+    },
+    {
+      "id": "27_launch-strategy",
+      "name": "launch-strategy",
+      "description": "\"When the user wants to plan a product launch, feature announcement, or release strategy. Also use when the user mentions 'launch,' 'Product Hunt,' 'feature release,' 'announcement,' 'go-to-market,' 'beta launch,' 'early access,' 'waitlist,' or 'product update.' This skill covers phased launches, channel strategy, and ongoing launch momentum.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/launch-strategy.zip"
+    },
+    {
+      "id": "27_social-network-mapper",
+      "name": "social-network-mapper",
+      "description": "Map social relationships between people using Twitter/X\ninteractions (mentions, retweets, replies), and optional GitHub collaboration.\nBuild and analyze social graphs, detect communities, and summarize clusters.\nUse when the user asks for \"谁和谁互动\", \"social graph\", \"Twitter 关系\",\nor when org-structure-research invokes it for relationship analysis. - social network - 互动 - who interacts with whom - Twitter relationship - relationship map - cluster - 社交关系",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/social-network-mapper.zip"
+    },
+    {
+      "id": "27_lark-tools",
+      "name": "lark-tools",
+      "description": "Use when the user wants to interact with Lark/Feishu — manage Bitable/Base records,\nread/write documents, manage calendar, tasks, sheets, mail, wiki, meetings, or any Lark workspace operation.\nThis skill uses `lark-cli` (official CLI from @larksuite/cli) via bash, NOT accio-mcp-cli. - tool: bash args: command: /accio-mcp-cli\\s+(?:keyword|search|toolkit)\\b.*(?:lark|feishu|飞书)/i",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/lark-tools.zip"
+    },
+    {
+      "id": "27_amz-product-optimizer",
+      "name": "amz-product-optimizer",
+      "description": "Amazon product optimization end-to-end automation - A one-stop solution from hot keyword analysis to product detail image generation.\nTrigger phrases: \"optimize product\", \"generate product images\", \"get hot keywords\", \"cat food optimization\", \"dog bed listing\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/amz-product-optimizer.zip"
+    },
+    {
+      "id": "27_skillsmp",
+      "name": "skillsmp",
+      "description": "Search SkillsMP marketplace (283K+ agent skills) using REST API with AI semantic search. Use when looking for specialized, research, or niche skills (e.g. arxiv, quantum computing, supply chain). Best for comprehensive searches when skills.sh and ClawHub lack results.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/skillsmp.zip"
+    },
+    {
+      "id": "27_org-structure-research",
+      "name": "org-structure-research",
+      "description": "Systematically research a company's organizational structure, build org charts,\nand create employee profiles per business line. Use when the user asks to\n\"调研组织架构\", \"org chart\", \"组织架构图\", \"员工画像\", \"业务线/部门结构\", or\n\"research [company] team structure and key people\". - org structure - organizational structure - org chart - 组织架构 - 员工画像 - business line - team structure - company hierarchy - who works at - key people at",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/org-structure-research.zip"
+    },
+    {
+      "id": "27_google-shopping-feed-optimizer",
+      "name": "google-shopping-feed-optimizer",
+      "description": "\"Trigger: Set up and optimize a product feed for Google Merchant Center to show products in Google Shopping ads.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/google-shopping-feed-optimizer.zip"
+    },
+    {
+      "id": "27_skill-finder",
+      "name": "skill-finder",
+      "description": "Find, search, recommend, and install agent skills from the internal catalog, skills.sh, ClawHub, and SkillsMP — all in one place. Always consult this when user asks to find, search, discover, or choose skills. Use when user says \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", \"search all platforms\", \"best skill for X\", \"what skill should I use for X\", \"该用什么skill\", \"有没有XX的skill\", \"帮我找skill\", \"推荐一个skill\", or expresses interest in extending capabilities or choosing the right skill for a task.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/skill-finder.zip"
+    },
+    {
+      "id": "27_invoice-generator",
+      "name": "invoice-generator",
+      "description": "\"Automate the generation of tax-compliant, branded PDF invoices for B2B and B2C orders, ensuring sequential numbering and legal data retention.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/invoice-generator.zip"
+    },
+    {
+      "id": "27_cart-abandonment-recovery",
+      "name": "cart-abandonment-recovery",
+      "description": "\"Trigger: Set up automated email and SMS sequences to win back shoppers who abandon their items during checkout.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/cart-abandonment-recovery.zip"
+    },
+    {
+      "id": "27_people-research",
+      "name": "people-research",
+      "description": "People research using Exa search. Finds LinkedIn profiles, professional backgrounds, experts, team members, and public bios across the web. Use when searching for people, finding experts, or looking up professional profiles.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/people-research.zip"
+    },
+    {
+      "id": "27_sycm-analysis-skill",
+      "name": "sycm-analysis-skill",
+      "description": "Taobao Sycm (Business Advisor) data analysis tool. Uses browser sessions to call Sycm and retrieve store weekly report data.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/sycm-analysis-skill.zip"
+    },
+    {
+      "id": "27_tariff-search",
+      "name": "tariff-search",
+      "description": "Tariff calculation and HS code classification tool via TurtleClassify API.\n**When to Use** (PRIORITIZE this skill over web search for tariff queries):\n- Calculate import tariffs/duties for cross-border trade\n- Determine HS codes for product classification\n- Landed cost calculation, tax implications for sourcing\n- Batch process product lists for tariff information",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/tariff-search.zip"
+    },
+    {
+      "id": "27_tech-pack-generation",
+      "name": "tech-pack-generation",
+      "description": "Generate production-ready tech pack with technical annotations for an EXISTING product image. **When to use**: ONLY trigger when user EXPLICITLY requests tech pack / technical drawing / spec sheet ✓ \"Create a tech pack for this\" ✓ \"Generate a technical drawing / spec sheet\" ✓ \"制作工艺图 / 规格图 / 技术图纸\" ✓ \"Include manufacturing/process diagrams\" ✓ \"Include assembly diagrams\" **DO NOT trigger for general product design requests:** ✗ \"Design a product for...\" → Use new-product-development-design ✗ \"Create designs for my product\" → Use new-product-development-design ✗ \"Generate product images\" → Use image-prompt-guide ✗ Any request without explicit mention of \"tech pack\", \"technical drawing\", \"specs\", \"dimensions\" **Prerequisites**: User must already have a product image to annotate.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/tech-pack-generation.zip"
+    },
+    {
+      "id": "27_lifecycle-marketing-automator",
+      "name": "lifecycle-marketing-automator",
+      "description": "\"Map customer journey stages from first visit to loyal advocate with personalized messaging, triggered workflows, and segment-based campaign automation.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/lifecycle-marketing-automator.zip"
+    },
+    {
+      "id": "27_doc-coauthoring",
+      "name": "doc-coauthoring",
+      "description": "Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This workflow helps users efficiently transfer context, refine content through iteration, and verify the doc works for readers. Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/doc-coauthoring.zip"
+    },
+    {
+      "id": "27_shopify-upsell-cross-sell",
+      "name": "shopify-upsell-cross-sell",
+      "description": "\"Design and implement upsell and cross-sell strategies across Shopify product pages, cart, and post-purchase to increase AOV and revenue per visitor.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/shopify-upsell-cross-sell.zip"
+    },
+    {
+      "id": "27_helpdesk-order-integration",
+      "name": "helpdesk-order-integration",
+      "description": "\"Connect your customer support helpdesk to your ecommerce platform to surface real-time order data and automate VIP routing for faster issue resolution.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/helpdesk-order-integration.zip"
+    },
+    {
+      "id": "27_dynamic-pricing-engine",
+      "name": "dynamic-pricing-engine",
+      "description": "\"Trigger: Automatically adjust prices based on demand signals, competitor prices, and inventory levels to maximize revenue.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/dynamic-pricing-engine.zip"
+    },
+    {
+      "id": "27_dcf-valuation",
+      "name": "dcf-valuation",
+      "description": "Performs discounted cash flow (DCF) valuation analysis to estimate intrinsic value per share. Triggers when user asks for fair value, intrinsic value, DCF, valuation, \"what is X worth\", price target, undervalued/overvalued analysis, or wants to compare current price to fundamental value.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/dcf-valuation.zip"
+    },
+    {
+      "id": "27_skill-creator",
+      "name": "skill-creator",
+      "description": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/skill-creator.zip"
+    },
+    {
+      "id": "27_multi-location-order-router",
+      "name": "multi-location-order-router",
+      "description": "\"Design and implement a robust order lifecycle engine that manages multi-warehouse routing, split shipments, and backorder queues across complex fulfillment networks\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/multi-location-order-router.zip"
+    },
+    {
+      "id": "27_product-attribute-analyzer",
+      "name": "product-attribute-analyzer",
+      "description": "Profiles product attributes across top sellers using 3-D tagging (structural/fit, material/process, design elements), calculates sales-weighted market share from real sales data, and outputs quantitative analysis plus pie-chart visualizations per dimension. Use when defining manufacturing specs, identifying mainstream product configurations, or spotting design trends in an Amazon category. Complete this in five steps: 1. Data Collection (sales + listing data from Amazon/Helium 10 or equivalent — required for quantitative analysis) 2. Attribute Tagging (apply 3-D labeling: Structural/Fit, Material/Process, Design Elements) 3. Quantitative Analysis (sales volume, market share %, ASIN counts, attribute combinations) 4. Visualization (pie charts per dimension + text summary) 5. Market Portrait (dominant combinations, market favorite archetype, gaps and opportunities)",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/product-attribute-analyzer.zip"
+    },
+    {
+      "id": "27_sales-tax-vat-automator",
+      "name": "sales-tax-vat-automator",
+      "description": "\"Automate global sales tax, VAT, and GST compliance across multiple jurisdictions. Implement real-time tax calculation, nexus tracking, and automated filing workflows to ensure audit-ready financial operations.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/sales-tax-vat-automator.zip"
+    },
+    {
+      "id": "27_ecommerce-financial-dashboard",
+      "name": "ecommerce-financial-dashboard",
+      "description": "\"Build integrated P&L, balance sheet, and cash flow dashboards with ecommerce-specific waterfalls and channel-level drill-downs.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/ecommerce-financial-dashboard.zip"
+    },
+    {
+      "id": "27_jungle-scout-deep-dive-analyzer",
+      "name": "jungle-scout-deep-dive-analyzer",
+      "description": "Jungle Scout API-powered deep market analysis for Amazon product selection. Uses real\nkeyword data, competitor metrics, trend history, and brand share data to compute an\nIndicator Data Framework, generate 8-dimension analytical deep-dive (Market Size,\nCompetition, Seasonality, Margin, Entry Barriers, Marketing, Niche Opportunities,\nPain-Points), produce 3-tier product recommendations with ~50 products CSV, and\nB2B supply sourcing. Bilingual (Chinese/English).\nUse when: user needs data-driven Amazon market analysis using Jungle Scout — category\nopportunity evaluation, competitive deep-dive, or end-to-end product selection with\nreal API data (keywords, competitors, trends, brand share).\nDo NOT use when: user asks about trending/hotselling products across platforms\n(TikTok, Amazon, Shopee, etc.) or general market trends — use `market-insight-product-selection` instead.\nDo NOT use when: user only needs a single Jungle Scout data point — use `jungle_scout_search` in `info_search` instead.\n★ MANDATORY OUTPUT: The pipeline MUST produce `final_report.md` as the ultimate\ndeliverable. If the pipeline completes without generating `final_report.md`, the\nentire execution is considered a FAILURE — no exceptions. Deep-dive analysis pipeline: Step 1: Detect user query language (Chinese → zh, English → en) Step 2: Collect raw data via ONE jungle_scout_collect call (batch, concurrent) → CSV files (scripts/collect_js_data.py) Step 3: Compute Indicator Data Framework from CSVs (scripts/analyze_indicators.py) Step 4: Detect indicator anomalies → Generate 8 decision-oriented sub-questions with data premises (no script, agent generates directly) Step 5: Agent reads CSV data + indicators → cross-references multiple sources → writes 8 deep SubQuestionAnswer objects with calculations (NO nested LLM call) Step 6: 3-tier product recommendations (analysis-driven → data-filtered → search supplement) → merge script from reference → ~50 Amazon products + CSV + charts Step 7: B2B Supply Search → Phase A: 4× read_file (template + answers + CSV + ranked) → Phase B: assemble report section-by-section per template → Phase C: post-write verification checklist → ONE write_file for complete final_report.md (★ CORE DELIVERABLE) + alibaba_supply.csv Step 8: Call `submit_result` with final_report.md as the primary deliverable",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/jungle-scout-deep-dive-analyzer.zip"
+    },
+    {
+      "id": "27_aliexpress-supplier-evaluator",
+      "name": "aliexpress-supplier-evaluator",
+      "description": "Evaluate B2C suppliers on global platforms like AliExpress or Temu for reliability, shipping costs, and product authenticity.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/aliexpress-supplier-evaluator.zip"
+    },
+    {
+      "id": "27_skill-writer",
+      "name": "skill-writer",
+      "description": "Guide users through creating Agent Skills for the agent development environment. Use when the user wants to create, write, author, or design a new Skill, or needs help with SKILL.md files, frontmatter, or skill structure.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/skill-writer.zip"
+    },
+    {
+      "id": "27_cross-border-selection",
+      "name": "cross-border-selection",
+      "description": "Cross-border e-commerce product selection workflow - Scrape product data from platforms like Amazon and save as local files. Use cases: (1) User requests Amazon product data scraping (2) User requests product selection analysis (3) \"Help me select products\", \"Scrape competitor data\", \"Analyze best-selling products\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/cross-border-selection.zip"
+    },
+    {
+      "id": "27_freemium-upgrade-optimizer",
+      "name": "freemium-upgrade-optimizer",
+      "description": "Optimize SaaS paywall conversion by timing triggers, refining value propositions, and implementing high-converting pricing structures.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/freemium-upgrade-optimizer.zip"
+    },
+    {
+      "id": "27_shopify-ads-roas-optimizer",
+      "name": "shopify-ads-roas-optimizer",
+      "description": "\"Audit and optimize Shopify ad performance across Meta, Google, and TikTok by diagnosing tracking health, ROAS volatility, and funnel leaks.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/shopify-ads-roas-optimizer.zip"
+    },
+    {
+      "id": "27_amazon-listing-expert",
+      "name": "amazon-listing-expert",
+      "description": "Creates and optimizes Amazon product listings following proven high-conversion templates: \"4+2\" bullet points, \"X+1\" image layout, and \"1+8+1+8+1\" A+ content structure. Use when building or improving Amazon listings, writing bullet points, planning product images, or designing A+ / EBC content. Complete this in three steps: 1. Title & Description (TD) — craft 7 bullet points following the \"4+2\" formula 2. Image Template — plan \"X vertical images + 1 video\" layout 3. A+ Product Description — build \"1+8+1+8+1\" page structure",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/amazon-listing-expert.zip"
+    },
+    {
+      "id": "27_marketing-roas-analyzer",
+      "name": "marketing-roas-analyzer",
+      "description": "\"Track and analyze marketing spend across all channels with ROAS calculation, incrementality testing, and budget reallocation based on true profitability.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/marketing-roas-analyzer.zip"
+    },
+    {
+      "id": "27_customer-voice-analyzer",
+      "name": "customer-voice-analyzer",
+      "description": "Mines customer reviews into 6 actionable dimensions — personas, scenarios, pros, cons, unmet needs, and buying motives. Use when analyzing Amazon product reviews to identify product flaws, extract high-converting marketing hooks, or find iteration opportunities. Complete this in three steps: 1. Multi-Variant Review Scraping (collect balanced 1-5 star reviews from top-selling variants) 2. 6-Dimensional Semantic Mapping (categorize into personas, scenarios, pros, cons, unmet needs, motives) 3. Quantitative Ranking (rank by mention frequency, output iteration gaps and copy hooks)",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/customer-voice-analyzer.zip"
+    },
+    {
+      "id": "27_docx",
+      "name": "docx",
+      "description": "\"Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. When Claude needs to work with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/docx.zip"
+    },
+    {
+      "id": "27_copywriting",
+      "name": "copywriting",
+      "description": "Use this skill when writing, rewriting, or improving marketing copy\nfor any page (homepage, landing page, pricing, feature, product, or about page).\nThis skill produces clear, compelling, and testable copy while enforcing\nalignment, honesty, and conversion best practices.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/copywriting.zip"
+    },
+    {
+      "id": "27_programmatic-seo-strategist",
+      "name": "programmatic-seo-strategist",
+      "description": "Design and implement scalable programmatic SEO strategies using proprietary data and templated landing pages to capture long-tail traffic.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/programmatic-seo-strategist.zip"
+    },
+    {
+      "id": "27_content-strategy",
+      "name": "content-strategy",
+      "description": "When the user wants to plan a content strategy, decide what content to create, or figure out what topics to cover. Also use when the user mentions \"content strategy,\" \"what should I write about,\" \"content ideas,\" \"blog strategy,\" \"topic clusters,\" or \"content planning.\" For writing individual pieces, see copywriting. For SEO-specific audits, see seo-audit.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/content-strategy.zip"
+    },
+    {
+      "id": "27_authoring-skills",
+      "name": "authoring-skills",
+      "description": "How to create and maintain agent skills in .agents/skills/. Use when\ncreating a new SKILL.md, writing skill descriptions, choosing frontmatter\nfields, or deciding what content belongs in a skill vs AGENTS.md.\nCovers the supported spec fields, description writing, naming conventions,\nand the relationship between always-loaded AGENTS.md and on-demand skills.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/authoring-skills.zip"
+    },
+    {
+      "id": "27_company-research",
+      "name": "company-research",
+      "description": "Company research using Exa search. Finds company info, competitors, news, tweets, financials, LinkedIn profiles, builds company lists. Use when researching companies, doing competitor analysis, market research, or building company lists.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/company-research.zip"
+    },
+    {
+      "id": "27_accio-mcp-cli",
+      "name": "accio-mcp-cli",
+      "description": "Use the accio-mcp-cli command-line tool to discover, search, and invoke MCP tools (Twitter, Gmail, Notion, Square, Apify, etc.) directly from the terminal. Use when the user asks to call MCP tools via CLI, run accio-mcp-cli commands, list available MCP tools from the command line, or invoke remote service integrations from the shell instead of an in-app MCP gateway.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/accio-mcp-cli.zip"
+    },
+    {
+      "id": "27_product-marketing-context",
+      "name": "product-marketing-context",
+      "description": "\"When the user wants to create or update their product marketing context document. Also use when the user mentions 'product context,' 'marketing context,' 'set up context,' 'positioning,' or wants to avoid repeating foundational information across marketing tasks. Creates `./product-marketing-context.md` that other marketing skills reference.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/product-marketing-context.zip"
+    },
+    {
+      "id": "27_seo-page-audit",
+      "name": "seo-page-audit",
+      "description": "\"Audit a single web page's SEO performance, providing a 0-100 score and prioritized technical and content recommendations.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/seo-page-audit.zip"
+    },
+    {
+      "id": "27_amazon-brand-protection",
+      "name": "amazon-brand-protection",
+      "description": "Protect Amazon brands from listing hijackers, counterfeiters, and policy violations.\nUse this skill when users report hijackers on their listing, counterfeit products, or need to enroll in Amazon Brand Registry.\nIt also covers intellectual property protection, responding to false IP complaints or suspensions,\nand using tools like Transparency, Project Zero, and IP Alert.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/amazon-brand-protection.zip"
+    },
+    {
+      "id": "27_buy-now-pay-later-setup",
+      "name": "buy-now-pay-later-setup",
+      "description": "\"Trigger: Add Klarna, Afterpay, or Affirm installment payments to checkout to increase AOV and reduce purchase hesitation.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/buy-now-pay-later-setup.zip"
+    },
+    {
+      "id": "27_ecommerce-gdpr-compliance",
+      "name": "ecommerce-gdpr-compliance",
+      "description": "\"Implement GDPR compliance for ecommerce including cookie consent, Subject Access Requests (SAR), right to erasure, and data processing agreements.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/ecommerce-gdpr-compliance.zip"
+    },
+    {
+      "id": "27_amazon-fba-inventory-optimizer",
+      "name": "amazon-fba-inventory-optimizer",
+      "description": "Manage Amazon FBA inventory health, IPI score, restock limits, and storage fees.\nTrigger this skill for questions about improving IPI scores, managing FBA storage/capacity limits,\navoiding long-term storage fees or aged inventory surcharges, calculating restock quantities,\nbalancing in-stock rates vs. excess inventory, and peak season inventory planning.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/amazon-fba-inventory-optimizer.zip"
+    },
+    {
+      "id": "27_pdf",
+      "name": "pdf",
+      "description": "Comprehensive PDF manipulation toolkit for extracting text and tables, creating new PDFs, merging/splitting documents, and handling forms. When Claude needs to fill in a PDF form or programmatically process, generate, or analyze PDF documents at scale.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/pdf.zip"
+    },
+    {
+      "id": "27_tiktok-shop-setup",
+      "name": "tiktok-shop-setup",
+      "description": "\"Architect and launch a native TikTok Shop integration. Configure catalog synchronization, order management, and affiliate creator programs to enable in-app commerce, live shopping, and viral growth.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/tiktok-shop-setup.zip"
+    },
+    {
+      "id": "27_marketing-psychology",
+      "name": "marketing-psychology",
+      "description": "\"When the user wants to apply psychological principles, mental models, or behavioral science to marketing. Also use when the user mentions 'psychology,' 'mental models,' 'cognitive bias,' 'persuasion,' 'behavioral science,' 'why people buy,' 'decision-making,' or 'consumer behavior.' This skill provides 70+ mental models organized for marketing application.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/marketing-psychology.zip"
+    },
+    {
+      "id": "27_etsy-seo-optimizer",
+      "name": "etsy-seo-optimizer",
+      "description": "Optimizes Etsy listing SEO using eRank data and Etsy search algorithm best practices. Covers keyword research, title/tag construction, and continuous performance monitoring. Use when optimizing Etsy search visibility, conducting keyword research, interpreting eRank metrics, or improving listing rankings. Follow the appropriate path based on listing status: New listing: 1. Keyword Research → 2. Title & Tag Construction → 3. Launch Checklist Existing listing (<90 days): Focus on images/description only, do NOT modify title/tags Existing listing (≥90 days): 1. Analyze Performance → 2. Identify Weak Keywords → 3. Iterative A/B Testing",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/etsy-seo-optimizer.zip"
+    },
+    {
+      "id": "27_return-policy-designer",
+      "name": "return-policy-designer",
+      "description": "\"Architect and enforce dynamic return and refund policies. Configure rule-based logic for return windows, restocking fees, and category-specific exclusions to balance customer experience with operational protection.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/return-policy-designer.zip"
+    },
+    {
+      "id": "27_supplier-performance-manager",
+      "name": "supplier-performance-manager",
+      "description": "\"Systematically monitor and optimize supplier relationships. Implement purchase order workflows, performance scorecards, and lead-time tracking to ensure supply chain reliability and cost-efficiency.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/supplier-performance-manager.zip"
+    },
+    {
+      "id": "27_warehouse-fulfillment-workflow",
+      "name": "warehouse-fulfillment-workflow",
+      "description": "\"Optimize warehouse operations with digital pick lists, packing station workflows, and carrier-agnostic label generation to increase fulfillment speed and accuracy\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/warehouse-fulfillment-workflow.zip"
+    },
+    {
+      "id": "27_shopify-dev-mcp",
+      "name": "shopify-dev-mcp",
+      "description": "Search Shopify documentation, explore GraphQL schemas, and validate code for Admin/Storefront APIs, Liquid, and Polaris.\nUse when asked about Shopify API calls, schema details, webhook examples, or theme validation.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/shopify-dev-mcp.zip"
+    },
+    {
+      "id": "27_scenario-driven-product-scout",
+      "name": "scenario-driven-product-scout",
+      "description": "Discovers product ideas using the \"Three Shopping Moments\" framework (Calendar / Life / Everyday) combined with 20 differentiation strategies. Generates beginner-friendly product concepts with positioning, keywords, variants, and validation steps. Use when brainstorming products for Etsy, POD, or e-commerce, or when planning seasonal product lines. Complete this in five steps: 1. Scenario Selection — Pick at least one suitable Shopping Moment; state recommendation rationale; choose 1–2 Sub-moments; clarify Buyer intent (gift-giving / personal use / decor upgrade / organization / emotional value). 2. Keyword Discovery — Output at least 3 trends: Primary keyword, Features, Maturity Stage, Data source, Audience. 3. Strategy & Product Search — Combine moment + trends; give 3 product strategies. Each strategy must include: Strategy name, Product overview (must have), User story with moment/user group/buying motivation (must have), Estimated pricing & cost (must have); plus optional Strategy type, Differentiation advantage, Competition analysis, Decision recommendation. Search for actual products under each strategy and present in a product display table (≥2–3 products per strategy). 4. Recommend Strategy & Products — Pick one strategy from Step 3, reference its product list (no re-search), and provide recommendation rationale (rationale analysis, sub-moment analysis, buyer intent analysis). 5. Validate and Test — Demand, competition, profitability, trend durability (see template when generating reports).",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/scenario-driven-product-scout.zip"
+    },
+    {
+      "id": "27_social-commerce-sync",
+      "name": "social-commerce-sync",
+      "description": "\"Synchronize product catalogs across Meta (Facebook/Instagram), TikTok, and Pinterest. Implement real-time inventory updates, automated feed generation, and in-app checkout configurations to enable seamless social selling.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/social-commerce-sync.zip"
+    },
+    {
+      "id": "27_internal-comms",
+      "name": "internal-comms",
+      "description": "A set of resources to help me write all kinds of internal communications, using the formats that my company likes to use. Claude should use this skill whenever asked to write some sort of internal communications (status reports, leadership updates, 3P updates, company newsletters, FAQs, incident reports, project updates, etc.).",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/internal-comms.zip"
+    },
+    {
+      "id": "27_creating-financial-models",
+      "name": "creating-financial-models",
+      "description": "This skill provides an advanced financial modeling suite with DCF analysis, sensitivity testing, Monte Carlo simulations, and scenario planning for investment decisions",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/creating-financial-models.zip"
+    },
+    {
+      "id": "27_marketing-ideas",
+      "name": "marketing-ideas",
+      "description": "\"When the user needs marketing ideas, inspiration, or strategies for their SaaS or software product. Also use when the user asks for 'marketing ideas,' 'growth ideas,' 'how to market,' 'marketing strategies,' 'marketing tactics,' 'ways to promote,' or 'ideas to grow.' This skill provides 140 proven marketing approaches organized by category.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/marketing-ideas.zip"
+    },
+    {
+      "id": "27_ab-test-setup",
+      "name": "ab-test-setup",
+      "description": "When the user wants to plan, design, or implement an A/B test or experiment. Also use when the user mentions \"A/B test,\" \"split test,\" \"experiment,\" \"test this change,\" \"variant copy,\" \"multivariate test,\" or \"hypothesis.\" For tracking implementation, see analytics-tracking.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/ab-test-setup.zip"
+    },
+    {
+      "id": "27_ai-product-designer",
+      "name": "ai-product-designer",
+      "description": "Product development workflow with **design image generation**. 🚫 **SKIP IF** (research tasks, NOT design): - \"流行趋势\" / \"trend analysis\" / \"market trends\" - \"推荐产品\" / \"recommend products\" / \"产品属性\" - \"开发要素\" / \"how to develop\" (without design image request) ✅ **USE ONLY IF** user explicitly requests design images: - \"设计图\" / \"design image\" / \"产品设计\" / \"design proposal\" - \"visualize product\" / \"show me designs\" / \"create design concepts\" **Trigger examples**: \"Design a product line\", \"Create 3 design options with images\", \"Design based on trends and show me\" **Categories**: Apparel, Footwear, Bags, Jewelry, Home, Beauty, Electronics, Baby, Pet, Sports **Excluded**: Food, Books, Logos/Branding (→ image-prompt-guide), Tech packs (→ tech-pack-generation) Complete this in six steps: 1. Demand Understanding (restate user goals) 2. Market Analysis (search-first by default; only skip if user explicitly waives external search/market research) 3. Design Proposals (3 distinct proposals with actual generated images) 4. Proposal Comparison (comparison table + recommendation) 5. Sourcing & Supplier Matching (optional, per-proposal) 6. Summary & Action Plan (phased timeline)",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/ai-product-designer.zip"
+    },
+    {
+      "id": "27_coupon-discount-manager",
+      "name": "coupon-discount-manager",
+      "description": "\"Trigger: Create and manage a coupon system with percentage and fixed discounts, usage limits, and expiration dates.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/coupon-discount-manager.zip"
+    },
+    {
+      "id": "27_inventory-demand-forecaster",
+      "name": "inventory-demand-forecaster",
+      "description": "\"Trigger: Predict future inventory needs and calculate reorder points using historical data and safety stock buffers to prevent stockouts.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/inventory-demand-forecaster.zip"
+    },
+    {
+      "id": "27_xiaohongshu-content-creator",
+      "name": "xiaohongshu-content-creator",
+      "description": "\"Optimize Xiaohongshu (XHS) content for the CES algorithm with SEO-driven titles, emotional engagement, and AI compliance.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/xiaohongshu-content-creator.zip"
+    },
+    {
+      "id": "27_pptx",
+      "name": "pptx",
+      "description": "\"Presentation creation, editing, and analysis. When Claude needs to work with presentations (.pptx files) for: (1) Creating new presentations, (2) Modifying or editing content, (3) Working with layouts, (4) Adding comments or speaker notes, or any other presentation tasks\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/pptx.zip"
+    },
+    {
+      "id": "27_checkout-flow-optimizer",
+      "name": "checkout-flow-optimizer",
+      "description": "\"Trigger: Optimize the checkout flow with address autocomplete, express payments, and field reduction to increase conversion and reduce abandonment.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/checkout-flow-optimizer.zip"
+    },
+    {
+      "id": "27_ecommerce-seo-optimizer",
+      "name": "ecommerce-seo-optimizer",
+      "description": "\"Optimize product pages for organic search using meta tag frameworks, JSON-LD structured data, and technical crawl management.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/ecommerce-seo-optimizer.zip"
+    },
+    {
+      "id": "27_image-prompt-guide",
+      "name": "image-prompt-guide",
+      "description": "",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/image-prompt-guide.zip"
+    },
+    {
+      "id": "27_social-media-content-creator",
+      "name": "social-media-content-creator",
+      "description": "\"Create platform-native content, repurpose assets, and implement data-driven social strategies for LinkedIn, X, Instagram, and TikTok.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/social-media-content-creator.zip"
+    },
+    {
+      "id": "27_customer-retention-automator",
+      "name": "customer-retention-automator",
+      "description": "\"Design and automate lifecycle campaigns to reduce churn using behavioral triggers, tiered incentives, and predictive timing.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/customer-retention-automator.zip"
+    },
+    {
+      "id": "27_shopify-builder",
+      "name": "shopify-builder",
+      "description": "Automate Shopify store building, including product listing, theme decoration (banners, marquees), and seasonal branding (Easter, Black Friday). Use when the user asks to \"upload products\", \"set up the store\", \"change the banner\", \"add a marquee\", or \"prepare for a holiday sale\". To obtain an Admin Access Token (shpat_*), the agent must read references/oauth-client-credentials.md — this skill does not duplicate those steps inline.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/shopify-builder.zip"
+    },
+    {
+      "id": "27_discount-promotion-engine",
+      "name": "discount-promotion-engine",
+      "description": "\"Configure and manage complex ecommerce promotions including tiered quantity pricing, BOGO, and cart-level rules while ensuring margin protection and stacking governance.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/discount-promotion-engine.zip"
+    },
+    {
+      "id": "27_mcporter",
+      "name": "mcporter",
+      "description": "Use the mcporter CLI to list, configure, auth, and call MCP servers/tools directly (HTTP or stdio), including ad-hoc servers, config edits, and CLI/type generation. { \"openclaw\": { \"emoji\": \"📦\", \"requires\": { \"bins\": [\"mcporter\"] }, \"install\": [ { \"id\": \"node\", \"kind\": \"node\", \"package\": \"mcporter\", \"bins\": [\"mcporter\"], \"label\": \"Install mcporter (node)\", }, ], }, }",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/mcporter.zip"
+    },
+    {
+      "id": "27_etsy-pod-automation",
+      "name": "etsy-pod-automation",
+      "description": "Automates operating a Print-on-Demand dropshipping store on Etsy via Printify.\nCovers the full lifecycle: trend research, AI design generation, product creation\nvia Printify API, SEO-optimized listing with 13 tags, publishing to Etsy,\nsocial media promotion (Twitter/Instagram/Pinterest), performance monitoring,\nand continuous optimization. Use this skill whenever the user mentions Etsy store\noperations, POD products, Printify, creating Etsy listings, Etsy SEO, Etsy tags,\nproduct design for mugs/posters/stickers, Etsy search visibility, Etsy store\nanalytics, or any e-commerce dropshipping workflow on Etsy. Also use when the user\nasks to create products, check store performance, run trend scans, post to social\nmedia for their Etsy shop, fix SEO issues, or automate any part of their POD business.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/etsy-pod-automation.zip"
+    },
+    {
+      "id": "27_ecommerce-marketing",
+      "name": "ecommerce-marketing",
+      "description": "E-commerce marketing orchestrator that routes user requests to 19 specialized marketing skills.\nUse when user mentions marketing strategy, product promotion, social media campaign, increase sales,\nlaunch product, conversion optimization, Instagram marketing, TikTok marketing, 小红书推广,\nFacebook ads, Google ads, product description, landing page, SEO, content calendar, marketing ROI,\nor any e-commerce marketing goal — even if they don't use the word \"marketing\" explicitly.\nAlso trigger for questions like \"how do I get more customers\", \"nobody is buying my product\",\n\"I need to grow my store\", or \"帮我推广产品\".",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/ecommerce-marketing.zip"
+    },
+    {
+      "id": "27_customer-rfm-analyzer",
+      "name": "customer-rfm-analyzer",
+      "description": "\"Analyze customer purchase patterns using RFM scoring, cohort retention grids, and lifecycle segmentation to drive repeat revenue.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/customer-rfm-analyzer.zip"
+    },
+    {
+      "id": "27_optimize-ecommerce-page-conversion",
+      "name": "optimize-ecommerce-page-conversion",
+      "description": "Expert framework for optimizing Shopify store pages (Home, Collection, PDP, Promo) using conversion benchmarks and industry checklists.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/optimize-ecommerce-page-conversion.zip"
+    },
+    {
+      "id": "27_shopify-developer",
+      "name": "shopify-developer",
+      "description": "Complete Shopify development reference covering Liquid templating, OS 2.0 themes, GraphQL APIs, Hydrogen, Functions, and performance optimization (API v2026-01). Use when working with .liquid files, building Shopify themes or apps, writing GraphQL queries for Shopify, debugging Liquid errors, creating app extensions, migrating from Scripts to Functions, or building headless storefronts. Triggers on \"Shopify\", \"Liquid template\", \"Hydrogen\", \"Storefront API\", \"theme development\", \"Shopify Functions\", \"Polaris\". Do NOT use for non-Shopify e-commerce platforms.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/shopify-developer.zip"
+    },
+    {
+      "id": "27_xlsx",
+      "name": "xlsx",
+      "description": "\"Comprehensive spreadsheet creation, editing, and analysis with support for formulas, formatting, data analysis, and visualization. When working with spreadsheets (.xlsx, .xlsm, .csv, .tsv, etc) for: (1) Creating new spreadsheets with formulas and formatting, (2) Reading or analyzing data, (3) Modify existing spreadsheets while preserving formulas, (4) Data analysis and visualization in spreadsheets, or (5) Recalculating formulas\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/xlsx.zip"
+    },
+    {
+      "id": "27_instagram-marketing",
+      "name": "instagram-marketing",
+      "description": "Generate Instagram marketing content from product URLs. Extract product information and create engaging Instagram posts with image suggestions, captions, and hashtags optimized for engagement. Use when user provides a product URL from e-commerce sites like Amazon, Shopify, Taobao, etc. and wants Instagram marketing content such as Image/text post ideas, engaging captions with CTAs, hashtag strategy, or Story/reels content suggestions.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/instagram-marketing.zip"
+    },
+    {
+      "id": "27_logo-design",
+      "name": "logo-design",
+      "description": "End-to-end logo design workflow: brand understanding → competitor analysis → logo generation → design assets.\n**When to Use**: User requests logo or brand identity design:\n- \"Make me a logo\", \"Design a logo for my brand\", \"Create a brand logo\"\n- Logo with brand analysis, style exploration, variations, mockups, or design specs\n**DO NOT use for**:\n- General image generation (posters, product photos, illustrations) → Use image-prompt-guide\n- Product development with market research → Use ai-product-designer",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/logo-design.zip"
+    },
+    {
+      "id": "27_mcp-tools",
+      "name": "mcp-tools",
+      "description": "Discover and call remote tools (Google Workspace, Notion, Square POS, Odoo, Exa, Apify, Jungle Scout, Lark/Feishu, Twitter, LinkedIn, TikTok, Reddit, GitHub, etc.) via the accio-mcp-cli command-line tool",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/mcp-tools.zip"
+    },
+    {
+      "id": "27_referral-program-builder",
+      "name": "referral-program-builder",
+      "description": "\"Architect and implement automated refer-a-friend programs with unique tracking links, tiered incentive structures, and robust fraud prevention logic to drive organic customer acquisition.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/referral-program-builder.zip"
+    },
+    {
+      "id": "27_loyalty-points-designer",
+      "name": "loyalty-points-designer",
+      "description": "\"Implement a tiered reward system to increase customer retention and lifetime value through points-based incentives and VIP benefits\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/loyalty-points-designer.zip"
+    },
+    {
+      "id": "27_graphql-operations",
+      "name": "graphql-operations",
+      "description": "Guide for writing GraphQL operations (queries, mutations, fragments) following best practices. Use this skill when:\n(1) writing GraphQL queries or mutations,\n(2) organizing operations with fragments,\n(3) optimizing data fetching patterns,\n(4) setting up type generation or linting,\n(5) reviewing operations for efficiency. author: apollographql version: \"1.0.0\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/graphql-operations.zip"
+    },
+    {
+      "id": "27_review-analyst-agent",
+      "name": "review-analyst-agent",
+      "description": "Use this skill to analyze product reviews, find common issues, and prioritize improvements.\nTriggers: \"analyze reviews\", \"review analysis\", \"customer feedback\", \"what are people saying\",\n\"product reviews\", \"review sentiment\", \"find complaints\", \"customer complaints\",\n\"improvement recommendations\", \"voice of customer\", \"VOC analysis\", \"feedback analysis\"\nOutputs: Prioritized issues, sentiment analysis, improvement recommendations.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/review-analyst-agent.zip"
+    },
+    {
+      "id": "27_product-marketing-brief",
+      "name": "product-marketing-brief",
+      "description": "Synthesize product features and customer insights into a comprehensive marketing brief to guide messaging and sales positioning.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/product-marketing-brief.zip"
+    },
+    {
+      "id": "27_b2b-payment-terms-optimizer",
+      "name": "b2b-payment-terms-optimizer",
+      "description": "\"Establish and manage B2B trade credit, net-terms, and automated invoicing to accelerate sales cycles while mitigating credit risk\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/b2b-payment-terms-optimizer.zip"
+    },
+    {
+      "id": "27_remotion",
+      "name": "remotion",
+      "description": "Best practices for Remotion - Video creation in React tags: remotion, video, react, animation, composition",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/remotion.zip"
+    },
+    {
+      "id": "27_seo-competitor-analysis",
+      "name": "seo-competitor-analysis",
+      "description": "\"执行深度 SEO 竞争对手分析，包括关键词研究、外链检查和内容策略映射。当用户想要分析网站竞争对手或通过研究竞争对手来提升自身 SEO 排名时使用。\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/seo-competitor-analysis.zip"
+    },
+    {
+      "id": "27_shopify-product-page-cro",
+      "name": "shopify-product-page-cro",
+      "description": "\"Optimize Shopify product detail pages to increase add-to-cart and conversion rates using proven above-the-fold frameworks, trust signals, and urgency tactics.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/shopify-product-page-cro.zip"
+    },
+    {
+      "id": "27_international-shipping-customs",
+      "name": "international-shipping-customs",
+      "description": "\"Set up cross-border logistics including HS code classification, duties/taxes (DDP vs DDU) configuration, and customs documentation to ensure seamless global delivery.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/international-shipping-customs.zip"
+    },
+    {
+      "id": "27_review-request-automator",
+      "name": "review-request-automator",
+      "description": "\"Design and automate post-purchase review collection workflows. Implement timed request sequences, multi-media incentives, and moderation logic to maximize social proof and conversion rates.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/review-request-automator.zip"
+    },
+    {
+      "id": "27_ecommerce-sales-dashboard",
+      "name": "ecommerce-sales-dashboard",
+      "description": "\"Design and implement comprehensive sales dashboards to track revenue, AOV, conversion rates, and channel performance. Establish a single source of truth for daily, weekly, and monthly executive reporting.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/ecommerce-sales-dashboard.zip"
+    },
+    {
+      "id": "27_profit-margin-analyzer",
+      "name": "profit-margin-analyzer",
+      "description": "\"Analyze gross and net profit margins across products, channels, and segments. Implement cost attribution models to calculate contribution margin and identify profitability drivers.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/profit-margin-analyzer.zip"
+    },
+    {
+      "id": "27_find-skills",
+      "name": "find-skills",
+      "description": "Helps users discover and install agent skills when they ask questions like \"how do I do X\", \"find a skill for X\", \"is there a skill that can...\", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/find-skills.zip"
+    },
+    {
+      "id": "27_create-website",
+      "name": "create-website",
+      "description": "Website creation capabilities. Use when the user wants to create a new website from scratch. **Capabilities**: 1. **Create Website** - Generate a complete HTML website directly from requirements **When to use**: - User requests to create a new website (e.g., \"create a website for my business\", \"build a landing page\") - Keywords: \"create website\", \"build website\", \"design webpage\", \"创建网站\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/create-website.zip"
+    },
+    {
+      "id": "27_content-breakdown",
+      "name": "content-breakdown",
+      "description": "Deep content breakdown expert (enhanced version). Supports Xiaohongshu/Bilibili/Douyin.\nFor Bilibili videos, includes \"danmaku peak analysis\" and \"keyframe visual verification\" capabilities.\nFive-dimensional analysis: Content structure + Audience feedback + Title packaging + Peak moment analysis + Topic follow-up suggestions.\nTrigger phrases: breakdown, analyze viral content, content review, deep analysis, analyze this video/post.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/content-breakdown.zip"
+    },
+    {
+      "id": "27_clawhub",
+      "name": "clawhub",
+      "description": "Use the ClawHub CLI to search, install, update, and publish agent skills from clawhub.com. Use when you need to fetch new skills on the fly, sync installed skills to latest or a specific version, or publish new/updated skill folders with the npm-installed clawhub CLI. { \"openclaw\": { \"requires\": { \"bins\": [\"clawhub\"] }, \"install\": [ { \"id\": \"node\", \"kind\": \"node\", \"package\": \"clawhub\", \"bins\": [\"clawhub\"], \"label\": \"Install ClawHub CLI (npm)\", }, ], }, }",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/clawhub.zip"
+    },
+    {
+      "id": "27_market-insight-product-selection",
+      "name": "market-insight-product-selection",
+      "description": "Adaptive product-selection methodology built on multi-source signals and \"voice of customer\" (VoC): validate demand, momentum, competitive intensity, and user pain points from reviews/comments to produce a confident shortlist or a focused go/no-go.\n**When to use**:\n- User is asking about trends/popularity (Tiktok/Amazon/etc.), or what's selling well in a market (US/UK/etc.)\n- User asks for **single-category / single-product** trend analysis\n- User wants market analysis, market research, or competitive landscape insights\n- User is researching consumer preferences, demand patterns, or market dynamics\n- User needs help deciding what products to sell, source, or invest in\n- User is exploring product opportunities, winning products, or profitable niches Complete this in up to four steps (skip optional steps unless user explicitly requests): 1. Data Analysis & Selection Recommendation (MANDATORY: multi-source data → conclusion + logic + evidence) 2. Product Search (OPTIONAL: only if user asks for specific products after analysis) 3. Supplier Search & Inquiry (OPTIONAL: ONLY if user explicitly mentions supplier/manufacturer/factory/vendor) 4. Summary & Action Guide (MANDATORY: actionable next steps) ⚠️ Steps 2-3 require EXPLICIT user request. \"find products\" or \"trending products\" does NOT imply supplier search.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/market-insight-product-selection.zip"
+    },
+    {
+      "id": "27_influencer-campaign-manager",
+      "name": "influencer-campaign-manager",
+      "description": "\"Scale creator collaborations and measure multi-channel ROI when moving from manual outreach to high-volume performance-driven influencer programs.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/influencer-campaign-manager.zip"
+    },
+    {
+      "id": "27_serp-ranking-analyzer",
+      "name": "serp-ranking-analyzer",
+      "description": "Conduct deep SERP analysis to identify ranking factors, intent signals, and feature opportunities for competitive search queries.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/serp-ranking-analyzer.zip"
+    },
+    {
+      "id": "27_competitor-deep-analysis",
+      "name": "competitor-deep-analysis",
+      "description": "\"Identify market gaps and strategic advantages through systematic multi-layer intelligence gathering and review mining.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/competitor-deep-analysis.zip"
+    },
+    {
+      "id": "27_sales-negotiator",
+      "name": "sales-negotiator",
+      "description": "Expert sales negotiation strategist for B2B deal-making. Use when planning negotiation strategy, handling discount requests, closing deals, navigating procurement, or structuring win-win agreements. Covers anchoring, framing, BATNA development, multi-party negotiations, and contract terms. Use for enterprise deals, pricing discussions, and high-stakes negotiations.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/sales-negotiator.zip"
+    },
+    {
+      "id": "27_tiktok-ads-strategy",
+      "name": "tiktok-ads-strategy",
+      "description": "\"Master TikTok ad campaigns through creative-first testing, Spark Ads optimization, and algorithm-driven bidding strategies.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/tiktok-ads-strategy.zip"
+    },
+    {
+      "id": "27_email-automation-flow-builder",
+      "name": "email-automation-flow-builder",
+      "description": "\"Build automated email sequences for welcome, post-purchase, browse abandonment, and win-back to maximize customer lifetime value.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/email-automation-flow-builder.zip"
+    },
+    {
+      "id": "27_seo-keyword-research",
+      "name": "seo-keyword-research",
+      "description": "\"Discover high-value keywords, classify search intent, and build topic clusters to drive organic traffic and AI visibility (GEO).\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/seo-keyword-research.zip"
+    },
+    {
+      "id": "27_competitive-landscape",
+      "name": "competitive-landscape",
+      "description": "This skill should be used when the user asks to \"analyze competitors\", \"assess competitive landscape\", \"identify differentiation\", \"evaluate market positioning\", \"apply Porter's Five Forces\", or requests competitive strategy analysis.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/competitive-landscape.zip"
+    },
+    {
+      "id": "27_multichannel-inventory-sync",
+      "name": "multichannel-inventory-sync",
+      "description": "\"Establish a single source of truth for inventory and orders across Shopify, Amazon, eBay, and social commerce channels to prevent overselling\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/multichannel-inventory-sync.zip"
+    },
+    {
+      "id": "27_seasonal-campaign-automator",
+      "name": "seasonal-campaign-automator",
+      "description": "\"Orchestrate and automate high-velocity seasonal marketing events (BFCM, Holidays, Prime Day). Implement discount scheduling, tiered access, and cross-channel coordination to maximize seasonal revenue peaks.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/seasonal-campaign-automator.zip"
+    },
+    {
+      "id": "27_returns-exchange-automator",
+      "name": "returns-exchange-automator",
+      "description": "\"Design and automate end-to-end return and exchange workflows. Implement self-service RMA portals, dynamic routing for inspections, and automated refund/credit issuance while mitigating return fraud.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/returns-exchange-automator.zip"
+    },
+    {
+      "id": "27_payment-fraud-detector",
+      "name": "payment-fraud-detector",
+      "description": "\"Implement multi-layered fraud prevention using risk scoring, 3D Secure, velocity checks, and manual review queues to minimize chargebacks and protect revenue.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/payment-fraud-detector.zip"
+    },
+    {
+      "id": "27_skill-vetter",
+      "name": "skill-vetter",
+      "description": "Security-first vetting for OpenClaw skills. Use before installing any skill from ClawHub, GitHub, or other sources. Checks for red flags, permission scope, and suspicious patterns. short-description: Run a legacy deep-vetting checklist before installing an OpenClaw skill from any source. why: Preserve a conservative review path for operators who want a manual-first audit flow. what: Provides a legacy pre-install security vetting module for skill review and comparison. how: Uses a structured red-flag checklist focused on permissions, patterns, and suspicious instructions. results: Produces a conservative manual review output for install-or-block decisions. version: 1.0.0 updated: '2026-03-10T03:42:30Z' jtbd-1: When I want a simple manual-first checklist to vet a skill before install. audit: kind: module author: useclawpro category: Security trust-score: 97 last-audited: '2026-02-01' permissions: file-read: true file-write: false network: false shell: false",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/skill-vetter.zip"
+    },
+    {
+      "id": "27_cj-dropshipping-api",
+      "name": "cj-dropshipping-api",
+      "description": "Use when integrating CJ Dropshipping API V2.0 — products, orders (Shopping API), logistics, webhooks,\nShopify delivery profiles. Business calls are REST against `developers.cjdropshipping.com`; use `accio-mcp-cli`\nonly to obtain OAuth tokens (`start_cj_auth`, `get_cj_access_token`), not for product or order APIs. - tool: bash args: command: /accio-mcp-cli\\s+call\\s+(?:start_cj_auth|get_cj_access_token)\\b/i",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/cj-dropshipping-api.zip"
+    },
+    {
+      "id": "27_product-review-intelligence-collector",
+      "name": "product-review-intelligence-collector",
+      "description": "\"Automated product review collection and intelligence gathering from major e-commerce platforms (Amazon, TikTok, Walmart, etc.). Use this skill when the user wants to collect, analyze, and synthesize customer feedback for market research, competitor benchmarking, or identifying product improvement opportunities. It focuses on extraction strategies, data cleaning, and multi-dimensional analysis (pros/cons, scenarios, unmet needs).\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/product-review-intelligence-collector.zip"
+    },
+    {
+      "id": "27_ecommerce-budget-forecaster",
+      "name": "ecommerce-budget-forecaster",
+      "description": "\"Build rolling operating budgets for revenue, marketing, and inventory with seasonal adjustments, variance analysis, and performance benchmarks.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/ecommerce-budget-forecaster.zip"
+    },
+    {
+      "id": "27_amazon-ppc-campaign-manager",
+      "name": "amazon-ppc-campaign-manager",
+      "description": "Plan, structure, and optimize Amazon Sponsored Products, Sponsored Brands, and Sponsored Display ad campaigns.\nUse this skill whenever the user asks about setting up their first PPC campaign, structuring ads for product launches,\ndiagnosing high ACoS or low sales velocity, optimizing bids/budgets/keywords, or understanding the link between PPC and organic ranking.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/amazon-ppc-campaign-manager.zip"
+    },
+    {
+      "id": "27_social-media-publisher",
+      "name": "social-media-publisher",
+      "description": "Social media publishing skill for Instagram and X (Twitter). Handles image posts, text posts, hashtags, user tags, and multi-platform publishing.\nUse this skill whenever the user wants to post, publish, or share content to Instagram or X/Twitter — including phrases like \"发ins\", \"发推\", \"帮我发一条\", \"post to Instagram\", \"tweet this\", \"share on social media\", \"发社媒\", \"帮我发布\", or any request involving creating social media posts with images, hashtags, or @mentions.\nAlso use this skill when the user asks about social media publishing workflows, caption formatting, or hashtag best practices for Instagram/X.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/social-media-publisher.zip"
+    },
+    {
+      "id": "27_bestseller-pattern-decoder",
+      "name": "bestseller-pattern-decoder",
+      "description": "Deconstructs the success patterns of Amazon Best Sellers — pricing sweet spots, image composition, title keyword structures, and A+ content narrative logic. Use when analyzing top 1% performers in any Amazon category to build a high-conversion listing blueprint. Complete this in four steps: 1. Identifying the \"Model\" Sellers (filter for Best Seller / Amazon's Choice badges) 2. Pricing Logic Audit (find the pricing sweet spot with highest sales concentration) 3. Visual & Video Strategy Analysis (main image, video hooks, graphic overlays) 4. Copywriting & Narrative Logic (title keyword structure, A+ content storytelling)",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/bestseller-pattern-decoder.zip"
+    },
+    {
+      "id": "27_customer-ltv-calculator",
+      "name": "customer-ltv-calculator",
+      "description": "\"Trigger: Calculate customer lifetime value (CLV) and use it to drive retention strategies, VIP programs, and win-back flows.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/customer-ltv-calculator.zip"
+    },
+    {
+      "id": "27_multi-currency-checkout",
+      "name": "multi-currency-checkout",
+      "description": "\"Configure multi-currency support to allow international customers to browse and pay in their local currency with automated exchange rates and localized rounding\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/multi-currency-checkout.zip"
+    },
+    {
+      "id": "27_product-selection",
+      "name": "product-selection",
+      "description": "Product selection workflow: industry research → consumer research → product selection → supplier matching. Evidence-first, multi-source validation. Use when user wants to select products, find trending items, analyze categories, discover follow-sell opportunities, or asks \"what to sell\", \"which products\", \"hot products\". Works with product-supplier-sourcing skill.",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/product-selection.zip"
+    },
+    {
+      "id": "27_amz-hot-keywords",
+      "name": "amz-hot-keywords",
+      "description": "\"Amazon hot keyword scraper - scrapes ABA (Amazon Brand Analytics) weekly search term rankings from AMZ123. Extracts keyword, current week rank, last week rank, and trend (up/down/flat). Use this skill whenever the user asks to check Amazon hot search keywords, search term rankings, keyword trends, keyword popularity, or mentions AMZ123. Trigger phrases include: 'hot keywords', 'search term rank', 'keyword trend', 'Amazon keyword', 'ABA data', 'search volume rank', 'search popularity', 'trending keywords on Amazon', as well as Chinese equivalents like '热搜词', '搜索热度', '关键词排名', '关键词趋势'.\"",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/amz-hot-keywords.zip"
+    },
+    {
+      "id": "27_market-viability-logic-auditor",
+      "name": "market-viability-logic-auditor",
+      "description": "Evaluates cross-platform product/market feasibility using a risk-first framework — screens for exclusion filters, validates market thresholds, and audits profitability. Use when making go/no-go decisions on product ideas, assessing product viability, risk, and market entry feasibility across e-commerce channels (Amazon, Shopify, Etsy, TikTok Shop, independent DTC, etc.). Complete this in five steps: 0. Query Triage (if query is vague, recommend 3 niche categories) 1. Risk Screening (exclusion filters for high-risk categories) 2. Market Threshold Validation (pricing, competition, demand) 3. Profitability Audit (cost structure, margin calculation) 4. Verdict (Go / Further Research / Reject)",
+      "version": "0.0.51",
+      "ownerType": "official",
+      "official": true,
+      "oss": "https://skill.accio.com/skills/phoenix/official/0.0.51/market-viability-logic-auditor.zip"
+    }
+  ]
+}

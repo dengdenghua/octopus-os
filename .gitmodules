@@ -1,0 +1,4 @@
+[submodule "extensions/workbuddy-connectors"]
+	path = extensions/workbuddy-connectors
+	url = https://github.com/dengdenghua/workbuddy-expert-market.git
+	branch = source

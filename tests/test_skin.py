@@ -8,7 +8,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from runtime.core.nerves.bus import TypedEventBus
 from runtime.sensing.normalize import (
     EnvSensor,
@@ -208,7 +207,7 @@ class TestFileWatcherPolling:
             deadline = time.time() + 2.0
             while time.time() < deadline and len(events) < 1:
                 time.sleep(0.1)
-            time.sleep(0.3)   # Implementation note.
+            time.sleep(0.3)  # Implementation note.
         finally:
             mgr.stop_all()
 
@@ -239,7 +238,9 @@ class TestFileWatcherPolling:
     def test_status_shows_backend_and_paths(self, tmp_path: Path):
         bus = TypedEventBus()
         sensor = FileWatcherSensor(
-            paths=[tmp_path], force_polling=True, poll_interval_seconds=1.0,
+            paths=[tmp_path],
+            force_polling=True,
+            poll_interval_seconds=1.0,
         )
         mgr = SensorManager(bus=bus)
         mgr.register(sensor)
@@ -256,7 +257,9 @@ class TestFileWatcherPolling:
 def _git_available() -> bool:
     try:
         r = subprocess.run(
-            ["git", "--version"], capture_output=True, timeout=3.0,
+            ["git", "--version"],
+            capture_output=True,
+            timeout=3.0,
         )
         return r.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
@@ -268,18 +271,21 @@ class TestGitHookSensor:
     @pytest.fixture
     def repo(self, tmp_path: Path) -> Path:
         subprocess.run(
-            ["git", "init", "-q", "-b", "main", str(tmp_path)], check=True,
+            ["git", "init", "-q", "-b", "main", str(tmp_path)],
+            check=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "config", "user.email", "t@t"],
             check=True,
         )
         subprocess.run(
-            ["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True,
+            ["git", "-C", str(tmp_path), "config", "user.name", "t"],
+            check=True,
         )
         (tmp_path / "a.txt").write_text("a")
         subprocess.run(
-            ["git", "-C", str(tmp_path), "add", "a.txt"], check=True,
+            ["git", "-C", str(tmp_path), "add", "a.txt"],
+            check=True,
         )
         subprocess.run(
             ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
@@ -349,7 +355,8 @@ class TestGitHookSensor:
         (repo / "c.txt").write_text("c")
         subprocess.run(["git", "-C", str(repo), "add", "c.txt"], check=True)
         subprocess.run(
-            ["git", "-C", str(repo), "commit", "-q", "-m", "third"], check=True,
+            ["git", "-C", str(repo), "commit", "-q", "-m", "third"],
+            check=True,
         )
 
         evt = sensor.check_once()
@@ -405,9 +412,9 @@ class TestProcessWatchSensor:
         sensor.check_once()
         # Implementation note.
         orig = sensor.is_alive
-        sensor.is_alive = lambda: False   # type: ignore[method-assign]
+        sensor.is_alive = lambda: False  # type: ignore[method-assign]
         evt = sensor.check_once()
-        sensor.is_alive = orig   # type: ignore[method-assign]
+        sensor.is_alive = orig  # type: ignore[method-assign]
         assert evt is not None
         assert evt.state == "stopped"
         assert len(events) == 1

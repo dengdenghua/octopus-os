@@ -1,10 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { useThreadChat } from "@/components/workspace/chats";
 import { useThreadSettings } from "@/core/settings";
 import type { BaseStream } from "@/core/api/use-stream-types";
 import type { AgentThreadState } from "@/core/threads";
-import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import type { PromptInputMessage } from "@/core/uploads";
 import { extractTextFromMessage } from "@/core/messages/utils";
 
 export function useRegenerateHandler(
@@ -12,6 +12,11 @@ export function useRegenerateHandler(
   sendMessage: (threadId: string, message: PromptInputMessage) => void,
   threadId: string,
 ) {
+  const threadRef = useRef(thread);
+  useEffect(() => {
+    threadRef.current = thread;
+  }, [thread]);
+
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as
@@ -20,31 +25,40 @@ export function useRegenerateHandler(
       if (detail && detail.threadId && detail.threadId !== threadId) {
         return;
       }
-      const lastHuman = thread.messages.filter(m => m.type === "human").at(-1);
+      const currentThread = threadRef.current;
+      const lastHuman = currentThread.messages
+        .filter((m) => m.type === "human")
+        .at(-1);
       if (!lastHuman) return;
       const text = extractTextFromMessage(lastHuman);
       if (text) {
-        if (thread.isLoading) {
-          thread.stop();
+        if (currentThread.isLoading) {
+          currentThread.stop();
         }
         void sendMessage(threadId, { text, files: [] });
       }
     };
-    window.addEventListener("octopus:regenerate", handler);
-    return () => window.removeEventListener("octopus:regenerate", handler);
-  }, [thread.messages, thread.isLoading, thread.stop, sendMessage, threadId]);
+    window.addEventListener("echo:regenerate", handler);
+    return () => window.removeEventListener("echo:regenerate", handler);
+  }, [sendMessage, threadId]);
 }
 
 export function usePlanActionHandler(
-  sendMessage: (threadId: string, message: PromptInputMessage, ...args: unknown[]) => void,
+  sendMessage: (
+    threadId: string,
+    message: PromptInputMessage,
+    ...args: unknown[]
+  ) => void,
   threadId: string,
 ) {
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as {
-        text: string;
-        additionalKwargs: Record<string, unknown>;
-      } | undefined;
+      const detail = (e as CustomEvent).detail as
+        | {
+            text: string;
+            additionalKwargs: Record<string, unknown>;
+          }
+        | undefined;
       if (detail) {
         void sendMessage(
           threadId,
@@ -54,8 +68,8 @@ export function usePlanActionHandler(
         );
       }
     };
-    window.addEventListener("octopus:plan-action", handler);
-    return () => window.removeEventListener("octopus:plan-action", handler);
+    window.addEventListener("echo:plan-action", handler);
+    return () => window.removeEventListener("echo:plan-action", handler);
   }, [sendMessage, threadId]);
 }
 

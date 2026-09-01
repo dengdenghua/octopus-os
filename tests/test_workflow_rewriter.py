@@ -69,9 +69,7 @@ class TestProposeNewRule:
         # Implementation note.
         for _ in range(5):
             j.write_trajectory(
-                _traj(
-                    [_step(0, "read_file"), _step(1, "count_words"), _step(2, "hash_text")]
-                )
+                _traj([_step(0, "read_file"), _step(1, "count_words"), _step(2, "hash_text")])
             )
         report = WorkflowRewriter(j).analyze()
         new_rule_proposals = [p for p in report.proposals if p.kind == "propose_new_rule"]
@@ -93,9 +91,7 @@ class TestProposeNewRule:
             j.write_trajectory(_traj([_step(0, "solo")]))
         report = WorkflowRewriter(j).analyze()
         # Implementation note.
-        assert not [
-            p for p in report.proposals if p.kind == "propose_new_rule"
-        ]
+        assert not [p for p in report.proposals if p.kind == "propose_new_rule"]
 
     def test_swarm_aggregate_deduplicates_same_success_task(self):
         j = InMemoryJournal()
@@ -112,9 +108,7 @@ class TestProposeNewRule:
                 )
             )
 
-        report = WorkflowRewriter(
-            j, config=RewriterConfig(new_sequence_min_hits=1)
-        ).analyze()
+        report = WorkflowRewriter(j, config=RewriterConfig(new_sequence_min_hits=1)).analyze()
         [proposal] = [p for p in report.proposals if p.kind == "propose_new_rule"]
         assert proposal.hit_count == 1
 
@@ -196,14 +190,10 @@ class TestLowerRulePriority:
     def test_healthy_rule_not_flagged(self):
         j = InMemoryJournal()
         for _ in range(5):
-            j.write_trajectory(
-                _traj([_step(0, "x")], strategy="good")
-            )
+            j.write_trajectory(_traj([_step(0, "x")], strategy="good"))
         rule = _FakeRule("good", ["x"])
         report = WorkflowRewriter(j).analyze(rules=[rule])
-        assert not [
-            p for p in report.proposals if p.kind == "lower_rule_priority"
-        ]
+        assert not [p for p in report.proposals if p.kind == "lower_rule_priority"]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -239,9 +229,7 @@ class TestRedundantAdjacent:
                 )
             )
         report = WorkflowRewriter(j).analyze()
-        assert not [
-            p for p in report.proposals if p.kind == "merge_redundant_adjacent"
-        ]
+        assert not [p for p in report.proposals if p.kind == "merge_redundant_adjacent"]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -290,7 +278,7 @@ class TestFormatProposals:
     def test_contains_header_and_rationale(self):
         p = RewriteProposal(
             kind="propose_new_rule",
-            suggested_skill_sequence=["a", "b"],   # type: ignore[arg-type]
+            suggested_skill_sequence=["a", "b"],  # type: ignore[arg-type]
             rationale="test rationale",
             confidence=0.8,
             severity="mid",
@@ -311,9 +299,7 @@ class TestReport:
     def test_proposals_by_kind(self):
         j = InMemoryJournal()
         for _ in range(5):
-            j.write_trajectory(
-                _traj([_step(0, "a"), _step(1, "b"), _step(2, "c")])
-            )
+            j.write_trajectory(_traj([_step(0, "a"), _step(1, "b"), _step(2, "c")]))
         report = WorkflowRewriter(j).analyze()
         counts = report.proposals_by_kind
         assert counts.get("propose_new_rule", 0) >= 1
@@ -323,11 +309,7 @@ class TestReport:
         for i in range(20):
             for _ in range(3):
                 j.write_trajectory(
-                    _traj(
-                        [_step(0, f"s_{i}_0"), _step(1, f"s_{i}_1"), _step(2, f"s_{i}_2")]
-                    )
+                    _traj([_step(0, f"s_{i}_0"), _step(1, f"s_{i}_1"), _step(2, f"s_{i}_2")])
                 )
-        report = WorkflowRewriter(
-            j, config=RewriterConfig(max_proposals=5)
-        ).analyze()
+        report = WorkflowRewriter(j, config=RewriterConfig(max_proposals=5)).analyze()
         assert len(report.proposals) == 5

@@ -1,11 +1,11 @@
-# Octopus Concepts
+# Echo Concepts
 
-Octopus has a biomimetic kernel, but new readers should not have to learn the
+Echo has a biomimetic kernel, but new readers should not have to learn the
 biomimetic names first. This page is the plain-language map.
 
 ## One Sentence
 
-Octopus is an Agent OS for running, supervising, and evolving AI agents on your
+Echo is an Agent OS for running, supervising, and evolving AI agents on your
 computer.
 
 ## The Mental Model
@@ -20,11 +20,11 @@ What each part means:
 
 | Plain term | What it does | Internal name |
 |---|---|---|
-| Agent OS | Runs and supervises agents as long-lived workers | Octopus runtime |
+| Agent OS | Runs and supervises agents as long-lived workers | Echo runtime |
 | Workspace | The IDE-like control surface for humans | Frontend / UI |
 | Planner | Breaks a goal into steps or a task graph | Cerebrum |
 | Reflex Layer | Answers known/simple intents without an LLM round trip | SpinalCord |
-| Scheduler | Runs task graphs and coordinates execution | Ganglia |
+| Scheduler | Runs task graphs and coordinates execution | Ganglia（未实装）|
 | Agent / Worker | A role-specific AI worker | Arm |
 | Skill / Tool | A callable capability used by agents | Sucker / Beak |
 | Event Bus | Carries typed events through the runtime | Nerves |
@@ -39,7 +39,7 @@ What each part means:
 
 ## Three-Layer Language Rule
 
-Octopus uses three vocabularies for three audiences:
+Echo uses three vocabularies for three audiences:
 
 | Audience | Use this language | Example |
 |---|---|---|
@@ -50,9 +50,9 @@ Octopus uses three vocabularies for three audiences:
 Default to the leftmost language that works. Biomimetic terms are useful once a
 reader wants the deeper architecture, but they should not block the first task.
 
-## What Octopus Is Not
+## What Echo Is Not
 
-Octopus is not just an IDE, browser, desktop app, or agent framework.
+Echo is not just an IDE, browser, desktop app, or agent framework.
 
 Those are surfaces:
 

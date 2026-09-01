@@ -1,36 +1,64 @@
 import {
-  ArrowUpDownIcon,
-  BotIcon,
-  BrainIcon,
-  BriefcaseIcon,
-  Building2Icon,
-  CalendarDaysIcon,
-  CheckCircle2Icon,
+  ArrowLeftIcon,
+  AppWindowIcon,
+  BookOpenIcon,
   ChevronRightIcon,
-  Code2Icon,
   DatabaseIcon,
   DnaIcon,
+  FileImageIcon,
+  FileTextIcon,
+  FilmIcon,
   FolderIcon,
   FolderPlusIcon,
   GlobeIcon,
+  HardDriveIcon,
+  ListTodoIcon,
   MessageSquarePlusIcon,
-  NetworkIcon,
+  MoreHorizontalIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
+  PencilIcon,
   PlusIcon,
-  PuzzleIcon,
+  RssIcon,
   Trash2Icon,
+  CandlestickChartIcon,
+  CompassIcon,
+  SquareKanbanIcon,
+  StoreIcon,
+  UserRoundPenIcon,
+  WorkflowIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type SVGProps,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { swallow } from "@/core/utils/log";
-import { uuid } from "@/core/utils/uuid";
 import { useEvent, eventBus, emitProjectsChanged } from "@/core/events";
 
-import { SettingsDialog } from "./settings";
-import { AgentFooter, TeamFooter } from "./sidebar-footer";
+import {
+  normalizeSettingsSection,
+  type SettingsSection,
+} from "./settings/settings-sections";
+import { AgentFooter } from "./sidebar-footer";
+import { FileTree } from "./file-tree";
+import { useEchoDesktopWindowChrome } from "./embedded-window-bridge";
+
+const LazySettingsDialog = lazy(() =>
+  import("./settings/settings-dialog").then((module) => ({
+    default: module.SettingsDialog,
+  })),
+);
 
 import {
   Collapsible,
@@ -40,11 +68,25 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  inElectron,
+  useElectronTitleBar,
+} from "@/components/electron-title-bar";
+import { isIMEComposing } from "@/lib/ime";
 
 import {
   Sidebar,
@@ -53,9 +95,9 @@ import {
   SidebarGroup,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import {
@@ -64,284 +106,177 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { getAPIClient } from "@/core/api";
-import { getBackendBaseURL } from "@/core/config";
-import { withAgentAvatarVersion } from "@/core/agents/avatar";
+import { pickLocalDirectory } from "@/core/workspace/pick-local-directory";
 import { useI18n } from "@/core/i18n/hooks";
-import { useDeleteThread, useThreads } from "@/core/threads/hooks";
+import { type Project, useProjects, useThreadMap } from "@/core/projects/hooks";
+import {
+  useDeleteThread,
+  useRenameThread,
+  useThreads,
+} from "@/core/threads/hooks";
+import {
+  buildConversationThreadSummaries,
+  buildProjectThreadSummaries,
+  buildThreadRunStatusByHref,
+  isGeneratedTeamProjectName,
+  isProjectThreadMode,
+  mergeThreadRunStatus,
+  normalizeThreadRunStatus,
+  projectNameForThread,
+  summarizeThreadForSidebar,
+  syncThreadAgentSelection,
+  activeTeamTaskRoomId,
+  activeWorkspaceThreadIdFromPathname,
+  withThreadSidebarMode,
+  type ThreadRunStatus,
+  type ThreadSummary,
+} from "@/core/threads/sidebar";
 import type { AgentThread } from "@/core/threads/types";
+import { useTasks } from "@/core/tasks/hooks";
+
+import {
+  BROWSER_WORKSPACE_ROUTE,
+  isAgentSurfaceActive,
+  isCompanySurfaceActive,
+  isNavRouteActive,
+  isStorageLibraryRouteActive,
+  isStorageRouteActive,
+  PRIMARY_WORKSPACE_ROUTE,
+} from "@/core/workspace/sidebar-routing";
+
+import { ModuleEditorDialog } from "@/components/workspace/module-editor-dialog";
+import { modulesInSection } from "@/core/modules/catalog";
+import { useEnabledModuleIds } from "@/core/modules/enabled-modules";
+import { filterRoutesByEnabled } from "@/core/modules/module-routing";
+import type { ModuleSection } from "@/core/modules/types";
+
+import { AvatarCell } from "@/components/workspace/avatar-cell";
+
+import { ThreadRunStatusLight } from "@/components/workspace/thread-run-status-light";
+import { useTeamTasks } from "@/core/team-tasks";
 import { useActiveAgentId } from "@/core/agents/active";
-import { formatRelativeTimestamp } from "@/core/utils/datetime";
+import { formatCompactRelativeTimestamp } from "@/core/utils/datetime";
 import { basename, isAbsolutePath } from "@/lib/path-utils";
 import { cn } from "@/lib/utils";
-import { useCompanyEnabled } from "@/appliance/company-capability";
+import { preloadWorkspaceRoute } from "@/core/navigation/workspace-route-preload";
+import { WorkspaceSurfaceHeader } from "@/components/workspace/workspace-surface-header";
+import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
+import {
+  setWorkspaceWebShortcut,
+  useWorkspaceWebShortcuts,
+  workspaceWebAppRoute,
+} from "@/core/workbench/apps";
 
 // Surface modes in the left sidebar. Chat and Company are handled by a
 // dedicated two-panel switch so they feel like peer work surfaces instead
-// of ordinary navigation rows. Team also lives under the Company surface.
+// of ordinary navigation rows.
 // NOTE: label bags are now built inside the component through useI18n
 // so translations respect the selected locale. Module-level constants
 // capture just the route + icon.
 type NavRoute = {
   to: string;
-  icon: LucideIcon;
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
   labelKey?: string;
   label?: string;
+  externalUrl?: string;
+  iconUrl?: string;
 };
-const PRIMARY_WORKSPACE_ROUTE = "/workspace/realtime/new";
-const COMPANY_WORKSPACE_ROUTE = "/workspace/company";
+/** 助理固定对话线程 id —— 像微信一样共用一个持久会话，不随每次进入新建。
+ *  侧边栏据此识别助理对话，避免生成指向自身的"当前任务会话"条目。 */
+const ECHO_THREAD_ID = "echo-assistant";
+// Safety net for live run-status lights that never got an explicit clear
+// (abnormal turn termination, crashed producer). Generous: a long turn
+// legitimately streams for many minutes between status events.
+const LIVE_RUN_STATUS_TTL_MS = 30 * 60 * 1000;
+const LIVE_RUN_STATUS_PRUNE_INTERVAL_MS = 60 * 1000;
 
-const CHAT_CAPABILITY_ROUTES: NavRoute[] = [
-  {
-    to: "/workspace/plugins?surface=chat",
-    labelKey: "navPlugins",
-    icon: PuzzleIcon,
-  },
-  {
-    to: "/workspace/knowledge?surface=chat",
-    labelKey: "navKnowledgeGraph",
-    icon: DatabaseIcon,
-  },
-  {
-    to: "/workspace/intelligence?surface=chat",
-    labelKey: "navIntelligence",
-    icon: BrainIcon,
-  },
-  {
-    to: "/workspace/evolution?surface=chat",
-    labelKey: "navEvolution",
-    icon: DnaIcon,
-  },
-];
+// Sidebar history needs labels, routing metadata, workspace bindings and
+// avatars, but never full message transcripts or artifacts. Keep metadata
+// intact for legacy records while projecting only the values fallbacks still
+// read by the sidebar derivation helpers.
+const SIDEBAR_THREAD_QUERY_PARAMS = {
+  limit: 30,
+  sortBy: "updated_at",
+  sortOrder: "desc",
+  select: [
+    "thread_id",
+    "updated_at",
+    "metadata",
+    "values.title",
+    "values.sidebar_title_source",
+    "values.current_speaker",
+    "values.agent_name",
+    "values.agent_roster",
+    "values.team_members",
+    "values.mode",
+    "values.workspace_path",
+    "values.workspace_id",
+    "values.team_room_id",
+    "values.room_id",
+  ],
+} as const;
 
-const COMPANY_ORG_ROUTES: NavRoute[] = [
-  { to: COMPANY_WORKSPACE_ROUTE, label: "工作台", icon: BriefcaseIcon },
-  {
-    to: "/workspace/company/projects",
-    label: "项目",
-    icon: Building2Icon,
-  },
-  {
-    to: "/workspace/company/tasks",
-    label: "任务",
-    icon: CheckCircle2Icon,
-  },
-  {
-    to: "/workspace/company/milestones",
-    label: "里程碑",
-    icon: CalendarDaysIcon,
-  },
-  {
-    to: "/workspace/company/ai",
-    label: "AI 助手",
-    icon: BotIcon,
-  },
-  { to: "/workspace/team/new", labelKey: "navTeam", icon: NetworkIcon },
-  { to: "/workspace/agents", labelKey: "navHR", icon: BriefcaseIcon },
-];
+// Icons live here rather than in the catalog so `core/modules` stays free of
+// component imports (it is pure data + logic, unit-tested without React).
+const MODULE_ICONS: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
+  hr: StoreIcon,
+  assistant: UserRoundPenIcon,
+  intelligence: RssIcon,
+  "paper.trading": CandlestickChartIcon,
+  projects: SquareKanbanIcon,
+  design: WorkflowIcon,
+  narrative: BookOpenIcon,
+  evolution: DnaIcon,
+  community: CompassIcon,
+  knowledge: DatabaseIcon,
+  "library.apps": AppWindowIcon,
+  "library.docs": FileTextIcon,
+  "library.images": FileImageIcon,
+  "library.videos": FilmIcon,
+  "library.computer": HardDriveIcon,
+};
 
-const COMPANY_CAPABILITY_ROUTES: NavRoute[] = [
-  {
-    to: "/workspace/intelligence?surface=company",
-    labelKey: "navIntelligence",
-    icon: BrainIcon,
-  },
-  {
-    to: "/workspace/evolution?surface=company",
-    labelKey: "navEvolution",
-    icon: DnaIcon,
-  },
-  {
-    to: "/workspace/knowledge?surface=company",
-    labelKey: "navKnowledgeGraph",
-    icon: DatabaseIcon,
-  },
-  {
-    to: "/workspace/plugins?surface=company",
-    labelKey: "navPlugins",
-    icon: PuzzleIcon,
-  },
-];
+/** Catalog descriptors → sidebar NavRoutes, in catalog order. */
+function moduleNavRoutes(section: ModuleSection): NavRoute[] {
+  return modulesInSection(section).map((m) => ({
+    to: m.to,
+    labelKey: m.labelKey,
+    icon: MODULE_ICONS[m.id] ?? StoreIcon,
+  }));
+}
 
-type ThreadSummary = {
-  id: string;
+const CHAT_CAPABILITY_ROUTES: NavRoute[] = moduleNavRoutes("chatCapability");
+
+const COMMUNITY_ROUTES: NavRoute[] = moduleNavRoutes("community");
+
+const STORAGE_LIBRARY_ROUTES: NavRoute[] = moduleNavRoutes("storageLibrary");
+
+type SidebarFileExplorerTarget = {
+  project: string;
   title: string;
-  updatedAt: string;
-  mode: string;
-  href: string;
-  /** Agent ids associated with this thread · drives the WeChat-style
-   *  avatar (single big avatar OR 2×2 / 3×3 grid for team threads). */
-  agents: string[];
+  threadId: string | null;
+  workDir: string | null;
+  href?: string;
 };
 
-/** Pull a list of agent ids out of thread metadata · accepts the
- *  several places the backend stashes them (single agent on solo
- *  threads, agent_roster on team threads, fallback to bare ``agent``
- *  field). */
-function isProjectThreadMode(mode: string): boolean {
-  return mode === "code";
-}
-
-function isConversationThreadMode(mode: string): boolean {
-  return (
-    mode === "chat" ||
-    mode === "chats" ||
-    mode === "react" ||
-    mode === "deep" ||
-    // Legacy persisted swarm threads stay visible in the conversation list,
-    // but the composer no longer exposes swarm as a selectable mode.
-    mode === "swarm" ||
-    mode === "agent"
-  );
-}
-
-function deriveThreadAgents(meta: Record<string, unknown>): string[] {
-  // 1. team threads · ``agent_roster`` is an array of {agent_id, ...}
-  const roster = meta["agent_roster"];
-  if (Array.isArray(roster)) {
-    const ids = roster
-      .map((r) =>
-        r &&
-        typeof r === "object" &&
-        typeof (r as { agent_id?: unknown }).agent_id === "string"
-          ? (r as { agent_id: string }).agent_id
-          : null,
-      )
-      .filter((x): x is string => !!x);
-    if (ids.length > 0) return ids;
-  }
-  // 2. team_members (legacy field name · same shape)
-  const members = meta["team_members"];
-  if (Array.isArray(members)) {
-    const ids = members
-      .map((r) =>
-        typeof r === "string"
-          ? r
-          : r &&
-              typeof r === "object" &&
-              typeof (r as { agent_id?: unknown }).agent_id === "string"
-            ? (r as { agent_id: string }).agent_id
-            : null,
-      )
-      .filter((x): x is string => !!x);
-    if (ids.length > 0) return ids;
-  }
-  // 3. solo agent · the ``agent`` field is set on every chat/code
-  //    thread by the compat router (cf. metadata.agent='coder')
-  const single = meta["agent"];
-  if (typeof single === "string" && single.trim()) {
-    return [single.trim()];
-  }
-  return [];
-}
-
-function cleanDisplayText(value: unknown): string {
-  if (typeof value !== "string") return "";
-  const s = value
-    .trim()
-    .replace(/[\x00-\x1F\x7F-\x9F]/g, "")
-    .replace(/\s+/g, " ");
-  const questionMarks = (s.match(/\?/g) ?? []).length;
-  const replacementChars = (s.match(/\uFFFD/g) ?? []).length;
-  if (
-    /^\?{3,}$/.test(s) ||
-    (questionMarks >= 5 && questionMarks / s.length > 0.25) ||
-    (replacementChars >= 3 && replacementChars / s.length > 0.2)
-  ) {
-    return "";
-  }
-  return s;
-}
-
-function threadTitleFromContent(content: unknown): string {
-  if (typeof content === "string") return cleanDisplayText(content);
-  if (!Array.isArray(content)) return "";
-  return cleanDisplayText(
-    content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (
-          part &&
-          typeof part === "object" &&
-          (part as Record<string, unknown>).type === "text" &&
-          typeof (part as Record<string, unknown>).text === "string"
-        ) {
-          return (part as { text: string }).text;
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join(" "),
-  );
-}
-
-function truncateThreadTitle(title: string): string {
-  return title.length > 60 ? `${title.slice(0, 58)}...` : title;
-}
-
-/** Best-effort thread title from `values`: first user message content,
- *  truncated. Falls back to metadata.title or a short thread-id. */
-function deriveThreadTitle(thread: {
-  thread_id: string;
-  metadata?: Record<string, unknown>;
-  values?: Record<string, unknown>;
-}): string {
-  const metaTitle = cleanDisplayText(thread.metadata?.["title"]);
-  if (metaTitle) return truncateThreadTitle(metaTitle);
-
-  const messages = thread.values?.["messages"];
-  if (Array.isArray(messages)) {
-    for (const m of messages) {
-      if (
-        m &&
-        typeof m === "object" &&
-        (m as Record<string, unknown>).type === "human"
-      ) {
-        const content = (m as Record<string, unknown>).content;
-        const title = threadTitleFromContent(content);
-        if (title) return truncateThreadTitle(title);
-      }
-    }
-  }
-  const valuesTitle = cleanDisplayText(thread.values?.["title"]);
-  if (valuesTitle && valuesTitle !== "New chat" && valuesTitle !== "New task") {
-    return truncateThreadTitle(valuesTitle);
-  }
-  return `thread/${thread.thread_id.slice(0, 6)}`;
-}
-
-function threadHref(thread: {
-  thread_id: string;
-  metadata?: Record<string, unknown>;
-}) {
-  const mode =
-    typeof thread.metadata?.["mode"] === "string"
-      ? (thread.metadata["mode"] as string)
-      : "chats";
-  if (mode === "react" || mode === "deep" || mode === "agent") {
-    const agent =
-      typeof thread.metadata?.["agent"] === "string"
-        ? thread.metadata["agent"].trim()
-        : typeof thread.metadata?.["agent_name"] === "string"
-          ? thread.metadata["agent_name"].trim()
-          : "";
-    if (agent) {
-      return `/workspace/agents/${encodeURIComponent(agent)}/chats/${thread.thread_id}`;
-    }
-  }
-  const segment = mode === "team" ? "team" : "realtime";
-  return `/workspace/${segment}/${thread.thread_id}`;
-}
-
-const PROJECTS_KEY = "octopus.projects";
-const RECENT_WORKDIRS_KEY = "octopus:recentWorkdirs";
-const PROJECT_GROUPING_KEY = "octopus.sidebar.project-grouping-enabled";
+const PROJECTS_KEY = "echo.projects";
+const RECENT_WORKDIRS_KEY = "echo:recentWorkdirs";
+const PROJECT_GROUPING_KEY = "echo.sidebar.project-grouping-enabled";
+const PROJECT_THREAD_PREVIEW_LIMIT = 6;
 
 function readUserProjects(): string[] {
   try {
     const raw = window.localStorage.getItem(PROJECTS_KEY);
     if (!raw) return [];
     const data = JSON.parse(raw);
-    return Array.isArray(data) ? (data as string[]).filter(Boolean) : [];
+    return Array.isArray(data)
+      ? (data as string[]).filter(
+          (name) =>
+            typeof name === "string" &&
+            !!name.trim() &&
+            !isGeneratedTeamProjectName(name),
+        )
+      : [];
   } catch (e) {
     swallow(e);
     return [];
@@ -350,7 +285,10 @@ function readUserProjects(): string[] {
 
 function writeUserProjects(names: string[]) {
   try {
-    window.localStorage.setItem(PROJECTS_KEY, JSON.stringify(names));
+    window.localStorage.setItem(
+      PROJECTS_KEY,
+      JSON.stringify(names.filter((name) => !isGeneratedTeamProjectName(name))),
+    );
   } catch (e) {
     swallow(e, "storage");
   }
@@ -380,7 +318,7 @@ function emitWorkDirSelected(path: string) {
   if (typeof window === "undefined" || !isAbsolutePath(path)) return;
   rememberProjectWorkDir(path);
   window.dispatchEvent(
-    new CustomEvent("octopus:workdir-selected", {
+    new CustomEvent("echo:workdir-selected", {
       detail: { path, source: "projects" },
     }),
   );
@@ -396,125 +334,361 @@ function readProjectGroupingEnabled(): boolean {
   }
 }
 
+/** 瞬时补位会话（运行中但未进历史列表 / 深链进入）拿不到线程元数据：
+ *  team 路由可按前缀识别；其余沿用域层默认--无元数据按 chat 归入对话列表。 */
+function transientThreadModeFromHref(href: string): string {
+  if (/^\/workspace\/team\//.test(href)) return "team";
+  return "chat";
+}
+
+function prioritizeActiveThread<T extends ThreadSummary>(
+  threads: T[],
+  pathname: string,
+): T[] {
+  const activeId = activeWorkspaceThreadIdFromPathname(pathname);
+  if (!activeId) return threads;
+  const activeIndex = threads.findIndex((thread) => thread.id === activeId);
+  if (activeIndex <= 0) return threads;
+  return [
+    threads[activeIndex]!,
+    ...threads.filter((_, index) => index !== activeIndex),
+  ];
+}
+
+function projectThreadsForPreview<T>(
+  threads: T[],
+  showAll: boolean,
+  limit = PROJECT_THREAD_PREVIEW_LIMIT,
+): T[] {
+  return showAll ? threads : threads.slice(0, limit);
+}
+
+type ProjectOsSidebarIndex = {
+  projectNames: string[];
+  projectNameByThreadId: Map<string, string>;
+  threads: ThreadSummary[];
+};
+
+/**
+ * Reconcile the agent-scoped thread search with Project OS' durable indexes.
+ *
+ * Project homes are shared work groups, so their discoverability must not
+ * depend on the currently-selected agent or on optional thread metadata. The
+ * projects endpoint keeps empty projects visible, while thread-map recovers
+ * legacy bindings whose project record does not yet carry execution_thread_id.
+ */
+function buildProjectOsSidebarIndex(
+  projects: Project[],
+  threadProjectMap: Record<string, string>,
+  existingThreads: ThreadSummary[],
+): ProjectOsSidebarIndex {
+  const existingById = new Map(
+    existingThreads.map((thread) => [thread.id, thread]),
+  );
+  const durableThreads: ThreadSummary[] = [];
+  const durableThreadIds = new Set<string>();
+  const projectNameByThreadId = new Map<string, string>();
+  const projectNames: string[] = [];
+  const seenProjectNames = new Set<string>();
+
+  for (const project of projects) {
+    const projectName = project.name.trim();
+    if (!projectName) continue;
+    if (!seenProjectNames.has(projectName)) {
+      seenProjectNames.add(projectName);
+      projectNames.push(projectName);
+    }
+
+    const mappedThreadIds = Object.entries(threadProjectMap)
+      .filter(([, projectId]) => projectId === project.id)
+      .map(([threadId]) => threadId.trim())
+      .filter(Boolean);
+    const canonicalThreadId =
+      project.execution_thread_id?.trim() || mappedThreadIds[0] || "";
+    const threadIds = Array.from(
+      new Set([canonicalThreadId, ...mappedThreadIds].filter(Boolean)),
+    );
+
+    for (const threadId of threadIds) {
+      // A corrupt cross-project duplicate should not render twice. Prefer the
+      // first project returned by the authoritative project list.
+      if (durableThreadIds.has(threadId)) continue;
+      durableThreadIds.add(threadId);
+      projectNameByThreadId.set(threadId, projectName);
+
+      const existing = existingById.get(threadId);
+      durableThreads.push({
+        ...(existing ?? {
+          id: threadId,
+          updatedAt: project.created_at ?? "",
+          mode: "code",
+          href: `/workspace/realtime/${encodeURIComponent(threadId)}`,
+          agents: [],
+        }),
+        // The canonical child is the stable project-group entry. Its label
+        // must survive values.title being replaced by the first user message.
+        title:
+          threadId === canonicalThreadId
+            ? projectName
+            : existing?.title || projectName,
+      });
+    }
+  }
+
+  return {
+    projectNames,
+    projectNameByThreadId,
+    // Put durable entries first so the project home cannot fall behind the
+    // compact six-thread preview after a reload.
+    threads: [
+      ...durableThreads,
+      ...existingThreads.filter((thread) => !durableThreadIds.has(thread.id)),
+    ],
+  };
+}
+
+export function syncedSidebarPathname(
+  pathname: string,
+  pendingThreadPath: string | null,
+): string {
+  return pendingThreadPath ?? pathname;
+}
+
 export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { pathname, search } = useLocation();
+  const embeddedInEchoOs = useEchoDesktopWindowChrome();
   const { t } = useI18n();
+  const {
+    isMobile,
+    openMobile,
+    setOpenMobile,
+    state: sidebarState,
+  } = useSidebar();
   const queryClient = useQueryClient();
   const apiClient = useMemo(() => getAPIClient(), []);
+  const electron = inElectron();
+  const { macTrafficLightsWidth } = useElectronTitleBar();
+  // Starting from `/new` swaps in a server thread id before the live page can
+  // safely remount. Use its transient route for sidebar selection until the
+  // page finishes the Router transition.
+  const [pendingThreadPath, setPendingThreadPath] = useState<string | null>(
+    null,
+  );
+  useEvent("thread:route-sync", ({ href }) => setPendingThreadPath(href), []);
+  useEffect(() => {
+    if (!pendingThreadPath) return;
+    if (
+      pathname === pendingThreadPath ||
+      (pathname !== "/workspace/realtime/new" && pathname !== pendingThreadPath)
+    ) {
+      setPendingThreadPath(null);
+    }
+  }, [pathname, pendingThreadPath]);
+  const sidebarPathname = syncedSidebarPathname(pathname, pendingThreadPath);
 
-  // Resolve a NavRoute's labelKey against the sidebar namespace. Every
-  // key we reference from the routes arrays is declared as a string on
-  // the Translations interface · the cast keeps TS narrowing happy
-  // without silently swallowing typos.
+  // Resolve a NavRoute's labelKey against the sidebar namespace. The cast
+  // keeps TS narrowing happy without silently swallowing typos in route keys.
   const resolveLabel = useCallback(
     (key: string) =>
       (t.sidebar as unknown as Record<string, string>)[key] ?? key,
     [t],
   );
+  const activeAgentId = useActiveAgentId();
+  const enabledModuleIds = useEnabledModuleIds(activeAgentId ?? "general");
+  const workspaceWebShortcuts = useWorkspaceWebShortcuts();
   const resolveRoutes = useCallback(
     (routes: NavRoute[]) =>
-      routes.map((r) => ({
+      filterRoutesByEnabled(routes, enabledModuleIds).map((r) => ({
         ...r,
         label: r.label ?? (r.labelKey ? resolveLabel(r.labelKey) : r.to),
       })),
-    [resolveLabel],
-  );
-  const companyOrgItems = useMemo(
-    () => resolveRoutes(COMPANY_ORG_ROUTES),
-    [resolveRoutes],
+    [enabledModuleIds, resolveLabel],
   );
   const chatCapabilityItems = useMemo(
     () => resolveRoutes(CHAT_CAPABILITY_ROUTES),
     [resolveRoutes],
   );
-  const companyCapabilityItems = useMemo(
-    () => resolveRoutes(COMPANY_CAPABILITY_ROUTES),
+  const workspaceWebShortcutItems = useMemo(
+    () =>
+      workspaceWebShortcuts.map((shortcut) => ({
+        to: workspaceWebAppRoute(shortcut),
+        icon: GlobeIcon,
+        label: shortcut.name,
+        externalUrl: shortcut.url,
+        iconUrl: shortcut.logoUrl,
+      })),
+    [workspaceWebShortcuts],
+  );
+  const workbenchCapabilityItems = useMemo(
+    () => [...chatCapabilityItems, ...workspaceWebShortcutItems],
+    [chatCapabilityItems, workspaceWebShortcutItems],
+  );
+  const communityItems = useMemo(
+    () => resolveRoutes(COMMUNITY_ROUTES),
+    [resolveRoutes],
+  );
+  const nasLibraryItems = useMemo(
+    () => resolveRoutes(STORAGE_LIBRARY_ROUTES),
     [resolveRoutes],
   );
 
   // Settings dialog state
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsDefaultSection, setSettingsDefaultSection] = useState<
-    "appearance" | "memory" | "notification" | "about" | "account" | "models"
-  >("appearance");
+  const [settingsHostActivated, setSettingsHostActivated] = useState(false);
+  const [moduleEditorOpen, setModuleEditorOpen] = useState(false);
+  const [settingsDefaultSection, setSettingsDefaultSection] =
+    useState<SettingsSection>("appearance");
+  const pendingSettingsOpenRef = useRef<number | null>(null);
+  const pendingSettingsFocusRef = useRef<number | null>(null);
+  const restoreSettingsFocusRef = useRef(false);
+
+  const openSettingsSection = useCallback(
+    (tab?: string) => {
+      const next: SettingsSection = normalizeSettingsSection(tab);
+
+      if (embeddedInEchoOs) {
+        window.dispatchEvent(
+          new CustomEvent("echo:open-system-settings", {
+            detail: { section: next },
+          }),
+        );
+        return;
+      }
+
+      const openDialog = () => {
+        pendingSettingsOpenRef.current = null;
+        setSettingsHostActivated(true);
+        setSettingsDefaultSection(next);
+        setSettingsOpen(true);
+      };
+
+      if (isMobile && openMobile) {
+        restoreSettingsFocusRef.current = true;
+        setOpenMobile(false);
+        if (pendingSettingsOpenRef.current !== null) {
+          window.clearTimeout(pendingSettingsOpenRef.current);
+        }
+        // Radix needs one event turn to release the Sheet's focus guards.
+        // Opening the settings Dialog in the same turn leaves two modal roots
+        // mounted and can immediately dismiss or trap focus behind the dialog.
+        pendingSettingsOpenRef.current = window.setTimeout(openDialog, 0);
+        return;
+      }
+
+      openDialog();
+    },
+    [embeddedInEchoOs, isMobile, openMobile, setOpenMobile],
+  );
+
+  useEffect(
+    () => () => {
+      if (pendingSettingsOpenRef.current !== null) {
+        window.clearTimeout(pendingSettingsOpenRef.current);
+      }
+      if (pendingSettingsFocusRef.current !== null) {
+        window.clearTimeout(pendingSettingsFocusRef.current);
+      }
+    },
+    [],
+  );
+
+  const handleSettingsOpenChange = useCallback((nextOpen: boolean) => {
+    setSettingsOpen(nextOpen);
+    if (nextOpen || !restoreSettingsFocusRef.current) return;
+
+    restoreSettingsFocusRef.current = false;
+    pendingSettingsFocusRef.current = window.setTimeout(() => {
+      pendingSettingsFocusRef.current = null;
+      const trigger = document.querySelector<HTMLElement>(
+        '[data-sidebar="trigger"]',
+      );
+      if (trigger && trigger.getClientRects().length > 0) trigger.focus();
+    }, 0);
+  }, []);
 
   // Listen for open-settings event via EventBus
-  useEvent("ui:open-settings", (payload) => {
-    if (payload.tab) {
-      const next =
-        payload.tab === "account" ||
-        payload.tab === "appearance" ||
-        payload.tab === "models" ||
-        payload.tab === "memory" ||
-        payload.tab === "notification" ||
-        payload.tab === "about"
-          ? payload.tab
-          : "appearance";
-      setSettingsDefaultSection(next);
-    }
-    setSettingsOpen(true);
-  });
-
-  // Thread list is scoped to the currently-active agent (localStorage-
-  // backed, `octopus.active-agent` key). Switching agent in the footer
-  // dropdown updates localStorage + dispatches `octopus:active-agent`
-  // · we subscribe here so the list refetches with the new scope.
-  // Previously the sidebar showed ALL threads across all agents, so
-  // switching from Coder to a specialist kept showing Coder sessions
-  // — defeating the "per-agent history" that the backend already
-  // maintains (agents/<id>/sessions/<thread>.jsonl).
-  const activeAgentId = useActiveAgentId();
-
-  // Two thread feeds:
-  //   1. ``rawThreads`` — chat-mode threads, filtered by activeAgentId
-  // Implementation note.
-  //   2. ``rawCodeThreads`` — code project threads, NOT filtered by
-  //      agent · code workspaces are workspace-level so they should show up
-  //      regardless of which agent the user has selected. Without this
-  // Implementation note.
-  //      section and the user would think their projects vanished.
-  const { data: rawThreads } = useThreads(
-    {
-      limit: 30,
-      sortBy: "updated_at",
-      sortOrder: "desc",
-      select: ["thread_id", "updated_at", "values", "metadata"],
+  useEvent(
+    "ui:open-settings",
+    (payload) => {
+      openSettingsSection(payload.tab);
     },
+    [],
+  );
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const tab =
+        event instanceof CustomEvent && typeof event.detail?.tab === "string"
+          ? event.detail.tab
+          : undefined;
+      openSettingsSection(tab);
+    };
+    window.addEventListener("echo:open-settings", handler);
+    return () => window.removeEventListener("echo:open-settings", handler);
+  }, [openSettingsSection]);
+
+  useEffect(() => {
+    const handler = () => handleSettingsOpenChange(false);
+    window.addEventListener("echo:close-settings", handler);
+    return () => window.removeEventListener("echo:close-settings", handler);
+  }, [handleSettingsOpenChange]);
+
+  // Conversation history stays scoped to the currently-active agent
+  // so the left-bottom persona switch only affects the current chat lane.
+  // Solo project conversations follow the same role boundary below. Shared
+  // team sessions are queried separately and remain visible to the team.
+  const { data: rawConversationThreads } = useThreads(
+    SIDEBAR_THREAD_QUERY_PARAMS,
     undefined,
     activeAgentId,
   );
-  const { data: rawCodeThreads } = useThreads({
-    limit: 30,
-    sortBy: "updated_at",
-    sortOrder: "desc",
-    select: ["thread_id", "updated_at", "values", "metadata"],
-    metadata: { mode: "code" },
-  });
-  // Merge the feeds into one list, deduping by thread_id. The
-  // chat feed (filtered by agent) wins on overlap so its metadata
-  // sticks · code feeds add cross-agent project threads on top.
-  const mergedRaw = (() => {
+  const { data: rawProjectThreads } = useThreads(
+    SIDEBAR_THREAD_QUERY_PARAMS,
+    "code",
+    activeAgentId,
+  );
+  const { data: rawTeamThreads } = useThreads(
+    SIDEBAR_THREAD_QUERY_PARAMS,
+    "team",
+    null,
+  );
+  const { data: projectOsProjects = [] } = useProjects();
+  const { data: threadProjectMap = {} } = useThreadMap();
+
+  const mergedConversationRaw = (() => {
     const m = new Map<string, AgentThread>();
-    for (const t of rawThreads ?? []) m.set(t.thread_id, t);
-    for (const t of rawCodeThreads ?? []) {
-      if (!m.has(t.thread_id)) m.set(t.thread_id, t);
+    for (const t of rawConversationThreads ?? []) m.set(t.thread_id, t);
+    for (const t of rawTeamThreads ?? []) {
+      m.set(t.thread_id, withThreadSidebarMode(t, "team"));
     }
     return Array.from(m.values()).sort((a, b) =>
       (b.updated_at || "").localeCompare(a.updated_at || ""),
     );
   })();
 
-  const threads: ThreadSummary[] = mergedRaw.map((t) => ({
-    id: t.thread_id,
-    title: deriveThreadTitle(t),
-    updatedAt: t.updated_at,
-    mode:
-      typeof t.metadata?.["mode"] === "string"
-        ? (t.metadata["mode"] as string)
-        : "chat",
-    href: threadHref(t),
-    agents: deriveThreadAgents((t.metadata ?? {}) as Record<string, unknown>),
-  }));
+  const mergedProjectRaw = (() => {
+    const m = new Map<string, AgentThread>();
+    for (const t of rawProjectThreads ?? []) {
+      m.set(t.thread_id, withThreadSidebarMode(t, "code"));
+    }
+    for (const t of rawTeamThreads ?? []) {
+      m.set(t.thread_id, withThreadSidebarMode(t, "team"));
+    }
+    return Array.from(m.values()).sort((a, b) =>
+      (b.updated_at || "").localeCompare(a.updated_at || ""),
+    );
+  })();
+
+  const queriedProjectThreads = buildProjectThreadSummaries(mergedProjectRaw);
+  const projectOsSidebar = buildProjectOsSidebarIndex(
+    projectOsProjects,
+    threadProjectMap,
+    queriedProjectThreads,
+  );
+  const projectThreads = projectOsSidebar.threads;
+  const conversationThreads: ThreadSummary[] = buildConversationThreadSummaries(
+    mergedConversationRaw,
+  ).filter((thread) => !projectOsSidebar.projectNameByThreadId.has(thread.id));
 
   // User-defined projects (localStorage) — so an empty project still
   // shows in the sidebar before any threads are tagged with it.
@@ -524,10 +698,10 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
   useEffect(() => {
     const refresh = () => setUserProjects(readUserProjects());
     window.addEventListener("storage", refresh);
-    window.addEventListener("octopus:projects-changed", refresh);
+    window.addEventListener("echo:projects-changed", refresh);
     return () => {
       window.removeEventListener("storage", refresh);
-      window.removeEventListener("octopus:projects-changed", refresh);
+      window.removeEventListener("echo:projects-changed", refresh);
     };
   }, []);
   const [projectGroupingEnabled, setProjectGroupingEnabled] = useState<boolean>(
@@ -547,20 +721,8 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
     setProjectGroupingEnabled((enabled) => !enabled);
   }, []);
 
-  // "New project" flow:
-  //   1. Try the native directory picker (Chromium) — lets the user
-  //      either pick an existing folder or type a new folder name in
-  // Implementation note.
-  //   2. Fall back to a hidden <input type="file" webkitdirectory> in
-  //      Safari / Firefox where showDirectoryPicker isn't available.
-  //   3. Final fallback: an inline input row in the sidebar (used when
-  //      even the file input is blocked, e.g. in sandboxed webviews).
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
-  const [projectDraftOpen, setProjectDraftOpen] = useState(false);
-
   const saveProjectName = useCallback((name: string) => {
     const trimmed = name.trim();
-    setProjectDraftOpen(false);
     if (!trimmed) return;
     const next = Array.from(new Set([trimmed, ...readUserProjects()]));
     writeUserProjects(next);
@@ -568,153 +730,240 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
     emitProjectsChanged();
   }, []);
 
-  const saveProjectPath = useCallback(
-    (path: string) => {
-      const trimmed = path.trim();
-      if (!trimmed || !isAbsolutePath(trimmed)) return;
-      saveProjectName(basename(trimmed) || trimmed);
-      emitWorkDirSelected(trimmed);
-    },
-    [saveProjectName],
-  );
-
+  // The same system chooser is used by the desktop shell and local web app.
+  // In web mode the local backend opens the OS dialog and returns the absolute
+  // path, which keeps the project label, workspace binding, and permissions in
+  // sync instead of creating a name-only project.
   const pickProjectFolder = useCallback(async () => {
-    if (window.octopus?.dialog?.open) {
+    try {
+      const selected = await pickLocalDirectory();
+      if (!selected) return;
+      saveProjectName(basename(selected) || selected);
+      emitWorkDirSelected(selected);
+    } catch (error) {
+      swallow(error);
+      toast.error(t.sidebar.projectPickerFailed);
+    }
+  }, [saveProjectName, t.sidebar.projectPickerFailed]);
+
+  // Group code/team threads by project. Team history defaults to its bound
+  // workspace folder, so multi-agent work sits with the project instead of
+  // falling back to loose chat recents.
+  const activeThreadId = activeWorkspaceThreadIdFromPathname(sidebarPathname);
+
+  const activeThread = useMemo(() => {
+    if (!activeThreadId) return null;
+    return (
+      mergedConversationRaw.find((t) => t.thread_id === activeThreadId) ||
+      mergedProjectRaw.find((t) => t.thread_id === activeThreadId) ||
+      null
+    );
+  }, [activeThreadId, mergedConversationRaw, mergedProjectRaw]);
+
+  const activeTaskWorkspacePath = useMemo(() => {
+    if (activeThread) {
+      const value =
+        activeThread.metadata?.["workspace_path"] ??
+        activeThread.values?.["workspace_path"];
+      if (typeof value === "string" && isAbsolutePath(value)) return value;
+    }
+    const routeValue = new URLSearchParams(search).get("workspace_path") ?? "";
+    return isAbsolutePath(routeValue) ? routeValue : null;
+  }, [activeThread, search]);
+
+  // Tracks the active remote-workspace id (if the thread is bound to one).
+  // Threads bound to a remote workspace carry ``workspace_id`` in their
+  // metadata; threads bound to a plain local path keep ``workspace_path``
+  // and have no ``workspace_id``.
+  const activeWorkspaceId = useMemo(() => {
+    if (!activeThread) return null;
+    const value =
+      activeThread.metadata?.["workspace_id"] ??
+      activeThread.values?.["workspace_id"];
+    return typeof value === "string" && value ? value : null;
+  }, [activeThread]);
+
+  // Switching workspace persists the new ``workspace_id`` (and clears
+  // ``workspace_path``) on the active thread so the rest of the app —
+  // file tree, FS endpoints, members panel — re-targets to the new
+  // workspace. When no thread is active we no-op; the caller can still
+  // see the switch in the trigger label via the ``activeWorkspaceId``
+  // prop, but persistence will happen on the next thread state update.
+  const handleSwitchWorkspace = useCallback(
+    async (workspace: { id: string }) => {
+      if (!activeThreadId) return;
       try {
-        const result = await window.octopus.dialog.open({
-          properties: ["openDirectory", "createDirectory"],
+        await apiClient.threads.updateState(activeThreadId, {
+          metadata: {
+            workspace_id: workspace.id,
+            workspace_path: "",
+          },
         });
-        const selected = result.filePaths[0];
-        if (!result.canceled && selected) {
-          saveProjectPath(selected);
-          return;
-        }
-      } catch (err) {
-        swallow(err);
+        queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+      } catch (error) {
+        console.error("Failed to switch workspace", error);
       }
-    }
-
-    // 1. Native picker — supported in modern Chromium. Gives the user
-    //    both "pick existing" and "new folder" in one OS dialog.
-    type DirPicker = () => Promise<{ name: string }>;
-    const picker = (window as unknown as { showDirectoryPicker?: DirPicker })
-      .showDirectoryPicker;
-    if (typeof picker === "function") {
-      try {
-        const handle = await picker();
-        if (handle?.name) {
-          saveProjectName(handle.name);
-          return;
-        }
-      } catch (err) {
-        swallow(err);
-        // Cancelled or permission denied. AbortError is the normal
-        // cancel path — fall back to the inline input only when the
-        // picker refused to even open (TypeError, SecurityError).
-        const name =
-          err && typeof err === "object" && "name" in err
-            ? (err as { name?: string }).name
-            : "";
-        if (name === "AbortError") return;
-      }
-    }
-
-    // 2. webkitdirectory input — fallback for browsers without
-    //    showDirectoryPicker. First segment of webkitRelativePath is
-    //    the chosen folder's name.
-    const input = folderInputRef.current;
-    if (input) {
-      input.value = "";
-      input.click();
-      return;
-    }
-
-    // 3. Inline draft row — last resort.
-    setProjectDraftOpen(true);
-  }, [saveProjectName, saveProjectPath]);
-
-  useEffect(() => {
-    const handler = () => void pickProjectFolder();
-    window.addEventListener("octopus:project-new", handler);
-    return () => window.removeEventListener("octopus:project-new", handler);
-  }, [pickProjectFolder]);
-
-  const onFolderInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const rel =
-        (file as File & { webkitRelativePath?: string }).webkitRelativePath ??
-        "";
-      const firstSegment = rel.split("/")[0] || file.name;
-      saveProjectName(firstSegment);
     },
-    [saveProjectName],
+    [activeThreadId, apiClient, queryClient],
   );
 
-  // Group threads by project · priority:
-  //   1. explicit ``metadata.project`` (user-tagged)
-  //   2. mode-derived synthetic project:
-  //        code → workspace_path basename (the folder you're working in)
-  //   3. fall through to "Recent" (only chat-mode threads land here)
-  //
-  // Why this matters: code conversations are about a *project*,
-  // Implementation note.
-  // ad-hoc questions and made it impossible to find which thread
-  // belonged to which project. Now they cluster under their actual
-  // Implementation note.
-  const projectThreads = threads.filter((t) => isProjectThreadMode(t.mode));
-  const conversationThreads = threads.filter((t) =>
-    isConversationThreadMode(t.mode),
+  const activeTaskRoomId = activeTeamTaskRoomId(sidebarPathname, activeThread);
+
+  const activeWorkDir = useMemo(() => {
+    if (activeThread) {
+      const path =
+        activeThread.metadata?.["workspace_path"] ??
+        activeThread.values?.["workspace_path"];
+      if (typeof path === "string" && path) return path;
+    }
+    // Fallback: use the most-recent workdir from localStorage so the
+    // file explorer is visible even on the "new task" page.
+    try {
+      const raw = window.localStorage.getItem(RECENT_WORKDIRS_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const first = parsed[0];
+        if (typeof first === "string" && first) return first;
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }, [activeThread]);
+
+  const [fileExplorerTarget, setFileExplorerTarget] =
+    useState<SidebarFileExplorerTarget | null>(null);
+  const openThreadFiles = useCallback(
+    (thread: ThreadSummary, project: string) => {
+      const workDir = thread.workspacePath ?? activeWorkDir;
+      setFileExplorerTarget({
+        project,
+        title: thread.title,
+        threadId: thread.id,
+        workDir: workDir ?? null,
+        href: thread.href,
+      });
+      if (workDir) emitWorkDirSelected(workDir);
+    },
+    [activeWorkDir],
+  );
+
+  const activeTeamTasksQuery = useTeamTasks(activeTaskRoomId);
+  const activeTeamTasks = useMemo(
+    () => activeTeamTasksQuery.data ?? [],
+    [activeTeamTasksQuery.data],
+  );
+  const backgroundTasksQuery = useTasks("all");
+  const threadHrefById = useMemo(
+    () => new Map(projectThreads.map((thread) => [thread.id, thread.href])),
+    [projectThreads],
+  );
+  // Live run status with a last-touch timestamp. Bare statuses never
+  // expire: a turn that terminated without a clearing event (crashed tab,
+  // abnormal stream end) left its light stuck on "running" forever. The
+  // TTL below is the safety net - page unmount still clears immediately.
+  const [liveThreadRunStatusByHref, setLiveThreadRunStatusByHref] = useState<
+    Map<string, { status: ThreadRunStatus; at: number }>
+  >(() => new Map());
+  useEvent(
+    "thread:run-status",
+    ({ href, state, threadId }) => {
+      const status = normalizeThreadRunStatus(state);
+      const targetHref = href || threadHrefById.get(threadId);
+      if (!targetHref) return;
+      setLiveThreadRunStatusByHref((prev) => {
+        if (!status && !prev.has(targetHref)) return prev;
+        const next = new Map(prev);
+        if (status) {
+          next.set(targetHref, { status, at: Date.now() });
+        } else {
+          next.delete(targetHref);
+        }
+        return next;
+      });
+    },
+    [threadHrefById],
+  );
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setLiveThreadRunStatusByHref((prev) => {
+        if (prev.size === 0) return prev;
+        const now = Date.now();
+        const next = new Map(prev);
+        let changed = false;
+        for (const [href, entry] of prev) {
+          if (now - entry.at > LIVE_RUN_STATUS_TTL_MS) {
+            next.delete(href);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, LIVE_RUN_STATUS_PRUNE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, []);
+  const runStatusByHref = useMemo(
+    () =>
+      buildThreadRunStatusByHref({
+        activeTeamTasks,
+        backgroundTasks: backgroundTasksQuery.data,
+        liveThreadRunStatusByHref: new Map(
+          Array.from(liveThreadRunStatusByHref, ([href, entry]) => [
+            href,
+            entry.status,
+          ]),
+        ),
+        threadHrefById,
+      }),
+    [
+      activeTeamTasks,
+      backgroundTasksQuery.data,
+      liveThreadRunStatusByHref,
+      threadHrefById,
+    ],
   );
 
   const byProject: Record<string, ThreadSummary[]> = {};
-  const explicitProjectThreadIdsByProject: Record<string, string[]> = {};
+  const threadIdsByProject: Record<string, string[]> = {};
+  const ungroupedProjectThreads: ThreadSummary[] = [];
+  for (const name of projectOsSidebar.projectNames) byProject[name] = [];
   for (const name of userProjects) byProject[name] = [];
-  const rawThreadMap = new Map(mergedRaw.map((r) => [r.thread_id, r]));
-  for (const t of projectThreads) {
-    const raw = rawThreadMap.get(t.id);
+  const rawThreadMap = new Map(mergedProjectRaw.map((r) => [r.thread_id, r]));
+  for (const thread of projectThreads) {
+    const raw = rawThreadMap.get(thread.id);
     const meta = (raw?.metadata ?? {}) as Record<string, unknown>;
-    const explicitProject = cleanDisplayText(meta["project"]);
-    let project: string;
-    if (explicitProject) {
-      project = explicitProject;
-      (explicitProjectThreadIdsByProject[project] ??= []).push(t.id);
-    } else if (t.mode === "code") {
-      const wp =
-        typeof meta["workspace_path"] === "string"
-          ? (meta["workspace_path"] as string).trim()
-          : "";
-      project = wp ? basename(wp) : "Code";
-    } else {
-      project = "Project";
+    const project =
+      projectOsSidebar.projectNameByThreadId.get(thread.id) ??
+      projectNameForThread(thread, meta, t.codeMode.personalSpace);
+    if (!project) {
+      ungroupedProjectThreads.push(thread);
+      continue;
     }
-    (byProject[project] ??= []).push(t);
+    (threadIdsByProject[project] ??= []).push(thread.id);
+    (byProject[project] ??= []).push(thread);
   }
-  // Belt-and-suspenders · ensure Recent never contains non-chat
-  const projectOrder = Object.keys(byProject);
-  const deletableProjects = new Set<string>();
-  for (const project of Object.keys(explicitProjectThreadIdsByProject)) {
-    deletableProjects.add(project);
-  }
-  for (const project of userProjects) {
-    const hasExplicitThreads =
-      (explicitProjectThreadIdsByProject[project]?.length ?? 0) > 0;
-    const isEmptyUserProject = (byProject[project]?.length ?? 0) === 0;
-    if (hasExplicitThreads || isEmptyUserProject) {
-      deletableProjects.add(project);
-    }
-  }
+  const projectOrder = Object.keys(byProject).filter(
+    (p) =>
+      (byProject[p]?.length ?? 0) > 0 ||
+      userProjects.includes(p) ||
+      projectOsSidebar.projectNames.includes(p),
+  );
+  // Local workspace folders keep the existing "unclassify" action. A Project
+  // OS record is server-owned and must not be silently treated as local-only.
+  const projectOsNames = new Set(projectOsSidebar.projectNames);
+  const deletableProjects = new Set(
+    projectOrder.filter((project) => !projectOsNames.has(project)),
+  );
   const [deletingProject, setDeletingProject] = useState<string | null>(null);
 
   const deleteProject = async (project: string) => {
-    const threadIds = explicitProjectThreadIdsByProject[project] ?? [];
+    const threadIds = threadIdsByProject[project] ?? [];
     const next = readUserProjects().filter((p) => p !== project);
 
     if (threadIds.length === 0) {
       writeUserProjects(next);
       setUserProjects(next);
-      window.dispatchEvent(new Event("octopus:projects-changed"));
+      window.dispatchEvent(new Event("echo:projects-changed"));
       return;
     }
 
@@ -723,7 +972,7 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
       await Promise.all(
         threadIds.map((threadId) =>
           apiClient.threads.updateState(threadId, {
-            metadata: { project: "" },
+            metadata: { project: "", workspace_path: "" },
           }),
         ),
       );
@@ -742,6 +991,7 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
                   metadata: {
                     ...(thread.metadata ?? {}),
                     project: "",
+                    workspace_path: "",
                   },
                 }
               : thread,
@@ -749,105 +999,195 @@ export function WorkspaceSidebar(props: React.ComponentProps<typeof Sidebar>) {
         },
       );
     } catch (error) {
-      console.error("Failed to delete project", error);
+      swallow(error);
+      toast.error(t.sidebar.deleteProjectFailed);
     } finally {
       setDeletingProject(null);
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
     }
   };
-  // OS appliance 默认剥离 company(PM 交给企业版插件)→ 隐藏"工作"surface 入口。
-  const companyEnabled = useCompanyEnabled();
-  const surfaceParam = new URLSearchParams(search).get("surface");
-  const companySurfaceActive =
-    companyEnabled &&
-    (surfaceParam === "company" ||
-      (surfaceParam !== "chat" && isCompanySurfaceRoute(pathname)));
   const sidebarConversationThreads = conversationThreads;
+  const allHistoryThreads = [
+    ...sidebarConversationThreads,
+    ...ungroupedProjectThreads,
+  ].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  // Keep a fallback summary for an older/deep-linked task that was not present
+  // in the bounded history queries. It is inserted into the normal Chat list
+  // below instead of becoming a separate pinned conversation above navigation.
+  const activeThreadSummary = useMemo<ThreadSummary | null>(() => {
+    const activeId = activeWorkspaceThreadIdFromPathname(sidebarPathname);
+    if (!activeId) return null;
+    // 助理是固定对话，本身就是一个持久会话，不当作"当前任务"重复置顶。
+    if (activeId === ECHO_THREAD_ID) return null;
+    return (
+      [...projectThreads, ...conversationThreads, ...allHistoryThreads].find(
+        (thread) => thread.id === activeId,
+      ) ?? {
+        id: activeId,
+        title: t.sidebar.currentTaskSession,
+        updatedAt: "",
+        mode: transientThreadModeFromHref(sidebarPathname),
+        href: sidebarPathname,
+        workspacePath: activeTaskWorkspacePath ?? undefined,
+        agents: activeAgentId ? [activeAgentId] : [],
+      }
+    );
+  }, [
+    activeAgentId,
+    activeTaskWorkspacePath,
+    allHistoryThreads,
+    conversationThreads,
+    projectThreads,
+    sidebarPathname,
+    t.sidebar.currentTaskSession,
+  ]);
+  const sidebarHistoryThreads = useMemo(() => {
+    if (!activeThreadSummary) return allHistoryThreads;
+    const activeIsProjectThread = projectThreads.some(
+      (thread) => thread.id === activeThreadSummary.id,
+    );
+    const activeIsInHistory = allHistoryThreads.some(
+      (thread) => thread.id === activeThreadSummary.id,
+    );
+    if (activeIsProjectThread || activeIsInHistory) return allHistoryThreads;
+    return [activeThreadSummary, ...allHistoryThreads];
+  }, [activeThreadSummary, allHistoryThreads, projectThreads]);
 
   return (
-    <Sidebar
-      variant="sidebar"
-      collapsible="icon"
-      className="border-r border-border/40 bg-background/82 backdrop-blur"
-      {...props}
-    >
-      {/* Implementation note. */}
-      <SidebarHeader className="relative h-11 shrink-0 items-center justify-center border-b border-border/45 bg-sidebar/65 px-2.5 py-0 group-data-[collapsible=icon]:h-20 group-data-[collapsible=icon]:justify-end group-data-[collapsible=icon]:pb-2 group-data-[collapsible=icon]:pt-2">
-        <WorkspaceSurfaceSwitch
-          active={companySurfaceActive ? "work" : "agent"}
-          showWork={companyEnabled}
-        />
-        <div className="absolute right-0.5 top-1/2 -translate-y-1/2 group-data-[collapsible=icon]:left-1/2 group-data-[collapsible=icon]:right-auto group-data-[collapsible=icon]:top-2 group-data-[collapsible=icon]:-translate-x-[calc(50%+4px)] group-data-[collapsible=icon]:translate-y-0">
-          <CollapseToggle compact />
-        </div>
-      </SidebarHeader>
+    <>
+      <Sidebar
+        variant="sidebar"
+        collapsible="icon"
+        className={cn("border-r bg-sidebar")}
+        {...props}
+      >
+        {/* Implementation note. */}
+        <SidebarHeader
+          className="h-10 shrink-0 border-b border-white/40 bg-transparent p-0 pr-2 py-0 group-data-[collapsible=icon]:px-0 dark:border-white/10"
+          style={
+            electron
+              ? ({
+                  paddingLeft:
+                    macTrafficLightsWidth > 0
+                      ? sidebarState === "collapsed"
+                        ? macTrafficLightsWidth - 8
+                        : macTrafficLightsWidth + 18
+                      : 10,
+                  WebkitAppRegion: "drag",
+                } as React.CSSProperties)
+              : { paddingLeft: 10 }
+          }
+        >
+          <div
+            className="grid h-full w-full grid-cols-[auto_minmax(0,1fr)] items-center group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center"
+            style={
+              electron
+                ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties)
+                : undefined
+            }
+          >
+            <WorkspaceSurfaceHeader
+              active={
+                pathname === BROWSER_WORKSPACE_ROUTE ? "browser" : "agent"
+              }
+              className="group-data-[collapsible=icon]:hidden"
+            />
+            <div className="flex shrink-0 items-center justify-self-end">
+              <CollapseToggle compact />
+            </div>
+          </div>
+        </SidebarHeader>
 
-      {/* Tight body: px-1.5 py-1.5 instead of default p-2/px-2 so groups
+        {/* Tight body: px-1.5 py-1.5 instead of default p-2/px-2 so groups
           sit closer to the header and we win a few rows of vertical
           space back. */}
-      <SidebarContent className="gap-1.5 px-2.5 py-2">
-        <SurfaceCreateButton companySurfaceActive={companySurfaceActive} />
-        {companySurfaceActive ? (
-          <>
-            <NavSection
-              label={t.sidebar.navSwarm}
-              items={companyOrgItems}
-              pathname={pathname}
+        <SidebarContent className="gap-1.5 px-2.5 py-2 group-data-[collapsible=icon]:px-1 group-data-[collapsible=icon]:py-1.5">
+          {/* Workspace switcher — sits at the very top so users can flip
+              between local folders and registered remote mounts without
+              diving into a settings page. Hidden when the sidebar is
+              collapsed to icon-only mode (the trigger label would clip). */}
+          <SidebarGroup className="p-0 px-1 pb-0.5 group-data-[collapsible=icon]:hidden">
+            <WorkspaceSwitcher
+              activeWorkspaceId={activeWorkspaceId}
+              onSwitch={handleSwitchWorkspace}
             />
-            <NavSection items={companyCapabilityItems} pathname={pathname} />
-          </>
-        ) : (
-          <>
-            <NavSection items={chatCapabilityItems} pathname={pathname} />
-            <ProjectsSection
-              groups={projectOrder}
-              byProject={byProject}
-              pathname={pathname}
-              draftOpen={projectDraftOpen}
-              deletableProjects={deletableProjects}
-              deletingProject={deletingProject}
-              groupingEnabled={projectGroupingEnabled}
-              onDraftCommit={saveProjectName}
-              onDraftCancel={() => setProjectDraftOpen(false)}
-              onDeleteProject={deleteProject}
-              onToggleGrouping={toggleProjectGrouping}
+          </SidebarGroup>
+          <SidebarGroup className="p-0 px-1 pb-0.5 group-data-[collapsible=icon]:px-0">
+            <SurfaceCreateButton
+              agentId={activeAgentId}
+              workspacePath={activeTaskWorkspacePath}
             />
-            <ChatsSection
-              threads={sidebarConversationThreads}
-              pathname={pathname}
-              label={t.sidebar.sectionChats}
+          </SidebarGroup>
+          {/* Unified sidebar — no more surface branching. All navigation
+            items are always visible regardless of the current route. */}
+          <NavSection
+            items={workbenchCapabilityItems}
+            pathname={pathname}
+            search={search}
+          />
+          <NavSection items={communityItems} pathname={pathname} />
+          <LocalDatabaseSection
+            title={resolveLabel("navDatabase")}
+            items={nasLibraryItems}
+            pathname={pathname}
+            search={search}
+          />
+          <EditModulesButton onOpen={() => setModuleEditorOpen(true)} />
+          {fileExplorerTarget ? (
+            <ProjectFileExplorerView
+              target={fileExplorerTarget}
+              fallbackWorkDir={activeWorkDir}
+              onBack={() => setFileExplorerTarget(null)}
             />
-          </>
-        )}
-        {/* Hidden directory input — used as the Safari/Firefox fallback
-            when showDirectoryPicker is unavailable. webkitdirectory
-            forces a folder selection instead of a single file. */}
-        <input
-          ref={folderInputRef}
-          type="file"
-          // @ts-expect-error — non-standard but supported across Chromium/WebKit
-          webkitdirectory=""
-          directory=""
-          multiple
-          hidden
-          onChange={onFolderInputChange}
-        />
-      </SidebarContent>
+          ) : (
+            <>
+              <ProjectsSection
+                groups={projectOrder}
+                byProject={byProject}
+                pathname={sidebarPathname}
+                deletableProjects={deletableProjects}
+                deletingProject={deletingProject}
+                groupingEnabled={projectGroupingEnabled}
+                runStatusByHref={runStatusByHref}
+                onDeleteProject={deleteProject}
+                onToggleGrouping={toggleProjectGrouping}
+                onOpenFiles={openThreadFiles}
+                onNewProject={() => void pickProjectFolder()}
+              />
+              <ChatsSection
+                threads={sidebarHistoryThreads}
+                pathname={sidebarPathname}
+                label={t.sidebar.sectionChats}
+                agentId={activeAgentId}
+                workspacePath={activeTaskWorkspacePath}
+                runStatusByHref={runStatusByHref}
+              />
+            </>
+          )}
+        </SidebarContent>
 
-      <SidebarFooter className="border-t border-border/40 p-1.5">
-        {pathname.startsWith("/workspace/team") ? (
-          <TeamFooter />
-        ) : (
+        <SidebarFooter className="border-t border-border-subtle p-1.5">
           <AgentFooter />
-        )}
-      </SidebarFooter>
-      <SidebarRail />
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        defaultSection={settingsDefaultSection}
+        </SidebarFooter>
+      </Sidebar>
+      {/* Keep the settings host outside the responsive Sidebar sheet.
+          Radix unmounts a closed mobile SheetContent, which previously also
+          unmounted this dialog and made every narrow-screen settings event a
+          no-op. */}
+      {settingsHostActivated ? (
+        <Suspense fallback={null}>
+          <LazySettingsDialog
+            open={settingsOpen}
+            onOpenChange={handleSettingsOpenChange}
+            defaultSection={settingsDefaultSection}
+          />
+        </Suspense>
+      ) : null}
+      <ModuleEditorDialog
+        open={moduleEditorOpen}
+        onOpenChange={setModuleEditorOpen}
       />
-    </Sidebar>
+    </>
   );
 }
 
@@ -856,221 +1196,155 @@ type NavItem = NavRoute & { label: string };
 function NavSection({
   items,
   pathname,
+  search,
   label,
 }: {
   items: NavItem[];
   pathname: string;
+  search?: string;
   label?: string;
 }) {
   return (
     <SidebarGroup className="p-0 px-1 group-data-[collapsible=icon]:px-0">
       {label && (
-        <div className="px-2 pb-1 pt-2 text-[11px] font-medium text-muted-foreground/72 group-data-[collapsible=icon]:sr-only">
+        <div className="px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground/72 group-data-[collapsible=icon]:sr-only">
           {label}
         </div>
       )}
       <SidebarMenu className="gap-0.5">
         {items.map((item) => (
-          <NavRow key={item.to} item={item} pathname={pathname} />
+          <NavRow
+            key={item.externalUrl ?? item.to}
+            item={item}
+            pathname={pathname}
+            search={search}
+          />
         ))}
       </SidebarMenu>
     </SidebarGroup>
   );
 }
 
-function routePath(to: string): string {
-  return to.split(/[?#]/)[0] || to;
-}
-
-function isNavRouteActive(pathname: string, to: string) {
-  const path = routePath(to);
-  if (path === PRIMARY_WORKSPACE_ROUTE) {
-    return isChatSurfaceRoute(pathname);
-  }
-  if (path === COMPANY_WORKSPACE_ROUTE) {
-    return pathname === COMPANY_WORKSPACE_ROUTE;
-  }
-  if (path === "/workspace/team/new") {
-    return (
-      pathname === "/workspace/team" || pathname.startsWith("/workspace/team/")
-    );
-  }
-  if (path === "/workspace/agents" && isAgentChatRoute(pathname)) {
-    return false;
-  }
-  return pathname === path || pathname.startsWith(`${path}/`);
-}
-
-function isAgentChatRoute(pathname: string) {
-  return /^\/workspace\/agents\/[^/]+\/chats(?:\/|$)/.test(pathname);
-}
-
-function isChatSurfaceRoute(pathname: string) {
-  return (
-    pathname === "/workspace/realtime" ||
-    pathname.startsWith("/workspace/realtime/") ||
-    pathname === "/workspace/chats" ||
-    pathname.startsWith("/workspace/chats/") ||
-    isAgentChatRoute(pathname)
-  );
-}
-
-function isCompanySurfaceRoute(pathname: string) {
-  if (isAgentChatRoute(pathname)) return false;
-  return (
-    pathname === COMPANY_WORKSPACE_ROUTE ||
-    pathname.startsWith(`${COMPANY_WORKSPACE_ROUTE}/`) ||
-    pathname === "/workspace/team" ||
-    pathname.startsWith("/workspace/team/") ||
-    pathname === "/workspace/agents" ||
-    pathname.startsWith("/workspace/agents/") ||
-    pathname === "/workspace/intelligence" ||
-    pathname.startsWith("/workspace/intelligence/") ||
-    pathname === "/workspace/evolution" ||
-    pathname.startsWith("/workspace/evolution/") ||
-    pathname === "/workspace/knowledge" ||
-    pathname.startsWith("/workspace/knowledge/") ||
-    pathname === "/workspace/plugins" ||
-    pathname.startsWith("/workspace/plugins/") ||
-    pathname === "/workspace/skills" ||
-    pathname.startsWith("/workspace/skills/")
-  );
-}
-
-export const __testing = {
-  isNavRouteActive,
-};
-
-type WorkspaceSurfaceMode = "agent" | "work" | "browser";
-
-export function WorkspaceSurfaceSwitch({
-  active,
-  showWork = true,
-}: {
-  active: WorkspaceSurfaceMode;
-  // OS appliance 剥离 company 时隐藏"工作"surface(PM 交给企业版插件)。
-  showWork?: boolean;
-}) {
+/** 侧栏底部的「编辑侧栏」入口 —— 对标钉钉侧栏那个 `+`。 */
+function EditModulesButton({ onOpen }: { onOpen: () => void }) {
   const { t } = useI18n();
-  const items = [
-    ...(showWork
-      ? [
-          {
-            to: COMPANY_WORKSPACE_ROUTE,
-            label: t.sidebar.navCompany,
-            icon: BriefcaseIcon,
-            active: active === "work",
-            kind: "icon" as const,
-          },
-        ]
-      : []),
-    {
-      to: PRIMARY_WORKSPACE_ROUTE,
-      label: "Octopus",
-      icon: BotIcon,
-      active: active === "agent",
-      kind: "brand" as const,
-    },
-    {
-      to: "/browser",
-      label: "浏览器",
-      icon: GlobeIcon,
-      active: active === "browser",
-      kind: "icon" as const,
-    },
-  ];
-
   return (
-    <div className="grid w-[150px] min-w-0 -translate-x-3 grid-cols-[30px_minmax(0,1fr)_30px] items-center gap-0.5 rounded-[14px] border border-border/45 bg-background/72 p-px shadow-[0_1px_2px_rgba(15,23,42,0.04),inset_0_1px_0_rgba(255,255,255,0.42)] group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:translate-x-[-4px] group-data-[collapsible=icon]:grid-cols-1 group-data-[collapsible=icon]:border-0 group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:shadow-none">
-      {items.map((item) => {
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.to}
-            to={item.to}
-            aria-current={item.active ? "page" : undefined}
-            aria-label={item.label}
+    <SidebarGroup className="p-0 px-1 pb-0.5 group-data-[collapsible=icon]:px-0">
+      <SidebarMenu className="gap-0.5">
+        <SidebarMenuItem className="justify-center">
+          <SidebarMenuButton
+            tooltip={t.sidebar.editModules}
+            aria-label={t.sidebar.editModules}
+            onClick={onOpen}
             className={cn(
-              "min-w-0 rounded-xl transition-[background-color,color,box-shadow,opacity] duration-150",
-              item.active
-                ? "flex h-7 items-center justify-center bg-background text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.055)] ring-1 ring-border/50 hover:bg-background/90"
-                : "flex h-7 items-center justify-center text-muted-foreground hover:bg-background/55 hover:text-foreground",
-              item.kind === "brand"
-                ? "px-1 text-[12px] font-bold tracking-[0.005em]"
-                : "px-0",
-              "group-data-[collapsible=icon]:grid group-data-[collapsible=icon]:size-7 group-data-[collapsible=icon]:place-items-center group-data-[collapsible=icon]:px-0",
-              item.active
-                ? "group-data-[collapsible=icon]:flex"
-                : "group-data-[collapsible=icon]:hidden",
-              item.active && "group-data-[collapsible=icon]:bg-sidebar-accent",
+              "group/nav h-9 w-full text-sm opacity-55 transition-[opacity,background-color,border-color]",
+              "border border-transparent hover:border-border-subtle hover:bg-muted/32 hover:opacity-100",
+              "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0",
             )}
           >
-            <Icon
-              className={cn(
-                "size-3.5 shrink-0",
-                item.kind === "brand" &&
-                  "hidden group-data-[collapsible=icon]:block",
-              )}
-            />
-            {item.kind === "brand" && (
-              <span
-                className={cn(
-                  "min-w-0 truncate group-data-[collapsible=icon]:sr-only",
-                )}
-              >
-                {item.label}
-              </span>
-            )}
-          </Link>
-        );
-      })}
-    </div>
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors group-hover/nav:text-foreground">
+              <PlusIcon className="size-[16px]" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">
+              {t.sidebar.editModules}
+            </span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarGroup>
   );
 }
 
-function SurfaceCreateButton({
-  companySurfaceActive,
+function LocalDatabaseSection({
+  title,
+  items,
+  pathname,
+  search,
 }: {
-  companySurfaceActive: boolean;
+  title: string;
+  items: NavItem[];
+  pathname: string;
+  search: string;
 }) {
   const { t } = useI18n();
-  const navigate = useNavigate();
-  const createAction = companySurfaceActive
-    ? {
-        label: t.sidebar.actionNewTask,
-        icon: PlusIcon,
-        to: "/workspace/team/new",
-      }
-    : {
-        label: t.sidebar.actionNewChat,
-        icon: MessageSquarePlusIcon,
-        to: PRIMARY_WORKSPACE_ROUTE,
-      };
-  const CreateIcon = createAction.icon;
+  const [open, setOpen] = useState(false);
+  const active = isStorageRouteActive(pathname);
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          title={createAction.label}
-          aria-label={createAction.label}
-          onClick={() => navigate(createAction.to)}
-          className="flex h-7 w-full shrink-0 items-center justify-center gap-1.5 rounded-full border border-border/40 bg-background/48 px-3 text-[11px] font-medium text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-[background-color,border-color,color,box-shadow] hover:border-border hover:bg-background hover:text-foreground group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:rounded-xl group-data-[collapsible=icon]:px-0"
-        >
-          <CreateIcon className="size-4" />
-          <span className="group-data-[collapsible=icon]:sr-only">
-            {createAction.label}
-          </span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="right">{createAction.label}</TooltipContent>
-    </Tooltip>
+    <SidebarGroup className="p-0 px-1 group-data-[collapsible=icon]:px-0">
+      <SidebarMenu className="gap-0.5">
+        <SidebarMenuItem className="justify-center">
+          <SidebarMenuButton
+            isActive={active}
+            tooltip={title}
+            aria-current={active ? "page" : undefined}
+            aria-expanded={open}
+            aria-label={
+              open
+                ? t.sidebar.ariaCollapseLocalDatabase
+                : t.sidebar.ariaExpandLocalDatabase
+            }
+            onClick={() => setOpen((value) => !value)}
+            className={cn(
+              "group/nav relative h-9 w-full opacity-76 transition-[opacity,background-color,border-color] text-sm",
+              "border border-transparent hover:border-border-subtle hover:bg-muted/32 hover:opacity-100",
+              "data-[active=true]:opacity-100",
+              "data-[active=true]:border-sidebar-primary/18 data-[active=true]:bg-[color:color-mix(in_oklch,var(--sidebar-accent)_82%,transparent)]",
+              "data-[active=true]:shadow-[var(--shadow-xs)]",
+              "data-[active=true]:before:absolute data-[active=true]:before:left-0 data-[active=true]:before:top-1.5 data-[active=true]:before:bottom-1.5 data-[active=true]:before:w-[2px] data-[active=true]:before:rounded-r data-[active=true]:before:bg-sidebar-primary/85",
+              "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0",
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-6 shrink-0 items-center justify-center rounded-lg transition-colors",
+                active
+                  ? "bg-sidebar-primary/12 text-sidebar-primary"
+                  : "text-muted-foreground group-hover/nav:text-foreground",
+              )}
+            >
+              <DatabaseIcon className="size-[16px]" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">
+              {title}
+            </span>
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors group-hover/nav:bg-muted/60 group-hover/nav:text-foreground group-data-[collapsible=icon]:hidden">
+              <ChevronRightIcon
+                className={cn(
+                  "size-3.5 transition-transform",
+                  open && "rotate-90",
+                )}
+              />
+            </span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        {open && (
+          <div className="space-y-0.5 pl-4 group-data-[collapsible=icon]:hidden">
+            {items.map((item) => (
+              <StorageLibraryRow
+                key={item.to}
+                item={item}
+                pathname={pathname}
+                search={search}
+              />
+            ))}
+          </div>
+        )}
+      </SidebarMenu>
+    </SidebarGroup>
   );
 }
 
-function NavRow({ item, pathname }: { item: NavItem; pathname: string }) {
-  const active = isNavRouteActive(pathname, item.to);
+function StorageLibraryRow({
+  item,
+  pathname,
+  search,
+}: {
+  item: NavItem;
+  pathname: string;
+  search: string;
+}) {
+  const active = isStorageLibraryRouteActive(pathname, search, item.to);
   const Icon = item.icon;
   return (
     <SidebarMenuItem className="justify-center">
@@ -1079,34 +1353,291 @@ function NavRow({ item, pathname }: { item: NavItem; pathname: string }) {
         isActive={active}
         tooltip={item.label}
         className={cn(
-          "group/nav relative h-9 w-full rounded-lg opacity-76 transition-[opacity,background-color,border-color] duration-150 text-[13px]",
-          "border border-transparent hover:border-border/45 hover:bg-muted/32 hover:opacity-100",
-          "data-[active=true]:opacity-100",
-          "data-[active=true]:border-primary/14 data-[active=true]:bg-[color:color-mix(in_oklch,var(--sidebar-accent)_76%,transparent)]",
-          "data-[active=true]:shadow-sm data-[active=true]:shadow-black/[0.025]",
-          "data-[active=true]:before:absolute data-[active=true]:before:left-0 data-[active=true]:before:top-1.5 data-[active=true]:before:bottom-1.5 data-[active=true]:before:w-[2px] data-[active=true]:before:rounded-r data-[active=true]:before:bg-primary/75",
+          "group/nav relative h-8 w-full opacity-72 transition-[opacity,background-color,border-color] text-xs",
+          "border border-transparent hover:border-border-subtle hover:bg-muted/32 hover:opacity-100",
+          "data-[active=true]:opacity-100 data-[active=true]:bg-[color:color-mix(in_oklch,var(--sidebar-accent)_58%,transparent)]",
         )}
       >
         <Link
           to={item.to}
+          onMouseEnter={() => preloadWorkspaceRoute(item.to)}
+          onFocus={() => preloadWorkspaceRoute(item.to)}
           aria-current={active ? "page" : undefined}
-          className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
+          className="flex items-center gap-2"
         >
           <span
             className={cn(
-              "flex size-6 shrink-0 items-center justify-center rounded-md transition-colors",
+              "flex size-5 shrink-0 items-center justify-center rounded-lg transition-colors",
               active
-                ? "bg-primary/10 text-primary"
+                ? "text-sidebar-primary"
                 : "text-muted-foreground group-hover/nav:text-foreground",
             )}
           >
-            <Icon className="size-[16px]" />
+            <Icon className="size-[14px]" />
           </span>
-          <span className="group-data-[collapsible=icon]:hidden">
+          <span className="truncate">{item.label}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+function ProjectFileExplorerView({
+  target,
+  fallbackWorkDir,
+  onBack,
+}: {
+  target: SidebarFileExplorerTarget;
+  fallbackWorkDir: string | null;
+  onBack: () => void;
+}) {
+  const { t } = useI18n();
+  const [eventWorkDir, setEventWorkDir] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { path?: string } | undefined;
+      if (detail?.path && typeof detail.path === "string") {
+        setEventWorkDir(detail.path);
+      }
+    };
+    window.addEventListener("echo:workdir-selected", handler);
+    return () =>
+      window.removeEventListener("echo:workdir-selected", handler);
+  }, []);
+
+  const resolvedWorkDir =
+    target.workDir ??
+    fallbackWorkDir ??
+    eventWorkDir ??
+    (() => {
+      try {
+        const raw = window.localStorage.getItem(RECENT_WORKDIRS_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const first = parsed[0];
+          if (typeof first === "string" && first) return first;
+        }
+      } catch {
+        /* ignore */
+      }
+      return null;
+    })();
+
+  const hasWorkDir = Boolean(resolvedWorkDir);
+
+  return (
+    <div className="mt-2 min-h-0 group-data-[collapsible=icon]:hidden">
+      <SidebarGroup className="p-0 px-2 pb-1">
+        <div className="flex h-9 items-center gap-2 px-1 text-sm">
+          <button
+            type="button"
+            onClick={onBack}
+            title={t.sidebar.backToProjectList}
+            aria-label={t.sidebar.backToProjectList}
+            className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg text-left text-foreground/85 transition-colors hover:text-foreground"
+          >
+            <ArrowLeftIcon className="size-4 shrink-0" />
+            <span className="truncate">{t.sidebar.backToProjectList}</span>
+          </button>
+          <button
+            type="button"
+            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground/75 transition-colors hover:bg-muted/55 hover:text-foreground"
+            title={t.codeMode.explorer}
+            aria-label={t.codeMode.explorer}
+          >
+            <ListTodoIcon className="size-3.5" />
+          </button>
+        </div>
+        <div className="mt-1 flex h-8 items-center gap-2 rounded-lg px-1 text-sm text-muted-foreground">
+          <FolderIcon className="size-4 shrink-0 opacity-75" />
+          <span className="min-w-0 flex-1 truncate">
+            {resolvedWorkDir ? basename(resolvedWorkDir) : target.project}
+          </span>
+        </div>
+        <div className="mt-0.5 overflow-hidden rounded-lg">
+          {hasWorkDir && resolvedWorkDir ? (
+            <FileTree
+              workDir={resolvedWorkDir}
+              threadId={target.threadId}
+              className="max-h-[calc(100vh-18rem)]"
+              onFileClick={(path) => {
+                window.dispatchEvent(
+                  new CustomEvent("echo:open-file", {
+                    detail: {
+                      path,
+                      workDir: resolvedWorkDir,
+                      threadId: target.threadId,
+                      sourceLabel: target.title,
+                    },
+                  }),
+                );
+              }}
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-2 p-4 text-center text-xs text-muted-foreground">
+              <FolderIcon className="size-8 opacity-40" />
+              <p>{t.agentWorkbenchPages.noWorkDirDescription}</p>
+            </div>
+          )}
+        </div>
+      </SidebarGroup>
+    </div>
+  );
+}
+
+export const __testing = {
+  SIDEBAR_THREAD_QUERY_PARAMS,
+  buildThreadRunStatusByHref,
+  isProjectThreadMode,
+  isNavRouteActive,
+  isCompanySurfaceActive,
+  isAgentSurfaceActive,
+  projectHasBoundFolder,
+  buildConversationThreadSummaries,
+  buildProjectThreadSummaries,
+  mergeThreadRunStatus,
+  projectNameForThread,
+  summarizeThreadForSidebar,
+  withThreadSidebarMode,
+  buildProjectSectionActions,
+  buildChatsSectionActions,
+  transientThreadModeFromHref,
+  prioritizeActiveThread,
+  projectThreadsForPreview,
+  buildProjectOsSidebarIndex,
+  syncedSidebarPathname,
+  activeTeamTaskRoomId,
+  ProjectGroupTrigger,
+  SidebarTimestamp,
+};
+
+function SurfaceCreateButton({
+  agentId,
+  workspacePath,
+}: {
+  agentId?: string | null;
+  workspacePath?: string | null;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <button
+      type="button"
+      title={t.sidebar.actionNewTask}
+      aria-label={t.sidebar.actionNewTask}
+      onClick={() =>
+        eventBus.emit("task:new", {
+          agentId: agentId || undefined,
+          workspacePath: workspacePath || undefined,
+        })
+      }
+      className="flex h-8 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border-default bg-background/60 px-3 text-xs font-medium text-muted-foreground transition-[background-color,border-color,color] hover:border-border hover:bg-background hover:text-foreground group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:translate-x-[3px] group-data-[collapsible=icon]:px-0"
+    >
+      <PlusIcon className="size-4" />
+      <span className="group-data-[collapsible=icon]:sr-only">
+        {t.sidebar.actionNewTask}
+      </span>
+    </button>
+  );
+}
+
+function NavRow({
+  item,
+  pathname,
+  search = "",
+}: {
+  item: NavItem;
+  pathname: string;
+  search?: string;
+}) {
+  const active = item.externalUrl
+    ? pathname === "/workspace/web-app" &&
+      new URLSearchParams(search).get("url") === item.externalUrl
+    : isNavRouteActive(pathname, item.to);
+  const Icon = item.icon;
+
+  const removeWebShortcut = () => {
+    if (!item.externalUrl) return;
+    setWorkspaceWebShortcut(
+      {
+        name: item.label,
+        url: item.externalUrl,
+        logoUrl: item.iconUrl,
+      },
+      false,
+    );
+    toast.success(`已从侧栏移除 ${item.label}`);
+  };
+
+  return (
+    <SidebarMenuItem className="group/menu-item justify-center">
+      <SidebarMenuButton
+        asChild
+        isActive={active}
+        tooltip={item.label}
+        className={cn(
+          "group/nav relative h-9 w-full opacity-76 transition-[opacity,background-color,border-color] text-sm",
+          "border border-transparent hover:border-border-subtle hover:bg-muted/32 hover:opacity-100",
+          "data-[active=true]:opacity-100",
+          "data-[active=true]:border-sidebar-primary/18 data-[active=true]:bg-[color:color-mix(in_oklch,var(--sidebar-accent)_82%,transparent)]",
+          "data-[active=true]:shadow-[var(--shadow-xs)]",
+          "data-[active=true]:before:absolute data-[active=true]:before:left-0 data-[active=true]:before:top-1.5 data-[active=true]:before:bottom-1.5 data-[active=true]:before:w-[2px] data-[active=true]:before:rounded-r data-[active=true]:before:bg-sidebar-primary/85",
+        )}
+      >
+        <Link
+          to={item.to}
+          onMouseEnter={() => {
+            if (!item.externalUrl) preloadWorkspaceRoute(item.to);
+          }}
+          onFocus={() => {
+            if (!item.externalUrl) preloadWorkspaceRoute(item.to);
+          }}
+          aria-current={active ? "page" : undefined}
+          className={cn(
+            "flex items-center gap-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0",
+            item.externalUrl && "pr-7",
+          )}
+        >
+          <span
+            className={cn(
+              "flex size-6 shrink-0 items-center justify-center rounded-lg transition-colors",
+              active
+                ? "bg-sidebar-primary/12 text-sidebar-primary"
+                : "text-muted-foreground group-hover/nav:text-foreground",
+            )}
+          >
+            {item.iconUrl ? (
+              <img
+                src={item.iconUrl}
+                alt=""
+                className="size-[16px] rounded-sm object-contain"
+              />
+            ) : (
+              <Icon className="size-[16px]" />
+            )}
+          </span>
+          <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">
             {item.label}
           </span>
         </Link>
       </SidebarMenuButton>
+      {item.externalUrl ? (
+        <SidebarMenuAction
+          showOnHover
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            removeWebShortcut();
+          }}
+          aria-label={`从侧栏移除 ${item.label}`}
+          title={`从侧栏移除 ${item.label}`}
+          className="text-muted-foreground/55 hover:text-destructive md:pointer-events-none md:group-focus-within/menu-item:pointer-events-auto md:group-hover/menu-item:pointer-events-auto"
+        >
+          <Trash2Icon />
+        </SidebarMenuAction>
+      ) : null}
     </SidebarMenuItem>
   );
 }
@@ -1122,7 +1653,7 @@ function NavRow({ item, pathname }: { item: NavItem; pathname: string }) {
  *  Each cell is the agent avatar fetched from
  *  ``/api/agents/{name}/avatar``. The img onError flips to a colored
  *  initial fallback so a missing avatar doesn't show a broken-image
- *  glyph. The whole block is rounded-md to mimic WeChat's group icon. */
+ *  glyph. The whole block is rounded-lg to mimic WeChat's group icon. */
 function ThreadAvatar({
   agents,
   className,
@@ -1156,7 +1687,7 @@ function ThreadAvatar({
   return (
     <span
       className={cn(
-        "grid bg-muted/30 rounded-md overflow-hidden flex-shrink-0",
+        "grid bg-muted/30 rounded-lg overflow-hidden flex-shrink-0",
         className,
       )}
       style={{
@@ -1176,125 +1707,92 @@ function ThreadAvatar({
   );
 }
 
-/** One image cell · falls back to a colored initial circle if the
- *  backend has no avatar for the agent (404 on
- *  ``/api/agents/<id>/avatar``). The initial fallback uses a hash-based
- *  color so different agents don't all blend into the same grey. */
-function AvatarCell({
-  agentId,
-  className,
-}: {
-  agentId: string;
-  className?: string;
-}) {
-  const [failed, setFailed] = useState(false);
-  if (failed) {
-    return (
-      <span
-        className={cn(
-          "flex items-center justify-center bg-muted text-[8px] font-semibold uppercase text-muted-foreground",
-          className,
-        )}
-        title={agentId}
-      >
-        {(agentId[0] || "?").toUpperCase()}
-      </span>
-    );
-  }
-  return (
-    <img
-      src={withAgentAvatarVersion(
-        `${getBackendBaseURL()}/api/agents/${encodeURIComponent(agentId)}/avatar`,
-      )}
-      alt={agentId}
-      title={agentId}
-      onError={() => setFailed(true)}
-      className={cn("object-cover", className)}
+function projectHasBoundFolder(threads: ThreadSummary[]): boolean {
+  return threads.some((thread) => Boolean(thread.workspacePath?.trim()));
+}
+
+function ProjectGroupIcon({ hasBoundFolder }: { hasBoundFolder: boolean }) {
+  return hasBoundFolder ? (
+    <FolderIcon
+      data-project-kind="folder"
+      className="size-[18px] shrink-0 opacity-70"
+    />
+  ) : (
+    <SquareKanbanIcon
+      data-project-kind="milestone"
+      className="size-[18px] shrink-0 opacity-70"
     />
   );
 }
 
-function ProjectGroupIcon({ project }: { project: string }) {
-  const isTeamProject = project === "Team" || project.startsWith("Team · ");
-  const isCodeProject = project === "Code";
-
-  if (!isTeamProject && !isCodeProject) {
-    return <FolderIcon className="size-[18px] shrink-0 opacity-70" />;
-  }
-
-  const AccentIcon = isTeamProject ? NetworkIcon : Code2Icon;
-
+function ProjectGroupTrigger({
+  project,
+  threadCount,
+  deletable,
+  hasBoundFolder,
+  boundWorkspacePath,
+}: {
+  project: string;
+  threadCount: number;
+  deletable: boolean;
+  hasBoundFolder: boolean;
+  boundWorkspacePath?: string;
+}) {
   return (
-    <span className="relative grid size-5 shrink-0 place-items-center text-muted-foreground/75">
-      <FolderIcon className="size-[18px]" strokeWidth={1.9} />
-      <span
-        className={cn(
-          "absolute -bottom-0.5 -right-0.5 grid size-3.5 place-items-center rounded-[4px] border border-sidebar-border bg-sidebar",
-          isTeamProject
-            ? "text-emerald-600 dark:text-emerald-400"
-            : "text-sky-600 dark:text-sky-400",
-        )}
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <CollapsibleTrigger
+          className={cn(
+            "flex h-9 w-full items-center gap-2 rounded-lg px-1 text-sm",
+            deletable ? "pr-8" : "pr-1",
+            "text-foreground/85 hover:text-foreground hover:bg-muted/40 transition-colors",
+            "outline-none focus-visible:ring-1 focus-visible:ring-ring/45 focus-visible:ring-inset",
+          )}
+        >
+          <ProjectGroupIcon hasBoundFolder={hasBoundFolder} />
+          <span className="min-w-0 truncate">{project}</span>
+          <span
+            className={cn(
+              "ml-auto shrink-0 text-xs text-muted-foreground/60 transition-opacity",
+              deletable && "group-hover/project:opacity-0",
+            )}
+          >
+            {threadCount}
+          </span>
+        </CollapsibleTrigger>
+      </TooltipTrigger>
+      <TooltipContent
+        side="right"
+        align="center"
+        className="max-w-72 break-words"
       >
-        <AccentIcon className="size-[9px]" strokeWidth={2.6} />
-      </span>
-    </span>
+        <span className="block font-medium">{project}</span>
+        <span className="mt-0.5 block text-[11px] text-muted-foreground">
+          {hasBoundFolder
+            ? boundWorkspacePath || "本地目录项目"
+            : "里程碑项目 · 不绑定本地目录"}
+        </span>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
-function ConfirmDeleteThreadDialog({
-  title,
-  open,
-  pending,
-  onOpenChange,
-  onConfirm,
+function SidebarTimestamp({
+  updatedAt,
+  className,
 }: {
-  title: string;
-  open: boolean;
-  pending: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
+  updatedAt: string;
+  className?: string;
 }) {
-  const { t } = useI18n();
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="w-[min(360px,calc(100vw-2rem))] gap-3 rounded-lg p-4 shadow-xl sm:max-w-[360px]"
-      >
-        <DialogHeader className="gap-1 text-left">
-          <DialogTitle className="text-[15px]">
-            {t.sidebar.deleteThreadTooltip}
-          </DialogTitle>
-          <DialogDescription className="text-[12.5px] leading-5">
-            {t.sidebar.confirmDeleteThread(title)}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="mt-1 flex-row justify-end gap-2">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => onOpenChange(false)}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-border bg-background px-3 text-[12.5px] font-medium text-foreground/80 transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-60"
-          >
-            {t.common.cancel}
-          </button>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={onConfirm}
-            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-destructive/25 bg-destructive/[0.07] px-3 text-[12.5px] font-medium text-destructive transition-colors hover:border-destructive/35 hover:bg-destructive/[0.11] disabled:pointer-events-none disabled:opacity-60"
-          >
-            {pending ? (
-              <span className="size-3 animate-spin rounded-full border border-current border-t-transparent" />
-            ) : (
-              <Trash2Icon className="size-3.5" />
-            )}
-            {t.common.delete}
-          </button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <span
+      className={cn(
+        "shrink-0 overflow-hidden whitespace-nowrap text-right text-mini font-medium text-sidebar-foreground/70 transition-[width,opacity,color] duration-fast group-hover/thread:text-sidebar-foreground/90",
+        className,
+      )}
+    >
+      {formatCompactRelativeTimestamp(updatedAt)}
+    </span>
   );
 }
 
@@ -1304,139 +1802,341 @@ function ProjectGroup({
   pathname,
   deletable,
   deleting,
+  runStatusByHref,
   onDeleteProject,
+  onOpenFiles,
 }: {
   project: string;
   threads: ThreadSummary[];
   pathname: string;
   deletable: boolean;
   deleting: boolean;
+  runStatusByHref: Map<string, ThreadRunStatus>;
   onDeleteProject: (project: string) => void | Promise<void>;
+  onOpenFiles: (thread: ThreadSummary, project: string) => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(true);
-  const [threadToDelete, setThreadToDelete] = useState<ThreadSummary | null>(
-    null,
+  const hasBoundFolder = projectHasBoundFolder(threads);
+  const boundWorkspacePath = threads.find((thread) =>
+    Boolean(thread.workspacePath?.trim()),
+  )?.workspacePath;
+  const containsActiveThread = threads.some(
+    (thread) => activeWorkspaceThreadIdFromPathname(pathname) === thread.id,
+  );
+  const orderedThreads = prioritizeActiveThread(threads, pathname);
+  // Project folders are an archive, not the primary task surface. Start them
+  // folded unless they contain the active task; this keeps the sidebar useful
+  // during a live conversation instead of filling it with old sessions.
+  const [open, setOpen] = useState(() => containsActiveThread);
+  const [showAllThreads, setShowAllThreads] = useState(false);
+  useEffect(() => {
+    if (containsActiveThread) setOpen(true);
+  }, [containsActiveThread]);
+  useEffect(() => {
+    if (!open) setShowAllThreads(false);
+  }, [open]);
+  const hiddenThreadCount = Math.max(
+    0,
+    orderedThreads.length - PROJECT_THREAD_PREVIEW_LIMIT,
+  );
+  const visibleThreads = projectThreadsForPreview(
+    orderedThreads,
+    showAllThreads,
   );
   const deleteThread = useDeleteThread();
+  const { mutate: renameThread } = useRenameThread();
   const navigate = useNavigate();
-  const deleteProject = () => {
-    if (!window.confirm(t.sidebar.confirmDeleteProject(project))) {
-      return;
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const [threadToRename, setThreadToRename] = useState<ThreadSummary | null>(
+    null,
+  );
+  const [renameValue, setRenameValue] = useState("");
+  const handleRenameSubmit = useCallback(() => {
+    if (threadToRename && renameValue.trim()) {
+      renameThread({ threadId: threadToRename.id, title: renameValue.trim() });
+      setThreadToRename(null);
+      setRenameValue("");
     }
+  }, [renameThread, threadToRename, renameValue]);
+  const handleDeleteThread = async (thread: ThreadSummary) => {
+    const ok = await confirm({
+      title: t.sidebar.deleteThreadTooltip,
+      description: t.sidebar.confirmDeleteThread(thread.title),
+    });
+    if (!ok) return;
+    deleteThread.mutate({ threadId: thread.id });
+    if (pathname === thread.href) {
+      void navigate(PRIMARY_WORKSPACE_ROUTE);
+    }
+  };
+  const handleDeleteProject = async (project: string) => {
+    const ok = await confirm({
+      title: t.sidebar.confirmDeleteProjectTitle,
+      description: t.sidebar.confirmDeleteProject(project),
+    });
+    if (!ok) return;
     void onDeleteProject(project);
   };
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <SidebarGroup className="p-0 px-2 py-1">
         <div className="group/project relative">
-          <CollapsibleTrigger
-            className={cn(
-              "flex h-9 w-full items-center gap-2 rounded-md px-1 text-sm",
-              deletable ? "pr-8" : "pr-1",
-              "text-foreground/85 hover:text-foreground hover:bg-muted/40 transition-colors",
-              "outline-none",
-            )}
-          >
-            <ProjectGroupIcon project={project} />
-            <span className="truncate">{project}</span>
-            <span
-              className={cn(
-                "ml-auto text-xs text-muted-foreground/60 shrink-0 transition-opacity",
-                deletable && "group-hover/project:opacity-0",
-              )}
-            >
-              {threads.length}
-            </span>
-          </CollapsibleTrigger>
+          <ProjectGroupTrigger
+            project={project}
+            threadCount={threads.length}
+            deletable={deletable}
+            hasBoundFolder={hasBoundFolder}
+            boundWorkspacePath={boundWorkspacePath}
+          />
           {deletable && (
-            <button
-              type="button"
-              title={t.sidebar.deleteProjectTooltip}
-              disabled={deleting}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                deleteProject();
-              }}
-              className={cn(
-                "absolute right-1 top-1/2 -translate-y-1/2 flex size-5 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover/project:opacity-100 hover:bg-destructive/10 hover:text-destructive",
-                deleting && "opacity-100 cursor-wait hover:bg-transparent",
-              )}
-            >
-              {deleting ? (
-                <span className="size-3 animate-spin rounded-full border border-current border-t-transparent" />
-              ) : (
-                <Trash2Icon className="size-3" />
-              )}
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  title={t.common.more}
+                  aria-label={`${t.common.more}：${project}`}
+                  disabled={deleting}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  className={cn(
+                    "absolute right-0.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground/70 opacity-100 transition-[opacity,background-color,color] duration-fast sm:text-muted-foreground/60 sm:opacity-0",
+                    "sm:group-hover/project:opacity-100 sm:group-focus-within/project:opacity-100 hover:bg-muted/55 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50 data-[state=open]:opacity-100",
+                    deleting && "cursor-wait opacity-100",
+                  )}
+                >
+                  {deleting ? (
+                    <span className="size-3 animate-spin rounded-full border border-current border-t-transparent" />
+                  ) : (
+                    <MoreHorizontalIcon className="size-3.5" />
+                  )}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="right">
+                {threads[0] ? (
+                  <DropdownMenuItem
+                    onSelect={() => onOpenFiles(threads[0]!, project)}
+                  >
+                    <FolderIcon className="text-muted-foreground" />
+                    <span>{t.sidebar.openThreadFilesTooltip}</span>
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem onSelect={() => setOpen((value) => !value)}>
+                  <ChevronRightIcon
+                    className={cn(
+                      "text-muted-foreground transition-transform",
+                      open && "rotate-90",
+                    )}
+                  />
+                  <span>
+                    {open
+                      ? t.sidebar.collapseSection(t.sidebar.sectionProjects)
+                      : t.sidebar.expandSection(t.sidebar.sectionProjects)}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={deleting}
+                  onSelect={() => void handleDeleteProject(project)}
+                  variant="destructive"
+                >
+                  <Trash2Icon />
+                  <span>{t.sidebar.deleteProjectTooltip}</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         <CollapsibleContent className="overflow-hidden">
-          {/* Threads nested under the folder — indent so titles start
-              beyond the 📁 icon, matching the Codex reference. */}
-          <ul className="mt-0.5 space-y-px pl-6">
-            {threads.slice(0, 12).map((thread) => {
-              const active = pathname.includes(thread.id);
+          {/* Keep task content indented, but let the active/hover bar span
+              the full project lane in the code sidebar. */}
+          <ul className="mt-1 space-y-0.5">
+            {visibleThreads.map((thread) => {
+              const active =
+                activeWorkspaceThreadIdFromPathname(pathname) === thread.id;
+              const runStatus = runStatusByHref.get(thread.href);
               return (
                 <li key={thread.id} className="group/thread relative">
                   <Link
                     to={thread.href}
+                    state={{
+                      threadOwnerAgentId:
+                        thread.agents.length === 1
+                          ? thread.agents[0]
+                          : undefined,
+                      workspacePath: thread.workspacePath,
+                    }}
+                    onMouseDown={() => syncThreadAgentSelection(thread.agents)}
                     aria-current={active ? "page" : undefined}
+                    title={thread.title}
                     className={cn(
-                      "flex min-h-8 items-center gap-2 rounded-md py-1 pl-2 pr-7 text-[13px] opacity-75 transition-[opacity,background-color] duration-150",
-                      "hover:opacity-100 hover:bg-muted/40",
+                      "flex min-h-9 w-full min-w-0 items-center gap-2 rounded-lg py-1.5 pl-3 pr-3 text-[13px] text-foreground/78 transition-[padding,background-color,color] duration-fast group-hover/thread:pr-[4.25rem] group-focus-within/thread:pr-[4.25rem]",
+                      "hover:bg-muted/40 hover:text-foreground",
+                      "outline-none focus-visible:ring-1 focus-visible:ring-ring/45 focus-visible:ring-inset",
                       active &&
-                        "opacity-100 bg-[color:color-mix(in_oklch,var(--sidebar-accent)_55%,transparent)]",
+                        "text-foreground bg-[color:color-mix(in_oklch,var(--sidebar-accent)_62%,transparent)] shadow-[inset_2px_0_0_color-mix(in_oklch,var(--primary)_60%,transparent)]",
                     )}
                   >
-                    <ThreadAvatar
-                      agents={thread.agents}
-                      className="size-5 shrink-0"
-                    />
-                    <span className="min-w-0 flex-1 truncate leading-tight">
+                    <span className="relative flex size-5 shrink-0 items-center justify-center">
+                      {active ? (
+                        <>
+                          <span aria-hidden="true">
+                            <ThreadAvatar
+                              agents={thread.agents}
+                              className="size-5 shrink-0"
+                            />
+                          </span>
+                          <ThreadRunStatusLight
+                            status={runStatus}
+                            className="absolute -bottom-0.5 -right-0.5 ring-2 ring-sidebar"
+                          />
+                        </>
+                      ) : (
+                        <ThreadRunStatusLight idle="queue" status={runStatus} />
+                      )}
+                    </span>
+                    <span className="line-clamp-2 min-w-0 flex-1 break-words leading-tight">
                       {thread.title}
                     </span>
-                    <span className="shrink-0 text-xs text-muted-foreground/60 transition-[opacity,color] group-hover/thread:opacity-0 group-hover/thread:text-muted-foreground/90">
-                      {formatRelativeTimestamp(thread.updatedAt)}
-                    </span>
+                    <SidebarTimestamp
+                      updatedAt={thread.updatedAt}
+                      className={
+                        active
+                          ? "w-0 opacity-0"
+                          : "w-10 opacity-100 group-hover/thread:w-0 group-hover/thread:opacity-0 group-focus-within/thread:w-0 group-focus-within/thread:opacity-0"
+                      }
+                    />
                   </Link>
                   <button
                     type="button"
-                    title={t.sidebar.deleteThreadTooltip}
-                    disabled={deleteThread.isPending}
+                    title={t.sidebar.openThreadFilesTooltip}
+                    aria-label={t.sidebar.openThreadFilesTooltip}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setThreadToDelete(thread);
+                      onOpenFiles(thread, project);
                     }}
-                    className="absolute right-1 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-opacity duration-150 hover:bg-destructive/10 hover:text-destructive group-hover/thread:opacity-100"
+                    className={cn(
+                      "absolute right-0.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground/65 opacity-0 transition-[opacity,background-color,color] duration-fast",
+                      "group-hover/thread:opacity-100 hover:bg-muted/55 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50",
+                    )}
                   >
-                    <Trash2Icon className="size-3" />
+                    <ListTodoIcon className="size-3.5" />
                   </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        title={t.common.more}
+                        aria-label={t.common.more}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        className="absolute right-8 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted/40 hover:text-foreground group-hover/thread:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50 data-[state=open]:opacity-100"
+                      >
+                        <MoreHorizontalIcon className="size-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" side="right">
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          setThreadToRename(thread);
+                          setRenameValue(thread.title);
+                        }}
+                      >
+                        <PencilIcon className="text-muted-foreground" />
+                        <span>{t.common.rename}</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        disabled={deleteThread.isPending}
+                        onSelect={() => void handleDeleteThread(thread)}
+                      >
+                        <Trash2Icon />
+                        <span>{t.sidebar.deleteThreadTooltip}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </li>
               );
             })}
           </ul>
+          {hiddenThreadCount > 0 && (
+            <button
+              type="button"
+              aria-expanded={showAllThreads}
+              onClick={() => setShowAllThreads((visible) => !visible)}
+              className="mt-1 flex min-h-8 w-full items-center gap-2 rounded-lg px-3 text-xs text-muted-foreground/75 transition-colors hover:bg-muted/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <ChevronRightIcon
+                className={cn(
+                  "size-3 shrink-0 transition-transform",
+                  showAllThreads && "rotate-90",
+                )}
+              />
+              <span className="truncate">
+                {showAllThreads
+                  ? t.sidebar.showFewerProjectThreads
+                  : t.sidebar.showMoreProjectThreads(hiddenThreadCount)}
+              </span>
+            </button>
+          )}
         </CollapsibleContent>
       </SidebarGroup>
-      <ConfirmDeleteThreadDialog
-        title={threadToDelete?.title ?? ""}
-        open={threadToDelete !== null}
-        pending={deleteThread.isPending}
+      <Dialog
+        open={threadToRename !== null}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen) setThreadToDelete(null);
-        }}
-        onConfirm={() => {
-          if (!threadToDelete) return;
-          const target = threadToDelete;
-          setThreadToDelete(null);
-          deleteThread.mutate({ threadId: target.id });
-          if (pathname === target.href) {
-            void navigate(PRIMARY_WORKSPACE_ROUTE);
+          if (!nextOpen) {
+            setThreadToRename(null);
+            setRenameValue("");
           }
         }}
-      />
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="w-[min(360px,calc(100vw-2rem))] gap-3 rounded-lg p-4 sm:max-w-[360px]"
+        >
+          <DialogHeader className="gap-1 text-left">
+            <DialogTitle className="text-base">{t.common.rename}</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !isIMEComposing(e)) {
+                e.preventDefault();
+                handleRenameSubmit();
+              }
+            }}
+            autoFocus
+            className="h-8 text-sm"
+          />
+          <DialogFooter className="mt-1 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setThreadToRename(null);
+                setRenameValue("");
+              }}
+            >
+              {t.common.cancel}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!renameValue.trim()}
+              onClick={handleRenameSubmit}
+            >
+              {t.common.save}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {confirmDialog}
     </Collapsible>
   );
 }
@@ -1444,9 +2144,49 @@ function ProjectGroup({
 interface SectionAction {
   icon: LucideIcon;
   label: string;
+  ariaLabel?: string;
   active?: boolean;
   onClick?: () => void;
   href?: string;
+  menuItems?: SectionAction[];
+}
+
+function buildProjectSectionActions({
+  groupingEnabled,
+  newProjectLabel,
+  onNewProject,
+}: {
+  groupingEnabled: boolean;
+  newProjectLabel: string;
+  onNewProject: () => void;
+}): SectionAction[] {
+  if (!groupingEnabled) return [];
+  return [
+    {
+      icon: FolderPlusIcon,
+      label: newProjectLabel,
+      onClick: onNewProject,
+    },
+  ];
+}
+
+function buildChatsSectionActions({
+  sectionLabel,
+  actionLabel,
+  onNewChat,
+}: {
+  sectionLabel: string;
+  actionLabel: string;
+  onNewChat: () => void;
+}): SectionAction[] {
+  return [
+    {
+      icon: MessageSquarePlusIcon,
+      label: actionLabel,
+      ariaLabel: `${sectionLabel} · ${actionLabel}`,
+      onClick: onNewChat,
+    },
+  ];
 }
 
 /* Implementation note. */
@@ -1462,6 +2202,7 @@ function SectionHeader({
   open?: boolean;
   onToggleOpen?: () => void;
 }) {
+  const { t } = useI18n();
   const hasToggle =
     typeof open === "boolean" && typeof onToggleOpen === "function";
   return (
@@ -1470,12 +2211,28 @@ function SectionHeader({
         <button
           type="button"
           onClick={onToggleOpen}
-          className="flex min-w-0 flex-1 items-center gap-1 rounded-md text-left text-sm font-medium text-muted-foreground hover:text-foreground transition-colors outline-none"
+          title={
+            open
+              ? t.sidebar.collapseSection(label)
+              : t.sidebar.expandSection(label)
+          }
+          aria-label={
+            open
+              ? t.sidebar.collapseSection(label)
+              : t.sidebar.expandSection(label)
+          }
+          aria-expanded={open}
+          className={cn(
+            "flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1 text-left text-sm font-medium transition-[background-color,color] outline-none focus-visible:ring-1 focus-visible:ring-ring/45",
+            open
+              ? "text-foreground/80"
+              : "text-muted-foreground hover:bg-muted/35 hover:text-foreground",
+          )}
         >
           {/* Implementation note. */}
           <ChevronRightIcon
             className={cn(
-              "size-3 shrink-0 transition-transform duration-150",
+              "size-3 shrink-0 transition-transform duration-fast",
               open && "rotate-90",
             )}
           />
@@ -1491,12 +2248,49 @@ function SectionHeader({
           {actions.map((a) => {
             const Icon = a.icon;
             const cls = cn(
-              "flex size-6 items-center justify-center rounded-md text-muted-foreground/70 hover:bg-muted hover:text-foreground transition-colors",
-              a.active && "bg-muted text-foreground",
+              "flex size-8 items-center justify-center rounded-lg text-muted-foreground/70 transition-colors hover:bg-muted/45 hover:text-foreground",
+              a.active && "text-foreground",
             );
+            if (a.menuItems) {
+              return (
+                <DropdownMenu key={a.label}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      title={a.label}
+                      aria-label={a.ariaLabel ?? a.label}
+                      onClick={(event) => event.stopPropagation()}
+                      className={cls}
+                    >
+                      <Icon className="size-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-44">
+                    {a.menuItems.map((item) => {
+                      const ItemIcon = item.icon;
+                      return (
+                        <DropdownMenuItem
+                          key={item.label}
+                          onSelect={() => item.onClick?.()}
+                        >
+                          <ItemIcon className="mr-2 size-3.5" />
+                          {item.label}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            }
             if (a.href) {
               return (
-                <Link key={a.label} to={a.href} title={a.label} className={cls}>
+                <Link
+                  key={a.label}
+                  to={a.href}
+                  title={a.label}
+                  aria-label={a.ariaLabel ?? a.label}
+                  className={cls}
+                >
                   <Icon className="size-3.5" />
                 </Link>
               );
@@ -1506,6 +2300,7 @@ function SectionHeader({
                 key={a.label}
                 type="button"
                 title={a.label}
+                aria-label={a.ariaLabel ?? a.label}
                 onClick={(e) => {
                   e.stopPropagation();
                   a.onClick?.();
@@ -1526,26 +2321,26 @@ function ProjectsSection({
   groups,
   byProject,
   pathname,
-  draftOpen,
   deletableProjects,
   deletingProject,
   groupingEnabled,
-  onDraftCommit,
-  onDraftCancel,
+  runStatusByHref,
   onDeleteProject,
   onToggleGrouping,
+  onOpenFiles,
+  onNewProject,
 }: {
   groups: string[];
   byProject: Record<string, ThreadSummary[]>;
   pathname: string;
-  draftOpen: boolean;
   deletableProjects: Set<string>;
   deletingProject: string | null;
   groupingEnabled: boolean;
-  onDraftCommit: (name: string) => void;
-  onDraftCancel: () => void;
+  runStatusByHref: Map<string, ThreadRunStatus>;
   onDeleteProject: (project: string) => void | Promise<void>;
   onToggleGrouping: () => void;
+  onOpenFiles: (thread: ThreadSummary, project: string) => void;
+  onNewProject: () => void;
 }) {
   const { t } = useI18n();
   // Persist the open/closed state in localStorage so it stays
@@ -1555,13 +2350,18 @@ function ProjectsSection({
   // expected the section to behave the same everywhere.
   const [open, setOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
-    const v = window.localStorage.getItem("octopus.sidebar.projects-open");
-    return v === null ? true : v === "1";
+    try {
+      const v = window.localStorage.getItem("echo.sidebar.projects-open");
+      return v === null ? true : v === "1";
+    } catch (e) {
+      swallow(e, "storage");
+      return true;
+    }
   });
   useEffect(() => {
     try {
       window.localStorage.setItem(
-        "octopus.sidebar.projects-open",
+        "echo.sidebar.projects-open",
         open ? "1" : "0",
       );
     } catch (e) {
@@ -1581,40 +2381,14 @@ function ProjectsSection({
             }
             setOpen((v) => !v);
           }}
-          actions={[
-            {
-              icon: FolderIcon,
-              label: groupingEnabled
-                ? t.sidebar.actionDisableProjectGrouping
-                : t.sidebar.actionEnableProjectGrouping,
-              active: groupingEnabled,
-              onClick: onToggleGrouping,
-            },
-            ...(groupingEnabled
-              ? [
-                  {
-                    icon: ArrowUpDownIcon,
-                    label: t.sidebar.actionSort,
-                    onClick: () => eventBus.emit("projects:sort"),
-                  },
-                  {
-                    icon: FolderPlusIcon,
-                    label: t.sidebar.actionNewProject,
-                    onClick: () =>
-                      window.dispatchEvent(new Event("octopus:project-new")),
-                  },
-                ]
-              : []),
-          ]}
+          actions={buildProjectSectionActions({
+            groupingEnabled,
+            newProjectLabel: t.sidebar.actionNewProject,
+            onNewProject,
+          })}
         />
         {groupingEnabled && open && (
           <div className="mt-0.5">
-            {draftOpen && (
-              <ProjectDraftRow
-                onCommit={onDraftCommit}
-                onCancel={onDraftCancel}
-              />
-            )}
             {groups.map((project) => (
               <ProjectGroup
                 key={project}
@@ -1623,7 +2397,9 @@ function ProjectsSection({
                 pathname={pathname}
                 deletable={deletableProjects.has(project)}
                 deleting={deletingProject === project}
+                runStatusByHref={runStatusByHref}
                 onDeleteProject={onDeleteProject}
+                onOpenFiles={onOpenFiles}
               />
             ))}
           </div>
@@ -1633,55 +2409,22 @@ function ProjectsSection({
   );
 }
 
-function ProjectDraftRow({
-  onCommit,
-  onCancel,
-}: {
-  onCommit: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const { t } = useI18n();
-  const [value, setValue] = useState("");
-  return (
-    <div className="flex h-8 items-center gap-2 rounded-md px-1">
-      <FolderIcon className="size-4 shrink-0 opacity-70" />
-      <input
-        autoFocus
-        value={value}
-        placeholder={t.sidebar.projectNamePlaceholder}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            onCommit(value);
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            onCancel();
-          }
-        }}
-        onBlur={() => {
-          // Commit on blur if the user typed something, otherwise cancel
-          // so clicking elsewhere doesn't leave a ghost draft row.
-          if (value.trim()) onCommit(value);
-          else onCancel();
-        }}
-        className={cn(
-          "min-w-0 flex-1 rounded-md border border-primary/40 bg-background px-1.5 py-0.5",
-          "text-[13px] outline-none focus:ring-1 focus:ring-primary/40",
-        )}
-      />
-    </div>
-  );
-}
-
 function ChatsSection({
   threads,
   pathname,
   label,
+  newActionLabel,
+  agentId,
+  workspacePath,
+  runStatusByHref,
 }: {
   threads: ThreadSummary[];
   pathname: string;
   label?: string;
+  newActionLabel?: string;
+  agentId?: string | null;
+  workspacePath?: string | null;
+  runStatusByHref?: Map<string, ThreadRunStatus>;
 }) {
   const { t: tr } = useI18n();
   // Match the ProjectsSection pattern · persist open/close so the
@@ -1689,195 +2432,232 @@ function ChatsSection({
   // collapsed it.
   const [open, setOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
-    const v = window.localStorage.getItem("octopus.sidebar.chats-open");
-    return v === null ? true : v === "1";
+    try {
+      const v = window.localStorage.getItem("echo.sidebar.chats-open");
+      return v === null ? true : v === "1";
+    } catch (e) {
+      swallow(e, "storage");
+      return true;
+    }
   });
   useEffect(() => {
     try {
       window.localStorage.setItem(
-        "octopus.sidebar.chats-open",
+        "echo.sidebar.chats-open",
         open ? "1" : "0",
       );
     } catch (e) {
       swallow(e);
     }
   }, [open]);
+  useEffect(() => {
+    if (activeWorkspaceThreadIdFromPathname(pathname)) setOpen(true);
+  }, [pathname]);
   const deleteThread = useDeleteThread();
+  const { mutate: renameThread } = useRenameThread();
   const navigate = useNavigate();
-  // Navigate to a fresh thread URL each click — using Link to /chats/new
-  // when already on /chats/new is a no-op (same pathname → react-router
-  // doesn't re-mount, so threadId never resets).
-  const [threadToDelete, setThreadToDelete] = useState<ThreadSummary | null>(
+  const { confirm, confirmDialog } = useConfirmDialog();
+  // Emit a task-new event each click. Reusing a fixed /new link can be a
+  // no-op when the pathname is already selected, so the workspace shell owns
+  // fresh thread creation.
+  const [threadToRename, setThreadToRename] = useState<ThreadSummary | null>(
     null,
   );
+  const [renameValue, setRenameValue] = useState("");
+  const handleRenameSubmit = useCallback(() => {
+    if (threadToRename && renameValue.trim()) {
+      renameThread({ threadId: threadToRename.id, title: renameValue.trim() });
+      setThreadToRename(null);
+      setRenameValue("");
+    }
+  }, [renameThread, threadToRename, renameValue]);
+  const handleDeleteThread = useCallback(
+    async (thread: ThreadSummary) => {
+      const ok = await confirm({
+        title: tr.sidebar.deleteThreadTooltip,
+        description: tr.sidebar.confirmDeleteThread(thread.title),
+      });
+      if (!ok) return;
+      deleteThread.mutate({ threadId: thread.id });
+      if (pathname === thread.href) {
+        void navigate(PRIMARY_WORKSPACE_ROUTE);
+      }
+    },
+    [confirm, deleteThread, navigate, pathname, tr],
+  );
   const startNewChat = useCallback(() => {
-    navigate(`/workspace/realtime/${uuid()}`);
-  }, [navigate]);
+    eventBus.emit("task:new", {
+      agentId: agentId || undefined,
+      workspacePath: workspacePath || undefined,
+    });
+  }, [agentId, workspacePath]);
+  const sectionLabel = label ?? tr.sidebar.sectionChats;
+  const actionLabel = newActionLabel ?? tr.sidebar.actionNewTask;
+  // Keep the global history scannable. Project folders already retain the
+  // deeper archive, so the primary conversation section should surface only
+  // the most useful recent set instead of becoming a second waterfall.
+  const visibleLimit = 10;
+  const displayedThreads = useMemo(() => {
+    const activeId = activeWorkspaceThreadIdFromPathname(pathname);
+    const current = activeId
+      ? threads.find((thread) => thread.id === activeId)
+      : undefined;
+    const recent = threads.slice(0, visibleLimit);
+    if (!current || recent.some((thread) => thread.id === current.id)) {
+      return recent;
+    }
+    return [
+      current,
+      ...recent.filter((thread) => thread.id !== current.id),
+    ].slice(0, visibleLimit);
+  }, [pathname, threads]);
   return (
-    <div className="mt-4 group-data-[collapsible=icon]:hidden">
+    <div className="mt-2 group-data-[collapsible=icon]:hidden">
       <SidebarGroup className="p-0 px-2 pb-1">
         <SectionHeader
-          label={label ?? tr.sidebar.sectionChats}
+          label={sectionLabel}
           open={open}
           onToggleOpen={() => setOpen((v) => !v)}
-          actions={[
-            {
-              icon: ArrowUpDownIcon,
-              label: tr.sidebar.actionSort,
-              onClick: () => eventBus.emit("chats:sort"),
-            },
-            {
-              icon: MessageSquarePlusIcon,
-              label: tr.sidebar.actionNewChat,
-              onClick: startNewChat,
-            },
-          ]}
+          actions={buildChatsSectionActions({
+            sectionLabel,
+            actionLabel,
+            onNewChat: startNewChat,
+          })}
         />
         {open &&
-          (threads.length === 0 ? (
-            <EmptyHint>{tr.sidebar.noChatsYet}</EmptyHint>
-          ) : (
+          (threads.length === 0 ? null : (
             <ul className="mt-0.5 space-y-px">
-              {threads.slice(0, 20).map((t) => {
-                const active = pathname.includes(t.id);
+              {displayedThreads.map((t) => {
+                const active =
+                  activeWorkspaceThreadIdFromPathname(pathname) === t.id;
+                const runStatus = runStatusByHref?.get(t.href);
                 return (
                   <li key={t.id} className="group/thread relative">
                     <Link
                       to={t.href}
+                      state={{
+                        threadOwnerAgentId:
+                          t.agents.length === 1 ? t.agents[0] : undefined,
+                        workspacePath: t.workspacePath,
+                      }}
+                      onMouseDown={() => syncThreadAgentSelection(t.agents)}
                       aria-current={active ? "page" : undefined}
+                      title={t.title}
                       className={cn(
-                        "flex min-h-7 items-center gap-2 rounded-md pl-2 pr-7 py-1 text-xs opacity-75 transition-[opacity,background-color] duration-150",
-                        "hover:opacity-100 hover:bg-muted/40",
+                        "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-lg py-1 pl-2 pr-2 text-[13px] text-foreground/78 transition-[padding,background-color,color] duration-fast group-hover/thread:pr-8 group-focus-within/thread:pr-8",
+                        "hover:bg-muted/40 hover:text-foreground",
+                        "outline-none focus-visible:ring-1 focus-visible:ring-ring/45 focus-visible:ring-inset",
                         active &&
-                          "opacity-100 bg-[color:color-mix(in_oklch,var(--sidebar-accent)_55%,transparent)]",
+                          "text-foreground bg-[color:color-mix(in_oklch,var(--sidebar-accent)_42%,transparent)]",
                       )}
                     >
+                      <ThreadRunStatusLight
+                        active={active}
+                        idle="queue"
+                        status={runStatus}
+                        className="ml-0.5"
+                      />
                       <span className="min-w-0 flex-1 truncate leading-tight">
                         {t.title}
                       </span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground/60 group-hover/thread:text-muted-foreground/90 group-hover/thread:opacity-0 transition-[opacity,color]">
-                        {formatRelativeTimestamp(t.updatedAt)}
-                      </span>
+                      <SidebarTimestamp
+                        updatedAt={t.updatedAt}
+                        className="w-10 group-hover/thread:w-0 group-hover/thread:opacity-0 group-focus-within/thread:w-0 group-focus-within/thread:opacity-0"
+                      />
                     </Link>
-                    <button
-                      type="button"
-                      title={tr.sidebar.deleteThreadTooltip}
-                      disabled={deleteThread.isPending}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setThreadToDelete(t);
-                      }}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 flex size-5 items-center justify-center rounded-md text-muted-foreground/60 opacity-0 transition-opacity duration-150 group-hover/thread:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                    >
-                      <Trash2Icon className="size-3" />
-                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          title={tr.common.more}
+                          aria-label={tr.common.more}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                          className="absolute right-0.5 top-1/2 -translate-y-1/2 flex size-8 items-center justify-center rounded-lg text-muted-foreground/60 opacity-0 transition-opacity group-hover/thread:opacity-100 hover:bg-muted/40 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50 data-[state=open]:opacity-100"
+                        >
+                          <MoreHorizontalIcon className="size-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" side="right">
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setThreadToRename(t);
+                            setRenameValue(t.title);
+                          }}
+                        >
+                          <PencilIcon className="text-muted-foreground" />
+                          <span>{tr.common.rename}</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          variant="destructive"
+                          disabled={deleteThread.isPending}
+                          onSelect={() => void handleDeleteThread(t)}
+                        >
+                          <Trash2Icon />
+                          <span>{tr.sidebar.deleteThreadTooltip}</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </li>
                 );
               })}
             </ul>
           ))}
       </SidebarGroup>
-      <ConfirmDeleteThreadDialog
-        title={threadToDelete?.title ?? ""}
-        open={threadToDelete !== null}
-        pending={deleteThread.isPending}
+      <Dialog
+        open={threadToRename !== null}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen) setThreadToDelete(null);
-        }}
-        onConfirm={() => {
-          if (!threadToDelete) return;
-          const target = threadToDelete;
-          setThreadToDelete(null);
-          deleteThread.mutate({ threadId: target.id });
-          if (pathname === target.href) {
-            void navigate(PRIMARY_WORKSPACE_ROUTE);
+          if (!nextOpen) {
+            setThreadToRename(null);
+            setRenameValue("");
           }
         }}
-      />
-    </div>
-  );
-}
-
-/* Implementation note. */
-export function ModeSwitcher({
-  active,
-  layout = "sidebar",
-}: {
-  active: "workspace" | "browser";
-  layout?: "sidebar" | "browser";
-}) {
-  const noDrag = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
-
-  const current =
-    active === "workspace"
-      ? { id: "workspace" as const, label: "Octopus" }
-      : { id: "browser" as const, label: "\u6d4f\u89c8\u5668" };
-  const target =
-    layout === "sidebar" && active === "workspace"
-      ? { href: PRIMARY_WORKSPACE_ROUTE, label: current.label }
-      : active === "workspace"
-        ? { href: "/browser", label: "\u6d4f\u89c8\u5668" }
-        : { href: PRIMARY_WORKSPACE_ROUTE, label: "Octopus" };
-  const title =
-    layout === "sidebar" && active === "workspace"
-      ? current.label
-      : `切换至 ${target.label}`;
-  const CurrentIcon = current.id === "workspace" ? OctopusMark : GlobeIcon;
-  const currentIconSize = current.id === "workspace" ? "size-[18px]" : "size-4";
-
-  return (
-    <div
-      className={cn(
-        "min-w-0 flex flex-1 items-center gap-1",
-        layout === "sidebar"
-          ? "justify-start group-data-[collapsible=icon]:flex-none group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-0.5 group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:items-center"
-          : // Implementation note.
-            "px-1",
-      )}
-    >
-      <Link
-        to={target.href}
-        title={title}
-        style={noDrag}
-        className={cn(
-          "group/mode relative flex h-10 min-w-0 flex-1 shrink items-center justify-start gap-2.5 rounded-xl border border-border/55 bg-background/72 px-2.5 text-[15px] font-bold tracking-[0.01em] text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.04),inset_0_1px_0_rgba(255,255,255,0.42)] transition-[background-color,border-color,box-shadow] hover:border-border hover:bg-background",
-          "before:absolute before:bottom-[-5px] before:left-1/2 before:hidden before:size-2 before:-translate-x-1/2 before:rotate-45 before:bg-popover group-hover/mode:before:block",
-          current.id === "workspace" ? "max-w-none" : "max-w-[142px]",
-          layout === "sidebar" &&
-            "group-data-[collapsible=icon]:size-9 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:before:hidden",
-        )}
       >
-        {current.id === "browser" ? (
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate px-1.5 text-center",
-              layout === "sidebar" && "group-data-[collapsible=icon]:hidden",
-            )}
-          >
-            {current.label}
-          </span>
-        ) : null}
-        <span
-          className={cn(
-            "flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/45 text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition-transform group-hover/mode:scale-[1.03]",
-            layout === "sidebar" && "group-data-[collapsible=icon]:size-9",
-          )}
-          aria-hidden
+        <DialogContent
+          showCloseButton={false}
+          className="w-[min(360px,calc(100vw-2rem))] gap-3 rounded-lg p-4 sm:max-w-[360px]"
         >
-          <CurrentIcon className={currentIconSize} />
-        </span>
-        {current.id === "workspace" ? (
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-left text-[15px]",
-              layout === "sidebar" && "group-data-[collapsible=icon]:hidden",
-            )}
-          >
-            {current.label}
-          </span>
-        ) : null}
-      </Link>
+          <DialogHeader className="gap-1 text-left">
+            <DialogTitle className="text-base">{tr.common.rename}</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !isIMEComposing(e)) {
+                e.preventDefault();
+                handleRenameSubmit();
+              }
+            }}
+            autoFocus
+            className="h-8 text-sm"
+          />
+          <DialogFooter className="mt-1 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setThreadToRename(null);
+                setRenameValue("");
+              }}
+            >
+              {tr.common.cancel}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={!renameValue.trim()}
+              onClick={handleRenameSubmit}
+            >
+              {tr.common.save}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {confirmDialog}
     </div>
   );
 }
@@ -1894,9 +2674,16 @@ export function CollapseToggle({ compact = false }: { compact?: boolean }) {
         <button
           type="button"
           onClick={toggleSidebar}
+          title={open ? t.sidebar.collapseSidebar : t.sidebar.expandSidebar}
+          aria-label={
+            open ? t.sidebar.collapseSidebar : t.sidebar.expandSidebar
+          }
+          aria-expanded={open}
           className={cn(
-            "flex shrink-0 items-center justify-center justify-self-center border border-border/45 bg-background/72 text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-[background-color,border-color,color] hover:border-border/60 hover:bg-background hover:text-foreground",
-            compact ? "size-6 rounded-lg" : "size-10 rounded-xl",
+            "flex shrink-0 items-center justify-center justify-self-center border border-transparent bg-transparent text-muted-foreground shadow-none transition-[background-color,border-color,color] hover:border-border-default hover:bg-muted/55 hover:text-foreground",
+            compact
+              ? "size-8 rounded-[var(--appearance-radius-control)]"
+              : "size-10 rounded-[var(--appearance-radius-lg)]",
           )}
         >
           <Icon className={compact ? "size-3.5" : "size-4"} />
@@ -1907,17 +2694,4 @@ export function CollapseToggle({ compact = false }: { compact?: boolean }) {
       </TooltipContent>
     </Tooltip>
   );
-}
-
-function EmptyHint({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-1 rounded-md border border-dashed border-border/50 px-2.5 py-1.5 text-[11px] leading-tight text-muted-foreground/75">
-      {children}
-    </div>
-  );
-}
-
-/** Compact robot mark tuned for the small sidebar tile. */
-function OctopusMark({ className }: { className?: string }) {
-  return <BotIcon className={className} aria-hidden="true" />;
 }

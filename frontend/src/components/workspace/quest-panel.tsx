@@ -15,7 +15,10 @@
 
 import { swallow } from "@/core/utils/log";
 import { getBackendBaseURL } from "@/core/config";
+import { openSseStream } from "@/core/streaming/sse";
 import { useI18n } from "@/core/i18n/hooks";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangleIcon,
@@ -32,13 +35,7 @@ import {
   XCircleIcon,
   XIcon,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -126,7 +123,11 @@ interface QuestState {
 // Phase definitions
 // ---------------------------------------------------------------------------
 
-const PHASES: { key: QuestPhase; labelKey: "analyze" | "plan" | "execute" | "verify" | "report"; icon: React.ElementType }[] = [
+const PHASES: {
+  key: QuestPhase;
+  labelKey: "analyze" | "plan" | "execute" | "verify" | "report";
+  icon: React.ElementType;
+}[] = [
   { key: "analyzing", labelKey: "analyze", icon: SearchIcon },
   { key: "planning", labelKey: "plan", icon: ClipboardCheckIcon },
   { key: "executing", labelKey: "execute", icon: PlayIcon },
@@ -225,106 +226,120 @@ function useQuestStream(questId: string | null): QuestState {
 
     const base = getBackendBaseURL();
     const url = `${base}/api/quest/${questId}/stream`;
-    const es = new EventSource(url);
 
-    es.addEventListener("phase", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setState((s) => ({
-          ...s,
-          phase: data.phase as QuestPhase,
-        }));
-      } catch (e) {
-        swallow(e, "quest.phase");
-      }
-    });
-
-    es.addEventListener("plan_ready", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setState((s) => ({
-          ...s,
-          phase: "awaiting_approval" as QuestPhase,
-          plan: data.plan as QuestPlan,
-        }));
-      } catch (e) {
-        swallow(e, "quest.plan_ready");
-      }
-    });
-
-    es.addEventListener("step_progress", (e) => {
-      let data: { step_index?: number; result?: unknown };
-      try {
-        data = JSON.parse(e.data);
-      } catch (e) {
-        swallow(e, "quest.step_progress");
-        return;
-      }
-      setState((s) => {
-        const updated = { ...s, currentStepIndex: data.step_index ?? s.currentStepIndex };
-        if (data.result) {
-          // Avoid duplicates by step_id
-          const existing = s.stepResults.find(
-            (r) => r.step_id === (data.result as QuestStepResult).step_id,
-          );
-          if (!existing) {
-            updated.stepResults = [...s.stepResults, data.result as QuestStepResult];
-          }
+    return openSseStream({
+      url,
+      onEvent: (msg) => {
+        if (msg.event === "complete") {
+          // Quest finished — close cleanly, no reconnect.
+          return true;
         }
-        return updated;
-      });
-    });
-
-    es.addEventListener("verification", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setState((s) => ({
-          ...s,
-          verification: data.verification as QuestVerification,
-        }));
-      } catch (e) {
-        swallow(e, "quest.verification");
-      }
-    });
-
-    es.addEventListener("report", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setState((s) => ({
-          ...s,
-          report: data.report as QuestReport,
-        }));
-      } catch (e) {
-        swallow(e, "quest.report");
-      }
-    });
-
-    es.addEventListener("complete", (_e) => {
-      es.close();
-    });
-
-    es.addEventListener("error", (e) => {
-      try {
-        const data = JSON.parse((e as MessageEvent).data);
-        setState((s) => ({
-          ...s,
-          phase: "failed" as QuestPhase,
-          error: data.error ?? "Unknown error",
-        }));
-      } catch (e) {
-        swallow(e);
+        if (msg.event === "phase") {
+          try {
+            const data = JSON.parse(msg.data);
+            setState((s) => ({
+              ...s,
+              phase: data.phase as QuestPhase,
+            }));
+          } catch (e) {
+            swallow(e, "quest.phase");
+          }
+          return;
+        }
+        if (msg.event === "plan_ready") {
+          try {
+            const data = JSON.parse(msg.data);
+            setState((s) => ({
+              ...s,
+              phase: "awaiting_approval" as QuestPhase,
+              plan: data.plan as QuestPlan,
+            }));
+          } catch (e) {
+            swallow(e, "quest.plan_ready");
+          }
+          return;
+        }
+        if (msg.event === "step_progress") {
+          let data: { step_index?: number; result?: unknown };
+          try {
+            data = JSON.parse(msg.data);
+          } catch (e) {
+            swallow(e, "quest.step_progress");
+            return;
+          }
+          setState((s) => {
+            const updated = {
+              ...s,
+              currentStepIndex: data.step_index ?? s.currentStepIndex,
+            };
+            if (data.result) {
+              // Avoid duplicates by step_id
+              const existing = s.stepResults.find(
+                (r) => r.step_id === (data.result as QuestStepResult).step_id,
+              );
+              if (!existing) {
+                updated.stepResults = [
+                  ...s.stepResults,
+                  data.result as QuestStepResult,
+                ];
+              }
+            }
+            return updated;
+          });
+          return;
+        }
+        if (msg.event === "verification") {
+          try {
+            const data = JSON.parse(msg.data);
+            setState((s) => ({
+              ...s,
+              verification: data.verification as QuestVerification,
+            }));
+          } catch (e) {
+            swallow(e, "quest.verification");
+          }
+          return;
+        }
+        if (msg.event === "report") {
+          try {
+            const data = JSON.parse(msg.data);
+            setState((s) => ({
+              ...s,
+              report: data.report as QuestReport,
+            }));
+          } catch (e) {
+            swallow(e, "quest.report");
+          }
+          return;
+        }
+        if (msg.event === "error") {
+          try {
+            const data = JSON.parse(msg.data);
+            setState((s) => ({
+              ...s,
+              phase: "failed" as QuestPhase,
+              error: data.error ?? "Unknown error",
+            }));
+          } catch (e) {
+            swallow(e);
+            setState((s) => ({
+              ...s,
+              phase: "failed" as QuestPhase,
+              error: "Connection lost",
+            }));
+          }
+          // Server reported a terminal quest failure — no reconnect.
+          return true;
+        }
+      },
+      onError: () => {
         setState((s) => ({
           ...s,
           phase: "failed" as QuestPhase,
           error: "Connection lost",
         }));
-      }
-      es.close();
+      },
     });
-
-    return () => {
-      es.close();
-    };
   }, [questId]);
 
   return state;
@@ -339,7 +354,7 @@ function PhaseStepper({ currentPhase }: { currentPhase: QuestPhase }) {
   const currentIdx = getPhaseIndex(currentPhase);
 
   return (
-    <div className="flex items-center gap-1 border-b border-border/40 bg-muted/20 px-4 py-2.5">
+    <div className="flex items-center gap-1 border-b border-border-subtle bg-muted/20 px-4 py-2.5">
       {PHASES.map((phase, i) => {
         const Icon = phase.icon;
         const isActive = Math.floor(currentIdx) === i;
@@ -350,10 +365,9 @@ function PhaseStepper({ currentPhase }: { currentPhase: QuestPhase }) {
           <div key={phase.key} className="flex items-center">
             <div
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-300",
-                isActive &&
-                  "bg-primary/10 text-primary ring-1 ring-primary/30",
-                isComplete && "text-emerald-600 dark:text-emerald-400",
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors duration-slow",
+                isActive && "bg-primary/10 text-primary ring-1 ring-primary/30",
+                isComplete && "text-success",
                 isFuture && "text-muted-foreground/40",
               )}
             >
@@ -371,9 +385,9 @@ function PhaseStepper({ currentPhase }: { currentPhase: QuestPhase }) {
             {i < PHASES.length - 1 && (
               <div
                 className={cn(
-                  "mx-1 h-px w-4 transition-colors duration-300",
+                  "mx-1 h-px w-4 transition-colors duration-slow",
                   isComplete
-                    ? "bg-emerald-400 dark:bg-emerald-600"
+                    ? "bg-success dark:bg-success"
                     : "bg-border",
                 )}
               />
@@ -411,18 +425,18 @@ function PlanReview({
   };
 
   return (
-    <div className="space-y-3 px-4 py-3 animate-in fade-in duration-300">
+    <div className="space-y-3 px-4 py-3 animate-in fade-in duration-slow">
       <div className="flex items-center justify-between">
         <h4 className="text-sm font-semibold">{t.questMode.executionPlan}</h4>
         <span
           className={cn(
-            "rounded-lg px-2 py-0.5 text-[10px] font-medium",
+            "rounded-lg px-2 py-0.5 text-xs font-medium",
             plan.total_estimated_complexity === "small" &&
-              "bg-emerald-500/10 text-emerald-600",
+              "bg-success/10 text-success",
             plan.total_estimated_complexity === "medium" &&
-              "bg-amber-500/10 text-amber-600",
+              "bg-warning/10 text-warning",
             plan.total_estimated_complexity === "large" &&
-              "bg-red-500/10 text-red-600",
+              "bg-destructive/10 text-destructive",
           )}
         >
           {plan.total_estimated_complexity} complexity
@@ -439,9 +453,10 @@ function PlanReview({
           return (
             <div
               key={step.step_id}
-              className="rounded-lg border border-border/60 bg-card text-card-foreground"
+              className="rounded-lg border border-border-default bg-card text-card-foreground"
             >
               <button
+                type="button"
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-accent/40"
                 onClick={() => toggleStep(step.step_id)}
               >
@@ -456,13 +471,13 @@ function PlanReview({
                 <span className="flex-1 font-medium">{step.title}</span>
                 <span
                   className={cn(
-                    "rounded px-1.5 py-0.5 text-[10px]",
+                    "rounded px-1.5 py-0.5 text-xs",
                     step.estimated_complexity === "low" &&
-                      "bg-emerald-500/10 text-emerald-600",
+                      "bg-success/10 text-success",
                     step.estimated_complexity === "medium" &&
-                      "bg-amber-500/10 text-amber-600",
+                      "bg-warning/10 text-warning",
                     step.estimated_complexity === "high" &&
-                      "bg-red-500/10 text-red-600",
+                      "bg-destructive/10 text-destructive",
                   )}
                 >
                   {step.estimated_complexity}
@@ -474,7 +489,7 @@ function PlanReview({
                     {step.description}
                   </p>
                   {step.tool_hint && (
-                    <p className="text-muted-foreground mt-1 font-mono text-[10px]">
+                    <p className="text-muted-foreground mt-1 font-mono text-xs">
                       Tool: {step.tool_hint}
                     </p>
                   )}
@@ -487,14 +502,16 @@ function PlanReview({
 
       <div className="flex justify-end gap-2 pt-1">
         <button
+          type="button"
           onClick={onReject}
-          className="rounded-lg border border-border/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+          className="rounded-lg border border-border-default px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
         >
           {t.questMode.reject}
         </button>
         <button
+          type="button"
           onClick={onApprove}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg px-3 py-1.5 text-xs font-medium shadow-sm shadow-primary/10 transition-colors"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg px-3 py-1.5 text-xs font-medium shadow-[var(--shadow-xs)] shadow-primary/10 transition-colors"
         >
           {t.questMode.approveExecute}
         </button>
@@ -532,7 +549,7 @@ function ExecutionProgress({
       : 0;
 
   return (
-    <div className="space-y-2 px-4 py-3 animate-in fade-in duration-300">
+    <div className="space-y-2 px-4 py-3 animate-in fade-in duration-slow">
       <div className="flex items-center justify-between text-xs">
         <span className="font-medium">
           {t.questMode.execute} ({completedCount}/{plan.steps.length})
@@ -543,7 +560,7 @@ function ExecutionProgress({
       {/* Progress bar */}
       <div className="bg-primary/10 h-1.5 w-full overflow-hidden rounded-lg">
         <div
-          className="bg-primary h-full rounded-lg transition-all duration-500 shadow-sm shadow-primary/20"
+          className="bg-primary h-full rounded-lg transition-all duration-slow shadow-[var(--shadow-xs)] shadow-primary/20"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -566,9 +583,9 @@ function ExecutionProgress({
               {isRunning ? (
                 <Loader2Icon className="text-primary mt-0.5 size-3.5 animate-spin" />
               ) : isComplete ? (
-                <CheckCircle2Icon className="mt-0.5 size-3.5 text-emerald-500" />
+                <CheckCircle2Icon className="mt-0.5 size-3.5 text-success" />
               ) : isFailed ? (
-                <XCircleIcon className="mt-0.5 size-3.5 text-red-500" />
+                <XCircleIcon className="mt-0.5 size-3.5 text-destructive" />
               ) : (
                 <div className="mt-0.5 size-3.5 rounded-lg border border-muted-foreground/30" />
               )}
@@ -582,13 +599,14 @@ function ExecutionProgress({
                   >
                     {step.title}
                   </span>
-                  {result?.duration_ms !== undefined && result.duration_ms > 0 && (
-                    <span className="text-muted-foreground shrink-0 text-[10px]">
-                      {result.duration_ms < 1000
-                        ? `${result.duration_ms}ms`
-                        : `${(result.duration_ms / 1000).toFixed(1)}s`}
-                    </span>
-                  )}
+                  {result?.duration_ms !== undefined &&
+                    result.duration_ms > 0 && (
+                      <span className="text-muted-foreground shrink-0 text-xs">
+                        {result.duration_ms < 1000
+                          ? `${result.duration_ms}ms`
+                          : `${(result.duration_ms / 1000).toFixed(1)}s`}
+                      </span>
+                    )}
                 </div>
                 {result?.output && (
                   <p className="text-muted-foreground mt-0.5 truncate">
@@ -596,9 +614,7 @@ function ExecutionProgress({
                   </p>
                 )}
                 {result?.error && (
-                  <p className="mt-0.5 truncate text-red-500">
-                    {result.error}
-                  </p>
+                  <p className="mt-0.5 truncate text-destructive">{result.error}</p>
                 )}
               </div>
             </div>
@@ -623,15 +639,17 @@ function VerificationResults({
     <div className="space-y-2 px-4 py-3">
       <div className="flex items-center gap-2">
         {verification.passed ? (
-          <CheckCircle2Icon className="size-4 text-emerald-500" />
+          <CheckCircle2Icon className="size-4 text-success" />
         ) : (
-          <AlertTriangleIcon className="size-4 text-amber-500" />
+          <AlertTriangleIcon className="size-4 text-warning" />
         )}
         <h4 className="text-sm font-semibold">
-          {verification.passed ? t.questMode.verificationPassed : t.questMode.verificationIssues}
+          {verification.passed
+            ? t.questMode.verificationPassed
+            : t.questMode.verificationIssues}
         </h4>
         {verification.fix_attempts > 0 && (
-          <span className="text-muted-foreground text-[10px]">
+          <span className="text-muted-foreground text-xs">
             (fix cycle {verification.fix_attempts})
           </span>
         )}
@@ -639,29 +657,31 @@ function VerificationResults({
 
       <div className="grid grid-cols-3 gap-2">
         {verification.tests_run > 0 && (
-          <div className="rounded-lg border border-border/60 bg-card p-2 text-center">
+          <div className="rounded-lg border border-border-default bg-card p-2 text-center">
             <div className="text-sm font-bold">
               {verification.tests_passed}/{verification.tests_run}
             </div>
-            <div className="text-muted-foreground text-[10px]">{t.questMode.tests}</div>
+            <div className="text-muted-foreground text-xs">
+              {t.questMode.tests}
+            </div>
           </div>
         )}
         {verification.lint_errors > 0 && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-center">
-            <div className="text-sm font-bold text-amber-500">
+          <div className="rounded-lg border border-warning/30 bg-warning/5 p-2 text-center">
+            <div className="text-sm font-bold text-warning">
               {verification.lint_errors}
             </div>
-            <div className="text-muted-foreground text-[10px]">
+            <div className="text-muted-foreground text-xs">
               {t.questMode.lintErrors}
             </div>
           </div>
         )}
         {verification.type_errors > 0 && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-2 text-center">
-            <div className="text-sm font-bold text-red-500">
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-center">
+            <div className="text-sm font-bold text-destructive">
               {verification.type_errors}
             </div>
-            <div className="text-muted-foreground text-[10px]">
+            <div className="text-muted-foreground text-xs">
               {t.questMode.typeErrors}
             </div>
           </div>
@@ -670,18 +690,15 @@ function VerificationResults({
 
       {verification.requirement_checks.length > 0 && (
         <div className="space-y-1">
-          <div className="text-muted-foreground text-[10px] font-medium uppercase">
+          <div className="text-muted-foreground text-xs font-medium uppercase">
             {t.questMode.requirementChecks}
           </div>
           {verification.requirement_checks.map((check, i) => (
-            <div
-              key={i}
-              className="flex items-start gap-1.5 text-xs"
-            >
+            <div key={i} className="flex items-start gap-1.5 text-xs">
               {check.passed ? (
-                <CheckCircle2Icon className="mt-0.5 size-3 text-emerald-500" />
+                <CheckCircle2Icon className="mt-0.5 size-3 text-success" />
               ) : (
-                <XCircleIcon className="mt-0.5 size-3 text-red-500" />
+                <XCircleIcon className="mt-0.5 size-3 text-destructive" />
               )}
               <span>{check.description}</span>
             </div>
@@ -691,13 +708,13 @@ function VerificationResults({
 
       {verification.issues_found.length > 0 && (
         <div className="space-y-1">
-          <div className="text-muted-foreground text-[10px] font-medium uppercase">
+          <div className="text-muted-foreground text-xs font-medium uppercase">
             {t.questMode.issues}
           </div>
           {verification.issues_found.map((issue, i) => (
             <div
               key={i}
-              className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400"
+              className="flex items-start gap-1.5 text-xs text-warning"
             >
               <AlertTriangleIcon className="mt-0.5 size-3" />
               <span>{issue}</span>
@@ -721,14 +738,14 @@ function ReportCard({ report }: { report: QuestReport }) {
     <div className="space-y-3 px-4 py-3">
       <div className="flex items-center gap-2">
         {isSuccess ? (
-          <CheckCircle2Icon className="size-5 text-emerald-500" />
+          <CheckCircle2Icon className="size-5 text-success" />
         ) : (
-          <XCircleIcon className="size-5 text-red-500" />
+          <XCircleIcon className="size-5 text-destructive" />
         )}
         <h4 className="text-sm font-semibold">
           {isSuccess ? t.questMode.questCompleted : t.questMode.questFailed}
         </h4>
-        <span className="text-muted-foreground text-[10px]">
+        <span className="text-muted-foreground text-xs">
           {report.duration_ms < 1000
             ? `${report.duration_ms}ms`
             : `${(report.duration_ms / 1000).toFixed(1)}s`}
@@ -738,26 +755,30 @@ function ReportCard({ report }: { report: QuestReport }) {
       <p className="text-sm">{report.summary}</p>
 
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-lg border border-border/60 bg-card p-2">
+        <div className="rounded-lg border border-border-default bg-card p-2">
           <div className="font-bold">
             {report.steps_completed}/{report.steps_total}
           </div>
-          <div className="text-muted-foreground">{t.questMode.stepsCompleted}</div>
+          <div className="text-muted-foreground">
+            {t.questMode.stepsCompleted}
+          </div>
         </div>
-        <div className="rounded-lg border border-border/60 bg-card p-2">
+        <div className="rounded-lg border border-border-default bg-card p-2">
           <div className="font-bold">{report.files_changed.length}</div>
-          <div className="text-muted-foreground">{t.questMode.filesChanged}</div>
+          <div className="text-muted-foreground">
+            {t.questMode.filesChanged}
+          </div>
         </div>
       </div>
 
       {report.files_changed.length > 0 && (
         <div className="space-y-1">
-          <div className="text-muted-foreground text-[10px] font-medium uppercase">
+          <div className="text-muted-foreground text-xs font-medium uppercase">
             {t.questMode.changedFiles}
           </div>
           <div className="max-h-24 overflow-y-auto">
             {report.files_changed.map((f) => (
-              <div key={f} className="font-mono text-[11px]">
+              <div key={f} className="font-mono text-xs">
                 {f}
               </div>
             ))}
@@ -767,7 +788,7 @@ function ReportCard({ report }: { report: QuestReport }) {
 
       {report.remaining_todos.length > 0 && (
         <div className="space-y-1">
-          <div className="text-muted-foreground text-[10px] font-medium uppercase">
+          <div className="text-muted-foreground text-xs font-medium uppercase">
             {t.questMode.remainingTodos}
           </div>
           {report.remaining_todos.map((todo, i) => (
@@ -775,7 +796,7 @@ function ReportCard({ report }: { report: QuestReport }) {
               key={i}
               className="text-muted-foreground flex items-start gap-1.5 text-xs"
             >
-              <span className="text-amber-500">-</span>
+              <span className="text-warning">-</span>
               <span>{todo}</span>
             </div>
           ))}
@@ -783,7 +804,7 @@ function ReportCard({ report }: { report: QuestReport }) {
       )}
 
       {report.error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-500">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           {report.error}
         </div>
       )}
@@ -833,18 +854,19 @@ function QuestStartForm({
           }
         }}
         placeholder="e.g. Add a dark mode toggle to the settings page with persistent preference storage..."
-        className="bg-muted/30 text-foreground placeholder:text-muted-foreground/40 min-h-[80px] w-full resize-none rounded-lg border border-border/60 px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40 focus:ring-1 focus:ring-primary/30"
+        className="bg-muted/30 text-foreground placeholder:text-muted-foreground/40 min-h-[80px] w-full resize-none rounded-lg border border-border-default px-3 py-2 text-sm outline-none transition-colors focus:border-primary/40 focus:ring-1 focus:ring-primary/30"
         rows={3}
       />
       <div className="flex items-center justify-between">
-        <span className="text-muted-foreground/50 text-[10px]">
+        <span className="text-muted-foreground/50 text-xs">
           Ctrl+Enter to start
         </span>
         <button
+          type="button"
           onClick={handleSubmit}
           disabled={!requirement.trim()}
           className={cn(
-            "bg-primary text-primary-foreground flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium shadow-sm shadow-primary/10 transition-colors",
+            "bg-primary text-primary-foreground flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium shadow-[var(--shadow-xs)] shadow-primary/10 transition-colors",
             requirement.trim()
               ? "hover:bg-primary/90"
               : "cursor-not-allowed opacity-50",
@@ -876,6 +898,7 @@ export function QuestPanel({
   workspacePath,
 }: QuestPanelProps) {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [questId, setQuestId] = useState<string | null>(null);
   const quest = useQuestStream(questId);
 
@@ -887,10 +910,11 @@ export function QuestPanel({
         });
         setQuestId(result.quest_id);
       } catch (err) {
-        console.error("Failed to start quest:", err);
+        swallow(err);
+        toast.error(t.questMode.startFailed);
       }
     },
-    [workspacePath],
+    [workspacePath, t.questMode.startFailed],
   );
 
   const handleApprove = useCallback(async () => {
@@ -898,29 +922,48 @@ export function QuestPanel({
     try {
       await approvePlan(questId);
     } catch (err) {
-      console.error("Failed to approve plan:", err);
+      swallow(err);
+      toast.error(t.questMode.approveFailed);
     }
-  }, [questId]);
+  }, [questId, t.questMode.approveFailed]);
 
   const handleReject = useCallback(async () => {
     if (!questId) return;
+    if (
+      !(await confirm({
+        title: t.questMode.rejectConfirmTitle,
+        description: t.questMode.rejectConfirmDescription,
+        confirmLabel: t.questMode.reject,
+      }))
+    )
+      return;
     try {
       await rejectPlan(questId);
       setQuestId(null);
     } catch (err) {
-      console.error("Failed to reject plan:", err);
+      swallow(err);
+      toast.error(t.questMode.rejectFailed);
     }
-  }, [questId]);
+  }, [questId, confirm, t.questMode.rejectConfirmTitle, t.questMode.rejectConfirmDescription, t.questMode.reject, t.questMode.rejectFailed]);
 
   const handleCancel = useCallback(async () => {
     if (!questId) return;
+    if (
+      !(await confirm({
+        title: t.questMode.cancelConfirmTitle,
+        description: t.questMode.cancelConfirmDescription,
+        confirmLabel: t.questMode.cancelConfirmLabel,
+      }))
+    )
+      return;
     try {
       await cancelQuest(questId);
       setQuestId(null);
     } catch (err) {
-      console.error("Failed to cancel quest:", err);
+      swallow(err);
+      toast.error(t.questMode.cancelFailed);
     }
-  }, [questId]);
+  }, [questId, confirm, t.questMode.cancelConfirmTitle, t.questMode.cancelConfirmDescription, t.questMode.cancelConfirmLabel, t.questMode.cancelFailed]);
 
   const handleNewQuest = useCallback(() => {
     setQuestId(null);
@@ -937,19 +980,19 @@ export function QuestPanel({
   return (
     <div
       className={cn(
-        "bg-popover text-popover-foreground w-96 overflow-hidden rounded-lg border border-border/60 shadow-2xl shadow-black/5",
+        "bg-popover text-popover-foreground w-96 overflow-hidden rounded-lg border border-border-default shadow-sm",
         className,
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5">
+      <div className="flex items-center justify-between border-b border-border-default px-4 py-2.5">
         <div className="flex items-center gap-2">
           <div className="flex size-6 items-center justify-center rounded-lg bg-primary/10">
             <RocketIcon className="text-primary size-3.5" />
           </div>
           <span className="text-sm font-semibold">{t.questMode.title}</span>
           {isActive && (
-            <span className="bg-primary/10 text-primary rounded-lg px-1.5 py-0.5 text-[10px] font-medium">
+            <span className="bg-primary/10 text-primary rounded-lg px-1.5 py-0.5 text-xs font-medium">
               {t.questMode.active}
             </span>
           )}
@@ -957,7 +1000,9 @@ export function QuestPanel({
         <div className="flex items-center gap-1">
           {isActive && (
             <button
+              type="button"
               onClick={handleCancel}
+              aria-label="Cancel quest"
               className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
               title="Cancel quest"
             >
@@ -965,7 +1010,9 @@ export function QuestPanel({
             </button>
           )}
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close"
             className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
           >
             <XIcon className="size-3.5" />
@@ -984,7 +1031,7 @@ export function QuestPanel({
 
             {/* Phase-specific content */}
             {quest.phase === "analyzing" && (
-              <div className="flex items-center gap-2 px-4 py-6 animate-in fade-in duration-300">
+              <div className="flex items-center gap-2 px-4 py-6 animate-in fade-in duration-slow">
                 <Loader2Icon className="text-primary size-4 animate-spin" />
                 <span className="text-muted-foreground text-sm">
                   {t.questMode.analyzing}
@@ -993,7 +1040,7 @@ export function QuestPanel({
             )}
 
             {quest.phase === "planning" && (
-              <div className="flex items-center gap-2 px-4 py-6 animate-in fade-in duration-300">
+              <div className="flex items-center gap-2 px-4 py-6 animate-in fade-in duration-slow">
                 <Loader2Icon className="text-primary size-4 animate-spin" />
                 <span className="text-muted-foreground text-sm">
                   {t.questMode.generatingPlan}
@@ -1018,7 +1065,7 @@ export function QuestPanel({
             )}
 
             {quest.phase === "verifying" && (
-              <div className="space-y-2 animate-in fade-in duration-300">
+              <div className="space-y-2 animate-in fade-in duration-slow">
                 {quest.verification ? (
                   <VerificationResults verification={quest.verification} />
                 ) : (
@@ -1033,7 +1080,7 @@ export function QuestPanel({
             )}
 
             {quest.phase === "reporting" && (
-              <div className="flex items-center gap-2 px-4 py-6 animate-in fade-in duration-300">
+              <div className="flex items-center gap-2 px-4 py-6 animate-in fade-in duration-slow">
                 <Loader2Icon className="text-primary size-4 animate-spin" />
                 <span className="text-muted-foreground text-sm">
                   {t.questMode.generatingReport}
@@ -1042,22 +1089,23 @@ export function QuestPanel({
             )}
 
             {(quest.phase === "completed" || quest.phase === "failed") && (
-              <div className="space-y-2 animate-in fade-in duration-300">
+              <div className="space-y-2 animate-in fade-in duration-slow">
                 {quest.verification && (
                   <VerificationResults verification={quest.verification} />
                 )}
                 {quest.report && <ReportCard report={quest.report} />}
                 {quest.error && !quest.report && (
                   <div className="px-4 py-2">
-                    <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-500">
+                    <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
                       {quest.error}
                     </div>
                   </div>
                 )}
                 <div className="flex justify-center px-4 pb-3 pt-1">
                   <button
+                    type="button"
                     onClick={handleNewQuest}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium shadow-sm shadow-primary/10 transition-colors"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium shadow-[var(--shadow-xs)] shadow-primary/10 transition-colors"
                   >
                     <RocketIcon className="size-3" />
                     {t.questMode.newQuest}
@@ -1067,7 +1115,7 @@ export function QuestPanel({
             )}
 
             {quest.phase === "cancelled" && (
-              <div className="space-y-2 px-4 py-6 text-center animate-in fade-in duration-300">
+              <div className="space-y-2 px-4 py-6 text-center animate-in fade-in duration-slow">
                 <div className="mx-auto flex size-12 items-center justify-center rounded-lg bg-muted/50">
                   <XCircleIcon className="text-muted-foreground size-6" />
                 </div>
@@ -1075,8 +1123,9 @@ export function QuestPanel({
                   {t.questMode.cancelled}
                 </p>
                 <button
+                  type="button"
                   onClick={handleNewQuest}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg px-4 py-1.5 text-xs font-medium shadow-sm shadow-primary/10 transition-colors"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg px-4 py-1.5 text-xs font-medium shadow-[var(--shadow-xs)] shadow-primary/10 transition-colors"
                 >
                   {t.questMode.startNewQuest}
                 </button>
@@ -1085,6 +1134,7 @@ export function QuestPanel({
           </>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }
@@ -1099,16 +1149,21 @@ interface QuestButtonProps {
   className?: string;
 }
 
-export function QuestButton({ onClick, isActive, className }: QuestButtonProps) {
+export function QuestButton({
+  onClick,
+  isActive,
+  className,
+}: QuestButtonProps) {
   const { t } = useI18n();
   return (
     <button
+      type="button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition-all duration-200",
+        "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium shadow-[var(--shadow-xs)] transition-colors transition-shadow duration-base",
         isActive
           ? "bg-primary text-primary-foreground border-primary/60 shadow-primary/10"
-          : "bg-background/80 text-muted-foreground hover:bg-muted/50 hover:text-foreground border-border/60",
+          : "bg-background/80 text-muted-foreground hover:bg-muted/50 hover:text-foreground border-border-default",
         className,
       )}
     >

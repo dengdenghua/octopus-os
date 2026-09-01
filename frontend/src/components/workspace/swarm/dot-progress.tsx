@@ -2,8 +2,8 @@ import type React from "react";
 import { cn } from "@/lib/utils";
 
 interface DotProgressProps {
-  progress: number;   // 0..1
-  hue: number;        // agent theme hue
+  progress: number; // 0..1
+  hue: number; // agent theme hue
   cols?: number;
   rows?: number;
   className?: string;

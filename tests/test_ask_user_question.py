@@ -1,10 +1,10 @@
 """Tests for the ``ask_user_question`` skill."""
+
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
-
 from runtime.execution.suckers.ask_user_question import (
     _ask_user_question,
     register_ask_user_question_skill,
@@ -69,6 +69,7 @@ def test_happy_path_emits_to_session(monkeypatch: pytest.MonkeyPatch) -> None:
         metadata = {"event_emitter": lambda ev: captured.append(ev)}
 
     from runtime.platform import session as session_mod
+
     monkeypatch.setattr(session_mod, "current_session", lambda: _FakeSession())
 
     out = _ask_user_question(
@@ -94,10 +95,12 @@ def test_emitter_exception_does_not_break_skill(monkeypatch: pytest.MonkeyPatch)
         metadata = {"event_emitter": lambda ev: (_ for _ in ()).throw(RuntimeError("boom"))}
 
     from runtime.platform import session as session_mod
+
     monkeypatch.setattr(session_mod, "current_session", lambda: _BoomSession())
 
     out = _ask_user_question(
-        question="A or B?", options=["A", "B"],
+        question="A or B?",
+        options=["A", "B"],
     )
     assert out["ok"] is True
     assert out["posted"] is False

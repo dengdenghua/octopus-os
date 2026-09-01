@@ -8,15 +8,15 @@ import type { PreviewDiagnostic } from "./live-preview-panel";
 
 const SESSION_INFO = {
   thread_id: "thread-1",
-  workspace_path: "F:/octopus-agent",
+  workspace_path: "F:/echo-agent",
   workspace_exists: true,
-  workspace_resolved: "F:/octopus-agent",
+  workspace_resolved: "F:/echo-agent",
   project: { kind: "node", checks: ["typecheck"] },
   rules_file: null,
   git_initialized: false,
   thread_metadata: null,
   write_scope: null,
-  server_cwd: "F:/octopus-agent",
+  server_cwd: "F:/echo-agent",
   python_executable: "python",
 };
 
@@ -43,14 +43,18 @@ describe("<DiagnosticsPanel /> preview diagnostics", () => {
     renderWithProviders(
       <DiagnosticsPanel
         threadId="thread-1"
-        workDir="F:/octopus-agent"
+        workDir="F:/echo-agent"
         previewDiagnostics={diagnostics}
       />,
     );
 
-    await waitFor(() => expect(screen.getByText("Workspace")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Workspace")).toBeInTheDocument(),
+    );
     expect(screen.getByText("Preview")).toBeInTheDocument();
     expect(screen.getByText("console")).toBeInTheDocument();
-    expect(screen.getByText("ReferenceError: app is not defined")).toBeInTheDocument();
+    expect(
+      screen.getByText("ReferenceError: app is not defined"),
+    ).toBeInTheDocument();
   });
 });

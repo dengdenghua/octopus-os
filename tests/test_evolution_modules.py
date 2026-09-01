@@ -1,4 +1,5 @@
 """Unit tests for runtime.safety.evolution modules."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -61,14 +62,18 @@ class TestEvolveConfig:
 
     def test_inherit_resolves_to_planner(self):
         cfg = EvolveConfig()
-        planner = PlannerConfig(type="llm", model="mimo-v2.5-pro", base_url="https://api.example.com/v1")
+        planner = PlannerConfig(
+            type="llm", model="mimo-v2.5-pro", base_url="https://api.example.com/v1"
+        )
         model, url = cfg.resolve(planner)
         assert model == "mimo-v2.5-pro"
         assert url == "https://api.example.com/v1"
 
     def test_cheaper_same_provider(self):
         cfg = EvolveConfig(strategy="cheaper_same_provider")
-        planner = PlannerConfig(type="llm", model="mimo-v2.5-pro", base_url="https://api.example.com/v1")
+        planner = PlannerConfig(
+            type="llm", model="mimo-v2.5-pro", base_url="https://api.example.com/v1"
+        )
         model, url = cfg.resolve(planner)
         assert model == "mimo-v2-flash"
         assert url == "https://api.example.com/v1"
@@ -107,27 +112,40 @@ class TestComputeL1:
 
     def test_all_success(self):
         from runtime.memory.learning.turn_scoring import TurnScore
-        scores = [TurnScore(ts="t", agent_id="a", score=1.0, reason="success", soul_hash="abc", rounds=3)]
+
+        scores = [
+            TurnScore(ts="t", agent_id="a", score=1.0, reason="success", soul_hash="abc", rounds=3)
+        ]
         scores = scores * 10
-        with patch("runtime.safety.evolution.fitness.read_recent_scores", return_value=scores):
-            with patch("runtime.safety.evolution.fitness.analyze_soul_impact", return_value={}):
-                l1 = compute_l1("test_agent", window=10)
-                assert l1.score == 1.0
-                assert l1.success_rate == 1.0
+        with (
+            patch("runtime.safety.evolution.fitness.read_recent_scores", return_value=scores),
+            patch("runtime.safety.evolution.fitness.analyze_soul_impact", return_value={}),
+        ):
+            l1 = compute_l1("test_agent", window=10)
+            assert l1.score == 1.0
+            assert l1.success_rate == 1.0
 
 
 class TestFitnessReport:
     def test_verdict_healthy(self):
         report = FitnessReport(
-            agent_id="test", ts="t", l1=L1Fitness(0.9, "stable", 0.9, 3.0, {}),
-            l2=None, combined=0.9, verdict="healthy",
+            agent_id="test",
+            ts="t",
+            l1=L1Fitness(0.9, "stable", 0.9, 3.0, {}),
+            l2=None,
+            combined=0.9,
+            verdict="healthy",
         )
         assert report.verdict == "healthy"
 
     def test_verdict_critical(self):
         report = FitnessReport(
-            agent_id="test", ts="t", l1=L1Fitness(0.1, "regressing", 0.1, 20.0, {}),
-            l2=None, combined=0.1, verdict="critical",
+            agent_id="test",
+            ts="t",
+            l1=L1Fitness(0.1, "regressing", 0.1, 20.0, {}),
+            l2=None,
+            combined=0.1,
+            verdict="critical",
         )
         assert report.verdict == "critical"
 
@@ -140,26 +158,32 @@ class TestFitnessReport:
 class TestDriftMonitor:
     def test_no_drift_on_first_check(self):
         monitor = DriftMonitor("test_agent")
-        with patch.object(monitor, "_check_soul_drift", return_value=None):
-            with patch.object(monitor, "_check_genome_drift", return_value=None):
-                with patch.object(monitor, "_check_score_drift", return_value=None):
-                    report = monitor.check()
-                    assert report.has_drift is False
-                    assert report.max_severity == "none"
+        with (
+            patch.object(monitor, "_check_soul_drift", return_value=None),
+            patch.object(monitor, "_check_genome_drift", return_value=None),
+            patch.object(monitor, "_check_score_drift", return_value=None),
+        ):
+            report = monitor.check()
+            assert report.has_drift is False
+            assert report.max_severity == "none"
 
     def test_soul_change_detected(self):
         monitor = DriftMonitor("test_agent")
         monitor._last_soul_hash = "old_hash"
         with patch.object(monitor, "_check_soul_drift") as mock_soul:
             mock_soul.return_value = DriftEvent(
-                kind="soul_change", severity="info",
-                detail="changed", ts="t",
+                kind="soul_change",
+                severity="info",
+                detail="changed",
+                ts="t",
             )
-            with patch.object(monitor, "_check_genome_drift", return_value=None):
-                with patch.object(monitor, "_check_score_drift", return_value=None):
-                    report = monitor.check()
-                    assert report.has_drift is True
-                    assert report.max_severity == "info"
+            with (
+                patch.object(monitor, "_check_genome_drift", return_value=None),
+                patch.object(monitor, "_check_score_drift", return_value=None),
+            ):
+                report = monitor.check()
+                assert report.has_drift is True
+                assert report.max_severity == "info"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -218,7 +242,7 @@ class TestProposalLedger:
         )
         ledger.mark_applied(proposal.proposal_id)
         cm = CanaryManager(canary_config)
-        state = cm.register(
+        _state = cm.register(
             "planner__cand-1",
             metadata={
                 "recipe_id": "planner",
@@ -262,81 +286,99 @@ class TestProposalLedger:
             final_front = [Candidate()]
             best_avg = Candidate()
             history = [{"iter": 0, "front_size": 1, "best_avg": 0.5}]
-            native_evaluation = [{
-                "candidate_id": "cand-1",
-                "total": 0.82,
-                "verdict": "promote",
-                "task_score": 0.9,
-                "constraint_score": 1.0,
-                "failure_coverage": 0.75,
-                "positive_preservation": 0.8,
-                "efficiency": 0.95,
-                "reasons": ["balanced candidate"],
-                "constraint_results": [{"verbose": "omitted"}],
-            }]
+            native_evaluation = [
+                {
+                    "candidate_id": "cand-1",
+                    "total": 0.82,
+                    "verdict": "promote",
+                    "task_score": 0.9,
+                    "constraint_score": 1.0,
+                    "failure_coverage": 0.75,
+                    "positive_preservation": 0.8,
+                    "efficiency": 0.95,
+                    "reasons": ["balanced candidate"],
+                    "constraint_results": [{"verbose": "omitted"}],
+                }
+            ]
             native_replay = {
                 "cases": [{"case_id": "case-1"}, {"case_id": "case-2"}],
-                "candidates": [{
-                    "candidate_id": "cand-1",
-                    "total": 0.77,
-                    "reasons": ["replay coverage is strong"],
-                    "case_results": [{
-                        "case_id": "case-2",
-                        "kind": "failure",
-                        "score": 0.4,
-                        "reason": "missing failure-specific guidance",
-                        "missing_signals": ["continue", "checkpoint"],
-                    }],
-                }],
+                "candidates": [
+                    {
+                        "candidate_id": "cand-1",
+                        "total": 0.77,
+                        "reasons": ["replay coverage is strong"],
+                        "case_results": [
+                            {
+                                "case_id": "case-2",
+                                "kind": "failure",
+                                "score": 0.4,
+                                "reason": "missing failure-specific guidance",
+                                "missing_signals": ["continue", "checkpoint"],
+                            }
+                        ],
+                    }
+                ],
             }
             native_sandbox_replay = {
                 "case_count": 2,
-                "candidates": [{
-                    "candidate_id": "cand-1",
-                    "total": 0.72,
-                    "passed": False,
-                    "reasons": ["sandbox replay weak cases: case-2"],
-                    "case_results": [{
-                        "case_id": "case-2",
-                        "kind": "failure",
-                        "score": 0.5,
-                        "sandbox_passed": True,
-                        "reason": "missing failure-specific guidance",
-                    }],
-                }],
+                "candidates": [
+                    {
+                        "candidate_id": "cand-1",
+                        "total": 0.72,
+                        "passed": False,
+                        "reasons": ["sandbox replay weak cases: case-2"],
+                        "case_results": [
+                            {
+                                "case_id": "case-2",
+                                "kind": "failure",
+                                "score": 0.5,
+                                "sandbox_passed": True,
+                                "reason": "missing failure-specific guidance",
+                            }
+                        ],
+                    }
+                ],
             }
             native_turn_replay = {
                 "cases": [{"case_id": "turn-1"}, {"case_id": "turn-2"}],
-                "candidates": [{
-                    "candidate_id": "cand-1",
-                    "total": 0.69,
-                    "passed": False,
-                    "reasons": ["turn replay weak cases: turn-2"],
-                    "case_results": [{
-                        "case_id": "turn-2",
-                        "kind": "final_step_stuck",
-                        "score": 0.4,
+                "candidates": [
+                    {
+                        "candidate_id": "cand-1",
+                        "total": 0.69,
                         "passed": False,
-                        "reason": "final_step_stuck missing: close-after-final",
-                        "missing_signals": ["close-after-final"],
-                    }],
-                }],
+                        "reasons": ["turn replay weak cases: turn-2"],
+                        "case_results": [
+                            {
+                                "case_id": "turn-2",
+                                "kind": "final_step_stuck",
+                                "score": 0.4,
+                                "passed": False,
+                                "reason": "final_step_stuck missing: close-after-final",
+                                "missing_signals": ["close-after-final"],
+                            }
+                        ],
+                    }
+                ],
             }
             native_llm_replay = {
                 "cases": [{"case_id": "llm-1"}],
-                "candidates": [{
-                    "candidate_id": "cand-1",
-                    "total": 0.81,
-                    "passed": False,
-                    "reasons": ["llm replay weak cases: llm-1"],
-                    "case_results": [{
-                        "case_id": "llm-1",
-                        "kind": "report_truncation",
-                        "score": 0.2,
+                "candidates": [
+                    {
+                        "candidate_id": "cand-1",
+                        "total": 0.81,
                         "passed": False,
-                        "reason": "model output was truncated",
-                    }],
-                }],
+                        "reasons": ["llm replay weak cases: llm-1"],
+                        "case_results": [
+                            {
+                                "case_id": "llm-1",
+                                "kind": "report_truncation",
+                                "score": 0.2,
+                                "passed": False,
+                                "reason": "model output was truncated",
+                            }
+                        ],
+                    }
+                ],
             }
             winner_proposal = {
                 "ok": False,
@@ -364,10 +406,11 @@ class TestProposalLedger:
             "candidate_id": "cand-1",
         }
 
-    def test_ledger_proposal_endpoint_returns_related_canary_and_rollback(self, tmp_path, monkeypatch):
+    def test_ledger_proposal_endpoint_returns_related_canary_and_rollback(
+        self, tmp_path, monkeypatch
+    ):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-
         from runtime.sensing.gateway.evolution_router import create_evolution_router
 
         monkeypatch.chdir(tmp_path)
@@ -479,7 +522,6 @@ class TestCanaryManager:
     def test_canary_router_lists_full_and_rolled_back_states(self, tmp_path, monkeypatch):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-
         from runtime.sensing.gateway.evolution_router import create_evolution_router
 
         cm = CanaryManager(CanaryConfig(state_dir=str(tmp_path / "canary")))
@@ -513,9 +555,12 @@ class TestFederationHub:
     def test_publish_and_discover(self, tmp_path):
         hub = FederationHub(FederationConfig(shared_dir=str(tmp_path / "fed")))
         proposal = SharedProposal(
-            proposal_id="p1", source_agent="agent_a",
-            kind="add_lesson", description="test lesson",
-            fitness_delta=0.15, ts="2026-01-01T00:00:00",
+            proposal_id="p1",
+            source_agent="agent_a",
+            kind="add_lesson",
+            description="test lesson",
+            fitness_delta=0.15,
+            ts="2026-01-01T00:00:00",
         )
         hub.publish("agent_a", proposal)
         discovered = hub.discover("agent_b")
@@ -525,9 +570,12 @@ class TestFederationHub:
     def test_agent_does_not_discover_own(self, tmp_path):
         hub = FederationHub(FederationConfig(shared_dir=str(tmp_path / "fed")))
         proposal = SharedProposal(
-            proposal_id="p2", source_agent="agent_a",
-            kind="add_lesson", description="test",
-            fitness_delta=0.1, ts="2026-01-01T00:00:00",
+            proposal_id="p2",
+            source_agent="agent_a",
+            kind="add_lesson",
+            description="test",
+            fitness_delta=0.1,
+            ts="2026-01-01T00:00:00",
         )
         hub.publish("agent_a", proposal)
         discovered = hub.discover("agent_a")
@@ -536,9 +584,12 @@ class TestFederationHub:
     def test_adopt_success(self, tmp_path):
         hub = FederationHub(FederationConfig(shared_dir=str(tmp_path / "fed")))
         proposal = SharedProposal(
-            proposal_id="p3", source_agent="agent_a",
-            kind="add_lesson", description="good lesson",
-            fitness_delta=0.2, ts="2026-01-01T00:00:00",
+            proposal_id="p3",
+            source_agent="agent_a",
+            kind="add_lesson",
+            description="good lesson",
+            fitness_delta=0.2,
+            ts="2026-01-01T00:00:00",
         )
         hub.publish("agent_a", proposal)
         discovered = hub.discover("agent_b")
@@ -546,14 +597,19 @@ class TestFederationHub:
         assert result is True
 
     def test_adopt_rejects_low_fitness_delta(self, tmp_path):
-        hub = FederationHub(FederationConfig(
-            shared_dir=str(tmp_path / "fed"),
-            adoption_threshold=0.5,
-        ))
+        hub = FederationHub(
+            FederationConfig(
+                shared_dir=str(tmp_path / "fed"),
+                adoption_threshold=0.5,
+            )
+        )
         proposal = SharedProposal(
-            proposal_id="p4", source_agent="agent_a",
-            kind="add_lesson", description="marginal",
-            fitness_delta=0.05, ts="2026-01-01T00:00:00",
+            proposal_id="p4",
+            source_agent="agent_a",
+            kind="add_lesson",
+            description="marginal",
+            fitness_delta=0.05,
+            ts="2026-01-01T00:00:00",
         )
         hub.publish("agent_a", proposal)
         discovered = hub.discover("agent_b")
@@ -563,9 +619,12 @@ class TestFederationHub:
     def test_stats(self, tmp_path):
         hub = FederationHub(FederationConfig(shared_dir=str(tmp_path / "fed")))
         proposal = SharedProposal(
-            proposal_id="p5", source_agent="agent_a",
-            kind="add_lesson", description="test",
-            fitness_delta=0.1, ts="2026-01-01T00:00:00",
+            proposal_id="p5",
+            source_agent="agent_a",
+            kind="add_lesson",
+            description="test",
+            fitness_delta=0.1,
+            ts="2026-01-01T00:00:00",
         )
         hub.publish("agent_a", proposal)
         stats = hub.stats()
@@ -581,9 +640,18 @@ class TestFederationHub:
 class TestStrategyEngine:
     def _make_report(self, combined: float, verdict: str) -> FitnessReport:
         return FitnessReport(
-            agent_id="test", ts="t",
-            l1=L1Fitness(score=combined, trend="stable", success_rate=combined, avg_rounds=5.0, soul_impact={}),
-            l2=None, combined=combined, verdict=verdict,
+            agent_id="test",
+            ts="t",
+            l1=L1Fitness(
+                score=combined,
+                trend="stable",
+                success_rate=combined,
+                avg_rounds=5.0,
+                soul_impact={},
+            ),
+            l2=None,
+            combined=combined,
+            verdict=verdict,
         )
 
     def test_critical_triggers_revert(self):

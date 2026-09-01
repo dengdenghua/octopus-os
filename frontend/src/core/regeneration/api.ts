@@ -112,10 +112,9 @@ export interface RegenerationStatus {
 }
 
 export async function getRegenerationStatus(): Promise<RegenerationStatus> {
-  const res = await fetch(
-    `${getBackendBaseURL()}/api/regeneration/status`,
-    { headers: authHeaders() },
-  );
+  const res = await fetch(`${getBackendBaseURL()}/api/regeneration/status`, {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed: ${res.statusText}`);
   return (await res.json()) as RegenerationStatus;
 }

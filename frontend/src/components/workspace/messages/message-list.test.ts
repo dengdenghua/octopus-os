@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 
+import type { MessageGroup } from "@/core/messages/utils";
 import type { LiveToolEvent } from "../live-tool-timeline";
+import { failureKind, isLatestMessageGroup } from "./message-list";
 import {
   shouldOpenProcessTraceByDefault,
   shouldShowProcessTrace,
@@ -145,11 +147,36 @@ describe("message-list: process trace visibility", () => {
   });
 
   test("shows active or failed meta events", () => {
-    expect(shouldShowProcessTrace([toolEvent("todo_write", { status: "running" })], true)).toBe(true);
-    expect(shouldOpenProcessTraceByDefault([toolEvent("todo_write", { status: "running" })], true)).toBe(true);
-    expect(shouldShowProcessTrace([toolEvent("todo_write", { status: "error" })], true)).toBe(true);
-    expect(shouldOpenProcessTraceByDefault([toolEvent("todo_write", { status: "error" })], true)).toBe(false);
-    expect(shouldOpenProcessTraceByDefault([toolEvent("todo_write", { status: "error" })], false)).toBe(true);
+    expect(
+      shouldShowProcessTrace(
+        [toolEvent("todo_write", { status: "running" })],
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      shouldOpenProcessTraceByDefault(
+        [toolEvent("todo_write", { status: "running" })],
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      shouldShowProcessTrace(
+        [toolEvent("todo_write", { status: "error" })],
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      shouldOpenProcessTraceByDefault(
+        [toolEvent("todo_write", { status: "error" })],
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      shouldOpenProcessTraceByDefault(
+        [toolEvent("todo_write", { status: "error" })],
+        false,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -204,5 +231,90 @@ describe("message-list: Subtask creation from tool_call", () => {
     expect(update.status).toBe("failed");
     expect(update.progress).toBe(1);
     expect(update.error).toBe("Error: timeout exceeded");
+  });
+});
+
+describe("message-list: failureKind classification", () => {
+  test("blocked_on_user disposition is always blocked, never a network loss", () => {
+    expect(
+      failureKind("network is unreachable", "network_unavailable", "blocked_on_user"),
+    ).toBe("blocked");
+    expect(
+      failureKind(
+        "net::ERR_CONNECTION_REFUSED",
+        undefined,
+        "blocked_on_user",
+        "environment",
+      ),
+    ).toBe("blocked");
+  });
+
+  test("structured environment kind maps to environment even for network-like text", () => {
+    expect(
+      failureKind("network is unreachable", "network_unavailable", "failed", "environment"),
+    ).toBe("environment");
+  });
+
+  test("legacy environment markers are still recognised without structure", () => {
+    expect(
+      failureKind("Aborted removal of modules directory due to no TTY"),
+    ).toBe("environment");
+    expect(
+      failureKind("zsh: command not found: pnpm"),
+    ).toBe("environment");
+    expect(
+      failureKind("Permission denied: /tmp/x"),
+    ).toBe("environment");
+  });
+
+  test("genuine network failures stay network", () => {
+    expect(
+      failureKind("fetch failed: network error"),
+    ).toBe("network");
+    expect(
+      failureKind("econnrefused", "ECONNREFUSED"),
+    ).toBe("network");
+  });
+
+  test("ordinary guard / verification codes keep their kinds", () => {
+    expect(
+      failureKind("todo-protocol guard: incomplete", "guard_impasse"),
+    ).toBe("guard");
+    expect(
+      failureKind("no verification step was recorded", "verification_required"),
+    ).toBe("verification");
+    expect(
+      failureKind("boom", "agent_response_failed"),
+    ).toBe("error");
+  });
+});
+
+describe("message-list: clarification card activity", () => {
+  function makeGroup(type: MessageGroup["type"], id: string): MessageGroup {
+    return { type, id, messages: [] } as MessageGroup;
+  }
+
+  test("only the newest group is active", () => {
+    const clarification = makeGroup("assistant:clarification", "g1");
+    const human = makeGroup("human", "g2");
+    const groups = [clarification, human];
+
+    expect(isLatestMessageGroup(groups, clarification)).toBe(false);
+    expect(isLatestMessageGroup(groups, human)).toBe(true);
+  });
+
+  test("a stale clarification card goes inert once the user moves on", () => {
+    const clarification = makeGroup("assistant:clarification", "g1");
+    const laterAssistant = makeGroup("assistant", "g2");
+
+    expect(
+      isLatestMessageGroup([clarification, laterAssistant], clarification),
+    ).toBe(false);
+  });
+
+  test("the newest clarification card stays active", () => {
+    const clarification = makeGroup("assistant:clarification", "g1");
+
+    expect(isLatestMessageGroup([clarification], clarification)).toBe(true);
   });
 });

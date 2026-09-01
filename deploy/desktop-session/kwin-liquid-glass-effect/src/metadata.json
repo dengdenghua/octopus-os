@@ -1,0 +1,18 @@
+{
+  "KPlugin": {
+    "Authors": [
+      {
+        "Name": "Echo OS contributors"
+      }
+    ],
+    "Category": "Appearance",
+    "Description": "Composites bounded blur, refraction and highlights for Echo OS Liquid Glass surfaces",
+    "EnabledByDefault": true,
+    "Id": "org.echoos.liquidglass",
+    "License": "GPL-2.0-or-later",
+    "Name": "Echo OS Liquid Glass"
+  },
+  "org.kde.kwin.effect": {
+    "enabledByDefaultMethod": true
+  }
+}

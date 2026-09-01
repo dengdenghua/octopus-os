@@ -2,7 +2,7 @@
 
 The two helpers exposed for the loop:
 
-* ``_checkpoint_interval()`` — reads OCTOPUS_CHECKPOINT_EVERY_N each
+* ``_checkpoint_interval()`` — reads ECHO_CHECKPOINT_EVERY_N each
   call so an operator can flip the knob without restart.
 * ``_should_auto_checkpoint(iteration, interval)`` — decides whether
   a given iteration triggers a write.
@@ -11,10 +11,10 @@ These are deliberately tiny pure functions so we can exercise the
 lifecycle without spinning up the full react_loop generator (which
 needs a full stack + journal + LLM router).
 """
+
 from __future__ import annotations
 
 import pytest
-
 from runtime.core.cerebrum.react_loop import (
     _checkpoint_interval,
     _should_auto_checkpoint,
@@ -26,48 +26,53 @@ from runtime.core.cerebrum.react_loop import (
 
 
 class TestCheckpointInterval:
-    def test_unset_returns_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("OCTOPUS_CHECKPOINT_EVERY_N", raising=False)
-        assert _checkpoint_interval() == 0
+    def test_unset_returns_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("ECHO_CHECKPOINT_EVERY_N", raising=False)
+        assert _checkpoint_interval() == 10
 
-    def test_blank_returns_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OCTOPUS_CHECKPOINT_EVERY_N", "   ")
-        assert _checkpoint_interval() == 0
+    def test_blank_returns_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ECHO_CHECKPOINT_EVERY_N", "   ")
+        assert _checkpoint_interval() == 10
 
     def test_explicit_zero_returns_zero(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("OCTOPUS_CHECKPOINT_EVERY_N", "0")
+        monkeypatch.setenv("ECHO_CHECKPOINT_EVERY_N", "0")
         assert _checkpoint_interval() == 0
 
-    def test_negative_treated_as_off(
-        self, monkeypatch: pytest.MonkeyPatch,
+    def test_negative_returns_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("OCTOPUS_CHECKPOINT_EVERY_N", "-3")
-        assert _checkpoint_interval() == 0
+        monkeypatch.setenv("ECHO_CHECKPOINT_EVERY_N", "-3")
+        assert _checkpoint_interval() == 10
 
     def test_positive_int_returned(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("OCTOPUS_CHECKPOINT_EVERY_N", "5")
+        monkeypatch.setenv("ECHO_CHECKPOINT_EVERY_N", "5")
         assert _checkpoint_interval() == 5
 
-    def test_garbage_returns_zero(
-        self, monkeypatch: pytest.MonkeyPatch,
+    def test_garbage_returns_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setenv("OCTOPUS_CHECKPOINT_EVERY_N", "not-a-number")
-        assert _checkpoint_interval() == 0
+        monkeypatch.setenv("ECHO_CHECKPOINT_EVERY_N", "not-a-number")
+        assert _checkpoint_interval() == 10
 
     def test_re_read_each_call(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # No caching — operator can flip mid-flight.
-        monkeypatch.setenv("OCTOPUS_CHECKPOINT_EVERY_N", "3")
+        monkeypatch.setenv("ECHO_CHECKPOINT_EVERY_N", "3")
         assert _checkpoint_interval() == 3
-        monkeypatch.setenv("OCTOPUS_CHECKPOINT_EVERY_N", "7")
+        monkeypatch.setenv("ECHO_CHECKPOINT_EVERY_N", "7")
         assert _checkpoint_interval() == 7
-        monkeypatch.delenv("OCTOPUS_CHECKPOINT_EVERY_N")
-        assert _checkpoint_interval() == 0
+        monkeypatch.delenv("ECHO_CHECKPOINT_EVERY_N")
+        assert _checkpoint_interval() == 10
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -77,7 +82,7 @@ class TestCheckpointInterval:
 
 class TestShouldAutoCheckpoint:
     def test_off_when_interval_zero(self) -> None:
-        # Off by default — every iteration must return False.
+        # Explicit zero disables checkpointing.
         for it in range(1, 100):
             assert _should_auto_checkpoint(it, 0) is False
 

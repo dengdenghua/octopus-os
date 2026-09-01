@@ -1,0 +1,134 @@
+#!/bin/bash
+# Verify private local printing before graphical login and boot blessing.
+set -euo pipefail
+set -f
+
+RUNTIME_ROOT=/
+if [[ -n "${ECHO_PRINTING_RUNTIME_ROOT:-}" ]]; then
+  [[ "${ECHO_PRINTING_SOURCE_TEST:-}" == "USE-SOURCE-RUNTIME" ]] || {
+    echo "printing runtime override requires the explicit source-test sentinel" >&2
+    exit 2
+  }
+  RUNTIME_ROOT="$ECHO_PRINTING_RUNTIME_ROOT"
+fi
+[[ "$RUNTIME_ROOT" == /* && -d "$RUNTIME_ROOT" && ! -L "$RUNTIME_ROOT" ]] || {
+  echo "printing runtime root is unsafe" >&2
+  exit 1
+}
+
+runtime_path() {
+  local suffix="$1"
+  if [[ "$RUNTIME_ROOT" == / ]]; then
+    printf '%s\n' "$suffix"
+  else
+    printf '%s%s\n' "${RUNTIME_ROOT%/}" "$suffix"
+  fi
+}
+
+PYTHON="$(runtime_path /usr/bin/python3)"
+SYSTEMCTL="$(runtime_path /usr/bin/systemctl)"
+LPSTAT="$(runtime_path /usr/bin/lpstat)"
+FINDMNT="$(runtime_path /usr/bin/findmnt)"
+STAT="$(runtime_path /usr/bin/stat)"
+POLICY="$(runtime_path /usr/lib/echo-os/echo-printing-policy.py)"
+SPOOL="$(runtime_path /var/spool/cups)"
+
+EXECUTABLES=(
+  "$PYTHON"
+  "$SYSTEMCTL"
+  "$LPSTAT"
+  "$FINDMNT"
+  "$STAT"
+  "$POLICY"
+  "$(runtime_path /usr/sbin/cupsd)"
+  "$(runtime_path /usr/bin/lp)"
+  "$(runtime_path /usr/bin/cancel)"
+  "$(runtime_path /usr/sbin/lpadmin)"
+  "$(runtime_path /usr/libexec/cups-pk-helper-mechanism)"
+  "$(runtime_path /usr/sbin/ipp-usb)"
+  "$(runtime_path /usr/sbin/avahi-daemon)"
+  "$(runtime_path /usr/bin/kde-add-printer)"
+  "$(runtime_path /usr/bin/configure-printer)"
+  "$(runtime_path /usr/bin/kde-print-queue)"
+  "$(runtime_path /usr/lib/cups/backend/ipp)"
+  "$(runtime_path /usr/lib/cups/backend/ipps)"
+  "$(runtime_path /usr/lib/cups/filter/pdftopdf)"
+  "$(runtime_path /usr/lib/cups/filter/pdftoraster)"
+)
+POLICY_FILES=(
+  "$(runtime_path /etc/cups/cupsd.conf)"
+  "$(runtime_path /etc/ipp-usb/ipp-usb.conf)"
+  "$(runtime_path /usr/lib/systemd/system/cups.service)"
+  "$(runtime_path /usr/lib/systemd/system/cups.socket)"
+  "$(runtime_path /usr/lib/systemd/system/cups.path)"
+  "$(runtime_path /usr/lib/systemd/system/ipp-usb.service)"
+  "$(runtime_path /usr/lib/udev/rules.d/71-ipp-usb.rules)"
+  "$(runtime_path /usr/lib/systemd/system/avahi-daemon.service)"
+  "$(runtime_path /usr/lib/systemd/system/avahi-daemon.socket)"
+  "$(runtime_path /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service)"
+  "$(runtime_path /usr/share/dbus-1/system.d/avahi-dbus.conf)"
+  "$(runtime_path /etc/dbus-1/system.d/org.opensuse.CupsPkHelper.Mechanism.conf)"
+  "$(runtime_path /usr/share/dbus-1/system-services/org.opensuse.CupsPkHelper.Mechanism.service)"
+  "$(runtime_path /usr/share/polkit-1/actions/org.opensuse.cupspkhelper.mechanism.policy)"
+  "$(runtime_path /usr/lib/x86_64-linux-gnu/qt6/plugins/kf6/kded/printmanager.so)"
+  "$(runtime_path /usr/lib/x86_64-linux-gnu/qt6/plugins/plasma/kcms/systemsettings/kcm_printer_manager.so)"
+  "$(runtime_path /usr/share/applications/kcm_printer_manager.desktop)"
+  "$(runtime_path /usr/share/applications/org.kde.kde-add-printer.desktop)"
+)
+
+for runtime in "${EXECUTABLES[@]}"; do
+  [[ -f "$runtime" && -x "$runtime" ]] || {
+    echo "printing executable is missing: $runtime" >&2
+    exit 1
+  }
+done
+for runtime in "${POLICY_FILES[@]}"; do
+  [[ -f "$runtime" ]] || {
+    echo "printing policy or desktop integration is missing: $runtime" >&2
+    exit 1
+  }
+done
+[[ -d "$SPOOL" && ! -L "$SPOOL" ]] || {
+  echo "CUPS spool is missing or redirected" >&2
+  exit 1
+}
+
+for runtime in "${EXECUTABLES[@]}" "${POLICY_FILES[@]}"; do
+  metadata="$($STAT -Lc '%u:%g:%a' "$runtime")" || {
+    echo "cannot inspect printing runtime: $runtime" >&2
+    exit 1
+  }
+  IFS=: read -r owner group mode <<<"$metadata"
+  [[ "$owner" == 0 && "$group" == 0 && "$mode" =~ ^[0-7]{3,4}$ && \
+     $((8#$mode & 8#022)) -eq 0 ]] || {
+    echo "printing runtime is not immutable root-owned content: $runtime" >&2
+    exit 1
+  }
+done
+
+"$PYTHON" "$POLICY" >/dev/null || {
+  echo "printing privacy policy verification failed" >&2
+  exit 1
+}
+"$SYSTEMCTL" is-active --quiet cups.socket || {
+  echo "CUPS socket is not active" >&2
+  exit 1
+}
+"$SYSTEMCTL" is-active --quiet cups.service || {
+  echo "CUPS scheduler is not active" >&2
+  exit 1
+}
+"$LPSTAT" -r >/dev/null || {
+  echo "CUPS scheduler API is unavailable" >&2
+  exit 1
+}
+SPOOL_SOURCE="$($FINDMNT --noheadings --output SOURCE --target "$SPOOL")" || {
+  echo "CUPS spool filesystem cannot be identified" >&2
+  exit 1
+}
+[[ "$SPOOL_SOURCE" == /dev/mapper/echo-var ]] || {
+  echo "CUPS spool is not backed by encrypted persistent var" >&2
+  exit 1
+}
+
+echo "ECHO_PRINTING_READY provider=cups transport=local-only auth=polkit driverless=ipp-usb retention=off storage=encrypted-var"

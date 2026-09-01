@@ -1,0 +1,29 @@
+name: comfyui_bridge
+display_name: ComfyUI 工作流桥接
+version: 0.8.0
+description: 将 ComfyUI 用户触发的托管安装与更新、节点扩展安装/备份/回滚、逐项授权模型下载与恢复、本机节点编辑、依赖冲突诊断、版本化持久化和队列接入 Echo 创作画布，并向 Agent 暴露受控只读与执行技能。
+author: Echo
+tags:
+  - design
+  - comfyui
+  - workflow
+provides:
+  - comfyui_bridge.api
+  - comfyui_bridge.status
+  - comfyui_bridge.dependencies
+  - comfyui_bridge.lifecycle
+  - comfyui_bridge.managed_installer
+  - comfyui_bridge.manager_status
+  - comfyui_bridge.custom_node_registry
+  - comfyui_bridge.custom_node_lifecycle
+  - comfyui_bridge.model_inventory
+  - comfyui_bridge.model_lifecycle
+  - comfyui_bridge.node_catalog
+  - comfyui_bridge.workflows
+  - comfyui_bridge.workflow_get
+  - comfyui_bridge.workflow_diagnostics
+  - comfyui_bridge.workflow_save
+  - comfyui_bridge.queue
+  - comfyui_bridge.result
+config:
+  base_url: http://127.0.0.1:8188

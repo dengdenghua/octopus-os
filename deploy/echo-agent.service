@@ -1,0 +1,83 @@
+# Implementation note.
+#
+# Implementation note.
+#   sudo useradd -r -s /usr/sbin/nologin echo
+#   sudo mkdir -p /opt/echo-os /var/lib/echo /etc/echo
+#   sudo chown -R echo:echo /opt/echo-os /var/lib/echo /etc/echo
+#
+# Implementation note.
+#   sudo -u echo python -m venv /opt/echo-os/.venv
+#   sudo -u echo /opt/echo-os/.venv/bin/pip install \
+#       "echo-os[serve,local-auth,anthropic]"
+# Implementation note.
+#   # sudo -u echo git clone <repo> /opt/echo-os/src
+#   # sudo -u echo /opt/echo-os/.venv/bin/pip install -e /opt/echo-os/src".[serve]"
+#
+# Implementation note.
+#   sudo cp deploy/systemd-config.yaml /etc/echo/config.yaml
+# Implementation note.
+#   sudo cp deploy/systemd.env.example /etc/echo/echo.env
+#   sudo chmod 600 /etc/echo/echo.env
+#   sudo chown echo:echo /etc/echo/echo.env
+#
+# Implementation note.
+#   sudo cp deploy/echo-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now echo-agent
+#
+# Implementation note.
+#   sudo systemctl status echo-agent
+#   sudo journalctl -u echo-agent -f
+#   sudo systemctl restart echo-agent
+
+[Unit]
+Description=Echo OS · embedded Agent runtime
+Documentation=https://github.com/dengdenghua/echo-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=echo
+Group=echo
+WorkingDirectory=/var/lib/echo
+
+# Implementation note.
+EnvironmentFile=/etc/echo/echo.env
+Environment=ECHO_DATA_DIR=/var/lib/echo
+
+# Implementation note.
+ExecStart=/opt/echo-os/.venv/bin/echo serve \
+    --config /etc/echo/config.yaml \
+    --host 0.0.0.0 \
+    --port 8000
+
+Restart=on-failure
+RestartSec=5s
+StartLimitInterval=60s
+StartLimitBurst=5
+
+# Implementation note.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/echo
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+PrivateDevices=true
+CapabilityBoundingSet=
+
+# Implementation note.
+MemoryMax=2G
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target
+

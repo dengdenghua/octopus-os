@@ -65,9 +65,7 @@ export function useSlashTypeahead({
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSlashIdx(
-          (i) => (i - 1 + slashMatches.length) % slashMatches.length,
-        );
+        setSlashIdx((i) => (i - 1 + slashMatches.length) % slashMatches.length);
         return true;
       }
       if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {

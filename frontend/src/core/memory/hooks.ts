@@ -5,7 +5,9 @@ import {
   createMemoryFact,
   deleteMemoryFact,
   getMemoryConfig,
+  getMemoryAssetTrace,
   importMemory,
+  listMemoryAssets,
   loadMemory,
   searchMemory,
   updateMemoryConfig,
@@ -13,12 +15,28 @@ import {
 } from "./api";
 import type {
   MemoryConfig,
+  MemoryAssetQuery,
   MemoryConfigPatch,
   MemoryFactInput,
   MemoryFactPatchInput,
   MemorySearchResult,
   UserMemory,
 } from "./types";
+
+export function useMemoryAssets(query: MemoryAssetQuery) {
+  return useQuery({
+    queryKey: ["memory-assets", query],
+    queryFn: () => listMemoryAssets(query),
+  });
+}
+
+export function useMemoryAssetTrace(assetId: string | null) {
+  return useQuery({
+    queryKey: ["memory-asset-trace", assetId],
+    queryFn: () => getMemoryAssetTrace(assetId as string),
+    enabled: Boolean(assetId),
+  });
+}
 
 export function useSearchMemory(query: string, limit = 50) {
   const { data, isLoading, error } = useQuery({
@@ -34,19 +52,31 @@ export function useSearchMemory(query: string, limit = 50) {
 }
 
 export function useMemory() {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["memory"],
     queryFn: () => loadMemory(),
   });
-  return { memory: data ?? null, isLoading, error };
+  return {
+    memory: data ?? null,
+    isLoading,
+    error,
+    refetch,
+    isRefreshing: isFetching && !isLoading,
+  };
 }
 
 export function useMemoryConfig() {
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["memory-config"],
     queryFn: () => getMemoryConfig(),
   });
-  return { config: data ?? null, isLoading, error };
+  return {
+    config: data ?? null,
+    isLoading,
+    error,
+    refetch,
+    isRefreshing: isFetching && !isLoading,
+  };
 }
 
 export function useUpdateMemoryConfig() {
@@ -67,6 +97,7 @@ export function useClearMemory() {
     mutationFn: () => clearMemory(),
     onSuccess: (memory) => {
       queryClient.setQueryData<UserMemory>(["memory"], memory);
+      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
     },
   });
 }
@@ -78,6 +109,7 @@ export function useDeleteMemoryFact() {
     mutationFn: (factId: string) => deleteMemoryFact(factId),
     onSuccess: (memory) => {
       queryClient.setQueryData<UserMemory>(["memory"], memory);
+      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
     },
   });
 }
@@ -89,6 +121,7 @@ export function useImportMemory() {
     mutationFn: (memory: UserMemory) => importMemory(memory),
     onSuccess: (memory) => {
       queryClient.setQueryData<UserMemory>(["memory"], memory);
+      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
     },
   });
 }
@@ -100,6 +133,7 @@ export function useCreateMemoryFact() {
     mutationFn: (input: MemoryFactInput) => createMemoryFact(input),
     onSuccess: (memory) => {
       queryClient.setQueryData<UserMemory>(["memory"], memory);
+      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
     },
   });
 }
@@ -117,6 +151,7 @@ export function useUpdateMemoryFact() {
     }) => updateMemoryFact(factId, input),
     onSuccess: (memory) => {
       queryClient.setQueryData<UserMemory>(["memory"], memory);
+      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
     },
   });
 }

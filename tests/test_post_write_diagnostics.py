@@ -5,6 +5,7 @@ successful code-write tool. The hook is best-effort — every failure
 mode (timeout, missing tool, no project, non-write skill) returns
 ``None`` rather than raising.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,9 +66,7 @@ def test_non_write_tool_returns_none(tmp_path: Path) -> None:
     # If the hook fired ruff on this bad file, we'd get a string back.
     # Asserting None proves the early-return for non-write tools fires
     # before any subprocess spawn.
-    with patch(
-        "runtime.execution.suckers.verify_skills.detect_project"
-    ) as mock_detect:
+    with patch("runtime.execution.suckers.verify_skills.detect_project") as mock_detect:
         out = post_write_diagnostics(
             "read_file",
             {"path": str(target)},

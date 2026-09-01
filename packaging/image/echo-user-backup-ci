@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# Disposable in-guest acceptance: encrypted backup, corruption rejection and staged restore.
+set -euo pipefail
+umask 077
+
+BACKUP_DEVICE=/dev/disk/by-id/virtio-echo-backup-ci
+BACKUP_MOUNT=/mnt/echo-backup
+REPOSITORY=$BACKUP_MOUNT/echo-os-user
+SOURCE_ROOT='/home/echo/Backup Acceptance'
+SOURCE_DOCUMENT="$SOURCE_ROOT/document.txt"
+SOURCE_SPARSE="$SOURCE_ROOT/sparse.bin"
+SOURCE_LINK="$SOURCE_ROOT/document-link"
+AGENT_FIXTURE=/var/lib/echo-agent/backup-acceptance.json
+RESTORE_ROOT=/home/echo/.echo-restore-staging
+WRONG_CREDENTIAL_DIR=/run/echo-wrong-backup-credential
+PRESSURE_FILE="$SOURCE_ROOT/pressure.bin"
+FILL_FILE=$BACKUP_MOUNT/.echo-backup-pressure
+
+fail() {
+  echo "Echo OS user-backup raw acceptance failed: $*" >&2
+  exit 1
+}
+
+for command_name in \
+  chmod chown cmp cp dd env fallocate find getfacl getfattr install ln mount \
+  mountpoint python3 readlink realpath rm runuser setfacl setfattr stat sync \
+  truncate udevadm umount; do
+  command -v "$command_name" >/dev/null 2>&1 || \
+    fail "required guest command is missing: $command_name"
+done
+[[ -x /usr/bin/echo-os-backup ]] || fail "backup coordinator is missing"
+
+udevadm settle --timeout=30
+[[ -b "$BACKUP_DEVICE" ]] || fail "dedicated virtio backup disk is missing"
+install -d -m 0755 -o root -g root "$BACKUP_MOUNT"
+mount -t ext4 -o rw,nosuid,nodev,noexec "$BACKUP_DEVICE" "$BACKUP_MOUNT"
+mountpoint -q "$BACKUP_MOUNT" || fail "dedicated backup disk did not mount"
+
+install -d -m 0700 -o echo -g echo "$SOURCE_ROOT"
+printf '%s\n' 'Echo OS backup acceptance payload v1' >"$SOURCE_DOCUMENT"
+chown echo:echo "$SOURCE_DOCUMENT"
+chmod 0600 "$SOURCE_DOCUMENT"
+setfattr -n user.echo.acceptance -v preserved "$SOURCE_DOCUMENT"
+setfacl -m u:daemon:r-- "$SOURCE_DOCUMENT"
+
+truncate -s 67108864 "$SOURCE_SPARSE"
+printf 'echo-sparse-tail' | dd of="$SOURCE_SPARSE" bs=1 seek=67108848 \
+  conv=notrunc status=none
+chown echo:echo "$SOURCE_SPARSE"
+chmod 0600 "$SOURCE_SPARSE"
+ln -s document.txt "$SOURCE_LINK"
+chown -h echo:echo "$SOURCE_LINK"
+
+printf '%s\n' '{"schema":1,"fixture":"backup-acceptance"}' >"$AGENT_FIXTURE"
+chown echo:echo "$AGENT_FIXTURE"
+chmod 0600 "$AGENT_FIXTURE"
+
+/usr/bin/echo-os-backup init
+/usr/bin/echo-os-backup backup
+
+install -d -m 0700 -o root -g root "$WRONG_CREDENTIAL_DIR"
+printf '%s\n' 'deliberately-wrong-backup-password' \
+  >"$WRONG_CREDENTIAL_DIR/echo-backup-password"
+chmod 0600 "$WRONG_CREDENTIAL_DIR/echo-backup-password"
+if env CREDENTIALS_DIRECTORY="$WRONG_CREDENTIAL_DIR" \
+  /usr/bin/echo-os-backup check; then
+  fail "repository accepted the wrong password"
+fi
+echo 'ECHO_USER_BACKUP_WRONG_PASSWORD_REJECTED credential=systemd-runtime'
+
+FILL_BYTES="$(python3 - "$BACKUP_MOUNT" <<'PY'
+import os
+import sys
+
+usage = os.statvfs(sys.argv[1])
+available = usage.f_bavail * usage.f_frsize
+reserve = 2 * 1024 * 1024
+if available <= 32 * 1024 * 1024:
+    raise SystemExit("backup disk has too little free space for pressure acceptance")
+print(available - reserve)
+PY
+)"
+install -m 0600 -o echo -g echo /dev/null "$FILL_FILE"
+runuser -u echo -- /usr/bin/fallocate -l "$FILL_BYTES" "$FILL_FILE"
+dd if=/dev/urandom of="$PRESSURE_FILE" bs=1048576 count=16 status=none
+chown echo:echo "$PRESSURE_FILE"
+chmod 0600 "$PRESSURE_FILE"
+if /usr/bin/echo-os-backup backup; then
+  fail "backup unexpectedly succeeded with only a two-MiB repository reserve"
+fi
+rm -f -- "$PRESSURE_FILE" "$FILL_FILE"
+sync -f "$BACKUP_MOUNT"
+/usr/bin/echo-os-backup check
+echo 'ECHO_USER_BACKUP_DISK_FULL_REJECTED repository=consistent-after-failure'
+
+mapfile -d '' -t PACK_FILES < <(
+  find "$REPOSITORY/data" -xdev -type f -print0
+)
+[[ "${#PACK_FILES[@]}" -gt 0 ]] || fail "repository contains no authenticated data pack"
+PACK_FILE="${PACK_FILES[0]}"
+PACK_REAL="$(realpath "$PACK_FILE")"
+[[ "$PACK_REAL" == "$REPOSITORY"/data/* ]] || fail "pack path escaped the repository"
+PACK_COPY=/run/echo-os-user-backup/acceptance-pack.original
+cp --preserve=all -- "$PACK_REAL" "$PACK_COPY"
+
+python3 - "$PACK_REAL" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+with path.open("r+b", buffering=0) as stream:
+    original = stream.read(1)
+    if len(original) != 1:
+        raise SystemExit("repository pack is empty")
+    stream.seek(0)
+    stream.write(bytes((original[0] ^ 0xFF,)))
+PY
+sync -f "$PACK_REAL"
+if /usr/bin/echo-os-backup check; then
+  fail "full repository check accepted a corrupted pack"
+fi
+echo 'ECHO_USER_BACKUP_CORRUPTION_REJECTED check=read-data'
+
+cp --preserve=all -- "$PACK_COPY" "$PACK_REAL"
+sync -f "$PACK_REAL"
+/usr/bin/echo-os-backup check
+RESTORE_OUTPUT="$(/usr/bin/echo-os-backup restore latest)"
+printf '%s\n' "$RESTORE_OUTPUT"
+RESTORE_TARGET="${RESTORE_OUTPUT##*target=}"
+[[ "$RESTORE_TARGET" == "$RESTORE_ROOT"/* && -d "$RESTORE_TARGET" ]] || \
+  fail "restore did not use a new private staging target"
+
+RESTORED_DOCUMENT="$RESTORE_TARGET/home/echo/Backup Acceptance/document.txt"
+RESTORED_SPARSE="$RESTORE_TARGET/home/echo/Backup Acceptance/sparse.bin"
+RESTORED_LINK="$RESTORE_TARGET/home/echo/Backup Acceptance/document-link"
+RESTORED_AGENT="$RESTORE_TARGET/var/lib/echo-agent/backup-acceptance.json"
+cmp -- "$SOURCE_DOCUMENT" "$RESTORED_DOCUMENT" || fail "document bytes changed"
+cmp -- "$SOURCE_SPARSE" "$RESTORED_SPARSE" || fail "sparse-file bytes changed"
+cmp -- "$AGENT_FIXTURE" "$RESTORED_AGENT" || fail "Agent-state bytes changed"
+[[ "$(readlink "$RESTORED_LINK")" == document.txt ]] || fail "relative symlink changed"
+[[ "$(getfattr --only-values -n user.echo.acceptance "$RESTORED_DOCUMENT")" == preserved ]] || \
+  fail "user xattr was not restored"
+[[ "$(getfacl --absolute-names --omit-header "$SOURCE_DOCUMENT")" == \
+   "$(getfacl --absolute-names --omit-header "$RESTORED_DOCUMENT")" ]] || \
+  fail "POSIX ACL was not restored"
+[[ "$(stat -c '%u:%g:%a' "$RESTORED_DOCUMENT")" == 1000:1000:640 ]] || \
+  fail "restored ACL file ownership or mode changed"
+LOGICAL_SECTORS=$(( ($(stat -c '%s' "$RESTORED_SPARSE") + 511) / 512 ))
+RESTORED_BLOCKS="$(stat -c '%b' "$RESTORED_SPARSE")"
+(( RESTORED_BLOCKS < LOGICAL_SECTORS / 2 )) || fail "sparse extent expanded into dense data"
+
+STATE="$(python3 - <<'PY'
+import json
+
+with open("/var/lib/echo-os/user-backup-state.json", encoding="utf-8") as stream:
+    state = json.load(stream)
+if state.get("action") != "restore-staged" or not state.get("verified_full_read"):
+    raise SystemExit("restore state is not fully verified")
+print(f"{state['repository_id'][:16]} {state['snapshot_id'][:12]}")
+PY
+)"
+read -r REPOSITORY_ID SNAPSHOT_ID <<<"$STATE"
+sync
+umount "$BACKUP_MOUNT"
+echo "ECHO_USER_BACKUP_STAGE_OK repository=$REPOSITORY_ID snapshot=$SNAPSHOT_ID wrong-password=rejected disk-full=rejected corruption=rejected restore=staged metadata=acl,xattr,sparse"

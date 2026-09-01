@@ -20,9 +20,12 @@ describe("useDebounce", () => {
   });
 
   it("updates only after the delay", () => {
-    const { result, rerender } = renderHook(({ value }) => useDebounce(value, 300), {
-      initialProps: { value: "a" },
-    });
+    const { result, rerender } = renderHook(
+      ({ value }) => useDebounce(value, 300),
+      {
+        initialProps: { value: "a" },
+      },
+    );
 
     rerender({ value: "b" });
     expect(result.current).toBe("a");
@@ -39,9 +42,12 @@ describe("useDebounce", () => {
   });
 
   it("cancels the previous timer when value changes quickly", () => {
-    const { result, rerender } = renderHook(({ value }) => useDebounce(value, 300), {
-      initialProps: { value: "a" },
-    });
+    const { result, rerender } = renderHook(
+      ({ value }) => useDebounce(value, 300),
+      {
+        initialProps: { value: "a" },
+      },
+    );
 
     rerender({ value: "b" });
     act(() => {
@@ -61,9 +67,12 @@ describe("useDebounce", () => {
   });
 
   it("works with non-string values", () => {
-    const { result, rerender } = renderHook(({ value }) => useDebounce(value, 200), {
-      initialProps: { value: 1 },
-    });
+    const { result, rerender } = renderHook(
+      ({ value }) => useDebounce(value, 200),
+      {
+        initialProps: { value: 1 },
+      },
+    );
 
     rerender({ value: 2 });
     act(() => {

@@ -12,6 +12,10 @@ export interface SaveCapabilitiesResponse {
   capabilities: Capabilities;
   restart_required: boolean;
   message: string;
+  registry?: {
+    registered: string[];
+    removed: string[];
+  };
 }
 
 export interface RestartBackendResponse {
@@ -20,10 +24,9 @@ export interface RestartBackendResponse {
 }
 
 export async function getCapabilities(): Promise<Capabilities> {
-  const res = await fetch(
-    `${getBackendBaseURL()}/api/settings/capabilities`,
-    { headers: authHeaders() },
-  );
+  const res = await fetch(`${getBackendBaseURL()}/api/settings/capabilities`, {
+    headers: authHeaders(),
+  });
   if (!res.ok)
     throw new Error(`Failed to load capabilities: ${res.statusText}`);
   return (await res.json()) as Capabilities;
@@ -32,14 +35,11 @@ export async function getCapabilities(): Promise<Capabilities> {
 export async function saveCapabilities(
   body: Capabilities,
 ): Promise<SaveCapabilitiesResponse> {
-  const res = await fetch(
-    `${getBackendBaseURL()}/api/settings/capabilities`,
-    {
-      method: "PUT",
-      headers: jsonAuthHeaders(),
-      body: JSON.stringify(body),
-    },
-  );
+  const res = await fetch(`${getBackendBaseURL()}/api/settings/capabilities`, {
+    method: "PUT",
+    headers: jsonAuthHeaders(),
+    body: JSON.stringify(body),
+  });
   if (!res.ok) {
     const detail = await res.text();
     throw new Error(
@@ -52,11 +52,11 @@ export async function saveCapabilities(
 /* Implementation note. */
 export async function restartBackend(): Promise<RestartBackendResponse> {
   // Implementation note.
-  if (typeof window === "undefined" || !window.octopus?.isElectron) {
+  if (typeof window === "undefined" || !window.echo?.isElectron) {
     return { ok: false, reason: "not in electron environment" };
   }
   try {
-    const result = await window.octopus.backend?.restart?.();
+    const result = await window.echo.backend?.restart?.();
     return result || { ok: false, reason: "ipc not available" };
   } catch (e) {
     swallow(e);

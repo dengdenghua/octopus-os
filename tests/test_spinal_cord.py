@@ -80,9 +80,7 @@ class TestDeterministicMatcher:
         assert m.try_match(_intent("x", intent_type="task")) is None
 
     def test_keywords_filter(self):
-        m = DeterministicMatcher(
-            "files", "task", response={}, keywords=["list", "show"]
-        )
+        m = DeterministicMatcher("files", "task", response={}, keywords=["list", "show"])
         assert m.try_match(_intent("list the files")) is not None
         assert m.try_match(_intent("do something else")) is None
 
@@ -155,32 +153,26 @@ class TestReflexRouter:
 
     def test_force_deliberative_on_debug_intent(self):
         """Implementation note."""
-        router = ReflexRouter(
-            [RegexMatcher("catch_all", r".+", response="should-not-hit")]
-        )
+        router = ReflexRouter([RegexMatcher("catch_all", r".+", response="should-not-hit")])
         result = router.try_match(_intent("fix bug", intent_type="debug"))
         assert isinstance(result, ReflexMiss)
         assert result.reason == "force_deliberative"
 
     def test_force_deliberative_on_deep_flag(self):
-        router = ReflexRouter(
-            [RegexMatcher("catch_all", r".+", response="should-not-hit")]
-        )
+        router = ReflexRouter([RegexMatcher("catch_all", r".+", response="should-not-hit")])
         result = router.try_match(_intent("x", deep=True))
         assert isinstance(result, ReflexMiss)
 
     def test_chitchat_goes_through_reflex(self):
         """Implementation note."""
-        router = ReflexRouter(
-            [DeterministicMatcher("greet", "chitchat", response={"r": "hi"})]
-        )
+        router = ReflexRouter([DeterministicMatcher("greet", "chitchat", response={"r": "hi"})])
         result = router.try_match(_intent("hello", intent_type="chitchat"))
         assert isinstance(result, ReflexMatch)
 
     def test_hit_rate_tracking(self):
         router = ReflexRouter([RegexMatcher("a", r"^match$")])
-        router.try_match(_intent("match"))      # hit
-        router.try_match(_intent("nomatch"))    # miss
+        router.try_match(_intent("match"))  # hit
+        router.try_match(_intent("nomatch"))  # miss
         assert router.hit_rate == 0.5
 
     def test_stats_by_rule(self):

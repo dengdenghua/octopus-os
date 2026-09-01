@@ -77,4 +77,3 @@ export function useUploadFilesOnSubmit(threadId: string) {
     [uploadMutation],
   );
 }
-

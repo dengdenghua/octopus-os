@@ -25,11 +25,13 @@ def test_classify_python_frontend_schema_and_docs() -> None:
 
 
 def test_requirements_are_deduplicated_by_bucket() -> None:
-    reqs = verification_requirements_for_paths([
-        "runtime/foo.py",
-        "runtime/bar.py",
-        "frontend/src/App.tsx",
-    ])
+    reqs = verification_requirements_for_paths(
+        [
+            "runtime/foo.py",
+            "runtime/bar.py",
+            "frontend/src/App.tsx",
+        ]
+    )
 
     assert [req.key for req in reqs] == ["python-checks", "frontend-typecheck"]
     assert reqs[0].paths == ("runtime/foo.py", "runtime/bar.py")
