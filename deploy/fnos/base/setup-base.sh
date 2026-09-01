@@ -156,7 +156,7 @@ if ! is_done echo-web; then
   # 锁文件是 pnpm-lock.yaml,必须用 pnpm 装(VM 实测:fallback 的 npm ci
   # 因无 package-lock.json 报 EUSAGE)。4/7 只装了 Node,这里补装 pnpm。
   if ! command -v pnpm >/dev/null 2>&1; then
-    npm install -g pnpm@9
+    npm install -g pnpm@10
   fi
   (cd "$OS_DIR/frontend" && pnpm install --frozen-lockfile && pnpm build)
   [ -f "$OS_DIR/frontend/dist/index.html" ] || { log "✗ 前端构建失败"; exit 1; }
