@@ -124,6 +124,10 @@ if ! is_done octopus-src; then
     git -C "$OS_DIR" reset --hard FETCH_HEAD
   fi
   done_mark octopus-src
+  # clone/reset 后仓库版本(0644)会覆盖 late_command 投放的引导脚本,
+  # 而 firstboot.service 的 ExecStart 直接执行它 —— 无执行位会 203/EXEC
+  # (VM 实测:重启后服务起不来)。每次重拉后强制恢复执行位。
+  chmod +x "$OS_DIR/deploy/fnos/base/setup-base.sh" 2>/dev/null || true
 else skip octopus-src; fi
 
 if ! is_done octopus-py; then
