@@ -38,6 +38,12 @@ function resolveBackendBaseURL() {
 
 // ── first-launch config (packaging/desktop/config.desktop.yaml) ──
 function ensureDesktopConfig() {
+  // 桌面图标来自 ~/Desktop;首次开机确保目录存在,否则 watchDesktop 监听会失败。
+  try {
+    fs.mkdirSync(DESKTOP_DIR, { recursive: true });
+  } catch (err) {
+    console.warn("[octopus] 预创建桌面目录失败:", err.message);
+  }
   try {
     const target = path.join(app.getPath("userData"), "config.desktop.yaml");
     if (fs.existsSync(target)) return;
@@ -74,7 +80,21 @@ function writeJournal(entries) {
 }
 
 async function listDesktopItems() {
-  const names = await fsp.readdir(DESKTOP_DIR);
+  // 桌面图标来自 ~/Desktop。精简镜像/新用户可能还没有这个目录,
+  // 这里自愈创建(首次开机即建好),避免前端拿到 ENOENT 报"读取失败"。
+  try {
+    await fsp.mkdir(DESKTOP_DIR, { recursive: true });
+  } catch (err) {
+    console.warn("[octopus] 无法创建桌面目录,返回空列表:", err.message);
+    return [];
+  }
+  let names;
+  try {
+    names = await fsp.readdir(DESKTOP_DIR);
+  } catch (err) {
+    console.warn("[octopus] 读取桌面目录失败,返回空列表:", err.message);
+    return [];
+  }
   const items = [];
   for (const name of names) {
     if (name.startsWith(".")) continue;
