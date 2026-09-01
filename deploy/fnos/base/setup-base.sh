@@ -127,7 +127,14 @@ if ! is_done octopus-py; then
   log "== 5b/7 安装 Python 依赖 =="
   # 母体 octopus-agent 是私有仓库,Docker/设备构建走本地 wheel;
   # 见 deploy/appliance/prepare-agent-wheel.sh。
-  if command -v uv >/dev/null 2>&1; then
+  # 无凭据环境(如验证 VM)可用 OCTOPUS_SKIP_AGENT=1 跳过私有 agent,
+  # 仅装最小集;真实部署请配 GitHub token 或本地 wheel。
+  if [ "${OCTOPUS_SKIP_AGENT:-0}" = "1" ]; then
+    log "  OCTOPUS_SKIP_AGENT=1,跳过私有 agent,仅装 minimal"
+    python3 -m venv "$OS_DIR/.venv"
+    "$OS_DIR/.venv/bin/pip" install --upgrade pip
+    "$OS_DIR/.venv/bin/pip" install -e "$OS_DIR[minimal]"
+  elif command -v uv >/dev/null 2>&1; then
     (cd "$OS_DIR" && uv sync --extra serve --extra web --extra appliance --extra dev)
   else
     python3 -m venv "$OS_DIR/.venv"
