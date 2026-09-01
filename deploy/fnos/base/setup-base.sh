@@ -163,13 +163,20 @@ if ! is_done echo-web; then
   done_mark echo-web
 else skip echo-web; fi
 
-# ── 6. 原生 shell(cage + plymouth + Electron)────────────
-# 仅当检测到显示输出时才装;纯无头 NAS 跳过这步,省几百 MB。
+# ── 6. 桌面 shell ───────────────────────────────────────
+# 收敛策略:桌面壳优先用上游 KWin 通用会话(deploy/desktop-session/),
+# 无 GPU / 轻量 NAS / 显式 ECHO_DESKTOP=cage 时回退 cage 极简 kiosk。
+#   ECHO_DESKTOP=kwin  上游 KWin 会话(需 Xorg seat + echo.os.ci-session 凭据)
+#   ECHO_DESKTOP=cage  默认,NAS 友好,不引整套 KDE/打印/扫描栈
 if ! is_done shell; then
-  if [ "${ECHO_HDMI_SHELL:-auto}" = "off" ]; then
+  DESKTOP_MODE="${ECHO_DESKTOP:-cage}"
+  if [ "$DESKTOP_MODE" = "kwin" ] && [ -x "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh" ]; then
+    log "== 6/7 安装 KWin 通用桌面会话(上游) =="
+    "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh"
+  elif [ "${ECHO_HDMI_SHELL:-auto}" = "off" ]; then
     log "== 6/7 跳过原生 shell (ECHO_HDMI_SHELL=off) =="
-  elif ls /dev/dri/card* >/dev/null 2>&1 || [ "${ECHO_HDMI_SHELL:-auto}" = "on" ]; then
-    log "== 6/7 安装原生 shell =="
+  elif ls /dev/dri/card* >/dev/null 2>&1 || [ "${ECHO_HDMI_SHELL:-auto}" = "on" ] || [ "$DESKTOP_MODE" = "cage" ]; then
+    log "== 6/7 安装 cage 原生 shell(回退) =="
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
       cage plymouth plymouth-themes seatd rsync
     # Electron 运行时依赖:精简 Debian 默认没有,不装桌面起不来
@@ -190,6 +197,31 @@ if ! is_done shell; then
   fi
   done_mark shell
 else skip shell; fi
+
+# ── 6b. 备份 / 恢复(上游模块,fnos 原缺)──────────────
+# 复用上游 deploy/backup + deploy/recovery,不自研。两类服务都带条件:
+# 缺挂载点/凭据时自动跳过,systemctl enable 不会失败。
+if ! is_done backup-recovery; then
+  log "== 6b/7 安装备份/恢复模块(上游) =="
+  install -m755 "$OS_DIR/deploy/backup/echo-user-backup" /usr/bin/echo-os-backup
+  install -m644 "$OS_DIR/deploy/backup/echo-user-backup.service" \
+    /etc/systemd/system/echo-user-backup.service
+  install -m644 "$OS_DIR/deploy/backup/echo-restore-transaction-health.service" \
+    /etc/systemd/system/echo-restore-transaction-health.service
+  install -m755 "$OS_DIR/deploy/recovery/echo-recovery" /usr/bin/echo-recovery
+  install -m644 "$OS_DIR/deploy/recovery/echo-recovery.service" \
+    /etc/systemd/system/echo-recovery.service
+  install -d -m0755 /usr/lib/echo-os/recovery-repart.d
+  install -m644 "$OS_DIR/deploy/recovery/repart.d/"*.conf \
+    /usr/lib/echo-os/recovery-repart.d/
+  systemctl daemon-reload
+  # recovery 默认只读诊断,挂 multi-user.target,安全启用
+  systemctl enable echo-recovery.service
+  # backup 需 /mnt/echo-backup 挂载点 + 加密凭据,缺则 Condition 跳过,仍 enable 待命
+  systemctl enable echo-user-backup.service 2>/dev/null || true
+  systemctl enable echo-restore-transaction-health.service 2>/dev/null || true
+  done_mark backup-recovery
+else skip backup-recovery; fi
 
 # ── 7. 服务:appliance 后端 + nginx 反代 ─────────────────
 if ! is_done services; then
