@@ -146,7 +146,12 @@ else skip octopus-py; fi
 
 if ! is_done octopus-web; then
   log "== 5c/7 构建前端 =="
-  (cd "$OS_DIR/frontend" && (pnpm install --frozen-lockfile 2>/dev/null || npm ci) && (pnpm build || npm run build))
+  # 锁文件是 pnpm-lock.yaml,必须用 pnpm 装(VM 实测:fallback 的 npm ci
+  # 因无 package-lock.json 报 EUSAGE)。4/7 只装了 Node,这里补装 pnpm。
+  if ! command -v pnpm >/dev/null 2>&1; then
+    npm install -g pnpm@9
+  fi
+  (cd "$OS_DIR/frontend" && pnpm install --frozen-lockfile && pnpm build)
   [ -f "$OS_DIR/frontend/dist/index.html" ] || { log "✗ 前端构建失败"; exit 1; }
   done_mark octopus-web
 else skip octopus-web; fi
