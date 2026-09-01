@@ -1,14 +1,14 @@
-# P3 · 整机镜像:Octopus OS × 飞牛 OS
+# P3 · 整机镜像:Echo OS × 飞牛 OS
 
-> 分支:`p3-fnos`(upstream = dengdenghua/octopus-os @ `5b82381`)
+> 分支:`p3-fnos`(upstream = dengdenghua/echo-os @ `5b82381`)
 > 状态:**规划 + 骨架已落地**(NAS 管控面 41 测试全绿;装机链路待 Linux 验证)
-> 前情:`docs/OCTOPUS_OS_PLAN.md` §6 P3 / `docs/NATIVE_SHELL_PLAN.md`
+> 前情:`docs/ECHO_OS_PLAN.md` §6 P3 / `docs/NATIVE_SHELL_PLAN.md`
 
 ---
 
 ## 1. 先说结论:这是缺口互补,不是硬凑
 
-octopus-os 的 P3 卡在一个具体的地方 —— 它自己的计划里写着:
+echo-os 的 P3 卡在一个具体的地方 —— 它自己的计划里写着:
 
 > **P3 —— 整机镜像**:Debian stable + OMV 存储包(apt 融合,不 fork)
 > §9 待决事项:**寄宿首选平台 CasaOS / OMV / 飞牛,三选一**
@@ -16,7 +16,7 @@ octopus-os 的 P3 卡在一个具体的地方 —— 它自己的计划里写着
 也就是说:**存储底座和装机方式至今未决**。而飞牛 OS 的解包产物恰好就是这两个
 问题的答案 —— 一个跑通的 Debian NAS 基座,和一个能用的 d-i 装机流程。
 
-| octopus-os 缺的 | 飞牛有 | 怎么拿 |
+| echo-os 缺的 | 飞牛有 | 怎么拿 |
 |---|---|---|
 | 装机镜像 | d-i + 自研选盘 TUI | 抄**模式**,换官方钩子(§3.1) |
 | 存储栈 | ZFS / mdadm / Samba / SMART | 直接用上游官方包,不碰飞牛二进制 |
@@ -24,7 +24,7 @@ octopus-os 的 P3 卡在一个具体的地方 —— 它自己的计划里写着
 | 应用生态约定 | `/usr/local/apps/@appcenter/` | 抄目录约定(§3.3) |
 | 单入口反向代理 | nginx + 每模块 unix socket | 抄架构(§3.2) |
 
-反过来说,飞牛没有而 octopus-os 能给的只有一样,但它是决定性的:
+反过来说,飞牛没有而 echo-os 能给的只有一样,但它是决定性的:
 **Agent 是会话本身,而不是装在系统上的一个应用。**
 
 ---
@@ -34,7 +34,7 @@ octopus-os 的 P3 卡在一个具体的地方 —— 它自己的计划里写着
 飞牛 OS 的 `trim`、`trim_app_center`、`trimafs2.ko` 等是**闭源自研二进制**。
 解包产物在我们手上只用于**学习架构决策**,以下三条是硬约束:
 
-1. **不复制任何飞牛二进制、库、前端资源到 octopus-os**;
+1. **不复制任何飞牛二进制、库、前端资源到 echo-os**;
 2. **不反向分发**飞牛的 ISO、`trimfs.tgz` 或其中任何片段;
 3. 本分支只实现**从飞牛学到的架构模式**,所有代码自己写。
 
@@ -64,20 +64,20 @@ grub 安装全部白拿。**
 钩子从 ISO 上直接跑 TUI:
 
 ```sh
-d-i preseed/early_command string /cdrom/octopus/octopus-install
+d-i preseed/early_command string /cdrom/echo-os/echo-install
 ```
 
 为什么不照抄 initrd 注入:它依赖 d-i 内部文件结构,上游一改就碎;而 Debian
 initrd 是**多段拼接**(early microcode + 压缩主段),重打包容易出错。
 官方钩子跨版本稳定,代价为零。
 
-- 载荷:`deploy/fnos/installer/octopus-install`(whiptail TUI,写 debconf 预置)
+- 载荷:`deploy/fnos/installer/echo-install`(whiptail TUI,写 debconf 预置)
 - 静态策略:`deploy/fnos/installer/preseed.cfg`
-- 组装:`deploy/fnos/build-iso.sh`(解包 → 塞 `/octopus/` → 改 append 行 → 重打包)
+- 组装:`deploy/fnos/build-iso.sh`(解包 → 塞 `/echo/` → 改 append 行 → 重打包)
 
 **关键取舍:重活不放在装机阶段**。ZFS 编译、Docker 安装、前端构建都要联网且
 耗时,放进 d-i 失败会让整台机器装不起来。这里把它们推到**首次开机**
-(`octopus-firstboot.service`),可重试、可 `journalctl` 查。
+(`echo-firstboot.service`),可重试、可 `journalctl` 查。
 
 ### 3.2 单 nginx 入口 + 功能模块各自 socket
 
@@ -85,7 +85,7 @@ initrd 是**多段拼接**(early microcode + 压缩主段),重打包容易出错
 一个独立进程一个 unix socket(accountsrv、dsmgr、thumbnailer、photos、vm、
 iscsi…),对外只暴露 80/443。
 
-我们:`deploy/fnos/base/octopus-nginx.conf` —— 对外 80/443,appliance 只听
+我们:`deploy/fnos/base/echo-nginx.conf` —— 对外 80/443,appliance 只听
 `127.0.0.1:8000`,WebSocket 升级头、流式输出超时、大文件上传限制全在一处配。
 
 **一处比飞牛做得严**:飞牛的 nginx conf 里随包带了 `server.crt` / `server.key`。
@@ -99,7 +99,7 @@ iscsi…),对外只暴露 80/443。
 片段 + reload。** 没有注册中心、没有数据库、没有 migrations。
 
 这条建议连目录命名一起照搬,P3 阶段接 `appliance/app_registry`(Docker label
-级联 `sh.octopus.*` → `casaos.*` → `homepage.*`)时,两个体系能对齐。
+级联 `sh.echo.*` → `casaos.*` → `homepage.*`)时,两个体系能对齐。
 
 ### 3.4 能力内置 / 应用外置
 
@@ -186,10 +186,10 @@ A/B 原子更新(见 §6 M4)。
 ### 真机验证清单(M2 起)
 
 - [ ] VM(UEFI + BIOS 各一遍):装机全流程
-- [ ] 首次开机:`journalctl -u octopus-firstboot` 无 ERROR,7 步全过
+- [ ] 首次开机:`journalctl -u echo-firstboot` 无 ERROR,7 步全过
 - [ ] `zpool status` / `smbclient -L localhost` 正常
 - [ ] HDMI 接显示器:cage → Electron 全屏桌面,点图标起应用
-- [ ] 无头模式:`OCTOPUS_HDMI_SHELL=off` 不装图形栈
+- [ ] 无头模式:`ECHO_HDMI_SHELL=off` 不装图形栈
 - [ ] N100 迷你主机实机(16GB 内存基线)
 - [ ] 断电测试:装机中途断电 → 重启能续跑
 
@@ -197,7 +197,7 @@ A/B 原子更新(见 §6 M4)。
 
 ## 7. 与上游的关系
 
-- 分支 `p3-fnos`,`upstream` 指向 `dengdenghua/octopus-os`;
+- 分支 `p3-fnos`,`upstream` 指向 `dengdenghua/echo-os`;
 - 所有 OS 专属代码放 `appliance/` 与 `deploy/`,**不碰 runtime**(沿用
-  `docs/OCTOPUS_OS_PLAN.md` §4 的 fork 管理策略);
+  `docs/ECHO_OS_PLAN.md` §4 的 fork 管理策略);
 - 定期 `git fetch upstream && git merge upstream/os-main`。

@@ -1,5 +1,5 @@
 [Unit]
-Description=Octopus OS appliance backend (NAS control plane + agent runtime)
+Description=Echo OS appliance backend (NAS control plane + agent runtime)
 Documentation=https://github.com/dengdenghua/octopus-os
 After=network-online.target docker.service
 Wants=network-online.target docker.service
@@ -9,25 +9,25 @@ Type=simple
 # 需要 root:docker.sock、zfs/zpool、smbcontrol、exportfs、smartctl 都要特权。
 # 对外的 HTTP 入口是 nginx(80/443),本服务只监听回环,不直接暴露。
 User=root
-WorkingDirectory=/opt/octopus-os
+WorkingDirectory=/opt/echo-os
 
-Environment=OCTOPUS_APPLIANCE=1
-Environment=OCTOPUS_APP_EXTENSIONS=appliance.extension
-Environment=OCTOPUS_SKILL_EXTENSIONS=appliance.pm_skills:register_pm_skills
-Environment=OCTOPUS_DATA_DIR=/data
-Environment=OCTOPUS_NAS_ROOT=/data/nas
-Environment=OCTOPUS_CONFIG=/etc/octopus/config.yaml
+Environment=ECHO_APPLIANCE=1
+Environment=ECHO_APP_EXTENSIONS=appliance.extension
+Environment=ECHO_SKILL_EXTENSIONS=appliance.pm_skills:register_pm_skills
+Environment=ECHO_DATA_DIR=/data
+Environment=ECHO_NAS_ROOT=/data/nas
+Environment=ECHO_CONFIG=/etc/echo-os/config.yaml
 Environment=PYTHONUNBUFFERED=1
 
-ExecStart=/opt/octopus-os/.venv/bin/octopus-agent serve \
-  --config /etc/octopus/config.yaml \
+ExecStart=/opt/echo-os/.venv/bin/echo-agent serve \
+  --config /etc/echo-os/config.yaml \
   --host 127.0.0.1 --port 8000
 
 Restart=always
 RestartSec=3
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=octopus-appliance
+SyslogIdentifier=echo-appliance
 
 [Install]
 WantedBy=multi-user.target

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# 组装 Octopus OS 装机 ISO。
+# 组装 Echo OS 装机 ISO。
 #
-# 思路:拿 Debian 13 (trixie) 官方 netinst 做底,往里塞一个 /octopus/ 载荷目录,
+# 思路:拿 Debian 13 (trixie) 官方 netinst 做底,往里塞一个 /echo/ 载荷目录,
 # 改一下引导配置的 append 行,再重新打包。**不动 initrd** —— 这是刻意的。
 #
 # 为什么不动 initrd:
@@ -27,7 +27,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEBIAN_ISO_URL="${DEBIAN_ISO_URL:-https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/}"
 INPUT_ISO=""
 MIRROR=""
-OUT_ISO="$REPO_ROOT/dist/octopus-os.iso"
+OUT_ISO="$REPO_ROOT/dist/echo-os.iso"
 WORK=""
 
 log()  { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
@@ -48,7 +48,7 @@ done
 [ "$(uname -s)" = "Linux" ] || die "必须在 Linux 上构建(需要 xorriso)"
 command -v xorriso >/dev/null 2>&1 || die "缺少 xorriso: sudo apt install xorriso"
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/octopus-iso.XXXXXX")"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/echo-iso.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/src" "$WORK/iso"
 
@@ -71,21 +71,21 @@ xorriso -osirrox on -indev "$INPUT_ISO" -extract / "$WORK/iso" 2>/dev/null \
 chmod -R u+w "$WORK/iso"
 
 # ── 3. 放载荷 ─────────────────────────────────────────────
-log "放入 /octopus/ 载荷"
-PAYLOAD="$WORK/iso/octopus"
+log "放入 /echo/ 载荷"
+PAYLOAD="$WORK/iso/echo"
 mkdir -p "$PAYLOAD"
 
-install -m0755 "$SCRIPT_DIR/installer/octopus-install"  "$PAYLOAD/octopus-install"
+install -m0755 "$SCRIPT_DIR/installer/echo-install"  "$PAYLOAD/echo-install"
 install -m0644 "$SCRIPT_DIR/installer/preseed.cfg"      "$PAYLOAD/preseed.cfg"
 install -m0755 "$SCRIPT_DIR/base/setup-base.sh"         "$PAYLOAD/setup-base.sh"
-install -m0644 "$SCRIPT_DIR/octopus-firstboot.service"   "$PAYLOAD/octopus-firstboot.service"
-install -m0644 "$SCRIPT_DIR/99-octopus"                  "$PAYLOAD/99-octopus"
+install -m0644 "$SCRIPT_DIR/echo-firstboot.service"   "$PAYLOAD/echo-firstboot.service"
+install -m0644 "$SCRIPT_DIR/99-echo-os"                  "$PAYLOAD/99-echo-os"
 
-# 首次开机要用的服务单元也带上(setup-base.sh 会从 /opt/octopus-os 里取,
+# 首次开机要用的服务单元也带上(setup-base.sh 会从 /opt/echo-os 里取,
 # 但 d-i 阶段的 late_command 直接读 ISO,两份都放更省心)
 mkdir -p "$PAYLOAD/units"
-install -m0644 "$SCRIPT_DIR/base/octopus-appliance.service" "$PAYLOAD/units/"
-install -m0644 "$SCRIPT_DIR/base/octopus-nginx.conf"        "$PAYLOAD/units/"
+install -m0644 "$SCRIPT_DIR/base/echo-appliance.service" "$PAYLOAD/units/"
+install -m0644 "$SCRIPT_DIR/base/echo-nginx.conf"        "$PAYLOAD/units/"
 
 # 镜像源覆盖
 if [ -n "$MIRROR" ]; then
@@ -100,16 +100,16 @@ if [ -n "$MIRROR" ]; then
 fi
 
 # 允许注入自定义仓库/分支
-cat >"$PAYLOAD/octopus-env.sh" <<EOF
+cat >"$PAYLOAD/echo-env.sh" <<EOF
 # 由 build-iso.sh 生成;首次开机脚本会 source 它
-OCTOPUS_OS_REPO="${OCTOPUS_OS_REPO:-https://github.com/dengdenghua/octopus-os.git}"
-OCTOPUS_OS_BRANCH="${OCTOPUS_OS_BRANCH:-p3-fnos}"
+ECHO_OS_REPO="${ECHO_OS_REPO:-https://github.com/dengdenghua/octopus-os.git}"
+ECHO_OS_BRANCH="${ECHO_OS_BRANCH:-p3-fnos}"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 EOF
 
 # ── 4. 改引导配置:指向我们的 preseed ─────────────────────
 log "改写引导参数"
-APPEND_ARGS="auto=true preseed/file=/cdrom/octopus/preseed.cfg"
+APPEND_ARGS="auto=true preseed/file=/cdrom/echo-os/preseed.cfg"
 
 # BIOS: isolinux。给所有含 vmlinuz 的 append 行追加参数。
 for f in "$WORK/iso"/isolinux/*.cfg "$WORK/iso"/isolinux/*.txt; do
@@ -146,7 +146,7 @@ done
 [ -n "$MBR" ] || die "找不到 isohdpfx.bin(apt install isolinux),无法生成可启动 hybrid ISO"
 
 xorriso -as mkisofs \
-  -r -V 'OCTOPUS_OS' -o "$OUT_ISO" \
+  -r -V 'ECHO_OS' -o "$OUT_ISO" \
   -J -joliet-long -cache-inodes \
   -isohybrid-mbr "$MBR" \
   -b isolinux/isolinux.bin -c isolinux/boot.cat \
@@ -162,10 +162,10 @@ cat <<EOF
   sudo dd if="$OUT_ISO" of=/dev/sdX bs=4M status=progress && sync
 
 装机流程:
-  1. U 盘启动 → 出现 Octopus OS 欢迎界面(octopus-install)
+  1. U 盘启动 → 出现 Echo OS 欢迎界面(echo-install)
   2. 选系统盘 → 确认清除 → 主机名 → 管理员密码
   3. 自动完成分区/装 Debian/装 grub → 重启
-  4. 首次开机自动跑 setup-base.sh(ZFS/Samba/Docker/octopus),约 10~20 分钟
-     journalctl -u octopus-firstboot -f
+  4. 首次开机自动跑 setup-base.sh(ZFS/Samba/Docker/echo),约 10~20 分钟
+     journalctl -u echo-firstboot -f
   5. 打开 http://<设备IP> 或 http://<主机名>.local
 EOF

@@ -1,9 +1,9 @@
-# Octopus OS · 管理员提权白名单
+# Echo OS · 管理员提权白名单
 #
 # 原则:按命令白名单授权,不给 blanket NOPASSWD:ALL。
-# appliance 后端以 root 运行,这里只给 octopus 用户做运维排障用。
+# appliance 后端以 root 运行,这里只给 echo 用户做运维排障用。
 
-octopus ALL=(root) NOPASSWD: \
+echo ALL=(root) NOPASSWD: \
     /usr/bin/systemctl, \
     /usr/bin/journalctl, \
     /usr/sbin/zfs, \

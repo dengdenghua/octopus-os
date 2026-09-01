@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# octopus-install 冒烟测试 —— 打桩 whiptail 与 debconf-set-selections,真跑装机流程。
+# echo-install 冒烟测试 —— 打桩 whiptail 与 debconf-set-selections,真跑装机流程。
 #
 # 为什么需要它:装机脚本平时只能在 d-i initrd 里跑,改一行就得烧 ISO 上 VM 验证,
 # 反馈周期以十分钟计。这里把交互层打桩,几秒钟就能验证 TUI 逻辑与产物正确性,
@@ -9,7 +9,7 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALLER="$SCRIPT_DIR/octopus-install"
+INSTALLER="$SCRIPT_DIR/echo-install"
 
 PASS=0
 FAIL=0
@@ -67,7 +67,7 @@ run_installer() {
   # (注释必须放在赋值块外 —— 续行中间插注释会截断 env 前缀链。)
   CAPTURE_FILE="$capture" \
   CNT_FILE="$WORK/cnt.$RANDOM" \
-  OCTOPUS_TEST_DISKS="${TEST_DISKS-sda sdb nvme0n1}" \
+  ECHO_TEST_DISKS="${TEST_DISKS-sda sdb nvme0n1}" \
   FAKE_DISK="${FAKE_DISK:-sdb}" \
   FAKE_HOST="${FAKE_HOST:-testnas}" \
   FAKE_PW1="${FAKE_PW1:-supersecret123}" \
@@ -90,7 +90,7 @@ assert_not_has() {
     && bad "$2 (不应包含: $1)" || ok "$2"
 }
 
-echo "octopus-install 冒烟测试"
+echo "echo-install 冒烟测试"
 echo "脚本: $INSTALLER"
 
 # ── 1. 正常流程 ───────────────────────────────────────────
@@ -101,7 +101,7 @@ assert_has "d-i partman-auto/disk string /dev/sdb" "系统盘写的是 /dev/sdb"
 assert_not_has "/dev/sda" "没有被默认选中项覆盖成 sda"
 assert_has "d-i netcfg/get_hostname string testnas" "主机名写入正确"
 assert_has "d-i netcfg/get_domain string local" "域名写入正确"
-assert_has "d-i passwd/username string octopus" "管理员用户名正确"
+assert_has "d-i passwd/username string echo" "管理员用户名正确"
 assert_has "d-i passwd/user-password password supersecret123" "密码写入正确"
 assert_has "d-i passwd/user-password-again password supersecret123" "密码确认项一致"
 assert_has "d-i partman/confirm boolean true" "分区确认项为 true"

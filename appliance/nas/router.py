@@ -41,8 +41,8 @@ class ShareIn(BaseModel):
 
 
 def _default_share_manager() -> ShareManager:
-    root = os.environ.get("OCTOPUS_NAS_ROOT") or os.path.join(
-        os.environ.get("OCTOPUS_DATA_DIR", "/data"), "nas"
+    root = os.environ.get("ECHO_NAS_ROOT") or os.path.join(
+        os.environ.get("ECHO_DATA_DIR", "/data"), "nas"
     )
     return ShareManager(root)
 

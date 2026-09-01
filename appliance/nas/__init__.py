@@ -1,6 +1,6 @@
-"""NAS 管控面 —— Octopus OS 的"NAS 那一半"。
+"""NAS 管控面 —— Echo OS 的"NAS 那一半"。
 
-octopus-os 原本只有桌面壳(启动器 + 文件管理器 + agent 对话),缺的是让一台
+echo-os 原本只有桌面壳(启动器 + 文件管理器 + agent 对话),缺的是让一台
 设备真正成为 NAS 的部分:存储池、共享协议、磁盘健康。本包补上这一层。
 
 分层坚持两条铁律(见 docs/P3_FNOS_BASE_PLAN.md):

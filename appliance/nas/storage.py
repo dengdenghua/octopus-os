@@ -42,7 +42,7 @@ def _default_runner(cmd: list[str]) -> tuple[int, str, str]:
             cmd,
             capture_output=True,
             text=True,
-            timeout=float(os.environ.get("OCTOPUS_NAS_CMD_TIMEOUT", "15")),
+            timeout=float(os.environ.get("ECHO_NAS_CMD_TIMEOUT", "15")),
             check=False,
         )
         return p.returncode, p.stdout, p.stderr

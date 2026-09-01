@@ -1,5 +1,5 @@
 #!/bin/bash
-# Octopus OS 装机 TUI —— 寄生在 Debian Installer 之前跑,只负责"问清几件事"。
+# Echo OS 装机 TUI —— 寄生在 Debian Installer 之前跑,只负责"问清几件事"。
 #
 # 为什么这么做(直接来自飞牛 OS 逆向的结论):
 #   飞牛的 initrd 里只多了 3 个自研文件,注入点只有两行 —— 选盘 TUI 跑在
@@ -13,7 +13,7 @@
 # 用法:由 debian-installer-startup 在 d-i 主程序之前调用。
 set -e
 
-ANSWERS=/tmp/octopus-answers.conf
+ANSWERS=/tmp/echo-answers.conf
 : >"$ANSWERS"
 
 # ── 小工具 ────────────────────────────────────────────────
@@ -22,13 +22,13 @@ die() { whiptail --msgbox "$1" 10 60; exit 1; }
 # 枚举整盘。注意:d-i 的 initrd 里**不一定有 lsblk**(util-linux 未必进 initrd),
 # 官方做法是用 di-utils 提供的 list-devices。这里三级回落,保证总能拿到盘。
 #
-# 测试接缝:设了 OCTOPUS_TEST_DISKS 就直接用注入的列表,不碰真实硬件。
+# 测试接缝:设了 ECHO_TEST_DISKS 就直接用注入的列表,不碰真实硬件。
 # 生产环境不会设置它 —— 仅 selftest.sh 用,否则装机脚本无法在非 Linux 上验证。
 list_disks() {
   # ${VAR+X} 语义:变量"设置过"(哪怕为空)就命中 —— 空列表=无盘,也是合法注入。
   # 若用 [ -n ],空串会误回落到真实硬件枚举,selftest 的无盘场景就失效。
-  if [ "${OCTOPUS_TEST_DISKS+X}" = "X" ]; then
-    echo "$OCTOPUS_TEST_DISKS" | tr ' ' '\n'
+  if [ "${ECHO_TEST_DISKS+X}" = "X" ]; then
+    echo "$ECHO_TEST_DISKS" | tr ' ' '\n'
     return
   fi
   if command -v list-devices >/dev/null 2>&1; then
@@ -47,8 +47,8 @@ list_disks() {
 # 容量(KB)。/sys/block/<dev>/size 的单位是 512B 扇区,最可靠。
 disk_size_kb() {
   # 见 list_disks 的测试接缝说明(同样必须区分"设置但为空")
-  if [ "${OCTOPUS_TEST_DISKS+X}" = "X" ]; then
-    echo "${OCTOPUS_TEST_DISK_KB:-500000000}"
+  if [ "${ECHO_TEST_DISKS+X}" = "X" ]; then
+    echo "${ECHO_TEST_DISK_KB:-500000000}"
     return
   fi
   if [ -r "/sys/block/$1/size" ]; then
@@ -79,8 +79,8 @@ DISKS=$(list_disks | tr '\n' ' ' )
 [ -n "${DISKS// /}" ] || die "没有找到可用磁盘,无法安装。"
 
 # ── 1. 欢迎 ───────────────────────────────────────────────
-whiptail --title "Octopus OS" --msgbox \
-"欢迎安装 Octopus OS。
+whiptail --title "Echo OS" --msgbox \
+"欢迎安装 Echo OS。
 
 开机即进 Agent 桌面:对话 / 文件 / 应用三原语,
 存储底座来自 ZFS 与 Samba 等上游开源组件。
@@ -127,18 +127,18 @@ whiptail --title "确认" --yesno \
 # ── 3. 主机名 ─────────────────────────────────────────────
 set +e
 HOSTNAME=$(whiptail --title "主机名" --inputbox \
-"给这台设备起个名字(局域网访问用它,如 octopus.local)。" \
-10 60 "octopus" 3>&1 1>&2 2>&3)
+"给这台设备起个名字(局域网访问用它,如 echo.local)。" \
+10 60 "echo" 3>&1 1>&2 2>&3)
 rc=$?
 set -e
 [ $rc -eq 0 ] || exit 1
-[ -n "$HOSTNAME" ] || HOSTNAME=octopus
+[ -n "$HOSTNAME" ] || HOSTNAME=echo
 
 # ── 4. 管理员密码 ─────────────────────────────────────────
 while :; do
   set +e
   PW1=$(whiptail --title "管理员密码" --passwordbox \
-"设置管理员(用户名 octopus)的密码,至少 8 位。" \
+"设置管理员(用户名 echo)的密码,至少 8 位。" \
 10 60 3>&1 1>&2 2>&3)
   rc1=$?
   PW2=$(whiptail --title "确认密码" --passwordbox "请再输入一次。" \
@@ -171,8 +171,8 @@ d-i partman/confirm boolean true
 d-i partman/confirm_nooverwrite boolean true
 d-i netcfg/get_hostname string $HOSTNAME
 d-i netcfg/get_domain string local
-d-i passwd/user-fullname string Octopus Admin
-d-i passwd/username string octopus
+d-i passwd/user-fullname string Echo Admin
+d-i passwd/username string echo
 d-i passwd/user-password password $PW1
 d-i passwd/user-password-again password $PW1
 EOF

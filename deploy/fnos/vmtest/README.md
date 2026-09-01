@@ -9,7 +9,7 @@
 
 1. 从 netinst ISO 抽出 `install.amd/vmlinuz` + `initrd.gz`(PowerShell 挂载复制)
 2. 用 `tools/make_initrd_segment.py` 往 initrd.gz **末尾追加一段 gzip cpio**,
-   内含 `preseed.cfg` 与 `octopus-vmtest/` 载荷 —— Linux 内核 initramfs
+   内含 `preseed.cfg` 与 `echo-vmtest/` 载荷 —— Linux 内核 initramfs
    支持多段拼接(飞牛镜像里就是这种结构),无需重打包任何东西
 3. QEMU `-kernel/-initrd` 直启,`-append` 指向 initrd 内的 preseed
 
@@ -39,7 +39,7 @@ powershell -File vmtest\tools\launch-vm.ps1 -WorkDir C:\vmtest -Mode install
 
 ```powershell
 powershell -File vmtest\tools\launch-vm.ps1 -WorkDir C:\vmtest -Mode boot
-# 串口 serial-boot.log 里出现 "octopus-vm login:" 即为通过
+# 串口 serial-boot.log 里出现 "echo-vm login:" 即为通过
 ```
 
 ## cpio-root 内容
@@ -47,12 +47,12 @@ powershell -File vmtest\tools\launch-vm.ps1 -WorkDir C:\vmtest -Mode boot
 | 路径(虚拟机内) | 来源 | 说明 |
 | --- | --- | --- |
 | `/preseed.cfg` | `preseed-vmtest.cfg` | 正式 preseed 的 VM 变体,5 处差异见文件头注释 |
-| `/octopus-vmtest/setup-base.sh` | `../base/setup-base.sh` | 与正式版同文件 |
-| `/octopus-vmtest/octopus-firstboot.service` | `../octopus-firstboot.service` | 同上 |
-| `/octopus-vmtest/99-octopus` | `../99-octopus` | 同上 |
+| `/echo-vmtest/setup-base.sh` | `../base/setup-base.sh` | 与正式版同文件 |
+| `/echo-vmtest/echo-firstboot.service` | `../echo-firstboot.service` | 同上 |
+| `/echo-vmtest/99-echo-os` | `../99-echo-os` | 同上 |
 
-late_command 与正式版逻辑一致,仅源路径 `/cdrom/octopus` → `/octopus-vmtest`,
-末尾追加 `echo stageA-ok > /target/var/log/octopus-stageA.txt` 作验证标记。
+late_command 与正式版逻辑一致,仅源路径 `/cdrom/echo-os` → `/echo-vmtest`,
+末尾追加 `echo stageA-ok > /target/var/log/echo-stageA.txt` 作验证标记。
 
 ## 已知坑(每条都真实踩过)
 
@@ -72,5 +72,5 @@ late_command 与正式版逻辑一致,仅源路径 `/cdrom/octopus` → `/octopu
 ## 与正式链路(build-iso.sh)的关系
 
 本目录验证的是 preseed 内容与 late_command 逻辑;ISO 组装、 isolinux/EFI
-双引导、`/cdrom/octopus` 载荷路径,仍由 `build-iso.sh` 在 Linux 上产出并
+双引导、`/cdrom/echo-os` 载荷路径,仍由 `build-iso.sh` 在 Linux 上产出并
 验证(Stage B)。两段通过后,M2(装机链路验证)闭环。

@@ -255,8 +255,8 @@ class TestShareManager:
         mgr.add_share(Share(name="media", path="/data/media"))
         result = mgr.apply()
 
-        smb = tmp_path / "smb" / "octopus.conf"
-        exports = tmp_path / "exports.d" / "octopus.exports"
+        smb = tmp_path / "smb" / "echo.conf"
+        exports = tmp_path / "exports.d" / "echo.exports"
         assert smb.exists() and exports.exists()
         assert result["shares"] == 1
         # 工具不存在时 reload 失败但不抛,错误被记录下来
@@ -354,7 +354,7 @@ class TestNasRouter:
         r = _client(shares=mgr).post("/api/appliance/nas/shares/apply")
         assert r.status_code == 200
         assert r.json()["shares"] == 1
-        assert (tmp_path / "smb" / "octopus.conf").exists()
+        assert (tmp_path / "smb" / "echo.conf").exists()
 
     def test_jwt_secret_protects_writes(self, tmp_path):
         """带 secret 时未认证请求应被拦下。"""
