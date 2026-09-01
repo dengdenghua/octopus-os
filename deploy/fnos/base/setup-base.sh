@@ -13,14 +13,15 @@ OS_DIR=/opt/octopus-os
 STATE_DIR=/var/lib/octopus-os/firstboot
 LOG_TAG="octopus-firstboot"
 
+# 可选覆盖文件:管理员/测试可在此改仓库源与镜像源(如指向宿主机 bundle/
+# git daemon,或国内 git 镜像),不必改本脚本。必须在默认值赋值**之前** source,
+# 否则 ${VAR:-default} 已定死,覆盖不生效(VM 实测踩坑)
+[ -r /etc/octopus/firstboot.env ] && . /etc/octopus/firstboot.env
+
 # 由 build-iso.sh 或环境变量注入
 OS_REPO="${OCTOPUS_OS_REPO:-https://github.com/dengdenghua/octopus-os.git}"
 OS_BRANCH="${OCTOPUS_OS_BRANCH:-p3-fnos}"
 DEBIAN_MIRROR="${DEBIAN_MIRROR:-https://deb.debian.org/debian}"
-
-# 可选覆盖文件:管理员/测试可在此改仓库源与镜像源(如 git://10.0.2.2/...
-# 指向宿主机 git daemon,或国内 git 镜像),不必改本脚本
-[ -r /etc/octopus/firstboot.env ] && . /etc/octopus/firstboot.env
 
 log()  { echo "[$(date -Is)] $*" | tee -a "/var/log/${LOG_TAG}.log"; }
 skip() { log "skip: $1 (已完成)"; }
