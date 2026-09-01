@@ -21,7 +21,16 @@ die() { whiptail --msgbox "$1" 10 60; exit 1; }
 
 # 枚举整盘。注意:d-i 的 initrd 里**不一定有 lsblk**(util-linux 未必进 initrd),
 # 官方做法是用 di-utils 提供的 list-devices。这里三级回落,保证总能拿到盘。
+#
+# 测试接缝:设了 OCTOPUS_TEST_DISKS 就直接用注入的列表,不碰真实硬件。
+# 生产环境不会设置它 —— 仅 selftest.sh 用,否则装机脚本无法在非 Linux 上验证。
 list_disks() {
+  # ${VAR+X} 语义:变量"设置过"(哪怕为空)就命中 —— 空列表=无盘,也是合法注入。
+  # 若用 [ -n ],空串会误回落到真实硬件枚举,selftest 的无盘场景就失效。
+  if [ "${OCTOPUS_TEST_DISKS+X}" = "X" ]; then
+    echo "$OCTOPUS_TEST_DISKS" | tr ' ' '\n'
+    return
+  fi
   if command -v list-devices >/dev/null 2>&1; then
     list-devices disk
     return
@@ -37,6 +46,11 @@ list_disks() {
 
 # 容量(KB)。/sys/block/<dev>/size 的单位是 512B 扇区,最可靠。
 disk_size_kb() {
+  # 见 list_disks 的测试接缝说明(同样必须区分"设置但为空")
+  if [ "${OCTOPUS_TEST_DISKS+X}" = "X" ]; then
+    echo "${OCTOPUS_TEST_DISK_KB:-500000000}"
+    return
+  fi
   if [ -r "/sys/block/$1/size" ]; then
     awk -v s="$(cat "/sys/block/$1/size")" 'BEGIN{printf "%d", s/2}'
   else
@@ -74,8 +88,12 @@ whiptail --title "Octopus OS" --msgbox \
 接下来只需回答几个问题。" 16 62 || true
 
 # ── 2. 系统盘 ─────────────────────────────────────────────
-# whiptail --radiolist 每行三个参数:tag / 描述 / 状态(首项默认选中)
-menu_args=""
+# whiptail --radiolist 每项三个参数:tag / 描述 / 状态(首项默认选中)。
+#
+# 用 bash 数组收参数,**不要用 eval 拼字符串**:eval 会重新解析整行,提示语里的
+# 括号会被当成 shell 语法 —— 下面这段中文提示含"(建议用 SSD…)",eval 会直接
+# syntax error 让装机脚本退出。这个坑是 selftest.sh 抓出来的。
+menu_items=()
 first=1
 for dev in $DISKS; do
   kb=$(disk_size_kb "$dev")
@@ -85,16 +103,16 @@ for dev in $DISKS; do
 
   state=OFF
   [ $first -eq 1 ] && { state=ON; first=0; }
-  menu_args="$menu_args '$dev' '$dev  $(human_size "$kb")  $(disk_model "$dev")' '$state'"
+  menu_items+=("$dev" "$dev  $(human_size "$kb")  $(disk_model "$dev")" "$state")
 done
 
-[ -n "$menu_args" ] || die "没有找到可用磁盘,无法安装。"
+[ "${#menu_items[@]}" -gt 0 ] || die "没有找到可用磁盘,无法安装。"
 
 set +e
-SYSDEV=$(eval whiptail --title '选择系统盘' --radiolist \
+SYSDEV=$(whiptail --title '选择系统盘' --radiolist \
 "选择安装系统的磁盘(建议用 SSD,系统会占用整盘)。
 
-数据盘稍后可在桌面里组 ZFS 存储池,这里不用选。" 18 70 8 $menu_args 3>&1 1>&2 2>&3)
+数据盘稍后可在桌面里组 ZFS 存储池,这里不用选。" 18 70 8 "${menu_items[@]}" 3>&1 1>&2 2>&3)
 rc=$?
 set -e
 [ $rc -eq 0 ] || exit 1
