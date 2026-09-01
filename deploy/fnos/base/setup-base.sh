@@ -18,6 +18,10 @@ OS_REPO="${OCTOPUS_OS_REPO:-https://github.com/dengdenghua/octopus-os.git}"
 OS_BRANCH="${OCTOPUS_OS_BRANCH:-p3-fnos}"
 DEBIAN_MIRROR="${DEBIAN_MIRROR:-https://deb.debian.org/debian}"
 
+# 可选覆盖文件:管理员/测试可在此改仓库源与镜像源(如 git://10.0.2.2/...
+# 指向宿主机 git daemon,或国内 git 镜像),不必改本脚本
+[ -r /etc/octopus/firstboot.env ] && . /etc/octopus/firstboot.env
+
 log()  { echo "[$(date -Is)] $*" | tee -a "/var/log/${LOG_TAG}.log"; }
 skip() { log "skip: $1 (已完成)"; }
 done_mark() { mkdir -p "$STATE_DIR"; touch "$STATE_DIR/$1"; }
@@ -53,12 +57,14 @@ else skip apt; fi
 # 飞牛逆向结论:存储栈一律集成,一个补丁都不打。ZFS 用 OpenZFS 官方源。
 if ! is_done storage; then
   log "== 2/7 安装存储栈 =="
+  # 注意:lsblk 在 util-linux 里,不是独立 apt 包(VM 实测写成包名会
+  # E: Unable to locate package → firstboot 卡死在 2/7 反复重试)
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     zfsutils-linux zfs-dkms \
     samba samba-common-bin smbclient \
     nfs-kernel-server \
     smartmontools mdadm lvm2 btrfs-progs \
-    parted lsblk util-linux
+    parted util-linux
 
   # ZFS 开机自动导入池 + 挂载
   systemctl enable --now zfs-import-cache || true
@@ -102,6 +108,12 @@ if ! is_done octopus-src; then
   log "== 5/7 拉取 Octopus OS ($OS_BRANCH) =="
   mkdir -p "$OS_DIR"
   if [ ! -d "$OS_DIR/.git" ]; then
+    # late_command 会先投放 setup-base.sh 引导文件,目录因此非空,
+    # 直接 clone 会报 "already exists"(VM 实测)。备份后重克隆。
+    if [ -n "$(ls -A "$OS_DIR" 2>/dev/null)" ]; then
+      mv "$OS_DIR" "$OS_DIR.pre-clone.$$"
+      mkdir -p "$OS_DIR"
+    fi
     git clone --depth 1 --branch "$OS_BRANCH" "$OS_REPO" "$OS_DIR"
   else
     git -C "$OS_DIR" fetch --depth 1 origin "$OS_BRANCH"
