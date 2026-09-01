@@ -172,6 +172,11 @@ if ! is_done shell; then
     log "== 6/7 安装原生 shell =="
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
       cage plymouth plymouth-themes seatd rsync
+    # Electron 运行时依赖:精简 Debian 默认没有,不装桌面起不来
+    # (VM 实测 octopus-shell 循环重启,status=127,ldd 缺 libnss3/libasound2)
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      libnss3 libasound2 libgbm1 libgtk-3-0 libxss1 libxtst6 libcups2 \
+      libxrandr2 libatk-bridge2.0-0 libdrm2
     systemctl enable seatd
     install -m644 "$OS_DIR/deploy/native-shell/octopus-shell.service" \
       /etc/systemd/system/octopus-shell.service
