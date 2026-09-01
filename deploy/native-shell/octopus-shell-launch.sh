@@ -18,6 +18,9 @@ EXTRA=()
 # 宿主机可 curl http://127.0.0.1:9222/json 看页面,或走 screencap。
 if [ -n "${OCTOPUS_ELECTRON_DEBUG_PORT:-}" ]; then
   EXTRA+=(--remote-debugging-port="$OCTOPUS_ELECTRON_DEBUG_PORT")
+  # Chromium 137+ 默认拒绝外部 origin 的 CDP WebSocket,截图工具会 403
+  # (VM 实测)。调试模式下放开,仅监听 127.0.0.1。
+  EXTRA+=(--remote-allow-origins='*')
 fi
 exec npx --no-install electron electron/main.cjs \
   --ozone-platform-hint=auto \
