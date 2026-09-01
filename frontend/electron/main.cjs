@@ -226,14 +226,14 @@ async function listDesktopItems() {
   try {
     await fsp.mkdir(DESKTOP_DIR, { recursive: true });
   } catch (err) {
-    console.warn("[octopus] 无法创建桌面目录,返回空列表:", err.message);
+    console.warn("[echo] 无法创建桌面目录,返回空列表:", err.message);
     return [];
   }
   let names;
   try {
     names = await fsp.readdir(DESKTOP_DIR);
   } catch (err) {
-    console.warn("[octopus] 读取桌面目录失败,返回空列表:", err.message);
+    console.warn("[echo] 读取桌面目录失败,返回空列表:", err.message);
     return [];
   }
   const items = [];
