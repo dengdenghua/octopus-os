@@ -215,7 +215,9 @@ if ! is_done services; then
 
   systemctl daemon-reload
   systemctl enable --now octopus-appliance.service
-  nginx -t && systemctl enable --now nginx
+  # nginx 可能已在跑(apt 安装时自启),`enable --now` 不会重载已运行进程
+  # 的配置 → 80 端口仍服务旧 default 站点(VM 实测)。必须 restart。
+  nginx -t && systemctl enable nginx && systemctl restart nginx
   done_mark services
 else skip services; fi
 
