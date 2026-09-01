@@ -172,7 +172,9 @@ if ! is_done shell; then
   DESKTOP_MODE="${ECHO_DESKTOP:-cage}"
   if [ "$DESKTOP_MODE" = "kwin" ] && [ -x "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh" ]; then
     log "== 6/7 安装 KWin 通用桌面会话(上游) =="
-    "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh"
+    # 复用既有 NAS 用户(octopus),避免上游脚本默认新建 echo 用户;
+    # 上游脚本读 ECHO_USER / ECHO_OS_DIR 两个 env。
+    ECHO_USER=octopus ECHO_OS_DIR="$OS_DIR" "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh"
   elif [ "${ECHO_HDMI_SHELL:-auto}" = "off" ]; then
     log "== 6/7 跳过原生 shell (ECHO_HDMI_SHELL=off) =="
   elif ls /dev/dri/card* >/dev/null 2>&1 || [ "${ECHO_HDMI_SHELL:-auto}" = "on" ] || [ "$DESKTOP_MODE" = "cage" ]; then
