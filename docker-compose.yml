@@ -1,5 +1,5 @@
-# octopus-agent · 最小部署栈
-# 仅 agent 单进程 · 适用于开发 / 测试 / 低负载场景
+# echo-os · 最小部署栈
+# Echo 主服务 + 最小权限 Docker 控制 sidecar · 适用于开发 / 测试 / 低负载场景
 #
 # 启动:
 #   docker compose up -d
@@ -15,28 +15,156 @@
 #   3. mkdir -p data/
 
 services:
-  octopus-agent:
+  # 唯一持有宿主 docker.sock 的窄控制面；不发布宿主端口，只允许
+  # ping / list / start / stop，以及由代理独立重算的 Hub 受信生命周期。
+  # 主 Echo/Agent 进程永远看不到原始 socket或任意 Docker 配置入口。
+  docker-control:
+    image: echo-os:latest
+    container_name: echo-docker-control
+    restart: unless-stopped
+    user: "0:0"
+    entrypoint: ["python", "-m", "appliance.docker_proxy"]
+    command: ["--host", "0.0.0.0", "--port", "2375"]
+    environment:
+      ECHO_DOCKER_SOCK: /var/run/docker.sock
+      ECHO_PUID: ${PUID:-1000}
+      ECHO_PGID: ${PGID:-1000}
+      ECHO_DOCKER_PROXY_USER: echo
+      ECHO_DOCKER_PROXY_TOKEN: ${ECHO_DOCKER_PROXY_TOKEN:?generate a 32+ character secret}
+      ECHO_DOCKER_DATA_ROOT_EXPECTED: ${ECHO_DOCKER_DATA_ROOT:-/var/lib/docker}
+      ECHO_DOCKER_DATA_ROOT_MOUNT: /run/echo-host/docker-data
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${ECHO_DOCKER_DATA_ROOT:-/var/lib/docker}:/run/echo-host/docker-data:ro
+    expose:
+      - "2375"
+    networks:
+      - docker-control
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      sh.echo.hide: "1"
+      sh.echo.control-protected: "true"
+      sh.echo.hub.data-copy-provider: "true"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:2375/health',headers={'X-Echo-Proxy-Token':os.environ['ECHO_DOCKER_PROXY_TOKEN']}); urllib.request.urlopen(r,timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  lan-discovery:
+    image: echo-os:latest
+    container_name: echo-lan-discovery
+    restart: unless-stopped
+    user: "65534:65534"
+    entrypoint: ["python", "-m", "appliance.lan_discovery_proxy"]
+    network_mode: host
+    environment:
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 64m
+    labels:
+      sh.echo.hide: "1"
+      sh.echo.control-protected: "true"
+      sh.echo.hub.lan-discovery-provider: "true"
+    healthcheck:
+      test: ["CMD", "python", "-m", "appliance.lan_discovery_proxy", "--check-network"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
+
+  echo-os:
     build:
       context: .
       dockerfile: Dockerfile
-    image: octopus-agent:latest
-    container_name: octopus-agent
+    image: echo-os:latest
+    container_name: echo-os
     restart: unless-stopped
+    user: "0:0"
     ports:
-      - "${PORT:-8000}:8000"
+      - "${ECHO_BIND_IP:-127.0.0.1}:${PORT:-8000}:8000"
+      - "${ECHO_DEVICE_LINK_BIND_ADDRESS:-0.0.0.0}:${ECHO_DEVICE_LINK_PORT:-8765}:${ECHO_DEVICE_LINK_PORT:-8765}"
     environment:
+      ECHO_APPLIANCE: "1"
+      ECHO_DEVICE_LINK_HOST: ${ECHO_DEVICE_LINK_HOST:-}
+      ECHO_DEVICE_LINK_PORT: ${ECHO_DEVICE_LINK_PORT:-8765}
+      ECHO_DEVICE_LINK_AUTO_HOST_FALLBACK: "0"
+      ECHO_DEVICE_SYNC_PORT: ${PORT:-8000}
+      ECHO_APP_EXTENSIONS: appliance.extension
+      ECHO_SKILL_EXTENSIONS: appliance.pm_skills:register_pm_skills
+      ECHO_ADMIN_PASSWORD: ${ECHO_ADMIN_PASSWORD:-}
+      # 明文密码阅后即焚，勿在宿主持久化 .env
+      ECHO_PRINT_GENERATED_PASSWORD: ${ECHO_PRINT_GENERATED_PASSWORD:-0}
+      ECHO_PUID: ${PUID:-1000}
+      ECHO_PGID: ${PGID:-1000}
+      ECHO_DOCKER_HOST: http://docker-control:2375
+      ECHO_DOCKER_PROXY_TOKEN: ${ECHO_DOCKER_PROXY_TOKEN:?generate a 32+ character secret}
+      ECHO_APPLIANCE_TRUSTED_HOSTS: ${ECHO_APPLIANCE_TRUSTED_HOSTS:-}
+      ECHO_APPLIANCE_TRUSTED_ORIGINS: ${ECHO_APPLIANCE_TRUSTED_ORIGINS:-}
+      ECHO_APPLIANCE_FRAME_ORIGINS: ${ECHO_APPLIANCE_FRAME_ORIGINS:-}
+      ECHO_APPLIANCE_CONNECT_ORIGINS: ${ECHO_APPLIANCE_CONNECT_ORIGINS:-}
+      FORWARDED_ALLOW_IPS: ${ECHO_TRUSTED_PROXY_IPS:-127.0.0.1}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      OTEL_SERVICE_NAME: octopus-agent
-      OCTOPUS_LOG_LEVEL: ${OCTOPUS_LOG_LEVEL:-INFO}
+      OTEL_SERVICE_NAME: echo-os
+      ECHO_LOG_LEVEL: ${ECHO_LOG_LEVEL:-INFO}
+      ECHO_NAS_OMV_SHARED_FOLDER_REF: ${ECHO_NAS_OMV_SHARED_FOLDER_REF:-}
     volumes:
       - ./data:/data
-      - ./config.yaml:/etc/octopus/config.yaml:ro
+      - ${NAS_STORAGE:-./storage}:/data/nas
+      - ./config.yaml:/etc/echo/config.yaml:ro
+    depends_on:
+      docker-control:
+        condition: service_healthy
+    networks:
+      - default
+      - docker-control
+    labels:
+      sh.echo.hide: "1"
+      sh.echo.control-protected: "true"
+      sh.echo.hub.nas-provider: "true"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
     command:
       - serve
       - --config
-      - /etc/octopus/config.yaml
+      - /etc/echo/config.yaml
       - --host
       - "0.0.0.0"
       - --port
@@ -44,7 +172,7 @@ services:
       - --learn-interval
       - "${LEARN_INTERVAL_S:-0}"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -61,3 +189,7 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
+
+networks:
+  docker-control:
+    internal: true

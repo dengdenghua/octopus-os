@@ -1,6 +1,6 @@
 # Architecture Docs
 
-This folder contains the current architecture map for Octopus-Agent.
+This folder contains the current architecture map for Echo Agent.
 
 ## Start here
 

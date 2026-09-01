@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过 Slack Bolt 框架将 Octopus-Agent 接入 Slack 工作区，支持在频道、私信和线程中与用户进行智能对话。
+通过 Slack Bolt 框架将 Echo Agent 接入 Slack 工作区，支持在频道、私信和线程中与用户进行智能对话。
 
 ## 前置条件
 
@@ -31,7 +31,7 @@
    - `message.im` — 监听私信消息
 6. 在「Request URL」中填入 Webhook URL
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 Slack，填写以下字段：
 
@@ -41,7 +41,7 @@
 | Signing Secret | 用于验证请求来源的签名密钥 | `8f742231b10e...` |
 | App Token | Socket Mode 令牌（可选） | `xapp-1-A1234567-...` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -55,7 +55,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -79,7 +79,7 @@ Slack 通过 Event Subscriptions 推送事件。在 Slack App 配置页面的「
 
 Webhook URL 格式：`https://your-domain.com/api/channels/slack/events`
 
-Slack 会向该 URL 发送 URL 验证请求（包含 `challenge` 字段），Octopus-Agent 会自动响应验证。
+Slack 会向该 URL 发送 URL 验证请求（包含 `challenge` 字段），Echo Agent 会自动响应验证。
 
 如果无法提供公网 URL，可使用 Socket Mode（配置 `mode: socket`），通过 WebSocket 连接接收事件，无需暴露端口。
 
@@ -89,7 +89,7 @@ Slack 会向该 URL 发送 URL 验证请求（包含 `challenge` 字段），Oct
 A: 1) 确认机器人已添加到目标频道（在频道中输入 `@机器人名` 邀请）；2) 确认 Event Subscriptions 中已订阅 `message.channels` 事件；3) 确认 Bot Token 拥有 `channels:history` 权限。
 
 ### Q: 如何使用 Socket Mode 避免配置公网 URL？
-A: 在 Slack App 配置中开启 Socket Mode（需生成 App-Level Token，scope 为 `connections:write`），在 Octopus-Agent 配置中设置 `mode: socket` 并填入 `app_token`。
+A: 在 Slack App 配置中开启 Socket Mode（需生成 App-Level Token，scope 为 `connections:write`），在 Echo Agent 配置中设置 `mode: socket` 并填入 `app_token`。
 
 ### Q: 如何让机器人支持 Slash Command？
 A: 在 Slack App 的「Slash Commands」页面创建命令，Request URL 填入 `https://your-domain.com/api/channels/slack/commands`。
@@ -99,4 +99,4 @@ A: 在 Slack App 的「Slash Commands」页面创建命令，Request URL 填入 
 - [Slack API: Applications](https://api.slack.com/apps)
 - [Slack Bolt 框架文档](https://slack.dev/bolt-js/tutorial/getting-started)
 - [Slack API 事件订阅文档](https://api.slack.com/apis/connections/events-api)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/slack)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/slack)

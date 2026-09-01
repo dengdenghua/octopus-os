@@ -1,0 +1,19 @@
+{
+  "KPlugin": {
+    "Name": "Echo OS Window Bridge",
+    "Description": "Publishes KWin compositor window state to the session-private Echo OS bridge",
+    "Icon": "preferences-system-windows",
+    "Authors": [
+      {
+        "Name": "Echo Project"
+      }
+    ],
+    "Id": "org.echoos.windowbridge",
+    "Version": "1.0.0",
+    "License": "Apache-2.0",
+    "EnabledByDefault": true
+  },
+  "X-Plasma-API": "javascript",
+  "X-Plasma-MainScript": "code/main.js",
+  "KPackageStructure": "KWin/Script"
+}

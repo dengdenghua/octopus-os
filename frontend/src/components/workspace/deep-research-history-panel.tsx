@@ -11,10 +11,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import {
-  listDeepResearchJobs,
-  type ResearchJob,
-} from "@/core/research/api";
+import { listDeepResearchJobs, type ResearchJob } from "@/core/research/api";
+import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
 interface DeepResearchHistoryPanelProps {
@@ -28,6 +26,7 @@ export function DeepResearchHistoryPanel({
   onSelect,
   onClose,
 }: DeepResearchHistoryPanelProps) {
+  const { t } = useI18n();
   const [jobs, setJobs] = useState<ResearchJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +39,9 @@ export function DeepResearchHistoryPanel({
       setJobs(next);
     } catch (err) {
       swallow(err);
-      setError(err instanceof Error ? err.message : "Failed to load research history");
+      setError(
+        err instanceof Error ? err.message : "Failed to load research history",
+      );
     } finally {
       setLoading(false);
     }
@@ -62,12 +63,12 @@ export function DeepResearchHistoryPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+      <div className="flex items-center justify-between border-b border-border-default px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <HistoryIcon className="size-4 text-primary" />
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">Agent History</div>
-            <div className="truncate text-[11px] text-muted-foreground">
+            <div className="truncate text-xs text-muted-foreground">
               {sortedJobs.length} saved runs
             </div>
           </div>
@@ -89,6 +90,7 @@ export function DeepResearchHistoryPanel({
           <button
             type="button"
             onClick={onClose}
+            aria-label={t.common.close}
             className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
           >
             <XIcon className="size-3.5" />
@@ -103,7 +105,7 @@ export function DeepResearchHistoryPanel({
           </div>
         )}
         {!loading && sortedJobs.length === 0 ? (
-          <div className="rounded-lg border border-border/60 bg-muted/20 p-4 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-border-default bg-muted/20 p-4 text-sm text-muted-foreground">
             No agent runs yet.
           </div>
         ) : (
@@ -117,7 +119,7 @@ export function DeepResearchHistoryPanel({
                   "w-full rounded-lg border p-3 text-left transition-colors",
                   activeJobId === job.job_id
                     ? "border-primary/30 bg-primary/10"
-                    : "border-border/60 bg-background/60 hover:bg-muted/40",
+                    : "border-border-default bg-background/60 hover:bg-muted/40",
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
@@ -125,22 +127,38 @@ export function DeepResearchHistoryPanel({
                     <div className="line-clamp-2 text-xs font-medium">
                       {job.topic}
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                       <span>{job.status}</span>
-                      {job.lead_agent_name && <span>{job.lead_agent_name}</span>}
-                      <span>{formatDate(job.completed_at ?? job.created_at)}</span>
+                      {job.lead_agent_name && (
+                        <span>{job.lead_agent_name}</span>
+                      )}
+                      <span>
+                        {formatDate(job.completed_at ?? job.created_at)}
+                      </span>
                     </div>
                   </div>
                   {job.final_report ? (
-                    <CheckCircle2Icon className="size-4 shrink-0 text-green-500" />
+                    <CheckCircle2Icon className="size-4 shrink-0 text-success" />
                   ) : (
                     <TelescopeIcon className="size-4 shrink-0 text-muted-foreground" />
                   )}
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-1.5 text-[10px] text-muted-foreground">
-                  <HistoryMetric icon={<FileTextIcon className="size-3" />} value={job.materials.length} label="materials" />
-                  <HistoryMetric icon={<SearchIcon className="size-3" />} value={job.evidence.length} label="evidence" />
-                  <HistoryMetric icon={<ClockIcon className="size-3" />} value={job.roles.length} label="roles" />
+                <div className="mt-2 grid grid-cols-3 gap-1.5 text-xs text-muted-foreground">
+                  <HistoryMetric
+                    icon={<FileTextIcon className="size-3" />}
+                    value={job.materials.length}
+                    label="materials"
+                  />
+                  <HistoryMetric
+                    icon={<SearchIcon className="size-3" />}
+                    value={job.evidence.length}
+                    label="evidence"
+                  />
+                  <HistoryMetric
+                    icon={<ClockIcon className="size-3" />}
+                    value={job.roles.length}
+                    label="roles"
+                  />
                 </div>
               </button>
             ))}

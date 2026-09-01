@@ -1,4 +1,3 @@
-
 import MagicBento, { type BentoCardProps } from "@/components/ui/magic-bento";
 import { cn } from "@/lib/utils";
 
@@ -51,8 +50,8 @@ export function WhatsNewSection({ className }: { className?: string }) {
   return (
     <Section
       className={cn("", className)}
-      title="Whats New in Octopus 2.0"
-      subtitle="Octopus is now evolving from a Deep Research agent into a full-stack Super Agent"
+      title="What's New in Echo 2.0"
+      subtitle="Echo is evolving from a Deep Research agent into a full-stack Super Agent"
     >
       <div className="flex w-full items-center justify-center">
         <MagicBento data={features} />
@@ -60,4 +59,3 @@ export function WhatsNewSection({ className }: { className?: string }) {
     </Section>
   );
 }
-

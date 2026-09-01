@@ -21,8 +21,8 @@ correctness > style.
 - **`/api/fs/revert` workspace whitelist** · the endpoint previously
   accepted any `workspace` / `path` a WS client could dereference
   (arbitrary `git checkout --` on the server host). Now rejects paths
-  outside `OCTOPUS_FS_ALLOWED_ROOTS` / `$OCTOPUS_DATA_DIR` /
-  `$OCTOPUS_HOME` / CWD and enforces that `path` lives under
+  outside `ECHO_FS_ALLOWED_ROOTS` / `$ECHO_DATA_DIR` /
+  `$ECHO_HOME` / CWD and enforces that `path` lives under
   `workspace`.
 - **`verify_skills` shell-injection surface removed** · replaced
   `subprocess.run(cmd_str, shell=True)` with `argv + shell=False` for
@@ -70,7 +70,7 @@ correctness > style.
   retired backend). The three `/workspace/{chats,code,team}/[thread_id]`
   pages carry an amber "Use realtime UI →" header button linking to
   `/realtime/:threadId`. Approval fetches replaced with
-  `window.dispatchEvent('octopus:tool-approval-reply')` events.
+  `window.dispatchEvent('echo:tool-approval-reply')` events.
 - **`benchmarks/` suite** · all 8 scripts replaced with
   `sys.exit(2)` stubs — the SSE endpoints they targeted are gone;
   harness will be re-enabled once a realtime-WS bench adapter lands.
@@ -82,11 +82,11 @@ correctness > style.
   `docs/design/config.design.yaml` with a 26-line DEPRECATED header.
   `make up` / `make up-full` continue to auto-bootstrap a runnable
   `config.yaml` from `config.example.yaml`.
-- `.octopus-browser-relay/` (actual product surface — Chrome MV3
+- `.echo-browser-relay/` (actual product surface — Chrome MV3
   extension) promoted from gitignored root dot-dir to
-  `extensions/octopus-browser-relay/`. `browser_router` now searches
+  `extensions/echo-browser-relay/`. `browser_router` now searches
   both locations; fresh checkouts create the new one.
-- Root-level scratch / logs moved to `.octopus/local/root-cleanup-2026-05-09/`
+- Root-level scratch / logs moved to `.echo/local/root-cleanup-2026-05-09/`
   (backend logs, `.runtime-logs/`, `artifacts/`, `logs/`).
 - Empty placeholder dirs deleted (`frontend/src/app/workspace/admin/`,
   the two `[thread_id]` / `new` children, `frontend/src/app/observability/`
@@ -259,7 +259,7 @@ above live in `frontend/src/core/realtime/`.
 
 **API 稳定性承诺**:从此版本起进入 **Beta** · `Development Status :: 4 - Beta` · semver 意义下 0.x 仍允许 breaking change,但承诺:
 - **公开 skill handler 签名** 在 minor 版本内不破坏(新增 kwarg 有默认值不算破坏)
-- **`additional_kwargs.octopus` metadata 字段** 只增不删(`input_tokens` / `rounds` / `strategy` 等前端依赖的字段稳定)
+- **`additional_kwargs.echo` metadata 字段** 只增不删(`input_tokens` / `rounds` / `strategy` 等前端依赖的字段稳定)
 - **SSE event 名字**(`tool_start` / `tool_end` / `sub_tool_start` / `sub_tool_end` / `messages-tuple` / `values`)稳定
 - **CLI subcommand 列表** 从 `python -m runtime --help` 可见的命令只增不删
 - **`ParsedIntent` / `TaskGraph` / `Trajectory` / `Budget` / `CostEntry`** 公开字段只增不删
@@ -299,7 +299,7 @@ above live in `frontend/src/core/realtime/`.
 - `runtime/core/cerebrum/llm_planner.py::LLMPlanner.last_plan_usage` · planner 自身 LLM call 的 tokens 暴露给调用方
 - `runtime/sensing/siphon/openai_gateway.py::synthesize_reply(usage_out=)` · 合成 LLM 的 tokens 通过 out 参数吐出
 - `_direct_llm_fallback_with_usage()` + `_stream_direct_llm_fallback` done tuple 带 JSON-encoded usage(streaming + non-streaming + planner-error fallback 三条兜底全覆盖)
-- `additional_kwargs.octopus` 现在带 `input_tokens` + `output_tokens` + 拆分字段(`executor_*` / `planner_*` / `synth_*`)· plan path 不再报 0
+- `additional_kwargs.echo` 现在带 `input_tokens` + `output_tokens` + 拆分字段(`executor_*` / `planner_*` / `synth_*`)· plan path 不再报 0
 - `runtime/sensing/siphon/tool_bridge._is_semantic_error()` · tool 返回 `{ok:False}` / `{error:...}` / `{status:error}` 时触发 SSE `status=error` · 之前只有 Python exception 才算错
 - `runtime/execution/suckers/ephemeral_runner.py` · `sub_tool_end` 带真实 `duration_ms`(之前恒 0)
 
@@ -352,7 +352,7 @@ above live in `frontend/src/core/realtime/`.
 **文档 + 工具**
 - `mkdocs.yml` · mkdocs material 配置（加 extras `[docs]`）
 - `invariants-cheatsheet.md` · 30 条必背（10 LINT + 20 核心协议不变量）
-- `runtime/tour.py` + CLI 子命令 `octopus-agent tour` · 10 章 5 分钟 walkthrough · 每章真跑代码 + 结论
+- `runtime/tour.py` + CLI 子命令 `echo-agent tour` · 10 章 5 分钟 walkthrough · 每章真跑代码 + 结论
 - 4 tests for tour
 
 **pyproject extras**（全 opt-in soft-dep）

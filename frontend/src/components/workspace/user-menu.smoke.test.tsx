@@ -16,7 +16,6 @@ type AuthShape = {
   authStatus: { enabled: boolean } | null;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
-  isGuest: boolean;
 };
 
 const mockAuth = { current: null as AuthShape | null };
@@ -24,9 +23,9 @@ const mockAuth = { current: null as AuthShape | null };
 vi.mock("@/providers/AuthProvider", () => ({
   useAuth: () => mockAuth.current,
 }));
-vi.mock("@/core/molili", () => ({
-  useMoliliLink: () => ({ data: null }),
-  useRefreshMoliliCredits: () => ({ mutateAsync: vi.fn() }),
+vi.mock("@/core/oct/hooks", () => ({
+  useOctLink: () => ({ data: null }),
+  useRefreshOctCredits: () => ({ mutateAsync: vi.fn() }),
 }));
 vi.mock("@/core/i18n/hooks", () => ({
   useI18n: () => ({
@@ -95,7 +94,6 @@ describe("UserMenu · auth state transitions", () => {
       authStatus: { enabled: true },
       logout: async () => {},
       isAuthenticated: false,
-      isGuest: true,
     };
     const { container } = renderMenu();
     expect(container.textContent).toBe("");
@@ -109,7 +107,6 @@ describe("UserMenu · auth state transitions", () => {
       authStatus: { enabled: true },
       logout: async () => {},
       isAuthenticated: false,
-      isGuest: true,
     };
     renderMenu();
     expect(screen.getByText("登录")).toBeInTheDocument();
@@ -123,7 +120,6 @@ describe("UserMenu · auth state transitions", () => {
       authStatus: { enabled: true },
       logout: async () => {},
       isAuthenticated: true,
-      isGuest: false,
     };
     renderMenu();
     // Username chip is inside a DropdownMenu trigger · either the
@@ -143,7 +139,6 @@ describe("UserMenu · auth state transitions", () => {
       authStatus: { enabled: true },
       logout: async () => {},
       isAuthenticated: false,
-      isGuest: true,
     };
     const { rerender } = renderMenu();
 
@@ -155,7 +150,6 @@ describe("UserMenu · auth state transitions", () => {
       authStatus: { enabled: true },
       logout: async () => {},
       isAuthenticated: true,
-      isGuest: false,
     };
     rerender(
       <MemoryRouter>

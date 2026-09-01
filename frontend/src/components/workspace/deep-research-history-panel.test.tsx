@@ -30,10 +30,35 @@ describe("<DeepResearchHistoryPanel />", () => {
       locale: "zh-CN",
       created_at: "2026-04-27T10:00:00.000Z",
       completed_at: "2026-04-27T10:05:00.000Z",
-      materials: [{ id: "m1", kind: "url", title: "Synology", url: "https://www.synology.com/" }],
+      materials: [
+        {
+          id: "m1",
+          kind: "url",
+          title: "Synology",
+          url: "https://www.synology.com/",
+        },
+      ],
       sources: [],
-      evidence: [{ id: "e1", title: "Synology", quote_or_summary: "", claim: "", stance: "context", confidence: 0.6 }],
-      roles: [{ id: "r1", name: "Role", subagent_name: "virtual-research-test", focus: "", deliverable: "", search_angles: [] }],
+      evidence: [
+        {
+          id: "e1",
+          title: "Synology",
+          quote_or_summary: "",
+          claim: "",
+          stance: "context",
+          confidence: 0.6,
+        },
+      ],
+      roles: [
+        {
+          id: "r1",
+          name: "Role",
+          subagent_name: "virtual-research-test",
+          focus: "",
+          deliverable: "",
+          search_angles: [],
+        },
+      ],
       steps: [],
       max_searches: 100,
       final_report_format: "markdown",

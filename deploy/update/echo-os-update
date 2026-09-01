@@ -1,0 +1,311 @@
+#!/usr/bin/env bash
+# Authenticate and atomically stage an Echo OS A/B root + UKI update bundle.
+set -euo pipefail
+
+ACTION="${1:-}"
+BUNDLE_INPUT="${2:-}"
+SYSTEM_KEYRING=/usr/lib/echo-os/update-keyring.gpg
+ADMIN_KEYRING=/etc/echo-os/update-keyring.gpg
+TRUST_TOOL=/usr/lib/echo-os/echo_update_trust.py
+TRUST_POLICY=/usr/lib/echo-os/update-trust-policy.json
+TRUST_STATE_ROOT=/var/lib/echo-os/update-trust
+DEFINITIONS=/usr/lib/echo-os/sysupdate.d
+VERIFY_BUNDLE=/usr/lib/echo-os/verify-update-bundle.py
+VERIFY_VERITY=/usr/lib/echo-os/verify-verity-set.py
+VERITY_CERTIFICATE=/usr/lib/echo-os/verity-certificate.pem
+VERIFY_KEYRING=/usr/lib/echo-os/verify-public-keyring.py
+ACCOUNT_STATE_TOOL=/usr/lib/echo-os/echo-oem-setup
+REGION_STATE_TOOL=/usr/lib/echo-os/echo-region-state
+OEM_MARKER=/var/lib/echo-os/oem-complete.json
+UPDATE_IMAGE=""
+UPDATE_LOCK=/run/echo-os-update/update.lock
+
+# The privileged raw-image acceptance harness exercises this exact production
+# entrypoint against a disposable disk. Overrides exist only behind one
+# explicit source-runtime sentinel; installed devices keep the immutable paths
+# above and always capture live persistent state.
+if [[ "${ECHO_UPDATE_SOURCE_SMOKE:-}" == USE-SOURCE-RUNTIME ]]; then
+  SYSTEM_KEYRING="${ECHO_UPDATE_SYSTEM_KEYRING:-$SYSTEM_KEYRING}"
+  ADMIN_KEYRING="${ECHO_UPDATE_ADMIN_KEYRING:-$ADMIN_KEYRING}"
+  TRUST_TOOL="${ECHO_UPDATE_TRUST_TOOL:-$TRUST_TOOL}"
+  TRUST_POLICY="${ECHO_UPDATE_TRUST_POLICY:-$TRUST_POLICY}"
+  TRUST_STATE_ROOT="${ECHO_UPDATE_TRUST_STATE_ROOT:-$TRUST_STATE_ROOT}"
+  DEFINITIONS="${ECHO_UPDATE_DEFINITIONS:-$DEFINITIONS}"
+  VERIFY_BUNDLE="${ECHO_UPDATE_VERIFY_BUNDLE:-$VERIFY_BUNDLE}"
+  VERIFY_VERITY="${ECHO_UPDATE_VERIFY_VERITY:-$VERIFY_VERITY}"
+  VERITY_CERTIFICATE="${ECHO_UPDATE_VERITY_CERTIFICATE:-$VERITY_CERTIFICATE}"
+  VERIFY_KEYRING="${ECHO_UPDATE_VERIFY_KEYRING:-$VERIFY_KEYRING}"
+  UPDATE_IMAGE="${ECHO_UPDATE_IMAGE:-}"
+  UPDATE_LOCK="${ECHO_UPDATE_LOCK:-$UPDATE_LOCK}"
+fi
+for update_runtime_path in \
+  "$SYSTEM_KEYRING" "$ADMIN_KEYRING" "$TRUST_TOOL" "$TRUST_POLICY" \
+  "$TRUST_STATE_ROOT" "$DEFINITIONS" "$VERIFY_BUNDLE" \
+  "$VERIFY_VERITY" "$VERITY_CERTIFICATE" "$VERIFY_KEYRING" "$UPDATE_LOCK"; do
+  [[ "$update_runtime_path" == /* ]] || {
+    echo "Echo OS update runtime paths must be absolute" >&2
+    exit 1
+  }
+done
+
+usage() {
+  echo "usage: echo-os-update {verify|apply} BUNDLE_DIRECTORY" >&2
+}
+
+[[ "$ACTION" == "verify" || "$ACTION" == "apply" ]] || {
+  usage
+  exit 2
+}
+[[ -n "$BUNDLE_INPUT" && $# -eq 2 ]] || {
+  usage
+  exit 2
+}
+[[ "$(id -u)" -eq 0 ]] || {
+  echo "Echo OS updates require root privileges" >&2
+  exit 1
+}
+
+for command_name in awk chmod flock gpgv install python3 realpath sha256sum stat zstd; do
+  command -v "$command_name" >/dev/null 2>&1 || {
+    echo "update dependency missing: $command_name" >&2
+    exit 1
+  }
+done
+[[ -d "$BUNDLE_INPUT" && ! -L "$BUNDLE_INPUT" ]] || {
+  echo "update bundle is not a regular directory: $BUNDLE_INPUT" >&2
+  exit 1
+}
+BUNDLE="$(realpath "$BUNDLE_INPUT")"
+
+require_root_immutable() {
+  local path="$1"
+  local label="$2"
+  local owner mode
+  owner="$(stat -c '%u:%g' "$path")"
+  mode="$(stat -c '%a' "$path")"
+  [[ "$owner" == 0:0 ]] || {
+    echo "$label must be owned by root:root" >&2
+    exit 1
+  }
+  (( (8#$mode & 8#022) == 0 )) || {
+    echo "$label must not be group/other writable" >&2
+    exit 1
+  }
+}
+require_root_immutable "$BUNDLE" "update bundle directory"
+
+LOCK_DIRECTORY="${UPDATE_LOCK%/*}"
+[[ -n "$LOCK_DIRECTORY" && "$LOCK_DIRECTORY" != "$UPDATE_LOCK" ]] || {
+  echo "update lock path has no parent directory" >&2
+  exit 1
+}
+install -d -m 0700 "$LOCK_DIRECTORY"
+[[ -d "$LOCK_DIRECTORY" && ! -L "$LOCK_DIRECTORY" ]] || {
+  echo "update lock directory is unsafe" >&2
+  exit 1
+}
+require_root_immutable "$LOCK_DIRECTORY" "update lock directory"
+if [[ -e "$UPDATE_LOCK" || -L "$UPDATE_LOCK" ]]; then
+  [[ -f "$UPDATE_LOCK" && ! -L "$UPDATE_LOCK" ]] || {
+    echo "update lock is not a regular non-symlink file" >&2
+    exit 1
+  }
+else
+  : >"$UPDATE_LOCK"
+  chmod 0600 "$UPDATE_LOCK"
+fi
+require_root_immutable "$UPDATE_LOCK" "update lock"
+exec 9<>"$UPDATE_LOCK"
+flock -n 9 || {
+  echo "another Echo OS update is already running" >&2
+  exit 1
+}
+
+for trust_runtime in "$TRUST_TOOL" "$TRUST_POLICY" "$SYSTEM_KEYRING" "$VERIFY_KEYRING"; do
+  [[ -f "$trust_runtime" && ! -L "$trust_runtime" ]] || {
+    echo "update trust runtime is missing or redirected: $trust_runtime" >&2
+    exit 1
+  }
+  require_root_immutable "$trust_runtime" "update trust runtime"
+done
+[[ -x "$TRUST_TOOL" && -x "$VERIFY_KEYRING" ]] || {
+  echo "update trust selection runtime is incomplete" >&2
+  exit 1
+}
+
+if [[ -f "$ADMIN_KEYRING" && ! -L "$ADMIN_KEYRING" && -s "$ADMIN_KEYRING" ]]; then
+  KEYRING="$ADMIN_KEYRING"
+  TRUST_SOURCE=administrator
+elif [[ -e "$ADMIN_KEYRING" || -L "$ADMIN_KEYRING" ]]; then
+  echo "administrator update keyring is not a regular non-symlink file" >&2
+  exit 1
+else
+  TRUST_RECORD="$(
+    python3 "$TRUST_TOOL" select \
+      --system-policy "$TRUST_POLICY" \
+      --system-keyring "$SYSTEM_KEYRING" \
+      --state-root "$TRUST_STATE_ROOT" \
+      --verifier "$VERIFY_KEYRING" \
+      --machine
+  )"
+  IFS=$'\t' read -r TRUST_GENERATION KEYRING TRUST_KEYRING_SHA256 TRUST_SOURCE \
+    <<<"$TRUST_RECORD"
+  [[ "$TRUST_GENERATION" =~ ^[1-9][0-9]*$ && "$KEYRING" == /* && \
+     "$TRUST_KEYRING_SHA256" =~ ^[0-9a-f]{64}$ && \
+     ( "$TRUST_SOURCE" == system || "$TRUST_SOURCE" == managed ) ]] || {
+    echo "update trust selector returned an invalid record" >&2
+    exit 1
+  }
+fi
+
+[[ -x "$VERIFY_BUNDLE" && -x "$VERIFY_VERITY" && \
+   -f "$VERITY_CERTIFICATE" && ! -L "$VERITY_CERTIFICATE" ]] || {
+  echo "update trust verifiers are incomplete" >&2
+  exit 1
+}
+require_root_immutable "$KEYRING" "update keyring"
+KEYRING_SIZE="$(stat -c '%s' "$KEYRING")"
+[[ "$KEYRING_SIZE" =~ ^[1-9][0-9]*$ && "$KEYRING_SIZE" -le 16777216 ]] || {
+  echo "update keyring is empty or oversized" >&2
+  exit 1
+}
+python3 "$VERIFY_KEYRING" "$KEYRING"
+
+[[ -f "$BUNDLE/SHA256SUMS" && ! -L "$BUNDLE/SHA256SUMS" ]] || {
+  echo "signed SHA256SUMS manifest is missing" >&2
+  exit 1
+}
+[[ -f "$BUNDLE/SHA256SUMS.gpg" && ! -L "$BUNDLE/SHA256SUMS.gpg" ]] || {
+  echo "detached SHA256SUMS.gpg signature is missing" >&2
+  exit 1
+}
+require_root_immutable "$BUNDLE/SHA256SUMS" "update manifest"
+require_root_immutable "$BUNDLE/SHA256SUMS.gpg" "update manifest signature"
+
+# Parse only bounded manifest/file metadata before signature verification. Once
+# authenticated, repeat verification with complete payload hashing.
+PREFLIGHT_RECORD="$(python3 "$VERIFY_BUNDLE" --preflight --machine "$BUNDLE")"
+for bundle_entry in "$BUNDLE"/*; do
+  [[ -f "$bundle_entry" && ! -L "$bundle_entry" ]] || {
+    echo "update bundle contains a non-regular entry" >&2
+    exit 1
+  }
+  require_root_immutable "$bundle_entry" "update bundle file"
+done
+gpgv --keyring "$KEYRING" "$BUNDLE/SHA256SUMS.gpg" "$BUNDLE/SHA256SUMS"
+AUTHENTICATED_RECORD="$(python3 "$VERIFY_BUNDLE" --machine "$BUNDLE")"
+[[ "$AUTHENTICATED_RECORD" == "$PREFLIGHT_RECORD" ]] || {
+  echo "update bundle changed between preflight and authentication" >&2
+  exit 1
+}
+IFS=$'\t' read -r VERSION OS_SOURCE_COMMIT OS_SOURCE_TREE \
+  OS_SOURCE_MANIFEST_SHA256 <<<"$AUTHENTICATED_RECORD"
+[[ -n "$VERSION" && "$OS_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ && \
+   "$OS_SOURCE_TREE" =~ ^[0-9a-f]{40}$ && \
+   "$OS_SOURCE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "authenticated update identity record is invalid" >&2
+  exit 1
+}
+partition_payloads=(
+  "$BUNDLE"/"echo-os_${VERSION}.root."*.raw.zst
+  "$BUNDLE"/"echo-os_${VERSION}.root-verity."*.raw.zst
+  "$BUNDLE"/"echo-os_${VERSION}.root-verity-sig."*.raw.zst
+)
+[[ "${#partition_payloads[@]}" -eq 3 ]] || {
+  echo "authenticated update partition payload set is incomplete" >&2
+  exit 1
+}
+zstd --test -- "${partition_payloads[@]}"
+python3 "$VERIFY_VERITY" \
+  "${partition_payloads[0]}" "${partition_payloads[1]}" \
+  "${partition_payloads[2]}" "$VERITY_CERTIFICATE" \
+  --uki "$BUNDLE/echo-os_${VERSION}.efi" \
+  --metadata-only --compressed-signature
+UPDATE_MANIFEST_SHA256="$(sha256sum "$BUNDLE/SHA256SUMS" | awk '{print $1}')"
+UPDATE_SIGNATURE_SHA256="$(sha256sum "$BUNDLE/SHA256SUMS.gpg" | awk '{print $1}')"
+[[ "$UPDATE_MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ && \
+   "$UPDATE_SIGNATURE_SHA256" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "authenticated update manifest or signature cannot be hashed" >&2
+  exit 1
+}
+echo "ECHO_UPDATE_BUNDLE_AUTHENTICATED version=$VERSION os=$OS_SOURCE_COMMIT tree=$OS_SOURCE_TREE source-manifest=$OS_SOURCE_MANIFEST_SHA256 manifest=$UPDATE_MANIFEST_SHA256 signature=$UPDATE_SIGNATURE_SHA256"
+
+if [[ "$ACTION" == "verify" ]]; then
+  exit 0
+fi
+
+[[ -d "$DEFINITIONS" ]] || {
+  echo "sysupdate transfer definitions are missing" >&2
+  exit 1
+}
+if command -v systemd-sysupdate >/dev/null 2>&1; then
+  SYSUPDATE_BIN="$(command -v systemd-sysupdate)"
+elif [[ -x /usr/lib/systemd/systemd-sysupdate ]]; then
+  SYSUPDATE_BIN=/usr/lib/systemd/systemd-sysupdate
+else
+  echo "systemd-sysupdate is unavailable" >&2
+  exit 1
+fi
+
+SYSUPDATE_IMAGE_ARGS=()
+if [[ -n "$UPDATE_IMAGE" ]]; then
+  [[ "${ECHO_UPDATE_SOURCE_SMOKE:-}" == USE-SOURCE-RUNTIME && \
+     "$UPDATE_IMAGE" == /* && -f "$UPDATE_IMAGE" && ! -L "$UPDATE_IMAGE" ]] || {
+    echo "offline update image is unavailable or unsafe" >&2
+    exit 1
+  }
+  UPDATE_IMAGE="$(realpath "$UPDATE_IMAGE")"
+  SYSUPDATE_IMAGE_ARGS=(--image="$UPDATE_IMAGE")
+fi
+
+# A new root starts from a locked vendor /etc/shadow. Capture the currently
+# active local account immediately before writing the inactive root so a recent
+# password/hostname change cannot be lost between the path watcher and reboot.
+if [[ -z "$UPDATE_IMAGE" && -f "$OEM_MARKER" ]]; then
+  [[ -x "$ACCOUNT_STATE_TOOL" ]] || {
+    echo "local-account persistence tool is missing; refusing unsafe A/B update" >&2
+    exit 1
+  }
+  python3 "$ACCOUNT_STATE_TOOL" --capture
+fi
+
+# Locale, keymap and timezone also live in the replaceable root. Synchronize
+# their validated persistent copy immediately before replacing the inactive
+# root, independently of whether OEM account setup was needed.
+if [[ -z "$UPDATE_IMAGE" ]]; then
+  [[ -x "$REGION_STATE_TOOL" ]] || {
+    echo "regional-state persistence tool is missing; refusing unsafe A/B update" >&2
+    exit 1
+  }
+  python3 "$REGION_STATE_TOOL" --capture
+else
+  echo "ECHO_UPDATE_OFFLINE_STATE_READY image=$UPDATE_IMAGE source=preprovisioned-test-disk"
+fi
+
+SYSUPDATE_COMMON_ARGS=(
+  "${SYSUPDATE_IMAGE_ARGS[@]}"
+  --definitions="$DEFINITIONS"
+  --transfer-source="$BUNDLE"
+)
+if ! CANDIDATE_VERSION="$(
+  "$SYSUPDATE_BIN" "${SYSUPDATE_COMMON_ARGS[@]}" check-new
+)"; then
+  echo "authenticated update bundle is not newer than the protected installed version" >&2
+  exit 1
+fi
+[[ "$CANDIDATE_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+:~_-]*$ && \
+   "$CANDIDATE_VERSION" == "$VERSION" ]] || {
+  echo "sysupdate candidate does not match the authenticated bundle version" >&2
+  exit 1
+}
+echo "ECHO_UPDATE_CANDIDATE_READY version=$VERSION source=authenticated-bundle"
+
+# check-new makes the success marker meaningful: systemd-sysupdate also exits
+# successfully when update is asked to install an already-installed version.
+# Pin the subsequent operation to the exact authenticated candidate so a
+# replay/no-op cannot be reported as an applied update.
+"$SYSUPDATE_BIN" "${SYSUPDATE_COMMON_ARGS[@]}" update "$VERSION"
+
+echo "ECHO_UPDATE_APPLIED version=$VERSION os=$OS_SOURCE_COMMIT tree=$OS_SOURCE_TREE source-manifest=$OS_SOURCE_MANIFEST_SHA256 manifest=$UPDATE_MANIFEST_SHA256 signature=$UPDATE_SIGNATURE_SHA256 target=inactive-root-uki-last"
+echo "Echo OS $VERSION was written to the inactive root slot"
+echo "The new UKI has three boot attempts; reboot to activate it"

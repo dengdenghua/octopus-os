@@ -31,11 +31,14 @@ class TestDockerfile:
         assert "COPY --from=" in text
 
     def test_non_root_user(self):
-        """Implementation note."""
+        """The root bootstrap must permanently drop to the configured Echo uid."""
         text = (REPO / "Dockerfile").read_text(encoding="utf-8")
-        assert "USER octopus" in text
-        # Implementation note.
+        entrypoint = (REPO / "appliance" / "entrypoint.py").read_text(encoding="utf-8")
+        assert "USER root" in text
         assert "useradd" in text
+        assert "os.setgid(gid)" in entrypoint
+        assert "os.setuid(uid)" in entrypoint
+        assert "failed to drop root privileges" in entrypoint
 
     def test_exposes_port(self):
         text = (REPO / "Dockerfile").read_text(encoding="utf-8")
@@ -43,7 +46,7 @@ class TestDockerfile:
 
     def test_entrypoint_is_cli(self):
         text = (REPO / "Dockerfile").read_text(encoding="utf-8")
-        assert 'ENTRYPOINT ["octopus-agent"]' in text
+        assert 'ENTRYPOINT ["python", "-m", "appliance.entrypoint"]' in text
         assert "serve" in text  # Implementation note.
 
     def test_dockerignore_excludes_data_and_env(self):
@@ -71,28 +74,26 @@ class TestDockerCompose:
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert isinstance(doc, dict)
         assert "services" in doc
-        assert "octopus-agent" in doc["services"]
+        assert "echo-os" in doc["services"]
 
     def test_compose_mounts_data_volume(self):
         yaml = pytest.importorskip("yaml")
         doc = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))
-        svc = doc["services"]["octopus-agent"]
+        svc = doc["services"]["echo-os"]
         vols = svc.get("volumes", [])
-        assert any("./data:/data" in v for v in vols), (
-            "需要把 ./data:/data 挂上做 journal 持久化"
-        )
+        assert any("./data:/data" in v for v in vols), "需要把 ./data:/data 挂上做 journal 持久化"
 
     def test_compose_mounts_config_readonly(self):
         yaml = pytest.importorskip("yaml")
         doc = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))
-        svc = doc["services"]["octopus-agent"]
+        svc = doc["services"]["echo-os"]
         vols = svc.get("volumes", [])
         assert any(":ro" in v and "config" in v for v in vols)
 
     def test_compose_command_uses_serve(self):
         yaml = pytest.importorskip("yaml")
         doc = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))
-        svc = doc["services"]["octopus-agent"]
+        svc = doc["services"]["echo-os"]
         cmd = svc.get("command", [])
         # Implementation note.
         assert "serve" in cmd
@@ -101,18 +102,18 @@ class TestDockerCompose:
     def test_compose_has_healthcheck(self):
         yaml = pytest.importorskip("yaml")
         doc = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))
-        svc = doc["services"]["octopus-agent"]
+        svc = doc["services"]["echo-os"]
         hc = svc.get("healthcheck")
         assert hc is not None
         assert "test" in hc
         # Implementation note.
         test_cmd = " ".join(hc["test"]) if isinstance(hc["test"], list) else hc["test"]
-        assert "/api/health" in test_cmd or "/api/status" in test_cmd
+        assert "/readyz" in test_cmd
 
     def test_compose_restart_policy(self):
         yaml = pytest.importorskip("yaml")
         doc = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))
-        svc = doc["services"]["octopus-agent"]
+        svc = doc["services"]["echo-os"]
         assert svc.get("restart") in ("unless-stopped", "always", "on-failure")
 
 
@@ -122,9 +123,9 @@ class TestDockerCompose:
 
 
 class TestPyproject:
-    def test_octopus_agent_script_registered(self):
+    def test_echo_agent_script_registered(self):
         text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-        assert 'octopus-agent = "runtime.cli:main"' in text
+        assert 'echo-agent = "runtime.cli:main"' in text
 
     def test_serve_extra_declared(self):
         text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
@@ -134,15 +135,15 @@ class TestPyproject:
 
     def test_anthropic_extra_declared(self):
         text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-        assert 'anthropic = [' in text
+        assert "anthropic = [" in text
 
     def test_mcp_extra_declared(self):
         text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-        assert 'mcp = [' in text
+        assert "mcp = [" in text
 
     def test_browser_extra_declared(self):
         text = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-        assert 'browser = [' in text
+        assert "browser = [" in text
         assert "playwright" in text
 
 

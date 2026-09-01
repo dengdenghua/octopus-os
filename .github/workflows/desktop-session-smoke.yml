@@ -1,0 +1,249 @@
+name: Desktop session smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [os-main, main]
+    paths:
+      - ".github/workflows/desktop-session-smoke.yml"
+      - "deploy/desktop-session/**"
+      - "deploy/apps/**"
+      - "deploy/machine-state/**"
+      - "deploy/network-security/**"
+      - "deploy/removable-storage/**"
+      - "deploy/printing/**"
+      - "deploy/scanning/**"
+      - "deploy/core-apps/**"
+      - "deploy/update/**"
+      - "deploy/oem/**"
+      - "frontend/electron/**"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/src/app/desktop/**"
+      - "frontend/src/appliance/apps-native*"
+      - "frontend/src/appliance/dock.tsx"
+      - "frontend/src/appliance/macos-shell*"
+      - "frontend/src/types/electron.d.ts"
+      - "packaging/desktop/**"
+  push:
+    branches: [os-main, main]
+    paths:
+      - ".github/workflows/desktop-session-smoke.yml"
+      - "deploy/desktop-session/**"
+      - "deploy/apps/**"
+      - "deploy/machine-state/**"
+      - "deploy/network-security/**"
+      - "deploy/removable-storage/**"
+      - "deploy/printing/**"
+      - "deploy/scanning/**"
+      - "deploy/core-apps/**"
+      - "deploy/update/**"
+      - "deploy/oem/**"
+      - "frontend/electron/**"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "frontend/src/app/desktop/**"
+      - "frontend/src/appliance/apps-native*"
+      - "frontend/src/appliance/dock.tsx"
+      - "frontend/src/appliance/macos-shell*"
+      - "frontend/src/types/electron.d.ts"
+      - "packaging/desktop/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-session-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kwin-x11:
+    name: Debian stable · KWin X11 and Wayland lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: debian:trixie-slim
+
+    env:
+      CI: "true"
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - name: Install Debian desktop and build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git xz-utils python3 \
+            build-essential cmake extra-cmake-modules kwin-dev \
+            libkf6coreaddons-dev qt6-base-dev \
+            xvfb kwin-x11 kwin-wayland xwayland wayland-utils libkscreenlocker6 \
+            fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 \
+            fcitx5-frontend-qt5 fcitx5-frontend-qt6 fcitx5-config-qt kde-config-fcitx5 \
+            libkf6config-bin \
+            plasma-workspace libqt6sql6-sqlite python3-pyqt6.qtqml xclip wl-clipboard \
+            at-spi2-core python3-pyatspi python3-xlib orca speech-dispatcher \
+            speech-dispatcher-espeak-ng espeak-ng \
+            wmctrl x11-utils x11-xserver-utils dbus-daemon dbus-x11 libgl1-mesa-dri \
+            dolphin konsole firefox-esr kate okular gwenview ark haruna kde-spectacle kcalc \
+            xdg-utils desktop-file-utils shared-mime-info 7zip bzip2 unar unzip zip \
+            xss-lock xsecurelock python3-dbus python3-gi systemd-coredump libglib2.0-bin \
+            libgtk-3-0t64 libnss3 libasound2t64 libgbm1 libdrm2 libxss1 libxtst6 \
+            libxrandr2 libxcomposite1 libxdamage1 libatk-bridge2.0-0t64 \
+            libatspi2.0-0t64 libcups2t64 fonts-dejavu-core
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+        with:
+          version: 10.26.2
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify unit and type contracts
+        working-directory: frontend
+        run: |
+          node electron/native-windows.node-test.cjs
+          node electron/renderer-readiness.node-test.cjs
+          node electron/system-shell.test.cjs
+          node electron/native-app-ipc-smoke.node-test.cjs
+          node electron/system-actions.test.cjs
+          node electron/system-update.test.cjs
+          node electron/agent-service.test.cjs
+          node electron/system-controls.test.cjs
+          node electron/system-notifications.test.cjs
+          node electron/native-liquid-glass.test.cjs
+          pnpm vitest run src/appliance/apps-native.test.ts
+          pnpm vitest run src/appliance/macos-shell.test.tsx
+          pnpm typecheck
+
+      - name: Build and install the native KWin Liquid Glass effect
+        run: |
+          cmake \
+            -S deploy/desktop-session/kwin-liquid-glass-effect \
+            -B /tmp/echo-kwin-liquid-glass \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build /tmp/echo-kwin-liquid-glass --parallel
+          cmake --install /tmp/echo-kwin-liquid-glass
+          test -f /usr/lib/x86_64-linux-gnu/qt6/plugins/kwin/effects/plugins/org.echoos.liquidglass.so
+
+      - name: Verify one-time local-account policy
+        run: python3 deploy/oem/test_echo_oem_setup.py
+
+      - name: Verify persistent application-catalog policy
+        run: ./deploy/apps/test-echo-app-catalog.sh
+
+      - name: Verify persistent machine-identity policy
+        run: ./deploy/machine-state/test-echo-machine-id.sh
+
+      - name: Verify persistent NetworkManager-state policy
+        run: ./deploy/machine-state/test-echo-network-state.sh
+
+      - name: Verify nftables/firewalld host-firewall policy
+        run: |
+          python3 deploy/network-security/test_echo_firewall_policy.py
+          python3 deploy/network-security/test_echo_firewall_health.py
+
+      - name: Verify on-demand removable-storage policy
+        run: python3 deploy/removable-storage/test_echo_removable_storage_health.py
+
+      - name: Verify private local printing policy
+        run: |
+          python3 deploy/printing/test_echo_printing_policy.py
+          python3 deploy/printing/test_echo_printing_health.py
+
+      - name: Verify native scanning policy
+        run: |
+          python3 deploy/scanning/test_echo_scanning_policy.py
+          python3 deploy/scanning/test_echo_scanning_health.py
+
+      - name: Verify core desktop application defaults
+        run: |
+          python3 deploy/core-apps/test_echo_core_apps_policy.py
+          python3 deploy/core-apps/test_echo_core_apps_health.py
+          python3 deploy/core-apps/test_echo_core_apps_session_smoke.py
+
+      - name: Verify persistent regional-state policy
+        run: python3 deploy/machine-state/test_echo_region_state.py
+
+      - name: Verify PAM screen-lock policy
+        run: ./deploy/desktop-session/test-echo-session-lock.sh
+
+      - name: Verify desktop boot-blessing dependency record
+        run: ./deploy/desktop-session/test-verify-desktop-boot.sh
+
+      - name: Verify compositor-native KWin bridge protocol
+        run: |
+          python3 deploy/desktop-session/test_echo_kwin_window_bridge.py
+          python3 deploy/desktop-session/test_verify_wayland_native_app_ipc.py
+
+      - name: Verify bounded native notification history
+        run: python3 deploy/desktop-session/test_echo_notification_store.py
+
+      - name: Exercise native notification D-Bus and UI bridge
+        run: ./deploy/desktop-session/test-echo-notification-service.sh
+
+      - name: Verify volatile system clipboard host policy
+        run: python3 deploy/desktop-session/test_echo_clipboard_host.py
+
+      - name: Verify privacy-bounded accessibility-tree probe
+        run: python3 deploy/desktop-session/test_echo_accessibility_smoke.py
+
+      - name: Verify bounded SDDM screen-reader shortcut policy
+        run: python3 deploy/oem/test_echo_sddm_accessibility.py
+
+      - name: Verify bounded local crash-collection policy
+        run: ./deploy/system-health/test-echo-coredump-policy.sh
+
+      - name: Build Linux desktop directory package
+        working-directory: frontend
+        run: |
+          pnpm build
+          pnpm exec electron-builder --linux dir --x64
+
+      - name: Install production lock assets in the isolated test container
+        run: |
+          install -d -m 0755 /usr/lib/echo-os
+          install -d -m 0755 /usr/local/share/applications
+          install -m 0755 deploy/desktop-session/echo-session-lock /usr/lib/echo-os/echo-session-lock
+          install -m 0755 deploy/desktop-session/echo-screen-locker /usr/lib/echo-os/echo-screen-locker
+          install -m 0755 deploy/desktop-session/echo-kwin-window-bridge /usr/lib/echo-os/echo-kwin-window-bridge
+          install -m 0755 deploy/desktop-session/echo-notification-service /usr/lib/echo-os/echo-notification-service
+          install -m 0644 deploy/desktop-session/echo_notification_store.py /usr/lib/echo-os/echo_notification_store.py
+          install -m 0755 deploy/desktop-session/echo-clipboard-host /usr/lib/echo-os/echo-clipboard-host
+          install -m 0755 deploy/desktop-session/echo-accessibility-smoke.py /usr/lib/echo-os/echo-accessibility-smoke.py
+          install -m 0644 deploy/desktop-session/echo-screen-reader.desktop /usr/local/share/applications/echo-screen-reader.desktop
+          install -m 0644 deploy/desktop-session/klipperrc /etc/xdg/klipperrc
+          install -m 0644 deploy/desktop-session/echo-lock.pam /etc/pam.d/echo-lock
+          install -m 0644 deploy/core-apps/mimeapps.list /etc/xdg/mimeapps.list
+          install -d -m 0755 /usr/share/kwin/scripts/org.echoos.windowbridge
+          cp -a deploy/desktop-session/kwin-window-bridge/. /usr/share/kwin/scripts/org.echoos.windowbridge/
+
+      - name: Exercise packaged KWin desktop and native window lifecycle
+        env:
+          ECHO_SMOKE_LOG_DIR: ${{ runner.temp }}/echo-desktop-smoke
+        run: ./deploy/desktop-session/smoke-desktop-session.sh
+
+      - name: Exercise KWin Wayland dual-output HiDPI and native window lifecycle
+        env:
+          ECHO_SMOKE_LOG_DIR: ${{ runner.temp }}/echo-wayland-smoke
+        run: ./deploy/desktop-session/smoke-wayland-session.sh
+
+      - name: Upload desktop smoke logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: echo-desktop-session-smoke
+          path: |
+            ${{ runner.temp }}/echo-desktop-smoke
+            ${{ runner.temp }}/echo-wayland-smoke
+          if-no-files-found: warn
+          retention-days: 7

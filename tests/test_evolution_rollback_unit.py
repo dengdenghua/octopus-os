@@ -1,4 +1,5 @@
 """Unit tests for evolution rollback mechanisms."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -66,10 +67,12 @@ class TestCanaryRollback:
 
 class TestCanaryPromotion:
     def test_shadow_promotion_on_high_success(self, tmp_path):
-        cm = CanaryManager(CanaryConfig(
-            state_dir=str(tmp_path / "canary"),
-            shadow_pass_rate=0.70,
-        ))
+        cm = CanaryManager(
+            CanaryConfig(
+                state_dir=str(tmp_path / "canary"),
+                shadow_pass_rate=0.70,
+            )
+        )
         cm.register("promo_skill")
         for _ in range(12):
             cm.record_outcome("promo_skill", True)
@@ -133,60 +136,73 @@ class TestProposalLedgerRollback:
 class TestDriftMonitorTriggers:
     def test_no_drift_on_first_check(self):
         monitor = DriftMonitor("test_agent")
-        with patch.object(monitor, "_check_soul_drift", return_value=None):
-            with patch.object(monitor, "_check_genome_drift", return_value=None):
-                with patch.object(monitor, "_check_score_drift", return_value=None):
-                    report = monitor.check()
-                    assert report.has_drift is False
+        with (
+            patch.object(monitor, "_check_soul_drift", return_value=None),
+            patch.object(monitor, "_check_genome_drift", return_value=None),
+            patch.object(monitor, "_check_score_drift", return_value=None),
+        ):
+            report = monitor.check()
+            assert report.has_drift is False
 
     def test_score_regression_detected(self):
         from runtime.memory.learning.turn_scoring import TurnScore
+
         monitor = DriftMonitor("test_agent")
         monitor._baseline_score = 0.85
         declining_scores = [
-            TurnScore(ts="t", agent_id="test_agent", score=0.5, reason="fail", soul_hash="h", rounds=3)
+            TurnScore(
+                ts="t", agent_id="test_agent", score=0.5, reason="fail", soul_hash="h", rounds=3
+            )
             for _ in range(10)
         ]
-        with patch.object(monitor, "_check_soul_drift", return_value=None):
-            with patch.object(monitor, "_check_genome_drift", return_value=None):
-                with patch(
-                    "runtime.memory.learning.turn_scoring.read_recent_scores",
-                    return_value=declining_scores,
-                ):
-                    report = monitor.check()
-                    assert report.has_drift is True
-                    kinds = [e.kind for e in report.events]
-                    assert "score_regression" in kinds
+        with (
+            patch.object(monitor, "_check_soul_drift", return_value=None),
+            patch.object(monitor, "_check_genome_drift", return_value=None),
+            patch(
+                "runtime.memory.learning.turn_scoring.read_recent_scores",
+                return_value=declining_scores,
+            ),
+        ):
+            report = monitor.check()
+            assert report.has_drift is True
+            kinds = [e.kind for e in report.events]
+            assert "score_regression" in kinds
 
     def test_severity_critical_on_large_drop(self):
         from runtime.memory.learning.turn_scoring import TurnScore
+
         monitor = DriftMonitor("test_agent")
         monitor._baseline_score = 0.90
         crashed_scores = [
-            TurnScore(ts="t", agent_id="test_agent", score=0.4, reason="fail", soul_hash="h", rounds=3)
+            TurnScore(
+                ts="t", agent_id="test_agent", score=0.4, reason="fail", soul_hash="h", rounds=3
+            )
             for _ in range(10)
         ]
-        with patch.object(monitor, "_check_soul_drift", return_value=None):
-            with patch.object(monitor, "_check_genome_drift", return_value=None):
-                with patch(
-                    "runtime.memory.learning.turn_scoring.read_recent_scores",
-                    return_value=crashed_scores,
-                ):
-                    report = monitor.check()
-                    assert report.max_severity == "critical"
-                    regression_events = [
-                        e for e in report.events if e.kind == "score_regression"
-                    ]
-                    assert len(regression_events) == 1
-                    assert regression_events[0].severity == "critical"
+        with (
+            patch.object(monitor, "_check_soul_drift", return_value=None),
+            patch.object(monitor, "_check_genome_drift", return_value=None),
+            patch(
+                "runtime.memory.learning.turn_scoring.read_recent_scores",
+                return_value=crashed_scores,
+            ),
+        ):
+            report = monitor.check()
+            assert report.max_severity == "critical"
+            regression_events = [e for e in report.events if e.kind == "score_regression"]
+            assert len(regression_events) == 1
+            assert regression_events[0].severity == "critical"
 
 
 class TestFitnessVerdict:
     def test_healthy_verdict(self):
         with patch("runtime.safety.evolution.fitness.compute_l1") as mock_l1:
             mock_l1.return_value = L1Fitness(
-                score=0.85, trend="stable", success_rate=0.85,
-                avg_rounds=3.0, soul_impact={},
+                score=0.85,
+                trend="stable",
+                success_rate=0.85,
+                avg_rounds=3.0,
+                soul_impact={},
             )
             with patch("runtime.safety.evolution.fitness.compute_l2", return_value=None):
                 report = compute_fitness("test_agent")
@@ -195,8 +211,11 @@ class TestFitnessVerdict:
     def test_degraded_verdict(self):
         with patch("runtime.safety.evolution.fitness.compute_l1") as mock_l1:
             mock_l1.return_value = L1Fitness(
-                score=0.65, trend="stable", success_rate=0.65,
-                avg_rounds=5.0, soul_impact={},
+                score=0.65,
+                trend="stable",
+                success_rate=0.65,
+                avg_rounds=5.0,
+                soul_impact={},
             )
             with patch("runtime.safety.evolution.fitness.compute_l2", return_value=None):
                 report = compute_fitness("test_agent")
@@ -205,8 +224,11 @@ class TestFitnessVerdict:
     def test_critical_verdict(self):
         with patch("runtime.safety.evolution.fitness.compute_l1") as mock_l1:
             mock_l1.return_value = L1Fitness(
-                score=0.2, trend="regressing", success_rate=0.2,
-                avg_rounds=10.0, soul_impact={},
+                score=0.2,
+                trend="regressing",
+                success_rate=0.2,
+                avg_rounds=10.0,
+                soul_impact={},
             )
             with patch("runtime.safety.evolution.fitness.compute_l2", return_value=None):
                 report = compute_fitness("test_agent")
@@ -214,6 +236,7 @@ class TestFitnessVerdict:
 
     def test_regressing_trend(self):
         from runtime.memory.learning.turn_scoring import TurnScore
+
         first_half = [
             TurnScore(ts="t", agent_id="a", score=0.9, reason="ok", soul_hash="h", rounds=3)
             for _ in range(5)
@@ -223,7 +246,9 @@ class TestFitnessVerdict:
             for _ in range(5)
         ]
         scores = first_half + second_half
-        with patch("runtime.safety.evolution.fitness.read_recent_scores", return_value=scores):
-            with patch("runtime.safety.evolution.fitness.analyze_soul_impact", return_value={}):
-                l1 = compute_l1("test_agent", window=10)
-                assert l1.trend == "regressing"
+        with (
+            patch("runtime.safety.evolution.fitness.read_recent_scores", return_value=scores),
+            patch("runtime.safety.evolution.fitness.analyze_soul_impact", return_value={}),
+        ):
+            l1 = compute_l1("test_agent", window=10)
+            assert l1.trend == "regressing"

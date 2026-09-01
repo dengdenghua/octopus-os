@@ -53,7 +53,13 @@ class TestProtocolConformance:
         assert backend.extract().ok
         names = [c[0] for c in backend.calls]
         assert names == [
-            "navigate", "click", "type", "scroll", "wait", "state", "extract",
+            "navigate",
+            "click",
+            "type",
+            "scroll",
+            "wait",
+            "state",
+            "extract",
         ]
 
     def test_navigate_updates_state_url(self):

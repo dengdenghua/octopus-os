@@ -14,13 +14,15 @@ Covered
 
 Sandbox: when a request carries no per-thread workspace scope, the
 endpoints now fail CLOSED to the process-wide allowed fs roots (data
-dir / home / project / OCTOPUS_FS_ALLOWED_ROOTS) instead of serving any
+dir / home / project / ECHO_FS_ALLOWED_ROOTS) instead of serving any
 absolute path the caller named — see ``_assert_in_scope`` and
 ``TestFailClosed`` below. Auth is enforced once at the router level when
 an identity store is wired and ``require_auth`` is set (``TestFsAuth``).
 """
+
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -42,7 +44,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # exact-match assertions.
     runtime_state = tmp_path.parent / f"{tmp_path.name}.runtime"
     runtime_state.mkdir(exist_ok=True)
-    monkeypatch.setenv("OCTOPUS_HOME", str(runtime_state))
+    monkeypatch.setenv("ECHO_HOME", str(runtime_state))
     monkeypatch.chdir(tmp_path)
     return TestClient(create_app())
 
@@ -65,7 +67,9 @@ def scoped_client(metadata: dict[str, object]) -> TestClient:
 
 class TestFsTree:
     def test_returns_filesystem_roots(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         r = client.get("/api/fs/roots")
 
@@ -76,7 +80,8 @@ class TestFsTree:
         assert all(e["type"] == "dir" for e in entries)
 
     def test_import_directory_preserves_relative_tree(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         r = client.post(
             "/api/fs/import-directory",
@@ -100,7 +105,9 @@ class TestFsTree:
         assert (imported / "src" / "app.ts").read_text(encoding="utf-8") == "export {}"
 
     def test_returns_entries_for_valid_dir(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         (tmp_path / "a.txt").write_text("hi")
         (tmp_path / "sub").mkdir()
@@ -118,21 +125,21 @@ class TestFsTree:
         # exist anywhere in tmp".
         assert {"a.txt", "sub", "b.txt"}.issubset(names)
         # Dirs sorted before files among the test's own writes.
-        own_top = [
-            e["name"]
-            for e in entries
-            if e["depth"] == 0 and e["name"] in {"a.txt", "sub"}
-        ]
+        own_top = [e["name"] for e in entries if e["depth"] == 0 and e["name"] in {"a.txt", "sub"}]
         assert own_top == ["sub", "a.txt"]
 
     def test_nonexistent_dir_returns_404(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         r = client.get(f"/api/fs/tree?path={tmp_path / 'nope'}")
         assert r.status_code == 404
 
     def test_file_instead_of_dir_returns_404(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         f = tmp_path / "x.txt"
         f.write_text("x")
@@ -140,7 +147,9 @@ class TestFsTree:
         assert r.status_code == 404
 
     def test_depth_cap_respected(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         """Deeply nested dirs beyond ``depth`` should not appear."""
         deep = tmp_path / "l0" / "l1" / "l2" / "l3"
@@ -153,14 +162,16 @@ class TestFsTree:
         assert max(depths) <= 1
 
     def test_ignores_heavy_project_dirs_by_default(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         (tmp_path / ".git" / "objects" / "aa").mkdir(parents=True)
         (tmp_path / ".git" / "objects" / "aa" / "pack").write_text("x")
         (tmp_path / "node_modules" / "pkg").mkdir(parents=True)
         (tmp_path / "node_modules" / "pkg" / "index.js").write_text("x")
-        (tmp_path / ".octopus" / "memory.db").parent.mkdir()
-        (tmp_path / ".octopus" / "memory.db").write_text("x")
+        (tmp_path / ".echo" / "memory.db").parent.mkdir()
+        (tmp_path / ".echo" / "memory.db").write_text("x")
         (tmp_path / "logs").mkdir()
         (tmp_path / "logs" / "server.log").write_text("x")
         (tmp_path / "src").mkdir()
@@ -172,12 +183,14 @@ class TestFsTree:
         names = {e["name"] for e in r.json()["entries"]}
         assert ".git" not in names
         assert "node_modules" not in names
-        assert ".octopus" not in names
+        assert ".echo" not in names
         assert "logs" not in names
         assert names >= {"src", "app.py"}
 
     def test_can_include_ignored_dirs_when_requested(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         (tmp_path / ".git" / "objects").mkdir(parents=True)
 
@@ -193,7 +206,9 @@ class TestFsTree:
 
 class TestFsRead:
     def test_read_small_file(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         f = tmp_path / "x.txt"
         f.write_text("line1\nline2\nline3\n")
@@ -204,7 +219,9 @@ class TestFsRead:
         assert data["truncated"] is False
 
     def test_read_respects_max_lines(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         f = tmp_path / "big.txt"
         f.write_text("\n".join(f"row{i}" for i in range(100)))
@@ -214,19 +231,24 @@ class TestFsRead:
         assert data["truncated"] is True
 
     def test_missing_file_returns_404(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         r = client.get(f"/api/fs/read?path={tmp_path / 'ghost.txt'}")
         assert r.status_code == 404
 
     def test_directory_returns_404(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         r = client.get(f"/api/fs/read?path={tmp_path}")
         assert r.status_code == 404
 
     def test_thread_workspace_rejects_outside_file(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
@@ -253,7 +275,9 @@ class TestFsRead:
 
 class TestFsWrite:
     def test_write_creates_file(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "out" / "nested" / "file.txt"
         r = client.post(
@@ -267,21 +291,26 @@ class TestFsWrite:
         assert data["bytes"] == len(b"hello world")
 
     def test_write_missing_path_rejected(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         r = client.post("/api/fs/write", json={"content": "x"})
         assert r.status_code == 400
 
     def test_write_empty_path_rejected(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         r = client.post(
-            "/api/fs/write", json={"path": "   ", "content": "x"},
+            "/api/fs/write",
+            json={"path": "   ", "content": "x"},
         )
         assert r.status_code == 400
 
     def test_write_non_string_content_rejected(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         r = client.post(
             "/api/fs/write",
@@ -290,17 +319,63 @@ class TestFsWrite:
         assert r.status_code == 400
 
     def test_write_overwrites(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         f = tmp_path / "x.txt"
         f.write_text("first")
         client.post(
-            "/api/fs/write", json={"path": str(f), "content": "second"},
+            "/api/fs/write",
+            json={"path": str(f), "content": "second"},
         )
         assert f.read_text(encoding="utf-8") == "second"
 
+    def test_write_with_matching_digest_preserves_optimistic_lock(
+        self,
+        client: TestClient,
+        tmp_path: Path,
+    ) -> None:
+        f = tmp_path / "shared.html"
+        original = "<h1>old</h1>"
+        f.write_text(original, encoding="utf-8")
+
+        r = client.post(
+            "/api/fs/write",
+            json={
+                "path": str(f),
+                "content": "<h1>new</h1>",
+                "expected_sha256": hashlib.sha256(original.encode()).hexdigest(),
+            },
+        )
+
+        assert r.status_code == 200
+        assert f.read_text(encoding="utf-8") == "<h1>new</h1>"
+
+    def test_write_rejects_stale_digest_without_overwriting(
+        self,
+        client: TestClient,
+        tmp_path: Path,
+    ) -> None:
+        f = tmp_path / "shared.html"
+        f.write_text("agent version", encoding="utf-8")
+
+        r = client.post(
+            "/api/fs/write",
+            json={
+                "path": str(f),
+                "content": "human stale version",
+                "expected_sha256": hashlib.sha256(b"older version").hexdigest(),
+            },
+        )
+
+        assert r.status_code == 409
+        assert r.json()["detail"]["error"] == "file_changed"
+        assert f.read_text(encoding="utf-8") == "agent version"
+
     def test_workspace_path_rejects_outside_write(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
@@ -322,19 +397,13 @@ class TestFsWrite:
 
 class TestFsRevertDiff:
     def test_revert_diff_restores_file_content(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "sample.txt"
         target.write_text("alpha\nnew\nomega\n", encoding="utf-8")
-        diff = (
-            "--- a/sample.txt\n"
-            "+++ b/sample.txt\n"
-            "@@ -1,3 +1,3 @@\n"
-            " alpha\n"
-            "-old\n"
-            "+new\n"
-            " omega\n"
-        )
+        diff = "--- a/sample.txt\n+++ b/sample.txt\n@@ -1,3 +1,3 @@\n alpha\n-old\n+new\n omega\n"
 
         r = client.post(
             "/api/fs/revert-diff",
@@ -346,19 +415,13 @@ class TestFsRevertDiff:
         assert target.read_text(encoding="utf-8") == "alpha\nold\nomega\n"
 
     def test_revert_diff_can_reject_one_hunk_only(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "sample.txt"
         target.write_text("alpha\nnew\nomega\nkeep\n", encoding="utf-8")
-        diff = (
-            "--- a/sample.txt\n"
-            "+++ b/sample.txt\n"
-            "@@ -1,3 +1,3 @@\n"
-            " alpha\n"
-            "-old\n"
-            "+new\n"
-            " omega\n"
-        )
+        diff = "--- a/sample.txt\n+++ b/sample.txt\n@@ -1,3 +1,3 @@\n alpha\n-old\n+new\n omega\n"
 
         r = client.post(
             "/api/fs/revert-diff",
@@ -369,19 +432,13 @@ class TestFsRevertDiff:
         assert target.read_text(encoding="utf-8") == "alpha\nold\nomega\nkeep\n"
 
     def test_revert_diff_conflict_returns_409(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "sample.txt"
         target.write_text("alpha\nchanged-again\nomega\n", encoding="utf-8")
-        diff = (
-            "--- a/sample.txt\n"
-            "+++ b/sample.txt\n"
-            "@@ -1,3 +1,3 @@\n"
-            " alpha\n"
-            "-old\n"
-            "+new\n"
-            " omega\n"
-        )
+        diff = "--- a/sample.txt\n+++ b/sample.txt\n@@ -1,3 +1,3 @@\n alpha\n-old\n+new\n omega\n"
 
         r = client.post(
             "/api/fs/revert-diff",
@@ -392,16 +449,13 @@ class TestFsRevertDiff:
         assert target.read_text(encoding="utf-8") == "alpha\nchanged-again\nomega\n"
 
     def test_revert_diff_can_delete_created_file(
-        self, client: TestClient, tmp_path: Path,
+        self,
+        client: TestClient,
+        tmp_path: Path,
     ) -> None:
         target = tmp_path / "created.txt"
         target.write_text("created\n", encoding="utf-8")
-        diff = (
-            "--- a/created.txt\n"
-            "+++ b/created.txt\n"
-            "@@ -0,0 +1 @@\n"
-            "+created\n"
-        )
+        diff = "--- a/created.txt\n+++ b/created.txt\n@@ -0,0 +1 @@\n+created\n"
 
         r = client.post(
             "/api/fs/revert-diff",
@@ -417,20 +471,15 @@ class TestFsRevertDiff:
         assert not target.exists()
 
     def test_revert_diff_respects_workspace_scope(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         outside = tmp_path / "outside.txt"
         outside.write_text("new\n", encoding="utf-8")
         client = scoped_client({})
-        diff = (
-            "--- a/outside.txt\n"
-            "+++ b/outside.txt\n"
-            "@@ -1 +1 @@\n"
-            "-old\n"
-            "+new\n"
-        )
+        diff = "--- a/outside.txt\n+++ b/outside.txt\n@@ -1 +1 @@\n-old\n+new\n"
 
         r = client.post(
             "/api/fs/revert-diff",
@@ -452,7 +501,9 @@ class TestFailClosed:
     """
 
     def test_unscoped_read_outside_roots_is_403(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         allowed = tmp_path / "allowed"
         allowed.mkdir()
@@ -460,7 +511,7 @@ class TestFailClosed:
         forbidden.mkdir()
         secret = forbidden / "secret.txt"
         secret.write_text("top secret", encoding="utf-8")
-        monkeypatch.setenv("OCTOPUS_FS_ALLOWED_ROOTS", str(allowed))
+        monkeypatch.setenv("ECHO_FS_ALLOWED_ROOTS", str(allowed))
 
         app = FastAPI()
         app.include_router(create_fs_router())
@@ -471,12 +522,14 @@ class TestFailClosed:
         assert r.status_code == 403
 
     def test_unscoped_write_outside_roots_is_403(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         allowed = tmp_path / "allowed"
         allowed.mkdir()
         target = tmp_path / "forbidden" / "evil.txt"
-        monkeypatch.setenv("OCTOPUS_FS_ALLOWED_ROOTS", str(allowed))
+        monkeypatch.setenv("ECHO_FS_ALLOWED_ROOTS", str(allowed))
 
         app = FastAPI()
         app.include_router(create_fs_router())
@@ -487,13 +540,15 @@ class TestFailClosed:
         assert not target.exists()
 
     def test_unscoped_read_inside_roots_is_allowed(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         allowed = tmp_path / "allowed"
         allowed.mkdir()
         f = allowed / "ok.txt"
         f.write_text("fine", encoding="utf-8")
-        monkeypatch.setenv("OCTOPUS_FS_ALLOWED_ROOTS", str(allowed))
+        monkeypatch.setenv("ECHO_FS_ALLOWED_ROOTS", str(allowed))
 
         app = FastAPI()
         app.include_router(create_fs_router())
@@ -510,15 +565,19 @@ class TestFsAuth:
     rejects unauthenticated requests.
     """
 
-    def _client(self, require_auth: bool):
+    def _client(self, require_auth: bool, *, allow_local_workspace_access: bool = False):
         from runtime.safety.auth import Identity, IdentityStore
 
         store = IdentityStore()
         store.add(Identity(actor_id="alice"), api_key_plaintext="sk-alice")
         app = FastAPI()
-        app.include_router(create_fs_router(
-            identity_store=store, require_auth=require_auth,
-        ))
+        app.include_router(
+            create_fs_router(
+                identity_store=store,
+                require_auth=require_auth,
+                allow_local_workspace_access=allow_local_workspace_access,
+            )
+        )
         return TestClient(app)
 
     def test_no_auth_required_by_default(self) -> None:
@@ -535,4 +594,49 @@ class TestFsAuth:
     def test_valid_token_accepted_when_required(self) -> None:
         client = self._client(require_auth=True)
         r = client.get("/api/fs/roots", headers={"Authorization": "Bearer sk-alice"})
-        assert r.status_code == 200
+        # Authentication succeeds, but shared-mode roots also require a
+        # server-owned thread scope.  The direct router has no thread store,
+        # so it must fail closed after the 401 boundary.
+        assert r.status_code == 403
+
+    def test_authenticated_loopback_mode_can_pick_before_thread_exists(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from runtime.sensing.gateway import _fs_router_endpoints as endpoints
+
+        selected = "/Users/alice/project"
+        monkeypatch.setattr(endpoints, "_pick_directory_macos", lambda _default: selected)
+        monkeypatch.setattr(endpoints, "_pick_directory_tk", lambda _default: selected)
+        monkeypatch.setattr(endpoints, "_pick_directory_windows", lambda _default: selected)
+        client = self._client(require_auth=True, allow_local_workspace_access=True)
+
+        roots = client.get(
+            "/api/fs/roots",
+            headers={"Authorization": "Bearer sk-alice"},
+        )
+        picked = client.get(
+            "/api/fs/pick-directory",
+            headers={"Authorization": "Bearer sk-alice"},
+        )
+
+        assert roots.status_code == 200
+        assert picked.status_code == 200
+        assert picked.json() == {
+            "success": True,
+            "path": selected,
+            "canceled": False,
+            "error": None,
+        }
+
+    def test_shared_mode_still_rejects_picker_without_thread_scope(self) -> None:
+        client = self._client(require_auth=True)
+
+        picked = client.get(
+            "/api/fs/pick-directory",
+            headers={"Authorization": "Bearer sk-alice"},
+        )
+
+        assert picked.status_code == 403
+        assert picked.json()["detail"]["error"] == "thread_scope_required"
+

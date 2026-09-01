@@ -112,8 +112,49 @@ def test_upsert_dedupes_by_title(base_dir: Path, project: str) -> None:
     assert merged["source_turn_ids"] == ["t1", "t2"]
 
 
+def test_upsert_keeps_same_title_separate_across_locales(
+    base_dir: Path,
+    project: str,
+) -> None:
+    first = Suggestion(
+        id="",
+        project_root=project,
+        title="Review API",
+        description="English",
+        prompt="Review it",
+        locale="en-US",
+    )
+    second = Suggestion(
+        id="",
+        project_root=project,
+        title="Review API",
+        description="中文",
+        prompt="检查 API",
+        locale="zh-CN",
+    )
+    assert amb.upsert_many(project, [first], base_dir=base_dir) == 1
+    assert amb.upsert_many(project, [second], base_dir=base_dir) == 1
+    assert len(amb.read_bucket(project, base_dir=base_dir)["suggestions"]) == 2
+    zh_bucket = amb.read_bucket(project, base_dir=base_dir, locale="zh-CN")
+    assert [s["description"] for s in zh_bucket["suggestions"]] == ["中文"]
+
+
+def test_legacy_suggestion_defaults_to_english() -> None:
+    suggestion = Suggestion.from_dict(
+        {
+            "id": "legacy",
+            "project_root": "/p",
+            "title": "Old English title",
+            "prompt": "Continue",
+        }
+    )
+    assert suggestion is not None
+    assert suggestion.locale == "en-US"
+
+
 def test_mark_status_updates_timestamp(
-    base_dir: Path, project: str,
+    base_dir: Path,
+    project: str,
 ) -> None:
     amb.upsert_many(
         project,
@@ -144,7 +185,8 @@ def test_mark_status_rejects_invalid(base_dir: Path, project: str) -> None:
 
 
 def test_mark_status_returns_none_for_unknown_id(
-    base_dir: Path, project: str,
+    base_dir: Path,
+    project: str,
 ) -> None:
     result = amb.mark_status(project, "nope", "dismissed", base_dir=base_dir)
     assert result is None
@@ -165,7 +207,8 @@ def test_clear_all_wipes(base_dir: Path, project: str) -> None:
 
 
 def test_clear_filtered_by_status(
-    base_dir: Path, project: str,
+    base_dir: Path,
+    project: str,
 ) -> None:
     amb.upsert_many(
         project,
@@ -246,7 +289,9 @@ def test_generate_with_no_scores_returns_error(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     result = amb.generate_suggestions(
-        project, "new-agent-nothing-logged", base_dir=base_dir,
+        project,
+        "new-agent-nothing-logged",
+        base_dir=base_dir,
     )
     assert result["generated"] == 0
     assert result["added"] == 0
@@ -282,7 +327,9 @@ def test_generate_merges_llm_output(
         return_value=fake_llm,
     ):
         result = amb.generate_suggestions(
-            project, scored_turns, base_dir=base_dir,
+            project,
+            scored_turns,
+            base_dir=base_dir,
         )
     assert result["error"] is None
     assert result["generated"] == 2
@@ -290,6 +337,42 @@ def test_generate_merges_llm_output(
     assert result["model"] == "mock/cheap"
     titles = {s["title"] for s in result["suggestions"]}
     assert "Fix tool_errors in CI path" in titles
+
+
+def test_generate_uses_requested_locale_in_prompt_and_bucket(
+    base_dir: Path,
+    project: str,
+    scored_turns: str,
+) -> None:
+    fake_llm = (
+        {
+            "suggestions": [
+                {
+                    "title": "检查失败的构建",
+                    "description": "最近的工具调用失败了。",
+                    "prompt": "请检查并修复构建失败。",
+                    "source_turn_ids": ["turn-1"],
+                }
+            ]
+        },
+        {"model": "mock/cheap"},
+    )
+    with patch(
+        "runtime.memory.learning.deep_evolution._llm_call_json",
+        return_value=fake_llm,
+    ) as llm:
+        result = amb.generate_suggestions(
+            project,
+            scored_turns,
+            base_dir=base_dir,
+            locale="zh-CN",
+        )
+
+    call = llm.call_args.kwargs
+    assert "Simplified Chinese" in call["system"]
+    assert "Response locale: zh-CN" in call["user"]
+    assert result["suggestions"][0]["locale"] == "zh-CN"
+    assert result["suggestions"][0]["title"] == "检查失败的构建"
 
 
 def test_generate_handles_llm_failure(
@@ -302,7 +385,9 @@ def test_generate_handles_llm_failure(
         return_value=(None, {"error": "router not wired"}),
     ):
         result = amb.generate_suggestions(
-            project, scored_turns, base_dir=base_dir,
+            project,
+            scored_turns,
+            base_dir=base_dir,
         )
     assert result["error"] == "router not wired"
     assert result["generated"] == 0
@@ -316,8 +401,8 @@ def test_generate_skips_candidates_missing_title_or_prompt(
     fake_llm = (
         {
             "suggestions": [
-                {"title": "", "prompt": "x"},           # no title
-                {"title": "Good one", "prompt": ""},    # no prompt
+                {"title": "", "prompt": "x"},  # no title
+                {"title": "Good one", "prompt": ""},  # no prompt
                 {"title": "Keep me", "prompt": "do it"},
             ]
         },
@@ -328,7 +413,9 @@ def test_generate_skips_candidates_missing_title_or_prompt(
         return_value=fake_llm,
     ):
         result = amb.generate_suggestions(
-            project, scored_turns, base_dir=base_dir,
+            project,
+            scored_turns,
+            base_dir=base_dir,
         )
     assert result["generated"] == 1
     assert result["added"] == 1
@@ -349,7 +436,8 @@ def test_get_returns_disabled_shape_when_flag_off(
     project: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OCTOPUS_FF_UI_AMBIENT_SUGGESTIONS", raising=False)
+    # Default is now True, so "off" must be explicit.
+    monkeypatch.setenv("ECHO_FF_UI_AMBIENT_SUGGESTIONS", "0")
     ff.reload()
     r = client.get("/api/ambient-suggestions", params={"project": project})
     assert r.status_code == 200
@@ -363,7 +451,7 @@ def test_get_returns_real_bucket_when_flag_on(
     project: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_AMBIENT_SUGGESTIONS", "1")
+    monkeypatch.setenv("ECHO_FF_UI_AMBIENT_SUGGESTIONS", "1")
     ff.reload()
     amb.upsert_many(
         project,
@@ -378,12 +466,52 @@ def test_get_returns_real_bucket_when_flag_on(
     assert body["suggestions"][0]["title"] == "hi"
 
 
+def test_get_filters_suggestions_by_locale(
+    client: TestClient,
+    base_dir: Path,
+    project: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ECHO_FF_UI_AMBIENT_SUGGESTIONS", "1")
+    ff.reload()
+    amb.upsert_many(
+        project,
+        [
+            Suggestion(
+                id="",
+                project_root=project,
+                title="English",
+                description="",
+                prompt="Continue",
+                locale="en-US",
+            ),
+            Suggestion(
+                id="",
+                project_root=project,
+                title="中文",
+                description="",
+                prompt="继续",
+                locale="zh-CN",
+            ),
+        ],
+        base_dir=base_dir,
+    )
+
+    r = client.get(
+        "/api/ambient-suggestions",
+        params={"project": project, "locale": "zh-CN"},
+    )
+    assert r.status_code == 200
+    assert [s["title"] for s in r.json()["suggestions"]] == ["中文"]
+
+
 def test_run_endpoint_is_403_when_flag_off(
     client: TestClient,
     project: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OCTOPUS_FF_UI_AMBIENT_SUGGESTIONS", raising=False)
+    # Default is now True, so "off" must be explicit.
+    monkeypatch.setenv("ECHO_FF_UI_AMBIENT_SUGGESTIONS", "0")
     ff.reload()
     r = client.post(
         "/api/ambient-suggestions/run",
@@ -398,7 +526,7 @@ def test_patch_404_when_suggestion_missing(
     project: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_AMBIENT_SUGGESTIONS", "1")
+    monkeypatch.setenv("ECHO_FF_UI_AMBIENT_SUGGESTIONS", "1")
     ff.reload()
     r = client.patch(
         "/api/ambient-suggestions/does-not-exist",
@@ -413,7 +541,7 @@ def test_patch_updates_status(
     project: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_AMBIENT_SUGGESTIONS", "1")
+    monkeypatch.setenv("ECHO_FF_UI_AMBIENT_SUGGESTIONS", "1")
     ff.reload()
     amb.upsert_many(
         project,
@@ -436,7 +564,7 @@ def test_patch_rejects_bad_status(
     project: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_AMBIENT_SUGGESTIONS", "1")
+    monkeypatch.setenv("ECHO_FF_UI_AMBIENT_SUGGESTIONS", "1")
     ff.reload()
     r = client.patch(
         "/api/ambient-suggestions/some-id",
@@ -451,7 +579,7 @@ def test_delete_filtered(
     project: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_AMBIENT_SUGGESTIONS", "1")
+    monkeypatch.setenv("ECHO_FF_UI_AMBIENT_SUGGESTIONS", "1")
     ff.reload()
     amb.upsert_many(
         project,
@@ -473,3 +601,5 @@ def test_delete_filtered(
     assert r.json()["removed"] == 1
     remaining = amb.read_bucket(project, base_dir=base_dir)["suggestions"]
     assert len(remaining) == 2
+
+

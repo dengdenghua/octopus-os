@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
-
 from runtime.core.cerebrum import LLMPlanner, PlannerError
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.suckers.builtins import register_builtins
@@ -89,15 +89,9 @@ class TestHappyPath:
         assert ("n1", "n2") not in pairs
 
     def test_task_type_derived(self, registry, composer):
-        debug_intent = ParsedIntent(
-            raw="x", intent_type="debug", normalized_goal="fix bug"
-        )
-        router = MockModelRouter(
-            response=_make_plan_json([{"skill": "list_cwd", "args": {}}])
-        )
-        graph = LLMPlanner(router=router, registry=registry, composer=composer).plan(
-            debug_intent
-        )
+        debug_intent = ParsedIntent(raw="x", intent_type="debug", normalized_goal="fix bug")
+        router = MockModelRouter(response=_make_plan_json([{"skill": "list_cwd", "args": {}}]))
+        graph = LLMPlanner(router=router, registry=registry, composer=composer).plan(debug_intent)
         assert graph.task_type == "code_fix"
 
     def test_markdown_fence_tolerated(self, registry, composer, intent):
@@ -147,12 +141,14 @@ class TestErrorPaths:
         register_sub_agent_skill(registry)
         composer = ContextComposer(registry=registry, journal=InMemoryJournal())
         router = MockModelRouter(
-            response=_make_plan_json([
-                {
-                    "skill": "call_agent",
-                    "args": {"agent_id": "coder", "prompt": "handle this"},
-                }
-            ])
+            response=_make_plan_json(
+                [
+                    {
+                        "skill": "call_agent",
+                        "args": {"agent_id": "coder", "prompt": "handle this"},
+                    }
+                ]
+            )
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
 
@@ -169,9 +165,7 @@ class TestErrorPaths:
     def test_too_many_nodes_raises(self, registry, composer, intent):
         too_many = [{"skill": "list_cwd", "args": {}}] * 20
         router = MockModelRouter(response=_make_plan_json(too_many))
-        planner = LLMPlanner(
-            router=router, registry=registry, composer=composer, max_nodes=5
-        )
+        planner = LLMPlanner(router=router, registry=registry, composer=composer, max_nodes=5)
         with pytest.raises(PlannerError, match="too long"):
             planner.plan(intent)
 
@@ -184,9 +178,7 @@ class TestErrorPaths:
 class TestInterfaceCompat:
     def test_signature_matches_staticplanner(self, registry, composer, intent):
         """Implementation note."""
-        router = MockModelRouter(
-            response=_make_plan_json([{"skill": "list_cwd", "args": {}}])
-        )
+        router = MockModelRouter(response=_make_plan_json([{"skill": "list_cwd", "args": {}}]))
         llm = LLMPlanner(router=router, registry=registry, composer=composer)
         from runtime.core.cerebrum import StaticPlanner
 
@@ -196,12 +188,37 @@ class TestInterfaceCompat:
         assert callable(llm.plan)
         assert callable(static.plan)
 
+    def test_last_plan_usage_is_thread_local(self, registry, composer):
+        planner = LLMPlanner(
+            router=MockModelRouter(response="{}"),
+            registry=registry,
+            composer=composer,
+        )
+        barrier = threading.Barrier(2)
+        observed: dict[str, dict[str, int]] = {}
+
+        def record(name: str, tokens: int) -> None:
+            planner.last_plan_usage = {"tokens": tokens}
+            barrier.wait()
+            observed[name] = planner.last_plan_usage
+
+        first = threading.Thread(target=record, args=("first", 11))
+        second = threading.Thread(target=record, args=("second", 29))
+        first.start()
+        second.start()
+        first.join()
+        second.join()
+
+        assert observed == {
+            "first": {"tokens": 11},
+            "second": {"tokens": 29},
+        }
+        assert planner.last_plan_usage == {}
+
 
 class TestRouterReceivesContext:
     def test_call_log_shows_system_and_user(self, registry, composer, intent):
-        router = MockModelRouter(
-            response=_make_plan_json([{"skill": "list_cwd", "args": {}}])
-        )
+        router = MockModelRouter(response=_make_plan_json([{"skill": "list_cwd", "args": {}}]))
         LLMPlanner(router=router, registry=registry, composer=composer).plan(intent)
 
         assert len(router.call_log) == 1

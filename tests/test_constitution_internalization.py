@@ -19,6 +19,7 @@ Contract pinned
 13. Secret-hit bypasses judge (block wins immediately)
 14. PII-rewrite bypasses judge (rewrite wins)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,6 +30,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _reset_judge():
     from runtime.safety.validation import set_judge
+
     set_judge(None)
     yield
     set_judge(None)
@@ -42,6 +44,7 @@ def _reset_judge():
 class TestSummary:
     def test_summary_compact(self):
         from runtime.safety.validation import CONSTITUTION_SUMMARY
+
         # Heuristic: 4 chars ≈ 1 token → 300 tokens ≈ 1200 chars cap
         assert len(CONSTITUTION_SUMMARY) < 1600
         # Non-empty
@@ -49,11 +52,13 @@ class TestSummary:
 
     def test_summary_covers_all_five_principles(self):
         from runtime.safety.validation import CONSTITUTION_SUMMARY
+
         for label in ("PRIV", "LAWF", "DGNT", "SELF", "EXFIL"):
             assert label in CONSTITUTION_SUMMARY
 
     def test_get_constitution_summary_returns_string(self):
         from runtime.safety.validation import get_constitution_summary
+
         assert isinstance(get_constitution_summary(), str)
 
 
@@ -64,9 +69,11 @@ class TestSummary:
 
 class TestLoaderInjection:
     def test_constitution_injected_by_default(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
-        monkeypatch.setenv("OCTOPUS_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path))
         from runtime.execution.agents.loader import _compose_soul
 
         agent_dir = tmp_path / "agent"
@@ -81,9 +88,11 @@ class TestLoaderInjection:
         assert "PRIV" in soul or "Privacy" in soul
 
     def test_constitution_opt_out_via_flag(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ):
-        monkeypatch.setenv("OCTOPUS_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path))
         from runtime.execution.agents.loader import _compose_soul
 
         agent_dir = tmp_path / "agent"
@@ -106,6 +115,7 @@ class TestLoaderInjection:
 class TestJudge:
     def test_null_judge_default(self):
         from runtime.safety.validation import get_judge
+
         j = get_judge()
         v = j("hello", "channels:x:y", None)
         assert v.action == "allow"
@@ -158,34 +168,30 @@ class TestJudge:
 
     def test_build_judge_parses_block(self):
         from runtime.safety.validation.judge import build_judge_from_llm_fn
-        judge = build_judge_from_llm_fn(
-            lambda p: "BLOCK: ransomware request"
-        )
+
+        judge = build_judge_from_llm_fn(lambda p: "BLOCK: ransomware request")
         v = judge("hi", "d", None)
         assert v.action == "block"
         assert "ransomware" in v.reason
 
     def test_build_judge_parses_escalate(self):
         from runtime.safety.validation.judge import build_judge_from_llm_fn
-        judge = build_judge_from_llm_fn(
-            lambda p: "ESCALATE: unclear"
-        )
+
+        judge = build_judge_from_llm_fn(lambda p: "ESCALATE: unclear")
         v = judge("hi", "d", None)
         assert v.action == "human_gate"
 
     def test_build_judge_parses_allow(self):
         from runtime.safety.validation.judge import build_judge_from_llm_fn
-        judge = build_judge_from_llm_fn(
-            lambda p: "ALLOW: clean"
-        )
+
+        judge = build_judge_from_llm_fn(lambda p: "ALLOW: clean")
         v = judge("hi", "d", None)
         assert v.action == "allow"
 
     def test_build_judge_unknown_reply_is_allow(self):
         from runtime.safety.validation.judge import build_judge_from_llm_fn
-        judge = build_judge_from_llm_fn(
-            lambda p: "i dunno lol"
-        )
+
+        judge = build_judge_from_llm_fn(lambda p: "i dunno lol")
         v = judge("hi", "d", None)
         assert v.action == "allow"
 

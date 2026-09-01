@@ -1,0 +1,115 @@
+#!/bin/bash
+# Verify native on-demand scanning without probing attached or network devices.
+set -euo pipefail
+set -f
+
+RUNTIME_ROOT=/
+if [[ -n "${ECHO_SCANNING_RUNTIME_ROOT:-}" ]]; then
+  [[ "${ECHO_SCANNING_SOURCE_TEST:-}" == "USE-SOURCE-RUNTIME" ]] || {
+    echo "scanning runtime override requires the explicit source-test sentinel" >&2
+    exit 2
+  }
+  RUNTIME_ROOT="$ECHO_SCANNING_RUNTIME_ROOT"
+fi
+[[ "$RUNTIME_ROOT" == /* && -d "$RUNTIME_ROOT" && ! -L "$RUNTIME_ROOT" ]] || {
+  echo "scanning runtime root is unsafe" >&2
+  exit 1
+}
+
+runtime_path() {
+  local suffix="$1"
+  if [[ "$RUNTIME_ROOT" == / ]]; then
+    printf '%s\n' "$suffix"
+  else
+    printf '%s%s\n' "${RUNTIME_ROOT%/}" "$suffix"
+  fi
+}
+
+PYTHON="$(runtime_path /usr/bin/python3)"
+SYSTEMCTL="$(runtime_path /usr/bin/systemctl)"
+SCANIMAGE="$(runtime_path /usr/bin/scanimage)"
+GETENT="$(runtime_path /usr/bin/getent)"
+STAT="$(runtime_path /usr/bin/stat)"
+POLICY="$(runtime_path /usr/lib/echo-os/echo-scanning-policy.py)"
+
+EXECUTABLES=(
+  "$PYTHON"
+  "$SYSTEMCTL"
+  "$SCANIMAGE"
+  "$GETENT"
+  "$STAT"
+  "$POLICY"
+  "$(runtime_path /usr/bin/sane-find-scanner)"
+  "$(runtime_path /usr/bin/airscan-discover)"
+  "$(runtime_path /usr/bin/skanpage)"
+  "$(runtime_path /usr/sbin/ipp-usb)"
+  "$(runtime_path /usr/sbin/avahi-daemon)"
+)
+RUNTIME_FILES=(
+  "$(runtime_path /etc/sane.d/airscan.conf)"
+  "$(runtime_path /etc/sane.d/dll.conf)"
+  "$(runtime_path /etc/sane.d/dll.d/airscan)"
+  "$(runtime_path /usr/lib/x86_64-linux-gnu/libsane.so.1)"
+  "$(runtime_path /usr/lib/x86_64-linux-gnu/sane/libsane-airscan.so.1)"
+  "$(runtime_path /usr/lib/udev/rules.d/60-libsane1.rules)"
+  "$(runtime_path /usr/lib/udev/rules.d/99-libsane1.rules)"
+  "$(runtime_path /usr/share/applications/org.kde.skanpage.desktop)"
+  "$(runtime_path /usr/lib/systemd/system/saned.service)"
+  "$(runtime_path /usr/lib/systemd/system/saned.socket)"
+  "$(runtime_path /usr/lib/systemd/system/saned@.service)"
+  "$(runtime_path /etc/ipp-usb/ipp-usb.conf)"
+  "$(runtime_path /usr/lib/systemd/system/ipp-usb.service)"
+  "$(runtime_path /usr/lib/udev/rules.d/71-ipp-usb.rules)"
+  "$(runtime_path /usr/lib/systemd/system/avahi-daemon.service)"
+  "$(runtime_path /usr/share/dbus-1/system-services/org.freedesktop.Avahi.service)"
+)
+
+for runtime in "${EXECUTABLES[@]}"; do
+  [[ -f "$runtime" && -x "$runtime" ]] || {
+    echo "scanning executable is missing: $runtime" >&2
+    exit 1
+  }
+done
+for runtime in "${RUNTIME_FILES[@]}"; do
+  [[ -f "$runtime" ]] || {
+    echo "scanning backend or desktop integration is missing: $runtime" >&2
+    exit 1
+  }
+done
+for runtime in "${EXECUTABLES[@]}" "${RUNTIME_FILES[@]}"; do
+  metadata="$($STAT -Lc '%u:%g:%a' "$runtime")" || {
+    echo "cannot inspect scanning runtime: $runtime" >&2
+    exit 1
+  }
+  IFS=: read -r owner group mode <<<"$metadata"
+  [[ "$owner" == 0 && "$group" == 0 && "$mode" =~ ^[0-7]{3,4}$ && \
+     $((8#$mode & 8#022)) -eq 0 ]] || {
+    echo "scanning runtime is not immutable root-owned content: $runtime" >&2
+    exit 1
+  }
+done
+
+"$PYTHON" "$POLICY" >/dev/null || {
+  echo "scanning privacy policy verification failed" >&2
+  exit 1
+}
+"$GETENT" group scanner >/dev/null || {
+  echo "scanner device authorization group is missing" >&2
+  exit 1
+}
+"$SCANIMAGE" --version >/dev/null || {
+  echo "SANE client/backend loader is unavailable" >&2
+  exit 1
+}
+
+SANED_ENABLEMENT="$($SYSTEMCTL is-enabled saned.socket 2>/dev/null || true)"
+[[ "$SANED_ENABLEMENT" == disabled || "$SANED_ENABLEMENT" == masked ]] || {
+  echo "saned scanner-sharing socket is not disabled" >&2
+  exit 1
+}
+if "$SYSTEMCTL" is-active --quiet saned.socket; then
+  echo "saned scanner-sharing socket is active" >&2
+  exit 1
+fi
+
+echo "ECHO_SCANNING_READY provider=sane frontend=skanpage usb=udev,ipp-usb network=airscan-on-demand sharing=off retention=user-owned"

@@ -13,6 +13,7 @@
  * for what's still an experimental feature.
  */
 
+import type { Locale } from "@/core/i18n";
 import { swallow } from "@/core/utils/log";
 import { useCallback, useEffect, useState } from "react";
 
@@ -22,6 +23,7 @@ export interface AmbientSuggestion {
   title: string;
   description: string;
   prompt: string;
+  locale: Locale;
   status: "pending" | "accepted" | "dismissed" | string;
   source_turn_ids: string[];
   created_at: string;
@@ -42,10 +44,14 @@ export interface AmbientSuggestionsState {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  generate: (agentId: string, opts?: {
-    model?: string;
-    turnWindow?: number;
-  }) => Promise<{
+  generate: (
+    agentId: string,
+    opts?: {
+      model?: string;
+      turnWindow?: number;
+      locale?: Locale;
+    },
+  ) => Promise<{
     added: number;
     generated: number;
     error: string | null;
@@ -59,6 +65,8 @@ export interface AmbientSuggestionsState {
 
 export interface UseAmbientSuggestionsOptions {
   baseUrl?: string;
+  /** Current global UI locale. Keeps generated content and cache aligned. */
+  locale?: Locale;
   /**
    * If ``true`` (default), fetch once on mount (and whenever
    * ``project`` changes). ``false`` means the caller drives via
@@ -72,7 +80,7 @@ export function useAmbientSuggestions(
   project: string | null,
   options: UseAmbientSuggestionsOptions = {},
 ): AmbientSuggestionsState {
-  const { baseUrl = "", auto = true } = options;
+  const { baseUrl = "", auto = true, locale } = options;
   const [bucket, setBucket] = useState<AmbientSuggestionsBucket | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +93,9 @@ export function useAmbientSuggestions(
     setLoading(true);
     setError(null);
     try {
-      const url = `${baseUrl}/api/ambient-suggestions?project=${encodeURIComponent(project)}`;
+      const params = new URLSearchParams({ project });
+      if (locale) params.set("locale", locale);
+      const url = `${baseUrl}/api/ambient-suggestions?${params.toString()}`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const body = (await resp.json()) as AmbientSuggestionsBucket;
@@ -97,32 +107,34 @@ export function useAmbientSuggestions(
     } finally {
       setLoading(false);
     }
-  }, [baseUrl, project]);
+  }, [baseUrl, locale, project]);
 
   const generate = useCallback(
     async (
       agentId: string,
-      opts?: { model?: string; turnWindow?: number },
+      opts?: { model?: string; turnWindow?: number; locale?: Locale },
     ) => {
       if (!project) {
         return { added: 0, generated: 0, error: "project required" };
       }
-      const resp = await fetch(
-        `${baseUrl}/api/ambient-suggestions/run`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            project,
-            agent_id: agentId,
-            model: opts?.model,
-            turn_window: opts?.turnWindow,
-          }),
-        },
-      );
+      const resp = await fetch(`${baseUrl}/api/ambient-suggestions/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project,
+          agent_id: agentId,
+          model: opts?.model,
+          turn_window: opts?.turnWindow,
+          locale: opts?.locale ?? locale,
+        }),
+      });
       if (!resp.ok) {
         const detail = await resp.text();
-        return { added: 0, generated: 0, error: detail || `HTTP ${resp.status}` };
+        return {
+          added: 0,
+          generated: 0,
+          error: detail || `HTTP ${resp.status}`,
+        };
       }
       const body = await resp.json();
       await refresh();
@@ -132,7 +144,7 @@ export function useAmbientSuggestions(
         error: body.error ?? null,
       };
     },
-    [baseUrl, project, refresh],
+    [baseUrl, locale, project, refresh],
   );
 
   const setStatus = useCallback(
@@ -156,10 +168,9 @@ export function useAmbientSuggestions(
       if (!project) return;
       const params = new URLSearchParams({ project });
       if (onlyStatus) params.set("status", onlyStatus);
-      await fetch(
-        `${baseUrl}/api/ambient-suggestions?${params.toString()}`,
-        { method: "DELETE" },
-      );
+      await fetch(`${baseUrl}/api/ambient-suggestions?${params.toString()}`, {
+        method: "DELETE",
+      });
       await refresh();
     },
     [baseUrl, project, refresh],

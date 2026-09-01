@@ -28,15 +28,12 @@ export const queryKeys = {
     popular: ["agent-world", "popular"] as const,
   },
   agentTrace: {
-    summary: (
-      scope?: {
-        threadId?: string | null;
-        taskId?: string | null;
-        agentId?: string | null;
-        turnId?: string | null;
-      },
-    ) =>
-      ["agent-trace", "summary", scope] as const,
+    summary: (scope?: {
+      threadId?: string | null;
+      taskId?: string | null;
+      agentId?: string | null;
+      turnId?: string | null;
+    }) => ["agent-trace", "summary", scope] as const,
     resumeRequests: (
       scope?: {
         threadId?: string | null;

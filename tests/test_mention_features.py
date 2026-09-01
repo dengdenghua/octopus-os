@@ -5,6 +5,7 @@
 3. agent_auto_delegate — heuristic-driven plan_auto_delegation.
 4. mention_history — SQLite-backed cross-thread ranking store.
 """
+
 from __future__ import annotations
 
 import time
@@ -18,9 +19,7 @@ import pytest
 def test_parse_input_mentions_extracts_pack() -> None:
     from runtime.core.cerebrum.input_mentions import parse_input_mentions
 
-    result = parse_input_mentions(
-        "use @pack:research and also @skill:web_search"
-    )
+    result = parse_input_mentions("use @pack:research and also @skill:web_search")
     assert result.packs == ("research",)
     assert result.skills == ("web_search",)
     assert result.has_any
@@ -59,7 +58,8 @@ def test_capability_router_pack_render_includes_pack_name() -> None:
             return True
 
     activation = activate_capabilities(
-        "@pack:research", registry=_Registry(),
+        "@pack:research",
+        registry=_Registry(),
     )
     rendered = activation.render_prompt()
     assert "@pack" in rendered
@@ -77,14 +77,15 @@ class _StubPlugin:
 class _StubHub:
     """Pretends to be a PluginHub for the auto-load test."""
 
-    def __init__(self, *, already_loaded: dict[str, str] | None = None,
-                 will_fail: set[str] | None = None) -> None:
+    def __init__(
+        self, *, already_loaded: dict[str, str] | None = None, will_fail: set[str] | None = None
+    ) -> None:
         self.loaded: dict[str, _StubPlugin] = {
-            name: _StubPlugin(state=state)
-            for name, state in (already_loaded or {}).items()
+            name: _StubPlugin(state=state) for name, state in (already_loaded or {}).items()
         }
         self.started: set[str] = {
-            name for name, state in (already_loaded or {}).items()
+            name
+            for name, state in (already_loaded or {}).items()
             if state in {"started", "running"}
         }
         self.will_fail = will_fail or set()
@@ -260,6 +261,7 @@ def history_store(tmp_path):
         MentionHistoryStore,
         reset_mention_history_store_for_tests,
     )
+
     reset_mention_history_store_for_tests()
     yield MentionHistoryStore(tmp_path / "history.sqlite")
     reset_mention_history_store_for_tests()
@@ -308,12 +310,16 @@ def test_mention_history_rejects_unknown_kind(history_store):
 
 def test_mention_history_record_batch(history_store):
     ts = time.time()
-    history_store.record_batch("u", [
-        ("skill", "a"),
-        ("skill", "b"),
-        ("agent", "c"),
-        ("pack", "d"),
-    ], ts=ts)
+    history_store.record_batch(
+        "u",
+        [
+            ("skill", "a"),
+            ("skill", "b"),
+            ("agent", "c"),
+            ("pack", "d"),
+        ],
+        ts=ts,
+    )
     top = history_store.top_for_actor("u", limit=10)
     identifiers = {stat.identifier for stat in top}
     assert identifiers == {"a", "b", "c", "d"}

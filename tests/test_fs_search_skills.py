@@ -1,4 +1,5 @@
 """Implementation note."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,6 +14,7 @@ from runtime.execution.suckers.fs_search_skills import (
 )
 
 # ─── Registration ────────────────────────────────────────────
+
 
 class TestRegistration:
     def test_register_installs_all_four(self):
@@ -47,6 +49,7 @@ class TestRegistration:
 
 
 # ─── glob_files ──────────────────────────────────────────────
+
 
 class TestGlobFiles:
     def test_matches_simple_pattern(self, tmp_path: Path):
@@ -102,6 +105,7 @@ class TestGlobFiles:
 
 # ─── grep_text ───────────────────────────────────────────────
 
+
 class TestGrepText:
     def test_finds_matches(self, tmp_path: Path):
         (tmp_path / "a.txt").write_text("hello\nworld\nhello again\n")
@@ -113,8 +117,10 @@ class TestGrepText:
     def test_ignore_case(self, tmp_path: Path):
         (tmp_path / "a.txt").write_text("Hello\nHELLO\nhello\n")
         r = _grep_text(
-            pattern="hello", root=str(tmp_path),
-            glob="*.txt", ignore_case=True,
+            pattern="hello",
+            root=str(tmp_path),
+            glob="*.txt",
+            ignore_case=True,
         )
         assert r["count"] == 3
 
@@ -137,8 +143,10 @@ class TestGrepText:
     def test_max_matches_caps_output(self, tmp_path: Path):
         (tmp_path / "a.txt").write_text("x\n" * 50)
         r = _grep_text(
-            pattern="x", root=str(tmp_path),
-            glob="*.txt", max_matches=10,
+            pattern="x",
+            root=str(tmp_path),
+            glob="*.txt",
+            max_matches=10,
         )
         assert r["count"] == 10
         assert r["truncated"]
@@ -151,6 +159,7 @@ class TestGrepText:
 
 
 # ─── tree ────────────────────────────────────────────────────
+
 
 class TestTree:
     def test_builds_nested_structure(self, tmp_path: Path):
@@ -197,6 +206,7 @@ class TestTree:
 
 
 # ─── read_file_range ─────────────────────────────────────────
+
 
 class TestReadFileRange:
     def test_reads_range(self, tmp_path: Path):

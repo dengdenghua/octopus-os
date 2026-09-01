@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from runtime.memory import user_store
 from runtime.platform.process.paths import app_paths
 from runtime.platform.ui.app import create_app
@@ -28,7 +27,9 @@ def test_app_paths_are_cwd_relative(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert paths.cron_jobs_path == tmp_path / "data" / "cron_jobs.json"
 
 
-def test_user_store_resolves_paths_at_call_time(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_user_store_resolves_paths_at_call_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
 
     stored = user_store.add_fact("Remember the blue deployment", source="test")
@@ -48,7 +49,7 @@ def test_memory_api_uses_real_store_before_stub_router(client: TestClient, tmp_p
             "category": "ops",
             "source": "manual",
             "scope": "project",
-            "project": "octopus",
+            "project": "echo",
         },
     )
 
@@ -56,7 +57,7 @@ def test_memory_api_uses_real_store_before_stub_router(client: TestClient, tmp_p
     body = created.json()
     assert "_stub" not in body
     assert body["facts"][0]["scope"] == "project"
-    assert body["facts"][0]["project"] == "octopus"
+    assert body["facts"][0]["project"] == "echo"
     assert (tmp_path / "data" / "user_memory.json").exists()
 
     results = client.get("/api/memory/search", params={"q": "blue green"}).json()
@@ -74,4 +75,3 @@ def test_memory_config_uses_same_app_paths(client: TestClient, tmp_path: Path) -
     assert config["max_facts"] == 12
     assert config["storage_path"] == str(tmp_path / "data" / "user_memory.json")
     assert (tmp_path / "data" / "user_memory_config.json").exists()
-

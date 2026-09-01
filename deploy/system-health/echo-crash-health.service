@@ -1,0 +1,15 @@
+[Unit]
+Description=Verify bounded local Echo OS crash collection
+Documentation=file:/usr/share/doc/echo-os/crash-collection.md
+After=local-fs.target systemd-coredump.socket
+Requires=systemd-coredump.socket
+RequiresMountsFor=/var
+Before=boot-complete.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/echo-crash-health
+RemainAfterExit=yes
+
+[Install]
+RequiredBy=boot-complete.target

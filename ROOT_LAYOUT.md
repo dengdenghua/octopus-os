@@ -18,7 +18,7 @@ to scan.
 | `runtime/` | Python runtime and API surface |
 | `frontend/` | React/Electron workspace |
 | `tests/` | Test suite |
-| `appliance/` | Octopus OS appliance layer (octopus-os fork; see docs/OCTOPUS_OS_PLAN.md) |
+| `appliance/` | Echo OS appliance layer (echo-os fork; see docs/ECHO_OS_PLAN.md) |
 
 ## Product Assets
 
@@ -30,7 +30,7 @@ to scan.
 | `prompts/` | Prompt templates and evaluation assets |
 | `extensions/` | Browser / IDE extensions |
 
-Android mobile client source lives as a sibling checkout at `../octopus-mobile/`, not
+Android mobile client source lives as a sibling checkout at `../echo-mobile/`, not
 as a repository-root child.
 
 ## Project Support
@@ -61,7 +61,7 @@ treated as part of the product surface.
 
 | Path | Rule |
 |---|---|
-| `.octopus/` | Local runtime state |
+| `.echo/` | Local runtime state |
 | `data/` | Local journals, DBs, and generated runtime state |
 | `logs/` | Local process logs |
 | `workspace/` | Generated workspaces |

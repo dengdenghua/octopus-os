@@ -1,6 +1,6 @@
 # Logo Design Prompt Guide
 
-Specialized guide for constructing high-quality logo generation prompts using the Octopus Workflow.
+Specialized guide for constructing high-quality logo generation prompts using the Echo Workflow.
 
 ---
 

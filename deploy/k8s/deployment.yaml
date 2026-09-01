@@ -1,50 +1,44 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: octopus-agent
-  namespace: octopus-agent
+  name: echo-agent
+  namespace: echo-agent
   labels:
-    app.kubernetes.io/name: octopus-agent
+    app.kubernetes.io/name: echo-agent
 spec:
   replicas: 1
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+    # The single-replica baseline stores SQLite, credentials, journals, and
+    # mutable resources on one RWO PVC.  Never overlap old/new writers during
+    # an upgrade or require the volume to attach to two nodes at once.
+    type: Recreate
   selector:
     matchLabels:
-      app: octopus-agent
+      app: echo-agent
   template:
     metadata:
       labels:
-        app: octopus-agent
+        app: echo-agent
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        runAsUser: 999
-        fsGroup: 999
-      containers:
-        - name: octopus-agent
-          image: ghcr.io/octopus-agent/octopus-agent:latest
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: seed-mutable-resources
+          # Fail-closed sentinel. Replace both occurrences through the
+          # kustomization images[].digest field after cosign verification.
+          image: ghcr.io/dengdenghua/echo-os@sha256:0000000000000000000000000000000000000000000000000000000000000000
           imagePullPolicy: Always
-          ports:
-            - containerPort: 8000
-              name: http
-          args:
-            - serve
-            - --config
-            - /etc/octopus/config.yaml
-            - --host
-            - "0.0.0.0"
-            - --port
-            - "8000"
-          env:
-            - name: OTEL_SERVICE_NAME
-              value: octopus-agent
-          envFrom:
-            - secretRef:
-                name: octopus-agent-secrets
+          command:
+            - /bin/sh
+            - -ec
+            # Seed only paths that are missing.  Existing PVC content is
+            # operator/user state and must survive image upgrades unchanged.
+            - install -d -m 0750 /data/resources && cp -a --no-clobber /app/resources/. /data/resources/
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -52,7 +46,48 @@ spec:
               drop:
                 - ALL
             runAsNonRoot: true
-            runAsUser: 999
+            runAsUser: 10001
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      containers:
+        - name: echo-agent
+          # Fail-closed sentinel. It cannot resolve to a real manifest; replace
+          # both agent image fields with one cosign-verified release digest.
+          image: ghcr.io/dengdenghua/echo-os@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          args:
+            - serve
+            - --config
+            - /etc/echo/config.yaml
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "8000"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: echo-agent-secrets
+                  key: REDIS_PASSWORD
+            - name: ECHO_HEARTS_REDIS_URL
+              value: redis://:$(REDIS_PASSWORD)@redis:6379/0
+            - name: OTEL_SERVICE_NAME
+              value: echo-agent
+          envFrom:
+            - secretRef:
+                name: echo-agent-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 10001
           resources:
             requests:
               cpu: 100m
@@ -62,32 +97,43 @@ spec:
               memory: 1Gi
           readinessProbe:
             httpGet:
-              path: /api/health
+              # /readyz reflects real readiness (drain → 503); /api/health
+              # is always 200 and would keep routing traffic to a draining
+              # or not-yet-ready pod.
+              path: /readyz
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /api/health
+              # /livez reflects process liveness; restart only when the
+              # process is actually wedged, not merely draining.
+              path: /livez
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 30
             failureThreshold: 5
           volumeMounts:
             - name: config
-              mountPath: /etc/octopus
+              mountPath: /etc/echo
               readOnly: true
             - name: data
               mountPath: /data
+            # The image remains read-only. Registry/agent/skill installs land
+            # on the PVC-backed resource tree seeded by the init container.
+            - name: data
+              mountPath: /app/resources
+              subPath: resources
             - name: tmp
               mountPath: /tmp
       volumes:
         - name: config
           configMap:
-            name: octopus-agent-config
+            name: echo-agent-config
         - name: data
           persistentVolumeClaim:
-            claimName: octopus-agent-data
+            claimName: echo-agent-data
         - name: tmp
           emptyDir: {}
+

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from runtime.platform.ui.app import create_app
 
 
@@ -60,17 +59,20 @@ def test_cron_create_replaces_job_with_same_name(client: TestClient) -> None:
 
     assert response.status_code == 200
     jobs = client.get("/api/cron").json()
-    assert jobs == [{
-        "name": "nightly",
-        "command": "new",
-        "cron_expression": "0 1 * * *",
-        "last_run": None,
-        "last_status": "created",
-        # ``creator_actor`` is ``"*"`` when no identity store is wired
-        # (test default). Anonymous bucket — admins and anons both
-        # see/edit these entries.
-        "creator_actor": "*",
-    }]
+    assert jobs == [
+        {
+            "name": "nightly",
+            "command": "new",
+            "cron_expression": "0 1 * * *",
+            "last_run": None,
+            "last_status": "created",
+            "last_output": None,
+            # ``creator_actor`` is ``"*"`` when no identity store is wired
+            # (test default). Anonymous bucket — admins and anons both
+            # see/edit these entries.
+            "creator_actor": "*",
+        }
+    ]
 
 
 def test_cron_create_rejects_invalid_expression(client: TestClient) -> None:

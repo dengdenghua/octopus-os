@@ -1,102 +1,209 @@
-
-import { UserCircleIcon, UsersIcon } from "lucide-react";
+import {
+  BoxesIcon,
+  ChevronDownIcon,
+  FlagIcon,
+  GitBranchIcon,
+  MessageCircleIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useMemo } from "react";
 
-import { cn } from "@/lib/utils";
-import { useI18n } from "@/core/i18n/hooks";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-export type TeamMode = "chat" | "cowork";
+import type { Translations } from "@/core/i18n/locales/types";
+import { useI18n } from "@/core/i18n/hooks";
+import { cn } from "@/lib/utils";
+
+/**
+ * How the team works on a turn:
+ * - chat (群聊): @someone routes to that agent; a multi-member room without an
+ *   @ mention stays a human discussion instead of waking every assistant.
+ * - cluster (集群): the leader decomposes → dispatches → each role works → merges.
+ * - swarm (蜂群): agents react to a shared blackboard, parallel & leaderless.
+ * - project (项目): milestone-driven — handed to the Project OS to break into
+ *   a task DAG, execute, and gate on acceptance.
+ * The backend still auto-picks cluster vs swarm by graph shape when no explicit
+ * pick is sent; choosing 集群/蜂群 forces that engine (serve_mesh "0"/"1").
+ */
+export type TeamMode = "chat" | "cluster" | "swarm" | "project";
+export type TeamResponseMode = Exclude<TeamMode, "project">;
 
 export type LegacyTeamMode =
+  | "cowork"
   | "group_chat"
   | "free"
   | "free_chat"
-  | "swarm"
   | "debate"
   | "pipeline";
 
 export function normalizeTeamMode(
   value: TeamMode | LegacyTeamMode | string | null | undefined,
 ): TeamMode {
-  // ``free`` was a placeholder UI-only mode that the backend never
-  // distinguished from ``chat``. It was removed 2026-06-04; legacy
-  // threads / persisted picker state with ``free`` collapse back to
-  // ``chat``, which is what the backend always treated them as.
-  if (value === "chat" || value === "group_chat") return "chat";
-  if (value === "free" || value === "free_chat") return "chat";
-  if (value === "cowork" || value === "swarm" || value === "debate" || value === "pipeline") {
-    return "cowork";
+  if (
+    value === "cluster" ||
+    value === "swarm" ||
+    value === "chat" ||
+    value === "project"
+  ) {
+    return value;
+  }
+  // Legacy: the old single "cowork/group" auto-picked the engine — map it to
+  // 集群 (the orchestrated default). Free/group_chat collapse to 单聊.
+  if (value === "cowork" || value === "debate" || value === "pipeline") {
+    return "cluster";
   }
   return "chat";
 }
 
-const TEAM_MODES: {
-  key: TeamMode;
-  icon: typeof UsersIcon;
-  activeColor: string;
-  activeIconColor: string;
-}[] = [
-  {
-    key: "chat",
-    icon: UserCircleIcon,
-    activeColor: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-    activeIconColor: "text-emerald-600 dark:text-emerald-400",
-  },
-  {
-    key: "cowork",
-    icon: UsersIcon,
-    activeColor: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
-    activeIconColor: "text-blue-600 dark:text-blue-400",
-  },
+/** Project is durable context, not a per-turn response strategy. Legacy
+ * project-mode groups migrate to normal discussion: explicit @ mentions or
+ * message actions decide when AI / Project OS should act. */
+export function normalizeTeamResponseMode(
+  value: TeamMode | LegacyTeamMode | string | null | undefined,
+): TeamResponseMode {
+  const normalized = normalizeTeamMode(value);
+  return normalized === "project" ? "chat" : normalized;
+}
+
+const TEAM_MODE_ICONS: Record<TeamMode, LucideIcon> = {
+  chat: MessageCircleIcon,
+  cluster: GitBranchIcon,
+  swarm: BoxesIcon,
+  project: FlagIcon,
+};
+
+export const TEAM_MODES: TeamMode[] = ["chat", "cluster", "swarm", "project"];
+export const TEAM_RESPONSE_MODES: TeamResponseMode[] = [
+  "chat",
+  "cluster",
+  "swarm",
 ];
+
+/** Per-turn engine force the backend reads (集群→sequential, 蜂群→mesh). */
+export function serveMeshForMode(mode: TeamMode): "0" | "1" | undefined {
+  if (mode === "cluster") return "0";
+  if (mode === "swarm") return "1";
+  return undefined;
+}
+
+export type TeamModeMeta = Record<
+  TeamMode,
+  { label: string; description: string; icon: LucideIcon }
+>;
+
+export function getTeamModeMeta(t: Translations): TeamModeMeta {
+  const meta = {} as TeamModeMeta;
+  for (const mode of TEAM_MODES) {
+    const translated = t.collab.teamModes.find((m) => m.id === mode);
+    meta[mode] = {
+      label: translated?.label ?? mode,
+      description: translated?.description ?? "",
+      icon: TEAM_MODE_ICONS[mode],
+    };
+  }
+  return meta;
+}
+
+export function useTeamModeMeta(): TeamModeMeta {
+  const { t } = useI18n();
+  return useMemo(() => getTeamModeMeta(t), [t]);
+}
 
 export function TeamModePicker({
   value,
   onChange,
   className,
+  ariaLabel = "Response mode",
+  compact = false,
+  disabled = false,
+  disabledModes = [],
+  disabledReason,
 }: {
   value: TeamMode;
-  onChange: (mode: TeamMode) => void;
+  onChange: (mode: TeamResponseMode) => void;
   className?: string;
+  ariaLabel?: string;
+  compact?: boolean;
+  disabled?: boolean;
+  disabledModes?: TeamResponseMode[];
+  disabledReason?: string;
 }) {
-  const { t } = useI18n();
-
-  const activeIndex = useMemo(
-    () => TEAM_MODES.findIndex((m) => m.key === value),
-    [value],
-  );
+  const teamModeMeta = useTeamModeMeta();
+  const normalizedValue = normalizeTeamResponseMode(value);
+  const disabledSet = useMemo(() => new Set(disabledModes), [disabledModes]);
+  const activeMeta = teamModeMeta[normalizedValue];
+  const ActiveIcon = activeMeta.icon;
 
   return (
-    <div className={cn("relative flex items-center rounded-full bg-muted/50 p-[3px] ring-1 ring-border/20", className)}>
-      <div
-        className="absolute top-[3px] bottom-[3px] rounded-full bg-background shadow-sm ring-1 ring-border/40 transition-all duration-300 ease-out"
-        style={{
-          left: `calc(${activeIndex} * (100% - 4px) / 2 + 2px)`,
-          width: `calc((100% - 4px) / 2)`,
-        }}
-      />
-      {TEAM_MODES.map((mode) => {
-        const Icon = mode.icon;
-        const active = value === mode.key;
-        const label = t.teamMode[mode.key];
-        return (
-          <button
-            key={mode.key}
-            type="button"
-            onClick={() => onChange(mode.key)}
-            className={cn(
-              "relative z-10 flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors duration-200",
-              active
-                ? mode.activeColor
-                : "text-muted-foreground/60 hover:text-muted-foreground",
-            )}
-          >
-            <Icon className={cn("size-3.5 transition-colors duration-200", active && mode.activeIconColor)} />
-            {label}
-          </button>
-        );
-      })}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={`${ariaLabel}: ${activeMeta.label}`}
+          title={`${ariaLabel}: ${activeMeta.label}`}
+          data-testid="team-mode-picker"
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center gap-1 rounded-md border border-transparent bg-transparent px-1.5 text-xs font-medium text-muted-foreground shadow-none transition-all duration-base hover:bg-muted/55 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35 disabled:cursor-not-allowed disabled:opacity-50",
+            compact ? "h-7" : "h-8",
+            className,
+          )}
+        >
+          <ActiveIcon className="size-3.5 shrink-0" />
+          <span>{activeMeta.label}</span>
+          <ChevronDownIcon className="size-3.5 shrink-0 opacity-70" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="center"
+        side="top"
+        sideOffset={8}
+        data-testid="team-mode-menu"
+        className="w-[min(19rem,calc(100vw-1rem))] rounded-lg border-border-default p-1.5 shadow-[var(--shadow-xs)]"
+      >
+        <DropdownMenuLabel className="px-2 py-1 text-xs font-medium text-muted-foreground">
+          {ariaLabel}
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          value={normalizedValue}
+          onValueChange={(nextValue) => onChange(nextValue as TeamResponseMode)}
+        >
+          {TEAM_RESPONSE_MODES.map((mode) => {
+            const meta = teamModeMeta[mode];
+            const Icon = meta.icon;
+            const modeDisabled = disabledSet.has(mode);
+            return (
+              <DropdownMenuRadioItem
+                key={mode}
+                value={mode}
+                disabled={modeDisabled}
+                data-testid={`team-mode-${mode}`}
+                className="items-start gap-2.5 rounded-lg py-2 pr-2 pl-8"
+              >
+                <Icon className="mt-0.5 size-4 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-medium text-foreground">
+                    {meta.label}
+                  </span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
+                    {modeDisabled && disabledReason
+                      ? disabledReason
+                      : meta.description}
+                  </span>
+                </span>
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -107,13 +214,10 @@ export function TeamModeDescription({
   mode: TeamMode;
   className?: string;
 }) {
-  const { t } = useI18n();
-  const descKey = `${mode}Description` as keyof typeof t.teamMode;
-  const desc = t.teamMode[descKey];
-
+  const teamModeMeta = useTeamModeMeta();
   return (
     <p className={cn("text-muted-foreground text-xs", className)}>
-      {desc}
+      {teamModeMeta[mode].description}
     </p>
   );
 }

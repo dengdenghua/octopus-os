@@ -1,0 +1,14 @@
+[Unit]
+Description=Require a healthy Echo OS graphical login before blessing this boot
+Documentation=file:/usr/lib/echo-os/image-contract
+Requires=sddm.service echo-agent-health.service
+After=sddm.service echo-agent-health.service
+Before=boot-complete.target
+ConditionCredential=!echo.os.ci-session
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/verify-login-boot.sh
+
+[Install]
+RequiredBy=boot-complete.target

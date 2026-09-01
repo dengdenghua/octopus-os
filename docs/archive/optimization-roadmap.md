@@ -1,4 +1,4 @@
-# Octopus Agent Optimization Roadmap
+# Echo Agent Optimization Roadmap
 
 Captured 2026-05-31. Written into the repo so the plan survives session
 boundaries — each item is sized to be picked up independently in a new

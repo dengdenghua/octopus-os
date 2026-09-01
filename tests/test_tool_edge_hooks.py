@@ -6,6 +6,7 @@ the config at it, then asserts the runner's outcome. End-to-end rather
 than mocked so the ``exit 0`` / JSON veto convention is verified on
 the actual wire.
 """
+
 from __future__ import annotations
 
 import json
@@ -190,18 +191,24 @@ class TestPreHookVeto:
                 )
             )
         )
-        assert runner.run_pre(
-            tool_name="exec_shell",
-            args_preview="ls -la",
-            thread_id="t",
-            workspace=tmp_path,
-        ).allow is True
-        assert runner.run_pre(
-            tool_name="exec_shell",
-            args_preview="rm -rf /",
-            thread_id="t",
-            workspace=tmp_path,
-        ).allow is False
+        assert (
+            runner.run_pre(
+                tool_name="exec_shell",
+                args_preview="ls -la",
+                thread_id="t",
+                workspace=tmp_path,
+            ).allow
+            is True
+        )
+        assert (
+            runner.run_pre(
+                tool_name="exec_shell",
+                args_preview="rm -rf /",
+                thread_id="t",
+                workspace=tmp_path,
+            ).allow
+            is False
+        )
 
 
 class TestPostHook:

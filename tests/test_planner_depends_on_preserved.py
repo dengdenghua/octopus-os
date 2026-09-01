@@ -20,6 +20,7 @@ Post-fix: ``depends_on`` survives validation (with light normalization
 · accept ints or ``"nN"``-style ids · drop stray types rather than
 crashing on slightly-off LLM output).
 """
+
 from __future__ import annotations
 
 import json
@@ -164,19 +165,18 @@ class TestPlanEndToEnd:
         }
         planner = _make_planner(reg, json.dumps(llm_plan))
 
-        graph = planner.plan(ParsedIntent(
-            raw="read two files and count words",
-            intent_type="command",
-            normalized_goal="read two files and count words",
-        ))
+        graph = planner.plan(
+            ParsedIntent(
+                raw="read two files and count words",
+                intent_type="command",
+                normalized_goal="read two files and count words",
+            )
+        )
 
         # Materialize edge pairs (source_index → dest_index)
         node_ids = [n.node_id for n in graph.nodes]
         assert node_ids == ["n0", "n1", "n2"]
-        edge_pairs = {
-            (node_ids.index(e.from_node), node_ids.index(e.to_node))
-            for e in graph.edges
-        }
+        edge_pairs = {(node_ids.index(e.from_node), node_ids.index(e.to_node)) for e in graph.edges}
         # Must include 0→2 AND 1→2; must NOT include 0→1 (linear
         # fallback signature).
         assert (0, 2) in edge_pairs

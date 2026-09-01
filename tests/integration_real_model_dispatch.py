@@ -7,6 +7,7 @@ directly. No backend or stack-builder needed.
 Run from project root:
     python tests/integration_real_model_dispatch.py
 """
+
 from __future__ import annotations
 
 import json
@@ -70,8 +71,9 @@ class _Stack:
 
 def main() -> int:
     custom = json.loads(
-        (Path(__file__).resolve().parents[1] / "data" / "custom_models.json")
-        .read_text(encoding="utf-8")
+        (Path(__file__).resolve().parents[1] / "data" / "custom_models.json").read_text(
+            encoding="utf-8"
+        )
     )
     if "mimo2.5" not in custom:
         print("FAIL: mimo2.5 not in data/custom_models.json")
@@ -108,7 +110,7 @@ def main() -> int:
         result = stop.value
     elapsed = time.monotonic() - started
 
-    print(f"\nwall-clock: {elapsed*1000:.0f} ms")
+    print(f"\nwall-clock: {elapsed * 1000:.0f} ms")
     if result is None:
         print("FAIL: react_loop returned None")
         for e in events[-5:]:

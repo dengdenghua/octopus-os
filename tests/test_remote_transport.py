@@ -10,7 +10,6 @@ from unittest.mock import patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.platform import feature_flags as ff
 from runtime.sensing.gateway.remote_backends_router import (
     create_remote_backends_router,
@@ -172,27 +171,21 @@ class _StubClient:
 
 def test_health_check_ok() -> None:
     backend = RemoteBackend(id="x", name="x", url="https://example.com")
-    status, detail = health_check(
-        backend, http_client=_StubClient(_StubResponse(200))
-    )
+    status, detail = health_check(backend, http_client=_StubClient(_StubResponse(200)))
     assert status == "ok"
     assert detail is None
 
 
 def test_health_check_non_2xx() -> None:
     backend = RemoteBackend(id="x", name="x", url="https://example.com")
-    status, detail = health_check(
-        backend, http_client=_StubClient(_StubResponse(503))
-    )
+    status, detail = health_check(backend, http_client=_StubClient(_StubResponse(503)))
     assert status == "error"
     assert "503" in (detail or "")
 
 
 def test_health_check_network_error() -> None:
     backend = RemoteBackend(id="x", name="x", url="https://example.com")
-    status, detail = health_check(
-        backend, http_client=_StubClient(ConnectionRefusedError("nope"))
-    )
+    status, detail = health_check(backend, http_client=_StubClient(ConnectionRefusedError("nope")))
     assert status == "error"
     assert "ConnectionRefusedError" in (detail or "")
 
@@ -252,7 +245,7 @@ def test_get_works_with_flag_off(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OCTOPUS_FF_UI_REMOTE_TRANSPORT", raising=False)
+    monkeypatch.delenv("ECHO_FF_UI_REMOTE_TRANSPORT", raising=False)
     ff.reload()
     r = client.get("/api/remote-backends")
     assert r.status_code == 200
@@ -264,7 +257,7 @@ def test_post_blocked_when_flag_off(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OCTOPUS_FF_UI_REMOTE_TRANSPORT", raising=False)
+    monkeypatch.delenv("ECHO_FF_UI_REMOTE_TRANSPORT", raising=False)
     ff.reload()
     r = client.post(
         "/api/remote-backends",
@@ -278,7 +271,7 @@ def test_post_then_get_with_flag_on(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_REMOTE_TRANSPORT", "1")
+    monkeypatch.setenv("ECHO_FF_UI_REMOTE_TRANSPORT", "1")
     ff.reload()
     r = client.post(
         "/api/remote-backends",
@@ -296,7 +289,7 @@ def test_post_validates_payload(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_REMOTE_TRANSPORT", "1")
+    monkeypatch.setenv("ECHO_FF_UI_REMOTE_TRANSPORT", "1")
     ff.reload()
     r = client.post("/api/remote-backends", json={"url": "https://x.com"})
     assert r.status_code == 400
@@ -310,7 +303,7 @@ def test_post_with_invalid_ssh_returns_400(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_REMOTE_TRANSPORT", "1")
+    monkeypatch.setenv("ECHO_FF_UI_REMOTE_TRANSPORT", "1")
     ff.reload()
     r = client.post(
         "/api/remote-backends",
@@ -327,7 +320,7 @@ def test_delete_known_backend(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_REMOTE_TRANSPORT", "1")
+    monkeypatch.setenv("ECHO_FF_UI_REMOTE_TRANSPORT", "1")
     ff.reload()
     bid = client.post(
         "/api/remote-backends",
@@ -343,7 +336,7 @@ def test_health_endpoint_records_status(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_REMOTE_TRANSPORT", "1")
+    monkeypatch.setenv("ECHO_FF_UI_REMOTE_TRANSPORT", "1")
     ff.reload()
     bid = client.post(
         "/api/remote-backends",
@@ -366,7 +359,7 @@ def test_proxy_endpoint_forwards(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_REMOTE_TRANSPORT", "1")
+    monkeypatch.setenv("ECHO_FF_UI_REMOTE_TRANSPORT", "1")
     ff.reload()
     bid = client.post(
         "/api/remote-backends",
@@ -389,7 +382,7 @@ def test_proxy_404_for_unknown_backend(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_UI_REMOTE_TRANSPORT", "1")
+    monkeypatch.setenv("ECHO_FF_UI_REMOTE_TRANSPORT", "1")
     ff.reload()
     r = client.post(
         "/api/remote-backends/missing/proxy",

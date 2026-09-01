@@ -1,0 +1,30 @@
+# Echo OS target C desktop session: Xorg -> KWin -> Echo Shell.
+[Unit]
+Description=Echo OS general desktop session (KWin + Echo Shell)
+Requires=echo-machine-identity-health.service echo-network-state-prepare.service echo-region-state-restore.service
+After=echo-machine-identity-health.service echo-network-state-prepare.service echo-region-state-restore.service systemd-user-sessions.service plymouth-quit-wait.service
+Conflicts=getty@tty7.service
+ConditionCredential=echo.os.ci-session
+
+[Service]
+Type=simple
+User=echo
+PAMName=login
+TTYPath=/dev/tty7
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty7
+UtmpMode=user
+Environment=ECHO_OS_DIR=/opt/echo-os
+Environment=ECHO_DESKTOP_READY_FILE=/run/echo-os/desktop-ready
+LoadCredential=echo.os.ci-session
+RuntimeDirectory=echo-os
+RuntimeDirectoryMode=0755
+ExecStart=/usr/bin/startx /opt/echo-os/deploy/desktop-session/echo-desktop-session.sh -- :0 vt7 -keeptty -nolisten tcp
+Restart=always
+RestartSec=2
+TimeoutStopSec=15
+
+[Install]
+WantedBy=graphical.target

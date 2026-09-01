@@ -103,7 +103,7 @@ client with the handler's reason; the planner never runs.
 * **JSON-defined hooks (shell-out variant).** A common
   alternative is to configure hooks via a JSON file shelling out
   to commands. We chose the Python-decorator path because
-  Octopus's audience is library users writing Python · not CLI
+  Echo's audience is library users writing Python · not CLI
   power-users who want shell commands. A JSON-driven adapter on
   top is a future possibility.
 

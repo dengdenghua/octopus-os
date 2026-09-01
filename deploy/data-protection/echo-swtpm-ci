@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# Create and operate one persistent swtpm identity for the Linux/QEMU gates.
+set -euo pipefail
+
+ACTION="${1:-}"
+STATE_INPUT="${2:-}"
+THIRD_INPUT="${3:-}"
+
+fail() {
+  echo "Echo OS swtpm harness: $*" >&2
+  exit 1
+}
+
+require_directory() {
+  local directory="$1"
+  local label="$2"
+  [[ -d "$directory" && ! -L "$directory" ]] || \
+    fail "$label must be a non-symlink directory: $directory"
+  [[ "$(stat -c '%u' "$directory")" == "$(id -u)" ]] || \
+    fail "$label must be owned by the invoking user"
+  local mode
+  mode="$(stat -c '%a' "$directory")"
+  (( (8#$mode & 8#077) == 0 )) || fail "$label must be private"
+}
+
+for command_name in \
+  chmod cmp find id kill mkdir mktemp realpath rm sleep stat swtpm swtpm_setup \
+  systemd-analyze \
+  tpm2_createprimary tpm2_evictcontrol tpm2_flushcontext tpm2_readpublic \
+  tpm2_startup tr; do
+  command -v "$command_name" >/dev/null 2>&1 || \
+    fail "required command is missing: $command_name"
+done
+
+start_swtpm() {
+  local state_directory="$1"
+  local runtime_directory="$2"
+  local control_socket="$runtime_directory/control.sock"
+  local pid_file="$runtime_directory/swtpm.pid"
+  local log_file="$runtime_directory/swtpm.log"
+  [[ ! -e "$control_socket" && ! -e "$pid_file" ]] || \
+    fail "swtpm runtime directory is not empty"
+  swtpm socket \
+    --tpm2 \
+    --tpmstate "dir=$state_directory,mode=0600" \
+    --ctrl "type=unixio,path=$control_socket,mode=0600" \
+    --pid "file=$pid_file" \
+    --log "file=$log_file,level=1" \
+    --daemon
+  for _attempt in {1..100}; do
+    [[ -S "$control_socket" && -s "$pid_file" ]] && break
+    sleep 0.05
+  done
+  [[ -S "$control_socket" && -s "$pid_file" ]] || \
+    fail "swtpm did not publish its control socket"
+  printf '%s\n' "$control_socket"
+}
+
+stop_swtpm() {
+  local runtime_directory="$1"
+  local pid_file="$runtime_directory/swtpm.pid"
+  [[ -f "$pid_file" && ! -L "$pid_file" ]] || return 0
+  local pid
+  pid="$(tr -d '[:space:]' <"$pid_file")"
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || fail "invalid swtpm pid file"
+  kill -TERM "$pid" >/dev/null 2>&1 || true
+  for _attempt in {1..100}; do
+    kill -0 "$pid" >/dev/null 2>&1 || return 0
+    sleep 0.05
+  done
+  fail "swtpm did not stop cleanly"
+}
+
+case "$ACTION" in
+  initialize)
+    [[ $# -eq 3 ]] || fail "usage: $0 initialize PRIVATE_STATE_DIR SRK_OUTPUT"
+    require_directory "$STATE_INPUT" "swtpm state directory"
+    STATE_DIR="$(realpath "$STATE_INPUT")"
+    SRK_OUTPUT="$THIRD_INPUT"
+    [[ ! -L "$SRK_OUTPUT" && ! -e "$SRK_OUTPUT" ]] || \
+      fail "SRK output must be a new non-symlink path"
+    [[ -z "$(find "$STATE_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]] || \
+      fail "swtpm state directory must be empty for initialization"
+    swtpm_setup \
+      --tpm2 \
+      --tpmstate "$STATE_DIR" \
+      --createek \
+      --lock-nvram \
+      --not-overwrite >/dev/null
+    RUNTIME_DIR="$(mktemp -d /run/echo-swtpm-init.XXXXXX)"
+    chmod 0700 "$RUNTIME_DIR"
+    cleanup_initialize() {
+      stop_swtpm "$RUNTIME_DIR" >/dev/null 2>&1 || true
+      rm -rf -- "$RUNTIME_DIR"
+    }
+    trap cleanup_initialize EXIT INT TERM
+    CONTROL_SOCKET="$(start_swtpm "$STATE_DIR" "$RUNTIME_DIR")"
+    TCTI="swtpm:path=$CONTROL_SOCKET"
+    tpm2_startup -T "$TCTI" -c
+    PRIMARY_CONTEXT="$RUNTIME_DIR/srk.ctx"
+    tpm2_createprimary \
+      -T "$TCTI" \
+      -C o \
+      -G rsa2048:aes128cfb \
+      -g sha256 \
+      -a 'restricted|decrypt|fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda' \
+      -c "$PRIMARY_CONTEXT" >/dev/null
+    tpm2_evictcontrol \
+      -T "$TCTI" \
+      -C o \
+      -c "$PRIMARY_CONTEXT" \
+      0x81000001 >/dev/null
+    TOOLS_SRK_OUTPUT="$RUNTIME_DIR/tpm2-tools-srk.public"
+    tpm2_readpublic \
+      -T "$TCTI" \
+      -c 0x81000001 \
+      -f tss \
+      -o "$TOOLS_SRK_OUTPUT" >/dev/null
+    SYSTEMD_TPM2_DEVICE="swtpm:path=$CONTROL_SOCKET" \
+      systemd-analyze srk >"$SRK_OUTPUT"
+    cmp "$TOOLS_SRK_OUTPUT" "$SRK_OUTPUT" || \
+      fail "systemd and tpm2-tools disagree about the persistent SRK"
+    tpm2_flushcontext -T "$TCTI" "$PRIMARY_CONTEXT"
+    chmod 0644 "$SRK_OUTPUT"
+    [[ -s "$SRK_OUTPUT" ]] || fail "swtpm SRK export is empty"
+    echo "ECHO_SWTPM_INITIALIZED state=$STATE_DIR srk=$SRK_OUTPUT"
+    ;;
+  start)
+    [[ $# -eq 3 ]] || fail "usage: $0 start PRIVATE_STATE_DIR PRIVATE_RUNTIME_DIR"
+    require_directory "$STATE_INPUT" "swtpm state directory"
+    require_directory "$THIRD_INPUT" "swtpm runtime directory"
+    start_swtpm "$(realpath "$STATE_INPUT")" "$(realpath "$THIRD_INPUT")"
+    ;;
+  stop)
+    [[ $# -eq 2 ]] || fail "usage: $0 stop PRIVATE_RUNTIME_DIR"
+    require_directory "$STATE_INPUT" "swtpm runtime directory"
+    stop_swtpm "$(realpath "$STATE_INPUT")"
+    ;;
+  *)
+    fail "usage: $0 {initialize STATE_DIR SRK_OUTPUT|start STATE_DIR RUNTIME_DIR|stop RUNTIME_DIR}"
+    ;;
+esac

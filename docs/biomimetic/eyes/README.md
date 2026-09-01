@@ -6,7 +6,7 @@
 显式输入感知：
 - 用户请求解析
 - 多模态输入（图像 / 文件）
-- **LLM Provider 适配**（`models/`，fork 自 octopus，10+ provider）
+- **LLM Provider 适配**（`models/`，fork 自 echo，10+ provider）
 
 ## 子目录
 ```

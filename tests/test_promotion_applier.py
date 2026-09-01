@@ -11,7 +11,7 @@ from runtime.safety.evolution.proposal_ledger import ProposalLedger
 
 def _review(task_id: str = "turn-1") -> dict:
     return {
-        "schema": "octopus.task_run_review.v1",
+        "schema": "echo.task_run_review.v1",
         "task_id": task_id,
         "thread_id": "thread-1",
         "turn_id": task_id,

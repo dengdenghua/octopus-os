@@ -1,0 +1,16 @@
+#!/usr/bin/env dash
+set -eu
+
+case "$1" in
+  remove)
+    deb-systemd-invoke stop echo-omv-bridge.service || true
+  ;;
+  upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+  ;;
+  *)
+    echo "prerm called with unknown argument '$1'" >&2
+    exit 1
+  ;;
+esac
+
+exit 0

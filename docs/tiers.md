@@ -28,9 +28,9 @@
 | `ganglia/` | 单 Ganglion，串行跑 | 低 |
 | `arms/` | 1 条 code_arm | 低 |
 | `suckers/` | 5–10 个手写 skill | 低 |
-| `beak/` | fork E:\octopus core | 零 |
+| `beak/` | fork E:\echo core | 零 |
 | `mantle/` | 只用 local/docker | 低 |
-| `eyes/` | fork octopus models，单 provider | 零 |
+| `eyes/` | fork echo models，单 provider | 零 |
 | `genome/` | checkpoint + journal | 低 |
 
 ### 🟡 Core 档（+5 个，3–9 月）
@@ -182,7 +182,7 @@ MVP 阶段的"锁"：一个白名单 + 人工 approve 的 PR 流程即可，不�
 ## 7. MVP 的 3 个月具体交付
 
 ### Month 1 · 骨架 & P0 fork
-- W1: 拷 E:\octopus 的 P0 模块（mcp/sandbox/graph/models/core/hooks）
+- W1: 拷 E:\echo 的 P0 模块（mcp/sandbox/graph/models/core/hooks）
 - W2: 改包名 + 剥 FastAPI 耦合
 - W3: pytest + 基础 CI + 14 条 MVP 不变量的 lint/assert 实现
 - W4: 烟测：手写一个 skill → 进 Mantle → Beak 执行

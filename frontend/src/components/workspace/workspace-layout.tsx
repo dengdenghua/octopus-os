@@ -42,21 +42,17 @@ export function WorkspaceLayout({
       {/* Implementation note. */}
       <header className="workspace-panel-subtle flex h-14 shrink-0 items-center justify-between px-4">
         {/* Implementation note. */}
-        <div className="flex items-center gap-3">
-          {workspaceIdentity}
-        </div>
-        
+        <div className="flex items-center gap-3">{workspaceIdentity}</div>
+
         {/* Implementation note. */}
         {modeSwitcher && (
-          <div className="absolute left-1/2 -translate-x-1/2 hidden md:block">
+          <div className="absolute left-1/2 -translate-x-1/2 hidden lg:block">
             {modeSwitcher}
           </div>
         )}
-        
+
         {/* Implementation note. */}
-        <div className="flex items-center gap-2">
-          {headerActions}
-        </div>
+        <div className="flex items-center gap-2">{headerActions}</div>
       </header>
 
       {/* Implementation note. */}
@@ -64,22 +60,22 @@ export function WorkspaceLayout({
         {/* Implementation note. */}
         <main className="relative flex min-h-0 flex-1 flex-col">
           {/* Implementation note. */}
-          <div className={cn(
-            "flex-1 overflow-y-auto",
-            isEmptyState && "flex items-center justify-center"
-          )}>
+          <div
+            className={cn(
+              "flex-1 overflow-y-auto",
+              isEmptyState && "flex items-center justify-center",
+            )}
+          >
             {mainContent}
           </div>
-          
+
           {/* Implementation note. */}
-          <div className="flex justify-center px-4 py-3">
-            {inputArea}
-          </div>
+          <div className="flex justify-center px-4 py-3">{inputArea}</div>
         </main>
 
         {/* Implementation note. */}
         {showRightPanel && rightPanel && (
-          <aside 
+          <aside
             className="workspace-panel-subtle ml-3 hidden min-h-0 shrink-0 flex-col overflow-hidden lg:flex"
             style={{ width: rightPanelWidth }}
           >

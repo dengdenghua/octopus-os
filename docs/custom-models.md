@@ -1,6 +1,6 @@
 # Custom Models · 接入任意 LLM 厂商
 
-Octopus 的 "自定义模型" 机制允许你在 UI 里直接接入 **任何 OpenAI-compat / Anthropic-native 协议** 的 LLM 服务，**零代码**。新接入的模型自动获得：
+Echo 的 "自定义模型" 机制允许你在 UI 里直接接入 **任何 OpenAI-compat / Anthropic-native 协议** 的 LLM 服务，**零代码**。新接入的模型自动获得：
 
 - 真流式（token-by-token）
 - 思考过程折叠（thinking-capable 模型）
@@ -226,7 +226,7 @@ Base URL  : https://openrouter.ai/api/v1
 Key 来源  : https://openrouter.ai/keys
 Extra Headers:
   HTTP-Referer: https://your-app.example
-  X-Title: Octopus
+  X-Title: Echo
 Tool use  : ✅（取决于选的模型）
 ```
 
@@ -237,7 +237,7 @@ Tool use  : ✅（取决于选的模型）
 1. **UI → 后端**：PUT `/api/config/custom-models/{id}` 写入 `base_url + api_key + model + provider`
 2. **后端 dispatch**：请求到达时，`ModelDispatchRouter` 按 model_id 找到对应的 provider router
 3. **协议翻译**（每个 router 内部）：
-   - Octopus 通用 `ToolSpec` / `ToolCall` / 块式消息
+   - Echo 通用 `ToolSpec` / `ToolCall` / 块式消息
    - → OpenAI shape: `tools=[{type:function, function:{...}}]`
    - → Anthropic shape: `tools=[{name, description, input_schema}]`
    - → Gemini shape: `tools=[{functionDeclarations:[...]}]`
@@ -245,9 +245,9 @@ Tool use  : ✅（取决于选的模型）
    - OpenAI/兼容：`choices[0].message.tool_calls[]`
    - Anthropic：`content[]` 里的 `tool_use` 块
    - Gemini：`candidates[0].content.parts[]` 里的 `functionCall`
-5. **统一成 `ModelResponse.tool_calls`** → Octopus 的 agentic loop 一视同仁
+5. **统一成 `ModelResponse.tool_calls`** → Echo 的 agentic loop 一视同仁
 
-**只要厂商支持 OpenAI 的 `tools` 字段（或 Anthropic / Gemini 的原生形），Octopus 就能无脑接入**。
+**只要厂商支持 OpenAI 的 `tools` 字段（或 Anthropic / Gemini 的原生形），Echo 就能无脑接入**。
 
 ---
 
@@ -264,7 +264,7 @@ Tool use  : ✅（取决于选的模型）
 
 **Q · "no current_actor set" 报错？**
 
-这是 Molili 默认路径需要登录态。用 custom model 后不经过 Molili，所以正常使用不会触发此错误。如果仍然报，说明 model_id 没命中 custom model 注册表，走到了 fallback Molili 路径 · 检查 model id 拼写。
+账户型 fallback router 需要登录态。用 custom model 时请求直接走注册表，所以正常使用不会触发此错误。如果仍然报，说明 model_id 没命中 custom model 注册表、落到了需要 actor 的 fallback 上 · 检查 model id 拼写。
 
 **Q · 响应里出现原始 `<thinking>` XML？**
 

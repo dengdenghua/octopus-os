@@ -17,6 +17,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { authHeaders, getToken } from "@/core/auth/api";
+import { openAuthenticatedWebSocket } from "@/core/auth/websocket";
+import { getBackendBaseURL, getBackendWebSocketBaseURL } from "@/core/config";
+
 // ── Types ──────────────────────────────────────────────
 
 export interface PcScreenStreamState {
@@ -27,7 +31,13 @@ export interface PcScreenStreamState {
 }
 
 export interface RemoteInputEvent {
-  action: "tap" | "double_tap" | "long_press" | "swipe" | "type_text" | "key_press";
+  action:
+    | "tap"
+    | "double_tap"
+    | "long_press"
+    | "swipe"
+    | "type_text"
+    | "key_press";
   x?: number;
   y?: number;
   x2?: number;
@@ -45,8 +55,7 @@ const FRAME_TYPE_WEBP = 0x03;
 // ── Helpers ────────────────────────────────────────────
 
 function buildPcWsUrl(): string {
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}/api/tentacle/pc-screen/stream`;
+  return `${getBackendWebSocketBaseURL()}/api/tentacle/pc-screen/stream`;
 }
 
 function parseFrameHeader(buf: ArrayBuffer): {
@@ -72,7 +81,11 @@ function parseFrameHeader(buf: ArrayBuffer): {
 
 export function usePcScreenStream(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
-): PcScreenStreamState & { sendInput: (event: RemoteInputEvent) => Promise<void> } {
+  options: { enabled?: boolean } = {},
+): PcScreenStreamState & {
+  sendInput: (event: RemoteInputEvent) => Promise<void>;
+} {
+  const enabled = options.enabled ?? true;
   const [isConnected, setIsConnected] = useState(false);
   const [frameCount, setFrameCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +95,14 @@ export function usePcScreenStream(
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const fpsFramesRef = useRef<number[]>([]);
+  const shouldReconnectRef = useRef(false);
+  // Raw per-frame counter, always accurate — the `frameCount`/`fps`
+  // STATE below is only a display readout, so it's throttled to ~1Hz
+  // (see handleMessage) rather than triggering a re-render on every
+  // incoming stream frame (up to 10x/sec by default).
+  const rawFrameCountRef = useRef(0);
+  const lastStatsFlushRef = useRef(0);
+  const STATS_FLUSH_INTERVAL_MS = 1000;
 
   // ── Render JPEG / WebP frame ────────────────────────
 
@@ -103,7 +124,10 @@ export function usePcScreenStream(
         if (canvas) {
           const ctx = canvas.getContext("2d");
           if (ctx) {
-            if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+            if (
+              canvas.width !== img.naturalWidth ||
+              canvas.height !== img.naturalHeight
+            ) {
               canvas.width = img.naturalWidth;
               canvas.height = img.naturalHeight;
             }
@@ -129,12 +153,25 @@ export function usePcScreenStream(
         renderImageFrame(payload, frameType);
       }
 
-      setFrameCount((c) => c + 1);
+      const isFirstFrame = rawFrameCountRef.current === 0;
+      rawFrameCountRef.current += 1;
 
       const now = performance.now();
       fpsFramesRef.current.push(now);
       fpsFramesRef.current = fpsFramesRef.current.filter((t) => now - t < 1000);
-      setFps(fpsFramesRef.current.length);
+
+      // Flush immediately on the very first frame — the UI gates a
+      // "waiting for signal" overlay on `frameCount === 0`, and
+      // throttling that transition would leave the overlay covering
+      // an already-rendered frame for up to a second.
+      if (
+        isFirstFrame ||
+        now - lastStatsFlushRef.current >= STATS_FLUSH_INTERVAL_MS
+      ) {
+        lastStatsFlushRef.current = now;
+        setFrameCount(rawFrameCountRef.current);
+        setFps(fpsFramesRef.current.length);
+      }
     },
     [renderImageFrame],
   );
@@ -143,11 +180,14 @@ export function usePcScreenStream(
 
   const sendInput = useCallback(async (event: RemoteInputEvent) => {
     try {
-      const res = await fetch("/api/tentacle/remote-input", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(event),
-      });
+      const res = await fetch(
+        `${getBackendBaseURL()}/api/tentacle/remote-input`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify(event),
+        },
+      );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         console.error("Remote input failed:", body.detail || res.statusText);
@@ -159,13 +199,48 @@ export function usePcScreenStream(
 
   // ── Connect / disconnect ────────────────────────────
 
-  const connect = useCallback(() => {
+  const disconnect = useCallback(() => {
+    shouldReconnectRef.current = false;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     if (wsRef.current) {
-      wsRef.current.close();
+      const ws = wsRef.current;
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
+      ws.onopen = null;
+      ws.close();
+      wsRef.current = null;
+    }
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+    fpsFramesRef.current = [];
+    rawFrameCountRef.current = 0;
+    lastStatsFlushRef.current = 0;
+    setIsConnected(false);
+    setFrameCount(0);
+    setFps(0);
+    setError(null);
+  }, []);
+
+  const connect = useCallback(() => {
+    if (!enabled) return;
+    shouldReconnectRef.current = true;
+    if (wsRef.current) {
+      const previous = wsRef.current;
+      previous.onclose = null;
+      previous.onerror = null;
+      previous.onmessage = null;
+      previous.onopen = null;
+      previous.close();
       wsRef.current = null;
     }
 
-    const ws = new WebSocket(buildPcWsUrl());
+    const ws = openAuthenticatedWebSocket(buildPcWsUrl(), getToken());
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
@@ -182,6 +257,7 @@ export function usePcScreenStream(
 
     ws.onclose = () => {
       setIsConnected(false);
+      if (!shouldReconnectRef.current) return;
       // Auto-reconnect after 3s
       reconnectTimerRef.current = setTimeout(() => {
         connect();
@@ -192,32 +268,19 @@ export function usePcScreenStream(
       setError("PC screen WebSocket connection error");
       ws.close();
     };
-  }, [handleMessage]);
+  }, [enabled, handleMessage]);
 
   // ── Lifecycle ───────────────────────────────────────
 
   useEffect(() => {
+    if (!enabled) {
+      disconnect();
+      return;
+    }
     connect();
 
-    return () => {
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      if (objectUrlRef.current) {
-        URL.revokeObjectURL(objectUrlRef.current);
-        objectUrlRef.current = null;
-      }
-      setIsConnected(false);
-      setFrameCount(0);
-      setFps(0);
-      setError(null);
-    };
-  }, [connect]);
+    return disconnect;
+  }, [connect, disconnect, enabled]);
 
   return { isConnected, frameCount, error, fps, sendInput };
 }

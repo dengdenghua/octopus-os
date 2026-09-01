@@ -46,25 +46,19 @@ class TestPaginateTurns:
     def test_cursor_pages_backwards(self):
         turns = _turns(10)
         first, _ = EventLog.paginate_turns(turns, limit=3)
-        older, has_more = EventLog.paginate_turns(
-            turns, limit=3, before_turn_id=first[0].id
-        )
+        older, has_more = EventLog.paginate_turns(turns, limit=3, before_turn_id=first[0].id)
         assert [t.id for t in older] == ["turn-4", "turn-5", "turn-6"]
         assert has_more is True
 
     def test_cursor_reaches_the_beginning(self):
         turns = _turns(4)
-        older, has_more = EventLog.paginate_turns(
-            turns, limit=10, before_turn_id="turn-2"
-        )
+        older, has_more = EventLog.paginate_turns(turns, limit=10, before_turn_id="turn-2")
         assert [t.id for t in older] == ["turn-0", "turn-1"]
         assert has_more is False
 
     def test_unknown_cursor_falls_back_to_full_list(self):
         turns = _turns(4)
-        window, has_more = EventLog.paginate_turns(
-            turns, limit=2, before_turn_id="nope"
-        )
+        window, has_more = EventLog.paginate_turns(turns, limit=2, before_turn_id="nope")
         assert [t.id for t in window] == ["turn-2", "turn-3"]
         assert has_more is True
 
@@ -97,9 +91,7 @@ class TestEchoResumePagination:
         class _Emitter:
             actor_id = None
 
-        out = asyncio.run(
-            rt.handle_request("thread/resume", {"threadId": "th-1"}, _Emitter())
-        )
+        out = asyncio.run(rt.handle_request("thread/resume", {"threadId": "th-1"}, _Emitter()))
         assert len(out["turns"]) == 5
         assert out["totalTurns"] == 5
         assert out["hasMore"] is False
@@ -116,9 +108,7 @@ class TestEchoResumePagination:
             actor_id = None
 
         first = asyncio.run(
-            rt.handle_request(
-                "thread/resume", {"threadId": "th-1", "limit": 2}, _Emitter()
-            )
+            rt.handle_request("thread/resume", {"threadId": "th-1", "limit": 2}, _Emitter())
         )
         assert [t["id"] for t in first["turns"]] == ["turn-5", "turn-6"]
         assert first["totalTurns"] == 7

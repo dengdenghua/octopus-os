@@ -2,12 +2,12 @@
 
 > **章鱼伸向桌面电脑的物理触手**（自指）
 
-Desktop Tentacle 是一个"**自指**"的触手——它把 **Octopus-agent Runtime
+Desktop Tentacle 是一个"**自指**"的触手——它把 **Echo Agent Runtime
 所在的那台机器本身** 包装为一根触手。
 
 这听起来奇怪，但其实很合理：
 
-- 在 Octopus-agent Runtime 部署的机器上，`desktop_operator_arm` 跑 pyautogui
+- 在 Echo Agent Runtime 部署的机器上，`desktop_operator_arm` 跑 pyautogui
   是 "进程内" 控制
 - 把它包成 Tentacle 后，**Cerebrum 可以用统一接口**（WebSocket + JSON-RPC）
   与之交互，与"远程手机触手"用同一套协议
@@ -17,7 +17,7 @@ Desktop Tentacle 是一个"**自指**"的触手——它把 **Octopus-agent Runt
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                Octopus-agent Runtime                 │
+│                Echo Agent Runtime                 │
 │   (Cerebrum + Ganglia + Arms + ...)                 │
 │                                                     │
 │   ┌─────────────┐       ┌─────────────┐            │
@@ -36,7 +36,7 @@ Desktop Tentacle 是一个"**自指**"的触手——它把 **Octopus-agent Runt
 │          ▼                     ▼                    │
 │   ┌─────────────┐       ┌─────────────┐            │
 │   │ 本地桌面    │       │ 小米 14    │            │
-│   │ (pyautogui) │       │ (Octopus Mobile)  │            │
+│   │ (pyautogui) │       │ (Echo Mobile)  │            │
 │   └─────────────┘       └─────────────┘            │
 └─────────────────────────────────────────────────────┘
 ```

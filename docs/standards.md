@@ -15,7 +15,7 @@
 ### 我们的对接
 | 方向 | 模块 | 状态 |
 |---|---|---|
-| **作为 Client** · 调外部 MCP server | `suckers/mcp/` | ✅ fork 自 E:\octopus |
+| **作为 Client** · 调外部 MCP server | `suckers/mcp/` | ✅ fork 自 E:\echo |
 | **作为 Server** · 暴露自己的技能给外部 | `siphon/mcp_server/` | ❌ 待实现 |
 
 ### Server 端暴露什么
@@ -51,7 +51,7 @@ Google 主推（2025 年发布）。面向"**agent 之间跨组织协作**"。�
 | **作为 A2A Agent** · 被其他 agent 调 | `siphon/a2a_server/` | ❌ 待实现 |
 | **调外部 A2A Agent** | `suckers/a2a_client/` | ❌ 待实现（可选）|
 
-E:\octopus 的 `backend/packages/harness/octopus/a2a/` 目录有现成实现，可 fork。
+E:\echo 的 `backend/packages/harness/echo/a2a/` 目录有现成实现，可 fork。
 
 ### 映射表
 
@@ -68,7 +68,7 @@ A2A 概念 ↔ 本系统：
 ### agent.json 示例
 ```json
 {
-  "name": "octopus-agent",
+  "name": "echo-agent",
   "description": "Biomimetic multi-agent system",
   "version": "1.0",
   "capabilities": {
@@ -164,11 +164,11 @@ span.set_attribute("gen_ai.response.finish_reasons", ["stop"])
 
 ### 本系统额外属性
 ```python
-span.set_attribute("octopus.arm_id", "code_arm")
-span.set_attribute("octopus.sucker_id", "run_pytest")
-span.set_attribute("octopus.recipe_id", "code_fix_light")
-span.set_attribute("octopus.genome_version", "v0042")
-span.set_attribute("octopus.cost_usd", 0.023)
+span.set_attribute("echo.arm_id", "code_arm")
+span.set_attribute("echo.sucker_id", "run_pytest")
+span.set_attribute("echo.recipe_id", "code_fix_light")
+span.set_attribute("echo.genome_version", "v0042")
+span.set_attribute("echo.cost_usd", 0.023)
 ```
 
 ### 三个工具选择
@@ -269,7 +269,7 @@ Core 阶段补：
 
 Full 阶段补：
 
-- **A2A**：两个 octopus-agent 实例互为 peer 协作
+- **A2A**：两个 echo-agent 实例互为 peer 协作
 
 ---
 

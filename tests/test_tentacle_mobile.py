@@ -1,11 +1,11 @@
-"""Octopus Mobile · Phase 0 概念验证测试.
+"""Echo Mobile · Phase 0 概念验证测试.
 
 验证：
 1. ``runtime/tentacle/`` 包可正常导入
 2. ``MobileDevice`` mock 模式可正常注册 / 心跳 / 执行
 3. ``TentaclePool`` 池化、按 affinity 选择、设备锁都工作
 4. ``mobile_operator_arm`` preset 可正常构造
-5. Octopus Mobile 30 个能力声明完整
+5. Echo Mobile 30 个能力声明完整
 
 完整测试覆盖待 Phase 1 补充。
 """
@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.execution.arms.presets import (
     make_desktop_operator_arm,
     make_mobile_browser_operator_arm,
@@ -37,7 +36,7 @@ from runtime.tentacle.mobile.apks.tool_bridge import (
     hello,
     tool_execute,
 )
-from runtime.tentacle.mobile.apks.version import OCTOPUS_MOBILE_VERSION, is_compatible
+from runtime.tentacle.mobile.apks.version import ECHO_MOBILE_VERSION, is_compatible
 from runtime.tentacle.mobile.mcp_server import TentacleMcpServer
 
 # ── 1. 包导入测试 ─────────────────────────────────────────
@@ -50,21 +49,43 @@ def test_tentacle_package_imports():
         TentacleStatus,
         TentacleType,
     )
+
     assert Tentacle is not None
     assert TentacleType.MOBILE.value == "mobile"
     assert TentacleStatus.ONLINE.value == "online"
 
 
 def test_android_capabilities_complete():
-    """30 个 Android 技能声明完整（与 Octopus Mobile BaseTool 一一对应）."""
+    """30 个 Android 技能声明完整（与 Echo Mobile BaseTool 一一对应）."""
     # 基础 5
-    basic = ["android.tap", "android.swipe", "android.input_text", "android.long_press", "android.system_key"]
+    basic = [
+        "android.tap",
+        "android.swipe",
+        "android.input_text",
+        "android.long_press",
+        "android.system_key",
+    ]
     # 感知 4
-    perception = ["android.get_screen_info", "android.take_screenshot", "android.find_node", "android.find_text"]
+    perception = [
+        "android.get_screen_info",
+        "android.take_screenshot",
+        "android.find_node",
+        "android.find_text",
+    ]
     # 管理 4
-    management = ["android.open_app", "android.install_app", "android.get_installed_apps", "android.wait"]
+    management = [
+        "android.open_app",
+        "android.install_app",
+        "android.get_installed_apps",
+        "android.wait",
+    ]
     # 复合 4
-    composite = ["android.scroll_to_find", "android.detect_dialog", "android.find_and_tap", "android.get_current_app"]
+    composite = [
+        "android.scroll_to_find",
+        "android.detect_dialog",
+        "android.find_and_tap",
+        "android.get_current_app",
+    ]
     # 控制 2
     control = ["android.finish", "android.fail"]
     # 文件 2
@@ -73,8 +94,12 @@ def test_android_capabilities_complete():
     clip = ["android.get_clipboard", "android.set_clipboard"]
     # 浏览器 7
     browser = [
-        "android.browser.navigate", "android.browser.get_dom", "android.browser.click",
-        "android.browser.type", "android.browser.screenshot", "android.browser.evaluate",
+        "android.browser.navigate",
+        "android.browser.get_dom",
+        "android.browser.click",
+        "android.browser.type",
+        "android.browser.screenshot",
+        "android.browser.evaluate",
         "android.browser.install_extension",
     ]
     expected = set(basic + perception + management + composite + control + files + clip + browser)
@@ -145,7 +170,12 @@ async def test_mobile_device_mock_execute():
     """Mock 工具执行返回成功."""
     device = MobileDevice("android-test-003")
     await device.connect()
-    call = ToolCall(call_id="tc-1", tentacle_id="android-test-003", tool="android.tap", args={"x": 100, "y": 200})
+    call = ToolCall(
+        call_id="tc-1",
+        tentacle_id="android-test-003",
+        tool="android.tap",
+        args={"x": 100, "y": 200},
+    )
     result = await device.execute(call)
     assert isinstance(result, ToolResult)
     assert result.success is True
@@ -271,9 +301,11 @@ async def test_desktop_device_connect():
 
 def test_mobile_operator_arm_preset():
     """mobile_operator_arm preset 构造正确."""
+
     # mock runtime
     class _MockRuntime:
         pass
+
     arm = make_mobile_operator_arm(_MockRuntime())  # type: ignore[arg-type]
     assert str(arm.arm_id) == "mobile_operator_arm"
     assert "mobile" in arm.affinity
@@ -287,8 +319,10 @@ def test_mobile_operator_arm_preset():
 
 def test_mobile_browser_operator_arm_preset():
     """mobile_browser_operator_arm preset 构造正确."""
+
     class _MockRuntime:
         pass
+
     arm = make_mobile_browser_operator_arm(_MockRuntime())  # type: ignore[arg-type]
     assert str(arm.arm_id) == "mobile_browser_operator_arm"
     assert "browser" in arm.affinity
@@ -299,12 +333,14 @@ def test_mobile_browser_operator_arm_preset():
 
 def test_desktop_operator_arm_unaffected():
     """desktop_operator_arm 完全不变（验证 add-only 假设）."""
+
     class _MockRuntime:
         pass
+
     arm = make_desktop_operator_arm(_MockRuntime())  # type: ignore[arg-type]
     assert str(arm.arm_id) == "desktop_operator_arm"
     assert "desktop" in arm.affinity
-    # 11 个 skills（与原值一致，未被 Octopus Mobile 改动）
+    # 11 个 skills（与原值一致，未被 Echo Mobile 改动）
     skill_ids = {str(s) for s in arm.allowed_skills}
     assert {
         "screen_capture",
@@ -391,7 +427,7 @@ def test_error_code_enum():
 
 
 def test_apks_version_compat():
-    """Octopus Mobile 版本兼容检查."""
+    """Echo Mobile 版本兼容检查."""
     assert is_compatible("0.0.1") is True
     assert is_compatible("0.1.0") is True
     assert is_compatible("1.0.0") is True
@@ -399,10 +435,10 @@ def test_apks_version_compat():
 
 
 def test_apks_version_metadata():
-    """Octopus Mobile 版本元数据完整."""
-    assert OCTOPUS_MOBILE_VERSION.protocol_version == "1.0"
-    assert OCTOPUS_MOBILE_VERSION.min_supported != ""
-    assert OCTOPUS_MOBILE_VERSION.recommended != ""
+    """Echo Mobile 版本元数据完整."""
+    assert ECHO_MOBILE_VERSION.protocol_version == "1.0"
+    assert ECHO_MOBILE_VERSION.min_supported != ""
+    assert ECHO_MOBILE_VERSION.recommended != ""
 
 
 # ── 8. 概念验证：add-only 假设 ─────────────────────────────
@@ -410,18 +446,29 @@ def test_apks_version_metadata():
 
 def test_concept_proof_desktop_unchanged():
     """核心验收：desktop_operator_arm 自身代码路径未变."""
+
     # 验证 make_desktop_operator_arm 仍返回完全相同的 11 个 skills
     class _MockRuntime:
         pass
+
     arm = make_desktop_operator_arm(_MockRuntime())  # type: ignore[arg-type]
     baseline_skills = {
-        "screen_capture", "screen_info", "mouse_click", "mouse_move",
-        "keyboard_type", "keyboard_press", "computer_observe",
-        "computer_plan_next", "computer_preview_action",
-        "computer_execute_token", "computer_use_loop",
+        "screen_capture",
+        "screen_info",
+        "mouse_click",
+        "mouse_move",
+        "keyboard_type",
+        "keyboard_press",
+        "computer_observe",
+        "computer_plan_next",
+        "computer_preview_action",
+        "computer_execute_token",
+        "computer_use_loop",
     }
     uia_skills = {
-        "computer_uia_status", "computer_uia_tree", "computer_uia_find",
+        "computer_uia_status",
+        "computer_uia_tree",
+        "computer_uia_find",
     }
     actual_skills = {str(s) for s in arm.allowed_skills}
     assert baseline_skills <= actual_skills
@@ -431,8 +478,10 @@ def test_concept_proof_desktop_unchanged():
 
 def test_concept_proof_mobile_and_desktop_coexist():
     """概念验证：mobile_operator_arm 和 desktop_operator_arm 可同时构造."""
+
     class _MockRuntime:
         pass
+
     desktop = make_desktop_operator_arm(_MockRuntime())  # type: ignore[arg-type]
     mobile = make_mobile_operator_arm(_MockRuntime())  # type: ignore[arg-type]
     mobile_browser = make_mobile_browser_operator_arm(_MockRuntime())  # type: ignore[arg-type]

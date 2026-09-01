@@ -46,7 +46,7 @@
 | 职责 | 落在章鱼哪个器官/协议 |
 |---|---|
 | 目标分解为 TaskNode 树 | `cerebrum/` Planner |
-| 状态机驱动（pending/running/blocked/done）| `ganglia/` LocalRuntime |
+| 状态机驱动（pending/running/blocked/done）| `ganglia/` LocalRuntime（未实装）|
 | Checkpoint + 断点续跑 | `genome/checkpoint/` |
 | JSONL trajectory 落盘 | `genome/journal/` |
 | 卡住探测 | `ink/` CircuitBreaker 的 `zero_gain_steps`（BDG-I5 附近）|
@@ -174,7 +174,7 @@
 | 器官 | 归入模块 |
 |---|---|
 | `cerebrum/` | 1 长任务 |
-| `ganglia/` | 1 长任务 |
+| `ganglia/` | 1 长任务（未实装）|
 | `nerves/graph/` | 2 工作流 |
 | `suckers/` | 3 技能 |
 | `genome/knowledge/` | 4 KG |
@@ -275,10 +275,10 @@
 
 ## 6. 推荐的目录重构
 
-当前 `F:\octopus-agent\` 按章鱼解剖分目录。如果要**按六模块重组**（产品视角），可以**加一层 views/**：
+当前 `F:\echo-agent\` 按章鱼解剖分目录。如果要**按六模块重组**（产品视角），可以**加一层 views/**：
 
 ```
-F:\octopus-agent\
+F:\echo-agent\
 ├── 章鱼解剖视图（当前实体目录）
 │   ├── cerebrum/ ganglia/ arms/ suckers/ ...
 │

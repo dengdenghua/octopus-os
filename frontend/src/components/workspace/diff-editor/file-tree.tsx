@@ -21,11 +21,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/core/i18n/hooks";
 
 import type { FileDiff, SortMode } from "./utils";
-import {
-  getFileName,
-  groupFilesByDirectory,
-  sortFiles,
-} from "./utils";
+import { getFileName, groupFilesByDirectory, sortFiles } from "./utils";
 
 // ---------------------------------------------------------------------------
 // Status badge / icon helpers
@@ -34,20 +30,20 @@ import {
 const STATUS_CONFIG = {
   added: {
     icon: FilePlusIcon,
-    color: "text-green-500",
-    bg: "bg-green-500/10",
+    color: "text-success",
+    bg: "bg-success/10",
     label: "A",
   },
   modified: {
     icon: FileEditIcon,
-    color: "text-yellow-500",
-    bg: "bg-yellow-500/10",
+    color: "text-warning",
+    bg: "bg-warning/10",
     label: "M",
   },
   deleted: {
     icon: FileMinusIcon,
-    color: "text-red-500",
-    bg: "bg-red-500/10",
+    color: "text-destructive",
+    bg: "bg-destructive/10",
     label: "D",
   },
 } as const;
@@ -57,10 +53,10 @@ function AcceptedBadge({ accepted }: { accepted: boolean | null }) {
   return (
     <span
       className={cn(
-        "ml-auto shrink-0 rounded px-1 py-px text-[9px] font-semibold uppercase leading-tight",
+        "ml-auto shrink-0 rounded px-1 py-px text-xs font-semibold uppercase leading-tight",
         accepted
-          ? "bg-green-500/15 text-green-600 dark:text-green-400"
-          : "bg-red-500/15 text-red-600 dark:text-red-400",
+          ? "bg-success/15 text-success"
+          : "bg-destructive/15 text-destructive",
       )}
     >
       {accepted ? "ok" : "rej"}
@@ -146,13 +142,13 @@ export function DiffFileTree({
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {t.diffEditor.changedFiles}
           </span>
-          <span className="flex items-center gap-1 rounded-lg bg-muted/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <span className="flex items-center gap-1 rounded-lg bg-muted/70 px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
             {files.length}
           </span>
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-          <span className="text-green-500">+{totalAdditions}</span>
-          <span className="text-red-500">-{totalDeletions}</span>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="text-success">+{totalAdditions}</span>
+          <span className="text-destructive">-{totalDeletions}</span>
         </div>
       </div>
 
@@ -174,7 +170,7 @@ export function DiffFileTree({
           title={sortLabel}
         >
           <ArrowUpDownIcon className="size-3" />
-          <span className="text-[9px] uppercase">{sortLabel}</span>
+          <span className="text-xs uppercase">{sortLabel}</span>
         </button>
       </div>
 
@@ -201,11 +197,11 @@ export function DiffFileTree({
                   ) : (
                     <ChevronDownIcon className="size-3 shrink-0" />
                   )}
-                  <FolderIcon className="size-3 shrink-0 text-amber-400" />
-                  <span className="truncate font-mono text-[10px]">
+                  <FolderIcon className="size-3 shrink-0 text-warning" />
+                  <span className="truncate font-mono text-xs">
                     {group.directory}
                   </span>
-                  <span className="ml-auto shrink-0 text-[10px]">
+                  <span className="ml-auto shrink-0 text-xs">
                     {group.files.length}
                   </span>
                 </button>
@@ -238,14 +234,14 @@ export function DiffFileTree({
 
                       <AcceptedBadge accepted={file.accepted} />
 
-                      <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px]">
+                      <span className="ml-auto flex shrink-0 items-center gap-1 text-xs">
                         {file.additions > 0 && (
-                          <span className="text-green-500">
+                          <span className="text-success">
                             +{file.additions}
                           </span>
                         )}
                         {file.deletions > 0 && (
-                          <span className="text-red-500">
+                          <span className="text-destructive">
                             -{file.deletions}
                           </span>
                         )}

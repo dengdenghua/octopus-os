@@ -6,7 +6,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  id-token: write
+  attestations: write
 
 concurrency:
   group: win-build-${{ github.ref }}
@@ -15,95 +17,678 @@ concurrency:
 jobs:
   build-win:
     name: Build Windows EXE
-    runs-on: windows-latest
+    runs-on: windows-2025
+    # Production signing credentials live only in this protected environment.
+    # Configure required reviewers in GitHub; a missing secret fails before build work.
+    environment: windows-code-signing
     env:
       NODE_OPTIONS: --max-old-space-size=8192
-      OCTOPUS_SOURCEMAP: "0"
+      ECHO_SOURCEMAP: "0"
+      ECHO_WINDOWS_TIMESTAMP_URL: http://timestamp.digicert.com
+      UV_PYTHON_DOWNLOADS: never
       CI: "true"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: pnpm/action-setup@v4
+      - name: Validate protected Windows signing identity
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CSC_LINK)) {
+            throw "Protected secret WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 is required"
+          }
+          if ([string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) {
+            throw "Protected secret WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD is required"
+          }
+
+          try {
+            $certificateBytes = [Convert]::FromBase64String(($env:CSC_LINK -replace '\s', ''))
+            $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+            $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+              $certificateBytes,
+              $env:CSC_KEY_PASSWORD,
+              $flags
+            )
+          } catch {
+            throw "Windows signing certificate is not a password-protected base64 PKCS#12 bundle: $($_.Exception.Message)"
+          }
+
+          try {
+            if (-not $certificate.HasPrivateKey) {
+              throw "Windows signing certificate does not contain a private key"
+            }
+            $codeSigningOid = "1.3.6.1.5.5.7.3.3"
+            $hasCodeSigningEku = $false
+            foreach ($extension in $certificate.Extensions) {
+              if ($extension -is [Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]) {
+                foreach ($usage in $extension.EnhancedKeyUsages) {
+                  if ($usage.Value -eq $codeSigningOid) {
+                    $hasCodeSigningEku = $true
+                  }
+                }
+              }
+            }
+            if (-not $hasCodeSigningEku) {
+              throw "Windows signing certificate is missing the Code Signing EKU"
+            }
+            $now = (Get-Date).ToUniversalTime()
+            if ($certificate.NotBefore.ToUniversalTime() -gt $now -or $certificate.NotAfter.ToUniversalTime() -le $now) {
+              throw "Windows signing certificate is not currently valid"
+            }
+            $publisherBytes = [Text.Encoding]::UTF8.GetBytes($certificate.Subject)
+            "ECHO_WINDOWS_SIGNER_THUMBPRINT=$($certificate.Thumbprint)" | Out-File `
+              -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            "ECHO_WINDOWS_SIGNER_SUBJECT_BASE64=$([Convert]::ToBase64String($publisherBytes))" | Out-File `
+              -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } finally {
+            if ($null -ne $certificate) { $certificate.Dispose() }
+          }
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10.26.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "20"
+          node-version: "22.23.2"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.11"
-          cache: pip
+          python-version: "3.11.9"
 
-      - name: Upgrade Python build tooling
-        run: python -m pip install --upgrade pip setuptools wheel
+      - name: Setup pinned uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.25"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
-      - name: Install Python dependencies
-        run: python -m pip install -e ".[dev,web,serve]" pyinstaller
+      - name: Sync locked desktop build dependencies
+        run: >-
+          uv sync --locked --python 3.11.9
+          --extra desktop-core
+          --extra desktop-build
 
-      - name: Install NSIS
-        run: |
-          choco install nsis -y
+      - name: Configure trusted first-party plugin publisher
+        shell: pwsh
+        env:
+          ECHO_PLUGIN_SIGNING_PUBLIC_KEY: ${{ vars.ECHO_PLUGIN_SIGNING_PUBLIC_KEY }}
+          ECHO_PLUGIN_SIGNING_PUBLISHER_ID: ${{ vars.ECHO_PLUGIN_SIGNING_PUBLISHER_ID }}
+          ECHO_PLUGIN_SIGNING_KEY_ID: ${{ vars.ECHO_PLUGIN_SIGNING_KEY_ID }}
+        run: ./.venv/Scripts/python.exe scripts/configure_builtin_plugin_publisher.py
 
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
-      - name: Install desktop dependencies
-        working-directory: extras/desktop
-        run: pnpm install --frozen-lockfile
+      - name: Prepare pinned Codex Windows runtime
+        working-directory: frontend
+        run: pnpm codex:prepare:win
+
+      - name: Verify pinned Codex before packaging
+        shell: pwsh
+        run: |
+          $codexRoot = Join-Path $PWD "extras/desktop/build/codex"
+          $codex = Join-Path $codexRoot "bin/codex.exe"
+          $manifestPath = Join-Path $codexRoot "echo-codex-bundle.json"
+          if (-not (Test-Path -LiteralPath $codex -PathType Leaf)) {
+            throw "Pinned Codex executable is missing: $codex"
+          }
+          if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+            throw "Pinned Codex bundle manifest is missing: $manifestPath"
+          }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          if ($manifest.schema -ne "echo.codex_bundle.v1" -or
+              $manifest.package -ne "@openai/codex" -or
+              $manifest.version -ne "0.149.0" -or
+              $manifest.platformPackageIntegrity -ne "sha512-qKbwSOOO/fdhQ5MlXE2fts6taPxRPZ/zqeC+eqHD72hLRymV9rFCUbUxOCquognUPRPvS/2/kRCV0UVhoDd3yQ==" -or
+              $manifest.target -ne "x86_64-pc-windows-msvc" -or
+              $manifest.fileHashPhase -ne "pre-authenticode") {
+            throw "Pinned Codex bundle manifest is invalid"
+          }
+          if ($manifest.licenses.codex.version -ne "0.149.0" -or
+              $manifest.licenses.codex.sourceTag -ne "rust-v0.149.0" -or
+              $manifest.licenses.codex.sourceCommit -ne "758ef40f50c1a458425c7cfbf1eb12cbc07af0b0" -or
+              $manifest.licenses.codex.cargoLockSha256 -ne "0c32858e9c47d0acf82735c8620c96840a5381152eec63acad15d1acadb9edad" -or
+              $manifest.licenses.codex.cargoAboutVersion -ne "0.9.2" -or
+              $manifest.licenses.native.schemaVersion -ne "codex-native-notices.v1" -or
+              $manifest.licenses.native.provenanceSha256 -ne "65e2c0c7f7b239ee758133ce17cfb680bc38aec84876ca81015458c41a988c7a" -or
+              $manifest.licenses.native.noticeSha256 -ne "da7997facd0e36f4ebca01594c60abdc1204f5421a35d28c4760b13addf247c5" -or
+              $manifest.licenses.native.componentCount -ne 12 -or
+              $manifest.licenses.native.licenseInputCount -ne 80 -or
+              $manifest.licenses.ratatui.version -ne "0.30.2" -or
+              $manifest.licenses.ratatui.crateSha256 -ne "3274ba0a2c5e1bcad2a2005d20f4dc59dad26b2eb0940fb094500dba4099d57d" -or
+              $manifest.licenses.ripgrep.version -ne "15.2.0" -or
+              $manifest.licenses.ripgrep.sourceTag -ne "15.2.0" -or
+              $manifest.licenses.ripgrep.sourceCommit -ne "e89fff89ac9af12e8d4ce9d5fd07beb408ca730f" -or
+              $manifest.licenses.ripgrep.cargoLockSha256 -ne "7a7d39cda8a03930e578f1dbb724e055771901842eca239e03b01e19da946a64" -or
+              $manifest.licenses.ripgrep.cargoAboutVersion -ne "0.9.2" -or
+              $manifest.licenses.ripgrep.releaseFeatures.Count -ne 1 -or
+              $manifest.licenses.ripgrep.releaseFeatures[0] -ne "pcre2" -or
+              $manifest.licenses.ripgrep.windowsExecutableSha256 -ne "14231169855ec5205cf5a1b6f1db358ff4aed4247c86b69ce8aae647c77f6680" -or
+              $manifest.licenses.ripgrep.windowsArchiveSha256 -ne "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5") {
+            throw "Pinned Codex third-party source manifest is invalid"
+          }
+
+          $requiredCodexFiles = @(
+            "bin/codex.exe",
+            "bin/codex-code-mode-host.exe",
+            "codex-resources/codex-command-runner.exe",
+            "codex-resources/codex-windows-sandbox-setup.exe",
+            "codex-path/rg.exe",
+            "codex-package.json",
+            "LICENSE",
+            "NOTICE",
+            "third-party/codex-rust/THIRD_PARTY_LICENSES-codex-cli.html",
+            "third-party/codex-rust/THIRD_PARTY_LICENSES-code-mode-host.html",
+            "third-party/codex-rust/THIRD_PARTY_LICENSES-windows-sandbox.html",
+            "third-party/codex-rust/README.md",
+            "third-party/codex-native/NATIVE_PROVENANCE.json",
+            "third-party/codex-native/NATIVE_THIRD_PARTY_NOTICES.md",
+            "third-party/ratatui/LICENSE",
+            "third-party/ripgrep/COPYING",
+            "third-party/ripgrep/THIRD_PARTY_LICENSES.html",
+            "third-party/ripgrep/THIRD_PARTY_LICENSES.md",
+            "third-party/ripgrep/LICENSE-MIT",
+            "third-party/ripgrep/UNLICENSE"
+          )
+          foreach ($relative in $requiredCodexFiles) {
+            $file = Join-Path $codexRoot $relative
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Pinned Codex bundle file is missing: $relative"
+            }
+            $manifestProperty = $manifest.files.PSObject.Properties[$relative]
+            $actualHash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($null -eq $manifestProperty -or $manifestProperty.Value -ne $actualHash) {
+              throw "Pinned Codex bundle file does not match its source manifest: $relative"
+            }
+          }
+
+          $expectedCodexExecutables = @(
+            "bin/codex.exe",
+            "bin/codex-code-mode-host.exe",
+            "codex-path/rg.exe",
+            "codex-resources/codex-command-runner.exe",
+            "codex-resources/codex-windows-sandbox-setup.exe"
+          ) | Sort-Object
+          $actualCodexExecutables = @(
+            Get-ChildItem -LiteralPath $codexRoot -Recurse -File -Filter "*.exe" |
+              ForEach-Object { $_.FullName.Substring($codexRoot.Length + 1).Replace("\", "/") } |
+              Sort-Object
+          )
+          if (@(Compare-Object $expectedCodexExecutables $actualCodexExecutables).Count -ne 0) {
+            throw "Pinned Codex package executable inventory changed"
+          }
+          & $codex app-server --help
+          if ($LASTEXITCODE -ne 0) {
+            throw "Pinned Codex App Server failed its pre-packaging startup check"
+          }
 
       - name: Typecheck frontend
         working-directory: frontend
         run: pnpm typecheck
 
-      - name: Generate desktop icons
-        working-directory: extras/desktop
-        run: pnpm icons:generate
-
-      - name: Prepare desktop agents
-        working-directory: extras/desktop
-        run: pnpm desktop:agents
-
       - name: Build backend (PyInstaller)
         working-directory: extras/desktop
+        env:
+          PYTHON_EXE: ${{ github.workspace }}\.venv\Scripts\python.exe
         run: pnpm backend:build:win
+
+      - name: Verify PyInstaller backend before packaging
+        shell: pwsh
+        run: |
+          $backend = Join-Path $PWD "extras/desktop/build/backend/echo-backend.exe"
+          if (-not (Test-Path -LiteralPath $backend -PathType Leaf)) {
+            throw "PyInstaller backend is missing: $backend"
+          }
+          & $backend --help
+          if ($LASTEXITCODE -ne 0) {
+            throw "PyInstaller backend failed its pre-packaging startup check"
+          }
+
+      - name: Sync locked desktop test dependencies
+        run: >-
+          uv sync --locked --python 3.11.9
+          --extra dev
+          --extra desktop-core
+          --extra desktop-build
+
+      - name: Verify desktop first-launch and packaging contracts
+        run: >-
+          ./.venv/Scripts/python.exe -m pytest
+          tests/test_desktop_config_packaging.py
+          tests/test_desktop_core_sync.py
+          -q
 
       - name: Build frontend
         working-directory: frontend
         run: pnpm build
 
-      - name: Build Electron EXE
-        working-directory: extras/desktop
+      - name: Build canonical Electron EXE
+        working-directory: frontend
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm exec electron-builder --win --publish never
+          # electron-builder consumes these only for this signing step. They are
+          # deliberately not job-wide, so setup and dependency actions cannot read them.
+          CSC_LINK: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CODE_SIGNING_CERTIFICATE_PASSWORD }}
+        run: pnpm electron:build:win
+
+      - name: Verify connector marketplace stays on demand
+        shell: pwsh
+        run: |
+          $connectorRoot = Join-Path $PWD "frontend/release/win-unpacked/resources/extensions/workbuddy-connectors"
+          if (Test-Path -LiteralPath $connectorRoot) {
+            throw "Desktop package must not embed the WorkBuddy marketplace snapshot"
+          }
+
+      - name: Verify packaged backend and Codex are present and runnable
+        shell: pwsh
+        run: |
+          $backend = Join-Path $PWD "frontend/release/win-unpacked/resources/backend/echo-backend.exe"
+          $codexRoot = Join-Path $PWD "frontend/release/win-unpacked/resources/codex"
+          $codex = Join-Path $codexRoot "bin/codex.exe"
+          $codexManifestPath = Join-Path $codexRoot "echo-codex-bundle.json"
+          if (-not (Test-Path -LiteralPath $backend -PathType Leaf)) {
+            throw "Packaged backend is missing: $backend"
+          }
+          if (-not (Test-Path -LiteralPath $codex -PathType Leaf)) {
+            throw "Packaged Codex is missing: $codex"
+          }
+          if (-not (Test-Path -LiteralPath $codexManifestPath -PathType Leaf)) {
+            throw "Packaged Codex manifest is missing: $codexManifestPath"
+          }
+          $codexManifest = Get-Content -LiteralPath $codexManifestPath -Raw | ConvertFrom-Json
+          if ($codexManifest.licenses.native.schemaVersion -ne "codex-native-notices.v1" -or
+              $codexManifest.licenses.native.provenanceSha256 -ne "65e2c0c7f7b239ee758133ce17cfb680bc38aec84876ca81015458c41a988c7a" -or
+              $codexManifest.licenses.native.noticeSha256 -ne "da7997facd0e36f4ebca01594c60abdc1204f5421a35d28c4760b13addf247c5" -or
+              $codexManifest.licenses.native.componentCount -ne 12 -or
+              $codexManifest.licenses.native.licenseInputCount -ne 80) {
+            throw "Packaged Codex native provenance manifest is invalid"
+          }
+          $packagedLicenseFiles = @(
+            "LICENSE",
+            "NOTICE",
+            "third-party/codex-rust/THIRD_PARTY_LICENSES-codex-cli.html",
+            "third-party/codex-rust/THIRD_PARTY_LICENSES-code-mode-host.html",
+            "third-party/codex-rust/THIRD_PARTY_LICENSES-windows-sandbox.html",
+            "third-party/codex-rust/README.md",
+            "third-party/codex-native/NATIVE_PROVENANCE.json",
+            "third-party/codex-native/NATIVE_THIRD_PARTY_NOTICES.md",
+            "third-party/ratatui/LICENSE",
+            "third-party/ripgrep/COPYING",
+            "third-party/ripgrep/THIRD_PARTY_LICENSES.html",
+            "third-party/ripgrep/THIRD_PARTY_LICENSES.md",
+            "third-party/ripgrep/LICENSE-MIT",
+            "third-party/ripgrep/UNLICENSE"
+          )
+          foreach ($relative in $packagedLicenseFiles) {
+            $file = Join-Path $codexRoot $relative
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Packaged Codex license file is missing: $relative"
+            }
+            $manifestProperty = $codexManifest.files.PSObject.Properties[$relative]
+            $actualHash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($null -eq $manifestProperty -or $manifestProperty.Value -ne $actualHash) {
+              throw "Packaged Codex license hash changed: $relative"
+            }
+          }
+          & $codex app-server --help
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged Codex App Server failed its startup check"
+          }
+
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "echo-packaged-backend-smoke"
+          $config = Join-Path $smokeRoot "config.yaml"
+          $mutableResources = Join-Path $smokeRoot "resources"
+          $packagedResources = Join-Path $PWD "frontend/release/win-unpacked/resources"
+          New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+          node -e 'const m=require(process.argv[1]);m.ensureDesktopConfigFile({bundledPath:process.argv[2],targetPath:process.argv[3]});m.ensureDesktopResources({bundledRoot:process.argv[4],targetRoot:process.argv[5]});' `
+            (Join-Path $PWD "frontend/electron/desktop-config.cjs") `
+            (Join-Path $packagedResources "config.desktop.yaml") `
+            $config $packagedResources $mutableResources
+          if ($LASTEXITCODE -ne 0) {
+            throw "Desktop first-launch materialization failed"
+          }
+          Add-Content -LiteralPath $config -Value @(
+            '  users:',
+            '    release-smoke: "bcrypt:$2b$04$KWFHX0cmIsgqSTQ23AnuouwO21q.Yz8ZP017wkIhGLfDU6Yg4ruoW"'
+          )
+
+          $env:ECHO_DESKTOP = "1"
+          $env:ECHO_DATA_DIR = Join-Path $smokeRoot "data"
+          $env:ECHO_RESOURCES_DIR = $mutableResources
+          $env:ECHO_CODEX_EXECUTABLE = $codex
+          $stdout = Join-Path $smokeRoot "backend.stdout.log"
+          $stderr = Join-Path $smokeRoot "backend.stderr.log"
+          $port = 18765
+          $backendProcess = Start-Process -FilePath $backend `
+            -ArgumentList @("serve", "--config", $config, "--host", "127.0.0.1", "--port", "$port") `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
+            -NoNewWindow -PassThru
+          $ready = $false
+          try {
+            $deadline = (Get-Date).AddSeconds(90)
+            while ((Get-Date) -lt $deadline -and -not $backendProcess.HasExited) {
+              try {
+                $response = Invoke-WebRequest "http://127.0.0.1:$port/readyz" `
+                  -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200) {
+                  $ready = $true
+                  break
+                }
+              } catch {
+                # The fixed backend is still starting; retry until the deadline.
+              }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $ready) {
+              if (Test-Path $stdout) { Get-Content $stdout -Tail 200 }
+              if (Test-Path $stderr) { Get-Content $stderr -Tail 200 }
+              throw "Packaged backend did not reach /readyz"
+            }
+            $localAuth = Invoke-RestMethod "http://127.0.0.1:$port/api/auth/local/login" `
+              -Method Post -ContentType "application/json" `
+              -Body '{"username":"release-smoke","password":"release-smoke-password"}' -TimeoutSec 5
+            if (-not $localAuth.access_token) {
+              throw "Packaged local authentication did not return an access token"
+            }
+            $authHeaders = @{ Authorization = "Bearer $($localAuth.access_token)" }
+            $clipStudio = Invoke-RestMethod `
+              "http://127.0.0.1:$port/api/plugins/clip-studio/health" `
+              -Headers $authHeaders -TimeoutSec 5
+            if ($clipStudio.ok -ne $true -or $clipStudio.plugin -ne "clip_studio") {
+              throw "Packaged Clip Studio runtime failed its health check"
+            }
+          } finally {
+            if (-not $backendProcess.HasExited) {
+              Stop-Process -Id $backendProcess.Id -Force
+              Wait-Process -Id $backendProcess.Id -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: Exercise packaged Electron first launch
+        shell: pwsh
+        run: |
+          $app = Join-Path $PWD "frontend/release/win-unpacked/Echo.exe"
+          if (-not (Test-Path -LiteralPath $app -PathType Leaf)) {
+            throw "Packaged Electron executable is missing: $app"
+          }
+          $resources = Join-Path $PWD "frontend/release/win-unpacked/resources"
+          $updateConfig = Join-Path $resources "app-update.yml"
+          $entries = @{}
+          foreach ($line in Get-Content -LiteralPath $updateConfig) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $parts = $line.Split(':', 2)
+            if ($parts.Count -ne 2 -or $entries.ContainsKey($parts[0].Trim())) {
+              throw "Packaged updater channel is malformed"
+            }
+            $entries[$parts[0].Trim()] = $parts[1].Trim()
+          }
+          if ($entries.Count -ne 4 -or $entries.owner -ne "dengdenghua" -or
+              $entries.repo -ne "echo-os" -or $entries.provider -ne "github" -or
+              $entries.updaterCacheDirName -ne "echo-frontend-updater") {
+            throw "Packaged updater channel differs from the release channel"
+          }
+          $updaterRoot = Join-Path $resources "app.asar/node_modules/electron-updater"
+          $updaterProbe = 'const fs=require("fs"),p=require("path"),r=process.argv[1],v=JSON.parse(fs.readFileSync(p.join(r,"package.json"),"utf8")).version;if(v!=="6.8.9"||!fs.statSync(p.join(r,"out/main.js")).isFile())process.exit(2)'
+          $env:ELECTRON_RUN_AS_NODE = "1"
+          try {
+            & $app -e $updaterProbe $updaterRoot
+            if ($LASTEXITCODE -ne 0) { throw "Packaged electron-updater runtime is incomplete" }
+          } finally {
+            Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          }
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "echo-packaged-app-smoke"
+          $userData = Join-Path $smokeRoot "user-data"
+          $stdout = Join-Path $smokeRoot "app.stdout.log"
+          $stderr = Join-Path $smokeRoot "app.stderr.log"
+          New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+          $port = 18767
+          $env:ECHO_BACKEND_URL = "http://127.0.0.1:$port"
+          $env:ECHO_SMOKE = "1"
+          $env:ECHO_SMOKE_HOLD_MS = "1000"
+          $appProcess = Start-Process -FilePath $app `
+            -ArgumentList @("--user-data-dir=$userData") `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr `
+            -PassThru
+          $ready = $false
+          $renderer = $false
+          try {
+            $deadline = (Get-Date).AddSeconds(90)
+            while ((Get-Date) -lt $deadline -and -not $appProcess.HasExited) {
+              try {
+                $response = Invoke-WebRequest "http://127.0.0.1:$port/readyz" `
+                  -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200) { $ready = $true }
+              } catch {
+                # The fixed packaged backend is still starting.
+              }
+              if ((Test-Path -LiteralPath $stdout) -and
+                  (Select-String -LiteralPath $stdout -SimpleMatch `
+                    "SMOKE OK: echo-app://app/" -Quiet)) {
+                $renderer = $true
+              }
+              if ($ready -and $renderer) { break }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $appProcess.WaitForExit(30000)) {
+              throw "Packaged Electron app did not exit after its bounded smoke hold"
+            }
+            if ((Test-Path -LiteralPath $stdout) -and
+                (Select-String -LiteralPath $stdout -SimpleMatch `
+                  "SMOKE OK: echo-app://app/" -Quiet)) {
+              $renderer = $true
+            }
+            $backendStopped = $false
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              try {
+                Invoke-WebRequest "http://127.0.0.1:$port/readyz" `
+                  -UseBasicParsing -TimeoutSec 1 | Out-Null
+              } catch {
+                $backendStopped = $true
+                break
+              }
+              Start-Sleep -Milliseconds 250
+            }
+            if ($appProcess.ExitCode -ne 0 -or -not $ready -or -not $renderer -or -not $backendStopped) {
+              if (Test-Path $stdout) { Get-Content $stdout -Tail 240 }
+              if (Test-Path $stderr) { Get-Content $stderr -Tail 240 }
+              throw "Packaged Electron first-launch smoke failed (status=$($appProcess.ExitCode) backend=$ready renderer=$renderer stopped=$backendStopped)"
+            }
+            if (-not (Test-Path -LiteralPath (Join-Path $userData "config.yaml") -PathType Leaf)) {
+              throw "Packaged app did not materialize config.yaml"
+            }
+            if (-not (Test-Path -LiteralPath (Join-Path $userData "resources") -PathType Container)) {
+              throw "Packaged app did not materialize resources"
+            }
+          } finally {
+            if (-not $appProcess.HasExited) {
+              Stop-Process -Id $appProcess.Id -Force
+              Wait-Process -Id $appProcess.Id -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: Verify Authenticode signatures and create commit-bound checksums
+        shell: pwsh
+        run: |
+          $releaseRoot = (Resolve-Path "frontend/release").Path
+          $installerCandidates = @(
+            Get-ChildItem -LiteralPath $releaseRoot -File -Filter "Echo-Setup-*.exe"
+          )
+          if ($installerCandidates.Count -ne 1) {
+            throw "Expected exactly one Echo installer, found $($installerCandidates.Count)"
+          }
+          $installer = $installerCandidates[0]
+          if (-not $installer.Name.Contains($env:GITHUB_SHA)) {
+            throw "Installer filename is not bound to GITHUB_SHA: $($installer.Name)"
+          }
+
+          $signedFiles = [ordered]@{}
+          $signedFiles[$installer.Name] = $installer.FullName
+          $signedFiles["win-unpacked/Echo.exe"] = Join-Path $releaseRoot "win-unpacked/Echo.exe"
+          $signedFiles["win-unpacked/resources/backend/echo-backend.exe"] = `
+            Join-Path $releaseRoot "win-unpacked/resources/backend/echo-backend.exe"
+          $signedFiles["win-unpacked/resources/codex/bin/codex.exe"] = `
+            Join-Path $releaseRoot "win-unpacked/resources/codex/bin/codex.exe"
+          $signedFiles["win-unpacked/resources/codex/bin/codex-code-mode-host.exe"] = `
+            Join-Path $releaseRoot "win-unpacked/resources/codex/bin/codex-code-mode-host.exe"
+          $signedFiles["win-unpacked/resources/codex/codex-resources/codex-command-runner.exe"] = `
+            Join-Path $releaseRoot "win-unpacked/resources/codex/codex-resources/codex-command-runner.exe"
+          $signedFiles["win-unpacked/resources/codex/codex-resources/codex-windows-sandbox-setup.exe"] = `
+            Join-Path $releaseRoot "win-unpacked/resources/codex/codex-resources/codex-windows-sandbox-setup.exe"
+          $signedFiles["win-unpacked/resources/codex/codex-path/rg.exe"] = `
+            Join-Path $releaseRoot "win-unpacked/resources/codex/codex-path/rg.exe"
+
+          $installerChecksumLine = $null
+          $expectedSignerThumbprint = $null
+          $expectedPublisher = $null
+          if ([string]::IsNullOrWhiteSpace($env:ECHO_WINDOWS_SIGNER_THUMBPRINT) -or
+              [string]::IsNullOrWhiteSpace($env:ECHO_WINDOWS_SIGNER_SUBJECT_BASE64)) {
+            throw "Validated Windows signing publisher identity is missing"
+          }
+          $protectedPublisher = [Text.Encoding]::UTF8.GetString(
+            [Convert]::FromBase64String($env:ECHO_WINDOWS_SIGNER_SUBJECT_BASE64)
+          )
+          $proofFiles = @()
+          foreach ($entry in $signedFiles.GetEnumerator()) {
+            $path = [string]$entry.Value
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Signed release file is missing: $path"
+            }
+            $signature = Get-AuthenticodeSignature -LiteralPath $path
+            if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+              throw "Authenticode signature is not Valid for $($entry.Key): $($signature.Status)"
+            }
+            if ($null -eq $signature.SignerCertificate) {
+              throw "Authenticode signer certificate is missing for $($entry.Key)"
+            }
+            if ($null -eq $signature.TimeStamperCertificate) {
+              throw "Trusted RFC3161 timestamp is missing for $($entry.Key)"
+            }
+            $publisher = [string]$signature.SignerCertificate.Subject
+            if ([string]::IsNullOrWhiteSpace($publisher)) {
+              throw "Authenticode publisher is missing for $($entry.Key)"
+            }
+            if ($signature.SignerCertificate.Thumbprint -ne $env:ECHO_WINDOWS_SIGNER_THUMBPRINT -or
+                $publisher -ne $protectedPublisher) {
+              throw "Authenticode publisher does not match the protected build identity for $($entry.Key)"
+            }
+            if ($null -eq $expectedSignerThumbprint) {
+              $expectedSignerThumbprint = $signature.SignerCertificate.Thumbprint
+            } elseif ($expectedSignerThumbprint -ne $signature.SignerCertificate.Thumbprint) {
+              throw "Release executables were not signed by one consistent identity"
+            }
+            if ($null -eq $expectedPublisher) {
+              $expectedPublisher = $publisher
+            } elseif ($expectedPublisher -ne $publisher) {
+              throw "Release executables were not signed by one consistent publisher"
+            }
+
+            $sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($entry.Key -eq $installer.Name) {
+              $installerChecksumLine = "$sha256 *$($entry.Key)"
+            }
+            $proofFiles += [ordered]@{
+              path = [string]$entry.Key
+              sha256 = $sha256
+              authenticodeStatus = [string]$signature.Status
+              signerThumbprint = $signature.SignerCertificate.Thumbprint
+              publisher = $publisher
+              timestampThumbprint = $signature.TimeStamperCertificate.Thumbprint
+              timestampSubject = [string]$signature.TimeStamperCertificate.Subject
+            }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($installerChecksumLine)) {
+            throw "Installer checksum was not generated"
+          }
+          $installerChecksumLine | Set-Content `
+            -LiteralPath (Join-Path $releaseRoot "SHA256SUMS") `
+            -Encoding ascii
+          [ordered]@{
+            schema = "echo.windows_signing_proof.v1"
+            sourceRevision = $env:GITHUB_SHA
+            timestampServer = $env:ECHO_WINDOWS_TIMESTAMP_URL
+            generatedAt = (Get-Date).ToUniversalTime().ToString("o")
+            files = $proofFiles
+          } | ConvertTo-Json -Depth 6 | Set-Content `
+            -LiteralPath (Join-Path $releaseRoot "windows-signing-proof.json") `
+            -Encoding utf8
+
+          $updateAssets = @(
+            $installer.FullName
+            "$($installer.FullName).blockmap"
+            (Join-Path $releaseRoot "latest.yml")
+          )
+          foreach ($asset in $updateAssets) {
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf) -or
+                (Get-Item -LiteralPath $asset).Length -le 0) {
+              throw "Windows update asset is missing: $asset"
+            }
+          }
+          $version = (Get-Content -LiteralPath "frontend/package.json" -Raw | ConvertFrom-Json).version
+          & ./.venv/Scripts/python.exe `
+            packaging/desktop/verify-electron-update-metadata.py `
+            --metadata (Join-Path $releaseRoot "latest.yml") `
+            --asset-root $releaseRoot `
+            --platform windows `
+            --expected-version $version `
+            --expected-revision $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Windows update metadata verification failed" }
+          @($updateAssets | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash *$(Split-Path -Leaf $_)"
+          }) | Set-Content `
+            -LiteralPath (Join-Path $releaseRoot "UPDATE-SHA256SUMS-Windows") `
+            -Encoding ascii
+
+      - name: Attest canonical installer provenance
+        id: installer-provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: |
+            frontend/release/Echo-Setup-*.exe
+            frontend/release/Echo-Setup-*.exe.blockmap
+            frontend/release/latest.yml
+
+      - name: Retain installer provenance bundle
+        shell: pwsh
+        run: >-
+          Copy-Item -LiteralPath
+          "${{ steps.installer-provenance.outputs.bundle-path }}"
+          -Destination
+          "frontend/release/Echo-Setup-Windows-provenance.sigstore.json"
 
       - name: List release artifacts
-        working-directory: extras/desktop/release
+        working-directory: frontend/release
         run: |
           Get-ChildItem -Recurse | Select-Object FullName, Length
           Get-ChildItem -File | ForEach-Object { "{0:N1} MB`t{1}" -f ($_.Length / 1MB), $_.Name }
 
       - name: Upload EXE installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: Octopus-Setup-Windows
+          name: Echo-Setup-Windows-${{ github.sha }}
           path: |
-            extras/desktop/release/*.exe
-            extras/desktop/release/*.blockmap
-            extras/desktop/release/*.yml
+            frontend/release/Echo-Setup-*.exe
+            frontend/release/SHA256SUMS
+            frontend/release/UPDATE-SHA256SUMS-Windows
+            frontend/release/windows-signing-proof.json
+            frontend/release/Echo-Setup-Windows-provenance.sigstore.json
+            frontend/release/*.blockmap
+            frontend/release/*.yml
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
       - name: Upload portable (unpacked)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: Octopus-Portable-Windows
-          path: extras/desktop/release/win-unpacked/**
+          name: Echo-Portable-Windows-${{ github.sha }}
+          path: frontend/release/win-unpacked/**
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30

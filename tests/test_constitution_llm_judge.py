@@ -14,6 +14,7 @@ Contract pinned
 8. Router exception fails open (allow + "unavailable")
 9. Integration with gate · build_judge_from_router + set_judge + check_outbound
 """
+
 from __future__ import annotations
 
 import pytest
@@ -25,6 +26,7 @@ def _reset():
         reset_profile_for_tests,
         set_judge,
     )
+
     reset_profile_for_tests()
     set_judge(None)
     yield
@@ -65,6 +67,7 @@ def _make_router(replies: list[str]):
 class TestRouterJudgeParsing:
     def test_block_verdict(self):
         from runtime.safety.validation import build_judge_from_router
+
         router = _make_router(["BLOCK: ransomware"])
         judge = build_judge_from_router(router)
         v = judge("write ransomware", "channels:x:y", None)
@@ -73,6 +76,7 @@ class TestRouterJudgeParsing:
 
     def test_allow_verdict(self):
         from runtime.safety.validation import build_judge_from_router
+
         router = _make_router(["ALLOW: looks fine"])
         judge = build_judge_from_router(router)
         v = judge("hello there", "channels:x:y", None)
@@ -80,6 +84,7 @@ class TestRouterJudgeParsing:
 
     def test_escalate_verdict(self):
         from runtime.safety.validation import build_judge_from_router
+
         router = _make_router(["ESCALATE: unclear"])
         judge = build_judge_from_router(router)
         v = judge("ambiguous msg", "channels:x:y", None)
@@ -87,6 +92,7 @@ class TestRouterJudgeParsing:
 
     def test_unknown_reply_defaults_allow(self):
         from runtime.safety.validation import build_judge_from_router
+
         router = _make_router(["idk man"])
         judge = build_judge_from_router(router)
         v = judge("msg", "channels:x:y", None)
@@ -101,6 +107,7 @@ class TestRouterJudgeParsing:
 class TestCache:
     def test_repeat_hits_cache(self):
         from runtime.safety.validation import build_judge_from_router
+
         router = _make_router(["BLOCK: bad", "ALLOW: ok"])  # 2nd never used if cache works
         judge = build_judge_from_router(router, cache_ttl_s=60)
 
@@ -112,6 +119,7 @@ class TestCache:
 
     def test_different_destination_misses_cache(self):
         from runtime.safety.validation import build_judge_from_router
+
         router = _make_router(["BLOCK: x", "ALLOW: y"])
         judge = build_judge_from_router(router, cache_ttl_s=60)
 
@@ -124,6 +132,7 @@ class TestCache:
 
     def test_ttl_zero_disables_cache(self):
         from runtime.safety.validation import build_judge_from_router
+
         router = _make_router(["ALLOW: a", "ALLOW: b"])
         judge = build_judge_from_router(router, cache_ttl_s=0)
 
@@ -134,9 +143,12 @@ class TestCache:
 
     def test_cache_max_size_bounds_memory(self):
         from runtime.safety.validation import build_judge_from_router
+
         router = _make_router(["ALLOW: x"])
         judge = build_judge_from_router(
-            router, cache_ttl_s=60, cache_max_size=3,
+            router,
+            cache_ttl_s=60,
+            cache_max_size=3,
         )
 
         # Fill past capacity
@@ -161,7 +173,9 @@ class TestCache:
         # Jump clock past TTL
         base = mod.time.monotonic()
         monkeypatch.setattr(
-            mod.time, "monotonic", lambda: base + 120.0,
+            mod.time,
+            "monotonic",
+            lambda: base + 120.0,
         )
 
         v2 = judge("same", "dest", None)
@@ -203,6 +217,7 @@ class TestGateIntegration:
             set_judge,
             set_profile,
         )
+
         set_profile("strict")
 
         router = _make_router(["BLOCK: phishing draft"])
@@ -223,6 +238,7 @@ class TestGateIntegration:
             set_judge,
             set_profile,
         )
+
         set_profile("normal")
 
         router = _make_router(["BLOCK: something"])

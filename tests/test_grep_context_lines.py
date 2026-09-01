@@ -5,6 +5,7 @@ back with optional ``before`` / ``after`` lists carrying the
 surrounding lines so the model can read context without round-tripping
 to ``read_file``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,7 +21,8 @@ def test_grep_text_no_context_by_default(tmp_path: Path) -> None:
     f = tmp_path / "a.txt"
     _write_lines(f, ["zero", "one", "MATCH", "three", "four"])
     out = _grep_text(
-        "MATCH", str(tmp_path),
+        "MATCH",
+        str(tmp_path),
         sandbox_dir=str(tmp_path),
         allow_sensitive=True,
     )
@@ -36,7 +38,8 @@ def test_grep_text_with_context_2(tmp_path: Path) -> None:
     f = tmp_path / "a.txt"
     _write_lines(f, ["zero", "one", "two", "MATCH", "four", "five", "six"])
     out = _grep_text(
-        "MATCH", str(tmp_path),
+        "MATCH",
+        str(tmp_path),
         context_lines=2,
         sandbox_dir=str(tmp_path),
         allow_sensitive=True,
@@ -56,7 +59,8 @@ def test_grep_text_context_at_file_start(tmp_path: Path) -> None:
     f = tmp_path / "a.txt"
     _write_lines(f, ["MATCH", "two", "three"])
     out = _grep_text(
-        "MATCH", str(tmp_path),
+        "MATCH",
+        str(tmp_path),
         context_lines=3,
         sandbox_dir=str(tmp_path),
         allow_sensitive=True,
@@ -71,7 +75,8 @@ def test_grep_text_context_at_file_end(tmp_path: Path) -> None:
     f = tmp_path / "a.txt"
     _write_lines(f, ["one", "two", "MATCH"])
     out = _grep_text(
-        "MATCH", str(tmp_path),
+        "MATCH",
+        str(tmp_path),
         context_lines=3,
         sandbox_dir=str(tmp_path),
         allow_sensitive=True,
@@ -84,9 +89,12 @@ def test_grep_text_context_at_file_end(tmp_path: Path) -> None:
 
 def test_grep_text_context_clamped_to_max_10(tmp_path: Path) -> None:
     f = tmp_path / "a.txt"
-    _write_lines(f, [f"line-{i}" for i in range(50)] + ["MATCH"] + [f"after-{i}" for i in range(50)])
+    _write_lines(
+        f, [f"line-{i}" for i in range(50)] + ["MATCH"] + [f"after-{i}" for i in range(50)]
+    )
     out = _grep_text(
-        "MATCH", str(tmp_path),
+        "MATCH",
+        str(tmp_path),
         context_lines=999,  # request more than allowed
         sandbox_dir=str(tmp_path),
         allow_sensitive=True,

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Echo Project</vendor>
+  <vendor_url>https://echo-age.com/</vendor_url>
+  <action id="org.echoos.update.apply">
+    <description>Install an authenticated Echo OS system update</description>
+    <message>Administrator authentication is required to install the authenticated Echo OS update</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/bin/bash</annotate>
+    <annotate key="org.freedesktop.policykit.exec.argv1">/usr/lib/echo-os/echo-os-update-apply</annotate>
+  </action>
+</policyconfig>

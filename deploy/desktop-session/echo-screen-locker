@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# xss-lock adapter: audit activation and release logind's sleep delay only after
+# XSecureLock has had time to establish its secure X11 grabs.
+set -euo pipefail
+
+if [[ "${ECHO_SCREEN_LOCKER_TESTING:-no}" == yes ]]; then
+  XSECURELOCK_BIN="${ECHO_XSECURELOCK_BIN:?missing test xsecurelock path}"
+  SLEEP_LOCK_DELAY_SECONDS="${ECHO_SLEEP_LOCK_DELAY_SECONDS:-0.1}"
+else
+  XSECURELOCK_BIN=/usr/bin/xsecurelock
+  SLEEP_LOCK_DELAY_SECONDS=1
+fi
+[[ -x "$XSECURELOCK_BIN" ]] || {
+  echo "XSecureLock is unavailable: $XSECURELOCK_BIN" >&2
+  exit 1
+}
+
+echo "ECHO_LOCK_SCREEN_LAUNCHED provider=xsecurelock pam=${XSECURELOCK_PAM_SERVICE:-unknown}"
+
+if [[ -n "${XSS_SLEEP_LOCK_FD:-}" && -e "/dev/fd/$XSS_SLEEP_LOCK_FD" ]]; then
+  # Do not let the child retain logind's delay-lock descriptor. Keep our copy
+  # briefly while XSecureLock establishes its windows and input grabs, then
+  # close it so suspend can proceed with the lock screen already in place.
+  "$XSECURELOCK_BIN" {XSS_SLEEP_LOCK_FD}<&- &
+  LOCKER_PID=$!
+  trap 'kill "$LOCKER_PID" 2>/dev/null || true' EXIT INT TERM
+  sleep "$SLEEP_LOCK_DELAY_SECONDS"
+  kill -0 "$LOCKER_PID" 2>/dev/null || {
+    wait "$LOCKER_PID" || true
+    echo "XSecureLock exited before the sleep lock became ready" >&2
+    exit 1
+  }
+  exec {XSS_SLEEP_LOCK_FD}<&-
+  wait "$LOCKER_PID"
+  exit $?
+fi
+
+exec "$XSECURELOCK_BIN"

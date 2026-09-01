@@ -22,7 +22,8 @@ def _stub_stack(planner_type: str = "llm"):
     if planner_type == "llm":
         cfg = AgentConfig(
             planner=PlannerConfig(
-                type="llm", model="mock/r",
+                type="llm",
+                model="mock/r",
                 mock_response=json.dumps({"nodes": []}),
             ),
         )
@@ -71,9 +72,7 @@ class TestReflectionTaskRegistration:
         runner = BackgroundRunner()
         _register_reflection_tasks(runner, stack, interval_s=3600)
         for task in runner._tasks:
-            assert task.jitter_s > 0, (
-                f"task {task.name} has jitter_s=0 · 雷群风险"
-            )
+            assert task.jitter_s > 0, f"task {task.name} has jitter_s=0 · 雷群风险"
 
     def test_skill_forge_is_planner_agnostic(self):
         """Implementation note."""
@@ -98,7 +97,7 @@ def _write_cfg(tmp_path: Path, planner_type: str = "llm") -> Path:
             "planner:\n"
             "  type: llm\n"
             "  model: mock/s\n"
-            '  mock_response: \'{"nodes":[]}\'\n'
+            "  mock_response: '{\"nodes\":[]}'\n"
             "budget:\n"
             "  max_tokens: 5000\n"
             "  max_usd: 0.05\n",
@@ -106,20 +105,16 @@ def _write_cfg(tmp_path: Path, planner_type: str = "llm") -> Path:
         )
     else:
         path.write_text(
-            "planner:\n  type: static\n"
-            "budget:\n  max_tokens: 5000\n  max_usd: 0.05\n",
+            "planner:\n  type: static\nbudget:\n  max_tokens: 5000\n  max_usd: 0.05\n",
             encoding="utf-8",
         )
     return path
 
 
 class TestServeReflectionScheduling:
-    def test_learn_interval_zero_no_reflection_tasks(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_learn_interval_zero_no_reflection_tasks(self, tmp_path: Path, monkeypatch):
         cfg = _write_cfg(tmp_path)
         import uvicorn
-
         from runtime import scheduler
         from runtime.cli import run_serve
 
@@ -135,19 +130,19 @@ class TestServeReflectionScheduling:
         monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)
 
         run_serve(
-            config_path=cfg, host="127.0.0.1", port=8000,
-            learn_interval_s=0, color=False,
+            config_path=cfg,
+            host="127.0.0.1",
+            port=8000,
+            learn_interval_s=0,
+            color=False,
         )
         names = set(captured["r"].task_names())
         # Implementation note.
         assert not any(n.startswith("reflect_") for n in names)
 
-    def test_learn_interval_positive_registers_llm_reflection(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_learn_interval_positive_registers_llm_reflection(self, tmp_path: Path, monkeypatch):
         cfg = _write_cfg(tmp_path, planner_type="llm")
         import uvicorn
-
         from runtime import scheduler
         from runtime.cli import run_serve
 
@@ -163,8 +158,11 @@ class TestServeReflectionScheduling:
         monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)
 
         run_serve(
-            config_path=cfg, host="127.0.0.1", port=8000,
-            learn_interval_s=3600, color=False,
+            config_path=cfg,
+            host="127.0.0.1",
+            port=8000,
+            learn_interval_s=3600,
+            color=False,
         )
         names = set(captured["r"].task_names())
         assert "reflect_rules" in names
@@ -173,12 +171,9 @@ class TestServeReflectionScheduling:
         assert "reflect_recipe" in names
         assert "reflect_skill_forge" in names
 
-    def test_learn_interval_positive_registers_static_reflection(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_learn_interval_positive_registers_static_reflection(self, tmp_path: Path, monkeypatch):
         cfg = _write_cfg(tmp_path, planner_type="static")
         import uvicorn
-
         from runtime import scheduler
         from runtime.cli import run_serve
 
@@ -194,8 +189,11 @@ class TestServeReflectionScheduling:
         monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)
 
         run_serve(
-            config_path=cfg, host="127.0.0.1", port=8000,
-            learn_interval_s=3600, color=False,
+            config_path=cfg,
+            host="127.0.0.1",
+            port=8000,
+            learn_interval_s=3600,
+            color=False,
         )
         names = set(captured["r"].task_names())
         assert "reflect_workflow" in names

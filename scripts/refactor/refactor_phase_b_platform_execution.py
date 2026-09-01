@@ -4,6 +4,7 @@ platform/<file>          → platform/<group>/<file>     (6 groups, 38 files)
 execution/<file>         → execution/misc/<file>       (1 group, 9 files)
 """
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -58,7 +59,7 @@ ORDERED = sorted(RENAMES.items(), key=lambda kv: -len(kv[0]))
 
 EXTENSIONS = {".py", ".md", ".yaml", ".yml", ".json", ".toml", ".cfg", ".txt", ".ini", ".mermaid"}
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", "build", "dist",
-             ".qoder", ".codex-logs", ".pytest_cache", ".ruff_cache", "octopus_agent.egg-info",
+             ".qoder", ".codex-logs", ".pytest_cache", ".ruff_cache", "echo_agent.egg-info",
              "frontend"}  # IMPORTANT: skip frontend so we don't pull in unrelated TS work
 
 

@@ -27,6 +27,7 @@ Design notes
   second-resolution mtime — sleeping past the next tick is the
   cheapest robust way.
 """
+
 from __future__ import annotations
 
 import os
@@ -38,7 +39,6 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.platform.prompts.registry import PromptRegistry
 from runtime.sensing.gateway.prompts_router import create_prompts_router
 
@@ -56,10 +56,10 @@ def _reset_flags() -> Iterator[None]:
     from runtime.platform import feature_flags as _ff
 
     # Drop any env override the prior test might have set
-    os.environ.pop("OCTOPUS_FF_UI_PROMPTS_HOT_RELOAD", None)
+    os.environ.pop("ECHO_FF_UI_PROMPTS_HOT_RELOAD", None)
     _ff.reload()
     yield
-    os.environ.pop("OCTOPUS_FF_UI_PROMPTS_HOT_RELOAD", None)
+    os.environ.pop("ECHO_FF_UI_PROMPTS_HOT_RELOAD", None)
     _ff.reload()
 
 
@@ -86,7 +86,7 @@ def _flag_on(monkeypatch: pytest.MonkeyPatch) -> None:
     """Switch ``ui.prompts_hot_reload`` ON and reload the snapshot."""
     from runtime.platform import feature_flags as _ff
 
-    monkeypatch.setenv("OCTOPUS_FF_UI_PROMPTS_HOT_RELOAD", "1")
+    monkeypatch.setenv("ECHO_FF_UI_PROMPTS_HOT_RELOAD", "1")
     _ff.reload()
 
 
@@ -94,7 +94,7 @@ def _flag_off(monkeypatch: pytest.MonkeyPatch) -> None:
     """Switch ``ui.prompts_hot_reload`` OFF and reload the snapshot."""
     from runtime.platform import feature_flags as _ff
 
-    monkeypatch.setenv("OCTOPUS_FF_UI_PROMPTS_HOT_RELOAD", "0")
+    monkeypatch.setenv("ECHO_FF_UI_PROMPTS_HOT_RELOAD", "0")
     _ff.reload()
 
 
@@ -105,18 +105,21 @@ def _flag_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
 class TestRoundTrip:
     def test_set_then_get_returns_body(
-        self, registry: PromptRegistry,
+        self,
+        registry: PromptRegistry,
     ) -> None:
         # ``atomic_write_text`` appends a trailing newline by design
         # (POSIX-friendly).  We assert by ``startswith`` so the test
         # locks the *content* contract without baking in the newline
         # quirk.
-        registry.set("system_prompt", "You are Octopus.")
+        registry.set("system_prompt", "You are Echo.")
         body = registry.get("system_prompt")
-        assert body.startswith("You are Octopus.")
+        assert body.startswith("You are Echo.")
 
     def test_set_writes_md_file_to_disk(
-        self, registry: PromptRegistry, prompts_dir: Path,
+        self,
+        registry: PromptRegistry,
+        prompts_dir: Path,
     ) -> None:
         registry.set("hello", "hi there")
         assert (prompts_dir / "hello.md").exists()
@@ -126,13 +129,13 @@ class TestRoundTrip:
         assert "hi there" in text
 
     def test_variant_set_lands_in_subdir(
-        self, registry: PromptRegistry, prompts_dir: Path,
+        self,
+        registry: PromptRegistry,
+        prompts_dir: Path,
     ) -> None:
         registry.set("sys", "base body")
         registry.set("sys", "friendly body", variant="friendly")
-        assert (
-            prompts_dir / "variants" / "sys" / "friendly.md"
-        ).exists()
+        assert (prompts_dir / "variants" / "sys" / "friendly.md").exists()
         assert registry.get("sys", variant="friendly").startswith(
             "friendly body",
         )
@@ -145,22 +148,26 @@ class TestRoundTrip:
 
 class TestVariantFallback:
     def test_missing_variant_falls_back_to_base(
-        self, registry: PromptRegistry,
+        self,
+        registry: PromptRegistry,
     ) -> None:
         registry.set("greeting", "hello base")
         # No variant file exists
         assert registry.get(
-            "greeting", variant="cheerful",
+            "greeting",
+            variant="cheerful",
         ).startswith("hello base")
 
     def test_missing_everything_raises(
-        self, registry: PromptRegistry,
+        self,
+        registry: PromptRegistry,
     ) -> None:
         with pytest.raises(KeyError):
             registry.get("nonexistent")
 
     def test_variant_takes_precedence_over_base(
-        self, registry: PromptRegistry,
+        self,
+        registry: PromptRegistry,
     ) -> None:
         registry.set("greeting", "base")
         registry.set("greeting", "variant!", variant="alt")
@@ -255,14 +262,22 @@ class TestAtomicPut:
         )
         assert r2.status_code == 200
         assert (prompts_dir / "sys.md.bak").exists()
-        assert (prompts_dir / "sys.md").read_text(
-            encoding="utf-8",
-        ).startswith("second")
+        assert (
+            (prompts_dir / "sys.md")
+            .read_text(
+                encoding="utf-8",
+            )
+            .startswith("second")
+        )
         # The .bak holds the prior version (atomic_write_text appends
         # a trailing newline; assert by prefix to remain robust).
-        assert (prompts_dir / "sys.md.bak").read_text(
-            encoding="utf-8",
-        ).startswith("first")
+        assert (
+            (prompts_dir / "sys.md.bak")
+            .read_text(
+                encoding="utf-8",
+            )
+            .startswith("first")
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -390,7 +405,8 @@ class TestMtimeCaching:
         # External edit
         time.sleep(1.1)
         (prompts_dir / "ghost.md").write_text(
-            "v2-from-disk", encoding="utf-8",
+            "v2-from-disk",
+            encoding="utf-8",
         )
 
         # Still the cached version because no re-stat occurs
@@ -428,15 +444,14 @@ class TestConcurrentReads:
                             f"body-{i}",
                         )
                         assert registry.get(
-                            f"p{i}", variant="alt",
+                            f"p{i}",
+                            variant="alt",
                         ).startswith(f"v-{i}")
                     registry.list()
             except BaseException as exc:  # noqa: BLE001
                 errors.append(exc)
 
-        threads = [
-            threading.Thread(target=worker) for _ in range(8)
-        ]
+        threads = [threading.Thread(target=worker) for _ in range(8)]
         for t in threads:
             t.start()
         for t in threads:

@@ -1,12 +1,15 @@
 import type { Message, Thread } from "@/core/api/types";
 
 import type { Todo } from "../todos";
+import type { GroundingSource } from "../realtime/items";
 
 export interface AgentRosterEntry {
-  name: string;
-  display_name: string;
-  avatar_url?: string;
-  role: "tl" | "member";
+  agent_id?: string | null;
+  avatar_url?: string | null;
+  display_name?: string | null;
+  icon?: string | null;
+  name?: string | null;
+  role?: "tl" | "member" | string | null;
 }
 
 export interface ExecutionMetrics {
@@ -52,16 +55,20 @@ export interface AgentThreadState extends Record<string, unknown> {
   current_speaker?: string | null;
   execution_metrics?: ExecutionMetrics | null;
   execution_plan?: ExecutionPlan | null;
+  /** Sources actually injected into the latest turn's model context. */
+  latest_grounding?: GroundingSource[];
 }
 
 export interface AgentThread extends Thread<AgentThreadState> {}
 
 export type ReasoningEffort =
+  | "off"
   | "minimal"
   | "low"
   | "medium"
   | "high"
-  | "xhigh";
+  | "xhigh"
+  | "max";
 
 export interface AgentThreadContext extends Record<string, unknown> {
   thread_id: string;
@@ -71,6 +78,13 @@ export interface AgentThreadContext extends Record<string, unknown> {
   subagent_enabled: boolean;
   reasoning_effort?: ReasoningEffort;
   interaction_mode?: "office" | "coding";
+  mode_preset?: string;
+  workflow_preset?: string;
+  skill_pack_profile?: string;
+  verification_policy?: "light" | "standard" | "strict" | "visual";
+  default_skill_packs?: string[];
+  default_plugins?: string[];
+  mode_contract?: string;
   agent_name?: string;
   permission_mode?:
     | "default"
@@ -82,4 +96,9 @@ export interface AgentThreadContext extends Record<string, unknown> {
   execution_environment?: "sandbox" | "local";
   /* Implementation note. */
   ephemeral?: boolean;
+  /** User-controlled network tier for confined shell exec: "deny" (only
+   * model inference reachable), "common" (plus pre-bundled dev-tool
+   * registries/mirrors), "full" (everything). Default "deny". Threaded
+   * through to ``sandboxPolicy.networkAccess`` / ``egressAllowCommon``. */
+  network_access?: "deny" | "common" | "full";
 }

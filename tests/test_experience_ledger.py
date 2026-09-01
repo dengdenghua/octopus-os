@@ -8,7 +8,7 @@ from runtime.memory.learning.experience_ledger import ExperienceLedger
 
 def _review(task_id: str = "turn-1") -> dict:
     return {
-        "schema": "octopus.task_run_review.v1",
+        "schema": "echo.task_run_review.v1",
         "task_id": task_id,
         "thread_id": "thread-1",
         "turn_id": task_id,
@@ -96,7 +96,7 @@ def test_experience_ledger_weekly_summary_groups_current_week(
     current = ledger.weekly_summary(week_start="2026-06-01")
     next_week = ledger.weekly_summary(week_start="2026-06-08")
 
-    assert current["schema"] == "octopus.experience_weekly_summary.v1"
+    assert current["schema"] == "echo.experience_weekly_summary.v1"
     assert current["week_start"] == "2026-06-01"
     assert current["record_count"] == 2
     assert current["by_priority"] == {"P0": 2}

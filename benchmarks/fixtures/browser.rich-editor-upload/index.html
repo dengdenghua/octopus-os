@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Onboarding</title></head>
+  <body>
+    <h1>Onboarding</h1>
+    <label for="role">Role</label><select id="role"><option>Member</option><option>Administrator</option></select>
+    <label for="bio">Bio</label><div id="bio" contenteditable="true" role="textbox" aria-label="Bio"></div>
+    <label for="avatar">Profile file</label><input id="avatar" type="file">
+    <button id="submit">Submit</button><iframe id="confirmation" title="Confirmation"></iframe>
+    <script>
+      const session=document.querySelector('meta[name=eval-session]')?.content||'';let submitting=false;
+      const roleInput=document.querySelector('#role'),bioInput=document.querySelector('#bio'),avatarInput=document.querySelector('#avatar'),submitButton=document.querySelector('#submit'),confirmationFrame=document.querySelector('#confirmation');
+      submitButton.onclick=async()=>{if(submitting)return;submitting=true;const file=avatarInput.files[0];const payload={role:roleInput.value,bio:bioInput.innerText,fileName:file?.name||'',fileText:file?await file.text():''};await fetch('/api/onboarding',{method:'POST',headers:{'Content-Type':'application/json','X-Eval-UI':session},body:JSON.stringify(payload)});setTimeout(()=>{confirmationFrame.src='/confirmation.html'},120);submitting=false};
+    </script>
+  </body>
+</html>

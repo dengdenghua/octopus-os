@@ -1,0 +1,16 @@
+{
+  "name": "潜空间高清放大",
+  "description": "在潜空间放大后低强度重采样，兼顾尺寸、细节与原图一致性。",
+  "tags": ["高清", "放大", "核心节点"],
+  "workflow": {
+    "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "选择本机模型.safetensors"}},
+    "2": {"class_type": "LoadImage", "inputs": {"image": "选择输入图.png", "upload": "image"}},
+    "3": {"class_type": "VAEEncode", "inputs": {"pixels": ["2", 0], "vae": ["1", 2]}},
+    "4": {"class_type": "LatentUpscaleBy", "inputs": {"upscale_method": "bislerp", "scale_by": 2, "samples": ["3", 0]}},
+    "5": {"class_type": "CLIPTextEncode", "inputs": {"text": "high detail, clean edges", "clip": ["1", 1]}},
+    "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "artifacts, oversharpen, watermark", "clip": ["1", 1]}},
+    "7": {"class_type": "KSampler", "inputs": {"seed": 0, "steps": 18, "cfg": 5, "sampler_name": "euler", "scheduler": "normal", "denoise": 0.28, "model": ["1", 0], "positive": ["5", 0], "negative": ["6", 0], "latent_image": ["4", 0]}},
+    "8": {"class_type": "VAEDecode", "inputs": {"samples": ["7", 0], "vae": ["1", 2]}},
+    "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "Echo/latent-upscale", "images": ["8", 0]}}
+  }
+}

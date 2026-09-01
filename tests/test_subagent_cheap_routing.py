@@ -7,6 +7,7 @@ project-wide cheap default into the merged context the runner sees.
 based defaults so research-style roles auto-route to the cheap tier
 while architects / synthesizers stay on the parent's primary model.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -59,31 +60,35 @@ def capture_runner(monkeypatch):
 @pytest.fixture(autouse=True)
 def _clear_cheap_model_env(monkeypatch):
     """Ensure each test starts with a clean env override."""
-    monkeypatch.delenv("OCTOPUS_SUBAGENT_CHEAP_MODEL", raising=False)
+    monkeypatch.delenv("ECHO_SUBAGENT_CHEAP_MODEL", raising=False)
 
 
 # ── _resolve_cheap_subagent_model ────────────────────────────
 
 
 def test_resolve_returns_env_override_when_set(monkeypatch) -> None:
-    monkeypatch.setenv("OCTOPUS_SUBAGENT_CHEAP_MODEL", "my-org-cheap-v2")
+    monkeypatch.setenv("ECHO_SUBAGENT_CHEAP_MODEL", "my-org-cheap-v2")
     assert bridge._resolve_cheap_subagent_model() == "my-org-cheap-v2"
 
 
 def test_resolve_strips_whitespace_and_ignores_blank(monkeypatch) -> None:
-    monkeypatch.setenv("OCTOPUS_SUBAGENT_CHEAP_MODEL", "   ")
-    # Blank → falls through to default.
-    assert bridge._resolve_cheap_subagent_model() == "glm-4-flash"
+    monkeypatch.setenv("ECHO_SUBAGENT_CHEAP_MODEL", "   ")
+    # Blank with no configured economy model leaves routing on the known-good
+    # planner model instead of inventing an external model id.
+    assert bridge._resolve_cheap_subagent_model() is None
 
 
 def test_resolve_returns_default_when_no_env() -> None:
-    assert bridge._resolve_cheap_subagent_model() == "glm-4-flash"
+    assert bridge._resolve_cheap_subagent_model() is None
 
 
 # ── call_subagent + use_cheap_model ──────────────────────────
 
 
-def test_call_subagent_injects_cheap_model_into_context(capture_runner) -> None:
+def test_call_subagent_injects_configured_cheap_model_into_context(
+    monkeypatch, capture_runner
+) -> None:
+    monkeypatch.setenv("ECHO_SUBAGENT_CHEAP_MODEL", "glm-4-flash")
     bridge.call_subagent(
         agent_id="researcher",
         prompt="dig into X",
@@ -109,9 +114,10 @@ def test_call_subagent_without_cheap_flag_does_not_inject(capture_runner) -> Non
 
 
 def test_call_subagent_env_override_is_used_when_cheap(
-    monkeypatch, capture_runner,
+    monkeypatch,
+    capture_runner,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_SUBAGENT_CHEAP_MODEL", "qwen-flash")
+    monkeypatch.setenv("ECHO_SUBAGENT_CHEAP_MODEL", "qwen-flash")
     bridge.call_subagent(
         agent_id="researcher",
         prompt="dig into X",
@@ -123,9 +129,10 @@ def test_call_subagent_env_override_is_used_when_cheap(
 # ── _call_agent_parallel role-based defaults ─────────────────
 
 
-def test_parallel_researcher_defaults_to_cheap(capture_runner) -> None:
+def test_parallel_researcher_defaults_to_configured_cheap(monkeypatch, capture_runner) -> None:
     """A researcher spec with no explicit ``cheap`` flag auto-routes
     to the cheap model."""
+    monkeypatch.setenv("ECHO_SUBAGENT_CHEAP_MODEL", "glm-4-flash")
     delegation_skills._call_agent_parallel(
         specs=[{"role": "researcher", "task": "find X"}],
         timeout_s=5,
@@ -154,9 +161,11 @@ def test_parallel_architect_defaults_to_primary(capture_runner) -> None:
 
 
 def test_parallel_explicit_cheap_true_on_architect_routes_cheap(
+    monkeypatch,
     capture_runner,
 ) -> None:
     """Explicit ``cheap: True`` overrides the architect default."""
+    monkeypatch.setenv("ECHO_SUBAGENT_CHEAP_MODEL", "glm-4-flash")
     delegation_skills._call_agent_parallel(
         specs=[{"role": "architect", "task": "summarize Y", "cheap": True}],
         timeout_s=5,

@@ -1,0 +1,7 @@
+version: "1.0"
+type: navigation-item
+data:
+  path: "services.echo-os"
+  text: _("Echo OS")
+  icon: "mdi:robot-outline"
+  url: "/services/echo-os"

@@ -46,7 +46,8 @@ def _graph(n: int = 1) -> TaskGraph:
     return TaskGraph(
         nodes=[
             TaskNode(
-                node_id=f"n{i}", skill_ref=SkillId("list_cwd"),
+                node_id=f"n{i}",
+                skill_ref=SkillId("list_cwd"),
                 args_template={"path": "."},
             )
             for i in range(n)
@@ -73,8 +74,11 @@ class TestActorField:
         j = InMemoryJournal()
         tid = TaskId(uuid4())
         j.write_task_started(
-            tid, arm_id=ArmId("a"), actor="user_alice",
-            total_nodes=2, strategy="s",
+            tid,
+            arm_id=ArmId("a"),
+            actor="user_alice",
+            total_nodes=2,
+            strategy="s",
         )
         events = j.read_all()
         assert events[0].actor == "user_alice"
@@ -90,7 +94,9 @@ class TestActorField:
         tid = TaskId(uuid4())
         call = ToolCall(caller="arms/x", sucker_id="list_cwd", args={})
         step = Step(
-            step_id=0, node_id="n0", action=call,
+            step_id=0,
+            node_id="n0",
+            action=call,
             result=ExecutionResult(call_id=call.call_id, status="success"),
         )
         j.write_step(tid, ArmId("x"), step, actor="alice")
@@ -109,8 +115,11 @@ class TestReadByActor:
         for actor_name in ("alice", "bob", "alice", "carol", "bob"):
             tid = TaskId(uuid4())
             j.write_task_started(
-                tid, arm_id=ArmId("a"), actor=actor_name,
-                total_nodes=1, strategy="s",
+                tid,
+                arm_id=ArmId("a"),
+                actor=actor_name,
+                total_nodes=1,
+                strategy="s",
             )
         alice_events = j.read_by_actor("alice")
         bob_events = j.read_by_actor("bob")
@@ -133,7 +142,9 @@ class TestReadByActor:
         tid = TaskId(uuid4())
         call = ToolCall(caller="arms/x", sucker_id="list_cwd", args={})
         step = Step(
-            step_id=0, node_id="n0", action=call,
+            step_id=0,
+            node_id="n0",
+            action=call,
             result=ExecutionResult(call_id=call.call_id, status="success"),
         )
         j.write_step(tid, ArmId("x"), step)  # Implementation note.
@@ -151,11 +162,13 @@ class TestExecutorPassesActor:
         tid = TaskId(uuid4())
         budget = Budget(task_id=tid, limits=BudgetLimits(tokens=1000, usd=0.01))
         executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("list_cwd"),
             args={"path": "."},
             caller="arms/x",
-            task_id=tid, arm_id=ArmId("x"),
+            task_id=tid,
+            arm_id=ArmId("x"),
             budget=budget,
             actor="user_zelda",
         )
@@ -163,20 +176,20 @@ class TestExecutorPassesActor:
         events = journal.read_all()
         assert len(events) >= 3
         for ev in events:
-            assert ev.actor == "user_zelda", (
-                f"{ev.event_type} missing actor"
-            )
+            assert ev.actor == "user_zelda", f"{ev.event_type} missing actor"
 
     def test_actor_none_stays_none(self):
         journal, executor = _stack()
         tid = TaskId(uuid4())
         budget = Budget(task_id=tid, limits=BudgetLimits(tokens=1000, usd=0.01))
         executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("list_cwd"),
             args={"path": "."},
             caller="arms/x",
-            task_id=tid, arm_id=ArmId("x"),
+            task_id=tid,
+            arm_id=ArmId("x"),
             budget=budget,
         )
         for ev in journal.read_all():
@@ -195,8 +208,10 @@ class TestRuntimePassesActor:
         graph = _graph(2)
         budget = Budget(task_id=graph.task_id, limits=BudgetLimits(tokens=10_000, usd=0.10))
         rt.run(
-            graph, budget=budget,
-            caller="arms/x", arm_id=ArmId("x"),
+            graph,
+            budget=budget,
+            caller="arms/x",
+            arm_id=ArmId("x"),
             actor="user_probe",
         )
 
@@ -205,20 +220,22 @@ class TestRuntimePassesActor:
         assert any(isinstance(e, TaskStartedEvent) for e in events)
         assert any(isinstance(e, TrajectoryEvent) for e in events)
         for ev in events:
-            assert ev.actor == "user_probe", (
-                f"{ev.event_type} missing actor={ev.actor}"
-            )
+            assert ev.actor == "user_probe", f"{ev.event_type} missing actor={ev.actor}"
 
     def test_runtime_checkpoint_includes_actor(self):
         journal, executor = _stack()
         rt = GraphRuntime(
-            executor=executor, journal=journal, checkpoint_every_n_nodes=1,
+            executor=executor,
+            journal=journal,
+            checkpoint_every_n_nodes=1,
         )
         graph = _graph(2)
         budget = Budget(task_id=graph.task_id, limits=BudgetLimits(tokens=10_000, usd=0.10))
         rt.run(
-            graph, budget=budget,
-            caller="arms/x", arm_id=ArmId("x"),
+            graph,
+            budget=budget,
+            caller="arms/x",
+            arm_id=ArmId("x"),
             actor="alice",
         )
         checkpoints = journal.read_by_type("task_checkpoint")
@@ -270,8 +287,11 @@ class TestJSONLRoundtrip:
         j1 = JSONLJournal(path)
         tid = TaskId(uuid4())
         j1.write_task_started(
-            tid, arm_id=ArmId("a"), actor="persistent_user",
-            total_nodes=1, strategy="s",
+            tid,
+            arm_id=ArmId("a"),
+            actor="persistent_user",
+            total_nodes=1,
+            strategy="s",
         )
 
         # Implementation note.

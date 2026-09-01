@@ -11,10 +11,10 @@ recently changed or are known-risky and have no test today:
 
 * Unknown-agent fallback (earlier bug: stale localStorage sent a
   dropped persona id; the server used to 400 · now falls back with
-  ``octopus.agent_fallback``)
+  ``echo.agent_fallback``)
 * ``conversation_id`` continuity — client's id must come back
   verbatim so subsequent turns thread together
-* SSE frames include the ``octopus`` extension with ``task_id`` and
+* SSE frames include the ``echo`` extension with ``task_id`` and
   ``conversation_id`` so the UI can correlate frames to a task
 * Reflex hits stay non-stream even when ``stream=True`` (fast path
   returns a completed ChatCompletion, not a one-chunk stream)
@@ -23,6 +23,7 @@ These pin the outward contract the frontend depends on. If the
 internals refactor breaks any of these, the streaming UI silently
 desyncs — these tests turn "silent" into "loud".
 """
+
 from __future__ import annotations
 
 import json
@@ -34,7 +35,6 @@ import contextlib
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config  # noqa: E402
 from runtime.sensing.gateway import create_openai_router  # noqa: E402
 
@@ -47,11 +47,14 @@ from runtime.sensing.gateway import create_openai_router  # noqa: E402
 def stack():
     cfg = AgentConfig(
         planner=PlannerConfig(
-            type="llm", model="mock/gw",
-            mock_response=json.dumps({
-                "reasoning": "r",
-                "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
-            }),
+            type="llm",
+            model="mock/gw",
+            mock_response=json.dumps(
+                {
+                    "reasoning": "r",
+                    "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
+                }
+            ),
         ),
     )
     return build_from_config(cfg)
@@ -97,7 +100,7 @@ def _collect_sse(response) -> list[dict]:
     for chunk in response.iter_text():
         for line in chunk.splitlines():
             if line.startswith("data: "):
-                payload = line[len("data: "):]
+                payload = line[len("data: ") :]
                 if payload.strip() == "[DONE]":
                     continue
                 with contextlib.suppress(json.JSONDecodeError):
@@ -112,7 +115,8 @@ def _collect_sse(response) -> list[dict]:
 
 class TestAgentParameter:
     def test_agent_without_registry_rejects_400(
-        self, client_without_registry,
+        self,
+        client_without_registry,
     ):
         """If no agent_registry configured but client sends ``agent=``
         the server rejects — otherwise the agent field would silently
@@ -128,12 +132,13 @@ class TestAgentParameter:
         assert "agent_registry" in r.json()["detail"].lower()
 
     def test_unknown_agent_falls_back_not_errors(
-        self, client_with_registry,
+        self,
+        client_with_registry,
     ):
         """A frontend with a stale localStorage entry sending an
         agent id the server no longer knows about must NOT 400 —
         the server falls back to no-agent mode and surfaces the
-        original id in ``octopus.agent_fallback`` so the client
+        original id in ``echo.agent_fallback`` so the client
         can tell the user their preferred agent vanished."""
         r = client_with_registry.post(
             "/v1/chat/completions",
@@ -144,12 +149,12 @@ class TestAgentParameter:
         )
         # If this response 400s, the pre-2026 regression is back.
         assert r.status_code == 200, (
-            f"unknown agent should fall back, got {r.status_code}: "
-            f"{r.text[:200]}"
+            f"unknown agent should fall back, got {r.status_code}: {r.text[:200]}"
         )
 
     def test_agent_must_be_non_empty_string(
-        self, client_with_registry,
+        self,
+        client_with_registry,
     ):
         r = client_with_registry.post(
             "/v1/chat/completions",
@@ -169,7 +174,7 @@ class TestAgentParameter:
 class TestConversationId:
     def test_client_id_echoes_back(self, client_without_registry):
         """When the client supplies ``conversation_id``, the
-        response's ``octopus.conversation_id`` must echo it
+        response's ``echo.conversation_id`` must echo it
         verbatim — lets the UI thread turns together."""
         r = client_without_registry.post(
             "/v1/chat/completions",
@@ -180,12 +185,11 @@ class TestConversationId:
         )
         assert r.status_code == 200
         data = r.json()
-        assert data.get("octopus", {}).get("conversation_id") == (
-            "conv-xyz-123"
-        )
+        assert data.get("echo", {}).get("conversation_id") == ("conv-xyz-123")
 
     def test_empty_conversation_id_rejected(
-        self, client_without_registry,
+        self,
+        client_without_registry,
     ):
         r = client_without_registry.post(
             "/v1/chat/completions",
@@ -197,34 +201,37 @@ class TestConversationId:
         assert r.status_code == 400
 
     def test_missing_conversation_id_gets_generated(
-        self, client_without_registry,
+        self,
+        client_without_registry,
     ):
         r = client_without_registry.post(
             "/v1/chat/completions",
             json={"messages": [{"role": "user", "content": "hi"}]},
         )
         assert r.status_code == 200
-        cid = r.json().get("octopus", {}).get("conversation_id")
+        cid = r.json().get("echo", {}).get("conversation_id")
         assert cid and isinstance(cid, str)
         # Generated UUID hex = 32 chars
         assert len(cid) == 32
 
 
 # ═══════════════════════════════════════════════════════════
-# SSE shape · every frame carries octopus correlation fields
+# SSE shape · every frame carries echo correlation fields
 # ═══════════════════════════════════════════════════════════
 
 
 class TestSSECorrelation:
     def test_stream_carries_conversation_id(
-        self, client_without_registry,
+        self,
+        client_without_registry,
     ):
         """Every ``chat.completion.chunk`` emitted MUST carry the
-        conversation_id in the ``octopus`` extension · without it
+        conversation_id in the ``echo`` extension · without it
         the UI can't multiplex concurrent streams onto the right
         thread."""
         with client_without_registry.stream(
-            "POST", "/v1/chat/completions",
+            "POST",
+            "/v1/chat/completions",
             json={
                 "stream": True,
                 "conversation_id": "sse-test-conv",
@@ -239,24 +246,25 @@ class TestSSECorrelation:
         # the gap. If this passes, great — if it fails, the message
         # tells the reader what the fix is.
         chunks_with_cid = [
-            f for f in frames
-            if f.get("octopus", {}).get("conversation_id") == "sse-test-conv"
+            f for f in frames if f.get("echo", {}).get("conversation_id") == "sse-test-conv"
         ]
         if not chunks_with_cid:
             pytest.skip(
                 "SSE chunks do not echo conversation_id today · "
-                "follow-up work: tag each chunk with octopus.conversation_id "
+                "follow-up work: tag each chunk with echo.conversation_id "
                 "so the UI can multiplex. Keeping as a skip to record the "
                 "observed gap without blocking CI."
             )
 
     def test_stream_emits_done_sentinel(
-        self, client_without_registry,
+        self,
+        client_without_registry,
     ):
         """SSE contract: stream ends with ``data: [DONE]`` · openai-
         compat clients rely on this to stop listening."""
         with client_without_registry.stream(
-            "POST", "/v1/chat/completions",
+            "POST",
+            "/v1/chat/completions",
             json={
                 "stream": True,
                 "messages": [{"role": "user", "content": "list"}],
@@ -273,7 +281,8 @@ class TestSSECorrelation:
 
 class TestRawIdentityPassthrough:
     def test_raw_prefix_bypasses_identity_filter(
-        self, client_without_registry,
+        self,
+        client_without_registry,
     ):
         """Implementation note."""
         r = client_without_registry.post(

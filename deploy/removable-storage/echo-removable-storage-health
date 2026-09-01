@@ -1,0 +1,103 @@
+#!/bin/bash
+# Verify the immutable, on-demand removable-storage stack before desktop login.
+set -euo pipefail
+set -f
+
+RUNTIME_ROOT=/
+if [[ -n "${ECHO_REMOVABLE_STORAGE_RUNTIME_ROOT:-}" ]]; then
+  [[ "${ECHO_REMOVABLE_STORAGE_SOURCE_TEST:-}" == "USE-SOURCE-RUNTIME" ]] || {
+    echo "removable-storage runtime override requires the explicit source-test sentinel" >&2
+    exit 2
+  }
+  RUNTIME_ROOT="$ECHO_REMOVABLE_STORAGE_RUNTIME_ROOT"
+fi
+[[ "$RUNTIME_ROOT" == /* && -d "$RUNTIME_ROOT" && ! -L "$RUNTIME_ROOT" ]] || {
+  echo "removable-storage runtime root is unsafe" >&2
+  exit 1
+}
+
+runtime_path() {
+  local suffix="$1"
+  if [[ "$RUNTIME_ROOT" == / ]]; then
+    printf '%s\n' "$suffix"
+  else
+    printf '%s%s\n' "${RUNTIME_ROOT%/}" "$suffix"
+  fi
+}
+
+SYSTEMCTL="$(runtime_path /usr/bin/systemctl)"
+BUSCTL="$(runtime_path /usr/bin/busctl)"
+UDISKSCTL="$(runtime_path /usr/bin/udisksctl)"
+STAT="$(runtime_path /usr/bin/stat)"
+
+EXECUTABLES=(
+  "$SYSTEMCTL"
+  "$BUSCTL"
+  "$UDISKSCTL"
+  "$STAT"
+  "$(runtime_path /usr/libexec/udisks2/udisksd)"
+  "$(runtime_path /usr/sbin/mkfs.vfat)"
+  "$(runtime_path /usr/sbin/fsck.vfat)"
+  "$(runtime_path /usr/sbin/mkfs.exfat)"
+  "$(runtime_path /usr/sbin/fsck.exfat)"
+  "$(runtime_path /usr/bin/ntfs-3g)"
+  "$(runtime_path /usr/sbin/mkfs.ntfs)"
+  "$(runtime_path /usr/sbin/mkfs.ext4)"
+  "$(runtime_path /usr/sbin/fsck.ext4)"
+  "$(runtime_path /usr/sbin/mkfs.btrfs)"
+  "$(runtime_path /usr/bin/btrfs)"
+  "$(runtime_path /usr/sbin/mkfs.xfs)"
+  "$(runtime_path /usr/sbin/xfs_repair)"
+  "$(runtime_path /usr/bin/dolphin)"
+)
+POLICY_FILES=(
+  "$(runtime_path /usr/lib/systemd/system/udisks2.service)"
+  "$(runtime_path /usr/lib/udev/rules.d/80-udisks2.rules)"
+  "$(runtime_path /usr/share/dbus-1/system-services/org.freedesktop.UDisks2.service)"
+  "$(runtime_path /usr/share/dbus-1/system.d/org.freedesktop.UDisks2.conf)"
+  "$(runtime_path /usr/share/polkit-1/actions/org.freedesktop.UDisks2.policy)"
+  "$(runtime_path /usr/lib/x86_64-linux-gnu/qt6/plugins/kf6/kio/mtp.so)"
+  "$(runtime_path /usr/share/applications/org.kde.dolphin.desktop)"
+  "$(runtime_path /usr/share/solid/actions/solid_mtp.desktop)"
+)
+
+for runtime in "${EXECUTABLES[@]}"; do
+  [[ -f "$runtime" && -x "$runtime" ]] || {
+    echo "removable-storage executable is missing: $runtime" >&2
+    exit 1
+  }
+done
+for runtime in "${POLICY_FILES[@]}"; do
+  [[ -f "$runtime" ]] || {
+    echo "removable-storage policy or desktop integration is missing: $runtime" >&2
+    exit 1
+  }
+done
+
+for runtime in "${EXECUTABLES[@]}" "${POLICY_FILES[@]}"; do
+  metadata="$($STAT -Lc '%u:%g:%a' "$runtime")" || {
+    echo "cannot inspect removable-storage runtime: $runtime" >&2
+    exit 1
+  }
+  IFS=: read -r owner group mode <<<"$metadata"
+  [[ "$owner" == 0 && "$group" == 0 && "$mode" =~ ^[0-7]{3,4}$ && \
+     $((8#$mode & 8#022)) -eq 0 ]] || {
+    echo "removable-storage runtime is not immutable root-owned content: $runtime" >&2
+    exit 1
+  }
+done
+
+"$SYSTEMCTL" is-active --quiet udisks2.service || {
+  echo "UDisks2 service is not active" >&2
+  exit 1
+}
+"$BUSCTL" --system status org.freedesktop.UDisks2 >/dev/null || {
+  echo "UDisks2 does not own its system D-Bus service" >&2
+  exit 1
+}
+"$UDISKSCTL" status >/dev/null || {
+  echo "UDisks2 status API is unavailable" >&2
+  exit 1
+}
+
+echo "ECHO_REMOVABLE_STORAGE_READY provider=udisks2 policy=polkit mount=on-demand filesystems=vfat,exfat,ntfs,ext4,btrfs,xfs portable=mtp"

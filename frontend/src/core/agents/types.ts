@@ -13,6 +13,23 @@ export interface Agent {
    *  Kept loose-typed so adding a flag server-side doesn't require a
    *  matching type migration on the client. */
   capabilities?: Record<string, unknown>;
+  /** Immutable identity code; display name and profession may change. */
+  identity_code?: string | null;
+  identity_profile?: {
+    code?: string;
+    code_version?: number;
+    immutable?: boolean;
+    derived_for_legacy_profile?: boolean;
+    personality_anchors?: {
+      mode?: "fictional_archetype" | "creator_defined" | string;
+      western_zodiac?: string | null;
+      chinese_zodiac?: string | null;
+      five_elements?: string[];
+      bazi_archetype?: string | null;
+      traits?: string[];
+      note?: string;
+    };
+  };
   /* Implementation note. */
   budget?: {
     max_tokens?: number;
@@ -52,7 +69,41 @@ export interface AgentWorldAgent {
   is_featured: boolean;
   is_official: boolean;
   is_installed: boolean;
+  /** Origin of the local binding, e.g. registry or a built-in persona. */
+  source_kind?: string;
   created_at: string;
+  model?: string | null;
+  soul?: string | null;
+  tool_groups?: string[] | null;
+  extra_affinity?: string[];
+  private_skills?: string[];
+  capabilities?: Record<string, unknown>;
+  character_profile?: {
+    id?: string;
+    name?: string;
+    zh_name?: string;
+    codename?: string;
+    gender?: string;
+    apparent_age?: string;
+    epithet?: string;
+    quote?: string;
+    intro?: string;
+    background?: string;
+    personality?: string;
+    temperament?: string;
+    likes?: string[];
+    dislikes?: string[];
+    quirks?: string[];
+    key_phrases?: string[];
+    tone?: string[];
+    appearance?: string[];
+    interaction?: string[];
+    current_state?: string[];
+    visual_keywords?: string[];
+    visual_assets?: Record<string, string>;
+    emotion_list?: string[];
+    emotion_videos?: Record<string, string[]>;
+  } | null;
   key_skills?: string[];
   available_skills?: string[];
 }
@@ -133,4 +184,5 @@ export interface UpdateAgentRequest {
   model?: string | null;
   tool_groups?: string[] | null;
   soul?: string | null;
+  capabilities?: Record<string, unknown> | null;
 }

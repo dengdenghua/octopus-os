@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.adapters.mcp_client import (
     STDIO_AVAILABLE,
     MCPClientError,
@@ -122,9 +121,7 @@ class TestStdioClient:
     @pytest.mark.skipif(not STDIO_AVAILABLE, reason="mcp SDK required")
     def test_constructs_when_sdk_available(self):
         """Implementation note."""
-        client = StdioMCPClient(
-            MCPServerConfig(name="x", command="nonexistent-cmd")
-        )
+        client = StdioMCPClient(MCPServerConfig(name="x", command="nonexistent-cmd"))
         assert not client._closed
         client.close()
         assert client._closed
@@ -134,7 +131,8 @@ class TestStdioClient:
         """Implementation note."""
         client = StdioMCPClient(
             MCPServerConfig(
-                name="x", command="cmd_definitely_does_not_exist_12345",
+                name="x",
+                command="cmd_definitely_does_not_exist_12345",
                 timeout_ms=3000,
             )
         )

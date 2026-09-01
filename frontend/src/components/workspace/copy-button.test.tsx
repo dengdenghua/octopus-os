@@ -35,7 +35,7 @@ describe("CopyButton", () => {
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => {
       const svg = container.querySelector("svg");
-      expect(svg?.classList.toString()).toContain("text-green-500");
+      expect(svg?.classList.toString()).toContain("text-success");
     });
   });
 });

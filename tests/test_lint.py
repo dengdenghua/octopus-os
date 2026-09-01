@@ -43,9 +43,8 @@ class TestSelfLint:
         assert pkg.is_dir()
         issues = lint_tree(pkg, ALL_RULES)
         errors = [i for i in issues if i.severity == "error"]
-        assert errors == [], (
-            "runtime/ must pass its own lint. Found: "
-            + "\n".join(i.format() for i in errors)
+        assert errors == [], "runtime/ must pass its own lint. Found: " + "\n".join(
+            i.format() for i in errors
         )
 
 
@@ -62,11 +61,12 @@ class TestImportDirectionRatchet:
         repo = Path(__file__).parent.parent
         r = subprocess.run(
             [sys.executable, "tools/lint/import_direction_check.py", "--strict"],
-            cwd=str(repo), capture_output=True, text=True,
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
         )
         assert r.returncode == 0, (
-            "import-direction baseline drifted from reality:\n"
-            + r.stdout + r.stderr
+            "import-direction baseline drifted from reality:\n" + r.stdout + r.stderr
         )
 
     def test_rule_classifies_edges(self):

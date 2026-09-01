@@ -22,7 +22,26 @@
  */
 
 import { swallow } from "@/core/utils/log";
+import { authHeaders } from "@/core/auth/api";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+const catalogInFlight = new Map<
+  string,
+  Promise<{ flags: FeatureFlagEntry[] }>
+>();
+
+function fetchCatalogOnce(url: string): Promise<{ flags: FeatureFlagEntry[] }> {
+  const existing = catalogInFlight.get(url);
+  if (existing) return existing;
+  const request = fetch(url, { method: "GET", headers: authHeaders() })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return (await response.json()) as { flags: FeatureFlagEntry[] };
+    })
+    .finally(() => catalogInFlight.delete(url));
+  catalogInFlight.set(url, request);
+  return request;
+}
 
 export interface FeatureFlagEntry {
   name: string;
@@ -77,17 +96,22 @@ export function useFeatureFlags(
         const url = `${baseUrl}/api/feature-flags${
           method === "POST" ? "/reload" : ""
         }`;
-        const resp = await fetch(url, { method });
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}`);
-        }
-        const body = (await resp.json()) as { flags: FeatureFlagEntry[] };
+        const body =
+          method === "GET"
+            ? await fetchCatalogOnce(url)
+            : await fetch(url, {
+                method,
+                headers: authHeaders(),
+              }).then(async (response) => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return (await response.json()) as {
+                  flags: FeatureFlagEntry[];
+                };
+              });
         setFlags(Array.isArray(body.flags) ? body.flags : []);
       } catch (exc) {
         swallow(exc);
-        setError(
-          exc instanceof Error ? exc.message : String(exc),
-        );
+        setError(exc instanceof Error ? exc.message : String(exc));
         setFlags([]);
       } finally {
         setLoading(false);
@@ -106,14 +130,11 @@ export function useFeatureFlags(
     return Boolean(entry?.value);
   }, []);
 
-  const valueFn = useCallback(
-    function value<T>(name: string, fallback: T): T {
-      const entry = indexRef.current.get(name);
-      if (entry === undefined) return fallback;
-      return entry.value as T;
-    },
-    [],
-  );
+  const valueFn = useCallback(function value<T>(name: string, fallback: T): T {
+    const entry = indexRef.current.get(name);
+    if (entry === undefined) return fallback;
+    return entry.value as T;
+  }, []);
 
   const reload = useCallback(async () => {
     await fetchCatalog("POST");

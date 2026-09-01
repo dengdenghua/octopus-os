@@ -9,11 +9,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHROMIUM_DIR="${1:-$HOME/chromium}"
 CHROMIUM_BRANCH="${CHROMIUM_BRANCH:-124.0.6367.78}"  # 锁版本，最后稳定 Chromium 124
 
 echo "============================================================"
-echo "🕷️ Octopus Mobile · Chromium 真集成 · 源码拉取"
+echo "🕷️ Echo Mobile · Chromium 真集成 · 源码拉取"
 echo "============================================================"
 echo ""
 echo "目标目录：$CHROMIUM_DIR"
@@ -127,5 +128,5 @@ echo "💾 占用空间：$(du -sh . | cut -f1)"
 echo ""
 echo "下一步："
 echo "  cd $CHROMIUM_DIR/src"
-echo "  ../octopus-agent/docs/mobile/chromium-build/build_scripts/build_webview.sh"
+echo "  $SCRIPT_DIR/build_webview.sh"
 echo ""

@@ -1,11 +1,11 @@
 [project]
-name = "octopus-os"
+name = "echo-os"
 version = "0.2.0"
-description = "Octopus OS · 家庭服务器 AI Agent 设备层(NAS 桌面/启动器/文件)。以 octopus-agent 为 pinned 依赖,自身只含 appliance 层。"
+description = "Echo OS · 内建 Agent 运行时、桌面、NAS 管理与本地应用平台。"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.11"
-authors = [{name = "octopus-agent contributors"}]
+authors = [{name = "Echo OS contributors"}]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3.11",
@@ -13,11 +13,20 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-    # P1 去 fork:runtime/tools 不再随 os 仓库 fork,改由 agent 作 pinned 依赖提供。
-    # serve/web extra = 运行 appliance(NAS 桌面/启动器)所需的 FastAPI/httpx 等。
-    # 注:agent 仓库私有,裸 `pip install octopus-os` 需 GitHub token;Docker 构建
-    # 走 sibling 源码本地装(见 Dockerfile),不触发该 git 拉取。
-    "octopus-agent[serve,web] @ git+https://github.com/dengdenghua/octopus-agent.git@fedd0c5",
+    # Echo OS 与 Agent runtime 现在由同一个 distribution 提供。
+    # 本地账号和 NAS 设备账号都依赖密码哈希，不能靠偶然安装的 extra 提供。
+    "bcrypt>=4.0",
+    "fastapi>=0.115,<1.0",
+    "cryptography>=50.0.0",
+    "defusedxml>=0.7.1",
+    "httpx>=0.27",
+    # 安全下限来自 2026-08-26 pip-audit；不能让宽松的上游范围回退到已知漏洞版。
+    "idna>=3.15",
+    "python-multipart>=0.0.31",
+    "pillow>=12.3.0",
+    "pydantic>=2.12.0",
+    "pyyaml>=6.0",
+    "starlette>=1.3.1",
 ]
 
 [project.optional-dependencies]
@@ -26,15 +35,27 @@ minimal = [
     "python-dotenv>=1.0",
 ]
 dev = [
+    "bandit>=1.7",
+    "build>=1.2",
+    "hatchling>=1.27",
+    # Starlette >=1.3 的 TestClient 使用独立的 httpx2 包。
+    "httpx2>=2.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
     "pytest-timeout>=2.2",
+    "pip-audit>=2.7",
     "ruff>=0.5.0,<1.0",
+]
+release = [
+    "twine==7.0.0",
 ]
 tracing = [
     "opentelemetry-api>=1.25",
     "opentelemetry-sdk>=1.25",
+]
+local-auth = [
+    "bcrypt>=4.0",
 ]
 langfuse = [
     "langfuse>=2.0",
@@ -43,13 +64,41 @@ serve = [
     "fastapi>=0.115,<1.0",
     "uvicorn[standard]>=0.32",
     "pyyaml>=6.0",
-    "python-multipart>=0.0.9",
+    "python-multipart>=0.0.31",
+]
+# Self-contained desktop backend. Keep this curated set aligned with
+# frontend/electron/backend-runtime.cjs::CORE_DEPS.
+desktop-core = [
+    # AI 剪辑工坊是内建桌面能力，不得在冻结过程中因可选视频依赖缺失而整插件消失。
+    "av>=12.0",
+    "bcrypt>=4.0",
+    "cryptography>=50.0.0",
+    "fastapi>=0.115,<1.0",
+    "starlette>=1.3.1",
+    "uvicorn[standard]>=0.32",
+    "pyyaml>=6.0",
+    "python-multipart>=0.0.31",
+    "httpx>=0.27",
+    "numpy>=2.0",
+    "python-dotenv>=1.0",
+    "ddgs>=9.0",
+    "pydantic>=2.12.0",
+    "packaging>=24.0",
+    "anthropic>=0.40,<1.0",
+    "python-docx>=1.2.0",
+    "openpyxl>=3.1.5",
+    "python-pptx>=1.0.2",
+    "pypdf>=6.15.0",
+    "reportlab>=4.4.4",
+]
+desktop-build = [
+    "pyinstaller==6.16.0",
 ]
 # ── Web skills · httpx-gated ─────────────────────────────
 web = [
     "httpx>=0.27",
 ]
-# ── Octopus OS appliance(octopus-os fork:NAS 启动器)──────
+# ── Echo OS appliance (NAS 启动器) ───────────────────────
 appliance = [
     "fastapi>=0.115,<1.0",
     "httpx>=0.27",
@@ -57,6 +106,14 @@ appliance = [
 # ── Web content extraction (Readability-style main content) ─
 extract = [
     "trafilatura>=2.0",
+    "pypdf>=6.15.0",
+]
+office = [
+    "python-docx>=1.2.0",
+    "openpyxl>=3.1.5",
+    "python-pptx>=1.0.2",
+    "pypdf>=6.15.0",
+    "reportlab>=4.4.4",
 ]
 # ── LLM provider adapters ────────────────────────────────
 anthropic = [
@@ -64,7 +121,12 @@ anthropic = [
 ]
 # ── MCP client ───────────────────────────────────────────
 mcp = [
-    "mcp>=0.9,<2.0",
+    "mcp>=2.0.0,<3.0",
+    "pydantic-settings>=2.14.2",
+    "pyjwt[crypto]>=2.13.0",
+]
+a2a = [
+    "a2a-sdk>=1.1.0,<2.0",
 ]
 # ── Browser skills ───────────────────────────────────────
 browser = [
@@ -76,12 +138,28 @@ desktop = [
     "pillow>=10.0",
     "uiautomation>=2.0; platform_system == 'Windows'",
 ]
+vision = [
+    "fastembed>=0.8.0",
+    "insightface>=1.0.1",
+    "opencv-python-headless>=5.0.0.93",
+    "rapidocr-onnxruntime>=1.3.0",
+]
+code-intel = [
+    "tree-sitter>=0.23",
+    "tree-sitter-python>=0.23",
+    "tree-sitter-typescript>=0.23",
+]
+# ── Local video understanding and timeline rendering ─────
+video = [
+    "av>=12.0",
+    "faster-whisper>=1.0.0",
+]
 discord = [
-    "cryptography>=42.0",
+    "cryptography>=50.0.0",
 ]
 channels = [
     "httpx>=0.27",
-    "cryptography>=42.0",
+    "cryptography>=50.0.0",
 ]
 mantle-ssh = [
     "paramiko>=3.0",
@@ -108,13 +186,15 @@ all = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pyyaml>=6.0",
-    "python-multipart>=0.0.9",
+    "python-multipart>=0.0.31",
     # web / IM
     "httpx>=0.27",
     # LLM providers
     "anthropic>=0.40",
     # MCP client
-    "mcp>=0.9",
+    "mcp>=2.0.0,<3.0",
+    "pydantic-settings>=2.14.2",
+    "pyjwt[crypto]>=2.13.0",
     # browsers
     "playwright>=1.48",
     # desktop
@@ -125,49 +205,58 @@ all = [
     "opentelemetry-api>=1.25",
     "opentelemetry-sdk>=1.25",
     # Implementation note.
-    "cryptography>=42.0",
+    "cryptography>=50.0.0",
     # Implementation note.
     "paramiko>=3.0",
     "redis>=5.0",
     "watchdog>=4.0",
+    "bcrypt>=4.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/octopus-agent/octopus-agent"
-Documentation = "https://github.com/octopus-agent/octopus-agent/blob/main/README.md"
-Repository = "https://github.com/octopus-agent/octopus-agent"
-Issues = "https://github.com/octopus-agent/octopus-agent/issues"
-Changelog = "https://github.com/octopus-agent/octopus-agent/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/dengdenghua/echo-os"
+Documentation = "https://github.com/dengdenghua/echo-os/blob/main/README.md"
+Repository = "https://github.com/dengdenghua/echo-os"
+Issues = "https://github.com/dengdenghua/echo-os/issues"
+Changelog = "https://github.com/dengdenghua/echo-os/blob/main/CHANGELOG.md"
 
 # ─── Single source of truth for the canonical repo URL ──────────
-# All other files (frontend/package.json, mkdocs.yml, install.sh,
-# permissions.example.json, the in-app About page, the in-app
-# GITHUB_URL constant, …) MUST match this value. CI enforces this via
-# tools/lint/repo_url_check.py. To move the project to a new home,
-# change this one line and re-run the linter.
-[tool.octopus]
-repo_url = "https://github.com/octopus-agent/octopus-agent"
+[tool.echo]
+repo_url = "https://github.com/dengdenghua/echo-os"
 
-# console scripts(octopus / octopus-agent / octopus-lint)由 agent 依赖提供,
-# os 不再重复声明(避免与 agent 包的同名脚本冲突)。
+[project.scripts]
+echo-lint = "tools.lint.invariant_check:main"
+echo = "runtime.cli:main"
+echo-agent = "runtime.cli:main"
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
 
-[tool.setuptools]
-include-package-data = true
+[tool.hatch.build.targets.wheel]
+# 单一 wheel 同时包含设备层和 Agent runtime，不再拼装第二个 distribution。
+packages = ["appliance", "runtime", "tools", "echo_runtime", "demos"]
+exclude = [
+    # These reviewed source trees are installed only with their matching
+    # remote workbench package; PluginHub intentionally keeps them inert in
+    # the immutable host runtime.
+    "runtime/platform/plugins/bundled/narrative_studio/**",
+    "runtime/platform/plugins/bundled/paper_trading/**",
+]
+artifacts = [
+    "runtime/sensing/gateway/agent_market_sources/**",
+    "runtime/execution/all_skills/**",
+    "skills.lock.json",
+]
 
-[tool.setuptools.packages.find]
-where = ["."]
-# os 仓库只发布 appliance 层;runtime*/tools* 由 agent 依赖提供(P1 去 fork)。
-include = ["appliance*"]
-exclude = ["tests*", "*.fixtures*"]
+[tool.uv]
+# 发行依赖锁由这个解析器版本生成；版本漂移必须显式升级并重建锁。
+required-version = "==0.11.25"
 
 # ─── pytest ──────────────────────────────────────────
 [tool.pytest.ini_options]
 minversion = "8.0"
-testpaths = ["tests"]
+testpaths = ["tests/appliance"]
 addopts = [
     "--strict-markers",
     "--strict-config",
@@ -179,12 +268,30 @@ markers = [
     "integration: end-to-end integration tests",
 ]
 
+# ─── mypy ────────────────────────────────────────────
+[tool.mypy]
+# 显式包基准：避免 deploy/scripts 等无 __init__.py 目录被同时映射成两种模块名。
+explicit_package_bases = true
+# 构建产物目录与 skill 包含同名模块，mypy 扫描会误判重复模块（如 minimax_image.py、validation）。
+exclude = [
+    "packaging/image/mkosi.agent-runtime/",
+    "deploy/appliance/agent-resources/",
+    "deploy/appliance/agent-dist/",
+    "deploy/appliance/agent-codex/",
+    "skills/public/pptx/",
+    "skills/public/docx/",
+]
+
 # ─── ruff ────────────────────────────────────────────
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 extend-exclude = [
     "tools/lint/fixtures",
+    "packaging/image/mkosi.agent-runtime/",
+    "deploy/appliance/agent-resources/",
+    "deploy/appliance/agent-dist/",
+    "deploy/appliance/agent-codex/",
 ]
 
 [tool.ruff.lint]
@@ -199,7 +306,7 @@ quote-style = "double"
 
 # ─── coverage ────────────────────────────────────────
 [tool.coverage.run]
-source = ["runtime", "tools"]
+source = ["appliance", "runtime", "tools", "echo_runtime"]
 omit = ["*/tests/*", "*/fixtures/*"]
 
 [tool.coverage.report]

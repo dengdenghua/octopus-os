@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const sharp = require("sharp");
 
-const SVG_INPUT = path.join(__dirname, "..", "public", "images", "octopus.svg");
+const SVG_INPUT = path.join(__dirname, "..", "..", "frontend", "public", "images", "echo.svg");
 const BUILD_DIR = path.join(__dirname, "..", "build");
 
 async function generateIcons() {

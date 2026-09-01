@@ -1,19 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BotIcon,
   CheckIcon,
   CopyIcon,
   EyeIcon,
-  FingerprintIcon,
   LinkIcon,
   Loader2Icon,
-  PlusIcon,
-  SearchIcon,
   ShieldCheckIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -22,57 +22,56 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useAgents } from "@/core/agents";
-import { withAgentAvatarVersion } from "@/core/agents/avatar";
-import type { Agent } from "@/core/agents/types";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { copyTextToClipboard } from "@/core/clipboard";
-import { getBackendBaseURL } from "@/core/config";
+import { coworkQueryKeys } from "@/core/cowork";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   createTeamInvite,
-  updateTeam,
-  type Team,
-  type TeamParticipantRole,
+  approveTeamJoinRequest,
+  getTeamJoinPolicy,
+  listTeamJoinRequests,
+  listTeamInvites,
+  rejectTeamJoinRequest,
+  revokeTeamInvite,
+  updateTeamJoinPolicy,
+  type TeamInvite,
+  type TeamInviteRecord,
+  type TeamInviteRole,
+  type TeamInviteStatus,
+  type TeamJoinPolicy,
+  type TeamJoinPolicyInfo,
+  type TeamJoinRequest,
 } from "@/core/teams";
 import { cn } from "@/lib/utils";
 
-interface InviteDialogProps {
+export interface InviteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   roomId: string;
   threadId?: string | null;
-  team?: Team | null;
-  onTeamChange?: (team: Team) => void;
 }
 
-function appendInviteThread(path: string, threadId?: string | null) {
-  const normalizedThreadId = threadId?.trim();
-  if (!normalizedThreadId || normalizedThreadId === "new") return path;
+const EXPIRATION_OPTIONS = [
+  { seconds: 60 * 60, translationKey: "expiresHour" },
+  { seconds: 24 * 60 * 60, translationKey: "expiresDay" },
+  { seconds: 7 * 24 * 60 * 60, translationKey: "expiresWeek" },
+  { seconds: 30 * 24 * 60 * 60, translationKey: "expiresMonth" },
+] as const;
 
-  const separator = path.includes("?") ? "&" : "?";
-  return `${path}${separator}thread=${encodeURIComponent(normalizedThreadId)}`;
-}
-
-function agentDisplayName(agent: Agent) {
-  return agent.display_name?.trim() || agent.name;
-}
-
-function isDigitalTwinAgent(agent: Agent) {
-  return (
-    [agent.name, agent.display_name ?? "", agent.description]
-      .join(" ")
-      .toLowerCase()
-      .includes("digital") ||
-    [agent.name, agent.display_name ?? "", agent.description]
-      .join(" ")
-      .includes("分身")
-  );
-}
-
-function resolveAgentAvatar(agent: Agent) {
-  if (!agent.avatar_url) return null;
-  const src = withAgentAvatarVersion(agent.avatar_url);
-  return src.startsWith("http") ? src : `${getBackendBaseURL()}${src}`;
+export function inviteLinkFromResponse(
+  invite: Pick<TeamInvite, "invite_hash_path" | "invite_path">,
+  origin: string,
+) {
+  const path = invite.invite_hash_path || invite.invite_path;
+  return new URL(path, origin).toString();
 }
 
 export function InviteDialog({
@@ -80,69 +79,228 @@ export function InviteDialog({
   onOpenChange,
   roomId,
   threadId,
-  team,
-  onTeamChange,
 }: InviteDialogProps) {
-  const { t } = useI18n();
-  const { agents, isLoading: agentsLoading } = useAgents();
-  const [copied, setCopied] = useState(false);
+  const { t, locale } = useI18n();
+  const copy = t.collab.humanInvite;
+  const queryClient = useQueryClient();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const loadGenerationRef = useRef(0);
+  const [role, setRole] = useState<TeamInviteRole>("member");
+  const [expiration, setExpiration] = useState(
+    String(EXPIRATION_OPTIONS[2].seconds),
+  );
   const [inviteLink, setInviteLink] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [inviteRole, setInviteRole] = useState<TeamParticipantRole>("member");
-  const [agentQuery, setAgentQuery] = useState("");
-  const [addingAgentIds, setAddingAgentIds] = useState<Set<string>>(
-    () => new Set(),
+  const [createdInviteId, setCreatedInviteId] = useState<string | null>(null);
+  const [invites, setInvites] = useState<TeamInviteRecord[]>([]);
+  const [loadingInvites, setLoadingInvites] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [policy, setPolicy] = useState<TeamJoinPolicyInfo | null>(null);
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const [joinRequests, setJoinRequests] = useState<TeamJoinRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [actingRequestId, setActingRequestId] = useState<string | null>(null);
+
+  const statusLabels = useMemo<Record<TeamInviteStatus, string>>(
+    () => ({
+      active: copy.statusActive,
+      expired: copy.statusExpired,
+      exhausted: copy.statusExhausted,
+      revoked: copy.statusRevoked,
+    }),
+    [copy],
   );
 
-  const teamMemberNames = useMemo(
-    () => new Set((team?.members ?? []).map((member) => member.name)),
-    [team?.members],
+  const loadInvites = useCallback(
+    async (
+      options: {
+        generation?: number;
+        roomId?: string;
+        silent?: boolean;
+      } = {},
+    ) => {
+      const targetRoomId = options.roomId ?? roomId;
+      const generation = options.generation ?? loadGenerationRef.current;
+      if (!targetRoomId) return;
+      if (!options.silent && generation === loadGenerationRef.current) {
+        setLoadingInvites(true);
+      }
+      try {
+        const nextInvites = await listTeamInvites(targetRoomId);
+        if (generation === loadGenerationRef.current) {
+          setInvites(nextInvites);
+        }
+      } catch (error) {
+        if (generation === loadGenerationRef.current && !options.silent) {
+          toast.error(error instanceof Error ? error.message : copy.loadFailed);
+        }
+      } finally {
+        if (generation === loadGenerationRef.current && !options.silent) {
+          setLoadingInvites(false);
+        }
+      }
+    },
+    [copy.loadFailed, roomId],
   );
 
-  const filteredAgents = useMemo(() => {
-    const query = agentQuery.trim().toLowerCase();
-    if (!query) return agents;
-    return agents.filter((agent) =>
-      [
-        agent.name,
-        agent.display_name ?? "",
-        agent.description,
-        isDigitalTwinAgent(agent) ? "数字分身 digital twin" : "",
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [agentQuery, agents]);
-
-  const addableFilteredAgents = useMemo(
-    () => filteredAgents.filter((agent) => !teamMemberNames.has(agent.name)),
-    [filteredAgents, teamMemberNames],
+  const loadGovernance = useCallback(
+    async (
+      options: {
+        generation?: number;
+        roomId?: string;
+        silent?: boolean;
+      } = {},
+    ) => {
+      const targetRoomId = options.roomId ?? roomId;
+      const generation = options.generation ?? loadGenerationRef.current;
+      if (!targetRoomId) return;
+      if (!options.silent && generation === loadGenerationRef.current) {
+        setLoadingRequests(true);
+      }
+      try {
+        const nextPolicy = await getTeamJoinPolicy(targetRoomId);
+        const nextRequests = nextPolicy.is_project_group
+          ? await listTeamJoinRequests(targetRoomId, "pending")
+          : [];
+        if (generation === loadGenerationRef.current) {
+          setPolicy(nextPolicy);
+          setJoinRequests(nextRequests);
+        }
+      } catch (error) {
+        if (generation === loadGenerationRef.current && !options.silent) {
+          toast.error(
+            error instanceof Error ? error.message : copy.requestsLoadFailed,
+          );
+        }
+      } finally {
+        if (generation === loadGenerationRef.current && !options.silent) {
+          setLoadingRequests(false);
+        }
+      }
+    },
+    [copy.requestsLoadFailed, roomId],
   );
 
   useEffect(() => {
-    let cancelled = false;
-    if (!open || !roomId) return;
-    setLoading(true);
-    void createTeamInvite(roomId, { role: inviteRole })
-      .then((invite) => {
-        if (cancelled) return;
-        const path = appendInviteThread(
-          invite.invite_hash_path || invite.invite_path,
-          threadId,
-        );
-        setInviteLink(`${window.location.origin}${path}`);
-      })
-      .catch(() => {
-        if (!cancelled) toast.error(t.collab.copyFailed);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const generation = loadGenerationRef.current + 1;
+    loadGenerationRef.current = generation;
+    setInviteLink("");
+    setCreatedInviteId(null);
+    setCopied(false);
+    setInvites([]);
+    setPolicy(null);
+    setJoinRequests([]);
+    setLoadingInvites(open);
+    setLoadingRequests(open);
+    if (open && roomId) {
+      void loadInvites({ generation, roomId });
+      void loadGovernance({ generation, roomId });
+    }
     return () => {
-      cancelled = true;
+      if (loadGenerationRef.current === generation) {
+        loadGenerationRef.current += 1;
+      }
     };
-  }, [inviteRole, open, roomId, threadId, t.collab.copyFailed]);
+  }, [loadGovernance, loadInvites, open, roomId]);
+
+  useEffect(() => {
+    if (!open || !policy?.is_project_group) return;
+    const timer = window.setInterval(() => {
+      void loadGovernance({ silent: true });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [loadGovernance, open, policy?.is_project_group]);
+
+  const handlePolicyChange = async (nextPolicy: TeamJoinPolicy) => {
+    if (
+      !policy ||
+      policy.team_id !== roomId ||
+      nextPolicy === policy.join_policy ||
+      savingPolicy
+    ) {
+      return;
+    }
+    const previous = policy;
+    setPolicy({ ...policy, join_policy: nextPolicy, overridden: true });
+    setSavingPolicy(true);
+    try {
+      setPolicy(await updateTeamJoinPolicy(roomId, nextPolicy));
+    } catch (error) {
+      setPolicy(previous);
+      toast.error(
+        error instanceof Error ? error.message : copy.policySaveFailed,
+      );
+    } finally {
+      setSavingPolicy(false);
+    }
+  };
+
+  const handlePolicySelection = async (nextPolicy: TeamJoinPolicy) => {
+    if (nextPolicy === "direct_join" && policy?.join_policy !== "direct_join") {
+      const accepted = await confirm({
+        title: copy.directJoinConfirmTitle,
+        description: copy.directJoinConfirmDescription,
+        confirmLabel: copy.directJoinConfirmAction,
+        cancelLabel: copy.directJoinConfirmCancel,
+        destructive: false,
+      });
+      if (!accepted) return;
+    }
+    await handlePolicyChange(nextPolicy);
+  };
+
+  const handleJoinRequest = async (
+    requestId: string,
+    action: "approve" | "reject",
+  ) => {
+    setActingRequestId(requestId);
+    try {
+      if (action === "approve") {
+        await approveTeamJoinRequest(roomId, requestId);
+        toast.success(copy.approveSuccess);
+      } else {
+        await rejectTeamJoinRequest(roomId, requestId);
+        toast.success(copy.rejectSuccess);
+      }
+      setJoinRequests((current) =>
+        current.filter((request) => request.id !== requestId),
+      );
+      if (threadId) {
+        void queryClient.invalidateQueries({
+          queryKey: coworkQueryKeys.session(threadId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: coworkQueryKeys.group(threadId),
+        });
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : copy.requestActionFailed,
+      );
+    } finally {
+      setActingRequestId(null);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!roomId) return;
+    setCreating(true);
+    try {
+      const invite = await createTeamInvite(roomId, {
+        role,
+        expires_in_seconds: Number(expiration),
+      });
+      setInviteLink(inviteLinkFromResponse(invite, window.location.origin));
+      setCreatedInviteId(invite.invite_id);
+      setCopied(false);
+      await loadInvites();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : copy.createFailed);
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const handleCopy = async () => {
     if (!inviteLink) return;
@@ -150,226 +308,378 @@ export function InviteDialog({
       await copyTextToClipboard(inviteLink);
       setCopied(true);
       toast.success(t.collab.linkCopied);
-      setTimeout(() => setCopied(false), 2000);
+      window.setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error(t.collab.copyFailed);
     }
   };
 
-  const handleAddAgents = async (nextAgents: Agent[]) => {
-    if (!team) return;
-    const additions = nextAgents.filter(
-      (agent) => !teamMemberNames.has(agent.name),
-    );
-    if (additions.length === 0) return;
-
-    setAddingAgentIds(new Set(additions.map((agent) => agent.name)));
+  const handleRevoke = async (inviteId: string) => {
+    setRevokingId(inviteId);
     try {
-      const members = [...team.members, ...additions];
-      const updated = await updateTeam(team.id, {
-        id: team.id,
-        name: team.name,
-        members,
-        leaderId: team.leaderId ?? members[0]?.name ?? null,
-      });
-      onTeamChange?.(updated);
-      toast.success(`已添加 ${additions.length} 个 Agent / 数字分身`);
+      const revoked = await revokeTeamInvite(roomId, inviteId);
+      setInvites((current) =>
+        current.map((invite) => (invite.id === inviteId ? revoked : invite)),
+      );
+      if (createdInviteId === inviteId) {
+        setInviteLink("");
+        setCreatedInviteId(null);
+      }
+      toast.success(copy.revokeSuccess);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "添加 Agent 失败");
+      toast.error(error instanceof Error ? error.message : copy.revokeFailed);
     } finally {
-      setAddingAgentIds(new Set());
+      setRevokingId(null);
     }
   };
 
+  const formatDate = (value?: string | null) => {
+    if (!value) return copy.neverExpires;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(date);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="overflow-hidden p-0 sm:max-w-3xl">
-        <DialogHeader className="px-6 pb-3 pt-5">
-          <DialogTitle>{t.collab.inviteDialogTitle}</DialogTitle>
-          <DialogDescription>{t.collab.inviteDialogDesc}</DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[min(82vh,720px)] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{copy.dialogTitle}</DialogTitle>
+            <DialogDescription>{copy.dialogDescription}</DialogDescription>
+          </DialogHeader>
 
-        <div className="grid gap-4 px-6 pb-5 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-          <section className="min-w-0 space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setInviteRole("member")}
-                className={cn(
-                  "rounded-lg border px-3 py-2 text-left transition-colors",
-                  inviteRole === "member"
-                    ? "border-primary/40 bg-primary/10 text-foreground"
-                    : "border-border bg-muted/20 text-muted-foreground hover:bg-muted/40",
-                )}
+          <div className="space-y-5">
+            {policy?.is_project_group ? (
+              <section
+                aria-labelledby="human-invite-policy-heading"
+                className="space-y-2 rounded-lg border border-border-default bg-muted/20 p-3"
               >
-                <span className="mb-1 flex items-center gap-2 text-sm font-medium">
-                  <ShieldCheckIcon className="size-4" />
-                  成员
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  可发起 AI 任务和参与协作
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setInviteRole("viewer")}
-                className={cn(
-                  "rounded-lg border px-3 py-2 text-left transition-colors",
-                  inviteRole === "viewer"
-                    ? "border-primary/40 bg-primary/10 text-foreground"
-                    : "border-border bg-muted/20 text-muted-foreground hover:bg-muted/40",
-                )}
-              >
-                <span className="mb-1 flex items-center gap-2 text-sm font-medium">
-                  <EyeIcon className="size-4" />
-                  旁观
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  可看进展和留言，不启动任务
-                </span>
-              </button>
-            </div>
+                <div className="flex items-center justify-between gap-3">
+                  <Label id="human-invite-policy-heading">
+                    {copy.joinPolicyLabel}
+                  </Label>
+                  {savingPolicy ? (
+                    <Loader2Icon
+                      className="size-4 animate-spin text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </div>
+                <Select
+                  value={policy.join_policy}
+                  onValueChange={(value) =>
+                    void handlePolicySelection(value as TeamJoinPolicy)
+                  }
+                  disabled={savingPolicy}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="apply_then_join">
+                      {copy.joinPolicyApply}
+                    </SelectItem>
+                    <SelectItem value="direct_join">
+                      {copy.joinPolicyDirect}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {policy.join_policy === "apply_then_join"
+                    ? copy.joinPolicyApplyDesc
+                    : copy.joinPolicyDirectDesc}
+                </p>
+              </section>
+            ) : null}
 
-            <div className="flex gap-2">
-              <div className="relative min-w-0 flex-1">
-                <LinkIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={loading ? t.collab.generatingLink : inviteLink}
-                  readOnly
-                  className="pl-9"
-                />
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium">{copy.roleLabel}</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {(["member", "viewer"] as const).map((nextRole) => {
+                  const isMember = nextRole === "member";
+                  const selected = role === nextRole;
+                  return (
+                    <button
+                      key={nextRole}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setRole(nextRole)}
+                      className={cn(
+                        "rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        selected
+                          ? "border-primary/40 bg-primary/10"
+                          : "border-border-default hover:bg-muted/40",
+                      )}
+                    >
+                      <span className="flex items-center gap-2 text-sm font-medium">
+                        {isMember ? (
+                          <ShieldCheckIcon className="size-4" />
+                        ) : (
+                          <EyeIcon className="size-4" />
+                        )}
+                        {isMember
+                          ? t.collab.inviteAgents.roleMember
+                          : t.collab.inviteAgents.roleViewer}
+                      </span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {isMember
+                          ? t.collab.inviteAgents.roleMemberDesc
+                          : t.collab.inviteAgents.roleViewerDesc}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <Button
-                onClick={handleCopy}
-                variant="outline"
-                disabled={!inviteLink || loading}
-              >
-                {copied ? (
-                  <CheckIcon className="size-4" />
-                ) : (
-                  <CopyIcon className="size-4" />
-                )}
-              </Button>
-            </div>
-          </section>
+            </fieldset>
 
-          <section className="min-w-0 rounded-lg border border-border/60 bg-muted/10">
-            <div className="border-b border-border/50 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <BotIcon className="size-4 text-primary" />
-                    添加 Agent / 数字分身
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    已有 {team?.members.length ?? 0} 个 · 可选 {agents.length}{" "}
-                    个
+            <div className="space-y-2">
+              <Label htmlFor="human-invite-expiration">
+                {copy.expiresLabel}
+              </Label>
+              <Select value={expiration} onValueChange={setExpiration}>
+                <SelectTrigger
+                  id="human-invite-expiration"
+                  className="w-full focus-visible:border-muted-foreground/40 focus-visible:ring-muted-foreground/15"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EXPIRATION_OPTIONS.map((option) => (
+                    <SelectItem
+                      key={option.seconds}
+                      value={String(option.seconds)}
+                    >
+                      {copy[option.translationKey]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              type="button"
+              className="w-full"
+              onClick={() => void handleCreate()}
+              disabled={creating || !roomId}
+            >
+              {creating ? (
+                <Loader2Icon className="size-4 animate-spin" />
+              ) : (
+                <LinkIcon className="size-4" />
+              )}
+              {creating ? copy.creatingLink : copy.createLink}
+            </Button>
+
+            {inviteLink ? (
+              <div className="space-y-2" aria-live="polite">
+                <Label htmlFor="human-invite-link">{copy.currentLink}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="human-invite-link"
+                    value={inviteLink}
+                    readOnly
+                    className="min-w-0 font-mono text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void handleCopy()}
+                    aria-label={t.collab.copyLink}
+                  >
+                    {copied ? (
+                      <CheckIcon className="size-4" />
+                    ) : (
+                      <CopyIcon className="size-4" />
+                    )}
+                    <span className="hidden sm:inline">
+                      {copied ? t.collab.copied : t.collab.copy}
+                    </span>
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {copy.linkVisibleOnce}
+                </p>
+              </div>
+            ) : null}
+
+            {policy?.is_project_group ? (
+              <section aria-labelledby="human-join-requests-heading">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3
+                    id="human-join-requests-heading"
+                    className="text-sm font-medium"
+                  >
+                    {copy.pendingRequestsTitle}
+                  </h3>
+                  <div className="flex items-center gap-1">
+                    <Badge variant="secondary">{joinRequests.length}</Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void loadGovernance()}
+                      disabled={loadingRequests}
+                    >
+                      {copy.refresh}
+                    </Button>
                   </div>
                 </div>
+                {loadingRequests ? (
+                  <div className="flex items-center justify-center gap-2 rounded-lg border border-border-default py-6 text-sm text-muted-foreground">
+                    <Loader2Icon className="size-4 animate-spin" />
+                    {copy.loadingRecords}
+                  </div>
+                ) : joinRequests.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-border-default py-6 text-center text-sm text-muted-foreground">
+                    {copy.pendingRequestsEmpty}
+                  </div>
+                ) : (
+                  <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+                    {joinRequests.map((request) => (
+                      <div
+                        key={request.id}
+                        className="flex items-center gap-3 rounded-lg border border-border-default px-3 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">
+                            {request.display_name}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {request.role === "viewer"
+                              ? t.collab.inviteAgents.roleViewer
+                              : t.collab.inviteAgents.roleMember}
+                            {request.created_at
+                              ? ` · ${formatDate(request.created_at)}`
+                              : ""}
+                          </div>
+                          {request.actor_id ? (
+                            <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground/80">
+                              {request.actor_id}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={actingRequestId === request.id}
+                            onClick={() =>
+                              void handleJoinRequest(request.id, "reject")
+                            }
+                          >
+                            {copy.rejectRequest}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={actingRequestId === request.id}
+                            onClick={() =>
+                              void handleJoinRequest(request.id, "approve")
+                            }
+                          >
+                            {actingRequestId === request.id ? (
+                              <Loader2Icon className="size-4 animate-spin" />
+                            ) : null}
+                            {copy.approveRequest}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ) : null}
+
+            <section aria-labelledby="human-invite-records-heading">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3
+                  id="human-invite-records-heading"
+                  className="text-sm font-medium"
+                >
+                  {copy.recordsTitle}
+                </h3>
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
-                  className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
-                  disabled={!team || addableFilteredAgents.length === 0}
-                  onClick={() => void handleAddAgents(addableFilteredAgents)}
+                  variant="ghost"
+                  onClick={() => void loadInvites()}
+                  disabled={loadingInvites}
                 >
-                  <PlusIcon className="mr-1 size-3.5" />
-                  添加当前筛选
+                  {copy.refresh}
                 </Button>
               </div>
 
-              <div className="relative mt-2">
-                <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={agentQuery}
-                  onChange={(event) => setAgentQuery(event.target.value)}
-                  placeholder="搜索 Agent、角色或数字分身"
-                  className="h-8 rounded-lg border-border/60 bg-background/70 pl-8 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="max-h-[280px] overflow-y-auto p-2">
-              {agentsLoading ? (
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              {loadingInvites ? (
+                <div className="flex items-center justify-center gap-2 rounded-lg border border-border-default py-8 text-sm text-muted-foreground">
                   <Loader2Icon className="size-4 animate-spin" />
-                  加载 Agent 中...
+                  {copy.loadingRecords}
                 </div>
-              ) : filteredAgents.length === 0 ? (
-                <div className="py-10 text-center text-sm text-muted-foreground">
-                  没有匹配的 Agent / 数字分身
+              ) : invites.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border-default py-8 text-center text-sm text-muted-foreground">
+                  {copy.emptyRecords}
                 </div>
               ) : (
-                <div className="space-y-1">
-                  {filteredAgents.map((agent) => {
-                    const displayName = agentDisplayName(agent);
-                    const inTeam = teamMemberNames.has(agent.name);
-                    const isAdding = addingAgentIds.has(agent.name);
-                    const avatarSrc = resolveAgentAvatar(agent);
-                    const isTwin = isDigitalTwinAgent(agent);
-                    return (
-                      <div
-                        key={agent.name}
-                        className={cn(
-                          "flex items-center gap-2 rounded-lg px-2 py-1.5",
-                          inTeam ? "bg-muted/35" : "hover:bg-muted/40",
-                        )}
-                      >
-                        <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/60 bg-background text-xs font-semibold text-muted-foreground">
-                          {avatarSrc ? (
-                            <img
-                              src={avatarSrc}
-                              alt={displayName}
-                              className="size-full object-cover"
-                            />
-                          ) : agent.icon?.trim() ? (
-                            agent.icon
-                          ) : (
-                            displayName.charAt(0)
+                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                  {invites.map((invite) => (
+                    <div
+                      key={invite.id}
+                      className="flex items-center gap-3 rounded-lg border border-border-default px-3 py-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium">
+                            {invite.role === "viewer"
+                              ? t.collab.inviteAgents.roleViewer
+                              : t.collab.inviteAgents.roleMember}
+                          </span>
+                          <Badge
+                            variant={
+                              invite.status === "active"
+                                ? "secondary"
+                                : "outline"
+                            }
+                          >
+                            {statusLabels[invite.status]}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground">
+                          {copy.expiresAt(formatDate(invite.expires_at))} ·{" "}
+                          {copy.usage(
+                            invite.use_count,
+                            invite.max_uses ?? null,
                           )}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <span className="truncate text-sm font-medium">
-                              {displayName}
-                            </span>
-                            {isTwin && (
-                              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                                <FingerprintIcon className="size-3" />
-                                分身
-                              </span>
-                            )}
-                          </div>
-                          <div className="truncate text-[11px] text-muted-foreground">
-                            {agent.description || agent.name}
-                          </div>
-                        </div>
+                      </div>
+                      {invite.status === "active" ? (
                         <Button
                           type="button"
-                          size="sm"
-                          variant={inTeam ? "ghost" : "outline"}
-                          className="h-7 shrink-0 rounded-lg px-2 text-xs"
-                          disabled={!team || inTeam || isAdding}
-                          onClick={() => void handleAddAgents([agent])}
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={copy.revoke}
+                          disabled={revokingId === invite.id}
+                          onClick={() => void handleRevoke(invite.id)}
                         >
-                          {isAdding ? (
-                            <Loader2Icon className="size-3.5 animate-spin" />
-                          ) : inTeam ? (
-                            "已在 Team"
+                          {revokingId === invite.id ? (
+                            <Loader2Icon className="size-4 animate-spin" />
                           ) : (
-                            "添加"
+                            <Trash2Icon className="size-4" />
                           )}
                         </Button>
-                      </div>
-                    );
-                  })}
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
               )}
-            </div>
-          </section>
-        </div>
-      </DialogContent>
-    </Dialog>
+            </section>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {confirmDialog}
+    </>
   );
 }

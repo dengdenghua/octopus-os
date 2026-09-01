@@ -11,13 +11,13 @@ can't reach task/execute at all.
 stream ends, so we assert on the registration callback / close state
 rather than connected_count after the call returns.)
 """
+
 from __future__ import annotations
 
 import json
 from typing import Any
 
 import pytest
-
 from runtime.tentacle.transport.ws_server import TentacleWebSocketServer
 
 
@@ -57,10 +57,14 @@ def _hello(token: str | None = None, tentacle_id: str = "android-1") -> str:
 
 
 def _task_execute() -> str:
-    return json.dumps({
-        "jsonrpc": "2.0", "method": "task/execute",
-        "params": {"task_id": "t1", "task": "do thing"}, "id": "9",
-    })
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "method": "task/execute",
+            "params": {"task_id": "t1", "task": "do thing"},
+            "id": "9",
+        }
+    )
 
 
 def _make_server(**kw: Any) -> tuple[TentacleWebSocketServer, list[str]]:
@@ -124,7 +128,9 @@ async def test_unauthenticated_cannot_reach_task_execute():
         seen.append(req)
 
     server = TentacleWebSocketServer(
-        host="0.0.0.0", auth_token="s3cret", on_task_execute=_on_task,
+        host="0.0.0.0",
+        auth_token="s3cret",
+        on_task_execute=_on_task,
     )
     ws = _FakeWs([_task_execute()])
     await server._handle_connection(ws, "/")
@@ -135,7 +141,7 @@ async def test_unauthenticated_cannot_reach_task_execute():
 
 @pytest.mark.asyncio
 async def test_env_var_token_is_honored(monkeypatch: Any):
-    monkeypatch.setenv("OCTOPUS_TENTACLE_TOKEN", "from-env")
+    monkeypatch.setenv("ECHO_TENTACLE_TOKEN", "from-env")
     server, registered = _make_server(host="0.0.0.0")
     ok = _FakeWs([_hello(token="from-env")])
     await server._handle_connection(ok, "/")

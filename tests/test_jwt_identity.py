@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from runtime.safety.auth import (
     Identity,
     IdentityStore,
@@ -27,7 +26,8 @@ class TestEncodeVerifyRoundtrip:
     def test_basic_roundtrip(self):
         exp = int(time.time()) + 3600
         token = encode_jwt_hs256(
-            {"sub": "alice", "exp": exp}, secret="shh",
+            {"sub": "alice", "exp": exp},
+            secret="shh",
         )
         claims = verify_jwt_hs256(token, secret="shh")
         assert claims["sub"] == "alice"
@@ -35,7 +35,8 @@ class TestEncodeVerifyRoundtrip:
 
     def test_token_has_three_parts(self):
         token = encode_jwt_hs256(
-            {"sub": "a", "exp": int(time.time()) + 60}, secret="x",
+            {"sub": "a", "exp": int(time.time()) + 60},
+            secret="x",
         )
         assert token.count(".") == 2
 
@@ -55,12 +56,17 @@ class TestAlgorithmDefense:
         # Implementation note.
         import base64
         import json
-        header = base64.urlsafe_b64encode(
-            json.dumps({"alg": "none", "typ": "JWT"}).encode()
-        ).rstrip(b"=").decode()
-        claims = base64.urlsafe_b64encode(
-            json.dumps({"sub": "admin", "exp": 9999999999}).encode()
-        ).rstrip(b"=").decode()
+
+        header = (
+            base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode())
+            .rstrip(b"=")
+            .decode()
+        )
+        claims = (
+            base64.urlsafe_b64encode(json.dumps({"sub": "admin", "exp": 9999999999}).encode())
+            .rstrip(b"=")
+            .decode()
+        )
         token = f"{header}.{claims}."
         with pytest.raises(JWTError, match="unsupported alg"):
             verify_jwt_hs256(token, secret="any")
@@ -69,32 +75,39 @@ class TestAlgorithmDefense:
         """Implementation note."""
         import base64
         import json
-        header = base64.urlsafe_b64encode(
-            json.dumps({"alg": "RS256", "typ": "JWT"}).encode()
-        ).rstrip(b"=").decode()
-        claims = base64.urlsafe_b64encode(
-            json.dumps({"sub": "a", "exp": 9999999999}).encode()
-        ).rstrip(b"=").decode()
+
+        header = (
+            base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
+            .rstrip(b"=")
+            .decode()
+        )
+        claims = (
+            base64.urlsafe_b64encode(json.dumps({"sub": "a", "exp": 9999999999}).encode())
+            .rstrip(b"=")
+            .decode()
+        )
         token = f"{header}.{claims}.sig"
         with pytest.raises(JWTError, match="unsupported alg"):
             verify_jwt_hs256(token, secret="any")
 
     def test_signature_tampering_detected(self):
         token = encode_jwt_hs256(
-            {"sub": "a", "exp": int(time.time()) + 60}, secret="s",
+            {"sub": "a", "exp": int(time.time()) + 60},
+            secret="s",
         )
         header, claims, sig = token.split(".")
         # Implementation note.
         mid = len(sig) // 2
         flipped = "A" if sig[mid] != "A" else "B"
-        bad_sig = sig[:mid] + flipped + sig[mid + 1:]
+        bad_sig = sig[:mid] + flipped + sig[mid + 1 :]
         bad_token = f"{header}.{claims}.{bad_sig}"
         with pytest.raises(JWTError, match="signature"):
             verify_jwt_hs256(bad_token, secret="s")
 
     def test_wrong_secret_rejected(self):
         token = encode_jwt_hs256(
-            {"sub": "a", "exp": int(time.time()) + 60}, secret="right",
+            {"sub": "a", "exp": int(time.time()) + 60},
+            secret="right",
         )
         with pytest.raises(JWTError, match="signature"):
             verify_jwt_hs256(token, secret="wrong")
@@ -103,14 +116,18 @@ class TestAlgorithmDefense:
         """Implementation note."""
         import base64
         import json
+
         token = encode_jwt_hs256(
-            {"sub": "bob", "exp": int(time.time()) + 60}, secret="s",
+            {"sub": "bob", "exp": int(time.time()) + 60},
+            secret="s",
         )
         header, _, sig = token.split(".")
         # Implementation note.
-        evil_claims = base64.urlsafe_b64encode(
-            json.dumps({"sub": "admin", "exp": 9999999999}).encode()
-        ).rstrip(b"=").decode()
+        evil_claims = (
+            base64.urlsafe_b64encode(json.dumps({"sub": "admin", "exp": 9999999999}).encode())
+            .rstrip(b"=")
+            .decode()
+        )
         bad = f"{header}.{evil_claims}.{sig}"
         with pytest.raises(JWTError, match="signature"):
             verify_jwt_hs256(bad, secret="s")
@@ -124,14 +141,16 @@ class TestAlgorithmDefense:
 class TestTimeClaims:
     def test_expired_rejected(self):
         token = encode_jwt_hs256(
-            {"sub": "a", "exp": int(time.time()) - 10}, secret="s",
+            {"sub": "a", "exp": int(time.time()) - 10},
+            secret="s",
         )
         with pytest.raises(JWTError, match="expired"):
             verify_jwt_hs256(token, secret="s")
 
     def test_expired_with_leeway_passes(self):
         token = encode_jwt_hs256(
-            {"sub": "a", "exp": int(time.time()) - 5}, secret="s",
+            {"sub": "a", "exp": int(time.time()) - 5},
+            secret="s",
         )
         # Implementation note.
         claims = verify_jwt_hs256(token, secret="s", leeway_seconds=10)
@@ -160,7 +179,8 @@ class TestTimeClaims:
         """Implementation note."""
         t0 = 1_700_000_000
         token = encode_jwt_hs256(
-            {"sub": "a", "exp": t0 + 60}, secret="s",
+            {"sub": "a", "exp": t0 + 60},
+            secret="s",
         )
         # Implementation note.
         claims = verify_jwt_hs256(token, secret="s", now=t0)
@@ -185,7 +205,9 @@ class TestClaimConstraints:
     def test_issuer_match_required(self):
         token = self._token(iss="my-idp")
         claims = verify_jwt_hs256(
-            token, secret="s", required_issuer="my-idp",
+            token,
+            secret="s",
+            required_issuer="my-idp",
         )
         assert claims["iss"] == "my-idp"
 
@@ -197,14 +219,18 @@ class TestClaimConstraints:
     def test_audience_as_list(self):
         token = self._token(aud=["svc-a", "svc-b"])
         claims = verify_jwt_hs256(
-            token, secret="s", required_audience="svc-a",
+            token,
+            secret="s",
+            required_audience="svc-a",
         )
         assert claims["aud"] == ["svc-a", "svc-b"]
 
     def test_audience_as_string(self):
         token = self._token(aud="svc-a")
         claims = verify_jwt_hs256(
-            token, secret="s", required_audience="svc-a",
+            token,
+            secret="s",
+            required_audience="svc-a",
         )
         assert claims["aud"] == "svc-a"
 
@@ -232,7 +258,8 @@ class TestMalformed:
 
     def test_empty_secret_rejected(self):
         token = encode_jwt_hs256(
-            {"sub": "a", "exp": 9999999999}, secret="s",
+            {"sub": "a", "exp": 9999999999},
+            secret="s",
         )
         with pytest.raises(JWTError):
             verify_jwt_hs256(token, secret="")
@@ -280,7 +307,8 @@ class TestIdentityStoreJWT:
     def test_missing_sub_returns_none(self):
         store = IdentityStore()
         token = encode_jwt_hs256(
-            {"exp": int(time.time()) + 60}, secret="s",
+            {"exp": int(time.time()) + 60},
+            secret="s",
         )
         assert store.verify_jwt(token, secret="s") is None
 
@@ -308,7 +336,6 @@ class TestIdentityStoreJWT:
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.safety.auth import TrustEngine  # noqa: E402
 from runtime.sensing.gateway.openai_gateway_router import create_openai_router  # noqa: E402
 
@@ -347,6 +374,7 @@ def _build_stack(tmp_path: Path):
 
     class _Stack:
         pass
+
     s = _Stack()
     s.planner = planner
     s.runtime = runtime
@@ -369,18 +397,20 @@ class TestGatewayJWT:
         )
 
         app = FastAPI()
-        app.include_router(create_openai_router(
-            stack,
-            identity_store=store,
-            require_auth=True,
-            jwt_secret="top-secret",
-        ))
+        app.include_router(
+            create_openai_router(
+                stack,
+                identity_store=store,
+                require_auth=True,
+                jwt_secret="top-secret",
+            )
+        )
         client = TestClient(app)
 
         resp = client.post(
             "/v1/chat/completions",
             json={
-                "model": "octopus-agent",
+                "model": "echo-agent",
                 "messages": [{"role": "user", "content": "list files"}],
             },
             headers={"Authorization": f"Bearer {token}"},
@@ -404,12 +434,14 @@ class TestGatewayJWT:
         )
 
         app = FastAPI()
-        app.include_router(create_openai_router(
-            stack,
-            identity_store=store,
-            require_auth=True,
-            jwt_secret="top-secret",
-        ))
+        app.include_router(
+            create_openai_router(
+                stack,
+                identity_store=store,
+                require_auth=True,
+                jwt_secret="top-secret",
+            )
+        )
         client = TestClient(app)
 
         resp = client.post(
@@ -431,12 +463,14 @@ class TestGatewayJWT:
         )
 
         app = FastAPI()
-        app.include_router(create_openai_router(
-            stack,
-            identity_store=store,
-            require_auth=True,
-            jwt_secret="s",
-        ))
+        app.include_router(
+            create_openai_router(
+                stack,
+                identity_store=store,
+                require_auth=True,
+                jwt_secret="s",
+            )
+        )
         client = TestClient(app)
 
         resp = client.post(
@@ -458,12 +492,14 @@ class TestGatewayJWT:
         )
 
         app = FastAPI()
-        app.include_router(create_openai_router(
-            stack,
-            identity_store=store,
-            require_auth=True,
-            jwt_secret="s",
-        ))
+        app.include_router(
+            create_openai_router(
+                stack,
+                identity_store=store,
+                require_auth=True,
+                jwt_secret="s",
+            )
+        )
         client = TestClient(app)
 
         # Implementation note.
@@ -495,13 +531,15 @@ class TestGatewayJWT:
         )
 
         app = FastAPI()
-        app.include_router(create_openai_router(
-            stack,
-            identity_store=store,
-            require_auth=True,
-            jwt_secret="s",
-            jwt_issuer="good-idp",
-        ))
+        app.include_router(
+            create_openai_router(
+                stack,
+                identity_store=store,
+                require_auth=True,
+                jwt_secret="s",
+                jwt_issuer="good-idp",
+            )
+        )
         client = TestClient(app)
 
         resp = client.post(

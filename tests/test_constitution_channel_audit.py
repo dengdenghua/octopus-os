@@ -17,13 +17,13 @@ These tests pin:
    never blocks. A noisy third-party author can still run; the
    warning is their signal to fix it.
 """
+
 from __future__ import annotations
 
 import logging
 from typing import Any
 
 import pytest
-
 from runtime.adapters.channels.base import (
     Channel,
     OutboundMessage,
@@ -140,19 +140,17 @@ class TestAuditWarns:
         with caplog.at_level(logging.WARNING):
             manager.register(_GateBypassingAdapter())
         # Warning emitted · mentions constitution.md for discoverability
-        warnings = [
-            r.message for r in caplog.records
-            if r.levelno >= logging.WARNING
-        ]
-        assert any(
-            "constitution" in m.lower() for m in warnings
-        ), f"no constitution warning · got: {warnings}"
-        assert any(
-            "_GateBypassingAdapter" in m for m in warnings
-        ), f"warning doesn't name the adapter · got: {warnings}"
+        warnings = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("constitution" in m.lower() for m in warnings), (
+            f"no constitution warning · got: {warnings}"
+        )
+        assert any("_GateBypassingAdapter" in m for m in warnings), (
+            f"warning doesn't name the adapter · got: {warnings}"
+        )
 
     def test_bypass_registration_still_succeeds(
-        self, manager: ChannelManager,
+        self,
+        manager: ChannelManager,
     ) -> None:
         """Audit is advisory · community author gets a warning but
         the channel still registers. Prevents the audit itself from
@@ -174,13 +172,8 @@ class TestAuditQuiet:
     ) -> None:
         with caplog.at_level(logging.WARNING):
             manager.register(_GatedAdapter())
-        warnings = [
-            r.message for r in caplog.records
-            if r.levelno >= logging.WARNING
-        ]
-        assert not warnings, (
-            f"safe_send adapter should not warn · got: {warnings}"
-        )
+        warnings = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        assert not warnings, f"safe_send adapter should not warn · got: {warnings}"
 
     def test_direct_check_outbound_also_accepted(
         self,
@@ -189,10 +182,7 @@ class TestAuditQuiet:
     ) -> None:
         with caplog.at_level(logging.WARNING):
             manager.register(_CheckOutboundAdapter())
-        warnings = [
-            r.message for r in caplog.records
-            if r.levelno >= logging.WARNING
-        ]
+        warnings = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
         assert not warnings
 
 
@@ -203,41 +193,50 @@ class TestAuditQuiet:
 
 class TestSafeSendVerdict:
     def test_clean_message_allowed_through(
-        self, manager: ChannelManager,
+        self,
+        manager: ChannelManager,
     ) -> None:
         ch = _GatedAdapter()
         manager.register(ch)
-        ch.send(OutboundMessage(
-            channel_id="test-gated",
-            thread_id="t1",
-            content="hello world",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="test-gated",
+                thread_id="t1",
+                content="hello world",
+            )
+        )
         assert ch.last_sent == "hello world"
 
     def test_pii_rewritten_to_sanitized(
-        self, manager: ChannelManager,
+        self,
+        manager: ChannelManager,
     ) -> None:
         ch = _GatedAdapter()
         manager.register(ch)
-        ch.send(OutboundMessage(
-            channel_id="test-gated",
-            thread_id="t1",
-            content="ping alice@example.com about it",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="test-gated",
+                thread_id="t1",
+                content="ping alice@example.com about it",
+            )
+        )
         assert ch.last_sent is not None
         assert "alice@example.com" not in ch.last_sent
         assert "[REDACTED:email]" in ch.last_sent
 
     def test_secret_blocked_not_sent(
-        self, manager: ChannelManager,
+        self,
+        manager: ChannelManager,
     ) -> None:
         ch = _GatedAdapter()
         manager.register(ch)
-        ch.send(OutboundMessage(
-            channel_id="test-gated",
-            thread_id="t1",
-            content="token is sk-abc123def456ghi789jkl012mno345",
-        ))
+        ch.send(
+            OutboundMessage(
+                channel_id="test-gated",
+                thread_id="t1",
+                content="token is sk-abc123def456ghi789jkl012mno345",
+            )
+        )
         # block → gated adapter's send() set last_sent to None
         assert ch.last_sent is None
 
@@ -270,16 +269,14 @@ class TestAuditRobustness:
         # blanking the module's __file__ so that fallback fires
         # the warning path.
         import sys as _sys
+
         adapter_mod = _sys.modules.get(_GatedAdapter.__module__)
         if adapter_mod is not None:
             monkeypatch.setattr(adapter_mod, "__file__", "/nonexistent", raising=False)
 
         with caplog.at_level(logging.WARNING):
             manager.register(_GatedAdapter())
-        warnings = [
-            r.message for r in caplog.records
-            if r.levelno >= logging.WARNING
-        ]
-        assert any(
-            "not inspectable" in m for m in warnings
-        ), f"should warn about uninspectable adapter · got: {warnings}"
+        warnings = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        assert any("not inspectable" in m for m in warnings), (
+            f"should warn about uninspectable adapter · got: {warnings}"
+        )

@@ -10,7 +10,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-
 from runtime.execution.suckers.ephemeral_runner import _emit_sub_tool_event
 from runtime.memory.journal import (
     InMemoryJournal,
@@ -37,6 +36,7 @@ def _session(monkeypatch):
     session = _FakeSession(journal)
 
     import runtime.platform.process.session as _sess
+
     monkeypatch.setattr(_sess, "current_session", lambda: session)
     return session, journal
 
@@ -177,6 +177,7 @@ def test_no_journal_no_crash(monkeypatch):
         metadata: dict = {}
 
     import runtime.platform.process.session as _sess
+
     monkeypatch.setattr(_sess, "current_session", lambda: _SessionNoJournal())
 
     # Should not raise.

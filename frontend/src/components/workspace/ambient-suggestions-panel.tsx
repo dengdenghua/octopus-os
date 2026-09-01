@@ -41,12 +41,16 @@ export function AmbientSuggestionsPanel({
   agentId,
   baseUrl,
 }: AmbientSuggestionsPanelProps) {
-  const { t } = useI18n();
-  const { bucket, loading, error, generate, setStatus } =
-    useAmbientSuggestions(project, { baseUrl });
+  const { locale, t } = useI18n();
+  const { bucket, loading, error, generate, setStatus } = useAmbientSuggestions(
+    project,
+    { baseUrl, locale },
+  );
   const [generating, setGenerating] = useState(false);
 
-  const suggestions = bucket?.suggestions ?? [];
+  const suggestions = (bucket?.suggestions ?? []).filter(
+    (suggestion) => suggestion.locale === locale,
+  );
   const pending = suggestions.filter((s) => s.status === "pending");
   const accepted = suggestions.filter((s) => s.status === "accepted");
   const dismissed = suggestions.filter((s) => s.status === "dismissed");
@@ -65,7 +69,7 @@ export function AmbientSuggestionsPanel({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
+      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <CardTitle className="text-base">
           {t.ambientSuggestionsPanel.title}
         </CardTitle>
@@ -101,15 +105,12 @@ export function AmbientSuggestionsPanel({
         )}
         {!loading && !error && !featureDisabled && (
           <>
-            {pending.length === 0 && accepted.length === 0 && dismissed.length === 0 ? (
-                <div className="text-muted-foreground text-sm">
-                  {t.ambientSuggestionsPanel.empty}
-                  {agentId && (
-                    <>
-                      {" "}
-                    {t.ambientSuggestionsPanel.emptyGenerateHint}
-                  </>
-                )}
+            {pending.length === 0 &&
+            accepted.length === 0 &&
+            dismissed.length === 0 ? (
+              <div className="text-muted-foreground text-sm">
+                {t.ambientSuggestionsPanel.empty}
+                {agentId && <> {t.ambientSuggestionsPanel.emptyGenerateHint}</>}
               </div>
             ) : (
               <div className="flex flex-col gap-4">
@@ -135,7 +136,7 @@ export function AmbientSuggestionsPanel({
                       {accepted.map((s) => (
                         <li
                           key={s.id}
-                          className="border-border/50 rounded-md border px-3 py-2"
+                          className="border-border-default rounded-md border px-3 py-2"
                         >
                           <div className="text-sm font-medium">{s.title}</div>
                         </li>
@@ -153,7 +154,7 @@ export function AmbientSuggestionsPanel({
                       {dismissed.map((s) => (
                         <li
                           key={s.id}
-                          className="border-border/50 rounded-md border px-3 py-2"
+                          className="border-border-default rounded-md border px-3 py-2"
                         >
                           <div className="text-muted-foreground text-sm">
                             {s.title}
@@ -216,9 +217,7 @@ function SuggestionCard({
             variant="ghost"
             size="sm"
             onClick={onDismiss}
-            aria-label={t.ambientSuggestionsPanel.dismissAria(
-              suggestion.title,
-            )}
+            aria-label={t.ambientSuggestionsPanel.dismissAria(suggestion.title)}
           >
             {t.ambientSuggestionsPanel.dismiss}
           </Button>

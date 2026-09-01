@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="default">
+  <short>Echo Public</short>
+  <description>Reject unsolicited inbound and forwarded traffic unless an administrator explicitly authorizes it.</description>
+  <service name="dhcpv6-client"/>
+</zone>

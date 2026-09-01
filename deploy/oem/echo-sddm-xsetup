@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Preserve Debian's display setup and arm the unprivileged greeter shortcut.
+set -euo pipefail
+
+VENDOR_XSETUP=/usr/share/sddm/scripts/Xsetup
+HELPER=/usr/lib/echo-os/echo-sddm-accessibility
+UNIT=echo-sddm-accessibility.service
+
+[[ "$(id -u)" -eq 0 ]] || {
+  echo "Echo SDDM Xsetup must run as root" >&2
+  exit 1
+}
+[[ -x "$VENDOR_XSETUP" && -x "$HELPER" ]] || {
+  echo "Echo SDDM accessibility setup is incomplete" >&2
+  exit 1
+}
+[[ "${DISPLAY:-}" =~ ^:[0-9]{1,5}(\.[0-9]+)?$ ]] || {
+  echo "Echo SDDM accessibility received an invalid display" >&2
+  exit 1
+}
+[[ "${XAUTHORITY:-}" == /* && -f "$XAUTHORITY" && ! -L "$XAUTHORITY" ]] || {
+  echo "Echo SDDM accessibility received an unsafe Xauthority" >&2
+  exit 1
+}
+SDDM_UID="$(id -u sddm)"
+[[ "$(stat -c '%u' "$XAUTHORITY")" == "$SDDM_UID" && \
+   "$((8#$(stat -c '%a' "$XAUTHORITY") & 8#22))" -eq 0 ]] || {
+  echo "Echo SDDM Xauthority failed its ownership contract" >&2
+  exit 1
+}
+
+"$VENDOR_XSETUP"
+
+systemctl stop "$UNIT" >/dev/null 2>&1 || true
+for _attempt in $(seq 1 50); do
+  [[ "$(systemctl show "$UNIT" --property=LoadState --value 2>/dev/null || true)" == not-found ]] && break
+  systemctl reset-failed "$UNIT" >/dev/null 2>&1 || true
+  sleep 0.1
+done
+[[ "$(systemctl show "$UNIT" --property=LoadState --value 2>/dev/null || true)" == not-found ]] || {
+  echo "stale Echo SDDM accessibility unit did not unload" >&2
+  exit 1
+}
+
+systemd-run \
+  --unit="$UNIT" \
+  --collect \
+  --quiet \
+  --service-type=exec \
+  --uid=sddm \
+  --property=CapabilityBoundingSet= \
+  --property=DevicePolicy=closed \
+  --property=LockPersonality=yes \
+  --property=NoNewPrivileges=yes \
+  --property=ProtectControlGroups=yes \
+  --property=ProtectKernelModules=yes \
+  --property=ProtectKernelTunables=yes \
+  --property=ProtectSystem=strict \
+  --property=RestrictAddressFamilies=AF_UNIX \
+  --property=RestrictRealtime=yes \
+  --property=RestrictSUIDSGID=yes \
+  --property=SystemCallArchitectures=native \
+  --property=UMask=0077 \
+  --setenv="ACCESSIBILITY_ENABLED=1" \
+  --setenv="DISPLAY=$DISPLAY" \
+  --setenv="HOME=/var/lib/sddm" \
+  --setenv="LOGNAME=sddm" \
+  --setenv="NO_AT_BRIDGE=0" \
+  --setenv="QT_ACCESSIBILITY=1" \
+  --setenv="USER=sddm" \
+  --setenv="XAUTHORITY=$XAUTHORITY" \
+  "$HELPER" --display "$DISPLAY" --xauthority "$XAUTHORITY"
+
+for _attempt in $(seq 1 50); do
+  systemctl is-active --quiet "$UNIT" && break
+  sleep 0.1
+done
+systemctl is-active --quiet "$UNIT" || {
+  echo "Echo SDDM accessibility helper did not stay active" >&2
+  exit 1
+}
+echo "ECHO_SDDM_ACCESSIBILITY_ARMED provider=at-spi2 screen-reader=orca trigger=super-alt-s"

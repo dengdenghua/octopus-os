@@ -1,0 +1,11 @@
+NAME="Echo Recovery"
+PRETTY_NAME="Echo Recovery 0.2.0"
+ID=echo-recovery
+ID_LIKE=debian
+VERSION_ID="0.2.0"
+VERSION="0.2.0"
+BUILD_ID=20260825
+IMAGE_ID=echo-recovery
+IMAGE_VERSION=0.2.0
+HOME_URL="https://github.com/echo-agent"
+SUPPORT_URL="https://github.com/echo-agent/echo-os/issues"

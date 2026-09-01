@@ -1,19 +1,19 @@
 """Tests for AI mode (Marvis-style efficiency / privacy wrapper)."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 import pytest
-
 from runtime.core.cerebrum import ai_mode
 
 
 @pytest.fixture
 def tmp_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state = tmp_path / "ai_mode.json"
-    monkeypatch.setenv("OCTOPUS_AI_MODE_PATH", str(state))
-    monkeypatch.delenv("OCTOPUS_AI_MODE", raising=False)
+    monkeypatch.setenv("ECHO_AI_MODE_PATH", str(state))
+    monkeypatch.delenv("ECHO_AI_MODE", raising=False)
     return state
 
 
@@ -25,14 +25,15 @@ def test_default_is_efficiency(tmp_state: Path) -> None:
 
 
 def test_env_override_wins(monkeypatch: pytest.MonkeyPatch, tmp_state: Path) -> None:
-    monkeypatch.setenv("OCTOPUS_AI_MODE", "privacy")
+    monkeypatch.setenv("ECHO_AI_MODE", "privacy")
     assert ai_mode.current_ai_mode() == "privacy"
 
 
 def test_unknown_env_falls_back(
-    monkeypatch: pytest.MonkeyPatch, tmp_state: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_state: Path,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_AI_MODE", "turbo")
+    monkeypatch.setenv("ECHO_AI_MODE", "turbo")
     assert ai_mode.current_ai_mode() == "efficiency"
 
 
@@ -73,18 +74,20 @@ def test_set_ai_mode_rejects_unknown(tmp_state: Path) -> None:
 
 
 def test_efficiency_passes_through(
-    monkeypatch: pytest.MonkeyPatch, tmp_state: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_state: Path,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_AI_MODE", "efficiency")
+    monkeypatch.setenv("ECHO_AI_MODE", "efficiency")
     assert ai_mode.apply_ai_mode_override("performance") == "performance"
     assert ai_mode.apply_ai_mode_override("local") == "local"
     assert ai_mode.apply_ai_mode_override("value") == "value"
 
 
 def test_privacy_pins_to_local(
-    monkeypatch: pytest.MonkeyPatch, tmp_state: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_state: Path,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_AI_MODE", "privacy")
+    monkeypatch.setenv("ECHO_AI_MODE", "privacy")
     for verdict in ("trivial", "local", "value", "performance", "research"):
         assert ai_mode.apply_ai_mode_override(verdict) == "local"
 

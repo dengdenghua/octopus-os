@@ -1,241 +1,92 @@
-# Octopus-Agent v0.2.0 Beta
+# Echo OS
 
-Octopus-Agent is an Agent OS. It runs agents with planning, tool execution,
-memory, reflection, safety governance, browser/workspace access, and
-self-improvement loops.
+Echo OS is the Agent operating system for personal devices: Agent runtime,
+desktop, launcher, files, and system capabilities ship from this repository as
+one versioned distribution. The visible workbench belongs to the single Echo
+frontend, and development and release use this checkout as their source of truth.
 
-The IDE, browser, desktop app, and extension are product surfaces. The core
-product is the Python runtime in `runtime/`.
+中文读者：[README.md](README.md)
 
-Start here:
+## Project family
 
-- [10-minute golden path](docs/GOLDEN_PATH.md)
-- [quick start](QUICKSTART.md)
-- [concept map](docs/CONCEPTS.md)
-- [root layout](ROOT_LAYOUT.md)
-- [architecture](docs/architecture.md)
+| Project | Responsibility |
+| --- | --- |
+| `echo-agent` | Agent capability name and compatibility command embedded in Echo OS |
+| `echo-os` | Single release unit: Agent runtime, desktop, files, and system capabilities |
+| `echo-mobile` | Android automation client |
+| `echo-enterprise` | Enterprise AI project management |
+| `echo-storage` | Local secure data coprocessor (File Agent) |
 
-Chinese readers: [README.md](README.md)
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `appliance/` | OS device layer: app registry, authentication, extensions, files, and system services |
+| `frontend/` | Desktop UI shell |
+| `tests/appliance/` | Authoritative OS appliance tests |
+| `deploy/` | Image, Docker, Kubernetes, host, recovery, and delivery tooling |
+| `docs/` | Active OS architecture, onboarding, operations, and archived Agent references |
+
+## echo-storage (File Agent) integration
+
+Echo OS does not duplicate document indexing. It talks to the sibling
+`echo-storage` project through a narrow HTTP API:
+
+- The desktop launcher opens the File Agent workspace.
+- The NAS file manager can call `/v1/search` and `/v1/answer`.
+- Uploads are staged and atomically committed; copy, move, directory creation,
+  multi-file selection, downloads, and trash are supported.
+- Set `ECHO_STORAGE_AUTOSTART=1` to start `echo-storage serve` in the
+  background. Failure is isolated from the rest of the OS.
+- Override the endpoint with `ECHO_STORAGE_URL`,
+  `ECHO_STORAGE_HOST`, or `ECHO_STORAGE_PORT`.
 
 ## Quick Start
 
 ```bash
-# Minimal deterministic backend demo. No LLM key required.
-pip install -e ".[minimal]"
-python -m runtime bugfix-demo
+# Install the unified development environment from this repository.
+make install
 
-# Development setup with tests, FastAPI UI, and web skills.
-pip install -e ".[dev,serve,web]"
-python -m runtime quickstart --non-interactive
-python -m runtime status
-python -m runtime ui --port 8000
+# Build a source-verified Agent bundle, then start the appliance stack.
+make agent-bundle
+make up
+
+# Run the appliance contract and integration tests.
+make test
 ```
 
-Open:
-
-```text
-http://127.0.0.1:8000
-```
-
-Frontend development:
-
-```bash
-cd frontend
-corepack enable
-pnpm install --frozen-lockfile
-pnpm dev
-```
-
-Common checks:
-
-```bash
-python -m pytest -q
-python -m ruff check runtime tests tools
-cd frontend && pnpm typecheck
-```
-
-## What It Is
-
-Octopus-Agent turns a user request into an observable, governed agent execution:
-
-```text
-user request
-  -> Siphon HTTP/SSE/API boundary
-  -> SpinalCord reflex/rule shortcut
-  -> Cerebrum planning or ReAct loop
-  -> Ganglia TaskGraph execution
-  -> Beak tool execution
-  -> Immunity / Budget / Journal governance
-  -> streamed frontend updates and persisted events
-```
-
-It is not just a chat wrapper or a thin SDK integration. The runtime is designed
-to make planning, execution, permissions, cost, memory, audit, recovery, and
-evolution explicit engineering surfaces.
-
-## Repository Layout
-
-Primary code:
-
-| Path | Purpose |
-|---|---|
-| `runtime/` | Python Agent OS runtime: planning, execution, memory, safety, UI APIs |
-| `frontend/` | React/Vite/Electron workspace |
-| `tests/` | Backend unit and integration tests |
-
-Product surfaces:
-
-| Path | Purpose |
-|---|---|
-| `agents/` | Agent definitions, presets, roles, and metadata |
-| `skills/` | Callable skills and skill metadata |
-| `protocols/` | MCP, A2A, OpenAI-compatible, and related protocol assets |
-| `prompts/` | Prompt templates, variants, and evaluation assets |
-| `tools/` | Developer utilities |
-| `scripts/` | Project automation |
-
-Docs and deployment:
-
-| Path | Purpose |
-|---|---|
-| `docs/` | Architecture, ADRs, onboarding, OpenAPI snapshots, references |
-| `demos/` | Small runnable examples |
-| `benchmarks/` | Reproducible benchmarks and reports |
-| `deploy/` | Deployment manifests |
-| `Dockerfile` / `docker-compose*.yml` | Container entry points |
-
-See [ROOT_LAYOUT.md](ROOT_LAYOUT.md) for the root hygiene rules.
-
-## Runtime Map
-
-`runtime/` is organized into seven semantic groups:
-
-| Group | Responsibility |
-|---|---|
-| `runtime/core/` | Planner, task graph runtime, reflex router, heartbeat/coordinator |
-| `runtime/execution/` | Agents, arms, tool executor, skills, parallel/swarm execution |
-| `runtime/sensing/` | HTTP/SSE/API, model routers, browser, sandbox/mantle |
-| `runtime/memory/` | Journal, checkpoints, knowledge graph, thread memory |
-| `runtime/safety/` | Immunity, budget breakers, regeneration, camouflage, constitution |
-| `runtime/adapters/` | MCP, channels, scheduler, instrumentation, integrations |
-| `runtime/platform/` | Config, shared models, UI factory, i18n, setup/doctor |
-
-The biomimetic names are design vocabulary, not hard numeric constraints. See
-[docs/architecture/module-map.md](docs/architecture/module-map.md).
+For local QA snapshots, device deployment, and recovery procedures, see the
+[NAS deployment guide](deploy/appliance/README.md).
 
 ## CLI
 
-| Command | Purpose |
-|---|---|
-| `python -m runtime status` | Show local capabilities and optional integrations |
-| `python -m runtime demo` | Built-in list/read/count end-to-end demo |
-| `python -m runtime bugfix-demo` | Deterministic bugfix demo: read files, run tests, edit code, commit |
-| `python -m runtime run "<goal>"` | Run a custom goal |
-| `python -m runtime reflect --from-journal <path>` | Run reflection producers from a journal |
-| `python -m runtime quickstart --non-interactive` | Generate a local static config and run doctor checks |
-| `python -m runtime ui --port 8000` | Start the FastAPI dashboard |
-| `python -m runtime serve --config config.local.yaml --port 8000` | Long-running service entry point |
-
-Editable installs also provide:
-
-```bash
-octopus-agent status
-octopus-agent bugfix-demo
-```
-
-## Configuration
-
-Useful files:
-
-- `config.example.yaml`: commit-safe example configuration
-- `config.local.yaml`: local real provider configuration; do not commit secrets
-- `.env.example`: environment variable example
-- `.env`: local secrets; do not commit
-
-Typical service startup:
-
-```bash
-python -m runtime quickstart --non-interactive
-python -m runtime quickstart --non-interactive --serve
-```
-
-## Frontend And Desktop
-
-The frontend lives in `frontend/` and uses React, Vite, TanStack Query, Radix UI,
-CodeMirror, and Electron.
-
-```bash
-cd frontend
-corepack enable
-pnpm install --frozen-lockfile
-pnpm dev
-pnpm typecheck
-pnpm test
-pnpm electron:dev
-```
-
-Production builds:
-
-```bash
-cd frontend
-pnpm build
-pnpm electron:build:win
-```
-
-## Quality Gates
-
-Backend:
-
-```bash
-python -m pytest -q
-python -m ruff check runtime tests tools
-python -m ruff format --check runtime tests tools
-```
-
-Frontend:
-
-```bash
-cd frontend
-pnpm typecheck
-pnpm test
-pnpm build
-```
-
-OpenAPI / TypeScript contract:
-
-```bash
-make openapi-snapshot
-make frontend-types
-```
+The unified installation exposes `echo` as the primary command and keeps
+`echo-agent` as a compatibility alias for existing automation.
 
 ## Reflection closure
 
-`python -m runtime reflect --from-journal <path>` drives the reflection
-producers over a journal file: it clusters traces, extracts durable
-lessons, and proposes skill-catalog tweaks. The `runtime/safety/regeneration/`
-scheduler runs the same loop in the background when a stack is live. This
-closes the execute → reflect → regenerate loop without requiring a
-separate controller.
+Agent execution, verification, replay evidence, memory promotion, and rollback
+all live inside this repository and release as one Echo OS version.
 
-Model routing is provider-agnostic — OpenAI, Anthropic, and any
-OpenAI-compatible endpoint plug in through `runtime/sensing/eyes/`. See
-`runtime/platform/models/` for the portable types.
+## License and upstream components
 
-## Docker
+Echo OS is distributed under Apache-2.0. Bundled OpenAI components retain their
+own notices and license files in the release artifacts.
+
+To run the embedded workbench with the OS backend:
 
 ```bash
-cp .env.example .env
-cp config.example.yaml config.yaml
-docker compose up -d
-docker compose logs -f octopus-agent
+cd frontend
+pnpm dev:with-agent
 ```
 
-Default service:
+This starts the Agent backend on `127.0.0.1:8000` and the only frontend on port
+3000. The full setup is documented in
+[Echo Agent workbench integration](docs/ECHO_AGENT_INTEGRATION.md).
 
-```text
-http://127.0.0.1:8000
-```
+Start with the [documentation ownership map](docs/README.md), the
+[OS architecture](docs/architecture.md), and the
+[Echo OS ↔ Echo Agent engineering boundary](docs/AGENT_OS_BOUNDARY.md).
 
-## License
-
-Apache-2.0. See [LICENSE](LICENSE).
+The NAS product-delivery boundary and remaining physical acceptance gates are
+tracked in [NAS_DELIVERY_STATUS.md](docs/NAS_DELIVERY_STATUS.md).

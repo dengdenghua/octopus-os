@@ -1,7 +1,8 @@
 /**
- * Octopus desktop shell — preload bridge.
+ * Echo desktop shell — preload bridge.
  *
- * Exposes window.octopus implementing the OctopusElectronAPI contract
+ * Exposes the `window.echo` bridge implementing the
+ * EchoElectronAPI contract
  * declared in src/types/electron.d.ts. Every method maps 1:1 onto an
  * ipcMain.handle channel in main.cjs.
  */
@@ -21,6 +22,7 @@ const EVENT_CHANNELS = [
   "browser:download-event",
   "desktop:organize-now",
   "desktop:items-changed",
+  "window:fullscreen-changed",
 ];
 
 const api = {
@@ -30,8 +32,17 @@ const api = {
 
   // 原生 shell(A 路线):本地已装应用 枚举/启动。Dock/启动器渲染真实应用清单。
   apps: {
-    list: invoke("apps:list"), // → [{id,name,exec,icon,categories,source}]
-    launch: invoke("apps:launch"), // (exec) → {ok,pid?|error}
+    list: invoke("apps:list"), // → [{id,name,icon,categories,source}]
+    launch: invoke("apps:launch"), // (appId) → {ok,error?}; resolves after gio exits
+  },
+
+  // 目标 C:由系统窗口管理器提供真实应用窗口，而不是 React 假窗口。
+  windows: {
+    getCapabilities: invoke("windows:getCapabilities"),
+    list: invoke("windows:list"),
+    focus: invoke("windows:focus"),
+    minimize: invoke("windows:minimize"),
+    close: invoke("windows:close"),
   },
 
   browser: {
@@ -52,8 +63,19 @@ const api = {
     getAriaTree: invoke("browser:getAriaTree"),
     getCurrentUrl: invoke("browser:getCurrentUrl"),
     clearSiteData: invoke("browser:clearSiteData"),
+    clearBrowsingData: invoke("browser:clearBrowsingData"),
+    listPasswords: invoke("browser:listPasswords"),
+    savePassword: invoke("browser:savePassword"),
+    deletePassword: invoke("browser:deletePassword"),
+    fillPassword: invoke("browser:fillPassword"),
+    listSitePermissions: invoke("browser:listSitePermissions"),
+    setSitePermission: invoke("browser:setSitePermission"),
     showDownloadInFolder: invoke("browser:showDownloadInFolder"),
     openDownload: invoke("browser:openDownload"),
+    pauseDownload: invoke("browser:pauseDownload"),
+    resumeDownload: invoke("browser:resumeDownload"),
+    cancelDownload: invoke("browser:cancelDownload"),
+    retryDownload: invoke("browser:retryDownload"),
   },
 
   dialog: {
@@ -74,7 +96,41 @@ const api = {
     getPlatform: invoke("app:getPlatform"),
   },
 
+  nativeGlass: {
+    getCapabilities: invoke("nativeGlass:getCapabilities"),
+    sync: invoke("nativeGlass:sync"),
+    deactivate: invoke("nativeGlass:deactivate"),
+  },
+
+  system: {
+    getCapabilities: invoke("system:getCapabilities"),
+    runAction: invoke("system:runAction"),
+  },
+
+  updates: {
+    getCapabilities: invoke("updates:getCapabilities"),
+    getStatus: invoke("updates:getStatus"),
+    apply: invoke("updates:apply"),
+  },
+
+  systemControls: {
+    getState: invoke("controls:getState"),
+    setWifiEnabled: invoke("controls:setWifiEnabled"),
+    setBluetoothEnabled: invoke("controls:setBluetoothEnabled"),
+    setAudioVolume: invoke("controls:setAudioVolume"),
+    setDisplayBrightness: invoke("controls:setDisplayBrightness"),
+  },
+
+  notifications: {
+    getCapabilities: invoke("notifications:getCapabilities"),
+    list: invoke("notifications:list"),
+    close: invoke("notifications:close"),
+    clear: invoke("notifications:clear"),
+  },
+
   desktop: {
+    getAutomationPermissions: invoke("desktop:getAutomationPermissions"),
+    openAutomationPermission: invoke("desktop:openAutomationPermission"),
     listItems: invoke("desktop:listItems"),
     openItem: invoke("desktop:openItem"),
     installContextMenu: invoke("desktop:installContextMenu"),
@@ -95,6 +151,7 @@ const api = {
     setTitleBarOverlay: invoke("window:setTitleBarOverlay"),
     setMousePassthrough: invoke("window:setMousePassthrough"),
     openDevTools: invoke("window:openDevTools"),
+    isFullScreen: invoke("window:isFullScreen"),
   },
 
   bridge: {
@@ -112,5 +169,5 @@ const api = {
   },
 };
 
-contextBridge.exposeInMainWorld("octopus", api);
-contextBridge.exposeInMainWorld("__OCTOPUS_DESKTOP__", true);
+contextBridge.exposeInMainWorld("echo", api);
+contextBridge.exposeInMainWorld("__ECHO_DESKTOP__", true);

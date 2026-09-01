@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.core.cerebrum import StaticPlanner
 from runtime.core.cerebrum.planner import Rule
 from runtime.execution.suckers import Skill, SkillRegistry

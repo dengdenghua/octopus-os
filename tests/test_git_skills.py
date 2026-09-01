@@ -7,12 +7,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.suckers.write_skills import register_git_skills
 
 pytestmark = pytest.mark.skipif(
-    shutil.which("git") is None, reason="git not on PATH",
+    shutil.which("git") is None,
+    reason="git not on PATH",
 )
 
 
@@ -27,29 +27,35 @@ def repo(tmp_path: Path) -> Path:
     r.mkdir()
     subprocess.run(
         ["git", "-C", str(r), "init", "-b", "main"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "-C", str(r), "config", "user.email", "t@t.test"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "-C", str(r), "config", "user.name", "Tester"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "-C", str(r), "config", "commit.gpgsign", "false"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     # Implementation note.
     (r / "README.md").write_text("hello\n", encoding="utf-8")
     subprocess.run(
         ["git", "-C", str(r), "add", "README.md"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     subprocess.run(
         ["git", "-C", str(r), "commit", "-m", "initial"],
-        check=True, capture_output=True,
+        check=True,
+        capture_output=True,
     )
     return r
 
@@ -95,7 +101,8 @@ class TestReadOps:
         (repo / "README.md").write_text("staged\n", encoding="utf-8")
         subprocess.run(
             ["git", "-C", str(repo), "add", "README.md"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
         out = _invoke(registry, "git_diff", repo_dir=str(repo), staged=True)
         assert "staged" in out["diff"]
@@ -129,14 +136,19 @@ class TestWriteOps:
     def test_add_and_commit_cycle(self, registry, repo):
         (repo / "new.txt").write_text("content\n", encoding="utf-8")
         add = _invoke(
-            registry, "git_add", repo_dir=str(repo), paths=["new.txt"],
+            registry,
+            "git_add",
+            repo_dir=str(repo),
+            paths=["new.txt"],
         )
         assert add.get("exit_code") == 0
         assert add["added"] == ["new.txt"]
 
         cm = _invoke(
-            registry, "git_commit",
-            repo_dir=str(repo), message="add new.txt",
+            registry,
+            "git_commit",
+            repo_dir=str(repo),
+            message="add new.txt",
         )
         assert "error" not in cm
         assert len(cm["sha"]) == 40
@@ -148,7 +160,10 @@ class TestWriteOps:
 
     def test_add_rejects_flag_injection(self, registry, repo):
         out = _invoke(
-            registry, "git_add", repo_dir=str(repo), paths=["-A"],
+            registry,
+            "git_add",
+            repo_dir=str(repo),
+            paths=["-A"],
         )
         assert "error" in out
         assert "flag-like" in out["error"]
@@ -156,24 +171,39 @@ class TestWriteOps:
     def test_add_rejects_broad_paths(self, registry, repo):
         for bad in [".", "*", "../escape"]:
             out = _invoke(
-                registry, "git_add", repo_dir=str(repo), paths=[bad],
+                registry,
+                "git_add",
+                repo_dir=str(repo),
+                paths=[bad],
             )
             assert "error" in out, f"should reject {bad}"
 
     def test_add_rejects_empty_and_non_string(self, registry, repo):
         assert "error" in _invoke(
-            registry, "git_add", repo_dir=str(repo), paths=[],
+            registry,
+            "git_add",
+            repo_dir=str(repo),
+            paths=[],
         )
         assert "error" in _invoke(
-            registry, "git_add", repo_dir=str(repo), paths=[""],
+            registry,
+            "git_add",
+            repo_dir=str(repo),
+            paths=[""],
         )
         assert "error" in _invoke(
-            registry, "git_add", repo_dir=str(repo), paths=None,
+            registry,
+            "git_add",
+            repo_dir=str(repo),
+            paths=None,
         )
 
     def test_commit_empty_message_rejected(self, registry, repo):
         out = _invoke(
-            registry, "git_commit", repo_dir=str(repo), message="   ",
+            registry,
+            "git_commit",
+            repo_dir=str(repo),
+            message="   ",
         )
         assert "error" in out
 
@@ -181,8 +211,11 @@ class TestWriteOps:
         (repo / "x.txt").write_text("x", encoding="utf-8")
         _invoke(registry, "git_add", repo_dir=str(repo), paths=["x.txt"])
         out = _invoke(
-            registry, "git_commit", repo_dir=str(repo),
-            message="x", author="just a name",
+            registry,
+            "git_commit",
+            repo_dir=str(repo),
+            message="x",
+            author="just a name",
         )
         assert "error" in out
         assert "Name <email>" in out["error"]
@@ -191,8 +224,11 @@ class TestWriteOps:
         (repo / "x.txt").write_text("x", encoding="utf-8")
         _invoke(registry, "git_add", repo_dir=str(repo), paths=["x.txt"])
         out = _invoke(
-            registry, "git_commit", repo_dir=str(repo),
-            message="x", author="Alice <a@b.test>",
+            registry,
+            "git_commit",
+            repo_dir=str(repo),
+            message="x",
+            author="Alice <a@b.test>",
         )
         assert "error" not in out
 
@@ -201,7 +237,10 @@ class TestWriteOps:
 
     def test_commit_fails_with_nothing_staged(self, registry, repo):
         out = _invoke(
-            registry, "git_commit", repo_dir=str(repo), message="empty",
+            registry,
+            "git_commit",
+            repo_dir=str(repo),
+            message="empty",
         )
         assert "error" in out
 
@@ -221,7 +260,10 @@ class TestBranch:
 
     def test_branch_create(self, registry, repo):
         out = _invoke(
-            registry, "git_branch", repo_dir=str(repo), create="feature/x",
+            registry,
+            "git_branch",
+            repo_dir=str(repo),
+            create="feature/x",
         )
         assert out["created"] == "feature/x"
 
@@ -231,11 +273,17 @@ class TestBranch:
 
     def test_branch_invalid_name(self, registry, repo):
         out = _invoke(
-            registry, "git_branch", repo_dir=str(repo), create="-bad",
+            registry,
+            "git_branch",
+            repo_dir=str(repo),
+            create="-bad",
         )
         assert "error" in out
         out = _invoke(
-            registry, "git_branch", repo_dir=str(repo), create="has space",
+            registry,
+            "git_branch",
+            repo_dir=str(repo),
+            create="has space",
         )
         assert "error" in out
 
@@ -250,15 +298,19 @@ class TestSandbox:
         outside = tmp_path / "outside"
         outside.mkdir()
         out = _invoke(
-            registry, "git_status",
-            repo_dir=str(outside), sandbox_dir=str(repo),
+            registry,
+            "git_status",
+            repo_dir=str(outside),
+            sandbox_dir=str(repo),
         )
         assert "error" in out
 
     def test_missing_repo_dir(self, registry):
         assert "error" in _invoke(registry, "git_status", repo_dir="")
         assert "error" in _invoke(
-            registry, "git_status", repo_dir="/nonexistent/xyz",
+            registry,
+            "git_status",
+            repo_dir="/nonexistent/xyz",
         )
 
 
@@ -275,7 +327,11 @@ class TestRegisterAllIntegration:
         register_all(reg)
         names = set(reg.all_names())
         for n in [
-            "git_status", "git_diff", "git_log",
-            "git_add", "git_commit", "git_branch",
+            "git_status",
+            "git_diff",
+            "git_log",
+            "git_add",
+            "git_commit",
+            "git_branch",
         ]:
             assert n in names, f"missing skill: {n}"

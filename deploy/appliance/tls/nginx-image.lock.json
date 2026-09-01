@@ -1,0 +1,11 @@
+{
+  "schema": "echo.tls-gateway-image-lock.v1",
+  "registry": "registry-1.docker.io",
+  "repository": "library/nginx",
+  "tag": "1.28.0-alpine-slim",
+  "indexDigest": "sha256:ce2bd4775ed6859d35f47d65401ee9f35f1dd00b32ed05f0ce38b68aa1830195",
+  "platforms": {
+    "linux/amd64": "sha256:eb8c00e3f75d52947cbfe3cc352671e70bcb78f850be8b64e6bf9652ee8853de",
+    "linux/arm64": "sha256:cf0f6a2acd16fd75e9dd7fcc571fdcdf1acf1c29fee0194b240ef1faf30e1b62"
+  }
+}

@@ -76,10 +76,9 @@ export async function fetchHistory(
   limit = 50,
   offset = 0,
 ): Promise<HistoryResponse> {
-  const res = await fetch(
-    `${BASE()}/history?limit=${limit}&offset=${offset}`,
-    { headers: authHeaders() },
-  );
+  const res = await fetch(`${BASE()}/history?limit=${limit}&offset=${offset}`, {
+    headers: authHeaders(),
+  });
   if (!res.ok) throw new Error(`History fetch failed: ${res.status}`);
   return res.json();
 }

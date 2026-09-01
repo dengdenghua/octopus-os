@@ -1,10 +1,11 @@
-/* Implementation note. */
 import { UserIcon, UsersIcon, InboxIcon, CopyIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 
 import { swallow } from "@/core/utils/log";
 import { copyTextToClipboard } from "@/core/clipboard";
+import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
 
 import {
@@ -14,6 +15,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { ErrorState, LoadingState } from "@/components/ui/state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -37,22 +46,24 @@ interface PairingsPayload {
 }
 
 export function ChannelPairingsSheet({
-  open, onOpenChange, channelId, displayName,
+  open,
+  onOpenChange,
+  channelId,
+  displayName,
 }: Props) {
   const { t } = useI18n();
   const [data, setData] = useState<PairingsPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
+  const loadPairings = useCallback(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError(null);
       try {
         const r = await fetch(
-          `/api/channels/${encodeURIComponent(channelId)}/pairings`,
+          `${getBackendBaseURL()}/api/channels/${encodeURIComponent(channelId)}/pairings`,
         );
         if (!r.ok) throw new Error(r.statusText);
         const body = (await r.json()) as PairingsPayload;
@@ -60,7 +71,9 @@ export function ChannelPairingsSheet({
       } catch (e) {
         swallow(e);
         if (!cancelled) {
-          setError(e instanceof Error ? e.message : t.channelPairings.loadFailed);
+          setError(
+            e instanceof Error ? e.message : t.channelPairings.loadFailed,
+          );
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -69,7 +82,15 @@ export function ChannelPairingsSheet({
     return () => {
       cancelled = true;
     };
-  }, [open, channelId]);
+  }, [channelId, t.channelPairings.loadFailed]);
+
+  useEffect(() => {
+    if (!open) return;
+    const cleanup = loadPairings();
+    return () => {
+      cleanup();
+    };
+  }, [loadPairings, open]);
 
   const users = data?.users ?? [];
   const groups = data?.groups ?? [];
@@ -82,41 +103,42 @@ export function ChannelPairingsSheet({
           <DialogTitle className="text-base">
             {displayName} · {t.channelPairings.pairingDetails}
           </DialogTitle>
-          <DialogDescription className="text-[12px]">
+          <DialogDescription className="text-xs">
             {t.channelPairings.autoRegisterDesc}
             {t.channelPairings.metadataDesc}
           </DialogDescription>
         </DialogHeader>
 
-        {loading && (
-          <div className="py-8 text-center text-[12px] text-muted-foreground">
-            {t.channelPairings.loading}
-          </div>
-        )}
+        {loading && <LoadingState title={t.channelPairings.loading} />}
         {error && (
-          <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-600">
-            {error}
-          </div>
+          <ErrorState
+            title={t.channelPairings.loadFailed}
+            detail={error}
+            actionLabel={t.channelPairings.retry}
+            onAction={() => {
+              loadPairings();
+            }}
+          />
         )}
 
         {data && !loading && !error && (
           <Tabs defaultValue="users" className="flex-1 flex flex-col mt-2">
             <TabsList className="w-full grid grid-cols-3 h-9">
-              <TabsTrigger value="users" className="text-[12px] gap-1.5">
+              <TabsTrigger value="users" className="text-xs gap-1.5">
                 <UserIcon className="size-3.5" />
                 {t.channelPairings.users}
                 <span className="text-muted-foreground tabular-nums">
                   {users.length}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="groups" className="text-[12px] gap-1.5">
+              <TabsTrigger value="groups" className="text-xs gap-1.5">
                 <UsersIcon className="size-3.5" />
                 {t.channelPairings.groups}
                 <span className="text-muted-foreground tabular-nums">
                   {groups.length}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="pending" className="text-[12px] gap-1.5">
+              <TabsTrigger value="pending" className="text-xs gap-1.5">
                 <InboxIcon className="size-3.5" />
                 {t.channelPairings.pending}
                 <span className="text-muted-foreground tabular-nums">
@@ -142,13 +164,17 @@ export function ChannelPairingsSheet({
               className="flex-1 overflow-y-auto mt-3 outline-none"
             >
               {pending.length === 0 ? (
-                <EmptyState hint={t.channelPairings.noPending} />
+                <EmptyState
+                  icon={<InboxIcon />}
+                  title={t.channelPairings.noPendingTitle}
+                  hint={t.channelPairings.noPending}
+                />
               ) : (
                 <ul className="space-y-1">
                   {pending.map((p, i) => (
                     <li
                       key={i}
-                      className="rounded-md border border-border/40 bg-muted/30 px-3 py-2 text-[11px] font-mono break-all"
+                      className="rounded-md border border-border-subtle bg-muted/30 px-3 py-2 text-xs font-mono break-all"
                     >
                       {JSON.stringify(p)}
                     </li>
@@ -165,21 +191,29 @@ export function ChannelPairingsSheet({
 
 function IdList({ ids, emptyHint }: { ids: string[]; emptyHint: string }) {
   const { t } = useI18n();
-  if (ids.length === 0) return <EmptyState hint={emptyHint} />;
+  if (ids.length === 0) {
+    return (
+      <EmptyState
+        icon={<UserIcon />}
+        title={t.channelPairings.emptyListTitle}
+        hint={emptyHint}
+      />
+    );
+  }
   return (
     <ul className="space-y-1">
       {ids.map((id) => (
         <li
           key={id}
           className={cn(
-            "group flex items-center gap-2 rounded-md border border-border/40",
-            "bg-muted/30 px-2 py-1.5 hover:border-border/80 transition-colors",
+            "group flex items-center gap-2 rounded-md border border-border-subtle",
+            "bg-muted/30 px-2 py-1.5 hover:border-border-strong transition-colors",
           )}
         >
-          <div className="flex size-6 items-center justify-center rounded-md bg-muted text-[10px] font-medium text-muted-foreground">
+          <div className="flex size-6 items-center justify-center rounded-md bg-muted text-xs font-medium text-muted-foreground">
             {id.charAt(0).toUpperCase()}
           </div>
-          <span className="flex-1 font-mono text-[11px] truncate">{id}</span>
+          <span className="flex-1 font-mono text-xs truncate">{id}</span>
           <button
             type="button"
             onClick={() => {
@@ -202,10 +236,22 @@ function IdList({ ids, emptyHint }: { ids: string[]; emptyHint: string }) {
   );
 }
 
-function EmptyState({ hint }: { hint: string }) {
+function EmptyState({
+  hint,
+  icon,
+  title,
+}: {
+  hint: string;
+  icon: ReactNode;
+  title: string;
+}) {
   return (
-    <div className="py-10 text-center text-[12px] text-muted-foreground italic">
-      {hint}
-    </div>
+    <Empty className="min-h-[var(--panel-height-sm)] rounded-lg">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">{icon}</EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{hint}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }

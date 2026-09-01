@@ -1,4 +1,5 @@
-"""Unit tests for gap-filling modules: budget, credentials, skill_usage, error_classifier, context_compressor."""
+"""Unit tests for budget, credentials, skill usage, and error classification."""
+
 from __future__ import annotations
 
 import os
@@ -10,10 +11,6 @@ from runtime.memory.diagnostics.error_classifier import (
     ErrorCategory,
     RecoveryAction,
     classify_error,
-)
-from runtime.memory.runtime_state.context_compressor import (
-    CompressorConfig,
-    ContextCompressor,
 )
 from runtime.platform.budget.iteration_budget import (
     IterationBudget,
@@ -48,7 +45,9 @@ class TestIterationBudget:
         assert status == "warning"
 
     def test_hard_limit_raises(self):
-        b = IterationBudget(IterationBudgetConfig(max_iterations=3, hard_limit=True, auto_extend=False))
+        b = IterationBudget(
+            IterationBudgetConfig(max_iterations=3, hard_limit=True, auto_extend=False)
+        )
         b.tick()
         b.tick()
         b.tick()
@@ -56,7 +55,9 @@ class TestIterationBudget:
             b.tick()
 
     def test_soft_limit_returns_over_budget(self):
-        b = IterationBudget(IterationBudgetConfig(max_iterations=3, hard_limit=False, auto_extend=False))
+        b = IterationBudget(
+            IterationBudgetConfig(max_iterations=3, hard_limit=False, auto_extend=False)
+        )
         for _ in range(3):
             b.tick()
         _, status = b.tick()
@@ -88,14 +89,16 @@ class TestIterationBudget:
         assert b.is_exceeded() is True
 
     def test_auto_extend_on_progress(self):
-        b = IterationBudget(IterationBudgetConfig(
-            max_iterations=5,
-            auto_extend=True,
-            extend_by_percent=1.0,
-            max_extensions=2,
-            progress_window=3,
-            progress_threshold=0.6,
-        ))
+        b = IterationBudget(
+            IterationBudgetConfig(
+                max_iterations=5,
+                auto_extend=True,
+                extend_by_percent=1.0,
+                max_extensions=2,
+                progress_window=3,
+                progress_threshold=0.6,
+            )
+        )
         for i in range(5):
             b.tick(tool_name=f"tool_{i}", success=True, is_unique=True)
         _, status = b.tick(tool_name="tool_next", success=True, is_unique=True)
@@ -103,56 +106,64 @@ class TestIterationBudget:
         assert b.effective_limit > 5
 
     def test_no_extend_when_stuck(self):
-        b = IterationBudget(IterationBudgetConfig(
-            max_iterations=5,
-            auto_extend=True,
-            extend_by_percent=1.0,
-            max_extensions=2,
-            progress_window=3,
-            progress_threshold=0.6,
-            hard_limit=True,
-        ))
-        for i in range(5):
+        b = IterationBudget(
+            IterationBudgetConfig(
+                max_iterations=5,
+                auto_extend=True,
+                extend_by_percent=1.0,
+                max_extensions=2,
+                progress_window=3,
+                progress_threshold=0.6,
+                hard_limit=True,
+            )
+        )
+        for _i in range(5):
             b.tick(tool_name="same_tool", success=False, is_unique=False)
         with pytest.raises(IterationBudgetExceeded):
             b.tick(tool_name="same_tool", success=False, is_unique=False)
 
     def test_is_stuck_detects_loop(self):
-        b = IterationBudget(IterationBudgetConfig(
-            max_iterations=20,
-            progress_window=5,
-            progress_threshold=0.6,
-        ))
-        for i in range(10):
+        b = IterationBudget(
+            IterationBudgetConfig(
+                max_iterations=20,
+                progress_window=5,
+                progress_threshold=0.6,
+            )
+        )
+        for _i in range(10):
             b.tick(tool_name="same_tool", success=False, is_unique=False)
         assert b.is_stuck() is True
 
     def test_is_stuck_false_when_progressing(self):
-        b = IterationBudget(IterationBudgetConfig(
-            max_iterations=20,
-            progress_window=5,
-            progress_threshold=0.6,
-        ))
+        b = IterationBudget(
+            IterationBudgetConfig(
+                max_iterations=20,
+                progress_window=5,
+                progress_threshold=0.6,
+            )
+        )
         for i in range(10):
             b.tick(tool_name=f"tool_{i}", success=True, is_unique=True)
         assert b.is_stuck() is False
 
     def test_max_extensions_respected(self):
-        b = IterationBudget(IterationBudgetConfig(
-            max_iterations=3,
-            auto_extend=True,
-            extend_by_percent=1.0,
-            max_extensions=1,
-            progress_window=2,
-            progress_threshold=0.5,
-            hard_limit=True,
-        ))
+        b = IterationBudget(
+            IterationBudgetConfig(
+                max_iterations=3,
+                auto_extend=True,
+                extend_by_percent=1.0,
+                max_extensions=1,
+                progress_window=2,
+                progress_threshold=0.5,
+                hard_limit=True,
+            )
+        )
         for i in range(3):
             b.tick(tool_name=f"tool_{i}", success=True, is_unique=True)
         _, status = b.tick(tool_name="tool_a", success=True, is_unique=True)
         assert status == "extended"
         for i in range(2):
-            b.tick(tool_name=f"tool_{i+10}", success=True, is_unique=True)
+            b.tick(tool_name=f"tool_{i + 10}", success=True, is_unique=True)
         with pytest.raises(IterationBudgetExceeded):
             b.tick(tool_name="tool_z", success=True, is_unique=True)
 
@@ -180,10 +191,13 @@ class TestRateLimitTracker:
 
     def test_is_limited_when_zero_remaining(self):
         import time as _time
+
         tracker = RateLimitTracker()
         entry = RateLimitEntry(
-            model="gpt-4o", provider="openai",
-            requests_remaining=0, reset_at=_time.time() + 60,
+            model="gpt-4o",
+            provider="openai",
+            requests_remaining=0,
+            reset_at=_time.time() + 60,
         )
         tracker.update(entry)
         assert tracker.is_limited("openai", "gpt-4o") is True
@@ -233,10 +247,12 @@ class TestUsagePricing:
         assert "gpt-4o" in summary["by_model"]
 
     def test_budget_tracking(self, tmp_path):
-        pricing = UsagePricing(UsageConfig(
-            log_path=str(tmp_path / "usage.jsonl"),
-            budget_usd=0.001,
-        ))
+        pricing = UsagePricing(
+            UsageConfig(
+                log_path=str(tmp_path / "usage.jsonl"),
+                budget_usd=0.001,
+            )
+        )
         assert pricing.is_over_budget() is False
         pricing.record("gpt-4o", 1_000_000, 1_000_000)
         assert pricing.is_over_budget() is True
@@ -325,7 +341,7 @@ class TestCredentialSources:
 
     def test_file_source_dotenv(self, tmp_path):
         f = tmp_path / ".env"
-        f.write_text('API_KEY=sk-dotenv\n# comment\nOTHER=val', encoding="utf-8")
+        f.write_text("API_KEY=sk-dotenv\n# comment\nOTHER=val", encoding="utf-8")
         src = FileSource(f, fmt="dotenv")
         result = src.load()
         assert result["API_KEY"] == "sk-dotenv"
@@ -428,55 +444,3 @@ class TestErrorClassifier:
     def test_exception_input(self):
         result = classify_error(ValueError("Rate limit hit"))
         assert result.category == ErrorCategory.RATE_LIMIT
-
-
-# ═══════════════════════════════════════════════════════════
-# ContextCompressor
-# ═══════════════════════════════════════════════════════════
-
-
-class TestContextCompressor:
-    def test_no_compression_needed(self):
-        comp = ContextCompressor(CompressorConfig(max_chars=10000))
-        msgs = [
-            {"role": "system", "content": "You are helpful"},
-            {"role": "user", "content": "Hello"},
-        ]
-        result = comp.compress(msgs)
-        assert len(result) == 2
-
-    def test_compression_preserves_system(self):
-        comp = ContextCompressor(CompressorConfig(max_chars=50, preserve_recent_n=1))
-        msgs = [
-            {"role": "system", "content": "Important system prompt"},
-            {"role": "user", "content": "First message that is quite long to exceed limit"},
-            {"role": "assistant", "content": "Response also quite long to exceed the limit"},
-            {"role": "user", "content": "Recent message"},
-        ]
-        result = comp.compress(msgs)
-        roles = [m["role"] for m in result]
-        assert "system" in roles
-
-    def test_compression_with_report(self):
-        comp = ContextCompressor(CompressorConfig(max_chars=50, preserve_recent_n=1, summary_max_chars=200))
-        msgs = [
-            {"role": "system", "content": "System"},
-            {"role": "user", "content": "A" * 2000},
-            {"role": "assistant", "content": "B" * 2000},
-            {"role": "user", "content": "C" * 2000},
-            {"role": "assistant", "content": "D" * 2000},
-            {"role": "user", "content": "Recent"},
-        ]
-        result, report = comp.compress_with_report(msgs)
-        assert report.original_chars > report.compressed_chars
-        assert report.ratio < 1.0
-
-    def test_summary_truncation(self):
-        comp = ContextCompressor(CompressorConfig(max_chars=1, summary_max_chars=100, preserve_recent_n=0))
-        msgs = [
-            {"role": "user", "content": "A" * 200},
-            {"role": "assistant", "content": "B" * 200},
-        ]
-        result = comp.compress(msgs)
-        total = sum(len(m["content"]) for m in result)
-        assert total < 500

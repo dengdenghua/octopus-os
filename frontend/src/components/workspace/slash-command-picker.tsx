@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   listSlashCommands,
@@ -26,7 +26,7 @@ export interface SlashCommandPickerProps {
 }
 
 // One catalog fetch per browser session. Slash commands change
-// rarely (file edits in ~/.octopus/commands/) so we don't need a
+// rarely (file edits in ~/.echo/commands/) so we don't need a
 // per-render refetch — refresh on app reload is fine.
 let _cache: SlashCommand[] | null = null;
 let _inflight: Promise<SlashCommand[]> | null = null;
@@ -67,19 +67,27 @@ export function SlashCommandPicker({
     };
   }, []);
 
-  const matches = catalog
-    .filter((c) =>
-      filter ? c.name.toLowerCase().startsWith(filter.toLowerCase()) : true,
-    )
-    .slice(0, 8);
+  const matches = useMemo(
+    () =>
+      catalog
+        .filter((c) =>
+          filter ? c.name.toLowerCase().startsWith(filter.toLowerCase()) : true,
+        )
+        .slice(0, 8),
+    [catalog, filter],
+  );
+
+  // Keep the latest callback in a ref so the notification effect does
+  // not need to depend on an unstable parent callback.
+  const onMatchesChangeRef = useRef(onMatchesChange);
+  useEffect(() => {
+    onMatchesChangeRef.current = onMatchesChange;
+  }, [onMatchesChange]);
 
   // Notify parent so it can clamp activeIndex without us owning it.
-  // Deps intentionally use primitive proxies (filter + length) rather
-  // than the derived `matches` array identity (new reference every
-  // render would cause an infinite update loop).
   useEffect(() => {
-    onMatchesChange?.(matches);
-  }, [filter, catalog.length, matches.length]);
+    onMatchesChangeRef.current?.(matches);
+  }, [matches]);
 
   if (matches.length === 0) return null;
 
@@ -87,8 +95,8 @@ export function SlashCommandPicker({
     <div
       className={cn(
         "absolute bottom-full left-0 right-0 mb-2 max-h-64 overflow-y-auto",
-        "rounded-lg border border-border/70 bg-popover shadow-lg",
-        "text-[12px] z-50",
+        "rounded-lg border border-border-default bg-popover shadow-[var(--shadow-md)]",
+        "text-xs z-50",
         className,
       )}
     >
@@ -120,12 +128,12 @@ export function SlashCommandPicker({
                     {cmd.argument_hint}
                   </span>
                 )}
-                <span className="ml-auto text-[10px] text-muted-foreground/70">
+                <span className="ml-auto text-xs text-muted-foreground/70">
                   {cmd.source}
                 </span>
               </div>
               {cmd.description && (
-                <div className="text-[11px] text-muted-foreground truncate">
+                <div className="text-xs text-muted-foreground truncate">
                   {cmd.description}
                 </div>
               )}

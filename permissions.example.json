@@ -1,6 +1,6 @@
 {
-  "_about": "Example approval policy for octopus-agent. Copy this file to data/permissions.json (which is gitignored) and edit there. Rules are evaluated in order — first match wins. Unknown fields like _about / _comment_* are ignored by load_policy.",
-  "_docs": "https://github.com/octopus-agent/octopus-agent  ·  see docs/permissions.md for the full guide.",
+  "_about": "Example approval policy for echo-agent. Copy this file to data/permissions.json (which is gitignored) and edit there. Rules are evaluated in order — first match wins. Unknown fields like _about / _comment_* are ignored by load_policy.",
+  "_docs": "https://github.com/dengdenghua/echo-os  ·  see docs/permissions.md for the full guide.",
   "version": 1,
   "rules": [
     {

@@ -1,0 +1,13 @@
+name: paper_trading_replica
+display_name: 模拟炒股 · 复刻版(待打磨)
+version: 0.1.0
+description: 模拟炒股「复刻版」交易页 —— 1:1 复刻平台配资盘交易界面(自选星标/持仓/买卖/图表周期等已完成功能)。从主插件拆出后停放在插件中心,复用主插件 paper_trading 的后端(行情/自选/平台配资交易),暂不在工作台前端展示,留待继续打磨。
+author: Echo
+tags:
+  - trading
+  - paper-trading
+  - replica
+  - ui
+provides:
+  - paper_trading_replica.api
+config: {}

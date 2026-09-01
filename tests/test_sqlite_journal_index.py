@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-
 from runtime.memory.journal.sqlite_index import JournalIndex
 
 # ─── Helpers ────────────────────────────────────────────────
@@ -15,7 +14,11 @@ from runtime.memory.journal.sqlite_index import JournalIndex
 
 def _ts(year: int, month: int, day: int, hour: int = 0) -> str:
     return datetime(
-        year, month, day, hour, tzinfo=UTC,
+        year,
+        month,
+        day,
+        hour,
+        tzinfo=UTC,
     ).isoformat()
 
 
@@ -75,7 +78,8 @@ def test_empty_db_stats_zeros(index: JournalIndex) -> None:
 
 
 def test_index_and_filter_by_event_type(
-    index: JournalIndex, tmp_path: Path,
+    index: JournalIndex,
+    tmp_path: Path,
 ) -> None:
     jsonl = tmp_path / "j.jsonl"
     records: list[dict] = []
@@ -155,7 +159,8 @@ def test_session_filter(index: JournalIndex, tmp_path: Path) -> None:
 
 
 def test_incremental_indexing_only_new_lines(
-    index: JournalIndex, tmp_path: Path,
+    index: JournalIndex,
+    tmp_path: Path,
 ) -> None:
     jsonl = tmp_path / "j.jsonl"
     _write_jsonl(jsonl, [_record() for _ in range(5)])
@@ -178,7 +183,8 @@ def test_incremental_indexing_only_new_lines(
 
 
 def test_malformed_lines_skipped(
-    index: JournalIndex, tmp_path: Path,
+    index: JournalIndex,
+    tmp_path: Path,
 ) -> None:
     jsonl = tmp_path / "j.jsonl"
     # Mix of valid + malformed lines.
@@ -225,10 +231,7 @@ def test_wal_mode_set(tmp_path: Path) -> None:
 
 def test_limit_and_offset(index: JournalIndex, tmp_path: Path) -> None:
     jsonl = tmp_path / "j.jsonl"
-    recs = [
-        _record(event_type="step", ts=_ts(2026, 1, 1, i))
-        for i in range(20)
-    ]
+    recs = [_record(event_type="step", ts=_ts(2026, 1, 1, i)) for i in range(20)]
     _write_jsonl(jsonl, recs)
     index.index_jsonl(jsonl)
 
@@ -249,7 +252,8 @@ def test_limit_and_offset(index: JournalIndex, tmp_path: Path) -> None:
 
 
 def test_multiple_sources_tracked_independently(
-    index: JournalIndex, tmp_path: Path,
+    index: JournalIndex,
+    tmp_path: Path,
 ) -> None:
     j1 = tmp_path / "src1.jsonl"
     j2 = tmp_path / "src2.jsonl"

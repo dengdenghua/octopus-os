@@ -13,6 +13,7 @@ Fix: add ``_commit_direct_llm_cost`` helper that mints a
 These tests pin the helper so future refactors can't silently break
 the Cost tab again.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -64,7 +65,9 @@ def test_commit_skips_zero_tokens() -> None:
     pollute the Cost tab with meaningless 0-token rows."""
     stack = _FakeStack()
     _commit_direct_llm_cost(
-        stack, {"input_tokens": 0, "output_tokens": 0}, None,
+        stack,
+        {"input_tokens": 0, "output_tokens": 0},
+        None,
     )
     assert _count_budget_commits(stack) == 0
 
@@ -117,7 +120,9 @@ def test_commit_handles_missing_stack_journal() -> None:
 def test_commit_uses_default_actor_when_no_agent() -> None:
     stack = _FakeStack()
     _commit_direct_llm_cost(
-        stack, {"input_tokens": 5, "output_tokens": 5}, None,
+        stack,
+        {"input_tokens": 5, "output_tokens": 5},
+        None,
     )
     events = list(stack.journal.read_by_type("budget_commit"))
     assert events[0].actor == "arms/direct_llm"
@@ -132,7 +137,9 @@ def test_commit_threads_custom_reason() -> None:
     but different paths pass different reasons."""
     stack = _FakeStack()
     _commit_direct_llm_cost(
-        stack, {"input_tokens": 1, "output_tokens": 1}, None,
+        stack,
+        {"input_tokens": 1, "output_tokens": 1},
+        None,
         reason="synthesize_reply",
     )
     ev = next(iter(stack.journal.read_by_type("budget_commit")))
@@ -147,10 +154,14 @@ def test_budget_summary_sees_direct_llm_cost() -> None:
     aggregation logic · confirm tokens flow end-to-end."""
     stack = _FakeStack()
     _commit_direct_llm_cost(
-        stack, {"input_tokens": 100, "output_tokens": 200}, None,
+        stack,
+        {"input_tokens": 100, "output_tokens": 200},
+        None,
     )
     _commit_direct_llm_cost(
-        stack, {"input_tokens": 50, "output_tokens": 75}, None,
+        stack,
+        {"input_tokens": 50, "output_tokens": 75},
+        None,
         reason="synthesize_reply",
     )
 

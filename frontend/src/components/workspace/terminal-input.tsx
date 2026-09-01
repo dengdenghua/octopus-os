@@ -1,4 +1,3 @@
-
 import { ArrowUpIcon, SquareIcon } from "lucide-react";
 import { useCallback, useRef, type KeyboardEvent } from "react";
 import { useI18n } from "@/core/i18n/hooks";
@@ -47,14 +46,12 @@ export function TerminalInput({
     [onSubmit, onKeyDown],
   );
 
-  const _shortPath = workDir
-    ? workDir.split(/[/\\]/).slice(-2).join("/")
-    : "~";
+  const _shortPath = workDir ? workDir.split(/[/\\]/).slice(-2).join("/") : "~";
 
   return (
     <div
       className={cn(
-        "rounded-lg border border-transparent bg-card overflow-hidden hover:border-border/60 focus-within:border-transparent transition-[border-color,box-shadow] duration-200",
+        "border border-transparent bg-card overflow-hidden hover:border-border-default focus-within:border-transparent transition-[border-color,box-shadow]",
         className,
       )}
     >
@@ -67,9 +64,10 @@ export function TerminalInput({
           onKeyDown={handleKeyDown}
           disabled={disabled}
           placeholder={finalPlaceholder}
+          aria-label={finalPlaceholder}
           rows={1}
           className={cn(
-            "text-foreground flex-1 resize-none bg-transparent outline-none text-[13px] leading-snug py-1",
+            "text-foreground flex-1 resize-none bg-transparent outline-none text-sm leading-snug py-1",
             "placeholder:text-muted-foreground/50",
             "disabled:opacity-50",
           )}
@@ -87,21 +85,25 @@ export function TerminalInput({
         />
         {isLoading ? (
           <button
+            type="button"
             onClick={onStop}
             title={t.codeMode.stop}
-            className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-foreground text-background hover:opacity-80 transition-opacity"
+            aria-label={t.codeMode.stop}
+            className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-destructive/90 text-destructive-foreground transition-colors hover:bg-destructive"
           >
             <SquareIcon className="size-3" fill="currentColor" />
           </button>
         ) : (
           <button
+            type="button"
             onClick={onSubmit}
             disabled={disabled || !value.trim()}
             title={t.codeMode.send}
+            aria-label={t.codeMode.send}
             className={cn(
-              "flex size-7 shrink-0 items-center justify-center rounded-lg transition-[background-color,transform] duration-150",
+              "flex size-7 shrink-0 items-center justify-center rounded-lg transition-[background-color,transform] duration-fast",
               "bg-foreground text-background hover:bg-foreground/90 active:scale-95",
-              "disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed",
+              "disabled:bg-transparent disabled:text-muted-foreground/50 disabled:cursor-not-allowed disabled:hover:bg-muted/60 disabled:hover:text-muted-foreground",
             )}
           >
             <ArrowUpIcon className="size-3.5" strokeWidth={2.25} />

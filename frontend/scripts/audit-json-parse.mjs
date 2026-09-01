@@ -50,10 +50,14 @@ for await (const f of walk(SRC)) {
 }
 
 if (findings.length === 0) {
-  console.log("All production JSON.parse() sites are protected by try/catch. ✅");
+  console.log(
+    "All production JSON.parse() sites are protected by try/catch. ✅",
+  );
   console.log("(Tests, .d.ts, and benchmark files are excluded.)");
 } else {
-  console.log(`Found ${findings.length} UNGUARDED JSON.parse() in production code:`);
+  console.log(
+    `Found ${findings.length} UNGUARDED JSON.parse() in production code:`,
+  );
   for (const f of findings) {
     console.log(`  ${f.file}:${f.line}  →  ${f.text}`);
   }

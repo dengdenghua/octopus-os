@@ -7,6 +7,7 @@ Two layers:
 2. Integration with ``EventLog`` — does ``turn_compacted`` + ``replay()``
    produce the expected surviving turn list?
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -75,10 +76,7 @@ class TestCompact:
         assert compact("th", turns, CompactionPolicy(trigger_at=20, keep_recent=10)) is None
 
     def test_summary_covers_stale_range_only(self) -> None:
-        turns = [
-            _make_turn(i, user_text=f"ask-{i}", agent_text=f"ans-{i}")
-            for i in range(25)
-        ]
+        turns = [_make_turn(i, user_text=f"ask-{i}", agent_text=f"ans-{i}") for i in range(25)]
         policy = CompactionPolicy(trigger_at=20, keep_recent=10)
         result = compact("th", turns, policy)
         assert isinstance(result, CompactionResult)
@@ -88,10 +86,7 @@ class TestCompact:
         assert not recent_ids.intersection(result.superseded_ids)
 
     def test_summary_text_references_all_stale_turns(self) -> None:
-        turns = [
-            _make_turn(i, user_text=f"ask-{i}", agent_text=f"ans-{i}")
-            for i in range(15)
-        ]
+        turns = [_make_turn(i, user_text=f"ask-{i}", agent_text=f"ans-{i}") for i in range(15)]
         policy = CompactionPolicy(trigger_at=10, keep_recent=5)
         result = compact("th", turns, policy)
         assert result is not None
@@ -102,9 +97,7 @@ class TestCompact:
         assert "ask-0" in text
 
     def test_custom_summariser_used(self) -> None:
-        turns = [
-            _make_turn(i, user_text=f"ask-{i}") for i in range(15)
-        ]
+        turns = [_make_turn(i, user_text=f"ask-{i}") for i in range(15)]
         called: list[int] = []
 
         def summariser(stale):  # type: ignore[no-untyped-def]
@@ -162,9 +155,7 @@ class TestCompact:
 
 
 class TestEventLogIntegration:
-    def test_replay_drops_superseded_turns_and_inserts_summary(
-        self, tmp_path: Path
-    ) -> None:
+    def test_replay_drops_superseded_turns_and_inserts_summary(self, tmp_path: Path) -> None:
         log = EventLog(tmp_path / "th.jsonl")
         log.thread_started("th")
 
@@ -188,9 +179,7 @@ class TestEventLogIntegration:
         # Summary replaces the first 3; kept-recent 2 intact.
         assert ids == [result.summary_turn.id] + [t.id for t in turns[-2:]]
 
-    def test_compaction_event_leaves_prior_events_untouched(
-        self, tmp_path: Path
-    ) -> None:
+    def test_compaction_event_leaves_prior_events_untouched(self, tmp_path: Path) -> None:
         """Append-only invariant: the raw events for the superseded
         turns are still on disk. A downstream audit that ignores
         ``turn_compacted`` events sees the full history."""
@@ -210,7 +199,5 @@ class TestEventLogIntegration:
         log.turn_compacted("th", result.summary_turn, result.superseded_ids)
 
         all_events = list(log.iter_events())
-        turn_started_ids = [
-            e.turn_id for e in all_events if e.event == "turn_started"
-        ]
+        turn_started_ids = [e.turn_id for e in all_events if e.event == "turn_started"]
         assert turn_started_ids == [t.id for t in turns]

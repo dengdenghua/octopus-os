@@ -12,7 +12,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from runtime.core.hearts import (
     FileLockCoordinator,
     Hearts,
@@ -137,7 +136,10 @@ class TestInMemoryRelease:
         assert lease is not None
         # Implementation note.
         fake = Lease(
-            scope="s", holder_id="other", acquired_at=0, expires_at=99999,
+            scope="s",
+            holder_id="other",
+            acquired_at=0,
+            expires_at=99999,
             fencing_token=lease.fencing_token,
         )
         assert c.release_lease(fake) is False
@@ -149,7 +151,10 @@ class TestInMemoryRelease:
         lease = c.acquire_lease("s", ttl=10.0)
         assert lease is not None
         stale = Lease(
-            scope="s", holder_id="a", acquired_at=0, expires_at=99999,
+            scope="s",
+            holder_id="a",
+            acquired_at=0,
+            expires_at=99999,
             fencing_token=lease.fencing_token - 1,
         )
         assert c.release_lease(stale) is False
@@ -274,12 +279,17 @@ _SUBPROC_SCRIPT = textwrap.dedent("""
 )
 class TestFileLockRealProcesses:
     def _spawn(
-        self, lock_dir: Path, holder: str, scope: str, ttl: float,
+        self,
+        lock_dir: Path,
+        holder: str,
+        scope: str,
+        ttl: float,
     ) -> dict:
         proc = subprocess.run(
-            [sys.executable, "-c", _SUBPROC_SCRIPT,
-             str(lock_dir), holder, scope, str(ttl)],
-            capture_output=True, text=True, timeout=15,
+            [sys.executable, "-c", _SUBPROC_SCRIPT, str(lock_dir), holder, scope, str(ttl)],
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         assert proc.returncode == 0, proc.stderr
         return json.loads(proc.stdout.strip())
@@ -390,6 +400,7 @@ class TestHeartsLeader:
             LeaderGuard,
             Lease,
         )
+
         # Implementation note.
         assert Coordinator is not None
         assert InMemoryCoordinator is not None

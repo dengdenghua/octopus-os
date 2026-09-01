@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 
 import pytest
-
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.memory.journal import InMemoryJournal
 from runtime.safety.recovery import (
@@ -127,18 +126,14 @@ class TestRunOnce:
             ),
             verify_tests=False,
         )
-        report = IntelCollector(
-            [IntelSource(source_id="x", query="q")], journal, r
-        ).run_once()
+        report = IntelCollector([IntelSource(source_id="x", query="q")], journal, r).run_once()
         assert report.searches_failed == 1
         steps = journal.read_by_type("step")
         assert steps[0].step.result.status == "failed"
         assert "network outage" in (steps[0].step.result.error_type or "")
 
     def test_tags_propagate_to_result(self, mock_registry, journal):
-        sources = [
-            IntelSource(source_id="s1", query="q", tags=["weekly", "security"])
-        ]
+        sources = [IntelSource(source_id="s1", query="q", tags=["weekly", "security"])]
         IntelCollector(sources, journal, mock_registry).run_once()
         step_event = journal.read_by_type("step")[0]
         assert "weekly" in step_event.step.result.stderr_tags
@@ -220,9 +215,7 @@ class TestTrajectoryOutput:
             ),
             verify_tests=False,
         )
-        IntelCollector(
-            [IntelSource(source_id="x", query="q")], journal, r
-        ).run_once()
+        IntelCollector([IntelSource(source_id="x", query="q")], journal, r).run_once()
         traj = journal.read_by_type("trajectory")[0].trajectory
         assert not traj.outcome.success
 
@@ -272,19 +265,14 @@ class TestDownstreamCompat:
             verify_tests=False,
         )
 
-        sources = [
-            IntelSource(source_id=f"s{i}", query=f"q{i}", fetch_top_n=1)
-            for i in range(5)
-        ]
+        sources = [IntelSource(source_id=f"s{i}", query=f"q{i}", fetch_top_n=1) for i in range(5)]
         IntelCollector(sources, journal, r).run_once()
 
         # Implementation note.
         # Implementation note.
         report = RuleExtractor(
             journal=journal,
-            config=ExtractorConfig(
-                min_hits=3, include_partial_as_failure=True
-            ),
+            config=ExtractorConfig(min_hits=3, include_partial_as_failure=True),
         ).extract()
         # Implementation note.
         rule_sucker_ids = [r.sucker_id for r in report.rules_produced]

@@ -11,9 +11,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import defusedxml.minidom
 import zipfile
 from pathlib import Path
+
+import defusedxml.minidom
 
 
 def main():
@@ -79,10 +80,9 @@ def pack_document(input_dir, output_file, validate=False):
                     zf.write(f, f.relative_to(temp_content_dir))
 
         # Validate if requested
-        if validate:
-            if not validate_document(output_file):
-                output_file.unlink()  # Delete the corrupt file
-                return False
+        if validate and not validate_document(output_file):
+            output_file.unlink()  # Delete the corrupt file
+            return False
 
     return True
 
@@ -132,7 +132,7 @@ def validate_document(doc_path):
 
 def condense_xml(xml_file):
     """Strip unnecessary whitespace and remove comments."""
-    with open(xml_file, "r", encoding="utf-8") as f:
+    with open(xml_file, encoding="utf-8") as f:
         dom = defusedxml.minidom.parse(f)
 
     # Process each element to remove whitespace and comments

@@ -11,7 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RealtimeClient } from "./client";
+import { RealtimeClient, toWebSocketURL } from "./client";
 import type { Envelope } from "./envelope";
 
 class FakeWebSocket {
@@ -22,6 +22,7 @@ class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
 
   url: string;
+  protocols: string[];
   readyState: number = FakeWebSocket.CONNECTING;
   sentRaw: string[] = [];
 
@@ -30,8 +31,9 @@ class FakeWebSocket {
   onclose: ((ev: CloseEvent) => void) | null = null;
   onerror: ((ev: Event) => void) | null = null;
 
-  constructor(url: string) {
+  constructor(url: string, protocols: string[] = []) {
     this.url = url;
+    this.protocols = protocols;
     FakeWebSocket.lastInstance = this;
     FakeWebSocket.instances.push(this);
   }
@@ -51,7 +53,8 @@ class FakeWebSocket {
     this.onopen?.({} as Event);
   }
   receive(payload: object | string): void {
-    const text = typeof payload === "string" ? payload : JSON.stringify(payload);
+    const text =
+      typeof payload === "string" ? payload : JSON.stringify(payload);
     this.onmessage?.({ data: text } as MessageEvent);
   }
   serverClose(code = 1006, reason = "abnormal"): void {
@@ -68,17 +71,31 @@ const ORIG_WS = (globalThis as { WebSocket?: unknown }).WebSocket;
 beforeEach(() => {
   FakeWebSocket.lastInstance = null;
   FakeWebSocket.instances = [];
-  (globalThis as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket = FakeWebSocket;
+  (globalThis as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket =
+    FakeWebSocket;
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  // Drop any per-test own-property override so the jsdom prototype
+  // getter (always false) is back in charge.
+  Reflect.deleteProperty(document, "hidden");
   if (ORIG_WS === undefined) {
     delete (globalThis as { WebSocket?: unknown }).WebSocket;
   } else {
     (globalThis as { WebSocket?: unknown }).WebSocket = ORIG_WS;
   }
 });
+
+// jsdom's ``document.hidden`` is a prototype getter; shadow it with a
+// configurable own property so tests can simulate a backgrounded tab.
+function setDocumentHidden(hidden: boolean): void {
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    get: () => hidden,
+  });
+}
 
 function makeClient(opts: {
   onIncomingRequest?: (req: any) => Promise<unknown>;
@@ -104,7 +121,9 @@ describe("RealtimeClient", () => {
     const ws = FakeWebSocket.lastInstance!;
     ws.open();
 
-    const promise = client.request<{ ok: true }>("turn/start", { threadId: "t" });
+    const promise = client.request<{ ok: true }>("turn/start", {
+      threadId: "t",
+    });
     const sent = ws.parseSent(0);
     expect("id" in sent && sent.id).toBe(1);
 
@@ -113,7 +132,7 @@ describe("RealtimeClient", () => {
     client.close();
   });
 
-  it("omits the guest sentinel token from the websocket URL", async () => {
+  it("sends supplied auth tokens through websocket subprotocols", async () => {
     const client = new RealtimeClient({
       url: "ws://test/api/realtime",
       authToken: () => "__guest__",
@@ -124,10 +143,14 @@ describe("RealtimeClient", () => {
     client.connect();
 
     expect(FakeWebSocket.lastInstance!.url).toBe("ws://test/api/realtime");
+    expect(FakeWebSocket.lastInstance!.protocols).toEqual([
+      "bearer.b64",
+      "X19ndWVzdF9f",
+    ]);
     client.close();
   });
 
-  it("adds real auth tokens to the websocket URL", async () => {
+  it("sends real auth tokens through websocket subprotocols", async () => {
     const client = new RealtimeClient({
       url: "ws://test/api/realtime",
       authToken: () => "sk-alice",
@@ -137,8 +160,29 @@ describe("RealtimeClient", () => {
 
     client.connect();
 
-    expect(FakeWebSocket.lastInstance!.url).toBe(
-      "ws://test/api/realtime?token=sk-alice",
+    expect(FakeWebSocket.lastInstance!.url).toBe("ws://test/api/realtime");
+    expect(FakeWebSocket.lastInstance!.protocols).toEqual([
+      "bearer.b64",
+      "c2stYWxpY2U",
+    ]);
+    client.close();
+  });
+
+  it("keeps unusual UTF-8 auth tokens out of the websocket URL", async () => {
+    const client = new RealtimeClient({
+      url: "ws://test/api/realtime",
+      authToken: () => "令牌 with spaces/(test)",
+      onIncomingRequest: async () => null,
+      onNotification: () => {},
+    });
+
+    client.connect();
+
+    expect(FakeWebSocket.lastInstance!.url).toBe("ws://test/api/realtime");
+    expect(FakeWebSocket.lastInstance!.url).not.toContain("token=");
+    expect(FakeWebSocket.lastInstance!.protocols[0]).toBe("bearer.b64");
+    expect(FakeWebSocket.lastInstance!.protocols[1]).toMatch(
+      /^[A-Za-z0-9_-]+$/,
     );
     client.close();
   });
@@ -173,10 +217,12 @@ describe("RealtimeClient", () => {
     // Delta notifications are batched through requestAnimationFrame to
     // keep React re-renders capped at ~60fps during high-rate streaming.
     // Wait a frame so the buffered notification lands on the callback.
-    await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
 
     expect(onNotification).toHaveBeenCalledTimes(1);
-    expect(onNotification.mock.calls[0]![0].method).toBe("item/agentMessage/delta");
+    expect(onNotification.mock.calls[0]![0].method).toBe(
+      "item/agentMessage/delta",
+    );
     client.close();
   });
 
@@ -203,7 +249,7 @@ describe("RealtimeClient", () => {
       params: { threadId: "t", turnId: "turn", itemId: "b", delta: "other" },
     });
 
-    await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
 
     expect(onNotification).toHaveBeenCalledTimes(2);
     expect(onNotification.mock.calls[0]![0]).toMatchObject({
@@ -264,16 +310,256 @@ describe("RealtimeClient", () => {
       },
     });
 
-    await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
 
     // Two adjacent same-item deltas coalesce; started + completed
     // ride alongside without merging. Total 3 callbacks.
     expect(onNotification).toHaveBeenCalledTimes(3);
-    const methods = onNotification.mock.calls.map(c => c[0].method);
+    const methods = onNotification.mock.calls.map((c) => c[0].method);
     expect(methods).toEqual([
       "item/started",
       "item/agentMessage/delta",
       "item/completed",
+    ]);
+    client.close();
+  });
+
+  it("flushes batched events via setTimeout, in order, while the tab is hidden", async () => {
+    // Regression guard: with the buffer pinned to requestAnimationFrame
+    // only, a hidden tab never flushed — the buffer grew without bound
+    // and immediately-dispatched methods (turn/interrupted) overtook
+    // the buffered item/started, so the reducer marked the turn
+    // interrupted before the item existed and the late-flushed item
+    // spun forever. Hidden tabs must fall back to a macrotask.
+    const rafSpy = vi
+      .spyOn(globalThis, "requestAnimationFrame")
+      .mockImplementation(() => 0);
+    setDocumentHidden(true);
+    const onNotification = vi.fn();
+    const client = makeClient({ onNotification });
+    client.connect();
+    const ws = FakeWebSocket.lastInstance!;
+    ws.open();
+
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "item/started",
+      params: {
+        threadId: "t",
+        turnId: "turn",
+        item: { id: "x", type: "agentMessage", text: "", status: "inProgress" },
+      },
+    });
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "item/agentMessage/delta",
+      params: { threadId: "t", turnId: "turn", itemId: "x", delta: "hi" },
+    });
+    // Buffered, not dispatched synchronously.
+    expect(onNotification).not.toHaveBeenCalled();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(rafSpy).not.toHaveBeenCalled();
+    expect(onNotification.mock.calls.map((c) => c[0].method)).toEqual([
+      "item/started",
+      "item/agentMessage/delta",
+    ]);
+    client.close();
+  });
+
+  it("flushes the buffer synchronously the moment the tab goes hidden", () => {
+    // The rAF scheduled while the tab was visible will never fire once
+    // it is hidden. Mock rAF to never invoke its callback so only the
+    // visibilitychange path can deliver the buffered events.
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 0);
+    const onNotification = vi.fn();
+    const client = makeClient({ onNotification });
+    client.connect();
+    const ws = FakeWebSocket.lastInstance!;
+    ws.open();
+
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "item/started",
+      params: {
+        threadId: "t",
+        turnId: "turn",
+        item: { id: "x", type: "agentMessage", text: "", status: "inProgress" },
+      },
+    });
+    expect(onNotification).not.toHaveBeenCalled();
+
+    setDocumentHidden(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    // Synchronous flush: the buffered item/started must land before any
+    // immediately-dispatched method that follows (turn/interrupted).
+    expect(onNotification).toHaveBeenCalledTimes(1);
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "turn/interrupted",
+      params: { threadId: "t", turnId: "turn" },
+    });
+    expect(onNotification.mock.calls.map((c) => c[0].method)).toEqual([
+      "item/started",
+      "turn/interrupted",
+    ]);
+
+    const removeSpy = vi.spyOn(document, "removeEventListener");
+    client.close();
+    expect(removeSpy).toHaveBeenCalledWith(
+      "visibilitychange",
+      expect.any(Function),
+    );
+  });
+
+  it("keeps item/fileChange/hunkDelta ordered behind item/started without merging", async () => {
+    // hunkDelta used to bypass the buffer: in the same frame it raced
+    // ahead of the still-buffered item/started and the reducer dropped
+    // it (unknown item). It must ride the buffer for ordering, but the
+    // structured hunk payloads must never coalesce like text deltas.
+    const onNotification = vi.fn();
+    const client = makeClient({ onNotification });
+    client.connect();
+    const ws = FakeWebSocket.lastInstance!;
+    ws.open();
+
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "item/started",
+      params: {
+        threadId: "t",
+        turnId: "turn",
+        item: { id: "fc", type: "fileChange", status: "inProgress" },
+      },
+    });
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "item/fileChange/hunkDelta",
+      params: {
+        threadId: "t",
+        turnId: "turn",
+        itemId: "fc",
+        path: "a.ts",
+        op: "update",
+        hunk: { header: "@@ -1 +1 @@" },
+      },
+    });
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "item/fileChange/hunkDelta",
+      params: {
+        threadId: "t",
+        turnId: "turn",
+        itemId: "fc",
+        path: "a.ts",
+        op: "update",
+        hunk: { header: "@@ -5 +5 @@" },
+      },
+    });
+
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+
+    expect(onNotification).toHaveBeenCalledTimes(3);
+    expect(onNotification.mock.calls.map((c) => c[0].method)).toEqual([
+      "item/started",
+      "item/fileChange/hunkDelta",
+      "item/fileChange/hunkDelta",
+    ]);
+    // Each hunk arrives intact — no text-delta-style merge.
+    expect(onNotification.mock.calls[1]![0].params.hunk.header).toBe(
+      "@@ -1 +1 @@",
+    );
+    expect(onNotification.mock.calls[2]![0].params.hunk.header).toBe(
+      "@@ -5 +5 @@",
+    );
+    client.close();
+  });
+
+  it("flushes buffered items before a non-batched method in the same frame", () => {
+    // Ordering invariant: within the buffering window (one frame in the
+    // foreground) an immediately-dispatched method (turn/interrupted,
+    // turn/completed, error, workbench/snapshot) used to overtake the
+    // still-buffered item/started — the reducer marked the turn done
+    // before the item existed and the late-flushed item spun forever.
+    // The dispatch path must now flush the buffer synchronously before
+    // delivering any non-batched notification, so the reducer sees
+    // strict WebSocket arrival order. Mock rAF to never fire so only
+    // the synchronous flush can deliver the buffered event.
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 0);
+    const onNotification = vi.fn();
+    const client = makeClient({ onNotification });
+    client.connect();
+    const ws = FakeWebSocket.lastInstance!;
+    ws.open();
+
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "item/started",
+      params: {
+        threadId: "t",
+        turnId: "turn",
+        item: { id: "x", type: "agentMessage", text: "", status: "inProgress" },
+      },
+    });
+    expect(onNotification).not.toHaveBeenCalled();
+
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "turn/interrupted",
+      params: { threadId: "t", turnId: "turn" },
+    });
+
+    expect(onNotification.mock.calls.map((c) => c[0].method)).toEqual([
+      "item/started",
+      "turn/interrupted",
+    ]);
+    client.close();
+  });
+
+  it("does not re-dispatch from the scheduled rAF after a synchronous flush", () => {
+    // The synchronous flush triggered by a non-batched method races the
+    // rAF callback that was scheduled when the batched event arrived.
+    // flushDeltaBuffer clears deltaFlushPending and drains the buffer,
+    // so the late rAF callback must see an empty buffer and return
+    // without duplicating anything.
+    const rafCallbacks: FrameRequestCallback[] = [];
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation((cb) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    });
+    const onNotification = vi.fn();
+    const client = makeClient({ onNotification });
+    client.connect();
+    const ws = FakeWebSocket.lastInstance!;
+    ws.open();
+
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "item/started",
+      params: {
+        threadId: "t",
+        turnId: "turn",
+        item: { id: "x", type: "agentMessage", text: "", status: "inProgress" },
+      },
+    });
+    expect(rafCallbacks.length).toBe(1);
+
+    // Non-batched method forces the synchronous flush.
+    ws.receive({
+      jsonrpc: "2.0",
+      method: "turn/interrupted",
+      params: { threadId: "t", turnId: "turn" },
+    });
+    expect(onNotification).toHaveBeenCalledTimes(2);
+
+    // Now the previously scheduled rAF fires — it must be a no-op.
+    for (const cb of rafCallbacks.splice(0)) cb(0);
+    expect(onNotification).toHaveBeenCalledTimes(2);
+    expect(onNotification.mock.calls.map((c) => c[0].method)).toEqual([
+      "item/started",
+      "turn/interrupted",
     ]);
     client.close();
   });
@@ -362,7 +648,7 @@ describe("RealtimeClient", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
     // onOpen fires again after a reconnect.
     FakeWebSocket.lastInstance!.serverClose(1006, "abnormal");
-    await new Promise(r => setTimeout(r, 60));
+    await new Promise((r) => setTimeout(r, 60));
     FakeWebSocket.lastInstance!.open();
     expect(onOpen).toHaveBeenCalledTimes(2);
     client.close();
@@ -407,6 +693,21 @@ describe("RealtimeClient", () => {
     client.close();
     await vi.advanceTimersByTimeAsync(500);
     expect(FakeWebSocket.instances.length).toBe(1);
+  });
+
+  it("rejects new requests after close instead of retaining an unflushable outbox", async () => {
+    const client = makeClient({});
+    client.connect();
+    const socket = FakeWebSocket.lastInstance!;
+    socket.open();
+
+    client.close();
+    client.notify("client/say", { text: "late" });
+
+    await expect(client.request("thread/resume", {})).rejects.toThrow(
+      "client closed",
+    );
+    expect(socket.sentRaw).toHaveLength(0);
   });
 
   it("does NOT replay buffered requests after a reconnect (P0-5 outbox invariant)", async () => {
@@ -461,5 +762,50 @@ describe("RealtimeClient", () => {
     }).not.toThrow();
     expect(onNotification).not.toHaveBeenCalled();
     client.close();
+  });
+});
+
+describe("toWebSocketURL", () => {
+  function withWindowLocation(
+    location: { protocol: string; host: string } | undefined,
+    assertion: () => void,
+  ) {
+    try {
+      vi.stubGlobal("window", location ? { location } : undefined);
+      assertion();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it("uses the current browser origin for same-origin backend URLs", () => {
+    withWindowLocation({ protocol: "http:", host: "localhost:3000" }, () => {
+      expect(toWebSocketURL("", "/api/realtime")).toBe(
+        "ws://localhost:3000/api/realtime",
+      );
+    });
+  });
+
+  it("keeps the active loopback host instead of forcing localhost", () => {
+    withWindowLocation({ protocol: "http:", host: "127.0.0.1:3000" }, () => {
+      expect(toWebSocketURL("", "/api/realtime")).toBe(
+        "ws://127.0.0.1:3000/api/realtime",
+      );
+    });
+  });
+
+  it("converts explicit backend origins to websocket origins", () => {
+    expect(toWebSocketURL("http://127.0.0.1:8100", "/api/realtime")).toBe(
+      "ws://127.0.0.1:8100/api/realtime",
+    );
+    expect(toWebSocketURL("https://example.com/base", "/api/realtime")).toBe(
+      "wss://example.com/base/api/realtime",
+    );
+  });
+
+  it("returns a relative path outside the browser when no base URL is known", () => {
+    withWindowLocation(undefined, () => {
+      expect(toWebSocketURL("", "/api/realtime")).toBe("/api/realtime");
+    });
   });
 });

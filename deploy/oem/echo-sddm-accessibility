@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+"""Arm the SDDM greeter's fixed Super+Alt+S Orca toggle.
+
+This process is started by a root-owned SDDM Xsetup wrapper but runs as the
+unprivileged ``sddm`` user.  It grabs exactly one conventional screen-reader
+shortcut, starts only the fixed Debian Orca command without a shell, and exits
+when the logind greeter session disappears.  It never observes password input
+or serializes the greeter's accessibility tree.
+"""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import os
+from pathlib import Path
+import re
+import select
+import signal
+import stat
+import subprocess
+import sys
+import time
+from typing import Callable, Mapping, Sequence
+
+
+ORCA_COMMAND = (
+    "/usr/bin/orca",
+    "--replace",
+    "--no-setup",
+    "--disable",
+    "splash-window",
+)
+LOGINCTL = "/usr/bin/loginctl"
+DISPLAY_PATTERN = re.compile(r"^:[0-9]{1,5}(?:\.[0-9]+)?$")
+STARTUP_TIMEOUT_SECONDS = 30.0
+SESSION_POLL_SECONDS = 0.5
+MISSING_SESSION_LIMIT = 4
+TOGGLE_DEBOUNCE_SECONDS = 1.0
+
+
+def validate_x11_environment(
+    display_name: str,
+    xauthority: Path,
+    expected_uid: int,
+) -> None:
+    if not DISPLAY_PATTERN.fullmatch(display_name):
+        raise ValueError("SDDM accessibility requires a local X11 display")
+    if not xauthority.is_absolute():
+        raise ValueError("SDDM Xauthority path must be absolute")
+    try:
+        metadata = xauthority.lstat()
+    except OSError as error:
+        raise ValueError("SDDM Xauthority file is unavailable") from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise ValueError("SDDM Xauthority must be a real regular file")
+    if metadata.st_uid != expected_uid:
+        raise ValueError("SDDM Xauthority belongs to the wrong user")
+    if metadata.st_mode & 0o022:
+        raise ValueError("SDDM Xauthority must not be group/world writable")
+
+
+def parse_session_ids(output: str) -> list[str]:
+    session_ids: list[str] = []
+    for line in output.splitlines():
+        fields = line.split()
+        if fields and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", fields[0]):
+            session_ids.append(fields[0])
+    return session_ids[:128]
+
+
+def is_sddm_greeter_properties(output: str) -> bool:
+    properties = dict(
+        line.split("=", 1)
+        for line in output.splitlines()
+        if "=" in line
+    )
+    return (
+        properties.get("Name") == "sddm"
+        and properties.get("Class") == "greeter"
+        and properties.get("Seat") == "seat0"
+        and properties.get("Remote") == "no"
+        and properties.get("State") in {"active", "online"}
+    )
+
+
+def greeter_session_present(
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> bool:
+    command_environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+    try:
+        listed = runner(
+            [LOGINCTL, "list-sessions", "--no-legend", "--no-pager"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+            env=command_environment,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if listed.returncode != 0:
+        return False
+    for session_id in parse_session_ids(listed.stdout):
+        try:
+            shown = runner(
+                [
+                    LOGINCTL,
+                    "show-session",
+                    session_id,
+                    "--property=Name",
+                    "--property=Class",
+                    "--property=Seat",
+                    "--property=Remote",
+                    "--property=State",
+                    "--no-pager",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=2,
+                env=command_environment,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if shown.returncode == 0 and is_sddm_greeter_properties(shown.stdout):
+            return True
+    return False
+
+
+def private_runtime(uid: int, runtime_root: Path = Path("/run/user")) -> Path:
+    runtime = runtime_root / str(uid)
+    metadata = runtime.lstat()
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise RuntimeError("SDDM runtime path is not a real directory")
+    if metadata.st_uid != uid or stat.S_IMODE(metadata.st_mode) != 0o700:
+        raise RuntimeError("SDDM runtime path failed its ownership contract")
+    bus_socket = runtime / "bus"
+    bus_metadata = bus_socket.lstat()
+    if stat.S_ISLNK(bus_metadata.st_mode) or not stat.S_ISSOCK(bus_metadata.st_mode):
+        raise RuntimeError("SDDM user D-Bus socket is unavailable")
+    if bus_metadata.st_uid != uid:
+        raise RuntimeError("SDDM user D-Bus socket belongs to the wrong user")
+    private = runtime / "echo-sddm-accessibility"
+    private.mkdir(mode=0o700, exist_ok=True)
+    private_metadata = private.lstat()
+    if (
+        stat.S_ISLNK(private_metadata.st_mode)
+        or not stat.S_ISDIR(private_metadata.st_mode)
+        or private_metadata.st_uid != uid
+        or stat.S_IMODE(private_metadata.st_mode) != 0o700
+    ):
+        raise RuntimeError("SDDM private accessibility runtime is unsafe")
+    return private
+
+
+def build_orca_environment(
+    base: Mapping[str, str],
+    uid: int,
+    runtime_root: Path = Path("/run/user"),
+) -> dict[str, str]:
+    private = private_runtime(uid, runtime_root)
+    runtime = private.parent
+    environment = dict(base)
+    environment.update(
+        {
+            "ACCESSIBILITY_ENABLED": "1",
+            "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus",
+            "GSETTINGS_BACKEND": "memory",
+            "NO_AT_BRIDGE": "0",
+            "QT_ACCESSIBILITY": "1",
+            "XDG_CACHE_HOME": str(private / "cache"),
+            "XDG_CONFIG_HOME": str(private / "config"),
+            "XDG_RUNTIME_DIR": str(runtime),
+        }
+    )
+    for child in (private / "cache", private / "config"):
+        child.mkdir(mode=0o700, exist_ok=True)
+        os.chmod(child, 0o700)
+    return environment
+
+
+@dataclass
+class OrcaController:
+    uid: int
+    base_environment: Mapping[str, str]
+    popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen
+    runtime_root: Path = Path("/run/user")
+    process: subprocess.Popen[bytes] | None = None
+
+    def _running(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+    def start(self) -> bool:
+        if self._running():
+            return True
+        self.process = None
+        try:
+            environment = build_orca_environment(
+                self.base_environment, self.uid, self.runtime_root
+            )
+            process = self.popen_factory(
+                list(ORCA_COMMAND),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+                start_new_session=True,
+            )
+        except (OSError, RuntimeError):
+            return False
+        time.sleep(0.15)
+        if process.poll() is not None:
+            return False
+        self.process = process
+        print(
+            "ECHO_SDDM_SCREEN_READER_STARTED provider=orca trigger=super-alt-s",
+            flush=True,
+        )
+        return True
+
+    def stop(self) -> None:
+        process = self.process
+        self.process = None
+        if process is None or process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=5)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        print(
+            "ECHO_SDDM_SCREEN_READER_STOPPED provider=orca trigger=super-alt-s",
+            flush=True,
+        )
+
+    def toggle(self) -> bool:
+        if self._running():
+            self.stop()
+            return True
+        return self.start()
+
+
+def wait_for_greeter_runtime(uid: int, deadline: float) -> Path | None:
+    while time.monotonic() < deadline:
+        if greeter_session_present():
+            try:
+                return private_runtime(uid)
+            except (OSError, RuntimeError):
+                pass
+        time.sleep(SESSION_POLL_SECONDS)
+    return None
+
+
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--display", required=True)
+    parser.add_argument("--xauthority", required=True, type=Path)
+    return parser.parse_args(argv)
+
+
+def run(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    if os.geteuid() == 0 or os.getuid() == 0:
+        print("SDDM accessibility helper must run as the unprivileged greeter", file=sys.stderr)
+        return 1
+    validate_x11_environment(args.display, args.xauthority, os.getuid())
+    if os.environ.get("USER") != "sddm" or os.environ.get("LOGNAME") != "sddm":
+        print("SDDM accessibility helper received the wrong identity", file=sys.stderr)
+        return 1
+    if wait_for_greeter_runtime(
+        os.getuid(), time.monotonic() + STARTUP_TIMEOUT_SECONDS
+    ) is None:
+        print("SDDM greeter runtime did not become ready", file=sys.stderr)
+        return 1
+
+    try:
+        from Xlib import X, XK, display as xdisplay
+    except ImportError:
+        print("python3-xlib is unavailable", file=sys.stderr)
+        return 1
+
+    os.environ["DISPLAY"] = args.display
+    os.environ["XAUTHORITY"] = str(args.xauthority)
+    connection = xdisplay.Display(args.display)
+    root = connection.screen().root
+    keycode = connection.keysym_to_keycode(XK.string_to_keysym("s"))
+    wanted_modifiers = X.Mod1Mask | X.Mod4Mask
+    ignored_modifiers = (0, X.LockMask, X.Mod2Mask, X.LockMask | X.Mod2Mask)
+    for ignored in ignored_modifiers:
+        root.grab_key(
+            keycode,
+            wanted_modifiers | ignored,
+            True,
+            X.GrabModeAsync,
+            X.GrabModeAsync,
+        )
+    connection.sync()
+
+    controller = OrcaController(os.getuid(), dict(os.environ))
+    stopping = False
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        nonlocal stopping
+        stopping = True
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+    print(
+        "ECHO_SDDM_ACCESSIBILITY_READY provider=at-spi2 "
+        "screen-reader=orca trigger=super-alt-s",
+        flush=True,
+    )
+
+    last_toggle = 0.0
+    missing_sessions = 0
+    try:
+        while not stopping:
+            readable, _, _ = select.select([connection.fileno()], [], [], 0.25)
+            if readable:
+                while connection.pending_events():
+                    event = connection.next_event()
+                    if event.type != X.KeyPress or event.detail != keycode:
+                        continue
+                    normalized = event.state & ~(X.LockMask | X.Mod2Mask)
+                    now = time.monotonic()
+                    if normalized != wanted_modifiers or now - last_toggle < TOGGLE_DEBOUNCE_SECONDS:
+                        continue
+                    last_toggle = now
+                    if not controller.toggle():
+                        print("Orca failed to start for the SDDM greeter", file=sys.stderr)
+            if greeter_session_present():
+                missing_sessions = 0
+            else:
+                missing_sessions += 1
+                if missing_sessions >= MISSING_SESSION_LIMIT:
+                    break
+    finally:
+        controller.stop()
+        for ignored in ignored_modifiers:
+            root.ungrab_key(keycode, wanted_modifiers | ignored)
+        connection.sync()
+        connection.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())

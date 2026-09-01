@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Build the Echo OS compositor effect inside mkosi's Debian build overlay.
+set -euo pipefail
+
+SOURCE_ROOT="${SRCDIR:?mkosi did not provide SRCDIR}/echo-os"
+EFFECT_SOURCE="$SOURCE_ROOT/deploy/desktop-session/kwin-liquid-glass-effect"
+EFFECT_BUILD="${BUILDDIR:?mkosi did not provide BUILDDIR}/echo-kwin-liquid-glass"
+
+[[ -f "$EFFECT_SOURCE/CMakeLists.txt" ]] || {
+  echo "Echo OS KWin Liquid Glass source is missing" >&2
+  exit 1
+}
+
+cmake -S "$EFFECT_SOURCE" -B "$EFFECT_BUILD" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build "$EFFECT_BUILD" --parallel
+DESTDIR="${DESTDIR:?mkosi did not provide DESTDIR}" \
+  cmake --install "$EFFECT_BUILD"

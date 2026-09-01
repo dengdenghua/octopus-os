@@ -35,6 +35,7 @@ def _write(tmp_path: Path, name: str, body: str) -> Path:
 # 1. regex mode preserves existing behaviour
 # ---------------------------------------------------------------------------
 
+
 def test_regex_mode_missing_query_returns_error(tmp_path: Path) -> None:
     out = cis._code_search(directory=str(tmp_path))
     assert "error" in out
@@ -54,6 +55,7 @@ def test_regex_mode_text_fallback_finds_matches(monkeypatch, tmp_path: Path) -> 
 # 2. ast mode argument validation
 # ---------------------------------------------------------------------------
 
+
 def test_ast_mode_missing_query_type(tmp_path: Path) -> None:
     out = cis._code_search(mode="ast", target_name="foo", root=str(tmp_path))
     assert out.get("error_type") == "invalid_argument"
@@ -61,7 +63,10 @@ def test_ast_mode_missing_query_type(tmp_path: Path) -> None:
 
 def test_ast_mode_invalid_query_type(tmp_path: Path) -> None:
     out = cis._code_search(
-        mode="ast", query_type="bogus", target_name="foo", root=str(tmp_path),
+        mode="ast",
+        query_type="bogus",
+        target_name="foo",
+        root=str(tmp_path),
     )
     assert out.get("error_type") == "invalid_argument"
 
@@ -74,6 +79,7 @@ def test_ast_mode_missing_target_name(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # 3. function_calls — must skip comments and string literals
 # ---------------------------------------------------------------------------
+
 
 def test_ast_function_calls_skips_comments_and_strings(tmp_path: Path) -> None:
     _write(
@@ -98,10 +104,7 @@ def test_ast_function_calls_handles_method_calls(tmp_path: Path) -> None:
     _write(
         tmp_path,
         "obj.py",
-        "import x\n"
-        "x.foo()\n"
-        "obj.bar.foo()\n"
-        "foo()\n",
+        "import x\nx.foo()\nobj.bar.foo()\nfoo()\n",
     )
     out = cis._code_search(
         mode="ast",
@@ -116,6 +119,7 @@ def test_ast_function_calls_handles_method_calls(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # 4. function_definitions
 # ---------------------------------------------------------------------------
+
 
 def test_ast_function_definitions_exact_name(tmp_path: Path) -> None:
     _write(tmp_path, "defs.py", "def foo(): pass\ndef bar(): pass\n")
@@ -166,6 +170,7 @@ def test_ast_class_definitions(tmp_path: Path) -> None:
 # 5. imports
 # ---------------------------------------------------------------------------
 
+
 def test_ast_imports_python(tmp_path: Path) -> None:
     _write(tmp_path, "imp.py", "import os\nfrom typing import List\n")
 
@@ -199,6 +204,7 @@ def test_ast_imports_python(tmp_path: Path) -> None:
 # 6. tree-sitter dependency missing path
 # ---------------------------------------------------------------------------
 
+
 def test_ast_mode_dependency_missing(monkeypatch, tmp_path: Path) -> None:
     """Simulate tree_sitter import failing inside _ast_search."""
     import builtins
@@ -226,6 +232,7 @@ def test_ast_mode_dependency_missing(monkeypatch, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # helper: ensure module imports cleanly when run individually
 # ---------------------------------------------------------------------------
+
 
 def test_module_importable() -> None:
     importlib.reload(cis)

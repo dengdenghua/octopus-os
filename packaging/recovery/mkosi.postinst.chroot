@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+for command_name in \
+  awk blkid blockdev cat cp cryptsetup cut dd e2fsck findmnt flock gpgv head id \
+  lsblk mount python3 readlink realpath resize2fs sed seq sgdisk sha256sum sleep \
+  stat swapon sync systemd-cryptenroll systemd-repart tr udevadm umount zstd; do
+  command -v "$command_name" >/dev/null 2>&1 || {
+    echo "recovery dependency missing: $command_name" >&2
+    exit 1
+  }
+done
+[[ -f /usr/lib/systemd/tpm2-pcr-public-key.pem && \
+   ! -L /usr/lib/systemd/tpm2-pcr-public-key.pem ]] || {
+  echo "Recovery signed-PCR public key is missing" >&2
+  exit 1
+}
+/usr/lib/echo-os/echo-data-protection check-tpm2-public-key \
+  /usr/lib/systemd/tpm2-pcr-public-key.pem
+for command_path in \
+  /usr/bin/echo-recovery \
+  /usr/bin/echo-os-installer \
+  /usr/lib/echo-os/verify-install-bundle.py \
+  /usr/lib/echo-os/verify-install-stream.py \
+  /usr/lib/echo-os/verify-public-keyring.py \
+  /usr/lib/echo-os/echo-restore-transaction.py \
+  /usr/lib/echo-os/echo-data-protection; do
+  [[ -e "$command_path" ]] || {
+    echo "recovery payload missing: $command_path" >&2
+    exit 1
+  }
+done
+[[ -f /usr/lib/echo-os/os-source-identity.py && \
+   ! -L /usr/lib/echo-os/os-source-identity.py && \
+   -f /usr/lib/echo-os/os-source-identity.json && \
+   ! -L /usr/lib/echo-os/os-source-identity.json && \
+   -f /usr/lib/echo-os/echo-os-source-identity && \
+   ! -L /usr/lib/echo-os/echo-os-source-identity ]] || {
+  echo "Recovery immutable source-identity chain is incomplete" >&2
+  exit 1
+}
+/usr/bin/python3 /usr/lib/echo-os/os-source-identity.py verify \
+  --manifest /usr/lib/echo-os/os-source-identity.json
+
+IMAGE_VERSION="${IMAGE_VERSION:-0.2.0}"
+[[ "$IMAGE_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+:~_-]*$ ]] || {
+  echo "invalid recovery image version: $IMAGE_VERSION" >&2
+  exit 1
+}
+sed -i \
+  -e "s/^PRETTY_NAME=.*/PRETTY_NAME=\"Echo Recovery $IMAGE_VERSION\"/" \
+  -e "s/^VERSION_ID=.*/VERSION_ID=\"$IMAGE_VERSION\"/" \
+  -e "s/^VERSION=.*/VERSION=\"$IMAGE_VERSION\"/" \
+  -e "s/^IMAGE_VERSION=.*/IMAGE_VERSION=$IMAGE_VERSION/" \
+  /usr/lib/os-release
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 -c \
+  'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"), sys.argv[1], "exec")' \
+  /usr/lib/echo-os/echo-restore-transaction.py
+chmod 0755 /usr/bin/echo-recovery
+chown root:root \
+  /usr/bin/echo-os-installer \
+  /usr/lib/echo-os/verify-install-bundle.py \
+  /usr/lib/echo-os/verify-install-stream.py \
+  /usr/lib/echo-os/verify-public-keyring.py \
+  /usr/lib/echo-os/echo-restore-transaction.py \
+  /usr/lib/echo-os/echo-data-protection
+chmod 0755 \
+  /usr/bin/echo-os-installer \
+  /usr/lib/echo-os/verify-install-bundle.py \
+  /usr/lib/echo-os/verify-install-stream.py \
+  /usr/lib/echo-os/verify-public-keyring.py \
+  /usr/lib/echo-os/echo-restore-transaction.py \
+  /usr/lib/echo-os/echo-data-protection
+chown root:root \
+  /usr/lib/echo-os/os-source-identity.py \
+  /usr/lib/echo-os/os-source-identity.json \
+  /usr/lib/echo-os/echo-os-source-identity
+chmod 0755 \
+  /usr/lib/echo-os/os-source-identity.py \
+  /usr/lib/echo-os/echo-os-source-identity
+chmod 0444 /usr/lib/echo-os/os-source-identity.json
+chown root:root /usr/lib/systemd/tpm2-pcr-public-key.pem
+chmod 0644 /usr/lib/systemd/tpm2-pcr-public-key.pem
+if [[ -e /usr/lib/echo-os/install-keyring.gpg ]]; then
+  [[ -f /usr/lib/echo-os/install-keyring.gpg && \
+     ! -L /usr/lib/echo-os/install-keyring.gpg && \
+     -s /usr/lib/echo-os/install-keyring.gpg ]] || {
+    echo "installer keyring is not a regular non-empty file" >&2
+    exit 1
+  }
+  python3 /usr/lib/echo-os/verify-public-keyring.py \
+    /usr/lib/echo-os/install-keyring.gpg
+  chown root:root /usr/lib/echo-os/install-keyring.gpg
+  chmod 0644 /usr/lib/echo-os/install-keyring.gpg
+fi

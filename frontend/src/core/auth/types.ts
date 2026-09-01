@@ -7,7 +7,7 @@ export interface AuthStatus {
 
 export interface LoginRequest {
   username: string;
-  password: string;
+  password?: string;
 }
 
 export interface LoginResponse {
@@ -34,14 +34,9 @@ export interface User {
   created_at?: string;
   last_login?: string;
   is_guest?: boolean;
-  // Molili SMS-login extras — backend's /api/auth/molili/sms/verify
-  // returns { actor_id, mobile, provider, created } on user, so the
-  // sidebar profile menu can surface mobile when username/email are
-  // absent.
   actor_id?: string;
   mobile?: string;
   provider?: string;
-  molili_credits?: Record<string, unknown>;
 }
 
 export interface APIKey {

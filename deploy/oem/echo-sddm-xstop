@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Stop the greeter-only shortcut helper and preserve Debian's display cleanup.
+set -euo pipefail
+
+UNIT=echo-sddm-accessibility.service
+VENDOR_XSTOP=/usr/share/sddm/scripts/Xstop
+
+[[ "$(id -u)" -eq 0 ]] || {
+  echo "Echo SDDM Xstop must run as root" >&2
+  exit 1
+}
+systemctl stop "$UNIT" >/dev/null 2>&1 || true
+[[ -x "$VENDOR_XSTOP" ]] && "$VENDOR_XSTOP"

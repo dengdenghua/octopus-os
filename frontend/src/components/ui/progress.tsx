@@ -1,4 +1,3 @@
-
 import * as React from "react";
 import * as ProgressPrimitive from "@radix-ui/react-progress";
 
@@ -13,7 +12,7 @@ function Progress({
     <ProgressPrimitive.Root
       data-slot="progress"
       className={cn(
-        "bg-primary/20 relative h-2 w-full overflow-hidden rounded-lg",
+        "bg-primary/20 relative h-2 w-full overflow-hidden",
         className,
       )}
       {...props}
@@ -28,4 +27,3 @@ function Progress({
 }
 
 export { Progress };
-

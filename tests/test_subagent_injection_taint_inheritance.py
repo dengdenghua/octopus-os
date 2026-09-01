@@ -10,12 +10,12 @@ react-loop start, or — for ephemeral runs — re-marked before tool dispatch).
 These tests pin the CAPTURE half of that contract (the consume half lives in
 ``test_react_loop.py`` and ``test_ephemeral_runner.py``).
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
-
 from runtime.safety.validation.prompt_injection import (
     mark_injection_taint,
     reset_injection_taint,
@@ -31,10 +31,12 @@ def _reset_taint():
 
 # ── bridge.call_subagent (primary delegation path) ──────────────────────────
 
+
 def _capturing_runner(captured: dict[str, Any]):
     def _runner(prompt, *, subagent_name, context):  # noqa: ARG001
         captured["context"] = context
         return "done"
+
     return _runner
 
 
@@ -79,6 +81,7 @@ def test_call_subagent_no_taint_leaves_context_clean():
 
 
 # ── ParallelTaskRunner.submit (/api/tasks parallel path) ────────────────────
+
 
 def test_parallel_runner_submit_captures_parent_taint(monkeypatch):
     from runtime.execution.misc.parallel_runner import (

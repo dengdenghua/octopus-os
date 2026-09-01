@@ -1,0 +1,26 @@
+[Unit]
+Description=Echo OS one-time local administrator setup
+Documentation=file:/usr/share/doc/echo-os/oem-setup.md
+Requires=echo-region-state-restore.service
+After=local-fs.target echo-region-state-restore.service systemd-user-sessions.service
+Before=sddm.service display-manager.service
+Conflicts=getty@tty1.service
+ConditionPathExists=!/var/lib/echo-os/oem-complete.json
+ConditionCredential=!echo.os.ci-session
+
+[Service]
+Type=oneshot
+LoadCredential=echo.os.oem
+ExecStart=/usr/bin/python3 /usr/lib/echo-os/echo-oem-setup
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+TimeoutStartSec=infinity
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target

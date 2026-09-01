@@ -13,6 +13,7 @@ Contract pinned
 6. Context merging · caller passes extra kv + timeout + session thread_id
 7. Subagent dispatch is not registered by the skill catalog.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -21,6 +22,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _clear_runner():
     from runtime.execution.subagents import set_sub_agent_runner
+
     set_sub_agent_runner(None)
     yield
     set_sub_agent_runner(None)
@@ -29,18 +31,21 @@ def _clear_runner():
 class TestGuards:
     def test_no_runner_configured(self):
         from runtime.execution.subagents import call_subagent
+
         r = call_subagent(agent_id="coder", prompt="do x")
         assert r["success"] is False
         assert "runner" in r["error"].lower()
 
     def test_missing_agent_id(self):
         from runtime.execution.subagents import call_subagent
+
         r = call_subagent(agent_id="", prompt="x")
         assert r["success"] is False
         assert "agent_id" in r["error"]
 
     def test_missing_prompt(self):
         from runtime.execution.subagents import call_subagent
+
         r = call_subagent(agent_id="coder", prompt="")
         assert r["success"] is False
 
@@ -147,6 +152,7 @@ class TestRegistration:
     def test_is_not_in_atomic_base(self):
         """``call_agent`` is not an atomic skill because it is not a skill."""
         from runtime.execution.suckers.layers import ATOMIC_SKILL_NAMES
+
         assert "call_agent" not in ATOMIC_SKILL_NAMES
 
     def test_catalog_metadata(self):
@@ -154,5 +160,6 @@ class TestRegistration:
             ALL_SKILL_IDS,
             skill_group,
         )
+
         assert "call_agent" in ALL_SKILL_IDS
         assert skill_group("call_agent") == "delegation"

@@ -5,7 +5,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-
 from runtime.core.cerebrum.planner import Rule, StaticPlanner
 from runtime.core.graph_runtime import GraphRuntime, TemplateResolutionError, resolve_templates
 from runtime.execution.suckers import Skill, SkillRegistry
@@ -127,6 +126,7 @@ def runtime_stack():
         def h(**kw):
             calls.append((name, kw))
             return output_fn(kw)
+
         return h
 
     registry = SkillRegistry()
@@ -169,7 +169,7 @@ class TestGraphRuntimeDataFlow:
                     intent_types=["task"],
                     skill_sequence=[SkillId("source"), SkillId("consumer")],
                     node_args_templates=[
-                        None,                         # Implementation note.
+                        None,  # Implementation note.
                         {"path": "{n0.path}", "count": "{n0.count}"},
                     ],
                 )
@@ -249,7 +249,9 @@ class TestGraphRuntimeDataFlow:
             default_budget=BudgetSpec(tokens=10_000, usd=0.10),
         )
         intent = ParsedIntent(
-            raw="x", intent_type="task", normalized_goal="bad ref j",
+            raw="x",
+            intent_type="task",
+            normalized_goal="bad ref j",
         )
         graph = planner.plan(intent)
         budget = Budget(
@@ -257,7 +259,9 @@ class TestGraphRuntimeDataFlow:
             limits=BudgetLimits(tokens=10_000, usd=0.10),
         )
         runtime_stack["runtime"].run(
-            graph, budget=budget, caller="arms/code_arm",
+            graph,
+            budget=budget,
+            caller="arms/code_arm",
             arm_id=ArmId("code_arm"),
         )
         journal = runtime_stack["journal"]
@@ -267,15 +271,15 @@ class TestGraphRuntimeDataFlow:
         # as a regression signal against a future rename as well.
         events = list(journal.read_all())
         failed_step_events = [
-            e for e in events
+            e
+            for e in events
             if getattr(e, "event_type", None) == "step"
             and getattr(getattr(e, "step", None), "result", None) is not None
             and e.step.result.status == "failed"
             and e.step.result.error_type == "TemplateResolutionError"
         ]
         assert len(failed_step_events) == 1, (
-            "template-resolution failure must produce exactly one "
-            "failed Step event in the journal"
+            "template-resolution failure must produce exactly one failed Step event in the journal"
         )
 
     def test_trajectory_written_to_journal(self, runtime_stack):
@@ -354,9 +358,7 @@ class TestGraphRuntimeDataFlow:
             task_id=graph.task_id,
             limits=BudgetLimits(tokens=10_000, usd=0.10),
         )
-        traj = runtime.run(
-            graph, budget=budget, caller="arms/code_arm", arm_id=ArmId("code_arm")
-        )
+        traj = runtime.run(graph, budget=budget, caller="arms/code_arm", arm_id=ArmId("code_arm"))
         assert traj.outcome.success
         state = CanaryManager(
             CanaryConfig(state_dir=str(tmp_path / "canary")),
@@ -472,11 +474,12 @@ class TestParallelFailureRetry:
         planned = {"called": False}
 
         class _FakePlanner:
-            def plan(self, intent):
+            def plan(self, intent, *, model=None):
                 planned["called"] = True
                 # A valid ParsedIntent reached us — assert its shape.
                 assert intent.intent_type == "task"
                 assert intent.raw
+                assert model is None
                 return TaskGraph(
                     nodes=_parallel_failing_graph().nodes[:1],
                     budget=BudgetSpec(tokens=1000, usd=0.01),

@@ -6,7 +6,6 @@ import threading
 from pathlib import Path
 
 import pytest
-
 from runtime.memory.cowork import CoworkStore, Task
 from runtime.memory.cowork.store import (
     PHASE_COMPLETE,
@@ -34,9 +33,7 @@ def _sample_tasks() -> list[Task]:
 # ─── 1. create_plan writes plan.json atomically ─────────────
 
 
-def test_create_plan_writes_plan_json_atomically(
-    store: CoworkStore, tmp_path: Path
-) -> None:
+def test_create_plan_writes_plan_json_atomically(store: CoworkStore, tmp_path: Path) -> None:
     plan = store.create_plan(
         session_id="sess-1",
         created_by="agent-A",
@@ -53,9 +50,7 @@ def test_create_plan_writes_plan_json_atomically(
     assert plan_path.exists()
     # No leftover temp file from atomic_write_json next to it.
     siblings = list(plan_path.parent.iterdir())
-    tmp_siblings = [
-        p for p in siblings if p.name.startswith(f".{plan_path.name}.tmp-")
-    ]
+    tmp_siblings = [p for p in siblings if p.name.startswith(f".{plan_path.name}.tmp-")]
     assert tmp_siblings == [], f"orphan temp files: {tmp_siblings}"
 
     # Round-trip via read_plan recovers the same payload.
@@ -104,9 +99,7 @@ def test_invalid_phase_transition_raises(store: CoworkStore) -> None:
     )
     store.advance_phase("sess-3b", PHASE_WORK)
     store.advance_phase("sess-3b", PHASE_SYNTHESIZE)
-    store.write_artifact(
-        "sess-3b", "__final__", "agent-A", {"summary": "done"}
-    )
+    store.write_artifact("sess-3b", "__final__", "agent-A", {"summary": "done"})
     store.advance_phase("sess-3b", PHASE_COMPLETE)
     with pytest.raises(ValueError):
         store.advance_phase("sess-3b", PHASE_PLAN)
@@ -153,10 +146,7 @@ def test_concurrent_claim_exactly_one_winner(store: CoworkStore) -> None:
         with results_lock:
             results.append(won)
 
-    threads = [
-        threading.Thread(target=claimant, args=(f"agent-{i}",))
-        for i in range(4)
-    ]
+    threads = [threading.Thread(target=claimant, args=(f"agent-{i}",)) for i in range(4)]
     for t in threads:
         t.start()
     for t in threads:

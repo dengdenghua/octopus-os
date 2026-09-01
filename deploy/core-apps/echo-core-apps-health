@@ -1,0 +1,109 @@
+#!/bin/bash
+# Verify the signed-root core application and MIME defaults without launching apps.
+set -euo pipefail
+set -f
+
+RUNTIME_ROOT=/
+if [[ -n "${ECHO_CORE_APPS_RUNTIME_ROOT:-}" ]]; then
+  [[ "${ECHO_CORE_APPS_SOURCE_TEST:-}" == "USE-SOURCE-RUNTIME" ]] || {
+    echo "core-app runtime override requires the explicit source-test sentinel" >&2
+    exit 2
+  }
+  RUNTIME_ROOT="$ECHO_CORE_APPS_RUNTIME_ROOT"
+fi
+[[ "$RUNTIME_ROOT" == /* && -d "$RUNTIME_ROOT" && ! -L "$RUNTIME_ROOT" ]] || {
+  echo "core-app runtime root is unsafe" >&2
+  exit 1
+}
+
+runtime_path() {
+  local suffix="$1"
+  if [[ "$RUNTIME_ROOT" == / ]]; then
+    printf '%s\n' "$suffix"
+  else
+    printf '%s%s\n' "${RUNTIME_ROOT%/}" "$suffix"
+  fi
+}
+
+PYTHON="$(runtime_path /usr/bin/python3)"
+STAT="$(runtime_path /usr/bin/stat)"
+DESKTOP_FILE_VALIDATE="$(runtime_path /usr/bin/desktop-file-validate)"
+POLICY="$(runtime_path /usr/lib/echo-os/echo-core-apps-policy.py)"
+
+EXECUTABLES=(
+  "$PYTHON"
+  "$STAT"
+  "$DESKTOP_FILE_VALIDATE"
+  "$POLICY"
+  "$(runtime_path /usr/bin/xdg-mime)"
+  "$(runtime_path /usr/bin/xdg-open)"
+  "$(runtime_path /usr/bin/gio)"
+  "$(runtime_path /usr/bin/dolphin)"
+  "$(runtime_path /usr/bin/konsole)"
+  "$(runtime_path /usr/bin/firefox-esr)"
+  "$(runtime_path /usr/bin/kate)"
+  "$(runtime_path /usr/bin/okular)"
+  "$(runtime_path /usr/bin/gwenview)"
+  "$(runtime_path /usr/bin/ark)"
+  "$(runtime_path /usr/bin/haruna)"
+  "$(runtime_path /usr/bin/spectacle)"
+  "$(runtime_path /usr/bin/kcalc)"
+  "$(runtime_path /usr/bin/7z)"
+  "$(runtime_path /usr/bin/bzip2)"
+  "$(runtime_path /usr/bin/unar)"
+  "$(runtime_path /usr/bin/unzip)"
+  "$(runtime_path /usr/bin/zip)"
+)
+DESKTOP_FILES=(
+  "$(runtime_path /usr/share/applications/org.kde.dolphin.desktop)"
+  "$(runtime_path /usr/share/applications/org.kde.konsole.desktop)"
+  "$(runtime_path /usr/share/applications/firefox-esr.desktop)"
+  "$(runtime_path /usr/share/applications/org.kde.kate.desktop)"
+  "$(runtime_path /usr/share/applications/org.kde.okular.desktop)"
+  "$(runtime_path /usr/share/applications/org.kde.gwenview.desktop)"
+  "$(runtime_path /usr/share/applications/org.kde.ark.desktop)"
+  "$(runtime_path /usr/share/applications/org.kde.haruna.desktop)"
+  "$(runtime_path /usr/share/applications/org.kde.spectacle.desktop)"
+  "$(runtime_path /usr/share/applications/org.kde.kcalc.desktop)"
+)
+POLICY_FILES=(
+  "$(runtime_path /etc/xdg/mimeapps.list)"
+)
+
+for runtime in "${EXECUTABLES[@]}"; do
+  [[ -f "$runtime" && -x "$runtime" ]] || {
+    echo "core application executable is missing: $runtime" >&2
+    exit 1
+  }
+done
+for runtime in "${DESKTOP_FILES[@]}" "${POLICY_FILES[@]}"; do
+  [[ -f "$runtime" ]] || {
+    echo "core application desktop or policy file is missing: $runtime" >&2
+    exit 1
+  }
+done
+for runtime in "${EXECUTABLES[@]}" "${DESKTOP_FILES[@]}" "${POLICY_FILES[@]}"; do
+  metadata="$($STAT -Lc '%u:%g:%a' "$runtime")" || {
+    echo "cannot inspect core application runtime: $runtime" >&2
+    exit 1
+  }
+  IFS=: read -r owner group mode <<<"$metadata"
+  [[ "$owner" == 0 && "$group" == 0 && "$mode" =~ ^[0-7]{3,4}$ && \
+     $((8#$mode & 8#022)) -eq 0 ]] || {
+    echo "core application runtime is not immutable root-owned content: $runtime" >&2
+    exit 1
+  }
+done
+
+"$PYTHON" "$POLICY" >/dev/null || {
+  echo "core application default-handler policy verification failed" >&2
+  exit 1
+}
+for desktop_file in "${DESKTOP_FILES[@]}"; do
+  "$DESKTOP_FILE_VALIDATE" "$desktop_file" >/dev/null || {
+    echo "core application desktop entry is invalid: $desktop_file" >&2
+    exit 1
+  }
+done
+
+echo "ECHO_CORE_APPS_READY files=dolphin terminal=konsole browser=firefox text=kate documents=okular images=gwenview archives=ark media=haruna capture=spectacle calculator=kcalc defaults=xdg"

@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from runtime.safety.organization import (
     AgentSpec,
     CoordinationProtocol,
@@ -57,7 +56,7 @@ def test_topology_fingerprint_stable() -> None:
         agents={Role.PLANNER: AgentSpec(agent_id="p")},
     )
     b = TeamTopology(
-        name="t1-rename",   # name doesn't enter fingerprint
+        name="t1-rename",  # name doesn't enter fingerprint
         protocol=CoordinationProtocol.SEQUENTIAL,
         agents={Role.PLANNER: AgentSpec(agent_id="p")},
     )
@@ -100,13 +99,16 @@ def test_topology_roundtrips_through_dict() -> None:
 # ── Score parser ─────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("text, expected", [
-    ("score: 0.85\nreason: good", 0.85),
-    ("Quality 0.40 — needs work", 0.40),
-    ("rating: 85/100", 0.85),
-    ("no score here", None),
-    ("score: 1.5", 1.0),  # clamp
-])
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("score: 0.85\nreason: good", 0.85),
+        ("Quality 0.40 — needs work", 0.40),
+        ("rating: 85/100", 0.85),
+        ("no score here", None),
+        ("score: 1.5", 1.0),  # clamp
+    ],
+)
 def test_parse_evaluator_score(text, expected) -> None:
     assert _parse_evaluator_score(text) == expected
 
@@ -116,9 +118,11 @@ def test_parse_evaluator_score(text, expected) -> None:
 
 def _stub_caller(scripts: dict[str, dict[str, Any]]):
     """Build a role caller that returns a scripted reply per agent_id."""
+
     def caller(**kwargs):
         agent_id = kwargs["agent_id"]
         return scripts.get(agent_id, {"output": f"<{agent_id}>", "success": True})
+
     return caller
 
 
@@ -132,21 +136,27 @@ def test_team_runner_sequential_chains_outputs() -> None:
             Role.EVALUATOR: AgentSpec(agent_id="judge"),
         },
     )
-    runner = TeamRunner(role_caller=_stub_caller({
-        "planner": {"output": "plan: outline", "success": True},
-        "gen": {"output": "draft v1", "success": True},
-        "judge": {"output": "score: 0.8\nlooks good", "success": True},
-    }))
+    runner = TeamRunner(
+        role_caller=_stub_caller(
+            {
+                "planner": {"output": "plan: outline", "success": True},
+                "gen": {"output": "draft v1", "success": True},
+                "judge": {"output": "score: 0.8\nlooks good", "success": True},
+            }
+        )
+    )
     result = runner.run(topology, "build foo")
     assert result.success is True
     assert result.final_output == "score: 0.8\nlooks good"
     assert [str(o.role) for o in result.role_outputs] == [
-        "planner", "generator", "evaluator",
+        "planner",
+        "generator",
+        "evaluator",
     ]
     assert result.quality_score == 0.8
 
 
-def test_team_runner_sequential_bails_on_role_error() -> None:
+def test_team_runner_sequential_degrades_on_role_error() -> None:
     topology = TeamTopology(
         name="bail",
         protocol=CoordinationProtocol.SEQUENTIAL,
@@ -155,13 +165,19 @@ def test_team_runner_sequential_bails_on_role_error() -> None:
             Role.GENERATOR: AgentSpec(agent_id="g"),
         },
     )
-    runner = TeamRunner(role_caller=_stub_caller({
-        "p": {"output": "", "success": False, "error": "boom"},
-        "g": {"output": "should not run", "success": True},
-    }))
+    runner = TeamRunner(
+        role_caller=_stub_caller(
+            {
+                "p": {"output": "", "success": False, "error": "boom"},
+                "g": {"output": "should not run", "success": True},
+            }
+        )
+    )
     result = runner.run(topology, "x")
-    assert result.success is False
-    assert len(result.role_outputs) == 1
+    assert result.success is True
+    assert result.final_output == "should not run"
+    assert len(result.role_outputs) == 2
+    assert result.degraded_roles == ["planner"]
 
 
 # ── TeamRunner: evaluator_optimizer ──────────────────────────
@@ -177,10 +193,14 @@ def test_team_runner_evaluator_optimizer_passes_first_try() -> None:
         },
         quality_threshold=0.5,
     )
-    runner = TeamRunner(role_caller=_stub_caller({
-        "g": {"output": "answer A", "success": True},
-        "e": {"output": "score: 0.8 great", "success": True},
-    }))
+    runner = TeamRunner(
+        role_caller=_stub_caller(
+            {
+                "g": {"output": "answer A", "success": True},
+                "e": {"output": "score: 0.8 great", "success": True},
+            }
+        )
+    )
     result = runner.run(topology, "task")
     assert result.iterations == 1
     assert result.final_output == "answer A"
@@ -221,6 +241,7 @@ def test_team_runner_evaluator_optimizer_retries_on_low_score() -> None:
 
 def test_team_runner_evaluator_optimizer_exhausts_iterations() -> None:
     """All iterations below threshold — still returns latest draft."""
+
     def caller(**kwargs):
         aid = kwargs["agent_id"]
         if aid == "g":
@@ -264,10 +285,12 @@ def test_team_runner_emits_role_lifecycle_events() -> None:
         captured.append(event)
 
     runner = TeamRunner(
-        role_caller=_stub_caller({
-            "p": {"output": "outline", "success": True},
-            "g": {"output": "answer", "success": True},
-        }),
+        role_caller=_stub_caller(
+            {
+                "p": {"output": "outline", "success": True},
+                "g": {"output": "answer", "success": True},
+            }
+        ),
         event_emitter=_emitter,
     )
     runner.run(topology, "x")
@@ -343,9 +366,13 @@ def test_performance_log_roundtrip(tmp_path: Path) -> None:
         protocol=CoordinationProtocol.SEQUENTIAL,
         agents={Role.GENERATOR: AgentSpec(agent_id="g")},
     )
-    runner = TeamRunner(role_caller=_stub_caller({
-        "g": {"output": "out", "success": True},
-    }))
+    runner = TeamRunner(
+        role_caller=_stub_caller(
+            {
+                "g": {"output": "out", "success": True},
+            }
+        )
+    )
     log_path = tmp_path / "perf.jsonl"
     result = runner.run(topology, "x")
     record_run(result, path=log_path)
@@ -382,6 +409,7 @@ def test_evolver_proposes_swap_when_other_agent_wins(tmp_path: Path) -> None:
             RoleOutput,
             TeamRunResult,
         )
+
         rl = TeamRunResult(
             topology_name=losing.name,
             topology_fingerprint=losing.fingerprint,
@@ -409,8 +437,7 @@ def test_evolver_proposes_swap_when_other_agent_wins(tmp_path: Path) -> None:
     report = evolver.analyse()
     swap_props = [p for p in report.proposals if p.kind == "swap_agent"]
     assert any(
-        p.detail.get("old_agent") == "alice"
-        and p.detail.get("new_agent") == "bob"
+        p.detail.get("old_agent") == "alice" and p.detail.get("new_agent") == "bob"
         for p in swap_props
     )
 
@@ -431,24 +458,23 @@ def test_forge_swap_promotes_and_writes_registry(tmp_path: Path) -> None:
     from runtime.safety.organization.evolver import Proposal
 
     forge = TopologyForge(registry_path=reg_path)
-    result: PromoteResult = forge.promote(Proposal(
-        kind="swap_agent",
-        base_topology=base.fingerprint,
-        bucket="b",
-        detail={"role": "generator", "old_agent": "alice", "new_agent": "bob"},
-        confidence=0.8,
-        rationale="test",
-    ))
+    result: PromoteResult = forge.promote(
+        Proposal(
+            kind="swap_agent",
+            base_topology=base.fingerprint,
+            bucket="b",
+            detail={"role": "generator", "old_agent": "alice", "new_agent": "bob"},
+            confidence=0.8,
+            rationale="test",
+        )
+    )
     assert result.accepted is True
     assert result.new_topology is not None
     new_reg = load_registry(path=reg_path)
     # Original is still there + new one is added (not a replacement).
     assert base.fingerprint in new_reg
     assert result.new_topology.fingerprint in new_reg
-    assert (
-        new_reg[result.new_topology.fingerprint].agents[Role.GENERATOR].agent_id
-        == "bob"
-    )
+    assert new_reg[result.new_topology.fingerprint].agents[Role.GENERATOR].agent_id == "bob"
 
 
 def test_forge_rejects_unknown_proposal_kind(tmp_path: Path) -> None:
@@ -463,13 +489,15 @@ def test_forge_rejects_unknown_proposal_kind(tmp_path: Path) -> None:
     from runtime.safety.organization.evolver import Proposal
 
     forge = TopologyForge(registry_path=reg_path)
-    result = forge.promote(Proposal(
-        kind="weird_unknown_kind",
-        base_topology=base.fingerprint,
-        bucket="b",
-        detail={},
-        confidence=0.5,
-    ))
+    result = forge.promote(
+        Proposal(
+            kind="weird_unknown_kind",
+            base_topology=base.fingerprint,
+            bucket="b",
+            detail={},
+            confidence=0.5,
+        )
+    )
     assert result.accepted is False
     assert "unknown proposal kind" in result.reason
 
@@ -478,13 +506,15 @@ def test_forge_rejects_missing_base(tmp_path: Path) -> None:
     forge = TopologyForge(registry_path=tmp_path / "empty.json")
     from runtime.safety.organization.evolver import Proposal
 
-    result = forge.promote(Proposal(
-        kind="swap_agent",
-        base_topology="does-not-exist",
-        bucket="b",
-        detail={"role": "generator", "new_agent": "x"},
-        confidence=0.5,
-    ))
+    result = forge.promote(
+        Proposal(
+            kind="swap_agent",
+            base_topology="does-not-exist",
+            bucket="b",
+            detail={"role": "generator", "new_agent": "x"},
+            confidence=0.5,
+        )
+    )
     assert result.accepted is False
     assert "base topology not found" in result.reason
 
@@ -508,22 +538,26 @@ def test_turn_params_carries_topology_id() -> None:
     """``turn/start`` payload's ``topologyId`` must decode into TurnParams."""
     from runtime.protocol.items import TurnParams
 
-    params = TurnParams.model_validate({
-        "threadId": "thr_1",
-        "input": [],
-        "topologyId": "team-A",
-    })
+    params = TurnParams.model_validate(
+        {
+            "threadId": "thr_1",
+            "input": [],
+            "topologyId": "team-A",
+        }
+    )
     assert params.topology_id == "team-A"
 
 
 def test_topology_id_round_trips_through_alias() -> None:
     from runtime.protocol.items import TurnParams
 
-    p = TurnParams.model_validate({
-        "threadId": "t",
-        "input": [],
-        "topologyId": "abc",
-    })
+    p = TurnParams.model_validate(
+        {
+            "threadId": "t",
+            "input": [],
+            "topologyId": "abc",
+        }
+    )
     dumped = p.model_dump(by_alias=True)
     assert dumped["topologyId"] == "abc"
 
@@ -541,9 +575,13 @@ def test_team_runner_records_run_to_perf_log(tmp_path: Path) -> None:
         agents={Role.GENERATOR: AgentSpec(agent_id="g")},
         task_bucket="e2e",
     )
-    runner = TeamRunner(role_caller=_stub_caller({
-        "g": {"output": "answered", "success": True},
-    }))
+    runner = TeamRunner(
+        role_caller=_stub_caller(
+            {
+                "g": {"output": "answered", "success": True},
+            }
+        )
+    )
     result = runner.run(topology, "do thing")
     assert result.success is True
 

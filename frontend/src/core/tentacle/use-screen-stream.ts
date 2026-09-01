@@ -19,6 +19,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { getToken } from "@/core/auth/api";
+import { openAuthenticatedWebSocket } from "@/core/auth/websocket";
+import { getBackendWebSocketBaseURL } from "@/core/config";
+
 // ── Types ──────────────────────────────────────────────
 
 export interface ScreenStreamState {
@@ -38,8 +42,7 @@ const FLAG_KEYFRAME = 0x01;
 // ── Helpers ────────────────────────────────────────────
 
 function buildWsUrl(): string {
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}/api/tentacle/screen/stream`;
+  return `${getBackendWebSocketBaseURL()}/api/tentacle/screen/stream`;
 }
 
 function parseFrameHeader(buf: ArrayBuffer): {
@@ -56,9 +59,7 @@ function parseFrameHeader(buf: ArrayBuffer): {
   const frameType = view.getUint8(2);
   const flags = view.getUint8(3);
   const decoder = new TextDecoder();
-  const tentacleId = decoder.decode(
-    new Uint8Array(buf, 4, idLen),
-  );
+  const tentacleId = decoder.decode(new Uint8Array(buf, 4, idLen));
   const payload = buf.slice(4 + idLen);
   return { idLen, frameType, flags, tentacleId, payload };
 }
@@ -128,8 +129,7 @@ export function useScreenStream(
         objectUrlRef.current = null;
       }
 
-      const mime =
-        frameType === FRAME_TYPE_WEBP ? "image/webp" : "image/jpeg";
+      const mime = frameType === FRAME_TYPE_WEBP ? "image/webp" : "image/jpeg";
       const blob = new Blob([payload], { type: mime });
       const url = URL.createObjectURL(blob);
       objectUrlRef.current = url;
@@ -198,9 +198,7 @@ export function useScreenStream(
       const now = performance.now();
       fpsFramesRef.current.push(now);
       // Keep only frames from the last second
-      fpsFramesRef.current = fpsFramesRef.current.filter(
-        (t) => now - t < 1000,
-      );
+      fpsFramesRef.current = fpsFramesRef.current.filter((t) => now - t < 1000);
       setFps(fpsFramesRef.current.length);
     },
     [renderImageFrame],
@@ -215,7 +213,7 @@ export function useScreenStream(
       wsRef.current = null;
     }
 
-    const ws = new WebSocket(buildWsUrl());
+    const ws = openAuthenticatedWebSocket(buildWsUrl(), getToken());
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
@@ -296,9 +294,7 @@ export function useScreenStream(
 
     // Subscribe to new device
     if (tentacleId) {
-      ws.send(
-        JSON.stringify({ action: "subscribe", tentacle_id: tentacleId }),
-      );
+      ws.send(JSON.stringify({ action: "subscribe", tentacle_id: tentacleId }));
     }
 
     // Reset counters

@@ -52,7 +52,7 @@ export function CaseStudySection({ className }: { className?: string }) {
     <Section
       className={className}
       title="Case Studies"
-      subtitle="See how Octopus is used in the wild"
+      subtitle="See how Echo is used in the wild"
     >
       <div className="container-md mt-8 grid grid-cols-1 gap-4 px-20 md:grid-cols-2 lg:grid-cols-3">
         {caseStudies.map((caseStudy) => (

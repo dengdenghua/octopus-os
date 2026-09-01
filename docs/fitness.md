@@ -1,6 +1,6 @@
 # FITNESS · 适应度函数设计
 
-> 整个 octopus-agent 的**进化方向舵**。
+> 整个 echo-agent 的**进化方向舵**。
 > Fitness 决定"什么叫变好"。写错了，系统会**越进化越糟**，而且你还以为它在进步。
 >
 > 核心警告：**Goodhart's Law** —— *"When a measure becomes a target, it ceases to be a good measure."*

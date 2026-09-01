@@ -8,7 +8,6 @@ import pytest
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.platform.ui import create_app  # noqa: E402
 
 # ═══════════════════════════════════════════════════════════
@@ -63,9 +62,7 @@ def _seed_journal(path: Path) -> None:
     )
     intent = ParsedIntent(raw="seed", intent_type="task", normalized_goal="seed")
     graph = planner.plan(intent)
-    budget = Budget(
-        task_id=graph.task_id, limits=BudgetLimits(tokens=10_000, usd=0.10)
-    )
+    budget = Budget(task_id=graph.task_id, limits=BudgetLimits(tokens=10_000, usd=0.10))
     runtime.run(graph, budget=budget, caller="arms/seed", arm_id=ArmId("seed_arm"))
 
 
@@ -78,7 +75,7 @@ class TestBasicRoutes:
     def test_index_html(self, client: TestClient):
         r = client.get("/")
         assert r.status_code == 200
-        assert "octopus-agent" in r.text
+        assert "echo-agent" in r.text
         assert "<html" in r.text.lower()
 
     def test_status_endpoint(self, client: TestClient):

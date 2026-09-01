@@ -12,25 +12,29 @@ from runtime.safety.recovery.native_replay import (
 
 
 def _positive_dataset() -> EvolutionDataset:
-    return EvolutionDataset(train=[
-        EvolutionExample(
-            task_input="edit src/app.py",
-            expected_behavior="Preserve the successful read, edit, and verification flow.",
-            source="journal_success",
-            category="successful_tool_chain",
-            metadata={"action_chain": ["read_file", "edit_file", "run_tests"]},
-        ),
-    ])
+    return EvolutionDataset(
+        train=[
+            EvolutionExample(
+                task_input="edit src/app.py",
+                expected_behavior="Preserve the successful read, edit, and verification flow.",
+                source="journal_success",
+                category="successful_tool_chain",
+                metadata={"action_chain": ["read_file", "edit_file", "run_tests"]},
+            ),
+        ]
+    )
 
 
 def test_build_replay_cases_weights_repeated_failure_clusters() -> None:
     cases = build_replay_cases(
-        failures=[{
-            "goal": "fix truncated report",
-            "failure_cluster": "length_limit:output truncated",
-            "failure_cluster_count": 4,
-            "turn_id": "turn-1",
-        }],
+        failures=[
+            {
+                "goal": "fix truncated report",
+                "failure_cluster": "length_limit:output truncated",
+                "failure_cluster_count": 4,
+                "turn_id": "turn-1",
+            }
+        ],
         positive_dataset=_positive_dataset(),
     )
 
@@ -43,13 +47,15 @@ def test_build_replay_cases_weights_repeated_failure_clusters() -> None:
 
 
 def test_replay_candidates_prefers_failure_coverage_and_success_preservation() -> None:
-    failures = [{
-        "goal": "fix truncated report",
-        "failure_cluster": "length_limit:output truncated",
-        "failure_source": "length_limit",
-        "last_error": "output truncated after max_tokens",
-        "failure_cluster_count": 3,
-    }]
+    failures = [
+        {
+            "goal": "fix truncated report",
+            "failure_cluster": "length_limit:output truncated",
+            "failure_source": "length_limit",
+            "last_error": "output truncated after max_tokens",
+            "failure_cluster_count": 3,
+        }
+    ]
     good = PromptCandidate(
         prompt=(
             "When output reaches max_tokens, continue or resume from the last "
@@ -90,9 +96,7 @@ def test_replay_candidates_penalizes_success_path_regressions() -> None:
 
     assert report.candidates[0].candidate_id == safe.candidate_id
     risky_report = next(
-        candidate
-        for candidate in report.candidates
-        if candidate.candidate_id == risky.candidate_id
+        candidate for candidate in report.candidates if candidate.candidate_id == risky.candidate_id
     )
     assert risky_report.case_results[0].score == 0.0
     assert "success regression risk" in risky_report.reasons[0]

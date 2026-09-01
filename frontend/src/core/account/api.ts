@@ -6,6 +6,7 @@
 
 import { getBackendBaseURL } from "@/core/config";
 import { apiClient } from "@/core/api";
+import { authHeaders } from "@/core/auth/api";
 
 import type {
   AccountOverview,
@@ -34,9 +35,11 @@ export const accountApi = {
     formData.append("file", file);
     const resp = await fetch(`${getBackendBaseURL()}/api/account/avatar`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-      },
+      // Auth owns the token storage contract. In particular, current sessions
+      // live in sessionStorage under `echo_auth_token`; never manufacture an
+      // empty Authorization header because that also prevents the global fetch
+      // interceptor from attaching a valid session token.
+      headers: authHeaders(),
       body: formData,
     });
     if (!resp.ok) throw new Error(`Upload avatar failed: ${resp.status}`);
@@ -91,11 +94,13 @@ export const accountApi = {
   getUsageEvents: (params?: { limit?: number; event_type?: string }) => {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.append("limit", String(params.limit));
-    if (params?.event_type) searchParams.append("event_type", params.event_type);
+    if (params?.event_type)
+      searchParams.append("event_type", params.event_type);
     const query = searchParams.toString();
-    return apiClient.get<{ data: UsageEvent[]; pagination?: { total: number } }>(
-      `/api/account/usage/events${query ? `?${query}` : ""}`,
-    );
+    return apiClient.get<{
+      data: UsageEvent[];
+      pagination?: { total: number };
+    }>(`/api/account/usage/events${query ? `?${query}` : ""}`);
   },
 
   getUsageSummary: (period?: string) => {

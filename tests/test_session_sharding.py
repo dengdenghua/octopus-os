@@ -11,9 +11,7 @@ from runtime.memory.threads.session_index import IndexEntry
 
 def _records(path: Path) -> list[dict]:
     return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
 
 
@@ -33,7 +31,7 @@ def test_per_thread_jsonl_starts_with_session_meta(tmp_path: Path) -> None:
         "payload": {
             "id": "thread-a",
             "timestamp": records[0]["payload"]["timestamp"],
-            "originator": "octopus",
+            "originator": "echo",
             "agent": "coder",
             "team_id": None,
         },
@@ -53,13 +51,11 @@ def test_session_meta_ignored_on_reload(tmp_path: Path) -> None:
 
 
 def test_custom_session_origin_is_respected(tmp_path: Path) -> None:
-    store = ThreadStateStore(
-        per_agent_base=tmp_path, session_origin="octopus-desktop"
-    )
+    store = ThreadStateStore(per_agent_base=tmp_path, session_origin="echo-desktop")
     store.ensure_thread("thread-c", metadata={"agent": "coder"})
     target = tmp_path / "agents" / "coder" / "sessions" / "thread-c.jsonl"
     meta = _records(target)[0]
-    assert meta["payload"]["originator"] == "octopus-desktop"
+    assert meta["payload"]["originator"] == "echo-desktop"
 
 
 # ─── dated layout ───────────────────────────────────────────
@@ -141,7 +137,8 @@ def test_session_index_is_written_alongside_threads(tmp_path: Path) -> None:
     assert idx_path.exists()
 
     lines = [
-        json.loads(line) for line in idx_path.read_text(encoding="utf-8").splitlines()
+        json.loads(line)
+        for line in idx_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     # Three writes: ensure t1, update t1, ensure t2
@@ -206,9 +203,7 @@ def test_session_index_compact_collapses_history(tmp_path: Path) -> None:
         file="x",
     )
     for v in ("v1", "v2", "v3", "v4"):
-        idx.upsert(
-            IndexEntry(**{**base.__dict__, "title": v, "updated_at": v})
-        )
+        idx.upsert(IndexEntry(**{**base.__dict__, "title": v, "updated_at": v}))
     # Four distinct upserts → four lines.
     raw = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(raw) == 4

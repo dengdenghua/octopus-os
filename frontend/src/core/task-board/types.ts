@@ -59,7 +59,12 @@ export interface TaskBoardTimelineResponse {
 }
 
 /** Column IDs for the kanban board. */
-export const KANBAN_COLUMNS = ["queued", "running", "completed", "failed"] as const;
+export const KANBAN_COLUMNS = [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+] as const;
 export type KanbanColumnId = (typeof KANBAN_COLUMNS)[number];
 
 /** Map every possible BoardStatus to a kanban column. */

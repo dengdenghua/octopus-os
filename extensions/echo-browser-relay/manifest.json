@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "EchoAI Browser Relay",
+  "description": "Connect the active browser tab to EchoOS automation.",
+  "version": "0.2.2",
+  "permissions": ["tabs", "activeTab", "scripting", "sidePanel", "storage"],
+  "host_permissions": ["http://127.0.0.1:8000/*", "http://localhost:8000/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 ws://127.0.0.1:8000 ws://localhost:8000;"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open EchoAI Browser Relay"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["cursor-overlay.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://auth.tdx.com.cn/tdx-oauth/*"],
+      "js": ["oauth-deep-link-core.js", "oauth-deep-link-bridge.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+

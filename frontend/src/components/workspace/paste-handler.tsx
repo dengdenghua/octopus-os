@@ -1,4 +1,3 @@
-
 import { useEffect, useCallback } from "react";
 
 interface PasteHandlerProps {

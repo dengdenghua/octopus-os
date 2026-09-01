@@ -1,0 +1,20 @@
+name: github
+version: 0.1.0
+description: >-
+  基于本地 gh CLI 重写的 GitHub 操作插件。提供 PR 摘要、issue 分诊、PR
+  列表、创建 PR 等能力。参考重写自 OpenAI codex github 插件(MIT 许可证,
+  原作者署名见 LICENSE.txt),但 connector 实现完全由 Echo 用 gh CLI 重写,
+  不再依赖 OpenAI 托管服务。
+author: Echo (ported from OpenAI codex github plugin, MIT)
+tags:
+  - github
+  - git
+  - developer-tools
+  - code-review
+provides:
+  - github.skills
+config:
+  schema_version: echo.github.manifest.v1
+config_schema:
+  type: object
+  properties: {}

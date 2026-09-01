@@ -1,7 +1,7 @@
 # Golden Path
 
 This is the 10-minute path for a new user. It avoids internal architecture and
-proves one thing first: Octopus can run an agent task and show you what happened.
+proves one thing first: Echo can run an agent task and show you what happened.
 
 ## Goal
 
@@ -52,7 +52,7 @@ What to look for:
 - verifies the fix;
 - records the process.
 
-This is the first "aha": Octopus is not only a chat box. It supervises work.
+This is the first "aha": Echo is not only a chat box. It supervises work.
 
 ## 4. Open The Workspace
 

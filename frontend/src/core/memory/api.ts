@@ -6,9 +6,40 @@ import type {
   FactPatchRequest,
   MemoryConfig,
   MemoryConfigPatch,
+  MemoryAssetList,
+  MemoryAssetQuery,
+  MemoryAssetTrace,
   MemoryData,
   MemorySearchResult,
 } from "./types";
+
+export async function listMemoryAssets(
+  query: MemoryAssetQuery = {},
+): Promise<MemoryAssetList> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  const suffix = params.size ? `?${params.toString()}` : "";
+  const res = await fetch(`${getBackendBaseURL()}/api/memory/assets${suffix}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok)
+    throw new Error(`Failed to list memory assets: ${res.statusText}`);
+  return (await res.json()) as MemoryAssetList;
+}
+
+export async function getMemoryAssetTrace(
+  assetId: string,
+): Promise<MemoryAssetTrace> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/memory/assets/${encodeURIComponent(assetId)}/trace`,
+    { headers: authHeaders() },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to load memory trace: ${res.statusText}`);
+  return (await res.json()) as MemoryAssetTrace;
+}
 
 export async function getMemory(): Promise<MemoryData> {
   const res = await fetch(`${getBackendBaseURL()}/api/memory`, {
@@ -28,8 +59,7 @@ export async function searchMemory(
     `${getBackendBaseURL()}/api/memory/search?q=${encodeURIComponent(query)}&limit=${limit}`,
     { headers: authHeaders() },
   );
-  if (!res.ok)
-    throw new Error(`Failed to search memory: ${res.statusText}`);
+  if (!res.ok) throw new Error(`Failed to search memory: ${res.statusText}`);
   return (await res.json()) as MemorySearchResult[];
 }
 
@@ -85,7 +115,11 @@ export async function updateFact(
 ): Promise<MemoryData> {
   const res = await fetch(
     `${getBackendBaseURL()}/api/memory/facts/${encodeURIComponent(factId)}`,
-    { method: "PATCH", headers: jsonAuthHeaders(), body: JSON.stringify(request) },
+    {
+      method: "PATCH",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify(request),
+    },
   );
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { detail?: string };

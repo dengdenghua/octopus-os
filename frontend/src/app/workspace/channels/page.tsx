@@ -6,6 +6,7 @@ import {
   ChevronRightIcon,
   MessageCircleIcon,
   PlusIcon,
+  SearchIcon,
   SettingsIcon,
   XIcon,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { RoutedWebLink } from "@/components/ui/routed-web-link";
 import {
   Dialog,
   DialogContent,
@@ -20,12 +22,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import { ErrorState, LoadingState, StatusBadge } from "@/components/ui/state";
 import { ChannelCredentialDialog } from "@/components/workspace/channel-credential-dialog";
 import { ChannelPairingsSheet } from "@/components/workspace/channel-pairings-sheet";
 import {
   WorkspaceBody,
   WorkspaceContainer,
-  WorkspaceHeader,
 } from "@/components/workspace/workspace-container";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
@@ -51,6 +62,8 @@ type AgentLite = {
   display_name?: string;
   avatar_url?: string | null;
 };
+
+type ChannelFilter = "all" | "connected" | "unlinked";
 
 // Implementation note.
 const PLATFORM_COLORS: Record<string, string> = {
@@ -149,10 +162,13 @@ const CATEGORY_ORDER = ["im", "china", "email_sms", "smart_home", "dev_tools"];
 
 export default function ChannelsPage() {
   const { t } = useI18n();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [rows, setRows] = useState<ChannelRow[]>([]);
   const [agents, setAgents] = useState<AgentLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ChannelFilter>("all");
   /* Implementation note. */
   const [assigningId, setAssigningId] = useState<string | null>(null);
   /* Implementation note. */
@@ -168,7 +184,8 @@ export default function ChannelsPage() {
         fetch(`${getBackendBaseURL()}/api/channels`),
         fetch(`${getBackendBaseURL()}/api/agents`),
       ]);
-      if (!chRes.ok) throw new Error(`Failed to load channels: ${chRes.status}`);
+      if (!chRes.ok)
+        throw new Error(`Failed to load channels: ${chRes.status}`);
       const ch = (await chRes.json()) as ChannelRow[];
       setRows(ch);
       if (agRes.ok) {
@@ -199,11 +216,14 @@ export default function ChannelsPage() {
 
   async function assignAgent(channelId: string, agentId: string) {
     try {
-      const r = await fetch(`/api/channels/${channelId}/assistant`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agent_id: agentId }),
-      });
+      const r = await fetch(
+        `${getBackendBaseURL()}/api/channels/${channelId}/assistant`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ agent_id: agentId }),
+        },
+      );
       if (!r.ok) {
         const detail = await r.text();
         throw new Error(detail || r.statusText);
@@ -217,15 +237,26 @@ export default function ChannelsPage() {
   }
 
   async function unassignAgent(channelId: string) {
+    if (
+      !(await confirm({
+        title: t.channels.unassignConfirmTitle,
+        description: t.channels.unassignConfirmDescription,
+        confirmLabel: t.channels.unassignCurrent,
+      }))
+    )
+      return;
     try {
-      const r = await fetch(`/api/channels/${channelId}/assistant`, {
-        method: "DELETE",
-      });
+      const r = await fetch(
+        `${getBackendBaseURL()}/api/channels/${channelId}/assistant`,
+        { method: "DELETE" },
+      );
       if (!r.ok) throw new Error(r.statusText);
       toast.success(t.channels.toastAgentUnbound);
       await loadAll();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t.channels.toastUnbindFailed);
+      toast.error(
+        e instanceof Error ? e.message : t.channels.toastUnbindFailed,
+      );
     }
   }
 
@@ -233,25 +264,84 @@ export default function ChannelsPage() {
     () => rows.filter((r) => r.connected).length,
     [rows],
   );
+  const filteredRows = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (filter === "connected" && !row.connected) return false;
+      if (filter === "unlinked" && row.connected) return false;
+      if (!term) return true;
+      const assignedAgent = agents.find((a) => a.id === row.assigned_agent_id);
+      return [
+        row.display_name,
+        row.description,
+        row.platform,
+        row.type,
+        row.channel_id,
+        row.assigned_agent_id ?? "",
+        assignedAgent?.display_name ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(term);
+    });
+  }, [agents, filter, query, rows]);
+
+  const channelSections = useMemo(() => {
+    const grouped: Record<string, ChannelRow[]> = {};
+    const otherRows: ChannelRow[] = [];
+    for (const row of filteredRows) {
+      const cat = PLATFORM_CATEGORY_MAP[row.platform];
+      if (cat) {
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push(row);
+      } else {
+        otherRows.push(row);
+      }
+    }
+    const sections: {
+      key: string;
+      label: string;
+      items: ChannelRow[];
+    }[] = [];
+    for (const cat of CATEGORY_ORDER) {
+      if (grouped[cat] && grouped[cat].length > 0) {
+        sections.push({
+          key: cat,
+          label: PLATFORM_CATEGORIES[cat] ?? cat,
+          items: grouped[cat],
+        });
+      }
+    }
+    if (otherRows.length > 0) {
+      sections.push({
+        key: "other",
+        label: t.channels.categoryOther,
+        items: otherRows,
+      });
+    }
+    return sections;
+  }, [filteredRows, t.channels.categoryOther]);
 
   return (
     <WorkspaceContainer>
-      <WorkspaceHeader />
       <WorkspaceBody className="px-4 pb-4">
         <div className="ui-density-stack mx-auto flex w-full max-w-6xl flex-col">
+          {confirmDialog}
           {/* Implementation note. */}
-          <section className="workspace-panel ui-density-panel rounded-[1.75rem]">
+          <section className="workspace-panel ui-density-panel">
             <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/10">
+                  <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/10">
                     <MessageCircleIcon className="size-5" />
                   </div>
                   <div>
-                    <div className="text-muted-foreground text-xs font-medium uppercase tracking-[0.18em]">
+                    <div className="text-muted-foreground text-xs font-medium uppercase tracking-eyebrow">
                       Channel Ops
                     </div>
-                    <h1 className="text-xl font-semibold tracking-tight">{t.channels.title}</h1>
+                    <h1 className="text-xl font-semibold tracking-tight">
+                      {t.channels.title}
+                    </h1>
                   </div>
                 </div>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -263,78 +353,140 @@ export default function ChannelsPage() {
               </div>
 
               <div className="grid min-w-[220px] grid-cols-2 gap-2 tabular-nums">
-                <div className="rounded-xl border border-border/60 bg-background/62 px-3 py-2">
-                  <div className="text-[11px] text-muted-foreground">{t.channels.channelCount(rows.length)}</div>
-                  <div className="mt-1 text-lg font-semibold">{rows.length}</div>
+                <div className="rounded-lg border border-border-default bg-background/62 px-3 py-2">
+                  <div className="text-xs text-muted-foreground">
+                    {t.channels.channelCount(rows.length)}
+                  </div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {rows.length}
+                  </div>
                 </div>
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2">
-                  <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
-                    <span className={cn("inline-block size-1.5 rounded-full", connectedCount > 0 ? "bg-emerald-500" : "bg-muted-foreground/40")} />
+                <div className="rounded-lg border border-success/20 bg-success/50/[0.06] px-3 py-2">
+                  <div className="flex items-center gap-1 text-xs text-success">
+                    <span
+                      className={cn(
+                        "inline-block size-1.5 rounded-full",
+                        connectedCount > 0
+                          ? "bg-success"
+                          : "bg-muted-foreground/40",
+                      )}
+                    />
                     {t.channels.connectedCount(connectedCount)}
                   </div>
-                  <div className="mt-1 text-lg font-semibold text-emerald-600 dark:text-emerald-400">{connectedCount}</div>
+                  <div className="mt-1 text-lg font-semibold text-success">
+                    {connectedCount}
+                  </div>
                 </div>
               </div>
             </div>
           </section>
 
           {loading && (
-            <div className="text-sm text-muted-foreground">
-              {t.channels.loading}
-            </div>
+            <LoadingState
+              title={t.channels.loading}
+              variant="skeleton"
+              className="workspace-panel p-5"
+            />
           )}
 
           {error && (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-600">
-              {error}
-            </div>
+            <ErrorState
+              title={t.channels.loadFailed}
+              detail={error}
+              actionLabel={t.channels.retry}
+              onAction={() => void loadAll()}
+              className="workspace-panel"
+            />
           )}
 
           {!loading && !error && rows.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border/60 px-6 py-10 text-center text-sm text-muted-foreground">
-              {t.channels.noRegistered}
-            </div>
+            <Empty className="workspace-panel min-h-[260px]">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <MessageCircleIcon />
+                </EmptyMedia>
+                <EmptyTitle>{t.channels.noRegistered}</EmptyTitle>
+                <EmptyDescription>
+                  {t.channels.noRegisteredDescription}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
 
-          {!loading && !error && rows.length > 0 && (() => {
-            const grouped: Record<string, ChannelRow[]> = {};
-            const otherRows: ChannelRow[] = [];
-            for (const row of rows) {
-              const cat = PLATFORM_CATEGORY_MAP[row.platform];
-              if (cat) {
-                if (!grouped[cat]) grouped[cat] = [];
-                grouped[cat].push(row);
-              } else {
-                otherRows.push(row);
-              }
-            }
-            const sections: { key: string; label: string; items: ChannelRow[] }[] = [];
-            for (const cat of CATEGORY_ORDER) {
-              if (grouped[cat] && grouped[cat].length > 0) {
-                sections.push({ key: cat, label: PLATFORM_CATEGORIES[cat] ?? cat, items: grouped[cat] });
-              }
-            }
-            if (otherRows.length > 0) {
-              sections.push({ key: "other", label: "其他", items: otherRows });
-            }
-            return sections.map((section) => (
-              <div key={section.key}>
-                <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{section.label}</h2>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {section.items.map((row, index) => (
-                    <ChannelCard
-                      key={row.channel_id || `${row.platform}-${index}`}
-                      row={row}
-                      agents={agents}
-                      onRequestAssign={() => setAssigningId(row.channel_id)}
-                      onRequestCredential={() => setCredPlatform(row.platform)}
-                      onRequestPairings={() => setPairingsForId(row.channel_id)}
-                    />
+          {!loading && !error && rows.length > 0 && (
+            <>
+              <section className="workspace-panel flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between">
+                <div className="relative min-w-0 flex-1">
+                  <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder={t.channels.searchPlaceholder}
+                    className="h-10 rounded-lg pl-9"
+                  />
+                </div>
+                <div className="grid shrink-0 grid-cols-3 gap-1 rounded-lg border border-border-default bg-muted/25 p-1">
+                  {[
+                    { value: "all", label: t.channels.filterAll },
+                    { value: "connected", label: t.channels.filterConnected },
+                    { value: "unlinked", label: t.channels.filterUnlinked },
+                  ].map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setFilter(item.value as ChannelFilter)}
+                      className={cn(
+                        "h-8 rounded-lg px-3 text-xs font-medium transition-colors",
+                        filter === item.value
+                          ? "bg-background text-foreground shadow-[var(--shadow-xs)]"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {item.label}
+                    </button>
                   ))}
                 </div>
-              </div>
-            ));
-          })()}
+              </section>
+
+              {channelSections.length === 0 ? (
+                <Empty className="workspace-panel min-h-[240px]">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <SearchIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>{t.channels.noSearchResults}</EmptyTitle>
+                    <EmptyDescription>
+                      {t.channels.noSearchResultsDescription}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                channelSections.map((section) => (
+                  <div key={section.key}>
+                    <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+                      {section.label}
+                    </h2>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {section.items.map((row, index) => (
+                        <ChannelCard
+                          key={row.channel_id || `${row.platform}-${index}`}
+                          row={row}
+                          agents={agents}
+                          onRequestAssign={() => setAssigningId(row.channel_id)}
+                          onRequestCredential={() =>
+                            setCredPlatform(row.platform)
+                          }
+                          onRequestPairings={() =>
+                            setPairingsForId(row.channel_id)
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </>
+          )}
         </div>
       </WorkspaceBody>
 
@@ -383,33 +535,35 @@ export default function ChannelsPage() {
               <PlusIcon className="size-4" />
               {t.channels.assignDialogTitle(assignRow?.display_name ?? "")}
             </DialogTitle>
-            <DialogDescription className="text-[12px]">
+            <DialogDescription className="text-xs">
               {t.channels.assignDialogDesc}
             </DialogDescription>
           </DialogHeader>
 
           <div className="overflow-y-auto flex-1 mt-2">
             {agents.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border/60 px-4 py-8 text-center text-[12px] text-muted-foreground">
-                {t.channels.noAgentsAvailable}
-              </div>
+              <Empty className="min-h-[180px] rounded-lg px-4 py-8">
+                <EmptyHeader>
+                  <EmptyTitle>{t.channels.noAgentsAvailable}</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
             ) : (
               <ul className="space-y-1">
                 {agents.map((a, index) => {
                   const isCurrent = assignRow?.assigned_agent_id === a.id;
-                  const agentKey = a.id?.trim() || `${a.display_name ?? "agent"}-${index}`;
+                  const agentKey =
+                    a.id?.trim() || `${a.display_name ?? "agent"}-${index}`;
                   return (
                     <li key={agentKey}>
                       <button
                         type="button"
                         onClick={() =>
-                          assigningId &&
-                          void assignAgent(assigningId, a.id)
+                          assigningId && void assignAgent(assigningId, a.id)
                         }
                         className={cn(
-                          "w-full flex items-center gap-3 rounded-lg border border-border/40",
+                          "w-full flex items-center gap-3 rounded-lg border border-border-subtle",
                           "bg-background px-3 py-2 text-left transition-colors",
-                          "hover:bg-muted/40 hover:border-border/80",
+                          "hover:bg-muted/40 hover:border-border-strong",
                           isCurrent &&
                             "border-primary/40 bg-primary/5 hover:border-primary/60",
                         )}
@@ -426,10 +580,10 @@ export default function ChannelsPage() {
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="text-[13px] font-medium truncate">
+                          <div className="text-sm font-medium truncate">
                             {a.display_name || a.id}
                           </div>
-                          <div className="text-[11px] text-muted-foreground truncate">
+                          <div className="text-xs text-muted-foreground truncate">
                             {a.id}
                           </div>
                         </div>
@@ -445,7 +599,7 @@ export default function ChannelsPage() {
           </div>
 
           {assignRow?.assigned_agent_id && (
-            <div className="mt-3 pt-3 border-t border-border/40">
+            <div className="mt-3 pt-3 border-t border-border-subtle">
               <Button
                 variant="ghost"
                 size="sm"
@@ -453,7 +607,7 @@ export default function ChannelsPage() {
                   void unassignAgent(assignRow.channel_id);
                   setAssigningId(null);
                 }}
-                className="w-full text-[12px] text-muted-foreground hover:text-destructive"
+                className="w-full text-xs text-muted-foreground hover:text-destructive"
               >
                 <XIcon className="mr-1.5 size-3.5" />
                 {t.channels.unassignCurrent}
@@ -467,7 +621,11 @@ export default function ChannelsPage() {
 }
 
 function ChannelCard({
-  row, agents, onRequestAssign, onRequestCredential, onRequestPairings,
+  row,
+  agents,
+  onRequestAssign,
+  onRequestCredential,
+  onRequestPairings,
 }: {
   row: ChannelRow;
   agents: AgentLite[];
@@ -477,7 +635,7 @@ function ChannelCard({
 }) {
   const { t } = useI18n();
   const colorCls = row.connected
-    ? PLATFORM_COLORS[row.platform] ?? PLATFORM_COLORS.other
+    ? (PLATFORM_COLORS[row.platform] ?? PLATFORM_COLORS.other)
     : "bg-muted/70 text-muted-foreground";
   const icon = PLATFORM_ICONS[row.platform] ?? "•";
   const assignedAgent = agents.find((a) => a.id === row.assigned_agent_id);
@@ -485,15 +643,15 @@ function ChannelCard({
   return (
     <div
       className={cn(
-        "workspace-panel ui-density-panel group relative overflow-hidden rounded-2xl border bg-background/60",
-        "transition-colors hover:border-border/80",
-        row.connected ? "border-emerald-500/20" : "border-border/60",
+        "workspace-panel ui-density-panel group relative overflow-hidden rounded-lg border bg-background/60",
+        "transition-colors hover:border-border-strong",
+        row.connected ? "border-success/20" : "border-border-default",
       )}
     >
       <div
         className={cn(
           "absolute inset-x-0 top-0 h-1",
-          row.connected ? "bg-emerald-500/55" : "bg-muted",
+          row.connected ? "bg-success/55" : "bg-muted",
         )}
       />
       {/* Implementation note. */}
@@ -501,24 +659,24 @@ function ChannelCard({
         <div className="flex items-start gap-3">
           <div
             className={cn(
-              "flex size-11 items-center justify-center rounded-xl text-lg shadow-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06]",
+              "flex size-11 items-center justify-center rounded-lg text-lg shadow-[var(--shadow-xs)] ring-1 ring-black/[0.04] dark:ring-white/[0.06]",
               colorCls,
             )}
           >
             <span>{icon}</span>
           </div>
           <div className="min-w-0">
-            <div className="text-sm font-semibold leading-5">{row.display_name}</div>
+            <div className="text-sm font-semibold leading-5">
+              {row.display_name}
+            </div>
             <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
               {row.description}
               {row.help_url && !row.connected && (
-                <a
+                <RoutedWebLink
                   href={row.help_url}
-                  target="_blank"
-                  rel="noreferrer"
+                  openTargetSource="channel-help"
                   className="ml-1 text-primary underline underline-offset-2 hover:opacity-80 cursor-pointer"
                   onClick={(e) => {
-                    console.log("Help URL clicked:", row.help_url);
                     if (!row.help_url || row.help_url === "#") {
                       e.preventDefault();
                       toast.info(t.channels.helpDocsComingSoon);
@@ -526,25 +684,21 @@ function ChannelCard({
                   }}
                 >
                   {t.channels.howToSetup}
-                </a>
+                </RoutedWebLink>
               )}
             </div>
           </div>
         </div>
-        <span
-          className={cn(
-            "shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium",
-            row.connected
-              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-              : "border-border/60 bg-muted/60 text-muted-foreground",
-          )}
+        <StatusBadge
+          tone={row.connected ? "success" : "idle"}
+          className="h-6 shrink-0 rounded-full px-2 text-xs"
         >
           {row.connected ? t.channels.connectedBadge : t.channels.notLinked}
-        </span>
+        </StatusBadge>
       </div>
 
       {/* Implementation note. */}
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <Metric
           label={t.channels.pairedUsers}
           value={row.metrics.pairings_count}
@@ -569,7 +723,7 @@ function ChannelCard({
             type="button"
             onClick={onRequestAssign}
             className={cn(
-              "group flex w-full items-center justify-between rounded-xl",
+              "group flex w-full items-center justify-between rounded-lg",
               "border border-primary/20 bg-primary/[0.04] px-3 py-2.5 text-left",
               "hover:border-primary/40 hover:bg-primary/[0.08] transition-colors",
             )}
@@ -583,19 +737,17 @@ function ChannelCard({
                   className="size-6 rounded-md object-cover"
                 />
               ) : (
-                <div className="flex size-6 items-center justify-center rounded-md bg-primary/15 text-[10px] font-medium text-primary">
-                  {(
-                    assignedAgent?.display_name ?? row.assigned_agent_id
-                  )
+                <div className="flex size-6 items-center justify-center rounded-md bg-primary/15 text-xs font-medium text-primary">
+                  {(assignedAgent?.display_name ?? row.assigned_agent_id)
                     .charAt(0)
                     .toUpperCase()}
                 </div>
               )}
               <div>
-                <div className="text-[12px] font-medium">
+                <div className="text-xs font-medium">
                   {assignedAgent?.display_name ?? row.assigned_agent_id}
                 </div>
-                <div className="text-[10px] text-muted-foreground">
+                <div className="text-xs text-muted-foreground">
                   {t.channels.handlingMessages}
                 </div>
               </div>
@@ -607,16 +759,18 @@ function ChannelCard({
             type="button"
             onClick={onRequestAssign}
             className={cn(
-              "group flex w-full items-center justify-between rounded-xl",
-              "border border-dashed border-border/60 bg-muted/18 px-3 py-2.5 text-left",
+              "group flex w-full items-center justify-between rounded-lg",
+              "border border-dashed border-border-default bg-muted/18 px-3 py-2.5 text-left",
               "hover:border-border hover:bg-muted/40 transition-colors",
             )}
           >
             <div className="flex items-center gap-2">
               <PlusIcon className="size-3.5 text-muted-foreground" />
               <div>
-                <div className="text-[12px] font-medium">{t.channels.configureAgent}</div>
-                <div className="text-[10px] text-muted-foreground">
+                <div className="text-xs font-medium">
+                  {t.channels.configureAgent}
+                </div>
+                <div className="text-xs text-muted-foreground">
                   {t.channels.configureAgentHint}
                 </div>
               </div>
@@ -627,7 +781,7 @@ function ChannelCard({
       </div>
 
       {/* Implementation note. */}
-      <div className="mt-3 flex gap-2 border-t border-border/50 pt-3">
+      <div className="mt-3 flex gap-2 border-t border-border-default pt-3">
         {row.connected ? (
           <Button
             variant="outline"
@@ -655,7 +809,9 @@ function ChannelCard({
 }
 
 function Metric({
-  label, value, onClick,
+  label,
+  value,
+  onClick,
 }: {
   label: string;
   value: number;
@@ -664,12 +820,12 @@ function Metric({
 }) {
   const body = (
     <>
-      <div className="text-[14px] font-semibold tabular-nums">{value}</div>
-      <div className="mt-0.5 text-[10px] text-muted-foreground">{label}</div>
+      <div className="text-sm font-semibold tabular-nums">{value}</div>
+      <div className="mt-0.5 text-xs text-muted-foreground">{label}</div>
     </>
   );
   const baseClass = cn(
-    "rounded-lg border border-border/45 bg-background/70",
+    "rounded-lg border border-border-subtle bg-background/70",
     "px-2 py-1.5 text-center",
   );
   if (!onClick) {

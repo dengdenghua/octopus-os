@@ -17,13 +17,13 @@ subprocess spawning succeeds — the MCP SDK path is behind an
 ``ImportError`` guard in the handler, so tests that don't install
 ``mcp`` stay green while still pinning the UI contract.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from runtime.platform.ui.app import create_app
 
 
@@ -44,10 +44,12 @@ class TestMcpConfigGet:
 
 class TestMcpConfigPut:
     def test_rejects_non_object_mcp_servers(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         r = client.put(
-            "/api/mcp/config", json={"mcp_servers": "not-a-dict"},
+            "/api/mcp/config",
+            json={"mcp_servers": "not-a-dict"},
         )
         assert r.status_code == 400
 
@@ -72,7 +74,8 @@ class TestMcpConfigPut:
         assert "demo-server" in listing["mcp_servers"]
 
     def test_enabled_without_command_surfaces_error(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         """Enabling a server that isn't a known preset AND has no
         explicit command should report a meaningful error in
@@ -97,7 +100,8 @@ class TestMcpConfigPut:
         assert entry.get("enabled") is False or "error" in entry
 
     def test_carries_through_command_args_env(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         """When the caller supplies command/args/env explicitly, the
         stored entry echoes them back — lets the UI re-render the

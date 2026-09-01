@@ -37,7 +37,10 @@ def test_git_status_summary_reports_branch_counts(monkeypatch: Any, tmp_path: Pa
 
     summary = _git_status_summary(str(tmp_path))
 
-    assert summary == 'branch=feature/agent modified=2 untracked=1 ahead=1 behind=2 last="abc1234 fix: agent guard"'
+    assert (
+        summary
+        == 'branch=feature/agent modified=2 untracked=1 ahead=1 behind=2 last="abc1234 fix: agent guard"'
+    )
     assert calls
 
 

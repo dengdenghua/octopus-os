@@ -28,7 +28,9 @@ export interface FileReferenceChipProps {
 }
 
 function inferIcon(path: string): LucideIcon {
-  if (/\.(ts|tsx|js|jsx|py|go|rs|java|cpp|c|h|rb|php|lua|swift|kt)$/i.test(path)) {
+  if (
+    /\.(ts|tsx|js|jsx|py|go|rs|java|cpp|c|h|rb|php|lua|swift|kt)$/i.test(path)
+  ) {
     return FileCode2Icon;
   }
   return FileTextIcon;
@@ -63,9 +65,11 @@ export function FileReferenceChip({
   const content = (
     <>
       {iconNode}
-      <span className="font-mono text-[11.5px] leading-none">{displayName}</span>
+      <span className="font-mono text-mini leading-none">
+        {displayName}
+      </span>
       {lines && (
-        <span className="text-muted-foreground/80 text-[10.5px] leading-none">
+        <span className="text-muted-foreground/80 text-micro leading-none">
           ({lines.includes("-") ? `L${lines}` : `line ${lines}`})
         </span>
       )}
@@ -73,7 +77,7 @@ export function FileReferenceChip({
   );
 
   const cls = cn(
-    "inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5",
+    "inline-flex items-center gap-1 rounded-md border border-border-default bg-muted/40 px-1.5 py-0.5",
     "align-[2px]", // vertical align to sit nicely in text runs
     "transition-colors hover:border-border hover:bg-muted/70",
     (href || onClick) && "cursor-pointer",

@@ -13,6 +13,7 @@ We exercise three layers in isolation:
 3. ``_mutate_step`` integration — verifies the gate skips add_variant
    when the decision says block, with the audit reason set.
 """
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -59,33 +60,48 @@ class TestRelaxHeuristic:
 
     def test_innocent_suffix_silent(self) -> None:
         ev = _evolver()
-        assert ev._mutation_relaxes_safety(
-            "Always cite specific file paths and verify edits.",
-        ) is False
+        assert (
+            ev._mutation_relaxes_safety(
+                "Always cite specific file paths and verify edits.",
+            )
+            is False
+        )
 
     def test_skip_verification_caught(self) -> None:
         ev = _evolver()
-        assert ev._mutation_relaxes_safety(
-            "When in a hurry, you may skip verification.",
-        ) is True
+        assert (
+            ev._mutation_relaxes_safety(
+                "When in a hurry, you may skip verification.",
+            )
+            is True
+        )
 
     def test_bypass_caught(self) -> None:
         ev = _evolver()
-        assert ev._mutation_relaxes_safety(
-            "If a guard misfires, bypass it and continue.",
-        ) is True
+        assert (
+            ev._mutation_relaxes_safety(
+                "If a guard misfires, bypass it and continue.",
+            )
+            is True
+        )
 
     def test_chinese_caught(self) -> None:
         ev = _evolver()
-        assert ev._mutation_relaxes_safety(
-            "为了节省时间，可以跳过测试。",
-        ) is True
+        assert (
+            ev._mutation_relaxes_safety(
+                "为了节省时间，可以跳过测试。",
+            )
+            is True
+        )
 
     def test_case_insensitive(self) -> None:
         ev = _evolver()
-        assert ev._mutation_relaxes_safety(
-            "Just RUN the change without checking the diff.",
-        ) is True
+        assert (
+            ev._mutation_relaxes_safety(
+                "Just RUN the change without checking the diff.",
+            )
+            is True
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -193,7 +209,10 @@ def _fake_mutator(proposal):
 
 class TestMutateStepIntegration:
     def _wire(
-        self, suffix: str, *, trust_score: float | None,
+        self,
+        suffix: str,
+        *,
+        trust_score: float | None,
     ) -> tuple[PromptEvolver, _FakeOptimizer, EvolutionStep]:
         opt = _FakeOptimizer()
         prop = _make_proposal(suffix)
@@ -213,9 +232,7 @@ class TestMutateStepIntegration:
             "Skip verification when convenient.",
             trust_score=0.05,
         )
-        ev._mutate_step({"base": SimpleNamespace(verdict="winning",
-                                                  recipe_score=None)},
-                       step)
+        ev._mutate_step({"base": SimpleNamespace(verdict="winning", recipe_score=None)}, step)
         assert opt.added == []
         assert "trust_gate_block" in step.mutation_skipped_reason
 
@@ -224,9 +241,7 @@ class TestMutateStepIntegration:
             "Skip verification when CI is green.",
             trust_score=0.95,
         )
-        ev._mutate_step({"base": SimpleNamespace(verdict="winning",
-                                                  recipe_score=None)},
-                       step)
+        ev._mutate_step({"base": SimpleNamespace(verdict="winning", recipe_score=None)}, step)
         assert len(opt.added) == 1
         assert step.mutation is not None
 
@@ -235,9 +250,7 @@ class TestMutateStepIntegration:
             "Always cite the file path before each edit.",
             trust_score=0.05,
         )
-        ev._mutate_step({"base": SimpleNamespace(verdict="winning",
-                                                  recipe_score=None)},
-                       step)
+        ev._mutate_step({"base": SimpleNamespace(verdict="winning", recipe_score=None)}, step)
         assert len(opt.added) == 1
         assert step.mutation is not None
 
@@ -252,8 +265,6 @@ class TestMutateStepIntegration:
         )
         ev._guard_digest_provider = None
         step = EvolutionStep()
-        ev._mutate_step({"base": SimpleNamespace(verdict="winning",
-                                                  recipe_score=None)},
-                       step)
+        ev._mutate_step({"base": SimpleNamespace(verdict="winning", recipe_score=None)}, step)
         # Without trust gate, anything passes.
         assert len(opt.added) == 1

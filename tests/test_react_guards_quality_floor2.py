@@ -7,6 +7,7 @@
 * §57: ``_async_without_await_guard`` — ``async def`` with a body
   that never awaits / yields / uses async-with / async-for.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -81,15 +82,15 @@ class TestDetectGenericTestNamesInPayload:
         ) == ["test_basic"]
 
     def test_one_meaningful(self) -> None:
-        assert _detect_generic_test_names_in_payload(
-            "def test_handles_empty_input():\n    pass\n",
-        ) == []
+        assert (
+            _detect_generic_test_names_in_payload(
+                "def test_handles_empty_input():\n    pass\n",
+            )
+            == []
+        )
 
     def test_mixed(self) -> None:
-        text = (
-            "def test_basic():\n    pass\n\n"
-            "def test_handles_empty_input():\n    pass\n"
-        )
+        text = "def test_basic():\n    pass\n\ndef test_handles_empty_input():\n    pass\n"
         assert _detect_generic_test_names_in_payload(text) == ["test_basic"]
 
 
@@ -125,9 +126,14 @@ class TestGenericTestNameGuard:
                 action='write_text_file({"path": "tests/test_x.py", "content": "def test_basic():\\n    pass\\n"})',
             ),
         ]
-        assert _generic_test_name_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _generic_test_name_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_generic_silent(self) -> None:
         steps = [
@@ -136,9 +142,14 @@ class TestGenericTestNameGuard:
                 action='write_text_file({"path": "tests/test_x.py", "content": "def test_specific_behavior():\\n    pass\\n"})',
             ),
         ]
-        assert _generic_test_name_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _generic_test_name_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_generic_fires(self) -> None:
         steps = [
@@ -148,7 +159,9 @@ class TestGenericTestNameGuard:
             ),
         ]
         msg = _generic_test_name_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "test_basic" in msg
@@ -160,9 +173,14 @@ class TestGenericTestNameGuard:
                 action='write_text_file({"path": "tests/test_x.py", "content": "def test_basic():\\n    pass\\n"})',
             ),
         ]
-        assert _generic_test_name_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _generic_test_name_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -251,9 +269,14 @@ class TestNoAssertionTestGuard:
                 ),
             ),
         ]
-        assert _no_assertion_test_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _no_assertion_test_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_hits_silent(self) -> None:
         steps = [
@@ -265,9 +288,14 @@ class TestNoAssertionTestGuard:
                 ),
             ),
         ]
-        assert _no_assertion_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _no_assertion_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_no_assertion_fires(self) -> None:
         steps = [
@@ -280,7 +308,9 @@ class TestNoAssertionTestGuard:
             ),
         ]
         msg = _no_assertion_test_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "test_x" in msg
@@ -295,9 +325,14 @@ class TestNoAssertionTestGuard:
                 ),
             ),
         ]
-        assert _no_assertion_test_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _no_assertion_test_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -358,11 +393,7 @@ class TestDetectAsyncWithoutAwaitInPayload:
         assert _detect_async_without_await_in_payload(text) == []
 
     def test_abstractmethod_silent(self) -> None:
-        text = (
-            "@abstractmethod\n"
-            "async def fetch(self):\n"
-            "    return 1\n"
-        )
+        text = "@abstractmethod\nasync def fetch(self):\n    return 1\n"
         assert _detect_async_without_await_in_payload(text) == []
 
 
@@ -413,9 +444,14 @@ class TestAsyncWithoutAwaitGuard:
                 ),
             ),
         ]
-        assert _async_without_await_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _async_without_await_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_proper_async_silent(self) -> None:
         steps = [
@@ -428,9 +464,14 @@ class TestAsyncWithoutAwaitGuard:
                 ),
             ),
         ]
-        assert _async_without_await_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _async_without_await_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_async_no_await_fires(self) -> None:
         steps = [
@@ -444,7 +485,9 @@ class TestAsyncWithoutAwaitGuard:
             ),
         ]
         msg = _async_without_await_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "go" in msg
@@ -461,6 +504,11 @@ class TestAsyncWithoutAwaitGuard:
                 ),
             ),
         ]
-        assert _async_without_await_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _async_without_await_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )

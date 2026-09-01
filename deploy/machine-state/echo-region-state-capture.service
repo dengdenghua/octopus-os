@@ -1,0 +1,9 @@
+[Unit]
+Description=Capture changed Echo OS locale, keymap and timezone
+Documentation=file:/usr/share/doc/echo-os/machine-state.md
+After=local-fs.target echo-region-state-restore.service
+ConditionPathExists=/var/lib/echo-os/region-state.json
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/lib/echo-os/echo-region-state --capture

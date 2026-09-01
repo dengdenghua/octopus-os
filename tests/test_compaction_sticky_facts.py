@@ -4,6 +4,7 @@ Compaction summarises old turns into one paragraph. Sticky facts —
 explicit user-stated constraints / prefs / decisions — should survive
 that summarisation as a separate, never-collapsed bullet list.
 """
+
 from __future__ import annotations
 
 from runtime.memory.threads.compaction import extract_sticky_facts
@@ -43,10 +44,7 @@ def test_too_short_message_skipped() -> None:
 
 
 def test_capped_at_max() -> None:
-    msgs = [
-        {"role": "user", "content": f"必须做事情第{i}项, 这是个长内容"}
-        for i in range(50)
-    ]
+    msgs = [{"role": "user", "content": f"必须做事情第{i}项, 这是个长内容"} for i in range(50)]
     facts = extract_sticky_facts(msgs)
     # _STICKY_FACTS_MAX is 12 in the impl
     assert len(facts) <= 12

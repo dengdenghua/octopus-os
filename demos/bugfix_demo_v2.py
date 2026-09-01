@@ -32,30 +32,35 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 # v1 building blocks · reused verbatim
 from demos.bugfix_demo import (
+    _C,
+    _count_commits,
+    _print_step,
     build_bugfix_graph,
     setup_buggy_project,
-    _count_commits,
-    _C,
-    _print_step,
 )
-from runtime.execution.tool_engine import ToolExecutor
 from runtime.core.graph_runtime import GraphRuntime
-from runtime.memory.journal import JSONLJournal
-from runtime.safety.auth import TrustEngine
-from runtime.platform.models import (
-    ArmId, Budget, BudgetLimits, BudgetSpec,
-    SkillId, TaskGraph, TaskNode, WorkflowEdge,
-)
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.suckers.builtins import register_all
-from runtime.execution.suckers.write_skills import register_exec_skill
 from runtime.execution.suckers.memory_skills import _update_soul
+from runtime.execution.suckers.write_skills import register_exec_skill
+from runtime.execution.tool_engine import ToolExecutor
+from runtime.memory.journal import JSONLJournal
+from runtime.platform.models import (
+    ArmId,
+    Budget,
+    BudgetLimits,
+    BudgetSpec,
+    SkillId,
+    TaskGraph,
+    TaskNode,
+    WorkflowEdge,
+)
+from runtime.safety.auth import TrustEngine
 
 # ── second-round buggy project ───────────────────────────────
 
@@ -93,7 +98,7 @@ def setup_v2_buggy_project(root: Path) -> Path:
             check=True, capture_output=True, text=True,
         )
     _git("init", "-b", "main")
-    _git("config", "user.email", "demo@octopus-agent.local")
+    _git("config", "user.email", "demo@echo-agent.local")
     _git("config", "user.name", "demo-bot")
     _git("config", "commit.gpgsign", "false")
     _git("add", ".")
@@ -198,23 +203,26 @@ def run_demo_v2(*, workdir: Path | None = None, color: bool = True) -> dict[str,
     c = _C(color)
     tmp_ctx = None
     if workdir is None:
-        tmp_ctx = tempfile.TemporaryDirectory(prefix="octopus-bugfix-v2-")
+        tmp_ctx = tempfile.TemporaryDirectory(prefix="echo-bugfix-v2-")
         root = Path(tmp_ctx.name)
     else:
-        root = Path(workdir); root.mkdir(parents=True, exist_ok=True)
+        root = Path(workdir)
+        root.mkdir(parents=True, exist_ok=True)
 
-    soul_backup: str | None = None
+    soul_backup: bytes | None = None
     try:
         # ── backup SOUL.md so repeated runs don't accumulate ──
+        # Bytes, not text: text-mode round-trips rewrite \n as \r\n on
+        # Windows and the restore is contractually byte-identical.
         if SOUL_PATH.exists():
-            soul_backup = SOUL_PATH.read_text(encoding="utf-8")
+            soul_backup = SOUL_PATH.read_bytes()
 
         print(c.bold("╭─────────────────────────────────────────────────╮"))
-        print(c.bold("│ octopus-agent · Bug Fix Demo v2 (evolution)     │"))
+        print(c.bold("│ Echo Agent · Bug Fix Demo v2 (evolution)        │"))
         print(c.bold("╰─────────────────────────────────────────────────╯"))
         print()
         print(c.dim(f"  workdir: {root}"))
-        print(c.dim(f"  SOUL.md backup: {len(soul_backup) if soul_backup else 0} chars"))
+        print(c.dim(f"  SOUL.md backup: {len(soul_backup) if soul_backup else 0} bytes"))
         print()
 
         # ── Round 1 · fix first bug + record lesson ──
@@ -283,10 +291,10 @@ def run_demo_v2(*, workdir: Path | None = None, color: bool = True) -> dict[str,
 
         # ── success summary ──
         print(c.bold("═══ evolution loop · summary ═══"))
-        print(c.dim(f"  Round 1 · fixed operator typo in add.py"))
-        print(c.dim(f"  update_soul recorded the pattern as a persisted lesson"))
-        print(c.dim(f"  Round 2 · DIFFERENT project + operator typo → same shape fix"))
-        print(c.dim(f"  next boot · lesson auto-loaded into system prompt via SOUL.md"))
+        print(c.dim("  Round 1 · fixed operator typo in add.py"))
+        print(c.dim("  update_soul recorded the pattern as a persisted lesson"))
+        print(c.dim("  Round 2 · DIFFERENT project + operator typo → same shape fix"))
+        print(c.dim("  next boot · lesson auto-loaded into system prompt via SOUL.md"))
         print()
         print(c.bold("  ✓ MiniMax-style self-evolution closed"))
         print(c.dim("     (the agent won't forget this pattern unless update_soul again OR revert_soul)"))
@@ -296,13 +304,13 @@ def run_demo_v2(*, workdir: Path | None = None, color: bool = True) -> dict[str,
             "round1_commits": commits1,
             "round2_commits": commits2,
             "lesson_persisted": LESSON_TAG in soul_now,
-            "soul_chars_before": len(soul_backup or ""),
+            "soul_chars_before": len(soul_backup or b""),
             "soul_chars_after": len(soul_now),
         }
     finally:
         # Always restore SOUL.md so demo is idempotent
         if soul_backup is not None:
-            SOUL_PATH.write_text(soul_backup, encoding="utf-8")
+            SOUL_PATH.write_bytes(soul_backup)
         if tmp_ctx is not None:
             tmp_ctx.cleanup()
 

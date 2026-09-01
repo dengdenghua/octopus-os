@@ -6,7 +6,6 @@ import threading
 import time
 
 import pytest
-
 from runtime.core.cerebrum import StaticPlanner
 from runtime.core.cerebrum.planner import Rule
 from runtime.core.graph_runtime import GraphRuntime
@@ -56,6 +55,7 @@ def _build_stack():
 
     class _Stack:
         pass
+
     s = _Stack()
     s.planner = planner
     s.runtime = runtime
@@ -69,6 +69,7 @@ class _BoomPlanner:
 
     def plan(self, intent, **_kw):
         from runtime.core.cerebrum.planner import PlannerError
+
         raise PlannerError("boom simulated")
 
 
@@ -82,15 +83,17 @@ def _build_registry():
         journal=InMemoryJournal(),
     )
     reg = AgentRegistry()
-    reg.register(Agent(
-        agent_id="scout",
-        display_name="Scout",
-        description="test agent",
-        soul="You are a scout.",
-        arms=ArmPool([make_web_read_arm(runtime)]),
-        icon="🔭",
-        model="test-model",
-    ))
+    reg.register(
+        Agent(
+            agent_id="scout",
+            display_name="Scout",
+            description="test agent",
+            soul="You are a scout.",
+            arms=ArmPool([make_web_read_arm(runtime)]),
+            icon="🔭",
+            model="test-model",
+        )
+    )
     return reg
 
 
@@ -173,10 +176,12 @@ class TestRunnerHappyPath:
             task_runner=make_stack_subagent_runner(stack=stack),
         )
         try:
-            batch = orch.dispatch([
-                DispatchTaskInput(description="list them", subagent_name="x"),
-                DispatchTaskInput(description="list others", subagent_name="y"),
-            ])
+            batch = orch.dispatch(
+                [
+                    DispatchTaskInput(description="list them", subagent_name="x"),
+                    DispatchTaskInput(description="list others", subagent_name="y"),
+                ]
+            )
             for _ in range(200):
                 snap = orch.get_batch(batch.batch_id)
                 if snap.status == "completed":
@@ -200,8 +205,10 @@ class TestRunnerHappyPath:
 class TestPlannerError:
     def test_planner_error_returns_message_not_failed(self):
         """Implementation note."""
+
         class _S:
             pass
+
         s = _S()
         s.planner = _BoomPlanner()
         # Implementation note.
@@ -223,7 +230,8 @@ class TestAgentRegistryLookup:
         stack = _build_stack()
         reg = _build_registry()
         runner = make_stack_subagent_runner(
-            stack=stack, agent_registry=reg,
+            stack=stack,
+            agent_registry=reg,
         )
         # Implementation note.
         out = runner("list", subagent_name="ghost", context={})
@@ -232,27 +240,28 @@ class TestAgentRegistryLookup:
     def test_known_subagent_name_injects_soul_and_model(self):
         """Implementation note."""
         stack = _build_stack()
-        real_planner = stack.planner   # Implementation note.
+        real_planner = stack.planner  # Implementation note.
         reg = _build_registry()
 
         class _SpyPlanner:
             captured: dict = {}
 
-            def plan(self, intent, *, allowed_skills=None,
-                     soul=None, model=None):
+            def plan(self, intent, *, allowed_skills=None, soul=None, model=None):
                 _SpyPlanner.captured = {
                     "allowed_skills": allowed_skills,
                     "soul": soul,
                     "model": model,
                 }
                 return real_planner.plan(
-                    intent, allowed_skills=allowed_skills,
+                    intent,
+                    allowed_skills=allowed_skills,
                 )
 
-        stack.planner = _SpyPlanner()   # type: ignore[assignment]
+        stack.planner = _SpyPlanner()  # type: ignore[assignment]
 
         runner = make_stack_subagent_runner(
-            stack=stack, agent_registry=reg,
+            stack=stack,
+            agent_registry=reg,
         )
         runner("list", subagent_name="scout", context={})
         assert _SpyPlanner.captured.get("soul") == "You are a scout."
@@ -266,22 +275,25 @@ class TestAgentRegistryLookup:
         class _SpyPlanner:
             captured: dict = {}
 
-            def plan(self, intent, *, allowed_skills=None,
-                     soul=None, model=None):
+            def plan(self, intent, *, allowed_skills=None, soul=None, model=None):
                 _SpyPlanner.captured = {
-                    "model": model, "soul": soul,
+                    "model": model,
+                    "soul": soul,
                 }
                 return real_planner.plan(
-                    intent, allowed_skills=allowed_skills,
+                    intent,
+                    allowed_skills=allowed_skills,
                 )
 
-        stack.planner = _SpyPlanner()   # type: ignore[assignment]
+        stack.planner = _SpyPlanner()  # type: ignore[assignment]
 
         runner = make_stack_subagent_runner(
-            stack=stack, agent_registry=reg,
+            stack=stack,
+            agent_registry=reg,
         )
         runner(
-            "list", subagent_name="scout",
+            "list",
+            subagent_name="scout",
             context={"model_name": "kimi-k2.5"},
         )
         assert _SpyPlanner.captured.get("model") == "kimi-k2.5"
@@ -313,9 +325,7 @@ class TestCancelAndBudget:
             ),
         )
         try:
-            batch = orch.dispatch([
-                DispatchTaskInput(description=f"list {i}") for i in range(3)
-            ])
+            batch = orch.dispatch([DispatchTaskInput(description=f"list {i}") for i in range(3)])
             for _ in range(200):
                 s = orch.get_batch(batch.batch_id)
                 if s.status == "completed":
@@ -341,6 +351,7 @@ class TestConstruct:
         class _Bad:
             planner = None
             runtime = object()
+
         with pytest.raises(ValueError, match="planner"):
             make_stack_subagent_runner(stack=_Bad())
 
@@ -348,6 +359,7 @@ class TestConstruct:
         class _Bad:
             planner = object()
             runtime = None
+
         with pytest.raises(ValueError, match="runtime"):
             make_stack_subagent_runner(stack=_Bad())
 
@@ -367,15 +379,15 @@ class TestInjectionTaintThreading:
         class _SpyPlanner:
             captured: dict = {}
 
-            def plan(self, intent, *, allowed_skills=None,
-                     soul=None, model=None):
+            def plan(self, intent, *, allowed_skills=None, soul=None, model=None):
                 _SpyPlanner.captured = dict(intent.user_context)
                 return real_planner.plan(intent, allowed_skills=allowed_skills)
 
         stack.planner = _SpyPlanner()  # type: ignore[assignment]
         runner = make_stack_subagent_runner(stack=stack, agent_registry=reg)
         runner(
-            "list", subagent_name="scout",
+            "list",
+            subagent_name="scout",
             context={"_inherited_injection_taint": "high"},
         )
         assert _SpyPlanner.captured.get("_inherited_injection_taint") == "high"
@@ -388,8 +400,7 @@ class TestInjectionTaintThreading:
         class _SpyPlanner:
             captured: dict = {}
 
-            def plan(self, intent, *, allowed_skills=None,
-                     soul=None, model=None):
+            def plan(self, intent, *, allowed_skills=None, soul=None, model=None):
                 _SpyPlanner.captured = dict(intent.user_context)
                 return real_planner.plan(intent, allowed_skills=allowed_skills)
 

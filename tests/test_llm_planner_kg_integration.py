@@ -6,7 +6,6 @@ import json
 from uuid import uuid4
 
 import pytest
-
 from runtime.core.cerebrum import LLMPlanner
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.memory.hemolymph import ContextComposer
@@ -67,9 +66,7 @@ def composer(registry) -> ContextComposer:
 @pytest.fixture
 def planner(registry, composer) -> LLMPlanner:
     router = MockModelRouter(
-        response=json.dumps(
-            {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-        )
+        response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
     )
     return LLMPlanner(router=router, registry=registry, composer=composer)
 
@@ -82,9 +79,7 @@ def _populate_traj_journal() -> InMemoryJournal:
         step_id=0,
         node_id="n0",
         action=call,
-        result=ExecutionResult(
-            call_id=call.call_id, status="success", output={"ok": True}
-        ),
+        result=ExecutionResult(call_id=call.call_id, status="success", output={"ok": True}),
     )
     for _ in range(3):
         j.write_trajectory(
@@ -168,27 +163,21 @@ class TestKGPromptInjection:
 
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="y")
         planner.plan(intent)
-        sys_msg = next(
-            m.content for m in planner.router.call_log[0].messages if m.role == "system"
-        )
+        sys_msg = next(m.content for m in planner.router.call_log[0].messages if m.role == "system")
         assert "RELATED FACTS" in sys_msg
         assert "preferred_version" in sys_msg
 
     def test_no_kg_no_section(self, planner):
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="y")
         planner.plan(intent)
-        sys_msg = next(
-            m.content for m in planner.router.call_log[0].messages if m.role == "system"
-        )
+        sys_msg = next(m.content for m in planner.router.call_log[0].messages if m.role == "system")
         assert "RELATED FACTS" not in sys_msg
 
     def test_empty_kg_no_section(self, planner):
         planner.attach_kg(KnowledgeGraph())
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="y")
         planner.plan(intent)
-        sys_msg = next(
-            m.content for m in planner.router.call_log[0].messages if m.role == "system"
-        )
+        sys_msg = next(m.content for m in planner.router.call_log[0].messages if m.role == "system")
         assert "RELATED FACTS" not in sys_msg
 
 
@@ -259,12 +248,8 @@ class TestConfigDrivenKGLoad:
             fj.write(ev)
 
         cfg = AgentConfig(
-            planner=PlannerConfig(
-                type="llm", model="mock/p", mock_response='{"nodes":[]}'
-            ),
-            learn=LearnConfig(
-                learn_kg_from_journal=str(path), kg_max_triples=7
-            ),
+            planner=PlannerConfig(type="llm", model="mock/p", mock_response='{"nodes":[]}'),
+            learn=LearnConfig(learn_kg_from_journal=str(path), kg_max_triples=7),
         )
         stack = build_from_config(cfg)
         assert stack.is_llm_planner
@@ -281,9 +266,7 @@ class TestConfigDrivenKGLoad:
         )
 
         cfg = AgentConfig(
-            planner=PlannerConfig(
-                type="llm", model="mock/p", mock_response='{"nodes":[]}'
-            ),
+            planner=PlannerConfig(type="llm", model="mock/p", mock_response='{"nodes":[]}'),
             learn=LearnConfig(learn_kg_from_journal=str(tmp_path / "nope.jsonl")),
         )
         stack = build_from_config(cfg)

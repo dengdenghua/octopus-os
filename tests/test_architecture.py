@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import sys
@@ -11,16 +11,16 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE))
 
-import pytest
+import pytest  # noqa: E402
 
-from runtime.platform.plugins.plugin_loader import (
-    OctopusPlugin,
+from runtime.platform.plugins.plugin_loader import (  # noqa: E402
+    EchoPlugin,
     PluginContext,
     PluginLoader,
     PluginManifest,
     PluginState,
 )
-from runtime.platform.process.eventbus import (
+from runtime.platform.process.eventbus import (  # noqa: E402
     ALL_DOMAIN_EVENTS,
     EVOLUTION_EVENTS,
     PLATFORM_EVENTS,
@@ -43,7 +43,7 @@ from runtime.platform.process.eventbus import (
     StateChanged,
     ToolCallBlocked,
 )
-from runtime.platform.process.state import (
+from runtime.platform.process.state import (  # noqa: E402
     FileBackend,
     MemoryBackend,
     SQLiteBackend,
@@ -60,8 +60,11 @@ class TestDomainEvent:
         assert e.payload == {}
 
     def test_domain_event_frozen(self):
+        from pydantic import ValidationError
+
         e = DomainEvent(event_type="test.event")
-        with pytest.raises(Exception):
+        # pydantic v2 frozen models raise ValidationError on attribute mutation.
+        with pytest.raises((AttributeError, TypeError, ValidationError)):
             e.event_type = "changed"
 
     def test_typed_events_have_correct_type(self):
@@ -84,7 +87,9 @@ class TestDomainEvent:
         assert FitnessComputed in EVOLUTION_EVENTS
         assert BudgetPressureEvent in SAFETY_EVENTS
         assert PluginLoadedEvent in PLATFORM_EVENTS
-        assert len(ALL_DOMAIN_EVENTS) == len(EVOLUTION_EVENTS) + len(SAFETY_EVENTS) + len(PLATFORM_EVENTS)
+        assert len(ALL_DOMAIN_EVENTS) == len(EVOLUTION_EVENTS) + len(SAFETY_EVENTS) + len(
+            PLATFORM_EVENTS
+        )
 
 
 class TestEventBus:
@@ -330,6 +335,30 @@ class TestFileBackend:
         assert len(self.backend.list_keys("ns1")) == 2
         assert set(self.backend.list_namespaces()) == {"ns1", "ns2"}
 
+    def test_rejects_namespace_path_traversal(self):
+        base = Path(self.tmpdir)
+        outside = base.parent / f"{base.name}-escape"
+
+        with pytest.raises(ValueError, match="invalid file state namespace"):
+            self.backend.set(StateEntry(key="k", value="v", namespace="../escape"))
+
+        assert not outside.exists()
+
+    def test_rejects_symlinked_namespace_escape(self):
+        base = Path(self.tmpdir)
+        outside = base.parent / f"{base.name}-outside"
+        outside.mkdir()
+        link = base / "linked"
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlink unavailable: {exc}")
+
+        with pytest.raises(ValueError, match="escapes base directory"):
+            self.backend.set(StateEntry(key="k", value="v", namespace="linked"))
+
+        assert not (outside / "k.json").exists()
+
 
 class TestSQLiteBackend:
     def setup_method(self):
@@ -470,9 +499,9 @@ class TestStateStore:
         StateStore.reset()
 
 
-class TestOctopusPlugin:
+class TestEchoPlugin:
     def test_default_lifecycle(self):
-        p = OctopusPlugin()
+        p = EchoPlugin()
         ctx = PluginContext(plugin_name="test")
         p.on_load(ctx)
         p.on_start(ctx)
@@ -541,37 +570,46 @@ class TestPluginLoader:
             f.write(textwrap.dedent(code))
 
     def test_discover_dir_plugin(self):
-        self._write_plugin("hello", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
+        self._write_plugin(
+            "hello",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
 
-            class HelloPlugin(OctopusPlugin):
+            class HelloPlugin(EchoPlugin):
                 name = "hello"
                 version = "1.0.0"
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         discovered = loader.discover()
         assert "hello" in discovered
 
     def test_discover_single_file_plugin(self):
-        self._write_single_plugin("simple", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
+        self._write_single_plugin(
+            "simple",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
 
-            class SimplePlugin(OctopusPlugin):
+            class SimplePlugin(EchoPlugin):
                 name = "simple"
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         discovered = loader.discover()
         assert "simple" in discovered
 
     def test_load_dir_plugin(self):
-        self._write_plugin("hello", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
+        self._write_plugin(
+            "hello",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
 
-            class HelloPlugin(OctopusPlugin):
+            class HelloPlugin(EchoPlugin):
                 name = "hello"
                 version = "1.0.0"
                 description = "A test plugin"
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         pi = loader.load("hello")
         assert pi is not None
@@ -579,41 +617,53 @@ class TestPluginLoader:
         assert pi.manifest.name == "hello"
 
     def test_load_single_file_plugin(self):
-        self._write_single_plugin("simple", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
+        self._write_single_plugin(
+            "simple",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
 
-            class SimplePlugin(OctopusPlugin):
+            class SimplePlugin(EchoPlugin):
                 name = "simple"
                 version = "0.1.0"
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         pi = loader.load("simple")
         assert pi is not None
         assert pi.state == PluginState.LOADED
 
     def test_load_all(self):
-        self._write_plugin("p1", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
-            class P1(OctopusPlugin):
+        self._write_plugin(
+            "p1",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
+            class P1(EchoPlugin):
                 name = "p1"
-        ''')
-        self._write_plugin("p2", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
-            class P2(OctopusPlugin):
+        """,
+        )
+        self._write_plugin(
+            "p2",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
+            class P2(EchoPlugin):
                 name = "p2"
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         loaded = loader.load_all()
         assert len(loaded) == 2
 
     def test_start_plugin(self):
-        self._write_plugin("hello", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
-            class HelloPlugin(OctopusPlugin):
+        self._write_plugin(
+            "hello",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
+            class HelloPlugin(EchoPlugin):
                 name = "hello"
                 def on_start(self, ctx):
                     pass
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         loader.load("hello")
         result = loader.start("hello")
@@ -621,11 +671,14 @@ class TestPluginLoader:
         assert loader.plugins["hello"].state == PluginState.STARTED
 
     def test_stop_plugin(self):
-        self._write_plugin("hello", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
-            class HelloPlugin(OctopusPlugin):
+        self._write_plugin(
+            "hello",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
+            class HelloPlugin(EchoPlugin):
                 name = "hello"
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         loader.load("hello")
         loader.start("hello")
@@ -634,11 +687,14 @@ class TestPluginLoader:
         assert loader.plugins["hello"].state == PluginState.STOPPED
 
     def test_unload_plugin(self):
-        self._write_plugin("hello", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
-            class HelloPlugin(OctopusPlugin):
+        self._write_plugin(
+            "hello",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
+            class HelloPlugin(EchoPlugin):
                 name = "hello"
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         loader.load("hello")
         result = loader.unload("hello")
@@ -646,16 +702,22 @@ class TestPluginLoader:
         assert "hello" not in loader.plugins
 
     def test_start_all_stop_all(self):
-        self._write_plugin("p1", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
-            class P1(OctopusPlugin):
+        self._write_plugin(
+            "p1",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
+            class P1(EchoPlugin):
                 name = "p1"
-        ''')
-        self._write_plugin("p2", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
-            class P2(OctopusPlugin):
+        """,
+        )
+        self._write_plugin(
+            "p2",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
+            class P2(EchoPlugin):
                 name = "p2"
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         loader.load_all()
         started = loader.start_all()
@@ -664,12 +726,15 @@ class TestPluginLoader:
         assert len(stopped) == 2
 
     def test_status(self):
-        self._write_plugin("hello", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
-            class HelloPlugin(OctopusPlugin):
+        self._write_plugin(
+            "hello",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
+            class HelloPlugin(EchoPlugin):
                 name = "hello"
                 version = "1.0.0"
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         loader.load("hello")
         status = loader.status()
@@ -682,9 +747,12 @@ class TestPluginLoader:
         assert result is None
 
     def test_load_broken_plugin(self):
-        self._write_plugin("broken", '''
+        self._write_plugin(
+            "broken",
+            """
             raise ImportError("broken!")
-        ''')
+        """,
+        )
         loader = PluginLoader(plugin_dir=self.tmpdir)
         pi = loader.load("broken")
         assert pi is not None
@@ -693,10 +761,12 @@ class TestPluginLoader:
     def test_plugin_context_integration(self):
         store = StateStore(backend=MemoryBackend())
         bus = EventBus()
-        self._write_plugin("stateful", '''
-            from runtime.platform.plugins.plugin_loader import OctopusPlugin
+        self._write_plugin(
+            "stateful",
+            """
+            from runtime.platform.plugins.plugin_loader import EchoPlugin
 
-            class StatefulPlugin(OctopusPlugin):
+            class StatefulPlugin(EchoPlugin):
                 name = "stateful"
                 version = "1.0.0"
 
@@ -705,7 +775,8 @@ class TestPluginLoader:
 
                 def on_start(self, ctx):
                     ctx.set_state("started", True)
-        ''')
+        """,
+        )
         loader = PluginLoader(
             plugin_dir=self.tmpdir,
             state_store=store,
@@ -743,9 +814,10 @@ class TestEventBusStateStoreIntegration:
     def test_event_bus_and_store_cross_reference(self):
         bus = EventBus()
         store = StateStore(backend=MemoryBackend())
-        bus.subscribe("fitness.computed", lambda e: store.set(
-            "last_fitness", e.combined_score, namespace="metrics"
-        ))
+        bus.subscribe(
+            "fitness.computed",
+            lambda e: store.set("last_fitness", e.combined_score, namespace="metrics"),
+        )
         bus.publish(FitnessComputed(combined_score=0.85, verdict="healthy"))
         assert store.get("last_fitness", namespace="metrics") == 0.85
 
@@ -756,12 +828,14 @@ class TestEventBusStateStoreIntegration:
         fitness_events = []
         bus.subscribe("fitness.computed", lambda e: fitness_events.append(e))
 
-        bus.publish(FitnessComputed(
-            combined_score=0.3,
-            verdict="unhealthy",
-            trend="regressing",
-            agent_id="agent1",
-        ))
+        bus.publish(
+            FitnessComputed(
+                combined_score=0.3,
+                verdict="unhealthy",
+                trend="regressing",
+                agent_id="agent1",
+            )
+        )
 
         store.set("agent1_fitness", 0.3, namespace="evolution")
 
@@ -772,3 +846,5 @@ class TestEventBusStateStoreIntegration:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
+
+

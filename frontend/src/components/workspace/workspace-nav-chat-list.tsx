@@ -1,6 +1,4 @@
-
 import {
-  BotIcon,
   ChevronDownIcon,
   FolderIcon,
   MoreHorizontal,
@@ -8,8 +6,9 @@ import {
   SparklesIcon,
   Trash2,
 } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 
 import {
   DropdownMenu,
@@ -31,26 +30,35 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { useI18n } from "@/core/i18n/hooks";
-import { useDeleteProject, useProjects } from "@/core/projects/hooks";
+import {
+  type Project,
+  useDeleteProject,
+  useEnsureProjectHome,
+  useProjects,
+} from "@/core/projects/hooks";
 import { useFeatureSeen } from "@/hooks/use-feature-seen";
 
 import { CreateProjectDialog } from "./create-project-dialog";
 
-function ProjectCollapsible({ 
-  projects, 
+function ProjectCollapsible({
+  projects,
   onCreateClick,
   onDeleteProject,
-  t 
-}: { 
-  projects: Array<{ id: string; name: string; icon?: string }>;
+  onOpenProject,
+  openingProjectId,
+  t,
+}: {
+  projects: Project[];
   onCreateClick: () => void;
   onDeleteProject: (id: string) => void;
+  onOpenProject: (project: Project) => void;
+  openingProjectId?: string | null;
   t: { common: { delete: string }; sidebar: { projects: string } };
 }) {
   return (
     <Collapsible defaultOpen className="group/projects">
       <SidebarGroup className="pt-0">
-        <SidebarGroupLabel className="flex h-6 items-center justify-between px-1.5 text-[11px]">
+        <SidebarGroupLabel className="flex h-6 items-center justify-between px-1.5 text-xs">
           <CollapsibleTrigger className="flex items-center gap-1">
             <ChevronDownIcon className="size-3 transition-transform group-data-[state=closed]/projects:-rotate-90" />
             <span>{t.sidebar.projects}</span>
@@ -66,17 +74,20 @@ function ProjectCollapsible({
         <CollapsibleContent>
           <SidebarMenu>
             {projects.map((project) => (
-              <SidebarMenuItem key={project.id} className="group-data-[collapsible=icon]:px-0 px-1.5">
-                <SidebarMenuButton asChild>
-                  <Link
-                    className="text-muted-foreground text-[13px]"
-                    to="/workspace/realtime/new"
-                  >
-                    <FolderIcon className="size-4" />
-                    <span>
-                      {project.icon} {project.name}
-                    </span>
-                  </Link>
+              <SidebarMenuItem
+                key={project.id}
+                className="group-data-[collapsible=icon]:px-0 px-1.5"
+              >
+                <SidebarMenuButton
+                  className="text-muted-foreground text-sm"
+                  disabled={openingProjectId === project.id}
+                  onClick={() => onOpenProject(project)}
+                  title={`打开项目工作群：${project.name}`}
+                >
+                  <FolderIcon className="size-4" />
+                  <span className="truncate">
+                    {project.icon} {project.name}
+                  </span>
                 </SidebarMenuButton>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -86,10 +97,10 @@ function ProjectCollapsible({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" side="right">
                     <DropdownMenuItem
-                      className="text-destructive"
-                      onClick={() => onDeleteProject(project.id)}
+                      variant="destructive"
+                      onSelect={() => onDeleteProject(project.id)}
                     >
-                      <Trash2 className="mr-2 size-4" />
+                      <Trash2 />
                       {t.common.delete}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -111,15 +122,35 @@ export function WorkspaceNavChatList({
   showOnlyProjects?: boolean;
 }) {
   const { t } = useI18n();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
   const { data: projects = [] } = useProjects();
   const { mutate: deleteProject } = useDeleteProject();
+  const ensureProjectHome = useEnsureProjectHome();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const skillsSeen = useFeatureSeen(
+    "skills",
+    pathname === "/workspace/agents" &&
+      new URLSearchParams(search).get("tab") === "skills",
+  );
+  const skillsTabActive =
+    pathname === "/workspace/agents" &&
+    new URLSearchParams(search).get("tab") === "skills";
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const openProject = (project: Project) => {
+    ensureProjectHome.mutate(project, {
+      onSuccess: ({ threadId }) =>
+        navigate(`/workspace/realtime/${encodeURIComponent(threadId)}`, {
+          state: { openProjectWorkbench: true },
+        }),
+      onError: () => toast.error("项目工作群打开失败，请重试"),
+    });
+  };
 
   // Only render projects section
   if (showOnlyProjects) {
@@ -130,6 +161,12 @@ export function WorkspaceNavChatList({
             projects={projects}
             onCreateClick={() => setCreateDialogOpen(true)}
             onDeleteProject={(id) => deleteProject(id)}
+            onOpenProject={openProject}
+            openingProjectId={
+              ensureProjectHome.isPending
+                ? ensureProjectHome.variables?.id
+                : null
+            }
             t={t}
           />
         )}
@@ -147,33 +184,16 @@ export function WorkspaceNavChatList({
         <SidebarMenu>
           <SidebarMenuItem className="group-data-[collapsible=icon]:px-0 px-1.5 mt-0">
             <SidebarMenuButton
-              isActive={pathname.startsWith("/workspace/agents")}
+              isActive={skillsTabActive}
               asChild
-              className="text-muted-foreground rounded-lg py-1 text-[13px] transition-all duration-150 hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=true]:font-medium"
+              className="text-muted-foreground rounded-lg py-1 text-sm transition-colors duration-fast hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=true]:font-medium"
             >
-              <Link to="/workspace/agents">
-                <BotIcon className="size-[15px]" />
-                <span className="flex items-center gap-1.5">
-                  {t.sidebar.agents}
-                  <span className="rounded bg-primary/10 px-1 py-0.5 text-[9px] font-medium leading-none text-primary">
-                    NEW
-                  </span>
-                </span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem className="group-data-[collapsible=icon]:px-0 px-1.5 mt-0">
-            <SidebarMenuButton
-              isActive={pathname.startsWith("/workspace/skills")}
-              asChild
-              className="text-muted-foreground rounded-lg py-1 text-[13px] transition-all duration-150 hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=true]:font-medium"
-            >
-              <Link to="/workspace/skills">
+              <Link to="/workspace/agents?surface=chat&tab=skills">
                 <SparklesIcon className="size-[15px]" />
                 <span className="flex items-center gap-1.5">
                   {t.sidebar.skills}
                   {!skillsSeen && (
-                    <span className="rounded bg-primary/10 px-1 py-0.5 text-[9px] font-medium leading-none text-primary">
+                    <span className="rounded bg-primary/10 px-1 py-0.5 text-xs font-medium leading-none text-primary">
                       NEW
                     </span>
                   )}
@@ -190,6 +210,10 @@ export function WorkspaceNavChatList({
           projects={projects}
           onCreateClick={() => setCreateDialogOpen(true)}
           onDeleteProject={(id) => deleteProject(id)}
+          onOpenProject={openProject}
+          openingProjectId={
+            ensureProjectHome.isPending ? ensureProjectHome.variables?.id : null
+          }
           t={t}
         />
       )}

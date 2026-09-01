@@ -6,6 +6,7 @@
 * §69: same string literal repeated 3+ times in one payload.
 * §70: time/size-unit magic numbers as bare literals.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -62,9 +63,12 @@ class TestDetectShellInjection:
         assert _detect_shell_injection_in_payload("os.popen(cmd)")
 
     def test_subprocess_argv_silent(self) -> None:
-        assert _detect_shell_injection_in_payload(
-            "subprocess.run(['ls', '-la'])",
-        ) == []
+        assert (
+            _detect_shell_injection_in_payload(
+                "subprocess.run(['ls', '-la'])",
+            )
+            == []
+        )
 
     def test_clean_silent(self) -> None:
         assert _detect_shell_injection_in_payload("def hello(): return 1") == []
@@ -95,7 +99,7 @@ class TestStepIntroducesShellInjection:
 
 
 class TestShellInjectionGuard:
-    def test_non_code_mode_silent(self) -> None:
+    def test_non_code_mode_still_blocks_shell_injection(self) -> None:
         steps = [
             _step(
                 1,
@@ -106,10 +110,17 @@ class TestShellInjectionGuard:
                 ),
             ),
         ]
-        assert _shell_injection_guard(steps, "done", is_code_mode=False) is None
+        msg = _shell_injection_guard(steps, "done", is_code_mode=False)
+        assert msg is not None
+        assert "os.system" in msg
 
     def test_clean_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
         assert _shell_injection_guard(steps, "done", is_code_mode=True) is None
 
     def test_shell_true_fires(self) -> None:
@@ -149,9 +160,12 @@ class TestDetectUnsafeDeser:
     def test_yaml_safe_load_silent(self) -> None:
         # ``yaml.safe_load`` is the safe variant; not flagged.
         # ``yaml.load(text, Loader=SafeLoader)`` also silent.
-        assert _detect_unsafe_deser_in_payload(
-            "config = yaml.load(text, Loader=SafeLoader)",
-        ) == []
+        assert (
+            _detect_unsafe_deser_in_payload(
+                "config = yaml.load(text, Loader=SafeLoader)",
+            )
+            == []
+        )
 
     def test_clean_silent(self) -> None:
         assert _detect_unsafe_deser_in_payload("data = json.loads(text)") == []
@@ -197,9 +211,14 @@ class TestUnsafeDeserGuard:
                 ),
             ),
         ]
-        assert _unsafe_deser_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _unsafe_deser_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -268,7 +287,12 @@ class TestNetworkInLoopGuard:
         assert _network_in_loop_guard(steps, "done", is_code_mode=False) is None
 
     def test_clean_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
         assert _network_in_loop_guard(steps, "done", is_code_mode=True) is None
 
     def test_fires(self) -> None:
@@ -294,11 +318,7 @@ class TestNetworkInLoopGuard:
 
 class TestDetectRepeatedLiterals:
     def test_three_repeats_detected(self) -> None:
-        text = (
-            'a = "runtime/safety"\n'
-            'b = "runtime/safety"\n'
-            'c = "runtime/safety"\n'
-        )
+        text = 'a = "runtime/safety"\nb = "runtime/safety"\nc = "runtime/safety"\n'
         repeats = _detect_repeated_literals_in_payload(text)
         assert ("runtime/safety", 3) in repeats
 
@@ -440,5 +460,10 @@ class TestMagicNumberGuard:
         assert "86400" in msg
 
     def test_clean_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
         assert _magic_number_guard(steps, "done", is_code_mode=True) is None

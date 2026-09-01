@@ -221,16 +221,21 @@ class TestParityWithInMemory:
         j = InMemoryJournal()
         call = ToolCall(caller="arms/x", sucker_id="list_cwd", args={"path": "."})
         step = Step(
-            step_id=0, node_id="n0", action=call,
+            step_id=0,
+            node_id="n0",
+            action=call,
             result=ExecutionResult(
-                call_id=call.call_id, status="success",
+                call_id=call.call_id,
+                status="success",
                 output={"path": "/tmp", "count": 5},
             ),
         )
         j.write_trajectory(
             Trajectory(
-                task_id=TaskId(uuid4()), arm_id=ArmId("a"),
-                steps=[step], outcome=TrajectoryOutcome(success=True),
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a"),
+                steps=[step],
+                outcome=TrajectoryOutcome(success=True),
             )
         )
 
@@ -276,9 +281,7 @@ class TestLLMPlannerCompat:
             verify_tests=False,
         )
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         composer = ContextComposer(registry=registry, journal=InMemoryJournal())
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
@@ -289,8 +292,6 @@ class TestLLMPlannerCompat:
 
             intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="y")
             planner.plan(intent)
-            sys_msg = next(
-                m.content for m in router.call_log[0].messages if m.role == "system"
-            )
+            sys_msg = next(m.content for m in router.call_log[0].messages if m.role == "system")
             assert "RELATED FACTS" in sys_msg
             assert "preferred_version" in sys_msg

@@ -7,7 +7,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/1688-product-research.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/1688-product-research.zip"
     },
     {
       "id": "27_1688-sourcing",
@@ -16,7 +16,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/1688-sourcing.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/1688-sourcing.zip"
     },
     {
       "id": "27_ab-test-setup",
@@ -25,7 +25,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/ab-test-setup.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/ab-test-setup.zip"
     },
     {
       "id": "27_alibaba-publish-skill",
@@ -34,7 +34,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/alibaba-publish-skill.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/alibaba-publish-skill.zip"
     },
     {
       "id": "27_alibaba-store-analysis",
@@ -43,7 +43,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/alibaba-store-analysis.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/alibaba-store-analysis.zip"
     },
     {
       "id": "27_amz-hot-keywords",
@@ -52,7 +52,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/amz-hot-keywords.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/amz-hot-keywords.zip"
     },
     {
       "id": "27_amz-product-optimizer",
@@ -61,7 +61,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/amz-product-optimizer.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/amz-product-optimizer.zip"
     },
     {
       "id": "27_authoring-skills",
@@ -70,7 +70,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/authoring-skills.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/authoring-skills.zip"
     },
     {
       "id": "27_cj-dropshipping-api",
@@ -79,16 +79,16 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/cj-dropshipping-api.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/cj-dropshipping-api.zip"
     },
     {
       "id": "27_clawhub",
       "name": "clawhub",
-      "description": "Use the ClawHub CLI to search, install, update, and publish agent skills from clawhub.com. Use when you need to fetch new skills on the fly, sync installed skills to latest or a specific version, or publish new/updated skill folders with the npm-installed clawhub CLI. { \"octopus\": { \"requires\": { \"bins\": [\"clawhub\"] }, \"install\": [ { \"id\": \"node\", \"kind\": \"node\", \"package\": \"clawhub\", \"bins\": [\"clawhub\"], \"label\": \"Install ClawHub CLI (npm)\", }, ], }, }",
+      "description": "Use the ClawHub CLI to search, install, update, and publish agent skills from clawhub.com. Use when you need to fetch new skills on the fly, sync installed skills to latest or a specific version, or publish new/updated skill folders with the npm-installed clawhub CLI. { \"echo\": { \"requires\": { \"bins\": [\"clawhub\"] }, \"install\": [ { \"id\": \"node\", \"kind\": \"node\", \"package\": \"clawhub\", \"bins\": [\"clawhub\"], \"label\": \"Install ClawHub CLI (npm)\", }, ], }, }",
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/clawhub.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/clawhub.zip"
     },
     {
       "id": "27_company-research",
@@ -97,7 +97,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/company-research.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/company-research.zip"
     },
     {
       "id": "27_competitive-landscape",
@@ -106,7 +106,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/competitive-landscape.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/competitive-landscape.zip"
     },
     {
       "id": "27_content-breakdown",
@@ -115,7 +115,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/content-breakdown.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/content-breakdown.zip"
     },
     {
       "id": "27_content-strategy",
@@ -124,7 +124,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/content-strategy.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/content-strategy.zip"
     },
     {
       "id": "27_copywriting",
@@ -133,7 +133,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/copywriting.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/copywriting.zip"
     },
     {
       "id": "27_create-website",
@@ -142,7 +142,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/create-website.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/create-website.zip"
     },
     {
       "id": "27_creating-financial-models",
@@ -151,7 +151,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/creating-financial-models.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/creating-financial-models.zip"
     },
     {
       "id": "27_cross-border-selection",
@@ -160,7 +160,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/cross-border-selection.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/cross-border-selection.zip"
     },
     {
       "id": "27_dcf-valuation",
@@ -169,7 +169,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/dcf-valuation.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/dcf-valuation.zip"
     },
     {
       "id": "27_docx",
@@ -178,7 +178,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/docx.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/docx.zip"
     },
     {
       "id": "27_ecommerce-marketing",
@@ -187,7 +187,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/ecommerce-marketing.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/ecommerce-marketing.zip"
     },
     {
       "id": "27_etsy-pod-automation",
@@ -196,7 +196,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/etsy-pod-automation.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/etsy-pod-automation.zip"
     },
     {
       "id": "27_find-skills",
@@ -205,7 +205,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/find-skills.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/find-skills.zip"
     },
     {
       "id": "27_gmail-assistant",
@@ -214,7 +214,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/gmail-assistant.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/gmail-assistant.zip"
     },
     {
       "id": "27_graphql-operations",
@@ -223,7 +223,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/graphql-operations.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/graphql-operations.zip"
     },
     {
       "id": "27_image-prompt-guide",
@@ -232,7 +232,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/image-prompt-guide.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/image-prompt-guide.zip"
     },
     {
       "id": "27_instagram-marketing",
@@ -241,7 +241,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/instagram-marketing.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/instagram-marketing.zip"
     },
     {
       "id": "27_lark-tools",
@@ -250,7 +250,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/lark-tools.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/lark-tools.zip"
     },
     {
       "id": "27_launch-strategy",
@@ -259,7 +259,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/launch-strategy.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/launch-strategy.zip"
     },
     {
       "id": "27_market-insight-product-selection",
@@ -268,7 +268,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/market-insight-product-selection.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/market-insight-product-selection.zip"
     },
     {
       "id": "27_marketing-ideas",
@@ -277,7 +277,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/marketing-ideas.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/marketing-ideas.zip"
     },
     {
       "id": "27_marketing-psychology",
@@ -286,7 +286,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/marketing-psychology.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/marketing-psychology.zip"
     },
     {
       "id": "27_mcp-tools",
@@ -295,16 +295,16 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/mcp-tools.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/mcp-tools.zip"
     },
     {
       "id": "27_mcporter",
       "name": "mcporter",
-      "description": "Use the mcporter CLI to list, configure, auth, and call MCP servers/tools directly (HTTP or stdio), including ad-hoc servers, config edits, and CLI/type generation. { \"octopus\": { \"emoji\": \"📦\", \"requires\": { \"bins\": [\"mcporter\"] }, \"install\": [ { \"id\": \"node\", \"kind\": \"node\", \"package\": \"mcporter\", \"bins\": [\"mcporter\"], \"label\": \"Install mcporter (node)\", }, ], }, }",
+      "description": "Use the mcporter CLI to list, configure, auth, and call MCP servers/tools directly (HTTP or stdio), including ad-hoc servers, config edits, and CLI/type generation. { \"echo\": { \"emoji\": \"📦\", \"requires\": { \"bins\": [\"mcporter\"] }, \"install\": [ { \"id\": \"node\", \"kind\": \"node\", \"package\": \"mcporter\", \"bins\": [\"mcporter\"], \"label\": \"Install mcporter (node)\", }, ], }, }",
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/mcporter.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/mcporter.zip"
     },
     {
       "id": "27_new-product-development-design",
@@ -313,7 +313,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/new-product-development-design.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/new-product-development-design.zip"
     },
     {
       "id": "27_org-structure-research",
@@ -322,7 +322,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/org-structure-research.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/org-structure-research.zip"
     },
     {
       "id": "27_page-cro",
@@ -331,7 +331,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/page-cro.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/page-cro.zip"
     },
     {
       "id": "27_pdf",
@@ -340,7 +340,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/pdf.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/pdf.zip"
     },
     {
       "id": "27_people-research",
@@ -349,7 +349,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/people-research.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/people-research.zip"
     },
     {
       "id": "27_pptx",
@@ -358,7 +358,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/pptx.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/pptx.zip"
     },
     {
       "id": "27_product-description-generator",
@@ -367,7 +367,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/product-description-generator.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/product-description-generator.zip"
     },
     {
       "id": "27_product-marketing-context",
@@ -376,7 +376,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/product-marketing-context.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/product-marketing-context.zip"
     },
     {
       "id": "27_product-selection",
@@ -385,7 +385,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/product-selection.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/product-selection.zip"
     },
     {
       "id": "27_product-supplier-sourcing",
@@ -394,7 +394,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/product-supplier-sourcing.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/product-supplier-sourcing.zip"
     },
     {
       "id": "27_remotion",
@@ -403,7 +403,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/remotion.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/remotion.zip"
     },
     {
       "id": "27_review-analyst-agent",
@@ -412,7 +412,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/review-analyst-agent.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/review-analyst-agent.zip"
     },
     {
       "id": "27_review-summarizer",
@@ -421,7 +421,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/review-summarizer.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/review-summarizer.zip"
     },
     {
       "id": "27_sales-negotiator",
@@ -430,7 +430,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/sales-negotiator.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/sales-negotiator.zip"
     },
     {
       "id": "27_self-improvement",
@@ -439,7 +439,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/self-improvement.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/self-improvement.zip"
     },
     {
       "id": "27_shopify-builder",
@@ -448,7 +448,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/shopify-builder.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/shopify-builder.zip"
     },
     {
       "id": "27_shopify-dev-mcp",
@@ -457,7 +457,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/shopify-dev-mcp.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/shopify-dev-mcp.zip"
     },
     {
       "id": "27_shopify-developer",
@@ -466,7 +466,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/shopify-developer.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/shopify-developer.zip"
     },
     {
       "id": "27_skill-creator",
@@ -475,7 +475,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/skill-creator.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/skill-creator.zip"
     },
     {
       "id": "27_skill-finder",
@@ -484,16 +484,16 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/skill-finder.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/skill-finder.zip"
     },
     {
       "id": "27_skill-vetter",
       "name": "skill-vetter",
-      "description": "Security-first vetting for Octopus skills. Use before installing any skill from ClawHub, GitHub, or other sources. Checks for red flags, permission scope, and suspicious patterns. short-description: Run a legacy deep-vetting checklist before installing an Octopus skill from any source. why: Preserve a conservative review path for operators who want a manual-first audit flow. what: Provides a legacy pre-install security vetting module for skill review and comparison. how: Uses a structured red-flag checklist focused on permissions, patterns, and suspicious instructions. results: Produces a conservative manual review output for install-or-block decisions. version: 1.0.0 updated: '2026-03-10T03:42:30Z' jtbd-1: When I want a simple manual-first checklist to vet a skill before install. audit: kind: module author: useclawpro category: Security trust-score: 97 last-audited: '2026-02-01' permissions: file-read: true file-write: false network: false shell: false",
+      "description": "Security-first vetting for Echo skills. Use before installing any skill from ClawHub, GitHub, or other sources. Checks for red flags, permission scope, and suspicious patterns. short-description: Run a legacy deep-vetting checklist before installing an Echo skill from any source. why: Preserve a conservative review path for operators who want a manual-first audit flow. what: Provides a legacy pre-install security vetting module for skill review and comparison. how: Uses a structured red-flag checklist focused on permissions, patterns, and suspicious instructions. results: Produces a conservative manual review output for install-or-block decisions. version: 1.0.0 updated: '2026-03-10T03:42:30Z' jtbd-1: When I want a simple manual-first checklist to vet a skill before install. audit: kind: module author: useclawpro category: Security trust-score: 97 last-audited: '2026-02-01' permissions: file-read: true file-write: false network: false shell: false",
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/skill-vetter.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/skill-vetter.zip"
     },
     {
       "id": "27_skill-writer",
@@ -502,7 +502,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/skill-writer.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/skill-writer.zip"
     },
     {
       "id": "27_skillsmp",
@@ -511,7 +511,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/skillsmp.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/skillsmp.zip"
     },
     {
       "id": "27_social-content",
@@ -520,7 +520,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/social-content.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/social-content.zip"
     },
     {
       "id": "27_social-media-publisher",
@@ -529,7 +529,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/social-media-publisher.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/social-media-publisher.zip"
     },
     {
       "id": "27_social-network-mapper",
@@ -538,7 +538,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/social-network-mapper.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/social-network-mapper.zip"
     },
     {
       "id": "27_sycm-analysis-skill",
@@ -547,7 +547,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/sycm-analysis-skill.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/sycm-analysis-skill.zip"
     },
     {
       "id": "27_tariff-search",
@@ -556,7 +556,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/tariff-search.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/tariff-search.zip"
     },
     {
       "id": "27_tech-pack-generation",
@@ -565,7 +565,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/tech-pack-generation.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/tech-pack-generation.zip"
     },
     {
       "id": "27_xlsx",
@@ -574,7 +574,7 @@
       "version": "0.0.37",
       "ownerType": "official",
       "official": true,
-      "oss": "https://skill.octopus.com/skills/phoenix/official/0.0.37/xlsx.zip"
+      "oss": "https://skill.echo.com/skills/phoenix/official/0.0.37/xlsx.zip"
     }
   ]
 }

@@ -5,7 +5,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-
 from runtime.memory.journal import InMemoryJournal
 from runtime.platform.models import (
     ArmId,
@@ -43,7 +42,7 @@ def _make_step(
         action=call,
         result=ExecutionResult(
             call_id=call.call_id,
-            status=status,          # type: ignore[arg-type]
+            status=status,  # type: ignore[arg-type]
             error_type=error_type,
         ),
     )
@@ -81,7 +80,8 @@ def journal_with_failures():
             _make_traj(
                 [
                     _make_step(
-                        0, "hash_text",
+                        0,
+                        "hash_text",
                         status="sandbox_violation",
                         error_type="PermissionError",
                         args={"path": "/etc/secret"},
@@ -149,9 +149,7 @@ class TestExtract:
     def test_swarm_aggregate_deduplicates_same_failed_task(self):
         j = InMemoryJournal()
         task_id = TaskId(uuid4())
-        failed_steps = [
-            _make_step(0, "read_file", status="timeout", error_type="timeout")
-        ]
+        failed_steps = [_make_step(0, "read_file", status="timeout", error_type="timeout")]
         for strategy in ("default", "swarm"):
             j.write_trajectory(
                 Trajectory(
@@ -163,9 +161,7 @@ class TestExtract:
                 )
             )
 
-        report = RuleExtractor(
-            j, config=ExtractorConfig(min_hits=1)
-        ).extract()
+        report = RuleExtractor(j, config=ExtractorConfig(min_hits=1)).extract()
 
         [rule] = [r for r in report.rules_produced if r.sucker_id == "read_file"]
         assert rule.hit_count == 1
@@ -240,7 +236,8 @@ class TestMitigationFormation:
                 _make_traj(
                     [
                         _make_step(
-                            0, "dangerous",
+                            0,
+                            "dangerous",
                             status="sandbox_violation",
                             error_type="PermissionError",
                         )
@@ -259,7 +256,8 @@ class TestMitigationFormation:
                 _make_traj(
                     [
                         _make_step(
-                            0, "shady",
+                            0,
+                            "shady",
                             status="immune_reject",
                             error_type="immune_reject",
                         )
@@ -287,9 +285,7 @@ class TestConfig:
                 )
             )
         # Implementation note.
-        assert RuleExtractor(
-            j, config=ExtractorConfig(min_hits=10)
-        ).extract().rules_produced == []
+        assert RuleExtractor(j, config=ExtractorConfig(min_hits=10)).extract().rules_produced == []
 
     def test_max_rules_cap(self):
         j = InMemoryJournal()
@@ -300,7 +296,8 @@ class TestConfig:
                     _make_traj(
                         [
                             _make_step(
-                                0, f"sucker_{i}",
+                                0,
+                                f"sucker_{i}",
                                 status="failed",
                                 error_type="E",
                             )
@@ -308,9 +305,7 @@ class TestConfig:
                         overall_success=False,
                     )
                 )
-        report = RuleExtractor(
-            j, config=ExtractorConfig(max_rules_per_run=5)
-        ).extract()
+        report = RuleExtractor(j, config=ExtractorConfig(max_rules_per_run=5)).extract()
         assert len(report.rules_produced) == 5
 
 
@@ -339,7 +334,7 @@ class TestFormatForPrompt:
         many = [
             LearnedRule(
                 rule_id=f"r_{i}",
-                sucker_id=f"sucker_{i}",           # type: ignore[arg-type]
+                sucker_id=f"sucker_{i}",  # type: ignore[arg-type]
                 error_signature="e",
                 pattern="x" * 200,
                 mitigation="y" * 200,
@@ -356,7 +351,7 @@ class TestFormatForPrompt:
         rules = [
             LearnedRule(
                 rule_id="low_r",
-                sucker_id="a",   # type: ignore[arg-type]
+                sucker_id="a",  # type: ignore[arg-type]
                 error_signature="e",
                 pattern="low pattern",
                 mitigation="low mit",
@@ -365,7 +360,7 @@ class TestFormatForPrompt:
             ),
             LearnedRule(
                 rule_id="high_r",
-                sucker_id="b",   # type: ignore[arg-type]
+                sucker_id="b",  # type: ignore[arg-type]
                 error_signature="e",
                 pattern="high pattern",
                 mitigation="high mit",

@@ -1,8 +1,8 @@
 """Implementation note."""
+
 from __future__ import annotations
 
 import pytest
-
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.execution.arms import Arm, ArmPool
 from runtime.execution.suckers import Skill, SkillRegistry
@@ -45,20 +45,24 @@ def registry():
         # and bare kwargs from legacy / forged calls · keep tolerant.
         return {"parsed": True, "len": len(kw.get("content", "") or "")}
 
-    r.register(Skill(
-        name=SkillId("read_file"),
-        description="Read file",
-        handler=_read_file,
-        idempotent=True,
-        trusted_source="skill://public/read_file",
-    ))
-    r.register(Skill(
-        name=SkillId("parse_content"),
-        description="Parse content",
-        handler=_parse_content,
-        idempotent=True,
-        trusted_source="skill://public/parse_content",
-    ))
+    r.register(
+        Skill(
+            name=SkillId("read_file"),
+            description="Read file",
+            handler=_read_file,
+            idempotent=True,
+            trusted_source="skill://public/read_file",
+        )
+    )
+    r.register(
+        Skill(
+            name=SkillId("parse_content"),
+            description="Parse content",
+            handler=_parse_content,
+            idempotent=True,
+            trusted_source="skill://public/parse_content",
+        )
+    )
     return r
 
 
@@ -94,7 +98,9 @@ def worker_pool(executor, journal, registry):
 
 
 def test_swarm_trajectory_is_visible_to_skill_forge(
-    journal, worker_pool, registry,
+    journal,
+    worker_pool,
+    registry,
 ):
     """End-to-end: run the same 2-step graph N times via SwarmRuntime,
     then ask SkillForge to propose candidates. It should find the
@@ -149,7 +155,9 @@ def test_swarm_trajectory_is_visible_to_skill_forge(
             limits=BudgetLimits(tokens=10_000, usd=0.10),
         )
         result = swarm.run(
-            graph=graph, budget=budget, split_strategy="single",
+            graph=graph,
+            budget=budget,
+            split_strategy="single",
         )
         # Sanity: swarm produced results and at least one succeeded.
         assert result.arm_results, "swarm must dispatch at least once"
@@ -171,7 +179,9 @@ def test_swarm_trajectory_is_visible_to_skill_forge(
 
 
 def test_per_node_split_now_produces_learnable_trajectory(
-    journal, worker_pool, registry,
+    journal,
+    worker_pool,
+    registry,
 ):
     """Regression lock for the claim-① fix.
 
@@ -230,7 +240,9 @@ def test_per_node_split_now_produces_learnable_trajectory(
             limits=BudgetLimits(tokens=10_000, usd=0.10),
         )
         swarm.run(
-            graph=graph, budget=budget, split_strategy="per_node",
+            graph=graph,
+            budget=budget,
+            split_strategy="per_node",
         )
 
     forge = SkillForge(
@@ -251,7 +263,9 @@ def test_per_node_split_now_produces_learnable_trajectory(
 
 
 def test_aggregated_trajectory_carries_cost(
-    journal, worker_pool, registry,
+    journal,
+    worker_pool,
+    registry,
 ):
     """The aggregated swarm Trajectory must propagate cost from
     every ArmResult into ``outcome.cost`` · pre-2026-05 this was
@@ -296,9 +310,9 @@ def test_aggregated_trajectory_carries_cost(
 
     # The aggregated Trajectory is written with ``strategy_id="swarm"``.
     swarm_trajs = [
-        e.trajectory for e in journal.read_all()
-        if isinstance(e, TrajectoryEvent)
-        and e.trajectory.strategy_id == "swarm"
+        e.trajectory
+        for e in journal.read_all()
+        if isinstance(e, TrajectoryEvent) and e.trajectory.strategy_id == "swarm"
     ]
     assert swarm_trajs, "no swarm-aggregated Trajectory in journal"
     outcome = swarm_trajs[0].outcome
@@ -315,7 +329,8 @@ def test_aggregated_trajectory_carries_cost(
 
 
 def test_real_trajectory_has_steps_even_when_swarm_summary_is_empty(
-    journal, worker_pool,
+    journal,
+    worker_pool,
 ):
     """Lower-level sanity check: confirm the journal carries BOTH
     a steps-full Trajectory (from GraphRuntime inside the Arm) AND
@@ -361,11 +376,8 @@ def test_real_trajectory_has_steps_even_when_swarm_summary_is_empty(
     )
     swarm.run(graph=graph, budget=budget, split_strategy="per_node")
 
-    traj_events = [
-        e for e in journal.read_all() if isinstance(e, TrajectoryEvent)
-    ]
+    traj_events = [e for e in journal.read_all() if isinstance(e, TrajectoryEvent)]
     # At least one with real steps (the GraphRuntime write).
     assert any(t.trajectory.step_count >= 1 for t in traj_events), (
-        "no Trajectory with steps found; GraphRuntime should have "
-        "written one per Arm"
+        "no Trajectory with steps found; GraphRuntime should have written one per Arm"
     )

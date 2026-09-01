@@ -1,4 +1,3 @@
-
 import React, { type MouseEventHandler } from "react";
 import confetti from "canvas-confetti";
 
@@ -46,4 +45,3 @@ export function ConfettiButton({
     </Button>
   );
 }
-

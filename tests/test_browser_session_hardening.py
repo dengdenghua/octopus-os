@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from runtime.platform.ui.browser_router import (
     _SESSION_SENTINEL_NAME,
     mark_session_active,

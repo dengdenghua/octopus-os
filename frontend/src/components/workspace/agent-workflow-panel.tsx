@@ -75,15 +75,15 @@ function StepItem({
         <div className="relative flex flex-col items-center">
           <div
             className={cn(
-              "flex size-6 items-center justify-center rounded-full border-2 transition-all duration-300",
+              "flex size-6 items-center justify-center rounded-full border-2 transition-colors duration-slow",
               step.status === "completed" &&
-                "border-emerald-500 bg-emerald-500/10 text-emerald-600",
+                "border-success/50 bg-success/10 text-success",
               step.status === "running" &&
-                "border-violet-500 bg-violet-500/10 text-violet-600",
+                "border-chart-1 bg-chart-1/10 text-chart-1",
               step.status === "error" &&
-                "border-rose-500 bg-rose-500/10 text-rose-600",
+                "border-destructive/50 bg-destructive/10 text-destructive",
               step.status === "pending" &&
-                "border-muted-foreground/30 text-muted-foreground/50"
+                "border-muted-foreground/30 text-muted-foreground/50",
             )}
           >
             {step.status === "completed" ? (
@@ -99,10 +99,10 @@ function StepItem({
           {!isLast && (
             <div
               className={cn(
-                "mt-1 h-full min-h-[20px] w-px transition-colors duration-300",
+                "mt-1 h-full min-h-[20px] w-px transition-colors duration-slow",
                 step.status === "completed"
-                  ? "bg-emerald-500/30"
-                  : "bg-border/50"
+                  ? "bg-success/30"
+                  : "bg-border/50",
               )}
             />
           )}
@@ -115,25 +115,28 @@ function StepItem({
                 <Icon
                   className={cn(
                     "size-3.5 shrink-0",
-                    step.status === "running" && "text-violet-500",
-                    step.status === "completed" && "text-emerald-500",
-                    step.status === "error" && "text-rose-500",
-                    step.status === "pending" && "text-muted-foreground/50"
+                    step.status === "running" && "text-chart-1",
+                    step.status === "completed" && "text-success",
+                    step.status === "error" && "text-destructive",
+                    step.status === "pending" && "text-muted-foreground/50",
                   )}
                 />
                 <span
                   className={cn(
                     "truncate text-sm font-medium",
-                    step.status === "running" && "text-violet-700 dark:text-violet-400",
-                    step.status === "completed" && "text-emerald-700 dark:text-emerald-400",
-                    step.status === "error" && "text-rose-700 dark:text-rose-400",
-                    step.status === "pending" && "text-muted-foreground"
+                    step.status === "running" &&
+                      "text-chart-1 dark:text-chart-1",
+                    step.status === "completed" &&
+                      "text-success",
+                    step.status === "error" &&
+                      "text-destructive",
+                    step.status === "pending" && "text-muted-foreground",
                   )}
                 >
                   {step.name}
                 </span>
                 {duration !== null && (
-                  <span className="text-[10px] text-muted-foreground/60">
+                  <span className="text-xs text-muted-foreground/60">
                     {duration}s
                   </span>
                 )}
@@ -144,7 +147,7 @@ function StepItem({
                 </p>
               )}
               {!expanded && step.outputText && (
-                <p className="mt-1 break-all text-[11px] text-emerald-700/80 line-clamp-2 dark:text-emerald-400/80">
+                <p className="mt-1 break-all text-xs text-success/80 line-clamp-2 dark:text-success/80">
                   {step.outputText}
                 </p>
               )}
@@ -153,7 +156,7 @@ function StepItem({
               <button
                 type="button"
                 onClick={() => setExpanded((value) => !value)}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 {expanded ? (
                   <ChevronDownIcon className="size-3" />
@@ -161,30 +164,32 @@ function StepItem({
                   <ChevronRightIcon className="size-3" />
                 )}
                 <span>
-                  {expanded ? t.agentWorkflow.hideDetails : t.agentWorkflow.showDetails}
+                  {expanded
+                    ? t.agentWorkflow.hideDetails
+                    : t.agentWorkflow.showDetails}
                 </span>
               </button>
             )}
           </div>
 
           {expanded && hasDetails && (
-            <div className="mt-2 space-y-2 rounded-md border border-border/50 bg-muted/30 p-2">
+            <div className="mt-2 space-y-2 rounded-md border border-border-default bg-muted/30 p-2">
               {step.inputText && (
                 <div className="space-y-1">
-                  <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground/70">
                     {t.agentWorkflow.input}
                   </div>
-                  <pre className="whitespace-pre-wrap break-all font-mono text-[11px] text-muted-foreground/85">
+                  <pre className="whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground/85">
                     {step.inputText}
                   </pre>
                 </div>
               )}
               {step.outputText && (
                 <div className="space-y-1">
-                  <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground/70">
                     {t.agentWorkflow.result}
                   </div>
-                  <pre className="whitespace-pre-wrap break-all font-mono text-[11px] text-emerald-700/85 dark:text-emerald-400/85">
+                  <pre className="whitespace-pre-wrap break-all font-mono text-xs text-success/85 dark:text-success/85">
                     {step.outputText}
                   </pre>
                 </div>
@@ -222,13 +227,13 @@ export function AgentWorkflowPanel({
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
-      <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+      <div className="flex items-center justify-between border-b border-border-default px-3 py-2">
         <div className="flex items-center gap-2">
-          <BotIcon className="size-4 text-violet-500" />
+          <BotIcon className="size-4 text-chart-1" />
           <span className="text-sm font-medium">{t.agentWorkflow.title}</span>
         </div>
         {isRunning && (
-          <div className="flex items-center gap-1.5 text-xs text-violet-600">
+          <div className="flex items-center gap-1.5 text-xs text-chart-1">
             <Loader2Icon className="size-3 animate-spin" />
             <span>{t.agentWorkflow.running}</span>
           </div>
@@ -237,7 +242,9 @@ export function AgentWorkflowPanel({
 
       <div className="px-3 py-2">
         <div className="mb-1.5 flex items-center justify-between text-xs">
-          <span className="text-muted-foreground">{t.agentWorkflow.progress}</span>
+          <span className="text-muted-foreground">
+            {t.agentWorkflow.progress}
+          </span>
           <span className="text-muted-foreground">
             {completedCount}/{steps.length}
           </span>
@@ -245,8 +252,8 @@ export function AgentWorkflowPanel({
         <div className="h-1.5 overflow-hidden rounded-full bg-muted">
           <div
             className={cn(
-              "h-full rounded-full transition-all duration-500",
-              isRunning ? "bg-violet-500" : "bg-emerald-500"
+              "h-full rounded-full transition-colors duration-slow",
+              isRunning ? "bg-chart-1" : "bg-success",
             )}
             style={{ width: `${progress}%` }}
           />

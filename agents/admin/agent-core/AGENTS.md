@@ -1,4 +1,4 @@
-# Working rules (shared by all Octopus agents)
+# Working rules (shared by all Echo agents)
 
 ## System Management
 

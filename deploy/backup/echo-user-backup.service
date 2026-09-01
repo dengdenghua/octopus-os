@@ -1,0 +1,30 @@
+[Unit]
+Description=Create and fully verify an offline Echo OS user backup
+Documentation=file:/usr/share/doc/echo-os/user-backup.md
+RequiresMountsFor=/home /var/lib/echo-agent /var/lib/echo-os /mnt/echo-backup
+After=local-fs.target echo-agent.service sddm.service
+ConditionPathIsMountPoint=/mnt/echo-backup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/echo-os-backup backup
+LoadCredentialEncrypted=echo-backup-password
+UMask=0077
+NoNewPrivileges=yes
+PrivateDevices=yes
+ProtectControlGroups=yes
+ProtectHome=read-only
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadOnlyPaths=/var/lib/echo-agent
+ReadWritePaths=/mnt/echo-backup /var/lib/echo-os
+RestrictAddressFamilies=AF_UNIX
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RuntimeDirectory=echo-os-user-backup
+RuntimeDirectoryMode=0700
+SystemCallArchitectures=native
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETGID CAP_SETUID
+TimeoutStartSec=infinity

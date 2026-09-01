@@ -1,708 +1,560 @@
-﻿import {
-  BotIcon,
-  CheckIcon,
-  ChevronDownIcon,
+import {
+  ArrowLeftIcon,
   ChevronRightIcon,
-  CircleIcon,
-  CopyIcon,
-  FolderIcon,
+  DownloadIcon,
+  FolderKanbanIcon,
   GlobeIcon,
-  LayoutGridIcon,
-  MonitorIcon,
-  PauseIcon,
-  PlayIcon,
-  SkipForwardIcon,
+  PackageIcon,
+  PanelsTopLeftIcon,
+  SparklesIcon,
   TerminalIcon,
-  UsersIcon,
-  XIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  memo,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  lazy,
+} from "react";
 
 import { useI18n } from "@/core/i18n/hooks";
+import {
+  artifactDisplayPath,
+  normalizeWorkspaceArtifactRef,
+  urlOfArtifact,
+} from "@/core/artifacts/utils";
+import { useArtifactContent } from "@/core/artifacts/hooks";
+import type { OutlineRound } from "@/core/threads/progress-outline";
+import type { GroundingSource } from "@/core/realtime/items";
 import { TerminalPanel } from "@/components/workspace/terminal-panel";
+import { ToolEffectDetailPanel } from "@/components/workspace/tool-effect-detail-panel";
+import { useArtifacts } from "@/components/workspace/artifacts/context";
+import {
+  HtmlPreview,
+  OfficePreview,
+} from "@/components/workspace/artifacts/artifact-file-detail";
+import { officeArtifactKind } from "@/components/workspace/artifacts/office-edit";
+import { ArtifactLink } from "@/components/workspace/citations/artifact-link";
+import { checkCodeFile, getFileIcon, getFileName } from "@/core/utils/files";
+import { useStreamdownPlugins } from "@/core/streamdown";
+import type {
+  AgentWorkbenchEventView,
+  AgentWorkbenchFocusAgentSnapshot,
+  AgentWorkbenchProcessEventSnapshot,
+  AgentWorkbenchProcessEventKind,
+} from "./agent-workbench-events";
 import type { LiveToolEvent } from "./live-tool-timeline";
-import {
-  pickCurrentWorkBlock,
-  progressForWorkBlocks,
-  statusText,
-} from "./work-blocks";
 import { cn } from "@/lib/utils";
-import { DotProgress } from "@/components/workspace/swarm/dot-progress";
-import { BrowserPreviewPanel } from "./browser-preview-panel";
-import { LivePreviewPanel } from "./live-preview-panel";
+import { CoworkCollabBar } from "./cowork-collab-bar";
 import type { ExtractedCodeBlocks } from "@/lib/extract-code-blocks";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  type AgentTile,
-  type AgentWorkbenchTabId,
-  blockIcon,
-  statusIcon,
-  kindLabel,
-  eventTime,
-  copyText,
-  compactDetail,
-  agentProgressPercent,
-  stringFromKeys,
-  textFromUnknown,
-  commandForBlock,
-  repairMojibakeText,
-  __testing,
-  FILES_TAB_LABEL,
-  DIFF_TAB_LABEL,
-  TERMINAL_TAB_LABEL,
-  BROWSER_TAB_LABEL,
-} from "./agent-workbench-utils";
+import type { StreamdownProps } from "streamdown";
+import type { AgentWorkbenchTabId, DiffEntry } from "./agent-workbench-utils";
 import { useAgentWorkbenchI18n } from "./use-agent-workbench-i18n";
+import { AgentDiffPage } from "./agent-workbench-pages";
+import { useAgentWorkbenchSnapshot } from "./agent-workbench-snapshot";
+import { deriveAgentPhases, type AgentPhase } from "./agent-phases";
+import { type AgentRunState, workbenchRunState } from "./agent-run-status";
+import { MachineScopeRail } from "./agent-workbench-panel/machine-scope-rail";
+import { EmptyShellView } from "./agent-workbench-panel/empty-shell-view";
 import {
-  StatusGlyph,
-  WorkBlockDetailSection,
-  AgentSummaryPage,
-  AgentCreationCard,
-  AgentFilesPage,
-  AgentDiffPage,
-  WorkbenchEmptyPage,
-  isAgentCreationBlock,
-  agentTileForBlock,
-  findAgentTileByFocusId,
-} from "./agent-workbench-pages";
+  WorkbenchTabHeader,
+  type WorkbenchTab,
+} from "./agent-workbench-panel/workbench-tab-header";
+import { BrowserTabPage } from "./agent-workbench-panel/browser-tab-page";
+import { PersonaWorkbenchHome } from "./agent-workbench-panel/persona-workbench-home";
+import { AgentKanbanView } from "./agent-workbench-panel/agent-kanban-view";
 import {
-  currentScreenFrame,
-  screenBlocksForAgent,
-  type ScreenFrameSnapshot,
-  useAgentWorkbenchSnapshot,
-} from "./agent-workbench-snapshot";
-import type { AgentPhase } from "./agent-phases";
-import type { WorkBlock } from "./work-blocks";
+  ProjectOsTab,
+  ProjectOsTabError,
+  ProjectOsTabLoading,
+  useBoundProjectState,
+} from "./agent-workbench-panel/project-os-tab";
+import type { WorkbenchRosterSeat } from "./agent-workbench-panel/helpers";
+import { useWorkbenchSelection } from "./agent-workbench-panel/use-workbench-selection";
+import { WorkbenchSnapshotCache } from "@/core/cache/workbench-snapshot-cache";
+import { workspacePresetForAgent } from "@/core/workspace/workspace-presets";
 
 // Re-export items that were exported from the original file
 export { hasAgentWorkbenchContent, __testing } from "./agent-workbench-utils";
 export type { AgentWorkbenchTabId } from "./agent-workbench-utils";
 export { workspaceFocusTabFromEvents } from "./agent-workbench-utils";
+export type { WorkbenchRosterSeat } from "./agent-workbench-panel/helpers";
 
-type ScreenPhaseGroup = {
-  id: string;
-  title: string;
-  detail?: string;
-  status: AgentPhase["status"];
-  blocks: WorkBlock[];
-};
-
-function MainProcessPhaseTimeline({
-  phases,
-  screenBlocks,
-  screenFrame,
-  currentPhaseId,
-  selectedBlockId,
-  onSelectBlock,
-}: {
-  phases: AgentPhase[];
-  screenBlocks: WorkBlock[];
-  screenFrame: ScreenFrameSnapshot;
-  currentPhaseId: string | null;
-  selectedBlockId: string | null;
-  onSelectBlock: (blockId: string, phaseId: string | null) => void;
-}) {
-  const groups = useMemo(
-    () => buildScreenPhaseGroups(phases, screenBlocks, currentPhaseId),
-    [currentPhaseId, phases, screenBlocks],
-  );
-  const currentBlockId = screenFrame.block?.id ?? null;
-  const currentGroupId = useMemo(() => {
-    if (currentBlockId) {
-      const group = groups.find((candidate) =>
-        candidate.blocks.some((block) => block.id === currentBlockId),
-      );
-      if (group) return group.id;
-    }
-    return currentPhaseId ?? groups[0]?.id ?? null;
-  }, [currentBlockId, currentPhaseId, groups]);
-  const [openPhaseIds, setOpenPhaseIds] = useState<Set<string>>(
-    () => new Set(currentGroupId ? [currentGroupId] : []),
-  );
-
-  useEffect(() => {
-    if (!currentGroupId) return;
-    setOpenPhaseIds((prev) => {
-      if (prev.has(currentGroupId)) return prev;
-      const next = new Set(prev);
-      next.add(currentGroupId);
-      return next;
-    });
-  }, [currentGroupId]);
-
-  if (screenBlocks.length === 0) {
-    return (
-      <div className="flex min-h-32 items-center justify-center px-4 text-xs text-muted-foreground">
-        暂无操作记录
-      </div>
-    );
-  }
-
-  if (!screenFrame.block) {
-    return (
-      <div className="flex min-h-32 items-center justify-center px-4 text-xs text-muted-foreground">
-        暂无当前操作
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {groups.map((group) => {
-        const open = openPhaseIds.has(group.id);
-        const groupIsCurrent = group.id === currentGroupId;
-        return (
-          <section
-            key={group.id}
-            className={cn(
-              "overflow-hidden rounded-lg border bg-background/85 shadow-sm",
-              groupIsCurrent ? "border-primary/25" : "border-border/40",
-            )}
-          >
-            <button
-              type="button"
-              onClick={() =>
-                setOpenPhaseIds((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(group.id)) next.delete(group.id);
-                  else next.add(group.id);
-                  return next;
-                })
-              }
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/35"
-            >
-              <ChevronDownIcon
-                className={cn(
-                  "size-3.5 shrink-0 text-muted-foreground transition-transform",
-                  open ? "rotate-0" : "-rotate-90",
-                )}
-              />
-              <StatusGlyph status={group.status} />
-              <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
-                {group.title}
-              </span>
-              {group.detail && (
-                <span className="hidden max-w-[35%] truncate text-[10px] text-muted-foreground sm:inline">
-                  {group.detail}
-                </span>
-              )}
-              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {group.blocks.length > 0
-                  ? `${group.blocks.length} 帧`
-                  : phaseStatusLabel(group.status)}
-              </span>
-            </button>
-            {open && (
-              <div className="border-t border-border/30">
-                {group.blocks.length === 0 ? (
-                  <div className="px-3 py-2 text-[11px] text-muted-foreground">
-                    {phaseStatusLabel(group.status)}
-                  </div>
-                ) : (
-                  <div className="divide-y divide-border/30">
-                    {group.blocks.map((block) => {
-                      const frameIndex = Math.max(
-                        0,
-                        screenBlocks.findIndex((item) => item.id === block.id),
-                      );
-                      const expanded =
-                        block.id === (selectedBlockId ?? currentBlockId);
-                      return (
-                        <ScreenFrameRow
-                          key={block.id}
-                          block={block}
-                          expanded={expanded}
-                          frameIndex={frameIndex}
-                          isCurrent={block.id === currentBlockId}
-                          onSelect={() => onSelectBlock(block.id, group.id)}
-                          total={screenFrame.total}
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
-function ScreenFrameRow({
-  block,
-  expanded,
-  frameIndex,
-  isCurrent,
-  onSelect,
-  total,
-}: {
-  block: WorkBlock;
-  expanded: boolean;
-  frameIndex: number;
-  isCurrent: boolean;
-  onSelect: () => void;
-  total: number;
-}) {
-  const Icon = blockIcon(block.kind);
-  const cmd = block.kind === "terminal" ? commandForBlock(block) : null;
-  const cwd =
-    block.kind === "terminal"
-      ? stringFromKeys(block.event.input, ["cwd", "work_dir"])
-      : null;
-  const output =
-    block.kind === "terminal"
-      ? block.outputText || textFromUnknown(block.event.output) || ""
-      : null;
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={onSelect}
-        className={cn(
-          "flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/35",
-          expanded && "bg-muted/25",
-        )}
-      >
-        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-          {isCurrent ? "当前帧" : "帧"} {frameIndex + 1}/{total}
-        </span>
-        <StatusGlyph status={block.status} />
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
-          {block.title}
-        </span>
-        {block.subtitle && (
-          <span className="max-w-[40%] shrink-0 truncate text-[10px] text-muted-foreground">
-            {block.subtitle}
-          </span>
-        )}
-        <ChevronDownIcon
-          className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform",
-            expanded ? "rotate-0" : "-rotate-90",
-          )}
-        />
-      </button>
-      {expanded && (cmd || cwd || output) && (
-        <div className="border-t border-border/30">
-          {cmd && (
-            <div className="flex items-start gap-1.5 px-2.5 py-1.5">
-              <span className="mt-0.5 shrink-0 font-mono text-[10px] text-emerald-600">
-                $
-              </span>
-              <pre className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-[11px] leading-4 text-foreground">
-                {cmd}
-              </pre>
-            </div>
-          )}
-          {cwd && (
-            <div className="px-2.5 pb-1 font-mono text-[10px] text-muted-foreground">
-              {cwd}
-            </div>
-          )}
-          {output && (
-            <pre className="max-h-32 overflow-auto border-t border-border/30 px-2.5 py-1.5 font-mono text-[10px] leading-4 text-foreground/70">
-              {output}
-            </pre>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function buildScreenPhaseGroups(
-  phases: AgentPhase[],
-  screenBlocks: WorkBlock[],
-  currentPhaseId: string | null,
-): ScreenPhaseGroup[] {
-  if (phases.length === 0) {
-    return [
-      {
-        id: "screen:all",
-        title: "过程帧",
-        status: statusFromBlocks(screenBlocks),
-        blocks: screenBlocks,
-      },
-    ];
-  }
-
-  const screenOrder = new Map(
-    screenBlocks.map((block, index) => [block.id, index]),
-  );
-  const blockById = new Map(screenBlocks.map((block) => [block.id, block]));
-  const assigned = new Set<string>();
-  const groups = phases.map((phase) => {
-    const phaseBlocks = phase.blockIds
-      .map((blockId) => blockById.get(blockId))
-      .filter((block): block is WorkBlock => Boolean(block))
-      .sort(
-        (left, right) =>
-          (screenOrder.get(left.id) ?? 0) - (screenOrder.get(right.id) ?? 0),
-      );
-    for (const block of phaseBlocks) assigned.add(block.id);
-    return {
-      id: phase.id,
-      title: phase.title,
-      detail: phase.detail,
-      status: phase.status,
-      blocks: phaseBlocks,
-    };
-  });
-
-  const orphanBlocks = screenBlocks.filter((block) => !assigned.has(block.id));
-  if (orphanBlocks.length > 0) {
-    const target =
-      groups.find((group) => group.id === currentPhaseId) ??
-      groups.find((group) => group.status === "running") ??
-      groups.find((group) => group.status !== "pending") ??
-      groups[0];
-    if (target) {
-      const merged = new Map(target.blocks.map((block) => [block.id, block]));
-      for (const block of orphanBlocks) {
-        if (!merged.has(block.id)) merged.set(block.id, block);
-      }
-      target.blocks = Array.from(merged.values());
-      target.blocks.sort(
-        (left, right) =>
-          (screenOrder.get(left.id) ?? 0) - (screenOrder.get(right.id) ?? 0),
-      );
-    }
-  }
-
-  return groups;
-}
-
-function statusFromBlocks(blocks: WorkBlock[]): AgentPhase["status"] {
-  if (blocks.some((block) => block.status === "error")) return "error";
-  if (
-    blocks.some(
-      (block) =>
-        block.status === "running" || block.status === "waiting_approval",
-    )
-  ) {
-    return "running";
-  }
-  return blocks.length > 0 ? "done" : "pending";
-}
-
-function phaseStatusLabel(status: AgentPhase["status"]) {
-  if (status === "running") return "进行中";
-  if (status === "error") return "异常";
-  if (status === "done") return "已完成";
-  return "待开始";
-}
-
-export function AgentWorkbenchPanel({
+function AgentWorkbenchPanelImpl({
   activeTab,
   events,
+  progressOutline,
+  userInput,
+  groundingSources,
   focusedAgentId,
+  focusedAgentView,
+  focusedAgentSnapshot,
+  focusedAgentNonce,
+  focusedEventId,
+  focusedEventKind,
+  focusedEventView,
+  focusedEventNonce,
+  focusedProcessEvent,
+  focusedEffectKey,
   hasAnswer,
+  isLoading,
   onSelectTab,
+  onClose,
+  onOpenArtifact,
+  onInvitePeople,
   runSettled,
   runFailed,
+  runInterrupted,
+  runBlocked,
   paused,
   className,
-  onClose,
   threadId,
   workDir,
   browserPreviewBlocks,
+  resultPreviewUrl,
+  mainAgentName,
+  contextTokens,
+  maxContextTokens,
+  isCompressingContext,
+  onCompressContext,
+  rosterSeats = [],
+  groupTitle,
+  currentThreadTitle,
+  personaId,
+  showMachineRosterRail = true,
 }: {
   activeTab?: AgentWorkbenchTabId;
   events: LiveToolEvent[];
+  /** 「进展」面板的叙事大纲（按 iteration 分组）；缺省时回退为 phase 平铺。 */
+  progressOutline?: OutlineRound[];
+  userInput?: {
+    text: string;
+    uploadedFiles: Array<{ filename: string; path: string }>;
+    attachments: Array<{ filename: string }>;
+  } | null;
+  /** Sources the runtime actually injected into this turn before tool use. */
+  groundingSources?: GroundingSource[];
   focusedAgentId?: string | null;
+  /** Which activity view a focusedAgentId intent lands on; defaults to the
+   * live computer screen when the caller doesn't say. */
+  focusedAgentView?: "summary" | "screen" | "role" | null;
+  /** Public fallback used when a historical chat card no longer belongs to
+   * the latest-turn event snapshot shown by the workbench. */
+  focusedAgentSnapshot?: AgentWorkbenchFocusAgentSnapshot | null;
+  /** Bumped by the parent on every focus emission. Without it, a second
+   * intent for the same agent (e.g. 查看过程 then 查看电脑 on one row) would be
+   * swallowed by the consume-once guard below. */
+  focusedAgentNonce?: number;
+  /** One-shot transcript navigation intent for an exact process event. */
+  focusedEventId?: string | null;
+  focusedEventKind?: AgentWorkbenchProcessEventKind | null;
+  focusedEventView?: AgentWorkbenchEventView | null;
+  focusedEventNonce?: number;
+  focusedProcessEvent?: AgentWorkbenchProcessEventSnapshot | null;
+  /** Durable effect receipt selected from the transcript timeline. */
+  focusedEffectKey?: string | null;
   hasAnswer?: boolean;
+  /** A turn is in flight. The panel is otherwise driven purely by tool
+   * events, so between "turn started" and "first tool ran" it has no
+   * blocks and would claim nothing is running — which is false, and is
+   * exactly the window a user stares at the panel waiting for signs of
+   * life. Knowing the turn is live lets the empty shell say so. */
+  isLoading?: boolean;
   onSelectTab?: (tab: AgentWorkbenchTabId) => void;
+  onClose?: () => void;
+  /** Opens a generated artifact in the artifacts side panel (path comes from
+   * the summary page's artifact rows). */
+  onOpenArtifact?: (path: string) => void;
+  /** Opens the human-member invitation flow for the linked group room. */
+  onInvitePeople?: () => void | Promise<void>;
   runSettled?: boolean;
   runFailed?: boolean;
+  runInterrupted?: boolean;
+  runBlocked?: boolean;
   threadId?: string | null;
   workDir?: string;
   paused?: boolean;
   className?: string;
-  onClose?: () => void;
   browserPreviewBlocks?: ExtractedCodeBlocks | null;
+  /** Deployed preview URL (vercel/netlify/localhost). When set, the browser
+   * tab renders the live deployed site via BrowserPreviewPanel instead of
+   * falling back to inline srcDoc. */
+  resultPreviewUrl?: string | null;
+  /** Public identity shown above the main-agent evidence surface. */
+  mainAgentName?: string | null;
+  /** Persona that owns this conversation and its workspace preset. */
+  personaId?: string | null;
+  /** Current conversation-window usage, shared with the composer. */
+  contextTokens?: number;
+  maxContextTokens?: number;
+  isCompressingContext?: boolean;
+  onCompressContext?: () => void | Promise<void>;
+  rosterSeats?: WorkbenchRosterSeat[];
+  /** Current group-room title, used to collapse a duplicated project heading. */
+  groupTitle?: string | null;
+  /** Current conversation title when no distinct group title is available. */
+  currentThreadTitle?: string | null;
+  /** Team-member avatars can be hosted below the composer. Runtime-spawned
+   * machine seats remain in the workbench rail either way. */
+  showMachineRosterRail?: boolean;
 }) {
   const { t } = useI18n();
-  const {
-    deriveAgentTiles,
-    phaseBlockSummary,
-    agentStatusLabel,
-    agentStatusClass,
-    workbenchStatus,
-  } = useAgentWorkbenchI18n();
+  const { deriveAgentTiles, workbenchStatus } = useAgentWorkbenchI18n();
+
+  // IndexedDB 缓存实例（跨刷新持久化）
+  const snapshotCacheRef = useRef<WorkbenchSnapshotCache | null>(null);
+  const [cachedSnapshot, setCachedSnapshot] = useState<ReturnType<
+    typeof useAgentWorkbenchSnapshot
+  > | null>(null);
+  const enableCache =
+    typeof window !== "undefined" &&
+    localStorage.getItem("echo:cache-workbench") === "1";
+
+  // 初始化缓存
+  useEffect(() => {
+    if (enableCache && !snapshotCacheRef.current) {
+      snapshotCacheRef.current = new WorkbenchSnapshotCache();
+    }
+  }, [enableCache]);
+
+  // 页面加载时尝试从缓存恢复
+  useEffect(() => {
+    if (!enableCache || !threadId || cachedSnapshot) return;
+
+    const restoreFromCache = async () => {
+      try {
+        // 使用最后一个事件的时间戳作为 turnId
+        const lastEvent = events[events.length - 1];
+        if (!lastEvent) return;
+
+        const turnId = `turn_${lastEvent.startedAt}`;
+        const cached = await snapshotCacheRef.current?.load(threadId, turnId);
+        if (cached) {
+          console.log(
+            `[WorkbenchCache] Restored snapshot from cache (${cached.events.length} events)`,
+          );
+          setCachedSnapshot(cached.snapshot);
+        }
+      } catch (error) {
+        console.warn("[WorkbenchCache] Failed to restore from cache:", error);
+      }
+    };
+
+    restoreFromCache();
+  }, [enableCache, threadId, events, cachedSnapshot]);
 
   const workbenchSnapshot = useAgentWorkbenchSnapshot(events, {
     deriveAgentTiles,
     hasAnswer,
+    isLoading,
     runSettled,
     runFailed,
     paused,
     workDir,
   });
+
+  // 如果缓存快照可用且事件匹配，优先使用缓存
+  const activeSnapshot = useMemo(() => {
+    if (
+      cachedSnapshot &&
+      cachedSnapshot.fingerprint === workbenchSnapshot.fingerprint
+    ) {
+      console.log("[WorkbenchCache] Using cached snapshot");
+      return cachedSnapshot;
+    }
+    return workbenchSnapshot;
+  }, [cachedSnapshot, workbenchSnapshot]);
+
+  // 快照更新时保存到缓存
+  useEffect(() => {
+    if (!enableCache || !threadId || !workbenchSnapshot) return;
+
+    const saveToCache = async () => {
+      try {
+        // 使用最后一个事件的时间戳作为 turnId
+        const lastEvent = events[events.length - 1];
+        if (!lastEvent) return;
+
+        const turnId = `turn_${lastEvent.startedAt}`;
+        await snapshotCacheRef.current?.save(
+          threadId,
+          turnId,
+          workbenchSnapshot,
+          events,
+        );
+        console.log(
+          `[WorkbenchCache] Saved snapshot to cache (v${workbenchSnapshot.version})`,
+        );
+      } catch (error) {
+        console.warn("[WorkbenchCache] Failed to save to cache:", error);
+      }
+    };
+
+    // 防抖保存，避免频繁写入
+    const timer = setTimeout(saveToCache, 500);
+    return () => clearTimeout(timer);
+  }, [enableCache, threadId, workbenchSnapshot, events]);
+
   const {
     agentTiles,
     blocks,
-    currentPhase,
+    currentPhase: snapshotCurrentPhase,
     focusedTab,
     inferredWorkDir,
-    phases,
-    recentFileEvents,
+    phases: snapshotPhases,
     visibleDiffEntries,
-  } = workbenchSnapshot;
-  const [selectedPhaseId, setSelectedPhaseId] = useState<string | null>(
-    currentPhase?.id ?? null,
+    evidence,
+  } = activeSnapshot;
+  const typedGroundingSources = useMemo<GroundingSource[]>(
+    () =>
+      evidence
+        .filter((item) => item.kind === "file" && Boolean(item.uri?.trim()))
+        .map((item) => ({
+          kind: "source",
+          title: item.title,
+          path: item.uri!.trim(),
+        })),
+    [evidence],
   );
-  const [manualPhaseSelection, setManualPhaseSelection] = useState(false);
-  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
-  const [manualBlockSelection, setManualBlockSelection] = useState(false);
-  const [activityView, setActivityView] = useState<"summary" | "screen">(
-    "summary",
+  const effectiveGroundingSources = useMemo(() => {
+    const seen = new Set<string>();
+    return [...typedGroundingSources, ...(groundingSources ?? [])].filter(
+      (source) => {
+        const key = `${source.kind}:${source.path}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      },
+    );
+  }, [groundingSources, typedGroundingSources]);
+  // Keep visibility traces available for the workbench, while the kanban view
+  // surfaces only decisions that explicitly require user attention.
+  const visibilityEvents = useMemo(
+    () => events.filter((event) => event.name === "visibility"),
+    [events],
   );
-  const [replayPlaying, setReplayPlaying] = useState(false);
-  const [replayCompleted, setReplayCompleted] = useState(false);
+
+  // Directly derive phases from raw events (same logic as composer-step-progress)
+  // to ensure workbench always shows task plan when expanded, regardless of
+  // whether server snapshot has been populated or survived a refresh/interrupt.
+  const directDerived = useMemo(
+    () =>
+      deriveAgentPhases(events, { hasAnswer, runSettled, runFailed, paused }),
+    [events, hasAnswer, runSettled, runFailed, paused],
+  );
+  const hasTerminalAgentFailure = agentTiles.some(
+    (agent) => agent.status === "error",
+  );
+  const phases = useMemo<AgentPhase[]>(() => {
+    const source =
+      snapshotPhases.length > 0 ? snapshotPhases : directDerived.phases;
+    if (!runSettled || runFailed || paused) return source;
+    // A replayed snapshot can preserve its last in-flight phase even though
+    // the owning turn has a terminal answer. The terminal run signal is more
+    // authoritative than that stale progress frame.
+    return source.map((phase) =>
+      phase.status === "running" ||
+      phase.status === "waiting_approval" ||
+      (phase.status === "error" && !hasTerminalAgentFailure)
+        ? { ...phase, status: "done" as const }
+        : phase,
+    );
+  }, [
+    snapshotPhases,
+    directDerived.phases,
+    paused,
+    runFailed,
+    runSettled,
+    hasTerminalAgentFailure,
+  ]);
+  const currentPhase =
+    phases.find((phase) => phase.status === "waiting_approval") ??
+    phases.find((phase) => phase.status === "running") ??
+    snapshotCurrentPhase ??
+    directDerived.currentPhase;
+
+  const {
+    selectedEffectKey,
+    setSelectedEffectKey,
+    setActivityView,
+    selectedAgent,
+    screenBlocks,
+    mainBlocks,
+    mainPhases,
+    screenFrame,
+    visibleRosterSeats,
+    leaderRosterSeat,
+    selectedRosterSeat,
+    openMainProcess,
+    openSubagentProcess,
+    openRosterProcess,
+    setSelectedBlockId,
+    setManualBlockSelection,
+    activityView,
+  } = useWorkbenchSelection({
+    blocks,
+    currentPhase,
+    phases,
+    agentTiles,
+    focusedAgentId,
+    focusedAgentView,
+    focusedAgentSnapshot,
+    focusedAgentNonce,
+    focusedEventId,
+    focusedEventKind,
+    focusedEventView,
+    focusedEventNonce,
+    focusedEffectKey,
+    rosterSeats,
+    onSelectTab,
+  });
+
+  // Keep task preview discoverable as a first-class workbench surface. Diff and
+  // terminal remain opt-in until a run focuses them; tab CONTENT is still lazy,
+  // so showing the browser tab does not create an extra browser session.
   const [closedTabs, setClosedTabs] = useState<Set<AgentWorkbenchTabId>>(
-    () => new Set(),
+    () => new Set<AgentWorkbenchTabId>(["diff", "terminal"]),
   );
-
-  const selectedPhase =
-    phases.find((phase) => phase.id === selectedPhaseId) ?? currentPhase;
-  const phaseBlocks = useMemo(
-    () =>
-      selectedPhase
-        ? blocks.filter((block) => selectedPhase.blockIds.includes(block.id))
-        : blocks,
-    [blocks, selectedPhase],
-  );
-  const defaultBlock = useMemo(
-    () => pickCurrentWorkBlock(phaseBlocks) ?? phaseBlocks[0] ?? null,
-    [phaseBlocks],
-  );
-  const selectedBlock =
-    phaseBlocks.find((block) => block.id === selectedBlockId) ?? defaultBlock;
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const selectedAgent = selectedAgentId
-    ? (agentTiles.find((agent) => agent.id === selectedAgentId) ?? null)
-    : null;
-  const creationFocusAgent = isAgentCreationBlock(selectedBlock)
-    ? agentTileForBlock(selectedBlock, agentTiles)
-    : undefined;
-  const screenBlocks = useMemo(
-    () => screenBlocksForAgent(blocks, selectedAgent?.id ?? null),
-    [blocks, selectedAgent?.id],
-  );
-  const screenFrame = useMemo(
-    () =>
-      currentScreenFrame(
-        screenBlocks,
-        manualBlockSelection ? selectedBlockId : null,
-      ),
-    [manualBlockSelection, screenBlocks, selectedBlockId],
-  );
-  const screenProgress = useMemo(() => {
-    if (!screenFrame.block || screenBlocks.length === 0) {
-      return { current: 0, total: 0 };
-    }
-    return progressForWorkBlocks(screenBlocks, screenFrame.block);
-  }, [screenBlocks, screenFrame.block]);
-  const replayIndex = useMemo(() => {
-    if (!screenFrame.block) return -1;
-    return screenBlocks.findIndex(
-      (block) => block.id === screenFrame.block?.id,
-    );
-  }, [screenBlocks, screenFrame.block]);
-  const replayPrompt = useMemo(
-    () => composeReplayPrompt(selectedAgent, screenBlocks),
-    [screenBlocks, selectedAgent],
-  );
+  // Browser tab source: while the run streams, the inline srcDoc blocks are
+  // the freshest view; once the run settles a deployed URL wins. The override
+  // lets the user flip between the two when both exist.
+  const [browserSourceOverride, setBrowserSourceOverride] = useState<
+    "deployed" | "inline" | null
+  >(null);
 
   useEffect(() => {
-    if (!currentPhase) {
-      setSelectedPhaseId(null);
-      setManualPhaseSelection(false);
-      return;
-    }
-    setSelectedPhaseId((current) => {
-      const currentStillExists = Boolean(
-        current && phases.some((phase) => phase.id === current),
-      );
-      if (!manualPhaseSelection || !currentStillExists) {
-        return currentPhase.id;
-      }
-      return current;
-    });
-  }, [currentPhase, phases, manualPhaseSelection]);
-
-  useEffect(() => {
-    if (!defaultBlock) {
-      setSelectedBlockId(null);
-      setManualBlockSelection(false);
-      return;
-    }
-    setSelectedBlockId((current) => {
-      const currentStillExists = Boolean(
-        current && phaseBlocks.some((block) => block.id === current),
-      );
-      if (!manualBlockSelection || !currentStillExists) {
-        return defaultBlock.id;
-      }
-      return current;
-    });
-  }, [defaultBlock, phaseBlocks, manualBlockSelection]);
-
-  useEffect(() => {
-    setSelectedAgentId((current) =>
-      current && agentTiles.some((agent) => agent.id === current)
-        ? current
-        : null,
-    );
-  }, [agentTiles]);
-
-  useEffect(() => {
-    setReplayPlaying(false);
-    setReplayCompleted(false);
-  }, [selectedAgent?.id]);
-
-  useEffect(() => {
-    if (!replayPlaying) return;
-    if (screenBlocks.length === 0) {
-      setReplayPlaying(false);
-      return;
-    }
-    const timer = window.setInterval(() => {
-      setManualBlockSelection(true);
-      setSelectedBlockId((current) => {
-        const index = current
-          ? screenBlocks.findIndex((block) => block.id === current)
-          : -1;
-        const nextIndex = index < 0 ? 0 : index + 1;
-        if (nextIndex >= screenBlocks.length) {
-          setReplayPlaying(false);
-          setReplayCompleted(true);
-          return current ?? screenBlocks[screenBlocks.length - 1]?.id ?? null;
+    if (!onClose) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== "Escape") return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName.toLowerCase();
+        if (
+          target.isContentEditable ||
+          tagName === "input" ||
+          tagName === "textarea" ||
+          tagName === "select"
+        ) {
+          return;
         }
-        return screenBlocks[nextIndex]?.id ?? current;
-      });
-    }, 1100);
-    return () => window.clearInterval(timer);
-  }, [replayPlaying, screenBlocks]);
+      }
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
 
-  const startReplay = useCallback(() => {
-    if (screenBlocks.length === 0) return;
-    setActivityView("screen");
-    onSelectTab?.("agent");
-    setReplayCompleted(false);
-    setManualBlockSelection(true);
-    setSelectedBlockId(screenBlocks[0]?.id ?? null);
-    setReplayPlaying(true);
-  }, [onSelectTab, screenBlocks]);
+  // Project OS binding: fetch the project bound to this thread so the
+  // workbench can surface a "项目" tab with live milestones / PM console.
+  const projectOsQuery = useBoundProjectState(threadId);
+  const boundProject = projectOsQuery.data;
+  const hasBoundProject = !!boundProject;
 
-  const pauseReplay = useCallback(() => {
-    setReplayPlaying(false);
-  }, []);
-
-  const jumpToCurrent = useCallback(() => {
-    setActivityView("screen");
-    onSelectTab?.("agent");
-    setReplayPlaying(false);
-    setReplayCompleted(false);
-    setManualBlockSelection(false);
-    setSelectedBlockId(null);
-  }, [onSelectTab]);
-
-  const copyReplayPrompt = useCallback(() => {
-    copyText(replayPrompt);
-  }, [replayPrompt]);
-
-  const openMainProcess = useCallback(() => {
-    setSelectedAgentId(null);
-    setActivityView("screen");
-    setManualBlockSelection(false);
-    onSelectTab?.("agent");
-  }, [onSelectTab]);
-
-  const openSubagentProcess = useCallback(
-    (agentId: string) => {
-      setSelectedAgentId(agentId);
-      setActivityView("screen");
-      setManualBlockSelection(false);
-      onSelectTab?.("agent");
-    },
-    [onSelectTab],
-  );
-
-  const subagentDock = (
-    <SubagentDock
+  const emptyShell =
+    blocks.length === 0 &&
+    agentTiles.length === 0 &&
+    !selectedAgent &&
+    visibleRosterSeats.length === 0 &&
+    (progressOutline?.length ?? 0) === 0;
+  const mainRunStatus = workbenchStatus(mainBlocks, mainPhases, {
+    settled: runSettled,
+    failed: runFailed,
+    interrupted: runInterrupted,
+    blocked: runBlocked,
+  });
+  const mainRunState: AgentRunState = runFailed
+    ? "error"
+    : runInterrupted || runBlocked
+      ? "waiting"
+      : isLoading
+        ? "running"
+        : runSettled
+          ? "done"
+          : workbenchRunState({
+              blocks: mainBlocks,
+              phases: mainPhases,
+              paused,
+            });
+  const machineRail = (
+    <MachineScopeRail
       agents={agentTiles}
-      selectedAgentId={selectedAgent?.id ?? null}
+      leaderSeat={showMachineRosterRail ? leaderRosterSeat : null}
+      mainRunState={mainRunState}
+      rosterSeats={showMachineRosterRail ? visibleRosterSeats : []}
+      selectedAgentId={selectedAgent?.id ?? selectedRosterSeat?.id ?? null}
       onSelectMain={openMainProcess}
       onSelectAgent={openSubagentProcess}
+      onSelectRoster={openRosterProcess}
     />
   );
-
-  useEffect(() => {
-    if (!focusedAgentId || agentTiles.length === 0) return;
-    const target = findAgentTileByFocusId(focusedAgentId, agentTiles);
-    if (!target) return;
-    setSelectedAgentId(target.id);
-    setActivityView("screen");
-  }, [focusedAgentId, agentTiles]);
-
-  const emptyShell = blocks.length === 0 && agentTiles.length === 0;
-  const runStatus = workbenchStatus(blocks, phases);
-  const runState: "running" | "error" | "pending" | "completed" = phases.some(
-    (p) => p.status === "running",
-  )
-    ? "running"
-    : blocks.some((b) => b.status === "error")
-      ? "error"
-      : phases.some((p) => p.status === "pending")
-        ? "pending"
-        : "completed";
-  const SelectedIcon = selectedBlock
-    ? blockIcon(selectedBlock.kind)
-    : MonitorIcon;
-  const SelectedStatusIcon = selectedBlock
-    ? statusIcon(selectedBlock.status)
-    : CircleIcon;
   const requestedActiveTab: AgentWorkbenchTabId =
     activeTab ?? (focusedAgentId ? "agent" : focusedTab) ?? "agent";
-  const effectiveActiveTab: AgentWorkbenchTabId =
-    requestedActiveTab === "subagents" ? "agent" : requestedActiveTab;
-  const workbenchTabs: Array<{
-    id: AgentWorkbenchTabId;
-    label: string;
-    Icon: typeof MonitorIcon;
-  }> = [
-    // Sort by expected usage frequency and priority.
-    {
-      id: "files",
-      label: FILES_TAB_LABEL,
-      Icon: FolderIcon,
-    },
-    {
-      id: "diff",
-      label: DIFF_TAB_LABEL,
-      Icon: ChevronRightIcon,
-    },
-    {
-      id: "terminal",
-      label: TERMINAL_TAB_LABEL,
-      Icon: TerminalIcon,
-    },
-    {
-      id: "browser",
-      label: BROWSER_TAB_LABEL,
-      Icon: GlobeIcon,
-    },
-  ];
+  // Keep an explicitly requested project surface mounted while its binding is
+  // loading (or temporarily failed) so users see a truthful state instead of
+  // being silently bounced to the agent tab. Background lookups still avoid a
+  // transient project-tab flash for ordinary, unbound conversations.
+  const projectTabVisible =
+    hasBoundProject ||
+    (requestedActiveTab === "project" &&
+      (projectOsQuery.isLoading || projectOsQuery.isError));
+  const effectiveActiveTab:
+    | "agent"
+    | "diff"
+    | "terminal"
+    | "browser"
+    | "artifacts"
+    | "workspace"
+    | "project" =
+    requestedActiveTab === "subagents" ||
+    requestedActiveTab === "plan" ||
+    requestedActiveTab === "design"
+      ? "agent"
+      : requestedActiveTab === "project" && !projectTabVisible
+        ? "agent"
+        : requestedActiveTab;
+  const workbenchTabs: WorkbenchTab[] = useMemo(
+    () => [
+      {
+        id: "workspace",
+        label: workspacePresetForAgent(personaId).workbenchLabel,
+        Icon: PanelsTopLeftIcon,
+      },
+      {
+        id: "diff",
+        label: t.agentWorkbenchPages.diffTab,
+        Icon: ChevronRightIcon,
+      },
+      {
+        id: "terminal",
+        label: t.agentWorkbenchPages.terminalTab,
+        Icon: TerminalIcon,
+      },
+      {
+        id: "browser",
+        label: t.agentWorkbenchPages.browserTab,
+        Icon: GlobeIcon,
+      },
+      {
+        id: "artifacts",
+        label: t.conversation.artifactsTitle,
+        Icon: PackageIcon,
+      },
+      ...(projectTabVisible
+        ? [
+            {
+              id: "project" as const,
+              label: t.agentWorkbenchPages.projectTab,
+              Icon: FolderKanbanIcon,
+            },
+          ]
+        : []),
+    ],
+    [t.agentWorkbenchPages, t.conversation, projectTabVisible, personaId],
+  );
 
   // Auto-open a tab if it becomes the effective active tab
   useEffect(() => {
@@ -741,339 +593,151 @@ export function AgentWorkbenchPanel({
     [onSelectTab],
   );
 
-  const visibleTabs = workbenchTabs.filter((tab) => !closedTabs.has(tab.id));
-  const showSubagentDock = effectiveActiveTab === "agent";
+  const visibleTabs = useMemo(
+    () => workbenchTabs.filter((tab) => !closedTabs.has(tab.id)),
+    [workbenchTabs, closedTabs],
+  );
+  const inferredWorkspaceLabel = inferredWorkDir
+    ?.split(/[\\/]/)
+    .filter(Boolean)
+    .pop();
+  const workspaceLabel =
+    !inferredWorkspaceLabel || inferredWorkspaceLabel === threadId
+      ? t.agentWorkbenchPanel.mainComputer
+      : inferredWorkspaceLabel;
+
+  // Browser tab content, shared by the empty shell and the main render path.
+  const canShowDeployedPreview = Boolean(resultPreviewUrl);
+  const canShowInlinePreview = Boolean(browserPreviewBlocks);
+  const autoBrowserSource: "deployed" | "inline" | "session" =
+    canShowDeployedPreview && (runSettled || !canShowInlinePreview)
+      ? "deployed"
+      : canShowInlinePreview
+        ? "inline"
+        : canShowDeployedPreview
+          ? "deployed"
+          : "session";
+  const browserPreviewSource =
+    (browserSourceOverride === "deployed" && canShowDeployedPreview) ||
+    (browserSourceOverride === "inline" && canShowInlinePreview)
+      ? browserSourceOverride
+      : autoBrowserSource;
+  const browserTabPage = (
+    <BrowserTabPage
+      canShowDeployedPreview={canShowDeployedPreview}
+      canShowInlinePreview={canShowInlinePreview}
+      browserPreviewSource={browserPreviewSource}
+      setBrowserSourceOverride={setBrowserSourceOverride}
+      resultPreviewUrl={resultPreviewUrl}
+      threadId={threadId}
+      inferredWorkDir={inferredWorkDir}
+      browserPreviewBlocks={browserPreviewBlocks}
+    />
+  );
+  const personaWorkbenchPage = <PersonaWorkbenchHome personaId={personaId} />;
+  // The main conversation owns the global execution narrative. A selected
+  // sub-agent may still open its own computer: a complete, isolated streaming
+  // conversation rather than a duplicate mixed activity trace.
+  const effectiveActivityView: "summary" | "screen" | "role" = selectedAgent
+    ? activityView === "role"
+      ? "role"
+      : activityView === "screen"
+        ? "screen"
+        : "summary"
+    : "summary";
 
   // Workbench view: summary / computer view.
-  if (emptyShell) {
-    const emptyEmbeddedPage =
-      effectiveActiveTab === "files" ? (
-        <AgentFilesPage
-          workDir={inferredWorkDir}
-          threadId={threadId}
-          recentFileEvents={recentFileEvents}
-        />
-      ) : effectiveActiveTab === "diff" ? (
-        <AgentDiffPage entries={visibleDiffEntries} />
-      ) : effectiveActiveTab === "terminal" ? (
-        <TerminalPanel
-          sessionId={`agent-workbench-${threadId ?? "local"}`}
-          cwd={inferredWorkDir}
-          className="min-h-0 flex-1"
-        />
-      ) : effectiveActiveTab === "browser" ? (
-        browserPreviewBlocks ? (
-          <LivePreviewPanel
-            htmlContent={browserPreviewBlocks.html}
-            cssContent={browserPreviewBlocks.css}
-            jsContent={browserPreviewBlocks.js}
-            className="min-h-0 flex-1"
-          />
-        ) : (
-          <BrowserPreviewPanel
-            threadId={threadId ?? "default"}
-            workspacePath={inferredWorkDir}
-            className="min-h-0 flex-1"
-          />
-        )
-      ) : (
-        <WorkbenchEmptyPage
-          title="机器人"
-          description="当前没有正在运行的机器人过程。"
-        />
-      );
-
+  if (
+    emptyShell &&
+    effectiveActiveTab !== "project" &&
+    !selectedEffectKey &&
+    !focusedProcessEvent
+  ) {
     return (
-      <div
-        className={cn(
-          "flex size-full min-h-0 flex-col bg-[color:color-mix(in_oklch,var(--muted)_46%,var(--background))]",
-          className,
-        )}
-      >
-        <header className="relative shrink-0 border-b border-border/60 px-3 py-2.5">
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => onSelectTab?.("agent")}
-              className="relative flex size-9 shrink-0 items-center justify-center rounded-md border border-border bg-background font-mono shadow-sm transition-colors hover:bg-muted"
-              aria-label="机器人"
-              title="机器人"
-            >
-              <BotIcon className="size-4 text-muted-foreground" />
-            </button>
-            <div
-              role="tablist"
-              aria-label="看板"
-              className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {visibleTabs.map((tab) => {
-                const active = effectiveActiveTab === tab.id;
-                const Icon = tab.Icon;
-                return (
-                  <div
-                    key={tab.id}
-                    className={cn(
-                      "group inline-flex h-8 max-w-[11rem] shrink-0 items-center gap-1.5 rounded-md text-sm font-medium shadow-none transition-colors",
-                      active
-                        ? "bg-background text-foreground shadow-sm ring-1 ring-border/70"
-                        : "text-muted-foreground hover:bg-background/65 hover:text-foreground",
-                    )}
-                  >
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => handleOpenTab(tab.id)}
-                      className="flex min-w-0 items-center gap-1.5 pl-2.5"
-                    >
-                      <Icon className="size-4 shrink-0" />
-                      <span className="truncate">{tab.label}</span>
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Close ${tab.label}`}
-                      onClick={() => handleCloseTab(tab.id)}
-                      className={cn(
-                        "mr-1 flex size-4 shrink-0 items-center justify-center rounded transition-colors",
-                        active
-                          ? "text-muted-foreground/70 hover:bg-muted hover:text-foreground"
-                          : "text-muted-foreground/0 group-hover:text-muted-foreground/70 hover:!bg-muted hover:!text-foreground",
-                      )}
-                    >
-                      <XIcon className="size-3" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-            {onClose ? (
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                aria-label={t.agentWorkbench.closeTitle}
-              >
-                <XIcon className="size-4" />
-              </button>
-            ) : null}
-          </div>
-        </header>
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background/70">
-          {emptyEmbeddedPage}
-        </main>
-        {showSubagentDock ? subagentDock : null}
-      </div>
+      <EmptyShellView
+        mainButton={{
+          active: effectiveActiveTab === "agent",
+          label: isLoading
+            ? t.agentWorkbenchPanel.agentStatusRunning
+            : mainRunStatus.label,
+          onClick: openMainProcess,
+          runState: mainRunState,
+          title: isLoading
+            ? t.agentWorkbenchPanel.startingRobotProcess
+            : mainRunStatus.label,
+        }}
+        visibleTabs={visibleTabs}
+        workbenchTabs={workbenchTabs}
+        closedTabs={closedTabs}
+        effectiveActiveTab={effectiveActiveTab}
+        onTabClick={handleOpenTab}
+        onTabClose={handleCloseTab}
+        onClose={onClose}
+        visibleDiffEntries={visibleDiffEntries}
+        threadId={threadId}
+        inferredWorkDir={inferredWorkDir}
+        browserTabPage={browserTabPage}
+        personaWorkbenchPage={personaWorkbenchPage}
+        isLoading={isLoading}
+        className={className}
+        machineRail={machineRail}
+      />
     );
   }
 
   const agentKanbanPage = (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* View switch tabs */}
-      <div className="flex items-center gap-0.5 border-b border-border/45 px-2 py-1">
-        {[
-          { id: "summary" as const, label: "概要" },
-          { id: "screen" as const, label: "电脑视图" },
-        ].map((view) => (
-          <button
-            key={view.id}
-            type="button"
-            onClick={() => setActivityView(view.id)}
-            className={cn(
-              "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
-              activityView === view.id
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-            )}
-          >
-            {view.label}
-          </button>
-        ))}
-        <span className="ml-auto text-[10px] text-muted-foreground font-mono">
-          {selectedAgent?.label ?? "Agent 01"}
-        </span>
-      </div>
-
-      {/* View content */}
-      {activityView === "summary" ? (
-        creationFocusAgent ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background/70 p-3">
-            <div className="mx-auto w-full max-w-xl">
-              <AgentCreationCard
-                agent={creationFocusAgent}
-                agentStatusClass={agentStatusClass}
-                agentStatusLabel={agentStatusLabel}
-              />
-            </div>
-          </div>
-        ) : (
-          <AgentSummaryPage
-            phases={phases}
-            diffEntries={visibleDiffEntries}
-            agentTiles={agentTiles}
-            blocks={blocks}
-            onSelectTab={onSelectTab}
-          />
-        )
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col bg-background/70">
-          {/* Header: agent identity + status */}
-          <div className="flex shrink-0 items-center gap-2 border-b border-border/40 bg-background/90 px-3 py-2">
-            <MonitorIcon className="size-4 shrink-0 text-muted-foreground" />
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-              <span
-                className={cn(
-                  "inline-block size-2 rounded-full ring-2 ring-background",
-                  !selectedAgent || selectedAgent.status === "running"
-                    ? "bg-emerald-500"
-                    : selectedAgent.status === "error"
-                      ? "bg-red-500"
-                      : selectedAgent.status === "done"
-                        ? "bg-muted-foreground/50"
-                        : "bg-amber-400",
-                )}
-              />
-              当前进度{" "}
-              {screenProgress.total > 0
-                ? `${screenProgress.current}/${screenProgress.total}`
-                : phases.length > 0
-                  ? `${Math.max(1, phases.findIndex((p) => p.id === currentPhase?.id) + 1)}/${phases.length}`
-                  : "0/0"}
-            </span>
-            <span className="h-4 w-px bg-border/70" />
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-              {selectedAgent
-                ? `${selectedAgent.label} · ${repairMojibakeText(
-                    selectedAgent.codename ?? selectedAgent.name,
-                  )}${
-                    selectedAgent.role
-                      ? ` · ${repairMojibakeText(selectedAgent.role)}`
-                      : ""
-                  }`
-                : (currentPhase?.title ?? "电脑视图")}
-            </span>
-            <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
-              <span>
-                {selectedAgent
-                  ? selectedAgent.status === "running"
-                    ? "运行中"
-                    : selectedAgent.status === "error"
-                      ? "异常"
-                      : selectedAgent.status === "done"
-                        ? "已结束"
-                        : "等待中"
-                  : phases.some((p) => p.status === "running")
-                    ? "运行中"
-                    : "已结束"}
-              </span>
-            </span>
-          </div>
-
-          {/* Tool call timeline */}
-          {selectedAgent ? (
-            <SubagentProcessView
-              agent={selectedAgent}
-              blocks={screenBlocks}
-              currentBlockId={screenFrame.block?.id ?? null}
-              onSelectBlock={(blockId) => {
-                setSelectedBlockId(blockId);
-                setManualBlockSelection(true);
-              }}
-            />
-          ) : (
-            <>
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                <div className="mx-auto w-full max-w-2xl space-y-3 p-3">
-                  <MainProcessPhaseTimeline
-                    currentPhaseId={currentPhase?.id ?? null}
-                    onSelectBlock={(blockId, phaseId) => {
-                      if (phaseId) {
-                        setSelectedPhaseId(phaseId);
-                        setManualPhaseSelection(true);
-                      }
-                      setSelectedBlockId(blockId);
-                      setManualBlockSelection(true);
-                    }}
-                    phases={phases}
-                    screenBlocks={screenBlocks}
-                    screenFrame={screenFrame}
-                    selectedBlockId={selectedBlockId}
-                  />
-                </div>
-              </div>
-
-              {/* Bottom agent switcher */}
-            </>
-          )}
-          <div className="hidden shrink-0 border-t border-border/40 bg-background/90">
-            <div className="mx-auto flex w-full max-w-2xl items-center gap-1.5 overflow-x-auto px-3 py-1.5">
-              {/* Main controller */}
-              <button
-                type="button"
-                onClick={() => setSelectedAgentId(null)}
-                className={cn(
-                  "flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors",
-                  !selectedAgent
-                    ? "bg-foreground/10 text-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <MonitorIcon className="size-3" />
-                主控
-              </button>
-              {/* Subagents */}
-              {agentTiles.map((tile) => {
-                const active = selectedAgent?.id === tile.id;
-                return (
-                  <button
-                    key={tile.id}
-                    type="button"
-                    onClick={() => setSelectedAgentId(tile.id)}
-                    className={cn(
-                      "flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors",
-                      active
-                        ? "bg-foreground/10 text-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    )}
-                  >
-                    {tile.avatar ? (
-                      <span className="text-xs">{tile.avatar}</span>
-                    ) : (
-                      <BotIcon className="size-3" />
-                    )}
-                    <span
-                      className={cn(
-                        "inline-block size-1.5 rounded-full",
-                        tile.status === "running"
-                          ? "bg-emerald-500"
-                          : tile.status === "error"
-                            ? "bg-red-500"
-                            : tile.status === "done"
-                              ? "bg-muted-foreground/50"
-                              : "bg-amber-400",
-                      )}
-                    />
-                    {tile.codename ?? tile.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    <AgentKanbanView
+      effectiveActivityView={effectiveActivityView}
+      selectedRosterSeat={selectedRosterSeat}
+      selectedAgent={selectedAgent}
+      screenBlocks={screenBlocks}
+      currentScreenBlockId={screenFrame.block?.id ?? null}
+      phases={phases}
+      blocks={blocks}
+      agentTiles={agentTiles}
+      visibleDiffEntries={visibleDiffEntries}
+      focusedProcessEvent={focusedProcessEvent ?? null}
+      focusedEventId={focusedEventId}
+      progressOutline={progressOutline}
+      userInput={userInput ?? null}
+      groundingSources={effectiveGroundingSources}
+      preferStructuredReferences={evidence.length > 0}
+      mainAgentName={mainAgentName}
+      resultPreviewUrl={resultPreviewUrl}
+      terminalState={
+        runInterrupted
+          ? "interrupted"
+          : runFailed
+            ? "failed"
+            : runBlocked
+              ? "blocked"
+              : null
+      }
+      contextTokens={contextTokens}
+      maxContextTokens={maxContextTokens}
+      isCompressingContext={isCompressingContext}
+      onCompressContext={onCompressContext}
+      setActivityView={setActivityView}
+      onSelectTab={onSelectTab}
+      onOpenArtifact={onOpenArtifact}
+      openMainProcess={openMainProcess}
+      setSelectedBlockId={setSelectedBlockId}
+      setManualBlockSelection={setManualBlockSelection}
+      visibilityEvents={visibilityEvents}
+    />
   );
 
   const effectiveEmbeddedPage =
-    effectiveActiveTab === "agent" ? (
-      agentKanbanPage
-    ) : effectiveActiveTab === "files" ? (
-      <AgentFilesPage
-        workDir={inferredWorkDir}
-        threadId={threadId}
-        recentFileEvents={recentFileEvents}
+    selectedEffectKey && effectiveActiveTab === "agent" ? (
+      <ToolEffectDetailPanel
+        effectKey={selectedEffectKey}
+        onBack={() => setSelectedEffectKey(null)}
       />
     ) : effectiveActiveTab === "diff" ? (
-      <AgentDiffPage entries={visibleDiffEntries} />
+      <AgentDiffPage
+        entries={visibleDiffEntries}
+        onBackToSummary={() => handleOpenTab("agent")}
+      />
     ) : effectiveActiveTab === "terminal" ? (
       <TerminalPanel
         sessionId={`agent-workbench-${threadId ?? "local"}`}
@@ -1081,20 +745,46 @@ export function AgentWorkbenchPanel({
         className="min-h-0 flex-1"
       />
     ) : effectiveActiveTab === "browser" ? (
-      browserPreviewBlocks ? (
-        <LivePreviewPanel
-          htmlContent={browserPreviewBlocks.html}
-          cssContent={browserPreviewBlocks.css}
-          jsContent={browserPreviewBlocks.js}
-          className="min-h-0 flex-1"
+      browserTabPage
+    ) : effectiveActiveTab === "workspace" ? (
+      personaWorkbenchPage
+    ) : effectiveActiveTab === "artifacts" && threadId ? (
+      // Reuses the outer ArtifactsProvider (page-level) so the artifact list
+      // synced from the backend stays visible. Wrapping in a fresh provider
+      // here reset artifacts to [] and showed "暂无预览内容" for generated
+      // outputs even though the files existed on disk.
+      <ArtifactInlinePreviewEmbedded
+        threadId={threadId}
+        currentTurnEntries={visibleDiffEntries}
+        runBlocked={runBlocked}
+        runSettled={runSettled}
+        isLoading={isLoading}
+      />
+    ) : effectiveActiveTab === "project" ? (
+      boundProject ? (
+        <ProjectOsTab
+          state={boundProject}
+          rosterSeats={rosterSeats}
+          groupTitle={groupTitle}
+          currentThreadTitle={currentThreadTitle}
+          onOpenArtifact={onOpenArtifact}
+          onInvitePeople={onInvitePeople}
+          onRefetch={() => {
+            void projectOsQuery.refetch();
+          }}
+        />
+      ) : projectOsQuery.isError ? (
+        <ProjectOsTabError
+          onRetry={() => {
+            void projectOsQuery.refetch();
+          }}
         />
       ) : (
-        <BrowserPreviewPanel
-          threadId={threadId ?? "default"}
-          workspacePath={inferredWorkDir}
-        />
+        <ProjectOsTabLoading />
       )
-    ) : undefined;
+    ) : (
+      agentKanbanPage
+    );
 
   return (
     <div
@@ -1103,786 +793,341 @@ export function AgentWorkbenchPanel({
         className,
       )}
     >
-      <header className="relative shrink-0 border-b border-border/60 px-3 py-2.5">
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => onSelectTab?.("agent")}
-            className={cn(
-              "relative flex size-9 shrink-0 items-center justify-center rounded-md border font-mono shadow-sm transition-colors",
-              effectiveActiveTab === "agent" && "ring-1",
-              runState === "running"
-                ? "border-emerald-500/40 bg-emerald-500/10 animate-[breathing_2s_ease-in-out_infinite]"
-                : runState === "error"
-                  ? "border-destructive/50 bg-destructive/10"
-                  : runState === "pending"
-                    ? "border-amber-500/40 bg-amber-500/10"
-                    : "border-emerald-500/30 bg-emerald-500/5",
-              effectiveActiveTab === "agent" && "ring-primary/30",
-            )}
-            title={runStatus.label}
-            aria-label={`${t.agentWorkbench.agentComputer} · ${runStatus.label}`}
-          >
-            <BotIcon
-              className={cn(
-                "size-4 transition-colors",
-                runState === "running"
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : runState === "error"
-                    ? "text-destructive"
-                    : runState === "pending"
-                      ? "text-amber-600 dark:text-amber-400"
-                      : "text-emerald-600 dark:text-emerald-400",
-              )}
-            />
-            {(runState === "running" || runState === "pending") && (
-              <span
-                className={cn(
-                  "absolute -top-0.5 -right-0.5 size-2 rounded-full",
-                  runState === "running"
-                    ? "bg-emerald-500 animate-ping"
-                    : "bg-amber-500 animate-pulse",
-                )}
-              />
-            )}
-          </button>
-          <div
-            role="tablist"
-            aria-label={t.agentWorkbench.agentComputer}
-            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {visibleTabs.map(({ id, label, Icon }) => {
-              const active = id === effectiveActiveTab;
-              return (
-                <div
-                  key={id}
-                  className={cn(
-                    "group inline-flex h-8 max-w-[11rem] shrink-0 items-center gap-1.5 rounded-md text-sm font-medium shadow-none transition-colors",
-                    active
-                      ? "bg-background text-foreground ring-1 ring-border/60"
-                      : "text-muted-foreground hover:bg-background/65 hover:text-foreground",
-                  )}
-                >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => onSelectTab?.(id)}
-                    className="flex min-w-0 items-center gap-1.5 pl-2.5"
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    <span className="truncate">{label}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCloseTab(id);
-                    }}
-                    className={cn(
-                      "mr-1 flex size-4 shrink-0 items-center justify-center rounded transition-colors",
-                      active
-                        ? "text-muted-foreground/70 hover:bg-muted hover:text-foreground"
-                        : "text-muted-foreground/0 group-hover:text-muted-foreground/70 hover:!bg-muted hover:!text-foreground",
-                    )}
-                    aria-label={`Close ${label}`}
-                  >
-                    <XIcon className="size-3" />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-muted/55 hover:text-foreground"
-                title="标签页列表"
-                aria-label="标签页列表"
-              >
-                <LayoutGridIcon className="size-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              {workbenchTabs.map(({ id, label, Icon }) => {
-                const visible = !closedTabs.has(id);
-                return (
-                  <DropdownMenuItem
-                    key={id}
-                    className="gap-2"
-                    onClick={() =>
-                      visible ? handleCloseTab(id) : handleOpenTab(id)
-                    }
-                  >
-                    <Icon className="size-4 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate">{label}</span>
-                    {visible && <CheckIcon className="size-3.5 text-primary" />}
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
+      <WorkbenchTabHeader
+        mainButton={{
+          active:
+            effectiveActiveTab === "agent" &&
+            !selectedEffectKey &&
+            !selectedAgent &&
+            !selectedRosterSeat,
+          label: mainRunStatus.label,
+          onClick: openMainProcess,
+          runState: mainRunState,
+          title: t.agentWorkbenchPanel.viewMainAgentSlot,
+        }}
+        visibleTabs={visibleTabs}
+        workbenchTabs={workbenchTabs}
+        closedTabs={closedTabs}
+        effectiveActiveTab={effectiveActiveTab}
+        onTabClick={handleOpenTab}
+        onTabClose={handleCloseTab}
+        onClose={onClose}
+        workspaceLabel={workspaceLabel}
+        showWorkspaceLabel
+        mainRunStatusLabel={mainRunStatus.label}
+      />
 
-      {effectiveEmbeddedPage ? (
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background/70">
-          {effectiveEmbeddedPage}
-        </main>
-      ) : (
-        <main className="flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background/70">
-            <div className="flex items-center border-b border-border/45 px-4 py-1 text-[11px]">
-              <span className="mx-auto font-mono text-foreground">
-                {selectedAgent
-                  ? `${t.agentWorkbench.kindAgent} ${selectedAgent.label}`
-                  : `${t.agentWorkbench.kindAgent} 01`}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setActivityView((value) =>
-                    value === "summary" ? "screen" : "summary",
-                  )
-                }
-                className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-              >
-                <UsersIcon className="size-3.5" />
-                {activityView === "summary"
-                  ? t.agentWorkbench.computerViewLabel
-                  : t.agentWorkbench.activityTrace}
-              </button>
-            </div>
-
-            <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-3 py-3">
-              {activityView === "screen" ? (
-                <div className="flex min-h-48 flex-1 items-center justify-center rounded-lg border border-border/55 bg-background/80 px-4 text-sm text-muted-foreground shadow-sm">
-                  {t.agentWorkbench.computerViewHint}
-                </div>
-              ) : selectedPhase ? (
-                <section className="rounded-lg border border-border/55 bg-background/85 px-3 py-3 shadow-sm">
-                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <StatusGlyph status={selectedPhase.status} />
-                    <span>{selectedPhase.title}</span>
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      {phaseBlockSummary(selectedPhase, blocks)}
-                    </span>
-                  </div>
-                  <div className="mt-3 space-y-1.5">
-                    {phaseBlocks.length === 0 ? (
-                      <div className="py-4 text-center text-sm text-muted-foreground">
-                        {selectedPhase.status === "done"
-                          ? t.agentWorkbench.phaseCompleted
-                          : selectedPhase.status === "error"
-                            ? t.agentWorkbench.statusError
-                            : t.agentWorkbench.waitingForPhase}
-                      </div>
-                    ) : (
-                      phaseBlocks.map((block) => {
-                        const Icon = blockIcon(block.kind);
-                        const active = selectedBlock?.id === block.id;
-                        return (
-                          <button
-                            key={block.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedBlockId(block.id);
-                              setManualBlockSelection(true);
-                            }}
-                            className={cn(
-                              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
-                              active
-                                ? "bg-muted/70 text-foreground"
-                                : "text-muted-foreground hover:bg-muted/45 hover:text-foreground",
-                            )}
-                          >
-                            <StatusGlyph status={block.status} />
-                            <Icon className="size-4 shrink-0" />
-                            <span className="min-w-0 flex-1 truncate">
-                              {block.title}
-                            </span>
-                            <span className="max-w-[45%] truncate text-xs text-muted-foreground">
-                              {block.subtitle}
-                            </span>
-                            <ChevronDownIcon className="size-3.5 -rotate-90 opacity-50" />
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </section>
-              ) : (
-                <WorkbenchEmptyPage
-                  title="机器人"
-                  description="当前没有正在运行的机器人过程。"
-                />
-              )}
-
-              {selectedBlock && (
-                <section className="mt-3 overflow-hidden rounded-lg border border-border/55 bg-background/85 shadow-sm">
-                  <div className="flex items-center justify-between border-b border-border/45 px-3 py-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <SelectedIcon className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="truncate text-xs font-semibold text-foreground">
-                        {selectedBlock.title}
-                      </span>
-                      <span className="shrink-0 text-xs font-normal text-muted-foreground">
-                        {kindLabel(selectedBlock.kind, t.agentWorkbench)} ·{" "}
-                        {eventTime(selectedBlock)}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      onClick={() =>
-                        copyText(
-                          selectedBlock.outputText ||
-                            selectedBlock.inputText ||
-                            selectedBlock.subtitle,
-                        )
-                      }
-                      title={t.agentWorkbench.copyDetails}
-                    >
-                      <CopyIcon className="size-3.5" />
-                    </button>
-                  </div>
-                  <div className="grid divide-y divide-border/45">
-                    <WorkBlockDetailSection
-                      key={`${selectedBlock.id}:request`}
-                      title={t.agentWorkbench.request}
-                      content={
-                        selectedBlock.inputText || selectedBlock.subtitle
-                      }
-                    />
-                    <WorkBlockDetailSection
-                      key={`${selectedBlock.id}:response`}
-                      title={t.agentWorkbench.response}
-                      content={selectedBlock.outputText}
-                      empty={
-                        <div className="flex min-h-16 items-center gap-2 px-3 py-2.5 text-sm text-muted-foreground">
-                          {selectedBlock.status === "running" ? (
-                            <>
-                              <CircleIcon className="size-3 animate-pulse" />
-                              {t.agentWorkbench.waitingForToolResult}
-                            </>
-                          ) : (
-                            <>
-                              <SelectedStatusIcon className="size-3.5" />
-                              {statusText(selectedBlock.status)}
-                            </>
-                          )}
-                        </div>
-                      }
-                    />
-                  </div>
-                </section>
-              )}
-            </div>
-          </div>
-
-          {agentTiles.length > 0 && (
-            <div className="shrink-0 border-t border-border/55 bg-background/90 px-4 py-2">
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {agentTiles.map((agent) => {
-                  const active = selectedAgent?.id === agent.id;
-                  const percent = agentProgressPercent(agent.status);
-                  return (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      onClick={() => setSelectedAgentId(agent.id)}
-                      title={`${repairMojibakeText(agent.name)}: ${repairMojibakeText(agent.task)}`}
-                      className={cn(
-                        "flex min-w-32 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
-                        active
-                          ? "border-foreground/70 bg-background"
-                          : "border-transparent bg-muted/45 hover:bg-muted/70",
-                      )}
-                    >
-                      {agent.avatar ? (
-                        <span
-                          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-background text-base"
-                          aria-hidden="true"
-                          title={agent.role ?? "subagent"}
-                        >
-                          {agent.avatar}
-                        </span>
-                      ) : (
-                        <BotIcon className="size-7 shrink-0 rounded-full bg-background p-1 text-foreground" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2 font-mono text-xs text-foreground">
-                          <span>{repairMojibakeText(agent.name)}</span>
-                          <span>{repairMojibakeText(agent.label)}</span>
-                        </div>
-                        <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
-                          {compactDetail(agent.task, 56)}
-                        </div>
-                        <div
-                          className={cn(
-                            "mt-1 truncate text-[11px]",
-                            agentStatusClass(agent.status),
-                          )}
-                        >
-                          {dockAgentStatusLabel(agent.status)}
-                        </div>
-                        <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
-                          <div
-                            className={cn(
-                              "h-full rounded-full transition-all",
-                              agent.status === "error"
-                                ? "bg-destructive"
-                                : "bg-emerald-500",
-                            )}
-                            style={{ width: `${percent}%` }}
-                          />
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedAgent && (
-                <div className="mt-0.5 truncate px-1 text-[11px] text-muted-foreground">
-                  {repairMojibakeText(selectedAgent.name)} ·{" "}
-                  {compactDetail(selectedAgent.task)}
-                </div>
-              )}
-            </div>
-          )}
-        </main>
-      )}
-      {showSubagentDock && screenBlocks.length > 0 ? (
-        <ReplayController
-          playing={replayPlaying}
-          completed={replayCompleted}
-          current={replayIndex >= 0 ? replayIndex + 1 : 0}
-          total={screenBlocks.length}
-          agentLabel={selectedAgent ? selectedAgent.label : "主控"}
-          onPlay={startReplay}
-          onPause={pauseReplay}
-          onJumpCurrent={jumpToCurrent}
-          onCopyPrompt={copyReplayPrompt}
-        />
+      {threadId &&
+      effectiveActiveTab !== "project" &&
+      effectiveActiveTab !== "workspace" ? (
+        <CoworkCollabBar threadId={threadId} rosterSeats={rosterSeats} />
       ) : null}
-      {showSubagentDock ? subagentDock : null}
+
+      <section
+        aria-label={t.sidebar.ariaAgentWorkbench}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background/70"
+      >
+        {effectiveEmbeddedPage}
+      </section>
+      {effectiveActiveTab === "project" || effectiveActiveTab === "workspace"
+        ? null
+        : machineRail}
     </div>
   );
 }
 
-function ReplayController({
-  playing,
-  completed,
-  current,
-  total,
-  agentLabel,
-  onPlay,
-  onPause,
-  onJumpCurrent,
-  onCopyPrompt,
-}: {
-  playing: boolean;
-  completed: boolean;
-  current: number;
-  total: number;
-  agentLabel: string;
-  onPlay: () => void;
-  onPause: () => void;
-  onJumpCurrent: () => void;
-  onCopyPrompt: () => void;
-}) {
-  const label = playing
-    ? "Octopus Agent 正在回放"
-    : completed
-      ? "Octopus Agent 回放完成"
-      : "Octopus Agent 可回放";
-  const progress = total > 0 ? Math.max(0, Math.min(1, current / total)) : 0;
+const LazyStreamdown = lazy(
+  () => import("@/components/ai-elements/streamdown-host"),
+);
 
+/**
+ * Two-state artifact panel for the workbench's "产物" tab.
+ *
+ * State 1 – List view (default):
+ *   A single flat list of all artifacts. Current-turn files appear first
+ *   with a ✨ "本轮" badge; history files follow without grouping headers.
+ *
+ * State 2 – Preview view:
+ *   Full-bleed preview of the selected file with a back button in the
+ *   header to return to the list. This mirrors the drawer's ArtifactPanel
+ *   / ArtifactFileDetail two-state pattern so the two surfaces feel
+ *   consistent.
+ */
+function ArtifactInlinePreviewEmbedded({
+  threadId,
+  currentTurnEntries = [],
+  runBlocked,
+  runSettled,
+  isLoading,
+}: {
+  threadId: string;
+  currentTurnEntries?: DiffEntry[];
+  runBlocked?: boolean;
+  runSettled?: boolean;
+  isLoading?: boolean;
+}) {
+  const {
+    artifacts,
+    selectedArtifact: externalSelected,
+    select,
+  } = useArtifacts();
+  const { t } = useI18n();
+  const streamdownPlugins = useStreamdownPlugins();
+
+  const currentTurnRefs = useMemo(() => {
+    const seen = new Set<string>();
+    const refs: string[] = [];
+    for (const entry of currentTurnEntries) {
+      const ref = normalizeWorkspaceArtifactRef(entry.path, threadId);
+      if (seen.has(ref)) continue;
+      seen.add(ref);
+      refs.push(ref);
+    }
+    return refs;
+  }, [currentTurnEntries, threadId]);
+
+  const currentTurnSet = useMemo(
+    () => new Set(currentTurnRefs),
+    [currentTurnRefs],
+  );
+
+  // Single flat list: current-turn first (in their natural order), then history.
+  const allFiles = useMemo(() => {
+    const cur: string[] = [];
+    const hist: string[] = [];
+    for (const f of artifacts ?? []) {
+      if (currentTurnSet.has(f)) cur.push(f);
+      else hist.push(f);
+    }
+    return [...cur, ...hist];
+  }, [artifacts, currentTurnSet]);
+
+  // Preview state: which file is being viewed full-screen. `null` = list view.
+  const [previewing, setPreviewing] = useState<string | null>(null);
+
+  // When an external selection arrives (e.g. clicking a filename in chat),
+  // jump straight to the preview view for that file.
+  useEffect(() => {
+    if (externalSelected && allFiles.includes(externalSelected)) {
+      setPreviewing(externalSelected);
+      // Also sync the shared context so the drawer stays in sync.
+      select(externalSelected);
+    }
+  }, [externalSelected, allFiles, select]);
+
+  const handleSelect = useCallback(
+    (path: string) => {
+      setPreviewing(path);
+      select(path);
+    },
+    [select],
+  );
+
+  const handleBack = useCallback(() => {
+    setPreviewing(null);
+  }, []);
+
+  if (allFiles.length === 0) {
+    const detail = runBlocked
+      ? t.streaming.blockedOnUser
+      : isLoading
+        ? t.agentWorkbenchPanel.agentStatusRunning
+        : runSettled
+          ? t.livePreview.emptyHint
+          : t.agentWorkbenchPanel.agentStatusPending;
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="flex max-w-xs flex-col items-center text-center">
+          <div className="mb-3 flex size-10 items-center justify-center rounded-xl border border-border-subtle bg-muted/45">
+            <PackageIcon className="size-4 text-muted-foreground" />
+          </div>
+          <p className="text-sm font-medium text-foreground">
+            {t.conversation.noPreviewArtifacts}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {detail}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Preview view ──
+  if (previewing) {
+    return (
+      <PreviewPane
+        filepath={previewing}
+        threadId={threadId}
+        streamdownPlugins={streamdownPlugins}
+        onBack={handleBack}
+      />
+    );
+  }
+
+  // ── List view ──
   return (
-    <div className="shrink-0 border-t border-border/45 bg-background/95 px-3 py-2">
-      <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-xl border border-border/55 bg-background px-3 py-2 shadow-sm">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted/45 text-foreground">
-          <BotIcon className="size-4" aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium text-foreground">
-              {label}
-            </span>
-            <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-              {agentLabel}
-            </span>
-            {total > 0 && (
-              <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
-                {Math.max(0, current)}/{total}
-              </span>
-            )}
-          </div>
-          <div className="mt-1 h-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all duration-300",
-                completed ? "bg-emerald-500" : "bg-primary",
-              )}
-              style={{ width: `${progress * 100}%` }}
-            />
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={playing ? onPause : onPlay}
-            className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition-colors",
-              playing
-                ? "bg-muted text-foreground hover:bg-muted/75"
-                : "bg-foreground text-background hover:opacity-90",
-            )}
-            title={playing ? "暂停回放" : "看回放"}
-          >
-            {playing ? (
-              <PauseIcon className="size-3.5" aria-hidden="true" />
-            ) : (
-              <PlayIcon className="size-3.5" aria-hidden="true" />
-            )}
-            {playing ? "暂停" : "看回放"}
-          </button>
-          <button
-            type="button"
-            onClick={onJumpCurrent}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/75"
-            title="跳到当前步骤"
-          >
-            <SkipForwardIcon className="size-3.5" aria-hidden="true" />
-            跳当前
-          </button>
-          <button
-            type="button"
-            onClick={onCopyPrompt}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-muted px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/75"
-            title="复制同款任务提示"
-          >
-            <CopyIcon className="size-3.5" aria-hidden="true" />
-            做同款
-          </button>
-        </div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex-1 overflow-y-auto">
+        {allFiles.map((f) => (
+          <FileListRow
+            key={f}
+            filepath={f}
+            isCurrentTurn={currentTurnSet.has(f)}
+            onSelect={handleSelect}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-function SubagentDock({
-  agents,
-  selectedAgentId,
-  onSelectMain,
-  onSelectAgent,
+/* ─────────────────────── List row ─────────────────────── */
+
+function FileListRow({
+  filepath,
+  isCurrentTurn = false,
+  onSelect,
 }: {
-  agents: AgentTile[];
-  selectedAgentId: string | null;
-  onSelectMain: () => void;
-  onSelectAgent: (agentId: string) => void;
+  filepath: string;
+  isCurrentTurn?: boolean;
+  onSelect: (path: string) => void;
 }) {
+  const displayPath = artifactDisplayPath(filepath);
+  const name = getFileName(displayPath);
   return (
-    <div className="shrink-0 border-t border-border/45 bg-background/95 px-3 py-2">
-      <div className="flex items-center gap-2">
-        <span className="flex shrink-0 items-center gap-1 rounded-md bg-muted/35 px-2 py-1 text-[11px] font-medium text-muted-foreground">
-          <BotIcon className="size-3.5" aria-hidden="true" />
-          工位
+    <button
+      type="button"
+      onClick={() => onSelect(filepath)}
+      className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50"
+    >
+      <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+        {getFileIcon(displayPath, "size-3.5")}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+        {name}
+      </span>
+      {isCurrentTurn && (
+        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+          <SparklesIcon className="size-2.5" />
+          本轮
         </span>
-        <div className="flex min-w-0 flex-1 items-stretch gap-2 overflow-x-auto pb-0.5">
-          <button
-            type="button"
-            onClick={onSelectMain}
-            aria-label="查看主 Agent 工位"
-            title="主 Agent: 当前对话主进程"
-            className={cn(
-              "relative flex min-w-28 shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
-              selectedAgentId === null
-                ? "border-primary/50 bg-primary/10 text-primary shadow-sm"
-                : "border-border/55 bg-muted/35 text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-background">
-              <BotIcon className="size-4" aria-hidden="true" />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-xs font-medium">主控</span>
-              <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                当前对话
-              </span>
-            </span>
-            <span className="ml-auto size-2 rounded-full bg-emerald-500" />
-          </button>
-          {agents.map((agent) => {
-            const active = selectedAgentId === agent.id;
-            const label = agent.codename ?? agent.name ?? agent.label;
-            const progress = agentProgressPercent(agent.status) / 100;
-            const hue = agent.status === "error" ? 8 : 118;
-            return (
-              <button
-                key={agent.id}
-                type="button"
-                onClick={() => onSelectAgent(agent.id)}
-                aria-label={`查看 ${label} 独立进程`}
-                title={`${label}: ${agent.task}`}
-                className={cn(
-                  "relative flex min-w-32 shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors",
-                  active
-                    ? "border-primary/50 bg-primary/10 text-primary shadow-sm"
-                    : "border-border/55 bg-muted/35 text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border/50 bg-background text-lg leading-none">
-                  {agent.avatar ? (
-                    <span aria-hidden="true">{agent.avatar}</span>
-                  ) : (
-                    <BotIcon className="size-5" aria-hidden="true" />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium">
-                      {repairMojibakeText(label)}
-                    </span>
-                    <span className="font-mono text-xs text-foreground">
-                      {agent.label}
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
-                    {dockAgentStatusLabel(agent.status)}
-                  </span>
-                  <DotProgress
-                    progress={progress}
-                    hue={hue}
-                    cols={10}
-                    rows={2}
-                    className={cn(
-                      "mt-1",
-                      agent.status === "running" && "animate-pulse",
-                    )}
-                  />
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+      )}
+    </button>
   );
 }
 
-function dockAgentStatusLabel(status: AgentTile["status"]): string {
-  if (status === "running") return "运行中";
-  if (status === "error") return "异常";
-  if (status === "done") return "已完成";
-  return "等待中";
-}
+/* ─────────────────────── Preview pane (full-screen) ─────────────────────── */
 
-function composeReplayPrompt(
-  agent: AgentTile | null,
-  blocks: WorkBlock[],
-): string {
-  const target = agent
-    ? `${repairMojibakeText(agent.codename ?? agent.name)} (${repairMojibakeText(agent.role ?? agent.label)})`
-    : "主控 Agent";
-  const brief = repairMojibakeText(
-    agent?.prompt ?? agent?.task ?? agent?.lastThought ?? "",
-  );
-  const steps = blocks
-    .slice(0, 12)
-    .map((block, index) => {
-      const detail = compactDetail(
-        repairMojibakeText(
-          block.subtitle || block.inputText || block.outputText || block.title,
-        ),
-        120,
-      );
-      return `${index + 1}. ${block.title}${detail ? ` - ${detail}` : ""}`;
-    })
-    .join("\n");
-  return [
-    `请按类似方式复刻这个多 Agent 工作流：${target}`,
-    brief ? `\n任务说明：\n${brief}` : "",
-    steps ? `\n关键过程：\n${steps}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function SubagentProcessView({
-  agent,
-  blocks,
-  currentBlockId,
-  onSelectBlock,
+export function PreviewPane({
+  filepath,
+  threadId,
+  streamdownPlugins,
+  onBack,
 }: {
-  agent: AgentTile;
-  blocks: WorkBlock[];
-  currentBlockId: string | null;
-  onSelectBlock: (blockId: string) => void;
+  filepath: string;
+  threadId: string;
+  streamdownPlugins: Pick<StreamdownProps, "remarkPlugins" | "rehypePlugins">;
+  onBack: () => void;
 }) {
-  const label = repairMojibakeText(agent.codename ?? agent.name ?? agent.label);
-  const progress = agentProgressPercent(agent.status) / 100;
-  const hue = agent.status === "error" ? 8 : 118;
-  const brief = repairMojibakeText(
-    agent.prompt ?? agent.task ?? agent.lastThought ?? "",
-  );
+  const { t } = useI18n();
+  const displayPath = artifactDisplayPath(filepath);
+  const isWriteFile = filepath.startsWith("write-file:");
+  const { content, url, isLoading, refetch } = useArtifactContent({
+    filepath,
+    threadId,
+    enabled: !isWriteFile,
+  });
+  const effectiveContent = isWriteFile ? "" : (content ?? "");
+
+  const lang = checkCodeFile(displayPath).language;
+  const isHtml = lang === "html";
+  const isMarkdown = lang === "markdown";
+  const officeKind = officeArtifactKind(displayPath);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-2 p-3">
-        <section className="overflow-hidden rounded-xl border border-border/55 bg-background/90 shadow-sm">
-          <div className="flex items-center justify-center border-b border-border/40 px-3 py-2 text-sm font-medium text-muted-foreground">
-            Agent 集群 - 独立进程
+    <div className="flex min-h-0 size-full flex-col">
+      {/* Header with back button */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-muted/30 px-2 py-1.5">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label={t.common.back}
+        >
+          <ArrowLeftIcon className="size-3.5" />
+        </button>
+        <span className="flex size-5 shrink-0 items-center justify-center">
+          {getFileIcon(displayPath, "size-3")}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">
+          {getFileName(displayPath)}
+        </span>
+        {lang && (
+          <span className="shrink-0 text-[10px] text-muted-foreground uppercase">
+            {lang}
+          </span>
+        )}
+        <a
+          href={urlOfArtifact({ filepath, threadId, download: true })}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label={t.common.download}
+        >
+          <DownloadIcon className="size-3" />
+        </a>
+      </div>
+
+      {/* Content */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        {isLoading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 text-xs text-muted-foreground">
+            {t.common.loading}…
           </div>
-          <div className="grid gap-4 p-4 sm:grid-cols-[8rem_1fr]">
-            <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-              <div className="rounded-md bg-foreground px-2.5 py-1.5 font-mono text-sm font-semibold text-background">
-                {agent.label}
-              </div>
-              <div className="mt-7 flex size-20 items-center justify-center rounded-lg border border-border bg-background text-4xl">
-                {agent.avatar ? (
-                  <span aria-hidden="true">{agent.avatar}</span>
-                ) : (
-                  <BotIcon className="size-10 text-foreground" />
-                )}
-              </div>
-              <div className="mt-4 truncate text-sm font-semibold text-foreground">
-                {label}
-              </div>
-              <div className="mt-1 truncate text-xs text-muted-foreground">
-                {repairMojibakeText(agent.role ?? "Subagent")}
-              </div>
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-lg font-semibold text-foreground">
-                    {label}
-                  </div>
-                  <div className="mt-1 truncate text-sm text-muted-foreground">
-                    {repairMojibakeText(
-                      agent.role ?? agent.taskLabel ?? "子智能体",
-                    )}
-                  </div>
+        )}
+        {officeKind ? (
+          <OfficePreview
+            displayPath={displayPath}
+            filepath={filepath}
+            isMock={false}
+            kind={officeKind}
+            threadId={threadId}
+          />
+        ) : isMarkdown ? (
+          <div className="size-full overflow-auto px-4 py-3">
+            <Suspense
+              fallback={
+                <div className="size-full whitespace-pre-wrap break-words py-2 text-sm text-muted-foreground">
+                  {effectiveContent}
                 </div>
-                <span
-                  className={cn(
-                    "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium",
-                    agent.status === "running" &&
-                      "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-                    agent.status === "error" &&
-                      "bg-destructive/10 text-destructive",
-                    agent.status === "done" && "bg-muted text-muted-foreground",
-                    agent.status === "pending" &&
-                      "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "size-2 rounded-full",
-                      agent.status === "running" && "bg-emerald-500",
-                      agent.status === "error" && "bg-destructive",
-                      agent.status === "done" && "bg-muted-foreground/45",
-                      agent.status === "pending" && "bg-amber-400",
-                    )}
-                  />
-                  {dockAgentStatusLabel(agent.status)}
-                </span>
-              </div>
-              <div className="mt-4 flex items-center gap-3">
-                <DotProgress
-                  progress={progress}
-                  hue={hue}
-                  cols={18}
-                  rows={3}
-                  className={cn(agent.status === "running" && "animate-pulse")}
-                />
-                <span className="text-xs text-muted-foreground">
-                  {agent.eventCount} 条过程记录
-                </span>
-                {agent.iterationCount !== undefined && (
-                  <span className="text-xs text-muted-foreground">
-                    {agent.iterationCount} 轮
-                  </span>
-                )}
-              </div>
-              <div className="mt-4 max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-muted/35 px-3 py-2 text-sm leading-6 text-foreground">
-                {brief || "暂无任务说明。"}
-              </div>
-            </div>
+              }
+            >
+              <LazyStreamdown
+                className="size-full"
+                {...streamdownPlugins}
+                components={{ a: ArtifactLink }}
+              >
+                {effectiveContent}
+              </LazyStreamdown>
+            </Suspense>
           </div>
-        </section>
-
-        {blocks.length === 0 ? (
-          <div className="flex min-h-32 items-center justify-center rounded-lg border border-dashed border-border/55 bg-muted/20 px-4 text-sm text-muted-foreground">
-            等待子智能体开始输出
-          </div>
+        ) : isHtml ? (
+          <HtmlPreview
+            artifactRef={filepath}
+            content={effectiveContent}
+            filepath={displayPath}
+            onSaved={() => void refetch()}
+            threadId={threadId}
+            url={url}
+          />
         ) : (
-          <section className="rounded-xl border border-border/50 bg-background/80 p-2 shadow-sm">
-            <div className="flex items-center gap-2 px-2 pb-2 text-sm font-medium text-muted-foreground">
-              <MonitorIcon className="size-4" aria-hidden="true" />
-              过程回放
-              <span className="ml-auto text-xs font-normal">
-                {blocks.length} 步
-              </span>
-            </div>
-            <div className="space-y-2">
-              {blocks.map((block, index) => {
-                const Icon = blockIcon(block.kind);
-                const active = currentBlockId === block.id;
-                const detail =
-                  block.outputText ||
-                  block.inputText ||
-                  block.subtitle ||
-                  block.title;
-                return (
-                  <button
-                    key={block.id}
-                    type="button"
-                    onClick={() => onSelectBlock(block.id)}
-                    className={cn(
-                      "flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors",
-                      active
-                        ? "border-primary/45 bg-primary/5"
-                        : "border-border/40 bg-background/75 hover:bg-muted/35",
-                    )}
-                  >
-                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
-                      {index + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <StatusGlyph
-                          status={block.status}
-                          className="size-3.5"
-                        />
-                        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate text-xs font-semibold text-foreground">
-                          {block.title}
-                        </span>
-                        {block.subtitle && (
-                          <span className="max-w-[38%] shrink-0 truncate text-[11px] text-muted-foreground">
-                            {block.subtitle}
-                          </span>
-                        )}
-                      </div>
-                      {detail && (
-                        <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
-                          {compactDetail(detail, 150)}
-                        </div>
-                      )}
-                    </div>
-                    <span className="shrink-0 text-[10px] text-muted-foreground/70">
-                      {statusText(block.status)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          <div className="flex size-full items-center justify-center p-4 text-xs text-muted-foreground">
+            此文件类型暂不支持预览
+          </div>
         )}
       </div>
     </div>
   );
 }
+
+export const AgentWorkbenchPanel = memo(AgentWorkbenchPanelImpl);

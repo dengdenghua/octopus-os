@@ -1,5 +1,6 @@
 """Phase B follow-up: rewrite *_mantle module name references."""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -17,7 +18,7 @@ RENAMES = {
 ORDERED = sorted(RENAMES.items(), key=lambda kv: -len(kv[0]))
 EXTENSIONS = {".py", ".md", ".yaml", ".yml", ".json", ".toml", ".cfg", ".txt", ".ini", ".mermaid"}
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", "build", "dist",
-             ".qoder", ".codex-logs", ".pytest_cache", ".ruff_cache", "octopus_agent.egg-info"}
+             ".qoder", ".codex-logs", ".pytest_cache", ".ruff_cache", "echo_agent.egg-info"}
 
 def should_process(path: Path) -> bool:
     if path.suffix.lower() not in EXTENSIONS:

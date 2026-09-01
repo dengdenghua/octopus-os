@@ -27,7 +27,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from runtime.platform.prompts.registry import PromptRegistry
 from runtime.platform.prompts.seed import (
     DEFAULT_TEMPLATES,
@@ -60,15 +59,11 @@ def seeded_registry(tmp_path: Path) -> PromptRegistry:
 # ═══════════════════════════════════════════════════════════
 
 
-def test_seed_if_empty_writes_defaults(
-    empty_registry: PromptRegistry, tmp_path: Path
-) -> None:
+def test_seed_if_empty_writes_defaults(empty_registry: PromptRegistry, tmp_path: Path) -> None:
     written = seed_if_empty(empty_registry)
 
     # Every base template + every variant must be written.
-    expected = len(DEFAULT_TEMPLATES) + sum(
-        len(v) for v in DEFAULT_VARIANTS.values()
-    )
+    expected = len(DEFAULT_TEMPLATES) + sum(len(v) for v in DEFAULT_VARIANTS.values())
     assert written == expected
 
     # Base files land in prompts_dir itself.
@@ -155,9 +150,7 @@ def test_render_leaves_unknown_placeholder_intact(
 def test_render_variant_returns_variant_body(
     seeded_registry: PromptRegistry,
 ) -> None:
-    friendly = render(
-        seeded_registry, "agent_system_prompt", {}, variant="friendly"
-    )
+    friendly = render(seeded_registry, "agent_system_prompt", {}, variant="friendly")
     # Friendly variant's literal title is a reliable witness.
     assert "Friendly Variant" in friendly
     assert "Pragmatic Variant" not in friendly
@@ -264,6 +257,4 @@ def test_seed_does_not_leave_bak_on_first_write(
     # vacuous.
     reg.set("agent_system_prompt", "fresh body")
     baks_after_overwrite = list(tmp_path.rglob("*.bak"))
-    assert baks_after_overwrite, (
-        "expected a .bak sibling after overwriting an existing template"
-    )
+    assert baks_after_overwrite, "expected a .bak sibling after overwriting an existing template"

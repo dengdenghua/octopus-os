@@ -1,0 +1,1 @@
+{"observations":["failures occur only when two workers retry together","single-worker retries pass"],"constraints":["preserve RetryPolicy API","maximum three attempts","do not repeat investigation"]}

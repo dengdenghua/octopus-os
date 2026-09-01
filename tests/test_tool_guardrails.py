@@ -1,4 +1,5 @@
 """Unit tests for tool guardrails and file safety."""
+
 from __future__ import annotations
 
 import os
@@ -110,7 +111,7 @@ class TestGuardrailController:
     def test_exact_failure_warn(self):
         ctrl = ToolCallGuardrailController()
         args = {"cmd": "bad_command"}
-        for i in range(3):
+        for _i in range(3):
             d = ctrl.observe("exec_shell", args, failed=True)
         assert d.action == "warn"
         assert "exact" in d.code or "same" in d.code
@@ -118,7 +119,7 @@ class TestGuardrailController:
     def test_block_after_exact_failure_threshold(self):
         ctrl = ToolCallGuardrailController(GuardrailConfig(hard_stop_enabled=True))
         args = {"cmd": "bad_command"}
-        for i in range(6):
+        for _i in range(6):
             d = ctrl.observe("exec_shell", args, failed=True)
         assert d.should_halt is True
 
@@ -131,7 +132,7 @@ class TestGuardrailController:
     def test_no_progress_warning_for_idempotent(self):
         ctrl = ToolCallGuardrailController()
         args = {"path": "/tmp/same.txt"}
-        for i in range(3):
+        for _i in range(3):
             d = ctrl.observe("read_file", args, result="same content")
         assert d.action == "warn"
         assert "no_progress" in d.code
@@ -139,7 +140,7 @@ class TestGuardrailController:
     def test_no_progress_block_with_hard_stop(self):
         ctrl = ToolCallGuardrailController(GuardrailConfig(hard_stop_enabled=True))
         args = {"path": "/tmp/same.txt"}
-        for i in range(6):
+        for _i in range(6):
             d = ctrl.observe("read_file", args, result="same content")
         assert d.should_halt is True
 
@@ -150,7 +151,7 @@ class TestGuardrailController:
 
     def test_reset_clears_state(self):
         ctrl = ToolCallGuardrailController()
-        for i in range(5):
+        for _i in range(5):
             ctrl.observe("exec_shell", {"cmd": "ls"}, failed=True)
         ctrl.reset()
         d = ctrl.observe("exec_shell", {"cmd": "ls"}, failed=True)
@@ -231,6 +232,7 @@ class TestFileWriteSafety:
 
     def test_etc_passwd_denied(self):
         import platform
+
         if platform.system() == "Windows":
             v = check_file_write("C:/etc/passwd")
             if not v.allow:

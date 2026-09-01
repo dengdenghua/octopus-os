@@ -1,7 +1,7 @@
 # PRINCIPLES · 去语境化的仿生 Agent 设计原则
 
 > 把 "仿生 → Agent 框架" 的映射抬到**纯理论层**，与任何具体产品 / 业务脱钩。
-> 本文档是**方法论地图**，下面的 octopus-agent 器官是其**一种实现**，不是唯一实现。
+> 本文档是**方法论地图**，下面的 echo-agent 器官是其**一种实现**，不是唯一实现。
 
 ---
 
@@ -128,7 +128,7 @@ Ingest → Parse → Plan → Execute → Synthesize → Store
 
 ---
 
-## 原则 → octopus-agent 器官映射
+## 原则 → echo-agent 器官映射
 
 这是"方法论"落到"一种实现"的桥：
 
@@ -139,7 +139,7 @@ Ingest → Parse → Plan → Execute → Synthesize → Store
 | ③ Self / Memory / Adaptive | `immunity/` | `mantle/`（先天）+ `ink/`（炎症）|
 | ④ Variation / Selection | `regeneration/` + `camouflage/` | `genome/journal/` |
 | ⑤ Edge + Cloud | `arms/edge/` vs `arms/cloud/` | `cerebrum/` 路由器 |
-| ⑥ Pipeline | 整条 `eyes → cerebrum → ganglia → beak → genome` | 所有器官 |
+| ⑥ Pipeline | 整条 `eyes → cerebrum → ganglia（未实装）→ beak → genome` | 所有器官 |
 
 **反向提醒**：如果哪天不用章鱼仿生，这六条原则依然成立 —— 换一套命名（比如"城市交通""工厂流水"），同样能搭出 Agent OS。**器官是 UI，原则才是 API**。
 

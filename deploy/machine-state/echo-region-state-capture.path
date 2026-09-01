@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch regional settings that must survive A/B root replacement
+After=local-fs.target echo-oem-setup.service
+ConditionPathExists=/var/lib/echo-os/region-state.json
+
+[Path]
+PathChanged=/etc/locale.conf
+PathChanged=/etc/vconsole.conf
+PathChanged=/etc/localtime
+Unit=echo-region-state-capture.service
+
+[Install]
+WantedBy=multi-user.target

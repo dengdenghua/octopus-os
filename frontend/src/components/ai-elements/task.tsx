@@ -1,4 +1,3 @@
-
 import {
   Collapsible,
   CollapsibleContent,
@@ -84,4 +83,3 @@ export const TaskContent = ({
     </div>
   </CollapsibleContent>
 );
-

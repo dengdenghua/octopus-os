@@ -6,7 +6,6 @@ import json
 from uuid import uuid4
 
 import pytest
-
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config
 from runtime.platform.models import (
     ArmId,
@@ -32,13 +31,18 @@ from runtime.sensing.model_router import ModelRequest, ModelResponse, ModelRoute
 
 @pytest.fixture
 def stack():
-    cfg = AgentConfig(planner=PlannerConfig(
-        type="llm", model="mock/po",
-        mock_response=json.dumps({
-            "reasoning": "r",
-            "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
-        }),
-    ))
+    cfg = AgentConfig(
+        planner=PlannerConfig(
+            type="llm",
+            model="mock/po",
+            mock_response=json.dumps(
+                {
+                    "reasoning": "r",
+                    "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
+                }
+            ),
+        )
+    )
     return build_from_config(cfg)
 
 
@@ -80,10 +84,7 @@ class TestConstruction:
 class TestRecipeHashSeparation:
     def test_different_suffixes_different_hashes(self, stack, basic_variants):
         opt = PromptOptimizer(stack, basic_variants)
-        hashes = {
-            name: opt.planner_for(name).recipe_hash()
-            for name in opt.variant_names
-        }
+        hashes = {name: opt.planner_for(name).recipe_hash() for name in opt.variant_names}
         # Implementation note.
         assert len(set(hashes.values())) == 3
 
@@ -197,9 +198,7 @@ class TestAddVariant:
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="x")
         for i in range(10):
             opt.plan(intent, f"t-{i}")
-        old_total = sum(
-            opt._splitter.stats[n].assignments for n in opt.variant_names
-        )
+        old_total = sum(opt._splitter.stats[n].assignments for n in opt.variant_names)
         assert old_total == 10
 
         opt.add_variant(PromptVariant(name="late", system_prompt_suffix="late"))
@@ -207,8 +206,7 @@ class TestAddVariant:
         assert opt._splitter.stats["late"].assignments == 0
         # Implementation note.
         new_total = sum(
-            opt._splitter.stats[n].assignments for n in opt.variant_names
-            if n != "late"
+            opt._splitter.stats[n].assignments for n in opt.variant_names if n != "late"
         )
         assert new_total == old_total
 
@@ -229,9 +227,11 @@ class _MutatorStubRouter(ModelRouter):
         self.calls.append(request)
         return ModelResponse(
             text=self.text,
-            input_tokens=50, output_tokens=30,
+            input_tokens=50,
+            output_tokens=30,
             cost=CostEntry(usd=0.001),
-            model=request.model, provider="mock",
+            model=request.model,
+            provider="mock",
         )
 
 
@@ -242,18 +242,24 @@ def _seed_failed_journal(stack, variant_recipe_hash: str, n: int = 5):
     for _i in range(n):
         call = ToolCall(caller="arms/x", sucker_id="read_file", args={})
         step = Step(
-            step_id=0, node_id="n0", action=call,
+            step_id=0,
+            node_id="n0",
+            action=call,
             result=ExecutionResult(
-                call_id=call.call_id, status="failed",
+                call_id=call.call_id,
+                status="failed",
                 error_type="timeout",
             ),
         )
-        stack.journal.write_trajectory(Trajectory(
-            task_id=TaskId(uuid4()), arm_id=ArmId("a"),
-            recipe_id=variant_recipe_hash,
-            steps=[step],
-            outcome=TrajectoryOutcome(success=False),
-        ))
+        stack.journal.write_trajectory(
+            Trajectory(
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a"),
+                recipe_id=variant_recipe_hash,
+                steps=[step],
+                outcome=TrajectoryOutcome(success=False),
+            )
+        )
 
 
 class TestPromptMutator:
@@ -311,12 +317,14 @@ class TestPromptMutator:
         mutator = PromptMutator(router=router, model="mock/m")
         # Implementation note.
         r1 = mutator.propose(
-            base=opt._variants["baseline"], journal=stack.journal,
+            base=opt._variants["baseline"],
+            journal=stack.journal,
         )
         assert r1 is not None
         # Implementation note.
         r2 = mutator.propose(
-            base=opt._variants["baseline"], journal=stack.journal,
+            base=opt._variants["baseline"],
+            journal=stack.journal,
         )
         assert r2 is None
 
@@ -328,7 +336,8 @@ class TestPromptMutator:
         router = _MutatorStubRouter("<suffix>Be careful.</suffix>")  # Implementation note.
         mutator = PromptMutator(router=router, model="mock/m")
         result = mutator.propose(
-            base=opt._variants["careful"], journal=stack.journal,
+            base=opt._variants["careful"],
+            journal=stack.journal,
         )
         assert result is None
 
@@ -340,10 +349,13 @@ class TestPromptMutator:
         long_suffix = "x" * 1000
         router = _MutatorStubRouter(f"<suffix>{long_suffix}</suffix>")
         mutator = PromptMutator(
-            router=router, model="mock/m", max_suffix_chars=100,
+            router=router,
+            model="mock/m",
+            max_suffix_chars=100,
         )
         result = mutator.propose(
-            base=opt._variants["baseline"], journal=stack.journal,
+            base=opt._variants["baseline"],
+            journal=stack.journal,
         )
         assert result is not None
         assert len(result.variant.system_prompt_suffix) <= 105  # "xxxxxxx…"
@@ -388,9 +400,7 @@ class TestEndToEndEvolution:
         # Implementation note.
         _seed_failed_journal(stack, opt.planner_for("baseline").recipe_hash(), n=3)
 
-        router = _MutatorStubRouter(
-            "<suffix>Prefer shorter plans · cap nodes at 3.</suffix>"
-        )
+        router = _MutatorStubRouter("<suffix>Prefer shorter plans · cap nodes at 3.</suffix>")
         mutator = PromptMutator(router=router, model="mock/m")
         proposal = mutator.propose(base=base, journal=stack.journal)
         assert proposal is not None

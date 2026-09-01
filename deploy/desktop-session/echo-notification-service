@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Echo OS org.freedesktop.Notifications service and private UI bridge."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import signal
+import socket
+import socketserver
+import stat
+import threading
+from pathlib import Path
+from typing import Any
+
+import dbus
+import dbus.service
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+
+from echo_notification_store import NotificationStore
+
+BUS_NAME = "org.freedesktop.Notifications"
+OBJECT_PATH = "/org/freedesktop/Notifications"
+INTERFACE = "org.freedesktop.Notifications"
+MAX_REQUEST_BYTES = 64 * 1024
+MAX_RESPONSE_BYTES = 1024 * 1024
+
+
+class NotificationService(dbus.service.Object):
+    def __init__(self, bus: dbus.SessionBus, bus_name: dbus.service.BusName) -> None:
+        super().__init__(bus_name, OBJECT_PATH)
+        self.bus = bus
+        self.bus_name = bus_name
+        self.store = NotificationStore()
+
+    @dbus.service.method(
+        INTERFACE,
+        in_signature="susssasa{sv}i",
+        out_signature="u",
+    )
+    def Notify(
+        self,
+        app_name: str,
+        replaces_id: int,
+        app_icon: str,
+        summary: str,
+        body: str,
+        actions: list[str],
+        hints: dict[str, Any],
+        expire_timeout: int,
+    ) -> dbus.UInt32:
+        # Icons, action labels and hints can refer to attacker-controlled paths
+        # or richer content. The first implementation intentionally accepts
+        # only bounded text and does not advertise unsupported capabilities.
+        del app_icon, actions, hints
+        notification_id, evicted_active = self.store.notify(
+            app_name=app_name,
+            replaces_id=replaces_id,
+            summary=summary,
+            body=body,
+            expire_timeout=expire_timeout,
+        )
+        for evicted_id in evicted_active:
+            self.NotificationClosed(dbus.UInt32(evicted_id), dbus.UInt32(4))
+        return dbus.UInt32(notification_id)
+
+    @dbus.service.method(INTERFACE, in_signature="u", out_signature="")
+    def CloseNotification(self, notification_id: int) -> None:
+        removed, was_active = self.store.close_with_state(notification_id)
+        if removed and was_active:
+            self.NotificationClosed(
+                dbus.UInt32(notification_id), dbus.UInt32(3)
+            )
+
+    @dbus.service.method(INTERFACE, in_signature="", out_signature="as")
+    def GetCapabilities(self) -> list[str]:
+        return ["body"]
+
+    @dbus.service.method(INTERFACE, in_signature="", out_signature="ssss")
+    def GetServerInformation(self) -> tuple[str, str, str, str]:
+        return ("Echo Notifications", "Echo OS", "1.0", "1.2")
+
+    @dbus.service.signal(INTERFACE, signature="uu")
+    def NotificationClosed(self, notification_id: int, reason: int) -> None:
+        del notification_id, reason
+
+    @dbus.service.signal(INTERFACE, signature="us")
+    def ActionInvoked(self, notification_id: int, action_key: str) -> None:
+        # Required by the interface but never emitted until the Echo UI exposes
+        # an action button and GetCapabilities advertises "actions".
+        del notification_id, action_key
+
+    def expire_due(self) -> bool:
+        for notification_id in self.store.expire_due():
+            self.NotificationClosed(dbus.UInt32(notification_id), dbus.UInt32(1))
+        return True
+
+    def handle_socket_request(self, request: object) -> dict[str, Any]:
+        if not isinstance(request, dict):
+            return {"ok": False, "error": "request must be an object"}
+        operation = request.get("op")
+        if operation == "capabilities":
+            return {
+                "ok": True,
+                "provider": "echo-native",
+                "list": True,
+                "close": True,
+                "clear": True,
+            }
+        if operation == "list":
+            return {
+                "ok": True,
+                "provider": "echo-native",
+                "notifications": self.store.list_notifications(),
+            }
+        if operation == "close":
+            notification_id = request.get("id")
+            removed, was_active = self.store.close_with_state(notification_id)
+            if removed and was_active:
+                try:
+                    closed_id = int(notification_id)
+                except (TypeError, ValueError):
+                    closed_id = 0
+                GLib.idle_add(
+                    self.NotificationClosed,
+                    dbus.UInt32(closed_id),
+                    dbus.UInt32(2),
+                )
+            return {"ok": removed, "id": notification_id}
+        if operation == "clear":
+            removed, active = self.store.clear_with_state()
+            for notification_id in active:
+                GLib.idle_add(
+                    self.NotificationClosed,
+                    dbus.UInt32(notification_id),
+                    dbus.UInt32(2),
+                )
+            return {"ok": True, "removed": len(removed)}
+        return {"ok": False, "error": "unsupported operation"}
+
+
+class _ThreadingUnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+    allow_reuse_address = False
+
+
+class _SocketHandler(socketserver.StreamRequestHandler):
+    def handle(self) -> None:
+        payload = self.rfile.readline(MAX_REQUEST_BYTES + 1)
+        if not payload or len(payload) > MAX_REQUEST_BYTES or not payload.endswith(b"\n"):
+            response: dict[str, Any] = {"ok": False, "error": "invalid request"}
+        else:
+            try:
+                request = json.loads(payload.decode("utf-8"))
+                response = self.server.notification_service.handle_socket_request(request)  # type: ignore[attr-defined]
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                response = {"ok": False, "error": "invalid JSON"}
+        encoded = json.dumps(
+            response, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        if len(encoded) > MAX_RESPONSE_BYTES:
+            encoded = b'{"ok":false,"error":"response too large"}'
+        self.wfile.write(encoded + b"\n")
+
+
+def _validate_socket_path(socket_path: Path) -> None:
+    runtime_dir = Path(os.environ.get("XDG_RUNTIME_DIR", ""))
+    expected_parent = runtime_dir / "echo-os"
+    if not runtime_dir.is_absolute() or socket_path != expected_parent / "notifications.sock":
+        raise RuntimeError("notification socket path is outside the private runtime directory")
+    parent = socket_path.parent
+    parent_stat = parent.stat(follow_symlinks=False)
+    if stat.S_ISLNK(parent_stat.st_mode) or not stat.S_ISDIR(parent_stat.st_mode):
+        raise RuntimeError("notification runtime path is not a real directory")
+    if parent_stat.st_uid != os.getuid() or stat.S_IMODE(parent_stat.st_mode) != 0o700:
+        raise RuntimeError("notification runtime directory must be user-owned mode 0700")
+    try:
+        existing = socket_path.lstat()
+    except FileNotFoundError:
+        return
+    if not stat.S_ISSOCK(existing.st_mode) or existing.st_uid != os.getuid():
+        raise RuntimeError("refusing to replace an unsafe notification socket path")
+    socket_path.unlink()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--socket", required=True)
+    parser.add_argument("--session", choices=("x11", "wayland"), required=True)
+    args = parser.parse_args()
+
+    socket_path = Path(args.socket)
+    _validate_socket_path(socket_path)
+    os.umask(0o077)
+
+    DBusGMainLoop(set_as_default=True)
+    bus = dbus.SessionBus()
+    bus_name = dbus.service.BusName(BUS_NAME, bus, do_not_queue=True)
+    service = NotificationService(bus, bus_name)
+    server = _ThreadingUnixServer(str(socket_path), _SocketHandler)
+    server.notification_service = service  # type: ignore[attr-defined]
+    os.chmod(socket_path, 0o600)
+    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    loop = GLib.MainLoop()
+    GLib.timeout_add(250, service.expire_due)
+
+    def stop(_signum: int, _frame: object) -> None:
+        GLib.idle_add(loop.quit)
+
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+    print(
+        "ECHO_NOTIFICATION_SERVICE_READY "
+        f"provider=echo-native dbus=ready socket=private session={args.session}",
+        flush=True,
+    )
+    try:
+        loop.run()
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=2)
+        try:
+            current = socket_path.lstat()
+            if stat.S_ISSOCK(current.st_mode) and current.st_uid == os.getuid():
+                socket_path.unlink()
+        except FileNotFoundError:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,4 +1,3 @@
-
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -809,7 +808,9 @@ export const PromptInput = ({
               controller.textInput.clear();
             }
           }
-        } catch (e) { swallow(e); }
+        } catch (e) {
+          swallow(e);
+        }
       })
       .catch(() => {
         // Don't clear on error - user may want to retry

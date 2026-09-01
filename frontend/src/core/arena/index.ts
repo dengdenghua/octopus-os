@@ -1,4 +1,10 @@
-export { createBattle, submitVote, fetchLeaderboard, fetchHistory, fetchArenaStats } from "./api";
+export {
+  createBattle,
+  submitVote,
+  fetchLeaderboard,
+  fetchHistory,
+  fetchArenaStats,
+} from "./api";
 export type {
   ArenaStats,
   BattleRequest,

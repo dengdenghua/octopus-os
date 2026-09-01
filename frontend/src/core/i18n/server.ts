@@ -23,6 +23,8 @@ export async function getI18n(localeOverride?: string | Locale): Promise<{
   const locale = localeOverride
     ? normalizeLocale(localeOverride)
     : detectLocaleServer();
-  const t = await loadTranslations(locale).catch(() => loadTranslations(DEFAULT_LOCALE));
+  const t = await loadTranslations(locale).catch(() =>
+    loadTranslations(DEFAULT_LOCALE),
+  );
   return { locale, t };
 }

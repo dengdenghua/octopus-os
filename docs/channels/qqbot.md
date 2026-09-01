@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过 QQ 开放平台或 NapCat/LLOneBot 等第三方框架将 Octopus-Agent 接入 QQ，支持在私聊和群聊中与用户进行智能对话。
+通过 QQ 开放平台或 NapCat/LLOneBot 等第三方框架将 Echo Agent 接入 QQ，支持在私聊和群聊中与用户进行智能对话。
 
 ## 前置条件
 
@@ -38,7 +38,7 @@
 2. 在 LLOneBot 设置中开启 HTTP 和 WebSocket 接口
 3. 配置反向 WebSocket 地址
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 QQ 机器人，填写以下字段：
 
@@ -51,7 +51,7 @@
 | OneBot WS 地址 | NapCat/LLOneBot WebSocket 接口 | `ws://localhost:3001` |
 | Access Token | OneBot 访问令牌 | `your-access-token` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -65,7 +65,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -99,7 +99,7 @@ Webhook URL 格式：`https://your-domain.com/api/channels/qqbot/webhook`
 ws://your-server:port/api/channels/qqbot/ws
 ```
 
-Octopus-Agent 会自动处理 WebSocket 连接和消息分发。
+Echo Agent 会自动处理 WebSocket 连接和消息分发。
 
 ## 常见问题
 
@@ -118,4 +118,4 @@ A: 1) 使用小号作为机器人；2) 控制消息发送频率；3) 避免发�
 - [NapCat GitHub](https://github.com/NapNeko/NapCatQQ)
 - [LLOneBot GitHub](https://github.com/LLOneBot/LLOneBot)
 - [OneBot 11 协议规范](https://github.com/botuniverse/onebot-11)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/qqbot)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/qqbot)

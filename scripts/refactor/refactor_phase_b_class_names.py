@@ -8,6 +8,7 @@ Skips build/ (setuptools artifact) which still has copies of the old
 sensing/mantle/ tree.
 """
 from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
@@ -34,7 +35,7 @@ RENAMES = [
 
 EXTENSIONS = {".py", ".md", ".yaml", ".yml", ".json", ".toml", ".cfg", ".txt", ".ini", ".mermaid"}
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", "build", "dist",
-             ".qoder", ".codex-logs", ".pytest_cache", ".ruff_cache", "octopus_agent.egg-info"}
+             ".qoder", ".codex-logs", ".pytest_cache", ".ruff_cache", "echo_agent.egg-info"}
 
 
 def should_process(path: Path) -> bool:

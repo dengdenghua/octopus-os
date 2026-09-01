@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过 Google Chat API 将 Octopus-Agent 接入 Google Chat，支持在聊天室和私信中与 Google Workspace 用户进行智能对话。
+通过 Google Chat API 将 Echo Agent 接入 Google Chat，支持在聊天室和私信中与 Google Workspace 用户进行智能对话。
 
 ## 前置条件
 
@@ -26,28 +26,28 @@
    - 功能选择：「接收 1:1 消息」和「加入群聊和聊天室」
    - 连接设置：选择「HTTP 端点」并填入 Webhook URL
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 Google Chat，填写以下字段：
 
 | 字段 | 说明 | 示例 |
 |---|---|---|
 | 服务账号密钥 | JSON 密钥文件路径或内容 | `/path/to/service-account.json` |
-| 项目 ID | Google Cloud 项目 ID | `my-octopus-project` |
+| 项目 ID | Google Cloud 项目 ID | `my-echo-project` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
   google_chat:
     service_account_key: "/path/to/service-account.json"
-    project_id: "my-octopus-project"
+    project_id: "my-echo-project"
 ```
 
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -73,7 +73,7 @@ Webhook URL 格式：`https://your-domain.com/api/channels/google_chat/webhook`
 
 Google Chat 会向该 URL 发送事件通知（包括消息事件、添加到聊天室事件等）。
 
-验证请求：Google Chat 会在请求头中附带 Bearer Token，Octopus-Agent 会自动验证请求来源。
+验证请求：Google Chat 会在请求头中附带 Bearer Token，Echo Agent 会自动验证请求来源。
 
 ## 常见问题
 
@@ -81,7 +81,7 @@ Google Chat 会向该 URL 发送事件通知（包括消息事件、添加到聊
 A: 1) 确认 Google Chat API 已启用且配置正确；2) 确认 HTTP 端点 URL 可公网访问；3) 检查服务账号权限；4) 在 Google Chat API 配置中确认已启用「接收 1:1 消息」功能。
 
 ### Q: 如何发送卡片消息？
-A: Octopus-Agent 会自动将 AI 的结构化输出转换为 Google Chat Card 格式。如需自定义卡片，可在配置中指定 `card_template`。
+A: Echo Agent 会自动将 AI 的结构化输出转换为 Google Chat Card 格式。如需自定义卡片，可在配置中指定 `card_template`。
 
 ### Q: 非 Google Workspace 用户可以使用吗？
 A: Google Chat API 仅支持 Google Workspace 组织内的用户。个人 Gmail 账号无法使用 Chat Bot 功能。
@@ -91,4 +91,4 @@ A: Google Chat API 仅支持 Google Workspace 组织内的用户。个人 Gmail 
 - [Google Chat API 文档](https://developers.google.com/chat/api/guides)
 - [Google Cloud Console](https://console.cloud.google.com/)
 - [Google Chat Bot 开发指南](https://developers.google.com/chat/how-tos/bot-develop)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/google_chat)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/google_chat)

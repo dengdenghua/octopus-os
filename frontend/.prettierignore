@@ -1,0 +1,13 @@
+node_modules/
+dist/
+release/
+playwright-report/
+test-results/
+coverage/
+.vite/
+
+# Generated assets and machine snapshots are verified by their producers.
+src/styles/tailwind-prebuilt.css
+src/core/api/openapi-types.ts
+pnpm-lock.yaml
+*.tsbuildinfo

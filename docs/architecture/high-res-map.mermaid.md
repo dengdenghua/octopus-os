@@ -1,4 +1,4 @@
-# Octopus 架构图（Mermaid 版）
+# Echo 架构图（Mermaid 版）
 
 `high-res-map.md` 的 ASCII 图对应的 Mermaid 版。GitHub / GitLab / 大多数 Markdown 渲染器原生支持，能直接渲染成可交互的 SVG。
 

@@ -1,62 +1,118 @@
-"""Octopus OS appliance:企业版 PM 工具(D① 编程接入)。
+"""Echo OS appliance:企业版 PM 工具(D① 编程接入)。
 
-让 OS 的对话 Agent 能通过工具在企业版(octopus-enterprise)里列项目 / 建任务 /
+让 OS 的对话 Agent 能通过工具在企业版(echo-enterprise)里列项目 / 建任务 /
 列任务——PM 已从 OS 删除(交企业版),这里是 Agent 侧的「可编程接入」:
 不打开 UI,直接调企业版的 PM API。
 
-依赖方向(docs:octopus-enterprise/docs/PM_INTERFACE.md):OS Agent →(HTTP)→
+依赖方向(docs:echo-enterprise/docs/PM_INTERFACE.md):OS Agent →(HTTP)→
 企业版 PM 服务。配置三项环境变量启用:
-- OCTOPUS_PM_URL    企业版地址(如 http://octopus-enterprise:8100 或 NAS IP)
-- OCTOPUS_PM_TOKEN  企业版登录 JWT(Authorization: Bearer)
-- OCTOPUS_PM_TENANT 租户 ID(X-Tenant-ID;单租户可留空)
+- ECHO_PM_URL    企业版地址(如 http://echo-enterprise:8100 或 NAS IP)
+- ECHO_PM_TOKEN  企业版登录 JWT(Authorization: Bearer)
+- ECHO_PM_TENANT 租户 ID(X-Tenant-ID;单租户可留空)
 
-未配置 OCTOPUS_PM_URL 时这些技能不注册(见 register_pm_skills 的门控)。
+未配置 ECHO_PM_URL 时这些技能不注册(见 register_pm_skills 的门控)。
 """
 
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
+from urllib.parse import urlsplit
 
-from runtime.execution.suckers.registry import Skill, SkillRegistry
-from runtime.execution.suckers.testing import SkillExpect, SkillTestCase
+_PROJECT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+_ROLES = frozenset({"硬件", "固件", "软件", "结构", "AI", "测试", "PM", "供应链"})
+_PRIORITIES = frozenset({"p0", "p1", "p2", "p3"})
+
+
+def _failure(
+    code: str,
+    message: str,
+    *,
+    retryable: bool = False,
+    status: int | None = None,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "ok": False,
+        "error": message,
+        "code": code,
+        "retryable": retryable,
+    }
+    if status is not None:
+        result["status"] = status
+    return result
 
 
 def _pm_base() -> str:
-    return (os.environ.get("OCTOPUS_PM_URL") or "").rstrip("/")
+    value = (os.environ.get("ECHO_PM_URL") or "").strip().rstrip("/")
+    if not value:
+        return ""
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("ECHO_PM_URL must be an HTTP(S) service URL without credentials")
+    return value
 
 
 def _pm_headers() -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
-    token = os.environ.get("OCTOPUS_PM_TOKEN")
+    token = os.environ.get("ECHO_PM_TOKEN")
     if token:
+        if len(token) > 8192 or any(character < " " for character in token):
+            raise ValueError("ECHO_PM_TOKEN is invalid")
         headers["Authorization"] = f"Bearer {token}"
-    tenant = os.environ.get("OCTOPUS_PM_TENANT")
+    tenant = os.environ.get("ECHO_PM_TENANT")
     if tenant:
+        if _PROJECT_ID.fullmatch(tenant) is None:
+            raise ValueError("ECHO_PM_TENANT is invalid")
         headers["X-Tenant-ID"] = tenant
     return headers
 
 
 def _pm_request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
-    base = _pm_base()
+    try:
+        base = _pm_base()
+        headers = _pm_headers()
+    except ValueError:
+        return _failure("invalid_configuration", "PM integration configuration is invalid")
     if not base:
-        return {"error": "OCTOPUS_PM_URL not configured"}
+        return _failure("not_configured", "PM integration is not configured")
     import httpx
 
     try:
         resp = httpx.request(
             method,
             f"{base}{path}",
-            headers=_pm_headers(),
+            headers=headers,
             timeout=20.0,
             **kwargs,
         )
         resp.raise_for_status()
         return {"ok": True, "data": resp.json()}
     except httpx.HTTPStatusError as exc:
-        return {"error": f"pm http {exc.response.status_code}", "detail": exc.response.text[:300]}
-    except Exception as exc:  # noqa: BLE001 — 网络/解析错误统一回错给 Agent
-        return {"error": str(exc)}
+        status = exc.response.status_code
+        return _failure(
+            "upstream_http",
+            "PM service rejected the request",
+            retryable=status == 429 or status >= 500,
+            status=status,
+        )
+    except httpx.RequestError:
+        return _failure(
+            "upstream_unavailable",
+            "PM service is unavailable",
+            retryable=True,
+        )
+    except ValueError:
+        return _failure("invalid_response", "PM service returned invalid JSON")
+    except Exception:  # noqa: BLE001 - never expose dependency or transport internals to Agent
+        return _failure("internal_error", "PM integration failed safely")
 
 
 # ── handlers ────────────────────────────────────────────────────
@@ -65,8 +121,8 @@ def _pm_list_projects(**_kw: Any) -> dict[str, Any]:
 
 
 def _pm_list_tasks(project_id: str = "", **_kw: Any) -> dict[str, Any]:
-    if not project_id:
-        return {"error": "missing project_id"}
+    if not isinstance(project_id, str) or _PROJECT_ID.fullmatch(project_id) is None:
+        return _failure("invalid_argument", "project_id is required and must be valid")
     return _pm_request("GET", f"/api/v1/projects/{project_id}/tasks")
 
 
@@ -79,13 +135,26 @@ def _pm_create_task(
     priority: str = "p2",
     **_kw: Any,
 ) -> dict[str, Any]:
-    if not project_id or not title:
-        return {"error": "missing project_id or title"}
+    normalized_title = title.strip() if isinstance(title, str) else ""
+    if (
+        not isinstance(project_id, str)
+        or _PROJECT_ID.fullmatch(project_id) is None
+        or not normalized_title
+        or len(normalized_title) > 256
+        or any(character < " " for character in normalized_title)
+        or not isinstance(description, str)
+        or len(description) > 4096
+        or not isinstance(role, str)
+        or role not in _ROLES
+        or not isinstance(priority, str)
+        or priority not in _PRIORITIES
+    ):
+        return _failure("invalid_argument", "task fields are missing or invalid")
     return _pm_request(
         "POST",
         f"/api/v1/projects/{project_id}/tasks",
         json={
-            "title": title,
+            "title": normalized_title,
             "description": description,
             "role": role,
             "priority": priority,
@@ -94,10 +163,19 @@ def _pm_create_task(
 
 
 # ── registration ────────────────────────────────────────────────
-def register_pm_skills(registry: SkillRegistry) -> int:
-    """配置了 OCTOPUS_PM_URL 才注册;否则返回 0(不暴露 PM 工具)。"""
-    if not _pm_base():
+def register_pm_skills(registry: Any) -> int:
+    """配置了 ECHO_PM_URL 才注册;否则返回 0(不暴露 PM 工具)。"""
+    if not (os.environ.get("ECHO_PM_URL") or "").strip():
         return 0
+    _pm_base()
+
+    # PM is an optional integration.  Do not import Agent's skill subsystem at
+    # module load time, otherwise an unused optional domain could break Agent
+    # startup.  Once explicitly configured, require a clear versioned contract.
+    from appliance.agent_api.contract import require_agent_api_contract
+
+    require_agent_api_contract(required_domains=("skills",), optional_domains=())
+    from appliance.agent_api.skills import Skill, SkillExpect, SkillTestCase
 
     registry.register(
         Skill(
@@ -106,7 +184,7 @@ def register_pm_skills(registry: SkillRegistry) -> int:
                 "用途: 列出企业版(项目管理)里的所有项目，返回 [{id, name, ...}]。\n"
                 "何时用: 用户提到「项目管理/我的项目/有哪些项目」，或建任务前需先拿 project_id。\n"
                 "参数: 无。\n"
-                '示例: pm_list_projects({})'
+                "示例: pm_list_projects({})"
             ),
             affinity=["web", "io", "pm"],
             cost_profile="low",

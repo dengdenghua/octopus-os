@@ -1,4 +1,4 @@
-"""Batch rewrite imports for the octopus-agent rename refactor.
+"""Batch rewrite imports for the echo-agent rename refactor.
 
 Replaces all references to old module paths with new ones across .py, .md, .yaml,
 .yml, .json, .toml, .cfg, .txt files in the repo.
@@ -9,7 +9,6 @@ context is NOT touched because the prefix `runtime.core.` is required).
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -36,7 +35,7 @@ ORDERED = sorted(RENAMES.items(), key=lambda kv: -len(kv[0]))
 
 EXTENSIONS = {".py", ".md", ".yaml", ".yml", ".json", ".toml", ".cfg", ".txt", ".ini", ".mermaid"}
 SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", "build", "dist",
-             ".qoder", ".codex-logs", ".pytest_cache", ".ruff_cache", "octopus_agent.egg-info"}
+             ".qoder", ".codex-logs", ".pytest_cache", ".ruff_cache", "echo_agent.egg-info"}
 
 
 def should_process(path: Path) -> bool:

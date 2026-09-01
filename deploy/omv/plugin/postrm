@@ -1,0 +1,22 @@
+#!/usr/bin/env dash
+set -eu
+
+case "$1" in
+  remove|purge)
+    dpkg-trigger update-workbench
+    if [ "$1" = purge ]; then
+      deb-systemd-helper purge echo-omv-bridge.service >/dev/null || true
+    fi
+    systemctl --system daemon-reload || true
+    # Keep the echo-omv group. It may be referenced by the Echo container and
+    # deleting a shared system group during package removal is not reversible.
+  ;;
+  upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+  ;;
+  *)
+    echo "postrm called with unknown argument '$1'" >&2
+    exit 1
+  ;;
+esac
+
+exit 0

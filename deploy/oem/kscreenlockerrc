@@ -1,0 +1,8 @@
+[Daemon]
+Autolock=true
+Timeout=10
+Lock=true
+LockGrace=0
+RequirePassword=true
+LockOnResume=true
+LockOnStart=false

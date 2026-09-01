@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: octopus-agent-data
-  namespace: octopus-agent
+  name: echo-agent-data
+  namespace: echo-agent
 spec:
   accessModes:
     - ReadWriteOnce
@@ -13,8 +13,8 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: octopus-redis-data
-  namespace: octopus-agent
+  name: echo-redis-data
+  namespace: echo-agent
 spec:
   accessModes:
     - ReadWriteOnce

@@ -21,7 +21,11 @@ export function normalizePath(p: string): string {
 export function isAbsolutePath(p: string): boolean {
   const value = p.trim();
   if (!value) return false;
-  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("/") || value.startsWith("\\\\");
+  return (
+    /^[A-Za-z]:[\\/]/.test(value) ||
+    value.startsWith("/") ||
+    value.startsWith("\\\\")
+  );
 }
 
 /** Extract the last segment of a path (file or folder name). */

@@ -1,0 +1,22 @@
+[Transfer]
+ProtectVersion=%A
+# The detached manifest signature is checked by echo-os-update first.
+Verify=no
+
+[Source]
+Type=regular-file
+Path=.
+PathRelativeTo=explicit
+MatchPattern=echo-os_@v.efi
+
+[Target]
+Type=regular-file
+Path=EFI/Linux
+PathRelativeTo=boot
+# The first pattern is used for a new file. The other two keep it visible
+# while systemd-boot advances or removes its automatic boot counters.
+MatchPattern=echo-os_@v+@l-@d.efi
+MatchPattern=echo-os_@v+@l.efi
+MatchPattern=echo-os_@v.efi
+Mode=0444
+InstancesMax=2

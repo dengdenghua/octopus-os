@@ -1,18 +1,25 @@
-
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ArrowDownIcon } from "lucide-react";
-import type { ComponentProps } from "react";
-import { useCallback } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
 
 export type ConversationProps = ComponentProps<typeof StickToBottom>;
 
 export const Conversation = ({ className, ...props }: ConversationProps) => (
   <StickToBottom
-    className={cn("relative flex-1 overflow-x-hidden overflow-y-hidden", className)}
-    initial="smooth"
-    resize="smooth"
+    className={cn(
+      "relative flex-1 overflow-x-hidden overflow-y-hidden",
+      className,
+    )}
+    // Streaming content changes height every frame. A smooth resize scroll
+    // starts a new animation for each measurement, which can visibly wobble
+    // while the user is wheel-scrolling or when the latest button is pressed.
+    // Keep resize reconciliation deterministic; explicit user navigation can
+    // still opt into animation below.
+    initial="instant"
+    resize="instant"
     role="log"
     {...props}
   />
@@ -63,7 +70,9 @@ export const ConversationEmptyState = ({
         <div className="space-y-1.5 max-w-xs">
           <h3 className="text-sm font-medium">{title}</h3>
           {description && (
-            <p className="text-muted-foreground text-sm leading-relaxed">{description}</p>
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              {description}
+            </p>
           )}
         </div>
       </>
@@ -71,34 +80,77 @@ export const ConversationEmptyState = ({
   </div>
 );
 
-export type ConversationScrollButtonProps = ComponentProps<typeof Button>;
+export type ConversationScrollButtonProps = Omit<
+  ComponentProps<typeof Button>,
+  "children"
+> & {
+  children?: ReactNode;
+  activityKey?: string | number;
+  activityLabel?: (count: number) => ReactNode;
+};
 
 export const ConversationScrollButton = ({
+  activityKey,
+  activityLabel,
   className,
   children,
   ...props
 }: ConversationScrollButtonProps) => {
-  const { isAtBottom, scrollToBottom } = useStickToBottomContext();
+  const { escapedFromLock, isAtBottom, scrollToBottom } =
+    useStickToBottomContext();
+  const previousActivityKey = useRef(activityKey);
+  const [pendingActivityCount, setPendingActivityCount] = useState(0);
+
+  useEffect(() => {
+    if (Object.is(previousActivityKey.current, activityKey)) return;
+    previousActivityKey.current = activityKey;
+    // The underlying ResizeObserver can briefly lose its bottom lock when a
+    // streamed response grows from shorter than the viewport to taller than
+    // it. That left a brand-new task parked at scrollTop=0 even though the
+    // reader never moved away. Preserve the library's explicit escape signal:
+    // only force-follow when no wheel/selection/up-scroll released the lock.
+    if (!escapedFromLock) {
+      void scrollToBottom({ animation: "instant", ignoreEscapes: true });
+      return;
+    }
+    // activityKey can advance once per streamed frame. Treat unseen activity
+    // as a boolean signal instead of counting transport chunks; otherwise a
+    // long answer produces labels such as "685 new updates" and keeps
+    // re-rendering this control while the reader is browsing older content.
+    if (!isAtBottom) setPendingActivityCount(1);
+  }, [activityKey, escapedFromLock, isAtBottom, scrollToBottom]);
+
+  useEffect(() => {
+    if (isAtBottom) setPendingActivityCount(0);
+  }, [isAtBottom]);
 
   const handleScrollToBottom = useCallback(() => {
-    scrollToBottom();
+    setPendingActivityCount(0);
+    // Smooth for the explicit button so the jump doesn't feel abrupt; the
+    // streaming auto-follow above stays "instant" to avoid jitter.
+    scrollToBottom({ animation: "smooth" });
   }, [scrollToBottom]);
+
+  const label =
+    pendingActivityCount > 0 && activityLabel
+      ? activityLabel(pendingActivityCount)
+      : children;
 
   return (
     !isAtBottom && (
       <Button
         className={cn(
-          "absolute bottom-4 left-[50%] z-20 translate-x-[-50%] rounded-full border-border/70 bg-background/92 px-3 text-xs shadow-lg shadow-black/10 backdrop-blur-md hover:bg-background",
+          "absolute bottom-4 left-1/2 z-40 -translate-x-1/2 rounded-full border-border-default bg-background/92 px-3 text-xs shadow-[var(--shadow-md)] shadow-black/10 backdrop-blur-md hover:bg-background",
           className,
         )}
         onClick={handleScrollToBottom}
-        size={children ? "sm" : "icon-sm"}
+        size={label ? "sm" : "icon-sm"}
         type="button"
         variant="outline"
         {...props}
       >
         <ArrowDownIcon className="size-4" />
-        {children}
+        {label}
       </Button>
     )
   );

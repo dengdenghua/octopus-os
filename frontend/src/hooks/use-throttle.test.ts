@@ -21,9 +21,12 @@ describe("useThrottle", () => {
   });
 
   it("does not update before the throttle limit", () => {
-    const { result, rerender } = renderHook(({ value }) => useThrottle(value, 300), {
-      initialProps: { value: "a" },
-    });
+    const { result, rerender } = renderHook(
+      ({ value }) => useThrottle(value, 300),
+      {
+        initialProps: { value: "a" },
+      },
+    );
 
     rerender({ value: "b" });
     act(() => {
@@ -33,9 +36,12 @@ describe("useThrottle", () => {
   });
 
   it("updates after the throttle limit", () => {
-    const { result, rerender } = renderHook(({ value }) => useThrottle(value, 300), {
-      initialProps: { value: "a" },
-    });
+    const { result, rerender } = renderHook(
+      ({ value }) => useThrottle(value, 300),
+      {
+        initialProps: { value: "a" },
+      },
+    );
 
     rerender({ value: "b" });
     act(() => {
@@ -45,9 +51,12 @@ describe("useThrottle", () => {
   });
 
   it("keeps the latest value when multiple changes happen within the same window", () => {
-    const { result, rerender } = renderHook(({ value }) => useThrottle(value, 300), {
-      initialProps: { value: "a" },
-    });
+    const { result, rerender } = renderHook(
+      ({ value }) => useThrottle(value, 300),
+      {
+        initialProps: { value: "a" },
+      },
+    );
 
     rerender({ value: "b" });
     act(() => {

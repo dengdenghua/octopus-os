@@ -1,4 +1,3 @@
-
 import { useEffect } from "react";
 
 type ShortcutAction = () => void;
@@ -50,4 +49,3 @@ export function useGlobalShortcuts(shortcuts: Shortcut[] = []) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [shortcuts]);
 }
-

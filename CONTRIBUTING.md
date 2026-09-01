@@ -1,11 +1,11 @@
-# Contributing to octopus-agent
+# Contributing to echo-agent
 
 感谢你愿意贡献。这份文档覆盖**最小必要**的流程 · 不多规则。
 
 ## 开发环境
 
 ```bash
-git clone <repo> && cd octopus-agent
+git clone <repo> && cd echo-agent
 pip install -e ".[dev,serve,web,tracing]"
 make test        # 或 python -m pytest tests/ -q
 ```
@@ -110,7 +110,7 @@ PR 描述和 commit message 里**用工程名**（"fix planner fallback"而非"f
 - **文档 polish**
   - `mkdocs.yml` + autodoc 配置
   - 139 条不变量的"速查卡"
-  - `octopus-agent tour` 交互式 walkthrough
+  - `echo-agent tour` 交互式 walkthrough
   - Grafana dashboard JSON 模板
 
 ### 🟡 中等（3-5 天）

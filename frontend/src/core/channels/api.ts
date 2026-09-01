@@ -235,16 +235,23 @@ export async function getChannelsStatus(): Promise<ChannelsStatusResponse> {
   const res = await fetch(`${getBackendBaseURL()}/api/channels/`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error(`Failed to load channels status: ${res.statusText}`);
+  if (!res.ok)
+    throw new Error(`Failed to load channels status: ${res.statusText}`);
   return (await res.json()) as ChannelsStatusResponse;
 }
 
-export async function restartChannel(name: ChannelName): Promise<{ message: string }> {
-  const res = await fetch(`${getBackendBaseURL()}/api/channels/${name}/restart`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to restart channel ${name}: ${res.statusText}`);
+export async function restartChannel(
+  name: ChannelName,
+): Promise<{ message: string }> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/channels/${name}/restart`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to restart channel ${name}: ${res.statusText}`);
   return (await res.json()) as { message: string };
 }
 
@@ -269,10 +276,14 @@ export class ChannelNotImplementedError extends Error {
 }
 
 /** Type guard · survives bundling / instanceof pitfalls across chunks. */
-export function isChannelNotImplemented(err: unknown): err is ChannelNotImplementedError {
+export function isChannelNotImplemented(
+  err: unknown,
+): err is ChannelNotImplementedError {
   return (
     err instanceof ChannelNotImplementedError ||
-    (typeof err === "object" && err !== null && (err as { name?: string }).name === "ChannelNotImplementedError")
+    (typeof err === "object" &&
+      err !== null &&
+      (err as { name?: string }).name === "ChannelNotImplementedError")
   );
 }
 
@@ -280,7 +291,8 @@ export async function getChannelsDetail(): Promise<ChannelsDetailResponse> {
   const res = await fetch(`${getBackendBaseURL()}/api/channels/detail`, {
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error(`Failed to load channels detail: ${res.statusText}`);
+  if (!res.ok)
+    throw new Error(`Failed to load channels detail: ${res.statusText}`);
   return (await res.json()) as ChannelsDetailResponse;
 }
 
@@ -288,12 +300,18 @@ export async function saveChannelCredentials(
   name: ChannelName,
   credentials: ChannelCredentials,
 ): Promise<{ message: string }> {
-  const res = await fetch(`${getBackendBaseURL()}/api/channels/credentials/${name}`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-    body: JSON.stringify(credentials),
-  });
-  if (!res.ok) throw new Error(`Failed to save credentials for ${name}: ${res.statusText}`);
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/channels/credentials/${name}`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify(credentials),
+    },
+  );
+  if (!res.ok)
+    throw new Error(
+      `Failed to save credentials for ${name}: ${res.statusText}`,
+    );
   return (await res.json()) as { message: string };
 }
 
@@ -301,21 +319,29 @@ export async function assignChannelAgent(
   name: ChannelName,
   agentName: string,
 ): Promise<{ message: string }> {
-  const res = await fetch(`${getBackendBaseURL()}/api/channels/${name}/assistant`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-    body: JSON.stringify({ agent_id: agentName }),
-  });
-  if (!res.ok) throw new Error(`Failed to assign agent for ${name}: ${res.statusText}`);
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/channels/${name}/assistant`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ agent_id: agentName }),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to assign agent for ${name}: ${res.statusText}`);
   return (await res.json()) as { message: string };
 }
 
 export async function getWechatQRCode(): Promise<WechatQRResponse> {
-  const res = await fetch(`${getBackendBaseURL()}/api/channels/wechat/qr/start`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to get WeChat QR code: ${res.statusText}`);
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/channels/wechat/qr/start`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to get WeChat QR code: ${res.statusText}`);
   const data = await res.json();
   return {
     session_id: data.qrcode ?? "",
@@ -324,13 +350,19 @@ export async function getWechatQRCode(): Promise<WechatQRResponse> {
   } as WechatQRResponse;
 }
 
-export async function pollWechatLoginStatus(sessionId: string): Promise<WechatQRResponse> {
-  const res = await fetch(`${getBackendBaseURL()}/api/channels/wechat/qr/poll`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-    body: JSON.stringify({ qrcode: sessionId }),
-  });
-  if (!res.ok) throw new Error(`Failed to poll WeChat status: ${res.statusText}`);
+export async function pollWechatLoginStatus(
+  sessionId: string,
+): Promise<WechatQRResponse> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/channels/wechat/qr/poll`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ qrcode: sessionId }),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to poll WeChat status: ${res.statusText}`);
   const data = await res.json();
   return {
     session_id: sessionId,
@@ -344,40 +376,60 @@ export async function getPairingRequests(params?: {
   status?: PairingStatus;
 }): Promise<PairingRequestsResponse> {
   const channelId = params?.channel ?? "all";
-  const res = await fetch(`${getBackendBaseURL()}/api/channels/${channelId}/pairings`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to load pairing requests: ${res.statusText}`);
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/channels/${channelId}/pairings`,
+    {
+      headers: authHeaders(),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to load pairing requests: ${res.statusText}`);
   const data = await res.json();
-  const pending: PairingRequest[] = (data.pending ?? []).map((p: Record<string, unknown>, i: number) => ({
-    id: (p.sender_id as string) || String(i),
-    channel: (params?.channel ?? channelId) as ChannelName,
-    user_id: (p.sender_id as string) ?? "",
-    user_name: (p.sender_id as string) ?? "",
-    group_id: (p.thread_id as string) ?? undefined,
-    group_name: undefined,
-    status: "pending" as PairingStatus,
-    created_at: p.ts ? new Date((p.ts as number) * 1000).toISOString() : "",
-    expires_at: "",
-  }));
-  const filtered = params?.status ? pending.filter(r => r.status === params.status) : pending;
+  const pending: PairingRequest[] = (data.pending ?? []).map(
+    (p: Record<string, unknown>, i: number) => ({
+      id: (p.sender_id as string) || String(i),
+      channel: (params?.channel ?? channelId) as ChannelName,
+      user_id: (p.sender_id as string) ?? "",
+      user_name: (p.sender_id as string) ?? "",
+      group_id: (p.thread_id as string) ?? undefined,
+      group_name: undefined,
+      status: "pending" as PairingStatus,
+      created_at: p.ts ? new Date((p.ts as number) * 1000).toISOString() : "",
+      expires_at: "",
+    }),
+  );
+  const filtered = params?.status
+    ? pending.filter((r) => r.status === params.status)
+    : pending;
   return { requests: filtered, total: filtered.length };
 }
 
-export async function approvePairingRequest(id: string): Promise<{ message: string }> {
-  const res = await fetch(`${getBackendBaseURL()}/api/channels/pairing/${id}/approve`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to approve pairing ${id}: ${res.statusText}`);
+export async function approvePairingRequest(
+  id: string,
+): Promise<{ message: string }> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/channels/pairing/${id}/approve`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to approve pairing ${id}: ${res.statusText}`);
   return (await res.json()) as { message: string };
 }
 
-export async function rejectPairingRequest(id: string): Promise<{ message: string }> {
-  const res = await fetch(`${getBackendBaseURL()}/api/channels/pairing/${id}/reject`, {
-    method: "POST",
-    headers: jsonAuthHeaders(),
-  });
-  if (!res.ok) throw new Error(`Failed to reject pairing ${id}: ${res.statusText}`);
+export async function rejectPairingRequest(
+  id: string,
+): Promise<{ message: string }> {
+  const res = await fetch(
+    `${getBackendBaseURL()}/api/channels/pairing/${id}/reject`,
+    {
+      method: "POST",
+      headers: jsonAuthHeaders(),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`Failed to reject pairing ${id}: ${res.statusText}`);
   return (await res.json()) as { message: string };
 }

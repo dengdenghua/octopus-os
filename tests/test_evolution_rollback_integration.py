@@ -1,4 +1,5 @@
 """Integration tests for the full evolution rollback pipeline."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -197,19 +198,25 @@ class TestDriftToRollbackPipeline:
 
         declining_scores = [
             TurnScore(
-                ts="t", agent_id="test_agent", score=0.5,
-                reason="fail", soul_hash="h", rounds=3,
+                ts="t",
+                agent_id="test_agent",
+                score=0.5,
+                reason="fail",
+                soul_hash="h",
+                rounds=3,
             )
             for _ in range(10)
         ]
 
-        with patch.object(monitor, "_check_soul_drift", return_value=None):
-            with patch.object(monitor, "_check_genome_drift", return_value=None):
-                with patch(
-                    "runtime.memory.learning.turn_scoring.read_recent_scores",
-                    return_value=declining_scores,
-                ):
-                    report = monitor.check()
+        with (
+            patch.object(monitor, "_check_soul_drift", return_value=None),
+            patch.object(monitor, "_check_genome_drift", return_value=None),
+            patch(
+                "runtime.memory.learning.turn_scoring.read_recent_scores",
+                return_value=declining_scores,
+            ),
+        ):
+            report = monitor.check()
 
         assert report.has_drift is True
         kinds = [e.kind for e in report.events]
@@ -223,23 +230,27 @@ class TestDriftToRollbackPipeline:
 
         crashed_scores = [
             TurnScore(
-                ts="t", agent_id="test_agent", score=0.4,
-                reason="fail", soul_hash="h", rounds=3,
+                ts="t",
+                agent_id="test_agent",
+                score=0.4,
+                reason="fail",
+                soul_hash="h",
+                rounds=3,
             )
             for _ in range(10)
         ]
 
-        with patch.object(monitor, "_check_soul_drift", return_value=None):
-            with patch.object(monitor, "_check_genome_drift", return_value=None):
-                with patch(
-                    "runtime.memory.learning.turn_scoring.read_recent_scores",
-                    return_value=crashed_scores,
-                ):
-                    report = monitor.check()
+        with (
+            patch.object(monitor, "_check_soul_drift", return_value=None),
+            patch.object(monitor, "_check_genome_drift", return_value=None),
+            patch(
+                "runtime.memory.learning.turn_scoring.read_recent_scores",
+                return_value=crashed_scores,
+            ),
+        ):
+            report = monitor.check()
 
         assert report.max_severity == "critical"
-        regression_events = [
-            e for e in report.events if e.kind == "score_regression"
-        ]
+        regression_events = [e for e in report.events if e.kind == "score_regression"]
         assert len(regression_events) == 1
         assert regression_events[0].severity == "critical"

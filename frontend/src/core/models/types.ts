@@ -1,12 +1,25 @@
+import type { ReasoningEffort } from "@/core/threads";
+
 export interface Model {
   id: string;
   name: string;
-  model: string;
+  /** Concrete wire-model id. Built-in virtual models may omit it. */
+  model?: string | null;
   display_name: string;
+  /** Human-facing source entry, e.g. "OpenCode Zen 免费模型". */
+  source_display_name?: string | null;
   description?: string | null;
+  /** Stable custom-model entry key; distinct endpoints may share `model`. */
+  entry_id?: string | null;
+  /** Stable row-level route key: endpoint + variant + context profile. */
+  selection_id?: string | null;
   supports_thinking?: boolean;
   supports_vision?: boolean;
+  supports_tool_use?: boolean;
   supports_reasoning_effort?: boolean;
+  reasoning_efforts?: ReasoningEffort[] | null;
+  context_window?: number | null;
+  context_profile?: string | null;
   // Provider identification · used to look up ProviderCapabilities for
   // UI gating (e.g. grey out "upload image" for vision-less providers,
   // show a cache-hit badge for cache-supported ones).

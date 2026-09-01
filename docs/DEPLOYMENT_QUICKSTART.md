@@ -1,6 +1,6 @@
 # Deployment Quickstart
 
-This page is the shortest path from a fresh checkout to a running Octopus
+This page is the shortest path from a fresh checkout to a running Echo
 service. Use the longer `docs/deployment.md` when you need Docker, k8s, or
 systemd details.
 
@@ -27,7 +27,7 @@ The second command repeats the checks and starts the FastAPI service.
 cp .env.example .env
 cp config.example.yaml config.yaml
 docker compose up -d
-docker compose logs -f octopus-agent
+docker compose logs -f echo-agent
 ```
 
 Stop it with:

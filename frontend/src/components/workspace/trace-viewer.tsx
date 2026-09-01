@@ -1,4 +1,3 @@
-
 import {
   ActivityIcon,
   AlertCircleIcon,
@@ -70,12 +69,12 @@ function statusColor(status: string): string {
   switch (status) {
     case "ok":
     case "completed":
-      return "text-green-500";
+      return "text-success";
     case "error":
     case "failed":
-      return "text-red-500";
+      return "text-destructive";
     case "running":
-      return "text-blue-500";
+      return "text-info";
     default:
       return "text-muted-foreground";
   }
@@ -85,12 +84,12 @@ function statusBg(status: string): string {
   switch (status) {
     case "ok":
     case "completed":
-      return "bg-green-500";
+      return "bg-success";
     case "error":
     case "failed":
-      return "bg-red-500";
+      return "bg-destructive";
     case "running":
-      return "bg-blue-500";
+      return "bg-info";
     default:
       return "bg-muted-foreground/30";
   }
@@ -100,12 +99,12 @@ function statusBarBg(status: string): string {
   switch (status) {
     case "ok":
     case "completed":
-      return "bg-green-500/70";
+      return "bg-success/70";
     case "error":
     case "failed":
-      return "bg-red-500/70";
+      return "bg-destructive/70";
     case "running":
-      return "bg-blue-500/70";
+      return "bg-info/70";
     default:
       return "bg-muted-foreground/20";
   }
@@ -170,7 +169,9 @@ function TraceListItem({
     [trace.spans],
   );
 
-  const hasError = trace.spans.some((s) => s.status === "error" || s.status === "failed");
+  const hasError = trace.spans.some(
+    (s) => s.status === "error" || s.status === "failed",
+  );
 
   return (
     <button
@@ -180,19 +181,21 @@ function TraceListItem({
       <div
         className={cn(
           "size-1.5 shrink-0 rounded-lg",
-          hasError ? "bg-red-500" : "bg-green-500",
+          hasError ? "bg-destructive" : "bg-success",
         )}
       />
       <div className="min-w-0 flex-1">
-        <div className="text-foreground/90 truncate font-mono text-[11px]">
+        <div className="text-foreground/90 truncate font-mono text-xs">
           {trace.agent_name || trace.trace_id.slice(0, 12)}
         </div>
-        <div className="text-muted-foreground flex items-center gap-2 text-[10px]">
-          <span>{trace.spans.length} {t.traces.spans}</span>
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
+          <span>
+            {trace.spans.length} {t.traces.spans}
+          </span>
           <span>{formatDuration(totalMs)}</span>
         </div>
       </div>
-      <div className="text-muted-foreground/60 shrink-0 text-[9px]">
+      <div className="text-muted-foreground/60 shrink-0 text-xs">
         {formatTimestamp(trace.created_at)}
       </div>
       <ChevronRightIcon className="text-muted-foreground/40 size-3 shrink-0" />
@@ -228,17 +231,20 @@ function WaterfallRow({
       <CircleDotIcon
         className={cn("size-2.5 shrink-0", statusColor(node.span.status))}
       />
-      <span className="text-foreground/80 min-w-0 flex-1 truncate font-mono text-[11px]">
+      <span className="text-foreground/80 min-w-0 flex-1 truncate font-mono text-xs">
         {node.span.name}
       </span>
       <div className="flex w-20 shrink-0 items-center gap-1">
         <div className="relative h-3 flex-1 overflow-hidden rounded-lg bg-muted/50">
           <div
-            className={cn("absolute inset-y-0 left-0 rounded-lg", statusBarBg(node.span.status))}
+            className={cn(
+              "absolute inset-y-0 left-0 rounded-lg",
+              statusBarBg(node.span.status),
+            )}
             style={{ width: `${barWidthPct}%` }}
           />
         </div>
-        <span className="text-muted-foreground w-9 text-right font-mono text-[9px]">
+        <span className="text-muted-foreground w-9 text-right font-mono text-xs">
           {formatDuration(node.span.duration_ms)}
         </span>
       </div>
@@ -257,11 +263,12 @@ function SpanDetail({
   return (
     <div className="border-t">
       <div className="flex items-center justify-between border-b px-3 py-1.5">
-        <span className="text-foreground/90 truncate font-mono text-[11px] font-semibold">
+        <span className="text-foreground/90 truncate font-mono text-xs font-semibold">
           {span.name}
         </span>
         <button
           onClick={onClose}
+          aria-label={t.common.close}
           className="text-muted-foreground hover:text-foreground shrink-0"
         >
           <XIcon className="size-3" />
@@ -270,7 +277,7 @@ function SpanDetail({
 
       <div className="space-y-2 p-3">
         {/* Status / Duration */}
-        <div className="flex items-center gap-3 text-[11px]">
+        <div className="flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1">
             <div className={cn("size-1.5 rounded-lg", statusBg(span.status))} />
             <span className="text-muted-foreground">{span.status}</span>
@@ -284,11 +291,11 @@ function SpanDetail({
         {/* Attributes */}
         {span.attributes && Object.keys(span.attributes).length > 0 && (
           <div>
-            <div className="text-muted-foreground mb-1 text-[10px] font-medium uppercase tracking-wider">
+            <div className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-wider">
               {t.traces.attributes}
             </div>
             <div className="rounded-lg border">
-              <div className="max-h-40 overflow-auto p-2 text-[10px]">
+              <div className="max-h-40 overflow-auto p-2 text-xs">
                 <pre className="text-foreground/70 whitespace-pre-wrap break-all font-mono">
                   {JSON.stringify(span.attributes, null, 2)}
                 </pre>
@@ -300,15 +307,12 @@ function SpanDetail({
         {/* Events */}
         {span.events && span.events.length > 0 && (
           <div>
-            <div className="text-muted-foreground mb-1 text-[10px] font-medium uppercase tracking-wider">
+            <div className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-wider">
               {t.traces.events(span.events.length)}
             </div>
             <div className="space-y-1">
               {span.events.map((ev, i) => (
-                <div
-                  key={i}
-                  className="rounded-lg border p-2 text-[10px]"
-                >
+                <div key={i} className="rounded-lg border p-2 text-xs">
                   <div className="text-foreground/80 font-mono font-medium">
                     {ev.name}
                   </div>
@@ -344,7 +348,10 @@ export function TraceViewer({ className }: { className?: string }) {
 
   const fetchTraces = useCallback(async () => {
     try {
-      const res = await fetch(`${getBackendBaseURL()}/api/trace/recent?limit=20`, { headers: authHeaders() });
+      const res = await fetch(
+        `${getBackendBaseURL()}/api/trace/recent?limit=20`,
+        { headers: authHeaders() },
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { traces: Trace[] };
       setTraces(data.traces ?? []);
@@ -382,7 +389,11 @@ export function TraceViewer({ className }: { className?: string }) {
     try {
       const res = await fetch(`${getBackendBaseURL()}/api/trace/${traceId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { success: boolean; trace?: Trace; error?: string };
+      const data = (await res.json()) as {
+        success: boolean;
+        trace?: Trace;
+        error?: string;
+      };
       if (data.success && data.trace) {
         setSelectedTrace(data.trace);
         setSelectedSpan(null);
@@ -412,7 +423,10 @@ export function TraceViewer({ className }: { className?: string }) {
 
   const totalMs = useMemo(() => {
     if (!selectedTrace) return 0;
-    return selectedTrace.spans.reduce((acc, s) => acc + (s.duration_ms ?? 0), 0);
+    return selectedTrace.spans.reduce(
+      (acc, s) => acc + (s.duration_ms ?? 0),
+      0,
+    );
   }, [selectedTrace]);
 
   // ---- Handlers -----------------------------------------------------------
@@ -451,7 +465,7 @@ export function TraceViewer({ className }: { className?: string }) {
             {selectedTrace ? t.traces.trace : t.traces.title}
           </span>
           {selectedTrace && (
-            <span className="text-muted-foreground font-mono text-[10px]">
+            <span className="text-muted-foreground font-mono text-xs">
               {selectedTrace.trace_id.slice(0, 8)}
             </span>
           )}
@@ -478,7 +492,7 @@ export function TraceViewer({ className }: { className?: string }) {
 
       {/* Error */}
       {error && (
-        <div className="mx-3 mb-2 flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/5 px-2 py-1 text-[10px] text-red-500">
+        <div className="mx-3 mb-2 flex items-center gap-1.5 rounded-lg border border-destructive/20 bg-destructive/5 px-2 py-1 text-xs text-destructive">
           <AlertCircleIcon className="size-3 shrink-0" />
           <span className="truncate">{error}</span>
         </div>
@@ -489,7 +503,7 @@ export function TraceViewer({ className }: { className?: string }) {
         /* ---- Trace List ---- */
         <div className="flex-1 overflow-auto">
           {traces.length === 0 && !loading && (
-            <div className="text-muted-foreground/50 py-8 text-center text-[11px]">
+            <div className="text-muted-foreground/50 py-8 text-center text-xs">
               {t.traces.noTraces}
             </div>
           )}
@@ -505,7 +519,7 @@ export function TraceViewer({ className }: { className?: string }) {
         /* ---- Waterfall + Detail ---- */
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Trace summary bar */}
-          <div className="flex items-center gap-2 border-b px-3 py-1.5 text-[10px]">
+          <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
             <span className="text-muted-foreground">
               {selectedTrace.spans.length} {t.traces.spans}
             </span>

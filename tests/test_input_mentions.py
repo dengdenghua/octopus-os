@@ -62,7 +62,7 @@ def test_parse_input_mentions_records_span() -> None:
     assert isinstance(mention, InputMention)
     assert mention.type == "skill"
     assert mention.id == "foo"
-    assert text[mention.span[0]:mention.span[1]] == "@skill:foo"
+    assert text[mention.span[0] : mention.span[1]] == "@skill:foo"
 
 
 def test_render_hint_mentions_each_bucket() -> None:

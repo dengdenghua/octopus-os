@@ -45,8 +45,12 @@ for (const h of hits) {
   byFile.get(h.file).push(h);
 }
 
-console.log(`--- localStorage / sessionStorage direct access — ${hits.length} hits in ${byFile.size} files ---`);
-for (const [file, list] of [...byFile.entries()].sort((a, b) => b[1].length - a[1].length)) {
+console.log(
+  `--- localStorage / sessionStorage direct access — ${hits.length} hits in ${byFile.size} files ---`,
+);
+for (const [file, list] of [...byFile.entries()].sort(
+  (a, b) => b[1].length - a[1].length,
+)) {
   console.log(`\n  ${file}  (${list.length})`);
   for (const h of list) {
     console.log(`    L${h.line}  ${h.text}`);

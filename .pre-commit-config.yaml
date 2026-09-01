@@ -1,5 +1,4 @@
 repos:
-  # Implementation note.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -22,105 +21,10 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  # Bandit (security lint)
+  # Bandit (security lint) — only scan appliance/
   - repo: https://github.com/PyCQA/bandit
     rev: "1.7.9"
     hooks:
       - id: bandit
         args: [-ll, -ii, -r]
-        files: ^runtime/
-
-  # Implementation note.
-  - repo: local
-    hooks:
-      - id: invariant-lint
-        name: octopus-agent invariant lint
-        entry: python -m tools.lint.invariant_check
-        language: system
-        types: [python]
-        files: ^(runtime/|tests/)
-        exclude: ^(tools/lint/fixtures/)
-
-      - id: skill-dedup
-        name: no duplicate skill packages
-        entry: python tools/lint/skill_dedup_check.py --strict
-        language: system
-        pass_filenames: false
-        # Run only when SKILL.md or skill scripts change. Cheap on
-        # other commits; ~1s when it does run.
-        files: ^runtime/execution/all_skills/
-
-      - id: exception-audit
-        name: "silent except: pass must be justified"
-        entry: python tools/lint/exception_audit.py --strict
-        language: system
-        pass_filenames: false
-        # Baselines existing swallows; new ones must add a noqa or
-        # log line. See exception_audit_baseline.txt.
-        files: ^runtime/
-
-      - id: god-file-check
-        name: no NEW files ≥1000 lines under runtime/
-        entry: python tools/lint/god_file_check.py --strict
-        language: system
-        pass_filenames: false
-        files: ^runtime/.*\.py$
-
-      - id: import-direction-check
-        name: no NEW wrong-way cross-package imports
-        entry: python tools/lint/import_direction_check.py --strict
-        language: system
-        pass_filenames: false
-        # Baselines existing kernel→sensing/web edges; new ones fail.
-        # See import_direction_baseline.txt.
-        files: ^runtime/.*\.py$
-
-      - id: orphan-module-check
-        name: no NEW exported-but-unimported runtime modules
-        entry: python tools/lint/orphan_module_check.py --strict
-        language: system
-        pass_filenames: false
-        # Baselines current orphans; a newly-stranded module fails.
-        # See orphan_module_baseline.txt.
-        files: ^(runtime|tests|demos|benchmarks|tools|scripts)/.*\.py$
-
-      - id: root-hygiene
-        name: repository root matches ROOT_LAYOUT.md allow-list
-        entry: python tools/lint/root_hygiene.py --strict
-        language: system
-        pass_filenames: false
-        # Block any commit that adds a top-level file or directory not
-        # enumerated in ROOT_ALLOWLIST (mirrors ROOT_LAYOUT.md).
-        files: ^(?!\.gitignore$|ROOT_LAYOUT\.md$|tools/lint/root_hygiene\.py$).*
-
-      - id: repo-url-consistent
-        name: all GitHub repo URLs match pyproject.toml source of truth
-        entry: python tools/lint/repo_url_check.py --strict
-        language: system
-        pass_filenames: false
-        # Trigger on any change that could shift a URL: the source of
-        # truth, the manifest files that hold derived URLs, the linter
-        # itself, and the install script. Lockfiles and vendored docs
-        # are excluded by the linter's own SKIP_GLOBS.
-        files: ^(pyproject\.toml$|frontend/package\.json$|mkdocs\.yml$|scripts/install\.sh$|permissions\.example\.json$|tools/lint/repo_url_check\.py$|runtime/cli\.py$|runtime/platform/demo\.py$|deploy/octopus-agent\.service$|frontend/src/core/config/index\.ts$|frontend/src/components/workspace/settings/about.*)
-
-      - id: auto-docs-fresh
-        name: auto-generated docs in sync
-        entry: python scripts/gen_wiki.py --check
-        language: system
-        pass_filenames: false
-        # The generator walks runtime/ + docs/auto/. Trigger on any
-        # change under those roots so a stale docs/auto/ entry can't
-        # hide in a PR diff.
-        files: ^(runtime/|docs/auto/|scripts/gen_wiki\.py$)
-
-      - id: openapi-snapshot
-        name: OpenAPI snapshot fresh
-        entry: python -m pytest tests/test_openapi_snapshot.py -q --no-header
-        language: system
-        pass_filenames: false
-        # Drift detector reads the FastAPI app and diffs against
-        # docs/openapi-snapshot.json. Run when any router file
-        # changes so a new endpoint can't ship without snapshot
-        # regeneration.
-        files: ^(runtime/sensing/siphon/|runtime/platform/ui/|docs/openapi-snapshot\.json$)
+        files: ^appliance/

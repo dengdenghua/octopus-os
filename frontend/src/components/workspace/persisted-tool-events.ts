@@ -45,7 +45,11 @@ export function persistedTodoEventsFromMessages(
 export function latestPersistedTodoEventsFromMessages(
   messages: Message[],
 ): LiveToolEvent[] {
-  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+  for (
+    let messageIndex = messages.length - 1;
+    messageIndex >= 0;
+    messageIndex -= 1
+  ) {
     const message = messages[messageIndex];
     if (!message || !isAIMessage(message)) continue;
     const events: LiveToolEvent[] = [];

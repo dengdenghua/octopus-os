@@ -1,0 +1,874 @@
+#!/usr/bin/env python3
+"""Offline, encrypted Echo OS user backup and staged migration restore.
+
+The command deliberately backs up only the fixed local user's home and native
+Agent state. Device identity, password hashes, NetworkManager secrets, TPM
+tokens and machine credentials are outside the source allowlist. Restores are
+always written into a new private staging directory and are never promoted over
+live data automatically.
+"""
+
+from __future__ import annotations
+
+import argparse
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import fcntl
+import getpass
+import hashlib
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import stat
+import subprocess
+import sys
+from typing import Any, Iterator, Mapping, Sequence
+
+
+RESTIC = "/usr/bin/restic"
+FINDMNT = "/usr/bin/findmnt"
+LOGINCTL = "/usr/bin/loginctl"
+SYSTEMCTL = "/usr/bin/systemctl"
+AGENT_HEALTH = "/usr/lib/echo-os/verify-native-agent-health"
+BACKUP_MOUNT = Path("/mnt/echo-backup")
+REPOSITORY = BACKUP_MOUNT / "echo-os-user"
+USER_HOME = Path("/home/echo")
+AGENT_STATE = Path("/var/lib/echo-agent")
+RESTORE_ROOT = USER_HOME / ".echo-restore-staging"
+STATE_FILE = Path("/var/lib/echo-os/user-backup-state.json")
+RUNTIME_ROOT = Path("/run/echo-os-user-backup")
+LOCK_FILE = RUNTIME_ROOT / "operation.lock"
+RUNTIME_TEMP = RUNTIME_ROOT / "tmp"
+USER_NAME = "echo"
+USER_UID = 1000
+TAG = "echo-os-user-v1"
+CONSISTENCY_TAG = "offline"
+SCHEMA = 2
+MAX_PASSWORD_BYTES = 1024
+MIN_PASSWORD_CHARACTERS = 12
+ALLOWED_FILESYSTEMS = frozenset({"btrfs", "ext4", "f2fs", "xfs"})
+SNAPSHOT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+SAFE_REPOSITORY_ID = re.compile(r"^[0-9a-f]{16,64}$")
+
+
+class BackupError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class LocalUser:
+    uid: int
+    gid: int
+    home: Path
+
+
+@dataclass(frozen=True)
+class MountRecord:
+    source: str
+    filesystem: str
+    target: Path
+
+
+def fixed_environment(user: LocalUser) -> dict[str, str]:
+    return {
+        "HOME": str(user.home),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "PATH": "/usr/bin:/bin",
+        "TMPDIR": str(RUNTIME_TEMP),
+    }
+
+
+def validate_password(password: str) -> bytes:
+    if len(password) < MIN_PASSWORD_CHARACTERS:
+        raise BackupError(
+            f"backup password must contain at least {MIN_PASSWORD_CHARACTERS} characters"
+        )
+    encoded = password.encode("utf-8")
+    if len(encoded) > MAX_PASSWORD_BYTES:
+        raise BackupError("backup password is too large")
+    if any(character in password for character in ("\0", "\r", "\n")):
+        raise BackupError("backup password contains an unsupported control character")
+    return encoded
+
+
+def credential_password(confirm: bool) -> bytes:
+    credential_directory = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    if credential_directory:
+        directory = Path(credential_directory)
+        credential = directory / "echo-backup-password"
+        if not directory.is_absolute():
+            raise BackupError("systemd credential directory is not absolute")
+        try:
+            directory_metadata = directory.lstat()
+        except OSError as error:
+            raise BackupError("backup password credential is unavailable") from error
+        if (
+            stat.S_ISLNK(directory_metadata.st_mode)
+            or not stat.S_ISDIR(directory_metadata.st_mode)
+            or directory_metadata.st_uid != 0
+            or stat.S_IMODE(directory_metadata.st_mode) & 0o022
+        ):
+            raise BackupError("backup password credential is unsafe")
+        flags = os.O_RDONLY | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(credential, flags)
+        except OSError as error:
+            raise BackupError("backup password credential is unavailable") from error
+        try:
+            credential_metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(credential_metadata.st_mode)
+                or credential_metadata.st_uid != 0
+                or stat.S_IMODE(credential_metadata.st_mode) & 0o077
+                or credential_metadata.st_size > MAX_PASSWORD_BYTES
+            ):
+                raise BackupError("backup password credential is unsafe")
+            raw_password = os.read(descriptor, MAX_PASSWORD_BYTES + 1)
+        finally:
+            os.close(descriptor)
+        if len(raw_password) > MAX_PASSWORD_BYTES:
+            raise BackupError("backup password credential is too large")
+        password = raw_password.removesuffix(b"\n").decode("utf-8")
+        return validate_password(password)
+
+    first = getpass.getpass("Echo backup password: ")
+    if confirm:
+        second = getpass.getpass("Confirm Echo backup password: ")
+        if first != second:
+            raise BackupError("backup password confirmation does not match")
+    return validate_password(first)
+
+
+def local_user() -> LocalUser:
+    try:
+        account = pwd.getpwnam(USER_NAME)
+    except KeyError as error:
+        raise BackupError("fixed Echo OS local user is missing") from error
+    if account.pw_uid != USER_UID or Path(account.pw_dir) != USER_HOME:
+        raise BackupError("fixed Echo OS local user identity is inconsistent")
+    return LocalUser(account.pw_uid, account.pw_gid, Path(account.pw_dir))
+
+
+def validate_mount_record(record: MountRecord) -> None:
+    if record.target != BACKUP_MOUNT:
+        raise BackupError("backup repository must use the fixed external mount")
+    if record.filesystem not in ALLOWED_FILESYSTEMS:
+        raise BackupError("backup filesystem lacks the required local POSIX semantics")
+    if not record.source.startswith("/dev/"):
+        raise BackupError("backup repository must be backed by a local block device")
+    if any(
+        forbidden in record.source
+        for forbidden in ("echo-home", "echo-var", "echo-root", "echo-swap")
+    ):
+        raise BackupError("backup repository cannot use an Echo OS internal volume")
+
+
+def read_mount_record(
+    runner: Any = subprocess.run,
+) -> MountRecord:
+    result = runner(
+        [FINDMNT, "--json", "--target", str(BACKUP_MOUNT), "--output", "SOURCE,FSTYPE,TARGET"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+    )
+    if result.returncode != 0:
+        raise BackupError("fixed external backup mount is unavailable")
+    try:
+        payload = json.loads(result.stdout)
+        filesystems = payload["filesystems"]
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        raise BackupError("findmnt returned an invalid backup mount record") from error
+    candidates = [
+        MountRecord(
+            str(item.get("source", "")),
+            str(item.get("fstype", "")),
+            Path(str(item.get("target", ""))),
+        )
+        for item in filesystems
+        if isinstance(item, dict)
+    ]
+    exact = [record for record in candidates if record.target == BACKUP_MOUNT]
+    if len(exact) != 1:
+        raise BackupError("backup path is not its own mount point")
+    validate_mount_record(exact[0])
+    return exact[0]
+
+
+def validate_directory(path: Path, uid: int, mode: int) -> None:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise BackupError(f"required private directory is unavailable: {path}") from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise BackupError(f"required private path is not a real directory: {path}")
+    if metadata.st_uid != uid or stat.S_IMODE(metadata.st_mode) != mode:
+        raise BackupError(f"required private directory has unsafe ownership or mode: {path}")
+
+
+def validate_backup_storage(user: LocalUser, create_repository: bool = False) -> None:
+    read_mount_record()
+    if not os.path.ismount(BACKUP_MOUNT):
+        raise BackupError("backup path is not a mounted filesystem")
+    mount_metadata = BACKUP_MOUNT.lstat()
+    if stat.S_ISLNK(mount_metadata.st_mode) or not stat.S_ISDIR(mount_metadata.st_mode):
+        raise BackupError("backup mount is not a real directory")
+    if mount_metadata.st_uid != 0 or stat.S_IMODE(mount_metadata.st_mode) & 0o022:
+        raise BackupError("backup mount root has unsafe ownership or mode")
+    mount_device = mount_metadata.st_dev
+    if mount_device in {USER_HOME.stat().st_dev, AGENT_STATE.stat().st_dev}:
+        raise BackupError("backup repository is on an Echo OS internal filesystem")
+
+    if create_repository:
+        if REPOSITORY.exists() or REPOSITORY.is_symlink():
+            raise BackupError("backup repository already exists")
+        REPOSITORY.mkdir(mode=0o700)
+        os.chown(REPOSITORY, user.uid, user.gid)
+        os.chmod(REPOSITORY, 0o700)
+    validate_directory(REPOSITORY, user.uid, 0o700)
+    if REPOSITORY.lstat().st_dev != mount_device:
+        raise BackupError("backup repository crosses into another mounted filesystem")
+
+
+def active_user_session(runner: Any = subprocess.run) -> bool:
+    environment = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+    listed = runner(
+        [LOGINCTL, "list-sessions", "--no-legend", "--no-pager"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        env=environment,
+    )
+    if listed.returncode != 0:
+        raise BackupError("cannot establish the local session state")
+    session_lines = listed.stdout.splitlines()
+    if len(session_lines) > 128:
+        raise BackupError("local session inventory exceeds the safety bound")
+    for line in session_lines:
+        fields = line.split()
+        if not fields or re.fullmatch(r"[0-9]{1,20}", fields[0]) is None:
+            raise BackupError("local session inventory is malformed")
+        shown = runner(
+            [
+                LOGINCTL,
+                "show-session",
+                fields[0],
+                "--property=Name",
+                "--property=Class",
+                "--property=Remote",
+                "--property=State",
+                "--no-pager",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            env=environment,
+        )
+        if shown.returncode != 0:
+            raise BackupError("cannot inspect every local session")
+        properties = dict(
+            row.split("=", 1) for row in shown.stdout.splitlines() if "=" in row
+        )
+        if not {"Name", "Class", "Remote", "State"}.issubset(properties):
+            raise BackupError("local session properties are incomplete")
+        if (
+            properties.get("Name") == USER_NAME
+            and properties.get("State") in {"active", "online", "closing"}
+        ):
+            return True
+    return False
+
+
+def ensure_no_user_processes(proc_root: Path = Path("/proc")) -> None:
+    try:
+        entries = list(proc_root.iterdir())
+    except OSError as error:
+        raise BackupError("cannot inspect the offline user process set") from error
+    if len(entries) > 1_000_000:
+        raise BackupError("process inventory exceeds the safety bound")
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            status_text = (entry / "status").read_text(encoding="ascii")
+        except FileNotFoundError:
+            continue
+        except (OSError, UnicodeError) as error:
+            raise BackupError("cannot inspect every offline user process") from error
+        uid_rows = [line for line in status_text.splitlines() if line.startswith("Uid:")]
+        if len(uid_rows) != 1:
+            raise BackupError("process identity record is malformed")
+        fields = uid_rows[0].split()[1:]
+        if len(fields) != 4 or any(not field.isdigit() for field in fields):
+            raise BackupError("process identity record is malformed")
+        if USER_UID in {int(field) for field in fields}:
+            raise BackupError("offline operation found a remaining echo process")
+
+
+def pseudonymous_host(machine_id_path: Path = Path("/etc/machine-id")) -> str:
+    machine_id = machine_id_path.read_text(encoding="ascii").strip()
+    if re.fullmatch(r"[0-9a-f]{32}", machine_id) is None or machine_id == "0" * 32:
+        raise BackupError("persistent machine identity is unavailable")
+    derived = hashlib.sha256(
+        b"echo-os-user-backup-v1\0" + machine_id.encode("ascii")
+    ).hexdigest()[:16]
+    return f"echo-{derived}"
+
+
+def restic_base(password_fd: int) -> list[str]:
+    return [
+        RESTIC,
+        "--repository",
+        str(REPOSITORY),
+        "--password-file",
+        f"/proc/self/fd/{password_fd}",
+        "--no-cache",
+    ]
+
+
+def backup_arguments(password_fd: int, host: str) -> list[str]:
+    return [
+        *restic_base(password_fd),
+        "backup",
+        "--json",
+        "--one-file-system",
+        "--exclude-caches",
+        "--exclude",
+        str(RESTORE_ROOT),
+        "--exclude",
+        str(USER_HOME / ".cache"),
+        "--host",
+        host,
+        "--tag",
+        TAG,
+        "--tag",
+        CONSISTENCY_TAG,
+        str(USER_HOME),
+        str(AGENT_STATE),
+    ]
+
+
+def check_arguments(password_fd: int) -> list[str]:
+    return [*restic_base(password_fd), "check", "--read-data"]
+
+
+def snapshots_arguments(password_fd: int) -> list[str]:
+    return [*restic_base(password_fd), "snapshots", "--json", "--tag", TAG]
+
+
+def restore_arguments(password_fd: int, snapshot_id: str, target: Path) -> list[str]:
+    if SNAPSHOT_PATTERN.fullmatch(snapshot_id) is None:
+        raise BackupError("restore requires a complete authenticated snapshot id")
+    return [
+        *restic_base(password_fd),
+        "restore",
+        snapshot_id,
+        "--target",
+        str(target),
+        "--overwrite",
+        "never",
+    ]
+
+
+@contextmanager
+def password_memfd(password: bytes, user: LocalUser) -> Iterator[int]:
+    if not hasattr(os, "memfd_create"):
+        raise BackupError("anonymous password transport is unavailable")
+    descriptor = os.memfd_create("echo-backup-password", 0)
+    try:
+        os.fchown(descriptor, user.uid, user.gid)
+        os.fchmod(descriptor, 0o400)
+        os.write(descriptor, password + b"\n")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def run_restic(
+    arguments: list[str],
+    password_fd: int,
+    user: LocalUser,
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        arguments,
+        check=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=fixed_environment(user),
+        pass_fds=(password_fd,),
+        user=user.uid,
+        group=user.gid,
+        extra_groups=(),
+    )
+    if result.returncode != 0:
+        raise BackupError(f"encrypted backup engine failed with status {result.returncode}")
+    return result
+
+
+def repository_config(password_fd: int, user: LocalUser) -> str:
+    result = run_restic(
+        [*restic_base(password_fd), "cat", "config"], password_fd, user
+    )
+    try:
+        repository_id = json.loads(result.stdout)["id"]
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        raise BackupError("backup repository returned an invalid identity") from error
+    if not isinstance(repository_id, str) or SAFE_REPOSITORY_ID.fullmatch(repository_id) is None:
+        raise BackupError("backup repository identity is invalid")
+    return repository_id
+
+
+def list_snapshots(password_fd: int, user: LocalUser) -> list[dict[str, Any]]:
+    result = run_restic(snapshots_arguments(password_fd), password_fd, user)
+    try:
+        snapshots = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise BackupError("backup repository returned an invalid snapshot list") from error
+    if not isinstance(snapshots, list):
+        raise BackupError("backup repository returned an invalid snapshot list")
+    safe: list[dict[str, Any]] = []
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        snapshot_id = snapshot.get("id")
+        timestamp = snapshot.get("time")
+        tags = snapshot.get("tags")
+        if (
+            not isinstance(snapshot_id, str)
+            or SNAPSHOT_PATTERN.fullmatch(snapshot_id) is None
+            or not isinstance(timestamp, str)
+            or not isinstance(tags, list)
+            or TAG not in tags
+        ):
+            continue
+        safe.append({"id": snapshot_id, "time": timestamp, "tags": tags})
+    return safe
+
+
+def snapshot_from_backup_output(output: str) -> str:
+    snapshot_ids: list[str] = []
+    for line in output.splitlines():
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(message, dict) or message.get("message_type") != "summary":
+            continue
+        snapshot_id = message.get("snapshot_id")
+        if isinstance(snapshot_id, str) and SNAPSHOT_PATTERN.fullmatch(snapshot_id):
+            snapshot_ids.append(snapshot_id)
+    if len(snapshot_ids) != 1:
+        raise BackupError("backup engine did not authenticate one completed snapshot")
+    return snapshot_ids[0]
+
+
+def select_snapshot(selector: str, snapshots: list[dict[str, Any]]) -> str:
+    if not snapshots:
+        raise BackupError("backup repository has no Echo OS user snapshots")
+    if selector == "latest":
+        return max(snapshots, key=lambda item: str(item["time"]))["id"]
+    if re.fullmatch(r"[0-9a-f]{12,64}", selector) is None:
+        raise BackupError("snapshot selector must be latest or a hexadecimal id prefix")
+    matches = [item["id"] for item in snapshots if item["id"].startswith(selector)]
+    if len(matches) != 1:
+        raise BackupError("snapshot selector is missing or ambiguous")
+    return matches[0]
+
+
+def write_state(
+    repository_id: str,
+    snapshot_id: str,
+    action: str,
+    *,
+    staging_name: str = "",
+) -> None:
+    if SAFE_REPOSITORY_ID.fullmatch(repository_id) is None:
+        raise BackupError("refusing to record an invalid repository identity")
+    if snapshot_id and SNAPSHOT_PATTERN.fullmatch(snapshot_id) is None:
+        raise BackupError("refusing to record an invalid snapshot identity")
+    if staging_name and re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}", staging_name) is None:
+        raise BackupError("refusing to record an invalid restore staging identity")
+    STATE_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    validate_directory(STATE_FILE.parent, 0, 0o700)
+    payload = {
+        "schema": SCHEMA,
+        "action": action,
+        "repository_id": repository_id,
+        "snapshot_id": snapshot_id,
+        "verified_full_read": True,
+        "updated_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    if staging_name:
+        payload["staging_name"] = staging_name
+    temporary = STATE_FILE.with_name(f".{STATE_FILE.name}.{os.getpid()}.tmp")
+    descriptor = os.open(
+        temporary,
+        os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
+        0o600,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, sort_keys=True, separators=(",", ":"))
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, STATE_FILE)
+    finally:
+        temporary.unlink(missing_ok=True)
+    os.chown(STATE_FILE, 0, 0)
+    os.chmod(STATE_FILE, 0o600)
+
+
+def systemctl(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            [SYSTEMCTL, *arguments],
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise BackupError("system service manager is unavailable") from error
+
+
+def service_is_active(service: str) -> bool:
+    result = systemctl(["is-active", "--quiet", service])
+    if result.returncode == 0:
+        return True
+    if result.returncode == 3:
+        return False
+    raise BackupError(f"cannot establish service state: {service}")
+
+
+def agent_is_healthy() -> bool:
+    try:
+        return subprocess.run(
+            [AGENT_HEALTH],
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+        ).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+@contextmanager
+def stopped_agent() -> Iterator[None]:
+    service = "echo-agent.service"
+    was_active = service_is_active(service)
+    primary_error: BaseException | None = None
+    try:
+        if was_active:
+            stop_result = systemctl(["stop", service])
+            stopped = not service_is_active(service)
+            if stop_result.returncode != 0 or not stopped:
+                raise BackupError("native Agent could not stop for a consistent backup")
+        yield
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        if was_active:
+            try:
+                active = service_is_active(service)
+                restarted = active or systemctl(["start", service]).returncode == 0
+                healthy = restarted and service_is_active(service) and agent_is_healthy()
+            except BackupError:
+                healthy = False
+            if not healthy:
+                if primary_error is not None:
+                    raise BackupError(
+                        "native Agent did not recover after a failed backup operation"
+                    ) from primary_error
+                raise BackupError("native Agent did not recover after backup")
+
+
+@contextmanager
+def stopped_login_manager() -> Iterator[None]:
+    service = "sddm.service"
+    was_active = service_is_active(service)
+    primary_error: BaseException | None = None
+    try:
+        if was_active:
+            stop_result = systemctl(["stop", service])
+            stopped = not service_is_active(service)
+            if stop_result.returncode != 0 or not stopped:
+                raise BackupError(
+                    "graphical login manager could not stop for offline data access"
+                )
+        if active_user_session():
+            raise BackupError("offline operation detected an active user session")
+        yield
+    except BaseException as error:
+        primary_error = error
+        raise
+    finally:
+        if was_active:
+            try:
+                active = service_is_active(service)
+                restarted = active or systemctl(["start", service]).returncode == 0
+                healthy = restarted and service_is_active(service)
+            except BackupError:
+                healthy = False
+            if not healthy:
+                if primary_error is not None:
+                    raise BackupError(
+                        "graphical login manager did not recover after a failed offline operation"
+                    ) from primary_error
+                raise BackupError("graphical login manager did not recover")
+
+
+def private_restore_target(user: LocalUser, snapshot_id: str) -> Path:
+    if SNAPSHOT_PATTERN.fullmatch(snapshot_id) is None:
+        raise BackupError("restore snapshot identity is invalid")
+    if not RESTORE_ROOT.exists():
+        RESTORE_ROOT.mkdir(mode=0o700)
+        os.chown(RESTORE_ROOT, user.uid, user.gid)
+    validate_directory(RESTORE_ROOT, user.uid, 0o700)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    target = RESTORE_ROOT / f"{timestamp}-{snapshot_id[:12]}"
+    if target.exists() or target.is_symlink():
+        raise BackupError("restore staging target already exists")
+    target.mkdir(mode=0o700)
+    os.chown(target, user.uid, user.gid)
+    return target
+
+
+def validate_restored_tree(target: Path, user: LocalUser) -> None:
+    validate_directory(target, user.uid, 0o700)
+    expected = {target / "home", target / "var"}
+    actual = set(target.iterdir())
+    if actual - expected:
+        raise BackupError("restored snapshot contains an unexpected top-level path")
+    for required in (
+        target / "home" / USER_NAME,
+        target / "var" / "lib" / "echo-agent",
+    ):
+        if not required.is_dir() or required.is_symlink():
+            raise BackupError("restored snapshot is missing a required user data root")
+    for root, directories, files in os.walk(target, topdown=True, followlinks=False):
+        for name in [*directories, *files]:
+            item = Path(root) / name
+            metadata = item.lstat()
+            if metadata.st_uid != user.uid:
+                raise BackupError("restored snapshot contains a foreign file owner")
+            if stat.S_ISLNK(metadata.st_mode):
+                link_target = os.readlink(item)
+                if os.path.isabs(link_target):
+                    raise BackupError("restored snapshot contains an absolute symlink")
+                resolved = (item.parent / link_target).resolve(strict=False)
+                try:
+                    resolved.relative_to(target)
+                except ValueError as error:
+                    raise BackupError("restored snapshot contains an escaping symlink") from error
+            elif not (stat.S_ISREG(metadata.st_mode) or stat.S_ISDIR(metadata.st_mode)):
+                raise BackupError("restored snapshot contains a special file")
+
+
+@contextmanager
+def operation_lock() -> Iterator[None]:
+    LOCK_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    validate_directory(LOCK_FILE.parent, 0, 0o700)
+    flags = os.O_CREAT | os.O_RDWR | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(LOCK_FILE, flags, 0o600)
+    except OSError as error:
+        raise BackupError("backup operation lock is unavailable") from error
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0:
+            raise BackupError("backup operation lock is unsafe")
+        os.fchmod(descriptor, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise BackupError("another Echo OS backup operation is active") from error
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def prepare_runtime(user: LocalUser) -> None:
+    validate_directory(RUNTIME_ROOT, 0, 0o700)
+    if not RUNTIME_TEMP.exists():
+        RUNTIME_TEMP.mkdir(mode=0o700)
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(RUNTIME_TEMP, flags)
+    except OSError as error:
+        raise BackupError("backup runtime directory is unsafe") from error
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid not in {0, user.uid}:
+            raise BackupError("backup runtime directory is unsafe")
+        os.fchown(descriptor, user.uid, user.gid)
+        os.fchmod(descriptor, 0o700)
+    finally:
+        os.close(descriptor)
+    validate_directory(RUNTIME_TEMP, user.uid, 0o700)
+
+
+def command_init(user: LocalUser) -> None:
+    validate_backup_storage(user, create_repository=True)
+    prepare_runtime(user)
+    password = credential_password(confirm=True)
+    with password_memfd(password, user) as descriptor:
+        run_restic(
+            [*restic_base(descriptor), "init", "--repository-version", "2"],
+            descriptor,
+            user,
+        )
+        run_restic(check_arguments(descriptor), descriptor, user)
+        repository_id = repository_config(descriptor, user)
+    write_state(repository_id, "", "init")
+    print(f"ECHO_USER_BACKUP_INITIALIZED repository={repository_id[:16]} encrypted=yes")
+
+
+def command_backup(user: LocalUser) -> None:
+    validate_backup_storage(user)
+    for source in (USER_HOME, AGENT_STATE):
+        validate_directory(source, user.uid, 0o750 if source == USER_HOME else 0o700)
+    if active_user_session():
+        raise BackupError("offline backup requires the local user to log out")
+    prepare_runtime(user)
+    password = credential_password(confirm=False)
+    host = pseudonymous_host()
+    with stopped_login_manager(), stopped_agent():
+        ensure_no_user_processes()
+        with password_memfd(password, user) as descriptor:
+            backup_result = run_restic(
+                backup_arguments(descriptor, host), descriptor, user
+            )
+            snapshot_id = snapshot_from_backup_output(backup_result.stdout)
+            run_restic(check_arguments(descriptor), descriptor, user)
+            snapshots = list_snapshots(descriptor, user)
+            if snapshot_id not in {str(snapshot["id"]) for snapshot in snapshots}:
+                raise BackupError("completed snapshot is absent from the authenticated index")
+            repository_id = repository_config(descriptor, user)
+    write_state(repository_id, snapshot_id, "backup")
+    print(
+        "ECHO_USER_BACKUP_VERIFIED "
+        f"repository={repository_id[:16]} snapshot={snapshot_id[:12]} "
+        "sources=home,agent consistency=offline read-data=full"
+    )
+
+
+def command_check(user: LocalUser) -> None:
+    validate_backup_storage(user)
+    prepare_runtime(user)
+    password = credential_password(confirm=False)
+    with password_memfd(password, user) as descriptor:
+        run_restic(check_arguments(descriptor), descriptor, user)
+        repository_id = repository_config(descriptor, user)
+    write_state(repository_id, "", "check")
+    print(f"ECHO_USER_BACKUP_CHECKED repository={repository_id[:16]} read-data=full")
+
+
+def command_snapshots(user: LocalUser) -> None:
+    validate_backup_storage(user)
+    prepare_runtime(user)
+    password = credential_password(confirm=False)
+    with password_memfd(password, user) as descriptor:
+        snapshots = list_snapshots(descriptor, user)
+    for snapshot in sorted(snapshots, key=lambda item: str(item["time"]), reverse=True):
+        print(f"{snapshot['id'][:12]} {snapshot['time']}")
+
+
+def command_restore(user: LocalUser, selector: str) -> None:
+    validate_backup_storage(user)
+    if active_user_session():
+        raise BackupError("staged restore requires the local user to log out")
+    prepare_runtime(user)
+    password = credential_password(confirm=False)
+    with stopped_login_manager(), stopped_agent():
+        ensure_no_user_processes()
+        with password_memfd(password, user) as descriptor:
+            run_restic(check_arguments(descriptor), descriptor, user)
+            snapshots = list_snapshots(descriptor, user)
+            snapshot_id = select_snapshot(selector, snapshots)
+            target = private_restore_target(user, snapshot_id)
+            run_restic(restore_arguments(descriptor, snapshot_id, target), descriptor, user)
+            validate_restored_tree(target, user)
+            repository_id = repository_config(descriptor, user)
+    write_state(
+        repository_id,
+        snapshot_id,
+        "restore-staged",
+        staging_name=target.name,
+    )
+    print(
+        "ECHO_USER_RESTORE_STAGED "
+        f"repository={repository_id[:16]} snapshot={snapshot_id[:12]} target={target}"
+    )
+
+
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("init")
+    subparsers.add_parser("backup")
+    subparsers.add_parser("check")
+    subparsers.add_parser("snapshots")
+    restore = subparsers.add_parser("restore")
+    restore.add_argument("snapshot", nargs="?", default="latest")
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    if os.geteuid() != 0 or os.getuid() != 0:
+        print("Echo OS backup management requires root", file=sys.stderr)
+        return 1
+    if not Path(RESTIC).is_file() or not os.access(RESTIC, os.X_OK):
+        print("encrypted backup engine is unavailable", file=sys.stderr)
+        return 1
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    try:
+        user = local_user()
+        with operation_lock():
+            if args.command == "init":
+                command_init(user)
+            elif args.command == "backup":
+                command_backup(user)
+            elif args.command == "check":
+                command_check(user)
+            elif args.command == "snapshots":
+                command_snapshots(user)
+            elif args.command == "restore":
+                command_restore(user, args.snapshot)
+            else:
+                raise BackupError("unsupported backup operation")
+    except (BackupError, OSError, subprocess.SubprocessError, UnicodeError) as error:
+        print(f"Echo OS backup failed: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

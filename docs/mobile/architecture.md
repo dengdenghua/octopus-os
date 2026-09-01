@@ -1,4 +1,4 @@
-# Octopus Mobile · 架构设计
+# Echo Mobile · 架构设计
 
 > **三层三端 · 触手器官 · 跨端混合编排**
 
@@ -26,7 +26,7 @@
    ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐
    │ macOS  │  │ Win PC │  │Android │  │Android │
    │(Electron│ │(Electron│ │Client 1│  │Client 2│
-   │  壳)   │  │  壳)   │  │(Octopus Mobile│  │(Octopus Mobile│
+   │  壳)   │  │  壳)   │  │(Echo Mobile│  │(Echo Mobile│
    └────────┘  └────────┘  │ 改造)  │  │ 改造)  │
                           └────────┘  └────────┘
        Tier 1              Tier 1 (设备层)
@@ -38,12 +38,12 @@
 | 层 | 职责 | 关键模块 |
 |---|---|---|
 | **Tier 0 · 中枢** | DAG 分解 · 任务派发 · 跨端协调 · 预算治理 · 反思进化 | `runtime/cerebrum/` `runtime/safety/ink/` `runtime/memory/regeneration/` |
-| **Tier 1 · 设备** | 物理执行 · 屏幕感知 · 用户交互 · 状态上报 | 桌面：`extras/desktop/` + `runtime/sensing/eyes/devices/desktop.py`<br>手机：同级 checkout `../octopus-mobile/` 改造版 + `runtime/sensing/eyes/devices/mobile.py` |
+| **Tier 1 · 设备** | 物理执行 · 屏幕感知 · 用户交互 · 状态上报 | 桌面：`extras/desktop/` + `runtime/sensing/eyes/devices/desktop.py`<br>手机：同级 checkout `../echo-mobile/` 改造版 + `runtime/sensing/eyes/devices/mobile.py` |
 | **Tier 2 · 网络**（隐含） | WebSocket 长连接 · NAT 穿透 · TLS 加密 | `runtime/protocol/envelope.py` |
 
 ### 仿生学映射
 
-| 仿生器官 | 对应系统模块 | 在 Octopus Mobile 中的角色 |
+| 仿生器官 | 对应系统模块 | 在 Echo Mobile 中的角色 |
 |---|---|---|
 | **Cerebrum** 中枢脑 | `runtime/cerebrum/` | 任务规划与派发 |
 | **Tentacle** 触手 | `runtime/tentacle/` | 物理设备操控（**新器官**）|
@@ -102,14 +102,14 @@ tentacle/
 ├── pool.py            # TentaclePool：设备池管理（多设备协调）
 ├── mobile.py          # MobileTentacle（Android 设备实现）
 ├── desktop.py         # DesktopTentacle（桌面端自指：把本地桌面包装为触手）
-├── apks/              # Octopus Mobile 集成相关
+├── apks/              # Echo Mobile 集成相关
 │   ├── __init__.py
 │   ├── skill_export.py   # 把 30 个 BaseTool 转 SKILL.md
 │   ├── tool_bridge.py    # 工具调用桥接（JSON-RPC envelope）
-│   └── version.py        # Octopus Mobile 端版本兼容
+│   └── version.py        # Echo Mobile 端版本兼容
 └── transport/
     ├── __init__.py
-    ├── websocket.py      # WebSocket 客户端（OctopusMobileClient 用）
+    ├── websocket.py      # WebSocket 客户端（EchoMobileClient 用）
     └── envelope.py       # JSON-RPC 2.0 envelope
 ```
 
@@ -147,14 +147,14 @@ class TentaclePool:
 
 ---
 
-## 3. Android 客户端（Octopus Mobile 改造版）
+## 3. Android 客户端（Echo Mobile 改造版）
 
 ### 3.1 内部模块
 
 ```
 com.apk.claw.android/
-├── octopus_mobile/         # ★ 新增（Octopus Runtime 集成层）
-│   ├── OctopusMobileClient.kt    # WebSocket 客户端
+├── echo_mobile/         # ★ 新增（Echo Runtime 集成层）
+│   ├── EchoMobileClient.kt    # WebSocket 客户端
 │   ├── Protocol.kt               # JSON-RPC envelope 定义
 │   ├── ScreenStreamer.kt         # 屏幕状态增量上报
 │   ├── SkillManifest.kt          # 读取 assets/skills/mobile/*.md
@@ -173,11 +173,11 @@ com.apk.claw.android/
 
 | 模式 | 是否需要 Runtime | 适用场景 |
 |---|---|---|
-| `LOCAL_ONLY` | ❌ | 出差、断网、隐私敏感（跟现在 Octopus Mobile 完全一致）|
+| `LOCAL_ONLY` | ❌ | 出差、断网、隐私敏感（跟现在 Echo Mobile 完全一致）|
 | `RPC_ONLY` | ✅ 必需 | 企业管控 —— 手机只做执行器，LLM 全在服务器 |
 | `DUAL` | 🟡 优先远程 | **默认推荐** —— 远程失败时透明降级到本地 |
 
-切换逻辑见 [ClawApplication.kt 启动决策](../mobile/browser-integration.md#octopus-mobile-启动决策)。
+切换逻辑见 [ClawApplication.kt 启动决策](../mobile/browser-integration.md#echo-mobile-启动决策)。
 
 ---
 
@@ -204,7 +204,7 @@ com.apk.claw.android/
 ```
 ┌────────┐         ┌────────┐         ┌────────┐
 │ Client │         │ Server │         │ Device │
-│(Web/IM)│         │(Runtime)│        │(Octopus Mobile)│
+│(Web/IM)│         │(Runtime)│        │(Echo Mobile)│
 └───┬────┘         └───┬────┘         └───┬────┘
     │  user message    │                  │
     ├─────────────────►│                  │
@@ -306,13 +306,13 @@ Cerebrum DAG 分解：
 
 ## 7. 对桌面端架构的影响
 
-详见 [ADR-008](../adr/008-octopus-mobile.md) 与 `runtime/tentacle/README.md`。
+详见 [ADR-008](../adr/008-echo-mobile.md) 与 `runtime/tentacle/README.md`。
 
 **核心结论**：
 - 桌面端现有代码路径**一字不改**
-- 所有新增走 `runtime/tentacle/`、`runtime/tentacle/mobile/skills/`、Octopus Mobile 端
+- 所有新增走 `runtime/tentacle/`、`runtime/tentacle/mobile/skills/`、Echo Mobile 端
 - desktop_operator_arm 自身**不动**，mobile_operator_arm 与之**并列**
-- 即便 Octopus Mobile 项目失败，桌面端**零损失**
+- 即便 Echo Mobile 项目失败，桌面端**零损失**
 
 ---
 
@@ -323,7 +323,7 @@ Cerebrum DAG 分解：
 | 设备数量 | 50 台（单 Runtime）| 100+ 用 Ganglia 分布式 Runtime |
 | 心跳频率 | 30s/台 | 按需订阅替代全广播 |
 | 屏幕增量事件 | ~100/分钟/台 | 哈希去重 + 5s 节流 |
-| LLM 上下文 | 8K tokens | 多级压缩（已借鉴 Octopus Mobile）|
+| LLM 上下文 | 8K tokens | 多级压缩（已借鉴 Echo Mobile）|
 | WebSocket 连接 | 200 并发 | 多端口 + 连接复用 |
 
 ---
@@ -341,7 +341,7 @@ Cerebrum DAG 分解：
 ## 10. 方案 F · 轻量 LLM + SKILL.md 单一源
 
 > **2026-06-06 优化** —— 推翻原方案 C 的"双内核"假设，改用"纯执行器 + 轻量 LLM"。
-> 完整决策见 [ADR-008](../adr/008-octopus-mobile.md)。本章聚焦**实现细节**。
+> 完整决策见 [ADR-008](../adr/008-echo-mobile.md)。本章聚焦**实现细节**。
 
 ### 10.1 设计哲学
 
@@ -350,7 +350,7 @@ Cerebrum DAG 分解：
 | 引入 LangChain4j（50k+ 行） | 自己写 < 600 行 Kotlin | **-99% 体积** |
 | 母体决策 / 手机决策 **双系统** | SKILL.md 单一源 + 同一种客户端 | 状态一致、零漂移 |
 | 母体决策 100% 不可降级 | 双模式（DUAL）+ 30s 健康检查 | 远程挂了自动切本地 |
-| 1 个 ReAct 循环（Octopus Mobile 旧版） | 极简 ReAct 循环（3 级压缩 + 4 轮死循环检测）| token 节省 60% |
+| 1 个 ReAct 循环（Echo Mobile 旧版） | 极简 ReAct 循环（3 级压缩 + 4 轮死循环检测）| token 节省 60% |
 
 **核心原则**：
 
@@ -363,7 +363,7 @@ Cerebrum DAG 分解：
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                       Octopus-agent Runtime                      │
+│                       Echo Agent Runtime                      │
 │                                                                  │
 │   runtime/tentacle/llm/        ←  Python 端 LLM 客户端            │
 │     ├── chat_types.py         消息/工具/响应/任务结果             │
@@ -371,7 +371,7 @@ Cerebrum DAG 分解：
 │     ├── react_loop.py         极简 ReAct 循环（200 行）            │
 │     └── skill_manifest.py     SKILL.md frontmatter 解析           │
 │                                                                  │
-│   ../octopus-mobile/octopus_mobile/  ←  Kotlin 端 LLM 客户端            │
+│   ../echo-mobile/echo_mobile/  ←  Kotlin 端 LLM 客户端            │
 │     ├── LightweightLlmClient.kt  裸 OkHttp 调 OpenAI 兼容 API    │
 │     ├── LightweightReAct.kt     极简 ReAct 循环（300 行）        │
 │     ├── BrainModeSelector.kt    决策层切换器（DUAL 模式）         │
@@ -421,10 +421,10 @@ print(result.outcome, result.final_message, result.total_tokens)
 - 工具结果摘要化（截断 1500 字符）
 - 6 类回调（on_step_start / on_llm_response / on_tool_call / on_tool_result / on_compress / on_finish）
 
-### 10.4 Kotlin 端 LLM 客户端（Octopus Mobile 集成）
+### 10.4 Kotlin 端 LLM 客户端（Echo Mobile 集成）
 
 ```kotlin
-// Octopus Mobile 端：纯执行器 + 轻量 LLM（无 LangChain4j）
+// Echo Mobile 端：纯执行器 + 轻量 LLM（无 LangChain4j）
 val client = LightweightLlmClient(LlmConfig.deepSeek(BuildConfig.DEEPSEEK_KEY))
 val skills = SkillManifest.loadFromAssets(assets, "skills/mobile/")
 
@@ -533,7 +533,7 @@ pytest tests/test_tentacle_mobile.py -v
 # 26/26 全绿：30 SKILL.md 全部能被 ManifestLoader 解析
 ```
 
-**Kotlin 端测试**（待 Octopus Mobile 集成阶段补）：
+**Kotlin 端测试**（待 Echo Mobile 集成阶段补）：
 
 - `LightweightLlmClientTest`：MockWebServer + OkHttp
 - `LightweightReActTest`：3 级压缩 + 死循环检测
@@ -554,7 +554,7 @@ pytest tests/test_tentacle_mobile.py -v
 
 - **Phase 1**：Python 端 LightweightLlmClient（✅ 已完成）
 - **Phase 2**：Kotlin 端 LightweightLlmClient + 30 SKILL.md 同步到 assets（🔄 进行中）
-- **Phase 3**：BrainModeSelector 接入 DUAL 模式（待 Octopus Mobile 集成）
+- **Phase 3**：BrainModeSelector 接入 DUAL 模式（待 Echo Mobile 集成）
 - **Phase 4**：远程 SKILL.md 推送（Regeneration 自进化联动）
 - **Phase 5**：token 优化（prompt 缓存、prefix caching、批处理）
 

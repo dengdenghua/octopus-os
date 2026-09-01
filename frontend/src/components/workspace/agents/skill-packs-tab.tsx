@@ -174,8 +174,8 @@ function PackCard({
       className={cn(
         "transition-colors",
         compact
-          ? "group rounded-xl px-3 py-3 hover:bg-muted/35"
-          : "rounded-2xl border border-border/60 bg-card/30 p-4 shadow-sm hover:border-border",
+          ? "group rounded-lg px-3 py-3 hover:bg-muted/35"
+          : "rounded-lg border border-border-default bg-card/30 p-4 shadow-[var(--shadow-xs)] hover:border-border",
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -183,19 +183,21 @@ function PackCard({
           <div className="flex flex-wrap items-center gap-2">
             <div
               className={cn(
-                "flex items-center justify-center bg-emerald-500/10 text-emerald-500",
+                "flex items-center justify-center bg-success/10 text-success",
                 compact ? "size-8 rounded-lg" : "size-6 rounded-md",
               )}
             >
               <BoxesIcon className={compact ? "size-4" : "size-3.5"} />
             </div>
-            <div className={cn("text-sm font-semibold", !compact && "font-mono")}>
+            <div
+              className={cn("text-sm font-semibold", !compact && "font-mono")}
+            >
               {pack.name}
             </div>
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
               {pack.display_name}
             </span>
-            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
               {t.metaSkills.steps(pack.step_count ?? pack.steps?.length ?? 0)}
             </span>
           </div>
@@ -205,7 +207,7 @@ function PackCard({
                 "text-muted-foreground",
                 compact
                   ? "line-clamp-1 text-sm leading-5"
-                  : "text-[12px] leading-relaxed",
+                  : "text-xs leading-relaxed",
               )}
             >
               {pack.description}
@@ -216,25 +218,25 @@ function PackCard({
               {pack.affinity.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-300"
+                  className="rounded-full bg-info/10 px-2 py-0.5 text-xs font-medium text-info dark:text-info"
                 >
                   {tag}
                 </span>
               ))}
             </div>
           ) : !compact ? (
-            <div className="text-[10px] text-muted-foreground">
+            <div className="text-xs text-muted-foreground">
               {t.metaSkills.noAffinity}
             </div>
           ) : null}
           {!compact && (
-            <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-[11px] text-muted-foreground">
-            <span>
-              <span className="font-medium">{t.metaSkills.budget}:</span>{" "}
-              {t.metaSkills.budgetTokens(pack.budget_tokens ?? 0)} ·{" "}
-              {t.metaSkills.budgetUsd(pack.budget_usd ?? 0)} ·{" "}
-              {t.metaSkills.budgetLatency(pack.budget_latency_ms ?? 0)}
-            </span>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-xs text-muted-foreground">
+              <span>
+                <span className="font-medium">{t.metaSkills.budget}:</span>{" "}
+                {t.metaSkills.budgetTokens(pack.budget_tokens ?? 0)} ·{" "}
+                {t.metaSkills.budgetUsd(pack.budget_usd ?? 0)} ·{" "}
+                {t.metaSkills.budgetLatency(pack.budget_latency_ms ?? 0)}
+              </span>
             </div>
           )}
         </div>
@@ -245,14 +247,16 @@ function PackCard({
           className={cn(
             "shrink-0 text-xs",
             compact
-              ? "h-9 rounded-xl bg-muted/55 px-3 shadow-none hover:bg-muted"
+              ? "h-9 rounded-lg bg-muted/55 px-3 shadow-none hover:bg-muted"
               : "h-7",
           )}
         >
           {expanded ? (
             <>
               <ChevronUpIcon className="mr-1 size-3.5" />
-              {compact ? t.metaSkills.collapseDiagram : t.metaSkills.hideDiagram}
+              {compact
+                ? t.metaSkills.collapseDiagram
+                : t.metaSkills.hideDiagram}
             </>
           ) : (
             <>
@@ -263,9 +267,9 @@ function PackCard({
         </Button>
       </div>
       {expanded && (
-        <div className="mt-3 space-y-2 border-t border-border/40 pt-3">
+        <div className="mt-3 space-y-2 border-t border-border-subtle pt-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {t.metaSkills.directionLabel}:
             </span>
             {DIRECTIONS.map((d) => (
@@ -274,10 +278,10 @@ function PackCard({
                 type="button"
                 onClick={() => setDirection(d)}
                 className={cn(
-                  "rounded border px-2 py-0.5 text-[10px] font-medium transition-colors",
+                  "rounded border px-2 py-0.5 text-xs font-medium transition-colors",
                   direction === d
                     ? "border-primary bg-primary/10 text-primary"
-                    : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground",
+                    : "border-border-default text-muted-foreground hover:border-border hover:text-foreground",
                 )}
               >
                 {d}
@@ -287,7 +291,7 @@ function PackCard({
             <Button
               size="sm"
               variant="ghost"
-              className="h-6 text-[10px]"
+              className="h-6 text-xs"
               onClick={() => void handleCopy()}
               disabled={!mermaid}
             >
@@ -301,21 +305,19 @@ function PackCard({
               )}
             </Button>
           </div>
-          <div className="min-h-[80px] rounded-md border border-dashed border-border/60 bg-muted/20 p-2">
+          <div className="min-h-[80px] rounded-md border border-dashed border-border-default bg-muted/20 p-2">
             {loading && (
-              <div className="py-4 text-center text-[11px] text-muted-foreground">
+              <div className="py-4 text-center text-xs text-muted-foreground">
                 {t.metaSkills.diagramLoading}
               </div>
             )}
             {err && !loading && (
-              <div className="flex items-center gap-2 py-3 text-[11px] text-rose-400">
+              <div className="flex items-center gap-2 py-3 text-xs text-destructive">
                 <XCircleIcon className="size-3.5" />
                 {t.metaSkills.diagramFailed(err)}
               </div>
             )}
-            {!loading && !err && mermaid && (
-              <MermaidBlock code={mermaid} />
-            )}
+            {!loading && !err && mermaid && <MermaidBlock code={mermaid} />}
           </div>
         </div>
       )}
@@ -366,8 +368,8 @@ function MatchBox({ compact = false }: { compact?: boolean }) {
       className={cn(
         "space-y-2",
         compact
-          ? "rounded-xl border border-border/60 bg-background/60 p-3"
-          : "workspace-panel rounded-2xl p-4",
+          ? "rounded-lg border border-border-default bg-background/60 p-3"
+          : "workspace-panel rounded-lg p-4",
       )}
     >
       <div
@@ -380,12 +382,12 @@ function MatchBox({ compact = false }: { compact?: boolean }) {
       >
         <div
           className={cn(
-            "text-[12px] font-medium",
+            "text-xs font-medium",
             compact &&
               "flex shrink-0 items-center gap-1.5 whitespace-nowrap text-muted-foreground",
           )}
         >
-          {compact && <SparklesIcon className="size-3.5 text-emerald-500" />}
+          {compact && <SparklesIcon className="size-3.5 text-success" />}
           {t.metaSkills.matchLabel}
         </div>
         <div className="relative flex-1">
@@ -399,7 +401,7 @@ function MatchBox({ compact = false }: { compact?: boolean }) {
             }}
             placeholder={t.metaSkills.matchPlaceholder}
             className={cn(
-              "w-full border border-border/60 bg-background/60 py-2 pl-9 pr-3",
+              "w-full border border-border-default bg-background/60 py-2 pl-9 pr-3",
               "text-sm placeholder:text-muted-foreground/60 outline-none",
               "focus:border-primary/50 focus:ring-2 focus:ring-primary/10",
               compact ? "h-9 rounded-full" : "rounded-lg",
@@ -413,7 +415,7 @@ function MatchBox({ compact = false }: { compact?: boolean }) {
             "h-9 shrink-0",
             compact
               ? "rounded-full px-3"
-              : "bg-gradient-to-r from-emerald-500 to-blue-500 text-white",
+              : "bg-gradient-to-r from-success to-blue-500 text-white",
           )}
           onClick={() => void submit()}
           disabled={busy || !query.trim()}
@@ -423,12 +425,12 @@ function MatchBox({ compact = false }: { compact?: boolean }) {
         </Button>
       </div>
       {result && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[12px]">
-          <div className="font-medium text-emerald-700 dark:text-emerald-300">
+        <div className="rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-xs">
+          <div className="font-medium text-success">
             {t.metaSkills.matchResult(result.query, result.matched)}
           </div>
           {result.description && (
-            <div className="mt-1 text-[11px] text-muted-foreground">
+            <div className="mt-1 text-xs text-muted-foreground">
               {result.description}
             </div>
           )}
@@ -437,7 +439,7 @@ function MatchBox({ compact = false }: { compact?: boolean }) {
               {result.affinity.map((a) => (
                 <span
                   key={a}
-                  className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] text-blue-600 dark:text-blue-300"
+                  className="rounded bg-info/10 px-1.5 py-0.5 text-xs text-info dark:text-info"
                 >
                   {a}
                 </span>
@@ -447,7 +449,7 @@ function MatchBox({ compact = false }: { compact?: boolean }) {
         </div>
       )}
       {err && !result && (
-        <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-[12px] text-rose-600 dark:text-rose-300">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           {err}
         </div>
       )}
@@ -544,7 +546,7 @@ export function SkillPacksTab({
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t.metaSkills.matchPlaceholder}
                 className={cn(
-                  "h-10 w-full rounded-2xl border border-border/60 bg-background py-1.5 pl-9 pr-3 shadow-sm",
+                  "h-10 w-full rounded-lg border border-border-default bg-background py-1.5 pl-9 pr-3 shadow-[var(--shadow-xs)]",
                   "text-xs placeholder:text-muted-foreground/60 outline-none",
                   "focus:border-primary/50 focus:ring-2 focus:ring-primary/10",
                 )}
@@ -565,17 +567,17 @@ export function SkillPacksTab({
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <div className="flex size-6 items-center justify-center rounded bg-emerald-500/10">
-                <BoxesIcon className="size-4 text-emerald-500" />
+              <div className="flex size-6 items-center justify-center rounded bg-success/10">
+                <BoxesIcon className="size-4 text-success" />
               </div>
               <h2 className="text-base font-bold">{t.metaSkills.title}</h2>
               {packs && (
-                <span className="rounded bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                   {t.metaSkills.count(packs.length)}
                 </span>
               )}
             </div>
-            <p className="mt-1 text-[12px] text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground">
               {t.metaSkills.subtitle}
             </p>
           </div>
@@ -605,7 +607,7 @@ export function SkillPacksTab({
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t.metaSkills.matchPlaceholder}
               className={cn(
-                "w-full rounded-lg border border-border/60 bg-background/60 py-2 pl-9 pr-3",
+                "w-full rounded-lg border border-border-default bg-background/60 py-2 pl-9 pr-3",
                 "text-sm placeholder:text-muted-foreground/60 outline-none",
                 "focus:border-primary/50 focus:ring-2 focus:ring-primary/10",
               )}
@@ -616,19 +618,19 @@ export function SkillPacksTab({
 
       {/* Pack list */}
       {err && (
-        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {t.metaSkills.loadFailed(err)}
         </div>
       )}
 
       {!packs && !err && (
-        <div className="rounded-xl border border-dashed border-border/60 px-6 py-8 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border-default px-6 py-8 text-center text-sm text-muted-foreground">
           {t.metaSkills.loading}
         </div>
       )}
 
       {packs && packs.length === 0 && !err && (
-        <div className="rounded-xl border border-dashed border-border/60 px-6 py-10 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border-default px-6 py-10 text-center text-sm text-muted-foreground">
           {t.metaSkills.empty}
         </div>
       )}
@@ -649,7 +651,7 @@ export function SkillPacksTab({
       )}
 
       {packs && filtered.length === 0 && query && (
-        <div className="rounded-xl border border-dashed border-border/60 px-6 py-8 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-border-default px-6 py-8 text-center text-sm text-muted-foreground">
           {t.metaSkills.matchNoResult(query)}
         </div>
       )}

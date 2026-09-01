@@ -1,4 +1,3 @@
-
 import {
   Tooltip as TooltipPrimitive,
   TooltipContent,
@@ -20,4 +19,3 @@ export function Tooltip({
     </TooltipPrimitive>
   );
 }
-

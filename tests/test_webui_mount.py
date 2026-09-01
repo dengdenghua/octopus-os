@@ -9,7 +9,6 @@ import pytest
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.platform.ui import create_app  # noqa: E402
 from runtime.platform.ui.app import _find_webui_dist  # noqa: E402
 
@@ -19,18 +18,18 @@ class TestFindWebuiDist:
         dist = tmp_path / "custom_dist"
         dist.mkdir()
         (dist / "index.html").write_text("<html>env</html>")
-        monkeypatch.setenv("OCTOPUS_WEBUI_DIST", str(dist))
+        monkeypatch.setenv("ECHO_WEBUI_DIST", str(dist))
         assert _find_webui_dist() == dist
 
     def test_env_invalid_path_ignored(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setenv("OCTOPUS_WEBUI_DIST", str(tmp_path / "nope"))
+        monkeypatch.setenv("ECHO_WEBUI_DIST", str(tmp_path / "nope"))
         # Implementation note.
         result = _find_webui_dist()
         # Implementation note.
         assert result is None or result.is_dir()
 
     def test_returns_none_when_nothing_found(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setenv("OCTOPUS_WEBUI_DIST", str(tmp_path / "empty"))
+        monkeypatch.setenv("ECHO_WEBUI_DIST", str(tmp_path / "empty"))
         # Implementation note.
         # Implementation note.
         # Implementation note.
@@ -43,7 +42,7 @@ class TestMountedRoutes:
         dist.mkdir()
         (dist / "index.html").write_text("<html>webui</html>", encoding="utf-8")
         (dist / "favicon.svg").write_text("<svg/>", encoding="utf-8")
-        monkeypatch.setenv("OCTOPUS_WEBUI_DIST", str(dist))
+        monkeypatch.setenv("ECHO_WEBUI_DIST", str(dist))
 
         app = create_app(journal_path=tmp_path / "events.jsonl")
         client = TestClient(app)
@@ -58,7 +57,7 @@ class TestMountedRoutes:
         dist = tmp_path / "dist"
         dist.mkdir()
         (dist / "index.html").write_text("<html>webui</html>", encoding="utf-8")
-        monkeypatch.setenv("OCTOPUS_WEBUI_DIST", str(dist))
+        monkeypatch.setenv("ECHO_WEBUI_DIST", str(dist))
 
         app = create_app(journal_path=tmp_path / "events.jsonl")
         r = TestClient(app).get("/ui/agents/coder")
@@ -70,7 +69,7 @@ class TestMountedRoutes:
         dist.mkdir()
         (dist / "index.html").write_text("<html/>")
         (dist / "favicon.svg").write_text("<svg/>", encoding="utf-8")
-        monkeypatch.setenv("OCTOPUS_WEBUI_DIST", str(dist))
+        monkeypatch.setenv("ECHO_WEBUI_DIST", str(dist))
 
         app = create_app(journal_path=tmp_path / "events.jsonl")
         r = TestClient(app).get("/ui/favicon.svg")
@@ -83,7 +82,7 @@ class TestMountedRoutes:
         assets.mkdir(parents=True)
         (dist / "index.html").write_text("<html/>")
         (assets / "bundle.js").write_text("console.log('hi');", encoding="utf-8")
-        monkeypatch.setenv("OCTOPUS_WEBUI_DIST", str(dist))
+        monkeypatch.setenv("ECHO_WEBUI_DIST", str(dist))
 
         app = create_app(journal_path=tmp_path / "events.jsonl")
         r = TestClient(app).get("/ui/assets/bundle.js")
@@ -91,28 +90,32 @@ class TestMountedRoutes:
         assert "console.log" in r.text
 
     def test_old_inline_dashboard_still_at_root(
-        self, tmp_path: Path, monkeypatch,
+        self,
+        tmp_path: Path,
+        monkeypatch,
     ):
         """Implementation note."""
         dist = tmp_path / "dist"
         dist.mkdir()
         (dist / "index.html").write_text("<html>webui</html>")
-        monkeypatch.setenv("OCTOPUS_WEBUI_DIST", str(dist))
+        monkeypatch.setenv("ECHO_WEBUI_DIST", str(dist))
 
         app = create_app(journal_path=tmp_path / "events.jsonl")
         r = TestClient(app).get("/")
         assert r.status_code == 200
         # Implementation note.
-        assert "octopus" in r.text.lower()
+        assert "echo" in r.text.lower()
 
     def test_api_routes_not_shadowed_by_spa(
-        self, tmp_path: Path, monkeypatch,
+        self,
+        tmp_path: Path,
+        monkeypatch,
     ):
         """Implementation note."""
         dist = tmp_path / "dist"
         dist.mkdir()
         (dist / "index.html").write_text("<html>webui</html>")
-        monkeypatch.setenv("OCTOPUS_WEBUI_DIST", str(dist))
+        monkeypatch.setenv("ECHO_WEBUI_DIST", str(dist))
 
         app = create_app(journal_path=tmp_path / "events.jsonl")
         r = TestClient(app).get("/api/health")
@@ -124,11 +127,11 @@ class TestMountedRoutes:
 class TestNoDistGracefulDegradation:
     def test_create_app_without_env_no_crash(self, tmp_path: Path, monkeypatch):
         """Implementation note."""
-        monkeypatch.delenv("OCTOPUS_WEBUI_DIST", raising=False)
+        monkeypatch.delenv("ECHO_WEBUI_DIST", raising=False)
         app = create_app(journal_path=tmp_path / "events.jsonl")
         r = TestClient(app).get("/")
         assert r.status_code == 200
-        assert "octopus" in r.text.lower()
+        assert "echo" in r.text.lower()
 
 
 class TestFrontendArtifacts:
@@ -140,7 +143,7 @@ class TestFrontendArtifacts:
         pkg = Path(__file__).resolve().parent.parent / "frontend" / "package.json"
         assert pkg.exists()
         data = json.loads(pkg.read_text(encoding="utf-8"))
-        assert data["name"] == "octopus-frontend"
+        assert data["name"] == "echo-frontend"
         assert "build" in data["scripts"]
         assert "react" in data["dependencies"]
         assert "react-router-dom" in data["dependencies"]
@@ -171,8 +174,10 @@ class TestFrontendArtifacts:
         existing = {p.name for p in app_dir.iterdir() if p.is_dir()}
         missing = [r for r in must_have_routes if r not in existing]
         assert not missing, f"missing core route dirs: {missing}"
-        # Implementation note.
-        assert (frontend_src / "pages" / "Login.tsx").exists()
+        # The login surface lives at app/login/page.tsx, already covered by
+        # must_have_routes above. The old pre-route-migration src/pages/Login.tsx
+        # was unreferenced and is gone.
+        assert (app_dir / "login" / "page.tsx").exists()
 
     def test_api_client_and_types_exist(self):
         # Implementation note.

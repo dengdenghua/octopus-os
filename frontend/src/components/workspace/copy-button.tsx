@@ -1,5 +1,11 @@
 import { CheckIcon, CopyIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -40,12 +46,13 @@ export function CopyButton({
         size="icon-sm"
         type="button"
         variant="ghost"
-        className="rounded-lg border border-transparent text-muted-foreground transition-all hover:border-border/50 hover:bg-muted/60 hover:text-foreground"
+        aria-label={t.clipboard.copyToClipboard}
+        className="rounded-lg border border-transparent text-muted-foreground transition-colors hover:border-border-default hover:bg-muted/60 hover:text-foreground"
         onClick={handleCopy}
         {...props}
       >
         {copied ? (
-          <CheckIcon className="text-green-500" size={12} />
+          <CheckIcon className="text-success" size={12} />
         ) : (
           <CopyIcon size={12} />
         )}
@@ -53,4 +60,3 @@ export function CopyButton({
     </Tooltip>
   );
 }
-

@@ -8,7 +8,7 @@
 
 **Step 1.5: Search Local Skill Catalog**
 ```bash
-cat ~/.octopus/accounts/ACCOUNT_ID/skills/remote_skills_cache.json | \
+cat ~/.echo/accounts/ACCOUNT_ID/skills/remote_skills_cache.json | \
   python3 -c "
 import json, sys
 query = 'tariff hs code 关税'.lower().split()
@@ -30,7 +30,7 @@ for s in data['skills']:
 
 **Check install status:**
 ```bash
-ls ~/.octopus/accounts/ACCOUNT_ID/skills/tariff-search/SKILL.md 2>/dev/null && echo "installed" || echo "not installed"
+ls ~/.echo/accounts/ACCOUNT_ID/skills/tariff-search/SKILL.md 2>/dev/null && echo "installed" || echo "not installed"
 # Result: not installed
 ```
 
@@ -42,10 +42,10 @@ ls ~/.octopus/accounts/ACCOUNT_ID/skills/tariff-search/SKILL.md 2>/dev/null && e
 
 **Install from OSS:**
 ```bash
-OSS_URL=$(cat ~/.octopus/accounts/ACCOUNT_ID/skills/remote_skills_cache.json | \
+OSS_URL=$(cat ~/.echo/accounts/ACCOUNT_ID/skills/remote_skills_cache.json | \
   python3 -c "import json,sys; data=json.load(sys.stdin); [print(s['oss']) for s in data['skills'] if s['name']=='tariff-search']")
 curl -sL "$OSS_URL" -o /tmp/skill.zip && \
-  unzip -o /tmp/skill.zip -d ~/.octopus/accounts/ACCOUNT_ID/skills/tariff-search/ && \
+  unzip -o /tmp/skill.zip -d ~/.echo/accounts/ACCOUNT_ID/skills/tariff-search/ && \
   rm /tmp/skill.zip
 ```
 
@@ -139,7 +139,7 @@ From ClawHub (0 results)
 **Agent installs the best match directly:**
 
 ```bash
-cd ~/.octopus/accounts/{accountId}/agents/{agentId}/agent-core/skills/
+cd ~/.echo/accounts/{accountId}/agents/{agentId}/agent-core/skills/
 git clone --depth 1 https://github.com/HyunjunJeon/... academic-search
 ```
 
@@ -170,7 +170,7 @@ vercel-labs/agent-skills@react-testing-library
 Good match found. Install directly:
 
 ```bash
-cd ~/.octopus/accounts/{accountId}/agents/{agentId}/agent-core/skills/
+cd ~/.echo/accounts/{accountId}/agents/{agentId}/agent-core/skills/
 npx skills add vercel-labs/agent-skills --skill react-testing-library -y
 mv .agents/skills/react-testing-library ./
 rm -rf .agents

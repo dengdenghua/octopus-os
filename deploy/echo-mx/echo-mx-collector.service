@@ -1,0 +1,37 @@
+[Unit]
+Description=Echo MX normalized message collector
+After=network-online.target echo-mx-guardian.service
+Requires=echo-mx-bridge.service
+Wants=echo-mx-guardian.service
+
+[Service]
+Type=simple
+User=echo-mx
+Group=echo-mx
+WorkingDirectory=/opt/echo-mx
+Environment=PYTHONUNBUFFERED=1
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/echo-mx/ms-playwright
+Environment=MX_COLLECTOR_VIEWER_URL=http://127.0.0.1:8092/viewer
+Environment=MX_COLLECTOR_HEALTH_URL=http://127.0.0.1:8092/healthz
+Environment=MX_COLLECTOR_SESSION_RECHECK_SECONDS=300
+Environment=MX_COLLECTOR_HEARTBEAT_SECONDS=900
+Environment=MX_COLLECTOR_EVENT_SETTLE_SECONDS=2
+Environment=MX_COLLECTOR_MIN_ROOM_REFRESH_SECONDS=5
+Environment=MX_COLLECTOR_ROOM_COOLDOWN_SECONDS=30
+Environment=MX_COLLECTOR_RATE_WINDOW_SECONDS=600
+Environment=MX_COLLECTOR_MAX_REFRESHES_PER_WINDOW=30
+ExecStart=/opt/echo-mx/.venv/bin/python /opt/echo-mx/mx_viewer_collector.py
+Restart=always
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/echo-mx
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
+

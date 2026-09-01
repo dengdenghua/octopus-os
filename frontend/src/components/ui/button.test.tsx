@@ -13,13 +13,22 @@ describe("Button", () => {
 
   it("renders with different variants", () => {
     const { rerender } = render(<Button variant="destructive">Delete</Button>);
-    expect(screen.getByRole("button")).toHaveAttribute("data-variant", "destructive");
+    expect(screen.getByRole("button")).toHaveAttribute(
+      "data-variant",
+      "destructive",
+    );
 
     rerender(<Button variant="outline">Outline</Button>);
-    expect(screen.getByRole("button")).toHaveAttribute("data-variant", "outline");
+    expect(screen.getByRole("button")).toHaveAttribute(
+      "data-variant",
+      "outline",
+    );
 
     rerender(<Button variant="secondary">Secondary</Button>);
-    expect(screen.getByRole("button")).toHaveAttribute("data-variant", "secondary");
+    expect(screen.getByRole("button")).toHaveAttribute(
+      "data-variant",
+      "secondary",
+    );
 
     rerender(<Button variant="ghost">Ghost</Button>);
     expect(screen.getByRole("button")).toHaveAttribute("data-variant", "ghost");
@@ -28,7 +37,10 @@ describe("Button", () => {
     expect(screen.getByRole("button")).toHaveAttribute("data-variant", "link");
 
     rerender(<Button variant="gradient">Gradient</Button>);
-    expect(screen.getByRole("button")).toHaveAttribute("data-variant", "gradient");
+    expect(screen.getByRole("button")).toHaveAttribute(
+      "data-variant",
+      "gradient",
+    );
   });
 
   it("renders with different sizes", () => {
@@ -45,7 +57,7 @@ describe("Button", () => {
   it("handles click events", () => {
     const handleClick = vi.fn();
     render(<Button onClick={handleClick}>Click me</Button>);
-    
+
     fireEvent.click(screen.getByRole("button"));
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
@@ -59,9 +71,9 @@ describe("Button", () => {
     render(
       <Button asChild>
         <a href="/test">Link Button</a>
-      </Button>
+      </Button>,
     );
-    
+
     const link = screen.getByRole("link", { name: /link button/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute("href", "/test");

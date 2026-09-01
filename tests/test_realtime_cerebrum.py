@@ -177,8 +177,9 @@ def test_flatten_merges_post_final_trace_items_into_delivered_answer() -> None:
     assert len(messages) == 2
     ai = messages[1]
     assert ai["content"].startswith("# Report")
-    assert "collect initial evidence" in ai["additional_kwargs"]["reasoning_content"]
-    assert "todo-protocol guard" in ai["additional_kwargs"]["reasoning_content"]
+    # Raw provider reasoning is never copied into persisted chat history.
+    assert "reasoning_content" not in ai["additional_kwargs"]
+    assert "public_reasoning_summary" not in ai["additional_kwargs"]
     assert [tool["name"] for tool in ai["tool_calls"]] == ["todo_write"]
 
 
@@ -316,38 +317,39 @@ def test_todo_write_emits_plan_update_and_resume_snapshot(gateway: Any) -> None:
     assert updates
     phases = updates[0].params["phases"]
     assert [phase["title"] for phase in phases] == [
-        "Phase 1: Inspect context",
-        "Phase 2: Patch realtime protocol",
-        "Phase 3: Verify behavior",
+        "Inspect context",
+        "Patch realtime protocol",
+        "Verify behavior",
     ]
     assert phases[1]["status"] == "running"
     assert phases[1]["activeItemId"] == "todo-1"
     assert updates[0].params["workspaceFocus"]["view"] == "trace"
-    assert updates[0].params["workbenchSnapshot"]["schemaVersion"] == 2
-    assert updates[0].params["workbenchSnapshot"]["currentItemId"] == "todo-1"
+    assert "workbenchSnapshot" not in updates[0].params
 
     snapshots = [n for n in out["notifications"] if n.method == "workbench/snapshot"]
     assert snapshots
     assert snapshots[0].params["snapshot"]["version"] == 1
+    assert snapshots[0].params["snapshot"]["schemaVersion"] == 2
+    assert snapshots[0].params["snapshot"]["currentItemId"] == "todo-1"
     assert snapshots[0].params["snapshot"]["workspaceFocus"]["view"] == "trace"
     final_snapshot = snapshots[-1].params["snapshot"]
-    assert final_snapshot["version"] == 2
+    assert final_snapshot["version"] == 3
     assert [phase["status"] for phase in final_snapshot["phases"]] == [
         "done",
-        "done",
-        "done",
+        "pending",
+        "pending",
     ]
 
     turn = out["response"].result["turn"]
-    assert turn["phases"][1]["status"] == "done"
+    assert turn["phases"][1]["status"] == "pending"
     assert turn["workspaceFocus"]["itemId"] == "todo-1"
-    assert turn["workbenchSnapshot"]["currentPhaseId"] == "todo-phase:2"
-    assert turn["workbenchSnapshot"]["version"] == 2
+    assert turn["workbenchSnapshot"]["currentPhaseId"] == "todo-phase:1"
+    assert turn["workbenchSnapshot"]["version"] == 3
     assert resume is not None and resume.result is not None
     resumed_turn = resume.result["turns"][0]
-    assert resumed_turn["phases"][1]["title"] == "Phase 2: Patch realtime protocol"
+    assert resumed_turn["phases"][1]["title"] == "Patch realtime protocol"
     assert resumed_turn["workspaceFocus"]["view"] == "trace"
-    assert resumed_turn["workbenchSnapshot"]["version"] == 2
+    assert resumed_turn["workbenchSnapshot"]["version"] == 3
 
 
 def test_team_subagent_lifecycle_maps_to_first_class_item(
@@ -1083,9 +1085,9 @@ def test_resume_proposal_block_is_parsed_into_sanitized_session_metadata() -> No
     resume_text = """
 Resume this agent run from the selected durable checkpoint.
 
-<octopus_resume_proposal>
+<echo_resume_proposal>
 {
-  "schema": "octopus.resume_proposal.v1",
+  "schema": "echo.resume_proposal.v1",
   "checkpoint_id": 7,
   "task_id": "task-1",
   "checkpoint_type": "react",
@@ -1098,7 +1100,7 @@ Resume this agent run from the selected durable checkpoint.
   "raw_message_snapshots_included": false,
   "messages_snapshot": ["message body"]
 }
-</octopus_resume_proposal>
+</echo_resume_proposal>
 """.strip()
     intent = _build_intent(
         resume_text,
@@ -1110,7 +1112,7 @@ Resume this agent run from the selected durable checkpoint.
     )
     resume_intent = intent.user_context["resume_intent"]
     assert resume_intent == {
-        "schema": "octopus.resume_intent.v1",
+        "schema": "echo.resume_intent.v1",
         "requires_confirmation": True,
         "source": "resume_proposal_block",
         "checkpoint_id": 7,
@@ -1139,9 +1141,9 @@ def test_resume_proposal_block_prepares_confirmation_without_running_react(
     resume_text = """
 Resume this agent run from the selected durable checkpoint.
 
-<octopus_resume_proposal>
+<echo_resume_proposal>
 {
-  "schema": "octopus.resume_proposal.v1",
+  "schema": "echo.resume_proposal.v1",
   "checkpoint_id": 9,
   "task_id": "task-9",
   "checkpoint_type": "react",
@@ -1154,7 +1156,7 @@ Resume this agent run from the selected durable checkpoint.
   "raw_message_snapshots_included": false,
   "messages_snapshot": ["message body"]
 }
-</octopus_resume_proposal>
+</echo_resume_proposal>
 """.strip()
     with client.websocket_connect("/api/realtime") as ws:
         out = _drive(
@@ -1186,9 +1188,9 @@ def test_confirmed_resume_intent_runs_react_once_and_is_consumed(gateway: Any) -
     resume_text = """
 Resume this agent run from the selected durable checkpoint.
 
-<octopus_resume_proposal>
+<echo_resume_proposal>
 {
-  "schema": "octopus.resume_proposal.v1",
+  "schema": "echo.resume_proposal.v1",
   "checkpoint_id": 12,
   "task_id": "task-12",
   "checkpoint_type": "react",
@@ -1201,7 +1203,7 @@ Resume this agent run from the selected durable checkpoint.
   "raw_message_snapshots_included": false,
   "messages_snapshot": ["message body"]
 }
-</octopus_resume_proposal>
+</echo_resume_proposal>
 """.strip()
     with client.websocket_connect("/api/realtime") as ws:
         _set_script(
@@ -1251,9 +1253,9 @@ def test_confirmed_resume_intent_passes_task_id_to_react(gateway: Any) -> None:
     resume_text = f"""
 Resume this agent run from the selected durable checkpoint.
 
-<octopus_resume_proposal>
+<echo_resume_proposal>
 {{
-  "schema": "octopus.resume_proposal.v1",
+  "schema": "echo.resume_proposal.v1",
   "checkpoint_id": 33,
   "task_id": "{task_id}",
   "checkpoint_type": "react",
@@ -1263,7 +1265,7 @@ Resume this agent run from the selected durable checkpoint.
   "raw_state_included": false,
   "raw_message_snapshots_included": false
 }}
-</octopus_resume_proposal>
+</echo_resume_proposal>
 """.strip()
     with client.websocket_connect("/api/realtime") as ws:
         _set_script([{"type": "react_completed"}])
@@ -1343,9 +1345,9 @@ def test_confirmed_resume_intent_survives_runtime_restart_when_trace_store_exist
     resume_text = """
 Resume this agent run from the selected durable checkpoint.
 
-<octopus_resume_proposal>
+<echo_resume_proposal>
 {
-  "schema": "octopus.resume_proposal.v1",
+  "schema": "echo.resume_proposal.v1",
   "checkpoint_id": 21,
   "task_id": "task-21",
   "checkpoint_type": "react",
@@ -1358,7 +1360,7 @@ Resume this agent run from the selected durable checkpoint.
   "raw_message_snapshots_included": false,
   "messages_snapshot": ["message body"]
 }
-</octopus_resume_proposal>
+</echo_resume_proposal>
 """.strip()
     with TestClient(app_a) as client, client.websocket_connect("/api/realtime") as ws:
         _set_script([{"type": "react_completed"}])
@@ -1773,6 +1775,13 @@ def test_tool_end_with_diff_emits_file_change_item(gateway: Any) -> None:
                 "output_preview": "ok",
                 "duration_ms": 1,
                 "diff": diff,
+                "verification": {
+                    "command": "pytest tests/test_foo.py",
+                    "kind": "test",
+                    "exit_code": 0,
+                    "success": True,
+                    "stdout_tail": "1 passed",
+                },
             },
             {"type": "react_completed"},
         ]
@@ -1842,6 +1851,11 @@ def test_code_file_change_without_verification_fails_turn(gateway: Any) -> None:
 
     turn = out["response"].result["turn"]
     assert turn["status"] == "failed"
+    # The bounded agent-verification follow-up reuses this fake script. A
+    # provider may also reuse call ids across real rounds; public item ids
+    # must remain unique for the entire turn.
+    command_ids = [it["id"] for it in turn["items"] if it["type"] == "commandExecution"]
+    assert command_ids == ["call-edit", "call-edit#2"]
     verification_items = [it for it in turn["items"] if it["type"] == "verification"]
     assert len(verification_items) == 1
     assert verification_items[0]["kind"] == "manual"
@@ -2258,7 +2272,7 @@ def test_turn_interrupt_kills_in_flight_subprocess(
 ) -> None:
     """End-to-end: client sends turn/interrupt while a tool is running
     a long subprocess → stream_run sees cancellation → proc killed →
-    tool_end carries status=cancelled → turn.status = interrupted."""
+    tool_end carries status=cancelled → turn.status = cancelled."""
     import sys
     import time
 
@@ -2367,7 +2381,7 @@ def test_turn_interrupt_kills_in_flight_subprocess(
     # propagate through the async watcher + stream_run kill path.
     assert elapsed < 3.0, f"interrupt took {elapsed:.1f}s, expected < 3s"
     assert tool_completed_naturally["flag"] is False
-    assert final.result["turn"]["status"] == "interrupted"
+    assert final.result["turn"]["status"] == "cancelled"
 
 
 def test_thread_resume_closes_stale_in_progress_turn(tmp_path: Path) -> None:
@@ -2582,22 +2596,16 @@ def test_meta_skill_hint_silent_when_no_match(tmp_path: Path) -> None:
     assert hints == []
 
 
-def test_producer_thread_cancelled_when_consumer_disconnects(
+def test_turn_survives_ws_disconnect_and_runs_server_side(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Regression: when the WebSocket disconnects mid-turn, the consumer
-    coroutine is cancelled — but the producer runs in a real OS thread
-    (asyncio.to_thread) that cancellation can't reach. Previously nobody
-    tripped ``cancel_source`` on consumer teardown, so the producer
-    looped to completion against a dead queue, piling up pending
-    ``Queue.put()`` tasks (the "Task was destroyed but it is pending"
-    flood). The fix trips ``cancel_source`` in the consumer's finally so
-    the producer thread observes cancellation and bails fast.
+    """Audit T-01: a dropped WebSocket must NOT cancel a running turn.
 
-    This test substitutes a fake stream that, after yielding once,
-    polls the cancellation token. It asserts the token DOES get tripped
-    after the consumer goes away.
+    Turns run as server-resident tasks behind a detached emitter, so a
+    network switch, lid-close, or transient disconnect cannot destroy a
+    long Agent run. The fake producer must finish naturally after the
+    requester disconnects, and the resident task must drain on its own.
     """
     import threading
     import time
@@ -2611,14 +2619,12 @@ def test_producer_thread_cancelled_when_consumer_disconnects(
     first_event_sent = threading.Event()
 
     def fake_stream(*args: Any, **kwargs: Any) -> Iterator[dict[str, Any]]:
-        # Yield one event so the turn is clearly in-flight, then block
-        # in the producer thread polling the cancellation token. Mirrors
-        # a long tool call that keeps the worker thread alive after the
-        # consumer is gone.
+        # Yield one event so the turn is clearly in-flight, then keep the
+        # producer alive briefly while polling the cancellation token.
         yield {"type": "text_delta", "delta": "working"}
         first_event_sent.set()
         token = current_cancellation_token()
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + 1.5
         while time.monotonic() < deadline:
             if token.is_cancelled:
                 observed["token_tripped"] = True
@@ -2658,15 +2664,20 @@ def test_producer_thread_cancelled_when_consumer_disconnects(
             # Wait until the producer has started streaming, then leave
             # the context → WebSocket disconnects mid-turn.
             assert first_event_sent.wait(timeout=5.0), "producer never started"
-        # ws is now closed; the gateway should cancel the in-flight turn
-        # task, whose finally trips cancel_source.
+        # ws is now closed; the server-resident turn must keep running.
 
-        # Give the producer's poll loop a moment to observe the trip.
         deadline = time.monotonic() + 5.0
         while observed["token_tripped"] is None and time.monotonic() < deadline:
             time.sleep(0.05)
 
-    assert observed["token_tripped"] is True, (
-        "producer thread was not cancelled after consumer disconnect — "
-        "cancel_source not tripped on teardown"
-    )
+        assert observed["token_tripped"] is False, (
+            "turn was cancelled by the ws disconnect — long turns must "
+            "survive connection loss and run on server-side (audit T-01)"
+        )
+
+        deadline = time.monotonic() + 10.0
+        while gateway._resident_turn_tasks and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not gateway._resident_turn_tasks, (
+            "resident turn did not drain after the requester left"
+        )

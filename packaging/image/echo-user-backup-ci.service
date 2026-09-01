@@ -1,0 +1,16 @@
+[Unit]
+Description=Disposable Echo OS encrypted user-backup acceptance
+After=local-fs.target echo-machine-state-initrd.service
+Before=echo-agent.service sddm.service echo-desktop.service
+RequiresMountsFor=/home /var/lib/echo-agent /var/lib/echo-os
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/verify-machine-identity.sh
+ExecStartPost=/var/lib/echo-os/echo-user-backup-ci
+LoadCredential=echo-backup-password:/var/lib/echo-os/echo-backup-ci-password
+RemainAfterExit=yes
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

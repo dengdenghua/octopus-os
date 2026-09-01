@@ -57,8 +57,10 @@ import { TimelineView } from "./timeline-view";
 
 type ViewMode = "kanban" | "timeline" | "list" | "schedules";
 
-const CronSettingsPage = lazy(
-  () => import("@/components/workspace/settings/cron-settings-page").then(m => ({ default: m.CronSettingsPage })),
+const CronSettingsPage = lazy(() =>
+  import("@/components/workspace/settings/cron-settings-page").then((m) => ({
+    default: m.CronSettingsPage,
+  })),
 );
 
 const VIEW_MODE_ICONS: Record<ViewMode, React.ReactNode> = {
@@ -76,30 +78,26 @@ const VIEW_MODES: ViewMode[] = ["kanban", "timeline", "list", "schedules"];
 
 const COLUMN_CONFIG: Record<
   KanbanColumnId,
-  { label: string; color: string; bgColor: string; icon: React.ReactNode }
+  { color: string; bgColor: string; icon: React.ReactNode }
 > = {
   queued: {
-    label: "Queued",
-    color: "text-slate-600 dark:text-slate-400",
-    bgColor: "bg-slate-500/5 border-slate-500/20",
+    color: "text-muted-foreground",
+    bgColor: "bg-muted-foreground/5 border-muted-foreground/20",
     icon: <ClockIcon className="size-3.5" />,
   },
   running: {
-    label: "Running",
-    color: "text-amber-600 dark:text-amber-400",
-    bgColor: "bg-amber-500/5 border-amber-500/20",
+    color: "text-warning",
+    bgColor: "bg-warning/5 border-warning/20",
     icon: <Loader2Icon className="size-3.5 animate-spin" />,
   },
   completed: {
-    label: "Completed",
-    color: "text-emerald-600 dark:text-emerald-400",
-    bgColor: "bg-emerald-500/5 border-emerald-500/20",
+    color: "text-success",
+    bgColor: "bg-success/5 border-success/20",
     icon: <CheckCircle2Icon className="size-3.5" />,
   },
   failed: {
-    label: "Failed",
-    color: "text-red-600 dark:text-red-400",
-    bgColor: "bg-red-500/5 border-red-500/20",
+    color: "text-destructive",
+    bgColor: "bg-destructive/5 border-destructive/20",
     icon: <AlertCircleIcon className="size-3.5" />,
   },
 };
@@ -132,13 +130,18 @@ function KanbanColumn({
     >
       {/* Column header */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-inherit">
-        <span className={cn("flex items-center gap-1.5 text-sm font-semibold", cfg.color)}>
+        <span
+          className={cn(
+            "flex items-center gap-1.5 text-sm font-semibold",
+            cfg.color,
+          )}
+        >
           {cfg.icon}
           {columnLabels[columnId]}
         </span>
         <Badge
           variant="secondary"
-          className="ml-auto text-[10px] px-1.5 py-0 h-5 min-w-[20px] justify-center"
+          className="ml-auto text-xs px-1.5 py-0 h-5 min-w-[20px] justify-center"
         >
           {tasks.length}
         </Badge>
@@ -204,7 +207,8 @@ type SortKey = "type" | "name" | "status" | "duration_ms" | "created_at";
 type SortDir = "asc" | "desc";
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
-  if (!active) return <ArrowUpDownIcon className="size-3 text-muted-foreground/40" />;
+  if (!active)
+    return <ArrowUpDownIcon className="size-3 text-muted-foreground/40" />;
   return dir === "asc" ? (
     <ArrowUpIcon className="size-3" />
   ) : (
@@ -277,23 +281,33 @@ function ListView({ tasks }: { tasks: UnifiedTask[] }) {
   ];
 
   return (
-    <div className="overflow-x-auto rounded-lg border">
+    <div className="overflow-x-auto max-w-full rounded-lg border">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b bg-muted/30">
             {columns.map((col) => (
               <th
                 key={col.key}
+                aria-sort={
+                  sortKey === col.key
+                    ? sortDir === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : "none"
+                }
                 className={cn(
-                  "px-3 py-2 text-left font-medium text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors",
+                  "px-1 py-1 text-left font-medium text-muted-foreground",
                   col.className,
                 )}
-                onClick={() => handleSort(col.key)}
               >
-                <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  className="flex min-h-8 w-full select-none items-center gap-1 rounded-md px-2 text-left transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => handleSort(col.key)}
+                >
                   {col.label}
                   <SortIcon active={sortKey === col.key} dir={sortDir} />
-                </div>
+                </button>
               </th>
             ))}
           </tr>
@@ -301,13 +315,17 @@ function ListView({ tasks }: { tasks: UnifiedTask[] }) {
         <tbody>
           {sorted.length === 0 ? (
             <tr>
-              <td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">
+              <td
+                colSpan={5}
+                className="px-3 py-8 text-center text-muted-foreground"
+              >
                 {t.taskBoard.noTasks}
               </td>
             </tr>
           ) : (
             sorted.map((task) => {
-              const statusCfg = STATUS_STYLE[task.status] ?? STATUS_STYLE.queued;
+              const statusCfg =
+                STATUS_STYLE[task.status] ?? STATUS_STYLE.queued;
               return (
                 <tr
                   key={task.id}
@@ -315,18 +333,29 @@ function ListView({ tasks }: { tasks: UnifiedTask[] }) {
                 >
                   {/* Type */}
                   <td className="px-3 py-2.5">
-                    <div className={cn("flex items-center gap-1.5", TYPE_COLORS[task.type])}>
+                    <div
+                      className={cn(
+                        "flex items-center gap-1.5",
+                        TYPE_COLORS[task.type],
+                      )}
+                    >
                       {TYPE_ICONS[task.type]}
-                      <span className="text-xs font-medium">{TYPE_LABELS[task.type]}</span>
+                      <span className="text-xs font-medium">
+                        {TYPE_LABELS[task.type]}
+                      </span>
                     </div>
                   </td>
 
                   {/* Name */}
                   <td className="px-3 py-2.5">
                     <div className="min-w-0">
-                      <p className="truncate font-medium">{task.name || task.id}</p>
+                      <p className="truncate font-medium">
+                        {task.name || task.id}
+                      </p>
                       {task.phase && (
-                        <p className="truncate text-xs text-muted-foreground">{task.phase}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {task.phase}
+                        </p>
                       )}
                     </div>
                   </td>
@@ -335,7 +364,7 @@ function ListView({ tasks }: { tasks: UnifiedTask[] }) {
                   <td className="px-3 py-2.5">
                     <span
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-medium leading-none",
+                        "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-xs font-medium leading-none",
                         statusCfg.badgeClass,
                       )}
                     >
@@ -391,7 +420,13 @@ function TypeFilterPills({
 }) {
   const { t: i18n } = useI18n();
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: tasks.length, background: 0, quest: 0, scheduled: 0, intelligence: 0 };
+    const c: Record<string, number> = {
+      all: tasks.length,
+      background: 0,
+      quest: 0,
+      scheduled: 0,
+      intelligence: 0,
+    };
     for (const t of tasks) c[t.type] = (c[t.type] ?? 0) + 1;
     return c;
   }, [tasks]);
@@ -405,7 +440,11 @@ function TypeFilterPills({
   ];
 
   return (
-    <div className="flex items-center gap-1">
+    <div
+      className="flex max-w-full items-center gap-1 overflow-x-auto pb-1"
+      role="group"
+      aria-label={i18n.taskBoard.filterByType}
+    >
       {options.map((opt) => (
         <Button
           key={opt.key}
@@ -416,10 +455,14 @@ function TypeFilterPills({
             value === opt.key && "font-semibold",
           )}
           onClick={() => onChange(opt.key)}
+          aria-pressed={value === opt.key}
         >
           {opt.label}
           {(counts[opt.key] ?? 0) > 0 && (
-            <span className="ml-1 text-[10px] text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className="ml-1 text-xs text-muted-foreground"
+            >
               {counts[opt.key]}
             </span>
           )}
@@ -443,11 +486,14 @@ export function TaskBoard({
   const initialType = searchParams.get("type");
   const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(
-    initialType === "background" || initialType === "quest" || initialType === "scheduled" || initialType === "intelligence"
+    initialType === "background" ||
+      initialType === "quest" ||
+      initialType === "scheduled" ||
+      initialType === "intelligence"
       ? initialType
       : initialTypeFilter
         ? initialTypeFilter
-      : "all",
+        : "all",
   );
 
   // Fetch data
@@ -460,9 +506,11 @@ export function TaskBoard({
     type: typeFilter === "all" ? undefined : typeFilter,
   });
   const { stats, loading: statsLoading } = useTaskBoardStats();
-  const { data: timelineData, loading: timelineLoading } = useTaskBoardTimeline({
-    type: typeFilter === "all" ? undefined : typeFilter,
-  });
+  const { data: timelineData, loading: timelineLoading } = useTaskBoardTimeline(
+    {
+      type: typeFilter === "all" ? undefined : typeFilter,
+    },
+  );
 
   const tasks = taskData.tasks;
 
@@ -471,22 +519,30 @@ export function TaskBoard({
   }, [refreshTasks]);
 
   return (
-    <div className={cn("ui-density-stack flex h-full flex-col", compact ? "p-0" : "ui-density-page")}>
+    <div
+      className={cn(
+        "ui-density-stack flex h-full flex-col",
+        compact ? "p-0" : "ui-density-page",
+      )}
+    >
       {/* Page header */}
-      <div className="ui-density-panel flex items-center justify-between rounded-lg border border-border/50 bg-card/60">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">{t.taskBoard.title}</h1>
+      <div className="ui-density-panel flex flex-col items-stretch justify-between gap-3 rounded-lg border border-border-default bg-card/60 sm:flex-row sm:items-center">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight">
+            {t.taskBoard.title}
+          </h1>
           <p className="text-sm text-muted-foreground">
             {t.taskBoard.description}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 sm:shrink-0">
           <Button
             variant="outline"
             size="sm"
-            className="h-8"
+            className="h-8 w-full sm:w-auto"
             onClick={handleRefresh}
+            disabled={tasksLoading}
           >
             <RefreshCwIcon className="size-3.5 mr-1.5" />
             {t.taskBoard.refresh}
@@ -498,7 +554,7 @@ export function TaskBoard({
       <StatsBar stats={stats} loading={statsLoading} />
 
       {/* Toolbar: view mode + filters */}
-      <div className="ui-density-panel flex items-center justify-between gap-4 rounded-lg border border-border/40 bg-card/40">
+      <div className="ui-density-panel flex flex-col items-stretch justify-between gap-3 rounded-lg border border-border-subtle bg-card/40 xl:flex-row xl:items-center">
         <TypeFilterPills
           value={typeFilter}
           onChange={setTypeFilter}
@@ -508,8 +564,9 @@ export function TaskBoard({
         <Tabs
           value={viewMode}
           onValueChange={(v) => setViewMode(v as ViewMode)}
+          className="max-w-full overflow-x-auto pb-1"
         >
-          <TabsList className="h-8">
+          <TabsList className="h-8 w-max min-w-full sm:min-w-0">
             {VIEW_MODES.map((vm) => (
               <TabsTrigger
                 key={vm}
@@ -525,35 +582,56 @@ export function TaskBoard({
       </div>
 
       {/* Error state */}
-      {tasksError && (
-        <div className="ui-density-panel rounded-lg border border-red-500/20 bg-red-500/5 text-sm text-red-600 dark:text-red-400">
-          <AlertCircleIcon className="mr-2 inline-block size-4" />
-          {tasksError}
+      {tasksError && viewMode !== "schedules" && (
+        <div
+          role="alert"
+          className="ui-density-panel flex flex-col items-start justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/5 text-sm text-destructive sm:flex-row sm:items-center"
+        >
+          <span className="flex items-center gap-2">
+            <AlertCircleIcon className="size-4 shrink-0" />
+            {t.taskBoard.loadFailed}
+          </span>
+          <Button variant="outline" size="sm" onClick={handleRefresh}>
+            <RefreshCwIcon className="mr-1.5 size-3.5" />
+            {t.taskBoard.retry}
+          </Button>
         </div>
       )}
 
       {/* Loading state */}
-      {tasksLoading && tasks.length === 0 && (
-        <div className="flex items-center justify-center rounded-lg border border-border/40 bg-card/40 py-20">
+      {tasksLoading && tasks.length === 0 && viewMode !== "schedules" && (
+        <div
+          role="status"
+          className="flex items-center justify-center rounded-lg border border-border-subtle bg-card/40 py-20"
+        >
           <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
+          <span className="sr-only">{t.common.loading}</span>
         </div>
       )}
 
       {/* Empty state */}
-      {!tasksLoading && tasks.length === 0 && !tasksError && (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/50 bg-card/30 py-20 text-muted-foreground">
-          <KanbanIcon className="size-12 mb-3 opacity-30" />
-          <p className="text-lg font-medium">{t.taskBoard.noTasks}</p>
-          <p className="text-sm">
-            {t.taskBoard.noTasksDescription}
-          </p>
-        </div>
-      )}
+      {!tasksLoading &&
+        tasks.length === 0 &&
+        !tasksError &&
+        viewMode !== "schedules" && (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border-default bg-card/30 py-20 text-muted-foreground">
+            <KanbanIcon className="size-12 mb-3 opacity-30" />
+            <p className="text-lg font-medium">{t.taskBoard.noTasks}</p>
+            <p className="text-sm">{t.taskBoard.noTasksDescription}</p>
+          </div>
+        )}
 
       {/* View content */}
       {viewMode === "schedules" ? (
         <div className="flex-1 min-h-0 overflow-auto">
-          <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2Icon className="size-6 animate-spin text-muted-foreground" /></div>}>
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-20">
+                <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
+                <span className="sr-only">{t.common.loading}</span>
+              </div>
+            }
+          >
             <CronSettingsPage />
           </Suspense>
         </div>

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.adapters.mcp_client import (
     STDIO_AVAILABLE,
     MCPClientError,
@@ -50,7 +49,7 @@ class TestLifecycle:
 
         # Implementation note.
         client.close()
-        client.close()   # Implementation note.
+        client.close()  # Implementation note.
 
     def test_context_manager_cleans_up(self):
         """Implementation note."""

@@ -10,6 +10,7 @@ it by setting ``user_ctx["enable_auto_topology"] = True`` on the turn
 context. These tests cover both the off-by-default contract and the
 opt-in path.
 """
+
 from __future__ import annotations
 
 from runtime.protocol.items import TurnParams
@@ -58,16 +59,20 @@ def test_disable_auto_topology_flag_locks_off() -> None:
     """Operators who built tooling on top of the old behaviour and
     want it locked off forever can set this flag to make the answer
     None even if a future opt-in slipped in."""
-    p = _make_params(metadata={
-        "context": {"disable_auto_topology": True, "enable_auto_topology": True},
-    })
+    p = _make_params(
+        metadata={
+            "context": {"disable_auto_topology": True, "enable_auto_topology": True},
+        }
+    )
     assert _should_default_topology("做调研报告", p) is None
 
 
 def test_disable_via_inner_metadata() -> None:
-    p = _make_params(metadata={
-        "context": {"metadata": {"disable_auto_topology": True}},
-    })
+    p = _make_params(
+        metadata={
+            "context": {"metadata": {"disable_auto_topology": True}},
+        }
+    )
     assert _should_default_topology("做调研报告", p) is None
 
 
@@ -94,9 +99,11 @@ def test_opt_in_enables_research_keyword() -> None:
 
 
 def test_opt_in_via_inner_metadata() -> None:
-    p = _make_params(metadata={
-        "context": {"metadata": {"enable_auto_topology": True}},
-    })
+    p = _make_params(
+        metadata={
+            "context": {"metadata": {"enable_auto_topology": True}},
+        }
+    )
     assert _should_default_topology("Run a deep research on X", p) == "research_swarm_v1"
 
 
@@ -119,9 +126,13 @@ def test_opt_in_review_pr_specificity_beats_refactor() -> None:
     """'review the refactor PR' mentions both — code-review wins
     even under opt-in mode (priority order is preserved)."""
     p = _make_params(metadata={"context": {"enable_auto_topology": True}})
-    assert _should_default_topology(
-        "code review the refactor PR I just opened", p,
-    ) == "code_review_team_v1"
+    assert (
+        _should_default_topology(
+            "code review the refactor PR I just opened",
+            p,
+        )
+        == "code_review_team_v1"
+    )
 
 
 def test_opt_in_unrelated_message_still_none() -> None:

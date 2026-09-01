@@ -30,7 +30,9 @@ export function SparklineChart({
   }, [data, width, height]);
 
   if (data.length === 0) {
-    return <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} />;
+    return (
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} />
+    );
   }
 
   if (data.length === 1) {

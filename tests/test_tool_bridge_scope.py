@@ -311,10 +311,10 @@ def test_agentic_stream_asserts_todo_write_capability():
 def test_agentic_stream_injects_relevant_memory_hub_records(tmp_path, monkeypatch):
     from runtime.memory import user_store
 
-    monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path))
+    monkeypatch.setenv("ECHO_HOME", str(tmp_path))
     monkeypatch.chdir(tmp_path)
     user_store.add_fact(
-        "Octopus deploys must use blue green rollout.",
+        "Echo deploys must use blue green rollout.",
         category="ops",
         source="manual",
         scope="project",
@@ -335,9 +335,9 @@ def test_agentic_stream_injects_relevant_memory_hub_records(tmp_path, monkeypatc
 
     router = Router()
     intent = ParsedIntent(
-        raw="Plan Octopus rollout",
+        raw="Plan Echo rollout",
         intent_type="task",
-        normalized_goal="Plan Octopus rollout",
+        normalized_goal="Plan Echo rollout",
         user_context={
             "conversation_id": "thread-1",
             "workspace_path": str(tmp_path),
@@ -357,7 +357,7 @@ def test_agentic_stream_injects_relevant_memory_hub_records(tmp_path, monkeypatc
 
 
 def test_agentic_stream_injects_team_memory_hub_records(tmp_path, monkeypatch):
-    monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("ECHO_HOME", str(tmp_path / "home"))
     monkeypatch.chdir(tmp_path)
     team_core = tmp_path / "teams" / "Alpha-Team" / "team-core"
     team_core.mkdir(parents=True)
@@ -403,7 +403,7 @@ def test_agentic_stream_injects_team_memory_hub_records(tmp_path, monkeypatch):
     assert "release captain reviews" in system_text
 
 
-def test_agentic_stream_requires_todo_before_complex_final():
+def test_agentic_stream_does_not_use_todo_as_completion_gate():
     class Router:
         def __init__(self):
             self.calls = 0
@@ -452,33 +452,25 @@ def test_agentic_stream_requires_todo_before_complex_final():
 
     router = Router()
     intent = ParsedIntent(
-        raw="fix the frontend and run tests",
+        raw="coordinate the team response",
         intent_type="task",
-        normalized_goal="fix the frontend and run tests",
+        normalized_goal="coordinate the team response",
         user_context={
             "conversation_id": "thread-1",
-            "metadata": {"mode": "code"},
+            "metadata": {"mode": "team"},
         },
     )
 
     events = list(stream_agentic_fallback(_stack_with_todo(router), intent, _agent()))
 
-    assert router.calls == 3
-    assert any(
-        event[0] == "tool_start" and event[1]["name"] == "todo_write"
-        for event in events
+    assert router.calls == 1
+    assert not any(
+        event[0] == "tool_start" and event[1]["name"] == "todo_write" for event in events
     )
-    assert events[-1] == ("done", "", "final")
-
-    second_request_text = "\n".join(
-        str(msg.content)
-        for msg in router.requests[1].messages
-        if msg.role == "user"
-    )
-    assert "task checklist required" in second_request_text
+    assert events[-1] == ("done", "", "premature")
 
 
-def test_agentic_stream_requires_todo_update_after_tools(tmp_path):
+def test_agentic_stream_does_not_require_todo_refresh_after_tools(tmp_path):
     marker = tmp_path / "ONLY_TARGET.txt"
     marker.write_text("target", encoding="utf-8")
 
@@ -576,21 +568,12 @@ def test_agentic_stream_requires_todo_update_after_tools(tmp_path):
 
     events = list(stream_agentic_fallback(_stack_with_todo(router), intent, _agent()))
 
-    assert router.calls == 5
+    assert router.calls == 3
     todo_starts = [
-        event
-        for event in events
-        if event[0] == "tool_start" and event[1]["name"] == "todo_write"
+        event for event in events if event[0] == "tool_start" and event[1]["name"] == "todo_write"
     ]
-    assert len(todo_starts) == 2
-    assert events[-1] == ("done", "", "final")
-
-    fourth_request_text = "\n".join(
-        str(msg.content)
-        for msg in router.requests[3].messages
-        if msg.role == "user"
-    )
-    assert "checklist update required" in fourth_request_text
+    assert len(todo_starts) == 1
+    assert events[-1] == ("done", "", "premature")
 
 
 def test_agentic_stream_prompts_for_user_decision_at_round_cap(monkeypatch):

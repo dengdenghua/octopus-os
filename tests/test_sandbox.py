@@ -5,13 +5,13 @@ uses ``sys.executable`` (always available) and feeds Python a one-liner
 via ``-c``. That dodges shell-builtin differences (``echo``, ``ls``,
 ``true``) without losing test coverage.
 """
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
 import pytest
-
 from runtime.safety.sandboxing.sandbox import (
     DirectBackend,
     SandboxPolicy,
@@ -45,9 +45,7 @@ class TestRun:
 
     def test_stderr_captured(self, workspace: Path) -> None:
         runner = SandboxRunner(SandboxPolicy(workspace=workspace, timeout_s=10.0))
-        result = runner.run(
-            _python("import sys; sys.stderr.write('boom'); sys.stderr.flush()")
-        )
+        result = runner.run(_python("import sys; sys.stderr.write('boom'); sys.stderr.flush()"))
         assert "boom" in result.stderr
 
     def test_stdin_text(self, workspace: Path) -> None:
@@ -62,9 +60,7 @@ class TestRun:
         chunks: list[str] = []
         runner = SandboxRunner(SandboxPolicy(workspace=workspace, timeout_s=10.0))
         runner.run(
-            _python(
-                "for i in range(3):\n    print('line' + str(i), flush=True)\n"
-            ),
+            _python("for i in range(3):\n    print('line' + str(i), flush=True)\n"),
             on_output=chunks.append,
         )
         assert any("line" in c for c in chunks)
@@ -76,9 +72,7 @@ class TestEnvironmentScrub:
     ) -> None:
         monkeypatch.setenv("FAKE_API_KEY", "TOPSECRET")
         runner = SandboxRunner(SandboxPolicy(workspace=workspace, timeout_s=10.0))
-        result = runner.run(
-            _python("import os; print(os.environ.get('FAKE_API_KEY', 'MISSING'))")
-        )
+        result = runner.run(_python("import os; print(os.environ.get('FAKE_API_KEY', 'MISSING'))"))
         assert "MISSING" in result.stdout
         assert "TOPSECRET" not in result.stdout
 
@@ -90,17 +84,13 @@ class TestEnvironmentScrub:
                 extra_env={"OCT_INJECT": "yes"},
             )
         )
-        result = runner.run(
-            _python("import os; print(os.environ.get('OCT_INJECT', 'no'))")
-        )
+        result = runner.run(_python("import os; print(os.environ.get('OCT_INJECT', 'no'))"))
         assert "yes" in result.stdout
 
     def test_no_network_sets_proxy_short_circuit(self, workspace: Path) -> None:
         runner = SandboxRunner(SandboxPolicy(workspace=workspace, timeout_s=10.0))
         result = runner.run(
-            _python(
-                "import os; print(os.environ.get('no_proxy'), os.environ.get('http_proxy'))"
-            )
+            _python("import os; print(os.environ.get('no_proxy'), os.environ.get('http_proxy'))")
         )
         assert "*" in result.stdout
         assert "127.0.0.1:1" in result.stdout
@@ -147,11 +137,7 @@ class TestLimits:
             SandboxPolicy(workspace=workspace, timeout_s=10.0, max_output_bytes=64)
         )
         # Each line is ~10 chars; produce more than the cap.
-        result = runner.run(
-            _python(
-                "for i in range(200):\n    print('xxxxxxxx', flush=True)\n"
-            )
-        )
+        result = runner.run(_python("for i in range(200):\n    print('xxxxxxxx', flush=True)\n"))
         assert result.truncated is True
         assert len(result.stdout) <= 64
 

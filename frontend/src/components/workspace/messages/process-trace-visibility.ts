@@ -42,7 +42,7 @@ export function shouldOpenProcessTraceByDefault(
   if (topLevel.some(isActive)) return true;
   if (hasAnswer) return false;
   if (topLevel.some(isError)) return true;
-  return true;
+  return false;
 }
 
 function isPlainChatMode(mode: ProcessTraceMode) {

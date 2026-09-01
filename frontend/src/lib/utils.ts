@@ -10,4 +10,3 @@ export const externalLinkClass =
   "text-primary underline underline-offset-2 hover:no-underline";
 /** Link style without underline by default (e.g. for streaming/loading). */
 export const externalLinkClassNoUnderline = "text-primary hover:underline";
-

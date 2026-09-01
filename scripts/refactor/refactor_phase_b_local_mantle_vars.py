@@ -8,6 +8,7 @@ Whole-word match. Skips strings that *contain* mantle as a substring
 of another identifier (none expected after Phase A).
 """
 from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path

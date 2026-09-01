@@ -36,9 +36,7 @@ def _mk_traj(
         steps=[],
         outcome=TrajectoryOutcome(
             success=success,
-            cost=CostEntry(
-                tokens_in=tokens // 2, tokens_out=tokens // 2, usd=cost_usd
-            ),
+            cost=CostEntry(tokens_in=tokens // 2, tokens_out=tokens // 2, usd=cost_usd),
         ),
     )
 
@@ -92,9 +90,7 @@ class TestBasicEvaluate:
                 )
             )
 
-        report = RecipeEvaluator(
-            j, config=RecipeEvaluatorConfig(min_uses_to_score=1)
-        ).evaluate()
+        report = RecipeEvaluator(j, config=RecipeEvaluatorConfig(min_uses_to_score=1)).evaluate()
         [score] = [s for s in report.scores if s.recipe_id == "llm@dup"]
         assert score.uses == 1
         assert score.successes == 1
@@ -198,9 +194,7 @@ class TestConfig:
         j = InMemoryJournal()
         for _ in range(5):
             j.write_trajectory(_mk_traj("r", success=True))
-        report = RecipeEvaluator(
-            j, config=RecipeEvaluatorConfig(min_uses_to_score=100)
-        ).evaluate()
+        report = RecipeEvaluator(j, config=RecipeEvaluatorConfig(min_uses_to_score=100)).evaluate()
         assert report.scores[0].verdict == "insufficient_data"
 
     def test_custom_winning_threshold(self):
@@ -211,9 +205,7 @@ class TestConfig:
             j.write_trajectory(_mk_traj("r", success=True))
         j.write_trajectory(_mk_traj("r", success=False))
         report = RecipeEvaluator(
-            j, config=RecipeEvaluatorConfig(
-                min_uses_to_score=3, winning_success_threshold=0.95
-            )
+            j, config=RecipeEvaluatorConfig(min_uses_to_score=3, winning_success_threshold=0.95)
         ).evaluate()
         # Implementation note.
         assert report.scores[0].verdict == "neutral"
@@ -283,7 +275,7 @@ class TestLLMPlannerRecipeHash:
             [
                 LearnedRule(
                     rule_id="r1",
-                    sucker_id="read_file",   # type: ignore[arg-type]
+                    sucker_id="read_file",  # type: ignore[arg-type]
                     error_signature="timeout",
                     pattern="p",
                     mitigation="m",

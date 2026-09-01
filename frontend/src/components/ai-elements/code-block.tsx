@@ -1,11 +1,12 @@
-
+import DOMPurify from "dompurify";
 import { Button } from "@/components/ui/button";
 import { swallow } from "@/core/utils/log";
 import { copyTextToClipboard } from "@/core/clipboard";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/core/i18n/hooks";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { ArrowLeftRight, CheckIcon, CopyIcon, WrapText } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useLocalStorage } from "@/hooks/use-local-storage";
 import {
   type ComponentProps,
   createContext,
@@ -82,18 +83,51 @@ export async function highlightCode(
  */
 const PRE_CLASS_OVERRIDES =
   "[&>pre]:m-0 [&>pre]:p-4 [&>pre]:text-sm [&>pre]:leading-6 " +
-  "[&>pre]:whitespace-pre-wrap [&>pre]:bg-transparent! " +
-  "[&_code]:font-mono [&_code]:text-sm";
+  "[&>pre]:bg-transparent! [&_code]:font-mono [&_code]:text-sm";
 
-function LightweightCodeBlock({ code }: { code: string }) {
+const WRAP_PRE_CLASS = "[&>pre]:whitespace-pre-wrap";
+const SCROLL_PRE_CLASS = "[&>pre]:whitespace-pre";
+
+function LightweightCodeBlock({ code, wrap }: { code: string; wrap: boolean }) {
   // Exactly the same <pre> shape the Shiki output uses — just without
   // syntax coloring. The `overflow-auto` wrapper and class contract
   // matches the highlighted variant below.
   return (
-    <pre className="m-0 p-4 text-sm leading-6 whitespace-pre-wrap bg-transparent font-mono">
+    <pre
+      className={cn(
+        "m-0 p-4 text-sm leading-6 bg-transparent font-mono",
+        wrap ? "whitespace-pre-wrap" : "whitespace-pre",
+      )}
+    >
       <code>{code}</code>
       <span className="inline-block w-0.5 h-4 bg-primary/60 ml-0.5 align-middle animate-pulse" />
     </pre>
+  );
+}
+
+/**
+ * Placeholder for a SETTLED (historical) code block whose first shiki
+ * highlight has not arrived yet. Readers reloading a conversation should
+ * never watch raw code "morph" into highlighted code — a neutral skeleton
+ * holds the geometry (same p-4 padding, one row per source line at
+ * leading-6 rhythm) until the real render is ready. Static bars only, no
+ * shimmer/pulse: this is a wait state, not live activity.
+ */
+function SettledCodeSkeleton({ code }: { code: string }) {
+  const lines = Math.max(code.split("\n").length, 1);
+  return (
+    <div className="flex flex-col p-4" aria-hidden="true">
+      {Array.from({ length: lines }, (_, i) => (
+        <div key={i} className="flex h-6 items-center">
+          <div
+            className={cn(
+              "h-3 rounded-sm bg-muted-foreground/10",
+              i % 3 === 2 ? "w-2/3" : "w-full",
+            )}
+          />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -111,6 +145,7 @@ export const CodeBlock = ({
   const isDark = resolvedTheme === "dark";
   const shikiTheme = isDark ? "one-dark-pro" : "one-light";
   const [html, setHtml] = useState<string>("");
+  const [wrap, setWrap] = useLocalStorage("echo:code-block-wrap", true);
   const mountedRef = useRef(false);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightRequestRef = useRef(0);
@@ -128,6 +163,11 @@ export const CodeBlock = ({
   }, []);
 
   useEffect(() => {
+    if (highlightTimerRef.current) {
+      clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
+    }
+
     const requestId = ++highlightRequestRef.current;
     const applyHighlight = (result: string) => {
       if (mountedRef.current && highlightRequestRef.current === requestId) {
@@ -135,19 +175,33 @@ export const CodeBlock = ({
       }
     };
 
-    if (highlightTimerRef.current) {
-      clearTimeout(highlightTimerRef.current);
-      highlightTimerRef.current = null;
-    }
-    setHtml("");
+    // A rejected highlight (grammar/engine failure) must not surface as an
+    // unhandled rejection — the block simply keeps its plain-text render.
+    const highlightSafely = (promise: Promise<string>) => {
+      promise.then(applyHighlight).catch((error: unknown) => {
+        swallow(error, "shiki-highlight");
+      });
+    };
 
     if (isStreaming) {
+      // Keep the last rendered highlight instead of clearing it on every
+      // token. Clearing per-token made the block flash back to plain text
+      // between debounced re-highlights. The stale highlight is replaced by
+      // the debounced one as soon as the stream pauses.
       highlightTimerRef.current = setTimeout(() => {
         highlightTimerRef.current = null;
-        void highlightCode(code, language, showLineNumbers, shikiTheme).then(applyHighlight);
+        highlightSafely(
+          highlightCode(code, language, showLineNumbers, shikiTheme),
+        );
       }, 150);
     } else {
-      void highlightCode(code, language, showLineNumbers, shikiTheme).then(applyHighlight);
+      // Settled code: highlight immediately and KEEP the stale streaming
+      // highlight on screen until the fresh one arrives. Clearing here used
+      // to flash one frame of unhighlighted plain text between the stream
+      // and the final highlight.
+      highlightSafely(
+        highlightCode(code, language, showLineNumbers, shikiTheme),
+      );
     }
 
     return () => {
@@ -172,34 +226,60 @@ export const CodeBlock = ({
       >
         <div className="flex h-8 items-center justify-between gap-2 border-b bg-muted/40 px-3">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground font-mono uppercase">
+            <span className="text-micro text-muted-foreground font-mono uppercase">
               {language}
             </span>
             {streamingHeader && (
               <>
-                <span className="text-[10px] text-muted-foreground">·</span>
-                <span className="text-[10px] text-muted-foreground animate-pulse">
+                <span className="text-micro text-muted-foreground">·</span>
+                <span className="text-micro text-muted-foreground animate-pulse">
                   {t.streaming.generating}
                 </span>
               </>
             )}
           </div>
-          {children && (
-            <div className="flex items-center gap-2">{children}</div>
-          )}
+          <div className="flex items-center gap-2">
+            {!isStreaming && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="shrink-0 h-6 w-6"
+                title={
+                  wrap ? t.streaming.codeBlockScroll : t.streaming.codeBlockWrap
+                }
+                aria-label={
+                  wrap ? t.streaming.codeBlockScroll : t.streaming.codeBlockWrap
+                }
+                onClick={() => setWrap((value) => !value)}
+              >
+                {wrap ? <ArrowLeftRight size={12} /> : <WrapText size={12} />}
+              </Button>
+            )}
+            {children}
+          </div>
         </div>
 
         <div className="relative size-full">
           {showHighlighted ? (
             <div
-              className={cn("size-full overflow-auto", PRE_CLASS_OVERRIDES)}
-              // biome-ignore lint/security/noDangerouslySetInnerHtml: "shiki output is sanitized html"
-              dangerouslySetInnerHTML={{ __html: html }}
+              className={cn(
+                "size-full overflow-auto",
+                PRE_CLASS_OVERRIDES,
+                wrap ? WRAP_PRE_CLASS : SCROLL_PRE_CLASS,
+              )}
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized via DOMPurify (audit C3/M4).
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }}
             />
-          ) : (
+          ) : isStreaming ? (
             <div className="size-full overflow-auto">
-              <LightweightCodeBlock code={code} />
+              <LightweightCodeBlock code={code} wrap={wrap} />
             </div>
+          ) : (
+            // Settled historical block still waiting for its first
+            // highlight: show a geometry-stable placeholder instead of
+            // flashing raw text that later "reorganizes" into colors.
+            <SettledCodeSkeleton code={code} />
           )}
         </div>
       </div>

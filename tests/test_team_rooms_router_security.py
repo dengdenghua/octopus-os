@@ -9,6 +9,7 @@ weren't a member of.
 Companion to ``test_team_tasks_router_security.py`` — both routers
 share the same underlying authz model.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,7 +20,6 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.safety.auth.identity import Identity, IdentityStore  # noqa: E402
 from runtime.sensing.gateway.team_rooms_router import (  # noqa: E402
     create_team_rooms_router,
@@ -34,7 +34,13 @@ def _build_app(
     keys: dict[str, str] = {}
     for actor in ("alice", "bob", "carol"):
         api_key = f"sk-test-{actor}"
-        store.add(Identity(actor_id=actor), api_key_plaintext=api_key)
+        # These actors model users in one organization.  Identities without
+        # tenant metadata are intentionally isolated into actor-local legacy
+        # tenants and therefore cannot accept one another's room invites.
+        store.add(
+            Identity(actor_id=actor, metadata={"tenant_id": "test-org"}),
+            api_key_plaintext=api_key,
+        )
         keys[actor] = api_key
 
     app = FastAPI()

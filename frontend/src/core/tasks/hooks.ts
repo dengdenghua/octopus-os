@@ -2,42 +2,42 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   deleteTask,
-  getTask,
   listTasks,
   pauseTask,
   resumeTask,
   type PauseReason,
+  type TasksListResponse,
 } from "./api";
 
 const TASKS_KEY = ["tasks"] as const;
 
-export function useTasks(status?: "paused" | "pending" | "active" | "all") {
-  return useQuery({
-    queryKey: [...TASKS_KEY, status ?? "all"],
-    queryFn: () => listTasks(status),
-    // Implementation note.
-    // Implementation note.
-    // Implementation note.
-    refetchInterval: (query) => {
-      const d = query.state.data;
-      const hasHot =
-        (d?.active?.length ?? 0) > 0 || (d?.pending?.length ?? 0) > 0;
-      return hasHot ? 1500 : 5000;
-    },
-    // Implementation note.
-    // Implementation note.
-    refetchIntervalInBackground: true,
-    staleTime: 1000,
-  });
+export function getTasksRefetchInterval(
+  data?: TasksListResponse,
+): number | false {
+  // `pending` contains pause requests, not queued/running work. Those records
+  // can remain in storage for a long time, so treating them as hot keeps every
+  // workspace polling forever. Only live tasks need the two-second cadence.
+  const hasHot = (data?.active?.length ?? 0) > 0;
+  return hasHot ? 2000 : false;
 }
 
-export function useTask(taskId: string | null | undefined) {
+function tasksRefetchInterval(query: {
+  state: { data?: TasksListResponse };
+}): number | false {
+  return getTasksRefetchInterval(query.state.data);
+}
+
+export function useTasks(status?: "paused" | "pending" | "active" | "all") {
+  const statusValue = status ?? "all";
   return useQuery({
-    queryKey: [...TASKS_KEY, "detail", taskId],
-    queryFn: () => getTask(taskId as string),
-    enabled: Boolean(taskId),
-    refetchInterval: 2000,
+    queryKey: [...TASKS_KEY, statusValue],
+    queryFn: ({ signal }) => listTasks(statusValue, signal),
+    refetchInterval: tasksRefetchInterval,
     refetchIntervalInBackground: true,
+    refetchOnReconnect: "always",
+    refetchOnWindowFocus: "always",
+    staleTime: 2000,
+    gcTime: 30000,
   });
 }
 
@@ -45,9 +45,14 @@ export function usePauseTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      taskId, reason = "user_request", note = "",
-    }: { taskId: string; reason?: PauseReason; note?: string }) =>
-      pauseTask(taskId, reason, note),
+      taskId,
+      reason = "user_request",
+      note = "",
+    }: {
+      taskId: string;
+      reason?: PauseReason;
+      note?: string;
+    }) => pauseTask(taskId, reason, note),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: TASKS_KEY });
     },
@@ -67,8 +72,7 @@ export function useResumeTask() {
       extra_iterations?: number;
       extra_tokens?: number;
       extra_usd?: number;
-    }) =>
-      resumeTask(taskId, { extra_iterations, extra_tokens, extra_usd }),
+    }) => resumeTask(taskId, { extra_iterations, extra_tokens, extra_usd }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: TASKS_KEY });
     },

@@ -1,0 +1,32 @@
+[Unit]
+Description=Echo isolated MX session bridge
+After=network-online.target echo-account.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=echo-mx
+Group=echo-mx
+WorkingDirectory=/opt/echo-mx
+Environment=PYTHONUNBUFFERED=1
+Environment=MX_SESSION_FILE=/var/lib/echo-mx/session.json
+Environment=MX_SESSION_STATE_FILE=/var/lib/echo-mx/session-state.json
+Environment=MX_GROUP_FILE=/var/lib/echo-mx/groups.json
+Environment=MX_MESSAGE_FILE=/var/lib/echo-mx/messages.sqlite3
+Environment=MX_VIEWER_FILE=/opt/echo-mx/mx_viewer.html
+Environment=MX_INACTIVE_DAYS=7
+ExecStart=/opt/echo-mx/.venv/bin/uvicorn mx_session_bridge:app --host 127.0.0.1 --port 8092 --no-access-log
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/echo-mx
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
+

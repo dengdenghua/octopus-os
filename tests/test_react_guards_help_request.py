@@ -17,6 +17,7 @@ characters are scanned, tight markers must include the action verb
 markers (``token``/``permission``) only count when the answer is
 short enough to be a sign-off rather than a report.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (

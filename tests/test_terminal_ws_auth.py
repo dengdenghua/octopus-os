@@ -10,6 +10,7 @@ the TestClient's event loop, which makes deterministic cleanup flaky in
 a unit test; the rejection path — the actual security boundary — needs
 no subprocess and is what we lock here.)
 """
+
 from __future__ import annotations
 
 import pytest
@@ -23,7 +24,10 @@ from runtime.sensing.gateway.terminal_router import mount_terminal_routes
 
 def _store() -> IdentityStore:
     store = IdentityStore()
-    store.add(Identity(actor_id="alice"), api_key_plaintext="sk-alice")
+    store.add(
+        Identity(actor_id="alice", roles=("operator",)),
+        api_key_plaintext="sk-alice",
+    )
     return store
 
 
@@ -35,16 +39,20 @@ def _client(require_auth: bool, store: IdentityStore | None = None) -> TestClien
 
 def test_ws_rejects_missing_token_when_required():
     client = _client(require_auth=True, store=_store())
-    with pytest.raises(WebSocketDisconnect) as ei, \
-            client.websocket_connect("/api/terminal/ws/s1") as ws:
+    with (
+        pytest.raises(WebSocketDisconnect) as ei,
+        client.websocket_connect("/api/terminal/ws/s1") as ws,
+    ):
         ws.receive_text()
     assert ei.value.code == 4401  # closed before any shell spawned
 
 
 def test_ws_rejects_wrong_token_when_required():
     client = _client(require_auth=True, store=_store())
-    with pytest.raises(WebSocketDisconnect) as ei, \
-            client.websocket_connect("/api/terminal/ws/s1?token=nope") as ws:
+    with (
+        pytest.raises(WebSocketDisconnect) as ei,
+        client.websocket_connect("/api/terminal/ws/s1?token=nope") as ws,
+    ):
         ws.receive_text()
     assert ei.value.code == 4401
 
@@ -52,8 +60,10 @@ def test_ws_rejects_wrong_token_when_required():
 def test_ws_require_auth_without_identity_store_rejects():
     # require_auth set but no identity store wired → fail closed, not open.
     client = _client(require_auth=True, store=None)
-    with pytest.raises(WebSocketDisconnect) as ei, \
-            client.websocket_connect("/api/terminal/ws/s1?token=anything") as ws:
+    with (
+        pytest.raises(WebSocketDisconnect) as ei,
+        client.websocket_connect("/api/terminal/ws/s1?token=anything") as ws,
+    ):
         ws.receive_text()
     assert ei.value.code == 4401
 
@@ -63,6 +73,7 @@ def test_terminal_kill_requires_auth_when_required():
     unauth = client.post("/api/terminal/kill/s1")
     assert unauth.status_code == 401
     ok = client.post(
-        "/api/terminal/kill/s1", headers={"Authorization": "Bearer sk-alice"},
+        "/api/terminal/kill/s1",
+        headers={"Authorization": "Bearer sk-alice"},
     )
     assert ok.status_code == 200

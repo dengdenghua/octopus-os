@@ -1,0 +1,19 @@
+# Add this override to the production appliance compose on OpenMediaVault:
+#   docker compose -f ../appliance/docker-compose.yml -f docker-compose.omv.yml up -d
+#
+# The container mount is read-only and the host bridge listens only on this
+# Unix socket. The bridge exposes one fixed SMB desired-state transaction;
+# docker-control intentionally receives neither the socket nor OMV data.
+
+services:
+  echo-os:
+    environment:
+      ECHO_OMV_SOCKET: /run/echo-omv/omv.sock
+      ECHO_OMV_ADMIN_URL: ${ECHO_OMV_ADMIN_URL:-}
+      ECHO_OMV_HEALTH_INTERVAL_SECONDS: ${ECHO_OMV_HEALTH_INTERVAL_SECONDS:-300}
+      ECHO_OMV_TEMP_WARNING_C: ${ECHO_OMV_TEMP_WARNING_C:-50}
+      ECHO_OMV_TEMP_CRITICAL_C: ${ECHO_OMV_TEMP_CRITICAL_C:-60}
+      ECHO_OMV_CAPACITY_WARNING_PERCENT: ${ECHO_OMV_CAPACITY_WARNING_PERCENT:-90}
+      ECHO_OMV_CAPACITY_CRITICAL_PERCENT: ${ECHO_OMV_CAPACITY_CRITICAL_PERCENT:-95}
+    volumes:
+      - /run/echo-omv:/run/echo-omv:ro

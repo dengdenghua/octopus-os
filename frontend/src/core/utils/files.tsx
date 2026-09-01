@@ -234,4 +234,3 @@ export function getFileIcon(filepath: string, className?: string) {
       return <FileTextIcon className={className} />;
   }
 }
-

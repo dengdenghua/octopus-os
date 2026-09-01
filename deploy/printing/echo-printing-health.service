@@ -1,0 +1,33 @@
+[Unit]
+Description=Verify Echo OS private local printing before login
+Documentation=file:/usr/share/doc/echo-os/printing.md
+Requires=cups.socket cups.service
+After=local-fs.target dbus.service cups.socket cups.service
+RequiresMountsFor=/var/spool/cups
+Before=sddm.service echo-desktop.service boot-complete.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/echo-printing-health
+RemainAfterExit=yes
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+RequiredBy=sddm.service echo-desktop.service boot-complete.target

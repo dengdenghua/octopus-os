@@ -1,0 +1,50 @@
+{
+  "turns": [
+    {
+      "id": "t_summary",
+      "status": "completed",
+      "items": [
+        {
+          "id": "a_sum",
+          "type": "agentMessage",
+          "text": "Summary of turn 1."
+        }
+      ]
+    },
+    {
+      "id": "t2",
+      "status": "interrupted",
+      "items": [
+        {
+          "id": "a2",
+          "type": "agentMessage",
+          "text": "partial answer tail"
+        }
+      ]
+    },
+    {
+      "id": "t3",
+      "status": "inProgress",
+      "items": [
+        {
+          "id": "p3",
+          "type": "plan",
+          "text": "step one; step two"
+        },
+        {
+          "id": "f3",
+          "type": "fileChange",
+          "text": "",
+          "hunks": [
+            "+++ b/src/new.ts\n+line"
+          ]
+        },
+        {
+          "id": "m3",
+          "type": "mcpToolCall",
+          "text": ""
+        }
+      ]
+    }
+  ]
+}

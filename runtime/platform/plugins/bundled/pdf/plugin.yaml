@@ -1,0 +1,12 @@
+name: pdf
+version: 0.1.0
+display_name: PDF
+description: 本地创建、提取、合并和拆分 PDF。
+author: Echo
+tags: [pdf, document, office, productivity]
+provides: [pdf.skills]
+config:
+  schema_version: echo.pdf.manifest.v1
+config_schema:
+  type: object
+  properties: {}

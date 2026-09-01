@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import { AgentProgressPill } from "./agent-progress-pill";
 import type { LiveToolEvent } from "./live-tool-timeline";
 import { renderWithProviders } from "@/test/harness";
+import type { StreamVitals } from "@/core/realtime";
 
 function event(partial: Partial<LiveToolEvent>): LiveToolEvent {
   return {
@@ -16,7 +17,113 @@ function event(partial: Partial<LiveToolEvent>): LiveToolEvent {
   };
 }
 
+function vitals(partial: Partial<StreamVitals>): StreamVitals {
+  return {
+    phase: "working",
+    ttftMs: null,
+    lastDeltaAgeMs: Infinity,
+    sinceActivityMs: 0,
+    elapsedMs: 0,
+    maxDeltaGapMs: 0,
+    stalled: false,
+    ...partial,
+  };
+}
+
 describe("<AgentProgressPill />", () => {
+  test("does not invent a primary stage before model events arrive", () => {
+    renderWithProviders(<AgentProgressPill events={[]} isLoading />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Thinking");
+  });
+
+  test("uses measured activity once answer content is streaming", () => {
+    renderWithProviders(
+      <AgentProgressPill events={[]} hasAnswer hasStreamingAnswer isLoading />,
+    );
+
+    // Answer tokens are flowing — that is processing, not "thinking".
+    expect(screen.getByRole("status")).toHaveTextContent("Working");
+    expect(screen.getByRole("status")).not.toHaveTextContent("Thinking");
+  });
+
+  test("keeps heartbeat-only waiting distinct from model work", () => {
+    renderWithProviders(
+      <AgentProgressPill
+        events={[]}
+        isLoading
+        vitals={vitals({ phase: "waiting", elapsedMs: 9_000 })}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("Thinking · 9s");
+  });
+
+  test("keeps minute-long waits readable", () => {
+    renderWithProviders(
+      <AgentProgressPill
+        events={[]}
+        isLoading
+        vitals={vitals({ phase: "waiting", elapsedMs: 104_500 })}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "First response is taking longer · 1m 44s",
+    );
+    expect(screen.getByRole("status")).toHaveAttribute(
+      "data-stream-first-response-delayed",
+      "true",
+    );
+  });
+
+  test("lets a real stall override an earlier partial answer", () => {
+    renderWithProviders(
+      <AgentProgressPill
+        events={[]}
+        hasAnswer
+        hasStreamingAnswer
+        isLoading
+        vitals={vitals({
+          phase: "slow",
+          ttftMs: 840,
+          sinceActivityMs: 11_000,
+          elapsedMs: 14_000,
+          maxDeltaGapMs: 2_400,
+          stalled: true,
+        })}
+      />,
+    );
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Still on it");
+    expect(status).not.toHaveTextContent("Model");
+    expect(status).toHaveAttribute("data-stream-phase", "slow");
+    expect(status).toHaveAttribute("data-stream-stalled", "true");
+    expect(status).toHaveAttribute("data-stream-ttft-ms", "840");
+    expect(status).toHaveAttribute("data-stream-max-gap-ms", "2400");
+  });
+
+  test("shows reconnecting ahead of answer generation after a disconnect", () => {
+    renderWithProviders(
+      <AgentProgressPill
+        events={[]}
+        hasAnswer
+        hasStreamingAnswer
+        isLoading
+        vitals={vitals({ phase: "disconnected", stalled: true })}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Connection dropped — reconnecting",
+    );
+    expect(screen.getByRole("status")).toHaveAttribute(
+      "data-stream-phase",
+      "disconnected",
+    );
+  });
+
   test("does not render for transport-only events", () => {
     const { container } = renderWithProviders(
       <AgentProgressPill
@@ -54,7 +161,7 @@ describe("<AgentProgressPill />", () => {
       name: /Current Progress 2\/2/,
     });
     expect(screen.getByText("Current Progress 2/2")).toBeInTheDocument();
-    expect(screen.getByText(/Phase 2:/)).toBeInTheDocument();
+    expect(screen.getByText(/Working through leads/)).toBeInTheDocument();
 
     fireEvent.click(pill);
     expect(pill).toHaveAttribute("aria-expanded", "true");
@@ -122,10 +229,10 @@ describe("<AgentProgressPill />", () => {
     fireEvent.click(screen.getByRole("button", { name: "Minimize Progress" }));
 
     const bead = screen.getByRole("button", { name: "Restore Progress" });
-    expect(bead).toHaveClass("bg-primary/70");
+    expect(bead).toHaveClass("bg-success/70");
     expect(bead.querySelector("[aria-hidden='true']")).toHaveClass(
       "animate-pulse",
-      "bg-primary/15",
+      "bg-success/15",
     );
   });
 
@@ -263,9 +370,71 @@ describe("<AgentProgressPill />", () => {
       />,
     );
 
+    // "create board deck - check and fix" contains "check", which routes to
+    // the testing bucket. The visible label becomes the localized testing
+    // title; the raw active-form text stays on the tooltip.
     expect(
-      screen.getByText("Phase 2: create board deck - check and fix"),
+      screen.getByTitle("create board deck - check and fix"),
     ).toBeInTheDocument();
+  });
+
+  test("surfaces the current tool action below the phase", () => {
+    renderWithProviders(
+      <AgentProgressPill
+        events={[
+          event({
+            id: "todo-1",
+            name: "todo_write",
+            status: "running",
+            startedAt: 1000,
+            input: {
+              items: [
+                { content: "inspect project", status: "completed" },
+                { content: "verify changes", status: "in_progress" },
+              ],
+            },
+          }),
+          event({
+            id: "shell-1",
+            name: "shell_command",
+            status: "running",
+            startedAt: 2000,
+            input: { command: "pnpm test" },
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Run terminal")).toBeInTheDocument();
+    expect(screen.queryByText(/pnpm test/)).not.toBeInTheDocument();
+  });
+
+  test("expanded todo plans include upcoming phases", () => {
+    renderWithProviders(
+      <AgentProgressPill
+        events={[
+          event({
+            id: "todo-1",
+            name: "todo_write",
+            status: "running",
+            input: {
+              items: [
+                { content: "collect context", status: "completed" },
+                { content: "apply changes", status: "in_progress" },
+                { content: "verify locally", status: "pending" },
+                { content: "deliver final", status: "pending" },
+              ],
+            },
+          }),
+        ]}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Current Progress 2\/4/ }),
+    );
+
+    expect(screen.getByText("deliver final")).toBeInTheDocument();
   });
 
   test("does not mark stale pending todo steps as failed after a settled answer", () => {
@@ -291,7 +460,10 @@ describe("<AgentProgressPill />", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Restore Progress" }));
 
-    expect(screen.getAllByText("Phase 2: run research").length).toBeGreaterThan(0);
+    // "run research" matches the exploring bucket (research keyword), so the
+    // visible label becomes the localized exploring title while the raw text
+    // stays on the tooltip.
+    expect(screen.getAllByTitle("run research").length).toBeGreaterThan(0);
     expect(container.querySelector(".animate-spin")).toBeNull();
     expect(container.querySelector(".text-destructive")).toBeNull();
   });
@@ -314,7 +486,7 @@ describe("<AgentProgressPill />", () => {
     expect(
       screen.getByRole("button", { name: /Current Progress 1\/2/ }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Phase 1:/)).toBeInTheDocument();
+    expect(screen.getByText(/Working through leads/)).toBeInTheDocument();
   });
 
   test("does not keep a stale approval running after the run settles", () => {
@@ -338,6 +510,8 @@ describe("<AgentProgressPill />", () => {
     expect(
       screen.getByRole("button", { name: /Current Progress 2\/2/ }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/Phase 2:/).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(/Pulling the answer together/).length,
+    ).toBeGreaterThan(0);
   });
 });

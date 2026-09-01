@@ -91,9 +91,12 @@ class TestEventSequence:
         # Implementation note.
         kinds = [e.event_type for e in relevant]
         assert kinds == [
-            "node_started", "step",
-            "node_started", "step",
-            "node_started", "step",
+            "node_started",
+            "step",
+            "node_started",
+            "step",
+            "node_started",
+            "step",
         ]
 
     def test_node_started_carries_metadata(self):

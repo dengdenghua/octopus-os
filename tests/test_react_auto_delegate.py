@@ -5,6 +5,7 @@ substantive instruction, and all heuristics pass, stream_react_loop
 calls call_subagent directly before the first model turn and injects
 the subagent's output as a synthetic Observation.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -117,7 +118,8 @@ def test_react_loop_auto_delegate_fires_on_single_agent_pin():
             max_iterations=1,
         )
         events = _collect_until_event(
-            gen, {"auto_delegation_completed", "auto_delegation_skipped"},
+            gen,
+            {"auto_delegation_completed", "auto_delegation_skipped"},
         )
 
     assert mock_call.called, "call_subagent should have been invoked"
@@ -202,9 +204,7 @@ def test_react_loop_auto_delegate_skips_when_multiple_agents():
         )
         _collect_until_event(gen, {"react_started"}, max_events=10)
 
-    assert not mock_call.called, (
-        "multiple agent mentions should require model orchestration"
-    )
+    assert not mock_call.called, "multiple agent mentions should require model orchestration"
 
 
 def test_react_loop_auto_delegate_skips_when_no_mention():
@@ -230,4 +230,3 @@ def test_react_loop_auto_delegate_skips_when_no_mention():
         _collect_until_event(gen, {"react_started"}, max_events=10)
 
     assert not mock_call.called
-

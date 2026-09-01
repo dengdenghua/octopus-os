@@ -27,13 +27,19 @@ export function getChecklistPlanFromMessage(message: {
 function StepIcon({ status }: { status: ExecutionPlanStep["status"] }) {
   switch (status) {
     case "completed":
-      return <CheckCircle2Icon className="size-4 shrink-0 text-emerald-500" />;
+      return <CheckCircle2Icon className="size-4 shrink-0 text-success" />;
     case "in_progress":
-      return <Loader2Icon className="size-4 shrink-0 animate-spin text-primary" />;
+      return (
+        <Loader2Icon className="size-4 shrink-0 animate-spin text-primary" />
+      );
     case "skipped":
-      return <CircleIcon className="size-4 shrink-0 text-muted-foreground/30" />;
+      return (
+        <CircleIcon className="size-4 shrink-0 text-muted-foreground/30" />
+      );
     default:
-      return <CircleIcon className="size-4 shrink-0 text-muted-foreground/40" />;
+      return (
+        <CircleIcon className="size-4 shrink-0 text-muted-foreground/40" />
+      );
   }
 }
 

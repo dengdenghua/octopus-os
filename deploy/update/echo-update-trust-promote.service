@@ -1,0 +1,38 @@
+[Unit]
+Description=Promote the healthy Echo OS update trust generation
+Requires=echo-restore-transaction-health.service echo-crash-health.service
+Requires=echo-agent-health.service echo-desktop-health.service echo-login-health.service
+After=local-fs.target echo-restore-transaction-health.service echo-crash-health.service
+After=echo-agent-health.service echo-desktop-health.service echo-login-health.service
+Before=boot-complete.target
+RequiresMountsFor=/var/lib/echo-os
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/echo_update_trust.py promote
+RemainAfterExit=yes
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/lib/echo-os
+
+[Install]
+RequiredBy=boot-complete.target

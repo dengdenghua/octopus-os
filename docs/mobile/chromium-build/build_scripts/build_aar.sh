@@ -2,19 +2,19 @@
 # build_aar.sh —— 把 Chromium WebView 编译产物打成 AAR
 #
 # AAR 格式：Android Archive，含 .so 库 + AndroidManifest.xml + resources
-# ApkClaw 集成时通过 implementation(files("libs/octopus-webview.aar")) 引入
+# ApkClaw 集成时通过 implementation(files("libs/echo-webview.aar")) 引入
 #
 # 用法：
 #   ./build_aar.sh [out_dir]
-#   out_dir 默认：$HOME/chromium/src/out/OctopusWebView_arm64
+#   out_dir 默认：$HOME/chromium/src/out/EchoWebView_arm64
 
 set -euo pipefail
 
-OUT_DIR="${1:-$HOME/chromium/src/out/OctopusWebView_arm64}"
-AAR_NAME="octopus-webview-${TARGET_CPU:-arm64}-v8a-1.0.0"
+OUT_DIR="${1:-$HOME/chromium/src/out/EchoWebView_arm64}"
+AAR_NAME="echo-webview-${TARGET_CPU:-arm64}-v8a-1.0.0"
 
 echo "============================================================"
-echo "📦 Octopus Mobile · Chromium WebView AAR 打包"
+echo "📦 Echo Mobile · Chromium WebView AAR 打包"
 echo "============================================================"
 echo ""
 echo "编译目录：$OUT_DIR"
@@ -69,7 +69,7 @@ done
 cat > "$WORK_DIR/AndroidManifest.xml" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.octopus.webview"
+    package="com.echo.webview"
     android:versionCode="1"
     android:versionName="1.0.0">
     <uses-sdk
@@ -82,7 +82,7 @@ EOF
 cat > "$WORK_DIR/proguard.txt" <<EOF
 # Chromium WebView proguard 规则
 -keep class org.chromium.** { *; }
--keep class com.octopus.webview.** { *; }
+-keep class com.echo.webview.** { *; }
 -dontwarn org.chromium.**
 EOF
 
@@ -108,7 +108,7 @@ echo "📲 集成到 ApkClaw"
 echo "============================================================"
 echo ""
 echo "1. 复制 AAR 到 ApkClaw："
-echo "     cp $AAR_FILE $HOME/octopus-agent/ApkClaw/app/libs/"
+echo "     cp $AAR_FILE $HOME/echo-agent/ApkClaw/app/libs/"
 echo ""
 echo "2. 改 ApkClaw/app/build.gradle.kts："
 echo "     dependencies {"

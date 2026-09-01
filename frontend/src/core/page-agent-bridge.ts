@@ -32,7 +32,7 @@ interface PageAgentElement {
 
 interface PageAgentSnapshot {
   ok: true;
-  app: "octopus";
+  app: "echo";
   url: string;
   title: string;
   route: string;
@@ -48,7 +48,7 @@ interface PageAgentSnapshot {
   }>;
 }
 
-interface OctopusPageAgentBridge {
+interface EchoPageAgentBridge {
   version: string;
   snapshot: () => PageAgentSnapshot;
   run: (
@@ -89,7 +89,7 @@ interface PageAgentRunState {
 
 declare global {
   interface Window {
-    __octopusPageAgent?: OctopusPageAgentBridge;
+    __echoPageAgent?: EchoPageAgentBridge;
   }
 }
 
@@ -124,7 +124,11 @@ function textOf(el: Element): string {
   return (el.textContent || "").replace(/\s+/g, " ").trim();
 }
 
-function classifyRisk(el: Element, label: string, kind: PageAgentElementKind): {
+function classifyRisk(
+  el: Element,
+  label: string,
+  kind: PageAgentElementKind,
+): {
   risk: PageAgentRisk;
   riskReasons: string[];
 } {
@@ -132,7 +136,7 @@ function classifyRisk(el: Element, label: string, kind: PageAgentElementKind): {
     label,
     el.getAttribute("aria-label"),
     el.getAttribute("title"),
-    el.getAttribute("data-octopus-risk"),
+    el.getAttribute("data-echo-risk"),
     el.getAttribute("type"),
     el.getAttribute("href"),
   ]
@@ -175,7 +179,8 @@ function classifyRisk(el: Element, label: string, kind: PageAgentElementKind): {
   for (const [needle, reason] of highPatterns) {
     if (text.includes(needle)) reasons.push(reason);
   }
-  if (reasons.length) return { risk: "high", riskReasons: Array.from(new Set(reasons)) };
+  if (reasons.length)
+    return { risk: "high", riskReasons: Array.from(new Set(reasons)) };
   for (const [needle, reason] of mediumPatterns) {
     if (text.includes(needle)) reasons.push(reason);
   }
@@ -205,9 +210,13 @@ function runState(): PageAgentRunState {
     title: document.title,
     route: location.hash || location.pathname,
     textHash: stateHash(text),
-    actionCount: elements.filter((item) => !["input", "textarea", "select"].includes(item.kind)).length,
-    fieldCount: elements.filter((item) => ["input", "textarea", "select"].includes(item.kind)).length,
-    focusedId: active?.getAttribute("data-octopus-agent-id") || undefined,
+    actionCount: elements.filter(
+      (item) => !["input", "textarea", "select"].includes(item.kind),
+    ).length,
+    fieldCount: elements.filter((item) =>
+      ["input", "textarea", "select"].includes(item.kind),
+    ).length,
+    focusedId: active?.getAttribute("data-echo-agent-id") || undefined,
   };
 }
 
@@ -235,9 +244,11 @@ function cssPath(el: Element): string {
     const parent: Element | null = node.parentElement;
     if (!parent) break;
     const siblings = Array.from(parent.children).filter(
-      (child): child is Element => child instanceof Element && child.tagName === node!.tagName,
+      (child): child is Element =>
+        child instanceof Element && child.tagName === node!.tagName,
     );
-    const nth = siblings.length > 1 ? `:nth-of-type(${siblings.indexOf(node) + 1})` : "";
+    const nth =
+      siblings.length > 1 ? `:nth-of-type(${siblings.indexOf(node) + 1})` : "";
     parts.unshift(`${tag}${nth}`);
     node = parent;
   }
@@ -258,10 +269,10 @@ function isVisible(el: Element): boolean {
 }
 
 function ensureAgentId(el: Element, index: number): string {
-  const existing = el.getAttribute("data-octopus-agent-id");
+  const existing = el.getAttribute("data-echo-agent-id");
   if (existing) return existing;
   const id = `el-${index}-${Math.random().toString(36).slice(2, 8)}`;
-  el.setAttribute("data-octopus-agent-id", id);
+  el.setAttribute("data-echo-agent-id", id);
   return id;
 }
 
@@ -273,14 +284,17 @@ function collectElements(): PageAgentElement[] {
     "textarea",
     "select",
     "[role='button']",
-    "[data-octopus-action]",
+    "[data-echo-action]",
   ].join(",");
   return Array.from(document.querySelectorAll(selector))
     .filter(isVisible)
     .slice(0, 180)
     .map((el, index) => {
       const kind = elementKind(el) ?? "button";
-      const html = el as HTMLInputElement | HTMLButtonElement | HTMLSelectElement;
+      const html = el as
+        | HTMLInputElement
+        | HTMLButtonElement
+        | HTMLSelectElement;
       const label = textOf(el) || el.getAttribute("name") || kind;
       const inputType = "type" in html ? html.type : undefined;
       const risk = classifyRisk(el, label, kind);
@@ -313,12 +327,14 @@ function collectForms(elements: PageAgentElement[]) {
       .filter(Boolean);
     const fieldIds = elements
       .filter((item) => ["input", "textarea", "select"].includes(item.kind))
-      .filter((item) => form.querySelector(`[data-octopus-agent-id="${item.id}"]`))
+      .filter((item) =>
+        form.querySelector(`[data-echo-agent-id="${item.id}"]`),
+      )
       .map((item) => item.id);
     const submitIds = elements
       .filter((item) => item.kind === "button")
       .filter((item) => {
-        const el = form.querySelector(`[data-octopus-agent-id="${item.id}"]`);
+        const el = form.querySelector(`[data-echo-agent-id="${item.id}"]`);
         return el && ((el as HTMLButtonElement).type || "submit") === "submit";
       })
       .map((item) => item.id);
@@ -340,7 +356,7 @@ function snapshot(): PageAgentSnapshot {
   const text = (document.body?.innerText || "").replace(/\s+\n/g, "\n").trim();
   return {
     ok: true,
-    app: "octopus",
+    app: "echo",
     url: location.href,
     title: document.title,
     route: location.hash || location.pathname,
@@ -354,7 +370,25 @@ function snapshot(): PageAgentSnapshot {
   };
 }
 
-async function run(action: Parameters<OctopusPageAgentBridge["run"]>[0]) {
+function setNativeFormValue(
+  input: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+) {
+  let prototype = Object.getPrototypeOf(input) as object | null;
+  let setter: ((this: typeof input, nextValue: string) => void) | undefined;
+
+  while (prototype && !setter) {
+    setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set as
+      | ((this: typeof input, nextValue: string) => void)
+      | undefined;
+    prototype = Object.getPrototypeOf(prototype) as object | null;
+  }
+
+  if (setter) setter.call(input, value);
+  else input.value = value;
+}
+
+async function run(action: Parameters<EchoPageAgentBridge["run"]>[0]) {
   if (action.type === "capability") {
     const capability = capabilityRegistry.get(action.id);
     const before = runState();
@@ -401,10 +435,13 @@ async function run(action: Parameters<OctopusPageAgentBridge["run"]>[0]) {
   }
 
   const el = document.querySelector<HTMLElement>(
-    `[data-octopus-agent-id="${CSS.escape(action.id)}"]`,
+    `[data-echo-agent-id="${CSS.escape(action.id)}"]`,
   );
-  if (!el) return { ok: false, error: `page agent element not found: ${action.id}` };
-  const item = collectElements().find((candidate) => candidate.id === action.id);
+  if (!el)
+    return { ok: false, error: `page agent element not found: ${action.id}` };
+  const item = collectElements().find(
+    (candidate) => candidate.id === action.id,
+  );
   const before = runState();
   if (
     item?.requiresConfirmation &&
@@ -427,8 +464,9 @@ async function run(action: Parameters<OctopusPageAgentBridge["run"]>[0]) {
   } else {
     el.focus();
     const input = el as HTMLInputElement | HTMLTextAreaElement;
-    if (action.clear !== false) input.value = "";
-    input.value += action.text;
+    const nextValue =
+      action.clear === false ? `${input.value}${action.text}` : action.text;
+    setNativeFormValue(input, nextValue);
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }
@@ -453,12 +491,12 @@ async function run(action: Parameters<OctopusPageAgentBridge["run"]>[0]) {
 
 export function installPageAgentBridge() {
   if (typeof window === "undefined") return;
-  window.__octopusPageAgent = {
+  window.__echoPageAgent = {
     version: "0.1.0",
     snapshot,
     run,
   };
-  document.documentElement.dataset.octopusPageAgent = "ready";
+  document.documentElement.dataset.echoPageAgent = "ready";
 }
 
 export {};

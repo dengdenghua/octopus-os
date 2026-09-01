@@ -19,6 +19,7 @@ GraphRuntime) through the three structural shapes that matter:
 CI runs these every push, so a regression on any of those paths shows
 up as a red integration test, not a production crash.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -124,9 +125,7 @@ class TestPlanExecuteVerifyHappyPath:
             ],
             default_budget=BudgetSpec(tokens=10_000, usd=0.10),
         )
-        intent = ParsedIntent(
-            raw="fix the bug", intent_type="task", normalized_goal="fix the bug"
-        )
+        intent = ParsedIntent(raw="fix the bug", intent_type="task", normalized_goal="fix the bug")
         graph = planner.plan(intent)
         assert len(graph.nodes) == 3
 
@@ -184,13 +183,12 @@ class TestReplanOnFailure:
         replanned: dict[str, Any] = {"called": False, "intent_ok": False}
 
         class _RecoveryPlanner:
-            def plan(self, intent):
+            def plan(self, intent, *, model=None):
                 replanned["called"] = True
                 # The replan path must hand us a VALID ParsedIntent
                 # (raw + intent_type populated) — not crash building it.
-                replanned["intent_ok"] = bool(
-                    intent.raw and intent.intent_type == "task"
-                )
+                replanned["intent_ok"] = bool(intent.raw and intent.intent_type == "task")
+                assert model is None
                 return TaskGraph(
                     nodes=[TaskNode(node_id="r0", skill_ref=SkillId("recover"))],
                     budget=BudgetSpec(tokens=1000, usd=0.01),

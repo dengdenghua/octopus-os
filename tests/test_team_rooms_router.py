@@ -7,7 +7,6 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.sensing.gateway.team_rooms_router import (  # noqa: E402
     TeamParticipantWire,
     TeamRoomWire,
@@ -44,7 +43,7 @@ def _team_body(name: str = "Family") -> dict:
         "members": [
             {
                 "name": "general",
-                "display_name": "Octopus",
+                "display_name": "Echo",
                 "description": "General assistant",
                 "model": None,
                 "tool_groups": None,
@@ -108,13 +107,17 @@ def test_team_room_websocket_presence_and_events(tmp_path: Path) -> None:
     team = client.post("/api/teams", json=_team_body()).json()
     url = f"/api/teams/{team['id']}/ws"
 
-    with client.websocket_connect(f"{url}?participant_id=alice&display_name=Alice&thread_id=thread-a") as alice:
+    with client.websocket_connect(
+        f"{url}?participant_id=alice&display_name=Alice&thread_id=thread-a"
+    ) as alice:
         ready = alice.receive_json()
         assert ready["type"] == "ready"
         assert ready["participant"]["id"] == "alice"
         assert alice.receive_json()["type"] == "presence"
 
-        with client.websocket_connect(f"{url}?participant_id=bob&display_name=Bob&thread_id=thread-a") as bob:
+        with client.websocket_connect(
+            f"{url}?participant_id=bob&display_name=Bob&thread_id=thread-a"
+        ) as bob:
             bob_ready = bob.receive_json()
             assert bob_ready["participant"]["id"] == "bob"
             alice_presence = alice.receive_json()

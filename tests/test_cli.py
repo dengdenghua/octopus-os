@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from runtime.cli import main, run_goal
 from runtime.platform.i18n import set_lang
 
@@ -11,6 +10,7 @@ from runtime.platform.i18n import set_lang
 class TestRunGoal:
     def setup_method(self) -> None:
         set_lang("en")
+
     def test_trivial_goal_runs(self, capsys, tmp_path):
         """Implementation note."""
         rc = run_goal(

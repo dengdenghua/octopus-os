@@ -4,14 +4,13 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from runtime.platform.ui.app import create_app
 
 
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("OCTOPUS_BROWSER_EXTENSION_DIR", raising=False)
+    monkeypatch.delenv("ECHO_BROWSER_EXTENSION_DIR", raising=False)
     return TestClient(create_app())
 
 
@@ -85,13 +84,13 @@ def test_browser_bookmarklet_callback_validation(client: TestClient) -> None:
     )
     good = client.get(
         "/api/browser/relay/bookmarklet-poll",
-        params={"callback": "octopus.cb", "url": "https://example.test"},
+        params={"callback": "echo.cb", "url": "https://example.test"},
     )
 
     assert bad.status_code == 400
     assert good.status_code == 200
     assert good.headers["content-type"].startswith("application/javascript")
-    assert good.text.startswith("octopus.cb(")
+    assert good.text.startswith("echo.cb(")
 
 
 def test_browser_extension_path_uses_workspace_fallback(
@@ -103,6 +102,6 @@ def test_browser_extension_path_uses_workspace_fallback(
     assert response.status_code == 200
     data = response.json()
     # Fresh workspace with no env override and no existing dir falls
-    # back to the committed product location ``extensions/octopus-browser-relay``.
-    assert data["path"] == str(tmp_path / "extensions" / "octopus-browser-relay")
+    # back to the committed product location ``extensions/echo-browser-relay``.
+    assert data["path"] == str(tmp_path / "extensions" / "echo-browser-relay")
     assert data["exists"] is True

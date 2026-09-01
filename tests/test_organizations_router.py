@@ -10,7 +10,6 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.safety.organization import (  # noqa: E402
     AgentSpec,
     CoordinationProtocol,
@@ -77,11 +76,18 @@ def test_get_topology_404(client: TestClient) -> None:
 def test_list_proposals_empty(client: TestClient) -> None:
     r = client.get("/api/organizations/topology-proposals")
     assert r.status_code == 200
-    assert r.json() == {"count": 0, "proposals": []}
+    body = r.json()
+    assert body["schema"] == "echo.topology_proposals.merged.v1"
+    assert body["count"] == 0
+    assert body["persisted_count"] == 0
+    assert body["subagent_promotion_count"] == 0
+    assert body["proposals"] == []
+    assert body["subagent_promotion"]["proposal_count"] == 0
 
 
 def test_list_proposals_returns_persisted_payload(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     payload = {
         "ts": 0,
@@ -97,7 +103,8 @@ def test_list_proposals_returns_persisted_payload(
         ],
     }
     (tmp_path / "data" / "topology_proposals.json").write_text(
-        json.dumps(payload), encoding="utf-8",
+        json.dumps(payload),
+        encoding="utf-8",
     )
     r = client.get("/api/organizations/topology-proposals")
     body = r.json()
@@ -111,7 +118,8 @@ def test_promote_proposal_invalid_index(client: TestClient) -> None:
 
 
 def test_promote_proposal_against_real_registry(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     base = TeamTopology(
         name="orig",
@@ -122,17 +130,20 @@ def test_promote_proposal_against_real_registry(
     save_registry({base.fingerprint: base})
     proposals = {
         "ts": 0,
-        "proposals": [{
-            "kind": "swap_agent",
-            "base_topology": base.fingerprint,
-            "bucket": "b",
-            "detail": {"role": "generator", "old_agent": "alice", "new_agent": "bob"},
-            "confidence": 0.8,
-            "rationale": "smoke",
-        }],
+        "proposals": [
+            {
+                "kind": "swap_agent",
+                "base_topology": base.fingerprint,
+                "bucket": "b",
+                "detail": {"role": "generator", "old_agent": "alice", "new_agent": "bob"},
+                "confidence": 0.8,
+                "rationale": "smoke",
+            }
+        ],
     }
     (tmp_path / "data" / "topology_proposals.json").write_text(
-        json.dumps(proposals), encoding="utf-8",
+        json.dumps(proposals),
+        encoding="utf-8",
     )
     r = client.post("/api/organizations/topology-proposals/0/promote")
     assert r.status_code == 200, r.text
@@ -148,7 +159,8 @@ def test_topology_performance_empty(client: TestClient) -> None:
 
 
 def test_retire_topology_removes_entry(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     t = TeamTopology(
         name="doomed",

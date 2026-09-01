@@ -5,6 +5,7 @@ smart-budget tests in ``test_delegation_smart_budget.py`` are the
 canonical regression suite; this file is a lightweight sanity check
 that the module can be imported and used independently.
 """
+
 from __future__ import annotations
 
 from runtime.execution.suckers.delegation_budget import (
@@ -38,6 +39,7 @@ def test_check_absolute_cap_no_turn():
 def test_record_delegation_success_increments():
     """Success bumps the counter."""
     from runtime.execution.suckers.delegation_budget import _TURN_DELEGATIONS
+
     _TURN_DELEGATIONS.clear()
     record_delegation("t1", "fp-x", succeeded=True)
     assert _TURN_DELEGATIONS["t1"] == 1
@@ -49,6 +51,7 @@ def test_record_delegation_first_failure_free():
         _TURN_DELEGATIONS,
         _TURN_FAILED_FINGERPRINTS,
     )
+
     _TURN_DELEGATIONS.clear()
     _TURN_FAILED_FINGERPRINTS.clear()
     record_delegation("t2", "fp-y", succeeded=False)
@@ -62,6 +65,7 @@ def test_record_delegation_repeat_failure_counts():
         _TURN_DELEGATIONS,
         _TURN_FAILED_FINGERPRINTS,
     )
+
     _TURN_DELEGATIONS.clear()
     _TURN_FAILED_FINGERPRINTS.clear()
     record_delegation("t3", "fp-z", succeeded=False)  # First: free

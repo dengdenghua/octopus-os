@@ -1,0 +1,15 @@
+[Unit]
+Description=Provision the Echo OS sandboxed application catalog
+Documentation=file:/usr/share/doc/echo-os/apps.md
+After=local-fs.target
+Before=sddm.service
+RequiresMountsFor=/var/lib/flatpak /var/lib/echo-os
+ConditionPathExists=!/var/lib/echo-os/app-catalog-provisioned
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/echo-app-catalog
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,6 @@
 import { swallow } from "@/core/utils/log";
 import type { LiveToolEvent } from "./live-tool-timeline";
+import { effectiveToolInput } from "./messages/action-display";
 
 export type WorkBlockKind =
   | "agent"
@@ -12,16 +13,246 @@ export type WorkBlockKind =
   | "terminal"
   | "todo";
 
+export type WorkBlockActionKey =
+  | "awaitVerification"
+  | "spawnAgent"
+  | "finishAgent"
+  | "writeTodoList"
+  | "parallelDispatch"
+  | "submitResult"
+  | "loadSkill"
+  | "terminalFailed"
+  | "terminalRecovered"
+  | "runTerminal"
+  | "read"
+  | "createFile"
+  | "deleteFile"
+  | "editFile"
+  | "browse"
+  | "search"
+  | "execute";
+
+export type WorkBlockTitle =
+  | { key: "awaitVerification" }
+  | { key: "spawnAgent"; name: string }
+  | { key: "finishAgent"; name: string }
+  | { key: "action" }
+  | { key: "actionTarget"; target: string }
+  | { key: "parallelDispatch"; count: number }
+  | { key: "skill"; skill: string }
+  | { key: "skillDeepResearch" }
+  | { key: "skillReportWriting" }
+  | { key: "skillDocx" }
+  | { key: "connectModel" }
+  | { key: "raw"; text: string };
+
 export interface WorkBlock {
   id: string;
   event: LiveToolEvent;
   kind: WorkBlockKind;
-  title: string;
+  actionKey: WorkBlockActionKey;
+  target: string;
+  title: WorkBlockTitle;
   subtitle: string;
-  status: LiveToolEvent["status"];
+  status: WorkBlockStatus;
   startedAt: number;
   inputText: string;
   outputText: string;
+}
+
+export type WorkBlockStatus = LiveToolEvent["status"] | "warning";
+
+export type WorkBlockStatusLabels = Partial<
+  Record<WorkBlockStatus, string>
+>;
+
+export interface WorkBlockLabels {
+  actions: Record<WorkBlockActionKey, string>;
+  actionTarget: (action: string, target: string) => string;
+  spawnAgent: (name: string) => string;
+  finishAgent: (name: string) => string;
+  parallelDispatch: (count: number) => string;
+  parallelTarget: (count: number) => string;
+  skillNamed: (skill: string) => string;
+  skillDeepResearch: string;
+  skillReportWriting: string;
+  skillDocx: string;
+  connectModel: string;
+  subagentFallback: string;
+}
+
+export interface WorkBlockLabelsShape {
+  actions: Partial<Record<WorkBlockActionKey, string>>;
+  actionTarget?: string;
+  spawnAgent?: string;
+  finishAgent?: string;
+  parallelDispatch?: string;
+  parallelDispatchWithCount?: string;
+  parallelTarget?: string;
+  parallelTargetWithCount?: string;
+  skillNamed?: string;
+  skillDeepResearch?: string;
+  skillReportWriting?: string;
+  skillDocx?: string;
+  connectModel?: string;
+  subagentFallback?: string;
+}
+
+const DEFAULT_WORK_BLOCK_LABELS: WorkBlockLabels = {
+  actions: {
+    awaitVerification: "Awaiting verification",
+    spawnAgent: "Create agent",
+    finishAgent: "Agent finished",
+    writeTodoList: "Write to-do list",
+    parallelDispatch: "Dispatch in parallel",
+    submitResult: "Submit result",
+    loadSkill: "Load skill",
+    terminalFailed: "Terminal run failed",
+    terminalRecovered: "Terminal recovered",
+    runTerminal: "Run terminal",
+    read: "Read",
+    createFile: "Create file",
+    deleteFile: "Delete file",
+    editFile: "Edit",
+    browse: "Browse",
+    search: "Search",
+    execute: "Execute",
+  },
+  actionTarget: (action, target) => `${action} ${target}`,
+  spawnAgent: (name) => `Create agent ${name}`,
+  finishAgent: (name) => `Agent ${name} finished`,
+  parallelDispatch: (count) =>
+    count > 0
+      ? `Dispatch ${count} subtasks in parallel`
+      : "Dispatch subtasks in parallel",
+  parallelTarget: (count) => (count > 0 ? `${count} subtasks` : "Subtasks"),
+  skillNamed: (skill) => `Load skill ${skill}`,
+  skillDeepResearch: "Load deep research swarm skill",
+  skillReportWriting: "Load report writing skill",
+  skillDocx: "Assemble DOCX deliverable",
+  connectModel: "Connect model",
+  subagentFallback: "Subagent",
+};
+
+function fillTemplate(
+  template: string,
+  vars: Record<string, string | number>,
+): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) => {
+    const value = vars[key];
+    return value === undefined ? match : String(value);
+  });
+}
+
+export function workBlockLabelsFromShape(
+  raw: unknown,
+): WorkBlockLabels | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const shape = raw as WorkBlockLabelsShape;
+  if (!shape.actions || typeof shape.actions !== "object") return undefined;
+  const fallback = DEFAULT_WORK_BLOCK_LABELS;
+  const actions = { ...fallback.actions, ...shape.actions };
+  const spawnAgentTemplate = shape.spawnAgent;
+  const finishAgentTemplate = shape.finishAgent;
+  const parallelTemplate = shape.parallelDispatch;
+  const parallelWithCountTemplate = shape.parallelDispatchWithCount;
+  const parallelTargetTemplate = shape.parallelTarget;
+  const parallelTargetWithCountTemplate = shape.parallelTargetWithCount;
+  const skillNamedTemplate = shape.skillNamed;
+  return {
+    actions,
+    actionTarget: shape.actionTarget
+      ? (action, target) =>
+          fillTemplate(shape.actionTarget as string, { action, target })
+      : fallback.actionTarget,
+    spawnAgent: spawnAgentTemplate
+      ? (name) => fillTemplate(spawnAgentTemplate, { name })
+      : fallback.spawnAgent,
+    finishAgent: finishAgentTemplate
+      ? (name) => fillTemplate(finishAgentTemplate, { name })
+      : fallback.finishAgent,
+    parallelDispatch: (count) => {
+      if (count > 0 && parallelWithCountTemplate) {
+        return fillTemplate(parallelWithCountTemplate, { count });
+      }
+      if (count > 0) return fallback.parallelDispatch(count);
+      return parallelTemplate ?? fallback.parallelDispatch(0);
+    },
+    parallelTarget: (count) => {
+      if (count > 0 && parallelTargetWithCountTemplate) {
+        return fillTemplate(parallelTargetWithCountTemplate, { count });
+      }
+      if (count > 0) return fallback.parallelTarget(count);
+      return parallelTargetTemplate ?? fallback.parallelTarget(0);
+    },
+    skillNamed: skillNamedTemplate
+      ? (skill) => fillTemplate(skillNamedTemplate, { skill })
+      : fallback.skillNamed,
+    skillDeepResearch: shape.skillDeepResearch ?? fallback.skillDeepResearch,
+    skillReportWriting: shape.skillReportWriting ?? fallback.skillReportWriting,
+    skillDocx: shape.skillDocx ?? fallback.skillDocx,
+    connectModel: shape.connectModel ?? fallback.connectModel,
+    subagentFallback: shape.subagentFallback ?? fallback.subagentFallback,
+  };
+}
+
+export function workBlockActionLabel(
+  block: WorkBlock,
+  labels?: WorkBlockLabels,
+): string {
+  return (labels ?? DEFAULT_WORK_BLOCK_LABELS).actions[block.actionKey];
+}
+
+export function workBlockTitle(
+  block: WorkBlock,
+  labels?: WorkBlockLabels,
+): string {
+  const resolved = labels ?? DEFAULT_WORK_BLOCK_LABELS;
+  const title = block.title;
+  switch (title.key) {
+    case "awaitVerification":
+      return resolved.actions.awaitVerification;
+    case "spawnAgent":
+      return resolved.spawnAgent(title.name || resolved.subagentFallback);
+    case "finishAgent":
+      return resolved.finishAgent(title.name || resolved.subagentFallback);
+    case "action":
+      return resolved.actions[block.actionKey];
+    case "actionTarget":
+      return resolved.actionTarget(
+        resolved.actions[block.actionKey],
+        title.target,
+      );
+    case "parallelDispatch":
+      return resolved.parallelDispatch(title.count);
+    case "skill":
+      return resolved.skillNamed(title.skill);
+    case "skillDeepResearch":
+      return resolved.skillDeepResearch;
+    case "skillReportWriting":
+      return resolved.skillReportWriting;
+    case "skillDocx":
+      return resolved.skillDocx;
+    case "connectModel":
+      return resolved.connectModel;
+    case "raw":
+      return title.text;
+  }
+}
+
+export function workBlockTarget(
+  block: WorkBlock,
+  labels?: WorkBlockLabels,
+): string {
+  const resolved = labels ?? DEFAULT_WORK_BLOCK_LABELS;
+  const title = block.title;
+  if (title.key === "parallelDispatch") {
+    return resolved.parallelTarget(title.count);
+  }
+  if (title.key === "spawnAgent" || title.key === "finishAgent") {
+    return title.name || resolved.subagentFallback;
+  }
+  return block.target;
 }
 
 export interface SettledRunDisplayOptions {
@@ -40,17 +271,43 @@ const LOW_LEVEL_EVENTS = new Set([
 ]);
 
 export function toWorkBlocks(events: LiveToolEvent[]): WorkBlock[] {
-  return events
+  return coalesceWorkEvents(events)
     .filter(isVisibleWorkEvent)
     .sort((a, b) => a.startedAt - b.startedAt)
     .map(toWorkBlock);
+}
+
+function coalesceWorkEvents(events: LiveToolEvent[]): LiveToolEvent[] {
+  const byId = new Map<string, LiveToolEvent>();
+  for (const event of events) {
+    const previous = byId.get(event.id);
+    if (!previous) {
+      byId.set(event.id, event);
+      continue;
+    }
+    byId.set(event.id, {
+      ...previous,
+      ...event,
+      input: event.input ?? previous.input,
+      output: event.output ?? previous.output,
+      startedAt: Math.min(previous.startedAt, event.startedAt),
+      finishedAt: event.finishedAt ?? previous.finishedAt,
+      durationMs: event.durationMs ?? previous.durationMs,
+    });
+  }
+  return [...byId.values()];
 }
 
 export function normalizeEventsForSettledDisplay(
   events: LiveToolEvent[],
   options: SettledRunDisplayOptions = {},
 ): LiveToolEvent[] {
-  if (!options.runSettled || options.runFailed || options.paused || !options.hasAnswer) {
+  if (
+    !options.runSettled ||
+    options.runFailed ||
+    options.paused ||
+    !options.hasAnswer
+  ) {
     return events;
   }
   return events.map((event) => {
@@ -85,7 +342,10 @@ export function progressForWorkBlocks(blocks: WorkBlock[], current: WorkBlock) {
     blocks.findIndex((block) => block.id === current.id),
   );
   const terminal = blocks.filter(
-    (block) => block.status === "done" || block.status === "error",
+    (block) =>
+      block.status === "done" ||
+      block.status === "warning" ||
+      block.status === "error",
   ).length;
   const currentIndex = Math.max(
     1,
@@ -96,32 +356,55 @@ export function progressForWorkBlocks(blocks: WorkBlock[], current: WorkBlock) {
 
 export function isWorkRunning(blocks: WorkBlock[]): boolean {
   return blocks.some(
-    (block) => block.status === "running" || block.status === "waiting_approval",
+    (block) =>
+      block.status === "running" || block.status === "waiting_approval",
   );
 }
 
-export function statusText(status: LiveToolEvent["status"]): string {
-  if (status === "running") return "正在执行";
-  if (status === "waiting_approval") return "等待确认";
-  if (status === "error") return "执行失败";
-  return "已完成";
+export function statusText(
+  status: WorkBlockStatus,
+  labels?: WorkBlockStatusLabels,
+): string {
+  const fallback: Record<WorkBlockStatus, string> = {
+    running: "正在执行",
+    waiting_approval: "等待确认",
+    warning: "已恢复",
+    error: "执行失败",
+    done: "已完成",
+  };
+  return labels?.[status] || fallback[status];
 }
 
 function toWorkBlock(event: LiveToolEvent): WorkBlock {
   const kind = workKind(event.name);
-  const title = workTitle(event, kind);
-  const subtitle = workSubtitle(event);
+  const status = workBlockStatus(event);
+  const actionKey = workActionKey(event, kind, status);
+  const target = workTarget(event, kind);
+  const title = workTitle(event, kind, target);
+  const subtitle = workSubtitle(event, target);
   return {
     id: event.id,
     event,
     kind,
+    actionKey,
+    target,
     title,
     subtitle,
-    status: event.status,
+    status,
     startedAt: event.startedAt,
     inputText: detailText(event.input),
     outputText: detailText(event.output),
   };
+}
+
+function workBlockStatus(event: LiveToolEvent): WorkBlockStatus {
+  if (event.status === "error" && isManualVerificationRequiredEvent(event)) {
+    return "waiting_approval";
+  }
+  if (event.status === "error" && isRecoverableToolFailureEvent(event)) {
+    return "warning";
+  }
+  return event.status;
 }
 
 function isVisibleWorkEvent(event: LiveToolEvent): boolean {
@@ -141,7 +424,12 @@ function isVisibleWorkEvent(event: LiveToolEvent): boolean {
 function workKind(name: string): WorkBlockKind {
   if (name === "call_agent_parallel") return "swarm";
   if (name === "todo_write") return "todo";
-  if (/skill|deep-research|report-writing|docx|pptx-swarm|webapp-building-swarm/i.test(name)) return "skill";
+  if (
+    /skill|deep-research|report-writing|docx|pptx-swarm|webapp-building-swarm/i.test(
+      name,
+    )
+  )
+    return "skill";
   if (/shell|bash|terminal|cmd|exec|python/i.test(name)) return "terminal";
   if (/fetch|browser|url|web/i.test(name)) return "browser";
   if (/search|grep|glob|list/i.test(name)) return "search";
@@ -150,61 +438,168 @@ function workKind(name: string): WorkBlockKind {
   return "agent";
 }
 
-function workTitle(event: LiveToolEvent, kind: WorkBlockKind): string {
+function workTitle(
+  event: LiveToolEvent,
+  kind: WorkBlockKind,
+  target: string,
+): WorkBlockTitle {
+  if (isManualVerificationRequiredEvent(event)) {
+    return { key: "awaitVerification" };
+  }
   if (event.lifecycle === "spawned" || /subagent_spawned/i.test(event.name)) {
-    return `创建助手 ${agentDisplayName(event)}`;
+    return { key: "spawnAgent", name: agentDisplayName(event) };
   }
   if (event.lifecycle === "finished" || /subagent_finished/i.test(event.name)) {
-    return `助手完成 ${agentDisplayName(event)}`;
+    return { key: "finishAgent", name: agentDisplayName(event) };
   }
   if (event.name === "todo_write") {
-    return todoTitle(event.input) || "更新待办清单";
+    return { key: "action" };
   }
   if (event.name === "call_agent_parallel") {
-    const count = specCount(event.input);
-    return count > 0 ? `并行分派 ${count} 个子任务` : "并行分派子任务";
+    return { key: "parallelDispatch", count: specCount(event.input) };
   }
   if (kind === "skill") {
     return skillTitle(event);
   }
   const progressLabel = progressLabelText(event);
   if (event.name.startsWith("mcp:") && progressLabel) {
-    return compact(progressLabel, 64);
+    return { key: "raw", text: compact(progressLabel, 64) };
   }
-  const path = firstString(event.input, [
-    "path",
-    "file_path",
-    "filepath",
-    "filename",
-  ]);
-  const url = firstString(event.input, ["url"]);
-  const query = firstString(event.input, ["query", "pattern"]);
-  const command = firstString(event.input, ["command", "cmd"]);
-  if (kind === "read" && path) return `阅读 ${basename(path)}`;
-  if (kind === "file" && path) return `编辑 ${basename(path)}`;
-  if (kind === "browser" && url) return `浏览 ${hostOf(url)}`;
-  if (kind === "search" && query) return `搜索 ${compact(query, 48)}`;
-  if (kind === "terminal" && command) return `运行 ${compact(command, 48)}`;
-  if (event.name === "model_gateway") return "连接模型";
-  return event.name.replace(/[_-]+/g, " ");
+  if (target) return { key: "actionTarget", target: compact(target, 48) };
+  if (event.name === "model_gateway") return { key: "connectModel" };
+  return { key: "action" };
 }
 
-function workSubtitle(event: LiveToolEvent): string {
+function workSubtitle(event: LiveToolEvent, fallbackTarget: string): string {
+  if (isManualVerificationRequiredEvent(event)) {
+    return statusText(workBlockStatus(event));
+  }
+  // A failed block's one useful subtitle is why it failed. Without this the
+  // subtitle fell through to the agent name / target, so a lane that died on an
+  // SSL disconnect or a round cap read as "Researcher" and nothing else — the
+  // cause was on the wire and in the event, just never on screen.
+  if (event.status === "error" && event.error?.trim()) {
+    return compact(event.error.trim(), 120);
+  }
   const progress = progressSubtitleText(event);
   if (progress) return compact(progress, 88);
-  const target = firstString(event.input, [
+  if (event.name === "todo_write") {
+    return todoTitle(event.input) || statusText(workBlockStatus(event));
+  }
+  const inputTarget = firstString(event.input, [
     "path",
     "file_path",
     "filepath",
     "url",
     "query",
     "pattern",
-    "command",
     "cwd",
   ]);
-  if (target) return compact(target, 88);
+  if (inputTarget) return compact(publicInputTarget(inputTarget, event), 88);
+  if (fallbackTarget) return compact(fallbackTarget, 88);
   if (event.agentName) return event.agentName;
-  return statusText(event.status);
+  return statusText(workBlockStatus(event));
+}
+
+function workActionKey(
+  event: LiveToolEvent,
+  kind: WorkBlockKind,
+  status: WorkBlockStatus,
+): WorkBlockActionKey {
+  if (isManualVerificationRequiredEvent(event)) return "awaitVerification";
+  if (event.lifecycle === "spawned" || /subagent_spawned/i.test(event.name)) {
+    return "spawnAgent";
+  }
+  if (event.lifecycle === "finished" || /subagent_finished/i.test(event.name)) {
+    return "finishAgent";
+  }
+  if (event.name === "todo_write") return "writeTodoList";
+  if (event.name === "call_agent_parallel") return "parallelDispatch";
+  if (normalizedToolName(event.name) === "report") return "submitResult";
+  if (kind === "skill") return "loadSkill";
+  if (kind === "terminal") {
+    if (status === "error") return "terminalFailed";
+    if (status === "warning") return "terminalRecovered";
+    return "runTerminal";
+  }
+  if (kind === "read") return "read";
+  if (kind === "file") return fileActionKey(event);
+  if (kind === "browser") return "browse";
+  if (kind === "search") return "search";
+  if (kind === "swarm") return "parallelDispatch";
+  return "execute";
+}
+
+function fileActionKey(event: LiveToolEvent): WorkBlockActionKey {
+  const op =
+    firstString(event.input, ["op", "operation", "action"]) ||
+    firstChangeString(event.input, ["op", "operation", "action"]);
+  if (/add|create|new|generate|write/i.test(op)) return "createFile";
+  if (/delete|remove/i.test(op)) return "deleteFile";
+  return "editFile";
+}
+
+function workTarget(event: LiveToolEvent, kind: WorkBlockKind): string {
+  if (event.lifecycle === "spawned" || /subagent_spawned/i.test(event.name)) {
+    return agentDisplayName(event);
+  }
+  if (event.lifecycle === "finished" || /subagent_finished/i.test(event.name)) {
+    return agentDisplayName(event);
+  }
+  if (event.name === "todo_write") return "";
+  if (event.name === "call_agent_parallel") return "";
+  if (kind === "skill") {
+    return firstString(event.input, ["skill", "skill_name", "name"]);
+  }
+  const path =
+    firstChangeString(event.input, ["path", "file_path", "filepath"]) ||
+    firstString(event.input, ["path", "file_path", "filepath", "filename"]);
+  const url = firstString(event.input, ["url"]);
+  const query = firstString(event.input, ["query", "pattern"]);
+  const commandSummary = firstString(event.input, [
+    "description",
+    "label",
+    "title",
+  ]);
+  if ((kind === "read" || kind === "file") && path) return basename(path);
+  if (kind === "browser" && url) return hostOf(url);
+  if (kind === "search" && query) return compact(query, 48);
+  if (kind === "terminal" && commandSummary) return compact(commandSummary, 48);
+  return "";
+}
+
+function publicInputTarget(value: string, event: LiveToolEvent): string {
+  const kind = workKind(event.name);
+  if (kind === "browser") return hostOf(value);
+  if (kind === "read" || kind === "file") return basename(value);
+  if (kind === "terminal" && /[\\/]/.test(value)) return basename(value);
+  return value;
+}
+
+function isManualVerificationRequiredEvent(event: LiveToolEvent): boolean {
+  const normalizedName = event.name.trim().toLowerCase();
+  if (
+    !(
+      normalizedName === "verification:manual" ||
+      normalizedName.endsWith(":verification:manual")
+    )
+  ) {
+    return false;
+  }
+  const command = firstString(event.input, ["command"]);
+  const output = detailText(event.output);
+  return /verification required|no verification step|Code changes were produced/i.test(
+    `${command}\n${output}`,
+  );
+}
+
+function isRecoverableToolFailureEvent(event: LiveToolEvent): boolean {
+  const haystack = `${event.name}\n${detailText(event.input)}\n${detailText(
+    event.output,
+  )}`;
+  return /工具失败|status=failed\s+error=TypeError|换一种方式重试|tool failed|tool_error|No such tool|不存在的工具/i.test(
+    haystack,
+  );
 }
 
 function agentDisplayName(event: LiveToolEvent): string {
@@ -213,12 +608,12 @@ function agentDisplayName(event: LiveToolEvent): string {
     event.agentName ||
     event.subAgentRole ||
     event.agentId ||
-    "子智能体"
+    ""
   );
 }
 
 function progressRecord(event: LiveToolEvent): Record<string, unknown> | null {
-  const progress = event.input?.progress;
+  const progress = effectiveToolInput(event.input).progress;
   if (!progress || typeof progress !== "object" || Array.isArray(progress)) {
     return null;
   }
@@ -257,27 +652,28 @@ function numberValue(value: unknown): number | null {
 }
 
 function specCount(input: Record<string, unknown> | undefined): number {
-  const specs = input?.specs;
+  const specs = effectiveToolInput(input).specs;
   return Array.isArray(specs) ? specs.length : 0;
 }
 
-function skillTitle(event: LiveToolEvent): string {
+function skillTitle(event: LiveToolEvent): WorkBlockTitle {
   const skill =
     firstString(event.input, ["skill", "skill_name", "name"]) || event.name;
   if (skill === "deep-research-swarm" || event.name === "deep-research-swarm") {
-    return "加载深度调研集群技能";
+    return { key: "skillDeepResearch" };
   }
   if (skill === "report-writing" || event.name === "report-writing") {
-    return "加载报告写作技能";
+    return { key: "skillReportWriting" };
   }
   if (skill === "docx" || event.name === "docx") {
-    return "组装 DOCX 交付物";
+    return { key: "skillDocx" };
   }
-  return `加载技能 ${compact(skill, 48)}`;
+  return { key: "skill", skill: compact(skill, 48) };
 }
 
 function todoTitle(input: Record<string, unknown> | undefined) {
-  const raw = input?.items ?? input?.todos;
+  const effective = effectiveToolInput(input);
+  const raw = effective.items ?? effective.todos;
   const items = Array.isArray(raw) ? raw : [];
   const current =
     items.find(
@@ -301,17 +697,37 @@ function firstString(
   input: Record<string, unknown> | undefined,
   keys: string[],
 ) {
-  if (!input) return "";
+  const effective = effectiveToolInput(input);
   for (const key of keys) {
-    const value = input[key];
+    const value = effective[key];
     if (typeof value === "string" && value.trim()) return value.trim();
     if (typeof value === "number") return String(value);
   }
   return "";
 }
 
+function firstChangeString(
+  input: Record<string, unknown> | undefined,
+  keys: string[],
+) {
+  const changes = effectiveToolInput(input).changes;
+  if (!Array.isArray(changes)) return "";
+  for (const change of changes) {
+    if (!change || typeof change !== "object" || Array.isArray(change)) {
+      continue;
+    }
+    const value = firstString(change as Record<string, unknown>, keys);
+    if (value) return value;
+  }
+  return "";
+}
+
 function basename(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+function normalizedToolName(name: string): string {
+  return name.trim().toLowerCase().replace(/^mcp:/, "");
 }
 
 function hostOf(url: string) {

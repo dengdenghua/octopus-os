@@ -16,106 +16,157 @@ import {
   RefreshCwIcon,
   ListChecksIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { swallow } from "@/core/utils/log";
 import { useI18n } from "@/core/i18n/hooks";
+import { RoutedWebLink } from "@/components/ui/routed-web-link";
 import type { Translations } from "@/core/i18n/locales/types";
 import { cn } from "@/lib/utils";
 
 import { emitAgentWorkbenchFocus } from "./agent-workbench-events";
+import {
+  agentRunBadgeClass,
+  agentRunStatusLightPulseClass,
+} from "./agent-run-status";
+import { stripToolEnvelope } from "./messages/trace-labels";
 import { getProcessTraceEvents } from "./process-trace-events";
-import { isChineseText, isSkillToolName } from "./tool-action-kind";
+import { SwarmRunOverview } from "./swarm-run-overview";
+import { isSkillToolName } from "./tool-action-kind";
 
-type TimelineT = Pick<Translations, "liveTools" | "liveToolTimeline">;
+type TimelineT = Pick<
+  Translations,
+  "liveTools" | "liveToolTimeline" | "messageGrouping" | "todoList"
+>;
 
 const TOOL_ICONS: Record<string, { icon: React.ElementType; color: string }> = {
-  bash: { icon: TerminalIcon, color: "text-green-500" },
-  exec_shell: { icon: TerminalIcon, color: "text-green-500" },
-  shell_command: { icon: TerminalIcon, color: "text-green-500" },
-  write_file: { icon: FileEditIcon, color: "text-blue-500" },
-  write_text_file: { icon: FileEditIcon, color: "text-blue-500" },
-  create_file: { icon: FileEditIcon, color: "text-blue-500" },
-  edit_code: { icon: FileEditIcon, color: "text-blue-500" },
-  edit_text_file: { icon: FileEditIcon, color: "text-blue-500" },
-  str_replace: { icon: FileEditIcon, color: "text-blue-500" },
-  read_file: { icon: EyeIcon, color: "text-cyan-500" },
-  read_text_file: { icon: EyeIcon, color: "text-cyan-500" },
-  fetch_url: { icon: GlobeIcon, color: "text-orange-500" },
-  list_cwd: { icon: SearchIcon, color: "text-purple-500" },
-  glob: { icon: SearchIcon, color: "text-purple-500" },
-  grep: { icon: SearchIcon, color: "text-purple-500" },
-  todo_write: { icon: ListChecksIcon, color: "text-violet-500" },
-  call_agent: { icon: BrainCircuitIcon, color: "text-sky-500" },
-  call_agent_parallel: { icon: BrainCircuitIcon, color: "text-sky-500" },
-  bb_read: { icon: BrainCircuitIcon, color: "text-sky-500" },
-  bb_write: { icon: BrainCircuitIcon, color: "text-sky-500" },
-  bb_keys: { icon: BrainCircuitIcon, color: "text-sky-500" },
-  "deep-research-swarm": { icon: BrainCircuitIcon, color: "text-violet-500" },
-  "report-writing": { icon: FileEditIcon, color: "text-blue-500" },
-  docx: { icon: FileEditIcon, color: "text-blue-500" },
-  web_search: { icon: GlobeIcon, color: "text-orange-500" },
-  apply_skill: { icon: BrainCircuitIcon, color: "text-violet-500" },
-  list_learned_skills: { icon: BrainCircuitIcon, color: "text-violet-500" },
-  learn_skill_from_text: { icon: BrainCircuitIcon, color: "text-violet-500" },
-  planning: { icon: BrainCircuitIcon, color: "text-sky-500" },
-  agent_thought: { icon: BrainCircuitIcon, color: "text-violet-500" },
-  team_swarm: { icon: BrainCircuitIcon, color: "text-sky-500" },
-  team_routing: { icon: BrainCircuitIcon, color: "text-sky-500" },
-  git_status: { icon: GitBranchIcon, color: "text-amber-500" },
-  git_commit: { icon: GitBranchIcon, color: "text-amber-500" },
-  git_diff: { icon: GitBranchIcon, color: "text-amber-500" },
-  stream_recovery: { icon: RefreshCwIcon, color: "text-sky-500" },
-  model_gateway: { icon: BrainCircuitIcon, color: "text-sky-500" },
-  model_reasoning: { icon: BrainCircuitIcon, color: "text-violet-500" },
+  bash: { icon: TerminalIcon, color: "text-chart-8" },
+  exec_shell: { icon: TerminalIcon, color: "text-chart-8" },
+  shell_command: { icon: TerminalIcon, color: "text-chart-8" },
+  write_file: { icon: FileEditIcon, color: "text-chart-6" },
+  write_text_file: { icon: FileEditIcon, color: "text-chart-6" },
+  create_file: { icon: FileEditIcon, color: "text-chart-6" },
+  edit_code: { icon: FileEditIcon, color: "text-chart-6" },
+  edit_text_file: { icon: FileEditIcon, color: "text-chart-6" },
+  str_replace: { icon: FileEditIcon, color: "text-chart-6" },
+  read_file: { icon: EyeIcon, color: "text-chart-2" },
+  read_text_file: { icon: EyeIcon, color: "text-chart-2" },
+  fetch_url: { icon: GlobeIcon, color: "text-chart-7" },
+  list_cwd: { icon: SearchIcon, color: "text-chart-1" },
+  glob: { icon: SearchIcon, color: "text-chart-1" },
+  grep: { icon: SearchIcon, color: "text-chart-1" },
+  todo_write: { icon: ListChecksIcon, color: "text-chart-1" },
+  call_agent: { icon: BrainCircuitIcon, color: "text-chart-6" },
+  call_agent_parallel: { icon: BrainCircuitIcon, color: "text-chart-6" },
+  bb_read: { icon: BrainCircuitIcon, color: "text-chart-6" },
+  bb_write: { icon: BrainCircuitIcon, color: "text-chart-6" },
+  bb_keys: { icon: BrainCircuitIcon, color: "text-chart-6" },
+  "deep-research-swarm": { icon: BrainCircuitIcon, color: "text-chart-1" },
+  "report-writing": { icon: FileEditIcon, color: "text-chart-6" },
+  docx: { icon: FileEditIcon, color: "text-chart-6" },
+  web_search: { icon: GlobeIcon, color: "text-chart-7" },
+  apply_skill: { icon: BrainCircuitIcon, color: "text-chart-1" },
+  list_learned_skills: { icon: BrainCircuitIcon, color: "text-chart-1" },
+  learn_skill_from_text: { icon: BrainCircuitIcon, color: "text-chart-1" },
+  planning: { icon: BrainCircuitIcon, color: "text-chart-6" },
+  agent_thought: { icon: BrainCircuitIcon, color: "text-chart-1" },
+  team_swarm: { icon: BrainCircuitIcon, color: "text-chart-6" },
+  team_routing: { icon: BrainCircuitIcon, color: "text-chart-6" },
+  git_status: { icon: GitBranchIcon, color: "text-chart-4" },
+  git_commit: { icon: GitBranchIcon, color: "text-chart-4" },
+  git_diff: { icon: GitBranchIcon, color: "text-chart-4" },
+  stream_recovery: { icon: RefreshCwIcon, color: "text-chart-6" },
+  model_gateway: { icon: BrainCircuitIcon, color: "text-chart-6" },
+  model_reasoning: { icon: BrainCircuitIcon, color: "text-chart-1" },
 };
 
 function getToolLabels(t: TimelineT): Record<string, string> {
   return {
-    bash: t.liveTools.terminal ?? "Terminal",
-    exec_shell: t.liveTools.terminal ?? "Terminal",
-    shell_command: t.liveTools.terminal ?? "Terminal",
-    write_file: t.liveTools.writeFile ?? "Write File",
-    write_text_file: t.liveTools.writeFile ?? "Write File",
-    create_file: t.liveTools.writeFile ?? "Create File",
-    edit_code: t.liveTools.editFile ?? "Edit File",
-    edit_text_file: t.liveTools.editFile ?? "Edit File",
-    str_replace: t.liveTools.editFile ?? "Edit File",
-    read_file: t.liveTools.readFile ?? "Read File",
-    read_text_file: t.liveTools.readFile ?? "Read File",
-    fetch_url: "Browse Page",
-    list_cwd: t.liveTools.searchFiles ?? "List Files",
-    glob: t.liveTools.searchFiles ?? "Search Files",
-    grep: t.liveTools.searchContent ?? "Search Content",
-    todo_write: "Todos",
-    call_agent: "Subagent",
-    call_agent_parallel: "Agent swarm",
-    bb_read: "Blackboard",
-    bb_write: "Blackboard",
-    bb_keys: "Blackboard",
-    "deep-research-swarm": "Research swarm",
-    "report-writing": "Report writing",
-    docx: "DOCX",
-    web_search: t.liveTools.webSearch ?? "Web Search",
-    apply_skill: "Apply skill",
-    list_learned_skills: "List skills",
-    learn_skill_from_text: "Learn skill",
-    planning: "Planning",
-    agent_thought: "Agent thought",
-    team_swarm: "Team swarm",
-    team_routing: "Team routing",
-    git_status: t.liveTools.gitStatus ?? "Git Status",
-    git_commit: t.liveTools.gitCommit ?? "Git Commit",
-    git_diff: t.liveTools.gitDiff ?? "Git Diff",
-    stream_recovery: t.liveTools.streamRecovery ?? "Stream recovery",
-    model_gateway: "Model gateway",
-    model_reasoning: "Model reasoning",
+    bash: t.liveTools.terminal,
+    exec_shell: t.liveTools.terminal,
+    shell_command: t.liveTools.terminal,
+    write_file: t.liveTools.writeFile,
+    write_text_file: t.liveTools.writeFile,
+    create_file: t.liveTools.writeFile,
+    edit_code: t.liveTools.editFile,
+    edit_text_file: t.liveTools.editFile,
+    str_replace: t.liveTools.editFile,
+    read_file: t.liveTools.readFile,
+    read_text_file: t.liveTools.readFile,
+    fetch_url: t.liveToolTimeline.browsingPage,
+    list_cwd: t.liveTools.searchFiles,
+    glob: t.liveTools.searchFiles,
+    grep: t.liveTools.searchContent,
+    todo_write: t.todoList.title,
+    call_agent: t.liveToolTimeline.callSubAgentShort,
+    call_agent_parallel: t.liveToolTimeline.subtaskAggregation,
+    bb_read: t.liveToolTimeline.readBlackboardShort,
+    bb_write: t.liveToolTimeline.writeBlackboardShort,
+    bb_keys: t.liveToolTimeline.readBlackboardDirectory,
+    "deep-research-swarm": t.messageGrouping.searchSources,
+    "report-writing": t.messageGrouping.runAction,
+    docx: t.messageGrouping.updateFile,
+    web_search: t.liveTools.webSearch,
+    apply_skill: t.liveToolTimeline.invokeSkillProcess,
+    list_learned_skills: t.messageGrouping.runAction,
+    learn_skill_from_text: t.liveToolTimeline.invokeSkillProcess,
+    planning: t.liveToolTimeline.understandTask,
+    agent_thought: t.liveToolTimeline.thinking,
+    team_swarm: t.liveToolTimeline.subtaskAggregation,
+    team_routing: t.liveToolTimeline.focusedDelegation,
+    git_status: t.liveTools.gitStatus,
+    git_commit: t.liveTools.gitCommit,
+    git_diff: t.liveTools.gitDiff,
+    stream_recovery: t.liveTools.streamRecovery,
+    model_gateway: t.liveToolTimeline.connectRuntime,
+    model_reasoning: t.liveToolTimeline.thinking,
   };
+}
+
+const SENSITIVE_DETAIL_KEY_RE =
+  /^(?:token|secret|api[_-]?key|password|passwd|authorization|cookie|set-cookie|private[_-]?key)$/i;
+const SENSITIVE_DETAIL_TEXT_RE =
+  /(?:bearer\s+|\bsk-[a-z0-9_-]+\b|\b(?:ghp|github_pat|xox[baprs])-)[^\s,;)}\]]+/gi;
+
+function sanitizePublicDetailText(value: string): string {
+  return value
+    .replace(SENSITIVE_DETAIL_TEXT_RE, "[redacted]")
+    .replace(
+      /((?:^|[\s,{[])['\"]?(?:token|secret|api[_-]?key|password|passwd|authorization|cookie|set-cookie|private[_-]?key)['\"]?\s*[:=]\s*)([^,;}\]\n]+)/gi,
+      "$1[redacted]",
+    );
+}
+
+function sanitizePublicDetailValue(value: unknown, depth = 0): unknown {
+  if (depth > 6) return "[redacted]";
+  if (typeof value === "string") return sanitizePublicDetailText(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizePublicDetailValue(item, depth + 1));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        SENSITIVE_DETAIL_KEY_RE.test(key)
+          ? "[redacted]"
+          : sanitizePublicDetailValue(item, depth + 1),
+      ]),
+    );
+  }
+  return value;
 }
 
 export interface LiveToolEvent {
   id: string;
   name: string;
   status: "running" | "done" | "error" | "waiting_approval";
+  /** Durable owning turn coordinates. `iteration` is an event-local
+   * execution/ordering coordinate and must not be used to infer chat turns. */
+  turnId?: string;
+  turnIndex?: number;
+  /** Why this failed, when the source event carried a reason. Kept separate
+   * from `output` so a renderer can show the cause without stringifying and
+   * truncating a whole payload. Only meaningful with status "error". */
+  error?: string;
   startedAt: number;
   durationMs?: number;
   finishedAt?: number;
@@ -133,6 +184,14 @@ export interface LiveToolEvent {
   /** Emoji avatar derived from role. Falls back to 🐙 for unknown
    * roles. */
   subagentAvatar?: string;
+  /** Authoritative role display name from the backend built-in role
+   * catalog (``BUILTIN_ROLES``), e.g. "Code Reviewer". Absent for
+   * free-form role labels the catalog doesn't recognise, in which case
+   * the frontend falls back to its own name mapping. */
+  subagentRoleDisplayName?: string;
+  /** Authoritative role responsibility blurb from ``BUILTIN_ROLES``.
+   * Same fallback semantics as ``subagentRoleDisplayName``. */
+  subagentRoleDescription?: string;
   /** Lifecycle marker. Synthesised events carry these instead of a
    * tool name, so panels can render the spawn moment + finish stats
    * without waiting for the first real tool call. */
@@ -143,6 +202,15 @@ export interface LiveToolEvent {
   filesTouched?: string[];
   thought?: string;
   observation?: string;
+  /** True when name/input/output mention a report-style deliverable
+   * (see core/threads/report-deliverable.ts). Precomputed at mapping
+   * time so per-frame render never stringifies payloads. */
+  isReportLike?: boolean;
+  /** When the tool is recognized by the catalog but its group is
+   * excluded by config (e.g. web_search under enable_web_skills=false),
+   * this carries {group, config_flag} so the UI can render a one-click
+   * "enable" prompt instead of a bare error. */
+  capabilityDisabled?: { group: string; config_flag: string };
 }
 
 function workflowEvents(events: LiveToolEvent[]): LiveToolEvent[] {
@@ -152,13 +220,15 @@ function workflowEvents(events: LiveToolEvent[]): LiveToolEvent[] {
 function getVisibleEvents(events: LiveToolEvent[]): LiveToolEvent[] {
   const topLevel = workflowEvents(events).filter((e) => !e.parentToolUseId);
   const runningEvents = topLevel
-    .filter((event) => event.status === "running" || event.status === "waiting_approval")
+    .filter(
+      (event) =>
+        event.status === "running" || event.status === "waiting_approval",
+    )
     .sort((a, b) => a.startedAt - b.startedAt);
   const recentFinishedEvents = topLevel
     .filter((event) => event.status !== "running")
     .sort(
-      (a, b) =>
-        (b.finishedAt ?? b.startedAt) - (a.finishedAt ?? a.startedAt),
+      (a, b) => (b.finishedAt ?? b.startedAt) - (a.finishedAt ?? a.startedAt),
     )
     .slice(0, runningEvents.length > 0 ? 2 : 4);
 
@@ -178,7 +248,8 @@ function getRunningEvents(events: LiveToolEvent[]): LiveToolEvent[] {
 }
 
 function getChildren(
-  events: LiveToolEvent[], parentId: string,
+  events: LiveToolEvent[],
+  parentId: string,
 ): LiveToolEvent[] {
   return events
     .filter((e) => e.parentToolUseId === parentId)
@@ -191,12 +262,14 @@ export function LiveToolTimeline({
   groupByAgent,
   runningOnly = false,
   showAll = false,
+  compactDelegations = false,
 }: {
   events: LiveToolEvent[];
   className?: string;
   groupByAgent?: boolean;
   runningOnly?: boolean;
   showAll?: boolean;
+  compactDelegations?: boolean;
 }) {
   const { t } = useI18n();
   const toolLabels = useMemo(() => getToolLabels(t), [t]);
@@ -209,32 +282,127 @@ export function LiveToolTimeline({
           : getVisibleEvents(events),
     [events, runningOnly, showAll],
   );
+  const displayEvents = useMemo(
+    () =>
+      compactDelegations
+        ? compactDelegationEvents(visibleEvents)
+        : visibleEvents.map((event) => ({ kind: "event" as const, event })),
+    [compactDelegations, visibleEvents],
+  );
 
-  if (visibleEvents.length === 0) return null;
+  if (visibleEvents.length === 0) {
+    return <SwarmRunOverview events={events} className={className} />;
+  }
 
   if (groupByAgent) {
     return (
-      <GroupedTimeline
-        events={visibleEvents}
-        allEvents={events}
-        toolLabels={toolLabels}
-        t={t}
-        className={className}
-      />
+      <div className={className}>
+        <SwarmRunOverview events={events} />
+        <GroupedTimeline
+          events={visibleEvents}
+          allEvents={events}
+          toolLabels={toolLabels}
+          t={t}
+        />
+      </div>
     );
   }
 
   return (
     <div className={cn("space-y-1 py-1.5", className)}>
-      {visibleEvents.map((event) => (
-        <ParentWithChildren
-          key={event.id}
-          event={event}
-          allEvents={events}
-          toolLabels={toolLabels}
-          t={t}
-        />
-      ))}
+      <SwarmRunOverview events={events} />
+      {displayEvents.map((item) =>
+        item.kind === "event" ? (
+          <ParentWithChildren
+            key={item.event.id}
+            event={item.event}
+            allEvents={events}
+            toolLabels={toolLabels}
+            t={t}
+          />
+        ) : (
+          <DelegationSummaryRow
+            key={`delegation-summary:${item.target}`}
+            events={item.events}
+            target={item.target}
+            t={t}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
+type TimelineDisplayItem =
+  | { kind: "event"; event: LiveToolEvent }
+  | { kind: "delegation"; events: LiveToolEvent[]; target: string };
+
+function compactDelegationEvents(
+  events: LiveToolEvent[],
+): TimelineDisplayItem[] {
+  const items: TimelineDisplayItem[] = [];
+  const buckets = new Map<
+    string,
+    Extract<TimelineDisplayItem, { kind: "delegation" }>
+  >();
+  for (const event of events) {
+    if (event.lifecycle || !/agent|delegate|orchestrat/i.test(event.name)) {
+      items.push({ kind: "event", event });
+      continue;
+    }
+    const input = event.input ?? {};
+    const target =
+      ["agent_id", "subagent_id", "subagent_name", "role", "agent", "name"]
+        .map((key) => input[key])
+        .find(
+          (value): value is string =>
+            typeof value === "string" && Boolean(value.trim()),
+        )
+        ?.trim() ||
+      event.subAgentRole ||
+      event.agentName ||
+      "other";
+    const existing = buckets.get(target);
+    if (existing) {
+      existing.events.push(event);
+      continue;
+    }
+    const summary = { kind: "delegation" as const, events: [event], target };
+    buckets.set(target, summary);
+    items.push(summary);
+  }
+  return items.flatMap((item) =>
+    item.kind === "delegation" && item.events.length === 1
+      ? [{ kind: "event" as const, event: item.events[0]! }]
+      : [item],
+  );
+}
+
+function DelegationSummaryRow({
+  events,
+  target,
+  t,
+}: {
+  events: LiveToolEvent[];
+  target: string;
+  t: TimelineT;
+}) {
+  const running = events.some((event) => event.status === "running");
+  const error = events.some((event) => event.status === "error");
+  return (
+    <div className="flex items-center gap-2 py-1.5 pl-2 text-xs text-muted-foreground">
+      {running ? (
+        <Loader2Icon className="size-3.5 shrink-0 animate-spin text-success" />
+      ) : error ? (
+        <XCircleIcon className="size-3.5 shrink-0 text-destructive" />
+      ) : (
+        <CheckCircle2Icon className="size-3.5 shrink-0 text-success" />
+      )}
+      <BrainCircuitIcon className="size-3.5 shrink-0 text-chart-6" />
+      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+        {t.liveToolTimeline.callSubAgent(target)}
+      </span>
+      <span className="ml-auto shrink-0 tabular-nums">{events.length}×</span>
     </div>
   );
 }
@@ -258,16 +426,26 @@ function ParentWithChildren({
   );
   if (children.length === 0) {
     return (
-      <ToolEventRow event={event} toolLabels={toolLabels} t={t} showAgent={showAgent} />
+      <ToolEventRow
+        event={event}
+        toolLabels={toolLabels}
+        t={t}
+        showAgent={showAgent}
+      />
     );
   }
   return (
     <div className="space-y-1">
-      <ToolEventRow event={event} toolLabels={toolLabels} t={t} showAgent={showAgent} />
+      <ToolEventRow
+        event={event}
+        toolLabels={toolLabels}
+        t={t}
+        showAgent={showAgent}
+      />
       <div className="ml-6 space-y-1 border-l border-primary/20 pl-2">
         {children.map((child) => (
           <ToolEventRow
-            key={child.id}
+            key={`${event.id}:${child.id}`}
             event={child}
             toolLabels={toolLabels}
             t={t}
@@ -280,18 +458,35 @@ function ParentWithChildren({
   );
 }
 
-function formatInputSummary(input?: Record<string, unknown>): string | undefined {
+function formatInputSummary(
+  input?: Record<string, unknown>,
+): string | undefined {
   if (!input) return undefined;
-  const priority = ["command", "path", "file_path", "cwd", "pattern", "url", "query", "task", "prompt", "description"] as const;
+  const priority = [
+    "command",
+    "path",
+    "file_path",
+    "cwd",
+    "pattern",
+    "url",
+    "query",
+    "task",
+    "prompt",
+    "description",
+  ] as const;
   for (const key of priority) {
     const v = input[key];
     if (v !== undefined && v !== null && `${v}`.trim() !== "") {
       const text = typeof v === "string" ? v : JSON.stringify(v);
       const normalized = text.replace(/\s+/g, " ").trim();
-      return normalized.length > 120 ? `${normalized.slice(0, 120)}…` : normalized;
+      return normalized.length > 120
+        ? `${normalized.slice(0, 120)}…`
+        : normalized;
     }
   }
-  const entries = Object.entries(input).filter(([, v]) => v !== undefined && v !== null);
+  const entries = Object.entries(input).filter(
+    ([, v]) => v !== undefined && v !== null,
+  );
   if (entries.length === 0) return undefined;
   return entries
     .slice(0, 2)
@@ -305,12 +500,23 @@ function formatInputSummary(input?: Record<string, unknown>): string | undefined
 function formatOutputSummary(output: unknown): string | undefined {
   if (output === undefined || output === null) return undefined;
   if (typeof output === "string") {
-    const normalized = output.replace(/\s+/g, " ").trim();
-    return normalized.length > 140 ? `${normalized.slice(0, 140)}…` : normalized;
+    const normalized = stripToolEnvelope(output).replace(/\s+/g, " ").trim();
+    if (!normalized) return undefined;
+    return normalized.length > 140
+      ? `${normalized.slice(0, 140)}…`
+      : normalized;
   }
   if (typeof output === "object" && !Array.isArray(output)) {
     const record = output as Record<string, unknown>;
-    for (const key of ["error", "stderr", "stdout", "result", "message", "path", "content"]) {
+    for (const key of [
+      "error",
+      "stderr",
+      "stdout",
+      "result",
+      "message",
+      "path",
+      "content",
+    ]) {
       const v = record[key];
       if (v !== undefined && v !== null && `${v}`.trim() !== "") {
         const text = typeof v === "string" ? v : JSON.stringify(v);
@@ -325,10 +531,16 @@ function formatOutputSummary(output: unknown): string | undefined {
 
 function formatDetailBlock(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  const sanitized = sanitizePublicDetailValue(value);
+  const text =
+    typeof sanitized === "string"
+      ? sanitized
+      : JSON.stringify(sanitized, null, 2);
   const normalized = text.trim();
   if (!normalized) return undefined;
-  return normalized.length > 4000 ? `${normalized.slice(0, 4000)}\n...` : normalized;
+  return normalized.length > 4000
+    ? `${normalized.slice(0, 4000)}\n...`
+    : normalized;
 }
 
 function parseMaybeJson(value: unknown): unknown {
@@ -461,16 +673,22 @@ function extractSourceLabels(value: unknown, max = 4): string[] {
   return out;
 }
 
-function researchLogText(event: LiveToolEvent, t: TimelineT): {
+function researchLogText(
+  event: LiveToolEvent,
+  t: TimelineT,
+): {
   label: string;
   detail?: string;
   sources?: string[];
 } | null {
   if (event.name === "web_search") {
-    const query = typeof event.input?.query === "string" ? event.input.query.trim() : "";
+    const query =
+      typeof event.input?.query === "string" ? event.input.query.trim() : "";
     const count =
       countItems(event.output, ["results", "items", "sources"]) ??
-      (typeof event.input?.max_results === "number" ? event.input.max_results : null);
+      (typeof event.input?.max_results === "number"
+        ? event.input.max_results
+        : null);
     if (event.status === "running") {
       return {
         label: t.liveToolTimeline.searchingWeb,
@@ -487,7 +705,8 @@ function researchLogText(event: LiveToolEvent, t: TimelineT): {
   }
 
   if (event.name === "fetch_url") {
-    const url = typeof event.input?.url === "string" ? event.input.url.trim() : "";
+    const url =
+      typeof event.input?.url === "string" ? event.input.url.trim() : "";
     const source = url
       ? (() => {
           try {
@@ -499,8 +718,13 @@ function researchLogText(event: LiveToolEvent, t: TimelineT): {
         })()
       : undefined;
     return {
-      label: event.status === "running" ? t.liveToolTimeline.browsingPage : t.liveToolTimeline.browsedOnePage,
-      detail: source ? t.liveToolTimeline.sourceFrom(source) : t.liveToolTimeline.pageOpenedAndExtracted,
+      label:
+        event.status === "running"
+          ? t.liveToolTimeline.browsingPage
+          : t.liveToolTimeline.browsedOnePage,
+      detail: source
+        ? t.liveToolTimeline.sourceFrom(source)
+        : t.liveToolTimeline.pageOpenedAndExtracted,
       sources: source ? [source] : extractSourceLabels(event.output, 1),
     };
   }
@@ -530,21 +754,23 @@ function compactMiddle(text: string, max = 96): string {
 }
 
 function actionStatusLabel(
-  t: TimelineT,
   event: LiveToolEvent,
-  zh: [string, string],
-  en: [string, string],
+  verb: (running: boolean) => string,
   target?: string,
 ): string {
-  const [running, done] = isChineseText(t.liveToolTimeline.searchingWeb) ? zh : en;
-  const verb = event.status === "running" ? running : done;
-  return target ? `${verb} ${target}` : verb;
+  const label = verb(event.status === "running");
+  return target ? `${label} ${target}` : label;
 }
 
 function elapsedInputMs(input?: Record<string, unknown>): number | undefined {
   const value = input?.elapsed_ms ?? input?.elapsedMs;
-  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
-  if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value))) {
+  if (typeof value === "number" && Number.isFinite(value))
+    return Math.max(0, value);
+  if (
+    typeof value === "string" &&
+    value.trim() &&
+    !Number.isNaN(Number(value))
+  ) {
     return Math.max(0, Number(value));
   }
   return undefined;
@@ -554,7 +780,10 @@ function elapsedSeconds(input?: Record<string, unknown>): number {
   return Math.max(0, Math.floor((elapsedInputMs(input) ?? 0) / 1000));
 }
 
-function swarmLogText(event: LiveToolEvent, t: TimelineT): {
+function swarmLogText(
+  event: LiveToolEvent,
+  t: TimelineT,
+): {
   label: string;
   detail?: string;
 } | null {
@@ -571,20 +800,26 @@ function swarmLogText(event: LiveToolEvent, t: TimelineT): {
     const count = specs.length;
     return {
       label:
-        event.status === "running"
-          ? t.liveToolTimeline.parallelDispatching(count || undefined)
-          : t.liveToolTimeline.parallelTasksReturned(count || undefined),
+        event.status === "error"
+          ? t.liveToolTimeline.parallelDispatchFailed(count || undefined)
+          : event.status === "running"
+            ? t.liveToolTimeline.parallelDispatching(count || undefined)
+            : t.liveToolTimeline.parallelTasksReturned(count || undefined),
       detail:
-        roles.length > 0
-          ? t.liveToolTimeline.rolesWithNextStep(roles.join(" / "))
-          : t.liveToolTimeline.subtaskAggregation,
+        event.status === "error"
+          ? undefined
+          : roles.length > 0
+            ? t.liveToolTimeline.rolesWithNextStep(roles.join(" / "))
+            : t.liveToolTimeline.subtaskAggregation,
     };
   }
 
   if (event.name === "call_agent") {
     const role = stringInput(event.input, ["agent_id", "role", "name"]);
     return {
-      label: role ? t.liveToolTimeline.callSubAgent(role) : t.liveToolTimeline.callSubAgentShort,
+      label: role
+        ? t.liveToolTimeline.callSubAgent(role)
+        : t.liveToolTimeline.callSubAgentShort,
       detail: t.liveToolTimeline.focusedDelegation,
     };
   }
@@ -592,7 +827,9 @@ function swarmLogText(event: LiveToolEvent, t: TimelineT): {
   if (event.name === "bb_write") {
     const key = stringInput(event.input, ["key"]);
     return {
-      label: key ? t.liveToolTimeline.writeBlackboard(compactMiddle(key, 60)) : t.liveToolTimeline.writeBlackboardShort,
+      label: key
+        ? t.liveToolTimeline.writeBlackboard(compactMiddle(key, 60))
+        : t.liveToolTimeline.writeBlackboardShort,
       detail: t.liveToolTimeline.saveBlackboardFinding,
     };
   }
@@ -613,13 +850,18 @@ function swarmLogText(event: LiveToolEvent, t: TimelineT): {
   return null;
 }
 
-function codeLogText(event: LiveToolEvent, t: TimelineT): {
+function codeLogText(
+  event: LiveToolEvent,
+  t: TimelineT,
+): {
   label: string;
   detail?: string;
 } | null {
   if (event.name === "agent_thought") {
     return {
-      label: t.liveToolTimeline.thoughtDetailLabel(event.iteration || undefined),
+      label: t.liveToolTimeline.thoughtDetailLabel(
+        event.iteration || undefined,
+      ),
       detail: event.thought ?? t.liveToolTimeline.modelPublicReasoningFragment,
     };
   }
@@ -641,30 +883,39 @@ function codeLogText(event: LiveToolEvent, t: TimelineT): {
   }
 
   if (isSkillToolName(event.name)) {
-    const skillName = stringInput(event.input, ["skill", "skill_name", "name"]) || event.name;
-    const request = stringInput(event.input, ["user_request", "request", "query", "task", "prompt"]);
+    const skillName =
+      stringInput(event.input, ["skill", "skill_name", "name"]) || event.name;
+    const request = stringInput(event.input, [
+      "user_request",
+      "request",
+      "query",
+      "task",
+      "prompt",
+    ]);
     return {
       label: actionStatusLabel(
-        t,
         event,
-        ["正在应用技能", "已应用技能"],
-        ["Applying skill", "Applied skill"],
+        t.liveToolTimeline.applyingSkill,
         compactMiddle(skillName, 80),
       ),
-      detail: request ? compactMiddle(request, 180) : t.liveToolTimeline.invokeSkillProcess,
+      detail: request
+        ? compactMiddle(request, 180)
+        : t.liveToolTimeline.invokeSkillProcess,
     };
   }
 
   if (event.name === "planning") {
-    const request = stringInput(event.input, ["task", "prompt", "description", "summary"]);
+    const request = stringInput(event.input, [
+      "task",
+      "prompt",
+      "description",
+      "summary",
+    ]);
     return {
-      label: actionStatusLabel(
-        t,
-        event,
-        ["正在规划下一步", "已规划下一步"],
-        ["Planning next step", "Planned next step"],
-      ),
-      detail: request ? compactMiddle(request, 180) : t.liveToolTimeline.modelOrganizingNextStep,
+      label: actionStatusLabel(event, t.liveToolTimeline.planningNextStep),
+      detail: request
+        ? compactMiddle(request, 180)
+        : t.liveToolTimeline.modelOrganizingNextStep,
     };
   }
 
@@ -693,12 +944,7 @@ function codeLogText(event: LiveToolEvent, t: TimelineT): {
     const seconds = elapsedSeconds(event.input);
     if (event.status === "running") {
       return {
-        label: actionStatusLabel(
-          t,
-          event,
-          ["正在规划下一步", "已规划下一步"],
-          ["Planning next step", "Planned next step"],
-        ),
+        label: actionStatusLabel(event, t.liveToolTimeline.planningNextStep),
         detail:
           seconds > 0
             ? t.liveToolTimeline.modelOrganizingNextStepWithWait(seconds)
@@ -717,11 +963,20 @@ function codeLogText(event: LiveToolEvent, t: TimelineT): {
     };
   }
 
-  const path = stringInput(event.input, ["path", "file_path", "target_path", "cwd"]);
+  const path = stringInput(event.input, [
+    "path",
+    "file_path",
+    "target_path",
+    "cwd",
+  ]);
   const command = stringInput(event.input, ["command", "cmd", "script"]);
   const pattern = stringInput(event.input, ["pattern", "query"]);
   const description = stringInput(event.input, ["description", "summary"]);
-  const lineStart = stringInput(event.input, ["line_start", "start_line", "start"]);
+  const lineStart = stringInput(event.input, [
+    "line_start",
+    "start_line",
+    "start",
+  ]);
   const lineEnd = stringInput(event.input, ["line_end", "end_line", "end"]);
   const lineSuffix =
     lineStart && lineEnd
@@ -733,10 +988,8 @@ function codeLogText(event: LiveToolEvent, t: TimelineT): {
   if (event.name === "read_file" || event.name === "read_text_file") {
     return {
       label: actionStatusLabel(
-        t,
         event,
-        ["正在读取", "已读取"],
-        ["Reading", "Read"],
+        t.liveToolTimeline.readingFile,
         `${compactMiddle(path || "file")}${lineSuffix}`,
       ),
       detail: path ? undefined : t.liveToolTimeline.readFileToUnderstand,
@@ -746,10 +999,8 @@ function codeLogText(event: LiveToolEvent, t: TimelineT): {
   if (event.name === "list_cwd") {
     return {
       label: actionStatusLabel(
-        t,
         event,
-        ["正在浏览目录", "已浏览目录"],
-        ["Browsing directory", "Browsed directory"],
+        t.liveToolTimeline.browsingDirectory,
         compactMiddle(path || "."),
       ),
       detail: t.liveToolTimeline.viewDirectoryStructure,
@@ -759,10 +1010,8 @@ function codeLogText(event: LiveToolEvent, t: TimelineT): {
   if (event.name === "glob") {
     return {
       label: actionStatusLabel(
-        t,
         event,
-        ["正在搜索文件", "已搜索文件"],
-        ["Searching files", "Searched files"],
+        t.liveToolTimeline.searchingFiles,
         compactMiddle(pattern || path || "*"),
       ),
       detail: path ? t.liveToolTimeline.scopePath(path) : undefined,
@@ -772,84 +1021,77 @@ function codeLogText(event: LiveToolEvent, t: TimelineT): {
   if (event.name === "grep") {
     return {
       label: actionStatusLabel(
-        t,
         event,
-        ["正在搜索文本", "已搜索文本"],
-        ["Searching text", "Searched text"],
+        t.liveToolTimeline.searchingText,
         compactMiddle(pattern || "pattern"),
       ),
       detail: path ? t.liveToolTimeline.scopePath(path) : undefined,
     };
   }
 
-  if (event.name === "bash" || event.name === "exec_shell" || event.name === "shell_command") {
+  if (
+    event.name === "bash" ||
+    event.name === "exec_shell" ||
+    event.name === "shell_command"
+  ) {
     return {
       label: actionStatusLabel(
-        t,
         event,
-        ["正在运行命令", "已运行命令"],
-        ["Running command", "Ran command"],
+        t.liveToolTimeline.runningCommand,
         compactMiddle(description || command || "command"),
       ),
       detail: command && description ? command : undefined,
     };
   }
 
-  if (event.name === "write_file" || event.name === "write_text_file" || event.name === "create_file") {
+  if (
+    event.name === "write_file" ||
+    event.name === "write_text_file" ||
+    event.name === "create_file"
+  ) {
     const creating = event.name === "create_file";
     return {
       label: actionStatusLabel(
-        t,
         event,
-        creating ? ["正在创建文件", "已创建文件"] : ["正在写入文件", "已写入文件"],
-        creating ? ["Creating file", "Created file"] : ["Writing file", "Wrote file"],
+        creating
+          ? t.liveToolTimeline.creatingFile
+          : t.liveToolTimeline.writingFile,
         compactMiddle(path || "file"),
       ),
       detail: t.liveToolTimeline.writeFileContent,
     };
   }
 
-  if (event.name === "edit_code" || event.name === "edit_text_file" || event.name === "str_replace") {
+  if (
+    event.name === "edit_code" ||
+    event.name === "edit_text_file" ||
+    event.name === "str_replace"
+  ) {
     return {
       label: actionStatusLabel(
-        t,
         event,
-        ["正在编辑文件", "已编辑文件"],
-        ["Editing file", "Edited file"],
+        t.liveToolTimeline.editingFile,
         compactMiddle(path || "file"),
       ),
-      detail: pattern ? t.liveToolTimeline.matchPattern(compactMiddle(pattern)) : undefined,
+      detail: pattern
+        ? t.liveToolTimeline.matchPattern(compactMiddle(pattern))
+        : undefined,
     };
   }
 
   if (event.name === "git_status") {
     return {
-      label: actionStatusLabel(
-        t,
-        event,
-        ["正在读取 Git 状态", "已读取 Git 状态"],
-        ["Reading Git status", "Read Git status"],
-      ),
+      label: actionStatusLabel(event, t.liveToolTimeline.readingGitStatus),
     };
   }
   if (event.name === "git_diff") {
     return {
-      label: actionStatusLabel(
-        t,
-        event,
-        ["正在读取 Git 差异", "已读取 Git 差异"],
-        ["Reading Git diff", "Read Git diff"],
-      ),
+      label: actionStatusLabel(event, t.liveToolTimeline.readingGitDiff),
     };
   }
   if (event.name === "git_commit") {
     return {
-      label: actionStatusLabel(
-        t,
-        event,
-        ["正在提交 Git", "已提交 Git"],
-        ["Committing Git", "Committed Git"],
-      ),
+      label: actionStatusLabel(event, t.liveToolTimeline.committingGit),
     };
   }
 
@@ -867,7 +1109,8 @@ const CONTENT_PREVIEW_KEYS = [
 
 function normalizePreviewText(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  const text =
+    typeof value === "string" ? value : JSON.stringify(value, null, 2);
   const trimmed = text.trim();
   if (!trimmed) return undefined;
   const lines = trimmed.split(/\r?\n/);
@@ -900,7 +1143,10 @@ function getContentPreview(event: LiveToolEvent): string | undefined {
   return undefined;
 }
 
-function researchAdjustmentSummary(event: LiveToolEvent, t: TimelineT): string | undefined {
+function researchAdjustmentSummary(
+  event: LiveToolEvent,
+  t: TimelineT,
+): string | undefined {
   if (event.name !== "web_search") return undefined;
   if (event.status === "running") {
     return t.liveToolTimeline.collectingEvidence;
@@ -912,7 +1158,9 @@ function researchAdjustmentSummary(event: LiveToolEvent, t: TimelineT): string |
   if (/规模|增[长長]|CAGR|market size|forecast/i.test(query)) {
     return t.liveToolTimeline.marketSizeLeads;
   }
-  if (/品牌|竞争|格局|company|companies|Oura|Eight Sleep|床垫|床墊/i.test(query)) {
+  if (
+    /品牌|竞争|格局|company|companies|Oura|Eight Sleep|床垫|床墊/i.test(query)
+  ) {
     return t.liveToolTimeline.competitionLeads;
   }
   if (/技术|technology|AI|sensor|wearable|产品|product/i.test(query)) {
@@ -924,48 +1172,36 @@ function researchAdjustmentSummary(event: LiveToolEvent, t: TimelineT): string |
   return t.liveToolTimeline.roundResultsRead;
 }
 
-function timelineWord(t: TimelineT, zh: string, en: string): string {
-  return isChineseText(t.liveToolTimeline.searchingWeb) ? zh : en;
-}
-
 function statusText(event: LiveToolEvent, t: TimelineT): string {
   switch (event.status) {
     case "running":
-      return timelineWord(t, "\u8fdb\u884c\u4e2d", "Running");
+      return t.liveToolTimeline.statusRunning;
     case "done":
-      return timelineWord(t, "\u5df2\u5b8c\u6210", "Done");
+      return t.liveToolTimeline.statusDone;
     case "error":
-      return timelineWord(t, "\u5931\u8d25", "Failed");
+      return t.liveToolTimeline.statusFailed;
     case "waiting_approval":
-      return timelineWord(t, "\u7b49\u5f85\u5ba1\u6279", "Waiting approval");
+      return t.liveToolTimeline.statusWaitingApproval;
     default:
       return "";
   }
 }
 
 function statusClassName(status: LiveToolEvent["status"]): string {
-  if (status === "running") return "bg-primary/10 text-primary";
-  if (status === "error") return "bg-red-500/10 text-red-600 dark:text-red-400";
-  if (status === "waiting_approval") {
-    return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
-  }
-  return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+  return agentRunBadgeClass(status);
 }
 
 function detailTitle(
   t: TimelineT,
-  key: "input" | "thought" | "publicReasoning" | "result" | "observation" | "preview",
+  key:
+    | "input"
+    | "thought"
+    | "publicReasoning"
+    | "result"
+    | "observation"
+    | "preview",
 ): string {
-  const titles = {
-    input: ["\u8f93\u5165", "Input"],
-    thought: ["\u601d\u8003", "Thought"],
-    publicReasoning: ["\u53ef\u89c1\u63a8\u7406", "Public reasoning"],
-    result: ["\u7ed3\u679c", "Result"],
-    observation: ["\u89c2\u5bdf", "Observation"],
-    preview: ["\u5185\u5bb9\u9884\u89c8", "Live content preview"],
-  } as const;
-  const [zh, en] = titles[key];
-  return timelineWord(t, zh, en);
+  return t.liveToolTimeline.detailTitles[key];
 }
 
 function InlineSummaryRow({
@@ -980,10 +1216,10 @@ function InlineSummaryRow({
   return (
     <div
       className={cn(
-        "mt-1 ml-5 flex min-w-0 items-start gap-2 border-l pl-2 text-[10px] leading-4",
+        "mt-1 ml-5 flex min-w-0 items-start gap-2 border-l pl-2 text-xs leading-4",
         tone === "result"
-          ? "border-emerald-500/25 text-emerald-700/85 dark:text-emerald-400/85"
-          : "border-border/50 text-muted-foreground/85",
+          ? "border-success/25 text-success/85"
+          : "border-border-default text-muted-foreground/85",
       )}
     >
       <span className="shrink-0 rounded-sm bg-muted/60 px-1.5 py-0.5 font-medium text-muted-foreground">
@@ -1007,11 +1243,16 @@ function ToolEventRow({
   showAgent?: boolean;
   nested?: boolean;
 }) {
-  const iconCfg = TOOL_ICONS[event.name] ?? {
-    icon: TerminalIcon,
-    color: "text-muted-foreground",
-  };
-  const label = toolLabels[event.name] ?? event.name;
+  // Tool names carry suffixes the icon map doesn't (grep_text→grep,
+  // glob_files→glob) — fall back to the normalized base before the generic
+  // icon so search/file/shell steps stay visually distinct.
+  const iconCfg = TOOL_ICONS[event.name] ??
+    TOOL_ICONS[event.name.toLowerCase().replace(/_text/g, "")] ??
+    TOOL_ICONS[event.name.toLowerCase().replace(/_files?$/, "")] ?? {
+      icon: TerminalIcon,
+      color: "text-muted-foreground",
+    };
+  const label = toolLabels[event.name] ?? t.liveTools.genericAction;
   const Icon = iconCfg.icon;
   const modelReasoningOutput = (() => {
     if (event.name !== "model_reasoning") return undefined;
@@ -1027,7 +1268,9 @@ function ToolEventRow({
     event.name === "model_reasoning";
   const inputSummary = formatInputSummary(event.input);
   const outputSummary = formatOutputSummary(event.output);
-  const inputDetail = isSystemWorkLogEvent ? undefined : formatDetailBlock(event.input);
+  const inputDetail = isSystemWorkLogEvent
+    ? undefined
+    : formatDetailBlock(event.input);
   const outputDetail =
     event.name === "model_reasoning"
       ? modelReasoningOutput
@@ -1036,7 +1279,9 @@ function ToolEventRow({
         : formatDetailBlock(event.output);
   const thoughtDetail = formatDetailBlock(event.thought);
   const observationDetail = formatDetailBlock(event.observation);
-  const contentPreview = isSystemWorkLogEvent ? undefined : getContentPreview(event);
+  const contentPreview = isSystemWorkLogEvent
+    ? undefined
+    : getContentPreview(event);
   const researchSummary = researchAdjustmentSummary(event, t);
   const researchLog = researchLogText(event, t);
   const searchResults =
@@ -1045,36 +1290,51 @@ function ToolEventRow({
       : [];
   const swarmLog = researchLog ? null : swarmLogText(event, t);
   const codeLog = researchLog || swarmLog ? null : codeLogText(event, t);
-  const [open, setOpen] = useState(event.status === "running" || event.status === "error");
+  const [open, setOpen] = useState(
+    event.status === "running" || event.status === "error",
+  );
+  useEffect(() => {
+    if (event.status === "running" || event.status === "error") setOpen(true);
+  }, [event.id, event.status]);
   const inlineInputSummary =
-    inputSummary && !researchLog && !isSystemWorkLogEvent && inputSummary !== codeLog?.detail
+    inputSummary &&
+    !researchLog &&
+    !isSystemWorkLogEvent &&
+    inputSummary !== codeLog?.detail
       ? inputSummary
       : undefined;
   const inlineOutputSummary =
-    outputSummary && !researchLog && !isSystemWorkLogEvent && event.status !== "running"
+    outputSummary &&
+    !researchLog &&
+    !isSystemWorkLogEvent &&
+    event.status !== "running"
       ? outputSummary
       : undefined;
   const hasDetails = Boolean(
-    inputDetail || outputDetail || thoughtDetail || observationDetail || contentPreview,
+    inputDetail ||
+    outputDetail ||
+    thoughtDetail ||
+    observationDetail ||
+    contentPreview,
   );
 
   return (
     <div
       className={cn(
-        "relative transition-all duration-200",
-        nested ? "py-1 pl-2 text-[11px]" : "py-1.5 pl-2 text-xs",
-        event.status === "error" ? "text-muted-foreground" : "text-muted-foreground",
+        "relative transition-all duration-base",
+        nested ? "py-1 pl-2 text-xs" : "py-1.5 pl-2 text-xs",
+        event.status === "error" ? "text-destructive" : "text-muted-foreground",
       )}
     >
       <div className="flex items-center gap-2">
         {event.status === "running" ? (
-          <Loader2Icon className="size-3.5 animate-spin text-primary shrink-0" />
+          <Loader2Icon className="size-3.5 animate-spin text-success shrink-0" />
         ) : event.status === "waiting_approval" ? (
-          <ShieldAlertIcon className="size-3.5 text-yellow-500 shrink-0 animate-pulse" />
+          <ShieldAlertIcon className="size-3.5 text-warning shrink-0 animate-pulse" />
         ) : event.status === "error" ? (
-          <XCircleIcon className="size-3.5 text-red-500 shrink-0" />
+          <XCircleIcon className="size-3.5 text-destructive shrink-0" />
         ) : (
-          <CheckCircle2Icon className="size-3.5 text-green-500 shrink-0" />
+          <CheckCircle2Icon className="size-3.5 text-success shrink-0" />
         )}
 
         <Icon className={cn("size-3.5 shrink-0", iconCfg.color)} />
@@ -1083,7 +1343,9 @@ function ToolEventRow({
         </span>
 
         {showAgent && event.agentName && (
-          <span className="text-muted-foreground text-[10px]">· {event.agentName}</span>
+          <span className="text-muted-foreground text-xs">
+            · {event.agentName}
+          </span>
         )}
 
         {researchLog?.sources && researchLog.sources.length > 0 && (
@@ -1091,7 +1353,7 @@ function ToolEventRow({
             {researchLog.sources.slice(0, 3).map((source) => (
               <span
                 key={source}
-                className="max-w-20 truncate rounded-full border border-border/60 bg-background/80 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                className="max-w-20 truncate rounded-full border border-border-default bg-background/80 px-1.5 py-0.5 text-xs text-muted-foreground"
                 title={source}
               >
                 {source}
@@ -1103,32 +1365,45 @@ function ToolEventRow({
         <span className="ml-auto flex items-center gap-1">
           <span
             className={cn(
-              "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-              event.status === "running" ? "animate-pulse" : "",
+              "rounded-full px-1.5 py-0.5 text-xs font-medium",
+              agentRunStatusLightPulseClass(event.status) ?? "",
               statusClassName(event.status),
             )}
           >
             {statusText(event, t)}
           </span>
 
-          {event.status === "done" && event.durationMs != null && (
-          <span className="text-muted-foreground text-[10px]">
-            {event.durationMs < 1000
-              ? `${event.durationMs}ms`
-              : `${(event.durationMs / 1000).toFixed(1)}s`}
-          </span>
-          )}
+          {event.status === "done" &&
+            event.durationMs != null &&
+            event.durationMs >= 1 && (
+              <span className="text-muted-foreground text-xs">
+                {event.durationMs < 1000
+                  ? `${event.durationMs}ms`
+                  : `${(event.durationMs / 1000).toFixed(1)}s`}
+              </span>
+            )}
 
           {hasDetails && (
             <button
               type="button"
               className="flex size-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               onClick={() => setOpen((value) => !value)}
-              aria-label={open ? t.liveToolTimeline.collapseToolDetails : t.liveToolTimeline.expandToolDetails}
-              title={open ? t.liveToolTimeline.collapseToolDetails : t.liveToolTimeline.expandToolDetails}
+              aria-label={
+                open
+                  ? t.liveToolTimeline.collapseToolDetails
+                  : t.liveToolTimeline.expandToolDetails
+              }
+              title={
+                open
+                  ? t.liveToolTimeline.collapseToolDetails
+                  : t.liveToolTimeline.expandToolDetails
+              }
             >
               <ChevronDownIcon
-                className={cn("size-3.5 transition-transform", open ? "rotate-180" : "rotate-0")}
+                className={cn(
+                  "size-3.5 transition-transform",
+                  open ? "rotate-180" : "rotate-0",
+                )}
               />
             </button>
           )}
@@ -1136,7 +1411,7 @@ function ToolEventRow({
       </div>
 
       {researchLog?.detail && (
-        <div className="mt-2 ml-5 border-l border-border/60 pl-3 text-sm leading-6 text-foreground/80">
+        <div className="mt-2 ml-5 border-l border-border-default pl-3 text-sm leading-6 text-foreground/80">
           {researchLog.detail}
         </div>
       )}
@@ -1146,26 +1421,26 @@ function ToolEventRow({
       )}
 
       {swarmLog?.detail && (
-        <div className="mt-2 ml-5 border-l border-sky-500/25 pl-3 text-sm leading-6 text-foreground/80">
+        <div className="mt-2 ml-5 border-l border-chart-6/25 pl-3 text-sm leading-6 text-foreground/80">
           {swarmLog.detail}
         </div>
       )}
 
       {codeLog?.detail && (
-        <div className="mt-1 ml-5 break-words border-l border-border/60 pl-3 text-sm leading-6 text-foreground/75">
+        <div className="mt-1 ml-5 break-words border-l border-border-default pl-3 text-sm leading-6 text-foreground/75">
           {codeLog.detail}
         </div>
       )}
 
       {thoughtDetail && event.name !== "agent_thought" && (
-        <div className="mt-1 ml-5 border-l border-violet-500/25 pl-2 text-[11px] leading-5 text-violet-700 dark:text-violet-300">
+        <div className="mt-1 ml-5 border-l border-chart-1/25 pl-2 text-xs leading-5 text-chart-1">
           <span className="font-medium">{detailTitle(t, "thought")}: </span>
           {compactMiddle(thoughtDetail, 260)}
         </div>
       )}
 
       {observationDetail && (
-        <div className="mt-1 ml-5 border-l border-emerald-500/25 pl-2 text-[11px] leading-5 text-emerald-700 dark:text-emerald-300">
+        <div className="mt-1 ml-5 border-l border-success/25 pl-2 text-xs leading-5 text-success">
           <span className="font-medium">{detailTitle(t, "observation")}: </span>
           {compactMiddle(observationDetail, 260)}
         </div>
@@ -1173,42 +1448,42 @@ function ToolEventRow({
 
       {inlineInputSummary && (
         <InlineSummaryRow
-          label={timelineWord(t, "\u8f93\u5165", "Input")}
+          label={t.liveToolTimeline.detailTitles.input}
           value={inlineInputSummary}
         />
       )}
 
       {inlineOutputSummary && (
         <InlineSummaryRow
-          label={timelineWord(t, "\u7ed3\u679c", "Result")}
+          label={t.liveToolTimeline.detailTitles.result}
           value={inlineOutputSummary}
           tone="result"
         />
       )}
 
       {researchSummary && !researchLog && (
-        <div className="mt-1 ml-5 border-l border-sky-500/25 pl-2 text-[10px] leading-4 text-sky-700 dark:text-sky-300">
+        <div className="mt-1 ml-5 border-l border-chart-6/25 pl-2 text-xs leading-4 text-chart-6">
           {researchSummary}
         </div>
       )}
 
       {open && inputDetail && (
-        <div className="mt-2 ml-5 overflow-hidden border-l border-border/55 pl-2">
-          <div className="pb-1 text-[10px] font-medium text-muted-foreground">
+        <div className="mt-2 ml-5 overflow-hidden border-l border-border-default pl-2">
+          <div className="pb-1 text-xs font-medium text-muted-foreground">
             {detailTitle(t, "input")}
           </div>
-          <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/35 px-2 py-1.5 font-mono text-[10px] leading-4 text-foreground/80">
+          <pre className="max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/35 px-2 py-1.5 font-mono text-xs leading-4 text-foreground/80">
             {inputDetail}
           </pre>
         </div>
       )}
 
       {open && thoughtDetail && (
-        <div className="mt-2 ml-5 overflow-hidden border-l border-violet-500/25 pl-2">
-          <div className="pb-1 text-[10px] font-medium text-muted-foreground">
+        <div className="mt-2 ml-5 overflow-hidden border-l border-chart-1/25 pl-2">
+          <div className="pb-1 text-xs font-medium text-muted-foreground">
             {detailTitle(t, "thought")}
           </div>
-          <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-md bg-violet-500/5 px-2 py-1.5 font-mono text-[10px] leading-4 text-foreground/80">
+          <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-md bg-chart-1/5 px-2 py-1.5 font-mono text-xs leading-4 text-foreground/80">
             {thoughtDetail}
           </pre>
         </div>
@@ -1217,35 +1492,35 @@ function ToolEventRow({
       {open &&
         outputDetail &&
         (event.status !== "running" || event.name === "model_reasoning") && (
-        <div className="mt-2 ml-5 overflow-hidden border-l border-emerald-500/25 pl-2">
-          <div className="pb-1 text-[10px] font-medium text-muted-foreground">
-            {event.name === "model_reasoning"
-              ? detailTitle(t, "publicReasoning")
-              : detailTitle(t, "result")}
+          <div className="mt-2 ml-5 overflow-hidden border-l border-success/25 pl-2">
+            <div className="pb-1 text-xs font-medium text-muted-foreground">
+              {event.name === "model_reasoning"
+                ? detailTitle(t, "publicReasoning")
+                : detailTitle(t, "result")}
+            </div>
+            <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-md bg-success/5 px-2 py-1.5 font-mono text-xs leading-4 text-foreground/80">
+              {outputDetail}
+            </pre>
           </div>
-          <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-md bg-emerald-500/5 px-2 py-1.5 font-mono text-[10px] leading-4 text-foreground/80">
-            {outputDetail}
-          </pre>
-        </div>
-      )}
+        )}
 
       {open && observationDetail && (
-        <div className="mt-2 ml-5 overflow-hidden border-l border-emerald-500/25 pl-2">
-          <div className="pb-1 text-[10px] font-medium text-muted-foreground">
+        <div className="mt-2 ml-5 overflow-hidden border-l border-success/25 pl-2">
+          <div className="pb-1 text-xs font-medium text-muted-foreground">
             {detailTitle(t, "observation")}
           </div>
-          <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-md bg-emerald-500/5 px-2 py-1.5 font-mono text-[10px] leading-4 text-foreground/80">
+          <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-md bg-success/5 px-2 py-1.5 font-mono text-xs leading-4 text-foreground/80">
             {observationDetail}
           </pre>
         </div>
       )}
 
       {open && contentPreview && (
-        <div className="mt-2 ml-5 overflow-hidden border-l border-border/55 pl-2">
-          <div className="pb-1 text-[10px] font-medium text-muted-foreground">
+        <div className="mt-2 ml-5 overflow-hidden border-l border-border-default pl-2">
+          <div className="pb-1 text-xs font-medium text-muted-foreground">
             {detailTitle(t, "preview")}
           </div>
-          <pre className="max-h-36 overflow-hidden whitespace-pre-wrap break-words py-1 font-mono text-[10px] leading-4 text-foreground/80">
+          <pre className="max-h-36 overflow-hidden whitespace-pre-wrap break-words py-1 font-mono text-xs leading-4 text-foreground/80">
             {contentPreview}
           </pre>
         </div>
@@ -1266,27 +1541,29 @@ function SearchResultsInline({
   const visibleResults = expanded ? results : results.slice(0, collapsedCount);
   const hiddenCount = Math.max(0, results.length - visibleResults.length);
   return (
-    <div className="mt-2 ml-5 space-y-1 border-l border-border/60 pl-3">
+    <div className="mt-2 ml-5 space-y-1 border-l border-border-default pl-3">
       {visibleResults.map((result, index) => (
         <div
           key={`${result.url ?? result.title}-${index}`}
           className="flex min-w-0 items-start gap-2 text-xs leading-5 text-muted-foreground"
         >
-          <span className="w-4 shrink-0 text-right font-mono text-[10px] text-muted-foreground/70">
+          <span className="w-4 shrink-0 text-right font-mono text-xs text-muted-foreground/70">
             {index + 1}
           </span>
           {result.url ? (
-            <a
+            <RoutedWebLink
               href={result.url}
-              target="_blank"
-              rel="noreferrer"
+              openTargetSource="tool-search-result"
               className="min-w-0 truncate text-foreground/75 underline-offset-2 hover:text-foreground hover:underline"
               title={result.title}
             >
               {result.title}
-            </a>
+            </RoutedWebLink>
           ) : (
-            <span className="min-w-0 truncate text-foreground/75" title={result.title}>
+            <span
+              className="min-w-0 truncate text-foreground/75"
+              title={result.title}
+            >
               {result.title}
             </span>
           )}
@@ -1295,25 +1572,21 @@ function SearchResultsInline({
       {hiddenCount > 0 && (
         <button
           type="button"
-          className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+          className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
           onClick={() => setExpanded(true)}
         >
           <ChevronDownIcon className="size-3" />
-          {timelineWord(
-            t,
-            `\u5c55\u5f00\u5176\u4f59 ${hiddenCount} \u6761`,
-            `Show ${hiddenCount} more`,
-          )}
+          {t.liveToolTimeline.showMoreResults(hiddenCount)}
         </button>
       )}
       {expanded && results.length > collapsedCount && (
         <button
           type="button"
-          className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+          className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
           onClick={() => setExpanded(false)}
         >
           <ChevronDownIcon className="size-3 rotate-180" />
-          {timelineWord(t, "\u6536\u8d77\u7ed3\u679c", "Collapse results")}
+          {t.liveToolTimeline.collapseResults}
         </button>
       )}
     </div>
@@ -1356,9 +1629,18 @@ function GroupedTimeline({
             <button
               type="button"
               onClick={() => emitAgentWorkbenchFocus({ agentId })}
-              className="mb-1 flex w-full items-center gap-1.5 rounded-md px-3 py-1 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground"
+              className="mb-1 flex w-full items-center gap-1.5 rounded-md px-3 py-1 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground"
             >
-              <span className="size-1.5 rounded-lg bg-primary animate-pulse" />
+              <span
+                className={cn(
+                  "size-1.5 rounded-lg",
+                  group.events.some((event) => event.status === "error")
+                    ? "bg-destructive"
+                    : group.events.some((event) => event.status === "running")
+                      ? "animate-pulse bg-primary"
+                      : "bg-success",
+                )}
+              />
               {group.name}
             </button>
           )}
@@ -1381,13 +1663,16 @@ function GroupedTimeline({
 }
 
 function timelineAgentGroupId(event: LiveToolEvent): string | undefined {
-  if (event.parentToolUseId && event.subAgentRole) {
-    return `${event.parentToolUseId}:${event.subAgentRole}`;
-  }
-  return (
-    event.agentId ??
+  const lane =
+    (event.agentId && event.agentId !== event.subAgentRole
+      ? event.agentId
+      : undefined) ??
     event.subagentCodename ??
-    event.subAgentRole ??
-    event.agentName
-  );
+    event.agentId ??
+    event.agentName ??
+    event.subAgentRole;
+  if (event.parentToolUseId && lane) {
+    return `${event.parentToolUseId}:${lane}`;
+  }
+  return lane;
 }

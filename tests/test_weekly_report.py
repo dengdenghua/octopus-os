@@ -1,4 +1,5 @@
 """Tests for the weekly guard-telemetry report writer."""
+
 from __future__ import annotations
 
 import json
@@ -42,7 +43,9 @@ class TestComputeDelta:
 
     def test_up_direction(self) -> None:
         prev = {
-            "week_tag": "2026-21", "total_hits": 30, "judged_total": 10,
+            "week_tag": "2026-21",
+            "total_hits": 30,
+            "judged_total": 10,
         }
         cur = {"total_hits": 50, "judged_total": 30}
         d = _compute_delta(cur, prev)
@@ -72,7 +75,9 @@ class TestComputeDelta:
 
 
 def _write_report_with_summary(
-    report_dir: Path, week_tag: str, summary: dict,
+    report_dir: Path,
+    week_tag: str,
+    summary: dict,
 ) -> None:
     """Helper: drop a fake report file with embedded JSON fence."""
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -94,10 +99,14 @@ class TestPreviousReportSummary:
 
     def test_picks_most_recent(self, tmp_path: Path) -> None:
         _write_report_with_summary(
-            tmp_path, "2026-20", {"week_tag": "2026-20", "total_hits": 10},
+            tmp_path,
+            "2026-20",
+            {"week_tag": "2026-20", "total_hits": 10},
         )
         _write_report_with_summary(
-            tmp_path, "2026-21", {"week_tag": "2026-21", "total_hits": 30},
+            tmp_path,
+            "2026-21",
+            {"week_tag": "2026-21", "total_hits": 30},
         )
         prev = _previous_report_summary(tmp_path)
         assert prev["week_tag"] == "2026-21"
@@ -106,12 +115,17 @@ class TestPreviousReportSummary:
     def test_skips_current_week(self, tmp_path: Path, monkeypatch) -> None:
         # If the current week's report already exists, don't read it.
         from runtime.safety.evolution import weekly_report
+
         monkeypatch.setattr(weekly_report, "_iso_week_tag", lambda *a, **k: "2026-22")
         _write_report_with_summary(
-            tmp_path, "2026-21", {"week_tag": "2026-21", "total_hits": 30},
+            tmp_path,
+            "2026-21",
+            {"week_tag": "2026-21", "total_hits": 30},
         )
         _write_report_with_summary(
-            tmp_path, "2026-22", {"week_tag": "2026-22", "total_hits": 50},
+            tmp_path,
+            "2026-22",
+            {"week_tag": "2026-22", "total_hits": 50},
         )
         prev = _previous_report_summary(tmp_path)
         assert prev["week_tag"] == "2026-21"
@@ -128,7 +142,8 @@ class TestPreviousReportSummary:
     def test_no_json_fence_returns_none(self, tmp_path: Path) -> None:
         tmp_path.mkdir(exist_ok=True)
         (tmp_path / "2026-21.md").write_text(
-            "# Just markdown, no fence\n", encoding="utf-8",
+            "# Just markdown, no fence\n",
+            encoding="utf-8",
         )
         assert _previous_report_summary(tmp_path) is None
 
@@ -142,17 +157,17 @@ class TestWriteWeeklyReport:
     def test_skip_when_empty_default(self, tmp_path: Path) -> None:
         sink = GuardTelemetry(path=tmp_path / "hits.jsonl")
         path = write_weekly_report(
-            sink=sink, report_dir=tmp_path / "reports",
+            sink=sink,
+            report_dir=tmp_path / "reports",
         )
         assert path is None
-        assert not (tmp_path / "reports").exists() or not list(
-            (tmp_path / "reports").iterdir()
-        )
+        assert not (tmp_path / "reports").exists() or not list((tmp_path / "reports").iterdir())
 
     def test_force_write_on_empty(self, tmp_path: Path) -> None:
         sink = GuardTelemetry(path=tmp_path / "hits.jsonl")
         path = write_weekly_report(
-            sink=sink, report_dir=tmp_path / "reports",
+            sink=sink,
+            report_dir=tmp_path / "reports",
             skip_if_empty=False,
         )
         assert path is not None
@@ -169,7 +184,8 @@ class TestWriteWeeklyReport:
         for _ in range(10):
             sink.record("secret-leak guard", "security")
         path = write_weekly_report(
-            sink=sink, report_dir=tmp_path / "reports",
+            sink=sink,
+            report_dir=tmp_path / "reports",
         )
         assert path is not None
         body = path.read_text(encoding="utf-8")
@@ -180,12 +196,14 @@ class TestWriteWeeklyReport:
         assert "code-smell" in body
 
     def test_filename_is_week_tag(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         sink = GuardTelemetry(path=tmp_path / "hits.jsonl")
         sink.record("guard-a", "security")
         path = write_weekly_report(
-            sink=sink, report_dir=tmp_path / "reports",
+            sink=sink,
+            report_dir=tmp_path / "reports",
             now=datetime(2026, 6, 1),
         )
         assert path is not None
@@ -195,7 +213,8 @@ class TestWriteWeeklyReport:
         sink = GuardTelemetry(path=tmp_path / "hits.jsonl")
         sink.record("guard-a", "security")
         path = write_weekly_report(
-            sink=sink, report_dir=tmp_path / "reports",
+            sink=sink,
+            report_dir=tmp_path / "reports",
         )
         body = path.read_text(encoding="utf-8")
         assert "first run" in body.lower() or "no previous" in body.lower()
@@ -204,7 +223,8 @@ class TestWriteWeeklyReport:
         report_dir = tmp_path / "reports"
         # Simulate last week's report.
         _write_report_with_summary(
-            report_dir, "2026-22",
+            report_dir,
+            "2026-22",
             {"week_tag": "2026-22", "total_hits": 10, "judged_total": 5},
         )
         # This week's data.
@@ -212,7 +232,8 @@ class TestWriteWeeklyReport:
         for _ in range(20):
             sink.record("guard-a", "security")
         path = write_weekly_report(
-            sink=sink, report_dir=report_dir,
+            sink=sink,
+            report_dir=report_dir,
             now=datetime(2026, 6, 1),  # week 23
         )
         body = path.read_text(encoding="utf-8")
@@ -225,12 +246,14 @@ class TestWriteWeeklyReport:
         for _ in range(5):
             sink.record("guard-a", "security")
         path = write_weekly_report(
-            sink=sink, report_dir=tmp_path / "reports",
+            sink=sink,
+            report_dir=tmp_path / "reports",
             now=datetime(2026, 6, 1),
         )
         body = path.read_text(encoding="utf-8")
         # Ensure the trailing JSON parses.
         import re
+
         match = re.search(r"```json\n(.+?)\n```\s*$", body, re.DOTALL)
         assert match is not None
         summary = json.loads(match.group(1))
@@ -243,13 +266,17 @@ class TestWriteWeeklyReport:
         sink.record("guard-a", "security")
         report_dir = tmp_path / "reports"
         first = write_weekly_report(
-            sink=sink, report_dir=report_dir, now=datetime(2026, 6, 1),
+            sink=sink,
+            report_dir=report_dir,
+            now=datetime(2026, 6, 1),
         )
         # Add more hits and rerun the same week.
         for _ in range(10):
             sink.record("guard-b", "code-smell")
         second = write_weekly_report(
-            sink=sink, report_dir=report_dir, now=datetime(2026, 6, 1),
+            sink=sink,
+            report_dir=report_dir,
+            now=datetime(2026, 6, 1),
         )
         assert first == second  # same path
         body = second.read_text(encoding="utf-8")
@@ -267,7 +294,8 @@ class TestTuningCandidatesInReport:
         for h in hits:
             sink.record_verdict("good-guard", h.ts, "true_positive")
         path = write_weekly_report(
-            sink=sink, report_dir=tmp_path / "reports",
+            sink=sink,
+            report_dir=tmp_path / "reports",
         )
         body = path.read_text(encoding="utf-8")
         assert "Tuning candidates" in body
@@ -283,7 +311,8 @@ class TestTuningCandidatesInReport:
         for h in hits:
             sink.record_verdict("noisy-guard", h.ts, "false_positive")
         path = write_weekly_report(
-            sink=sink, report_dir=tmp_path / "reports",
+            sink=sink,
+            report_dir=tmp_path / "reports",
         )
         body = path.read_text(encoding="utf-8")
         # Per-label table still has it (operator visibility) but the

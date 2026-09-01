@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Fail closed unless the host firewall is loaded before networking and login.
+set -euo pipefail
+set -f
+
+POLICY_TOOL=/usr/lib/echo-os/echo-firewall-policy.py
+SYSTEMCTL=/usr/bin/systemctl
+BUSCTL=/usr/bin/busctl
+FIREWALL_CMD=/usr/bin/firewall-cmd
+NFT=/usr/sbin/nft
+
+if [[ -n "${ECHO_FIREWALL_POLICY_TOOL:-}${ECHO_FIREWALL_SYSTEMCTL:-}${ECHO_FIREWALL_BUSCTL:-}${ECHO_FIREWALL_CMD:-}${ECHO_FIREWALL_NFT:-}" ]]; then
+  [[ "${ECHO_FIREWALL_SOURCE_TEST:-}" == "USE-SOURCE-RUNTIME" ]] || {
+    echo "firewall runtime overrides require the explicit source-test sentinel" >&2
+    exit 2
+  }
+  POLICY_TOOL="${ECHO_FIREWALL_POLICY_TOOL:-$POLICY_TOOL}"
+  SYSTEMCTL="${ECHO_FIREWALL_SYSTEMCTL:-$SYSTEMCTL}"
+  BUSCTL="${ECHO_FIREWALL_BUSCTL:-$BUSCTL}"
+  FIREWALL_CMD="${ECHO_FIREWALL_CMD:-$FIREWALL_CMD}"
+  NFT="${ECHO_FIREWALL_NFT:-$NFT}"
+fi
+
+for runtime in "$POLICY_TOOL" "$SYSTEMCTL" "$BUSCTL" "$FIREWALL_CMD" "$NFT"; do
+  [[ "$runtime" == /* && -f "$runtime" && ! -L "$runtime" && -x "$runtime" ]] || {
+    echo "firewall health runtime is missing or unsafe: $runtime" >&2
+    exit 1
+  }
+done
+
+DEFAULT_ZONE="$($POLICY_TOOL verify-runtime --machine)"
+[[ "$DEFAULT_ZONE" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] || {
+  echo "firewall policy verifier returned an unsafe default zone" >&2
+  exit 1
+}
+"$SYSTEMCTL" is-active --quiet firewalld.service || {
+  echo "firewalld service is not active" >&2
+  exit 1
+}
+"$BUSCTL" --system status org.fedoraproject.FirewallD1 >/dev/null || {
+  echo "firewalld does not own its system D-Bus service" >&2
+  exit 1
+}
+[[ "$($FIREWALL_CMD --state)" == "running" ]] || {
+  echo "firewalld runtime state is not running" >&2
+  exit 1
+}
+RUNTIME_DEFAULT="$($FIREWALL_CMD --get-default-zone)"
+[[ "$RUNTIME_DEFAULT" == "$DEFAULT_ZONE" ]] || {
+  echo "firewalld runtime and persistent default zones disagree" >&2
+  exit 1
+}
+ZONE_FOUND=0
+for zone in $($FIREWALL_CMD --get-zones); do
+  [[ "$zone" == "$DEFAULT_ZONE" ]] && ZONE_FOUND=1
+done
+[[ "$ZONE_FOUND" -eq 1 ]] || {
+  echo "configured firewalld default zone does not exist at runtime" >&2
+  exit 1
+}
+"$NFT" list table inet firewalld >/dev/null || {
+  echo "firewalld nftables table is not loaded" >&2
+  exit 1
+}
+
+INBOUND=admin-defined
+if [[ "$DEFAULT_ZONE" == "echo-public" ]]; then
+  [[ "$($FIREWALL_CMD --zone=echo-public --get-target)" == "default" ]] || {
+    echo "Echo public zone target is not the default reject policy" >&2
+    exit 1
+  }
+  [[ "$($FIREWALL_CMD --zone=echo-public --get-services)" == "dhcpv6-client" ]] || {
+    echo "Echo public zone exposes an unexpected service" >&2
+    exit 1
+  }
+  for query in --get-ports --get-protocols --get-source-ports --list-rich-rules; do
+    [[ -z "$($FIREWALL_CMD --zone=echo-public "$query")" ]] || {
+      echo "Echo public zone exposes an unexpected rule: $query" >&2
+      exit 1
+    }
+  done
+  set +e
+  "$FIREWALL_CMD" --zone=echo-public --query-forward >/dev/null 2>&1
+  FORWARD_STATUS=$?
+  "$FIREWALL_CMD" --zone=echo-public --query-masquerade >/dev/null 2>&1
+  MASQUERADE_STATUS=$?
+  set -e
+  [[ "$FORWARD_STATUS" -eq 1 && "$MASQUERADE_STATUS" -eq 1 ]] || {
+    echo "Echo public zone unexpectedly enables forwarding or masquerading" >&2
+    exit 1
+  }
+  INBOUND=deny
+fi
+
+printf 'ECHO_FIREWALL_READY backend=nftables default-zone=%s inbound=%s forward=explicit\n' \
+  "$DEFAULT_ZONE" "$INBOUND"

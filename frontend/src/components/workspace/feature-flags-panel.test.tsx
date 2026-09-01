@@ -16,7 +16,7 @@ const _SAMPLE = {
       default: false,
       description: "Surface AI-generated follow-ups",
       experimental: true,
-      primary_env: "OCTOPUS_FF_UI_AMBIENT_SUGGESTIONS",
+      primary_env: "ECHO_FF_UI_AMBIENT_SUGGESTIONS",
       legacy_env: [],
     },
     {
@@ -26,8 +26,8 @@ const _SAMPLE = {
       default: true,
       description: "Self-repair scheduler",
       experimental: false,
-      primary_env: "OCTOPUS_FF_REGENERATION_ENABLED",
-      legacy_env: ["OCTOPUS_REGEN_ENABLED"],
+      primary_env: "ECHO_FF_REGENERATION_ENABLED",
+      legacy_env: ["ECHO_REGEN_ENABLED"],
     },
   ],
 };
@@ -103,9 +103,9 @@ describe("FeatureFlagsPanel", () => {
 
     await waitFor(() => {
       const calls = fetchMock.mock.calls.map((c) => c[0] as string);
-      expect(
-        calls.some((u) => u.endsWith("/api/feature-flags/reload")),
-      ).toBe(true);
+      expect(calls.some((u) => u.endsWith("/api/feature-flags/reload"))).toBe(
+        true,
+      );
     });
   });
 });

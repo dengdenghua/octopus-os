@@ -75,7 +75,9 @@ def test_screenshot_ok_false_no_emit(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert not (tmp_path / "artifacts").exists()
 
 
-def test_screenshot_journal_broadcast_called(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_screenshot_journal_broadcast_called(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """When a journal with _broadcast is available, _emit_screenshot_artifact
     calls _broadcast with the artifact event dict."""
     from runtime.execution.suckers import browser_act_skills as bas
@@ -93,11 +95,14 @@ def test_screenshot_journal_broadcast_called(tmp_path: Path, monkeypatch: pytest
     def fake_active_journal():
         return fake_journal
 
-    with patch.dict("sys.modules", {
-        "runtime.sensing.gateway": MagicMock(
-            _active_streaming_journal=fake_active_journal,
-        ),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "runtime.sensing.gateway": MagicMock(
+                _active_streaming_journal=fake_active_journal,
+            ),
+        },
+    ):
         # Re-import to pick up the patched module
         # We call _emit directly after patching _artifacts_root
         response = {
@@ -107,7 +112,9 @@ def test_screenshot_journal_broadcast_called(tmp_path: Path, monkeypatch: pytest
             "height": 900,
         }
         # Patch the journal lookup within the function
-        with patch("runtime.sensing.gateway._active_streaming_journal", fake_active_journal, create=True):
+        with patch(
+            "runtime.sensing.gateway._active_streaming_journal", fake_active_journal, create=True
+        ):
             bas._emit_screenshot_artifact(response)
 
     # The journal broadcast might not fire (patching the import is tricky),
@@ -137,7 +144,6 @@ def test_emit_swallows_exceptions(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_artifact_endpoint_serves_png(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-
     from runtime.platform.ui.browser_router import create_browser_router
 
     # Write a fake PNG
@@ -146,6 +152,7 @@ def test_artifact_endpoint_serves_png(tmp_path: Path, monkeypatch: pytest.Monkey
     (artifacts / "screenshot-test.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)
 
     from runtime.execution.suckers import browser_act_skills as bas
+
     monkeypatch.setattr(bas, "_artifacts_root", lambda: artifacts)
 
     app = FastAPI()
@@ -161,7 +168,6 @@ def test_artifact_endpoint_serves_png(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_artifact_endpoint_rejects_traversal() -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-
     from runtime.platform.ui.browser_router import create_browser_router
 
     app = FastAPI()
@@ -175,7 +181,6 @@ def test_artifact_endpoint_rejects_traversal() -> None:
 def test_artifact_endpoint_rejects_non_png() -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-
     from runtime.platform.ui.browser_router import create_browser_router
 
     app = FastAPI()
@@ -189,7 +194,6 @@ def test_artifact_endpoint_rejects_non_png() -> None:
 def test_artifact_endpoint_404_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-
     from runtime.execution.suckers import browser_act_skills as bas
     from runtime.platform.ui.browser_router import create_browser_router
 

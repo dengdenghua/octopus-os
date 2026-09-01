@@ -1,4 +1,3 @@
-
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -44,18 +43,21 @@ export default function HomePage() {
               <div className="absolute inset-[-6px] rounded-xl border border-white/[0.06] bg-white/[0.025] blur-xl" />
               <div className="relative flex size-[72px] items-center justify-center rounded-xl border border-white/12 bg-white/[0.04] text-white/80 shadow-sm shadow-black/25">
                 <svg width="36" height="36" viewBox="0 0 512 512" fill="none">
-                  <path d="M256 32C167.6 32 96 103.6 96 192c0 52.8 25.6 99.6 65.2 128.8C128 348 96 404 96 448c0 17.7 14.3 32 32 32s32-14.3 32-32c0-28 16-68 40-96 8 4 16.4 7.2 25.2 9.6-4 26.4-9.2 56-9.2 86.4 0 17.7 14.3 32 32 32s32-14.3 32-32c0-26.4 4-52 8-76 12-2.4 23.6-6 34.8-11.2C348 384 368 420 368 448c0 17.7 14.3 32 32 32s32-14.3 32-32c0-48-36-108-72-147.2C399.6 271.6 416 233.6 416 192c0-88.4-71.6-160-160-160zm0 64c53 0 96 43 96 96s-43 96-96 96-96-43-96-96 43-96 96-96z" fill="currentColor"/>
-                  <circle cx="224" cy="176" r="20" fill="currentColor"/>
-                  <circle cx="288" cy="176" r="20" fill="currentColor"/>
-                  <circle cx="228" cy="180" r="10" fill="#08080c"/>
-                  <circle cx="292" cy="180" r="10" fill="#08080c"/>
+                  <path
+                    d="M256 32C167.6 32 96 103.6 96 192c0 52.8 25.6 99.6 65.2 128.8C128 348 96 404 96 448c0 17.7 14.3 32 32 32s32-14.3 32-32c0-28 16-68 40-96 8 4 16.4 7.2 25.2 9.6-4 26.4-9.2 56-9.2 86.4 0 17.7 14.3 32 32 32s32-14.3 32-32c0-26.4 4-52 8-76 12-2.4 23.6-6 34.8-11.2C348 384 368 420 368 448c0 17.7 14.3 32 32 32s32-14.3 32-32c0-48-36-108-72-147.2C399.6 271.6 416 233.6 416 192c0-88.4-71.6-160-160-160zm0 64c53 0 96 43 96 96s-43 96-96 96-96-43-96-96 43-96 96-96z"
+                    fill="currentColor"
+                  />
+                  <circle cx="224" cy="176" r="20" fill="currentColor" />
+                  <circle cx="288" cy="176" r="20" fill="currentColor" />
+                  <circle cx="228" cy="180" r="10" fill="#08080c" />
+                  <circle cx="292" cy="180" r="10" fill="#08080c" />
                 </svg>
               </div>
             </div>
           </div>
 
           <h1 className="mb-2 text-5xl font-bold tracking-tight md:text-7xl">
-            <span className="inline-block text-white">Octopus</span>
+            <span className="inline-block text-white">Echo</span>
           </h1>
 
           <p className="mb-1.5 max-w-lg text-lg text-white/45 md:text-xl">
@@ -100,8 +102,12 @@ export default function HomePage() {
       <div className="relative z-10 mx-auto max-w-5xl px-6 pb-20">
         <div className="mb-5 flex items-center justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.18em] text-white/35">Agent OS Runtime</div>
-            <div className="mt-1 text-sm text-white/55">{t.landing.capabilitiesPanel}</div>
+            <div className="text-xs uppercase tracking-[0.18em] text-white/35">
+              Agent OS Runtime
+            </div>
+            <div className="mt-1 text-sm text-white/55">
+              {t.landing.capabilitiesPanel}
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

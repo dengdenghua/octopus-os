@@ -12,13 +12,15 @@ export type InspectSelected = InspectPayload & {
   threadId?: string;
 };
 
-const EVT = "octopus:inspect-selected";
+const EVT = "echo:inspect-selected";
 
 export function dispatchInspectSelected(
   detail: Omit<InspectSelected, "capturedAt">,
 ) {
   const enriched: InspectSelected = { ...detail, capturedAt: Date.now() };
-  window.dispatchEvent(new CustomEvent<InspectSelected>(EVT, { detail: enriched }));
+  window.dispatchEvent(
+    new CustomEvent<InspectSelected>(EVT, { detail: enriched }),
+  );
 }
 
 export function onInspectSelected(
@@ -28,7 +30,8 @@ export function onInspectSelected(
   const wrapped = (e: Event) => {
     const ce = e as CustomEvent<InspectSelected>;
     if (!ce.detail) return;
-    if (threadId && ce.detail.threadId && ce.detail.threadId !== threadId) return;
+    if (threadId && ce.detail.threadId && ce.detail.threadId !== threadId)
+      return;
     handler(ce.detail);
   };
   window.addEventListener(EVT, wrapped);

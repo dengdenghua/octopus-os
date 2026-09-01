@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "echo-recorder": {
+      "command": "python3",
+      "args": ["./scripts/echo_recorder_mcp.py"],
+      "cwd": ".",
+      "env_vars": [
+        "ECHO_BACKEND_URL",
+        "ECHO_AUTH_TOKEN"
+      ],
+      "startup_timeout_sec": 10,
+      "tool_timeout_sec": 60
+    }
+  }
+}
+

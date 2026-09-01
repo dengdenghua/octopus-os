@@ -6,11 +6,7 @@
 
 ## Exports
 
-- `BUILTIN_SKILLS`
-- `COMPUTER_USE_SKILL`
-- `FILE_EDIT_SKILL`
 - `PRESET_FACTORIES`
-- `SHELL_EXEC_SKILL`
 - `Arm`
 - `ArmPool`
 - `ByteStreamBuffer`
@@ -33,11 +29,6 @@
 - `ShellExecEvent`
 - `ShellExecTelemetry`
 - `ShellStateManager`
-- `SkillBuilder`
-- `SkillCapability`
-- `SkillCategory`
-- `SkillDefinition`
-- `SkillInterface`
 - `ToolCallContext`
 - `ToolCallResult`
 - `ToolDefinition`
@@ -62,6 +53,7 @@
 | Module | Summary |
 | --- | --- |
 | `base.py` | — |
+| `enterprise_cache.py` | Enterprise Arm 本地决策层(Ganglion). |
 | `extension_registry.py` | Dynamic extension registry — hot-pluggable skill registration. |
 | `lazy_loader.py` | Lazy loading patterns — on-demand resource initialization. |
 | `output_buffer.py` | Dual-layer output buffer for shell command output. |
@@ -72,24 +64,26 @@
 | `shell_state.py` | Shell environment state snapshot model. |
 | `shell_state_manager.py` | Shell state snapshot manager. |
 | `shell_telemetry.py` | Shell execution telemetry events. |
-| `skill_manifest.py` | Self-describing skill definition. |
 | `specialized.py` | — |
 | `tool_registry.py` | MCP-style tool registry — declarative tool registration pattern. |
 
 ## Who imports this
 
-**7** file(s) reference this package:
+**10** file(s) reference this package:
 
 - **`runtime/cli_core.py/`** · 1 file(s)
   - `runtime/cli_core.py`
 - **`runtime/cli_run.py/`** · 1 file(s)
   - `runtime/cli_run.py`
-- **`runtime/execution/`** · 3 file(s)
+- **`runtime/execution/`** · 5 file(s)
   - `runtime/execution/agents/base.py`
   - `runtime/execution/agents/loader.py`
+  - `runtime/execution/swarm/_runtime_helpers.py`
+  - `runtime/execution/swarm/drive.py`
   - `runtime/execution/swarm/runtime.py`
-- **`runtime/platform/`** · 1 file(s)
-  - `runtime/platform/ui/app.py`
+- **`runtime/platform/`** · 2 file(s)
+  - `runtime/platform/ui/_app_meta.py`
+  - `runtime/platform/ui/_app_routers_extra.py`
 - **`runtime/sensing/`** · 1 file(s)
   - `runtime/sensing/gateway/terminal_router.py`
 

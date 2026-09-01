@@ -1,0 +1,406 @@
+name: Build Linux AppImage
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: linux-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    name: Build Linux AppImage
+    runs-on: ubuntu-24.04
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
+      ECHO_SOURCEMAP: "0"
+      UV_PYTHON_DOWNLOADS: never
+      CI: "true"
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install packaged desktop smoke dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libgtk-3-0 libnss3 libasound2t64 libgbm1
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.26.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22.23.2"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Setup pinned uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.25"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked desktop build dependencies
+        run: >-
+          uv sync --locked --python 3.11.9
+          --extra desktop-core
+          --extra desktop-build
+
+      - name: Configure trusted first-party plugin publisher
+        env:
+          ECHO_PLUGIN_SIGNING_PUBLIC_KEY: ${{ vars.ECHO_PLUGIN_SIGNING_PUBLIC_KEY }}
+          ECHO_PLUGIN_SIGNING_PUBLISHER_ID: ${{ vars.ECHO_PLUGIN_SIGNING_PUBLISHER_ID }}
+          ECHO_PLUGIN_SIGNING_KEY_ID: ${{ vars.ECHO_PLUGIN_SIGNING_KEY_ID }}
+        run: ./.venv/bin/python scripts/configure_builtin_plugin_publisher.py
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare pinned Codex Linux runtime
+        working-directory: frontend
+        run: pnpm codex:prepare:linux
+
+      - name: Verify pinned Codex before packaging
+        run: |
+          set -euo pipefail
+          codex_root="$PWD/extras/desktop/build/codex"
+          codex="$codex_root/bin/codex"
+          manifest_path="$codex_root/echo-codex-bundle.json"
+          test -f "$codex" || { echo "Pinned Codex executable is missing: $codex"; exit 1; }
+          test -f "$manifest_path" || { echo "Pinned Codex bundle manifest is missing: $manifest_path"; exit 1; }
+          schema=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["schema"])' "$manifest_path")
+          target=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["target"])' "$manifest_path")
+          phase=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["fileHashPhase"])' "$manifest_path")
+          version=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$manifest_path")
+          [[ "$schema" == "echo.codex_bundle.v1" ]] || { echo "manifest schema=$schema"; exit 1; }
+          [[ "$version" == "0.149.0" ]] || { echo "manifest version=$version"; exit 1; }
+          [[ "$phase" == "pre-package" ]] || { echo "manifest fileHashPhase=$phase"; exit 1; }
+          [[ "$target" == "x86_64-unknown-linux-musl" || "$target" == "aarch64-unknown-linux-musl" ]] || { echo "manifest target=$target"; exit 1; }
+
+          required=(
+            "bin/codex"
+            "bin/codex-code-mode-host"
+            "codex-path/rg"
+            "codex-resources/zsh/bin/zsh"
+            "codex-resources/bwrap"
+            "codex-package.json"
+            "LICENSE"
+            "NOTICE"
+            "third-party/codex-rust/THIRD_PARTY_LICENSES-codex-cli.html"
+            "third-party/codex-rust/THIRD_PARTY_LICENSES.md"
+            "third-party/ratatui/LICENSE"
+            "third-party/ripgrep/COPYING"
+            "third-party/ripgrep/THIRD_PARTY_LICENSES.html"
+            "third-party/ripgrep/THIRD_PARTY_LICENSES.md"
+            "third-party/ripgrep/LICENSE-MIT"
+            "third-party/ripgrep/UNLICENSE"
+          )
+          for relative in "${required[@]}"; do
+            file="$codex_root/$relative"
+            test -f "$file" || { echo "Pinned Codex bundle file is missing: $relative"; exit 1; }
+            actual=$(sha256sum "$file" | awk '{print $1}')
+            expected=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["files"].get(sys.argv[2],""))' "$manifest_path" "$relative")
+            [[ "$actual" == "$expected" ]] || { echo "Pinned Codex bundle file does not match its source manifest: $relative"; exit 1; }
+          done
+
+          # Every boosted executable must be an ELF binary (magic 7f 45 4c 46).
+          for relative in \
+            "bin/codex" \
+            "bin/codex-code-mode-host" \
+            "codex-path/rg" \
+            "codex-resources/zsh/bin/zsh" \
+            "codex-resources/bwrap"; do
+            magic=$(od -An -t x1 -N 4 "$codex_root/$relative" | tr -d ' ')
+            [[ "$magic" == "7f454c46" ]] || { echo "not ELF: $relative ($magic)"; exit 1; }
+            test -x "$codex_root/$relative" || { echo "not executable: $relative"; exit 1; }
+          done
+
+          "$codex" app-server --help
+          test $? -eq 0 || { echo "Pinned Codex App Server failed its pre-packaging startup check"; exit 1; }
+
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: pnpm typecheck
+
+      - name: Build backend (PyInstaller)
+        working-directory: extras/desktop
+        env:
+          PYTHON_EXE: ${{ github.workspace }}/.venv/bin/python
+        run: pnpm backend:build:linux
+
+      - name: Verify PyInstaller backend before packaging
+        run: |
+          set -euo pipefail
+          backend="$PWD/extras/desktop/build/backend/echo-backend"
+          test -f "$backend" || { echo "PyInstaller backend is missing: $backend"; exit 1; }
+          magic=$(od -An -t x1 -N 4 "$backend" | tr -d ' ')
+          [[ "$magic" == "7f454c46" ]] || { echo "backend is not ELF: $magic"; exit 1; }
+          "$backend" --help
+          test $? -eq 0 || { echo "PyInstaller backend failed its pre-packaging startup check"; exit 1; }
+
+      - name: Sync locked desktop test dependencies
+        run: >-
+          uv sync --locked --python 3.11.9
+          --extra dev
+          --extra desktop-core
+          --extra desktop-build
+
+      - name: Verify desktop packaging contracts
+        run: >-
+          ./.venv/bin/python -m pytest
+          tests/test_desktop_config_packaging.py
+          -q
+
+      - name: Build canonical Electron AppImage
+        working-directory: frontend
+        run: pnpm electron:build:linux
+
+      - name: Verify packaged backend and Codex are present and runnable
+        run: |
+          set -euo pipefail
+          appimage=$(ls "$PWD/frontend/release/"Echo-Setup-Linux-*.AppImage)
+          case "$appimage" in
+            *"$GITHUB_SHA"*) ;;
+            *) echo "AppImage filename is not bound to GITHUB_SHA: $appimage"; exit 1 ;;
+          esac
+
+          # AppImage requires FUSE; extract instead of mounting on the runner.
+          extract_dir="$(mktemp -d)/squashfs-root"
+          (cd "$(dirname "$extract_dir")" && "$appimage" --appimage-extract >/dev/null)
+          resources="$extract_dir/resources"
+          backend="$resources/backend/echo-backend"
+          codex="$resources/codex"
+          codex_bin="$codex/bin/codex"
+          test -f "$backend" || { echo "Packaged backend is missing: $backend"; exit 1; }
+          test -f "$codex_bin" || { echo "Packaged Codex is missing: $codex_bin"; exit 1; }
+          test -f "$codex/echo-codex-bundle.json" || { echo "Packaged Codex manifest is missing"; exit 1; }
+          test ! -e "$resources/extensions/workbuddy-connectors" || {
+            echo "Desktop package must not embed the WorkBuddy marketplace snapshot"; exit 1;
+          }
+
+          packaged_licenses=(
+            "LICENSE"
+            "NOTICE"
+            "third-party/codex-rust/THIRD_PARTY_LICENSES-codex-cli.html"
+            "third-party/codex-rust/THIRD_PARTY_LICENSES.md"
+            "third-party/ratatui/LICENSE"
+            "third-party/ripgrep/COPYING"
+            "third-party/ripgrep/THIRD_PARTY_LICENSES.html"
+            "third-party/ripgrep/THIRD_PARTY_LICENSES.md"
+            "third-party/ripgrep/LICENSE-MIT"
+            "third-party/ripgrep/UNLICENSE"
+          )
+          for relative in "${packaged_licenses[@]}"; do
+            test -f "$codex/$relative" || { echo "Packaged Codex license file is missing: $relative"; exit 1; }
+            actual=$(sha256sum "$codex/$relative" | awk '{print $1}')
+            expected=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["files"].get(sys.argv[2],""))' "$codex/echo-codex-bundle.json" "$relative")
+            [[ "$actual" == "$expected" ]] || { echo "Packaged Codex license hash changed: $relative"; exit 1; }
+          done
+
+          "$codex_bin" app-server --help
+          test $? -eq 0 || { echo "Packaged Codex App Server failed its startup check"; exit 1; }
+
+          # Run the backend from a first-launch materialized layout against the
+          # packaged config template, then require /readyz.
+          smoke_root="$(mktemp -d)"
+          backend_port=18766
+          config="$smoke_root/config.yaml"
+          node -e 'const m=require(process.argv[1]);m.ensureDesktopConfigFile({bundledPath:process.argv[2],targetPath:process.argv[3]});m.ensureDesktopResources({bundledRoot:process.argv[4],targetRoot:process.argv[5]});' \
+            "$PWD/frontend/electron/desktop-config.cjs" \
+            "$resources/config.desktop.yaml" \
+            "$config" "$resources" "$smoke_root/resources"
+          printf '%s\n' '  users:' '    release-smoke: "bcrypt:$2b$04$KWFHX0cmIsgqSTQ23AnuouwO21q.Yz8ZP017wkIhGLfDU6Yg4ruoW"' >>"$config"
+
+          ECHO_DESKTOP=1 \
+          ECHO_DATA_DIR="$smoke_root/data" \
+          ECHO_RESOURCES_DIR="$smoke_root/resources" \
+          ECHO_CODEX_EXECUTABLE="$codex_bin" \
+           "$backend" serve --config "$config" --host 127.0.0.1 --port "$backend_port" \
+            >"$smoke_root/backend.stdout.log" 2>"$smoke_root/backend.stderr.log" &
+          backend_pid=$!
+          ready=0
+          deadline=$(( SECONDS + 90 ))
+          while [ $SECONDS -lt $deadline ] && kill -0 "$backend_pid" 2>/dev/null; do
+            if curl -fsS "http://127.0.0.1:$backend_port/readyz" >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 0.5
+          done
+          clip_studio=0
+          if [ "$ready" -eq 1 ]; then
+            access_token=$(curl -fsS -H "Content-Type: application/json" \
+              --data '{"username":"release-smoke","password":"release-smoke-password"}' \
+              "http://127.0.0.1:$backend_port/api/auth/local/login" \
+              | python3 -c 'import json,sys; token=json.load(sys.stdin).get("access_token"); raise SystemExit(1) if not isinstance(token,str) or not token else print(token)') || true
+            if [ -n "$access_token" ] && curl -fsS -H "Authorization: Bearer $access_token" \
+              "http://127.0.0.1:$backend_port/api/plugins/clip-studio/health" \
+              | python3 -c 'import json,sys; value=json.load(sys.stdin); raise SystemExit(0 if value.get("ok") is True and value.get("plugin") == "clip_studio" else 1)'; then
+              clip_studio=1
+            fi
+          fi
+          kill "$backend_pid" 2>/dev/null || true
+          wait "$backend_pid" 2>/dev/null || true
+          if [ "$ready" -ne 1 ]; then
+            echo "--- backend stdout ---"; cat "$smoke_root/backend.stdout.log" 2>/dev/null || true
+            echo "--- backend stderr ---"; cat "$smoke_root/backend.stderr.log" 2>/dev/null || true
+            echo "Packaged backend did not reach /readyz"
+            exit 1
+          fi
+          if [ "$clip_studio" -ne 1 ]; then
+            echo "Packaged Clip Studio runtime failed its health check"
+            exit 1
+          fi
+
+          # Exercise the actual packaged Electron shell, not only its embedded
+          # executables. A bounded first launch must materialize writable state,
+          # load the production renderer, start the bundled backend and exit
+          # cleanly through the application's smoke lifecycle.
+          app_executable="$extract_dir/echo"
+          app_user_data="$smoke_root/app-user-data"
+          app_stdout="$smoke_root/app.stdout.log"
+          app_stderr="$smoke_root/app.stderr.log"
+          app_port=18767
+          test -x "$app_executable" || { echo "Packaged Electron executable is missing: $app_executable"; exit 1; }
+          test -s "$resources/app-update.yml" || { echo "Packaged updater channel is missing"; exit 1; }
+          python3 - "$resources/app-update.yml" <<'PY'
+          import pathlib, sys
+          entries = {}
+          for line in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+              if not line.strip():
+                  continue
+              key, separator, value = line.partition(":")
+              if not separator or key.strip() in entries:
+                  raise SystemExit("packaged updater channel is malformed")
+              entries[key.strip()] = value.strip()
+          expected = {"owner": "dengdenghua", "repo": "echo-os", "provider": "github", "updaterCacheDirName": "echo-frontend-updater"}
+          if entries != expected:
+              raise SystemExit(f"packaged updater channel mismatch: {entries!r}")
+          PY
+          ELECTRON_RUN_AS_NODE=1 "$app_executable" -e \
+            'const fs=require("fs"),p=require("path"),r=process.argv[1],v=JSON.parse(fs.readFileSync(p.join(r,"package.json"),"utf8")).version;if(v!=="6.8.9"||!fs.statSync(p.join(r,"out/main.js")).isFile())process.exit(2)' \
+            "$resources/app.asar/node_modules/electron-updater"
+          ECHO_BACKEND_URL="http://127.0.0.1:$app_port" \
+          ECHO_SMOKE=1 \
+          ECHO_SMOKE_HOLD_MS=1000 \
+            timeout --signal=TERM --kill-after=10s 120s \
+            xvfb-run -a "$app_executable" --user-data-dir="$app_user_data" \
+            >"$app_stdout" 2>"$app_stderr" &
+          app_pid=$!
+          app_ready=0
+          app_renderer=0
+          deadline=$(( SECONDS + 90 ))
+          while [ $SECONDS -lt $deadline ] && kill -0 "$app_pid" 2>/dev/null; do
+            if curl -fsS "http://127.0.0.1:$app_port/readyz" >/dev/null 2>&1; then
+              app_ready=1
+            fi
+            if grep -q "SMOKE OK: echo-app://app/" "$app_stdout" 2>/dev/null; then
+              app_renderer=1
+            fi
+            if [ "$app_ready" -eq 1 ] && [ "$app_renderer" -eq 1 ]; then
+              break
+            fi
+            sleep 0.5
+          done
+          set +e
+          wait "$app_pid"
+          app_status=$?
+          set -e
+          if grep -q "SMOKE OK: echo-app://app/" "$app_stdout" 2>/dev/null; then
+            app_renderer=1
+          fi
+          backend_stopped=0
+          for _ in $(seq 1 40); do
+            if ! curl -fsS "http://127.0.0.1:$app_port/readyz" >/dev/null 2>&1; then
+              backend_stopped=1
+              break
+            fi
+            sleep 0.25
+          done
+          if [ "$app_status" -ne 0 ] || [ "$app_ready" -ne 1 ] || [ "$app_renderer" -ne 1 ] || [ "$backend_stopped" -ne 1 ]; then
+            echo "--- packaged app stdout ---"; cat "$app_stdout" 2>/dev/null || true
+            echo "--- packaged app stderr ---"; cat "$app_stderr" 2>/dev/null || true
+            echo "Packaged Electron first-launch smoke failed (status=$app_status backend=$app_ready renderer=$app_renderer stopped=$backend_stopped)"
+            exit 1
+          fi
+          test -f "$app_user_data/config.yaml" || { echo "Packaged app did not materialize config.yaml"; exit 1; }
+          test -d "$app_user_data/resources" || { echo "Packaged app did not materialize resources"; exit 1; }
+
+      - name: Create commit-bound checksum
+        working-directory: frontend/release
+        run: |
+          set -euo pipefail
+          appimages=(Echo-Setup-Linux-*-${GITHUB_SHA}.AppImage)
+          test "${#appimages[@]}" -eq 1
+          appimage=${appimages[0]}
+          update_assets=("$appimage" "$appimage.blockmap" latest-linux.yml)
+          for asset in "${update_assets[@]}"; do test -s "$asset"; done
+          version=$(node -p 'require("../package.json").version')
+          "$GITHUB_WORKSPACE/.venv/bin/python" \
+            "$GITHUB_WORKSPACE/packaging/desktop/verify-electron-update-metadata.py" \
+            --metadata latest-linux.yml \
+            --asset-root . \
+            --platform linux \
+            --expected-version "$version" \
+            --expected-revision "$GITHUB_SHA"
+          echo "$(sha256sum "$appimage" | awk '{print $1}') *$appimage" > SHA256SUMS
+          sha256sum "${update_assets[@]}" > UPDATE-SHA256SUMS-Linux
+          cat SHA256SUMS
+          cat UPDATE-SHA256SUMS-Linux
+
+      - name: Attest canonical installer provenance
+        id: installer-provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: |
+            frontend/release/Echo-Setup-Linux-*.AppImage
+            frontend/release/Echo-Setup-Linux-*.AppImage.blockmap
+            frontend/release/latest-linux.yml
+
+      - name: Retain installer provenance bundle
+        run: >-
+          cp "${{ steps.installer-provenance.outputs.bundle-path }}"
+          frontend/release/Echo-Setup-Linux-provenance.sigstore.json
+
+      - name: List release artifacts
+        working-directory: frontend/release
+        run: |
+          ls -R .
+          du -h Echo-Setup-Linux-*.AppImage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Echo-Setup-Linux-${{ github.sha }}
+          path: |
+            frontend/release/Echo-Setup-Linux-*.AppImage
+            frontend/release/SHA256SUMS
+            frontend/release/UPDATE-SHA256SUMS-Linux
+            frontend/release/Echo-Setup-Linux-provenance.sigstore.json
+            frontend/release/*.blockmap
+            frontend/release/*.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload portable (unpacked)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Echo-Portable-Linux-${{ github.sha }}
+          path: frontend/release/linux-unpacked/**
+          if-no-files-found: error
+          retention-days: 30

@@ -9,6 +9,7 @@ These tests mock call_subagent so they run fast without spawning real
 subagents. The contract is that delegation_skills calls call_subagent
 with the right arguments and handles results correctly.
 """
+
 from __future__ import annotations
 
 from typing import Any

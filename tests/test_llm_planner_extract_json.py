@@ -20,10 +20,10 @@ These tests pin the new behavior:
 * Braces inside JSON string literals never break the scanner.
 * Truly-absent JSON and malformed JSON surface distinguishable errors.
 """
+
 from __future__ import annotations
 
 import pytest
-
 from runtime.core.cerebrum.llm_planner import (
     LLMPlanner,
     PlannerError,
@@ -61,7 +61,7 @@ class TestScanBalancedObject:
 
     def test_wrong_start_returns_none(self):
         """Defensive: caller must pass an index pointing at ``{``."""
-        assert _scan_balanced_object('not a brace', 0) is None
+        assert _scan_balanced_object("not a brace", 0) is None
 
 
 # ═══════════════════════════════════════════════════════════
@@ -82,13 +82,13 @@ def planner() -> LLMPlanner:
 
 class TestExtractJSONFenced:
     def test_fenced_block_happy_path(self, planner):
-        text = '''Sure, here is the plan:
+        text = """Sure, here is the plan:
 
 ```json
 {"reasoning": "short", "nodes": [{"skill": "read_file"}]}
 ```
 
-Let me know if you want changes.'''
+Let me know if you want changes."""
         out = planner._extract_json(text)
         assert out["reasoning"] == "short"
         assert out["nodes"][0]["skill"] == "read_file"
@@ -129,9 +129,9 @@ class TestExtractJSONAdversarial:
         prefer the first valid dict. Not wrong per se — just
         pinning the documented behavior so a later change doesn't
         silently flip it."""
-        text = '''{"example": true}
+        text = """{"example": true}
 
-{"nodes": [{"skill": "x"}]}'''
+{"nodes": [{"skill": "x"}]}"""
         out = planner._extract_json(text)
         assert out == {"example": True}  # first-match wins
 
@@ -140,7 +140,7 @@ class TestExtractJSONAdversarial:
         assert planner._extract_json(text) == {"nodes": []}
 
     def test_leading_prose_no_fence(self, planner):
-        text = "The plan is:\n{\"nodes\": [1, 2, 3]}"
+        text = 'The plan is:\n{"nodes": [1, 2, 3]}'
         assert planner._extract_json(text) == {"nodes": [1, 2, 3]}
 
 
@@ -167,10 +167,10 @@ class TestExtractJSONFencedFallback:
         """A fenced block that ISN'T valid JSON must not short-circuit
         the scan — otherwise a corrupt fenced section would prevent
         us from finding a valid one later in the text."""
-        text = '''```json
+        text = """```json
 {this is bad
 ```
 
-{"nodes": []}'''
+{"nodes": []}"""
         out = planner._extract_json(text)
         assert out == {"nodes": []}

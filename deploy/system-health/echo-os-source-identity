@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Read the immutable, build-captured Echo OS source identity.
+set -euo pipefail
+
+MODE="${1:---machine}"
+[[ "$#" -le 1 && ( "$MODE" == "--machine" || "$MODE" == "--commit" ) ]] || {
+  echo "usage: echo-os-source-identity [--machine|--commit]" >&2
+  exit 2
+}
+
+VERIFIER=/usr/lib/echo-os/os-source-identity.py
+MANIFEST=/usr/lib/echo-os/os-source-identity.json
+if [[ "${ECHO_OS_SOURCE_IDENTITY_TEST_MODE:-}" == USE-TEST-INPUTS ]]; then
+  VERIFIER="${ECHO_OS_SOURCE_IDENTITY_VERIFIER:-$VERIFIER}"
+  MANIFEST="${ECHO_OS_SOURCE_IDENTITY_MANIFEST:-$MANIFEST}"
+fi
+[[ "$VERIFIER" == /* && "$MANIFEST" == /* ]] || {
+  echo "Echo OS source identity paths must be absolute" >&2
+  exit 1
+}
+[[ -x "$VERIFIER" && ! -L "$VERIFIER" && -f "$MANIFEST" && ! -L "$MANIFEST" ]] || {
+  echo "Echo OS immutable source identity runtime is incomplete" >&2
+  exit 1
+}
+
+record="$(/usr/bin/python3 "$VERIFIER" verify --manifest "$MANIFEST" --machine)"
+[[ "$record" != *$'\n'* ]] || {
+  echo "Echo OS source identity verifier returned multiple records" >&2
+  exit 1
+}
+IFS=$'\t' read -r repository commit tree manifest_sha256 extra <<<"$record"
+[[ -n "$repository" && "$commit" =~ ^[0-9a-f]{40}$ && \
+   "$tree" =~ ^[0-9a-f]{40}$ && "$manifest_sha256" =~ ^[0-9a-f]{64}$ && \
+   -z "${extra:-}" ]] || {
+  echo "Echo OS source identity verifier returned an invalid record" >&2
+  exit 1
+}
+
+if [[ "$MODE" == "--commit" ]]; then
+  printf '%s\n' "$commit"
+else
+  printf '%s\t%s\t%s\t%s\n' \
+    "$repository" "$commit" "$tree" "$manifest_sha256"
+fi

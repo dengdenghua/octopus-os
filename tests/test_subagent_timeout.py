@@ -10,6 +10,7 @@ Coverage
 5. event_emitter exceptions are swallowed (don't crash the runner)
 6. Round counting: timeout at round 2 → rounds_completed=2
 """
+
 from __future__ import annotations
 
 import time
@@ -26,6 +27,7 @@ def _reset_bridge():
         set_sub_agent_runner,
         set_subagent_registry,
     )
+
     set_sub_agent_runner(None)
     set_subagent_registry(None)
     yield
@@ -39,6 +41,7 @@ def _reset_bridge():
 def _install_runner(fn):
     """Register *fn* as the legacy _RUNNER and return it."""
     from runtime.execution.subagents.bridge import set_sub_agent_runner
+
     set_sub_agent_runner(fn)
     return fn
 
@@ -130,13 +133,15 @@ def test_event_emitter_receives_sub_tool_start():
         # Simulate two tool calls across two rounds.
         for rnd in (1, 2):
             if emitter:
-                emitter({
-                    "type": "sub_tool_start",
-                    "agent_id": subagent_name,
-                    "round": rnd,
-                    "skill": f"fetch_url_{rnd}",
-                    "args_preview": f"https://example.com/{rnd}",
-                })
+                emitter(
+                    {
+                        "type": "sub_tool_start",
+                        "agent_id": subagent_name,
+                        "round": rnd,
+                        "skill": f"fetch_url_{rnd}",
+                        "args_preview": f"https://example.com/{rnd}",
+                    }
+                )
         return "done"
 
     _install_runner(_emitting_runner)
@@ -170,8 +175,15 @@ def test_event_emitter_exception_does_not_crash_runner():
     def _emitting_runner(prompt, *, subagent_name, context):
         emitter = context.get("event_emitter")
         if emitter:
-            emitter({"type": "sub_tool_start", "agent_id": subagent_name,
-                     "round": 1, "skill": "test_skill", "args_preview": ""})
+            emitter(
+                {
+                    "type": "sub_tool_start",
+                    "agent_id": subagent_name,
+                    "round": 1,
+                    "skill": "test_skill",
+                    "args_preview": "",
+                }
+            )
         return "survived"
 
     _install_runner(_emitting_runner)
@@ -200,12 +212,26 @@ def test_rounds_completed_reflects_progress_before_timeout():
         emitter = context.get("event_emitter")
         # Round 1 completes quickly.
         if emitter:
-            emitter({"type": "sub_tool_start", "agent_id": subagent_name,
-                     "round": 1, "skill": "quick_tool", "args_preview": ""})
+            emitter(
+                {
+                    "type": "sub_tool_start",
+                    "agent_id": subagent_name,
+                    "round": 1,
+                    "skill": "quick_tool",
+                    "args_preview": "",
+                }
+            )
         # Round 2 starts but then the runner hangs.
         if emitter:
-            emitter({"type": "sub_tool_start", "agent_id": subagent_name,
-                     "round": 2, "skill": "slow_tool", "args_preview": ""})
+            emitter(
+                {
+                    "type": "sub_tool_start",
+                    "agent_id": subagent_name,
+                    "round": 2,
+                    "skill": "slow_tool",
+                    "args_preview": "",
+                }
+            )
         time.sleep(5)  # hang — will be interrupted by timeout
         return "never"
 

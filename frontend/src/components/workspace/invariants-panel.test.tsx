@@ -36,7 +36,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mockOnce(body: unknown, init: Partial<{ ok: boolean; status: number }> = {}) {
+function mockOnce(
+  body: unknown,
+  init: Partial<{ ok: boolean; status: number }> = {},
+) {
   fetchMock.mockResolvedValueOnce({
     ok: init.ok ?? true,
     status: init.status ?? 200,

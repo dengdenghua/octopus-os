@@ -1,74 +1,211 @@
-# Octopus OS · NAS 桌面 appliance 部署栈
+# Echo OS · NAS 桌面 appliance 部署栈
 # ───────────────────────────────────────────────────────────────
 # 原生路线:桌面即系统主页 + Docker 应用启动器。装在任意带 Docker 的
 # NAS / 主机上,浏览器打开即原生桌面,自动发现并点亮已装的 Docker 应用。
 #
 # 启动:
-#   ./deploy/appliance/prepare-agent-wheel.sh   # P1 去 fork:先备好 agent wheel
-#   ./deploy/appliance/prepare-agent-webui.sh   # P2 去 fork:再备好 agent 工作台前端
+#   ./deploy/appliance/prepare-agent-bundle.sh  # 同一 Agent 源码构建并校验全部制品
 #   cd deploy/appliance
 #   docker compose up -d --build
 #   浏览器打开 http://<NAS_IP>:8000/#/desktop
 #
-# 注(P1/P2):os 不再 fork agent 的 runtime/ 与工作台前端,改装 pinned agent 依赖 +
-# 在 /agent-ui/ serve 独立构建的 agent webui。构建前必须先跑两个 prepare 脚本:
-#   - prepare-agent-wheel.sh → agent wheel(投喂 Dockerfile 的 --find-links)
-#   - prepare-agent-webui.sh → agent 工作台前端(base=/agent-ui/,投喂 OCTOPUS_AGENT_WEBUI_DIST)
+# OS 不再 fork Agent runtime 和部署资源；工作台是 OS 自有的窄客户端。统一准备脚本会从
+# 一个源码身份生成 wheel + resources + Codex，并在构建和启动时再次校验。
 #
 # 关键点:
-#   * OCTOPUS_APPLIANCE=1   启用启动器应用注册器(/api/appliance/*)
-#   * 挂载 docker.sock       让注册器读取/启停宿主容器
+#   * ECHO_APPLIANCE=1   启用启动器应用注册器(/api/appliance/*)
+#   * docker-control 独占 socket，仅暴露启动器控制和受信 Hub 生命周期
 #   * 挂载 NAS 存储卷         供桌面文件区使用(P2 文件管理器)
 #
-# ⚠ 安全:挂载 docker.sock = 容器获得宿主 root 等价权限(CasaOS /
-#   Portainer 等 NAS 面板同此惯例)。启停应用在应用层经 approval 审批门
-#   把关(见 appliance/app_registry/router.py)。仅在可信内网部署。
+# ⚠ 安全:只有无宿主端口的 docker-control sidecar 持有 socket，启动后降权并
+#   只实现 launcher 控制与代理侧重算的受信安装/更新/卸载。Echo/Agent 主进程不再获得
+#   宿主 root 等价能力，也无法提交任意镜像、卷、端口或 Compose 配置。
 #
 # CasaOS / ZimaOS 一键安装:本文件含 x-casaos 元数据,可直接在
 #   CasaOS「自定义安装 → 导入 compose」中粘贴使用。
 
-name: octopus-os
+name: echo-os
 
 services:
-  octopus-os:
+  docker-control:
+    image: ${ECHO_OS_IMAGE:-echo-os:latest}
+    container_name: echo-docker-control
+    restart: unless-stopped
+    user: "0:0"
+    entrypoint: ["python", "-m", "appliance.docker_proxy"]
+    command: ["--host", "0.0.0.0", "--port", "2375"]
+    environment:
+      ECHO_DOCKER_SOCK: /var/run/docker.sock
+      ECHO_PUID: ${PUID:-1000}
+      ECHO_PGID: ${PGID:-1000}
+      ECHO_DOCKER_PROXY_USER: echo
+      ECHO_DOCKER_PROXY_TOKEN: ${ECHO_DOCKER_PROXY_TOKEN:?generate a 32+ character secret}
+      ECHO_DOCKER_DATA_ROOT_EXPECTED: ${ECHO_DOCKER_DATA_ROOT:-/var/lib/docker}
+      ECHO_DOCKER_DATA_ROOT_MOUNT: /run/echo-host/docker-data
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${ECHO_DOCKER_DATA_ROOT:-/var/lib/docker}:/run/echo-host/docker-data:ro
+    expose:
+      - "2375"
+    networks:
+      - docker-control
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      sh.echo.hide: "1"
+      sh.echo.control-protected: "true"
+      sh.echo.hub.data-copy-provider: "true"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:2375/health',headers={'X-Echo-Proxy-Token':os.environ['ECHO_DOCKER_PROXY_TOKEN']}); urllib.request.urlopen(r,timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  lan-discovery:
+    image: ${ECHO_OS_IMAGE:-echo-os:latest}
+    container_name: echo-lan-discovery
+    restart: unless-stopped
+    user: "65534:65534"
+    entrypoint: ["python", "-m", "appliance.lan_discovery_proxy"]
+    network_mode: host
+    environment:
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    mem_limit: 64m
+    labels:
+      sh.echo.hide: "1"
+      sh.echo.control-protected: "true"
+      sh.echo.hub.lan-discovery-provider: "true"
+    healthcheck:
+      test: ["CMD", "python", "-m", "appliance.lan_discovery_proxy", "--check-network"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
+
+  echo-os:
     build:
       context: ../..
       dockerfile: Dockerfile
-    image: octopus-os:latest
-    container_name: octopus-os
+    image: ${ECHO_OS_IMAGE:-echo-os:latest}
+    container_name: echo-os
     restart: unless-stopped
+    user: "0:0"
     ports:
-      - "${PORT:-8000}:8000"
+      - "${ECHO_BIND_ADDRESS:-0.0.0.0}:${PORT:-8000}:8000"
+      - "${ECHO_DEVICE_LINK_BIND_ADDRESS:-0.0.0.0}:${ECHO_DEVICE_LINK_PORT:-8765}:${ECHO_DEVICE_LINK_PORT:-8765}"
     environment:
       # 启用 NAS 桌面 appliance profile(应用注册器 + 单用户认证随之挂载)
-      OCTOPUS_APPLIANCE: "1"
+      ECHO_APPLIANCE: "1"
+      ECHO_DEVICE_LINK_HOST: ${ECHO_DEVICE_LINK_HOST:-}
+      ECHO_DEVICE_LINK_PORT: ${ECHO_DEVICE_LINK_PORT:-8765}
+      # 容器内自动探测只能得到容器网段；只使用浏览器 LAN Host 或上方显式配置。
+      ECHO_DEVICE_LINK_AUTO_HOST_FALLBACK: "0"
+      ECHO_DEVICE_SYNC_PORT: ${ECHO_DEVICE_SYNC_PORT:-8000}
       # 「消费而非 fork」:appliance 路由 / 企业版 PM 技能不再改 agent 源码,
       # 改由 agent 官方扩展点加载(见 runtime/platform/extensions.py)。
-      OCTOPUS_APP_EXTENSIONS: appliance.extension
-      OCTOPUS_SKILL_EXTENSIONS: appliance.pm_skills:register_pm_skills
+      ECHO_APP_EXTENSIONS: appliance.extension
+      ECHO_SKILL_EXTENSIONS: appliance.pm_skills:register_pm_skills
       # 管理员密码:不设则首启随机生成并打印到容器日志(docker compose logs)。
       # 设置后即为登录密码(用户名固定 admin),持久化到 data 卷,改此值不影响已设密码。
-      OCTOPUS_ADMIN_PASSWORD: ${OCTOPUS_ADMIN_PASSWORD:-}
-      # 容器内访问宿主 Docker 的 socket 路径(下方 volume 挂到此处)
-      OCTOPUS_DOCKER_SOCK: /var/run/docker.sock
-      OCTOPUS_LOG_LEVEL: ${OCTOPUS_LOG_LEVEL:-INFO}
+      ECHO_ADMIN_PASSWORD: ${ECHO_ADMIN_PASSWORD:-}
+      # 设为拥有宿主 data/NAS 目录的用户与组 ID；入口完成状态目录迁移后永久降权。
+      ECHO_PUID: ${PUID:-1000}
+      ECHO_PGID: ${PGID:-1000}
+      # 只连同栈内部窄代理；主进程不挂宿主 socket。
+      ECHO_DOCKER_HOST: http://docker-control:2375
+      ECHO_DOCKER_PROXY_TOKEN: ${ECHO_DOCKER_PROXY_TOKEN:?generate a 32+ character secret}
+      # 反代/FQDN 部署必须显式声明；私网 IP、localhost、*.local、单标签 LAN 名免配。
+      ECHO_APPLIANCE_TRUSTED_HOSTS: ${ECHO_APPLIANCE_TRUSTED_HOSTS:-}
+      ECHO_APPLIANCE_TRUSTED_ORIGINS: ${ECHO_APPLIANCE_TRUSTED_ORIGINS:-}
+      # 默认 CSP 只允许同源 iframe/connect；外置应用必须逐 origin 放行，禁止 *。
+      ECHO_APPLIANCE_FRAME_ORIGINS: ${ECHO_APPLIANCE_FRAME_ORIGINS:-}
+      ECHO_APPLIANCE_CONNECT_ORIGINS: ${ECHO_APPLIANCE_CONNECT_ORIGINS:-}
+      # Uvicorn 只接受这些直连代理的 X-Forwarded-*；禁止使用 *。
+      FORWARDED_ALLOW_IPS: ${ECHO_TRUSTED_PROXY_IPS:-127.0.0.1}
+      ECHO_LOG_LEVEL: ${ECHO_LOG_LEVEL:-INFO}
+      # 上传前保留空间、单文件上限、共享目录逻辑配额与崩溃临时文件回收窗口。
+      ECHO_UPLOAD_RESERVE_BYTES: ${ECHO_UPLOAD_RESERVE_BYTES:-536870912}
+      ECHO_UPLOAD_MAX_BYTES: ${ECHO_UPLOAD_MAX_BYTES:-53687091200}
+      ECHO_UPLOAD_STALE_SECONDS: ${ECHO_UPLOAD_STALE_SECONDS:-86400}
+      ECHO_UPLOAD_MAX_SESSIONS: ${ECHO_UPLOAD_MAX_SESSIONS:-64}
+      ECHO_SHARE_QUOTAS_JSON: ${ECHO_SHARE_QUOTAS_JSON:-}
+      # NAS_STORAGE 若直接绑定某个 OMV 共享目录（而非文件系统根），必须填该共享 UUID；
+      # 家庭成员权限会以它为虚拟根，不按宿主目录名猜测。
+      ECHO_NAS_OMV_SHARED_FOLDER_REF: ${ECHO_NAS_OMV_SHARED_FOLDER_REF:-}
       # LLM 可选:不配也能用桌面/启动器/文件;配上才有对话 Agent
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # 企业版 PM 编程接入(可选):配置后 Agent 获得 pm_list_projects /
       # pm_list_tasks / pm_create_task 工具,能在企业版里列项目/建任务。
-      # 指向同机部署的企业版(见 octopus-enterprise/docker-compose.yml)。
-      OCTOPUS_PM_URL: ${OCTOPUS_PM_URL:-}
-      OCTOPUS_PM_TOKEN: ${OCTOPUS_PM_TOKEN:-}
-      OCTOPUS_PM_TENANT: ${OCTOPUS_PM_TENANT:-}
+      # 指向同机部署的企业版(见 echo-enterprise/docker-compose.yml)。
+      ECHO_PM_URL: ${ECHO_PM_URL:-}
+      ECHO_PM_TOKEN: ${ECHO_PM_TOKEN:-}
+      ECHO_PM_TENANT: ${ECHO_PM_TENANT:-}
     volumes:
-      # 应用注册器读取/启停宿主容器(root 等价,见上方安全说明)
-      - /var/run/docker.sock:/var/run/docker.sock
       # 持久化:journal / 记忆 / 配置
       - ./data:/data
       # NAS 存储:把宿主的共享目录挂进来供桌面文件区使用
       - ${NAS_STORAGE:-./storage}:/data/nas
+    depends_on:
+      docker-control:
+        condition: service_healthy
+    networks:
+      - default
+      - docker-control
+    labels:
+      sh.echo.hide: "1"
+      sh.echo.control-protected: "true"
+      sh.echo.hub.nas-provider: "true"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import json,urllib.request; d=json.load(urllib.request.urlopen('http://localhost:8000/api/appliance/config', timeout=3)); assert d.get('agent_bundle',{}).get('verified') is True",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -87,24 +224,28 @@ services:
         max-size: "10m"
         max-file: "3"
 
+networks:
+  docker-control:
+    internal: true
+
 # ─── CasaOS / ZimaOS 应用商店元数据(纯 docker compose 运行时忽略)───
 x-casaos:
   architectures:
     - amd64
     - arm64
-  main: octopus-os
+  main: echo-os
   description:
     en_us: Native AI desktop for your NAS — launcher for your Docker apps, file desktop, and an on-device agent.
     zh_cn: NAS 原生 AI 桌面 —— Docker 应用启动器、文件桌面,与设备端 Agent。
   tagline:
     en_us: Your NAS, with a desktop and an agent.
     zh_cn: 给 NAS 一个桌面和一个 Agent。
-  developer: octopus-os
-  author: octopus-os
+  developer: echo-os
+  author: echo-os
   category: NAS
   port_map: "8000"
   scheme: http
   index: /#/desktop
   title:
-    en_us: Octopus OS
-    zh_cn: Octopus OS
+    en_us: Echo OS
+    zh_cn: Echo OS

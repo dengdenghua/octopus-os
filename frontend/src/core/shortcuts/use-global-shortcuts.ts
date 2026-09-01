@@ -27,7 +27,9 @@ export function useWorkspaceShortcuts() {
       // Ctrl+J: Focus chat input
       if (mod && e.key === "j") {
         e.preventDefault();
-        document.querySelector<HTMLTextAreaElement>("[data-chat-input]")?.focus();
+        document
+          .querySelector<HTMLTextAreaElement>("[data-chat-input]")
+          ?.focus();
       }
 
       // Ctrl+Shift+P: Command palette (alternative to Ctrl+K)

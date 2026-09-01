@@ -1,12 +1,19 @@
-/* Implementation note. */
+/**
+ * localStorage-backed state with cross-tab sync.
+ *
+ * The persisted value is read synchronously on first render so the UI
+ * reflects stored preferences immediately. The app is a client-only SPA,
+ * so there is no SSR hydration mismatch to guard against.
+ */
 
 import { useState, useEffect, useCallback } from "react";
 
 export function useLocalStorage<T>(
   key: string,
-  initialValue: T
+  initialValue: T,
 ): [T, (value: T | ((val: T) => T)) => void] {
-  // Implementation note.
+  // Read once per mount; JSON values are parsed, corrupted entries fall
+  // back to the initial value.
   const readValue = useCallback((): T => {
     if (typeof window === "undefined") {
       return initialValue;
@@ -23,7 +30,8 @@ export function useLocalStorage<T>(
 
   const [storedValue, setStoredValue] = useState<T>(readValue);
 
-  // Implementation note.
+  // Accept direct values and functional updates; storage writes are
+  // best-effort (quota / private mode failures are logged, not thrown).
   const setValue = useCallback(
     (value: T | ((val: T) => T)) => {
       try {
@@ -37,10 +45,10 @@ export function useLocalStorage<T>(
         console.warn(`Error setting localStorage key "${key}":`, error);
       }
     },
-    [key, storedValue]
+    [key, storedValue],
   );
 
-  // Implementation note.
+  // Cross-tab sync: apply writes made in other tabs for this key.
   useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === key && event.newValue) {

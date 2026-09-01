@@ -8,6 +8,10 @@
 
 - `desktop_operator`
 
+## Capabilities（能力 flags）
+
+- ✅ `execution_backend`
+
 ## Affinity keywords（路由亲和度）
 
 `desktop`, `gui`, `vision`, `automation`, `screenshot`, `native_app`

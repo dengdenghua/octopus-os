@@ -4,10 +4,7 @@ export { useDebounce } from "./use-debounce";
 export { useThrottle } from "./use-throttle";
 export { useLocalStorage } from "./use-local-storage";
 export { useFeatureFlags } from "./use-feature-flags";
-export type {
-  FeatureFlagEntry,
-  FeatureFlagsState,
-} from "./use-feature-flags";
+export type { FeatureFlagEntry, FeatureFlagsState } from "./use-feature-flags";
 export { useAmbientSuggestions } from "./use-ambient-suggestions";
 export type {
   AmbientSuggestion,

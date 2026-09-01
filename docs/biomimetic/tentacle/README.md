@@ -2,7 +2,7 @@
 
 > **生物原型**：章鱼有 8 腕，但章鱼能把任一腕伸出去 1 米远，抓住远处的目标。
 > 章鱼的"腕"既是**逻辑能力**（"我能做什么"）也是**物理肢体**（"我在哪里做"）。
-> Octopus-agent 把这两层**解耦**了：
+> Echo Agent 把这两层**解耦**了：
 >
 > - **Arms**（腕）= 逻辑能力单位（"我能写代码"、"我能控制桌面"）
 > - **Tentacle**（触手）= 物理设备（"我在小米 14 上做"、"我在 MacBook 上做"）
@@ -57,11 +57,11 @@ tentacle/
 ├── pool.py            # TentaclePool：设备池管理（多设备协调）
 ├── mobile.py          # MobileDevice（Android 设备实现）
 ├── desktop.py         # DesktopDevice（桌面端自指：把本地桌面包装为触手）
-├── apks/              # Octopus Mobile 集成相关
+├── apks/              # Echo Mobile 集成相关
 │   ├── __init__.py
 │   ├── skill_export.py   # 把 30 个 BaseTool 转 SKILL.md
 │   ├── tool_bridge.py    # 工具调用桥接（JSON-RPC envelope）
-│   └── version.py        # Octopus Mobile 端版本兼容
+│   └── version.py        # Echo Mobile 端版本兼容
 └── transport/         # 通讯层
     ├── __init__.py
     ├── websocket.py      # WebSocket 客户端
@@ -103,7 +103,7 @@ class Tentacle(Protocol):
 
 | 触手 | 形态 | 状态 | 文档 |
 |---|---|---|---|
-| **MobileDevice** | Android 设备（基于 Octopus Mobile 改造）| ✅ Phase 0 | [mobile.md](mobile.md) |
+| **MobileDevice** | Android 设备（基于 Echo Mobile 改造）| ✅ Phase 0 | [mobile.md](mobile.md) |
 | **DesktopDevice** | 本地桌面自指 | ⏳ 计划 | [desktop.md](desktop.md) |
 
 ## 未来触手
@@ -130,7 +130,7 @@ class Tentacle(Protocol):
 
 1. **设备无关**：Tentacle 抽象**不暴露**任何设备特定 API，所有设备
    能力通过 SKILL.md 描述。
-2. **离线友好**：Tentacle 必须能在断网时降级工作（Octopus Mobile 本地模式）。
+2. **离线友好**：Tentacle 必须能在断网时降级工作（Echo Mobile 本地模式）。
 3. **状态可观测**：所有 Tentacle 状态通过 Nerves 总线广播，Cerebrum 实时可见。
 4. **能力可扩展**：新 Tentacle 类型（iOS、IoT）只需实现 6 个方法即可接入。
 5. **失败可恢复**：网络抖动 / 设备锁死 / 进程崩溃，统统可重连可恢复。

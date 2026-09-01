@@ -6,7 +6,10 @@ import { renderWithProviders } from "@/test/harness";
 import type { LiveToolEvent } from "./live-tool-timeline";
 import { TodoPanel } from "./todo-panel";
 
-function todoEvent(input: Record<string, unknown>, startedAt = 1): LiveToolEvent {
+function todoEvent(
+  input: Record<string, unknown>,
+  startedAt = 1,
+): LiveToolEvent {
   return {
     id: `todo-${startedAt}`,
     name: "todo_write",
@@ -60,6 +63,42 @@ describe("TodoPanel", () => {
     expect(screen.queryByText("旧计划")).not.toBeInTheDocument();
     expect(screen.getByText("新计划")).toBeInTheDocument();
   });
+
+  it("does not let a later turn.phases projection override source todos", () => {
+    renderWithProviders(
+      <TodoPanel
+        liveToolEvents={[
+          todoEvent(
+            {
+              items: [
+                { content: "已完成定位", status: "completed" },
+                { content: "正在实现", status: "in_progress" },
+              ],
+            },
+            1,
+          ),
+          todoEvent(
+            {
+              source: "turn.phases",
+              items: [
+                { content: "已完成定位", status: "in_progress" },
+                { content: "正在实现", status: "pending" },
+              ],
+            },
+            2,
+          ),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("正在实现")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (content) => content.includes("1/2") && content.includes("50%"),
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("renders todo_write JSON string payloads from native tool calls", () => {
     renderWithProviders(
       <TodoPanel
@@ -80,10 +119,14 @@ describe("TodoPanel", () => {
 
     expect(screen.getByText("Confirm task")).toBeInTheDocument();
     expect(screen.getByText("Checking constraints")).toBeInTheDocument();
-    expect(screen.getByText((content) => content.includes("1/2") && content.includes("50%"))).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (content) => content.includes("1/2") && content.includes("50%"),
+      ),
+    ).toBeInTheDocument();
   });
 
-  it("marks unfinished in-progress work as interrupted once the turn is no longer live", () => {
+  it("returns unfinished in-progress work to pending once the turn is no longer live", () => {
     const { container } = renderWithProviders(
       <TodoPanel
         liveToolEvents={[
@@ -109,10 +152,10 @@ describe("TodoPanel", () => {
 
     expect(screen.getByText("Detect issue")).toBeInTheDocument();
     expect(container.querySelector(".animate-spin")).toBeNull();
-    expect(container.querySelector(".text-destructive")).not.toBeNull();
+    expect(container.querySelector(".text-destructive")).toBeNull();
   });
 
-  it("marks pending work as interrupted once the turn is no longer live", () => {
+  it("keeps never-started pending work neutral once the turn is no longer live", () => {
     const { container } = renderWithProviders(
       <TodoPanel
         liveToolEvents={[
@@ -128,6 +171,6 @@ describe("TodoPanel", () => {
 
     expect(screen.getByText("Never started")).toBeInTheDocument();
     expect(container.querySelector(".animate-spin")).toBeNull();
-    expect(container.querySelector(".text-destructive")).not.toBeNull();
+    expect(container.querySelector(".text-destructive")).toBeNull();
   });
 });

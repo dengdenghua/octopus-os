@@ -73,7 +73,9 @@ export function LineChart({
 }: LineChartProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(
+    null,
+  );
 
   // Chart area
   const chartW = width - PAD_LEFT - PAD_RIGHT;
@@ -173,7 +175,12 @@ export function LineChart({
 
       // Find closest data index
       const dataX = mx - PAD_LEFT;
-      if (dataX < 0 || dataX > chartW || my < PAD_TOP || my > PAD_TOP + chartH) {
+      if (
+        dataX < 0 ||
+        dataX > chartW ||
+        my < PAD_TOP ||
+        my > PAD_TOP + chartH
+      ) {
         setHoverIdx(null);
         setTooltipPos(null);
         return;
@@ -346,7 +353,7 @@ export function LineChart({
       {/* Tooltip */}
       {hoverIdx !== null && tooltipPos && (
         <div
-          className="pointer-events-none absolute z-50 rounded-lg border bg-popover px-3 py-2 shadow-lg"
+          className="pointer-events-none absolute z-50 rounded-lg border bg-popover px-3 py-2 shadow-[var(--shadow-md)]"
           style={{
             left: Math.min(tooltipPos.x + 12, width - 180),
             top: Math.max(tooltipPos.y - 10, 0),
@@ -378,7 +385,10 @@ export function LineChart({
       {/* Legend */}
       <div className="mt-2 flex flex-wrap items-center justify-center gap-4">
         {series.map((s, i) => (
-          <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div
+            key={i}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
             <span
               className="inline-block size-2.5 rounded-lg"
               style={{ backgroundColor: s.color }}
@@ -414,7 +424,9 @@ export function StackedAreaChart({
 }: StackedAreaChartProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(
+    null,
+  );
 
   const chartW = width - PAD_LEFT - PAD_RIGHT;
   const chartH = height - PAD_TOP - PAD_BOTTOM;
@@ -497,7 +509,12 @@ export function StackedAreaChart({
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       const dataX = mx - PAD_LEFT;
-      if (dataX < 0 || dataX > chartW || my < PAD_TOP || my > PAD_TOP + chartH) {
+      if (
+        dataX < 0 ||
+        dataX > chartW ||
+        my < PAD_TOP ||
+        my > PAD_TOP + chartH
+      ) {
         setHoverIdx(null);
         setTooltipPos(null);
         return;
@@ -591,7 +608,7 @@ export function StackedAreaChart({
       {/* Tooltip */}
       {hoverIdx !== null && tooltipPos && (
         <div
-          className="pointer-events-none absolute z-50 rounded-lg border bg-popover px-3 py-2 shadow-lg"
+          className="pointer-events-none absolute z-50 rounded-lg border bg-popover px-3 py-2 shadow-[var(--shadow-md)]"
           style={{
             left: Math.min(tooltipPos.x + 12, width - 180),
             top: Math.max(tooltipPos.y - 10, 0),
@@ -616,8 +633,7 @@ export function StackedAreaChart({
             </div>
           ))}
           <div className="mt-1 border-t pt-1 text-xs font-medium text-foreground">
-            Total:{" "}
-            {series.reduce((sum, s) => sum + (s.data[hoverIdx] ?? 0), 0)}
+            Total: {series.reduce((sum, s) => sum + (s.data[hoverIdx] ?? 0), 0)}
           </div>
         </div>
       )}
@@ -625,7 +641,10 @@ export function StackedAreaChart({
       {/* Legend */}
       <div className="mt-2 flex flex-wrap items-center justify-center gap-4">
         {series.map((s, i) => (
-          <div key={i} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div
+            key={i}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
             <span
               className="inline-block size-2.5 rounded-lg"
               style={{ backgroundColor: s.color }}

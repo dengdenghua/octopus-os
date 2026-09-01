@@ -18,6 +18,7 @@ const SAMPLE_BUCKET = {
       title: "Fix CI",
       description: "Last 3 runs failed",
       prompt: "investigate CI failures",
+      locale: "en-US",
       status: "pending",
       source_turn_ids: ["t1"],
       created_at: "",
@@ -31,6 +32,7 @@ const SAMPLE_BUCKET = {
       title: "Old accepted",
       description: "",
       prompt: "x",
+      locale: "en-US",
       status: "accepted",
       source_turn_ids: [],
       created_at: "",
@@ -44,6 +46,7 @@ const SAMPLE_BUCKET = {
       title: "Bygones",
       description: "",
       prompt: "y",
+      locale: "en-US",
       status: "dismissed",
       source_turn_ids: [],
       created_at: "",
@@ -63,7 +66,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mockOnce(body: unknown, init: Partial<{ ok: boolean; status: number }> = {}) {
+function mockOnce(
+  body: unknown,
+  init: Partial<{ ok: boolean; status: number }> = {},
+) {
   fetchMock.mockResolvedValueOnce({
     ok: init.ok ?? true,
     status: init.status ?? 200,
@@ -74,7 +80,12 @@ function mockOnce(body: unknown, init: Partial<{ ok: boolean; status: number }> 
 
 describe("AmbientSuggestionsPanel", () => {
   it("renders empty state", async () => {
-    mockOnce({ project_root: "/p", generated_at: "", enabled: true, suggestions: [] });
+    mockOnce({
+      project_root: "/p",
+      generated_at: "",
+      enabled: true,
+      suggestions: [],
+    });
     renderWithProviders(<AmbientSuggestionsPanel project="/p" />);
     await waitFor(() => {
       expect(screen.getByText(/No suggestions yet/i)).toBeInTheDocument();
@@ -82,7 +93,12 @@ describe("AmbientSuggestionsPanel", () => {
   });
 
   it("renders disabled hint when bucket.enabled is false", async () => {
-    mockOnce({ project_root: "/p", generated_at: "", enabled: false, suggestions: [] });
+    mockOnce({
+      project_root: "/p",
+      generated_at: "",
+      enabled: false,
+      suggestions: [],
+    });
     renderWithProviders(<AmbientSuggestionsPanel project="/p" />);
     await waitFor(() => {
       expect(screen.getByText(/Feature disabled/i)).toBeInTheDocument();
@@ -123,7 +139,9 @@ describe("AmbientSuggestionsPanel", () => {
       );
       expect(patchCall).toBeDefined();
       expect(patchCall![0]).toContain("/api/ambient-suggestions/abc");
-      expect(JSON.parse((patchCall![1] as RequestInit).body as string)).toMatchObject({
+      expect(
+        JSON.parse((patchCall![1] as RequestInit).body as string),
+      ).toMatchObject({
         status: "accepted",
       });
     });
@@ -148,7 +166,9 @@ describe("AmbientSuggestionsPanel", () => {
         (c) => (c[1] as RequestInit | undefined)?.method === "PATCH",
       );
       expect(patchCall).toBeDefined();
-      expect(JSON.parse((patchCall![1] as RequestInit).body as string)).toMatchObject({
+      expect(
+        JSON.parse((patchCall![1] as RequestInit).body as string),
+      ).toMatchObject({
         status: "dismissed",
       });
     });
@@ -170,7 +190,9 @@ describe("AmbientSuggestionsPanel", () => {
 
     await waitFor(() => {
       const runCall = fetchMock.mock.calls.find(
-        (c) => typeof c[0] === "string" && (c[0] as string).endsWith("/api/ambient-suggestions/run"),
+        (c) =>
+          typeof c[0] === "string" &&
+          (c[0] as string).endsWith("/api/ambient-suggestions/run"),
       );
       expect(runCall).toBeDefined();
     });
@@ -182,7 +204,9 @@ describe("AmbientSuggestionsPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Fix CI")).toBeInTheDocument();
     });
-    expect(screen.queryByRole("button", { name: /Generate/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Generate/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows Dismissed section count", async () => {

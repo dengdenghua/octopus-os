@@ -1,17 +1,15 @@
 /* Implementation note. */
 
 import { useCallback, useRef, useState, type KeyboardEvent } from "react";
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  RefreshCwIcon,
-} from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, RefreshCwIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useI18n } from "@/core/i18n/hooks";
 import { useBrowserPanel } from "./browser-context";
 import { WebviewRenderer, type WebviewHandle } from "./webview-renderer";
 
 const isElectron = (): boolean =>
-  typeof window !== "undefined" && !!window.octopus?.isElectron;
+  typeof window !== "undefined" && !!window.echo?.isElectron;
 
 export function BrowserPanel() {
   const { t } = useI18n();
@@ -92,40 +90,47 @@ export function BrowserPanel() {
   }, [canGoForward, electron, setUrl]);
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-background">
-      {/* Implementation note. */}
-      <div className="flex items-center gap-1 border-b px-2 py-1.5">
-        <button
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      {/* Simplified browser toolbar */}
+      <div className="flex min-h-10 items-center gap-1.5 border-b border-border-subtle bg-muted/30 px-2.5 py-1.5">
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={goBack}
           disabled={!canGoBack}
-          className="rounded p-1 hover:bg-muted disabled:opacity-30"
-          title={t.browser.back}
+          aria-label={t.browser.back}
+          className="size-7 hover:bg-muted/80"
         >
-          <ArrowLeftIcon className="size-4 text-muted-foreground" />
-        </button>
-        <button
+          <ArrowLeftIcon className="size-3.5 text-muted-foreground" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={goForward}
           disabled={!canGoForward}
-          className="rounded p-1 hover:bg-muted disabled:opacity-30"
-          title={t.browser.forward}
+          aria-label={t.browser.forward}
+          className="size-7 hover:bg-muted/80"
         >
-          <ArrowRightIcon className="size-4 text-muted-foreground" />
-        </button>
-        <button
+          <ArrowRightIcon className="size-3.5 text-muted-foreground" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={handleRefresh}
-          className="rounded p-1 hover:bg-muted"
-          title={t.browser.reload}
+          aria-label={t.browser.reload}
+          className="size-7 hover:bg-muted/80"
         >
-          <RefreshCwIcon className="size-4 text-muted-foreground" />
-        </button>
-        <input
+          <RefreshCwIcon className="size-3.5 text-muted-foreground" />
+        </Button>
+        <Input
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleNavigate}
           placeholder={t.browser.urlPlaceholder}
-          className="flex-1 rounded bg-muted px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-primary"
+          aria-label={t.browser.urlPlaceholder}
+          className="flex-1 h-7 rounded-md border-0 bg-background/60 px-2.5 text-xs shadow-none focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-border-default"
         />
       </div>
 
@@ -145,8 +150,9 @@ export function BrowserPanel() {
             <iframe
               key={key}
               src={url}
+              title={t.browser.startBrowsingHint}
               className="h-full w-full border-0"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              sandbox="allow-scripts allow-forms allow-popups"
             />
           )
         ) : (

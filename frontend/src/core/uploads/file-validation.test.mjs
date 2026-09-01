@@ -7,10 +7,12 @@ import {
 } from "./file-validation.ts";
 
 test("identifies Finder-style .app bundle uploads as unsupported", () => {
-  expect(isLikelyMacOSAppBundle({
+  expect(
+    isLikelyMacOSAppBundle({
       name: "Vibe Island.app",
       type: "application/octet-stream",
-    })).toBe(true,);
+    }),
+  ).toBe(true);
 });
 
 test("keeps normal files and reports rejected app bundles", () => {

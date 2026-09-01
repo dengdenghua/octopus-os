@@ -23,10 +23,10 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from runtime.company.core import (
+from runtime.company.core import (  # noqa: E402
+    BulkImportPatentRecordsRequest,
     CompanyStore,
     CreatePatentRecordRequest,
-    BulkImportPatentRecordsRequest,
 )
 
 
@@ -71,7 +71,7 @@ def main() -> None:
         print(f"Error: project {project_id} not found during import", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\nImport complete:")
+    print("\nImport complete:")
     print(f"  Created: {counts['created']}")
     print(f"  Updated: {counts['updated']}")
     print(f"  Skipped: {counts['skipped']}")
@@ -132,7 +132,7 @@ def _detect_columns(header_row: tuple[str, ...] | list[str]) -> dict[str, int]:
 
     Implements the column-alias table from the patent-import-xlsx skill.
     """
-    ALIASES = {
+    ALIASES = {  # noqa: N806
         "title": ["标题", "名称", "发明名称", "专利名称", "title", "patent title", "invention title"],
         "applicant": ["申请人", "专利权人", "申请单位", "[标]当前申请", "当前申请", "申请(专利权)人", "applicant", "assignee", "patent owner"],
         "publicationNumber": ["公开号", "公告号", "公开(公告)号", "publication number", "publication no", "pub no"],
@@ -210,13 +210,13 @@ def _row_to_patent_record(
         key_claims_summary=key_claims_summary,
         inventors=inventors,
         ipc_codes=ipc_codes,
-        notes=f"Imported from spreadsheet",
+        notes="Imported from spreadsheet",
     )
 
 
 def _normalize_country(raw: str) -> str:
     """Normalize country names to ISO codes."""
-    COUNTRY_MAP = {
+    COUNTRY_MAP = {  # noqa: N806
         "中国": "CN",
         "美国": "US",
         "欧洲": "EP",

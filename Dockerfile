@@ -1,114 +1,99 @@
 # syntax=docker/dockerfile:1.7
-# octopus-agent · 多阶段构建
-# 阶段 1: node:20-alpine → Vite 构建前端
-# 阶段 2: python:3.12-slim → pip install 后端依赖
-# 阶段 3: python:3.12-slim → 运行时（最小镜像）
+# Echo OS appliance · one verified Echo wheel/resources/Codex + NAS desktop.
 #
-# 构建:
-#   docker build -t octopus-agent .
-#
-# 快速启动（无持久化）:
-#   docker run --rm -p 8000:8000 octopus-agent
-# 生产部署（持久化 + 配置):
-#   docker run --rm -p 8000:8000 \
-#     -v $(pwd)/data:/data \
-#     -v $(pwd)/config.yaml:/etc/octopus/config.yaml:ro \
-#     -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-#     octopus-agent
+# Required preflight:
+#   ./deploy/appliance/prepare-agent-bundle.sh
+#   docker build -t echo-os .
+# Safe local publish (loopback only):
+#   docker run --rm -p 127.0.0.1:8000:8000 echo-os
 
-# ═══════════════════════════════════════════════════════════
-# 阶段 1 · webui-builder · Vite + React 前端构建
-# ═══════════════════════════════════════════════════════════
-
-FROM node:20-alpine AS webui-builder
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS webui-builder
 
 WORKDIR /webui
-
-# 利用 Docker 层缓存: 先复制 package.json → npm ci → 再复制源码
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
-
-# 源码变更不影响 npm ci 缓存层
+RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
-
-RUN npm run build
-# 产物在 /webui/dist · 运行时阶段复制到 /app/webui
+RUN pnpm build
 
 
-# ═══════════════════════════════════════════════════════════
-# 阶段 2 · py-builder · pip install 后端依赖
-# ═══════════════════════════════════════════════════════════
+# Fail before dependency installation if the three Agent surfaces are missing,
+# mixed between commits, or changed after the manifest was assembled.
+FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS agent-bundle-verifier
 
-FROM python:3.12-slim AS py-builder
+WORKDIR /build
+COPY deploy/appliance/agent_bundle.py ./agent_bundle.py
+COPY deploy/appliance/agent-bundle.json ./agent-bundle.json
+COPY deploy/appliance/agent-dist/ ./agent-dist/
+COPY deploy/appliance/agent-resources/ ./agent-resources/
+COPY deploy/appliance/agent-codex/ ./agent-codex/
+RUN python agent_bundle.py verify \
+      --bundle-root /build \
+      --manifest /build/agent-bundle.json
+
+
+FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS py-builder
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /build
-
-# P1 去 fork:runtime/tools 不再随 os 仓库,改由 pinned agent 依赖提供。
-# agent 仓库私有 → 构建前先跑 deploy/appliance/prepare-agent-wheel.sh 预构建
-# agent wheel 到 deploy/appliance/agent-dist/,此处本地投喂(无需 GitHub token)。
 COPY pyproject.toml README.md ./
-COPY deploy/appliance/agent-dist/ ./agent-dist/
 COPY appliance/ ./appliance/
+COPY --from=agent-bundle-verifier /build/agent_bundle.py ./agent_bundle.py
+COPY --from=agent-bundle-verifier /build/agent-bundle.json ./agent-bundle.json
+COPY --from=agent-bundle-verifier /build/agent-dist/ ./agent-dist/
 
-# 1) 装 agent(=runtime/tools)+ serve/web/tracing extra:octopus-agent 取自本地
-#    find-links 的 wheel,其余依赖(fastapi 等)走 PyPI。
-# 2) 装 os 自身(仅 appliance 层),--no-deps 不再去 git 拉 agent(已装)。
-RUN pip install --prefix=/install --no-warn-script-location \
-        --find-links agent-dist/ "octopus-agent[serve,tracing,web]" \
- && pip install --prefix=/install --no-warn-script-location --no-deps .
+# Install the source-bound, hash-locked dependency closure and the one unified
+# Echo wheel. Build backends live only in /build-tools and are never copied
+# into the runtime image.
+RUN pip install --prefix=/build-tools --no-warn-script-location \
+      --require-hashes --only-binary=:all: \
+      -r agent-dist/build-requirements.lock \
+ && pip install --prefix=/install --no-warn-script-location \
+      --require-hashes --only-binary=:all: \
+      -r agent-dist/runtime-requirements.lock \
+ && pip install --prefix=/install --no-warn-script-location --no-deps \
+      -r agent-dist/requirements.txt \
+ && PYTHONPATH=/install/lib/python3.12/site-packages \
+      python agent_bundle.py verify-installed --manifest agent-bundle.json
 
 
-# ═══════════════════════════════════════════════════════════
-# 阶段 3 · runtime · 最小运行时镜像
-# ═══════════════════════════════════════════════════════════
-
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/install/bin:${PATH}" \
     PYTHONPATH="/install/lib/python3.12/site-packages:${PYTHONPATH}" \
-    OCTOPUS_DATA_DIR=/data \
-    OCTOPUS_CONFIG=/etc/octopus/config.yaml \
-    OCTOPUS_WEBUI_DIST=/app/webui \
-    OCTOPUS_RESOURCES_DIR=/app/resources \
-    OCTOPUS_AGENT_WEBUI_DIST=/app/agent-webui
+    ECHO_DATA_DIR=/data \
+    ECHO_CONFIG=/etc/echo/config.yaml \
+    ECHO_WEBUI_DIST=/app/webui \
+    ECHO_RESOURCES_DIR=/app/resources \
+    ECHO_AGENT_BUNDLE_MANIFEST=/app/agent-bundle.json \
+    ECHO_CODEX_BUNDLE_DIR=/app/codex \
+    ECHO_CODEX_EXECUTABLE=/app/codex/bin/codex
 
-RUN groupadd -r octopus && \
-    useradd -r -g octopus -d /data -s /bin/false octopus && \
-    mkdir -p /data /etc/octopus /app/webui /app/resources && \
-    chown -R octopus:octopus /data /etc/octopus /app
+RUN groupadd -r echo && \
+    useradd -r -g echo -d /home/echo -s /bin/false echo && \
+    mkdir -p /home/echo /data /etc/echo /app/webui /app/resources /app/codex && \
+    chown -R echo:echo /home/echo /data /etc/echo /app
 
-# 只复制已安装的依赖（不含构建工具链）
-COPY --from=py-builder  /install     /install
-COPY --from=webui-builder /webui/dist /app/webui
+COPY --from=py-builder /install /install
+COPY --from=webui-builder /webui/dist/ /app/webui/
+COPY --from=agent-bundle-verifier /build/agent-resources/ /app/resources/
+COPY --from=agent-bundle-verifier /build/agent-codex/ /app/codex/
+COPY --from=agent-bundle-verifier /build/agent-bundle.json /app/agent-bundle.json
+COPY config.example.yaml /etc/echo/config.example.yaml
+RUN chown -R echo:echo /app /etc/echo
 
-# 运行时资源目录 · planner / skills / prompts / protocols 读取
-# 必须存在于镜像中，否则 agent fallback 到空目录
-COPY agents/    /app/resources/agents/
-COPY skills/    /app/resources/skills/
-COPY prompts/   /app/resources/prompts/
-COPY protocols/ /app/resources/protocols/
-COPY teams/     /app/resources/teams/
-COPY config.example.yaml /etc/octopus/config.example.yaml
-
-# P2 同机 webui 投喂:独立构建的 agent 工作台前端(base=/agent-ui/),由后端在
-# /agent-ui/ serve、os 桌面窗口加载。构建前先跑 deploy/appliance/prepare-agent-webui.sh
-# 产出此目录(.gitignore)。未投喂(目录空)→ 后端回退,前端用同源工作台路由。
-COPY deploy/appliance/agent-webui/ /app/agent-webui/
-RUN chown -R octopus:octopus /app/resources /app/agent-webui /etc/octopus
-
-USER octopus
+# The entrypoint starts with only uid/gid/chown capabilities, repairs the
+# bind-mounted state directory for ECHO_PUID/ECHO_PGID, then permanently drops
+# to that unprivileged identity before importing or executing Agent runtime.
+USER root
 WORKDIR /data
-
 EXPOSE 8000
 
-# 入口点支持任意子命令:
-#   docker run octopus-agent octopus-agent run "帮我做X"
-#   docker run octopus-agent octopus-agent loop "目标" --config /etc/octopus/config.yaml
-ENTRYPOINT ["octopus-agent"]
-CMD ["serve", "--config", "/etc/octopus/config.yaml", "--host", "0.0.0.0", "--port", "8000"]
+# The unified distribution exposes both `echo` and `echo-agent` entry points.
+ENTRYPOINT ["python", "-m", "appliance.entrypoint"]
+CMD ["serve", "--host", "0.0.0.0", "--port", "8000"]

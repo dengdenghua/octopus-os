@@ -1,0 +1,4 @@
+Copyright 2026 Echo contributors
+
+Licensed under the Apache License, Version 2.0. This is an original Echo
+implementation and includes no MiniMax Design private source or prompt text.

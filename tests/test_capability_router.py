@@ -18,13 +18,15 @@ class _FakeRegistry:
 
 
 def test_research_goal_activates_research_tools() -> None:
-    reg = _FakeRegistry([
-        "web_search",
-        "fetch_url",
-        "deep-research",
-        "report-writing",
-        "query_skill",
-    ])
+    reg = _FakeRegistry(
+        [
+            "web_search",
+            "fetch_url",
+            "deep-research",
+            "report-writing",
+            "query_skill",
+        ]
+    )
 
     activation = activate_capabilities(
         "调研一个值得进入的细分赛道，输出竞品格局和风险",

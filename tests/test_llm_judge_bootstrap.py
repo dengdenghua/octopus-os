@@ -1,14 +1,13 @@
 """LLM-judge bootstrap wiring (constitution semantic tier).
 
 The gate has consulted ``get_judge()`` all along; what was missing is
-the registration at process start. These tests pin the opt-in flag
-resolution and the fail-open registration semantics.
+the registration at process start. These tests pin flag resolution and
+the fail-open registration semantics.
 """
 
 from typing import Any
 
 import pytest
-
 from runtime.safety.validation.bootstrap import (
     llm_judge_enabled,
     maybe_register_llm_judge,
@@ -43,24 +42,24 @@ class _FakeRouter:
 
 
 class TestFlagResolution:
-    def test_default_is_off(self, monkeypatch):
-        monkeypatch.delenv("OCTOPUS_ENABLE_LLM_JUDGE", raising=False)
-        assert llm_judge_enabled() is False
+    def test_default_is_on(self, monkeypatch):
+        monkeypatch.delenv("ECHO_ENABLE_LLM_JUDGE", raising=False)
+        assert llm_judge_enabled() is True
 
     def test_explicit_wins_over_env(self, monkeypatch):
-        monkeypatch.setenv("OCTOPUS_ENABLE_LLM_JUDGE", "1")
+        monkeypatch.setenv("ECHO_ENABLE_LLM_JUDGE", "1")
         assert llm_judge_enabled(False) is False
-        monkeypatch.setenv("OCTOPUS_ENABLE_LLM_JUDGE", "0")
+        monkeypatch.setenv("ECHO_ENABLE_LLM_JUDGE", "0")
         assert llm_judge_enabled(True) is True
 
     def test_env_var_toggles(self, monkeypatch):
-        monkeypatch.setenv("OCTOPUS_ENABLE_LLM_JUDGE", "true")
+        monkeypatch.setenv("ECHO_ENABLE_LLM_JUDGE", "true")
         assert llm_judge_enabled() is True
-        monkeypatch.setenv("OCTOPUS_ENABLE_LLM_JUDGE", "off")
+        monkeypatch.setenv("ECHO_ENABLE_LLM_JUDGE", "off")
         assert llm_judge_enabled() is False
 
     def test_yaml_layer(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("OCTOPUS_ENABLE_LLM_JUDGE", raising=False)
+        monkeypatch.delenv("ECHO_ENABLE_LLM_JUDGE", raising=False)
         (tmp_path / "config.local.yaml").write_text(
             "safety:\n  enable_llm_judge: true\n", encoding="utf-8"
         )
@@ -69,16 +68,16 @@ class TestFlagResolution:
     def test_config_value_respected_when_env_silent(self, monkeypatch):
         # A flag from the loaded --config (config_value) takes effect
         # when the env var is silent — this is the cross-cwd fix.
-        monkeypatch.delenv("OCTOPUS_ENABLE_LLM_JUDGE", raising=False)
+        monkeypatch.delenv("ECHO_ENABLE_LLM_JUDGE", raising=False)
         assert llm_judge_enabled(config_value=True) is True
         assert llm_judge_enabled(config_value=False) is False
-        assert llm_judge_enabled(config_value=None) is False
+        assert llm_judge_enabled(config_value=None) is True
 
     def test_env_overrides_config_value(self, monkeypatch):
         # The env var stays an emergency override above the config file.
-        monkeypatch.setenv("OCTOPUS_ENABLE_LLM_JUDGE", "0")
+        monkeypatch.setenv("ECHO_ENABLE_LLM_JUDGE", "0")
         assert llm_judge_enabled(config_value=True) is False
-        monkeypatch.setenv("OCTOPUS_ENABLE_LLM_JUDGE", "1")
+        monkeypatch.setenv("ECHO_ENABLE_LLM_JUDGE", "1")
         assert llm_judge_enabled(config_value=False) is True
 
 
@@ -98,10 +97,7 @@ class TestRegistration:
 
     def test_model_override_reaches_request(self):
         router = _FakeRouter()
-        assert (
-            maybe_register_llm_judge(router, enabled=True, model="mock/fast")
-            is True
-        )
+        assert maybe_register_llm_judge(router, enabled=True, model="mock/fast") is True
         get_judge()("hi", "channels:slack:c2", None)
         assert router.calls[0].model == "mock/fast"
 

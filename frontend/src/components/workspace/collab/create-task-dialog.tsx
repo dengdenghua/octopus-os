@@ -25,6 +25,7 @@ import { useCreateTeamTask } from "@/core/team-tasks";
 import type { TaskAssignee } from "@/core/team-tasks";
 import type { Team } from "@/core/teams";
 import { getBackendBaseURL } from "@/core/config";
+import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
 interface MetaSkillSummary {
@@ -49,6 +50,7 @@ export function CreateTaskDialog({
   roomId,
   team,
 }: CreateTaskDialogProps) {
+  const { t } = useI18n();
   const createTask = useCreateTeamTask();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -121,11 +123,11 @@ export function CreateTaskDialog({
         sop_template: sopTemplate === FREEFORM_TEMPLATE ? "" : sopTemplate,
         assignees,
       });
-      toast.success("任务已创建");
+      toast.success(t.collab.createTask.toastCreated);
       reset();
       onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "创建任务失败");
+      toast.error(error instanceof Error ? error.message : t.collab.createTask.toastFailed);
     }
   };
 
@@ -138,47 +140,51 @@ export function CreateTaskDialog({
       }}
     >
       <DialogContent className="overflow-hidden p-0 sm:max-w-2xl">
-        <DialogHeader className="border-b border-border/60 px-5 py-4">
+        <DialogHeader className="border-b border-border-default px-5 py-4">
           <DialogTitle className="flex items-center gap-2">
             <ClipboardListIcon className="size-5" />
-            新建任务
+            {t.collab.createTask.title}
           </DialogTitle>
           <DialogDescription>
-            把团队目标拆成可运行、可追踪、可产出结果的任务。
+            {t.collab.createTask.description}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid max-h-[66vh] gap-4 overflow-y-auto px-5 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="team-task-title">任务标题</Label>
+            <Label htmlFor="team-task-title">
+              {t.collab.createTask.taskTitleLabel}
+            </Label>
             <Input
               id="team-task-title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="例如：调研一个值得进入的细分赛道"
+              placeholder={t.collab.createTask.titlePlaceholder}
             />
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="team-task-description">补充说明</Label>
+            <Label htmlFor="team-task-description">
+              {t.collab.createTask.descriptionLabel}
+            </Label>
             <Textarea
               id="team-task-description"
               value={description}
               onChange={(event) => setDescription(event.target.value)}
-              placeholder="范围、输出格式、约束、已有资料..."
+              placeholder={t.collab.createTask.descriptionPlaceholder}
               className="min-h-24 resize-none"
             />
           </div>
 
           <div className="grid gap-2">
-            <Label>能力包 / SOP</Label>
+            <Label>{t.collab.createTask.sopLabel}</Label>
             <Select value={sopTemplate} onValueChange={setSopTemplate}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={FREEFORM_TEMPLATE}>
-                  自动匹配或自由执行
+                  {t.collab.createTask.autoMatchFreeform}
                 </SelectItem>
                 {packs.map((pack) => (
                   <SelectItem key={pack.name} value={pack.name}>
@@ -191,14 +197,14 @@ export function CreateTaskDialog({
             {packsLoading && (
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Loader2Icon className="size-3 animate-spin" />
-                正在加载能力包
+                {t.collab.createTask.loadingPacks}
               </span>
             )}
           </div>
 
           {agentOptions.length > 0 && (
             <div className="grid gap-2">
-              <Label>指派 Agent</Label>
+              <Label>{t.collab.createTask.assigneeLabel}</Label>
               <div className="grid grid-cols-2 gap-2">
                 {agentOptions.map((agent) => {
                   const selected = selectedAssignees.includes(agent.ref);
@@ -211,10 +217,10 @@ export function CreateTaskDialog({
                         "flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors",
                         selected
                           ? "border-primary/40 bg-primary/10 text-foreground"
-                          : "border-border/70 bg-muted/10 hover:bg-muted/40",
+                          : "border-border-default bg-muted/10 hover:bg-muted/40",
                       )}
                     >
-                      <span className="grid size-7 shrink-0 place-items-center rounded-lg border border-border/60 bg-background text-sm">
+                      <span className="grid size-7 shrink-0 place-items-center rounded-lg border border-border-default bg-background text-sm">
                         {agent.icon?.trim() || agent.label.charAt(0)}
                       </span>
                       <span className="min-w-0 flex-1">
@@ -233,15 +239,15 @@ export function CreateTaskDialog({
           )}
         </div>
 
-        <DialogFooter className="border-t border-border/60 px-5 py-3">
+        <DialogFooter className="border-t border-border-default px-5 py-3">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t.collab.createTask.cancel}
           </Button>
           <Button onClick={() => void handleSubmit()} disabled={!canSubmit}>
             {createTask.isPending && (
               <Loader2Icon className="mr-2 size-4 animate-spin" />
             )}
-            创建
+            {t.collab.createTask.create}
           </Button>
         </DialogFooter>
       </DialogContent>

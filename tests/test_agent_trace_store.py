@@ -4,7 +4,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
 from runtime.memory.diagnostics.trace_store import AgentTraceStore
 from runtime.memory.journal import JSONLJournal
 from runtime.safety.approval.approval_gate import ApprovalRequest
@@ -195,7 +194,7 @@ def test_resume_requests_track_pending_confirmed_and_consumed_state(
         task_id="task-1",
         status="pending",
         intent={
-            "schema": "octopus.resume_intent.v1",
+            "schema": "echo.resume_intent.v1",
             "requires_confirmation": True,
             "checkpoint_id": 7,
             "progress": "private message body",
@@ -213,11 +212,14 @@ def test_resume_requests_track_pending_confirmed_and_consumed_state(
     assert pending["intent"]["requires_confirmation"] is True
     assert "message body" not in str(pending)
 
-    assert store.confirm_resume_request(
-        thread_id="thread-1",
-        checkpoint_id=7,
-        confirmation_text="确认恢复 checkpoint #7",
-    ) is not None
+    assert (
+        store.confirm_resume_request(
+            thread_id="thread-1",
+            checkpoint_id=7,
+            confirmation_text="确认恢复 checkpoint #7",
+        )
+        is not None
+    )
     confirmed = store.resume_requests(thread_id="thread-1")[0]
     assert confirmed["status"] == "confirmed"
     assert confirmed["confirmed_at"] is not None
@@ -450,7 +452,7 @@ def test_task_run_review_extracts_findings_replay_and_learning_candidates(
         reason="accept",
         metadata={
             "trust_gateway": {
-                "schema": "octopus.trust_decision.v1",
+                "schema": "echo.trust_decision.v1",
                 "source": "risk_policy",
                 "risk": {"level": "high", "categories": ["shell_execution"]},
                 "action": "ask",
@@ -483,7 +485,7 @@ def test_task_run_review_extracts_findings_replay_and_learning_candidates(
     review = store.task_run_review("turn-review")
 
     assert review is not None
-    assert review["schema"] == "octopus.task_run_review.v1"
+    assert review["schema"] == "echo.task_run_review.v1"
     assert review["status"] == "failed"
     assert review["score"] < 0.5
     finding_types = [finding["type"] for finding in review["findings"]]
@@ -492,10 +494,7 @@ def test_task_run_review_extracts_findings_replay_and_learning_candidates(
     assert "high_risk_approval" in finding_types
     assert review["replay"]["replayable"] is True
     assert review["replay"]["steps"][1]["approval"]["risk_level"] == "high"
-    assert any(
-        item["kind"] == "failure_pattern"
-        for item in review["learning_candidates"]
-    )
+    assert any(item["kind"] == "failure_pattern" for item in review["learning_candidates"])
     assert review["backlog_candidates"][0]["priority"] == "P0"
 
 
@@ -678,7 +677,7 @@ def test_gateway_approval_provider_records_decision_to_trace_store(tmp_path: Pat
             assert approvals[0]["turn_id"] == "turn-1"
             assert approvals[0]["metadata"]["detail"] == "dangerous command"
             trust = approvals[0]["metadata"]["trust_gateway"]
-            assert trust["schema"] == "octopus.trust_decision.v1"
+            assert trust["schema"] == "echo.trust_decision.v1"
             assert trust["tool_name"] == "exec_shell"
             assert trust["risk"]["level"] == "critical"
         finally:
@@ -881,14 +880,16 @@ def test_app_state_attaches_trace_store_to_injected_jsonl_journal(tmp_path: Path
         trace.close()
 
 
-def test_create_app_uses_default_agent_trace_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_create_app_uses_default_agent_trace_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     fastapi = pytest.importorskip("fastapi")
     assert fastapi is not None
     from runtime.platform.ui import create_app
 
-    monkeypatch.setenv("OCTOPUS_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path / "data"))
 
     app = create_app(journal_path=tmp_path / "data" / "events.jsonl")
-    state = app.state.octopus_state
+    state = app.state.echo_state
 
     assert state.trace_store_path == (tmp_path / "data" / "agent_trace.sqlite").resolve()

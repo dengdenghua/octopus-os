@@ -1,0 +1,18 @@
+# Declarative workflow demo — two parallel research lanes, one synthesis step.
+# Run: load_and_dispatch("demos/workflows/research-report.yaml", orchestrator)
+name: research-report
+description: "Two parallel research lanes synthesized into one report (declarative DSL demo)."
+max_concurrency: 2
+aggregation_strategy: synthesize
+tasks:
+  - id: research_auth
+    agent: researcher
+    prompt: "Investigate authentication & authorization in runtime/auth/"
+  - id: research_crypto
+    agent: researcher
+    prompt: "Investigate cryptographic key management in runtime/storage/"
+  - id: report
+    agent: synthesizer
+    prompt: "Synthesize both research lanes into a prioritized security report"
+    depends_on: [research_auth, research_crypto]
+

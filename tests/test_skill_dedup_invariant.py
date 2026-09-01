@@ -10,6 +10,7 @@ test is parametrised to xfail those names so contributors see the
 backlog without the test being green-lit dishonestly. Each pair removed
 should also be removed from ``_KNOWN_BACKLOG``.
 """
+
 from __future__ import annotations
 
 import sys
@@ -51,8 +52,7 @@ def test_known_backlog_is_still_present() -> None:
     assert not stale, (
         "Backlog list out of date — these pairs are already merged "
         "(or never existed). Remove them from _KNOWN_BACKLOG in "
-        f"{__file__!s}:\n  "
-        + "\n  ".join(" ↔ ".join(sorted(p)) for p in stale)
+        f"{__file__!s}:\n  " + "\n  ".join(" ↔ ".join(sorted(p)) for p in stale)
     )
 
 

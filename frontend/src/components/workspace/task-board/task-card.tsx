@@ -26,8 +26,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/core/i18n/hooks";
-import type { BoardStatus, TaskType, UnifiedTask } from "@/core/task-board/types";
+import type {
+  BoardStatus,
+  TaskType,
+  UnifiedTask,
+} from "@/core/task-board/types";
+import { formatDurationMs } from "@/core/utils/datetime";
 import { cn } from "@/lib/utils";
+
+export { formatDurationMs };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -41,10 +48,10 @@ const TYPE_ICONS: Record<TaskType, React.ReactNode> = {
 };
 
 const TYPE_COLORS: Record<TaskType, string> = {
-  background: "text-violet-500",
-  quest: "text-orange-500",
-  scheduled: "text-sky-500",
-  intelligence: "text-purple-500",
+  background: "text-chart-1",
+  quest: "text-chart-7",
+  scheduled: "text-info",
+  intelligence: "text-chart-3",
 };
 
 const STATUS_STYLE: Record<
@@ -52,52 +59,51 @@ const STATUS_STYLE: Record<
   { dotColor: string; badgeClass: string; icon: React.ReactNode }
 > = {
   queued: {
-    dotColor: "bg-slate-400",
-    badgeClass: "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
+    dotColor: "bg-muted-foreground",
+    badgeClass:
+      "bg-muted-foreground/10 text-muted-foreground border-muted-foreground/20",
     icon: <ClockIcon className="size-3" />,
   },
   running: {
-    dotColor: "bg-amber-500",
-    badgeClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+    dotColor: "bg-warning",
+    badgeClass:
+      "bg-warning/10 text-warning border-warning/20",
     icon: <Loader2Icon className="size-3 animate-spin" />,
   },
   paused: {
-    dotColor: "bg-amber-400",
-    badgeClass: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+    dotColor: "bg-warning",
+    badgeClass:
+      "bg-warning/10 text-warning border-warning/20",
     icon: <PauseIcon className="size-3" />,
   },
   completed: {
-    dotColor: "bg-emerald-500",
-    badgeClass: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+    dotColor: "bg-success",
+    badgeClass:
+      "bg-success/10 text-success border-success/20",
     icon: <CheckCircle2Icon className="size-3" />,
   },
   failed: {
-    dotColor: "bg-red-500",
-    badgeClass: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
+    dotColor: "bg-destructive",
+    badgeClass:
+      "bg-destructive/10 text-destructive border-destructive/20",
     icon: <AlertCircleIcon className="size-3" />,
   },
   cancelled: {
-    dotColor: "bg-gray-400",
-    badgeClass: "bg-gray-500/10 text-gray-500 dark:text-gray-400 border-gray-500/20",
+    dotColor: "bg-muted-foreground",
+    badgeClass:
+      "bg-muted-foreground/10 text-muted-foreground border-muted-foreground/20",
     icon: <XIcon className="size-3" />,
   },
 };
 
-export function formatDurationMs(ms: number): string {
-  if (ms <= 0) return "--";
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${secs}s`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}h ${mins}m`;
-}
-
 export function formatRelativeTime(
   isoString: string,
-  translations?: { justNow: string; minutesAgo: string; hoursAgo: string; daysAgo: string },
+  translations?: {
+    justNow: string;
+    minutesAgo: string;
+    hoursAgo: string;
+    daysAgo: string;
+  },
 ): string {
   if (!isoString) return "";
   const now = Date.now();
@@ -105,8 +111,10 @@ export function formatRelativeTime(
   const diff = now - ts;
   if (diff < 0) return translations?.justNow ?? "just now";
   if (diff < 60_000) return translations?.justNow ?? "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}${translations?.minutesAgo ?? "m ago"}`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}${translations?.hoursAgo ?? "h ago"}`;
+  if (diff < 3_600_000)
+    return `${Math.floor(diff / 60_000)}${translations?.minutesAgo ?? "m ago"}`;
+  if (diff < 86_400_000)
+    return `${Math.floor(diff / 3_600_000)}${translations?.hoursAgo ?? "h ago"}`;
   return `${Math.floor(diff / 86_400_000)}${translations?.daysAgo ?? "d ago"}`;
 }
 
@@ -128,7 +136,7 @@ function StatusBadge({ status }: { status: BoardStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-medium leading-none",
+        "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-xs font-medium leading-none",
         cfg.badgeClass,
       )}
     >
@@ -181,20 +189,30 @@ export function TaskCard({
   return (
     <TooltipProvider delayDuration={400}>
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={onClick ? undefined : expanded}
+        aria-label={t.taskBoard.taskDetails(task.name || task.id)}
         className={cn(
-          "ui-dense-row group relative cursor-pointer rounded-lg border bg-card transition-all duration-200",
-          "hover:shadow-md hover:border-border/80 hover:-translate-y-0.5",
-          isRunning && "border-amber-500/30 shadow-amber-500/5",
-          task.status === "failed" && "border-red-500/20",
-          task.status === "completed" && "border-emerald-500/20",
+          "ui-dense-row group relative cursor-pointer rounded-lg border bg-card transition-all duration-base",
+          "hover:shadow-[var(--shadow-sm)] hover:border-border-strong hover:-translate-y-0.5",
+          isRunning && "border-warning/30 shadow-warning/5",
+          task.status === "failed" && "border-destructive/20",
+          task.status === "completed" && "border-success/20",
         )}
         onClick={handleClick}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            handleClick();
+          }
+        }}
       >
         {/* Running indicator pulse */}
         {isRunning && (
           <div className="absolute -top-px -right-px size-2.5 rounded-lg">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-lg bg-amber-400 opacity-75" />
-            <span className="relative inline-flex size-2.5 rounded-lg bg-amber-500" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-lg bg-warning opacity-75" />
+            <span className="relative inline-flex size-2.5 rounded-lg bg-warning" />
           </div>
         )}
 
@@ -218,7 +236,7 @@ export function TaskCard({
 
             {/* Phase label for quests */}
             {task.phase && !compact && (
-              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 {task.phase}
               </p>
             )}
@@ -229,8 +247,10 @@ export function TaskCard({
         {isRunning && task.progress_pct > 0 && (
           <div className="mt-2">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] text-muted-foreground">{t.taskBoard.progress}</span>
-              <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">
+              <span className="text-xs text-muted-foreground">
+                {t.taskBoard.progress}
+              </span>
+              <span className="text-xs font-medium text-warning">
                 {Math.round(task.progress_pct)}%
               </span>
             </div>
@@ -241,7 +261,7 @@ export function TaskCard({
         {/* Footer: status + duration */}
         <div className="mt-2 flex items-center justify-between gap-2">
           <StatusBadge status={task.status} />
-          <span className="text-[10px] text-muted-foreground tabular-nums">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {task.duration_ms > 0
               ? formatDurationMs(task.duration_ms)
               : formatRelativeTime(task.updated_at || task.created_at, {
@@ -255,19 +275,25 @@ export function TaskCard({
 
         {/* Expanded detail */}
         {expanded && !compact && (
-          <div className="mt-3 space-y-1.5 border-t pt-2 text-xs text-muted-foreground animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="mt-3 space-y-1.5 border-t pt-2 text-xs text-muted-foreground animate-in fade-in slide-in-from-top-1 duration-base">
             <div className="flex justify-between">
               <span>{t.taskBoard.type}</span>
-              <span className="font-medium text-foreground">{TYPE_LABELS[task.type]}</span>
+              <span className="font-medium text-foreground">
+                {TYPE_LABELS[task.type]}
+              </span>
             </div>
             <div className="flex justify-between">
               <span>{t.taskBoard.status}</span>
-              <span className="font-medium text-foreground">{STATUS_LABELS[task.status]}</span>
+              <span className="font-medium text-foreground">
+                {STATUS_LABELS[task.status]}
+              </span>
             </div>
             {task.phase && (
               <div className="flex justify-between">
                 <span>{t.taskBoard.phase}</span>
-                <span className="font-medium text-foreground">{task.phase}</span>
+                <span className="font-medium text-foreground">
+                  {task.phase}
+                </span>
               </div>
             )}
             {task.duration_ms > 0 && (
@@ -292,7 +318,7 @@ export function TaskCard({
               </div>
             )}
             {task.error && (
-              <div className="mt-1 rounded bg-red-500/10 px-2 py-1 text-red-600 dark:text-red-400">
+              <div className="mt-1 rounded bg-destructive/10 px-2 py-1 text-destructive">
                 {task.error}
               </div>
             )}

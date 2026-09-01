@@ -4,7 +4,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-
 from runtime.memory.threads import ThreadStateStore
 from runtime.platform.ui.app import create_app
 
@@ -20,7 +19,7 @@ def test_factory_reset_endpoint_requires_confirmation(
     response = client.post("/api/system/factory-reset", json={"confirm": "RESET"})
 
     assert response.status_code == 400
-    assert "RESET OCTOPUS" in response.text
+    assert "RESET ECHO" in response.text
 
 
 def test_factory_reset_endpoint_clears_runtime_state(
@@ -30,8 +29,8 @@ def test_factory_reset_endpoint_clears_runtime_state(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "threads.jsonl").write_text("thread", encoding="utf-8")
-    (tmp_path / ".octopus").mkdir()
-    (tmp_path / ".octopus" / "intelligence.json").write_text("{}", encoding="utf-8")
+    (tmp_path / ".echo").mkdir()
+    (tmp_path / ".echo" / "intelligence.json").write_text("{}", encoding="utf-8")
     (tmp_path / "agents").mkdir()
     (tmp_path / "agents" / "general.txt").write_text("keep", encoding="utf-8")
 
@@ -40,14 +39,14 @@ def test_factory_reset_endpoint_clears_runtime_state(
 
     response = client.post(
         "/api/system/factory-reset",
-        json={"confirm": "RESET OCTOPUS", "clear_user_install_state": False},
+        json={"confirm": "RESET ECHO", "clear_user_install_state": False},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["ok"] is True
     assert not (tmp_path / "data").exists()
-    assert not (tmp_path / ".octopus").exists()
+    assert not (tmp_path / ".echo").exists()
     assert (tmp_path / "agents" / "general.txt").exists()
 
 
@@ -88,7 +87,7 @@ def test_factory_reset_endpoint_clears_visible_threads_and_teams(
 
     response = client.post(
         "/api/system/factory-reset",
-        json={"confirm": "RESET OCTOPUS", "clear_user_install_state": False},
+        json={"confirm": "RESET ECHO", "clear_user_install_state": False},
     )
 
     assert response.status_code == 200

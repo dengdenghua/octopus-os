@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.platform.runtime_policy.browser_sessions import BrowserSessionCenter
 from runtime.platform.ui.browser_router import create_browser_router
 
@@ -35,6 +34,10 @@ def test_browser_session_center_snapshots_without_runtime_objects() -> None:
         "healthy": True,
         "current_url": "",
         "current_title": "",
+        "viewport_width": 1440,
+        "viewport_height": 900,
+        "recovered_from_crash": False,
+        "recovery_revalidated_at": 0,
         "browser_regression_enabled": False,
         "browser_regression_mode": "off",
         "browser_regression_preview_url": "",

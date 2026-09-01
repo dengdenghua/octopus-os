@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="https://github.com/octopus-agent/octopus-agent.git"
+REPO_URL="https://github.com/dengdenghua/echo-os.git"
+PYENV_INSTALL_SHA256="1065197a9fff657e0e2941e4ca8c8b6e72833833466b777b9eddd0fff335ec41"
+NVM_INSTALL_SHA256="abdb525ee9f5b48b34d8ed9fc67c6013fb0f659712e401ecd88ab989b3af8f53"
+UV_INSTALL_SHA256="92e8554321e2bde08c9b1445dae47a65360f885274f31df51cdc2f9faa84e001"
 MINIMAL=0
 DEV=0
 
@@ -16,6 +19,41 @@ ok()    { printf "${GREEN}[OK]${NC}    %s\n" "$*"; }
 warn()  { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
 err()   { printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; }
 die()   { err "$@"; exit 1; }
+
+download_verify_run() {
+    local url="$1"
+    local expected_sha256="$2"
+    local interpreter="${3:-bash}"
+    local downloaded actual_sha256 rc
+
+    [[ "$expected_sha256" =~ ^[0-9a-fA-F]{64}$ ]] || die "invalid expected SHA-256 for ${url}"
+    downloaded="$(mktemp "${TMPDIR:-/tmp}/echo-install.XXXXXX")" || die "cannot create download file"
+    if ! curl -fsSL --proto '=https,file' --tlsv1.2 "$url" -o "$downloaded"; then
+        rm -f "$downloaded"
+        die "download failed: ${url}"
+    fi
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual_sha256="$(sha256sum "$downloaded" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        actual_sha256="$(shasum -a 256 "$downloaded" | awk '{print $1}')"
+    else
+        rm -f "$downloaded"
+        die "SHA-256 verification unavailable (need sha256sum or shasum)"
+    fi
+    actual_sha256="$(printf '%s' "$actual_sha256" | tr '[:upper:]' '[:lower:]')"
+    expected_sha256="$(printf '%s' "$expected_sha256" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+        rm -f "$downloaded"
+        die "checksum mismatch for ${url}"
+    fi
+    if "$interpreter" "$downloaded"; then
+        rc=0
+    else
+        rc=$?
+    fi
+    rm -f "$downloaded"
+    return "$rc"
+}
 
 for arg in "$@"; do
     case "$arg" in
@@ -83,7 +121,7 @@ install_python_pyenv() {
     info "Installing Python 3.12 via pyenv..."
     if ! require_cmd pyenv; then
         info "Installing pyenv..."
-        curl -fsSL https://pyenv.run | bash 2>/dev/null || {
+        download_verify_run https://pyenv.run "$PYENV_INSTALL_SHA256" bash 2>/dev/null || {
             warn "pyenv install failed, trying brew..."
             if require_cmd brew; then
                 brew install pyenv
@@ -160,7 +198,9 @@ if [[ "$MINIMAL" -eq 0 ]]; then
         info "Installing nvm..."
         export NVM_DIR="$HOME/.nvm"
         if [[ ! -d "$NVM_DIR" ]]; then
-            curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+            download_verify_run \
+                https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh \
+                "$NVM_INSTALL_SHA256" bash
         fi
         [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
         nvm install --lts
@@ -178,7 +218,7 @@ if require_cmd uv; then
 else
     warn "uv not found"
     info "Installing uv..."
-    curl -fsSL https://astral.sh/uv/install.sh | sh
+    download_verify_run https://astral.sh/uv/install.sh "$UV_INSTALL_SHA256" sh
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
     if require_cmd uv; then
         ok "uv installed: $(uv --version 2>&1)"
@@ -194,7 +234,7 @@ if git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree &>/dev/null; then
     ok "Git repository detected at ${PROJECT_DIR}"
 else
     info "Not inside a git repo, cloning ${REPO_URL}..."
-    CLONE_DIR="$HOME/octopus-agent"
+    CLONE_DIR="$HOME/echo-agent"
     if [[ -d "$CLONE_DIR" && -d "$CLONE_DIR/.git" ]]; then
         ok "Repo already cloned at ${CLONE_DIR}, pulling latest..."
         git -C "$CLONE_DIR" pull --ff-only || warn "git pull failed, continuing with existing checkout"
@@ -246,7 +286,7 @@ fi
 
 echo ""
 printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-printf "${GREEN}  ✓ Octopus Agent installed successfully!${NC}\n"
+printf "${GREEN}  ✓ Echo Agent installed successfully!${NC}\n"
 printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 echo ""
 echo "  Project:  ${PROJECT_DIR}"

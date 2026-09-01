@@ -65,9 +65,8 @@ def _public_symbols(path: Path) -> list[str]:
     # Fallback: top-level non-_ classes / funcs
     names: list[str] = []
     for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            if not node.name.startswith("_"):
-                names.append(node.name)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and not node.name.startswith("_"):
+            names.append(node.name)
     return names
 
 
@@ -144,9 +143,8 @@ def _load_catalog() -> dict[str, dict[str, Any]]:
     )
     tree = ast.parse(src)
     for node in tree.body:
-        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            if node.target.id == "_CATALOG" and node.value is not None:
-                return ast.literal_eval(node.value)
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "_CATALOG" and node.value is not None:
+            return ast.literal_eval(node.value)
         if isinstance(node, ast.Assign):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name) and tgt.id == "_CATALOG":
@@ -164,19 +162,18 @@ def _load_arm_skill_map() -> dict[str, list[str]]:
     for node in tree.body:
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
             tgt = node.targets[0]
-            if isinstance(tgt, ast.Name) and tgt.id.startswith("_") and tgt.id.isupper():
-                if isinstance(node.value, ast.List):
-                    skills: list[str] = []
-                    for elt in node.value.elts:
-                        if (
-                            isinstance(elt, ast.Call)
-                            and elt.args
-                            and isinstance(elt.args[0], ast.Constant)
-                            and isinstance(elt.args[0].value, str)
-                        ):
-                            skills.append(elt.args[0].value)
-                    if skills:
-                        group_lists[tgt.id] = skills
+            if isinstance(tgt, ast.Name) and tgt.id.startswith("_") and tgt.id.isupper() and isinstance(node.value, ast.List):
+                skills: list[str] = []
+                for elt in node.value.elts:
+                    if (
+                        isinstance(elt, ast.Call)
+                        and elt.args
+                        and isinstance(elt.args[0], ast.Constant)
+                        and isinstance(elt.args[0].value, str)
+                    ):
+                        skills.append(elt.args[0].value)
+                if skills:
+                    group_lists[tgt.id] = skills
     arm_to_skills: dict[str, list[str]] = {}
     for node in tree.body:
         if not (isinstance(node, ast.FunctionDef) and node.name.startswith("make_") and node.name.endswith("_arm")):
@@ -278,10 +275,7 @@ def _build_import_graph() -> dict[str, set[str]]:
                 # ``runtime.execution.tool_engine`` both attribute to the
                 # package ``runtime.execution.tool_engine``.
                 parts = target.split(".")
-                if len(parts) >= 3:
-                    key = ".".join(parts[:3])
-                else:
-                    key = target
+                key = ".".join(parts[:3]) if len(parts) >= 3 else target
                 graph.setdefault(key, set()).add(rel)
     return graph
 
@@ -385,7 +379,7 @@ def page_overview() -> str:
     pieces: list[str] = [
         "# 项目概述 · Project Overview",
         "",
-        "> 自动从仓库结构提取。Octopus · The Open-Source Multi-Agent AI Workspace.",
+        "> 自动从仓库结构提取。Echo · The Open-Source Multi-Agent AI Workspace.",
         "",
     ]
     readme = ROOT / "README.md"
@@ -702,7 +696,7 @@ def page_adr_anchors() -> str:
         entries.append((md.name, title, status, refs))
 
     file_to_adrs: dict[str, list[str]] = {}
-    for name, title, status, refs in entries:
+    for name, _title, _status, refs in entries:
         for ref in refs:
             file_to_adrs.setdefault(ref, []).append(name)
 
@@ -780,7 +774,7 @@ def generate_all() -> tuple[dict[str, str], DocNode]:
         ("23-memory/hemolymph.md", "Memory · Hemolymph (Context)", "runtime/memory/hemolymph",
          "Context Composer · 给 planner 组装上下文（最近 trajectory + learned rules + memories）。"),
         ("24-sensing/model-router.md", "Sensing · Model Router", "runtime/sensing/model_router",
-         "ModelRouter 抽象 · Anthropic / OpenAI / Molili / Mock / MultiModelRouter (multi-provider fallback)。"),
+         "ModelRouter 抽象 · Anthropic / OpenAI / Gemini / Ollama / Mock / MultiModelRouter (multi-provider fallback)。"),
         ("24-sensing/gateway.md", "Sensing · Gateway (HTTP API)", "runtime/sensing/gateway",
          "全部 FastAPI router · openai_gateway / meta / mcp / config / channels / thread_compat / …"),
         ("25-adapters/mcp.md", "Adapters · MCP", "runtime/adapters/mcp_client",
@@ -788,7 +782,7 @@ def generate_all() -> tuple[dict[str, str], DocNode]:
         ("25-adapters/channels.md", "Adapters · Channels", "runtime/adapters/channels",
          "外部 channel adapter (Slack / Discord / 微信 / …) · 必须走 validation safe_send 才允许出站。"),
         ("25-adapters/integrations.md", "Adapters · Integrations", "runtime/adapters/integrations",
-         "Molili 桥接 · Local auth 路由 · 各家第三方集成的 router proxy。"),
+         "Local auth 路由 · 各家第三方集成的 router proxy。"),
     ]
     for rel, title, pkg_rel, prelude in runtime_subs:
         pkg = ROOT / pkg_rel
@@ -881,7 +875,7 @@ def generate_all() -> tuple[dict[str, str], DocNode]:
     # ── index.json manifest ────────────────────────────────
     manifest = {
         "version": 2,
-        "generated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+        "generated_at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         "files_analyzed": len(out),
         "tree": [c.to_dict() for c in tree.children],
     }
@@ -912,7 +906,19 @@ def main() -> int:
     for rel, content in outputs.items():
         path = OUT_DIR / rel
         current = path.read_text(encoding="utf-8") if path.exists() else None
-        if current != content:
+        matches = current == content
+        if args.check and rel == "index.json" and current is not None:
+            # generated_at records the real generation time. Ignore only that
+            # volatile field while continuing to verify the manifest payload.
+            try:
+                current_manifest = json.loads(current)
+                expected_manifest = json.loads(content)
+                current_manifest.pop("generated_at", None)
+                expected_manifest.pop("generated_at", None)
+                matches = current_manifest == expected_manifest
+            except json.JSONDecodeError:
+                matches = False
+        if not matches:
             drift = True
             if args.check:
                 print(f"[drift] {path.relative_to(ROOT)}", file=sys.stderr)

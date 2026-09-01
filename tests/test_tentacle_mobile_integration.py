@@ -12,12 +12,12 @@ import json
 
 import pytest
 import pytest_asyncio
-
 from runtime.tentacle.base import ToolCall
 from runtime.tentacle.coordinator import TentacleCoordinator
 from runtime.tentacle.mobile.device import MobileDevice
 
 # ── fixtures ──────────────────────────────────────────────
+
 
 @pytest_asyncio.fixture
 async def coordinator():
@@ -27,6 +27,7 @@ async def coordinator():
     # Disable the dashboard (port 8766 by default) to prevent the same kind
     # of collision on the dashboard socket.
     import socket
+
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -40,7 +41,7 @@ async def coordinator():
 
 @pytest_asyncio.fixture
 async def mock_mobile_client(coordinator):
-    """模拟 Octopus Mobile 客户端."""
+    """模拟 Echo Mobile 客户端."""
     from websockets import connect
 
     ws = await connect(f"ws://127.0.0.1:{coordinator._test_port}")
@@ -75,6 +76,7 @@ async def mock_mobile_client(coordinator):
 
 
 # ── 基础测试 ──────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_device_registration(coordinator, mock_mobile_client):
@@ -122,6 +124,7 @@ async def test_heartbeat_updates_meta(coordinator, mock_mobile_client):
 
 
 # ── tool/execute 往返测试 ─────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_tool_execute_roundtrip(coordinator, mock_mobile_client):
@@ -207,6 +210,7 @@ async def test_unknown_tool_returns_error(coordinator, mock_mobile_client):
 
 # ── task/execute 端到端测试 ───────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_task_execute_no_decision_engine(coordinator, mock_mobile_client):
     """无决策引擎时 task/execute 返回提示信息."""
@@ -241,19 +245,31 @@ async def test_task_execute_with_decision_engine(coordinator, mock_mobile_client
     # 定义简单决策引擎：生成两个 tap 指令
     async def simple_decision(task: str, device: MobileDevice) -> list[ToolCall]:
         return [
-            ToolCall(call_id="tc-a", tentacle_id=device.tentacle_id, tool="android.tap", args={"x": 100, "y": 200}),
-            ToolCall(call_id="tc-b", tentacle_id=device.tentacle_id, tool="android.tap", args={"x": 300, "y": 400}),
+            ToolCall(
+                call_id="tc-a",
+                tentacle_id=device.tentacle_id,
+                tool="android.tap",
+                args={"x": 100, "y": 200},
+            ),
+            ToolCall(
+                call_id="tc-b",
+                tentacle_id=device.tentacle_id,
+                tool="android.tap",
+                args={"x": 300, "y": 400},
+            ),
         ]
 
     # 重启协调器带决策引擎
     await coordinator.stop()
     import socket as _socket
+
     _s = _socket.socket()
     _s.bind(("127.0.0.1", 0))
     _engine_port = _s.getsockname()[1]
     _s.close()
     coord_with_engine = TentacleCoordinator(
-        host="127.0.0.1", port=_engine_port,
+        host="127.0.0.1",
+        port=_engine_port,
         decision_engine=simple_decision,
         dashboard_port=None,
     )
@@ -262,6 +278,7 @@ async def test_task_execute_with_decision_engine(coordinator, mock_mobile_client
     try:
         # 重新连接
         from websockets import connect
+
         ws = await connect(f"ws://127.0.0.1:{_engine_port}")
 
         hello_msg = {
@@ -370,6 +387,7 @@ async def test_task_execute_device_not_found(coordinator, mock_mobile_client):
 
 
 # ── 断开与统计 ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_device_disconnect_removes_from_pool(coordinator, mock_mobile_client):

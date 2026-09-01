@@ -23,12 +23,14 @@ def test_llm_replay_scores_real_model_output() -> None:
         prompt="When truncated, continue from checkpoint and deliver the complete report.",
         task_scores=[0.8],
     )
-    router = FakeRouter([
-        ModelResponse(
-            text="I will continue from the checkpoint and deliver the complete final report.",
-            finish_reason="stop",
-        ),
-    ])
+    router = FakeRouter(
+        [
+            ModelResponse(
+                text="I will continue from the checkpoint and deliver the complete final report.",
+                finish_reason="stop",
+            ),
+        ]
+    )
     case = TurnReplayCase(
         case_id="trunc",
         kind="report_truncation",
@@ -53,19 +55,21 @@ def test_llm_replay_handles_native_tool_call_loop(tmp_path) -> None:
         prompt="Default agent mode may use tools; do not claim tools are unavailable.",
         task_scores=[0.8],
     )
-    router = FakeRouter([
-        ModelResponse(
-            text="I will search first.",
-            tool_calls=[
-                ToolCall(id="tool-1", name="web_search", input={"query": "agent tools"}),
-            ],
-            finish_reason="tool_use",
-        ),
-        ModelResponse(
-            text="I used the available tool and can proceed with the answer.",
-            finish_reason="stop",
-        ),
-    ])
+    router = FakeRouter(
+        [
+            ModelResponse(
+                text="I will search first.",
+                tool_calls=[
+                    ToolCall(id="tool-1", name="web_search", input={"query": "agent tools"}),
+                ],
+                finish_reason="tool_use",
+            ),
+            ModelResponse(
+                text="I used the available tool and can proceed with the answer.",
+                finish_reason="stop",
+            ),
+        ]
+    )
     case = TurnReplayCase(
         case_id="tools",
         kind="tool_permission_confusion",
@@ -89,9 +93,11 @@ def test_llm_replay_handles_native_tool_call_loop(tmp_path) -> None:
 
 def test_llm_replay_rejects_truncated_output() -> None:
     candidate = PromptCandidate(prompt="Write reports.", task_scores=[0.8])
-    router = FakeRouter([
-        ModelResponse(text="partial report", finish_reason="length"),
-    ])
+    router = FakeRouter(
+        [
+            ModelResponse(text="partial report", finish_reason="length"),
+        ]
+    )
     case = TurnReplayCase(
         case_id="trunc",
         kind="report_truncation",

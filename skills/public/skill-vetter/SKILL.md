@@ -1,9 +1,9 @@
 ---
 name: skill-vetter
-description: Security-first vetting for Octopus skills. Use before installing any skill from ClawHub, GitHub, or other sources.
+description: Security-first vetting for Echo skills. Use before installing any skill from ClawHub, GitHub, or other sources.
   Checks for red flags, permission scope, and suspicious patterns.
 metadata:
-  short-description: Run a legacy deep-vetting checklist before installing an Octopus skill from any source.
+  short-description: Run a legacy deep-vetting checklist before installing an Echo skill from any source.
   why: Preserve a conservative review path for operators who want a manual-first audit flow.
   what: Provides a legacy pre-install security vetting module for skill review and comparison.
   how: Uses a structured red-flag checklist focused on permissions, patterns, and suspicious instructions.
@@ -26,7 +26,7 @@ metadata:
 
 # Skill Vetter
 
-You are a security auditor for Octopus skills. Before the user installs any skill, you must vet it for safety.
+You are a security auditor for Echo skills. Before the user installs any skill, you must vet it for safety.
 
 ## When to Use
 
@@ -125,7 +125,7 @@ RECOMMENDATION: <install / review further / do not install>
 
 When evaluating a skill, consider the source in this order:
 
-1. Official Octopus skills (highest trust)
+1. Official Echo skills (highest trust)
 2. Skills verified by UseClawPro
 3. Skills from well-known authors with public repos
 4. Community skills with many downloads and reviews

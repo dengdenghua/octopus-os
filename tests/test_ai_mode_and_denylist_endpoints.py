@@ -1,4 +1,5 @@
 """Tests for AI mode + path denylist HTTP endpoints."""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +8,6 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.sensing.gateway.config_router import create_config_router
 
 
@@ -23,8 +23,8 @@ def _make_app() -> FastAPI:
 @pytest.fixture
 def ai_mode_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state = tmp_path / "ai_mode.json"
-    monkeypatch.setenv("OCTOPUS_AI_MODE_PATH", str(state))
-    monkeypatch.delenv("OCTOPUS_AI_MODE", raising=False)
+    monkeypatch.setenv("ECHO_AI_MODE_PATH", str(state))
+    monkeypatch.delenv("ECHO_AI_MODE", raising=False)
     return state
 
 
@@ -70,7 +70,7 @@ def test_ai_mode_device_summary_present(ai_mode_state: Path) -> None:
 @pytest.fixture
 def denylist_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state = tmp_path / "denylist.json"
-    monkeypatch.setenv("OCTOPUS_PATH_DENYLIST_PATH", str(state))
+    monkeypatch.setenv("ECHO_PATH_DENYLIST_PATH", str(state))
     return state
 
 
@@ -104,7 +104,8 @@ def test_denylist_delete_removes(denylist_state: Path) -> None:
     client.post("/api/path-denylist", json={"path": "C:/x"})
     client.post("/api/path-denylist", json={"path": "C:/y"})
     r = client.request(
-        "DELETE", "/api/path-denylist",
+        "DELETE",
+        "/api/path-denylist",
         json={"path": "C:/x"},
     )
     assert r.status_code == 200

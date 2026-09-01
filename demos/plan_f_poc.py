@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -39,8 +38,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from runtime.tentacle.llm import (
-    ChatMessage,
+from runtime.tentacle.llm import (  # noqa: E402
     FakeTransport,
     LightweightLlmClient,
     LightweightReAct,
@@ -51,7 +49,6 @@ from runtime.tentacle.llm import (
     ToolCall,
     ToolCallResult,
 )
-
 
 # ── 工具执行器：Mock 实现（不真发请求） ──────────────────────
 
@@ -183,7 +180,7 @@ def run_offline_mode(skills: list) -> dict[str, Any]:
     print("=" * 70)
     print("【Offline 模式】 FakeTransport 模拟 LLM 响应")
     print("=" * 70)
-    print(f"任务: 在微信中找到 '我' 按钮并点击")
+    print("任务: 在微信中找到 '我' 按钮并点击")
     print(f"加载技能: {len(skills)} 个（{sum(1 for s in skills if s.name.startswith('android.'))} android.*）")
     print()
 
@@ -251,13 +248,12 @@ def run_online_mode(skills: list, provider: str = "deepseek") -> dict[str, Any]:
     else:
         raise ValueError(f"unknown provider: {provider}")
 
-    if not config.api_key or config.api_key == "ollama":
-        if provider != "ollama":
-            raise SystemExit(f"❌ {provider.upper()}_API_KEY not set")
+    if (not config.api_key or config.api_key == "ollama") and provider != "ollama":
+        raise SystemExit(f"❌ {provider.upper()}_API_KEY not set")
 
     print(f"Model: {config.model}")
     print(f"Base URL: {config.base_url}")
-    print(f"任务: 在微信中找到 '我' 按钮并点击")
+    print("任务: 在微信中找到 '我' 按钮并点击")
     print()
 
     client = LightweightLlmClient(config)
@@ -298,8 +294,8 @@ def benchmark_token_efficiency(skills: list) -> None:
 
     # 构造"system + 30 tools"的完整请求体
     from runtime.tentacle.llm import LlmConfig
-    from runtime.tentacle.llm.lightweight_client import UrllibTransport
     from runtime.tentacle.llm.chat_types import ChatMessage
+    from runtime.tentacle.llm.lightweight_client import UrllibTransport
 
     config = LlmConfig.deepSeek(api_key="fake")
     client = LightweightLlmClient(config, transport=UrllibTransport())
@@ -321,7 +317,7 @@ def benchmark_token_efficiency(skills: list) -> None:
     print(f"请求体字节数: {len(body_json.encode('utf-8')):,}")
     print(f"估算 tokens: {est_tokens_en:,}（纯英文）/ {est_tokens_zh:,}（中英混合）")
     print(f"DeepSeek 输入成本: ¥{est_tokens_zh / 1_000_000 * 2:.4f} 元/次")
-    print(f"  （DeepSeek 定价：输入 ¥2/M tokens）")
+    print("  （DeepSeek 定价：输入 ¥2/M tokens）")
     print()
     print("→ 实测 30 个 SKILL.md 全部塞进 system prompt，单次调用成本 < 0.01 元")
     print()
@@ -338,7 +334,7 @@ def main():
     args = parser.parse_args()
 
     print()
-    print("🐙 Octopus Mobile · 方案 F PoC")
+    print("🐙 Echo Mobile · 方案 F PoC")
     print()
 
     # 加载 30 个 SKILL.md
@@ -372,3 +368,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

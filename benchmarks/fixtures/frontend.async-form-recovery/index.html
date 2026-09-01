@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Account</title></head>
+  <body>
+    <form id="account-form">
+      <input id="email" name="email" placeholder="Email" />
+      <button type="submit">Save</button>
+      <p id="status"></p>
+    </form>
+    <script>
+      const email = document.querySelector('#email');
+      const status = document.querySelector('#status');
+      const form = document.querySelector('#account-form');
+      async function validate(value) {
+        await new Promise((resolve) => setTimeout(resolve, value.startsWith('slow') ? 300 : 40));
+        status.textContent = `Available: ${value}`;
+      }
+      email.addEventListener('input', () => validate(email.value));
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        form.dataset.submittedEmail = email.value;
+      });
+    </script>
+  </body>
+</html>

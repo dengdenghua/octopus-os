@@ -1,10 +1,10 @@
 """Regression tests for the in-flight guards added in optimisation §15+§18.
 
-Two guards fire DURING the loop (not at Final Answer time):
+The write-verification guard fires during the loop; the legacy completion
+phrase hook is retained as telemetry-only compatibility:
 
-* ``_completion_phrase_without_todo_guard`` — the model says "done /
-  finished / 已完成" but its action wasn't ``todo_write``. Nudge to
-  update the visible checklist before moving on.
+* ``_completion_phrase_without_todo_guard`` — detects completion wording
+  but never forces a checklist round.
 
 * ``_unverified_write_followup_guard`` — code was written N steps ago
   with no verification (ruff/pytest/tsc/...). Nudge to verify before
@@ -13,6 +13,7 @@ Two guards fire DURING the loop (not at Final Answer time):
 Both must be silent when the model is already doing the right thing
 — extra nudges burn tokens without value.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -64,30 +65,37 @@ class TestCompletionPhraseDetector:
 
 
 class TestCompletionPhraseGuard:
-    """Returns a nudge string when the model claims completion but
-    isn't calling todo_write next; ``None`` otherwise."""
+    """The compatibility hook stays silent; receipts own completion."""
 
     def test_no_todo_protocol_no_nudge(self) -> None:
         # Free-form chat doesn't need checklists — guard stays silent.
         steps = [
-            _step(1, thought="Done!", action="exec_shell({\"cmd\": \"echo hi\"})"),
+            _step(1, thought="Done!", action='exec_shell({"cmd": "echo hi"})'),
         ]
-        assert _completion_phrase_without_todo_guard(
-            steps, todo_protocol_required=False,
-        ) is None
+        assert (
+            _completion_phrase_without_todo_guard(
+                steps,
+                todo_protocol_required=False,
+            )
+            is None
+        )
 
     def test_no_existing_todos_no_nudge(self) -> None:
         # First-turn warm-up: model hasn't built a checklist yet.
         # The Final-Answer-time guard catches "no todo at all"; we
         # don't pile on mid-flight.
         steps = [
-            _step(1, thought="Done with discovery", action="read_file({\"path\": \"a.py\"})"),
+            _step(1, thought="Done with discovery", action='read_file({"path": "a.py"})'),
         ]
-        assert _completion_phrase_without_todo_guard(
-            steps, todo_protocol_required=True,
-        ) is None
+        assert (
+            _completion_phrase_without_todo_guard(
+                steps,
+                todo_protocol_required=True,
+            )
+            is None
+        )
 
-    def test_completion_phrase_after_real_action_triggers(self) -> None:
+    def test_completion_phrase_after_real_action_is_telemetry_only(self) -> None:
         steps = [
             _step(
                 1,
@@ -101,11 +109,13 @@ class TestCompletionPhraseGuard:
                 observation="foo.py",
             ),
         ]
-        msg = _completion_phrase_without_todo_guard(
-            steps, todo_protocol_required=True,
+        assert (
+            _completion_phrase_without_todo_guard(
+                steps,
+                todo_protocol_required=True,
+            )
+            is None
         )
-        assert msg is not None
-        assert "todo_write" in msg
 
     def test_completion_phrase_followed_by_todo_write_silent(self) -> None:
         # The model already did the right thing — guard MUST stay quiet.
@@ -122,9 +132,13 @@ class TestCompletionPhraseGuard:
                 observation="ok",
             ),
         ]
-        assert _completion_phrase_without_todo_guard(
-            steps, todo_protocol_required=True,
-        ) is None
+        assert (
+            _completion_phrase_without_todo_guard(
+                steps,
+                todo_protocol_required=True,
+            )
+            is None
+        )
 
     def test_all_todos_completed_silent(self) -> None:
         # Final-Answer guard handles wrap-up; mid-flight guard stops
@@ -137,9 +151,13 @@ class TestCompletionPhraseGuard:
             ),
             _step(2, thought="All done", action="none"),
         ]
-        assert _completion_phrase_without_todo_guard(
-            steps, todo_protocol_required=True,
-        ) is None
+        assert (
+            _completion_phrase_without_todo_guard(
+                steps,
+                todo_protocol_required=True,
+            )
+            is None
+        )
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -184,10 +202,7 @@ class TestUnverifiedWriteGuard:
         # action to test the nudge.
         steps = [
             _step(1, action='edit_file({"path": "a.py", "old_string": "x", "new_string": "y"})'),
-        ] + [
-            _step(i, action='todo_write({"items": []})')
-            for i in range(2, 9)
-        ]
+        ] + [_step(i, action='todo_write({"items": []})') for i in range(2, 9)]
         msg = _unverified_write_followup_guard(steps, is_code_mode=True)
         assert msg is not None
         assert "verification" in msg.lower() or "verify" in msg.lower()

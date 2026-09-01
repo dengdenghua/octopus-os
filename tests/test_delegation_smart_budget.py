@@ -11,10 +11,10 @@ These tests directly poke the budget primitives. Higher-level tests in
 ``test_delegation_enhancements.py`` cover the integration with
 ``_call_agent`` and ``_call_agent_parallel``.
 """
+
 from __future__ import annotations
 
 import pytest
-
 from runtime.execution.suckers.delegation_budget import (
     _PER_TURN_ABSOLUTE_LIMIT,
     _TURN_DELEGATIONS,
@@ -166,9 +166,9 @@ def test_different_failures_each_get_a_free_pass():
 def test_mixed_success_and_failure():
     """Mix: 2 successes + 1 first-fail + 1 repeat-fail = counter at 3."""
     turn_id = "turn-mixed"
-    _record_delegation(turn_id, "fp-A", succeeded=True)   # +1
+    _record_delegation(turn_id, "fp-A", succeeded=True)  # +1
     _record_delegation(turn_id, "fp-B", succeeded=False)  # +0 (first-time)
-    _record_delegation(turn_id, "fp-C", succeeded=True)   # +1
+    _record_delegation(turn_id, "fp-C", succeeded=True)  # +1
     _record_delegation(turn_id, "fp-B", succeeded=False)  # +1 (repeat)
     assert _TURN_DELEGATIONS[turn_id] == 3
 

@@ -6,6 +6,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { useI18n } from "@/core/i18n/hooks";
+
 import { accountApi } from "./api";
 import { queryKeys } from "./query-keys";
 
@@ -31,18 +33,23 @@ export function useProfile() {
     queryFn: () => accountApi.getProfile(),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+    // Local/community deployments may intentionally omit the optional
+    // profile service. Fail fast so Settings can render the authenticated
+    // account fallback instead of showing a retrying skeleton for seconds.
+    retry: false,
   });
 }
 
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
+  const { t } = useI18n();
 
   return useMutation<UserProfile, Error, UpdateProfileRequest>({
     mutationFn: (data) => accountApi.updateProfile(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.profile() });
       queryClient.invalidateQueries({ queryKey: queryKeys.overview() });
-      toast.success("Profile updated successfully");
+      toast.success(t.accountSettings.profileUpdated);
     },
     onError: (error) => {
       toast.error(error.message);
@@ -52,12 +59,13 @@ export function useUpdateProfile() {
 
 export function useUploadAvatar() {
   const queryClient = useQueryClient();
+  const { t } = useI18n();
 
   return useMutation<{ success: boolean; avatar_url: string }, Error, File>({
     mutationFn: (file) => accountApi.uploadAvatar(file),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.profile() });
-      toast.success("Avatar uploaded successfully");
+      toast.success(t.accountSettings.avatarUploaded);
     },
     onError: (error) => {
       toast.error(error.message);
@@ -95,13 +103,14 @@ export function useLinkAccount() {
 
 export function useUnlinkAccount() {
   const queryClient = useQueryClient();
+  const { t } = useI18n();
 
   return useMutation<UserProfile, Error, string>({
     mutationFn: (provider) => accountApi.unlinkAccount(provider),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.linkedAccounts() });
       queryClient.invalidateQueries({ queryKey: queryKeys.profile() });
-      toast.success("Account unlinked successfully");
+      toast.success(t.accountSettings.accountUnlinked);
     },
     onError: (error) => {
       toast.error(error.message);
@@ -116,17 +125,19 @@ export function usePrivacySettings() {
     queryFn: () => accountApi.getPrivacySettings(),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+    retry: false,
   });
 }
 
 export function useUpdatePrivacySettings() {
   const queryClient = useQueryClient();
+  const { t } = useI18n();
 
   return useMutation<PrivacySettings, Error, Partial<PrivacySettings>>({
     mutationFn: (data) => accountApi.updatePrivacySettings(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.privacy() });
-      toast.success("Privacy settings updated");
+      toast.success(t.accountSettings.privacyUpdated);
     },
     onError: (error) => {
       toast.error(error.message);
@@ -141,6 +152,7 @@ export function useSubscription() {
     queryFn: () => accountApi.getSubscription(),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+    retry: false,
   });
 }
 
@@ -156,8 +168,13 @@ export function usePlans(includeInactive = false) {
 export function useSubscribe() {
   const queryClient = useQueryClient();
 
-  return useMutation<UserSubscription, Error, { planId: string; autoRenew?: boolean }>({
-    mutationFn: ({ planId, autoRenew }) => accountApi.subscribe(planId, autoRenew),
+  return useMutation<
+    UserSubscription,
+    Error,
+    { planId: string; autoRenew?: boolean }
+  >({
+    mutationFn: ({ planId, autoRenew }) =>
+      accountApi.subscribe(planId, autoRenew),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.subscription() });
       queryClient.invalidateQueries({ queryKey: queryKeys.usage() });
@@ -172,12 +189,13 @@ export function useSubscribe() {
 
 export function useCancelSubscription() {
   const queryClient = useQueryClient();
+  const { t } = useI18n();
 
   return useMutation<UserSubscription, Error>({
     mutationFn: () => accountApi.cancelSubscription(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.subscription() });
-      toast.success("Subscription cancelled successfully");
+      toast.success(t.subscriptionSettings.cancelled);
     },
     onError: (error) => {
       toast.error(error.message);
@@ -195,7 +213,10 @@ export function useUsage() {
   });
 }
 
-export function useUsageEvents(params?: { limit?: number; event_type?: string }) {
+export function useUsageEvents(params?: {
+  limit?: number;
+  event_type?: string;
+}) {
   return useQuery<UsageEvent[], Error>({
     queryKey: queryKeys.usageEvents(params),
     queryFn: async () => {

@@ -1,4 +1,3 @@
-
 import {
   Children,
   createContext,
@@ -235,9 +234,9 @@ export const Terminal = ({
     >
       <div className="border-border flex flex-col gap-y-2 border-b p-4">
         <div className="flex flex-row gap-x-2">
-          <div className="h-2 w-2 rounded-lg bg-red-500"></div>
-          <div className="h-2 w-2 rounded-lg bg-yellow-500"></div>
-          <div className="h-2 w-2 rounded-lg bg-green-500"></div>
+          <div className="h-2 w-2 rounded-lg bg-destructive"></div>
+          <div className="h-2 w-2 rounded-lg bg-warning"></div>
+          <div className="h-2 w-2 rounded-lg bg-success"></div>
         </div>
       </div>
       <pre className="p-4">
@@ -254,4 +253,3 @@ export const Terminal = ({
     </SequenceContext.Provider>
   );
 };
-

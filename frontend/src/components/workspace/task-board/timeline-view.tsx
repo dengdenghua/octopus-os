@@ -9,16 +9,14 @@
  *   - Zoom in/out on timeline via buttons
  */
 
-import {
-  ClockIcon,
-  Loader2Icon,
-  ZoomInIcon,
-  ZoomOutIcon,
-} from "lucide-react";
+import { ClockIcon, Loader2Icon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { TaskBoardTimelineResponse, TimelineTask } from "@/core/task-board/types";
+import type {
+  TaskBoardTimelineResponse,
+  TimelineTask,
+} from "@/core/task-board/types";
 
 import { useI18n } from "@/core/i18n/hooks";
 import type { TaskType } from "@/core/task-board/types";
@@ -66,21 +64,54 @@ function computeTicks(
   startMs: number,
   endMs: number,
   _viewWidth: number,
+  locale: string,
 ): TickMark[] {
   const rangeMs = endMs - startMs;
   if (rangeMs <= 0) return [];
 
   // Choose tick interval based on range
   const intervals = [
-    { thresholdMs: 5 * 60_000, intervalMs: 60_000, majorEvery: 5, format: "mm:ss" },
-    { thresholdMs: 30 * 60_000, intervalMs: 5 * 60_000, majorEvery: 6, format: "HH:mm" },
-    { thresholdMs: 2 * 3_600_000, intervalMs: 15 * 60_000, majorEvery: 4, format: "HH:mm" },
-    { thresholdMs: 12 * 3_600_000, intervalMs: 3_600_000, majorEvery: 3, format: "HH:mm" },
-    { thresholdMs: 48 * 3_600_000, intervalMs: 6 * 3_600_000, majorEvery: 4, format: "HH:mm" },
-    { thresholdMs: Infinity, intervalMs: 24 * 3_600_000, majorEvery: 1, format: "MMM dd" },
+    {
+      thresholdMs: 5 * 60_000,
+      intervalMs: 60_000,
+      majorEvery: 5,
+      format: "mm:ss",
+    },
+    {
+      thresholdMs: 30 * 60_000,
+      intervalMs: 5 * 60_000,
+      majorEvery: 6,
+      format: "HH:mm",
+    },
+    {
+      thresholdMs: 2 * 3_600_000,
+      intervalMs: 15 * 60_000,
+      majorEvery: 4,
+      format: "HH:mm",
+    },
+    {
+      thresholdMs: 12 * 3_600_000,
+      intervalMs: 3_600_000,
+      majorEvery: 3,
+      format: "HH:mm",
+    },
+    {
+      thresholdMs: 48 * 3_600_000,
+      intervalMs: 6 * 3_600_000,
+      majorEvery: 4,
+      format: "HH:mm",
+    },
+    {
+      thresholdMs: Infinity,
+      intervalMs: 24 * 3_600_000,
+      majorEvery: 1,
+      format: "MMM dd",
+    },
   ];
 
-  const cfg = intervals.find((i) => rangeMs <= i.thresholdMs) ?? intervals[intervals.length - 1]!;
+  const cfg =
+    intervals.find((i) => rangeMs <= i.thresholdMs) ??
+    intervals[intervals.length - 1]!;
 
   const ticks: TickMark[] = [];
   const firstTick = Math.ceil(startMs / cfg.intervalMs) * cfg.intervalMs;
@@ -95,8 +126,10 @@ function computeTicks(
     } else if (cfg.format === "HH:mm") {
       label = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
     } else {
-      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      label = `${months[d.getMonth()]} ${d.getDate()}`;
+      label = new Intl.DateTimeFormat(locale, {
+        month: "short",
+        day: "numeric",
+      }).format(d);
     }
 
     ticks.push({
@@ -131,7 +164,7 @@ export function TimelineView({
   data: TaskBoardTimelineResponse;
   loading?: boolean;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
@@ -144,8 +177,14 @@ export function TimelineView({
     intelligence: t.taskBoard.intelligence,
   };
 
-  const handleZoomIn = useCallback(() => setZoom((z) => Math.min(z * 1.5, 8)), []);
-  const handleZoomOut = useCallback(() => setZoom((z) => Math.max(z / 1.5, 0.5)), []);
+  const handleZoomIn = useCallback(
+    () => setZoom((z) => Math.min(z * 1.5, 8)),
+    [],
+  );
+  const handleZoomOut = useCallback(
+    () => setZoom((z) => Math.max(z / 1.5, 0.5)),
+    [],
+  );
   const handleZoomReset = useCallback(() => setZoom(1), []);
 
   const tasks = data.tasks;
@@ -165,28 +204,54 @@ export function TimelineView({
     const baseWidth = 800;
     const timelineWidth = Math.max(baseWidth * zoom, 400);
     const totalWidth = LABEL_WIDTH + timelineWidth + PADDING_RIGHT;
-    const totalHeight = PADDING_TOP + tasks.length * ROW_HEIGHT + PADDING_BOTTOM;
+    const totalHeight =
+      PADDING_TOP + tasks.length * ROW_HEIGHT + PADDING_BOTTOM;
 
-    return { startMs, endMs, rangeMs: endMs - startMs, timelineWidth, totalWidth, totalHeight };
+    return {
+      startMs,
+      endMs,
+      rangeMs: endMs - startMs,
+      timelineWidth,
+      totalWidth,
+      totalHeight,
+    };
   }, [tasks, data, zoom]);
 
   const ticks = useMemo(() => {
     if (!layout) return [];
-    return computeTicks(layout.startMs, layout.endMs, layout.timelineWidth);
-  }, [layout]);
+    return computeTicks(
+      layout.startMs,
+      layout.endMs,
+      layout.timelineWidth,
+      locale,
+    );
+  }, [layout, locale]);
+
+  const STATUS_LABELS: Record<string, string> = {
+    queued: t.taskBoard.queued,
+    running: t.taskBoard.running,
+    paused: t.taskBoard.paused,
+    completed: t.taskBoard.completed,
+    failed: t.taskBoard.failed,
+    cancelled: t.taskBoard.cancelled,
+  };
 
   const msToX = useCallback(
     (ms: number) => {
       if (!layout) return 0;
-      return LABEL_WIDTH + ((ms - layout.startMs) / layout.rangeMs) * layout.timelineWidth;
+      return (
+        LABEL_WIDTH +
+        ((ms - layout.startMs) / layout.rangeMs) * layout.timelineWidth
+      );
     },
     [layout],
   );
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div role="status" className="flex items-center justify-center py-20">
         <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
+        <span className="sr-only">{t.common.loading}</span>
       </div>
     );
   }
@@ -204,7 +269,14 @@ export function TimelineView({
     <div className="space-y-3">
       {/* Zoom controls */}
       <div className="flex items-center justify-end gap-1">
-        <Button variant="outline" size="icon" className="size-7" onClick={handleZoomOut} title={t.taskBoard.zoomOut}>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-7"
+          onClick={handleZoomOut}
+          title={t.taskBoard.zoomOut}
+          aria-label={t.taskBoard.zoomOut}
+        >
           <ZoomOutIcon className="size-3.5" />
         </Button>
         <Button
@@ -212,10 +284,18 @@ export function TimelineView({
           size="sm"
           className="h-7 px-2 text-xs tabular-nums"
           onClick={handleZoomReset}
+          aria-label={t.taskBoard.zoomReset(Math.round(zoom * 100))}
         >
           {Math.round(zoom * 100)}%
         </Button>
-        <Button variant="outline" size="icon" className="size-7" onClick={handleZoomIn} title={t.taskBoard.zoomIn}>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-7"
+          onClick={handleZoomIn}
+          title={t.taskBoard.zoomIn}
+          aria-label={t.taskBoard.zoomIn}
+        >
           <ZoomInIcon className="size-3.5" />
         </Button>
       </div>
@@ -223,7 +303,7 @@ export function TimelineView({
       {/* Timeline container */}
       <div
         ref={containerRef}
-        className="relative overflow-x-auto overflow-y-auto rounded-lg border bg-card"
+        className="relative overflow-x-auto max-w-full overflow-y-auto rounded-lg border bg-card"
         style={{ maxHeight: "480px" }}
         onScroll={(e) => setScrollLeft((e.target as HTMLDivElement).scrollLeft)}
       >
@@ -231,6 +311,8 @@ export function TimelineView({
           width={layout.totalWidth}
           height={layout.totalHeight}
           className="select-none"
+          role="img"
+          aria-label={t.taskBoard.timelineChart}
         >
           {/* Defs for animations & gradients */}
           <defs>
@@ -302,7 +384,7 @@ export function TimelineView({
                     x={x}
                     y={PADDING_TOP - 10}
                     textAnchor="middle"
-                    className="fill-muted-foreground text-[10px]"
+                    className="fill-muted-foreground text-xs"
                     style={{ fontSize: "10px" }}
                   >
                     {tick.label}
@@ -328,13 +410,20 @@ export function TimelineView({
                   if (rect) {
                     setTooltip({
                       task,
-                      x: e.clientX - rect.left + (containerRef.current?.scrollLeft ?? 0),
-                      y: e.clientY - rect.top + (containerRef.current?.scrollTop ?? 0),
+                      x:
+                        e.clientX -
+                        rect.left +
+                        (containerRef.current?.scrollLeft ?? 0),
+                      y:
+                        e.clientY -
+                        rect.top +
+                        (containerRef.current?.scrollTop ?? 0),
                     });
                   }
                 }}
                 onMouseLeave={() => setTooltip(null)}
               >
+                <title>{`${task.name} · ${STATUS_LABELS[task.status] ?? task.status} · ${formatDurationMs(task.duration_ms)}`}</title>
                 {/* Row background on hover */}
                 <rect
                   x={0}
@@ -351,13 +440,15 @@ export function TimelineView({
                   x={8}
                   y={y + BAR_HEIGHT / 2 + 1}
                   dominantBaseline="middle"
-                  className="fill-foreground text-[11px]"
+                  className="fill-foreground text-xs"
                   style={{ fontSize: "11px" }}
                 >
                   <tspan className="fill-muted-foreground">
                     {TYPE_ICON_EMOJI[task.type] ?? ""}{" "}
                   </tspan>
-                  {task.name.length > 18 ? task.name.slice(0, 18) + "..." : task.name}
+                  {task.name.length > 18
+                    ? task.name.slice(0, 18) + "..."
+                    : task.name}
                 </text>
 
                 {/* Task bar */}
@@ -422,7 +513,7 @@ export function TimelineView({
         {/* Tooltip overlay */}
         {tooltip && (
           <div
-            className="pointer-events-none absolute z-50 rounded-lg border bg-popover px-3 py-2 shadow-lg"
+            className="pointer-events-none absolute z-50 rounded-lg border bg-popover px-3 py-2 shadow-[var(--shadow-md)]"
             style={{
               left: Math.min(tooltip.x + 12, layout.totalWidth - 200),
               top: tooltip.y - 60,
@@ -435,16 +526,30 @@ export function TimelineView({
                   {TYPE_LABELS[tooltip.task.type]}
                 </span>
                 {" -- "}
-                {tooltip.task.status}
+                {STATUS_LABELS[tooltip.task.status] ?? tooltip.task.status}
               </p>
-              <p>{t.taskBoard.duration}: {formatDurationMs(tooltip.task.duration_ms)}</p>
+              <p>
+                {t.taskBoard.duration}:{" "}
+                {formatDurationMs(tooltip.task.duration_ms)}
+              </p>
               {tooltip.task.is_running && (
-                <p className="text-amber-500 font-medium">{t.taskBoard.inProgress}</p>
+                <p className="text-warning font-medium">
+                  {t.taskBoard.inProgress}
+                </p>
               )}
             </div>
           </div>
         )}
       </div>
+      <ul className="sr-only">
+        {tasks.map((task) => (
+          <li key={task.id}>
+            {task.name}, {TYPE_LABELS[task.type]},{" "}
+            {STATUS_LABELS[task.status] ?? task.status},{" "}
+            {formatDurationMs(task.duration_ms)}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

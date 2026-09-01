@@ -1,9 +1,15 @@
 import {
   CheckIcon,
   ChevronDownIcon,
+  CloudIcon,
+  DatabaseIcon,
   FolderIcon,
   FolderOpenIcon,
+  HardDriveIcon,
   Loader2Icon,
+  ServerIcon,
+  TerminalIcon,
+  type LucideIcon,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -20,45 +26,49 @@ import { authHeaders } from "@/core/auth/api";
 import type { components } from "@/core/api/openapi-types";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
+import {
+  listWorkspaces,
+  type MountType,
+  type Workspace,
+} from "@/core/workspace/api";
+import { pickLocalDirectory } from "@/core/workspace/pick-local-directory";
 import { basename, isAbsolutePath, joinPath } from "@/lib/path-utils";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/providers/AuthProvider";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 
 interface WorkDirSelectorProps {
   workDir: string;
   onWorkDirChange?: (dir: string) => void;
+  lockToCurrentThread?: boolean;
+  onOpenWorkDirInNewTask?: (dir: string) => void;
   className?: string;
   variant?: "default" | "muted";
+  chromeless?: boolean;
+  /** When true, adds a "Remote mount" tab to the dropdown. */
+  enableRemoteTab?: boolean;
+  /** Active remote workspace id, if the thread is bound to one. */
+  workspaceId?: string | null;
+  /** Fired when the user picks a remote workspace in the Remote tab. */
+  onWorkspaceIdChange?: (workspaceId: string) => void;
 }
 
 type FsTreeEntry = components["schemas"]["FsTreeEntry"];
-const RECENT_WORKDIRS_KEY = "octopus:recentWorkdirs";
+const RECENT_WORKDIRS_KEY = "echo:recentWorkdirs";
 const MAX_RECENT_WORKDIRS = 6;
 const MENU_WIDTH = 360;
 const MENU_MARGIN = 12;
 
-// Native folder picker via Electron preload(`window.octopus.dialog`)·
-// Implementation note.
-// Implementation note.
-async function openNativeFolderPicker(
-  currentDir: string,
-): Promise<string | null> {
-  const api = window.octopus;
-  if (api?.dialog?.open) {
-    try {
-      const result = await api.dialog.open({
-        properties: ["openDirectory"],
-        defaultPath: currentDir,
-      });
-      if (!result.canceled && result.filePaths.length > 0) {
-        return result.filePaths[0] || null;
-      }
-    } catch (error) {
-      console.error("Electron folder picker failed:", error);
-    }
-  }
-
-  return null;
-}
+// Remote mount type → lucide icon. Mirrors the WorkspaceSwitcher palette.
+const MOUNT_TYPE_ICON: Record<MountType, LucideIcon> = {
+  local: HardDriveIcon,
+  smb: ServerIcon,
+  nfs: ServerIcon,
+  webdav: CloudIcon,
+  sftp: TerminalIcon,
+  s3: DatabaseIcon,
+};
 
 function readRecentWorkdirs(): string[] {
   if (typeof window === "undefined") return [];
@@ -127,12 +137,12 @@ function parentDir(path: string): string | null {
 // Stable hash → palette index. Same folder name always lands on the
 // same color across reloads, so the avatar tiles act as a visual id.
 const AVATAR_PALETTE: Array<{ bg: string; fg: string }> = [
-  { bg: "bg-rose-500/15", fg: "text-rose-600 dark:text-rose-400" },
-  { bg: "bg-amber-500/15", fg: "text-amber-600 dark:text-amber-400" },
-  { bg: "bg-emerald-500/15", fg: "text-emerald-600 dark:text-emerald-400" },
-  { bg: "bg-sky-500/15", fg: "text-sky-600 dark:text-sky-400" },
-  { bg: "bg-violet-500/15", fg: "text-violet-600 dark:text-violet-400" },
-  { bg: "bg-pink-500/15", fg: "text-pink-600 dark:text-pink-400" },
+  { bg: "bg-destructive/15", fg: "text-destructive" },
+  { bg: "bg-warning/15", fg: "text-warning" },
+  { bg: "bg-success/15", fg: "text-success" },
+  { bg: "bg-info/15", fg: "text-info dark:text-info" },
+  { bg: "bg-chart-1/15", fg: "text-chart-1 dark:text-chart-1" },
+  { bg: "bg-chart-3/15", fg: "text-chart-3 dark:text-chart-3" },
 ];
 
 function avatarTile(path: string): { bg: string; fg: string; letter: string } {
@@ -154,14 +164,76 @@ function entryDisplayName(entry: FsTreeEntry): string {
   return fromPath || entry.name || entry.path;
 }
 
+// Kept self-contained (not in the shared i18n bundle) so this touch-up stays
+// decoupled from concurrently-edited locale files.
+const WEB_PICKER_HINT: Record<"zh" | "en" | "ja" | "ko", string> = {
+  zh: "未能打开系统文件夹选择器。你仍可选择最近使用的工作区，或在下方粘贴完整路径。",
+  en: "The system folder picker could not be opened. Choose a recent workspace or paste its full path below.",
+  ja: "システムのフォルダ選択を開けませんでした。最近のワークスペースを選ぶか、完全なパスを貼り付けてください。",
+  ko: "시스템 폴더 선택기를 열 수 없습니다. 최근 작업 공간을 선택하거나 전체 경로를 붙여넣으세요.",
+};
+
+const LOCKED_WORKDIR_TEXT: Record<
+  "zh" | "en" | "ja" | "ko",
+  { triggerTitle: string; hint: string; openFolder: string }
+> = {
+  zh: {
+    triggerTitle: "当前任务已绑定工作区",
+    hint: "当前对话已绑定这个工作区。选择其他工作区会打开一个新任务，避免上下文和权限混在一起。",
+    openFolder: "在新任务打开其他工作区",
+  },
+  en: {
+    triggerTitle: "Current task is bound to this workspace",
+    hint: "This conversation is bound to its workspace. Choosing another workspace opens a new task so context and permissions stay separate.",
+    openFolder: "Open another workspace in a new task",
+  },
+  ja: {
+    triggerTitle: "このタスクは現在のワークスペースに固定されています",
+    hint: "この会話は現在のワークスペースに固定されています。別のワークスペースは新しいタスクで開き、文脈と権限を分けます。",
+    openFolder: "別のワークスペースを新しいタスクで開く",
+  },
+  ko: {
+    triggerTitle: "현재 작업은 이 작업 공간에 고정되어 있습니다",
+    hint: "이 대화는 현재 작업 공간에 고정되어 있습니다. 다른 작업 공간은 새 작업으로 열어 컨텍스트와 권한을 분리합니다.",
+    openFolder: "다른 작업 공간을 새 작업으로 열기",
+  },
+};
+
+function webPickerHint(locale: string): string {
+  const lang = (locale || "en").slice(0, 2).toLowerCase();
+  if (lang === "zh") return WEB_PICKER_HINT.zh;
+  if (lang === "ja") return WEB_PICKER_HINT.ja;
+  if (lang === "ko") return WEB_PICKER_HINT.ko;
+  return WEB_PICKER_HINT.en;
+}
+
+function lockedWorkdirText(locale: string) {
+  const lang = (locale || "en").slice(0, 2).toLowerCase();
+  if (lang === "zh") return LOCKED_WORKDIR_TEXT.zh;
+  if (lang === "ja") return LOCKED_WORKDIR_TEXT.ja;
+  if (lang === "ko") return LOCKED_WORKDIR_TEXT.ko;
+  return LOCKED_WORKDIR_TEXT.en;
+}
+
 export function WorkDirSelector({
   workDir,
   onWorkDirChange,
+  lockToCurrentThread = false,
+  onOpenWorkDirInNewTask,
   className,
   variant = "default",
+  chromeless = false,
+  enableRemoteTab = false,
+  workspaceId,
+  onWorkspaceIdChange,
 }: WorkDirSelectorProps) {
   const isMutedVariant = variant === "muted";
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const { authStatus, isAuthenticated, isLoading: authLoading } = useAuth();
+  const featureFlags = useFeatureFlags();
+  const remoteWorkspaceEnabled =
+    !featureFlags.loading && featureFlags.isOn("ui.remote_workspace");
+  const trRemote = t.remoteWorkspace;
   const [isPicking, setIsPicking] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   // ``browsePath`` drives the in-menu folder browser. When the user
@@ -188,34 +260,74 @@ export function WorkDirSelector({
   const [isBrowserOpen, setBrowserOpen] = useState(
     () => !isMutedVariant && !workDir,
   );
+  // True when the user just hit the "pick folder" CTA but no Electron bridge
+  // is present (i.e. running in a plain browser). We surface the manual input
+  // and a one-line hint instead of silently doing nothing. Resets once the
+  // user enters a path or closes the menu.
+  const [noBridgeHint, setNoBridgeHint] = useState(false);
+  // Remote workspace list (loaded when the Remote tab is enabled and the
+  // menu opens). Stored at the component level so the second open is instant.
+  const [remoteWorkspaces, setRemoteWorkspaces] = useState<Workspace[]>([]);
+  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+  // Active tab inside the dropdown — defaults to "local" so existing
+  // users see the same UI as before. We only switch to "remote" if
+  // the parent has bound the thread to a workspace_id already.
+  const [menuTab, setMenuTab] = useState<"local" | "remote">(
+    workspaceId ? "remote" : "local",
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const manualInputRef = useRef<HTMLInputElement>(null);
+  const pendingBrowserPickedNameRef = useRef("");
   const folderName = useMemo(
     () => (workDir ? basename(workDir) : ""),
     [workDir],
   );
+  const lockedCopy = lockedWorkdirText(locale);
   const isEmpty = !workDir;
+  const isWorkDirLocked = lockToCurrentThread;
   const emptyTriggerLabel = isMutedVariant
     ? t.codeMode.personalSpace
     : t.codeMode.chooseWorkspaceFolder;
-  const folderPickerLabel = isMutedVariant
-    ? t.codeMode.selectFolder
-    : t.codeMode.openFolderCta;
+  const triggerLabel =
+    !isEmpty && isMutedVariant
+      ? folderName
+      : isEmpty
+        ? emptyTriggerLabel
+        : folderName;
+  const folderPickerLabel = isWorkDirLocked
+    ? lockedCopy.openFolder
+    : isMutedVariant
+      ? t.codeMode.chooseWorkspaceFolder
+      : t.codeMode.openFolderCta;
   const triggerTitle = isEmpty
     ? emptyTriggerLabel
-    : `${t.codeMode.chooseWorkspaceFolder}: ${workDir}`;
-  const menuToggleTitle = isMutedVariant
-    ? t.codeMode.selectFolder
+    : isWorkDirLocked
+      ? `${lockedCopy.triggerTitle}: ${workDir}`
+      : `${t.codeMode.chooseWorkspaceFolder}: ${workDir}`;
+  const _menuToggleTitle = isMutedVariant
+    ? t.codeMode.chooseWorkspaceFolder
     : t.codeMode.recentWorkspaces;
   const emptyTriggerClass = isMutedVariant
-    ? "bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-    : "bg-transparent text-amber-700 hover:bg-amber-500/10 dark:text-amber-300 dark:hover:bg-amber-500/15";
+    ? "text-muted-foreground"
+    : "text-muted-foreground";
+  const activeTriggerClass = isMutedVariant
+    ? "text-foreground"
+    : "text-foreground";
 
   const applyWorkDir = useCallback(
     (dir: string) => {
       const next = dir.trim();
       if (!next || !isAbsolutePath(next)) return;
+      if (isWorkDirLocked) {
+        if (normalizePathKey(next) !== normalizePathKey(workDir)) {
+          onOpenWorkDirInNewTask?.(next);
+        }
+        setShowMenu(false);
+        setNoBridgeHint(false);
+        return;
+      }
       onWorkDirChange?.(next);
       setBrowsePath(next);
       setRecentWorkdirs((prev) => {
@@ -227,9 +339,16 @@ export function WorkDirSelector({
         return merged;
       });
       setShowMenu(false);
+      setNoBridgeHint(false);
     },
-    [onWorkDirChange],
+    [isWorkDirLocked, onOpenWorkDirInNewTask, onWorkDirChange, workDir],
   );
+
+  const clearWorkDir = useCallback(() => {
+    onWorkDirChange?.("");
+    setManualPath("");
+    setShowMenu(false);
+  }, [onWorkDirChange]);
 
   const loadDirectories = useCallback(async (path: string) => {
     if (!path) {
@@ -282,6 +401,62 @@ export function WorkDirSelector({
     }
   }, []);
 
+  // Load remote workspaces from the registry. Cached at component level so
+  // the second menu open is instant — we don't refetch on every tab switch.
+  const loadRemoteWorkspaces = useCallback(async () => {
+    if (!enableRemoteTab || !remoteWorkspaceEnabled) return;
+    const canReadRemoteWorkspaces =
+      !authLoading && (authStatus?.enabled === false || isAuthenticated);
+    if (!canReadRemoteWorkspaces) {
+      setRemoteWorkspaces([]);
+      setRemoteError(null);
+      return;
+    }
+    setRemoteLoading(true);
+    setRemoteError(null);
+    try {
+      const list = await listWorkspaces();
+      setRemoteWorkspaces(list);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setRemoteError(message);
+      swallow(e);
+    } finally {
+      setRemoteLoading(false);
+    }
+  }, [
+    authLoading,
+    authStatus?.enabled,
+    enableRemoteTab,
+    isAuthenticated,
+    remoteWorkspaceEnabled,
+  ]);
+
+  // When the menu opens with the remote tab enabled, prime the list so
+  // the user isn't staring at an empty state. Subsequent tab switches
+  // reuse the cached list.
+  useEffect(() => {
+    if (!showMenu || !enableRemoteTab || !remoteWorkspaceEnabled) return;
+    if (remoteWorkspaces.length > 0 || remoteLoading) return;
+    void loadRemoteWorkspaces();
+  }, [
+    showMenu,
+    enableRemoteTab,
+    remoteWorkspaceEnabled,
+    remoteWorkspaces.length,
+    remoteLoading,
+    loadRemoteWorkspaces,
+  ]);
+
+  const handlePickRemote = useCallback(
+    (workspace: Workspace) => {
+      onWorkspaceIdChange?.(workspace.id);
+      setShowMenu(false);
+      setNoBridgeHint(false);
+    },
+    [onWorkspaceIdChange],
+  );
+
   useEffect(() => {
     if (!workDir) return;
     setManualPath(workDir);
@@ -298,15 +473,17 @@ export function WorkDirSelector({
 
   useEffect(() => {
     if (!showMenu) return;
-    if (isMutedVariant) return;
+    if (isMutedVariant && !noBridgeHint) return;
     void loadDirectories(browsePath);
-  }, [isMutedVariant, showMenu, browsePath, loadDirectories]);
+  }, [isMutedVariant, noBridgeHint, showMenu, browsePath, loadDirectories]);
 
   useEffect(() => {
     if (!showMenu) return;
-    setManualPath(workDir);
-    if (!workDir && !isMutedVariant) setBrowserOpen(true);
-  }, [isMutedVariant, showMenu, workDir]);
+    const pendingName = pendingBrowserPickedNameRef.current;
+    pendingBrowserPickedNameRef.current = "";
+    setManualPath(pendingName || workDir);
+    if (!workDir && (!isMutedVariant || noBridgeHint)) setBrowserOpen(true);
+  }, [isMutedVariant, noBridgeHint, showMenu, workDir]);
 
   useEffect(() => {
     if (!showMenu) return;
@@ -325,28 +502,26 @@ export function WorkDirSelector({
 
   const handlePrimaryAction = useCallback(async () => {
     if (isPicking) return;
-    if (isMutedVariant) {
-      setShowMenu(true);
-      return;
-    }
-    if (!window.octopus?.dialog?.open) {
-      setShowMenu(true);
-      setBrowserOpen(true);
-      requestAnimationFrame(() => manualInputRef.current?.focus());
-      return;
-    }
     setIsPicking(true);
     try {
-      const selected = await openNativeFolderPicker(workDir);
+      const selected = await pickLocalDirectory(workDir);
       if (selected) {
         applyWorkDir(selected);
         return;
       }
-      setShowMenu(true);
+    } catch (error) {
+      swallow(error);
+      setNoBridgeHint(true);
       setBrowserOpen(true);
     } finally {
       setIsPicking(false);
     }
+
+    setShowMenu(true);
+    if (!isMutedVariant) setBrowserOpen(true);
+    requestAnimationFrame(() => {
+      manualInputRef.current?.focus();
+    });
   }, [applyWorkDir, isMutedVariant, isPicking, workDir]);
 
   const handleManualSubmit = useCallback(
@@ -358,7 +533,8 @@ export function WorkDirSelector({
   );
 
   const [menuRect, setMenuRect] = useState<{
-    top: number;
+    top?: number;
+    bottom?: number;
     left: number;
     width: number;
     maxHeight: number;
@@ -367,29 +543,36 @@ export function WorkDirSelector({
   const updateMenuPosition = useCallback(() => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const targetWidth = isMutedVariant ? 176 : MENU_WIDTH;
-    const minWidth = isMutedVariant ? 160 : 280;
-    const estimatedHeight = isMutedVariant ? 56 : 260;
-    const minHeight = isMutedVariant ? 48 : 240;
+    const compactMutedMenu = isMutedVariant && !noBridgeHint;
+    const targetWidth = compactMutedMenu ? 136 : MENU_WIDTH;
+    const minWidth = compactMutedMenu ? 128 : 280;
+    const _estimatedHeight = compactMutedMenu ? 56 : 260;
+    const minHeight = compactMutedMenu ? 48 : 240;
     const width = Math.min(
       targetWidth,
       Math.max(minWidth, window.innerWidth - MENU_MARGIN * 2),
     );
+    const preferredLeft = compactMutedMenu ? rect.left : rect.right - width;
     const left = Math.min(
-      Math.max(MENU_MARGIN, rect.right - width),
+      Math.max(MENU_MARGIN, preferredLeft),
       window.innerWidth - MENU_MARGIN - width,
     );
-    const top = Math.min(
-      rect.bottom + 6,
-      Math.max(MENU_MARGIN, window.innerHeight - MENU_MARGIN - estimatedHeight),
+    const spaceBelow = window.innerHeight - rect.bottom - MENU_MARGIN;
+    const spaceAbove = rect.top - MENU_MARGIN;
+    const openUp = spaceAbove > spaceBelow;
+    const maxHeight = Math.max(
+      minHeight,
+      openUp ? spaceAbove - 6 : spaceBelow - 6,
     );
     setMenuRect({
-      top,
       left,
       width,
-      maxHeight: Math.max(minHeight, window.innerHeight - top - MENU_MARGIN),
+      maxHeight,
+      ...(openUp
+        ? { bottom: window.innerHeight - rect.top + 6 }
+        : { top: rect.bottom + 6 }),
     });
-  }, [isMutedVariant]);
+  }, [isMutedVariant, noBridgeHint]);
 
   useEffect(() => {
     if (!showMenu) {
@@ -414,33 +597,25 @@ export function WorkDirSelector({
 
   const upDir = parentDir(browsePath);
 
-  // Browser CTAs map to native Electron actions when available; in pure
-  // web mode they degrade to existing in-page flows (manual edit prompt
-  // for "open folder", info popups for the unimplemented ones).
   const handleOpenFolderCta = useCallback(async () => {
-    if (!window.octopus?.dialog?.open) {
-      if (isMutedVariant) {
-        setShowMenu(false);
-        return;
-      }
-      setBrowserOpen(true);
-      requestAnimationFrame(() => manualInputRef.current?.focus());
-      return;
-    }
     setIsPicking(true);
     try {
-      const selected = await openNativeFolderPicker(workDir);
+      const selected = await pickLocalDirectory(workDir);
       if (selected) {
         applyWorkDir(selected);
         return;
       }
-      if (!isMutedVariant) {
-        setBrowserOpen(true);
-        requestAnimationFrame(() => manualInputRef.current?.focus());
-      }
+    } catch (error) {
+      swallow(error);
+      setNoBridgeHint(true);
+      setBrowserOpen(true);
     } finally {
       setIsPicking(false);
     }
+
+    setShowMenu(true);
+    if (!isMutedVariant) setBrowserOpen(true);
+    requestAnimationFrame(() => manualInputRef.current?.focus());
   }, [applyWorkDir, isMutedVariant, workDir]);
 
   // CTA tile for the implemented workspace picker entry point.
@@ -455,9 +630,9 @@ export function WorkDirSelector({
       onClick={opts.onClick}
       disabled={opts.disabled}
       className={cn(
-        "flex w-full items-center gap-2 transition-all",
+        "flex w-full items-center gap-2 transition-colors",
         isMutedVariant
-          ? "rounded-md px-2 py-1.5 text-[12px] font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          ? "rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
           : "rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm font-medium text-primary",
         opts.disabled
           ? "cursor-not-allowed opacity-50"
@@ -489,20 +664,53 @@ export function WorkDirSelector({
     disabled: isPicking,
   });
 
-  const menuContent = (
+  const localMenuContent = (
     <div
       className={cn(
-        "flex max-h-full flex-col overflow-hidden border border-border/60 bg-popover/95 backdrop-blur",
-        isMutedVariant ? "rounded-lg shadow-lg" : "rounded-xl shadow-2xl",
+        "flex max-h-full flex-col overflow-hidden",
+        // When wrapped in Tabs we drop the outer chrome — Tabs adds its own
+        // border/rounded corners. When standalone we keep the original frame.
+        remoteWorkspaceEnabled
+          ? ""
+          : "border border-border-default bg-popover/95 backdrop-blur " +
+              (isMutedVariant
+                ? "rounded-lg shadow-[var(--shadow-md)]"
+                : "rounded-lg shadow-2xl"),
       )}
     >
-      {/* Primary entry point for adding a workspace. */}
+      {/* The same system picker is available in both the desktop shell and the
+          local web app; the backend supplies the absolute path in web mode. */}
       <div className={cn("shrink-0", isMutedVariant ? "p-1.5" : "p-2.5")}>
         {folderPickerCta}
+        {isWorkDirLocked && (
+          <div className="mt-1.5 rounded-md border border-primary/15 bg-primary/5 px-2 py-1.5 text-xs leading-snug text-muted-foreground">
+            {lockedCopy.hint}
+          </div>
+        )}
+        {workDir && !isWorkDirLocked && (
+          <button
+            type="button"
+            onClick={clearWorkDir}
+            className={cn(
+              "mt-1.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
+              !isMutedVariant && "border border-border-default",
+            )}
+          >
+            <FolderIcon className="size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">
+              {t.codeMode.personalSpace}
+            </span>
+          </button>
+        )}
 
-        {!isMutedVariant && (
+        {noBridgeHint && (
+          <div className="mt-2 rounded-md border border-border-default bg-muted/40 px-2 py-1.5 text-xs leading-snug text-muted-foreground">
+            {webPickerHint(locale)}
+          </div>
+        )}
+        {(!isMutedVariant || noBridgeHint) && (
           <form
-            className="mt-2 flex items-center gap-1.5 rounded-lg border border-border/50 bg-background/70 p-1 shadow-inner"
+            className="mt-2 flex items-center gap-1.5 rounded-lg border border-border-default bg-background/70 p-1 shadow-inner"
             onSubmit={handleManualSubmit}
           >
             <input
@@ -511,13 +719,13 @@ export function WorkDirSelector({
               value={manualPath}
               onChange={(event) => setManualPath(event.target.value)}
               placeholder={t.codeMode.selectWorkspace}
-              className="min-w-0 flex-1 bg-transparent px-2 py-1.5 font-mono text-[11px] text-foreground outline-none placeholder:text-muted-foreground/60"
+              className="min-w-0 flex-1 bg-transparent px-2 py-1.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
             />
             <button
               type="submit"
               disabled={!isAbsolutePath(manualPath)}
               className={cn(
-                "rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors",
+                "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
                 isAbsolutePath(manualPath)
                   ? "bg-primary text-primary-foreground hover:bg-primary/90"
                   : "cursor-not-allowed bg-muted text-muted-foreground/45",
@@ -529,16 +737,17 @@ export function WorkDirSelector({
         )}
       </div>
 
-      {/* Recent workspaces — colored letter-tile + path subtitle + ✓
-          for the currently active workspace */}
-      {!isMutedVariant && (
+      {/* Recent workspaces — colored letter-tile + path subtitle + ✓ for the
+          active one. Shown in the muted (web) menu too so there's a one-click
+          way to rebind without a native picker. */}
+      {(!isMutedVariant || recentWorkdirs.length > 0) && (
         <div
           className={cn(
-            "border-t border-border/50",
+            "border-t border-border-default",
             isMutedVariant ? "px-1.5 py-1.5" : "px-2.5 py-2",
           )}
         >
-          <div className="pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {t.codeMode.recentWorkspaces}
           </div>
           {recentWorkdirs.length > 0 ? (
@@ -566,7 +775,7 @@ export function WorkDirSelector({
                   >
                     <span
                       className={cn(
-                        "flex size-7 shrink-0 items-center justify-center rounded-md font-mono text-[12px] font-semibold",
+                        "flex size-7 shrink-0 items-center justify-center rounded-md font-mono text-xs font-semibold",
                         tile.bg,
                         tile.fg,
                       )}
@@ -574,10 +783,10 @@ export function WorkDirSelector({
                       {tile.letter}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <div className="truncate text-[12px] font-medium text-foreground">
+                      <div className="truncate text-xs font-medium text-foreground">
                         {basename(dir) || dir}
                       </div>
-                      <div className="truncate font-mono text-[10px] text-muted-foreground/80">
+                      <div className="truncate font-mono text-xs text-muted-foreground/80">
                         {dir}
                       </div>
                     </span>
@@ -589,7 +798,7 @@ export function WorkDirSelector({
               })}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 px-2 py-3 text-center text-[11px] text-muted-foreground">
+            <div className="rounded-lg border border-dashed border-border-default bg-muted/20 px-2 py-3 text-center text-xs text-muted-foreground">
               {t.codeMode.noRecentWorkspaces}
             </div>
           )}
@@ -599,13 +808,13 @@ export function WorkDirSelector({
       {/* Advanced: in-page directory browser. Web-mode users without an
           Electron picker still need a way to navigate; native users will
           rarely open this. Collapsed by default so it doesn't dominate. */}
-      {!isMutedVariant && (
+      {(!isMutedVariant || noBridgeHint) && (
         <details
-          className="group border-t border-border/50 px-2.5 py-2"
+          className="group border-t border-border-default px-2.5 py-2"
           open={isBrowserOpen}
           onToggle={(event) => setBrowserOpen(event.currentTarget.open)}
         >
-          <summary className="cursor-pointer list-none rounded-md px-1 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+          <summary className="cursor-pointer list-none rounded-md px-1 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
             <span className="inline-flex items-center gap-1">
               <ChevronDownIcon className="size-3 transition-transform group-open:rotate-180" />
               {t.codeMode.browseCurrentFolder}
@@ -613,7 +822,7 @@ export function WorkDirSelector({
           </summary>
           <div className="mt-1">
             <div
-              className="px-1 pb-1 text-[10px] font-mono text-muted-foreground/80 truncate"
+              className="px-1 pb-1 text-xs font-mono text-muted-foreground/80 truncate"
               title={browsePath}
             >
               {browsePath || "—"}
@@ -622,13 +831,13 @@ export function WorkDirSelector({
               <button
                 type="button"
                 onClick={() => setBrowsePath(upDir)}
-                className="block w-full rounded-md px-2 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               >
                 .. / {t.codeMode.parentFolder}
               </button>
             )}
             {browseLoading ? (
-              <div className="flex items-center gap-2 px-2 py-2 text-[11px] text-muted-foreground">
+              <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
                 <Loader2Icon className="size-3 animate-spin" />
                 {t.codeMode.loadingFolders}
               </div>
@@ -650,7 +859,7 @@ export function WorkDirSelector({
                       <button
                         type="button"
                         onClick={() => handleEnterDirectory(entry.path)}
-                        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                         title={nextPath}
                       >
                         <FolderIcon className="size-3 shrink-0" />
@@ -659,7 +868,7 @@ export function WorkDirSelector({
                       <button
                         type="button"
                         onClick={() => applyWorkDir(nextPath)}
-                        className="rounded-md px-2 py-1 text-[10px] text-primary transition-colors hover:bg-primary/10"
+                        className="rounded-md px-2 py-1 text-xs text-primary transition-colors hover:bg-primary/10"
                         title={t.codeMode.chooseWorkspaceFolder}
                       >
                         ✓
@@ -669,7 +878,7 @@ export function WorkDirSelector({
                 })}
               </div>
             ) : (
-              <div className="px-2 py-2 text-[11px] text-muted-foreground">
+              <div className="px-2 py-2 text-xs text-muted-foreground">
                 {t.codeMode.noSubfolders}
               </div>
             )}
@@ -679,17 +888,149 @@ export function WorkDirSelector({
     </div>
   );
 
+  const remoteMenuContent = (
+    <div
+      className={cn(
+        "flex max-h-full flex-col overflow-hidden",
+        remoteWorkspaceEnabled
+          ? ""
+          : "border border-border-default bg-popover/95 backdrop-blur rounded-lg shadow-2xl",
+      )}
+    >
+      <div className={cn("shrink-0", isMutedVariant ? "p-1.5" : "p-2.5")}>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {trRemote.switcherTitle}
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadRemoteWorkspaces()}
+            disabled={remoteLoading}
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:opacity-50"
+            title={trRemote.searchPlaceholder}
+            aria-label={trRemote.searchPlaceholder}
+          >
+            <Loader2Icon
+              className={cn("size-3", remoteLoading && "animate-spin")}
+            />
+          </button>
+        </div>
+
+        {remoteError && (
+          <div className="mb-2 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">
+            {trRemote.remoteLoadFailed(remoteError)}
+          </div>
+        )}
+
+        {remoteLoading && remoteWorkspaces.length === 0 ? (
+          <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+            <Loader2Icon className="size-3 animate-spin" />
+            {trRemote.remoteLoading}
+          </div>
+        ) : remoteWorkspaces.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border-default bg-muted/20 px-2 py-3 text-center text-xs text-muted-foreground">
+            {trRemote.remoteEmpty}
+          </div>
+        ) : (
+          <div className="space-y-0.5 overflow-y-auto pr-1 max-h-72">
+            {remoteWorkspaces.map((ws) => {
+              const Icon = MOUNT_TYPE_ICON[ws.mount_type];
+              const active = ws.id === workspaceId;
+              return (
+                <button
+                  key={ws.id}
+                  type="button"
+                  onClick={() => handlePickRemote(ws)}
+                  title={ws.mount_target}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition-colors",
+                    active ? "bg-primary/10 text-primary" : "hover:bg-muted/55",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-7 shrink-0 items-center justify-center rounded-md",
+                      active
+                        ? "bg-primary/15 text-primary"
+                        : "bg-muted/40 text-muted-foreground",
+                    )}
+                  >
+                    <Icon className="size-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-medium text-foreground">
+                      {ws.name}
+                    </span>
+                    <span className="block truncate font-mono text-xs text-muted-foreground/80">
+                      {ws.mount_target}
+                    </span>
+                  </span>
+                  {active && (
+                    <CheckIcon className="size-3.5 shrink-0 text-primary" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // When the remote tab is enabled we wrap the two panels in a shadcn Tabs
+  // so the user can flip between local-folder and remote-mount entry
+  // points. Otherwise we render the local panel as before — no visual
+  // change for existing callers.
+  const menuContent = remoteWorkspaceEnabled ? (
+    <div
+      className={cn(
+        "flex max-h-full flex-col overflow-hidden rounded-lg border border-border-default bg-popover/95 backdrop-blur",
+        isMutedVariant ? "shadow-[var(--shadow-md)]" : "shadow-2xl",
+      )}
+    >
+      <Tabs
+        value={menuTab}
+        onValueChange={(value) => setMenuTab(value as "local" | "remote")}
+        className="flex min-h-0 flex-1 flex-col"
+      >
+        <TabsList className="mx-2 mt-2 grid h-8 shrink-0 grid-cols-2 rounded-md bg-muted/50">
+          <TabsTrigger value="local" className="text-xs">
+            {trRemote.localTab}
+          </TabsTrigger>
+          <TabsTrigger value="remote" className="text-xs">
+            {trRemote.remoteTab}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent
+          value="local"
+          className="mt-0 min-h-0 flex-1 overflow-y-auto"
+        >
+          {localMenuContent}
+        </TabsContent>
+        <TabsContent
+          value="remote"
+          className="mt-0 min-h-0 flex-1 overflow-y-auto"
+        >
+          {remoteMenuContent}
+        </TabsContent>
+      </Tabs>
+    </div>
+  ) : (
+    localMenuContent
+  );
+
   return (
     <div
       ref={containerRef}
-      className={cn("relative flex items-center gap-1", className)}
+      className={cn("relative flex items-center gap-1.5", className)}
     >
       <button
         className={cn(
-          "flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] transition-all",
-          isEmpty
-            ? emptyTriggerClass
-            : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+          "group flex items-center gap-1.5 text-xs font-medium shadow-none transition-colors duration-base",
+          chromeless
+            ? "h-8 rounded-lg px-1.5 text-muted-foreground hover:bg-muted/55 hover:text-foreground"
+            : "h-8 rounded-lg border border-transparent bg-transparent px-2 text-muted-foreground hover:border-border-default hover:bg-muted/55 hover:text-foreground",
+          isEmpty ? emptyTriggerClass : activeTriggerClass,
           isPicking && "cursor-wait opacity-50",
         )}
         onClick={handlePrimaryAction}
@@ -697,29 +1038,18 @@ export function WorkDirSelector({
         title={triggerTitle}
         type="button"
       >
-        <FolderOpenIcon className="size-3" />
+        <FolderOpenIcon className="size-3 shrink-0 opacity-70" />
         <span
           className={cn(
-            "max-w-[160px] truncate",
-            isEmpty && isMutedVariant ? "font-medium" : "font-mono",
+            isMutedVariant
+              ? "max-w-[120px] truncate"
+              : "max-w-[160px] truncate",
+            isEmpty ? "font-medium" : "tracking-normal",
           )}
         >
-          {isEmpty ? emptyTriggerLabel : folderName}
+          {triggerLabel}
         </span>
-      </button>
-
-      <button
-        className="flex items-center justify-center rounded-md p-0.5 text-[10px] text-muted-foreground/60 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
-        onClick={() => setShowMenu((v) => !v)}
-        title={menuToggleTitle}
-        type="button"
-      >
-        <ChevronDownIcon
-          className={cn(
-            "size-3 transition-transform",
-            showMenu && "rotate-180",
-          )}
-        />
+        <ChevronDownIcon className="size-3 shrink-0 opacity-35 transition-opacity group-hover:opacity-60" />
       </button>
 
       {menuRect && typeof document !== "undefined"
@@ -728,7 +1058,12 @@ export function WorkDirSelector({
               ref={menuRef}
               className="fixed z-[100]"
               style={{
-                top: `${menuRect.top}px`,
+                top:
+                  menuRect.top !== undefined ? `${menuRect.top}px` : undefined,
+                bottom:
+                  menuRect.bottom !== undefined
+                    ? `${menuRect.bottom}px`
+                    : undefined,
                 left: `${menuRect.left}px`,
                 width: `${menuRect.width}px`,
                 maxHeight: `${menuRect.maxHeight}px`,

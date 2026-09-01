@@ -13,7 +13,9 @@
 // Designed to live behind a React hook (see ``useRealtimeThread``)
 // that exposes ``state``, ``send``, ``startTurn``, ``resolveApproval``.
 
+import { nextBackoffDelay } from "@/core/streaming/backoff";
 import { swallow } from "@/core/utils/log";
+import { webSocketAuthProtocols } from "@/core/auth/websocket";
 import {
   type Envelope,
   type JsonRpcError,
@@ -49,7 +51,6 @@ interface PendingRequest {
 
 const DEFAULT_INITIAL_BACKOFF = 500;
 const DEFAULT_MAX_BACKOFF = 15_000;
-const GUEST_AUTH_TOKEN = "__guest__";
 
 // Delta notification methods that participate in delta-coalescing.
 // Used by the coalesce step (which merges N consecutive deltas with the
@@ -79,6 +80,10 @@ const PONG_TIMEOUT_MS = 70_000;
 // completed too, a frame boundary between ``started`` and the deltas
 // reorders them: completed lands first, the reducer's status guard
 // then drops the deltas as "stale" and the user sees an empty bubble.
+// ``item/fileChange/hunkDelta`` rides the buffer for the same ordering
+// reason (the reducer drops hunk deltas for items it hasn't seen), but
+// stays out of DELTA_METHODS: hunks are structured payloads, not
+// appendable text, so they must never coalesce.
 const BATCHED_METHODS = new Set([
   "item/started",
   "item/completed",
@@ -86,6 +91,7 @@ const BATCHED_METHODS = new Set([
   "item/reasoning/textDelta",
   "item/plan/delta",
   "item/commandExecution/outputDelta",
+  "item/fileChange/hunkDelta",
 ]);
 
 export class RealtimeClient {
@@ -109,25 +115,45 @@ export class RealtimeClient {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   // Timestamp of the last pong (or open). Used by the heartbeat tick to
   // decide whether the connection should be considered dead.
-  private lastPongAt: number = 0;
+  private lastPongAt = 0;
 
   constructor(opts: RealtimeClientOptions) {
     this.opts = opts;
     this.initialBackoff = opts.initialBackoffMs ?? DEFAULT_INITIAL_BACKOFF;
     this.maxBackoff = opts.maxBackoffMs ?? DEFAULT_MAX_BACKOFF;
+    // Flush the moment the tab goes hidden: a requestAnimationFrame
+    // scheduled while visible never fires in a background tab, so
+    // anything still buffered would sit there (and grow) until the tab
+    // is foregrounded — meanwhile non-batched methods (turn/interrupted,
+    // turn/completed, error) keep dispatching immediately and would
+    // overtake the buffered item events. ``typeof document`` guard keeps
+    // this SSR-safe.
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", this.onVisibilityChange);
+    }
   }
+
+  private onVisibilityChange = (): void => {
+    if (document.hidden) {
+      this.flushDeltaBuffer();
+    }
+  };
 
   // ── Lifecycle ──────────────────────────────────────────────
 
   connect(): void {
     if (this.closed) return;
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
-    const url = this.buildUrl();
+    const { url, protocols } = this.buildConnection();
     let ws: WebSocket;
     try {
-      ws = new WebSocket(url);
+      ws = new WebSocket(url, protocols);
     } catch (err) {
       swallow(err);
       this.opts.onError?.(err as Error);
@@ -143,17 +169,19 @@ export class RealtimeClient {
       this.startHeartbeat();
       this.opts.onOpen?.();
     };
-    ws.onmessage = ev => {
+    ws.onmessage = (ev) => {
       this.dispatch(typeof ev.data === "string" ? ev.data : "");
     };
-    ws.onerror = ev => {
+    ws.onerror = (ev) => {
       this.opts.onError?.(ev);
     };
-    ws.onclose = ev => {
+    ws.onclose = (ev) => {
       this.stopHeartbeat();
       this.flushDeltaBuffer();
       this.opts.onClose?.(ev.code, ev.reason);
-      this.failPending(new Error(`websocket closed (${ev.code} ${ev.reason || "no reason"})`));
+      this.failPending(
+        new Error(`websocket closed (${ev.code} ${ev.reason || "no reason"})`),
+      );
       // Clear the outbox on disconnect. Anything that was buffered
       // for "send on next open" was a request whose Promise has now
       // been rejected by failPending; replaying those frames after a
@@ -173,6 +201,9 @@ export class RealtimeClient {
   close(): void {
     this.closed = true;
     this.stopHeartbeat();
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.onVisibilityChange);
+    }
     this.flushDeltaBuffer();
     if (this.reconnectTimer != null) {
       clearTimeout(this.reconnectTimer);
@@ -184,7 +215,13 @@ export class RealtimeClient {
 
   // ── Send paths ─────────────────────────────────────────────
 
-  request<R = unknown>(method: string, params: Record<string, unknown> = {}): Promise<R> {
+  request<R = unknown>(
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<R> {
+    if (this.closed) {
+      return Promise.reject(new Error("client closed"));
+    }
     const id = this.nextId++;
     const envelope: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
     return new Promise<R>((resolve, reject) => {
@@ -211,14 +248,21 @@ export class RealtimeClient {
 
   // ── Internal ───────────────────────────────────────────────
 
-  private buildUrl(): string {
+  // Credentials ride the ``Sec-WebSocket-Protocol`` handshake header
+  // instead of a ``?token=`` query param. Query strings end up in access
+  // logs, proxy logs and browser history. Base64url makes every UTF-8 token
+  // legal inside the subprotocol header, so unusual credentials never need
+  // to fall back to the URL. The gateway decodes the second protocol and
+  // echoes only the non-secret ``bearer.b64`` marker.
+  private buildConnection(): { url: string; protocols?: string[] } {
     const token = this.opts.authToken?.() ?? null;
-    if (!token || token === GUEST_AUTH_TOKEN) return this.opts.url;
-    const sep = this.opts.url.includes("?") ? "&" : "?";
-    return `${this.opts.url}${sep}token=${encodeURIComponent(token)}`;
+    return { url: this.opts.url, protocols: webSocketAuthProtocols(token) };
   }
 
   private send(env: Envelope): void {
+    // A deliberately closed client never reconnects. Do not retain late
+    // approval replies/notifications in an outbox that can never flush.
+    if (this.closed) return;
     const text = JSON.stringify(env);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(text);
@@ -265,8 +309,9 @@ export class RealtimeClient {
       // Server-initiated. Route to the caller and reply with the
       // decision. Errors are translated to a JSON-RPC error response so
       // the server's awaiting future doesn't hang.
-      this.opts.onIncomingRequest(env)
-        .then(result => this.reply(env.id, result))
+      this.opts
+        .onIncomingRequest(env)
+        .then((result) => this.reply(env.id, result))
         .catch((err: unknown) => {
           const message = err instanceof Error ? err.message : String(err);
           this.reply(env.id, null, { code: -32603, message });
@@ -283,13 +328,39 @@ export class RealtimeClient {
       }
       if (BATCHED_METHODS.has(env.method)) {
         this.deltaBuffer.push(env);
-        if (!this.deltaFlushPending) {
-          this.deltaFlushPending = true;
-          requestAnimationFrame(() => this.flushDeltaBuffer());
-        }
+        this.scheduleFlush();
       } else {
+        // Ordering invariant: a non-batched notification must never
+        // overtake events still sitting in the delta buffer. Within the
+        // buffering window (a frame in the foreground, a macrotask in a
+        // hidden tab) turn/completed, turn/interrupted, workbench
+        // snapshots or errors would otherwise reach the reducer before
+        // the buffered item/started they logically follow — e.g. an
+        // interrupt lands first, the reducer marks the turn done, then
+        // the late-flushed item spins forever. Flushing synchronously
+        // here keeps every cross-method sequence in WebSocket arrival
+        // order. Non-batched methods are low-frequency (a handful per
+        // turn), so this doesn't erode the coalescing win; the already
+        // scheduled rAF/setTimeout callback sees an empty buffer and
+        // returns without re-dispatching.
+        this.flushDeltaBuffer();
         this.opts.onNotification(env);
       }
+    }
+  }
+
+  // Foreground: coalesce on the next animation frame (caps React
+  // renders at the display rate during high-frequency streaming).
+  // Hidden tab: rAF callbacks are suspended, so fall back to a
+  // macrotask — otherwise the buffer grows unbounded and immediately-
+  // dispatched methods reorder past the buffered item events.
+  private scheduleFlush(): void {
+    if (this.deltaFlushPending) return;
+    this.deltaFlushPending = true;
+    if (typeof document !== "undefined" && document.hidden) {
+      setTimeout(() => this.flushDeltaBuffer(), 0);
+    } else {
+      requestAnimationFrame(() => this.flushDeltaBuffer());
     }
   }
 
@@ -319,7 +390,10 @@ export class RealtimeClient {
       // socket to stay open but stopped responding (proxy half-open,
       // load-balancer ghost session). Force-close so onclose triggers
       // the reconnect path.
-      if (this.lastPongAt > 0 && Date.now() - this.lastPongAt > PONG_TIMEOUT_MS) {
+      if (
+        this.lastPongAt > 0 &&
+        Date.now() - this.lastPongAt > PONG_TIMEOUT_MS
+      ) {
         this.ws?.close(4000, "pong timeout");
         return;
       }
@@ -337,11 +411,10 @@ export class RealtimeClient {
   private scheduleReconnect(): void {
     if (this.closed) return;
     if (this.reconnectTimer != null) return;
-    const idx = Math.min(this.reconnectAttempts, 12);
-    const base = Math.min(this.initialBackoff * 2 ** idx, this.maxBackoff);
-    // Full jitter: pick uniformly in [0, base]. Keeps thundering-herd
-    // away when many clients reconnect after a server bounce.
-    const wait = Math.floor(Math.random() * base);
+    const wait = nextBackoffDelay(this.reconnectAttempts, {
+      initialMs: this.initialBackoff,
+      maxMs: this.maxBackoff,
+    });
     this.reconnectAttempts++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -359,7 +432,7 @@ export class RealtimeClient {
 }
 
 // Convenience builder: returns a wired client with sensible defaults
-// for an octopus-agent backend.
+// for an echo-agent backend.
 export function createDefaultClient(args: {
   baseURL: string;
   threadId?: string;
@@ -382,7 +455,7 @@ export function createDefaultClient(args: {
   });
 }
 
-function toWebSocketURL(httpBase: string, path: string): string {
+export function toWebSocketURL(httpBase: string, path: string): string {
   const trimmed = (httpBase || "").replace(/\/+$/, "");
   if (!trimmed) {
     // Same-origin (vite dev proxy routes /api/* through to backend).
@@ -390,7 +463,7 @@ function toWebSocketURL(httpBase: string, path: string): string {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       return `${proto}//${window.location.host}${path}`;
     }
-    return `ws://localhost:8000${path}`;
+    return path;
   }
   if (trimmed.startsWith("https://")) return `wss://${trimmed.slice(8)}${path}`;
   if (trimmed.startsWith("http://")) return `ws://${trimmed.slice(7)}${path}`;
@@ -399,26 +472,51 @@ function toWebSocketURL(httpBase: string, path: string): string {
 
 function coalesceDeltaNotifications(batch: Notification[]): Notification[] {
   const merged: Notification[] = [];
-  for (const note of batch) {
-    const last = merged[merged.length - 1];
-    if (last && canMergeDeltaNotifications(last, note)) {
-      const previousParams = last.params as Record<string, unknown>;
-      const nextParams = note.params as Record<string, unknown>;
+  // Deltas of an open merge run, joined ONCE when the run closes. The
+  // naive ``merged.delta += next.delta`` recopies the growing prefix on
+  // every merge — quadratic in a busy frame where dozens of deltas for
+  // the same item land between animation frames.
+  let runParts: string[] = [];
+  const closeRun = (): void => {
+    // A lone delta keeps its original envelope — nothing was merged.
+    if (runParts.length <= 1) {
+      runParts = [];
+      return;
+    }
+    const seed = merged[merged.length - 1];
+    if (seed) {
       merged[merged.length - 1] = {
-        ...last,
+        ...seed,
         params: {
-          ...previousParams,
-          delta: String(previousParams.delta ?? "") + String(nextParams.delta ?? ""),
+          ...(seed.params as Record<string, unknown>),
+          delta: runParts.join(""),
         },
       };
+    }
+    runParts = [];
+  };
+  for (const note of batch) {
+    const last = merged[merged.length - 1];
+    if (last && runParts.length > 0 && canMergeDeltaNotifications(last, note)) {
+      runParts.push(
+        String((note.params as Record<string, unknown>).delta ?? ""),
+      );
       continue;
     }
+    closeRun();
     merged.push(note);
+    if (DELTA_METHODS.has(note.method)) {
+      runParts = [String((note.params as Record<string, unknown>).delta ?? "")];
+    }
   }
+  closeRun();
   return merged;
 }
 
-function canMergeDeltaNotifications(left: Notification, right: Notification): boolean {
+function canMergeDeltaNotifications(
+  left: Notification,
+  right: Notification,
+): boolean {
   if (left.method !== right.method) return false;
   // Only delta-style notifications carry appendable text. ``item/started``
   // / ``item/completed`` snapshots must never merge — they replace,

@@ -1,0 +1,27 @@
+#!/bin/sh
+# Copy cryptsetup and systemd's TPM2 external-token plugin into initramfs-tools.
+set -eu
+
+PREREQ=cryptroot
+prereqs() {
+  echo "$PREREQ"
+}
+if [ "${1:-}" = prereqs ]; then
+  prereqs
+  exit 0
+fi
+
+. /usr/share/initramfs-tools/hook-functions
+
+copy_exec /usr/sbin/cryptsetup
+
+plugin_count=0
+for plugin in /usr/lib/*-linux-gnu/cryptsetup/libcryptsetup-token-systemd-tpm2.so; do
+  [ -f "$plugin" ] || continue
+  copy_exec "$plugin" "$plugin"
+  plugin_count=$((plugin_count + 1))
+done
+[ "$plugin_count" -eq 1 ] || {
+  echo "Echo OS initramfs requires exactly one systemd TPM2 cryptsetup token plugin" >&2
+  exit 1
+}

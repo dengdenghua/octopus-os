@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from runtime.platform.io.atomic import (
     AtomicWriteError,
     atomic_write_bytes,
@@ -98,10 +97,13 @@ def test_failed_write_leaves_original_intact(tmp_path: Path) -> None:
     atomic_write_json(target, {"v": 1})
 
     # Simulate failure: os.replace raises partway through.
-    with patch(
-        "runtime.platform.io.atomic.os.replace",
-        side_effect=OSError("simulated"),
-    ), pytest.raises(AtomicWriteError):
+    with (
+        patch(
+            "runtime.platform.io.atomic.os.replace",
+            side_effect=OSError("simulated"),
+        ),
+        pytest.raises(AtomicWriteError),
+    ):
         atomic_write_json(target, {"v": 2})
 
     # Original file still contains v1.
@@ -110,10 +112,13 @@ def test_failed_write_leaves_original_intact(tmp_path: Path) -> None:
 
 def test_failed_write_cleans_up_tmp(tmp_path: Path) -> None:
     target = tmp_path / "out.json"
-    with patch(
-        "runtime.platform.io.atomic.os.replace",
-        side_effect=OSError("simulated"),
-    ), pytest.raises(AtomicWriteError):
+    with (
+        patch(
+            "runtime.platform.io.atomic.os.replace",
+            side_effect=OSError("simulated"),
+        ),
+        pytest.raises(AtomicWriteError),
+    ):
         atomic_write_json(target, {"v": 1})
     # No temp files left behind.
     leftovers = [p for p in tmp_path.iterdir() if p.name.startswith(".")]
@@ -143,9 +148,7 @@ def test_read_falls_back_to_bak_when_primary_corrupt(
 
 def test_read_returns_default_when_both_missing(tmp_path: Path) -> None:
     target = tmp_path / "missing.json"
-    assert read_json_with_backup(target, default={"fallback": True}) == {
-        "fallback": True
-    }
+    assert read_json_with_backup(target, default={"fallback": True}) == {"fallback": True}
 
 
 def test_read_returns_default_when_both_corrupt(tmp_path: Path) -> None:
@@ -179,9 +182,7 @@ def test_concurrent_writers_never_leave_corruption(tmp_path: Path) -> None:
         except Exception as e:  # pragma: no cover
             errors.append(e)
 
-    threads = [
-        threading.Thread(target=writer, args=(n,)) for n in range(8)
-    ]
+    threads = [threading.Thread(target=writer, args=(n,)) for n in range(8)]
     for t in threads:
         t.start()
     for t in threads:
@@ -213,9 +214,7 @@ def test_debounced_close_flushes(tmp_path: Path) -> None:
     writer = debounced_json_writer(target, interval_s=5.0)
     writer.queue({"final": "value"})
     writer.close()
-    assert json.loads(target.read_text(encoding="utf-8")) == {
-        "final": "value"
-    }
+    assert json.loads(target.read_text(encoding="utf-8")) == {"final": "value"}
 
 
 def test_debounced_noop_when_empty(tmp_path: Path) -> None:

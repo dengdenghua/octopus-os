@@ -1,0 +1,14 @@
+[Unit]
+Description=Prepare persistent Echo OS NetworkManager profiles
+Documentation=file:/usr/share/doc/echo-os/machine-state.md
+After=local-fs.target
+Before=NetworkManager.service sddm.service echo-desktop.service
+RequiresMountsFor=/var/lib/NetworkManager /var/lib/echo-os
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/echo-network-state-prepare
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

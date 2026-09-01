@@ -7,12 +7,12 @@
 * §40: ``_full_file_rewrite_guard`` — write_text_file overwriting an
   existing > 100-line file without a prior surgical edit on it.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
 from runtime.core.cerebrum.react_guards import (
     _full_file_rewrite_guard,
     _new_destructive_call_guard,
@@ -120,7 +120,7 @@ class TestStepIntroducesDestructiveCall:
 
 
 class TestNewDestructiveCallGuard:
-    def test_non_code_mode_silent(self) -> None:
+    def test_non_code_mode_still_blocks_destructive_call(self) -> None:
         steps = [
             _step(
                 1,
@@ -131,15 +131,25 @@ class TestNewDestructiveCallGuard:
                 ),
             ),
         ]
-        assert _new_destructive_call_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        msg = _new_destructive_call_guard(steps, "done", is_code_mode=False)
+        assert msg is not None
+        assert "shutil.rmtree" in msg
 
     def test_no_destructive_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _new_destructive_call_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _new_destructive_call_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_destructive_no_test_fires(self) -> None:
         steps = [
@@ -153,7 +163,9 @@ class TestNewDestructiveCallGuard:
             ),
         ]
         msg = _new_destructive_call_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "destructive" in msg.lower()
@@ -175,9 +187,14 @@ class TestNewDestructiveCallGuard:
                 action='write_text_file({"path": "tests/test_cleanup.py", "content": "def test_x(): pass\\n"})',
             ),
         ]
-        assert _new_destructive_call_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _new_destructive_call_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_help_request_short_circuits(self) -> None:
         steps = [
@@ -189,9 +206,14 @@ class TestNewDestructiveCallGuard:
                 ),
             ),
         ]
-        assert _new_destructive_call_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _new_destructive_call_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -261,15 +283,30 @@ class TestSleepInProductionGuard:
                 ),
             ),
         ]
-        assert _sleep_in_production_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _sleep_in_production_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_sleep_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _sleep_in_production_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _sleep_in_production_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_new_sleep_fires(self) -> None:
         steps = [
@@ -282,7 +319,9 @@ class TestSleepInProductionGuard:
             ),
         ]
         msg = _sleep_in_production_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "sleep" in msg.lower()
@@ -298,9 +337,14 @@ class TestSleepInProductionGuard:
                 ),
             ),
         ]
-        assert _sleep_in_production_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _sleep_in_production_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -321,52 +365,60 @@ def fake_repo_with_existing_file(tmp_path: Path) -> Path:
 
 class TestStepIsFullFileRewriteAttempt:
     def test_overwrite_big_existing_file_fires(
-        self, fake_repo_with_existing_file: Path,
+        self,
+        fake_repo_with_existing_file: Path,
     ) -> None:
         step = _step(
             1,
             action='write_text_file({"path": "runtime/big.py", "content": "x = 2\\n"})',
         )
         is_rewrite, path, lines = _step_is_full_file_rewrite_attempt(
-            step, repo_root=str(fake_repo_with_existing_file),
+            step,
+            repo_root=str(fake_repo_with_existing_file),
         )
         assert is_rewrite
         assert path == "runtime/big.py"
         assert lines >= 100
 
     def test_overwrite_small_existing_file_silent(
-        self, fake_repo_with_existing_file: Path,
+        self,
+        fake_repo_with_existing_file: Path,
     ) -> None:
         step = _step(
             1,
             action='write_text_file({"path": "runtime/small.py", "content": "y = 2\\n"})',
         )
         is_rewrite, _path, _lines = _step_is_full_file_rewrite_attempt(
-            step, repo_root=str(fake_repo_with_existing_file),
+            step,
+            repo_root=str(fake_repo_with_existing_file),
         )
         assert not is_rewrite
 
     def test_create_new_file_silent(
-        self, fake_repo_with_existing_file: Path,
+        self,
+        fake_repo_with_existing_file: Path,
     ) -> None:
         step = _step(
             1,
             action='write_text_file({"path": "runtime/brand_new.py", "content": "z = 1\\n"})',
         )
         is_rewrite, _path, _lines = _step_is_full_file_rewrite_attempt(
-            step, repo_root=str(fake_repo_with_existing_file),
+            step,
+            repo_root=str(fake_repo_with_existing_file),
         )
         assert not is_rewrite
 
     def test_edit_file_not_rewrite(
-        self, fake_repo_with_existing_file: Path,
+        self,
+        fake_repo_with_existing_file: Path,
     ) -> None:
         step = _step(
             1,
             action='edit_file({"path": "runtime/big.py", "old_string": "x = 1", "new_string": "x = 2"})',
         )
         is_rewrite, _path, _lines = _step_is_full_file_rewrite_attempt(
-            step, repo_root=str(fake_repo_with_existing_file),
+            step,
+            repo_root=str(fake_repo_with_existing_file),
         )
         assert not is_rewrite
 
@@ -396,59 +448,96 @@ class TestStepIsSurgicalEditOn:
 
 class TestFullFileRewriteGuard:
     def test_non_code_mode_silent(
-        self, fake_repo_with_existing_file: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        fake_repo_with_existing_file: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(fake_repo_with_existing_file)
         steps = [
             _step(1, action='write_text_file({"path": "runtime/big.py", "content": "x = 2\\n"})'),
         ]
-        assert _full_file_rewrite_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _full_file_rewrite_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_full_rewrite_no_prior_edit_fires(
-        self, fake_repo_with_existing_file: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        fake_repo_with_existing_file: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(fake_repo_with_existing_file)
         steps = [
             _step(1, action='write_text_file({"path": "runtime/big.py", "content": "x = 2\\n"})'),
         ]
         msg = _full_file_rewrite_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "runtime/big.py" in msg
 
     def test_full_rewrite_with_prior_edit_silent(
-        self, fake_repo_with_existing_file: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        fake_repo_with_existing_file: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(fake_repo_with_existing_file)
         steps = [
-            _step(1, action='edit_file({"path": "runtime/big.py", "old_string": "x = 1", "new_string": "x = 2"})'),
+            _step(
+                1,
+                action='edit_file({"path": "runtime/big.py", "old_string": "x = 1", "new_string": "x = 2"})',
+            ),
             _step(2, action='write_text_file({"path": "runtime/big.py", "content": "x = 3\\n"})'),
         ]
-        assert _full_file_rewrite_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _full_file_rewrite_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_new_file_silent(
-        self, fake_repo_with_existing_file: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        fake_repo_with_existing_file: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(fake_repo_with_existing_file)
         steps = [
-            _step(1, action='write_text_file({"path": "runtime/brand_new.py", "content": "z = 1\\n"})'),
+            _step(
+                1, action='write_text_file({"path": "runtime/brand_new.py", "content": "z = 1\\n"})'
+            ),
         ]
-        assert _full_file_rewrite_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _full_file_rewrite_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_help_request_short_circuits(
-        self, fake_repo_with_existing_file: Path, monkeypatch: pytest.MonkeyPatch,
+        self,
+        fake_repo_with_existing_file: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.chdir(fake_repo_with_existing_file)
         steps = [
             _step(1, action='write_text_file({"path": "runtime/big.py", "content": "x = 2\\n"})'),
         ]
-        assert _full_file_rewrite_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _full_file_rewrite_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )

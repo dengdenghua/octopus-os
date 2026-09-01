@@ -17,7 +17,9 @@ import {
 import type { FileOpEvent } from "@/core/observability/api";
 import { useFileOpStream } from "@/core/observability/file-ops";
 import { useI18n } from "@/core/i18n/hooks";
+import { canAccessOperatorControlPlane } from "@/core/auth/control-plane-access";
 import { cn } from "@/lib/utils";
+import { useOptionalAuth } from "@/providers/AuthProvider";
 
 interface Props {
   className?: string;
@@ -25,7 +27,14 @@ interface Props {
 
 export function FileActivityIndicator({ className }: Props) {
   const { t } = useI18n();
-  const events = useFileOpStream({ limit: 20 });
+  const auth = useOptionalAuth();
+  const events = useFileOpStream({
+    limit: 20,
+    enabled: canAccessOperatorControlPlane(
+      auth?.authStatus ?? null,
+      auth?.user ?? null,
+    ),
+  });
   const [flashKey, setFlashKey] = useState<number | null>(null);
   const latest = events[events.length - 1];
 
@@ -43,7 +52,7 @@ export function FileActivityIndicator({ className }: Props) {
         <button
           type="button"
           className={cn(
-            "flex items-center gap-1 rounded-md px-2 py-1 text-[11px]",
+            "flex items-center gap-1 rounded-md px-2 py-1 text-xs",
             "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
             className,
@@ -61,18 +70,19 @@ export function FileActivityIndicator({ className }: Props) {
             )}
             onAnimationEnd={() => setFlashKey(null)}
           />
-          <span className="truncate max-w-[140px]">
-            {latest ? shortPath(latest.path) : t.activityIndicators.filesCount(events.length)}
+          <span className="truncate max-w-[var(--text-truncate-md)]">
+            {latest
+              ? shortPath(latest.path)
+              : t.activityIndicators.filesCount(events.length)}
           </span>
         </button>
       </HoverCardTrigger>
-      <HoverCardContent
-        align="start"
-        className="w-[480px] p-2 text-[12px]"
-      >
+      <HoverCardContent align="start" className="w-80 sm:w-[480px] p-2 text-xs">
         <div className="font-medium mb-1.5 flex items-center justify-between">
           <span>{t.activityIndicators.fileActivityTitle(events.length)}</span>
-          <span className="text-[10px] text-muted-foreground">{t.activityIndicators.realtimeLabel}</span>
+          <span className="text-xs text-muted-foreground">
+            {t.activityIndicators.realtimeLabel}
+          </span>
         </div>
         <ul className="space-y-1 max-h-[60vh] overflow-y-auto">
           {[...events].reverse().map((e, i) => (
@@ -89,7 +99,7 @@ function FileOpRow({ event }: { event: FileOpEvent }) {
   const hasDiff = !!event.diff && event.diff.length > 0;
 
   return (
-    <li className="rounded border border-border/30 bg-muted/20">
+    <li className="rounded border border-border-subtle bg-muted/20">
       <button
         type="button"
         onClick={() => hasDiff && setExpanded((v) => !v)}
@@ -114,16 +124,12 @@ function FileOpRow({ event }: { event: FileOpEvent }) {
           action={event.action}
           className="size-3 text-muted-foreground shrink-0"
         />
-        <span className="flex-1 font-mono text-[10px] truncate">
-          {event.path}
-        </span>
-        <span className="text-[9px] text-muted-foreground tabular-nums shrink-0">
+        <span className="flex-1 font-mono text-xs truncate">{event.path}</span>
+        <span className="text-xs text-muted-foreground tabular-nums shrink-0">
           {formatDelta(event.bytes_delta)}
         </span>
       </button>
-      {expanded && event.diff && (
-        <DiffBlock diff={event.diff} />
-      )}
+      {expanded && event.diff && <DiffBlock diff={event.diff} />}
     </li>
   );
 }
@@ -132,9 +138,9 @@ function DiffBlock({ diff }: { diff: string }) {
   return (
     <pre
       className={cn(
-        "m-1 rounded border border-border/40 bg-background px-2 py-1.5",
-        "text-[10px] font-mono leading-snug whitespace-pre overflow-x-auto",
-        "max-h-[320px] overflow-y-auto",
+        "m-1 rounded border border-border-subtle bg-background px-2 py-1.5",
+        "text-xs font-mono leading-snug whitespace-pre overflow-x-auto",
+        "max-h-[var(--panel-height-md)] overflow-y-auto",
       )}
     >
       {diff.split("\n").map((line, i) => (
@@ -142,9 +148,11 @@ function DiffBlock({ diff }: { diff: string }) {
           key={i}
           className={cn(
             "block",
-            line.startsWith("+") && !line.startsWith("+++") && "text-emerald-600 dark:text-emerald-400",
-            line.startsWith("-") && !line.startsWith("---") && "text-rose-600 dark:text-rose-400",
-            line.startsWith("@@") && "text-sky-600 dark:text-sky-400",
+            line.startsWith("+") && !line.startsWith("+++") && "text-success",
+            line.startsWith("-") &&
+              !line.startsWith("---") &&
+              "text-destructive",
+            line.startsWith("@@") && "text-info dark:text-info",
             line.startsWith("+++") && "text-muted-foreground",
             line.startsWith("---") && "text-muted-foreground",
           )}
@@ -157,7 +165,9 @@ function DiffBlock({ diff }: { diff: string }) {
 }
 
 function ActionIcon({
-  action, className, onAnimationEnd,
+  action,
+  className,
+  onAnimationEnd,
 }: {
   action: FileOpEvent["action"];
   className?: string;

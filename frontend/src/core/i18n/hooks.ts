@@ -1,14 +1,9 @@
-
 import { useEffect, useState } from "react";
 
 import { useI18nContext } from "./context";
 import { getLocaleFromCookie, setLocaleInCookie } from "./cookies";
 
-import {
-  detectLocale,
-  normalizeLocale,
-  type Locale,
-} from "./index";
+import { detectLocale, normalizeLocale, type Locale } from "./index";
 
 export function useI18n() {
   const { locale, setLocale, t } = useI18nContext();
@@ -17,6 +12,7 @@ export function useI18n() {
   const changeLocale = (newLocale: Locale) => {
     void setLocale(newLocale);
     setLocaleInCookie(newLocale);
+    document.documentElement.lang = newLocale.split("-")[0] ?? newLocale;
   };
 
   // Initialize locale on mount
@@ -44,4 +40,3 @@ export function useI18n() {
     isClient,
   };
 }
-

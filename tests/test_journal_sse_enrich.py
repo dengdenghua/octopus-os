@@ -26,7 +26,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from runtime.memory.journal import (
     BrowserArtifactEvent,
     FileRollbackEvent,
@@ -42,7 +41,8 @@ from runtime.platform.ui.app import create_app
 
 @pytest.fixture
 def isolated_cwd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[Path]:
     monkeypatch.chdir(tmp_path)
     yield tmp_path
@@ -52,7 +52,8 @@ def isolated_cwd(
 def stack(isolated_cwd: Path):
     cfg = AgentConfig(
         planner=PlannerConfig(
-            type="llm", model="mock/sse",
+            type="llm",
+            model="mock/sse",
             mock_response='{"reasoning":"r","nodes":[]}',
         ),
     )
@@ -62,7 +63,9 @@ def stack(isolated_cwd: Path):
 @pytest.fixture
 def client(stack, isolated_cwd: Path) -> TestClient:
     app = create_app(
-        journal=stack.journal, registry=stack.registry, stack=stack,
+        journal=stack.journal,
+        registry=stack.registry,
+        stack=stack,
     )
     return TestClient(app)
 
@@ -71,7 +74,8 @@ def client(stack, isolated_cwd: Path) -> TestClient:
 
 
 def test_journal_endpoint_serializes_sub_tool_start(
-    client: TestClient, stack,
+    client: TestClient,
+    stack,
 ) -> None:
     """``/api/journal`` returns the recent tail · this is the
     same enrichment path used by ``/api/stream`` SSE."""
@@ -80,7 +84,7 @@ def test_journal_endpoint_serializes_sub_tool_start(
         tool_call_id="call_123",
         tool_name="web_search",
         iteration=2,
-        args_preview="{'query':'octopus'}",
+        args_preview="{'query':'echo'}",
         parent_tool_use_id="parent_xyz",
     )
     stack.journal.write(ev)
@@ -92,7 +96,8 @@ def test_journal_endpoint_serializes_sub_tool_start(
 
 
 def test_journal_endpoint_serializes_browser_artifact(
-    client: TestClient, stack,
+    client: TestClient,
+    stack,
 ) -> None:
     ev = BrowserArtifactEvent(
         kind="screenshot",
@@ -235,7 +240,8 @@ def test_enrich_payload_carries_sub_tool_fields(
     journal = StreamingJournal(InMemoryJournal())
     registry = SkillRegistry()
     router = create_observability_router(
-        journal=journal, registry=registry,
+        journal=journal,
+        registry=registry,
     )
     assert router is not None  # smoke · build succeeded
 
@@ -246,22 +252,36 @@ def test_in_memory_journal_accepts_new_event_types() -> None:
     journal = InMemoryJournal()
     journal.write(
         SubToolStartEvent(
-            role_id="r", tool_call_id="c", tool_name="t",
-            iteration=0, args_preview="", parent_tool_use_id=None,
+            role_id="r",
+            tool_call_id="c",
+            tool_name="t",
+            iteration=0,
+            args_preview="",
+            parent_tool_use_id=None,
         ),
     )
     journal.write(
         SubToolEndEvent(
-            role_id="r", tool_call_id="c", tool_name="t",
-            iteration=0, is_error=False, duration_ms=10,
-            output_preview="ok", parent_tool_use_id=None,
+            role_id="r",
+            tool_call_id="c",
+            tool_name="t",
+            iteration=0,
+            is_error=False,
+            duration_ms=10,
+            output_preview="ok",
+            parent_tool_use_id=None,
         ),
     )
     journal.write(
         BrowserArtifactEvent(
-            kind="screenshot", url="/x", filename="x.png",
-            caption="", mime_type="image/png",
-            width=1, height=1, thread_id="t",
+            kind="screenshot",
+            url="/x",
+            filename="x.png",
+            caption="",
+            mime_type="image/png",
+            width=1,
+            height=1,
+            thread_id="t",
         ),
     )
     journal.write(

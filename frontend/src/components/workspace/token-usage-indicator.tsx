@@ -1,4 +1,3 @@
-
 import type { Message } from "@/core/api/types";
 import { CoinsIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, memo } from "react";
@@ -62,7 +61,7 @@ export const TokenUsageIndicator = memo(function TokenUsageIndicator({
         <button
           type="button"
           className={cn(
-            "text-muted-foreground hover:text-foreground hover:bg-muted flex h-8 cursor-default items-center gap-1 rounded-lg border border-transparent px-2 text-xs transition-colors",
+            "text-muted-foreground hover:text-foreground hover:bg-muted flex h-8 cursor-default items-center gap-1 border border-transparent px-2 text-xs transition-colors",
             className,
           )}
         >
@@ -85,7 +84,7 @@ export const TokenUsageIndicator = memo(function TokenUsageIndicator({
               {formatTokenCount(usage.outputTokens)}
             </span>
           </div>
-          <div className="border-t border-border/50 pt-1">
+          <div className="border-t border-border-default pt-1">
             <div className="flex justify-between gap-4">
               <span>{t.tokenUsage.total}</span>
               <span className="font-mono font-medium">
@@ -96,13 +95,11 @@ export const TokenUsageIndicator = memo(function TokenUsageIndicator({
           {tokensPerSec !== null && tokensPerSec > 0 && (
             <div className="flex justify-between gap-4">
               <span>{t.tokenUsage.speed}</span>
-              <span className="font-mono">
-                {tokensPerSec} tok/s
-              </span>
+              <span className="font-mono">{tokensPerSec} tok/s</span>
             </div>
           )}
           {usage && (
-            <div className="border-t border-border/50 pt-1 mt-1">
+            <div className="border-t border-border-default pt-1 mt-1">
               <div className="flex justify-between gap-4 mb-1">
                 <span>{t.tokenUsage.context}</span>
                 <span className="font-mono">
@@ -113,10 +110,15 @@ export const TokenUsageIndicator = memo(function TokenUsageIndicator({
                 <div
                   className={cn(
                     "h-full rounded-lg transition-all",
-                    usage.totalTokens > 80000 ? "bg-red-500 dark:bg-red-400" :
-                    usage.totalTokens > 50000 ? "bg-amber-500 dark:bg-amber-400" : "bg-green-500 dark:bg-green-400"
+                    usage.totalTokens > 80000
+                      ? "bg-destructive dark:bg-destructive"
+                      : usage.totalTokens > 50000
+                        ? "bg-warning dark:bg-warning"
+                        : "bg-success dark:bg-success",
                   )}
-                  style={{ width: `${Math.min(100, (usage.totalTokens / 100000) * 100)}%` }}
+                  style={{
+                    width: `${Math.min(100, (usage.totalTokens / 100000) * 100)}%`,
+                  }}
                 />
               </div>
             </div>
@@ -126,4 +128,3 @@ export const TokenUsageIndicator = memo(function TokenUsageIndicator({
     </Tooltip>
   );
 });
-

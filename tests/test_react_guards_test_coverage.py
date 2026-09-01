@@ -6,6 +6,7 @@ edit to any test file. Conservative: private symbols, nested defs,
 non-Python files, and any trajectory that touches ``tests/`` are all
 exempt.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -182,63 +183,116 @@ class TestHasTestWrite:
 class TestNewPythonCodeWithoutTestGuard:
     def test_non_code_mode_silent(self) -> None:
         steps = [
-            _step(1, action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})'),
+            _step(
+                1,
+                action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})',
+            ),
         ]
-        assert _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _new_python_code_without_test_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_writes_silent(self) -> None:
         steps = [_step(1, action='read_file({"path": "runtime/foo.py"})')]
-        assert _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _new_python_code_without_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_only_private_symbol_silent(self) -> None:
         steps = [
-            _step(1, action='write_text_file({"path": "runtime/foo.py", "content": "def _helper():\\n    return 1\\n"})'),
+            _step(
+                1,
+                action='write_text_file({"path": "runtime/foo.py", "content": "def _helper():\\n    return 1\\n"})',
+            ),
         ]
-        assert _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _new_python_code_without_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_new_public_def_no_test_fires(self) -> None:
         steps = [
-            _step(1, action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})'),
+            _step(
+                1,
+                action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})',
+            ),
         ]
         msg = _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "test" in msg.lower()
 
     def test_new_public_class_no_test_fires(self) -> None:
         steps = [
-            _step(1, action='write_text_file({"path": "runtime/foo.py", "content": "class Bar:\\n    pass\\n"})'),
+            _step(
+                1,
+                action='write_text_file({"path": "runtime/foo.py", "content": "class Bar:\\n    pass\\n"})',
+            ),
         ]
-        assert _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is not None
+        assert (
+            _new_python_code_without_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is not None
+        )
 
     def test_new_public_def_with_test_edit_silent(self) -> None:
         # ANY edit to a test file in the trajectory is enough signal.
         steps = [
-            _step(1, action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})'),
-            _step(2, action='write_text_file({"path": "tests/test_foo.py", "content": "def test_hello():\\n    pass\\n"})'),
+            _step(
+                1,
+                action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})',
+            ),
+            _step(
+                2,
+                action='write_text_file({"path": "tests/test_foo.py", "content": "def test_hello():\\n    pass\\n"})',
+            ),
         ]
-        assert _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _new_python_code_without_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_help_request_short_circuits(self) -> None:
         steps = [
-            _step(1, action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})'),
+            _step(
+                1,
+                action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})',
+            ),
         ]
         # Use a phrase the help-request detector recognises.
         final = "I cannot continue — please provide the API key."
-        assert _new_python_code_without_test_guard(
-            steps, final, is_code_mode=True,
-        ) is None
+        assert (
+            _new_python_code_without_test_guard(
+                steps,
+                final,
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_refactor_only_silent(self) -> None:
         # Removing a function body (no NEW public symbol introduced).
@@ -253,27 +307,45 @@ class TestNewPythonCodeWithoutTestGuard:
         # guard's docstring. We assert the trade-off explicitly so
         # future readers know it's intentional.
         msg = _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None  # Documented limitation: refactor → False positive.
 
     def test_old_write_outside_window_silent(self) -> None:
         # Symbol added > _NEW_SYMBOL_LOOKBACK steps ago — guard moves on.
         steps = [
-            _step(1, action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})'),
+            _step(
+                1,
+                action='write_text_file({"path": "runtime/foo.py", "content": "def hello():\\n    return 1\\n"})',
+            ),
         ] + [_step(i, action='read_file({"path": "x.py"})') for i in range(2, 20)]
-        assert _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _new_python_code_without_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_test_path_edit_not_flagged(self) -> None:
         # Adding a public def to a test file should never trip the guard.
         steps = [
-            _step(1, action='write_text_file({"path": "tests/test_foo.py", "content": "def helper_for_tests():\\n    return 1\\n"})'),
+            _step(
+                1,
+                action='write_text_file({"path": "tests/test_foo.py", "content": "def helper_for_tests():\\n    return 1\\n"})',
+            ),
         ]
-        assert _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _new_python_code_without_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_multi_edit_file_new_symbol_no_test_fires(self) -> None:
         steps = [
@@ -285,6 +357,11 @@ class TestNewPythonCodeWithoutTestGuard:
                 ),
             ),
         ]
-        assert _new_python_code_without_test_guard(
-            steps, "done", is_code_mode=True,
-        ) is not None
+        assert (
+            _new_python_code_without_test_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is not None
+        )

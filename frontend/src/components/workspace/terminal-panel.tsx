@@ -7,7 +7,9 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { TerminalIcon, XIcon, RotateCcwIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { swallow } from "@/core/utils/log";
-import { getBackendBaseURL } from "@/core/config";
+import { getToken } from "@/core/auth/api";
+import { getBackendBaseURL, getBackendWebSocketBaseURL } from "@/core/config";
+import { useI18n } from "@/core/i18n/hooks";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPanelProps {
@@ -17,7 +19,19 @@ interface TerminalPanelProps {
   onClose?: () => void;
 }
 
-export function TerminalPanel({ sessionId, cwd, className, onClose }: TerminalPanelProps) {
+function terminalShellLabel(platform: string): string {
+  if (/win/i.test(platform)) return "PowerShell";
+  if (/mac|iphone|ipad/i.test(platform)) return "zsh";
+  return "shell";
+}
+
+export function TerminalPanel({
+  sessionId,
+  cwd,
+  className,
+  onClose,
+}: TerminalPanelProps) {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -29,10 +43,13 @@ export function TerminalPanel({ sessionId, cwd, className, onClose }: TerminalPa
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const base = getBackendBaseURL() || window.location.origin;
-    const wsBase = base.replace(/^http/, "ws");
-    const params = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
-    const url = `${wsBase}/api/terminal/ws/${sessionId}${params}`;
+    const wsBase = getBackendWebSocketBaseURL();
+    const params = new URLSearchParams();
+    if (cwd) params.set("cwd", cwd);
+    const token = getToken();
+    if (token) params.set("token", token);
+    const query = params.size ? `?${params.toString()}` : "";
+    const url = `${wsBase}/api/terminal/ws/${sessionId}${query}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -50,7 +67,9 @@ export function TerminalPanel({ sessionId, cwd, className, onClose }: TerminalPa
           termRef.current.write(msg.data);
         } else if (msg.type === "exit") {
           setHasOutput(true);
-          termRef.current?.writeln(`\r\n[Process exited with code ${msg.code}]`);
+          termRef.current?.writeln(
+            `\r\n[Process exited with code ${msg.code}]`,
+          );
           setConnected(false);
         } else if (msg.type === "error") {
           setHasOutput(true);
@@ -107,12 +126,18 @@ export function TerminalPanel({ sessionId, cwd, className, onClose }: TerminalPa
     connect();
 
     const ro = new ResizeObserver(() => {
-      try { fit.fit(); } catch (e) { swallow(e); }
+      try {
+        fit.fit();
+      } catch (e) {
+        swallow(e);
+      }
     });
     ro.observe(containerRef.current);
 
     return () => {
       ro.disconnect();
+      wsRef.current?.close();
+      wsRef.current = null;
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -121,10 +146,12 @@ export function TerminalPanel({ sessionId, cwd, className, onClose }: TerminalPa
 
   const handleRestart = useCallback(async () => {
     wsRef.current?.close();
-    const base = getBackendBaseURL() || window.location.origin;
+    const base = getBackendBaseURL();
     try {
       await fetch(`${base}/api/terminal/kill/${sessionId}`, { method: "POST" });
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
     termRef.current?.clear();
     setHasOutput(false);
     setConnectionError(false);
@@ -132,23 +159,34 @@ export function TerminalPanel({ sessionId, cwd, className, onClose }: TerminalPa
   }, [sessionId, connect]);
 
   return (
-    <div className={cn("flex h-full flex-col bg-white text-slate-950", className)}>
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-2">
-        <div className="flex items-center gap-2 text-xs text-slate-500">
+    <div
+      className={cn(
+        "flex h-full flex-col bg-background text-foreground",
+        className,
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-border bg-background px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <TerminalIcon className="size-3.5" />
-          <span className="text-sm font-semibold text-slate-950">Terminal</span>
-          <span className="font-medium">powershell</span>
-          <span className={cn(
-            "size-1.5 rounded-full",
-            connected ? "bg-emerald-400" : "bg-rose-400"
-          )} />
+          <span className="text-sm font-semibold text-foreground">
+            {t.codeMode.terminal}
+          </span>
+          <span className="font-medium">
+            {terminalShellLabel(navigator.platform || navigator.userAgent)}
+          </span>
+          <span
+            className={cn(
+              "size-1.5 rounded-full",
+              connected ? "bg-success" : "bg-destructive",
+            )}
+          />
         </div>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={handleRestart}
-            className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-            title="Restart shell"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title={t.codeMode.terminalRestart}
           >
             <RotateCcwIcon className="size-3" />
           </button>
@@ -156,26 +194,28 @@ export function TerminalPanel({ sessionId, cwd, className, onClose }: TerminalPa
             <button
               type="button"
               onClick={onClose}
-              className="rounded p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-              title="Close terminal"
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title={t.codeMode.terminalClose}
             >
               <XIcon className="size-3" />
             </button>
           )}
         </div>
       </div>
-      <div className="relative min-h-0 flex-1 bg-white">
+      <div className="relative min-h-0 flex-1 bg-background">
         <div ref={containerRef} className="absolute inset-0" />
         {!hasOutput && (
-          <div className="pointer-events-none absolute inset-0 px-6 py-5 font-mono text-[13px] leading-6 text-slate-400">
+          <div className="pointer-events-none absolute inset-0 px-6 py-5 font-mono text-sm leading-6 text-muted-foreground/70">
             {connectionError
-              ? "Terminal connection failed. Use restart to reconnect."
+              ? t.codeMode.terminalConnectionFailed
               : connected
-                ? "Terminal connected. Type a command to begin."
-                : "Connecting terminal..."}
+                ? t.codeMode.terminalConnectedHint
+                : t.codeMode.terminalConnecting}
           </div>
         )}
       </div>
     </div>
   );
 }
+
+export const __testing = { terminalShellLabel };

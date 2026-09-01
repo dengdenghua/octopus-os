@@ -27,9 +27,18 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-function BucketBar({ bucket, totalBudget: _totalBudget }: { bucket: ContextBucket; totalBudget: number }) {
+function BucketBar({
+  bucket,
+  totalBudget: _totalBudget,
+}: {
+  bucket: ContextBucket;
+  totalBudget: number;
+}) {
   const Icon = bucket.icon;
-  const usedPct = bucket.allocated > 0 ? Math.min(100, (bucket.used / bucket.allocated) * 100) : 0;
+  const usedPct =
+    bucket.allocated > 0
+      ? Math.min(100, (bucket.used / bucket.allocated) * 100)
+      : 0;
   const overflow = bucket.used > bucket.allocated;
 
   return (
@@ -37,20 +46,26 @@ function BucketBar({ bucket, totalBudget: _totalBudget }: { bucket: ContextBucke
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <Icon className={cn("size-3", bucket.color)} />
-          <span className="text-[10px] text-muted-foreground/70">{bucket.name}</span>
+          <span className="text-xs text-muted-foreground/70">
+            {bucket.name}
+          </span>
         </div>
-        <span className={cn(
-          "text-[10px] font-mono tabular-nums",
-          overflow ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground/50",
-        )}>
+        <span
+          className={cn(
+            "text-xs font-mono tabular-nums",
+            overflow
+              ? "text-warning"
+              : "text-muted-foreground/50",
+          )}
+        >
           {formatTokens(bucket.used)}/{formatTokens(bucket.allocated)}
         </span>
       </div>
       <div className="h-1 rounded-full bg-muted/50 overflow-hidden">
         <div
           className={cn(
-            "h-full rounded-full transition-all duration-300",
-            overflow ? "bg-amber-500" : bucket.color.replace("text-", "bg-"),
+            "h-full rounded-full transition-all duration-slow",
+            overflow ? "bg-warning" : bucket.color.replace("text-", "bg-"),
           )}
           style={{ width: `${usedPct}%` }}
         />
@@ -76,49 +91,55 @@ export function ContextWindowIndicator({
       used: buckets.system.used,
       allocated: buckets.system.allocated,
       icon: MonitorIcon,
-      color: "text-sky-500",
+      color: "text-info",
     },
     {
       name: t.contextWindow?.tools,
       used: buckets.suckers.used,
       allocated: buckets.suckers.allocated,
       icon: WrenchIcon,
-      color: "text-orange-500",
+      color: "text-chart-7",
     },
     {
       name: t.contextWindow?.memory,
       used: buckets.memory.used,
       allocated: buckets.memory.allocated,
       icon: BrainIcon,
-      color: "text-violet-500",
+      color: "text-chart-1",
     },
     {
       name: t.contextWindow?.history,
       used: buckets.history.used,
       allocated: buckets.history.allocated,
       icon: HistoryIcon,
-      color: "text-emerald-500",
+      color: "text-success",
     },
   ];
 
   return (
     <div className={cn("space-y-2 px-3 py-2", className)}>
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-medium text-muted-foreground/70">
+        <span className="text-xs font-medium text-muted-foreground/70">
           {t.contextWindow?.title}
         </span>
-        <span className={cn(
-          "text-[10px] font-mono tabular-nums",
-          isHigh ? "text-red-500" : isMedium ? "text-amber-500" : "text-muted-foreground/50",
-        )}>
+        <span
+          className={cn(
+            "text-xs font-mono tabular-nums",
+            isHigh
+              ? "text-destructive"
+              : isMedium
+                ? "text-warning"
+                : "text-muted-foreground/50",
+          )}
+        >
           {formatTokens(totalUsed)}/{formatTokens(totalBudget)}
         </span>
       </div>
       <div className="h-1.5 rounded-full bg-muted overflow-hidden">
         <div
           className={cn(
-            "h-full rounded-full transition-all duration-500",
-            isHigh ? "bg-red-500" : isMedium ? "bg-amber-500" : "bg-primary/60",
+            "h-full rounded-full transition-all duration-slow",
+            isHigh ? "bg-destructive" : isMedium ? "bg-warning" : "bg-primary/60",
           )}
           style={{ width: `${Math.min(100, utilization * 100)}%` }}
         />

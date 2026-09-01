@@ -12,6 +12,7 @@ Contract pinned
 6. Catalog load failure falls through unchanged (resilience)
 7. Expansion happens BEFORE UserPromptSubmit hook (handlers see expanded text)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,9 +27,9 @@ def cwd_with_command(
 ) -> Path:
     """Set up an empty global commands dir + project commands dir
     with one test command, and chdir into the project."""
-    monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("ECHO_HOME", str(tmp_path / "home"))
     proj = tmp_path / "proj"
-    cmds = proj / ".octopus" / "commands"
+    cmds = proj / ".echo" / "commands"
     cmds.mkdir(parents=True)
     (cmds / "review.md").write_text(
         "Review PR #$1 for $ARGUMENTS",
@@ -48,6 +49,7 @@ class TestExpansion:
         from runtime.sensing.gateway.slash_command_expansion import (
             maybe_expand_slash_command,
         )
+
         out = maybe_expand_slash_command("/review 123 security")
         assert out == "Review PR #123 for 123 security"
 
@@ -55,6 +57,7 @@ class TestExpansion:
         from runtime.sensing.gateway.slash_command_expansion import (
             maybe_expand_slash_command,
         )
+
         out = maybe_expand_slash_command("/no-such-cmd args")
         assert out == "/no-such-cmd args"
 
@@ -62,6 +65,7 @@ class TestExpansion:
         from runtime.sensing.gateway.slash_command_expansion import (
             maybe_expand_slash_command,
         )
+
         out = maybe_expand_slash_command("just a regular message")
         assert out == "just a regular message"
 
@@ -69,6 +73,7 @@ class TestExpansion:
         from runtime.sensing.gateway.slash_command_expansion import (
             maybe_expand_slash_command,
         )
+
         # No name after the slash · can't match anything
         assert maybe_expand_slash_command("/") == "/"
         assert maybe_expand_slash_command("/ args") == "/ args"
@@ -77,6 +82,7 @@ class TestExpansion:
         from runtime.sensing.gateway.slash_command_expansion import (
             maybe_expand_slash_command,
         )
+
         out = maybe_expand_slash_command("  /review 1 perf")
         # First $1 binds to "1", $ARGUMENTS binds to "1 perf"
         assert out == "Review PR #1 for 1 perf"
@@ -85,13 +91,15 @@ class TestExpansion:
         from runtime.sensing.gateway.slash_command_expansion import (
             maybe_expand_slash_command,
         )
+
         out = maybe_expand_slash_command("/review")
         # $1 unresolved · stays literal · $ARGUMENTS empty
         assert "Review PR #" in out
         assert out.endswith("for ")
 
     def test_catalog_failure_falls_through(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         """If load_slash_commands somehow raises, we return verbatim
         rather than 500 the chat turn."""
@@ -102,6 +110,7 @@ class TestExpansion:
 
         # Monkeypatch the import path the helper uses
         from runtime.execution import slash_commands as scm
+
         monkeypatch.setattr(scm, "load_slash_commands", _boom)
 
         out = mod.maybe_expand_slash_command("/anything args")

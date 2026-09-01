@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, type MotionProps } from "motion/react";
 
@@ -50,4 +49,3 @@ export function WordRotate({
     </div>
   );
 }
-

@@ -1,0 +1,62 @@
+[Unit]
+Description=Echo QuoteHub read-only market data service
+Documentation=file:/opt/echo-cloud/quote-hub/current/deploy/quote-hub/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=echo-quote
+Group=echo-quote
+WorkingDirectory=/opt/echo-cloud/quote-hub/current
+EnvironmentFile=/etc/echo/quote-hub.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+
+ExecStartPre=/usr/bin/test -r /etc/echo/quote-hub.env
+ExecStartPre=/usr/bin/test -r /etc/echo/quote-hub-secret.json
+ExecStartPre=/usr/bin/test -x /opt/echo-cloud/quote-hub/current/.venv/bin/python
+ExecStart=/opt/echo-cloud/quote-hub/current/.venv/bin/python -m uvicorn runtime.platform.plugins.bundled.paper_trading.quote_service:app --host 127.0.0.1 --port 8091 --proxy-headers --forwarded-allow-ips=127.0.0.1 --timeout-keep-alive 75
+
+Restart=on-failure
+RestartSec=3s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+KillSignal=SIGINT
+
+# The service can read its immutable release and service-owned 0600 secrets, but
+# only its state directory is writable. It does not need device or kernel APIs.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/echo/quote-hub
+
+# 2G-class host baseline: QuoteHub uses bounded queues and one merged upstream
+# subscription. Raise these only together with application-level quotas.
+MemoryHigh=384M
+MemoryMax=512M
+TasksMax=256
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

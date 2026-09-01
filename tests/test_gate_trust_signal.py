@@ -10,10 +10,10 @@ Verifies the contract:
 4. Owner destinations exempt — owner sees their own data.
 5. Trust scoring failure degrades to no-op (allow), not block.
 """
+
 from __future__ import annotations
 
 import pytest
-
 from runtime.safety.validation import gate
 
 # ══════════════════════════════════════════════════════════════════
@@ -23,22 +23,26 @@ from runtime.safety.validation import gate
 
 class TestTrustSignalDisabledByDefault:
     def test_clean_message_default_allows(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Even if trust would say suspect, default off → no escalation.
         monkeypatch.setattr(
             "runtime.safety.validation.gate.fetch_current_trust_score",
-            lambda: 0.0, raising=False,
+            lambda: 0.0,
+            raising=False,
         )
         v = gate.check_outbound("hello world", destination="channels:slack:c1")
         assert v.action == "allow"
 
     def test_no_kwarg_means_default_off(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Belt-and-braces — the kwarg now defaults to None (tri-state)
         # which resolves to off when no env / yaml says otherwise.
         import inspect
+
         sig = inspect.signature(gate.check_outbound)
         assert sig.parameters["enable_trust_signal"].default is None
 
@@ -50,9 +54,11 @@ class TestTrustSignalDisabledByDefault:
 
 class TestSuspectTrustEscalates:
     def test_suspect_clean_message_becomes_human_gate(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from runtime.safety.validation import trust_signal
+
         monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: 0.05)
         v = gate.check_outbound(
             "Hello team, please review the docs.",
@@ -64,9 +70,11 @@ class TestSuspectTrustEscalates:
         assert "0.05" in v.reason
 
     def test_neutral_trust_does_not_escalate(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from runtime.safety.validation import trust_signal
+
         monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: 0.5)
         v = gate.check_outbound(
             "Hello team",
@@ -76,9 +84,11 @@ class TestSuspectTrustEscalates:
         assert v.action == "allow"
 
     def test_trusted_score_does_not_escalate(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from runtime.safety.validation import trust_signal
+
         monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: 0.95)
         v = gate.check_outbound(
             "Hello team",
@@ -88,9 +98,11 @@ class TestSuspectTrustEscalates:
         assert v.action == "allow"
 
     def test_owner_destination_exempt(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from runtime.safety.validation import trust_signal
+
         monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: 0.05)
         # Even with suspect trust, owner-destined messages don't
         # need human review (it's the owner's own surface).
@@ -110,10 +122,12 @@ class TestSuspectTrustEscalates:
 
 class TestTrustNeverRelaxes:
     def test_secret_still_blocks_when_trust_high(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Even if trust is perfect, a secret in the payload still blocks.
         from runtime.safety.validation import trust_signal
+
         monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: 1.0)
         v = gate.check_outbound(
             "API_KEY=sk-abcdefghijklmnopqrstuvwxyz1234567890",
@@ -124,10 +138,12 @@ class TestTrustNeverRelaxes:
         assert v.action == "block"
 
     def test_pii_rewrite_unchanged_when_trust_high(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # PII path should still rewrite (not allow) regardless of trust.
         from runtime.safety.validation import trust_signal
+
         monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: 1.0)
         v = gate.check_outbound(
             "Contact me at alice.smith@example.com",
@@ -146,7 +162,8 @@ class TestTrustNeverRelaxes:
 
 class TestTrustSignalFailureSafe:
     def test_trust_fetch_exception_falls_through_to_allow(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # If fetch_current_trust_score raises, gate must NOT crash —
         # it falls through to the existing allow.
@@ -164,14 +181,17 @@ class TestTrustSignalFailureSafe:
         assert v.action == "allow"
 
     def test_classify_returns_none_falls_through(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Defensive: if classify returns something non-suspect-shaped,
         # gate stays clean.
         from runtime.safety.validation import trust_signal
+
         monkeypatch.setattr(trust_signal, "fetch_current_trust_score", lambda **_: 0.5)
         v = gate.check_outbound(
-            "hello", destination="channels:slack:c1",
+            "hello",
+            destination="channels:slack:c1",
             enable_trust_signal=True,
         )
         assert v.action == "allow"

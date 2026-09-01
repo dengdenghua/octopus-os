@@ -7,6 +7,7 @@
 * §45: ``_hardcoded_personal_path_guard`` — ``C:\\Users\\<name>``,
   ``/Users/<name>``, ``/home/<name>`` baked into committed code.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -86,10 +87,7 @@ class TestDetectWeakTestsInPayload:
         assert _detect_weak_tests_in_payload(payload) == []
 
     def test_two_tests_one_weak(self) -> None:
-        payload = (
-            "def test_x():\n    assert True\n\n"
-            "def test_y():\n    assert compute() == 42\n"
-        )
+        payload = "def test_x():\n    assert True\n\ndef test_y():\n    assert compute() == 42\n"
         weak = _detect_weak_tests_in_payload(payload)
         assert len(weak) == 1
         assert weak[0][0] == "test_x"
@@ -127,9 +125,14 @@ class TestWeakTestAssertionGuard:
                 action='write_text_file({"path": "tests/test_foo.py", "content": "def test_x():\\n    assert True\\n"})',
             ),
         ]
-        assert _weak_test_assertion_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _weak_test_assertion_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_weak_silent(self) -> None:
         steps = [
@@ -138,9 +141,14 @@ class TestWeakTestAssertionGuard:
                 action='write_text_file({"path": "tests/test_foo.py", "content": "def test_x():\\n    assert compute() == 42\\n"})',
             ),
         ]
-        assert _weak_test_assertion_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _weak_test_assertion_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_only_weak_fires(self) -> None:
         steps = [
@@ -150,7 +158,9 @@ class TestWeakTestAssertionGuard:
             ),
         ]
         msg = _weak_test_assertion_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "test_x" in msg
@@ -166,9 +176,14 @@ class TestWeakTestAssertionGuard:
                 ),
             ),
         ]
-        assert _weak_test_assertion_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _weak_test_assertion_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_help_request_short_circuits(self) -> None:
         steps = [
@@ -177,9 +192,14 @@ class TestWeakTestAssertionGuard:
                 action='write_text_file({"path": "tests/test_foo.py", "content": "def test_x():\\n    pass\\n"})',
             ),
         ]
-        assert _weak_test_assertion_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _weak_test_assertion_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -274,15 +294,30 @@ class TestPrintInProductionGuard:
                 ),
             ),
         ]
-        assert _print_in_production_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _print_in_production_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_print_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/core/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _print_in_production_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/core/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _print_in_production_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_print_fires(self) -> None:
         steps = [
@@ -296,7 +331,9 @@ class TestPrintInProductionGuard:
             ),
         ]
         msg = _print_in_production_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "print" in msg.lower()
@@ -312,9 +349,14 @@ class TestPrintInProductionGuard:
                 ),
             ),
         ]
-        assert _print_in_production_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _print_in_production_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -343,20 +385,29 @@ class TestDetectHardcodedPaths:
 
     def test_users_public_silent(self) -> None:
         # /Users/Public is not user-specific.
-        assert _detect_hardcoded_paths_in_payload(
-            'PATH = "/Users/Shared/data"',
-        ) == []
+        assert (
+            _detect_hardcoded_paths_in_payload(
+                'PATH = "/Users/Shared/data"',
+            )
+            == []
+        )
 
     def test_home_runner_silent(self) -> None:
         # GitHub Actions runner is intentionally exempt.
-        assert _detect_hardcoded_paths_in_payload(
-            'PATH = "/home/runner/work/repo"',
-        ) == []
+        assert (
+            _detect_hardcoded_paths_in_payload(
+                'PATH = "/home/runner/work/repo"',
+            )
+            == []
+        )
 
     def test_clean_path_silent(self) -> None:
-        assert _detect_hardcoded_paths_in_payload(
-            'PATH = "./config"',
-        ) == []
+        assert (
+            _detect_hardcoded_paths_in_payload(
+                'PATH = "./config"',
+            )
+            == []
+        )
 
 
 class TestStepIntroducesHardcodedPath:
@@ -408,15 +459,30 @@ class TestHardcodedPersonalPathGuard:
                 ),
             ),
         ]
-        assert _hardcoded_personal_path_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _hardcoded_personal_path_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_hardcoded_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _hardcoded_personal_path_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _hardcoded_personal_path_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_hardcoded_fires(self) -> None:
         steps = [
@@ -430,7 +496,9 @@ class TestHardcodedPersonalPathGuard:
             ),
         ]
         msg = _hardcoded_personal_path_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "runtime/foo.py" in msg
@@ -446,6 +514,11 @@ class TestHardcodedPersonalPathGuard:
                 ),
             ),
         ]
-        assert _hardcoded_personal_path_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _hardcoded_personal_path_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )

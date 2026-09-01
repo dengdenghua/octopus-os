@@ -1,0 +1,12 @@
+{
+  "schema": "echo.tailscale-image-lock.v1",
+  "registry": "registry-1.docker.io",
+  "repository": "tailscale/tailscale",
+  "tag": "v1.102.3",
+  "indexDigest": "sha256:8c42c4574ab066384fcb72f69e086a2ff1dd3652eb6f56856cee34bcf0d2f680",
+  "platforms": {
+    "linux/amd64": "sha256:51fec4863144d6ba0a22504cfb455d020ee0307d0c04eb48f5afee63390bdba0",
+    "linux/arm64": "sha256:7e3d9602f072a01ced5bb294d431cd9406a097f54e07cf48514fe2d6930691ab"
+  }
+}
+

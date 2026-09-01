@@ -4,7 +4,6 @@ from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.memory.journal import InMemoryJournal
 from runtime.platform.models import CostEntry
 from runtime.sensing.gateway.account_usage_router import (

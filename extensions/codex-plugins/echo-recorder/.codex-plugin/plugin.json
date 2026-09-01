@@ -1,0 +1,39 @@
+{
+  "name": "echo-recorder",
+  "version": "1.2.0",
+  "releaseNotes": "1.2.0：统一聊天与浏览器 REC 入口，新增敏感输入自动脱敏、断线降级和可恢复录制。",
+  "description": "可插拔的真人示范与 Agent 轨迹录制器，用于回放、复用和技能沉淀。",
+  "author": {
+    "name": "EchoAI"
+  },
+  "interface": {
+    "displayName": "REC 录制器",
+    "shortDescription": "把真人示范和 Agent 操作沉淀为可复用流程",
+    "longDescription": "安装后在聊天和 AI 浏览器中提供 REC 入口，统一记录 Echo、内置浏览器、Chrome Relay 与 Agent 工具轨迹；录制可恢复、敏感输入自动脱敏，页面连接断开时自动降级，停止后生成可审核的流程或技能。禁用或卸载后入口与录制接口立即停用。",
+    "developerName": "EchoAI",
+    "category": "Productivity",
+    "capabilities": [
+      "chat.recorder",
+      "browser.recorder"
+    ],
+    "defaultPrompt": "录制并整理这次操作流程。",
+    "composerIcon": "./assets/recorder.svg",
+    "logo": "./assets/recorder.svg",
+    "brandColor": "#EF4444"
+  },
+  "echo": {
+    "auth_modes": [],
+    "dependencies": [],
+    "host_api": ">=0.2,<0.3",
+    "permissions": [
+      "content.read",
+      "content.write",
+      "interaction.user",
+      "process.local"
+    ],
+    "runtime_dependencies": []
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
+

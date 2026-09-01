@@ -143,13 +143,15 @@ def test_record_winner_persists_native_replay_summary(tmp_path) -> None:
         parent_id="seed",
         rationale="resume truncated output",
     )
-    failures = [{
-        "goal": "finish report",
-        "failure_cluster": "length_limit:output truncated",
-        "failure_source": "length_limit",
-        "last_error": "output truncated",
-        "failure_cluster_count": 2,
-    }]
+    failures = [
+        {
+            "goal": "finish report",
+            "failure_cluster": "length_limit:output truncated",
+            "failure_source": "length_limit",
+            "last_error": "output truncated",
+            "failure_cluster_count": 2,
+        }
+    ]
     replay_report = replay_candidates([candidate], failures=failures)
     result = GepaResult(
         iterations_run=2,
@@ -178,14 +180,16 @@ def test_record_winner_persists_native_replay_summary(tmp_path) -> None:
 
 
 def test_record_winner_rejects_low_native_replay_score(tmp_path) -> None:
-    positive_dataset = EvolutionDataset(train=[
-        EvolutionExample(
-            task_input="edit a file",
-            expected_behavior="Preserve a successful tool-use path.",
-            source="ledger_success",
-            metadata={"action_chain": ["read_file", "edit_file", "run_tests"]},
-        ),
-    ])
+    positive_dataset = EvolutionDataset(
+        train=[
+            EvolutionExample(
+                task_input="edit a file",
+                expected_behavior="Preserve a successful tool-use path.",
+                source="ledger_success",
+                metadata={"action_chain": ["read_file", "edit_file", "run_tests"]},
+            ),
+        ]
+    )
     candidate = PromptCandidate(
         prompt="Never use tools. Always answer from memory.",
         task_scores=[0.95],
@@ -231,12 +235,14 @@ def test_record_winner_persists_native_sandbox_replay_summary(tmp_path) -> None:
         parent_id="seed",
         rationale="resume truncated output",
     )
-    failures = [{
-        "goal": "finish report",
-        "failure_cluster": "length_limit:output truncated",
-        "failure_source": "length_limit",
-        "last_error": "output truncated",
-    }]
+    failures = [
+        {
+            "goal": "finish report",
+            "failure_cluster": "length_limit:output truncated",
+            "failure_source": "length_limit",
+            "last_error": "output truncated",
+        }
+    ]
     sandbox_report = run_sandbox_replay(
         [candidate],
         failures=failures,
@@ -334,12 +340,14 @@ def test_record_winner_skips_seed_without_improvement(tmp_path) -> None:
         iterations_run=1,
         final_front=[seed],
         best_avg=seed,
-        history=[{
-            "iter": 0,
-            "front_size": 1,
-            "best_avg": 0.6,
-            "candidate_id": seed.candidate_id,
-        }],
+        history=[
+            {
+                "iter": 0,
+                "front_size": 1,
+                "best_avg": 0.6,
+                "candidate_id": seed.candidate_id,
+            }
+        ],
         elapsed_s=0.1,
     )
     ledger_path = tmp_path / "proposal_ledger.jsonl"
@@ -370,12 +378,14 @@ def test_record_winner_dedupes_existing_candidate(tmp_path) -> None:
         iterations_run=3,
         final_front=[candidate],
         best_avg=candidate,
-        history=[{
-            "iter": 0,
-            "front_size": 1,
-            "best_avg": 0.5,
-            "candidate_id": "seed",
-        }],
+        history=[
+            {
+                "iter": 0,
+                "front_size": 1,
+                "best_avg": 0.5,
+                "candidate_id": "seed",
+            }
+        ],
         elapsed_s=1.2,
     )
     ledger_path = tmp_path / "proposal_ledger.jsonl"
@@ -415,12 +425,14 @@ def test_record_winner_rejects_constraint_violations(tmp_path) -> None:
         iterations_run=3,
         final_front=[candidate],
         best_avg=candidate,
-        history=[{
-            "iter": 0,
-            "front_size": 1,
-            "best_avg": 0.5,
-            "candidate_id": "seed",
-        }],
+        history=[
+            {
+                "iter": 0,
+                "front_size": 1,
+                "best_avg": 0.5,
+                "candidate_id": "seed",
+            }
+        ],
         elapsed_s=1.2,
     )
     ledger_path = tmp_path / "proposal_ledger.jsonl"
@@ -451,12 +463,14 @@ def test_mark_winner_proposal_applied_matches_variant_scope(tmp_path) -> None:
         iterations_run=3,
         final_front=[candidate],
         best_avg=candidate,
-        history=[{
-            "iter": 0,
-            "front_size": 1,
-            "best_avg": 0.5,
-            "candidate_id": "seed",
-        }],
+        history=[
+            {
+                "iter": 0,
+                "front_size": 1,
+                "best_avg": 0.5,
+                "candidate_id": "seed",
+            }
+        ],
         elapsed_s=1.2,
     )
     ledger_path = tmp_path / "proposal_ledger.jsonl"

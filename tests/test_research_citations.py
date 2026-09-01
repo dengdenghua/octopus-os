@@ -31,8 +31,12 @@ class TestBuildCitationContext:
 
     def test_accepts_dict_input(self):
         sources = [
-            {"url": "https://x.example/", "title": "X",
-             "content": "body text", "metadata": {"date": "2026-01-01"}},
+            {
+                "url": "https://x.example/",
+                "title": "X",
+                "content": "body text",
+                "metadata": {"date": "2026-01-01"},
+            },
         ]
         block, norm = build_citation_context(sources)
         assert len(norm) == 1
@@ -60,8 +64,7 @@ class TestBuildCitationContext:
 
     def test_caps_number_of_sources(self):
         sources = [
-            SourceEntry(url=f"https://s.example/{i}", title=f"T{i}", snippet="s")
-            for i in range(20)
+            SourceEntry(url=f"https://s.example/{i}", title=f"T{i}", snippet="s") for i in range(20)
         ]
         _, norm = build_citation_context(sources, max_sources=5)
         assert len(norm) == 5
@@ -91,9 +94,7 @@ class TestRenderCitationPrompt:
         sources = [
             SourceEntry(url="https://a.example/", title="Alpha", snippet="foo"),
         ]
-        prompt, norm = render_citation_prompt(
-            "What is foo?", sources, today=date(2026, 5, 9)
-        )
+        prompt, norm = render_citation_prompt("What is foo?", sources, today=date(2026, 5, 9))
         assert "What is foo?" in prompt
         assert "[1] Alpha" in prompt
         assert "2026-05-09" in prompt
@@ -101,7 +102,8 @@ class TestRenderCitationPrompt:
 
     def test_contains_core_instructions(self):
         prompt, _ = render_citation_prompt(
-            "Q", [SourceEntry(url="https://x/", title="X", snippet="y")],
+            "Q",
+            [SourceEntry(url="https://x/", title="X", snippet="y")],
         )
         # core policies from the template
         assert "[n]" in prompt
@@ -120,10 +122,7 @@ class TestRenderCitationPrompt:
 
 class TestResolveCitations:
     def _srcs(self, n: int) -> list[SourceEntry]:
-        return [
-            SourceEntry(url=f"https://s{i}.example/", title=f"S{i}")
-            for i in range(1, n + 1)
-        ]
+        return [SourceEntry(url=f"https://s{i}.example/", title=f"S{i}") for i in range(1, n + 1)]
 
     def test_extracts_used_indices_in_order(self):
         srcs = self._srcs(3)

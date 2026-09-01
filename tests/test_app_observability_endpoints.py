@@ -19,6 +19,7 @@ counts would tie the test to emergent behavior (how many rules
 the extractor actually finds in a trivially-empty journal), which
 churns without us learning anything.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -26,14 +27,14 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config
 from runtime.platform.ui.app import create_app
 
 
 @pytest.fixture
 def isolated_cwd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[Path]:
     monkeypatch.chdir(tmp_path)
     yield tmp_path
@@ -43,7 +44,8 @@ def isolated_cwd(
 def stack(isolated_cwd: Path):
     cfg = AgentConfig(
         planner=PlannerConfig(
-            type="llm", model="mock/ob",
+            type="llm",
+            model="mock/ob",
             mock_response='{"reasoning":"r","nodes":[]}',
         ),
     )
@@ -53,7 +55,9 @@ def stack(isolated_cwd: Path):
 @pytest.fixture
 def client(stack, isolated_cwd: Path) -> TestClient:
     app = create_app(
-        journal=stack.journal, registry=stack.registry, stack=stack,
+        journal=stack.journal,
+        registry=stack.registry,
+        stack=stack,
     )
     return TestClient(app)
 
@@ -90,14 +94,16 @@ class TestJournalEndpoint:
 
 class TestReflectEndpoint:
     def test_empty_journal_returns_error_hint(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         r = client.get("/api/reflect")
         assert r.status_code == 200
         assert r.json().get("error") == "journal empty · run something first"
 
     def test_populated_journal_returns_all_producers(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         """Once the journal has events, reflect returns all 6
         producer keys. We drive events by hitting /api/run."""
@@ -108,8 +114,12 @@ class TestReflectEndpoint:
         assert r.status_code == 200
         data = r.json()
         required = {
-            "skill_forge", "rule_extractor", "kg",
-            "memory", "workflow", "recipe",
+            "skill_forge",
+            "rule_extractor",
+            "kg",
+            "memory",
+            "workflow",
+            "recipe",
         }
         assert required.issubset(data.keys()), (
             f"reflect response missing keys: {required - data.keys()}"
@@ -146,7 +156,8 @@ class TestProgressEndpoint:
         assert data["tasks"] == []
 
     def test_unknown_task_id_returns_404(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         r = client.get("/api/progress?task_id=nope")
         assert r.status_code == 404
@@ -178,7 +189,8 @@ class TestEvolutionStatusEndpoint:
     """Implementation note."""
 
     def test_fresh_stack_returns_zero_counts(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         r = client.get("/api/evolution/status")
         assert r.status_code == 200
@@ -190,7 +202,8 @@ class TestEvolutionStatusEndpoint:
         assert data["trajectories"]["react_loop"] == 0
 
     def test_shape_includes_full_sections_and_trajectory_stats(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         r = client.get("/api/evolution/status")
         data = r.json()
@@ -200,7 +213,9 @@ class TestEvolutionStatusEndpoint:
         assert "react_loop_failures" in data["trajectories"]
 
     def test_delete_rule_removes_one_bullet(
-        self, client: TestClient, stack,
+        self,
+        client: TestClient,
+        stack,
     ) -> None:
         """Implementation note."""
         stack.planner.learned_rules_section = (
@@ -220,14 +235,18 @@ class TestEvolutionStatusEndpoint:
         assert "rule B" in s["rules_lines"][0]
 
     def test_delete_rule_out_of_range_returns_404(
-        self, client: TestClient, stack,
+        self,
+        client: TestClient,
+        stack,
     ) -> None:
         stack.planner.learned_rules_section = ""
         r = client.delete("/api/evolution/rules/99")
         assert r.status_code == 404
 
     def test_delete_memory_removes_one_bullet(
-        self, client: TestClient, stack,
+        self,
+        client: TestClient,
+        stack,
     ) -> None:
         stack.planner.learned_memories_section = (
             "CONSOLIDATED MEMORIES (past pattern stats):\n"
@@ -241,7 +260,8 @@ class TestEvolutionStatusEndpoint:
         assert s["memories_count"] == 1
 
     def test_status_exposes_react_variants(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         r = client.get("/api/evolution/status")
         data = r.json()
@@ -250,7 +270,9 @@ class TestEvolutionStatusEndpoint:
         assert isinstance(data["react_variants"], list)
 
     def test_counts_rules_after_react_failure(
-        self, client: TestClient, stack,
+        self,
+        client: TestClient,
+        stack,
     ) -> None:
         """Implementation note."""
         from runtime.core.cerebrum.react_loop import run_react_loop
@@ -260,12 +282,16 @@ class TestEvolutionStatusEndpoint:
         # Implementation note.
         def _boom() -> None:
             raise RuntimeError("kaboom")
-        stack.registry.register(Skill(
-            name="boom",
-            description="test failure skill",
-            trusted_source="builtin://boom",
-            handler=_boom,
-        ), verify_tests=False)
+
+        stack.registry.register(
+            Skill(
+                name="boom",
+                description="test failure skill",
+                trusted_source="builtin://boom",
+                handler=_boom,
+            ),
+            verify_tests=False,
+        )
 
         # Implementation note.
         from dataclasses import dataclass
@@ -291,6 +317,7 @@ class TestEvolutionStatusEndpoint:
                 ModelResponse,
                 ModelStreamEvent,
             )
+
             resp = _fake_call(req)
             if resp.text:
                 yield ModelStreamEvent(type="text_delta", delta=resp.text)
@@ -300,7 +327,9 @@ class TestEvolutionStatusEndpoint:
             )
 
         stack.planner.router = type(
-            "R", (), {
+            "R",
+            (),
+            {
                 "call": staticmethod(_fake_call),
                 "call_stream": staticmethod(_fake_stream),
             },
@@ -309,8 +338,10 @@ class TestEvolutionStatusEndpoint:
         run_react_loop(
             stack,
             ParsedIntent(
-                raw="go", intent_type="task",
-                normalized_goal="go", user_context={},
+                raw="go",
+                intent_type="task",
+                normalized_goal="go",
+                user_context={},
             ),
             agent=None,
             max_iterations=3,

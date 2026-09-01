@@ -1,11 +1,6 @@
 import { CheckIcon, CopyIcon, TriangleAlertIcon } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import DOMPurify from "dompurify";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { copyTextToClipboard } from "@/core/clipboard";
@@ -45,6 +40,16 @@ export function MermaidBlock({
     ((element: Element) => void) | null
   >(null);
   const trimmedCode = code.trim();
+  // DOMPurify sanitizes the rendered SVG before insertion (audit C3/M4):
+  // Mermaid's strict security mode is good, but this is an independent layer
+  // against injected <script>/event handlers surviving render.
+  const sanitizedSvg = useMemo(
+    () =>
+      DOMPurify.sanitize(svg, {
+        USE_PROFILES: { svg: true, svgFilters: true },
+      }),
+    [svg],
+  );
 
   useEffect(() => {
     if (isStreaming || !trimmedCode) {
@@ -61,7 +66,9 @@ export function MermaidBlock({
 
     void (async () => {
       try {
-        const mod = (await import("mermaid-real")) as { default: MermaidRuntime };
+        const mod = (await import("mermaid-real")) as {
+          default: MermaidRuntime;
+        };
         if (cancelled) return;
         const mermaid = mod.default;
         mermaid.initialize?.({
@@ -121,12 +128,13 @@ export function MermaidBlock({
       <div
         ref={containerRef}
         className={cn(
-          "overflow-auto bg-muted/20 p-3",
+          "overflow-auto bg-muted/20 p-3 animate-fade-in",
           "[&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-full",
         )}
-        // Mermaid returns SVG markup after applying its own strict security mode.
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: Mermaid renderer output.
-        dangerouslySetInnerHTML={{ __html: svg }}
+        // Mermaid returns SVG markup after applying its own strict security mode,
+        // and DOMPurify sanitizes it again before insertion (audit C3/M4).
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized via DOMPurify.
+        dangerouslySetInnerHTML={{ __html: sanitizedSvg }}
       />
     </div>
   );
@@ -167,9 +175,7 @@ function MermaidSourceBlock({
           <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-primary/60 align-middle" />
         )}
       </pre>
-      {isStreaming && (
-        <span className="sr-only">{t.streaming.generating}</span>
-      )}
+      {isStreaming && <span className="sr-only">{t.streaming.generating}</span>}
     </div>
   );
 }
@@ -199,13 +205,13 @@ function MermaidBlockHeader({
   return (
     <div className="flex h-8 items-center justify-between gap-2 border-b bg-muted/40 px-3">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="font-mono text-[10px] text-muted-foreground uppercase">
+        <span className="font-mono text-xs text-muted-foreground uppercase">
           mermaid
         </span>
         {isStreaming && (
           <>
-            <span className="text-[10px] text-muted-foreground">·</span>
-            <span className="animate-pulse text-[10px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">·</span>
+            <span className="animate-pulse text-xs text-muted-foreground">
               {t.streaming.generating}
             </span>
           </>

@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过 BlueBubbles Server 将 Octopus-Agent 接入 iMessage，实现通过 Apple 生态系统与 AI 进行对话交互。
+通过 BlueBubbles Server 将 Echo Agent 接入 iMessage，实现通过 Apple 生态系统与 AI 进行对话交互。
 
 ## 前置条件
 
@@ -24,7 +24,7 @@
 3. 在「API」设置中生成 API 密钥
 4. 记录服务器地址和 API 密钥
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 BlueBubbles，填写以下字段：
 
@@ -34,7 +34,7 @@
 | API 密钥 | BlueBubbles API 密钥 | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` |
 | 轮询间隔 | 检查新消息的间隔（秒） | `5` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -47,7 +47,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -71,7 +71,7 @@ BlueBubbles 支持 WebSocket 实时推送和 Webhook 回调两种方式接收新
 
 **WebSocket 模式（推荐）：**
 
-Octopus-Agent 默认通过 WebSocket 连接 BlueBubbles Server 接收实时消息，无需额外配置。
+Echo Agent 默认通过 WebSocket 连接 BlueBubbles Server 接收实时消息，无需额外配置。
 
 **Webhook 模式：**
 
@@ -104,4 +104,4 @@ A: 1) 在「系统设置」→「节能」中关闭自动休眠；2) 使用 `caf
 - [BlueBubbles 官方网站](https://bluebubbles.app/)
 - [BlueBubbles Server GitHub](https://github.com/BlueBubblesApp/bluebubbles-server)
 - [BlueBubbles API 文档](https://documenter.getpostman.com/view/11337661/UVFnfdFX)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/bluebubbles)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/bluebubbles)

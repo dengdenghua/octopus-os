@@ -1,4 +1,4 @@
-﻿# Octopus Mobile · 浏览器内核集成
+﻿# Echo Mobile · 浏览器内核集成
 
 > **真浏览器 + 反爬免疫 + 可装 Chrome 扩展**
 
@@ -10,18 +10,18 @@ LLM 操控 Web 的三种现状：
 |---|---|---|---|---|---|
 | **Puppeteer/Playwright**（headless Chrome）| ❌ 暴露 `navigator.webdriver` | ❌ | ❌ | ✅ | ✅ |
 | **Selenium + ChromeDriver** | ❌ 暴露 `cdc_` 变量 | ❌ | ❌ | ⚠️ | ⚠️ |
-| **Octopus Mobile + Android System WebView** | ⚠️ 弱 | ⚠️ 阉割内核 | ❌ | ✅ | ✅ |
+| **Echo Mobile + Android System WebView** | ⚠️ 弱 | ⚠️ 阉割内核 | ❌ | ✅ | ✅ |
 | **集成 Chromium for Android（Kiwi 思路）** | ✅ 真实指纹 | ✅ 完整 | ✅ | ✅ | ❌ 高 |
 | **远程 Browserbase 等 SaaS** | ✅ | ✅ | ⚠️ | ⚠️ | ✅ |
 
-> Octopus Mobile 的方案：本地集成 Chromium for Android（Kiwi 思路）。
+> Echo Mobile 的方案：本地集成 Chromium for Android（Kiwi 思路）。
 > 优点：真实指纹、零外传、可装扩展；缺点：包大（+80-100MB）、实现复杂。
 
 ## 2. 推荐方案：Kiwi 思路的 Chromium + CDP 协议
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                  Octopus Mobile（Android App 改造）                       │
+│                  Echo Mobile（Android App 改造）                       │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │  Chromium 内核（Kiwi 思路 fork）                            │  │
@@ -223,15 +223,15 @@ returns:
 | **Web Scraper** | 复杂数据抓取（点选式）|
 | **Proxy SwitchyOmega** | 多代理（多账号管理）|
 | **Selenium IDE** | 录制回放（AI 可学习）|
-| **Octopus Mobile AI Bridge** | 自定义扩展：让 AI 自由调用扩展能力 |
+| **Echo Mobile AI Bridge** | 自定义扩展：让 AI 自由调用扩展能力 |
 
-> **Octopus Mobile AI Bridge** 是 Octopus Mobile 自带的扩展，定义了一个
-> `window.__OCTOPUS_AI__` 对象，AI 可通过 `browser.evaluate` 调用：
+> **Echo Mobile AI Bridge** 是 Echo Mobile 自带的扩展，定义了一个
+> `window.__ECHO_AI__` 对象，AI 可通过 `browser.evaluate` 调用：
 >
 > ```js
-> window.__OCTOPUS_AI__.findByText("立即购买")
-> window.__OCTOPUS_AI__.cookies.getAll()
-> window.__OCTOPUS_AI__.storage.set("key", "value")
+> window.__ECHO_AI__.findByText("立即购买")
+> window.__ECHO_AI__.cookies.getAll()
+> window.__ECHO_AI__.storage.set("key", "value")
 > ```
 
 ## 5. 反爬能力详解
@@ -239,7 +239,7 @@ returns:
 ### 5.1 真实指纹
 
 ```javascript
-// 在 Octopus Mobile 集成 Chromium 中查询
+// 在 Echo Mobile 集成 Chromium 中查询
 navigator.webdriver           // undefined ✅ (Puppeteer 是 true ❌)
 navigator.languages            // ['zh-CN', 'zh', 'en'] ✅
 navigator.plugins.length       // 3-5 (取决于系统) ✅
@@ -265,7 +265,7 @@ document.hasFocus()            // true (有焦点) ✅
 - 太规律 → 机器人
 - 无 Mouse Hover → 机器人
 
-**缓解**（Octopus Mobile Android 端 + Chromium 集成提供）：
+**缓解**（Echo Mobile Android 端 + Chromium 集成提供）：
 - 操作间加随机 delay（200-1500ms）
 - tap 之前先 mouse hover
 - 滚动用平滑曲线（不是瞬间跳）
@@ -298,10 +298,10 @@ document.hasFocus()            // true (有焦点) ✅
 - [ ] 加载 .crx 扩展
 - [ ] Tampermonkey 兼容测试
 - [ ] uBlock Origin 兼容测试
-- [ ] Octopus Mobile AI Bridge 自定义扩展
+- [ ] Echo Mobile AI Bridge 自定义扩展
 
-### Phase 4 · octopus-agent 集成（1 周）
-- [ ] Octopus Mobile 注册到 octopus-agent 设备池
+### Phase 4 · echo-agent 集成（1 周）
+- [ ] Echo Mobile 注册到 echo-agent 设备池
 - [ ] Cerebrum 加 `android_browser` affinity
 - [ ] 端到端测试多手机比价场景
 
@@ -323,8 +323,8 @@ document.hasFocus()            // true (有焦点) ✅
 |---|---|
 | Puppeteer headless | ❌ 失败（"Checking your browser..." 卡住）|
 | Selenium + ChromeDriver | ❌ 失败（暴露 cdc_ 变量）|
-| Octopus Mobile + Android System WebView | ⚠️ 偶尔通过（WebView 指纹不全）|
-| **Octopus Mobile + Chromium** | ✅ 通过（真实指纹）|
+| Echo Mobile + Android System WebView | ⚠️ 偶尔通过（WebView 指纹不全）|
+| **Echo Mobile + Chromium** | ✅ 通过（真实指纹）|
 
 ---
 

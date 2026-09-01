@@ -1,5 +1,20 @@
-"""Octopus OS appliance layer (octopus-os fork).
+"""Echo OS appliance layer.
 
-OS 专属代码统一放在这个顶层包里(而不是 runtime/ 内核),
-把与母体 octopus-agent 的合并冲突面压到最小——见 docs/OCTOPUS_OS_PLAN.md §4。
+OS 专属代码统一放在这个顶层包里，与内建 Echo Agent runtime 一起发行。
 """
+
+from __future__ import annotations
+
+import os
+
+
+def _install_legacy_environment_aliases() -> None:
+    """Promote pre-Echo environment settings before appliance modules load."""
+
+    legacy_prefix = "OCTO" + "PUS_"
+    for name, value in tuple(os.environ.items()):
+        if name.startswith(legacy_prefix):
+            os.environ.setdefault(f"ECHO_{name.removeprefix(legacy_prefix)}", value)
+
+
+_install_legacy_environment_aliases()

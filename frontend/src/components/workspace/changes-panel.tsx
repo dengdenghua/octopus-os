@@ -13,8 +13,10 @@ import { toast } from "sonner";
 import { swallow } from "@/core/utils/log";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
+import { canAccessOperatorControlPlane } from "@/core/auth/control-plane-access";
 import type { FileOpEvent } from "@/core/observability/api";
 import { useFileOpStream } from "@/core/observability/file-ops";
+import { useOptionalAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
 
 import { HunkHeader } from "./diff-editor/hunk-actions";
@@ -27,7 +29,14 @@ interface ChangesPanelProps {
 
 export function ChangesPanel({ className, onFileClick }: ChangesPanelProps) {
   const { t } = useI18n();
-  const events = useFileOpStream({ limit: 50 });
+  const auth = useOptionalAuth();
+  const events = useFileOpStream({
+    limit: 50,
+    enabled: canAccessOperatorControlPlane(
+      auth?.authStatus ?? null,
+      auth?.user ?? null,
+    ),
+  });
 
   const uniqueFiles = new Map<string, FileOpEvent>();
   for (const e of events) {
@@ -37,12 +46,12 @@ export function ChangesPanel({ className, onFileClick }: ChangesPanelProps) {
 
   return (
     <div className={cn("flex h-full flex-col", className)}>
-      <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+      <div className="flex items-center justify-between border-b border-border-default px-3 py-2">
         <div className="flex items-center gap-2">
           <FileEditIcon className="size-4 text-primary" />
           <span className="text-sm font-medium">{t.changesPanel.title}</span>
           {files.length > 0 && (
-            <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
               {files.length}
             </span>
           )}
@@ -54,7 +63,9 @@ export function ChangesPanel({ className, onFileClick }: ChangesPanelProps) {
           <div className="flex h-full flex-col items-center justify-center px-4 text-muted-foreground/50">
             <FileIcon className="mb-2 size-8 opacity-30" />
             <span className="text-xs">{t.changesPanel.empty}</span>
-            <span className="mt-1 text-[10px] opacity-60">{t.changesPanel.emptyHint}</span>
+            <span className="mt-1 text-xs opacity-60">
+              {t.changesPanel.emptyHint}
+            </span>
           </div>
         ) : (
           <ul className="divide-y divide-border/30">
@@ -80,7 +91,7 @@ function ChangeRow({
 }: {
   event: FileOpEvent;
   onFileClick?: (path: string) => void;
-  t: ReturnType<typeof useI18n>['t'];
+  t: ReturnType<typeof useI18n>["t"];
 }) {
   const [expanded, setExpanded] = useState(false);
   const [accepted, setAccepted] = useState<Record<string, boolean | null>>({});
@@ -116,7 +127,9 @@ function ChangeRow({
       notifyWorkspaceChanged();
       toast.success(t.codeMode.fileReverted);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t.codeMode.failedToRevertFile);
+      toast.error(
+        error instanceof Error ? error.message : t.codeMode.failedToRevertFile,
+      );
     } finally {
       setReverting(false);
     }
@@ -147,7 +160,9 @@ function ChangeRow({
       notifyWorkspaceChanged();
       toast.success(t.codeMode.hunkReverted);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t.codeMode.failedToRevertHunk);
+      toast.error(
+        error instanceof Error ? error.message : t.codeMode.failedToRevertHunk,
+      );
     } finally {
       setBusyHunks((prev) => ({ ...prev, [hunk.id]: false }));
     }
@@ -160,7 +175,10 @@ function ChangeRow({
           type="button"
           onClick={() => hasDiff && setExpanded((v) => !v)}
           disabled={!hasDiff}
-          className={cn("shrink-0", hasDiff ? "cursor-pointer" : "cursor-default")}
+          className={cn(
+            "shrink-0",
+            hasDiff ? "cursor-pointer" : "cursor-default",
+          )}
         >
           {hasDiff ? (
             expanded ? (
@@ -182,31 +200,38 @@ function ChangeRow({
             {fileName}
           </div>
           {dirPath && (
-            <div className="truncate text-[10px] text-muted-foreground/60">{dirPath}</div>
+            <div className="truncate text-xs text-muted-foreground/60">
+              {dirPath}
+            </div>
           )}
         </button>
         {hunks.length > 0 && (
-          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
             {t.codeMode.hunks(hunks.length)}
           </span>
         )}
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+        <span className="shrink-0 font-mono text-xs text-muted-foreground">
           {formatDelta(event.bytes_delta)}
         </span>
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); void handleRevert(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleRevert();
+          }}
           disabled={reverting}
-          className="shrink-0 rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-rose-500/10 hover:text-rose-500"
+          className="shrink-0 rounded p-0.5 text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
           title={t.codeMode.revertToLastCommit}
         >
-          <RotateCcwIcon className={cn("size-3", reverting && "animate-spin")} />
+          <RotateCcwIcon
+            className={cn("size-3", reverting && "animate-spin")}
+          />
         </button>
       </div>
       {expanded && event.diff && (
-        <div className="mx-3 mb-2 overflow-hidden rounded border border-border/40 bg-background">
+        <div className="mx-3 mb-2 overflow-hidden rounded border border-border-subtle bg-background">
           {hunks.length > 0 ? (
-            <div className="max-h-[380px] overflow-y-auto">
+            <div className="max-h-[var(--panel-height-lg)] overflow-y-auto">
               {hunks.map((hunk) => (
                 <HunkBlock
                   key={hunk.id}
@@ -221,8 +246,8 @@ function ChangeRow({
           ) : (
             <pre
               className={cn(
-                "max-h-[320px] overflow-x-auto overflow-y-auto px-2 py-1.5",
-                "whitespace-pre text-[10px] font-mono leading-snug",
+                "max-h-[var(--panel-height-md)] overflow-x-auto overflow-y-auto px-2 py-1.5",
+                "whitespace-pre text-xs font-mono leading-snug",
               )}
             >
               {event.diff}
@@ -250,7 +275,7 @@ function HunkBlock({
   return (
     <div
       className={cn(
-        "border-t border-border/30 first:border-t-0",
+        "border-t border-border-subtle first:border-t-0",
         busy && "pointer-events-none opacity-60",
       )}
     >
@@ -260,32 +285,36 @@ function HunkBlock({
         onAcceptHunk={(_filePath, hunkId) => onAccept(hunkId)}
         onRejectHunk={() => onReject(hunk)}
       />
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[10px] font-mono leading-snug">
+      <div className="overflow-x-auto max-w-full">
+        <table className="w-full border-collapse text-xs font-mono leading-snug">
           <tbody>
             {hunk.lines.map((line, index) => (
               <tr
                 key={`${hunk.id}-${index}`}
                 className={cn(
-                  line.type === "add" && "bg-emerald-500/8",
-                  line.type === "remove" && "bg-rose-500/8",
+                  line.type === "add" && "bg-success/8",
+                  line.type === "remove" && "bg-destructive/8",
                 )}
               >
-                <td className="w-10 select-none border-r border-border/20 px-2 py-0.5 text-right text-muted-foreground/60">
+                <td className="w-10 select-none border-r border-border-subtle px-2 py-0.5 text-right text-muted-foreground/60">
                   {line.oldLineNumber ?? ""}
                 </td>
-                <td className="w-10 select-none border-r border-border/20 px-2 py-0.5 text-right text-muted-foreground/60">
+                <td className="w-10 select-none border-r border-border-subtle px-2 py-0.5 text-right text-muted-foreground/60">
                   {line.newLineNumber ?? ""}
                 </td>
                 <td
                   className={cn(
                     "px-2 py-0.5 whitespace-pre",
-                    line.type === "add" && "text-emerald-700 dark:text-emerald-400",
-                    line.type === "remove" && "text-rose-700 dark:text-rose-400",
+                    line.type === "add" && "text-success",
+                    line.type === "remove" && "text-destructive",
                   )}
                 >
                   <span className="mr-2 inline-block w-2 text-muted-foreground/60">
-                    {line.type === "add" ? "+" : line.type === "remove" ? "-" : " "}
+                    {line.type === "add"
+                      ? "+"
+                      : line.type === "remove"
+                        ? "-"
+                        : " "}
                   </span>
                   {line.content || "​"}
                 </td>
@@ -314,7 +343,7 @@ function hunkToUnifiedDiff(filePath: string, hunk: DiffHunk): string {
 }
 
 function notifyWorkspaceChanged() {
-  window.dispatchEvent(new CustomEvent("octopus:workspace-changed"));
+  window.dispatchEvent(new CustomEvent("echo:workspace-changed"));
 }
 
 async function responseErrorMessage(response: Response): Promise<string> {
@@ -322,7 +351,9 @@ async function responseErrorMessage(response: Response): Promise<string> {
     const payload = await response.json();
     if (typeof payload?.detail === "string") return payload.detail;
     if (payload?.detail?.error) return String(payload.detail.error);
-  } catch (e) { swallow(e); }
+  } catch (e) {
+    swallow(e);
+  }
   return response.statusText || `Request failed (${response.status})`;
 }
 

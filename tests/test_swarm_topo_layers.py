@@ -7,7 +7,6 @@ import time
 from uuid import uuid4
 
 import pytest
-
 from runtime.execution.swarm import SwarmRuntime
 from runtime.execution.swarm.runtime import _split_topo_layers
 from runtime.platform.models import (
@@ -195,11 +194,13 @@ class TestTopoLayersExecution:
             budget=BudgetSpec(tokens=1000, usd=0.1),
         )
         result = runtime.run(
-            graph=g, budget=generous_budget, split_strategy="topo_layers",
+            graph=g,
+            budget=generous_budget,
+            split_strategy="topo_layers",
         )
         assert result.all_successful
         assert len(result.arm_results) == 3
-        assert _TimingArm._peak == 1   # Implementation note.
+        assert _TimingArm._peak == 1  # Implementation note.
 
         # Implementation note.
         timeline = sorted(arm.timeline, key=lambda t: t[1])
@@ -222,7 +223,9 @@ class TestTopoLayersExecution:
             budget=BudgetSpec(tokens=1000, usd=0.1),
         )
         result = runtime.run(
-            graph=g, budget=generous_budget, split_strategy="topo_layers",
+            graph=g,
+            budget=generous_budget,
+            split_strategy="topo_layers",
         )
         assert result.all_successful
         assert len(result.arm_results) == 4
@@ -253,7 +256,9 @@ class TestPerNodeEdgeGuard:
         )
         with pytest.raises(ValueError, match="per_node requires edgeless"):
             runtime.run(
-                graph=g, budget=generous_budget, split_strategy="per_node",
+                graph=g,
+                budget=generous_budget,
+                split_strategy="per_node",
             )
 
     def test_per_node_still_works_without_edges(self, generous_budget):
@@ -264,7 +269,9 @@ class TestPerNodeEdgeGuard:
             budget=BudgetSpec(tokens=1000, usd=0.1),
         )
         result = runtime.run(
-            graph=g, budget=generous_budget, split_strategy="per_node",
+            graph=g,
+            budget=generous_budget,
+            split_strategy="per_node",
         )
         assert result.all_successful
         assert len(result.arm_results) == 2

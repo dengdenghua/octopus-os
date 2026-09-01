@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Provision Echo OS's default sandboxed application catalog from a pinned,
+# locally shipped Flatpak repository definition. No network access is needed
+# to establish the trust root; catalog metadata is fetched later by Flatpak.
+set -euo pipefail
+
+REMOTE_NAME="${ECHO_APP_CATALOG_REMOTE_NAME:-flathub}"
+REMOTE_URL="${ECHO_APP_CATALOG_REMOTE_URL:-https://dl.flathub.org/repo/}"
+REMOTE_DEFINITION="${ECHO_APP_CATALOG_REMOTE_DEFINITION:-/usr/share/echo-os/remotes/flathub.flatpakrepo}"
+REMOTE_DEFINITION_SHA256="${ECHO_APP_CATALOG_REMOTE_SHA256:-3371dd250e61d9e1633630073fefda153cd4426f72f4afa0c3373ae2e8fea03a}"
+STATE_DIRECTORY="${ECHO_APP_CATALOG_STATE_DIRECTORY:-/var/lib/echo-os}"
+STATE_MARKER="$STATE_DIRECTORY/app-catalog-provisioned"
+FLATPAK="${ECHO_APP_CATALOG_FLATPAK:-/usr/bin/flatpak}"
+
+[[ "$(id -u)" -eq 0 || "${ECHO_APP_CATALOG_TESTING:-no}" == yes ]] || {
+  echo "Echo OS app-catalog provisioning must run as root" >&2
+  exit 1
+}
+[[ -x "$FLATPAK" && -r "$REMOTE_DEFINITION" ]] || {
+  echo "Flatpak or the pinned Flathub definition is missing" >&2
+  exit 1
+}
+
+if command -v sha256sum >/dev/null 2>&1; then
+  definition_sha256="$(sha256sum "$REMOTE_DEFINITION" | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  definition_sha256="$(shasum -a 256 "$REMOTE_DEFINITION" | awk '{print $1}')"
+else
+  echo "no SHA-256 implementation is available" >&2
+  exit 1
+fi
+[[ "$definition_sha256" == "$REMOTE_DEFINITION_SHA256" ]] || {
+  echo "Flathub definition checksum mismatch" >&2
+  exit 1
+}
+
+existing_url="$(
+  "$FLATPAK" remotes --system --columns=name,url |
+    awk -v name="$REMOTE_NAME" '$1 == name {print $2; exit}'
+)"
+if [[ -n "$existing_url" && "$existing_url" != "$REMOTE_URL" ]]; then
+  echo "refusing to replace existing $REMOTE_NAME remote at $existing_url" >&2
+  exit 1
+fi
+if [[ -z "$existing_url" ]]; then
+  "$FLATPAK" remote-add --system --if-not-exists --from \
+    "$REMOTE_NAME" "$REMOTE_DEFINITION"
+fi
+
+if [[ "${ECHO_APP_CATALOG_TESTING:-no}" == yes ]]; then
+  install -d -m 0700 "$STATE_DIRECTORY"
+else
+  install -d -m 0700 -o root -g root "$STATE_DIRECTORY"
+fi
+marker_temp="$STATE_MARKER.$$"
+trap 'rm -f -- "$marker_temp"' EXIT INT TERM
+printf 'schema=1\nremote=%s\nurl=%s\ndefinition_sha256=%s\n' \
+  "$REMOTE_NAME" "$REMOTE_URL" "$definition_sha256" >"$marker_temp"
+chmod 0600 "$marker_temp"
+if [[ "${ECHO_APP_CATALOG_TESTING:-no}" != yes ]]; then
+  chown root:root "$marker_temp"
+fi
+mv -f -- "$marker_temp" "$STATE_MARKER"
+trap - EXIT INT TERM
+
+echo "ECHO_APP_CATALOG_READY remote=$REMOTE_NAME storage=/var/lib/flatpak"

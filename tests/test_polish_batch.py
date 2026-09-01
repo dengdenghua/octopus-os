@@ -4,13 +4,13 @@
 * §2: ``CheckpointMirror`` retry + circuit breaker.
 * §3: resume_cli writes ``task_resumed`` event before driving runner.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from runtime.core.cerebrum import resume_cli
 from runtime.core.cerebrum.checkpoint_mirror import (
     CheckpointMirror,
@@ -24,10 +24,11 @@ from runtime.core.cerebrum.react_loop import (
 
 @pytest.fixture(autouse=True)
 def _isolated_cwd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("OCTOPUS_DISABLED_GUARDS", raising=False)
+    monkeypatch.delenv("ECHO_DISABLED_GUARDS", raising=False)
     _reset_disabled_set_for_tests()
     yield tmp_path
     _reset_disabled_set_for_tests()
@@ -40,20 +41,19 @@ def _isolated_cwd(
 
 class TestGuardOverridesYaml:
     def test_override_false_adds_to_disabled(
-        self, _isolated_cwd: Path,
+        self,
+        _isolated_cwd: Path,
     ) -> None:
         (_isolated_cwd / "config.local.yaml").write_text(
-            "safety:\n"
-            "  disabled_guards: []\n"
-            "  guard_overrides:\n"
-            "    magic-number guard: false\n",
+            "safety:\n  disabled_guards: []\n  guard_overrides:\n    magic-number guard: false\n",
             encoding="utf-8",
         )
         result = _disabled_guards_from_yaml()
         assert "magic-number guard" in result
 
     def test_override_true_removes_from_disabled(
-        self, _isolated_cwd: Path,
+        self,
+        _isolated_cwd: Path,
     ) -> None:
         # Blanket disabled list says off; override says on (True wins).
         (_isolated_cwd / "config.local.yaml").write_text(
@@ -67,7 +67,8 @@ class TestGuardOverridesYaml:
         assert "weak-test guard" not in result
 
     def test_overrides_combine_with_disabled_list(
-        self, _isolated_cwd: Path,
+        self,
+        _isolated_cwd: Path,
     ) -> None:
         (_isolated_cwd / "config.local.yaml").write_text(
             "safety:\n"
@@ -82,10 +83,7 @@ class TestGuardOverridesYaml:
 
     def test_non_bool_override_ignored(self, _isolated_cwd: Path) -> None:
         (_isolated_cwd / "config.local.yaml").write_text(
-            "safety:\n"
-            "  guard_overrides:\n"
-            "    guard-a: 'maybe'\n"
-            "    guard-b: 42\n",
+            "safety:\n  guard_overrides:\n    guard-a: 'maybe'\n    guard-b: 42\n",
             encoding="utf-8",
         )
         result = _disabled_guards_from_yaml()
@@ -93,8 +91,7 @@ class TestGuardOverridesYaml:
 
     def test_overrides_not_dict_silent(self, _isolated_cwd: Path) -> None:
         (_isolated_cwd / "config.local.yaml").write_text(
-            "safety:\n"
-            "  guard_overrides: not-a-dict\n",
+            "safety:\n  guard_overrides: not-a-dict\n",
             encoding="utf-8",
         )
         assert _disabled_guards_from_yaml() == frozenset()
@@ -149,12 +146,23 @@ class _FlakyClient:
 
 
 class _AlwaysFailClient:
-    def set(self, *a, **kw): raise RuntimeError("always")
-    def get(self, *a, **kw): raise RuntimeError("always")
-    def sadd(self, *a, **kw): raise RuntimeError("always")
-    def srem(self, *a, **kw): raise RuntimeError("always")
-    def smembers(self, *a, **kw): raise RuntimeError("always")
-    def delete(self, *a, **kw): raise RuntimeError("always")
+    def set(self, *a, **kw):
+        raise RuntimeError("always")
+
+    def get(self, *a, **kw):
+        raise RuntimeError("always")
+
+    def sadd(self, *a, **kw):
+        raise RuntimeError("always")
+
+    def srem(self, *a, **kw):
+        raise RuntimeError("always")
+
+    def smembers(self, *a, **kw):
+        raise RuntimeError("always")
+
+    def delete(self, *a, **kw):
+        raise RuntimeError("always")
 
 
 class TestRetry:
@@ -203,7 +211,9 @@ class TestCircuitBreaker:
     def test_breaker_cooldown_lets_calls_through(self) -> None:
         time_now = [0.0]
         b = _CircuitBreaker(
-            threshold=1, cooldown_s=5, clock=lambda: time_now[0],
+            threshold=1,
+            cooldown_s=5,
+            clock=lambda: time_now[0],
         )
         b.record_failure()
         assert b.is_open() is True
@@ -232,24 +242,29 @@ class TestCircuitBreaker:
 
 class TestResumeTelemetry:
     def test_resume_writes_task_resumed_event(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         path = tmp_path / "j.jsonl"
         # Seed a non-final checkpoint event.
         import json as _json
+
         path.write_text(
-            _json.dumps({
-                "event_type": "react_checkpoint",
-                "task_id": "task-z",
-                "ts": "2026-06-02T10:00:00",
-                "iteration_completed": 5,
-                "max_iterations": 100,
-                "current_phase": "implement",
-                "has_final_answer": False,
-                "steps_snapshot": [],
-                "working_set_snapshot": [],
-                "progress_summary": "Working on it.",
-            }) + "\n",
+            _json.dumps(
+                {
+                    "event_type": "react_checkpoint",
+                    "task_id": "task-z",
+                    "ts": "2026-06-02T10:00:00",
+                    "iteration_completed": 5,
+                    "max_iterations": 100,
+                    "current_phase": "implement",
+                    "has_final_answer": False,
+                    "steps_snapshot": [],
+                    "working_set_snapshot": [],
+                    "progress_summary": "Working on it.",
+                }
+            )
+            + "\n",
             encoding="utf-8",
         )
 
@@ -279,23 +294,28 @@ class TestResumeTelemetry:
         assert "resume_cli/" in captured["kw"]["resumed_by"]
 
     def test_resume_telemetry_failure_does_not_break_resume(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         # Journal raises on write_task_resumed — runner must still run.
         path = tmp_path / "j.jsonl"
         import json as _json
+
         path.write_text(
-            _json.dumps({
-                "event_type": "react_checkpoint",
-                "task_id": "t",
-                "ts": "2026-06-02T10:00:00",
-                "iteration_completed": 1,
-                "max_iterations": 10,
-                "has_final_answer": False,
-                "steps_snapshot": [],
-                "working_set_snapshot": [],
-                "progress_summary": "",
-            }) + "\n",
+            _json.dumps(
+                {
+                    "event_type": "react_checkpoint",
+                    "task_id": "t",
+                    "ts": "2026-06-02T10:00:00",
+                    "iteration_completed": 1,
+                    "max_iterations": 10,
+                    "has_final_answer": False,
+                    "steps_snapshot": [],
+                    "working_set_snapshot": [],
+                    "progress_summary": "",
+                }
+            )
+            + "\n",
             encoding="utf-8",
         )
 

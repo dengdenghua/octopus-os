@@ -67,7 +67,7 @@ def test_trace_metadata_has_stable_trust_gateway_shape() -> None:
     assert metadata["detail"] == "write request"
     trust = metadata["trust_gateway"]
     assert isinstance(trust, dict)
-    assert trust["schema"] == "octopus.trust_decision.v1"
+    assert trust["schema"] == "echo.trust_decision.v1"
     assert trust["tool_name"] == "write_text_file"
     assert trust["source"] == "risk_policy"
     assert trust["risk"]["level"] == "high"
@@ -115,9 +115,7 @@ def test_trust_gateway_provider_records_static_allow_to_trace(tmp_path: Path) ->
 def test_trust_gateway_provider_delegates_policy_miss() -> None:
     fallback = _FallbackProvider()
     provider = TrustGatewayApprovalProvider(
-        static_policy=ApprovalPolicy(
-            rules=(ApprovalRule(effect="allow", tool="read_*"),)
-        ),
+        static_policy=ApprovalPolicy(rules=(ApprovalRule(effect="allow", tool="read_*"),)),
         fallback=fallback,
     )
 

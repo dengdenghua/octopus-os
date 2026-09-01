@@ -18,8 +18,8 @@ def test_todo_protocol_skips_short_acknowledgements() -> None:
     )
 
 
-def test_todo_protocol_requires_execution_modes() -> None:
-    assert should_require_todo_protocol(
+def test_todo_protocol_is_optional_for_code_but_required_for_team() -> None:
+    assert not should_require_todo_protocol(
         "fix the frontend and run tests",
         {"metadata": {"mode": "code"}},
     )
@@ -29,9 +29,9 @@ def test_todo_protocol_requires_execution_modes() -> None:
     )
 
 
-def test_todo_protocol_detects_complex_freeform_requests() -> None:
-    assert should_require_todo_protocol("audit the streaming modules")
-    assert should_require_todo_protocol("\u7ee7\u7eed\u4f18\u5316\u6df1\u5ea6\u7814\u7a76")
+def test_todo_protocol_does_not_gate_on_freeform_wording() -> None:
+    assert not should_require_todo_protocol("audit the streaming modules")
+    assert not should_require_todo_protocol("\u7ee7\u7eed\u4f18\u5316\u6df1\u5ea6\u7814\u7a76")
 
 
 def test_todo_protocol_requires_goal_mode_even_for_short_tasks() -> None:

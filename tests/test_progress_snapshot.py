@@ -5,7 +5,6 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-
 from runtime.memory.journal import (
     InMemoryJournal,
     all_task_progress,
@@ -30,7 +29,9 @@ from runtime.platform.models import (
 def _step(sid: int, sucker: str, success: bool = True) -> Step:
     call = ToolCall(caller="arms/x", sucker_id=sucker, args={})
     return Step(
-        step_id=sid, node_id=f"n{sid}", action=call,
+        step_id=sid,
+        node_id=f"n{sid}",
+        action=call,
         result=ExecutionResult(
             call_id=call.call_id,
             status="success" if success else "failed",
@@ -54,8 +55,11 @@ class TestSnapshot:
         j = InMemoryJournal()
         tid = TaskId(uuid4())
         j.write_task_started(
-            tid, arm_id=ArmId("a"),
-            total_nodes=3, strategy="rule_x", task_type="probe",
+            tid,
+            arm_id=ArmId("a"),
+            total_nodes=3,
+            strategy="rule_x",
+            task_type="probe",
         )
         snap = task_progress_snapshot(j, tid)
         assert snap is not None
@@ -101,14 +105,17 @@ class TestSnapshot:
         j.write_task_started(tid, arm_id=ArmId("a"), total_nodes=1, strategy="s")
         j.write_node_started(tid, ArmId("a"), node_id="n0", skill_ref="list_cwd", node_index=0)
         j.write_step(tid, ArmId("a"), _step(0, "list_cwd"))
-        j.write_trajectory(Trajectory(
-            task_id=tid, arm_id=ArmId("a"),
-            steps=[_step(0, "list_cwd")],
-            outcome=TrajectoryOutcome(
-                success=True,
-                cost=CostEntry(tokens_in=50, tokens_out=30, usd=0.002),
-            ),
-        ))
+        j.write_trajectory(
+            Trajectory(
+                task_id=tid,
+                arm_id=ArmId("a"),
+                steps=[_step(0, "list_cwd")],
+                outcome=TrajectoryOutcome(
+                    success=True,
+                    cost=CostEntry(tokens_in=50, tokens_out=30, usd=0.002),
+                ),
+            )
+        )
         snap = task_progress_snapshot(j, tid)
         assert snap.status == "completed"
         assert snap.tokens_spent == 80
@@ -120,11 +127,14 @@ class TestSnapshot:
         j = InMemoryJournal()
         tid = TaskId(uuid4())
         j.write_task_started(tid, arm_id=ArmId("a"), total_nodes=2, strategy="s")
-        j.write_trajectory(Trajectory(
-            task_id=tid, arm_id=ArmId("a"),
-            steps=[_step(0, "list_cwd", success=False)],
-            outcome=TrajectoryOutcome(success=False),
-        ))
+        j.write_trajectory(
+            Trajectory(
+                task_id=tid,
+                arm_id=ArmId("a"),
+                steps=[_step(0, "list_cwd", success=False)],
+                outcome=TrajectoryOutcome(success=False),
+            )
+        )
         snap = task_progress_snapshot(j, tid)
         assert snap.status == "failed"
 
@@ -133,9 +143,12 @@ class TestSnapshot:
         tid = TaskId(uuid4())
         j.write_task_started(tid, arm_id=ArmId("a"), total_nodes=5, strategy="s")
         j.write_checkpoint(
-            tid, arm_id=ArmId("a"),
-            nodes_completed=2, total_nodes=5,
-            tokens_spent=150, usd_spent=0.0123,
+            tid,
+            arm_id=ArmId("a"),
+            nodes_completed=2,
+            total_nodes=5,
+            tokens_spent=150,
+            usd_spent=0.0123,
         )
         snap = task_progress_snapshot(j, tid)
         assert snap.tokens_spent == 150
@@ -168,11 +181,15 @@ class TestAllTasks:
         tid = TaskId(uuid4())
         j.write_task_started(tid, arm_id=ArmId("a"), total_nodes=1, strategy="s")
         # Implementation note.
-        j.write(BudgetEvent(
-            task_id=None, arm_id=None,
-            event_type="budget_commit", reason="global",
-            cost=_Cost(usd=0.01),
-        ))
+        j.write(
+            BudgetEvent(
+                task_id=None,
+                arm_id=None,
+                event_type="budget_commit",
+                reason="global",
+                cost=_Cost(usd=0.01),
+            )
+        )
         snaps = all_task_progress(j)
         assert len(snaps) == 1
         assert snaps[0].task_id == str(tid)
@@ -185,7 +202,6 @@ class TestAllTasks:
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.platform.ui import create_app  # noqa: E402
 
 

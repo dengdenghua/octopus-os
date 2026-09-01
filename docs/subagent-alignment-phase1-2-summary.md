@@ -1,6 +1,6 @@
 # Subagent Capability Alignment — Phase 1 + 2 Completion Summary
 
-**Goal**: Bring octopus-agent's ephemeral subagents (researcher, implementer, explorer, etc.) closer to the depth and user experience of Claude Code itself.
+**Goal**: Bring echo-agent's ephemeral subagents (researcher, implementer, explorer, etc.) closer to the depth and user experience of Claude Code itself.
 
 **Before**: Subagents were single-shot, stateless, with hard 5-round caps → surface-level outputs, no streaming visibility, redundant work on follow-ups.
 
@@ -110,7 +110,7 @@ Turn 2: "Which model was most capable?"    → 1 round, "Claude Opus 4.8" (from 
 
 ## 📊 Alignment Matrix
 
-| Capability           | Claude Code (me) | Octopus Before | Octopus After (P1+2) |
+| Capability           | Claude Code (me) | Echo Before | Echo After (P1+2) |
 |----------------------|------------------|----------------|----------------------|
 | **Round depth**      | 100+ rounds      | 5 (all roles)  | 5-30 by role ✅      |
 | **Streaming**        | real-time SSE    | ❌ (sync only) | SSE real-time ✅     |
@@ -267,4 +267,4 @@ result = call_subagent(
 
 ---
 
-**Status**: ✅ **Phase 1+2 complete. Octopus subagents are production-ready for multi-turn, context-aware research and implementation tasks.**
+**Status**: ✅ **Phase 1+2 complete. Echo subagents are production-ready for multi-turn, context-aware research and implementation tasks.**

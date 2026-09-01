@@ -9,6 +9,7 @@ Two layers:
    + a stub router; assert that after enough turns a ``turn_compacted``
    event lands in the log with LLM-provided text.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -131,9 +132,7 @@ class TestSummariserPure:
         router = _RecordingRouter()
         router.next_error = RuntimeError("upstream 500")
         summariser = make_llm_summariser(router, fallback=_default_summariser)
-        text = summariser(
-            [_turn(i, user=f"u{i}", agent=f"a{i}") for i in range(3)]
-        )
+        text = summariser([_turn(i, user=f"u{i}", agent=f"a{i}") for i in range(3)])
         # Falls back to mechanical — includes the turn counts header.
         assert "[turn 1/3" in text
 
@@ -148,7 +147,9 @@ class TestSummariserPure:
         summariser = make_llm_summariser(
             router,
             config=LlmSummariserConfig(
-                model="test-model", max_tokens=42, temperature=0.7,
+                model="test-model",
+                max_tokens=42,
+                temperature=0.7,
             ),
         )
         summariser([_turn(0, user="u", agent="a")])
@@ -238,9 +239,7 @@ def _drive_simple(ws: Any, params: dict[str, Any]) -> None:
         msg = decode_message(ws.receive_text())
         if isinstance(msg, JsonRpcRequest):
             # Shouldn't happen in these scripts — reply to unblock.
-            ws.send_text(
-                encode_message(JsonRpcResponse(id=msg.id, result={"action": "decline"}))
-            )
+            ws.send_text(encode_message(JsonRpcResponse(id=msg.id, result={"action": "decline"})))
             continue
         if isinstance(msg, Notification):
             continue

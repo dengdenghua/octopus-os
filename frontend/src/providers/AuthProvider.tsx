@@ -20,9 +20,16 @@ import {
   _writeToken,
   _clearTokens,
 } from "@/core/auth/api";
+import { octAuthApi } from "@/core/oct/api";
+import { AUTH_EXPIRED_EVENT } from "@/core/auth/fetch-interceptor";
 
 import { swallow } from "@/core/utils/log";
-import type { AuthStatus, LoginRequest, RegisterRequest, User } from "@/core/auth/types";
+import type {
+  AuthStatus,
+  LoginRequest,
+  RegisterRequest,
+  User,
+} from "@/core/auth/types";
 import { useI18n } from "@/core/i18n/hooks";
 
 const GUEST_USER_ID = "__guest__";
@@ -46,19 +53,22 @@ function userFromJwt(token: string | null): Partial<User> | null {
     const tokenPayload = token.split(".")[1];
     if (!tokenPayload) return null;
     const rawPayload = tokenPayload.replace(/-/g, "+").replace(/_/g, "/");
-    const payload = rawPayload.padEnd(Math.ceil(rawPayload.length / 4) * 4, "=");
-    const json = JSON.parse(
-      window.atob(payload),
-    ) as { sub?: string; mobile?: string; provider?: string };
+    const payload = rawPayload.padEnd(
+      Math.ceil(rawPayload.length / 4) * 4,
+      "=",
+    );
+    const json = JSON.parse(window.atob(payload)) as {
+      sub?: string;
+      mobile?: string;
+      provider?: string;
+    };
     const actorId = json.sub;
-    const mobile =
-      json.mobile ||
-      (actorId?.startsWith("molili:") ? actorId.slice("molili:".length) : undefined);
+    const mobile = json.mobile;
     if (!actorId && !mobile) return null;
     return {
       user_id: actorId || mobile,
       actor_id: actorId,
-      username: mobile || actorId || "Octopus",
+      username: mobile || actorId || "EchoAI",
       mobile,
       provider: json.provider,
     };
@@ -72,7 +82,6 @@ function normalizeUserIdentity(
   incoming: User,
   fallback?: Partial<User> | null,
   fallbackMobile?: string,
-  credits?: Record<string, unknown> | null,
 ): User {
   const mobile = incoming.mobile || fallback?.mobile || fallbackMobile;
   const actorId = incoming.actor_id || fallback?.actor_id;
@@ -82,13 +91,18 @@ function normalizeUserIdentity(
   const fallbackUserId = !isPlaceholderUserId(fallback?.user_id)
     ? fallback?.user_id
     : undefined;
-  const userId = incomingUserId || actorId || fallbackUserId || mobile || ANONYMOUS_USER_ID;
+  const userId =
+    incomingUserId || actorId || fallbackUserId || mobile || ANONYMOUS_USER_ID;
   const fallbackUsername =
     fallback?.username && !isPlaceholderUsername(fallback.username)
       ? fallback.username
       : undefined;
   const username = isPlaceholderUsername(incoming.username)
-    ? mobile || incoming.email || fallbackUsername || incoming.username || userId
+    ? mobile ||
+      incoming.email ||
+      fallbackUsername ||
+      incoming.username ||
+      userId
     : incoming.username;
 
   return {
@@ -98,93 +112,115 @@ function normalizeUserIdentity(
     username,
     ...(actorId ? { actor_id: actorId } : {}),
     ...(mobile ? { mobile } : {}),
-    ...(credits && Object.keys(credits).length > 0 ? { molili_credits: credits } : {}),
   };
 }
 
 interface AuthContextType {
   isLoading: boolean;
+  authError: Error | null;
   authStatus: AuthStatus | null;
   user: User | null;
   isAuthenticated: boolean;
-  isGuest: boolean;
   login: (request: LoginRequest) => Promise<void>;
-  smsLogin: (phone: string, code: string) => Promise<void>;
+  emailLogin: (email: string, code: string) => Promise<void>;
+  /** Deprecated: guest mode is disabled when auth is enabled. */
   guestLogin: () => Promise<void>;
   register: (request: RegisterRequest) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  retryAuth: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function _writeGuestState(guestUser: User): void {
-  _writeToken(GUEST_USER_ID, guestUser);
-}
-
-function _clearGuestState(): void {
-  _clearTokens();
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { t } = useI18n();
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState<Error | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const initializedRef = useRef(false);
 
-  const isAuthenticated = !!user && !isPlaceholderUserId(user.user_id) && !user.is_guest;
-  const isGuest = !!user && (user.is_guest || isPlaceholderUserId(user.user_id));
-
-  const bootstrapGuest = useCallback(() => {
-    const guestUser: User = {
-      user_id: GUEST_USER_ID,
-      username: t.auth.guestUser,
-      email: "",
-      is_guest: true,
-    };
-    _writeGuestState(guestUser);
-    setUser(guestUser);
-  }, [t.auth.guestUser]);
+  const isAuthenticated =
+    !!user && !isPlaceholderUserId(user.user_id) && !user.is_guest;
 
   const initAuth = useCallback(async () => {
+    setIsLoading(true);
+    setAuthError(null);
     const token = getToken();
     const storedUser = getStoredUser();
     const tokenUser = userFromJwt(token);
     const localUser = storedUser || tokenUser;
-    if (token && token !== GUEST_USER_ID && localUser && !localUser.is_guest) {
-      setUser(normalizeUserIdentity(localUser as User, tokenUser));
-    } else if (storedUser?.is_guest && token === GUEST_USER_ID) {
-      setUser(storedUser);
-    } else {
-      bootstrapGuest();
-    }
-    setIsLoading(false);
-
     try {
-      const status = await getAuthStatus().catch(() => null);
-      if (status) setAuthStatus(status);
-      if (token && token !== GUEST_USER_ID) {
-        try {
-          const currentUser = await getMe();
-          setUser(normalizeUserIdentity(currentUser, storedUser || tokenUser, undefined, undefined));
-        } catch (err) {
-          swallow(err);
-          const msg = err instanceof Error ? err.message : "";
-          if (/401|Unauthorized/i.test(msg)) {
-            _clearGuestState();
-            bootstrapGuest();
-          }
+      if (token === GUEST_USER_ID || storedUser?.is_guest) {
+        _clearTokens();
+        setUser(null);
+      } else if (token && localUser && !localUser.is_guest) {
+        setUser(normalizeUserIdentity(localUser as User, tokenUser));
+      } else {
+        setUser(null);
+      }
+      let status: AuthStatus;
+      try {
+        status = await getAuthStatus();
+        setAuthStatus(status);
+      } catch (error) {
+        const unavailable =
+          error instanceof Error
+            ? error
+            : new Error("Authentication service is unavailable");
+        swallow(unavailable);
+        setAuthStatus(null);
+        setAuthError(unavailable);
+        return;
+      }
+      // A browser restart intentionally has no sessionStorage JWT.  The
+      // HttpOnly cookie is the durable credential, so always ask the backend
+      // for the current actor when authentication is enabled.
+      const current = status.enabled
+        ? await getMe()
+            .then((currentUser) => ({ currentUser, error: null }))
+            .catch((error: unknown) => ({ currentUser: null, error }))
+        : { currentUser: null, error: null };
+      if (current.currentUser) {
+        setUser(
+          normalizeUserIdentity(current.currentUser, storedUser || tokenUser),
+        );
+      } else if (current.error) {
+        swallow(current.error);
+        const msg = current.error instanceof Error ? current.error.message : "";
+        if (/401|Unauthorized/i.test(msg)) {
+          _clearTokens();
+          setUser(null);
         }
       }
-    } catch (e) { swallow(e); }
-  }, [bootstrapGuest]);
+    } catch (e) {
+      swallow(e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (initializedRef.current) return;
     initializedRef.current = true;
     initAuth();
   }, [initAuth]);
+
+  useEffect(() => {
+    const expire = () => {
+      _clearTokens();
+      setUser(null);
+      // HttpOnly cookies cannot be cleared from JavaScript.  The logout route
+      // is deliberately callable even when the old JWT has expired.
+      void fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      }).catch(() => undefined);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, expire);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expire);
+  }, []);
 
   const login = useCallback(async (request: LoginRequest) => {
     const response = await loginApi(request);
@@ -195,26 +231,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const smsLogin = useCallback(async (phone: string, code: string) => {
-    const { moliliSmsVerify } = await import("@/core/auth/api");
-    const response = await moliliSmsVerify(phone, code);
+  const emailLogin = useCallback(async (email: string, code: string) => {
+    // oct 账号网关:邮箱验证码登录 → agent 自有会话 JWT
+    const response = await octAuthApi.emailLogin(email, code);
     if (response.user) {
-      const normalized = normalizeUserIdentity(response.user, null, phone, response.credits);
+      const normalized = normalizeUserIdentity(
+        response.user as unknown as User,
+        null,
+        email,
+      );
       if (response.access_token) _writeToken(response.access_token, normalized);
       setUser(normalized);
     }
   }, []);
 
   const guestLogin = useCallback(async () => {
-    const guestUser: User = {
-      user_id: GUEST_USER_ID,
-      username: t.auth.guestUser,
-      email: "",
-      is_guest: true,
-    };
-    _writeGuestState(guestUser);
-    setUser(guestUser);
-  }, [t.auth.guestUser]);
+    _clearTokens();
+    setUser(null);
+    throw new Error(t.auth.notLoggedIn);
+  }, [t.auth.notLoggedIn]);
 
   const register = useCallback(async (request: RegisterRequest) => {
     const newUser = await registerApi(request);
@@ -223,7 +258,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     await logoutApi();
-    _clearGuestState();
+    _clearTokens();
     setUser(null);
   }, []);
 
@@ -232,7 +267,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (response.user) {
       setUser((previous) => {
         const normalized = normalizeUserIdentity(response.user!, previous);
-        if (response.access_token) _writeToken(response.access_token, normalized);
+        if (response.access_token)
+          _writeToken(response.access_token, normalized);
         return normalized;
       });
     }
@@ -241,18 +277,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       isLoading,
+      authError,
       authStatus,
       user,
       isAuthenticated,
-      isGuest,
       login,
-      smsLogin,
+      emailLogin,
       guestLogin,
       register,
       logout,
       refresh,
+      retryAuth: initAuth,
     }),
-    [isLoading, authStatus, user, isAuthenticated, isGuest, login, smsLogin, guestLogin, register, logout, refresh],
+    [
+      isLoading,
+      authError,
+      authStatus,
+      user,
+      isAuthenticated,
+      login,
+      emailLogin,
+      guestLogin,
+      register,
+      logout,
+      refresh,
+      initAuth,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -264,4 +314,13 @@ export function useAuth() {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
+}
+
+/**
+ * Read authentication when a reusable leaf component may render outside the
+ * application shell (tests, stories, previews). Missing context means no
+ * control-plane privileges; it must never grant guest access implicitly.
+ */
+export function useOptionalAuth() {
+  return useContext(AuthContext);
 }

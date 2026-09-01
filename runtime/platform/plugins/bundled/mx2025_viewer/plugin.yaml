@@ -1,0 +1,49 @@
+name: mx2025_viewer
+display_name: MX技术小筑
+version: 0.5.0
+description: MX技术小筑本地连接器 — 对话分组、消息采集与签名云端同步
+author: Echo
+tags:
+  - viewer
+  - web
+provides:
+  - mx2025_viewer.api
+  - mx2025_viewer.skills
+config:
+  base_url: https://mx2025.hhhuu.com
+  inactive_days: 7
+  proxy_origin: true
+  allow_same_origin_third_party_scripts: true
+  isolated_bridge_url: http://127.0.0.1:18082
+config_schema:
+  type: object
+  properties:
+    base_url:
+      type: string
+      title: 网站地址
+      description: MX技术小筑的完整 URL(默认 https://mx2025.hhhuu.com)
+      default: https://mx2025.hhhuu.com
+      format: uri
+    inactive_days:
+      type: integer
+      title: 自动收起天数
+      description: 最后活动超过该天数的对话自动从列表收起；对话有新活动后会自动恢复显示。
+      default: 7
+      minimum: 1
+      maximum: 365
+    proxy_origin:
+      type: boolean
+      title: 同源反向代理
+      description: 本地单用户环境默认开启。仅当本项与独立风险确认开关均为布尔 true、上游为 HTTPS 且宿主未开启认证时挂载。
+      default: true
+    allow_same_origin_third_party_scripts:
+      type: boolean
+      title: 允许第三方脚本使用应用同源权限（危险）
+      description: 本地单用户环境默认开启的独立风险确认开关。第三方脚本可能以当前应用 origin 调用宿主 API；生产、多用户或认证部署不得开启。
+      default: true
+    isolated_bridge_url:
+      type: string
+      title: 隔离云端会话地址
+      description: 认证宿主只嵌入这个独立 origin，不把萌侠第三方脚本挂到 Echo 账号与控制 API 的 origin。HTTP 仅允许回环地址。
+      default: http://127.0.0.1:18082
+      format: uri

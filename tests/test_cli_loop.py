@@ -32,11 +32,7 @@ def _write_config(
         )
     else:
         path.write_text(
-            "planner:\n"
-            "  type: static\n"
-            "budget:\n"
-            "  max_tokens: 5000\n"
-            "  max_usd: 0.05\n",
+            "planner:\n  type: static\nbudget:\n  max_tokens: 5000\n  max_usd: 0.05\n",
             encoding="utf-8",
         )
     return path
@@ -170,12 +166,21 @@ class TestCLIWiring:
         )
         journal = tmp_path / "events.jsonl"
 
-        rc = main([
-            "--no-color", "--lang", "en", "loop", "list things",
-            "--config", str(cfg),
-            "--journal", str(journal),
-            "--iterations", "1",
-        ])
+        rc = main(
+            [
+                "--no-color",
+                "--lang",
+                "en",
+                "loop",
+                "list things",
+                "--config",
+                str(cfg),
+                "--journal",
+                str(journal),
+                "--iterations",
+                "1",
+            ]
+        )
         assert rc in (0, 1)
         out = capsys.readouterr().out
         assert "[Iteration 1/1]" in out
@@ -203,9 +208,7 @@ class TestLoopClosureEvidence:
             observed_counts.append(n_trajs)
             return original(self, journal)
 
-        monkeypatch.setattr(
-            LLMPlanner, "learn_memories_from_journal", spy
-        )
+        monkeypatch.setattr(LLMPlanner, "learn_memories_from_journal", spy)
 
         cfg = _write_config(
             tmp_path,
@@ -223,13 +226,9 @@ class TestLoopClosureEvidence:
         )
         assert rc == 0
         # Implementation note.
-        assert observed_counts == [0, 1, 2], (
-            f"closure broken · observed={observed_counts}"
-        )
+        assert observed_counts == [0, 1, 2], f"closure broken · observed={observed_counts}"
 
-    def test_planner_state_accumulates_across_iters(
-        self, tmp_path: Path, monkeypatch
-    ):
+    def test_planner_state_accumulates_across_iters(self, tmp_path: Path, monkeypatch):
         """Implementation note."""
         from runtime.core.cerebrum import LLMPlanner
 

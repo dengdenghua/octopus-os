@@ -26,4 +26,3 @@ export function explainToolCall(toolCall: ToolCall, t: Translations) {
     return t.toolCalls.useTool(toolCall.name);
   }
 }
-

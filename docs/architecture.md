@@ -1,4 +1,17 @@
-# Octopus-Agent · 章鱼仿生分布式 Agent 架构
+# Echo Agent · 章鱼仿生分布式 Agent 架构
+
+> **本文档已拆分为三层，请按需阅读：**
+>
+> | 层 | 文档 | 内容 |
+> |---|---|---|
+> | **工程参考** | [guide/architecture.md](guide/architecture.md) | 只写已实装，纯工程语言，按 runtime/ 实际模块组织 |
+> | **仿生愿景** | [vision/biomimetic-architecture.md](vision/biomimetic-architecture.md) | 完整仿生架构设计，每段标注实装状态 |
+> | **映射表** | [biomimetic/README.md](biomimetic/README.md) | 20 个器官 → 代码路径的一页总表 |
+> | **实装状态** | [implementation-status.md](implementation-status.md) | 每个机制的代码证据 |
+>
+> 本文档保留作为历史参考，不再主动更新。新内容请写入上述分层文档。
+
+---
 
 > 章鱼是地球上唯一"脑分布在身体里"的高级智能动物。
 > 1 中枢 + 8 神经节 + 3 颗心脏 + 2000+ 吸盘 —— 天然的分布式 agent 蓝图。
@@ -18,7 +31,7 @@
 
 三条不变量：
 
-1. **去中心智能** — Cerebrum 不直接调工具，吸盘动作由 Ganglion 决定
+1. **去中心智能** — Cerebrum 不直接调工具，吸盘动作由 Ganglion 决定（未实装）
 2. **器官分工明确** — 每个模块对应一个生物器官，职责单一且可替换
 3. **自适应进化** — 能再生（Regeneration），能拟态（Camouflage），能喷墨逃命（Ink）
 
@@ -71,7 +84,7 @@
 |---|---|---|---|
 | Cerebrum 中枢脑 | 1/3 神经元，做总规划（慢路径）| `cerebrum/` | 任务分解、路由、裁决 |
 | **Spinal Cord 脊髓** | **不过大脑的反射（快路径）**| **`spinal_cord/`** | **规则/cache/小模型，旁路 LLM** |
-| Ganglia 神经节 × 8 | 每条腕自带小脑 | `ganglia/` | 分布式腕控制器 |
+| Ganglia 神经节 × 8（未实装） | 每条腕自带小脑 | `ganglia/` | 分布式腕控制器 |
 | Arms 腕足 × 8 | 半自主，可独立行动 | `arms/` | Worker agent 实例 |
 | Tentacle 触腕 | 伸向端侧设备的执行触点 | `tentacle/` | 移动 / 跨设备连接、锁定、调用与能力上报 |
 | Suckers 吸盘 | 有味觉与触觉的执行点 | `suckers/` | 技能库（SKILL.md）|
@@ -118,14 +131,14 @@
 
 ### 三条核心通路
 
-1. **纵向命令链**：Cerebrum → Ganglion → Arm → Sucker（规划下行）
+1. **纵向命令链**：Cerebrum → Ganglion（未实装）→ Arm → Sucker（规划下行）
 2. **横向腕间**：Arm ↔ Chromatophores ↔ Arm（腕足可直接互通，不占用中枢）
 3. **感知上行**：Eyes/Skin → Hemolymph → Cerebrum（环境信号汇聚规划）
 
 ### 为什么比 Lead+Sub-agents 更进一步
 
-Octopus 项目的 Lead+Sub 仍是中心化 —— Lead 必须驱动每一次 Sub 行动。
-本架构的 Arm 有自己的 Ganglion，能在 Cerebrum 沉默时继续完成已下发的长任务；
+Echo 项目的 Lead+Sub 仍是中心化 —— Lead 必须驱动每一次 Sub 行动。
+本架构的 Arm 有自己的 Ganglion（未实装），能在 Cerebrum 沉默时继续完成已下发的长任务；
 Chromatophores 让 Arm₃ 可以直接告诉 Arm₇ "我已经抓住了"，无需往中枢绕。
 **这是从"树状编排"升级到"网状编排"**。
 
@@ -135,7 +148,7 @@ Chromatophores 让 Arm₃ 可以直接告诉 Arm₇ "我已经抓住了"，无�
 
 | 进化层 | 章鱼对应 | 实现模块 | 关键输出 |
 |---|---|---|---|
-| ① 长任务引擎 | Cerebrum + Ganglia + Genome/Checkpoint | `cerebrum/` + `ganglia/` + `genome/checkpoint/` | 断点续跑、多会话恢复 |
+| ① 长任务引擎 | Cerebrum + Ganglia（未实装）+ Genome/Checkpoint | `cerebrum/` + `ganglia/`（未实装）+ `genome/checkpoint/` | 断点续跑、多会话恢复 |
 | ② 工作流 | Nerves 神经通路 | `nerves/graph/` | DAG 执行器、节点/边类型 |
 | ③ 技能 | Suckers 吸盘 | `suckers/` | SKILL.md + progressive disclosure |
 | ④ 上下文/记忆 | Genome + Hemolymph | `genome/` + `hemolymph/` | 长时记忆 + 每轮循环流 |
@@ -159,7 +172,7 @@ Arms 一天的 trajectory
 
 ```
  长任务引擎 ┐                         ┌ Cerebrum   ───── 规划
-           ├─ 中枢 + 节 + 基因组 ────│ Ganglia   ───── 驱动
+           ├─ 中枢 + 节 + 基因组 ────│ Ganglia（未实装）───── 驱动
  工作流    ┘                         │ Genome     ───── 续跑
 
  工作流 ──── 神经通路 ──────────────── Nerves
@@ -179,7 +192,7 @@ Arms 一天的 trajectory
 - **输出**：`TaskGraph` (nerves/graph 格式) + 路由策略
 - **LLM 分层**：planner 用最强模型，其余层用更便宜的
 
-### Ganglia 神经节
+### Ganglia 神经节（未实装）
 - **每条 Arm 都有一个**，独立进程/线程
 - 负责**把 ArmTask 翻译成 Sucker 调用序列**
 - 带本地 **Checkpointer**（genome 共享）和本地预算上限（ink 共享）
@@ -191,15 +204,15 @@ Arms 一天的 trajectory
 - 接入 **Chromatophores** 广播"我正在做什么 / 我抓住了什么"
 
 ### Suckers 吸盘
-- 技能原子单位，**SKILL.md frontmatter**（fork 自 octopus）
+- 技能原子单位，**SKILL.md frontmatter**（fork 自 echo）
 - 默认只注入名字 + 一句话（progressive disclosure）
 - 每条 Arm 只挂与其专长匹配的 Sucker 子集，上下文不爆
 - MCP 工具也当作一类 Sucker（`suckers/mcp/`）
 
 ### Nerves 神经
-- **graph/**：DAG 执行器，6 节点 + 4 边（fork octopus）
+- **graph/**：DAG 执行器，6 节点 + 4 边（fork echo）
 - **bus/**：分布式消息（NATS / Redis Streams 二选一）
-- **hooks/**：pre/post tool use 钩子（fork octopus）
+- **hooks/**：pre/post tool use 钩子（fork echo）
 - 是所有器官之间唯一的通信基础设施
 
 ### Chromatophores 色素细胞
@@ -225,7 +238,7 @@ Arms 一天的 trajectory
 - `checkpoint/`：SQLite 检查点（fork）
 - `journal/`：事件日志（fork）
 - `memory/`：长时记忆，Teach-Repeat 的录像带存在这里
-- `knowledge/`：Wiki + 知识图谱 + FTS5（fork octopus 的 knowledge 模块）
+- `knowledge/`：Wiki + 知识图谱 + FTS5（fork echo 的 knowledge 模块）
 
 ### Hemolymph 血淋巴（上下文流）
 - **铜基蓝血 → 携带"氧"到各器官**，这里的"氧"就是每轮的 context 预算
@@ -246,12 +259,12 @@ Arms 一天的 trajectory
 - 色彩变化 = 参数变化
 
 ### Mantle 外套膜（沙箱）
-- 四种 provider，fork 自 octopus：`local/` `docker/` `ssh/` `k8s/`
+- 四种 provider，fork 自 echo：`local/` `docker/` `ssh/` `k8s/`
 - 每条 Arm 默认进入自己的 Mantle，互不污染
 - Beak 的每一次"咬合"（工具执行）都在 Mantle 内发生
 
 ### Eyes 与 Skin
-- **Eyes** = 显式感知：用户输入、多模态、LLM 响应解析；`models/` fork 自 octopus，10+ Provider
+- **Eyes** = 显式感知：用户输入、多模态、LLM 响应解析；`models/` fork 自 echo，10+ Provider
 - **Skin** = 隐式感知：系统指标、环境变量、文件变化、外部事件 webhook
 - 二者的信号都汇入 Hemolymph 参与下一轮规划
 
@@ -289,7 +302,7 @@ item/<kind>/delta        { threadId, turnId, itemId, delta }  (多次)
 item/completed           { threadId, turnId, item: Item }
 ```
 
-Client reducer 按 `itemId` 合并,乱序或重复不会破坏状态。对比之前扁平 SSE 事件,Item 抽象让 UI 层可以独立处理每种输出的生命周期,不再靠 `additional_kwargs.octopus.run_status` 这种外挂标记。
+Client reducer 按 `itemId` 合并,乱序或重复不会破坏状态。对比之前扁平 SSE 事件,Item 抽象让 UI 层可以独立处理每种输出的生命周期,不再靠 `additional_kwargs.echo.run_status` 这种外挂标记。
 
 ### 持久化
 
@@ -316,17 +329,21 @@ class RealtimeRuntime(Protocol):
 - `client.ts` — `RealtimeClient`(jittered 指数回退重连 / outbox / 批准 reply tracker)
 - `use-realtime-thread.ts` — React hook,暴露 `state / startTurn / resolveApproval / resume`
 
-产品路由 `/workspace/realtime/:threadId` 提供完整的 thread UI,这也是**新协议的单一真相源页面**。旧 `/workspace/chats/:threadId` 仍在,但只作为兼容入口渲染同一个 `ChatPage`；`/workspace/code*` 也只是重定向到 realtime。`/realtime` 保留为开发索引页,`/realtime/:threadId` 会跳回 workspace shell。
+完整的 `/workspace/realtime/:threadId` 产品 UI 由同级 `echo-agent` 提供。Echo OS
+不再包含 `ChatPage`、Workspace shell、`/workspace/chats`、`/workspace/code` 或
+`/realtime` 开发索引；OS 中的这些深链只负责整页桥接到当前 Agent。这里保留的
+`frontend/src/core/realtime/` 仅服务 OS 的浏览器 Copilot 与协议连接，不构成第二套
+Agent 工作台。
 
 ---
 
-## 与 Octopus 项目的继承/差异
+## 与 Echo 项目的继承/差异
 
 **继承（通过 forklist.md 直接 fork）**：MCP 客户端、四种沙箱、技能加载器、工作流图执行器、Checkpointer、Journal、模型适配、Hooks、OpenAI-compat gateway。
 
 **重构**：Lead+Sub → 网状 Arm + Chromatophores；Teach-Repeat → 完整 Regeneration 流水线。
 
-**全新**：Ink（预算/熔断）、Hearts（HA + 节律）、Camouflage（策略 A/B）、Ganglion（腕本地自治）、Hemolymph（流式上下文）—— 这五个是 octopus 缺失的差异化层。
+**全新**：Ink（预算/熔断）、Hearts（HA + 节律）、Camouflage（策略 A/B）、Ganglion（腕本地自治）（未实装）、Hemolymph（流式上下文）—— 这五个是 echo 缺失的差异化层。
 
 ---
 

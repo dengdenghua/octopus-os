@@ -5,12 +5,18 @@
  * exercise the full load → render → act → reload cycle for each tab.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("@/core/config", () => ({
   getBackendBaseURL: () => "",
-  getOctopusBaseURL: () => "/api",
+  getEchoBaseURL: () => "/api",
 }));
 vi.mock("@/core/auth/api", () => ({
   authHeaders: () => ({ Authorization: "Bearer test-token" }),
@@ -40,10 +46,7 @@ function routedFetch(routes: Record<string, Handler>) {
     const u = typeof url === "string" ? url : url.toString();
     const method = (init?.method ?? "GET").toUpperCase();
     const key = `${method} ${u}`;
-    const handler =
-      merged[key] ??
-      merged[u] ??
-      (() => [] as unknown[]); // default: empty list
+    const handler = merged[key] ?? merged[u] ?? (() => [] as unknown[]); // default: empty list
     const body = handler(u, init);
     return Promise.resolve({
       ok: true,
@@ -193,7 +196,9 @@ describe("EvolutionControlPanel — integration", () => {
     await waitFor(() =>
       expect(screen.queryByText("summarize-pdfs")).not.toBeInTheDocument(),
     );
-    expect(await screen.findByText("暂无待处理的技能提案。")).toBeInTheDocument();
+    expect(
+      await screen.findByText("暂无待处理的技能提案。"),
+    ).toBeInTheDocument();
   });
 
   it("MCP tab triggers 'vet all' and the install button shows only for vetted rows", async () => {
@@ -284,7 +289,36 @@ describe("EvolutionControlPanel — integration", () => {
           acknowledged: false,
         },
       ],
-      "GET /api/intel-evolution/protocols/repair/proposals?status=pending": () => [],
+      "GET /api/intel-evolution/protocols/repair/proposals?status=pending":
+        () => [
+          {
+            id: 9,
+            drift_event_id: 11,
+            protocol_id: "learned_rule:read_before_write_guard",
+            created_at: "2026-04-15T00:00:00Z",
+            suggested_diff: "Insert read_file before edit_file.",
+            rationale: "planner learned the rule but needs a hard guard",
+            status: "pending",
+            source: "learned_rules",
+            repair_tasks: [
+              {
+                id: 12,
+                proposal_id: 9,
+                protocol_id: "learned_rule:read_before_write_guard",
+                priority: "high",
+                title: "Harden read-before-write planning guard for edit_file",
+                target_layer: "planner/tool preflight",
+                target_modules: [
+                  "runtime/execution/tool_engine/executor.py",
+                  "runtime/core/cerebrum/react_execution.py",
+                ],
+                verification_commands: [
+                  ".venv/bin/python -m pytest tests/test_write_skills.py -q",
+                ],
+              },
+            ],
+          },
+        ],
       "POST /api/intel-evolution/protocols/drift/scan": (_u) => {
         scanCalls.push(1);
         return { ok: true };
@@ -304,13 +338,23 @@ describe("EvolutionControlPanel — integration", () => {
 
     expect(await screen.findByText("proto.x")).toBeInTheDocument();
     expect(screen.getByText("schema drift detected")).toBeInTheDocument();
+    expect(
+      screen.getByText("learned_rule:read_before_write_guard"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Harden read-before-write planning guard for edit_file"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("high")).toBeInTheDocument();
+    expect(
+      screen.getByText(/runtime\/execution\/tool_engine\/executor.py/),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "立即扫描" }));
     await user.click(screen.getByRole("button", { name: "生成修复" }));
 
     // Find the ACK-equivalent button within the drift event row.
-    const eventRow = screen.getByText("proto.x").closest("div")!
-      .parentElement!.parentElement!;
+    const eventRow = screen.getByText("proto.x").closest("div")!.parentElement!
+      .parentElement!;
     const ackBtn = within(eventRow).getByRole("button", { name: "确认" });
     await user.click(ackBtn);
 

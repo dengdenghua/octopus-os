@@ -1,8 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { env } from "@/env";
-import { listWorkspaceArtifactRefs } from "@/core/artifacts/workspace-outputs";
+import { getWorkspaceArtifactRefetchInterval } from "@/core/artifacts/polling";
+import { useWorkspaceArtifacts } from "@/core/artifacts/use-workspace-artifacts";
+import { normalizeWorkspaceArtifactRef } from "@/core/artifacts/utils";
+import { isInternalArtifactRef } from "@/core/artifacts/workspace-outputs";
 import { cn } from "@/lib/utils";
 
 import { ArtifactPanel, useArtifacts } from "../artifacts";
@@ -28,19 +31,38 @@ const ChatBox: React.FC<{
   threadId: string;
 }> = ({ artifactPanelMode = "drawer", children, threadId }) => {
   const { thread } = useThread();
+  const queryClient = useQueryClient();
   const threadIdRef = useRef(threadId);
-  const { data: workspaceArtifacts = EMPTY_ARTIFACTS } = useQuery({
-    queryKey: ["workspace-artifacts", threadId],
-    queryFn: () => listWorkspaceArtifactRefs(threadId),
-    enabled: Boolean(threadId && threadId !== "new"),
-    refetchInterval: 4000,
-    staleTime: 2000,
+  const previousRunRef = useRef({
+    isLoading: thread.isLoading,
+    threadId,
   });
+  const { data: workspaceArtifacts = EMPTY_ARTIFACTS } = useWorkspaceArtifacts(
+    threadId,
+    {
+      refetchInterval: getWorkspaceArtifactRefetchInterval(thread.isLoading),
+    },
+  );
+
+  useEffect(() => {
+    const previous = previousRunRef.current;
+    const runJustFinished =
+      previous.threadId === threadId && previous.isLoading && !thread.isLoading;
+
+    previousRunRef.current = { isLoading: thread.isLoading, threadId };
+
+    if (!runJustFinished || !threadId || threadId === "new") return;
+    void queryClient.invalidateQueries({
+      exact: true,
+      queryKey: ["workspace-artifacts", threadId],
+    });
+  }, [queryClient, thread.isLoading, threadId]);
 
   const {
     artifacts,
     open: artifactsOpen,
     autoOpen,
+    selectedArtifact,
     setOpen: setArtifactsOpen,
     setArtifacts,
     select: selectArtifact,
@@ -57,6 +79,7 @@ const ChatBox: React.FC<{
     const mergedArtifacts = mergeArtifacts(
       workspaceArtifacts,
       thread.values.artifacts ?? EMPTY_ARTIFACTS,
+      threadId,
     );
     setArtifacts((current) =>
       artifactsEqual(current, mergedArtifacts) ? current : mergedArtifacts,
@@ -78,12 +101,36 @@ const ChatBox: React.FC<{
     workspaceArtifacts,
   ]);
 
+  // A receipt opened before its workspace artifact list finished loading can
+  // leave an old absolute path selected. Normalize that existing selection as
+  // well, otherwise the drawer keeps querying the legacy uploads endpoint.
   useEffect(() => {
+    if (!selectedArtifact) return;
+    const normalized = normalizeWorkspaceArtifactRef(
+      selectedArtifact,
+      threadId,
+    );
+    if (normalized !== selectedArtifact) {
+      selectArtifact(normalized, true);
+    }
+  }, [selectedArtifact, selectArtifact, threadId]);
+
+  useEffect(() => {
+    // External consumers (Realtime's unified workbench) own artifact
+    // visibility. Keep synchronising the artifact list, but never mutate the
+    // legacy drawer-open state behind their back.
+    if (artifactPanelMode !== "drawer") return;
     if (thread.isLoading) return;
     if (artifacts.length === 0) return;
     if (!autoOpen) return;
     setArtifactsOpen(true);
-  }, [artifacts.length, autoOpen, setArtifactsOpen, thread.isLoading]);
+  }, [
+    artifactPanelMode,
+    artifacts.length,
+    autoOpen,
+    setArtifactsOpen,
+    thread.isLoading,
+  ]);
 
   // In static-preview mode, hide the drawer entirely if no artifacts yet.
   const drawerEnabled = artifactPanelMode === "drawer";
@@ -99,7 +146,7 @@ const ChatBox: React.FC<{
           timing-function that settles rather than flashes, and the
           inner content keeps its own overflow handling. */}
       <div
-        className="min-w-0 flex-1 transition-[margin-right] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+        className="min-w-0 flex-1 transition-[margin-right] duration-slow ease-[cubic-bezier(0.22,1,0.36,1)]"
         style={{ marginRight: drawerOpen ? DRAWER_WIDTH : "0px" }}
       >
         {children}
@@ -113,10 +160,10 @@ const ChatBox: React.FC<{
           aria-hidden={!drawerOpen}
           className={cn(
             "absolute right-0 top-0 bottom-0 z-20 flex flex-col overflow-hidden",
-            "border-l border-border/60 bg-[color:color-mix(in_oklch,var(--card)_92%,transparent)]",
+            "border-l border-border-default bg-[color:color-mix(in_oklch,var(--card)_92%,transparent)]",
             "backdrop-blur-[10px]",
             "shadow-[-12px_0_32px_-16px_rgba(0,0,0,0.12)]",
-            "transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "transition-[transform,opacity] duration-slow ease-[cubic-bezier(0.22,1,0.36,1)]",
             drawerOpen
               ? "translate-x-0 opacity-100 pointer-events-auto"
               : "translate-x-full opacity-0 pointer-events-none",
@@ -130,10 +177,16 @@ const ChatBox: React.FC<{
   );
 };
 
-function mergeArtifacts(primary: string[], fallback: string[]) {
+function mergeArtifacts(
+  primary: string[],
+  fallback: string[],
+  threadId: string,
+) {
   const merged: string[] = [];
   const seen = new Set<string>();
-  for (const artifact of [...primary, ...fallback]) {
+  for (const rawArtifact of [...primary, ...fallback]) {
+    const artifact = normalizeWorkspaceArtifactRef(rawArtifact, threadId);
+    if (isInternalArtifactRef(artifact)) continue;
     if (seen.has(artifact)) continue;
     seen.add(artifact);
     merged.push(artifact);

@@ -1,0 +1,15 @@
+[Unit]
+Description=Watch local identity changes that must survive A/B root replacement
+After=local-fs.target
+ConditionPathExists=/var/lib/echo-os/oem-complete.json
+ConditionPathExists=/var/lib/echo-os/local-account.shadow
+ConditionCredential=!echo.os.ci-session
+
+[Path]
+PathChanged=/etc/passwd
+PathChanged=/etc/shadow
+PathChanged=/etc/hostname
+Unit=echo-account-capture.service
+
+[Install]
+WantedBy=multi-user.target

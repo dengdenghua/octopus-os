@@ -7,7 +7,6 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-
 from runtime.platform import feature_flags as ff
 
 
@@ -40,8 +39,8 @@ def test_built_in_flags_are_registered() -> None:
 def test_default_wins_when_nothing_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OCTOPUS_FF_SAFETY_INVARIANTS_ENABLED", raising=False)
-    monkeypatch.delenv("OCTOPUS_INVARIANTS", raising=False)
+    monkeypatch.delenv("ECHO_FF_SAFETY_INVARIANTS_ENABLED", raising=False)
+    monkeypatch.delenv("ECHO_INVARIANTS", raising=False)
     ff.reload()
     assert ff.is_on("safety.invariants_enabled") is True
     assert ff.source_of("safety.invariants_enabled") == "default"
@@ -51,8 +50,8 @@ def test_default_wins_when_nothing_overrides(
 
 
 def test_primary_env_beats_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_REGENERATION_ENABLED", "0")
-    monkeypatch.delenv("OCTOPUS_REGEN_ENABLED", raising=False)
+    monkeypatch.setenv("ECHO_FF_REGENERATION_ENABLED", "0")
+    monkeypatch.delenv("ECHO_REGEN_ENABLED", raising=False)
     ff.reload()
     assert ff.is_on("regeneration.enabled") is False
     assert ff.source_of("regeneration.enabled") == "env"
@@ -61,16 +60,16 @@ def test_primary_env_beats_default(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_legacy_env_used_when_primary_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OCTOPUS_FF_REGENERATION_ENABLED", raising=False)
-    monkeypatch.setenv("OCTOPUS_REGEN_ENABLED", "0")
+    monkeypatch.delenv("ECHO_FF_REGENERATION_ENABLED", raising=False)
+    monkeypatch.setenv("ECHO_REGEN_ENABLED", "0")
     ff.reload()
     assert ff.is_on("regeneration.enabled") is False
-    assert ff.source_of("regeneration.enabled") == "legacy_env:OCTOPUS_REGEN_ENABLED"
+    assert ff.source_of("regeneration.enabled") == "legacy_env:ECHO_REGEN_ENABLED"
 
 
 def test_primary_env_wins_over_legacy(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_REGENERATION_ENABLED", "1")
-    monkeypatch.setenv("OCTOPUS_REGEN_ENABLED", "0")
+    monkeypatch.setenv("ECHO_FF_REGENERATION_ENABLED", "1")
+    monkeypatch.setenv("ECHO_REGEN_ENABLED", "0")
     ff.reload()
     assert ff.is_on("regeneration.enabled") is True
     assert ff.source_of("regeneration.enabled") == "env"
@@ -84,17 +83,15 @@ def test_file_override_beats_default_but_not_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "feature_flags.json"
-    path.write_text(
-        json.dumps({"camouflage.enabled": True}), encoding="utf-8"
-    )
-    monkeypatch.delenv("OCTOPUS_FF_CAMOUFLAGE_ENABLED", raising=False)
-    monkeypatch.delenv("OCTOPUS_CAMOUFLAGE_ENABLED", raising=False)
+    path.write_text(json.dumps({"camouflage.enabled": True}), encoding="utf-8")
+    monkeypatch.delenv("ECHO_FF_CAMOUFLAGE_ENABLED", raising=False)
+    monkeypatch.delenv("ECHO_CAMOUFLAGE_ENABLED", raising=False)
     ff.configure(path)
     assert ff.is_on("camouflage.enabled") is True
     assert ff.source_of("camouflage.enabled") == "file"
 
     # Env override now wins.
-    monkeypatch.setenv("OCTOPUS_CAMOUFLAGE_ENABLED", "0")
+    monkeypatch.setenv("ECHO_CAMOUFLAGE_ENABLED", "0")
     ff.reload()
     assert ff.is_on("camouflage.enabled") is False
 
@@ -111,8 +108,8 @@ def test_file_reload_picks_up_edits(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OCTOPUS_FF_CAMOUFLAGE_ENABLED", raising=False)
-    monkeypatch.delenv("OCTOPUS_CAMOUFLAGE_ENABLED", raising=False)
+    monkeypatch.delenv("ECHO_FF_CAMOUFLAGE_ENABLED", raising=False)
+    monkeypatch.delenv("ECHO_CAMOUFLAGE_ENABLED", raising=False)
     path = tmp_path / "flags.json"
     path.write_text(json.dumps({"camouflage.enabled": False}))
     ff.configure(path)
@@ -127,7 +124,7 @@ def test_file_reload_picks_up_edits(
 
 
 def test_int_flags_parse_env_to_int(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OCTOPUS_INTELLIGENCE_POLL_SECONDS", "3600")
+    monkeypatch.setenv("ECHO_INTELLIGENCE_POLL_SECONDS", "3600")
     ff.reload()
     assert ff.value("intelligence.poll_interval_sec") == 3600
 
@@ -135,7 +132,7 @@ def test_int_flags_parse_env_to_int(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_int_flags_fall_back_when_env_invalid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_INTELLIGENCE_POLL_SECONDS", "not-a-number")
+    monkeypatch.setenv("ECHO_INTELLIGENCE_POLL_SECONDS", "not-a-number")
     ff.reload()
     # Falls through to default (1800), doesn't crash.
     assert ff.value("intelligence.poll_interval_sec") == 1800
@@ -146,11 +143,11 @@ def test_custom_coerce_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
         ff.FlagSpec(
             name="custom.mode",
             default="balanced",
-            legacy_env=("OCTOPUS_MODE",),
+            legacy_env=("ECHO_MODE",),
             coerce=lambda raw: raw.strip().lower(),
         )
     )
-    monkeypatch.setenv("OCTOPUS_MODE", "AGGRESSIVE")
+    monkeypatch.setenv("ECHO_MODE", "AGGRESSIVE")
     ff.reload()
     assert ff.value("custom.mode") == "aggressive"
 
@@ -161,8 +158,8 @@ def test_custom_coerce_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_invariants_legacy_off_is_respected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OCTOPUS_FF_SAFETY_INVARIANTS_ENABLED", raising=False)
-    monkeypatch.setenv("OCTOPUS_INVARIANTS", "off")
+    monkeypatch.delenv("ECHO_FF_SAFETY_INVARIANTS_ENABLED", raising=False)
+    monkeypatch.setenv("ECHO_INVARIANTS", "off")
     ff.reload()
     assert ff.is_on("safety.invariants_enabled") is False
 
@@ -190,11 +187,9 @@ def test_describe_returns_catalog_for_each_flag() -> None:
 def test_describe_source_reflects_winner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_FF_REGENERATION_ENABLED", "0")
+    monkeypatch.setenv("ECHO_FF_REGENERATION_ENABLED", "0")
     ff.reload()
-    entry = next(
-        e for e in ff.describe() if e["name"] == "regeneration.enabled"
-    )
+    entry = next(e for e in ff.describe() if e["name"] == "regeneration.enabled")
     assert entry["value"] is False
     assert entry["source"] == "env"
 

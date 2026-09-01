@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Customer admin</title></head>
+  <body>
+    <h1>Customers</h1>
+    <form id="create-form"><label>Name <input id="name"></label><label>Plan <select id="plan"><option>Starter</option><option>Pro</option><option>Enterprise</option></select></label><button>Create</button></form>
+    <div id="customers"></div>
+    <script>
+      const session = document.querySelector('meta[name=eval-session]')?.content || '';
+      const nameInput = document.querySelector('#name');
+      const planInput = document.querySelector('#plan');
+      const request = (url, options={}) => fetch(url,{...options,headers:{'Content-Type':'application/json','X-Eval-UI':session,...(options.headers||{})}});
+      async function render(){const rows=await (await request('/api/customers')).json();const root=document.querySelector('#customers');root.innerHTML='';for(const row of rows){const el=document.createElement('section');el.dataset.customerId=row.id;el.innerHTML=`<strong>${row.name}</strong> <span data-plan>${row.plan}</span> <select data-edit-plan><option>Starter</option><option>Pro</option><option>Enterprise</option></select><button data-save>Save</button><button data-verify>Verify</button><button data-delete>Delete</button>`;el.querySelector('[data-edit-plan]').value=row.plan;el.querySelector('[data-save]').onclick=async()=>{await request('/api/customers/'+row.id,{method:'PATCH',body:JSON.stringify({plan:el.querySelector('[data-edit-plan]').value})});render()};el.querySelector('[data-verify]').onclick=async()=>{await request('/api/customers/'+row.id+'/verify',{method:'POST',body:JSON.stringify({name:row.name,plan:row.plan})});render()};el.querySelector('[data-delete]').onclick=async()=>{await request('/api/customers/'+row.id,{method:'DELETE'});render()};root.append(el)}}
+      document.querySelector('#create-form').onsubmit=async(e)=>{e.preventDefault();await request('/api/customers',{method:'POST',body:JSON.stringify({name:nameInput.value,plan:planInput.value})});nameInput.value='';render()};render();
+    </script>
+  </body>
+</html>

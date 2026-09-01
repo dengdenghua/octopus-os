@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Playwright E2E configuration for octopus-frontend.
+ * Playwright E2E configuration for echo-frontend.
  *
  * Expects the backend (FastAPI) on port 8000 and the frontend (Vite) on
  * port 3000. In CI, start both services before running `npx playwright test`.

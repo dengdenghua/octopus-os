@@ -1,4 +1,5 @@
 import {
+  AlertCircleIcon,
   CheckCircle2Icon,
   ClockIcon,
   FileTextIcon,
@@ -11,12 +12,14 @@ import {
 } from "lucide-react";
 
 import type { Translations } from "@/core/i18n/locales/types";
-import { type FileTreeEvent } from "@/components/workspace/file-tree";
 import { deriveAgentPhases, type AgentPhaseStatus } from "./agent-phases";
 import type { LiveToolEvent } from "./live-tool-timeline";
 import {
   normalizeEventsForSettledDisplay,
+  toWorkBlocks,
+  workBlockTitle,
   type WorkBlock,
+  type WorkBlockStatus,
 } from "./work-blocks";
 
 // ── Type definitions ──────────────────────────────────────────────────
@@ -25,7 +28,7 @@ export interface AgentTile {
   id: string;
   name: string;
   label: string;
-  status: "running" | "done" | "pending" | "error";
+  status: "running" | "waiting_approval" | "done" | "pending" | "error";
   task: string;
   /** Full prompt or mission brief when available. */
   prompt?: string;
@@ -35,6 +38,13 @@ export interface AgentTile {
   codename?: string;
   /** Sub-agent role label ("researcher" / "critic" / ...). */
   role?: string;
+  /** Authoritative display name from the backend built-in role catalog
+   * (BUILTIN_ROLES), e.g. "Code Reviewer". Absent for free-form labels the
+   * catalog doesn't recognise. */
+  roleDisplayName?: string;
+  /** Authoritative responsibility blurb from BUILTIN_ROLES. Absent when the
+   * role label is free-form. */
+  roleDescription?: string;
   specIndex?: number;
   taskLabel?: string;
   parentToolUseId?: string;
@@ -63,10 +73,12 @@ export type AgentWorkbenchTabId =
   | "subagents"
   | "artifacts"
   | "plan"
-  | "files"
   | "diff"
   | "terminal"
-  | "browser";
+  | "browser"
+  | "workspace"
+  | "design"
+  | "project";
 
 export type JsonRecord = Record<string, unknown>;
 
@@ -96,16 +108,53 @@ export interface DiffEntry {
   title: string;
   op?: string | null;
   text: string;
-  status: LiveToolEvent["status"];
+  status: WorkBlockStatus;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────
 
-export const FILES_TAB_LABEL = "文件";
-export const SUBAGENTS_TAB_LABEL = "子智能体";
 export const DIFF_TAB_LABEL = "Diff";
 export const TERMINAL_TAB_LABEL = "终端";
 export const BROWSER_TAB_LABEL = "浏览器";
+export const FINAL_OUTPUT_PATH_PATTERN = /(?:^|[\\/])output[\\/]final[\\/]/i;
+export const FINAL_DELIVERABLE_PATTERN =
+  /report|docx|pptx|pdf|xlsx|html|报告|调研|总结|交付|文档|方案/i;
+/**
+ * Files agents use to coordinate their work. They are useful in the process
+ * trace, but are not user-facing deliverables even when written below
+ * output/final/.
+ */
+const INTERNAL_WORKING_FILE_BASENAMES = new Set([
+  "plan.md",
+  "todo.md",
+  "todos.md",
+  "note.md",
+  "notes.md",
+]);
+
+export function isInternalWorkingFilePath(path: string | null | undefined) {
+  if (!path) return false;
+  const normalized = normalizeSlashes(path).replace(/[\\/]+$/, "");
+  const basename = normalized.slice(normalized.lastIndexOf("/") + 1);
+  return INTERNAL_WORKING_FILE_BASENAMES.has(basename.toLowerCase());
+}
+const FINAL_DELIVERABLE_WRITE_OPS = new Set([
+  "add",
+  "added",
+  "create",
+  "created",
+  "edit",
+  "edited",
+  "generate",
+  "generated",
+  "modify",
+  "modified",
+  "new",
+  "update",
+  "updated",
+  "write",
+  "written",
+]);
 
 // Mirror runtime.execution.subagents.bridge._ROLE_AVATAR so the
 // frontend can pick a per-role emoji even when the backend hasn't
@@ -139,6 +188,46 @@ export const ROLE_AVATAR: Record<string, string> = {
 };
 export const DEFAULT_AVATAR = "🐙";
 
+// Role → one-line description of what the role does. The nameplate
+// (角色卡) is each role's 说明 (identity/responsibility), not the turn's
+// work brief — so this is the primary copy, and the delegated task/prompt
+// only fills in as a fallback for roles we don't recognise.
+export const ROLE_DESCRIPTION: Record<string, string> = {
+  researcher:
+    "Investigates the question, gathers evidence, and reports findings.",
+  research:
+    "Investigates the question, gathers evidence, and reports findings.",
+  explorer: "Maps the unknown — explores the space and surfaces what is there.",
+  fact_checker: "Verifies claims against sources and flags inaccuracies.",
+  "fact-checker": "Verifies claims against sources and flags inaccuracies.",
+  critic: "Reviews work against the requirements and challenges weak points.",
+  reviewer: "Reviews work against the requirements and challenges weak points.",
+  security: "Audits for security risks and unsafe patterns.",
+  "security-review": "Audits for security risks and unsafe patterns.",
+  performance: "Profiles and tunes for speed, memory, and throughput.",
+  style: "Polishes prose and presentation for clarity and tone.",
+  synthesizer: "Synthesizes many findings into one coherent conclusion.",
+  writer: "Drafts clear, well-structured prose and deliverables.",
+  architect: "Designs the structure and breaks the work into parts.",
+  designer: "Shapes interfaces and visual decisions.",
+  implementer: "Writes and wires up the actual implementation.",
+  coder: "Writes and wires up the actual implementation.",
+  reproducer: "Reproduces reported issues into minimal failing cases.",
+  hypothesizer: "Forms testable hypotheses from the evidence.",
+  verifier: "Runs checks and tests to confirm a change actually works.",
+  debugger: "Isolates and fixes defects.",
+  planner: "Lays out the plan, steps, and task breakdown.",
+  evaluator: "Judges results against criteria and scores them.",
+  generator: "Generates content and artifacts on demand.",
+};
+
+export function roleDescription(
+  role: string | undefined | null,
+): string | undefined {
+  if (!role || typeof role !== "string") return undefined;
+  return ROLE_DESCRIPTION[role.trim().toLowerCase()];
+}
+
 // ── Utility functions ─────────────────────────────────────────────────
 
 export function blockIcon(kind: WorkBlock["kind"]) {
@@ -149,8 +238,9 @@ export function blockIcon(kind: WorkBlock["kind"]) {
   return MonitorIcon;
 }
 
-export function statusIcon(status: LiveToolEvent["status"] | AgentPhaseStatus) {
+export function statusIcon(status: WorkBlockStatus | AgentPhaseStatus) {
   if (status === "running") return Loader2Icon;
+  if (status === "warning") return AlertCircleIcon;
   if (status === "error") return XCircleIcon;
   if (status === "done") return CheckCircle2Icon;
   return ClockIcon;
@@ -252,15 +342,11 @@ export function maxDefined(a?: number, b?: number): number | undefined {
 }
 
 export function agentEventGroupId(event: LiveToolEvent): string | undefined {
+  if (event.agentId) return event.agentId;
   if (event.parentToolUseId && event.subAgentRole) {
     return `${event.parentToolUseId}:${event.subAgentRole}`;
   }
-  return (
-    event.agentId ??
-    event.subagentCodename ??
-    event.subAgentRole ??
-    event.agentName
-  );
+  return event.subagentCodename ?? event.subAgentRole ?? event.agentName;
 }
 
 export function readableToolName(event: LiveToolEvent): string {
@@ -329,6 +415,23 @@ export function errorFromAgentEvent(event: LiveToolEvent): string | undefined {
   return event.name;
 }
 
+/** Internal auto-parallel bootstrap can fail before producing any usable
+ * child output, then deliberately fall back to the main model. Keep that
+ * diagnostic in the execution trace, but do not present it as a real Agent
+ * seat beside the successful explicit delegation that follows. */
+export function isInternalAutoParallelFailure(event: LiveToolEvent): boolean {
+  if (event.name !== "subagent" || event.status !== "error") return false;
+  const error = [
+    event.error,
+    stringFromKeys(event.output, ["error", "error_type", "message"]),
+    stringFromKeys(event.input, ["error", "error_type", "message"]),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLowerCase();
+  return error.includes("empty_result_contract_violation");
+}
+
 export function compactDetail(text: string, max = 160) {
   const clean = repairMojibakeText(text).replace(/\s+/g, " ").trim();
   return clean.length <= max ? clean : `${clean.slice(0, max - 1)}…`;
@@ -337,6 +440,7 @@ export function compactDetail(text: string, max = 160) {
 export function agentProgressPercent(status: AgentTile["status"]) {
   if (status === "done") return 100;
   if (status === "running") return 48;
+  if (status === "waiting_approval") return 48;
   if (status === "error") return 100;
   return 0;
 }
@@ -423,7 +527,7 @@ export function workspaceFocusTabFromEvents(
   if (focus.view === "browser") return null;
   if (focus.view === "terminal") return "terminal";
   if (focus.view === "diff") return "diff";
-  if (focus.view === "file") return "files";
+  if (focus.view === "file") return "agent";
   if (focus.view === "artifact" || focus.view === "image") return "agent";
   if (focus.view === "subagent") return "subagents";
   return "agent";
@@ -485,9 +589,14 @@ export function pathsFromUnknown(value: unknown): string[] {
   if (isRecord(value)) {
     for (const key of [
       "path",
+      "artifact_path",
       "file_path",
+      "filePath",
       "filepath",
       "filename",
+      "output_path",
+      "relative_path",
+      "written_path",
       "target_path",
       "source_path",
     ]) {
@@ -498,7 +607,12 @@ export function pathsFromUnknown(value: unknown): string[] {
       for (const change of changes) {
         if (isRecord(change)) {
           addPath(change.path);
+          addPath(change.artifact_path);
           addPath(change.file_path);
+          addPath(change.filePath);
+          addPath(change.output_path);
+          addPath(change.relative_path);
+          addPath(change.written_path);
           addPath(change.target_path);
         }
       }
@@ -519,22 +633,6 @@ export function pathsForBlock(block: WorkBlock): string[] {
     if (path.trim()) paths.add(path.trim());
   }
   return Array.from(paths);
-}
-
-export function fileEventsFromBlocks(blocks: WorkBlock[]): FileTreeEvent[] {
-  return blocks
-    .filter((block) => block.kind === "file")
-    .flatMap((block) => {
-      const kind: FileTreeEvent["kind"] = /write|create/i.test(block.event.name)
-        ? "write"
-        : "edit";
-      return pathsForBlock(block).map((path) => ({
-        path,
-        kind,
-        at: block.event.finishedAt ?? block.startedAt,
-      }));
-    })
-    .slice(-24);
 }
 
 export function inferWorkbenchCwd(
@@ -596,7 +694,7 @@ function changeRecordsFromUnknown(value: unknown): JsonRecord[] {
 }
 
 function isFinalOutputPath(path: string | null | undefined) {
-  if (!path) return false;
+  if (!path || isInternalWorkingFilePath(path)) return false;
   const normalized = normalizeSlashes(path).toLowerCase();
   return (
     normalized.includes("/output/final/") ||
@@ -605,7 +703,7 @@ function isFinalOutputPath(path: string | null | undefined) {
 }
 
 function fallbackCreateOpFromEventName(name: string) {
-  return /(^|[_:-])(write_text_file|write_file|create_file|artifact)($|[_:-])/i.test(
+  return /(^|[_.:-])(write_text_file|write_file|create_file|artifact)($|[_.:-])/i.test(
     name,
   )
     ? "create"
@@ -641,9 +739,11 @@ export function diffEntriesFromBlocks(blocks: WorkBlock[]): DiffEntry[] {
   const entries = blocks
     .filter(
       (block) =>
-        // Only include actual file write/edit operations
+        // Diff/changed-file surfaces must represent mutations, not every
+        // event that happens to carry a path. Read blocks expose their input
+        // path too; admitting them here made a read-only audit appear to have
+        // edited every inspected source file.
         block.kind === "file" ||
-        block.kind === "read" ||
         /file_change|write_file|edit_file|create_file|patch_file/i.test(
           block.event.name,
         ),
@@ -658,7 +758,16 @@ export function diffEntriesFromBlocks(blocks: WorkBlock[]): DiffEntry[] {
           .map((change, index): DiffEntry | null => {
             const text = diffTextFromUnknown(change);
             const path =
-              stringFromKeys(change, ["path", "file_path", "target_path"]) ||
+              stringFromKeys(change, [
+                "path",
+                "artifact_path",
+                "file_path",
+                "filePath",
+                "output_path",
+                "relative_path",
+                "written_path",
+                "target_path",
+              ]) ||
               pathsForBlock(block)[index] ||
               block.subtitle;
             if (!text && !path) return null;
@@ -671,7 +780,7 @@ export function diffEntriesFromBlocks(blocks: WorkBlock[]): DiffEntry[] {
               id: `${block.id}:${path || index}`,
               op,
               path,
-              title: path || block.title,
+              title: path || workBlockTitle(block),
               text,
               status: block.status,
             };
@@ -706,6 +815,31 @@ export function diffEntriesFromBlocks(blocks: WorkBlock[]): DiffEntry[] {
   return dedupeDiffEntries(entries);
 }
 
+function isFinalDeliverableEntry(entry: DiffEntry) {
+  const target = entry.path || entry.title;
+  if (!target || entry.status === "error") return false;
+  if (
+    FINAL_OUTPUT_PATH_PATTERN.test(target) &&
+    !isInternalWorkingFilePath(target)
+  ) {
+    return true;
+  }
+  if (!FINAL_DELIVERABLE_PATTERN.test(target)) return false;
+  if (entry.created) return true;
+  const op = typeof entry.op === "string" ? entry.op.trim().toLowerCase() : "";
+  return FINAL_DELIVERABLE_WRITE_OPS.has(op);
+}
+
+export function finalOutputArtifactEntries(events: LiveToolEvent[]) {
+  return diffEntriesFromBlocks(toWorkBlocks(events)).filter(
+    isFinalDeliverableEntry,
+  );
+}
+
+export function hasFinalOutputArtifact(events: LiveToolEvent[]) {
+  return finalOutputArtifactEntries(events).length > 0;
+}
+
 function diffEntryDedupeKey(entry: DiffEntry) {
   const normalized = normalizeSlashes(entry.path || entry.title)
     .toLowerCase()
@@ -737,6 +871,6 @@ export function commandForBlock(block: WorkBlock): string {
   return (
     stringFromKeys(block.event.input, ["command", "cmd", "script"]) ||
     block.subtitle ||
-    block.title
+    workBlockTitle(block)
   );
 }

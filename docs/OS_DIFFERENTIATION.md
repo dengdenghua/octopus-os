@@ -1,6 +1,6 @@
-# Octopus OS 定位与差异化
+# Echo OS 定位与差异化
 
-> 回答一个战略问题:**octopus-os 如何与 octopus-agent 拉开差距?**
+> 回答一个战略问题:**echo-os 如何与 echo-agent 拉开差距?**
 > 当前差距很窄(os ≈ agent 全套 ~22 万行 + 一层薄 appliance/desktop),
 > 本文确立差异化方向 + "fork→依赖"的结构性迁移路线,让差距复利增长。
 
@@ -8,7 +8,7 @@
 
 不是"同一个东西的两个版本",而是**两个品类**(类比 Chrome vs ChromeOS):
 
-| | octopus-agent | octopus-os |
+| | echo-agent | echo-os |
 |---|---|---|
 | 是什么 | **引擎**:嵌入的运行时 / 调用的服务 / 浏览器里的工作台 | **设备**:拥有整台机器,开机进桌面,是系统本身 |
 | 买家 | 开发者 / 集成商(要个 Agent 引擎) | 家庭服务器/NAS 主人(要私有 AI 设备) |

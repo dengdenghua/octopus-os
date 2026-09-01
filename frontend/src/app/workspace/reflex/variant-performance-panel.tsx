@@ -30,7 +30,6 @@
  */
 
 import { swallow } from "@/core/utils/log";
-import { getBackendBaseURL } from "@/core/config";
 import {
   BarChart3Icon,
   CheckCheckIcon,
@@ -48,6 +47,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+
+import { reflexFetch } from "./api";
 
 type RecipeSummary = {
   recipe_id: string;
@@ -133,12 +134,12 @@ export function VariantPerformancePanel() {
   const reload = useCallback(async () => {
     try {
       const [r, s] = await Promise.all([
-        fetch(`${getBackendBaseURL()}/api/evolution/forge/recipes`).then(
-          (r) => r.json() as Promise<{ recipes: RecipeSummary[] }>,
+        reflexFetch<{ recipes: RecipeSummary[] }>(
+          "/api/evolution/forge/recipes",
         ),
-        fetch(`${getBackendBaseURL()}/api/evolution/forge/auto-tick/status`)
-          .then((r) => r.json() as Promise<AutoTickStatus>)
-          .catch(() => null),
+        reflexFetch<AutoTickStatus>(
+          "/api/evolution/forge/auto-tick/status",
+        ).catch(() => null),
       ]);
       setRecipes(r.recipes ?? []);
       setAutoTick(s);
@@ -162,7 +163,7 @@ export function VariantPerformancePanel() {
       const path = autoTick?.enabled
         ? "/api/evolution/forge/auto-tick/disable"
         : "/api/evolution/forge/auto-tick/enable?interval_hours=24";
-      await fetch(path, { method: "POST" });
+      await reflexFetch<unknown>(path, { method: "POST" });
       void reload();
     } finally {
       setAutoBusy(false);
@@ -172,8 +173,8 @@ export function VariantPerformancePanel() {
   const tickNow = useCallback(async () => {
     setAutoBusy(true);
     try {
-      await fetch(
-        `${getBackendBaseURL()}/api/evolution/forge/auto-tick/run-now?apply=true`,
+      await reflexFetch<unknown>(
+        "/api/evolution/forge/auto-tick/run-now?apply=true",
         { method: "POST" },
       );
       void reload();
@@ -190,14 +191,14 @@ export function VariantPerformancePanel() {
   if (recipes.length === 0 && !autoTick?.enabled) return null;
 
   return (
-    <Card className="workspace-panel rounded-[1.5rem] border-white/40 shadow-none dark:border-white/10">
+    <Card className="workspace-panel border-white/40 shadow-none dark:border-white/10">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <BarChart3Icon className="size-4" />
           Variant performance · {recipes.length} recipe
           {recipes.length !== 1 ? "s" : ""} with A/B running
           {tickAt && (
-            <span className="ml-auto text-[10px] font-normal text-muted-foreground">
+            <span className="ml-auto text-xs font-normal text-muted-foreground">
               {tickAt.toLocaleTimeString()}
             </span>
           )}
@@ -213,7 +214,7 @@ export function VariantPerformancePanel() {
       </CardHeader>
       <CardContent className="space-y-3">
         {err && (
-          <div className="rounded-md bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+          <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {err}
           </div>
         )}
@@ -258,13 +259,15 @@ function RecipeRow({
   const loadStats = useCallback(async () => {
     setLoading(true);
     try {
-      const r: VariantStatsResp = await fetch(
+      const r: VariantStatsResp = await reflexFetch<VariantStatsResp>(
         `/api/evolution/forge/variants/${encodeURIComponent(
           summary.recipe_id,
         )}/stats`,
-      ).then((r) => r.json());
+      );
       setStats(r);
-    } catch (e) { swallow(e); } finally {
+    } catch (e) {
+      swallow(e);
+    } finally {
       setLoading(false);
     }
   }, [summary.recipe_id]);
@@ -276,12 +279,12 @@ function RecipeRow({
   const previewPromote = useCallback(async () => {
     setPromoting(true);
     try {
-      const r: PromoteResp = await fetch(
+      const r: PromoteResp = await reflexFetch<PromoteResp>(
         `/api/evolution/forge/variants/${encodeURIComponent(
           summary.recipe_id,
         )}/auto-promote?apply=false`,
         { method: "POST" },
-      ).then((r) => r.json());
+      );
       setPromote(r);
       setConfirmApply(false);
     } catch (e) {
@@ -298,12 +301,12 @@ function RecipeRow({
   const applyPromote = useCallback(async () => {
     setPromoting(true);
     try {
-      const r: PromoteResp = await fetch(
+      const r: PromoteResp = await reflexFetch<PromoteResp>(
         `/api/evolution/forge/variants/${encodeURIComponent(
           summary.recipe_id,
         )}/auto-promote?apply=true`,
         { method: "POST" },
-      ).then((r) => r.json());
+      );
       setPromote(r);
       if (r.applied) {
         void loadStats();
@@ -322,17 +325,15 @@ function RecipeRow({
   }, [summary.recipe_id, loadStats, onChange]);
 
   return (
-    <div className="rounded-xl border border-border/60 bg-background/60 px-4 py-3">
+    <div className="rounded-lg border border-border-default bg-background/60 px-4 py-3">
       <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-mono text-xs text-muted-foreground">
-          recipe:
-        </span>
+        <span className="font-mono text-xs text-muted-foreground">recipe:</span>
         <span className="font-mono">{summary.recipe_id}</span>
-        <Badge variant="outline" className="text-[10px]">
+        <Badge variant="outline" className="text-xs">
           {summary.variant_count} variants · total weight {summary.total_weight}
         </Badge>
         {summary.default_weight > 0 && (
-          <Badge className="bg-slate-500/15 text-[10px] text-slate-300 hover:bg-slate-500/15">
+          <Badge className="bg-muted-foreground/15 text-xs text-muted-foreground hover:bg-muted-foreground/15">
             control branch w={summary.default_weight}
           </Badge>
         )}
@@ -344,8 +345,8 @@ function RecipeRow({
 
       {stats && stats.variants.length > 0 && (
         <table className="w-full text-xs">
-          <thead className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            <tr className="border-b border-border/40">
+          <thead className="text-xs uppercase tracking-wide text-muted-foreground">
+            <tr className="border-b border-border-subtle">
               <th className="pb-1 text-left font-medium">variant</th>
               <th className="pb-1 text-right font-medium">uses</th>
               <th className="pb-1 text-right font-medium">✓</th>
@@ -391,7 +392,7 @@ function RecipeRow({
         {promote?.proposal && !confirmApply && (
           <Button
             size="sm"
-            className="h-7 bg-emerald-600 text-xs hover:bg-emerald-700"
+            className="h-7 bg-success text-xs hover:bg-success"
             onClick={() => setConfirmApply(true)}
           >
             <TrophyIcon className="mr-1 size-3" />
@@ -402,7 +403,7 @@ function RecipeRow({
           <div className="flex items-center gap-1">
             <Button
               size="sm"
-              className="h-7 bg-emerald-600 text-xs hover:bg-emerald-700"
+              className="h-7 bg-success text-xs hover:bg-success"
               onClick={applyPromote}
               disabled={promoting}
             >
@@ -427,30 +428,26 @@ function RecipeRow({
           className={cn(
             "mt-2 rounded-md px-3 py-2 text-xs",
             promote.applied
-              ? "bg-emerald-500/10 text-emerald-300"
+              ? "bg-success/10 text-success"
               : promote.skipped
-                ? "bg-slate-500/10 text-slate-300"
+                ? "bg-muted-foreground/10 text-muted-foreground"
                 : promote.ok
-                  ? "bg-amber-500/10 text-amber-200"
-                  : "bg-rose-500/10 text-rose-300",
+                  ? "bg-warning/10 text-warning"
+                  : "bg-destructive/10 text-destructive",
           )}
         >
           {promote.error && <div>✗ {promote.error}</div>}
-          {promote.skipped && (
-            <div>ℹ︎ no winner yet · {promote.reason}</div>
-          )}
+          {promote.skipped && <div>ℹ︎ no winner yet · {promote.reason}</div>}
           {promote.proposal && (
             <>
               <div className="font-medium">
-                {promote.applied ? "✓ Applied" : "Proposed"}:{" "}
-                winner <span className="font-mono">
+                {promote.applied ? "✓ Applied" : "Proposed"}: winner{" "}
+                <span className="font-mono">
                   {promote.proposal.winner_variant_id}
                 </span>
               </div>
-              <div className="mt-1 italic">
-                "{promote.proposal.rationale}"
-              </div>
-              <div className="mt-1 font-mono text-[10px]">
+              <div className="mt-1 italic">"{promote.proposal.rationale}"</div>
+              <div className="mt-1 font-mono text-xs">
                 new weights:{" "}
                 {Object.entries(promote.proposal.weights)
                   .map(([k, v]) => `${k}=${v}`)
@@ -497,36 +494,32 @@ function AutoTickBar({
   const nextStr = status.next_tick_at
     ? new Date(status.next_tick_at * 1000).toLocaleString()
     : null;
-  const lastStr = last
-    ? new Date(last.ts * 1000).toLocaleString()
-    : null;
+  const lastStr = last ? new Date(last.ts * 1000).toLocaleString() : null;
   return (
     <div
       className={cn(
-        "rounded-xl border px-4 py-3",
+        "rounded-lg border px-4 py-3",
         status.enabled
-          ? "border-emerald-500/30 bg-emerald-500/5"
-          : "border-border/60 bg-background/60",
+          ? "border-success/30 bg-success/5"
+          : "border-border-default bg-background/60",
       )}
     >
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <TimerIcon
           className={cn(
             "size-4",
-            status.enabled ? "text-emerald-400" : "text-muted-foreground",
+            status.enabled ? "text-success" : "text-muted-foreground",
           )}
         />
         <span className="font-medium">Auto-promote daemon:</span>
         <Badge
           className={cn(
-            "text-[10px]",
+            "text-xs",
             status.enabled
-              ? "bg-emerald-500/15 text-emerald-300"
-              : "bg-slate-500/15 text-slate-400",
+              ? "bg-success/15 text-success"
+              : "bg-muted-foreground/15 text-muted-foreground",
             "hover:" +
-              (status.enabled
-                ? "bg-emerald-500/15"
-                : "bg-slate-500/15"),
+              (status.enabled ? "bg-success/15" : "bg-muted-foreground/15"),
           )}
         >
           {status.enabled ? "ON" : "OFF"}
@@ -534,8 +527,7 @@ function AutoTickBar({
         {status.enabled && (
           <span className="text-xs text-muted-foreground">
             every {status.interval_hours.toFixed(0)}h · min_uses{" "}
-            {status.min_uses} · min_lead{" "}
-            {(status.min_lead * 100).toFixed(0)}pp
+            {status.min_uses} · min_lead {(status.min_lead * 100).toFixed(0)}pp
           </span>
         )}
         <div className="flex-1" />
@@ -571,16 +563,13 @@ function AutoTickBar({
         </Button>
       </div>
       {(last || nextStr) && (
-        <div className="mt-1 text-[11px] text-muted-foreground">
+        <div className="mt-1 text-xs text-muted-foreground">
           {last && (
             <>
               last ran {lastStr} · scanned {last.recipes_scanned} recipe
               {last.recipes_scanned !== 1 ? "s" : ""} · promoted{" "}
-              <span className="text-emerald-400">
-                {last.recipes_promoted}
-              </span>
-              {last.elapsed_s > 0 &&
-                ` · ${last.elapsed_s.toFixed(2)}s`}
+              <span className="text-success">{last.recipes_promoted}</span>
+              {last.elapsed_s > 0 && ` · ${last.elapsed_s.toFixed(2)}s`}
               {" · "}
             </>
           )}
@@ -588,7 +577,7 @@ function AutoTickBar({
         </div>
       )}
       {last && last.results.length > 0 && (
-        <details className="mt-2 text-[11px]">
+        <details className="mt-2 text-xs">
           <summary className="cursor-pointer text-muted-foreground">
             last tick actions ({last.results.length})
           </summary>
@@ -599,12 +588,12 @@ function AutoTickBar({
                 className={cn(
                   "truncate",
                   r.applied
-                    ? "text-emerald-300"
+                    ? "text-success"
                     : r.skipped
-                      ? "text-slate-400"
+                      ? "text-muted-foreground"
                       : r.error
-                        ? "text-rose-300"
-                        : "text-amber-300",
+                        ? "text-destructive"
+                        : "text-warning",
                 )}
               >
                 {r.applied && "✓ "}
@@ -643,12 +632,14 @@ function VariantStatRow({
   return (
     <tr
       className={cn(
-        "border-b border-border/20",
-        isLeader && "bg-emerald-500/5",
+        "border-b border-border-subtle",
+        isLeader && "bg-success/5",
       )}
     >
       <td className="py-1 font-mono">
-        {isLeader && <TrophyIcon className="mr-1 inline size-3 text-emerald-400" />}
+        {isLeader && (
+          <TrophyIcon className="mr-1 inline size-3 text-success" />
+        )}
         {label}
       </td>
       <td className="py-1 text-right font-mono">{row.uses}</td>
@@ -657,10 +648,10 @@ function VariantStatRow({
         className={cn(
           "py-1 text-right font-mono",
           row.success_rate >= 0.7
-            ? "text-emerald-400"
+            ? "text-success"
             : row.success_rate >= 0.4
-              ? "text-amber-400"
-              : "text-rose-400",
+              ? "text-warning"
+              : "text-destructive",
         )}
       >
         {(row.success_rate * 100).toFixed(0)}%

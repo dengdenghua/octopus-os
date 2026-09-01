@@ -12,7 +12,6 @@ from urllib.parse import urlparse
 
 import yaml
 
-
 TODO_MARKER = "[TODO:"
 SEMVER_RE = re.compile(
     r"^(0|[1-9]\d*)\."

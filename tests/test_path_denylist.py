@@ -1,11 +1,11 @@
 """Tests for path denylist (Marvis-style "不可读取文件夹")."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 import pytest
-
 from runtime.safety.auth import path_denylist as pdn
 from runtime.safety.auth.path_guard import check_path
 
@@ -20,7 +20,7 @@ def _clear_turn_denylist():
 @pytest.fixture
 def tmp_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state = tmp_path / "denylist.json"
-    monkeypatch.setenv("OCTOPUS_PATH_DENYLIST_PATH", str(state))
+    monkeypatch.setenv("ECHO_PATH_DENYLIST_PATH", str(state))
     return state
 
 
@@ -130,7 +130,8 @@ def test_path_guard_blocks_user_added(tmp_path: Path, tmp_state: Path) -> None:
 
 
 def test_path_guard_allow_sensitive_bypasses_denylist(
-    tmp_path: Path, tmp_state: Path,
+    tmp_path: Path,
+    tmp_state: Path,
 ) -> None:
     """``allow_sensitive=True`` is the explicit override gate;
     callers that pass it have signed off on whatever they're
@@ -144,7 +145,8 @@ def test_path_guard_allow_sensitive_bypasses_denylist(
 
 
 def test_path_guard_unrelated_path_passes(
-    tmp_path: Path, tmp_state: Path,
+    tmp_path: Path,
+    tmp_state: Path,
 ) -> None:
     """Files outside the denylist still resolve normally."""
     f = tmp_path / "innocent.txt"

@@ -39,4 +39,3 @@ export function setLocaleInCookie(locale: string): void {
   const maxAge = 365 * 24 * 60 * 60; // 1 year in seconds
   document.cookie = `${LOCALE_COOKIE_NAME}=${encodeURIComponent(locale)}; max-age=${maxAge}; path=/; SameSite=Lax`;
 }
-

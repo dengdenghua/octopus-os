@@ -1,0 +1,811 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-readiness:
+    name: Verify same-SHA release prerequisites
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      windows-run-id: ${{ steps.evidence-run.outputs.windows_run_id }}
+      macos-run-id: ${{ steps.evidence-run.outputs.macos_run_id }}
+      linux-run-id: ${{ steps.evidence-run.outputs.linux_run_id }}
+    env:
+      ECHO_BEHAVIORAL_EXPECTED_REVISION: ${{ github.sha }}
+      ECHO_BEHAVIORAL_EVAL_BUNDLE: benchmarks/results/behavioral-surpass-latest.json
+      PYTHON: .venv/bin/python
+      UV_PYTHON_DOWNLOADS: never
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Configure isolated release readiness paths
+        run: |
+          echo "ECHO_READINESS_HOME=${RUNNER_TEMP}/echo-release-readiness" >> "${GITHUB_ENV}"
+          echo "ECHO_READINESS_DATA_DIR=${RUNNER_TEMP}/echo-release-readiness/data" >> "${GITHUB_ENV}"
+          echo "ECHO_READINESS_REPORT=${RUNNER_TEMP}/echo-release-readiness/readiness_gate.json" >> "${GITHUB_ENV}"
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Verify release tag matches package versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import tomllib
+          from pathlib import Path
+
+          root = Path.cwd()
+          with (root / "pyproject.toml").open("rb") as handle:
+              python_version = str(tomllib.load(handle)["project"]["version"])
+          frontend_version = str(
+              json.loads((root / "frontend" / "package.json").read_text(encoding="utf-8"))["version"]
+          )
+          if frontend_version != python_version:
+              raise SystemExit(
+                  "::error::pyproject.toml and frontend/package.json versions differ: "
+                  f"{python_version!r} != {frontend_version!r}"
+              )
+          expected_tag = f"v{python_version}"
+          actual_tag = os.environ.get("RELEASE_TAG", "")
+          if actual_tag != expected_tag:
+              raise SystemExit(
+                  f"::error::Release tag {actual_tag!r} must exactly equal {expected_tag!r}"
+              )
+          print(f"Release version contract verified: {actual_tag}")
+          PY
+
+      - name: Find successful same-SHA prerequisite runs
+        id: evidence-run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          response="$(gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/behavioral-evidence.yml/runs" \
+            -f head_sha="${GITHUB_SHA}" \
+            -f status=success \
+            -F per_page=100)"
+          run_id="$(jq -r --arg sha "${GITHUB_SHA}" \
+            '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")] | sort_by(.run_started_at) | last | .id // empty' \
+            <<<"${response}")"
+          if [[ -z "${run_id}" ]]; then
+            echo "::error::No successful behavioral-evidence workflow exists for ${GITHUB_SHA}."
+            echo "::error::Dispatch Behavioral surpass evidence on this exact revision, then rerun the release."
+            exit 1
+          fi
+          echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+
+          ci_response="$(gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+            -f head_sha="${GITHUB_SHA}" \
+            -f status=success \
+            -F per_page=100)"
+          ci_run_id="$(jq -r --arg sha "${GITHUB_SHA}" \
+            '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")] | sort_by(.run_started_at) | last | .id // empty' \
+            <<<"${ci_response}")"
+          if [[ -z "${ci_run_id}" ]]; then
+            echo "::error::No successful CI workflow exists for ${GITHUB_SHA}."
+            echo "::error::The release requires same-commit backend, frontend, security, Docker, and browser gates."
+            exit 1
+          fi
+          echo "ci_run_id=${ci_run_id}" >> "${GITHUB_OUTPUT}"
+
+          windows_response="$(gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/build-win.yml/runs" \
+            -f head_sha="${GITHUB_SHA}" \
+            -f status=success \
+            -F per_page=100)"
+          windows_run_id="$(jq -r --arg sha "${GITHUB_SHA}" \
+            '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")] | sort_by(.run_started_at) | last | .id // empty' \
+            <<<"${windows_response}")"
+          if [[ -z "${windows_run_id}" ]]; then
+            echo "::error::No successful build-win workflow exists for ${GITHUB_SHA}."
+            echo "::error::The release requires same-commit, protected-environment Authenticode evidence."
+            exit 1
+          fi
+          echo "windows_run_id=${windows_run_id}" >> "${GITHUB_OUTPUT}"
+
+          macos_response="$(gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/build-mac.yml/runs" \
+            -f head_sha="${GITHUB_SHA}" \
+            -f status=success \
+            -F per_page=100)"
+          macos_run_id="$(jq -r --arg sha "${GITHUB_SHA}" \
+            '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")] | sort_by(.run_started_at) | last | .id // empty' \
+            <<<"${macos_response}")"
+          if [[ -z "${macos_run_id}" ]]; then
+            echo "::error::No successful build-mac workflow exists for ${GITHUB_SHA}."
+            echo "::error::The release requires a signed, notarized and first-launch-tested macOS artifact."
+            exit 1
+          fi
+          echo "macos_run_id=${macos_run_id}" >> "${GITHUB_OUTPUT}"
+
+          linux_response="$(gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/build-linux.yml/runs" \
+            -f head_sha="${GITHUB_SHA}" \
+            -f status=success \
+            -F per_page=100)"
+          linux_run_id="$(jq -r --arg sha "${GITHUB_SHA}" \
+            '[.workflow_runs[] | select(.head_sha == $sha and .conclusion == "success")] | sort_by(.run_started_at) | last | .id // empty' \
+            <<<"${linux_response}")"
+          if [[ -z "${linux_run_id}" ]]; then
+            echo "::error::No successful build-linux workflow exists for ${GITHUB_SHA}."
+            echo "::error::The release requires a self-contained, first-launch-tested Linux artifact."
+            exit 1
+          fi
+          echo "linux_run_id=${linux_run_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download same-SHA behavioral evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: behavioral-surpass-evidence-${{ github.sha }}
+          path: benchmarks/results
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.evidence-run.outputs.run_id }}
+
+      - name: Download same-SHA full-stack smoke evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: full-stack-smoke-proof-${{ github.sha }}
+          path: test-results/local-verify-state
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.evidence-run.outputs.ci_run_id }}
+
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.25"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked release-gate dependencies
+        run: uv sync --locked --python 3.11.9 --extra dev --extra serve --extra web
+
+      - name: Run full commit-bound production readiness gate
+        run: |
+          set -euo pipefail
+          test -n "${ECHO_BEHAVIORAL_EXPECTED_REVISION}"
+          test -f "${ECHO_BEHAVIORAL_EVAL_BUNDLE}"
+          make production-readiness
+
+      - name: Build release certificate from readiness and browser evidence
+        run: |
+          set -euo pipefail
+          .venv/bin/python scripts/e2e_release_proof.py \
+            --readiness "${ECHO_READINESS_REPORT}" \
+            --full-stack test-results/local-verify-state/full_stack_smoke_proof.json \
+            --output "${ECHO_READINESS_HOME}/e2e_release_proof.json" \
+            --required-suite full-stack-desktop \
+            --required-suite full-stack-mobile
+
+      - name: Upload release readiness proof
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-readiness-proof-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/echo-release-readiness/readiness_gate.json
+            ${{ runner.temp }}/echo-release-readiness/e2e_release_proof.json
+          if-no-files-found: error
+
+  windows-release-proof:
+    name: Re-verify signed Windows release assets
+    needs: release-readiness
+    runs-on: windows-2025
+    permissions:
+      actions: read
+      contents: read
+    env:
+      WINDOWS_BUILD_RUN_ID: ${{ needs.release-readiness.outputs.windows-run-id }}
+    steps:
+      - name: Download same-SHA signed installer
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: Echo-Setup-Windows-${{ github.sha }}
+          path: ${{ runner.temp }}\echo-windows-release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.WINDOWS_BUILD_RUN_ID }}
+
+      - name: Download same-SHA signed unpacked application
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: Echo-Portable-Windows-${{ github.sha }}
+          path: ${{ runner.temp }}\echo-windows-release\win-unpacked
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.WINDOWS_BUILD_RUN_ID }}
+
+      - name: Verify checksums, Authenticode, timestamps, and source revision
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path (Join-Path $env:RUNNER_TEMP "echo-windows-release")).Path
+          $releaseAssets = Join-Path $env:RUNNER_TEMP "echo-windows-release-assets"
+          $installerCandidates = @(
+            Get-ChildItem -LiteralPath $root -File -Filter "Echo-Setup-*.exe"
+          )
+          if ($installerCandidates.Count -ne 1) {
+            throw "Expected exactly one downloaded Echo installer, found $($installerCandidates.Count)"
+          }
+          $installer = $installerCandidates[0]
+          if (-not $installer.Name.Contains($env:GITHUB_SHA)) {
+            throw "Downloaded installer filename is not bound to GITHUB_SHA: $($installer.Name)"
+          }
+
+          $checksumPath = Join-Path $root "SHA256SUMS"
+          $checksumLines = @(Get-Content -LiteralPath $checksumPath | Where-Object { $_.Trim() })
+          if ($checksumLines.Count -ne 1) {
+            throw "SHA256SUMS must contain exactly one canonical installer checksum"
+          }
+          $checksumMatch = [regex]::Match($checksumLines[0], '^([0-9a-fA-F]{64}) \*(.+)$')
+          if (-not $checksumMatch.Success) {
+            throw "SHA256SUMS contains a malformed installer checksum"
+          }
+          $manifestHash = $checksumMatch.Groups[1].Value.ToLowerInvariant()
+          $manifestName = $checksumMatch.Groups[2].Value
+          if ($manifestName -ne $installer.Name) {
+            throw "SHA256SUMS names $manifestName but downloaded installer is $($installer.Name)"
+          }
+          $installerHash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($installerHash -ne $manifestHash) {
+            throw "Installer SHA-256 does not match SHA256SUMS"
+          }
+
+          $updateChecksumPath = Join-Path $root "UPDATE-SHA256SUMS-Windows"
+          $updateChecksumLines = @(
+            Get-Content -LiteralPath $updateChecksumPath | Where-Object { $_.Trim() }
+          )
+          $expectedUpdateNames = @($installer.Name, "$($installer.Name).blockmap", "latest.yml")
+          if ($updateChecksumLines.Count -ne $expectedUpdateNames.Count) {
+            throw "Windows update checksum manifest must cover exactly three assets"
+          }
+          foreach ($expectedName in $expectedUpdateNames) {
+            $matchingLine = @($updateChecksumLines | Where-Object { $_ -match "\*$([regex]::Escape($expectedName))$" })
+            if ($matchingLine.Count -ne 1 -or
+                $matchingLine[0] -notmatch '^([0-9a-fA-F]{64}) \*(.+)$') {
+              throw "Windows update checksum is missing or malformed: $expectedName"
+            }
+            $updateAsset = Join-Path $root $expectedName
+            $actualUpdateHash = (Get-FileHash -LiteralPath $updateAsset -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualUpdateHash -ne $Matches[1].ToLowerInvariant()) {
+              throw "Windows update asset hash mismatch: $expectedName"
+            }
+          }
+
+          $buildProofPath = Join-Path $root "windows-signing-proof.json"
+          $buildProof = Get-Content -LiteralPath $buildProofPath -Raw | ConvertFrom-Json
+          if ($buildProof.schema -ne "echo.windows_signing_proof.v1") {
+            throw "Unexpected Windows signing proof schema"
+          }
+          if ($buildProof.sourceRevision -ne $env:GITHUB_SHA) {
+            throw "Windows signing proof revision does not match GITHUB_SHA"
+          }
+          if ($buildProof.timestampServer -ne "http://timestamp.digicert.com") {
+            throw "Windows signing proof does not use the required trusted RFC3161 endpoint"
+          }
+          $proofFiles = @($buildProof.files)
+          if ($proofFiles.Count -ne 8) {
+            throw "Windows signing proof must cover the installer, app, backend, and all five packaged Codex executables"
+          }
+
+          $signedFiles = [ordered]@{}
+          $signedFiles[$installer.Name] = $installer.FullName
+          $signedFiles["win-unpacked/Echo.exe"] = Join-Path $root "win-unpacked/Echo.exe"
+          $signedFiles["win-unpacked/resources/backend/echo-backend.exe"] = `
+            Join-Path $root "win-unpacked/resources/backend/echo-backend.exe"
+          $signedFiles["win-unpacked/resources/codex/bin/codex.exe"] = `
+            Join-Path $root "win-unpacked/resources/codex/bin/codex.exe"
+          $signedFiles["win-unpacked/resources/codex/bin/codex-code-mode-host.exe"] = `
+            Join-Path $root "win-unpacked/resources/codex/bin/codex-code-mode-host.exe"
+          $signedFiles["win-unpacked/resources/codex/codex-resources/codex-command-runner.exe"] = `
+            Join-Path $root "win-unpacked/resources/codex/codex-resources/codex-command-runner.exe"
+          $signedFiles["win-unpacked/resources/codex/codex-resources/codex-windows-sandbox-setup.exe"] = `
+            Join-Path $root "win-unpacked/resources/codex/codex-resources/codex-windows-sandbox-setup.exe"
+          $signedFiles["win-unpacked/resources/codex/codex-path/rg.exe"] = `
+            Join-Path $root "win-unpacked/resources/codex/codex-path/rg.exe"
+
+          $expectedSignerThumbprint = $null
+          $expectedPublisher = $null
+          $verifiedFiles = @()
+          foreach ($entry in $signedFiles.GetEnumerator()) {
+            $path = [string]$entry.Value
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Downloaded signed release file is missing: $path"
+            }
+            $sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            $proofEntry = @($proofFiles | Where-Object { $_.path -eq $entry.Key })
+            if ($proofEntry.Count -ne 1 -or $proofEntry[0].sha256 -ne $sha256) {
+              throw "Build signing proof hash mismatch for $($entry.Key)"
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $path
+            if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+              throw "Authenticode signature is not Valid for $($entry.Key): $($signature.Status)"
+            }
+            if ($null -eq $signature.SignerCertificate -or $null -eq $signature.TimeStamperCertificate) {
+              throw "Signer or trusted RFC3161 timestamp is missing for $($entry.Key)"
+            }
+            $publisher = [string]$signature.SignerCertificate.Subject
+            if ([string]::IsNullOrWhiteSpace($publisher)) {
+              throw "Authenticode publisher is missing for $($entry.Key)"
+            }
+            if ($null -eq $expectedSignerThumbprint) {
+              $expectedSignerThumbprint = $signature.SignerCertificate.Thumbprint
+            } elseif ($expectedSignerThumbprint -ne $signature.SignerCertificate.Thumbprint) {
+              throw "Downloaded release executables do not share one signer identity"
+            }
+            if ($null -eq $expectedPublisher) {
+              $expectedPublisher = $publisher
+            } elseif ($expectedPublisher -ne $publisher) {
+              throw "Downloaded release executables do not share one publisher"
+            }
+            if ($proofEntry[0].signerThumbprint -ne $signature.SignerCertificate.Thumbprint) {
+              throw "Signer identity changed after Windows build for $($entry.Key)"
+            }
+            if ($proofEntry[0].publisher -ne $publisher) {
+              throw "Publisher identity changed after Windows build for $($entry.Key)"
+            }
+            if ($proofEntry[0].timestampThumbprint -ne $signature.TimeStamperCertificate.Thumbprint) {
+              throw "Timestamp identity changed after Windows build for $($entry.Key)"
+            }
+            if ($proofEntry[0].timestampSubject -ne $signature.TimeStamperCertificate.Subject) {
+              throw "Timestamp publisher changed after Windows build for $($entry.Key)"
+            }
+            $verifiedFiles += [ordered]@{
+              path = [string]$entry.Key
+              sha256 = $sha256
+              authenticodeStatus = [string]$signature.Status
+              signerThumbprint = $signature.SignerCertificate.Thumbprint
+              publisher = $publisher
+              timestampThumbprint = $signature.TimeStamperCertificate.Thumbprint
+              timestampSubject = [string]$signature.TimeStamperCertificate.Subject
+            }
+          }
+
+          New-Item -ItemType Directory -Force -Path $releaseAssets | Out-Null
+          Copy-Item -LiteralPath $installer.FullName -Destination $releaseAssets
+          Copy-Item -LiteralPath $checksumPath -Destination $releaseAssets
+          Copy-Item -LiteralPath $updateChecksumPath -Destination $releaseAssets
+          Copy-Item -LiteralPath "$($installer.FullName).blockmap" -Destination $releaseAssets
+          Copy-Item -LiteralPath (Join-Path $root "latest.yml") -Destination $releaseAssets
+          $provenancePath = Join-Path $root "Echo-Setup-Windows-provenance.sigstore.json"
+          if (-not (Test-Path -LiteralPath $provenancePath -PathType Leaf)) {
+            throw "Windows installer provenance bundle is missing"
+          }
+          Copy-Item -LiteralPath $provenancePath -Destination $releaseAssets
+          [ordered]@{
+            schema = "echo.windows_release_verification.v1"
+            sourceRevision = $env:GITHUB_SHA
+            sourceWorkflowRunId = $env:WINDOWS_BUILD_RUN_ID
+            verifiedAt = (Get-Date).ToUniversalTime().ToString("o")
+            files = $verifiedFiles
+          } | ConvertTo-Json -Depth 6 | Set-Content `
+            -LiteralPath (Join-Path $releaseAssets "windows-release-verification.json") `
+            -Encoding utf8
+
+      - name: Upload verified Windows release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Echo-Windows-Release-${{ github.sha }}
+          path: ${{ runner.temp }}\echo-windows-release-assets\*
+          if-no-files-found: error
+          retention-days: 30
+
+  build-python-distribution:
+    name: Build and verify Python distribution
+    needs:
+      - release-readiness
+      - windows-release-proof
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          version: "0.11.25"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked release validation tools
+        env:
+          UV_PYTHON_DOWNLOADS: never
+        run: uv sync --locked --python 3.11.9 --extra release
+
+      - name: Configure trusted first-party plugin publisher
+        env:
+          ECHO_PLUGIN_SIGNING_PUBLIC_KEY: ${{ vars.ECHO_PLUGIN_SIGNING_PUBLIC_KEY }}
+          ECHO_PLUGIN_SIGNING_PUBLISHER_ID: ${{ vars.ECHO_PLUGIN_SIGNING_PUBLISHER_ID }}
+          ECHO_PLUGIN_SIGNING_KEY_ID: ${{ vars.ECHO_PLUGIN_SIGNING_KEY_ID }}
+        run: ./.venv/bin/python scripts/configure_builtin_plugin_publisher.py
+
+      - name: Build wheel and source distribution
+        run: uv build --no-sources --out-dir dist
+
+      - name: Validate metadata and isolated wheel imports
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m twine check --strict dist/*
+          .venv/bin/python - <<'PY'
+          from email.parser import BytesParser
+          from pathlib import Path
+          import tomllib
+          from zipfile import ZipFile
+
+          dist = Path("dist")
+          with Path("pyproject.toml").open("rb") as handle:
+              expected_version = str(tomllib.load(handle)["project"]["version"])
+          wheels = list(dist.glob("echo_agent_runtime-*.whl"))
+          sdists = list(dist.glob("echo_agent_runtime-*.tar.gz"))
+          if len(wheels) != 1 or len(sdists) != 1:
+              raise SystemExit(
+                  f"expected one wheel and one sdist, got wheels={wheels}, sdists={sdists}"
+              )
+          with ZipFile(wheels[0]) as package:
+              metadata_names = [name for name in package.namelist() if name.endswith(".dist-info/METADATA")]
+              if len(metadata_names) != 1:
+                  raise SystemExit(f"expected one METADATA entry, got {metadata_names}")
+              metadata = BytesParser().parsebytes(package.read(metadata_names[0]))
+          if (
+              metadata["Name"] != "echo-agent-runtime"
+              or metadata["Version"] != expected_version
+          ):
+              raise SystemExit(
+                  f"unexpected distribution identity: {metadata['Name']} {metadata['Version']}"
+              )
+          PY
+          mkdir -p "${RUNNER_TEMP}/echo-release-wheel"
+          uv pip install --python .venv/bin/python --target "${RUNNER_TEMP}/echo-release-wheel" \
+            --no-deps dist/echo_agent_runtime-*.whl
+          ECHO_RELEASE_WHEEL="${RUNNER_TEMP}/echo-release-wheel" \
+            PYTHONPATH="${RUNNER_TEMP}/echo-release-wheel" \
+            .venv/bin/python -P - <<'PY'
+          import os
+          from pathlib import Path
+
+          import echo_runtime
+          import runtime.cli
+
+          root = Path(os.environ["ECHO_RELEASE_WHEEL"]).resolve()
+          for module in (echo_runtime, runtime.cli):
+              source = Path(module.__file__).resolve()
+              if root not in source.parents:
+                  raise SystemExit(f"module escaped isolated wheel: {module.__name__} -> {source}")
+          PY
+
+      - name: Upload commit-bound Python distribution
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-distribution-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-python-distribution:
+    name: Publish Python distribution with PyPI Trusted Publishing
+    needs:
+      - build-python-distribution
+      - build-and-push-image
+      - windows-release-proof
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/echo-agent-runtime
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download commit-bound Python distribution
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: python-distribution-${{ github.sha }}
+          path: dist
+
+      - name: Publish signed attestations to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/
+          verify-metadata: true
+          attestations: true
+          print-hash: true
+
+  build-and-push-image:
+    name: Build and push image to GHCR
+    needs:
+      - build-python-distribution
+      - windows-release-proof
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python for publisher trust material
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11.9"
+
+      - name: Set up pinned uv for publisher trust material
+        uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb # v6
+        with:
+          version: "0.11.25"
+
+      - name: Configure trusted first-party plugin publisher for the image
+        env:
+          ECHO_PLUGIN_SIGNING_PUBLIC_KEY: ${{ vars.ECHO_PLUGIN_SIGNING_PUBLIC_KEY }}
+          ECHO_PLUGIN_SIGNING_PUBLISHER_ID: ${{ vars.ECHO_PLUGIN_SIGNING_PUBLISHER_ID }}
+          ECHO_PLUGIN_SIGNING_KEY_ID: ${{ vars.ECHO_PLUGIN_SIGNING_KEY_ID }}
+        run: uv run --locked --python 3.11.9 python scripts/configure_builtin_plugin_publisher.py
+
+      - name: Extract tag name
+        id: tag
+        run: echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Lowercase repository name for GHCR
+        id: repo
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Install pinned cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.6.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        id: image-build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          # Publish attestations with the immutable manifest digest. Operators
+          # deploy by digest; the version tag is only a human-readable pointer.
+          provenance: mode=max
+          sbom: true
+          tags: ghcr.io/${{ steps.repo.outputs.name }}:${{ steps.tag.outputs.name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Sign and verify immutable image manifest
+        env:
+          CERTIFICATE_IDENTITY: https://github.com/${{ github.workflow_ref }}
+          IMAGE_DIGEST: ${{ steps.image-build.outputs.digest }}
+          IMAGE_REPOSITORY: ghcr.io/${{ steps.repo.outputs.name }}
+        run: |
+          set -euo pipefail
+          [[ "${IMAGE_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          image="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          cosign sign --yes "${image}"
+          cosign verify \
+            --certificate-identity "${CERTIFICATE_IDENTITY}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --certificate-github-workflow-sha "${GITHUB_SHA}" \
+            --output json \
+            "${image}" > cosign-verification.json
+          jq --exit-status --arg digest "${IMAGE_DIGEST}" \
+            'length > 0 and all(.[]; .critical.image["docker-manifest-digest"] == $digest)' \
+            cosign-verification.json >/dev/null
+
+  create-release:
+    name: Create draft GitHub Release
+    needs:
+      - release-readiness
+      - build-and-push-image
+      - publish-python-distribution
+      - windows-release-proof
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      attestations: read
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Extract tag name
+        id: tag
+        run: |
+          raw="${GITHUB_REF#refs/tags/}"
+          echo "raw=${raw}" >> "$GITHUB_OUTPUT"
+          echo "version=${raw#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract changelog section for ${{ steps.tag.outputs.version }}
+        id: changelog
+        env:
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          version="${RELEASE_VERSION}"
+          # Extract the section starting at "## [<version>]" up to the next "## [" heading.
+          awk -v v="${version}" '
+            BEGIN { in_section = 0 }
+            /^## \[/ {
+              if (in_section) { exit }
+              if (index($0, "[" v "]") > 0) { in_section = 1; print; next }
+            }
+            in_section { print }
+          ' CHANGELOG.md > release_notes.md
+
+          if [ ! -s release_notes.md ]; then
+            echo "::warning::No CHANGELOG.md section found for version ${version}"
+            printf 'Release %s. See CHANGELOG.md for details.\n' "${version}" > release_notes.md
+          fi
+          echo "path=release_notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Download verified Windows release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: Echo-Windows-Release-${{ github.sha }}
+          path: release-inputs/windows
+
+      - name: Download signed macOS release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: Echo-Setup-macOS-${{ github.sha }}
+          path: release-inputs/macos
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.release-readiness.outputs.macos-run-id }}
+
+      - name: Download Linux release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: Echo-Setup-Linux-${{ github.sha }}
+          path: release-inputs/linux
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.release-readiness.outputs.linux-run-id }}
+
+      - name: Stage three-platform commit-bound release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          (cd release-inputs/macos && sha256sum -c SHA256SUMS-macOS)
+          (cd release-inputs/linux && sha256sum -c SHA256SUMS)
+          (cd release-inputs/macos && sha256sum -c UPDATE-SHA256SUMS-macOS)
+          (cd release-inputs/linux && sha256sum -c UPDATE-SHA256SUMS-Linux)
+          (cd release-inputs/windows && sha256sum -c UPDATE-SHA256SUMS-Windows)
+          mkdir -p release-assets
+          windows=(release-inputs/windows/Echo-Setup-*.exe)
+          macos=(release-inputs/macos/Echo-Setup-macOS-*.dmg)
+          linux=(release-inputs/linux/Echo-Setup-Linux-*.AppImage)
+          test "${#windows[@]}" -eq 1
+          test "${#macos[@]}" -eq 1
+          test "${#linux[@]}" -eq 1
+          windows_provenance=release-inputs/windows/Echo-Setup-Windows-provenance.sigstore.json
+          macos_provenance=release-inputs/macos/Echo-Setup-macOS-provenance.sigstore.json
+          linux_provenance=release-inputs/linux/Echo-Setup-Linux-provenance.sigstore.json
+          test -f "$windows_provenance"
+          test -f "$macos_provenance"
+          test -f "$linux_provenance"
+          windows_update_assets=(
+            "${windows[0]}"
+            "${windows[0]}.blockmap"
+            release-inputs/windows/latest.yml
+          )
+          macos_zip=(release-inputs/macos/Echo-Setup-macOS-*.zip)
+          test "${#macos_zip[@]}" -eq 1
+          macos_update_assets=(
+            "${macos[0]}"
+            "${macos[0]}.blockmap"
+            "${macos_zip[0]}"
+            "${macos_zip[0]}.blockmap"
+            release-inputs/macos/latest-mac.yml
+          )
+          linux_update_assets=(
+            "${linux[0]}"
+            "${linux[0]}.blockmap"
+            release-inputs/linux/latest-linux.yml
+          )
+          for artifact in "${windows_update_assets[@]}"; do
+            gh attestation verify "$artifact" \
+              --bundle "$windows_provenance" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-win.yml" \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
+          for artifact in "${macos_update_assets[@]}"; do
+            gh attestation verify "$artifact" \
+              --bundle "$macos_provenance" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-mac.yml" \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
+          for artifact in "${linux_update_assets[@]}"; do
+            gh attestation verify "$artifact" \
+              --bundle "$linux_provenance" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-linux.yml" \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
+          for artifact in "${windows[0]}" "${macos[0]}" "${linux[0]}"; do
+            [[ "$(basename "$artifact")" == *"${GITHUB_SHA}"* ]] || {
+              echo "Artifact filename is not bound to GITHUB_SHA: $artifact" >&2
+              exit 1
+            }
+            cp "$artifact" release-assets/
+          done
+          cp release-inputs/windows/SHA256SUMS release-assets/SHA256SUMS-Windows
+          cp release-inputs/macos/SHA256SUMS-macOS release-assets/SHA256SUMS-macOS
+          cp release-inputs/linux/SHA256SUMS release-assets/SHA256SUMS-Linux
+          cp release-inputs/windows/windows-release-verification.json release-assets/
+          cp "$windows_provenance" "$macos_provenance" "$linux_provenance" release-assets/
+          cp "${windows_update_assets[@]:1}" release-assets/
+          cp "${macos_update_assets[@]:1}" release-assets/
+          cp "${linux_update_assets[@]:1}" release-assets/
+          cp release-inputs/windows/UPDATE-SHA256SUMS-Windows release-assets/
+          cp release-inputs/macos/UPDATE-SHA256SUMS-macOS release-assets/
+          cp release-inputs/linux/UPDATE-SHA256SUMS-Linux release-assets/
+
+      - name: Create draft GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ steps.tag.outputs.raw }}
+          name: ${{ steps.tag.outputs.raw }}
+          body_path: ${{ steps.changelog.outputs.path }}
+          draft: true
+          prerelease: false
+          files: |
+            release-assets/Echo-Setup-*.exe
+            release-assets/Echo-Setup-macOS-*.dmg
+            release-assets/Echo-Setup-Linux-*.AppImage
+            release-assets/Echo-Setup-*.exe.blockmap
+            release-assets/Echo-Setup-macOS-*.dmg.blockmap
+            release-assets/Echo-Setup-macOS-*.zip
+            release-assets/Echo-Setup-macOS-*.zip.blockmap
+            release-assets/Echo-Setup-Linux-*.AppImage.blockmap
+            release-assets/latest.yml
+            release-assets/latest-mac.yml
+            release-assets/latest-linux.yml
+            release-assets/SHA256SUMS-Windows
+            release-assets/SHA256SUMS-macOS
+            release-assets/SHA256SUMS-Linux
+            release-assets/UPDATE-SHA256SUMS-Windows
+            release-assets/UPDATE-SHA256SUMS-macOS
+            release-assets/UPDATE-SHA256SUMS-Linux
+            release-assets/windows-release-verification.json
+            release-assets/Echo-Setup-Windows-provenance.sigstore.json
+            release-assets/Echo-Setup-macOS-provenance.sigstore.json
+            release-assets/Echo-Setup-Linux-provenance.sigstore.json
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

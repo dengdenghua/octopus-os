@@ -18,6 +18,7 @@ Impact:
   its recent-history context, biasing next-turn decisions against
   tasks that recovered.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -38,6 +39,7 @@ def _make_swarm_trajectory(task_id, *, success: bool, usd: float):
         Trajectory,
         TrajectoryOutcome,
     )
+
     return Trajectory(
         task_id=task_id,
         arm_id=ArmId("swarm-aggregate"),
@@ -59,7 +61,7 @@ def _write_two_aggregates(journal):
 
     tid = TaskId(uuid4())
     old_traj = _make_swarm_trajectory(tid, success=False, usd=0.01)
-    new_traj = _make_swarm_trajectory(tid, success=True,  usd=0.02)
+    new_traj = _make_swarm_trajectory(tid, success=True, usd=0.02)
 
     t0 = datetime(2026, 4, 1, 10, 0, tzinfo=UTC)
     t1 = t0 + timedelta(hours=1)
@@ -90,9 +92,7 @@ class TestConsolidatorNewest:
         consolidator = MemoryConsolidator(journal=journal)
         tagged = consolidator._collect_trajectories()
         # Exactly one entry for this task_id · the newer one.
-        task_entries = [
-            (traj, agent) for traj, agent in tagged if traj.task_id == tid
-        ]
+        task_entries = [(traj, agent) for traj, agent in tagged if traj.task_id == tid]
         assert len(task_entries) == 1
         picked_traj, _ = task_entries[0]
         assert picked_traj.outcome.success is True
@@ -114,11 +114,14 @@ class TestComposerNewest:
         tid, old_traj, new_traj = _write_two_aggregates(journal)
 
         composer = ContextComposer(
-            journal=journal, registry=SkillRegistry(),
+            journal=journal,
+            registry=SkillRegistry(),
         )
         # Private helper · signature is (n, token_budget, arm_id=None)
         blurbs = composer._render_recent_trajectories(
-            n=5, arm_id=None, budget_for_bucket=4000,
+            n=5,
+            arm_id=None,
+            budget_for_bucket=4000,
         )
         # Exactly one blurb for this task_id · content reflects the
         # newer (successful) trajectory.

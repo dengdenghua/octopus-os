@@ -1,71 +1,97 @@
 import { useSearchParams } from "react-router-dom";
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 
+import { type Agent, useAgents } from "@/core/agents";
+import { useActiveAgentId } from "@/core/agents/active";
+import { getAssistantDisplayName } from "@/core/agents/assistant-naming";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
-import { AuroraText } from "../ui/aurora-text";
+/** Pseudo agent IDs used in URLs that are not real agent names. */
+const PSEUDO_AGENT_IDS = new Set(["", "new", "general", "echo-assistant"]);
+
+function agentDisplayName(a: Agent | null | undefined): string | null {
+  if (!a) return null;
+  const d = a.display_name?.trim();
+  if (d) return d;
+  const n = a.name?.trim();
+  if (n && !PSEUDO_AGENT_IDS.has(n)) return n;
+  return null;
+}
+
+function pickGreetingName(
+  agentProp: Agent | null | undefined,
+  agentNameProp: string | null | undefined,
+  allAgents: Agent[],
+  footerAgentId: string | null,
+): string {
+  if (agentNameProp === "echo") return getAssistantDisplayName();
+
+  const propDisplay = agentDisplayName(agentProp);
+  if (propDisplay) return propDisplay;
+
+  const nameFromProp = agentNameProp?.trim() ?? "";
+  if (nameFromProp && !PSEUDO_AGENT_IDS.has(nameFromProp)) {
+    const found = allAgents.find((a) => a.name === nameFromProp);
+    const foundDisplay = agentDisplayName(found);
+    if (foundDisplay) return foundDisplay;
+  }
+
+  if (footerAgentId && !PSEUDO_AGENT_IDS.has(footerAgentId)) {
+    const footerAgent = allAgents.find((a) => a.name === footerAgentId);
+    const footerDisplay = agentDisplayName(footerAgent);
+    if (footerDisplay) return footerDisplay;
+  }
+
+  return "EchoAI";
+}
 
 export function Welcome({
   className,
-  mode,
+  agent,
+  agentName,
 }: {
   className?: string;
-  mode?: "chat" | "deep" | "thinking" | "flash" | "react";
+  agent?: Agent | null;
+  agentName?: string | null;
 }) {
   const { t } = useI18n();
   const [searchParams] = useSearchParams();
-  const wavedRef = useRef(false);
-  const isDeep = useMemo(() => mode === "deep", [mode]);
+  const { agents: allAgents } = useAgents();
+  const footerAgentId = useActiveAgentId();
   const isSkillSeed = searchParams.get("mode") === "skill";
-  const colors = useMemo(() => {
-    if (isDeep) {
-      return ["#efefbb", "#e9c665", "#e3a812"];
-    }
-    return ["var(--color-foreground)"];
-  }, [isDeep]);
-  useEffect(() => {
-    wavedRef.current = true;
-  }, []);
+
+  const greetingName = useMemo(
+    () =>
+      pickGreetingName(
+        agent ?? null,
+        agentName ?? null,
+        allAgents,
+        footerAgentId,
+      ),
+    [agent, agentName, allAgents, footerAgentId],
+  );
+
   return (
     <div
       className={cn(
-        "mx-auto flex w-full flex-col items-center justify-center gap-2 px-8 py-4 text-center",
+        "mx-auto flex w-full flex-col items-center justify-center px-5 pt-8 pb-6 text-center sm:px-8",
         className,
       )}
     >
-      <div className="text-2xl font-bold">
-        {isSkillSeed ? (
-          `✨ ${t.welcome.createYourOwnSkill} ✨`
-        ) : (
-          <div className="flex items-center gap-2">
-            <div
-              className={cn(
-                "inline-block",
-                !wavedRef.current ? "animate-wave" : "",
-              )}
-            >
-              {isDeep ? "🚀" : "👋"}
-            </div>
-            <AuroraText colors={colors}>{t.welcome.greeting}</AuroraText>
-          </div>
-        )}
-      </div>
-      {/* Use ``whitespace-pre-line`` so the \n in the i18n string
-          still forces a line break, but the text also wraps
-          naturally on narrow viewports. Pre-fix this used ``<pre>``
-          which inherits the browser's monospace default font and
-          refused to wrap — on mobile the description overflowed
-          horizontally, and on desktop it rendered Latin text in
-          monospace while the rest of the UI was sans-serif. */}
       {isSkillSeed ? (
-        <p className="text-muted-foreground whitespace-pre-line text-sm">
-          {t.welcome.createYourOwnSkillDescription}
-        </p>
+        <>
+          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-2xl font-semibold tracking-tight">
+            {t.welcome.createYourOwnSkill}
+          </div>
+          <p className="max-w-xl text-muted-foreground/90 whitespace-pre-line text-sm leading-relaxed">
+            {t.welcome.createYourOwnSkillDescription}
+          </p>
+        </>
       ) : (
-        <p className="text-muted-foreground whitespace-pre-line text-sm">
-          {t.welcome.description}
-        </p>
+        <h2 className="text-[28px] font-semibold tracking-tight text-foreground">
+          {t.welcome.greeting.replace("{name}", greetingName)}
+        </h2>
       )}
     </div>
   );

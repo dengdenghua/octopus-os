@@ -11,6 +11,7 @@ Contract pinned
 5. AnthropicModelRouter dispatches ``provider_down`` on call exception
    (and still re-raises · doesn't swallow)
 """
+
 from __future__ import annotations
 
 from uuid import uuid4
@@ -21,6 +22,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _clean_hooks():
     from runtime.safety.hooks.registry import get_global_registry
+
     get_global_registry().clear()
     yield
     get_global_registry().clear()
@@ -34,6 +36,7 @@ def _clean_hooks():
 class TestBudgetWarnCrossing:
     def test_fresh_budget_no_crossings(self):
         from runtime.platform.models import Budget, BudgetLimits, TaskId
+
         b = Budget(
             task_id=TaskId(uuid4()),
             limits=BudgetLimits(tokens=1000, usd=1.0),
@@ -47,6 +50,7 @@ class TestBudgetWarnCrossing:
             CostEntry,
             TaskId,
         )
+
         b = Budget(
             task_id=TaskId(uuid4()),
             limits=BudgetLimits(tokens=1000, usd=1.0),
@@ -66,6 +70,7 @@ class TestBudgetWarnCrossing:
             CostEntry,
             TaskId,
         )
+
         b = Budget(
             task_id=TaskId(uuid4()),
             limits=BudgetLimits(tokens=1000, usd=1.0),
@@ -89,14 +94,16 @@ def _executor_plus_budget(usd_limit: float = 0.01):
     from runtime.safety.auth import TrustEngine
 
     reg = SkillRegistry()
-    reg.register(Skill(
-        name="noop",
-        description="no-op",
-        affinity=["test"],
-        cost_profile="low",
-        trusted_source="skill://public/noop",
-        handler=lambda: "ok",
-    ))
+    reg.register(
+        Skill(
+            name="noop",
+            description="no-op",
+            affinity=["test"],
+            cost_profile="low",
+            trusted_source="skill://public/noop",
+            handler=lambda: "ok",
+        )
+    )
     executor = ToolExecutor(
         registry=reg,
         immunity=TrustEngine(trusted_sources=["skill://public/*"]),
@@ -104,7 +111,8 @@ def _executor_plus_budget(usd_limit: float = 0.01):
     )
     tid = TaskId(uuid4())
     budget = Budget(
-        task_id=tid, limits=BudgetLimits(tokens=1000, usd=usd_limit),
+        task_id=tid,
+        limits=BudgetLimits(tokens=1000, usd=usd_limit),
     )
     return executor, budget, tid
 
@@ -131,14 +139,18 @@ class TestExecutorBudgetWarn:
         # Consume ~85% via predicted_cost override (default is
         # tokens_in=100/out=100/usd=0.001 · way under limit).
         executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("noop"),
             args={},
             caller="t",
-            task_id=tid, arm_id=ArmId("a"),
+            task_id=tid,
+            arm_id=ArmId("a"),
             budget=budget,
             predicted_cost=CostEntry(
-                tokens_in=400, tokens_out=400, usd=0.0085,
+                tokens_in=400,
+                tokens_out=400,
+                usd=0.0085,
             ),
         )
 
@@ -167,14 +179,18 @@ class TestExecutorBudgetWarn:
 
         # Predict cost above limit · triggers InsufficientBudget
         step = executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("noop"),
             args={},
             caller="t",
-            task_id=tid, arm_id=ArmId("a"),
+            task_id=tid,
+            arm_id=ArmId("a"),
             budget=budget,
             predicted_cost=CostEntry(
-                tokens_in=99999, tokens_out=99999, usd=99.0,
+                tokens_in=99999,
+                tokens_out=99999,
+                usd=99.0,
             ),
         )
         assert step.result.status == "circuit_broken"
@@ -201,6 +217,7 @@ class _RateLimitClient:
         def create(self, **kwargs):
             class RateLimitError(RuntimeError):
                 pass
+
             raise RateLimitError("429 Too Many Requests")
 
     def __init__(self):
@@ -228,7 +245,8 @@ class TestProviderDown:
 
         router = AnthropicModelRouter(client=_RateLimitClient())
         req = ModelRequest(
-            model="m", messages=[Message(role="user", content="x")],
+            model="m",
+            messages=[Message(role="user", content="x")],
         )
         with pytest.raises(RuntimeError):
             router.call(req)
@@ -297,15 +315,17 @@ class TestImmuneReject:
             return HookDecision.pass_through()
 
         reg = SkillRegistry()
-        reg.register(Skill(
-            name="hostile",
-            description="x",
-            affinity=["test"],
-            cost_profile="low",
-            # NOT in trusted_sources allow-list · TrustEngine rejects
-            trusted_source="skill://untrusted/hostile",
-            handler=lambda: "no",
-        ))
+        reg.register(
+            Skill(
+                name="hostile",
+                description="x",
+                affinity=["test"],
+                cost_profile="low",
+                # NOT in trusted_sources allow-list · TrustEngine rejects
+                trusted_source="skill://untrusted/hostile",
+                handler=lambda: "no",
+            )
+        )
         # Allowlist excludes "untrusted" + reject policy → reject path
         executor = ToolExecutor(
             registry=reg,
@@ -317,13 +337,16 @@ class TestImmuneReject:
         )
         tid = TaskId(uuid4())
         step = executor.execute_step(
-            step_id=0, node_id="n0",
+            step_id=0,
+            node_id="n0",
             sucker_id=SkillId("hostile"),
             args={},
             caller="t",
-            task_id=tid, arm_id=ArmId("a"),
+            task_id=tid,
+            arm_id=ArmId("a"),
             budget=Budget(
-                task_id=tid, limits=BudgetLimits(tokens=1000, usd=0.01),
+                task_id=tid,
+                limits=BudgetLimits(tokens=1000, usd=0.01),
             ),
         )
         # Step's immune_verdict tracks the rejection (status field)
@@ -355,12 +378,16 @@ class TestPlanModeExit:
             return HookDecision.pass_through()
 
         sess = Session(
-            actor="u", agent=_StubAgent(), thread_id="t-xyz",
+            actor="u",
+            agent=_StubAgent(),
+            thread_id="t-xyz",
             metadata={"mode": "plan"},
         )
         result = _exit_plan_mode(
             plan="execute the deploy",
-            confirm=True, new_mode="code", session=sess,
+            confirm=True,
+            new_mode="code",
+            session=sess,
         )
         assert result["mode_transitioned"] is True
         assert len(captured) == 1

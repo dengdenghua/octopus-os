@@ -1,0 +1,12 @@
+name: spreadsheets
+version: 0.1.0
+display_name: 表格
+description: 本地创建、读取和原位修改 Excel 工作簿，保留公式与样式。
+author: Echo
+tags: [spreadsheets, xlsx, excel, office, productivity]
+provides: [spreadsheets.skills]
+config:
+  schema_version: echo.spreadsheets.manifest.v1
+config_schema:
+  type: object
+  properties: {}

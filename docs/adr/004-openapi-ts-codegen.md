@@ -41,7 +41,7 @@ Flow:
 
 1. Backend changes an endpoint.
 2. `make openapi-snapshot` runs the snapshot drift test with
-   `OCTOPUS_OPENAPI_WRITE=1`, refreshing
+   `ECHO_OPENAPI_WRITE=1`, refreshing
    `docs/openapi-snapshot.json`.
 3. `make frontend-types` regenerates
    `frontend/src/core/api/openapi-types.ts` from that snapshot.

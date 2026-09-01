@@ -1,4 +1,3 @@
-
 import {
   Folder,
   FileText,
@@ -13,7 +12,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect, useRef } from "react";
 
-import { Tooltip } from "@/components/workspace/tooltip";
+import { SimpleTooltip } from "@/components/ui/simple-tooltip";
 
 type AnimationPhase =
   | "idle"
@@ -365,7 +364,7 @@ export default function ProgressiveSkillsAnimation() {
       </AnimatePresence>
 
       {/* Bottom Left Play/Pause Button */}
-      <Tooltip content="Play / Pause">
+      <SimpleTooltip content="Play / Pause">
         <div className="absolute bottom-12 left-12 z-40 flex items-center gap-2">
           <motion.button
             initial={{ opacity: 0, scale: 0.8 }}
@@ -383,7 +382,7 @@ export default function ProgressiveSkillsAnimation() {
             Click to {isPlaying ? "pause" : "play"}
           </span>
         </div>
-      </Tooltip>
+      </SimpleTooltip>
 
       <div className="flex h-full max-h-[700px] w-full max-w-6xl gap-8">
         {/* Left: File Tree */}
@@ -460,7 +459,7 @@ export default function ProgressiveSkillsAnimation() {
           <div className="border-b border-zinc-800 p-4">
             <div className="flex items-center gap-2">
               <div className="h-3 w-3 rounded-lg bg-green-500" />
-              <span className="text-sm text-zinc-400">Octopus Agent</span>
+              <span className="text-sm text-zinc-400">Echo Agent</span>
             </div>
           </div>
 
@@ -690,7 +689,7 @@ export default function ProgressiveSkillsAnimation() {
           {/* Chat Input (decorative) */}
           <div className="border-t border-zinc-800 p-4">
             <div className="rounded-lg bg-zinc-800 px-4 py-3 text-sm text-zinc-500">
-              Ask Octopus anything...
+              Ask Echo anything...
             </div>
           </div>
         </div>
@@ -698,4 +697,3 @@ export default function ProgressiveSkillsAnimation() {
     </div>
   );
 }
-

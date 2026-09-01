@@ -2,14 +2,10 @@ import type { Locale } from "./locale";
 import type { Translations } from "./locales";
 
 const loaders: Record<Locale, () => Promise<Translations>> = {
-  "en-US": () =>
-    import("./locales/en-US").then((module) => module.enUS),
-  "zh-CN": () =>
-    import("./locales/zh-CN").then((module) => module.zhCN),
-  "ja-JP": () =>
-    import("./locales/ja-JP").then((module) => module.jaJP),
-  "ko-KR": () =>
-    import("./locales/ko-KR").then((module) => module.koKR),
+  "en-US": () => import("./locales/en-US").then((module) => module.enUS),
+  "zh-CN": () => import("./locales/zh-CN").then((module) => module.zhCN),
+  "ja-JP": () => import("./locales/ja-JP").then((module) => module.jaJP),
+  "ko-KR": () => import("./locales/ko-KR").then((module) => module.koKR),
 };
 
 const translationCache = new Map<Locale, Translations>();

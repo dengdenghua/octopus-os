@@ -35,6 +35,7 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { jsonAuthHeaders } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
@@ -65,17 +66,19 @@ interface ExecutionPlanReviewProps {
 
 const RISK_CONFIG = {
   low: {
-    color: "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
+    color:
+      "bg-success/10 text-success border-success/20",
     icon: ShieldCheckIcon,
     label: "Low Risk",
   },
   medium: {
-    color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20",
+    color:
+      "bg-warning/10 text-warning border-warning/20",
     icon: AlertTriangleIcon,
     label: "Medium Risk",
   },
   high: {
-    color: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
+    color: "bg-destructive/10 text-destructive dark:text-destructive border-destructive/20",
     icon: AlertTriangleIcon,
     label: "High Risk",
   },
@@ -90,7 +93,10 @@ const DURATION_CONFIG = {
 const STATUS_CONFIG = {
   pending: { color: "text-muted-foreground", bgColor: "bg-muted/30" },
   in_progress: { color: "text-primary", bgColor: "bg-primary/5" },
-  completed: { color: "text-green-600 dark:text-green-400", bgColor: "bg-green-500/5" },
+  completed: {
+    color: "text-success",
+    bgColor: "bg-success/5",
+  },
   skipped: { color: "text-muted-foreground/50", bgColor: "bg-muted/10" },
 } as const;
 
@@ -112,23 +118,28 @@ function StepEditor({
   const { t } = useI18n();
   const toolsNeeded = Array.isArray(step.tools_needed) ? step.tools_needed : [];
   return (
-    <div className="group flex items-start gap-2 rounded-lg border border-border/50 bg-background p-2.5">
+    <div className="group flex items-start gap-2 rounded-lg border border-border-default bg-background p-2.5">
       <div className="mt-1 cursor-grab text-muted-foreground/40">
         <GripVerticalIcon className="size-3.5" />
       </div>
       <div className="min-w-0 flex-1 space-y-1.5">
-        <input
+        <Input
           type="text"
           value={step.description}
           onChange={(e) => onUpdate(index, { description: e.target.value })}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/40"
+          className="w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground/40 focus-visible:ring-0"
           placeholder="Step description..."
+          aria-label={t.executionPlan.stepDescriptionAria}
         />
         <div className="flex flex-wrap items-center gap-1.5">
           <select
             value={step.risk}
-            onChange={(e) => onUpdate(index, { risk: e.target.value as ExecutionPlanStep["risk"] })}
-            className="h-5 rounded border border-border/50 bg-muted/30 px-1 text-[10px] outline-none"
+            onChange={(e) =>
+              onUpdate(index, {
+                risk: e.target.value as ExecutionPlanStep["risk"],
+              })
+            }
+            className="h-5 rounded border border-border-default bg-muted/30 px-1 text-xs outline-none"
           >
             <option value="low">{t.executionPlan.lowRisk}</option>
             <option value="medium">{t.executionPlan.mediumRisk}</option>
@@ -138,10 +149,11 @@ function StepEditor({
             value={step.estimated_duration}
             onChange={(e) =>
               onUpdate(index, {
-                estimated_duration: e.target.value as ExecutionPlanStep["estimated_duration"],
+                estimated_duration: e.target
+                  .value as ExecutionPlanStep["estimated_duration"],
               })
             }
-            className="h-5 rounded border border-border/50 bg-muted/30 px-1 text-[10px] outline-none"
+            className="h-5 rounded border border-border-default bg-muted/30 px-1 text-xs outline-none"
           >
             <option value="fast">{t.executionPlan.fast}</option>
             <option value="medium">{t.executionPlan.medium}</option>
@@ -150,7 +162,7 @@ function StepEditor({
           {toolsNeeded.length > 0 && (
             <div className="flex items-center gap-0.5">
               <WrenchIcon className="size-2.5 text-muted-foreground/40" />
-              <span className="text-[10px] text-muted-foreground/60">
+              <span className="text-xs text-muted-foreground/60">
                 {toolsNeeded.join(", ")}
               </span>
             </div>
@@ -158,8 +170,10 @@ function StepEditor({
         </div>
       </div>
       <button
+        type="button"
+        aria-label={t.executionPlan.removeStepAria}
         onClick={() => onRemove(index)}
-        className="mt-0.5 rounded p-0.5 text-muted-foreground/40 hover:bg-red-500/10 hover:text-red-500"
+        className="mt-0.5 rounded p-0.5 text-muted-foreground/40 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Trash2Icon className="size-3" />
       </button>
@@ -190,7 +204,8 @@ function PlanStepRow({
     medium: t.executionPlan.mediumRisk,
     high: t.executionPlan.highRisk,
   };
-  const durationCfg = DURATION_CONFIG[step.estimated_duration] ?? DURATION_CONFIG.medium;
+  const durationCfg =
+    DURATION_CONFIG[step.estimated_duration] ?? DURATION_CONFIG.medium;
   const durationLabels: Record<string, string> = {
     fast: t.executionPlan.fast,
     medium: t.executionPlan.medium,
@@ -202,22 +217,24 @@ function PlanStepRow({
   return (
     <div
       className={cn(
-        "rounded-lg border px-3 py-2 transition-all duration-200",
+        "rounded-lg border px-3 py-2 transition-colors",
         statusCfg.bgColor,
-        step.status === "in_progress" && "border-primary/30 shadow-sm shadow-primary/5",
-        step.status === "completed" && "border-green-500/20",
-        step.status === "skipped" && "border-border/30 opacity-60",
-        step.status === "pending" && "border-border/40",
+        step.status === "in_progress" &&
+          "border-primary/30 shadow-[var(--shadow-xs)] shadow-primary/5",
+        step.status === "completed" && "border-success/20",
+        step.status === "skipped" && "border-border-subtle opacity-60",
+        step.status === "pending" && "border-border-subtle",
       )}
     >
       <button
+        type="button"
         onClick={onToggle}
         className="flex w-full items-start gap-2.5 text-left"
       >
         {/* Status icon */}
         <div className="mt-0.5 shrink-0">
           {step.status === "completed" ? (
-            <CheckCircle2Icon className="size-3.5 text-green-500" />
+            <CheckCircle2Icon className="size-3.5 text-success" />
           ) : step.status === "in_progress" ? (
             <Loader2Icon className="size-3.5 animate-spin text-primary" />
           ) : step.status === "skipped" ? (
@@ -230,15 +247,17 @@ function PlanStepRow({
         {/* Content */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-muted-foreground/40 text-[10px] font-mono tabular-nums">
+            <span className="text-muted-foreground/40 text-xs font-mono tabular-nums">
               {index + 1}
             </span>
             <span
               className={cn(
                 "text-xs leading-relaxed",
-                step.status === "completed" && "text-muted-foreground line-through",
+                step.status === "completed" &&
+                  "text-muted-foreground line-through",
                 step.status === "in_progress" && "text-foreground font-medium",
-                step.status === "skipped" && "text-muted-foreground/50 line-through",
+                step.status === "skipped" &&
+                  "text-muted-foreground/50 line-through",
                 step.status === "pending" && "text-foreground/80",
               )}
             >
@@ -266,7 +285,7 @@ function PlanStepRow({
           {step.risk !== "low" && (
             <span
               className={cn(
-                "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-medium",
+                "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-xs font-medium",
                 riskCfg.color,
               )}
             >
@@ -275,7 +294,7 @@ function PlanStepRow({
             </span>
           )}
           {/* Duration */}
-          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/60">
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60">
             <DurationIcon className="size-2.5" />
             {durationLabels[step.estimated_duration] ?? durationCfg.label}
           </span>
@@ -286,7 +305,7 @@ function PlanStepRow({
               {toolsNeeded.map((tool) => (
                 <span
                   key={tool}
-                  className="rounded bg-muted/50 px-1 py-0.5 font-mono text-[9px] text-muted-foreground"
+                  className="rounded bg-muted/50 px-1 py-0.5 font-mono text-xs text-muted-foreground"
                 >
                   {tool}
                 </span>
@@ -311,7 +330,10 @@ export function ExecutionPlanReview({
   className,
 }: ExecutionPlanReviewProps) {
   const { t } = useI18n();
-  const steps = Array.isArray(plan.steps) ? plan.steps : [];
+  const steps = useMemo(
+    () => (Array.isArray(plan.steps) ? plan.steps : []),
+    [plan.steps],
+  );
   const [isEditing, setIsEditing] = useState(false);
   const [editableSteps, setEditableSteps] = useState<ExecutionPlanStep[]>([]);
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
@@ -394,7 +416,7 @@ export function ExecutionPlanReview({
   // The ExecutionPlanMiddleware.abefore_agent inspects incoming
   // HumanMessages for ``additional_kwargs.plan_action``.  By emitting a
   // custom DOM event the parent chat page picks it up and feeds it to
-  // ``sendMessage`` — exactly like the existing ``octopus:regenerate``
+  // ``sendMessage`` — exactly like the existing ``echo:regenerate``
   // pattern.  The REST API call updates the plan store optimistically so
   // the middleware sees the correct status immediately.
   // ---------------------------------------------------------------------------
@@ -402,13 +424,14 @@ export function ExecutionPlanReview({
   const _dispatchPlanMessage = useCallback(
     (action: string, payload: Record<string, unknown> = {}) => {
       window.dispatchEvent(
-        new CustomEvent("octopus:plan-action", {
+        new CustomEvent("echo:plan-action", {
           detail: {
-            text: action === "execution_plan_approve"
-              ? "Approve plan"
-              : action === "execution_plan_reject"
-                ? "Reject plan"
-                : "Modify plan",
+            text:
+              action === "execution_plan_approve"
+                ? "Approve plan"
+                : action === "execution_plan_reject"
+                  ? "Reject plan"
+                  : "Modify plan",
             additionalKwargs: {
               plan_action: action,
               plan_payload: { plan_id: plan.plan_id, ...payload },
@@ -441,7 +464,14 @@ export function ExecutionPlanReview({
     } finally {
       setActionInFlight(null);
     }
-  }, [plan.plan_id, threadId, onAction, _dispatchPlanMessage, t.executionPlan.toastApproved, t.executionPlan.toastApproveFailed]);
+  }, [
+    plan.plan_id,
+    threadId,
+    onAction,
+    _dispatchPlanMessage,
+    t.executionPlan.toastApproved,
+    t.executionPlan.toastApproveFailed,
+  ]);
 
   const handleSaveEdits = useCallback(async () => {
     const validSteps = editableSteps.filter((s) => s.description.trim());
@@ -483,7 +513,16 @@ export function ExecutionPlanReview({
     } finally {
       setActionInFlight(null);
     }
-  }, [editableSteps, plan.plan_id, threadId, onAction, _dispatchPlanMessage, t.executionPlan.toastMustHaveStep, t.executionPlan.toastUpdated, t.executionPlan.toastModifyFailed]);
+  }, [
+    editableSteps,
+    plan.plan_id,
+    threadId,
+    onAction,
+    _dispatchPlanMessage,
+    t.executionPlan.toastMustHaveStep,
+    t.executionPlan.toastUpdated,
+    t.executionPlan.toastModifyFailed,
+  ]);
 
   const handleReject = useCallback(async () => {
     setActionInFlight("reject");
@@ -506,30 +545,60 @@ export function ExecutionPlanReview({
     } finally {
       setActionInFlight(null);
     }
-  }, [plan.plan_id, threadId, rejectReason, onAction, _dispatchPlanMessage, t.executionPlan.toastRejected, t.executionPlan.toastRejectFailed]);
+  }, [
+    plan.plan_id,
+    threadId,
+    rejectReason,
+    onAction,
+    _dispatchPlanMessage,
+    t.executionPlan.toastRejected,
+    t.executionPlan.toastRejectFailed,
+  ]);
 
   // Determine header status text and color
   const headerStatus = useMemo(() => {
-    if (isReviewable) return { text: t.executionPlan.awaitingReview, color: "text-yellow-600 dark:text-yellow-400" };
-    if (isApproved || isExecuting) return { text: t.executionPlan.executing, color: "text-primary" };
-    if (isCompleted) return { text: t.executionPlan.completed, color: "text-green-600 dark:text-green-400" };
-    if (isRejected) return { text: t.executionPlan.rejected, color: "text-red-600 dark:text-red-400" };
+    if (isReviewable)
+      return {
+        text: t.executionPlan.awaitingReview,
+        color: "text-warning",
+      };
+    if (isApproved || isExecuting)
+      return { text: t.executionPlan.executing, color: "text-primary" };
+    if (isCompleted)
+      return {
+        text: t.executionPlan.completed,
+        color: "text-success",
+      };
+    if (isRejected)
+      return {
+        text: t.executionPlan.rejected,
+        color: "text-destructive dark:text-destructive",
+      };
     return { text: plan.status, color: "text-muted-foreground" };
-  }, [isReviewable, isApproved, isExecuting, isCompleted, isRejected, plan.status, t]);
+  }, [
+    isReviewable,
+    isApproved,
+    isExecuting,
+    isCompleted,
+    isRejected,
+    plan.status,
+    t,
+  ]);
 
   return (
     <div
       className={cn(
-        "w-full rounded-lg border transition-all duration-300",
-        isReviewable && "border-yellow-500/30 bg-yellow-500/[0.02] shadow-sm",
+        "w-full rounded-lg border transition-colors transition-shadow duration-slow",
+        isReviewable && "border-warning/30 bg-warning/50/[0.02] shadow-[var(--shadow-xs)]",
         (isExecuting || isApproved) && "border-primary/20 bg-primary/[0.02]",
-        isCompleted && "border-green-500/20 bg-green-500/[0.02]",
-        isRejected && "border-red-500/20 bg-red-500/[0.02] opacity-75",
+        isCompleted && "border-success/20 bg-success/50/[0.02]",
+        isRejected && "border-destructive/20 bg-destructive/[0.02] opacity-75",
         className,
       )}
     >
       {/* Header */}
       <button
+        type="button"
         onClick={() => setIsCollapsed(!shouldCollapse)}
         className="flex w-full items-center justify-between px-4 py-3"
       >
@@ -537,7 +606,7 @@ export function ExecutionPlanReview({
           <ClipboardCheckIcon className={cn("size-4", headerStatus.color)} />
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold">{plan.title}</span>
-            <span className={cn("text-[10px] font-medium", headerStatus.color)}>
+            <span className={cn("text-xs font-medium", headerStatus.color)}>
               {headerStatus.text}
             </span>
           </div>
@@ -545,19 +614,25 @@ export function ExecutionPlanReview({
         <div className="flex items-center gap-2">
           {/* Progress badge */}
           {(isExecuting || isCompleted) && (
-            <span className="rounded-lg bg-muted px-2 py-0.5 text-[10px] font-medium tabular-nums">
+            <span className="rounded-lg bg-muted px-2 py-0.5 text-xs font-medium tabular-nums">
               {completedSteps}/{steps.length}
             </span>
           )}
           {/* Risk badge */}
           <span
             className={cn(
-              "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-medium",
+              "inline-flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-xs font-medium",
               riskCfg.color,
             )}
           >
             <RiskIcon className="size-2.5" />
-            {({low: t.executionPlan.lowRisk, medium: t.executionPlan.mediumRisk, high: t.executionPlan.highRisk} as Record<string, string>)[plan.risk_level] ?? riskCfg.label}
+            {(
+              {
+                low: t.executionPlan.lowRisk,
+                medium: t.executionPlan.mediumRisk,
+                high: t.executionPlan.highRisk,
+              } as Record<string, string>
+            )[plan.risk_level] ?? riskCfg.label}
           </span>
           {/* Expand/collapse */}
           {shouldCollapse ? (
@@ -574,8 +649,8 @@ export function ExecutionPlanReview({
           <div className="h-1 overflow-hidden rounded-lg bg-muted">
             <div
               className={cn(
-                "h-full rounded-lg transition-all duration-700 ease-out",
-                isCompleted ? "bg-green-500" : "bg-primary",
+                "h-full rounded-lg transition-all duration-slow ease-out",
+                isCompleted ? "bg-success" : "bg-primary",
               )}
               style={{ width: `${progressPct}%` }}
             />
@@ -587,10 +662,10 @@ export function ExecutionPlanReview({
       {!shouldCollapse && (
         <div className="space-y-3 px-4 pb-4">
           {/* Meta info */}
-          <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">
-              <WrenchIcon className="size-2.5" />
-              ~{plan.estimated_actions} actions
+              <WrenchIcon className="size-2.5" />~{plan.estimated_actions}{" "}
+              actions
             </span>
             <span className="inline-flex items-center gap-1">
               <ClipboardCheckIcon className="size-2.5" />
@@ -612,8 +687,9 @@ export function ExecutionPlanReview({
                   />
                 ))}
                 <button
+                  type="button"
                   onClick={addEditableStep}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/50 py-2 text-xs text-muted-foreground hover:border-primary/30 hover:text-primary"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border-default py-2 text-xs text-muted-foreground hover:border-primary/30 hover:text-primary"
                 >
                   <PlusIcon className="size-3" />
                   {t.executionPlan.addStep}
@@ -729,7 +805,7 @@ export function ExecutionPlanReview({
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-red-500"
+                    className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive"
                     onClick={() => setShowRejectInput(true)}
                     disabled={isProcessing || actionInFlight !== null}
                   >

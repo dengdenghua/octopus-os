@@ -37,13 +37,18 @@ from runtime.sensing.model_router import ModelRequest, ModelResponse, ModelRoute
 
 @pytest.fixture
 def stack():
-    cfg = AgentConfig(planner=PlannerConfig(
-        type="llm", model="mock/ap",
-        mock_response=json.dumps({
-            "reasoning": "r",
-            "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
-        }),
-    ))
+    cfg = AgentConfig(
+        planner=PlannerConfig(
+            type="llm",
+            model="mock/ap",
+            mock_response=json.dumps(
+                {
+                    "reasoning": "r",
+                    "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
+                }
+            ),
+        )
+    )
     return build_from_config(cfg)
 
 
@@ -53,9 +58,12 @@ class _StubRouter(ModelRouter):
 
     def call(self, r: ModelRequest) -> ModelResponse:
         return ModelResponse(
-            text=self.text, input_tokens=10, output_tokens=10,
+            text=self.text,
+            input_tokens=10,
+            output_tokens=10,
             cost=CostEntry(usd=0.001),
-            model=r.model, provider="mock",
+            model=r.model,
+            provider="mock",
         )
 
 
@@ -63,17 +71,24 @@ def _seed_failures(stack, recipe_hash: str, n: int = 2):
     for _ in range(n):
         call = ToolCall(caller="arms/a", sucker_id="read_file", args={})
         step = Step(
-            step_id=0, node_id="n0", action=call,
+            step_id=0,
+            node_id="n0",
+            action=call,
             result=ExecutionResult(
-                call_id=call.call_id, status="failed",
+                call_id=call.call_id,
+                status="failed",
                 error_type="timeout",
             ),
         )
-        stack.journal.write_trajectory(Trajectory(
-            task_id=TaskId(uuid4()), arm_id=ArmId("a"),
-            recipe_id=recipe_hash, steps=[step],
-            outcome=TrajectoryOutcome(success=False),
-        ))
+        stack.journal.write_trajectory(
+            Trajectory(
+                task_id=TaskId(uuid4()),
+                arm_id=ArmId("a"),
+                recipe_id=recipe_hash,
+                steps=[step],
+                outcome=TrajectoryOutcome(success=False),
+            )
+        )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -140,9 +155,12 @@ class TestSerializationRoundtrip:
 
     def test_single_quote_escape_in_reason(self, tmp_path):
         """Implementation note."""
-        vs = [PromptVariant(
-            name="x", reason="it's a test · can't break YAML",
-        )]
+        vs = [
+            PromptVariant(
+                name="x",
+                reason="it's a test · can't break YAML",
+            )
+        ]
         text = dump_variants_to_yaml(vs)
         path = tmp_path / "v.yaml"
         path.write_text(text, encoding="utf-8")
@@ -182,13 +200,15 @@ class TestAutoPersist:
             [PromptVariant(name="baseline")],
             auto_persist_path=path,
         )
-        opt.add_variant(PromptVariant(
-            name="child",
-            parents=("baseline",),
-            generation=1,
-            origin="mutation",
-            reason="test",
-        ))
+        opt.add_variant(
+            PromptVariant(
+                name="child",
+                parents=("baseline",),
+                generation=1,
+                origin="mutation",
+                reason="test",
+            )
+        )
         reloaded = load_variants_from_yaml(path)
         names = {v.name for v in reloaded}
         assert names == {"baseline", "child"}
@@ -256,13 +276,13 @@ class TestRestartScenario:
         _seed_failures(stack, opt1.planner_for("baseline").recipe_hash(), n=2)
         mutator = PromptMutator(
             router=_StubRouter(
-                "<reason>baseline slow</reason>"
-                "<suffix>use file_stats first</suffix>"
+                "<reason>baseline slow</reason><suffix>use file_stats first</suffix>"
             ),
             model="mock/m",
         )
         proposal = mutator.propose(
-            base=opt1._variants["baseline"], journal=stack.journal,
+            base=opt1._variants["baseline"],
+            journal=stack.journal,
         )
         assert proposal is not None
         opt1.add_variant(proposal.variant)
@@ -287,9 +307,7 @@ class TestRestartScenario:
 
 
 class TestServeAutoPersist:
-    def test_serve_uses_variants_path_for_both_load_and_save(
-        self, tmp_path, monkeypatch
-    ):
+    def test_serve_uses_variants_path_for_both_load_and_save(self, tmp_path, monkeypatch):
         import uvicorn
 
         from runtime.cli import run_serve
@@ -297,10 +315,7 @@ class TestServeAutoPersist:
         # Implementation note.
         variants_path = tmp_path / "variants.yaml"
         variants_path.write_text(
-            "variants:\n"
-            "  - name: seed\n"
-            "    system_prompt_suffix: ''\n"
-            "    weight: 1.0\n",
+            "variants:\n  - name: seed\n    system_prompt_suffix: ''\n    weight: 1.0\n",
             encoding="utf-8",
         )
 
@@ -316,16 +331,18 @@ class TestServeAutoPersist:
 
         captured = {}
 
-        def fake_uvicorn_run(app, host, port, log_level):
+        def fake_uvicorn_run(app, host, port, log_level, ws):
             # Implementation note.
             # Implementation note.
+            assert ws == "websockets-sansio"
             captured["variants_after_start"] = variants_path.read_text(encoding="utf-8")
 
         monkeypatch.setattr(uvicorn, "run", fake_uvicorn_run)
 
         rc = run_serve(
             config_path=cfg_path,
-            host="127.0.0.1", port=8000,
+            host="127.0.0.1",
+            port=8000,
             learn_interval_s=0,
             prompt_variants_path=variants_path,
             evolve_interval_s=0,

@@ -1,0 +1,7 @@
+version: "1.0"
+type: route
+data:
+  url: "/services/echo-os"
+  title: _("Echo OS")
+  editing: false
+  component: omv-services-echo-os-form-page

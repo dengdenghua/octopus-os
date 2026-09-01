@@ -6,7 +6,6 @@ import json
 from uuid import uuid4
 
 import pytest
-
 from runtime.core.cerebrum import LLMPlanner
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.memory.hemolymph import ContextComposer
@@ -37,7 +36,7 @@ def _populate_failed_journal() -> InMemoryJournal:
             action=call,
             result=ExecutionResult(
                 call_id=call.call_id,
-                status=err,          # type: ignore[arg-type]
+                status=err,  # type: ignore[arg-type]
                 error_type=err,
             ),
         )
@@ -91,18 +90,14 @@ def composer(registry) -> ContextComposer:
 class TestUpdateLearnedRules:
     def test_default_no_rules_section(self, registry, composer):
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
         assert planner.learned_rules_section == ""
 
     def test_update_sets_section(self, registry, composer):
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
 
@@ -123,15 +118,13 @@ class TestUpdateLearnedRules:
 
     def test_re_update_replaces(self, registry, composer):
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
 
         r1 = LearnedRule(
             rule_id="r1",
-            sucker_id="a",     # type: ignore[arg-type]
+            sucker_id="a",  # type: ignore[arg-type]
             error_signature="e",
             pattern="first rule",
             mitigation="first fix",
@@ -140,7 +133,7 @@ class TestUpdateLearnedRules:
         )
         r2 = LearnedRule(
             rule_id="r2",
-            sucker_id="b",     # type: ignore[arg-type]
+            sucker_id="b",  # type: ignore[arg-type]
             error_signature="e",
             pattern="second rule",
             mitigation="second fix",
@@ -165,15 +158,13 @@ class TestUpdateLearnedRules:
 class TestPromptInjection:
     def test_system_prompt_contains_mitigations_after_update(self, registry, composer):
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
 
         rule = LearnedRule(
             rule_id="r1",
-            sucker_id="read_file",   # type: ignore[arg-type]
+            sucker_id="read_file",  # type: ignore[arg-type]
             error_signature="timeout",
             pattern="read_file times out with large files",
             mitigation="use streaming read with chunk size 4096",
@@ -186,26 +177,20 @@ class TestPromptInjection:
         planner.plan(intent)
 
         assert len(router.call_log) == 1
-        sys_msg = next(
-            m for m in router.call_log[0].messages if m.role == "system"
-        )
+        sys_msg = next(m for m in router.call_log[0].messages if m.role == "system")
         assert "LEARNED MITIGATIONS" in sys_msg.content
         assert "streaming read with chunk size 4096" in sys_msg.content
 
     def test_no_mitigations_when_empty_rules(self, registry, composer):
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
         planner.update_learned_rules([])  # Implementation note.
 
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="do thing")
         planner.plan(intent)
-        sys_msg = next(
-            m for m in router.call_log[0].messages if m.role == "system"
-        )
+        sys_msg = next(m for m in router.call_log[0].messages if m.role == "system")
         assert "LEARNED MITIGATIONS" not in sys_msg.content
 
 
@@ -218,9 +203,7 @@ class TestLearnFromJournal:
     def test_one_call_full_loop(self, registry, composer):
         """Implementation note."""
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
         journal = _populate_failed_journal()
@@ -231,17 +214,13 @@ class TestLearnFromJournal:
         # Implementation note.
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="read file")
         planner.plan(intent)
-        sys_msg = next(
-            m for m in router.call_log[0].messages if m.role == "system"
-        )
+        sys_msg = next(m for m in router.call_log[0].messages if m.role == "system")
         assert "read_file" in sys_msg.content
         assert "hash_text" in sys_msg.content
 
     def test_empty_journal_produces_zero_rules(self, registry, composer):
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
         n = planner.learn_from_journal(InMemoryJournal())
@@ -250,9 +229,7 @@ class TestLearnFromJournal:
 
     def test_min_hits_respected(self, registry, composer):
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
         journal = _populate_failed_journal()
@@ -270,25 +247,19 @@ class TestReflectionLoopEffect:
     def test_two_plans_see_different_prompts(self, registry, composer):
         """Implementation note."""
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
 
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="y")
         planner.plan(intent)
-        first_prompt = next(
-            m.content for m in router.call_log[0].messages if m.role == "system"
-        )
+        first_prompt = next(m.content for m in router.call_log[0].messages if m.role == "system")
 
         journal = _populate_failed_journal()
         planner.learn_from_journal(journal)
 
         planner.plan(intent)
-        second_prompt = next(
-            m.content for m in router.call_log[1].messages if m.role == "system"
-        )
+        second_prompt = next(m.content for m in router.call_log[1].messages if m.role == "system")
 
         # Implementation note.
         assert "LEARNED MITIGATIONS" not in first_prompt
@@ -357,18 +328,14 @@ class TestMemoryInjection:
 
     def test_memories_appear_in_system_prompt(self, registry, composer):
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
         planner.learn_memories_from_journal(_populate_successful_journal())
 
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="y")
         planner.plan(intent)
-        sys_msg = next(
-            m.content for m in router.call_log[0].messages if m.role == "system"
-        )
+        sys_msg = next(m.content for m in router.call_log[0].messages if m.role == "system")
         assert "CONSOLIDATED MEMORIES" in sys_msg
 
     def test_recipe_hash_changes_with_memories(self, registry, composer):
@@ -381,9 +348,7 @@ class TestMemoryInjection:
 
     def test_rules_and_memories_coexist(self, registry, composer):
         router = MockModelRouter(
-            response=json.dumps(
-                {"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]}
-            )
+            response=json.dumps({"reasoning": "r", "nodes": [{"skill": "read_file", "args": {}}]})
         )
         planner = LLMPlanner(router=router, registry=registry, composer=composer)
         planner.learn_from_journal(_populate_failed_journal())
@@ -391,9 +356,7 @@ class TestMemoryInjection:
 
         intent = ParsedIntent(raw="x", intent_type="task", normalized_goal="y")
         planner.plan(intent)
-        sys_msg = next(
-            m.content for m in router.call_log[0].messages if m.role == "system"
-        )
+        sys_msg = next(m.content for m in router.call_log[0].messages if m.role == "system")
         assert "LEARNED MITIGATIONS" in sys_msg
         assert "CONSOLIDATED MEMORIES" in sys_msg
 
@@ -417,9 +380,7 @@ class TestConfigDrivenMemoryLoad:
             file_journal.write_trajectory(t_evt.trajectory)
 
         cfg = AgentConfig(
-            planner=PlannerConfig(
-                type="llm", model="mock/p", mock_response='{"nodes":[]}'
-            ),
+            planner=PlannerConfig(type="llm", model="mock/p", mock_response='{"nodes":[]}'),
             learn=LearnConfig(learn_memories_from_journal=str(mem_path)),
         )
         stack = build_from_config(cfg)
@@ -436,9 +397,7 @@ class TestConfigDrivenMemoryLoad:
         )
 
         cfg = AgentConfig(
-            planner=PlannerConfig(
-                type="llm", model="mock/p", mock_response='{"nodes":[]}'
-            ),
+            planner=PlannerConfig(type="llm", model="mock/p", mock_response='{"nodes":[]}'),
             learn=LearnConfig(learn_memories_from_journal=str(tmp_path / "nope.jsonl")),
         )
         stack = build_from_config(cfg)

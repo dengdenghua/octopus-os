@@ -2,12 +2,13 @@ import type { Element, Root, ElementContent } from "hast";
 import { useMemo } from "react";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import { visit } from "unist-util-visit";
 import type { BuildVisitor } from "unist-util-visit";
 import type { StreamdownProps } from "streamdown";
 
 const CJK_TEXT_RE =
-  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
 
 const cjkSegmenter = new Intl.Segmenter("zh", { granularity: "grapheme" });
 const wordSegmenter = new Intl.Segmenter("en", { granularity: "word" });
@@ -33,7 +34,54 @@ function splitTextIntoUnits(text: string): string[] {
   return isCJK ? splitCJKText(text) : splitNonCJKText(text);
 }
 
-export function rehypeSplitWordsIntoSpans() {
+export type RehypeSplitWordsOptions = {
+  // Text nodes longer than this are left untouched. Bounds the
+  // per-token cost of the still-growing final block during streaming.
+  maxTextLength?: number;
+  // Only the trailing window is fed to Intl.Segmenter. The animated
+  // unit lives at the very end of the text, and word/grapheme
+  // boundaries near the end never depend on content hundreds of
+  // characters earlier, so the output is identical to segmenting the
+  // full string while the per-token cost stays O(tailWindow).
+  tailWindow?: number;
+};
+
+const DEFAULT_MAX_TEXT_LENGTH = 8000;
+const DEFAULT_TAIL_WINDOW = 200;
+
+function animateLastVisibleUnit(
+  text: string,
+  tailWindow: number,
+): ElementContent[] {
+  const tailStart = Math.max(0, text.length - tailWindow);
+  const head = text.slice(0, tailStart);
+  const units = splitTextIntoUnits(text.slice(tailStart));
+  let animatedIndex = units.length - 1;
+  while (animatedIndex >= 0 && !units[animatedIndex]?.trim()) {
+    animatedIndex -= 1;
+  }
+  if (animatedIndex < 0) return [{ type: "text", value: text }];
+
+  const children: ElementContent[] = [];
+  const prefix = head + units.slice(0, animatedIndex).join("");
+  const animated = units[animatedIndex] ?? "";
+  const suffix = units.slice(animatedIndex + 1).join("");
+
+  if (prefix) children.push({ type: "text", value: prefix });
+  children.push({
+    type: "element",
+    tagName: "span",
+    properties: { className: ["animate-fade-in", "inline"] },
+    children: [{ type: "text", value: animated }],
+  });
+  if (suffix) children.push({ type: "text", value: suffix });
+  return children;
+}
+
+export function rehypeSplitWordsIntoSpans({
+  maxTextLength = DEFAULT_MAX_TEXT_LENGTH,
+  tailWindow = DEFAULT_TAIL_WINDOW,
+}: RehypeSplitWordsOptions = {}) {
   return (tree: Root) => {
     visit(tree, "element", ((node: Element) => {
       if (
@@ -62,36 +110,24 @@ export function rehypeSplitWordsIntoSpans() {
             const text = child.value;
             if (!text || text.length === 0) return;
 
+            if (text.length > maxTextLength) {
+              newChildren.push(child);
+              return;
+            }
+
             const isLastTextNode = hasMultipleTextNodes
               ? childIndex === lastTextNodeIndex
               : true;
 
-            if (text.length <= 3) {
-              newChildren.push({
-                type: "element",
-                tagName: "span",
-                properties: {
-                  className: isLastTextNode ? "animate-fade-in inline" : "inline",
-                },
-                children: [{ type: "text", value: text }],
-              });
+            if (!isLastTextNode) {
+              newChildren.push(child);
               return;
             }
 
-            const units = splitTextIntoUnits(text);
-            const lastIndex = units.length - 1;
-
-            units.forEach((unit: string, index: number) => {
-              const isLastUnit = isLastTextNode && index === lastIndex;
-              newChildren.push({
-                type: "element",
-                tagName: "span",
-                properties: {
-                  className: isLastUnit ? "animate-fade-in inline" : "inline",
-                },
-                children: [{ type: "text", value: unit }],
-              });
-            });
+            // Only the newest visible unit needs a wrapper. Wrapping every
+            // historical word makes a long streaming answer grow thousands
+            // of DOM nodes even though those older units no longer animate.
+            newChildren.push(...animateLastVisibleUnit(text, tailWindow));
           } else {
             newChildren.push(child);
           }
@@ -147,8 +183,12 @@ export function rehypeFileReferences() {
 // `<details>` wrapper around a ReAct trace) got escaped as text.
 // Static import fixes the first-render window; packages are
 // already in the dependency bundle anyway.
+//
+// Security: rehype-sanitize removes unsafe HTML (XSS vectors) after
+// rehype-raw parses it. The default schema allows safe tags/attrs.
 const CHAT_REHYPE_BASE: StreamdownProps["rehypePlugins"] = [
   rehypeRaw,
+  rehypeSanitize,
   [rehypeKatex, { output: "html" }],
 ] as StreamdownProps["rehypePlugins"];
 
@@ -167,6 +207,8 @@ export function useChatRehypePlugins({
 }
 
 /** @deprecated Prefer ``useChatRehypePlugins({ splitWords: enabled })``. */
-export function useRehypeSplitWordsIntoSpans(enabled = true): StreamdownProps["rehypePlugins"] {
+export function useRehypeSplitWordsIntoSpans(
+  enabled = true,
+): StreamdownProps["rehypePlugins"] {
   return useChatRehypePlugins({ splitWords: enabled });
 }

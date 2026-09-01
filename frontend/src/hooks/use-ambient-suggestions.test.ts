@@ -20,6 +20,7 @@ const _BUCKET_TWO = {
       title: "Fix something",
       description: "",
       prompt: "do it",
+      locale: "en-US",
       status: "pending",
       source_turn_ids: [],
       created_at: "",
@@ -33,6 +34,7 @@ const _BUCKET_TWO = {
       title: "Other",
       description: "",
       prompt: "x",
+      locale: "en-US",
       status: "dismissed",
       source_turn_ids: [],
       created_at: "",
@@ -73,9 +75,31 @@ describe("useAmbientSuggestions", () => {
     renderHook(() => useAmbientSuggestions("/some/project"));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const url = (fetchMock.mock.calls[0][0] as string);
+    const url = fetchMock.mock.calls[0][0] as string;
     expect(url).toContain("/api/ambient-suggestions?project=");
     expect(url).toContain(encodeURIComponent("/some/project"));
+  });
+
+  it("scopes reads and generation to the global locale", async () => {
+    mockOnce(_BUCKET_DISABLED);
+    const { result } = renderHook(() =>
+      useAmbientSuggestions("/p", { locale: "zh-CN" }),
+    );
+
+    await waitFor(() => expect(result.current.bucket).not.toBe(null));
+    expect(fetchMock.mock.calls[0][0]).toContain("locale=zh-CN");
+
+    mockOnce({ added: 1, generated: 1, error: null });
+    mockOnce(_BUCKET_TWO);
+    await act(async () => {
+      await result.current.generate("coder");
+    });
+
+    const runCall = fetchMock.mock.calls.find(
+      (call) => (call[1] as RequestInit | undefined)?.method === "POST",
+    );
+    const body = JSON.parse(String((runCall?.[1] as RequestInit)?.body));
+    expect(body.locale).toBe("zh-CN");
   });
 
   it("returns empty bucket when project is null", async () => {
@@ -115,7 +139,9 @@ describe("useAmbientSuggestions", () => {
     });
 
     const calls = fetchMock.mock.calls.map((c) => c[0] as string);
-    expect(calls.some((u) => u.endsWith("/api/ambient-suggestions/run"))).toBe(true);
+    expect(calls.some((u) => u.endsWith("/api/ambient-suggestions/run"))).toBe(
+      true,
+    );
     expect(result.current.bucket?.suggestions).toHaveLength(2);
   });
 

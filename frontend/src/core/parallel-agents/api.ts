@@ -5,7 +5,9 @@
  * `swarm/live-driver.ts` (Kimi-style workbench). Both now consume this module.
  */
 import { swallow } from "@/core/utils/log";
+import { getToken } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
+import { openSseStream } from "@/core/streaming/sse";
 
 // ---------------------------------------------------------------------------
 // Backend shapes
@@ -34,6 +36,18 @@ export interface TaskResult {
   work_contract?: WorkContract | null;
 }
 
+export interface SubagentRouteDecision {
+  schema: "echo.subagent_route_decision.v1";
+  role: string;
+  action: "allow" | "allow_with_warning" | "block" | string;
+  reason: string;
+  risk_level: "low" | "medium" | "high" | "critical" | string;
+  verdict: string;
+  score: number | null;
+  confidence: number;
+  evidence_item_ids: string[];
+}
+
 export interface WorkContract {
   contract_id: string;
   agent_id: string;
@@ -42,6 +56,7 @@ export interface WorkContract {
   depends_on: string[];
   owned_scope: string[];
   forbidden_scope: string[];
+  write_paths?: string[];
   success_criteria: string[];
 }
 
@@ -59,6 +74,43 @@ export interface BatchPlan {
   contracts: WorkContract[];
 }
 
+export interface ParallelBatchCoordinationTask {
+  task_id: string;
+  subagent_name: string;
+  status: ParallelTaskStatus | string;
+  recommended_action: string;
+  result_chars: number;
+  error: string | null;
+  depends_on: string[];
+  write_paths: string[];
+  duration_seconds: number | null;
+}
+
+export interface ParallelBatchCoordinationSummary {
+  schema: "echo.parallel_batch_coordination.v1" | string;
+  batch_id: string;
+  status: ParallelTaskStatus | string;
+  ready: boolean;
+  primary_task_id: string | null;
+  recommended_next_action: string;
+  completed_task_ids: string[];
+  failed_task_ids: string[];
+  cancelled_task_ids: string[];
+  dependency_blocked_task_ids: string[];
+  conflict_count: number;
+  contract_issue_count: number;
+  contract_warning_count: number;
+  output_present: boolean;
+  aggregation_strategy: string;
+  tasks: ParallelBatchCoordinationTask[];
+  checkpoint: {
+    batch_id?: string;
+    after_sequence?: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 export interface BatchResult {
   batch_id: string;
   status: ParallelTaskStatus | string;
@@ -74,6 +126,81 @@ export interface BatchResult {
   conflicts: string[];
   plan?: BatchPlan | null;
   event_log?: BatchStreamEvent[];
+  completion_receipt?: Record<string, unknown>;
+  file_write_observability?: Record<string, unknown>;
+  coordination_summary?: ParallelBatchCoordinationSummary;
+}
+
+export interface BatchRecoveryTask {
+  task_id: string;
+  status: ParallelTaskStatus | string;
+  subagent_name: string;
+  depends_on: string[];
+  priority: number;
+  write_paths: string[];
+  description_preview?: string | null;
+  result_preview?: string | null;
+  error?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  duration_seconds?: number | null;
+  artifact_paths: string[];
+  work_contract?: WorkContract | null;
+  route_decision?: Record<string, unknown>;
+}
+
+export interface BatchRecoverySnapshot {
+  schema: "echo.parallel_batch_recovery_snapshot.v1" | string;
+  batch_id: string;
+  status: ParallelTaskStatus | string;
+  terminal: boolean;
+  resume_available: boolean;
+  created_at: string | null;
+  completed_at: string | null;
+  task_count: number;
+  completed_tasks: number;
+  failed_tasks: number;
+  cancelled_tasks: number;
+  running_tasks: number;
+  pending_tasks: number;
+  tasks: BatchRecoveryTask[];
+  dag: Record<string, string[]>;
+  plan?: BatchPlan | null;
+  event_sequence: {
+    event_count?: number;
+    first_sequence?: number | null;
+    last_sequence?: number | null;
+    next_after_sequence?: number;
+    types?: Record<string, number>;
+    [key: string]: unknown;
+  };
+  artifact_paths: string[];
+  conflicts: string[];
+  completion_receipt: Record<string, unknown>;
+  file_write_observability: Record<string, unknown>;
+  coordination_summary?: ParallelBatchCoordinationSummary;
+  recovery_hints: {
+    rerunnable_task_ids?: string[];
+    failed_task_ids?: string[];
+    cancelled_task_ids?: string[];
+    pending_task_ids?: string[];
+    running_task_ids?: string[];
+    blocked_by_dependency?: string[];
+    checkpoint?: {
+      batch_id?: string;
+      after_sequence?: number;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  };
+  safety: {
+    raw_subagent_outputs_included?: boolean;
+    event_payloads_included?: boolean;
+    owner_id_included?: boolean;
+    result_preview_max_chars?: number;
+    description_preview_max_chars?: number;
+    [key: string]: unknown;
+  };
 }
 
 export interface OrchestratorStatus {
@@ -117,8 +244,6 @@ async function authedFetch(
   pathOrUrl: string,
   init?: RequestInit,
 ): Promise<Response> {
-  // Lazy import to avoid a hard dependency for SSR / tests.
-  const { getToken } = await import("@/core/auth/api");
   const token = getToken();
   return fetch(toBackendURL(pathOrUrl), {
     ...init,
@@ -152,12 +277,26 @@ export async function fetchBatch(batchId: string): Promise<BatchResult | null> {
   }
 }
 
-export async function cancelTask(taskId: string): Promise<boolean> {
+export async function fetchBatchRecoverySnapshot(
+  batchId: string,
+): Promise<BatchRecoverySnapshot | null> {
   try {
     const res = await authedFetch(
-      `/api/agents/parallel/cancel/${taskId}`,
-      { method: "POST" },
+      `/api/agents/parallel/batch/${batchId}/recovery-snapshot`,
     );
+    if (!res.ok) return null;
+    return (await res.json()) as BatchRecoverySnapshot;
+  } catch (e) {
+    swallow(e);
+    return null;
+  }
+}
+
+export async function cancelTask(taskId: string): Promise<boolean> {
+  try {
+    const res = await authedFetch(`/api/agents/parallel/cancel/${taskId}`, {
+      method: "POST",
+    });
     return res.ok;
   } catch (e) {
     swallow(e);
@@ -183,22 +322,22 @@ export async function cancelAll(): Promise<boolean> {
 
 export const STATUS_TEXT_COLOR: Record<string, string> = {
   pending: "text-muted-foreground",
-  running: "text-blue-500",
-  completed: "text-green-500",
-  failed: "text-red-500",
-  cancelled: "text-yellow-500",
-  timed_out: "text-orange-500",
-  partial: "text-amber-500",
+  running: "text-info",
+  completed: "text-success",
+  failed: "text-destructive",
+  cancelled: "text-warning",
+  timed_out: "text-warning",
+  partial: "text-warning",
 };
 
 export const STATUS_BG: Record<string, string> = {
   pending: "bg-muted/50",
-  running: "bg-blue-500/10",
-  completed: "bg-green-500/10",
-  failed: "bg-red-500/10",
-  cancelled: "bg-yellow-500/10",
-  timed_out: "bg-orange-500/10",
-  partial: "bg-amber-500/10",
+  running: "bg-info/10",
+  completed: "bg-success/10",
+  failed: "bg-destructive/10",
+  cancelled: "bg-warning/10",
+  timed_out: "bg-warning/10",
+  partial: "bg-warning/10",
 };
 
 /**
@@ -264,20 +403,12 @@ function streamURL(batchId: string, afterSequence: number): string {
 }
 
 /**
- * Subscribe to real-time SSE events for a batch.
- * Returns a cleanup function that closes the EventSource.
- */
-/**
  * Subscribe to real-time SSE events for a parallel agent batch.
  *
- * Uses `fetch` + `ReadableStream` (not `EventSource`) to support
- * Bearer token authentication via `authedFetch`.
- *
- * Features:
- * - Automatic exponential backoff reconnection (default 3 retries)
- * - `onReconnecting` callback for UI feedback
- * - Proper SSE event parsing (event type + data)
- * - Cleanup via returned function
+ * Built on the shared ``openSseStream`` transport: Bearer token auth
+ * via header (never the URL), jittered exponential backoff reconnect,
+ * and ``after_sequence`` resume on reconnect so no events are missed
+ * or replayed.
  *
  * @param batchId - The batch ID to subscribe to
  * @param callbacks - Event callbacks (onTaskUpdate, onBatchComplete, onError, onReconnecting)
@@ -289,119 +420,40 @@ export function streamBatch(
   callbacks: BatchStreamCallbacks,
   options?: { maxRetries?: number; baseDelay?: number },
 ): () => void {
-  const maxRetries = options?.maxRetries ?? 3;
-  const baseDelay = options?.baseDelay ?? 1000;
-  let aborted = false;
-  let retryCount = 0;
   let lastSequence = 0;
-  let activeController = new AbortController();
-
-  const connect = async () => {
-    while (!aborted && retryCount <= maxRetries) {
+  return openSseStream({
+    url: () => toBackendURL(streamURL(batchId, lastSequence)),
+    maxRetries: options?.maxRetries ?? 3,
+    initialBackoffMs: options?.baseDelay ?? 1000,
+    onReconnecting: (attempt) => callbacks.onReconnecting?.(attempt),
+    onError: (err) => callbacks.onError?.(err),
+    onEvent: (msg) => {
+      let data: BatchStreamEvent;
       try {
-        activeController = new AbortController();
-        const res = await authedFetch(streamURL(batchId, lastSequence), {
-          signal: activeController.signal,
-          headers: { Accept: "text/event-stream" },
-        });
-        if (!res.ok || !res.body) {
-          if (!aborted) {
-            const err = new Error(`SSE HTTP ${res.status}`);
-            if (retryCount < maxRetries) {
-              retryCount++;
-              callbacks.onReconnecting?.(retryCount);
-              await sleep(baseDelay * Math.pow(2, retryCount - 1));
-              continue;
-            }
-            callbacks.onError?.(err);
-          }
-          return;
-        }
-
-        retryCount = 0;
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let eventType = "";
-        let eventData = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done || aborted) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (line.startsWith("event:")) {
-              eventType = line.slice(6).trim();
-            } else if (line.startsWith("data:")) {
-              eventData = line.slice(5).trim();
-            } else if (line === "") {
-              if (eventType && eventData) {
-                try {
-                  const data = JSON.parse(eventData) as BatchStreamEvent;
-                  if (
-                    typeof data.sequence === "number" &&
-                    data.sequence <= lastSequence
-                  ) {
-                    eventType = "";
-                    eventData = "";
-                    continue;
-                  }
-                  if (typeof data.sequence === "number") {
-                    lastSequence = data.sequence;
-                  }
-                  if (eventType === "stage_change") {
-                    callbacks.onStageChange?.(data);
-                  } else if (eventType === "task_update") {
-                    callbacks.onTaskUpdate?.(data);
-                  } else if (eventType === "tool_call") {
-                    callbacks.onTaskUpdate?.(data);
-                  } else if (eventType === "batch_complete") {
-                    callbacks.onBatchComplete?.(data);
-                    return;
-                  }
-                } catch (e) { swallow(e); }
-              }
-              eventType = "";
-              eventData = "";
-            }
-          }
-        }
-
-        if (!aborted && retryCount < maxRetries) {
-          retryCount++;
-          callbacks.onReconnecting?.(retryCount);
-          await sleep(baseDelay * Math.pow(2, retryCount - 1));
-        }
-      } catch (err) {
-        swallow(err);
-        if (aborted) return;
-        if (retryCount < maxRetries) {
-          retryCount++;
-          callbacks.onReconnecting?.(retryCount);
-          await sleep(baseDelay * Math.pow(2, retryCount - 1));
-        } else {
-          callbacks.onError?.(err instanceof Error ? err : new Error("SSE max retries exceeded"));
-          return;
-        }
+        data = JSON.parse(msg.data) as BatchStreamEvent;
+      } catch (e) {
+        swallow(e);
+        return;
       }
-    }
-  };
-
-  void connect();
-
-  return () => {
-    aborted = true;
-    activeController.abort();
-  };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+      if (
+        typeof data.sequence === "number" &&
+        data.sequence <= lastSequence
+      ) {
+        return;
+      }
+      if (typeof data.sequence === "number") {
+        lastSequence = data.sequence;
+      }
+      if (msg.event === "stage_change") {
+        callbacks.onStageChange?.(data);
+      } else if (msg.event === "task_update" || msg.event === "tool_call") {
+        callbacks.onTaskUpdate?.(data);
+      } else if (msg.event === "batch_complete") {
+        callbacks.onBatchComplete?.(data);
+        return true;
+      }
+    },
+  });
 }
 
 export interface DispatchTaskInput {

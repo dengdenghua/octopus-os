@@ -1,0 +1,432 @@
+#!/usr/bin/env bash
+# Authenticate and install an Echo OS whole-disk image onto one explicit disk.
+set -euo pipefail
+
+ACTION="${1:-}"
+BUNDLE_INPUT="${2:-}"
+TARGET_INPUT="${3:-}"
+CONFIRMATION="${4:-}"
+SYSTEM_KEYRING=/usr/lib/echo-os/install-keyring.gpg
+ADMIN_KEYRING=/etc/echo-os/install-keyring.gpg
+VERIFY_BUNDLE=/usr/lib/echo-os/verify-install-bundle.py
+VERIFY_STREAM=/usr/lib/echo-os/verify-install-stream.py
+VERIFY_KEYRING=/usr/lib/echo-os/verify-public-keyring.py
+INSTALL_REPART_DEFINITIONS=/usr/lib/echo-os/install-repart.d
+DATA_PROTECTION=/usr/lib/echo-os/echo-data-protection
+PCR_POLICY_PUBLIC_KEY=/usr/lib/systemd/tpm2-pcr-public-key.pem
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  echo-os-installer plan BUNDLE_DIRECTORY WHOLE_DISK
+  echo-os-installer install BUNDLE_DIRECTORY WHOLE_DISK "CONFIRMATION"
+
+plan is read-only and prints the exact per-disk confirmation string. install
+irreversibly replaces the target disk after re-running all safety checks.
+EOF
+}
+
+fail() {
+  echo "Echo OS installer: $*" >&2
+  exit 1
+}
+
+[[ "$ACTION" == plan || "$ACTION" == install ]] || { usage; exit 2; }
+if [[ "$ACTION" == plan ]]; then
+  [[ $# -eq 3 ]] || { usage; exit 2; }
+else
+  [[ $# -eq 4 ]] || { usage; exit 2; }
+fi
+[[ "$(id -u)" -eq 0 ]] || fail "root privileges are required"
+for command_name in \
+  awk blkid blockdev cat cryptsetup cut dd e2fsck findmnt flock gpgv \
+  id install lsblk mktemp python3 readlink realpath resize2fs rm sed seq sgdisk \
+  sha256sum sleep stat swapon sync systemd-cryptenroll systemd-repart tr \
+  udevadm zstd; do
+  command -v "$command_name" >/dev/null 2>&1 || \
+    fail "required command is missing: $command_name"
+done
+[[ -x "$VERIFY_BUNDLE" && -x "$VERIFY_STREAM" && -x "$VERIFY_KEYRING" && \
+   -x "$DATA_PROTECTION" && -d "$INSTALL_REPART_DEFINITIONS" ]] || \
+  fail "installer verifiers or repartition definitions are missing"
+
+BUNDLE="$(realpath "$BUNDLE_INPUT")"
+[[ -d "$BUNDLE" ]] || fail "bundle is not a directory: $BUNDLE"
+
+require_root_immutable() {
+  local path="$1"
+  local label="$2"
+  local owner mode
+  owner="$(stat -c '%u:%g' "$path")"
+  mode="$(stat -c '%a' "$path")"
+  [[ "$owner" == 0:0 ]] || fail "$label must be owned by root:root"
+  (( (8#$mode & 8#022) == 0 )) || \
+    fail "$label must not be group/other writable"
+}
+require_root_immutable "$BUNDLE" "installer bundle directory"
+MANIFEST="$BUNDLE/INSTALL-MANIFEST.json"
+SIGNATURE="$BUNDLE/INSTALL-MANIFEST.json.gpg"
+[[ -f "$MANIFEST" && ! -L "$MANIFEST" && -f "$SIGNATURE" && ! -L "$SIGNATURE" ]] || \
+  fail "signed install manifest is missing"
+MANIFEST_SIZE="$(stat -c '%s' "$MANIFEST")"
+SIGNATURE_SIZE="$(stat -c '%s' "$SIGNATURE")"
+[[ "$MANIFEST_SIZE" =~ ^[1-9][0-9]*$ && "$MANIFEST_SIZE" -le 65536 ]] || \
+  fail "install manifest must be 1 byte to 64 KiB"
+[[ "$SIGNATURE_SIZE" =~ ^[1-9][0-9]*$ && "$SIGNATURE_SIZE" -le 1048576 ]] || \
+  fail "install manifest signature must be 1 byte to 1 MiB"
+
+if [[ -f "$ADMIN_KEYRING" && ! -L "$ADMIN_KEYRING" && -s "$ADMIN_KEYRING" ]]; then
+  KEYRING="$ADMIN_KEYRING"
+elif [[ -f "$SYSTEM_KEYRING" && ! -L "$SYSTEM_KEYRING" && -s "$SYSTEM_KEYRING" ]]; then
+  KEYRING="$SYSTEM_KEYRING"
+else
+  fail "no trusted Echo OS installer keyring is provisioned"
+fi
+[[ ! -L "$KEYRING" && "$(stat -c '%u:%g' "$KEYRING")" == 0:0 ]] || \
+  fail "installer keyring must be a root-owned regular file"
+KEYRING_MODE="$(stat -c '%a' "$KEYRING")"
+(( (8#$KEYRING_MODE & 8#022) == 0 )) || \
+  fail "installer keyring must not be group/other writable"
+python3 "$VERIFY_KEYRING" "$KEYRING"
+
+gpgv --keyring "$KEYRING" "$SIGNATURE" "$MANIFEST"
+MANIFEST_SHA256="$(sha256sum "$MANIFEST" | awk '{print $1}')"
+[[ "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+  fail "cannot bind the authenticated install manifest"
+MACHINE_RECORD="$(python3 "$VERIFY_BUNDLE" --machine "$BUNDLE")"
+IFS=$'\t' read -r IMAGE_VERSION PAYLOAD_NAME UNCOMPRESSED_SIZE UNCOMPRESSED_SHA256 \
+  FACTORY_KEY_NAME FACTORY_KEY_SHA256 PCR_POLICY_PUBLIC_KEY_SHA256 \
+  <<<"$MACHINE_RECORD"
+[[ -n "$IMAGE_VERSION" && -n "$PAYLOAD_NAME" && \
+   "$UNCOMPRESSED_SIZE" =~ ^[1-9][0-9]*$ && \
+   "$UNCOMPRESSED_SHA256" =~ ^[0-9a-f]{64}$ && \
+   "$FACTORY_KEY_NAME" == FACTORY-DATA-KEY && \
+   "$FACTORY_KEY_SHA256" =~ ^[0-9a-f]{64}$ && \
+   "$PCR_POLICY_PUBLIC_KEY_SHA256" =~ ^[0-9a-f]{64}$ ]] || \
+  fail "bundle verifier returned an invalid machine record"
+PAYLOAD="$BUNDLE/$PAYLOAD_NAME"
+FACTORY_KEY_SOURCE="$BUNDLE/$FACTORY_KEY_NAME"
+for bundle_entry in "$BUNDLE"/*; do
+  [[ -f "$bundle_entry" && ! -L "$bundle_entry" ]] || \
+    fail "installer bundle contains a non-regular entry"
+  require_root_immutable "$bundle_entry" "installer bundle file"
+done
+[[ "$(sha256sum "$FACTORY_KEY_SOURCE" | awk '{print $1}')" == \
+   "$FACTORY_KEY_SHA256" ]] || fail "factory key changed after bundle authentication"
+[[ -f "$PCR_POLICY_PUBLIC_KEY" && ! -L "$PCR_POLICY_PUBLIC_KEY" ]] || \
+  fail "signed-PCR public key is missing from Recovery"
+require_root_immutable "$PCR_POLICY_PUBLIC_KEY" "signed-PCR public key"
+python3 "$DATA_PROTECTION" check-tpm2-public-key "$PCR_POLICY_PUBLIC_KEY"
+[[ "$(sha256sum "$PCR_POLICY_PUBLIC_KEY" | awk '{print $1}')" == \
+   "$PCR_POLICY_PUBLIC_KEY_SHA256" ]] || \
+  fail "installer bundle and Recovery signed-PCR public keys do not match"
+zstd --test --quiet "$PAYLOAD"
+echo "ECHO_INSTALL_BUNDLE_AUTHENTICATED action=$ACTION version=$IMAGE_VERSION manifest=$MANIFEST_SHA256 source=$UNCOMPRESSED_SHA256"
+
+TARGET="$(readlink -f "$TARGET_INPUT")"
+[[ -b "$TARGET" && "$(lsblk -dnro TYPE "$TARGET")" == disk ]] || \
+  fail "target is not a whole block disk: $TARGET_INPUT"
+
+top_disk_for_device() {
+  local device="$1"
+  local top
+  top="$(lsblk -srno PATH,TYPE "$device" 2>/dev/null | awk '$2 == "disk" { print $1; exit }')"
+  [[ -n "$top" ]] && readlink -f "$top"
+}
+
+require_safe_target() {
+  [[ "$(blockdev --getro "$TARGET")" == 0 ]] || fail "target disk is read-only"
+  local target_size
+  target_size="$(blockdev --getsize64 "$TARGET")"
+  [[ "$target_size" =~ ^[1-9][0-9]*$ ]] || fail "unable to read target size"
+  (( target_size >= UNCOMPRESSED_SIZE )) || \
+    fail "target is too small: need $UNCOMPRESSED_SIZE bytes, have $target_size"
+
+  local device
+  while IFS= read -r device; do
+    [[ -n "$device" ]] || continue
+    if findmnt -rn --source "$device" >/dev/null 2>&1; then
+      fail "target or a child device is mounted: $device"
+    fi
+  done < <(lsblk -nrpo PATH "$TARGET")
+
+  # An unmounted disk can still back an active dm-crypt/LVM/RAID device. Check
+  # the kernel holder graph for the whole disk and every child partition; a
+  # destructive installer must not rely on mount state alone.
+  local kernel_name holders_directory active_holder
+  while read -r device kernel_name; do
+    [[ -n "$device" && -n "$kernel_name" ]] || continue
+    holders_directory="/sys/class/block/${kernel_name##*/}/holders"
+    [[ -d "$holders_directory" ]] || \
+      fail "cannot inspect active block holders for $device"
+    active_holder="$(
+      find "$holders_directory" -mindepth 1 -maxdepth 1 -printf '%f\n' -quit
+    )"
+    [[ -z "$active_holder" ]] || \
+      fail "target or a child device has an active block holder: $device -> $active_holder"
+  done < <(lsblk -nrpo PATH,KNAME "$TARGET")
+
+  local active_swap
+  while IFS= read -r active_swap; do
+    [[ -n "$active_swap" ]] || continue
+    while IFS= read -r device; do
+      [[ "$(readlink -f "$active_swap")" == "$(readlink -f "$device")" ]] && \
+        fail "target contains active swap: $active_swap"
+    done < <(lsblk -nrpo PATH "$TARGET")
+  done < <(swapon --show=NAME --noheadings 2>/dev/null || true)
+
+  local root_source root_disk
+  root_source="$(findmnt -rn -o SOURCE / 2>/dev/null || true)"
+  if [[ "$root_source" == /dev/* ]]; then
+    root_disk="$(top_disk_for_device "$root_source" || true)"
+    [[ -z "$root_disk" || "$root_disk" != "$TARGET" ]] || \
+      fail "refusing to overwrite the disk backing the running recovery root"
+  fi
+
+  local media_source media_disk
+  media_source="$(findmnt -rn -T "$PAYLOAD" -o SOURCE 2>/dev/null || true)"
+  if [[ "$media_source" == /dev/* ]]; then
+    media_disk="$(top_disk_for_device "$media_source" || true)"
+    [[ -z "$media_disk" || "$media_disk" != "$TARGET" ]] || \
+      fail "refusing to overwrite the disk containing the installer bundle"
+  fi
+}
+
+sanitize_identity() {
+  tr -cs 'A-Za-z0-9._-' '_' | sed -E 's/^_+|_+$//g' | cut -c1-80
+}
+
+target_identity_record() {
+  local device_id target_size target_model target_serial target_wwn
+  device_id="$(lsblk -dnro MAJ:MIN "$TARGET" | tr -d '[:space:]')"
+  [[ "$device_id" =~ ^[0-9]+:[0-9]+$ ]] || \
+    fail "unable to read the target device identity"
+  target_size="$(blockdev --getsize64 "$TARGET")"
+  [[ "$target_size" =~ ^[1-9][0-9]*$ ]] || \
+    fail "unable to read target size"
+  target_model="$(lsblk -dnro MODEL "$TARGET" | sanitize_identity)"
+  target_serial="$(lsblk -dnro SERIAL "$TARGET" | sanitize_identity)"
+  target_wwn="$(lsblk -dnro WWN "$TARGET" | sanitize_identity)"
+  [[ -n "$target_model" ]] || target_model=unknown
+  [[ -n "$target_serial" ]] || target_serial=none
+  [[ -n "$target_wwn" ]] || target_wwn=none
+  printf '%s|%s|%s|%s|%s\n' \
+    "$device_id" "$target_size" "$target_model" "$target_serial" "$target_wwn"
+}
+
+require_safe_target
+TARGET_IDENTITY="$(target_identity_record)"
+IFS='|' read -r TARGET_DEVICE_ID TARGET_SIZE TARGET_MODEL TARGET_SERIAL TARGET_WWN \
+  <<<"$TARGET_IDENTITY"
+CONFIRM_TOKEN="$(
+  printf '%s\n' "$TARGET|$TARGET_IDENTITY|$IMAGE_VERSION|$UNCOMPRESSED_SHA256" |
+    sha256sum | awk '{print substr($1, 1, 16)}'
+)"
+EXPECTED_CONFIRMATION="INSTALL-ECHO-OS:${TARGET##*/}:$CONFIRM_TOKEN"
+
+echo "Echo OS installer plan"
+echo "  release:      $IMAGE_VERSION (authenticated)"
+echo "  payload:      $PAYLOAD_NAME"
+echo "  target:       $TARGET"
+echo "  device id:    $TARGET_DEVICE_ID"
+echo "  model:        $TARGET_MODEL"
+echo "  serial:       $TARGET_SERIAL"
+echo "  wwn:          $TARGET_WWN"
+echo "  target bytes: $TARGET_SIZE"
+echo "  image bytes:  $UNCOMPRESSED_SIZE"
+echo "  result:       GPT + dm-verity A/B roots + signed-PCR11 TPM2/recovery LUKS2 data"
+echo "  confirmation: $EXPECTED_CONFIRMATION"
+
+if [[ "$ACTION" == plan ]]; then
+  echo "ECHO_INSTALL_PLAN_READY target=$TARGET version=$IMAGE_VERSION source=$UNCOMPRESSED_SHA256"
+  exit 0
+fi
+[[ "$CONFIRMATION" == "$EXPECTED_CONFIRMATION" ]] || \
+  fail "confirmation does not match this exact disk and release"
+
+INSTALL_TEMP="$(mktemp -d /run/echo-os-installer.XXXXXX)"
+FACTORY_KEY="$INSTALL_TEMP/factory-data.key"
+RECOVERY_KEY="$INSTALL_TEMP/recovery.key"
+TPM2_DEVICE_KEY=""
+TPM2_ENROLLMENT_ARGS=(--tpm2-public-key "$PCR_POLICY_PUBLIC_KEY")
+ACTIVE_MAPPINGS=()
+cleanup_install_secrets() {
+  local mapping
+  for mapping in "${ACTIVE_MAPPINGS[@]}"; do
+    cryptsetup close "$mapping" >/dev/null 2>&1 || true
+  done
+  rm -rf -- "$INSTALL_TEMP"
+}
+trap cleanup_install_secrets EXIT INT TERM
+install -m 0600 "$FACTORY_KEY_SOURCE" "$FACTORY_KEY"
+python3 "$DATA_PROTECTION" check-factory-key "$FACTORY_KEY"
+if [[ -n "${ECHO_INSTALL_TPM2_DEVICE_KEY:-}" ]]; then
+  [[ -f "$ECHO_INSTALL_TPM2_DEVICE_KEY" && \
+     ! -L "$ECHO_INSTALL_TPM2_DEVICE_KEY" ]] || \
+    fail "offline TPM2 device key must be a regular non-symlink file"
+  TPM2_DEVICE_KEY_INPUT="$(realpath "$ECHO_INSTALL_TPM2_DEVICE_KEY")"
+  [[ "$(stat -c '%u:%g' "$TPM2_DEVICE_KEY_INPUT")" == 0:0 ]] || \
+    fail "offline TPM2 device key must be root-owned"
+  TPM2_DEVICE_KEY_MODE="$(stat -c '%a' "$TPM2_DEVICE_KEY_INPUT")"
+  (( (8#$TPM2_DEVICE_KEY_MODE & 8#022) == 0 )) || \
+    fail "offline TPM2 device key must not be group/other writable"
+  TPM2_DEVICE_KEY="$INSTALL_TEMP/tpm2-device-key.public"
+  install -m 0644 "$TPM2_DEVICE_KEY_INPUT" "$TPM2_DEVICE_KEY"
+  TPM2_ENROLLMENT_ARGS+=(--tpm2-device-key "$TPM2_DEVICE_KEY")
+  echo "  TPM2 enrollment: offline against the supplied virtual-device SRK"
+else
+  echo "  TPM2 enrollment: live against the device TPM"
+fi
+if [[ -n "${ECHO_INSTALL_RECOVERY_KEY_FILE:-}" ]]; then
+  [[ -f "$ECHO_INSTALL_RECOVERY_KEY_FILE" && \
+     ! -L "$ECHO_INSTALL_RECOVERY_KEY_FILE" ]] || \
+    fail "supplied recovery key must be a regular non-symlink file"
+  RECOVERY_KEY_INPUT="$(realpath "$ECHO_INSTALL_RECOVERY_KEY_FILE")"
+  [[ -f "$RECOVERY_KEY_INPUT" && \
+     "$(stat -c '%u:%g' "$RECOVERY_KEY_INPUT")" == 0:0 ]] || \
+    fail "supplied recovery key must be a root-owned regular file"
+  RECOVERY_KEY_MODE="$(stat -c '%a' "$RECOVERY_KEY_INPUT")"
+  (( (8#$RECOVERY_KEY_MODE & 8#077) == 0 )) || \
+    fail "supplied recovery key must be private"
+  install -m 0600 "$RECOVERY_KEY_INPUT" "$RECOVERY_KEY"
+  python3 "$DATA_PROTECTION" check-recovery-key "$RECOVERY_KEY"
+  echo "  recovery key: supplied through a private installer input"
+else
+  python3 "$DATA_PROTECTION" generate-recovery-key "$RECOVERY_KEY" >/dev/null
+  [[ -r /dev/tty && -w /dev/tty ]] || \
+    fail "a physical console is required to present the recovery key"
+  {
+    echo
+    echo "Echo OS recovery key — store this away from the device:"
+    tr -d '\n' <"$RECOVERY_KEY"
+    echo
+    echo "Type RECOVERY-KEY-SAVED after recording it:"
+  } >/dev/tty
+  IFS= read -r RECOVERY_ACK </dev/tty
+  [[ "$RECOVERY_ACK" == RECOVERY-KEY-SAVED ]] || \
+    fail "installation stopped before recovery-key acknowledgement"
+  unset RECOVERY_ACK
+  echo "  recovery key: presented and acknowledged on the physical console"
+fi
+
+exec {TARGET_LOCK_FD}<>"$TARGET"
+flock -n "$TARGET_LOCK_FD" || fail "target disk is locked by another installer"
+require_safe_target
+LOCKED_TARGET_IDENTITY="$(target_identity_record)"
+[[ "$LOCKED_TARGET_IDENTITY" == "$TARGET_IDENTITY" ]] || \
+  fail "target identity changed after confirmation; create a new install plan"
+echo "ECHO_INSTALL_TARGET_LOCKED target=$TARGET device-id=$TARGET_DEVICE_ID identity=stable"
+echo "Writing authenticated Echo OS $IMAGE_VERSION to $TARGET"
+zstd --decompress --stdout -- "$PAYLOAD" |
+  python3 "$VERIFY_STREAM" "$UNCOMPRESSED_SIZE" |
+  dd of="$TARGET" bs=16M iflag=fullblock conv=fsync status=progress
+sync
+
+# Drop the kernel's buffered view before verification, then read the exact
+# signed byte count directly from the block device. This proves the bytes that
+# reached the target rather than merely hashing a warm page-cache copy.
+blockdev --flushbufs "$TARGET"
+WRITTEN_SHA256="$(
+  dd if="$TARGET" bs=16M count="$UNCOMPRESSED_SIZE" \
+    iflag=direct,fullblock,count_bytes status=none |
+    sha256sum | awk '{print $1}'
+)"
+[[ "$WRITTEN_SHA256" == "$UNCOMPRESSED_SHA256" ]] || \
+  fail "post-write SHA-256 mismatch; target must not be booted"
+echo "  verified: exact uncompressed image bytes by direct post-flush readback"
+
+# Relocate the backup GPT to the physical end of larger disks, then let
+# systemd-repart grow the final home partition into all remaining free space.
+sgdisk -e "$TARGET"
+for _attempt in $(seq 1 20); do
+  if blockdev --rereadpt "$TARGET" 2>/dev/null; then break; fi
+  sleep 0.25
+done
+blockdev --rereadpt "$TARGET"
+udevadm settle --timeout=30
+systemd-repart \
+  --dry-run=no \
+  --discard=no \
+  --key-file="$FACTORY_KEY" \
+  --definitions="$INSTALL_REPART_DEFINITIONS" \
+  "$TARGET"
+blockdev --rereadpt "$TARGET"
+udevadm settle --timeout=30
+
+mapfile -t INSTALLED_LABELS < <(
+  lsblk -nrpo PARTLABEL "$TARGET" | awk 'NF { print $1 }'
+)
+EXPECTED_LABELS=(
+  echo-esp
+  "echo-root-$IMAGE_VERSION"
+  "echo-root-$IMAGE_VERSION-verity"
+  "echo-root-$IMAGE_VERSION-verity-sig"
+  _empty
+  _empty
+  _empty
+  echo-var
+  echo-swap
+  echo-home
+)
+[[ "${#INSTALLED_LABELS[@]}" -eq "${#EXPECTED_LABELS[@]}" ]] || \
+  fail "installed partition count mismatch: ${INSTALLED_LABELS[*]}"
+for index in "${!EXPECTED_LABELS[@]}"; do
+  [[ "${INSTALLED_LABELS[$index]}" == "${EXPECTED_LABELS[$index]}" ]] || \
+    fail "installed partition order mismatch: ${INSTALLED_LABELS[*]}"
+done
+
+partition_for_label() {
+  local label="$1"
+  lsblk -nrpo PATH,PARTLABEL "$TARGET" | awk -v wanted="$label" '$2 == wanted { print $1 }'
+}
+
+HOME_PARTITION="$(partition_for_label echo-home)"
+[[ -b "$HOME_PARTITION" ]] || fail "installed home partition is missing"
+cryptsetup open --key-file "$FACTORY_KEY" "$HOME_PARTITION" echo-install-home
+ACTIVE_MAPPINGS+=(echo-install-home)
+HOME_MAPPING=/dev/mapper/echo-install-home
+set +e
+e2fsck -pf "$HOME_MAPPING"
+FSCK_STATUS=$?
+set -e
+(( FSCK_STATUS <= 1 )) || fail "home filesystem check failed with status $FSCK_STATUS"
+resize2fs "$HOME_MAPPING"
+cryptsetup close echo-install-home
+ACTIVE_MAPPINGS=()
+
+for label_and_type in \
+  'echo-esp vfat' \
+  "echo-root-$IMAGE_VERSION ext4" \
+  "echo-root-$IMAGE_VERSION-verity DM_verity_hash" \
+  "echo-root-$IMAGE_VERSION-verity-sig verity_hash_signature" \
+  'echo-var crypto_LUKS' \
+  'echo-swap crypto_LUKS' \
+  'echo-home crypto_LUKS'; do
+  read -r label expected_type <<<"$label_and_type"
+  partition="$(partition_for_label "$label")"
+  [[ -b "$partition" ]] || fail "installed partition is missing: $label"
+  actual_type="$(blkid -s TYPE -o value "$partition" 2>/dev/null || true)"
+  [[ "$actual_type" == "$expected_type" ]] || \
+    fail "$label filesystem mismatch: expected $expected_type, got ${actual_type:-none}"
+done
+
+for label_and_type in 'echo-var ext4' 'echo-swap swap' 'echo-home ext4'; do
+  read -r label expected_type <<<"$label_and_type"
+  partition="$(partition_for_label "$label")"
+  mapping="echo-install-${label#echo-}"
+  cryptsetup open --key-file "$FACTORY_KEY" "$partition" "$mapping"
+  ACTIVE_MAPPINGS+=("$mapping")
+  inner_type="$(blkid -s TYPE -o value "/dev/mapper/$mapping" 2>/dev/null || true)"
+  [[ "$inner_type" == "$expected_type" ]] || \
+    fail "$label inner filesystem mismatch: expected $expected_type, got ${inner_type:-none}"
+  cryptsetup close "$mapping"
+  ACTIVE_MAPPINGS=()
+done
+
+python3 "$DATA_PROTECTION" enroll "${TPM2_ENROLLMENT_ARGS[@]}" \
+  "$TARGET" "$FACTORY_KEY" "$RECOVERY_KEY"
+python3 "$DATA_PROTECTION" verify "${TPM2_ENROLLMENT_ARGS[@]}" \
+  "$TARGET" "$RECOVERY_KEY"
+sync
+echo "ECHO_INSTALL_COMPLETE target=$TARGET version=$IMAGE_VERSION source=$UNCOMPRESSED_SHA256 home=$HOME_PARTITION data=luks2-tpm2-signed-pcr11-recovery"
+echo "Remove the installer media and reboot into Echo OS"

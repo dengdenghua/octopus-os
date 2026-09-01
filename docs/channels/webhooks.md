@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过通用 Webhook 接口将 Octopus-Agent 接入任意支持 HTTP 回调的系统，实现灵活的消息收发与 AI 对话集成。
+通过通用 Webhook 接口将 Echo Agent 接入任意支持 HTTP 回调的系统，实现灵活的消息收发与 AI 对话集成。
 
 ## 前置条件
 
@@ -16,11 +16,11 @@
 
 Webhooks 渠道无需注册第三方平台账号。只需生成一个 Webhook 签名密钥用于验证请求来源：
 
-1. 在 Octopus-Agent Web UI 中创建 Webhook 渠道
+1. 在 Echo Agent Web UI 中创建 Webhook 渠道
 2. 系统自动生成 Webhook URL 和签名密钥
 3. 记录 Webhook URL 和签名密钥
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 Webhooks，填写以下字段：
 
@@ -31,7 +31,7 @@ Webhooks 渠道无需注册第三方平台账号。只需生成一个 Webhook �
 | 消息格式 | 请求体的消息字段路径 | `data.message` |
 | 用户标识字段 | 请求体的用户标识路径 | `data.user_id` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -47,7 +47,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -86,7 +86,7 @@ Webhook URL 格式：`https://your-domain.com/api/channels/webhooks/{hook_path}`
 
 ### 请求格式
 
-Octopus-Agent 接收标准 HTTP POST 请求，请求体为 JSON 格式：
+Echo Agent 接收标准 HTTP POST 请求，请求体为 JSON 格式：
 
 ```json
 {
@@ -115,7 +115,7 @@ AI 回复通过 HTTP 响应返回：
 
 ### 签名验证
 
-为防止伪造请求，建议启用签名验证。Octopus-Agent 使用 HMAC-SHA256 签名：
+为防止伪造请求，建议启用签名验证。Echo Agent 使用 HMAC-SHA256 签名：
 
 ```
 X-Webhook-Signature: sha256=<hmac_hex>
@@ -151,7 +151,7 @@ channels:
 ## 常见问题
 
 ### Q: 如何与 GitHub/GitLab 等平台集成？
-A: 在 GitHub/GitLab 的 Webhook 设置中，将 Payload URL 填入 Octopus-Agent 的 Webhook URL。需自定义 `message_path` 以匹配平台的事件格式，如 GitHub Issues 事件使用 `issue.body` 作为消息字段。
+A: 在 GitHub/GitLab 的 Webhook 设置中，将 Payload URL 填入 Echo Agent 的 Webhook URL。需自定义 `message_path` 以匹配平台的事件格式，如 GitHub Issues 事件使用 `issue.body` 作为消息字段。
 
 ### Q: 如何处理多个不同的 Webhook 来源？
 A: 在配置中定义多个 hook，每个 hook 使用不同的 path 和消息格式映射：
@@ -169,10 +169,10 @@ channels:
 ```
 
 ### Q: 请求超时怎么办？
-A: AI 生成回复可能需要较长时间。如果调用方超时，建议使用异步回调模式（配置 `callback_url`），Octopus-Agent 会先返回 202 状态码，生成完成后主动推送回复。
+A: AI 生成回复可能需要较长时间。如果调用方超时，建议使用异步回调模式（配置 `callback_url`），Echo Agent 会先返回 202 状态码，生成完成后主动推送回复。
 
 ## 相关链接
 
 - [Webhook 安全最佳实践](https://developer.github.com/webhooks/securing/)
-- [Octopus-Agent Webhook API 文档](https://docs.octopus-agent.dev/api/webhooks)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/webhooks)
+- [Echo Agent Webhook API 文档](https://docs.echo-agent.dev/api/webhooks)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/webhooks)

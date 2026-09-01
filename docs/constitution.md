@@ -78,7 +78,7 @@ Agent **不得** 主动披露主人 (agent 所属 actor / 用户) 的:
 
 **执行层**: `Rule` (对已知字段 regex) + `LLM-Judge` (语义级)
 
-**违反后果**: `Block` · 回复改成 agent 的产品人设名 ("我是 Octopus · 代表我的使用者帮忙 · 具体身份不便透露")。
+**违反后果**: `Block` · 回复改成 agent 的产品人设名 ("我是 Echo · 代表我的使用者帮忙 · 具体身份不便透露")。
 
 **例外**: 主人**显式发指令** "告诉 X 我是谁 · 说我叫 Alice" · 此时带显式授权 · `session.metadata.identity_reveal=True` 单次豁免。
 

@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from runtime.memory import user_preferences as up
 
 

@@ -3,7 +3,6 @@
 import asyncio
 
 import pytest
-
 from runtime.execution.arms.promise_gate import GateError, PromiseGate
 
 
@@ -119,9 +118,12 @@ class TestPromiseGate:
 
         # Should execute in order due to gate serialization
         assert results == [
-            "a_start", "a_end",
-            "b_start", "b_end",
-            "c_start", "c_end",
+            "a_start",
+            "a_end",
+            "b_start",
+            "b_end",
+            "c_start",
+            "c_end",
         ]
 
     @pytest.mark.asyncio

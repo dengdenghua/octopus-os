@@ -6,7 +6,6 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
-
 from runtime.memory.journal import InMemoryJournal, journal_context
 from runtime.platform.models import (
     ArmId,
@@ -87,18 +86,14 @@ class TestConsolidate:
 
     def test_success_rate_correct(self, journal_mixed):
         report = MemoryConsolidator(journal_mixed).consolidate()
-        main = next(
-            m for m in report.memories_produced if m.pattern_key == "code_arm/default"
-        )
+        main = next(m for m in report.memories_produced if m.pattern_key == "code_arm/default")
         assert main.trajectories_count == 8
         assert main.success_count == 5
         assert abs(main.success_rate - 5 / 8) < 1e-6
 
     def test_cost_aggregation(self, journal_mixed):
         report = MemoryConsolidator(journal_mixed).consolidate()
-        text_arm = next(
-            m for m in report.memories_produced if m.pattern_key == "text_arm/llm_plan"
-        )
+        text_arm = next(m for m in report.memories_produced if m.pattern_key == "text_arm/llm_plan")
         # Implementation note.
         assert abs(text_arm.total_cost_usd - 0.10) < 1e-6
 
@@ -246,12 +241,8 @@ class TestMaxMemories:
         j = InMemoryJournal()
         for arm_i in range(10):
             for _ in range(2):
-                j.write_trajectory(
-                    _mk_traj(arm=f"arm_{arm_i}", strategy=f"s_{arm_i}")
-                )
-        report = MemoryConsolidator(
-            j, config=ConsolidatorConfig(max_memories=3)
-        ).consolidate()
+                j.write_trajectory(_mk_traj(arm=f"arm_{arm_i}", strategy=f"s_{arm_i}"))
+        report = MemoryConsolidator(j, config=ConsolidatorConfig(max_memories=3)).consolidate()
         assert len(report.memories_produced) == 3
 
 
@@ -283,9 +274,7 @@ class TestFormatForPrompt:
         for _ in range(2):
             j.write_trajectory(_mk_traj(arm="hot_arm", strategy="s1", age_hours=1))
         for _ in range(2):
-            j.write_trajectory(
-                _mk_traj(arm="cold_arm", strategy="s2", age_hours=24 * 60)
-            )
+            j.write_trajectory(_mk_traj(arm="cold_arm", strategy="s2", age_hours=24 * 60))
         memories = MemoryConsolidator(j).consolidate().memories_produced
         text_all = format_memories_for_prompt(memories, only_hot=False)
         text_hot = format_memories_for_prompt(memories, only_hot=True)

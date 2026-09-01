@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.core.nerves import (
     AgentAdded,
@@ -25,7 +24,7 @@ from runtime.platform.models import ArmId, SkillId
 
 class TestSkillRegistryBackwardCompat:
     def test_no_bus_register_unchanged(self):
-        reg = SkillRegistry()   # Implementation note.
+        reg = SkillRegistry()  # Implementation note.
         skill = Skill(
             name="x",
             description="",
@@ -40,7 +39,8 @@ class TestSkillRegistryBackwardCompat:
         for n in ["a", "b", "c"]:
             reg.register(
                 Skill(
-                    name=n, trusted_source=f"skill://public/{n}",
+                    name=n,
+                    trusted_source=f"skill://public/{n}",
                     handler=lambda **_kw: {},
                 ),
                 verify_tests=False,
@@ -95,6 +95,7 @@ class TestSkillRegistryPublishes:
 
     def test_bus_exception_does_not_break_register(self):
         """Implementation note."""
+
         class _BadBus:
             def publish(self, ev):
                 raise RuntimeError("bus down")
@@ -102,7 +103,8 @@ class TestSkillRegistryPublishes:
         reg = SkillRegistry(event_bus=_BadBus())
         reg.register(
             Skill(
-                name="x", trusted_source="skill://public/x",
+                name="x",
+                trusted_source="skill://public/x",
                 handler=lambda **_kw: {},
             ),
             verify_tests=False,
@@ -127,8 +129,10 @@ def _rt():
 def _mk_agent(agent_id: str, display_name: str = "") -> Agent:
     rt = _rt()
     arm = Worker(
-        arm_id=ArmId("a"), affinity=[],
-        allowed_skills=[SkillId("read_file")], runtime=rt,
+        arm_id=ArmId("a"),
+        affinity=[],
+        allowed_skills=[SkillId("read_file")],
+        runtime=rt,
     )
     return Agent(
         agent_id=agent_id,
@@ -174,7 +178,7 @@ class TestAgentRegistryPublishes:
         assert removed == []
 
     def test_backward_compat_no_bus(self):
-        reg = AgentRegistry()   # Implementation note.
+        reg = AgentRegistry()  # Implementation note.
         reg.register(_mk_agent("x"))
         assert reg.has("x")
 
@@ -210,10 +214,10 @@ class TestForgeTriggersEvent:
     def test_forge_promote_publishes(self, tmp_path: Path):
         """Implementation note."""
         import shutil
+
         if shutil.which("git") is None:
             pytest.skip("git not on PATH")
 
-        from demos.bugfix_demo import build_bugfix_graph, setup_buggy_project
         from runtime.execution.suckers.builtins import register_all
         from runtime.execution.suckers.write_skills import register_exec_skill
         from runtime.execution.tool_engine import ToolExecutor
@@ -221,6 +225,8 @@ class TestForgeTriggersEvent:
         from runtime.platform.models import Budget, BudgetLimits
         from runtime.safety.auth import TrustEngine
         from runtime.safety.recovery import ForgeConfig, SkillForge
+
+        from demos.bugfix_demo import build_bugfix_graph, setup_buggy_project
 
         bus = TypedEventBus()
         events: list[SkillRegistered] = []
@@ -231,7 +237,7 @@ class TestForgeTriggersEvent:
         register_all(reg)
         register_exec_skill(reg)
 
-        initial_count = len(events)    # Implementation note.
+        initial_count = len(events)  # Implementation note.
 
         # Implementation note.
         journal_path = tmp_path / "events.jsonl"
@@ -253,7 +259,8 @@ class TestForgeTriggersEvent:
 
         # Implementation note.
         forge = SkillForge(
-            journal=journal, registry=reg,
+            journal=journal,
+            registry=reg,
             config=ForgeConfig(min_hits=2, min_success_rate=0.5),
         )
         result = forge.run()

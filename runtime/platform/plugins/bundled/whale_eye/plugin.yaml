@@ -1,0 +1,23 @@
+name: whale_eye
+display_name: 鲸鱼之眼
+version: 1.0.0
+description: 鲸鱼之眼 — 视觉判读与转述(截图/图片 → 中文描述,给纯文本模型装的一只"眼睛")
+author: Echo
+tags:
+  - vision
+  - ui-qa
+  - regression
+  - vision-guard
+provides:
+  - whale_eye.skills
+config_schema:
+  type: object
+  properties:
+    default_prompt:
+      type: string
+      title: 默认判读提示词
+      description: 未显式传 prompt 时使用的视觉回归 checklist
+    default_output_dir:
+      type: string
+      title: 截图/报告落盘目录
+      description: 相对仓库根的目录,默认 .codex-logs/vision

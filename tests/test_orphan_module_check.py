@@ -30,22 +30,18 @@ class TestConsumedTargets:
     def test_absolute_and_from_imports(self, tmp_path: Path):
         f = tmp_path / "m.py"
         f.write_text(
-            "import runtime.a.b\n"
-            "from runtime.c import d\n"
-            "from runtime.e.f import G\n",
+            "import runtime.a.b\nfrom runtime.c import d\nfrom runtime.e.f import G\n",
             encoding="utf-8",
         )
         got = _consumed_targets(f)
         assert "runtime.a.b" in got
-        assert "runtime.c.d" in got       # submodule-or-symbol, over-marked (safe)
+        assert "runtime.c.d" in got  # submodule-or-symbol, over-marked (safe)
         assert "runtime.e.f" in got
 
     def test_lazy_import_in_function_counts(self, tmp_path: Path):
         f = tmp_path / "m.py"
         f.write_text(
-            "def loader():\n"
-            "    from runtime.deep.mod import thing\n"
-            "    return thing\n",
+            "def loader():\n    from runtime.deep.mod import thing\n    return thing\n",
             encoding="utf-8",
         )
         # A lazy import inside a body still marks the module consumed —
@@ -57,7 +53,9 @@ class TestBaselineGreen:
     def test_strict_is_green(self):
         r = subprocess.run(
             [sys.executable, "tools/lint/orphan_module_check.py", "--strict"],
-            cwd=str(_REPO), capture_output=True, text=True,
+            cwd=str(_REPO),
+            capture_output=True,
+            text=True,
         )
         assert r.returncode == 0, (
             "orphan-module baseline drifted from reality:\n" + r.stdout + r.stderr

@@ -10,6 +10,7 @@ field is one of the ``ItemMarker`` magic strings — so any subscriber
 that already drinks the journal sees the lifecycle without separate
 plumbing.
 """
+
 from __future__ import annotations
 
 import json

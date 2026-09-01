@@ -1,0 +1,16 @@
+[Unit]
+Description=Restore the Echo OS local administrator on the current A/B root
+Documentation=file:/usr/share/doc/echo-os/oem-setup.md
+Requires=echo-oem-setup.service
+After=local-fs.target echo-oem-setup.service
+Before=sddm.service display-manager.service
+ConditionPathExists=/var/lib/echo-os/oem-complete.json
+ConditionCredential=!echo.os.ci-session
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/lib/echo-os/echo-oem-setup --restore
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target

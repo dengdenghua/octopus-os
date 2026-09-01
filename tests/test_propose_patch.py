@@ -1,4 +1,5 @@
 """Tests for ``propose_patch`` skill (lane G — diff-as-tool)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,17 +14,11 @@ def _write(p: Path, content: str) -> None:
 def test_dry_run_does_not_modify_file(tmp_path: Path) -> None:
     f = tmp_path / "a.py"
     _write(f, "line1\nline2\nline3\n")
-    diff = (
-        "--- a/a.py\n"
-        "+++ b/a.py\n"
-        "@@ -1,3 +1,3 @@\n"
-        "-line1\n"
-        "+LINE_ONE\n"
-        " line2\n"
-        " line3\n"
-    )
+    diff = "--- a/a.py\n+++ b/a.py\n@@ -1,3 +1,3 @@\n-line1\n+LINE_ONE\n line2\n line3\n"
     result = _propose_patch(
-        path=str(f), unified_diff=diff, dry_run=True,
+        path=str(f),
+        unified_diff=diff,
+        dry_run=True,
         sandbox_dir=str(tmp_path),
     )
     assert result["ok"] is True
@@ -35,17 +30,11 @@ def test_dry_run_does_not_modify_file(tmp_path: Path) -> None:
 def test_apply_writes_file(tmp_path: Path) -> None:
     f = tmp_path / "a.py"
     _write(f, "line1\nline2\nline3\n")
-    diff = (
-        "--- a/a.py\n"
-        "+++ b/a.py\n"
-        "@@ -1,3 +1,3 @@\n"
-        "-line1\n"
-        "+LINE_ONE\n"
-        " line2\n"
-        " line3\n"
-    )
+    diff = "--- a/a.py\n+++ b/a.py\n@@ -1,3 +1,3 @@\n-line1\n+LINE_ONE\n line2\n line3\n"
     result = _propose_patch(
-        path=str(f), unified_diff=diff, dry_run=False,
+        path=str(f),
+        unified_diff=diff,
+        dry_run=False,
         sandbox_dir=str(tmp_path),
     )
     assert result["ok"] is True
@@ -63,7 +52,8 @@ def test_missing_diff(tmp_path: Path) -> None:
     f = tmp_path / "a.py"
     _write(f, "x")
     result = _propose_patch(
-        path=str(f), unified_diff="",
+        path=str(f),
+        unified_diff="",
         sandbox_dir=str(tmp_path),
     )
     assert result["error_type"] == "invalid_argument"
@@ -72,7 +62,8 @@ def test_missing_diff(tmp_path: Path) -> None:
 def test_file_not_found(tmp_path: Path) -> None:
     diff = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
     result = _propose_patch(
-        path=str(tmp_path / "nope.py"), unified_diff=diff,
+        path=str(tmp_path / "nope.py"),
+        unified_diff=diff,
         sandbox_dir=str(tmp_path),
     )
     assert result["error_type"] == "not_found"
@@ -88,15 +79,11 @@ def test_no_op_diff(tmp_path: Path) -> None:
     """
     f = tmp_path / "a.py"
     _write(f, "line1\nline2\n")
-    diff = (
-        "--- a/a.py\n"
-        "+++ b/a.py\n"
-        "@@ -1,1 +1,1 @@\n"
-        "-no_match_anywhere\n"
-        "+replacement\n"
-    )
+    diff = "--- a/a.py\n+++ b/a.py\n@@ -1,1 +1,1 @@\n-no_match_anywhere\n+replacement\n"
     result = _propose_patch(
-        path=str(f), unified_diff=diff, dry_run=True,
+        path=str(f),
+        unified_diff=diff,
+        dry_run=True,
         sandbox_dir=str(tmp_path),
     )
     # Either it was rejected as no-op, OR the dry-run preview shows
@@ -104,24 +91,17 @@ def test_no_op_diff(tmp_path: Path) -> None:
     if "error" in result:
         assert result["error_type"] in {"invalid_argument", "patch_apply_failed"}
     else:
-        assert any(
-            "replacement" in h.get("preview", "")
-            for h in result.get("hunks_preview", [])
-        )
+        assert any("replacement" in h.get("preview", "") for h in result.get("hunks_preview", []))
 
 
 def test_preview_shows_hunks(tmp_path: Path) -> None:
     f = tmp_path / "a.py"
     _write(f, "line1\nline2\nline3\nline4\nline5\n")
-    diff = (
-        "--- a/a.py\n"
-        "+++ b/a.py\n"
-        "@@ -2,1 +2,1 @@\n"
-        "-line2\n"
-        "+changed\n"
-    )
+    diff = "--- a/a.py\n+++ b/a.py\n@@ -2,1 +2,1 @@\n-line2\n+changed\n"
     result = _propose_patch(
-        path=str(f), unified_diff=diff, dry_run=True,
+        path=str(f),
+        unified_diff=diff,
+        dry_run=True,
         sandbox_dir=str(tmp_path),
     )
     assert result["ok"] is True

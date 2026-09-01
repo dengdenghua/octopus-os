@@ -1,0 +1,102 @@
+{
+  "27_image-prompt-guide": {
+    "installedVersion": "0.0.51"
+  },
+  "27_remotion": {
+    "installedVersion": "0.0.51"
+  },
+  "27_pptx": {
+    "installedVersion": "0.0.51"
+  },
+  "27_xlsx": {
+    "enabled": true,
+    "installedVersion": "0.0.51"
+  },
+  "27_pdf": {
+    "installedVersion": "0.0.51"
+  },
+  "27_mcp-tools": {
+    "installedVersion": "0.0.51"
+  },
+  "27_mcporter": {
+    "installedVersion": "0.0.51"
+  },
+  "27_docx": {
+    "installedVersion": "0.0.51"
+  },
+  "27_graphql-operations": {
+    "installedVersion": "0.0.51"
+  },
+  "27_gmail-assistant": {
+    "installedVersion": "0.0.51"
+  },
+  "27_lark-tools": {
+    "installedVersion": "0.0.51"
+  },
+  "27_skill-finder": {
+    "installedVersion": "0.0.51"
+  },
+  "27_skill-creator": {
+    "installedVersion": "0.0.51"
+  },
+  "27_find-skills": {
+    "installedVersion": "0.0.51"
+  },
+  "27_skill-writer": {
+    "installedVersion": "0.0.51"
+  },
+  "27_skill-vetter": {
+    "installedVersion": "0.0.51"
+  },
+  "27_create-website": {
+    "installedVersion": "0.0.51"
+  },
+  "google_gemini-api-dev": {
+    "enabled": true,
+    "installedVersion": "google-gemini/gemini-skills"
+  },
+  "google_gemini-interactions-api": {
+    "enabled": true,
+    "installedVersion": "google-gemini/gemini-skills"
+  },
+  "google_gemini-live-api-dev": {
+    "enabled": true,
+    "installedVersion": "google-gemini/gemini-skills"
+  },
+  "google_vertex-ai-api-dev": {
+    "enabled": true,
+    "installedVersion": "google-gemini/gemini-skills"
+  },
+  "addy_frontend-ui-engineering": {
+    "enabled": true,
+    "installedVersion": "addyosmani/agent-skills"
+  },
+  "addy_api-and-interface-design": {
+    "enabled": true,
+    "installedVersion": "addyosmani/agent-skills"
+  },
+  "addy_browser-testing-with-devtools": {
+    "enabled": true,
+    "installedVersion": "addyosmani/agent-skills"
+  },
+  "addy_performance-optimization": {
+    "enabled": true,
+    "installedVersion": "addyosmani/agent-skills"
+  },
+  "addy_code-review-and-quality": {
+    "enabled": true,
+    "installedVersion": "addyosmani/agent-skills"
+  },
+  "meoo_uiux-pro-max": {
+    "enabled": true,
+    "installedVersion": "https://meoo.com/skills/21"
+  },
+  "superpower_writing-plans": {
+    "enabled": true,
+    "installedVersion": "local"
+  },
+  "superpower_brainstorming": {
+    "enabled": true,
+    "installedVersion": "local"
+  }
+}

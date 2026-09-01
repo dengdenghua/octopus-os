@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from "react";
 import {
   BarChart3Icon,
@@ -32,12 +31,18 @@ export function SkillPerformance({ className }: { className?: string }) {
     setLoading(true);
     try {
       const [statsRes, decliningRes] = await Promise.all([
-        fetch(`${getBackendBaseURL()}/api/skills/performance`, { headers: authHeaders() }),
-        fetch(`${getBackendBaseURL()}/api/skills/declining`, { headers: authHeaders() }),
+        fetch(`${getBackendBaseURL()}/api/skills/performance`, {
+          headers: authHeaders(),
+        }),
+        fetch(`${getBackendBaseURL()}/api/skills/declining`, {
+          headers: authHeaders(),
+        }),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
       if (decliningRes.ok) setDeclining(await decliningRes.json());
-    } catch (e) { swallow(e); }
+    } catch (e) {
+      swallow(e);
+    }
     setLoading(false);
   }, []);
 
@@ -51,7 +56,9 @@ export function SkillPerformance({ className }: { className?: string }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <BarChart3Icon className="text-primary size-4" />
-          <span className="text-sm font-semibold">{t.evolutionDashboard.skillPerformance}</span>
+          <span className="text-sm font-semibold">
+            {t.evolutionDashboard.skillPerformance}
+          </span>
         </div>
         <button
           onClick={() => void refresh()}
@@ -67,8 +74,8 @@ export function SkillPerformance({ className }: { className?: string }) {
 
       {/* Declining Skills Warning */}
       {declining.length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
-          <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+        <div className="rounded-lg border border-warning/30 bg-warning/5 p-3">
+          <div className="flex items-center gap-1.5 text-warning">
             <TrendingDownIcon className="size-3.5" />
             <span className="text-xs font-medium">
               {t.evolutionDashboard.declining} ({declining.length})
@@ -80,10 +87,10 @@ export function SkillPerformance({ className }: { className?: string }) {
                 key={s.skill_name}
                 className="flex items-center justify-between text-xs"
               >
-                <span className="font-mono text-amber-700 dark:text-amber-300">
+                <span className="font-mono text-warning">
                   {s.skill_name}
                 </span>
-                <span className="text-amber-600 dark:text-amber-400">
+                <span className="text-warning">
                   {(s.success_rate * 100).toFixed(0)}% success
                 </span>
               </div>
@@ -102,10 +109,18 @@ export function SkillPerformance({ className }: { className?: string }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b bg-muted/30">
-                <th className="px-3 py-2 text-left font-medium">{t.evolutionDashboard.skillName}</th>
-                <th className="px-3 py-2 text-right font-medium">{t.evolutionDashboard.usageCount}</th>
-                <th className="px-3 py-2 text-right font-medium">{t.evolutionDashboard.successRate}</th>
-                <th className="px-3 py-2 text-right font-medium">{t.evolutionDashboard.avgDuration}</th>
+                <th className="px-3 py-2 text-left font-medium">
+                  {t.evolutionDashboard.skillName}
+                </th>
+                <th className="px-3 py-2 text-right font-medium">
+                  {t.evolutionDashboard.usageCount}
+                </th>
+                <th className="px-3 py-2 text-right font-medium">
+                  {t.evolutionDashboard.successRate}
+                </th>
+                <th className="px-3 py-2 text-right font-medium">
+                  {t.evolutionDashboard.avgDuration}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -120,10 +135,10 @@ export function SkillPerformance({ className }: { className?: string }) {
                       className={cn(
                         "rounded px-1.5 py-0.5 tabular-nums",
                         s.success_rate >= 0.8
-                          ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                          ? "bg-success/10 text-success dark:bg-success/30 dark:text-success"
                           : s.success_rate >= 0.5
-                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                            : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+                            ? "bg-warning/10 text-warning dark:bg-warning/30 dark:text-warning"
+                            : "bg-destructive/10 text-destructive dark:bg-destructive/30 dark:text-destructive",
                       )}
                     >
                       {(s.success_rate * 100).toFixed(0)}%

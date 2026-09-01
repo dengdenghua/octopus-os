@@ -17,7 +17,12 @@ export type UsageEventType =
   | "agent_run"
   | "workflow_run";
 
-export type BillingStatus = "pending" | "paid" | "failed" | "refunded" | "cancelled";
+export type BillingStatus =
+  | "pending"
+  | "paid"
+  | "failed"
+  | "refunded"
+  | "cancelled";
 
 export type InvoiceType = "subscription" | "usage" | "bonus" | "refund";
 

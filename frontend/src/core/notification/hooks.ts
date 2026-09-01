@@ -15,24 +15,27 @@ interface NotificationOptions {
 interface UseNotificationReturn {
   permission: NotificationPermission;
   isSupported: boolean;
+  isReady: boolean;
   requestPermission: () => Promise<NotificationPermission>;
-  showNotification: (title: string, options?: NotificationOptions) => void;
+  showNotification: (title: string, options?: NotificationOptions) => boolean;
 }
 
 export function useNotification(): UseNotificationReturn {
   const [permission, setPermission] =
     useState<NotificationPermission>("default");
   const [isSupported, setIsSupported] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   // Implementation note.
   const lastNotificationTime = useRef<number>(0);
 
   useEffect(() => {
     // Check if browser supports Notification API
-    if ("Notification" in window) {
+    if (typeof window !== "undefined" && "Notification" in window) {
       setIsSupported(true);
       setPermission(Notification.permission);
     }
+    setIsReady(true);
   }, []);
 
   const requestPermission =
@@ -53,23 +56,23 @@ export function useNotification(): UseNotificationReturn {
     (title: string, options?: NotificationOptions) => {
       if (!isSupported) {
         console.warn("Notification API is not supported");
-        return;
+        return false;
       }
 
       if (!settings.notification.enabled) {
         console.warn("Notification is disabled");
-        return;
+        return false;
       }
 
       if (Date.now() - lastNotificationTime.current < 1000) {
         console.warn("Notification sent too soon");
-        return;
+        return false;
       }
       lastNotificationTime.current = Date.now();
 
       if (permission !== "granted") {
         console.warn("Notification permission not granted");
-        return;
+        return false;
       }
 
       try {
@@ -81,8 +84,10 @@ export function useNotification(): UseNotificationReturn {
         notification.onerror = (error) => {
           console.error("Notification error:", error);
         };
+        return true;
       } catch (e) {
         console.error("Failed to create notification:", e);
+        return false;
       }
     },
     [isSupported, settings.notification.enabled, permission],
@@ -91,8 +96,8 @@ export function useNotification(): UseNotificationReturn {
   return {
     permission,
     isSupported,
+    isReady,
     requestPermission,
     showNotification,
   };
 }
-

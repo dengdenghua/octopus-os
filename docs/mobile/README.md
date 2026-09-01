@@ -1,8 +1,8 @@
-# Octopus Mobile · 移动触手
+# Echo Mobile · 移动触手
 
 > **章鱼伸出去的物理触手 · 让 AI 真正"操控"你的手机与桌面**
 
-Octopus Mobile 是 [octopus-agent](../README.md) 的**移动端与跨端编排层**。
+Echo Mobile 是 [echo-agent](../README.md) 的**移动端与跨端编排层**。
 它让章鱼的中枢（Cerebrum）能**真实操控** Android 设备、桌面设备，并
 实现"**手机+电脑+多手机**"的混合编排任务。
 
@@ -10,7 +10,7 @@ Octopus Mobile 是 [octopus-agent](../README.md) 的**移动端与跨端编排�
 
 ## 🎯 解决的真实问题
 
-| 场景 | 没有 Octopus Mobile | 有 Octopus Mobile |
+| 场景 | 没有 Echo Mobile | 有 Echo Mobile |
 |---|---|---|
 | "帮我在淘宝抢个首发" | 需自己写爬虫 / 用 Puppeteer（被反爬） | 发微信 → 章鱼调小米 14 真机自动抢 |
 | "用公司 3 台手机比价" | 手动切 3 个 App 来回截屏 | 一句话 → 3 台手机并行跑 + Excel 报表 |
@@ -39,7 +39,7 @@ Octopus Mobile 是 [octopus-agent](../README.md) 的**移动端与跨端编排�
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     Cerebrum 中枢（octopus-agent 已有）              │
+│                     Cerebrum 中枢（echo-agent 已有）              │
 │   接收用户任务 → DAG 分解 → 任务分配到 Arm → 协调并发/依赖/失败重试  │
 └─────────────────────────┬───────────────────────────────────────────┘
                           │ Nerves 总线 / JSON-RPC 2.0 / WebSocket
@@ -56,7 +56,7 @@ Octopus Mobile 是 [octopus-agent](../README.md) 的**移动端与跨端编排�
      ▼                    ▼
 ┌──────────┐         ┌──────────────┐
 │ Desktop  │         │  Android     │
-│  客户端  │         │  Octopus Mobile     │
+│  客户端  │         │  Echo Mobile     │
 │ (Electron)│        │  改造版      │
 └──────────┘         └──────────────┘
    Tier 1              Tier 1
@@ -79,7 +79,7 @@ Octopus Mobile 是 [octopus-agent](../README.md) 的**移动端与跨端编排�
 
 补充：
 - 仿生学：[../biomimetic/tentacle/README.md](../biomimetic/tentacle/README.md) — "触手"器官的设计哲学
-- 决策记录：[../adr/008-octopus-mobile.md](../adr/008-octopus-mobile.md)
+- 决策记录：[../adr/008-echo-mobile.md](../adr/008-echo-mobile.md)
 
 ---
 
@@ -90,7 +90,7 @@ Octopus Mobile 是 [octopus-agent](../README.md) 的**移动端与跨端编排�
 | `runtime/tentacle/` 触手器官 | ✅ Phase 0 骨架 | Device pool + Mobile/Desktop 抽象 |
 | `runtime/execution/arms/presets.py` | ✅ 接入 | `make_mobile_operator_arm` 已添加 |
 | `runtime/tentacle/mobile/skills/` | ✅ 30 个 | 30 个移动技能的 canonical SKILL.md，MCP/LLM 与 Android assets 由此对齐 |
-| `../octopus-mobile/` Android 端 | ⏳ Phase 0 概念验证 | RPC 客户端骨架已就位 |
+| `../echo-mobile/` Android 端 | ⏳ Phase 0 概念验证 | RPC 客户端骨架已就位 |
 | `docs/mobile/` 文档 | ✅ 完整 | 架构/协议/技能/浏览器集成 |
 | 桌面端架构影响 | ✅ 零破坏 | 全 add-only，最坏情况撤掉不损失任何代码 |
 
@@ -115,7 +115,7 @@ Octopus Mobile 是 [octopus-agent](../README.md) 的**移动端与跨端编排�
 
 ## 🤝 贡献
 
-Octopus Mobile 接受以下类型的 PR：
+Echo Mobile 接受以下类型的 PR：
 1. **新设备类型**（iOS、IoT、嵌入式设备）—— 继承 `runtime/tentacle/base.py`
 2. **新移动技能**（SKILL.md + 1 个 Android 实现）—— 参考 `runtime/tentacle/mobile/skills/`
 3. **新 IM 触发源**（小众 IM 适配）—— 参考 `docs/channels/`

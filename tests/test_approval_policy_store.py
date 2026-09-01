@@ -8,6 +8,7 @@ Three layers covered here:
                                   rule added during one turn affects
                                   the next without reboot.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,7 +16,6 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.platform.ui.permissions_router import create_permissions_router
 from runtime.safety.approval.approval_gate import (
     ApprovalPolicy,
@@ -167,9 +167,7 @@ class TestPermissionsExampleFile:
 
     def setup_method(self) -> None:
         self.path = _repo_root() / "permissions.example.json"
-        assert self.path.is_file(), (
-            f"permissions.example.json missing at repo root: {self.path}"
-        )
+        assert self.path.is_file(), f"permissions.example.json missing at repo root: {self.path}"
 
     def test_is_valid_json_with_v1_schema(self) -> None:
         import json as _json
@@ -189,8 +187,7 @@ class TestPermissionsExampleFile:
 
         raw = _json.loads(self.path.read_text(encoding="utf-8"))
         assert len(policy.rules) == len(raw["rules"]), (
-            "example file has rule entries that fail to parse — "
-            "either fix them, or drop them"
+            "example file has rule entries that fail to parse — either fix them, or drop them"
         )
 
     def test_decisions_match_documented_intent(self) -> None:
@@ -369,8 +366,8 @@ class TestPermissionsRouter:
         tmp_path: Path,
     ) -> None:
         data_dir = tmp_path / "runtime-data"
-        monkeypatch.setenv("OCTOPUS_DATA_DIR", str(data_dir))
-        monkeypatch.delenv("OCTOPUS_HOME", raising=False)
+        monkeypatch.setenv("ECHO_DATA_DIR", str(data_dir))
+        monkeypatch.delenv("ECHO_HOME", raising=False)
 
         app = FastAPI()
         app.include_router(create_permissions_router())

@@ -1,0 +1,212 @@
+#!/usr/bin/python3
+"""Run Plasma 6 Klipper as a private, windowless Echo OS session service.
+
+Plasma 6 no longer ships a standalone ``klipper`` executable.  Its supported
+implementation is the ``org.kde.plasma.private.clipboard`` QML module backed by
+libklipper6.  This small QApplication host instantiates that upstream module
+without starting plasmashell or exposing a helper window.
+
+Clipboard payloads are never logged.  Klipper's SQLite database is forced into
+the logind runtime directory so a crash cannot leave clipboard history in the
+user's persistent home directory.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+from pathlib import Path
+import signal
+import stat
+import subprocess
+import sys
+
+
+DBUS_NAME = "org.kde.klipper"
+QML_SOURCE = b"""
+import org.kde.plasma.private.clipboard 0.1 as Clipboard
+Clipboard.KlipperInterface {}
+"""
+
+
+def fail(message: str) -> "NoReturn":
+    print(f"echo-clipboard-host: {message}", file=sys.stderr, flush=True)
+    raise SystemExit(1)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Host Plasma 6 Klipper without a Plasma Shell window"
+    )
+    parser.add_argument("--session", choices=("x11", "wayland"), required=True)
+    parser.add_argument("--database", required=True)
+    return parser.parse_args()
+
+
+def validate_private_directory(path: Path, uid: int) -> None:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        fail(f"private runtime directory is missing: {path}")
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        fail(f"private runtime path is not a real directory: {path}")
+    if info.st_uid != uid or stat.S_IMODE(info.st_mode) != 0o700:
+        fail(f"private runtime directory has unsafe ownership or mode: {path}")
+
+
+def ensure_private_directory(path: Path, uid: int) -> None:
+    try:
+        path.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    validate_private_directory(path, uid)
+
+
+def prepare_runtime_database(database_arg: str) -> Path:
+    uid = os.getuid()
+    runtime_value = os.environ.get("XDG_RUNTIME_DIR", "")
+    runtime_dir = Path(runtime_value)
+    if not runtime_value or not runtime_dir.is_absolute():
+        fail("XDG_RUNTIME_DIR must be an absolute logind runtime directory")
+    validate_private_directory(runtime_dir, uid)
+
+    expected_parent = runtime_dir / "echo-os" / "clipboard"
+    expected_database = expected_parent / "history3.sqlite"
+    database = Path(database_arg)
+    if not database.is_absolute() or database != expected_database:
+        fail(f"database must be exactly {expected_database}")
+
+    echo_runtime = runtime_dir / "echo-os"
+    ensure_private_directory(echo_runtime, uid)
+    ensure_private_directory(expected_parent, uid)
+
+    if database.exists() or database.is_symlink():
+        info = database.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            fail(f"clipboard database is not a regular file: {database}")
+        if info.st_uid != uid or stat.S_IMODE(info.st_mode) & 0o077:
+            fail(f"clipboard database has unsafe ownership or mode: {database}")
+
+    return database
+
+
+def name_has_owner() -> bool:
+    try:
+        result = subprocess.run(
+            [
+                "/usr/bin/gdbus",
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.DBus",
+                "--object-path",
+                "/org/freedesktop/DBus",
+                "--method",
+                "org.freedesktop.DBus.NameHasOwner",
+                DBUS_NAME,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        fail(f"could not probe the session bus: {exc}")
+    return result.returncode == 0 and result.stdout.strip() == "(true,)"
+
+
+def validate_session_environment(session: str) -> None:
+    if not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+        fail("DBUS_SESSION_BUS_ADDRESS is required")
+    if session == "x11":
+        if not os.environ.get("DISPLAY") or os.environ.get("QT_QPA_PLATFORM") != "xcb":
+            fail("X11 host requires DISPLAY and QT_QPA_PLATFORM=xcb")
+        return
+
+    runtime_dir = Path(os.environ["XDG_RUNTIME_DIR"])
+    display_name = os.environ.get("WAYLAND_DISPLAY", "")
+    if (
+        not display_name
+        or "/" in display_name
+        or os.environ.get("QT_QPA_PLATFORM") != "wayland"
+    ):
+        fail("Wayland host requires a simple WAYLAND_DISPLAY and QT_QPA_PLATFORM=wayland")
+    socket_path = runtime_dir / display_name
+    try:
+        info = socket_path.lstat()
+    except FileNotFoundError:
+        fail(f"Wayland socket is missing: {socket_path}")
+    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+        fail(f"Wayland socket is unsafe: {socket_path}")
+
+
+def main() -> int:
+    args = parse_args()
+    os.umask(0o077)
+    validate_session_environment(args.session)
+    database = prepare_runtime_database(args.database)
+    config_home = database.parent / "config"
+    cache_home = database.parent / "cache"
+    ensure_private_directory(config_home, os.getuid())
+    ensure_private_directory(cache_home, os.getuid())
+    os.environ["KLIPPER_DATABASE"] = str(database)
+    os.environ["XDG_CONFIG_HOME"] = str(config_home)
+    os.environ["XDG_CACHE_HOME"] = str(cache_home)
+    os.environ["XDG_CONFIG_DIRS"] = "/etc/xdg"
+    # Upstream has debug-only statements that can include clipboard text.
+    # This dedicated host never permits that category to be enabled by an
+    # inherited user/session logging rule.
+    os.environ["QT_LOGGING_RULES"] = "org.kde.klipper.debug=false"
+
+    if name_has_owner():
+        fail(f"{DBUS_NAME} is already owned by another session process")
+
+    try:
+        from PyQt6.QtCore import QByteArray, QCoreApplication, QTimer, QUrl
+        from PyQt6.QtQml import QQmlApplicationEngine
+        from PyQt6.QtWidgets import QApplication
+    except ImportError as exc:
+        fail(f"PyQt6 QtQml runtime is missing: {exc}")
+
+    QCoreApplication.setApplicationName("echo-clipboard-host")
+    QCoreApplication.setOrganizationDomain("echoos.local")
+    app = QApplication([sys.argv[0]])
+    app.setQuitOnLastWindowClosed(False)
+
+    engine = QQmlApplicationEngine()
+    engine.loadData(QByteArray(QML_SOURCE), QUrl("qrc:/echo-clipboard-host.qml"))
+    if len(engine.rootObjects()) != 1:
+        fail("Plasma Klipper QML module did not create its root object")
+    if not name_has_owner():
+        fail(f"Plasma Klipper did not register {DBUS_NAME}")
+
+    info = database.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+        fail("Klipper did not create a private runtime database")
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        fail("Klipper runtime database is readable outside the session user")
+
+    print(
+        "ECHO_CLIPBOARD_HOST_READY "
+        f"provider=klipper-qml dbus=ready storage=runtime-tmpfs session={args.session}",
+        flush=True,
+    )
+
+    stop_requested = False
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        nonlocal stop_requested
+        stop_requested = True
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+    signal_timer = QTimer()
+    signal_timer.setInterval(200)
+    signal_timer.timeout.connect(lambda: app.quit() if stop_requested else None)
+    signal_timer.start()
+
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

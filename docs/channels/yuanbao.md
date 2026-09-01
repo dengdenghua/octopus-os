@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过腾讯元宝（原腾讯混元助手）的开放接口将 Octopus-Agent 接入元宝平台，实现与用户在元宝生态中的智能对话。
+通过腾讯元宝（原腾讯混元助手）的开放接口将 Echo Agent 接入元宝平台，实现与用户在元宝生态中的智能对话。
 
 ## 前置条件
 
@@ -22,7 +22,7 @@
    - 记录 SecretKey
 4. 在元宝开放平台（如有）注册开发者并创建机器人应用
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择元宝，填写以下字段：
 
@@ -33,7 +33,7 @@
 | 应用 ID | 元宝机器人应用 ID | `xxxxxxxx` |
 | 回调 URL | 接收消息的地址 | `https://your-domain.com/api/channels/yuanbao/webhook` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -47,7 +47,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -86,7 +86,7 @@ def sign(secret_key, params):
     return signature
 ```
 
-Octopus-Agent 会自动处理签名验证和请求认证。
+Echo Agent 会自动处理签名验证和请求认证。
 
 ## 常见问题
 
@@ -97,7 +97,7 @@ A: 1) 确认 SecretId 和 SecretKey 正确；2) 检查系统时间是否准确�
 A: 1) 确认 Webhook URL 可公网访问且 SSL 证书有效；2) 检查应用 ID 是否正确；3) 确认机器人已发布并通过审核；4) 查看元宝开放平台的事件推送日志。
 
 ### Q: 如何使用混元大模型的图片理解功能？
-A: 在配置中启用多模态支持，Octopus-Agent 会自动将用户发送的图片传递给混元多模态模型进行处理。
+A: 在配置中启用多模态支持，Echo Agent 会自动将用户发送的图片传递给混元多模态模型进行处理。
 
 ## 相关链接
 
@@ -105,4 +105,4 @@ A: 在配置中启用多模态支持，Octopus-Agent 会自动将用户发送的
 - [混元大模型 API 文档](https://cloud.tencent.com/document/product/1729)
 - [腾讯云 API 签名文档](https://cloud.tencent.com/document/api/1729/101841)
 - [元宝官方网站](https://yuanbao.tencent.com/)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/yuanbao)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/yuanbao)

@@ -1,0 +1,1 @@
+{"facts":[{"id":"tech-latency-a","text":"Option A p95 latency is 120ms."},{"id":"tech-latency-b","text":"Option B p95 latency is 180ms."},{"id":"tech-compat-b","text":"Only Option B supports the required legacy protocol."}]}

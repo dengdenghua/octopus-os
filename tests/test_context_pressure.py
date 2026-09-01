@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from runtime.core.cerebrum.react_loop import _estimate_context_fullness
+from runtime.core.cerebrum._react_context_helpers import _compress_context
+from runtime.platform.models.llm import Message
 
 
 @dataclass
@@ -112,3 +114,18 @@ def test_ratio_always_within_bounds_for_varied_inputs() -> None:
     for msgs, model in cases:
         r = _estimate_context_fullness(msgs, model)
         assert 0.0 <= r <= 1.0, f"out of range for ({len(msgs)}, {model!r}): {r}"
+
+
+def test_compress_context_preserves_system_contract_and_recent_turns() -> None:
+    messages = [Message(role="system", content="system contract")]
+    messages.extend(
+        Message(role="user" if index % 2 == 0 else "assistant", content="x" * 1200)
+        for index in range(30)
+    )
+
+    compressed = _compress_context(messages, max_tokens=800)
+
+    assert compressed[0].role == "system"
+    assert "system contract" in str(compressed[0].content)
+    assert compressed[-1].content == messages[-1].content
+    assert len(compressed) < len(messages)

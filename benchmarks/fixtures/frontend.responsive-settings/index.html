@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Settings fixture</title>
+    <style>
+      body { margin: 0; font-family: sans-serif; }
+      main { width: 980px; padding: 24px; }
+      [data-testid="settings-grid"] { display: grid; grid-template-columns: 1fr; gap: 12px; }
+      .setting-card { border: 1px solid #ddd; padding: 16px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Workspace settings</h1>
+      <div data-testid="settings-grid">
+        <section class="setting-card"><input id="display-name" placeholder="Display name" /></section>
+        <section class="setting-card"><select id="theme"><option>System</option></select></section>
+      </div>
+    </main>
+  </body>
+</html>

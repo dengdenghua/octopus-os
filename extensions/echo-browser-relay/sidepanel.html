@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EchoAI Browser Relay</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="mark" aria-hidden="true">E</span>
+          <div>
+            <h1>EchoAI</h1>
+            <p id="connectionText" role="status" aria-live="polite" aria-atomic="true">
+              正在连接
+            </p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <button
+            id="authToggleButton"
+            class="icon-button"
+            type="button"
+            aria-label="连接密钥设置"
+            aria-controls="authPanel"
+            aria-expanded="false"
+            title="连接密钥"
+          >
+            ◇
+          </button>
+          <button
+            id="newThreadButton"
+            class="icon-button"
+            type="button"
+            aria-label="新建对话"
+            title="新建对话"
+          >
+            +
+          </button>
+        </div>
+      </header>
+
+      <section
+        id="authPanel"
+        class="auth-panel"
+        aria-label="主控身份验证"
+        hidden
+      >
+        <form id="authForm">
+          <label for="authTokenInput">连接密钥</label>
+          <div class="auth-row">
+            <input
+              id="authTokenInput"
+              type="password"
+              autocomplete="off"
+              placeholder="仅在主控开启认证时填写"
+            />
+            <button id="authSaveButton" class="primary" type="submit">保存</button>
+            <button id="authClearButton" class="secondary" type="button">
+              清除
+            </button>
+          </div>
+          <span
+            id="authStatus"
+            class="auth-status"
+            role="status"
+            aria-live="polite"
+            data-tone="muted"
+          >
+            密钥仅保存在此 Chrome 配置中。
+          </span>
+        </form>
+      </section>
+
+      <section class="tab-strip" aria-label="当前标签页">
+        <div class="status-dot" id="relayDot" aria-hidden="true"></div>
+        <div class="tab-copy">
+          <strong id="tabTitle">尚未连接标签页</strong>
+          <span id="tabUrl">等待 Chrome Relay</span>
+        </div>
+      </section>
+
+      <section class="control-strip" aria-label="页面控制权" aria-live="polite">
+        <div>
+          <strong id="controlTitle">控制权空闲</strong>
+          <span id="controlDetail">你可以随时操作页面。</span>
+        </div>
+        <button id="stopButton" class="danger-button" type="button" disabled>
+          停止
+        </button>
+      </section>
+
+      <section
+        id="approvalDock"
+        class="approval-dock"
+        aria-label="待确认操作"
+        aria-live="assertive"
+        hidden
+      ></section>
+
+      <section
+        id="messages"
+        class="messages"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+      >
+        <article class="message system">
+          <span>用这里和 Agent 沟通；真实网页保留在左侧主区域。</span>
+        </article>
+      </section>
+
+      <form id="composer" class="composer">
+        <textarea
+          id="promptInput"
+          rows="3"
+          aria-label="发送给 Agent 的消息"
+          placeholder="告诉 Agent 要在当前 Chrome 页面做什么..."
+        ></textarea>
+        <div class="composer-actions">
+          <button id="pageAgentButton" class="secondary" type="button">
+            页面轻面板
+          </button>
+          <button id="openAppButton" class="secondary" type="button">
+            打开主控
+          </button>
+          <button id="sendButton" class="primary" type="submit">发送</button>
+        </div>
+      </form>
+    </main>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>
+

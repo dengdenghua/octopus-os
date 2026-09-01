@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import React from "react";
 import { useI18n } from "@/core/i18n/hooks";
+import packageInfo from "../../../../package.json";
 
 interface InfoRow {
   label: string;
@@ -13,30 +14,29 @@ export function BundleInfo() {
     const env = import.meta.env.MODE ?? "unknown";
     const viteVersion = import.meta.env.VITE_VERSION ?? __VITE_VERSION__;
     const reactVersion = React.version;
-    const moduleCount =
-      typeof import.meta.glob === "function"
-        ? Object.keys(import.meta.glob("/src/**/*.{ts,tsx}")).length
-        : "N/A";
 
     return [
+      { label: t.bundleInfo.appVersion, value: packageInfo.version },
+      { label: t.bundleInfo.license, value: packageInfo.license },
       { label: t.bundleInfo.environment, value: env },
       { label: t.bundleInfo.vite, value: viteVersion },
       { label: t.bundleInfo.react, value: reactVersion },
-      { label: t.bundleInfo.sourceModules, value: String(moduleCount) },
     ];
   }, [t]);
 
   return (
     <div className="mt-6 rounded-lg border p-4">
       <h3 className="text-sm font-semibold mb-3">{t.bundleInfo.title}</h3>
-      <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm">
+      <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-x-4 gap-y-2 text-sm">
         {rows.map((row) => (
           <div key={row.label} className="contents">
-            <span className="text-muted-foreground">{row.label}</span>
-            <span className="font-mono text-xs">{row.value}</span>
+            <dt className="text-muted-foreground">{row.label}</dt>
+            <dd className="break-all text-right font-mono text-xs">
+              {row.value}
+            </dd>
           </div>
         ))}
-      </div>
+      </dl>
     </div>
   );
 }

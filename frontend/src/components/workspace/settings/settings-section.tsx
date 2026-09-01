@@ -14,13 +14,14 @@ export function SettingsSection({
   return (
     <section className={cn(className)}>
       <header className="space-y-2">
-        <div className="text-lg font-semibold">{title}</div>
+        <div role="heading" aria-level={3} className="text-lg font-semibold">
+          {title}
+        </div>
         {description && (
           <div className="text-muted-foreground text-sm">{description}</div>
         )}
       </header>
-      <main className="mt-4">{children}</main>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
-

@@ -1,0 +1,5 @@
+Copyright 2026 Echo contributors
+
+Licensed under the Apache License, Version 2.0. ComfyUI is a separate project;
+this plugin only connects to a user-run local service and bundles no ComfyUI
+source, model or third-party workflow.

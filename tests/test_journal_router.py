@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.sensing.gateway.journal_router import create_journal_router
 
 
@@ -64,7 +63,8 @@ def test_stats_empty_before_reindex(client: TestClient) -> None:
 
 
 def test_reindex_imports_records(
-    client: TestClient, jsonl_path: Path,
+    client: TestClient,
+    jsonl_path: Path,
 ) -> None:
     r = client.post("/api/journal/reindex")
     assert r.status_code == 200
@@ -75,7 +75,8 @@ def test_reindex_imports_records(
 
 
 def test_reindex_uses_explicit_path(
-    client: TestClient, tmp_path: Path,
+    client: TestClient,
+    tmp_path: Path,
 ) -> None:
     other = tmp_path / "other.jsonl"
     _seed_jsonl(other, n=3)
@@ -98,7 +99,8 @@ def test_reindex_404_when_path_missing(client: TestClient) -> None:
 def test_query_filters_by_event_type(client: TestClient) -> None:
     client.post("/api/journal/reindex")
     r = client.get(
-        "/api/journal/events", params={"event_type": "task_started"},
+        "/api/journal/events",
+        params={"event_type": "task_started"},
     )
     assert r.status_code == 200
     rows = r.json()["events"]
@@ -109,22 +111,23 @@ def test_query_filters_by_event_type(client: TestClient) -> None:
 def test_query_pagination(client: TestClient) -> None:
     client.post("/api/journal/reindex")
     page1 = client.get(
-        "/api/journal/events", params={"limit": 3, "offset": 0},
+        "/api/journal/events",
+        params={"limit": 3, "offset": 0},
     ).json()["events"]
     page2 = client.get(
-        "/api/journal/events", params={"limit": 3, "offset": 3},
+        "/api/journal/events",
+        params={"limit": 3, "offset": 3},
     ).json()["events"]
     assert len(page1) == 3
     assert len(page2) == 3
-    assert {e["event_id"] for e in page1}.isdisjoint(
-        {e["event_id"] for e in page2}
-    )
+    assert {e["event_id"] for e in page1}.isdisjoint({e["event_id"] for e in page2})
 
 
 def test_query_filters_by_session(client: TestClient) -> None:
     client.post("/api/journal/reindex")
     r = client.get(
-        "/api/journal/events", params={"session_id": "thread-1"},
+        "/api/journal/events",
+        params={"session_id": "thread-1"},
     )
     rows = r.json()["events"]
     assert rows

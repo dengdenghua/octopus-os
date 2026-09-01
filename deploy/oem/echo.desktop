@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Echo OS
+Comment=Echo OS KWin desktop session
+Exec=/opt/echo-os/deploy/desktop-session/echo-desktop-session.sh
+TryExec=/opt/echo-os/deploy/desktop-session/echo-desktop-session.sh
+Type=Application
+DesktopNames=Echo

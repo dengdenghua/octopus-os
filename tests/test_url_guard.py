@@ -5,7 +5,6 @@ from __future__ import annotations
 import socket
 
 import pytest
-
 from runtime.safety.auth import check_url, is_safe_url
 
 # ═══════════════════════════════════════════════════════════
@@ -22,14 +21,17 @@ class TestScheme:
         v = check_url("https://example.com/path")
         assert v.allow
 
-    @pytest.mark.parametrize("scheme", [
-        "file:///etc/passwd",
-        "ftp://internal.srv/data",
-        "gopher://localhost",
-        "javascript:alert(1)",
-        "data:text/html,<script>",
-        "ssh://root@10.0.0.1",
-    ])
+    @pytest.mark.parametrize(
+        "scheme",
+        [
+            "file:///etc/passwd",
+            "ftp://internal.srv/data",
+            "gopher://localhost",
+            "javascript:alert(1)",
+            "data:text/html,<script>",
+            "ssh://root@10.0.0.1",
+        ],
+    )
     def test_unsafe_scheme_blocked(self, scheme):
         v = check_url(scheme)
         assert not v.allow
@@ -52,19 +54,22 @@ class TestScheme:
 
 
 class TestDirectIP:
-    @pytest.mark.parametrize("url,reason_kw", [
-        ("http://127.0.0.1/x", "private_ip"),
-        ("http://127.0.0.1:8080/admin", "private_ip"),
-        ("http://169.254.169.254/latest/meta-data/", "private_ip"),
-        ("http://10.0.0.1/", "private_ip"),
-        ("http://172.16.1.2/", "private_ip"),
-        ("http://172.31.255.254/", "private_ip"),
-        ("http://192.168.1.1/", "private_ip"),
-        ("http://0.0.0.0/", "private_ip"),
-        ("http://[::1]/", "private_ip"),
-        ("http://[fe80::1]/", "private_ip"),
-        ("http://[fd00:ec2::254]/", "blocked_host"),  # Implementation note.
-    ])
+    @pytest.mark.parametrize(
+        "url,reason_kw",
+        [
+            ("http://127.0.0.1/x", "private_ip"),
+            ("http://127.0.0.1:8080/admin", "private_ip"),
+            ("http://169.254.169.254/latest/meta-data/", "private_ip"),
+            ("http://10.0.0.1/", "private_ip"),
+            ("http://172.16.1.2/", "private_ip"),
+            ("http://172.31.255.254/", "private_ip"),
+            ("http://192.168.1.1/", "private_ip"),
+            ("http://0.0.0.0/", "private_ip"),
+            ("http://[::1]/", "private_ip"),
+            ("http://[fe80::1]/", "private_ip"),
+            ("http://[fd00:ec2::254]/", "blocked_host"),  # Implementation note.
+        ],
+    )
     def test_private_ip_blocked(self, url, reason_kw):
         v = check_url(url)
         assert not v.allow
@@ -86,23 +91,29 @@ class TestDirectIP:
 
 
 class TestBlockedHostnames:
-    @pytest.mark.parametrize("url,reason_kw", [
-        ("http://localhost/x", "blocked_host"),
-        ("http://LOCALHOST/x", "blocked_host"),
-        ("http://metadata.google.internal/", "blocked_host"),
-        ("http://metadata.azure.internal/", "blocked_host"),
-    ])
+    @pytest.mark.parametrize(
+        "url,reason_kw",
+        [
+            ("http://localhost/x", "blocked_host"),
+            ("http://LOCALHOST/x", "blocked_host"),
+            ("http://metadata.google.internal/", "blocked_host"),
+            ("http://metadata.azure.internal/", "blocked_host"),
+        ],
+    )
     def test_special_hosts_blocked(self, url, reason_kw):
         v = check_url(url)
         assert not v.allow
         assert reason_kw in v.reason
 
-    @pytest.mark.parametrize("url", [
-        "http://my-app.internal/api",
-        "http://foo.local/",
-        "http://svc.svc.cluster.local/",
-        "http://host.lan/",
-    ])
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://my-app.internal/api",
+            "http://foo.local/",
+            "http://svc.svc.cluster.local/",
+            "http://host.lan/",
+        ],
+    )
     def test_internal_suffixes_blocked(self, url):
         v = check_url(url)
         assert not v.allow
@@ -113,10 +124,15 @@ class TestBlockedHostnames:
         import runtime.safety.auth.url_guard as guard
 
         def fake_resolve(*a, **kw):
-            return [(
-                socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
-                "", ("142.250.72.14", 0),  # Implementation note.
-            )]
+            return [
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    "",
+                    ("142.250.72.14", 0),  # Implementation note.
+                )
+            ]
 
         monkeypatch.setattr(guard.socket, "getaddrinfo", fake_resolve)
 
@@ -136,10 +152,15 @@ class TestDNSRebinding:
 
         def fake_getaddrinfo(host, *a, **kw):
             # Implementation note.
-            return [(
-                socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
-                "", ("10.0.0.5", 0),
-            )]
+            return [
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    "",
+                    ("10.0.0.5", 0),
+                )
+            ]
 
         monkeypatch.setattr(guard.socket, "getaddrinfo", fake_getaddrinfo)
 
@@ -151,10 +172,15 @@ class TestDNSRebinding:
         import runtime.safety.auth.url_guard as guard
 
         def fake_getaddrinfo(host, *a, **kw):
-            return [(
-                socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
-                "", ("142.250.72.14", 0),  # Implementation note.
-            )]
+            return [
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    "",
+                    ("142.250.72.14", 0),  # Implementation note.
+                )
+            ]
 
         monkeypatch.setattr(guard.socket, "getaddrinfo", fake_getaddrinfo)
 
@@ -249,10 +275,15 @@ class TestFetchURLIntegration:
         import runtime.safety.auth.url_guard as guard
 
         def fake_resolve(host, *a, **kw):
-            return [(
-                socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP,
-                "", ("142.250.72.14", 0),
-            )]
+            return [
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    "",
+                    ("142.250.72.14", 0),
+                )
+            ]
 
         monkeypatch.setattr(guard.socket, "getaddrinfo", fake_resolve)
 

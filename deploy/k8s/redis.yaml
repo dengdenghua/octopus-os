@@ -2,9 +2,13 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
-  namespace: octopus-agent
+  namespace: echo-agent
 spec:
   replicas: 1
+  strategy:
+    # Redis also owns an RWO PVC; overlapping writers are not a safe upgrade
+    # strategy for this deliberately single-node baseline.
+    type: Recreate
   selector:
     matchLabels:
       app: redis
@@ -13,9 +17,16 @@ spec:
       labels:
         app: redis
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
-          image: redis:7-alpine
+          image: redis:7.4.11-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
           args:
             - redis-server
             - --appendonly
@@ -29,11 +40,24 @@ spec:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: octopus-agent-secrets
+                  name: echo-agent-secrets
+                  key: REDIS_PASSWORD
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: echo-agent-secrets
                   key: REDIS_PASSWORD
           ports:
             - containerPort: 6379
               name: redis
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 999
           resources:
             requests:
               cpu: 50m
@@ -43,30 +67,35 @@ spec:
               memory: 256Mi
           readinessProbe:
             exec:
-              command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
+              command: ["redis-cli", "ping"]
             initialDelaySeconds: 5
             periodSeconds: 5
           livenessProbe:
             exec:
-              command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" ping"]
+              command: ["redis-cli", "ping"]
             initialDelaySeconds: 10
             periodSeconds: 15
           volumeMounts:
             - name: redis-data
               mountPath: /data
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: redis-data
           persistentVolumeClaim:
-            claimName: octopus-redis-data
+            claimName: echo-redis-data
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: redis
-  namespace: octopus-agent
+  namespace: echo-agent
 spec:
   selector:
     app: redis
   ports:
     - port: 6379
       targetPort: 6379
+

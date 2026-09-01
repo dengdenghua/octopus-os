@@ -116,12 +116,15 @@ describe("React-like Operations", () => {
   });
 
   bench("Group messages by role", () => {
-    messages.reduce((groups, m) => {
-      const key = m.role;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(m);
-      return groups;
-    }, {} as Record<string, typeof messages>);
+    messages.reduce(
+      (groups, m) => {
+        const key = m.role;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(m);
+        return groups;
+      },
+      {} as Record<string, typeof messages>,
+    );
   });
 });
 
@@ -174,7 +177,7 @@ describe("State Update Patterns", () => {
 
   bench("Immutable update", () => {
     const updatedMessages = initialState.messages.map((m) =>
-      m.id === 50 ? { ...m, content: "Updated" } : m
+      m.id === 50 ? { ...m, content: "Updated" } : m,
     );
     const _result = { ...initialState, messages: updatedMessages };
   });

@@ -1,4 +1,3 @@
-
 import { Button } from "@/components/ui/button";
 import { ButtonGroup, ButtonGroupText } from "@/components/ui/button-group";
 import {
@@ -7,6 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 import type { FileUIPart, UIMessage } from "ai";
 import {
@@ -16,11 +16,23 @@ import {
   XIcon,
 } from "lucide-react";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
-import { Suspense, createContext, lazy, memo, useContext, useEffect, useState } from "react";
+import {
+  Suspense,
+  createContext,
+  lazy,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import type { StreamdownProps } from "./streamdown-host";
 
-const LazyStreamdown = lazy(() => import("./streamdown-host"));
+const LazyStreamdown = lazy(async () => {
+  const mod = await import("./streamdown-host");
+  return { default: mod.LocalizedStreamdown };
+});
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -47,9 +59,11 @@ export const MessageContent = ({
   <div
     className={cn(
       "flex max-w-full flex-col gap-2 overflow-visible select-text",
-      // Codex-flat: no bubble, no shadow. Users get a soft left accent bar
-      // + left padding so the speaker is still distinguishable from the
-      // assistant stream without visual weight.
+      // Chat-bubble style for the user side (messenger convention): a
+      // filled, right-aligned bubble so your own messages read as distinct
+      // from the assistant's flat streamed output. The assistant stays
+      // bubble-less because it streams long markdown, code and traces that
+      // a tinted container would fight with.
       //
       // Width behavior split by role to avoid the CJK vertical-stacking
       // bug: `w-fit min-w-0` together with `word-break:break-word` defaults
@@ -60,9 +74,16 @@ export const MessageContent = ({
       // never collapses below it. Assistant bubbles keep `w-full min-w-0`
       // because they need to span and wrap long streamed markdown.
       "group-[.is-user]:ml-auto group-[.is-user]:min-w-fit group-[.is-user]:max-w-[85%] group-[.is-user]:w-auto",
-      "group-[.is-user]:border-l-2 group-[.is-user]:border-[color:color-mix(in_oklch,var(--primary)_60%,transparent)]",
-      "group-[.is-user]:pl-3 group-[.is-user]:pr-1 group-[.is-user]:py-0.5",
-      "group-[.is-user]:text-foreground",
+      // A solid `--primary` fill read as a loud colored slab next to the
+      // neutral surfaces the rest of the timeline uses (tool groups,
+      // clarification cards and composer chrome are all `bg-muted/25..40`
+      // + `border-border`). Use that same neutral language: a plain muted
+      // grey bubble, which marks the speaker by shape and alignment rather
+      // than by colour. Text stays `--foreground`.
+      "group-[.is-user]:bg-muted group-[.is-user]:text-foreground",
+      "group-[.is-user]:border group-[.is-user]:border-border",
+      "group-[.is-user]:rounded-2xl group-[.is-user]:rounded-br-md",
+      "group-[.is-user]:px-3.5 group-[.is-user]:py-2",
       "group-[.is-assistant]:w-full group-[.is-assistant]:min-w-0",
       "group-[.is-assistant]:text-foreground",
       className,
@@ -203,7 +224,10 @@ export const MessageBranchContent = ({
   ...props
 }: MessageBranchContentProps) => {
   const { currentBranch, setBranches, branches } = useMessageBranch();
-  const childrenArray = Array.isArray(children) ? children : [children];
+  const childrenArray = useMemo(
+    () => (Array.isArray(children) ? children : [children]),
+    [children],
+  );
 
   // Use useEffect to update branches when they change
   useEffect(() => {
@@ -244,7 +268,11 @@ export const MessageBranchSelector = ({
 
   return (
     <ButtonGroup
-      className="[&>*:not(:first-child)]:rounded-l-md [&>*:not(:last-child)]:rounded-r-md"
+      className={cn(
+        "[&>*:not(:first-child)]:rounded-l-md [&>*:not(:last-child)]:rounded-r-md",
+        className,
+      )}
+      data-from={from}
       orientation="horizontal"
       {...props}
     />
@@ -258,10 +286,11 @@ export const MessageBranchPrevious = ({
   ...props
 }: MessageBranchPreviousProps) => {
   const { goToPrevious, totalBranches } = useMessageBranch();
+  const { t } = useI18n();
 
   return (
     <Button
-      aria-label="Previous branch"
+      aria-label={t.message.previousBranch}
       disabled={totalBranches <= 1}
       onClick={goToPrevious}
       size="icon-sm"
@@ -282,10 +311,12 @@ export const MessageBranchNext = ({
   ...props
 }: MessageBranchNextProps) => {
   const { goToNext, totalBranches } = useMessageBranch();
+  const { t } = useI18n();
 
   return (
     <Button
-      aria-label="Next branch"
+      aria-label={t.message.nextBranch}
+      className={className}
       disabled={totalBranches <= 1}
       onClick={goToNext}
       size="icon-sm"
@@ -305,6 +336,7 @@ export const MessageBranchPage = ({
   ...props
 }: MessageBranchPageProps) => {
   const { currentBranch, totalBranches } = useMessageBranch();
+  const { t } = useI18n();
 
   return (
     <ButtonGroupText
@@ -314,7 +346,7 @@ export const MessageBranchPage = ({
       )}
       {...props}
     >
-      {currentBranch + 1} of {totalBranches}
+      {t.message.branchPosition(currentBranch + 1, totalBranches)}
     </ButtonGroupText>
   );
 };
@@ -322,16 +354,28 @@ export const MessageBranchPage = ({
 export type MessageResponseProps = StreamdownProps;
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
+  ({ className, children, ...props }: MessageResponseProps) => (
     <Suspense
       fallback={
         <div
           className={cn(
-            "size-full whitespace-pre-wrap break-words select-text",
+            "size-full select-text",
+            typeof children === "string" &&
+              "whitespace-pre-wrap break-words text-foreground",
             className,
           )}
+          aria-busy="true"
         >
-          {props.children}
+          {typeof children === "string" ? (
+            children
+          ) : (
+            <div className="space-y-2">
+              <div className="h-4 w-3/5 rounded-sm bg-muted-foreground/10" />
+              <div className="h-4 w-full rounded-sm bg-muted-foreground/10" />
+              <div className="h-4 w-4/5 rounded-sm bg-muted-foreground/10" />
+              <div className="h-4 w-2/3 rounded-sm bg-muted-foreground/10" />
+            </div>
+          )}
         </div>
       }
     >
@@ -341,20 +385,11 @@ export const MessageResponse = memo(
           className,
         )}
         {...props}
-      />
+      >
+        {children}
+      </LazyStreamdown>
     </Suspense>
   ),
-  // IMPORTANT: include `className` in the equality check. The original
-  // signature ignored it because the caller tends to pass a stable
-  // string literal — but once chat_font_size became runtime-driven,
-  // MarkdownContent started swapping between `prose-sm / prose-base /
-  // prose-lg` and the memo was eating every update, leaving the prose
-  // variant stuck at whatever was set on first mount.
-  (prevProps, nextProps) =>
-    prevProps.children === nextProps.children &&
-    prevProps.className === nextProps.className &&
-    prevProps.rehypePlugins === nextProps.rehypePlugins &&
-    prevProps.remarkPlugins === nextProps.remarkPlugins,
 );
 
 MessageResponse.displayName = "MessageResponse";
@@ -371,11 +406,14 @@ export function MessageAttachment({
   onRemove,
   ...props
 }: MessageAttachmentProps) {
+  const { t } = useI18n();
   const filename = data.filename || "";
   const mediaType =
     data.mediaType?.startsWith("image/") && data.url ? "image" : "file";
   const isImage = mediaType === "image";
-  const attachmentLabel = filename || (isImage ? "Image" : "Attachment");
+  const attachmentLabel =
+    filename ||
+    (isImage ? t.message.imageAttachment : t.message.attachmentFallback);
 
   return (
     <div
@@ -388,7 +426,7 @@ export function MessageAttachment({
       {isImage ? (
         <>
           <img
-            alt={filename || "attachment"}
+            alt={filename || t.message.imageAttachment}
             className="size-full object-cover"
             height={100}
             src={data.url}
@@ -396,8 +434,8 @@ export function MessageAttachment({
           />
           {onRemove && (
             <Button
-              aria-label="Remove attachment"
-              className="bg-background/80 hover:bg-background absolute top-2 right-2 size-6 rounded-lg p-0 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 [&>svg]:size-3"
+              aria-label={t.message.removeAttachment}
+              className="bg-background/80 hover:bg-background absolute top-2 right-2 size-6 p-0 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 [&>svg]:size-3"
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove();
@@ -406,7 +444,7 @@ export function MessageAttachment({
               variant="ghost"
             >
               <XIcon />
-              <span className="sr-only">Remove</span>
+              <span className="sr-only">{t.message.removeAttachment}</span>
             </Button>
           )}
         </>
@@ -424,8 +462,8 @@ export function MessageAttachment({
           </Tooltip>
           {onRemove && (
             <Button
-              aria-label="Remove attachment"
-              className="hover:bg-accent size-6 shrink-0 rounded-lg p-0 opacity-0 transition-opacity group-hover:opacity-100 [&>svg]:size-3"
+              aria-label={t.message.removeAttachment}
+              className="hover:bg-accent size-6 shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100 [&>svg]:size-3"
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove();
@@ -434,7 +472,7 @@ export function MessageAttachment({
               variant="ghost"
             >
               <XIcon />
-              <span className="sr-only">Remove</span>
+              <span className="sr-only">{t.message.removeAttachment}</span>
             </Button>
           )}
         </>

@@ -9,15 +9,12 @@
 import { swallow } from "@/core/utils/log";
 import { useEffect, useState } from "react";
 
-import {
-  useDailyClaimInfo,
-  useMoliliLink,
-} from "@/core/molili";
+import { useDailyClaimInfo, useOctLink } from "@/core/oct/hooks";
 import { useAuth } from "@/providers/AuthProvider";
 
 import { DailyClaimDialog } from "./daily-claim-dialog";
 
-const DISMISS_KEY_PREFIX = "molili:dailyClaimDismissed:";
+const DISMISS_KEY_PREFIX = "oct:dailyClaimDismissed:";
 
 function todayKey(): string {
   // Match the user's local day boundary — dismissing in the evening
@@ -43,12 +40,14 @@ function markDismissedToday() {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(todayKey(), "1");
-  } catch (e) { swallow(e, "storage"); }
+  } catch (e) {
+    swallow(e, "storage");
+  }
 }
 
 export function DailyClaimAutoPopup() {
-  const { user, isGuest } = useAuth();
-  const link = useMoliliLink();
+  const { user } = useAuth();
+  const link = useOctLink();
   const linked = Boolean(link.data);
 
   // Only fetch claim info when we know the user is actually linked —
@@ -57,16 +56,16 @@ export function DailyClaimAutoPopup() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!user || isGuest || !linked) return;
+    if (!user || !linked) return;
     if (info.isLoading || !info.data) return;
     const data = info.data.data;
-    const claimed = Boolean(data?.claimed ?? data?.claimedToday ?? false);
+    const claimed = Boolean(data?.claimedToday ?? false);
     if (claimed) return;
     if (wasDismissedToday()) return;
     setOpen(true);
-  }, [user, isGuest, linked, info.isLoading, info.data]);
+  }, [user, linked, info.isLoading, info.data]);
 
-  if (!user || isGuest || !linked) return null;
+  if (!user || !linked) return null;
 
   return (
     <DailyClaimDialog

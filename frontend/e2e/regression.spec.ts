@@ -1,4 +1,9 @@
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import {
+  test,
+  expect,
+  type APIRequestContext,
+  type Page,
+} from "@playwright/test";
 
 /**
  * E2E regression lockdown · 2026-04-24
@@ -35,13 +40,18 @@ const BACKEND = "http://127.0.0.1:8000";
  * ``HTMLTextAreaElement.prototype`` / ``HTMLInputElement.prototype``
  * and dispatch an ``input`` event so React's onChange fires.
  */
-async function reactFill(page: Page, selector: string, text: string): Promise<void> {
+async function reactFill(
+  page: Page,
+  selector: string,
+  text: string,
+): Promise<void> {
   const el = page.locator(selector).filter({ visible: true }).first();
   await el.waitFor({ state: "visible", timeout: 10_000 });
   await el.evaluate((node: Element, value: string) => {
-    const proto = (node instanceof HTMLTextAreaElement)
-      ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype;
+    const proto =
+      node instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
     if (!setter) throw new Error("no native value setter");
     setter.call(node, value);
@@ -188,7 +198,9 @@ test.describe("Bug#1 regression · Intelligence subscriptions", () => {
       expect(body.topic).toBe(topic);
       expect(body.id).toMatch(/^sub_/);
 
-      const listed = await request.get(`${BACKEND}/api/intelligence/subscriptions`);
+      const listed = await request.get(
+        `${BACKEND}/api/intelligence/subscriptions`,
+      );
       expect(listed.ok()).toBeTruthy();
       const listedBody = await listed.json();
       expect(
@@ -214,7 +226,9 @@ test.describe("Bug#1 regression · Intelligence subscriptions", () => {
         "textarea",
         `Create a temporary subscription named ${topic} for E2E cleanup verification.`,
       );
-      await page.getByRole("button", { name: /生成订阅草案|Generate Draft/ }).click();
+      await page
+        .getByRole("button", { name: /生成订阅草案|Generate Draft/ })
+        .click();
 
       const createButton = page.getByRole("button", {
         name: /创建这个订阅|Create Subscription/,
@@ -227,7 +241,9 @@ test.describe("Bug#1 regression · Intelligence subscriptions", () => {
         page.getByText(/订阅添加成功|Subscription added/i),
       ).toBeVisible({ timeout: 5000 });
 
-      const listed = await page.request.get(`${BACKEND}/api/intelligence/subscriptions`);
+      const listed = await page.request.get(
+        `${BACKEND}/api/intelligence/subscriptions`,
+      );
       expect(listed.ok()).toBeTruthy();
       const listedBody = await listed.json();
       expect(
@@ -261,7 +277,9 @@ test.describe("Bug#6 regression · Team join page i18n", () => {
     await page.goto("/#/workspace/team/join");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page.getByRole("heading", { name: "Join team" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Join team" }),
+    ).toBeVisible();
     await expect(
       page.getByText("The invite link is missing a token."),
     ).toBeVisible();

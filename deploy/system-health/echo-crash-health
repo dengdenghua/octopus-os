@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Fail closed unless local crash collection is bounded and backed by encrypted /var.
+set -euo pipefail
+
+readonly CONFIG_PATH=/etc/systemd/coredump.conf.d/60-echo-os.conf
+readonly COREDUMP_DIRECTORY=/var/lib/systemd/coredump
+readonly COREDUMP_SOCKET=systemd-coredump.socket
+
+fail() {
+  echo "echo-crash-health: $*" >&2
+  exit 1
+}
+
+[[ -f "$CONFIG_PATH" && ! -L "$CONFIG_PATH" ]] || \
+  fail "the immutable coredump policy is missing or redirected"
+[[ "$(stat -c '%u:%g:%a' "$CONFIG_PATH")" == "0:0:644" ]] || \
+  fail "the coredump policy has unsafe ownership or mode"
+[[ -d "$COREDUMP_DIRECTORY" && ! -L "$COREDUMP_DIRECTORY" ]] || \
+  fail "the local coredump directory is missing or redirected"
+[[ "$(stat -c '%u:%g:%a' "$COREDUMP_DIRECTORY")" == "0:0:755" ]] || \
+  fail "the local coredump directory has unsafe ownership or mode"
+
+require_source_setting() {
+  local key="$1"
+  local expected="$2"
+  [[ "$(grep -Ec "^[[:space:]]*${key}[[:space:]]*=" "$CONFIG_PATH")" -eq 1 ]] || \
+    fail "the coredump policy must define $key exactly once"
+  grep -Eq "^[[:space:]]*${key}[[:space:]]*=[[:space:]]*${expected}[[:space:]]*$" \
+    "$CONFIG_PATH" || fail "the coredump policy has an unexpected $key value"
+}
+
+require_effective_setting() {
+  local rendered="$1"
+  local key="$2"
+  local expected="$3"
+  awk -F= -v wanted_key="$key" -v wanted_value="$expected" '
+    /^[[:space:]]*[#;]/ { next }
+    NF >= 2 {
+      key = $1
+      value = substr($0, index($0, "=") + 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      if (key == wanted_key) last = value
+    }
+    END { exit(last == wanted_value ? 0 : 1) }
+  ' <<<"$rendered" || fail "the effective coredump policy overrides $key"
+}
+
+declare -ar SETTINGS=(
+  'Storage external'
+  'Compress yes'
+  'ProcessSizeMax 512M'
+  'ExternalSizeMax 512M'
+  'MaxUse 1G'
+  'KeepFree 2G'
+  'EnterNamespace no'
+)
+
+effective_config="$(/usr/bin/systemd-analyze cat-config systemd/coredump.conf)" || \
+  fail "systemd cannot render the effective coredump policy"
+for setting in "${SETTINGS[@]}"; do
+  read -r key expected <<<"$setting"
+  require_source_setting "$key" "$expected"
+  require_effective_setting "$effective_config" "$key" "$expected"
+done
+unset effective_config
+
+[[ "$(/usr/bin/findmnt --raw --noheadings --output SOURCE --target /var)" == \
+   "/dev/mapper/echo-var" ]] || \
+  fail "coredumps are not backed by the encrypted echo-var mapping"
+/usr/bin/systemctl is-active --quiet "$COREDUMP_SOCKET" || \
+  fail "systemd-coredump socket is not active"
+
+echo "ECHO_CRASH_COLLECTION_READY provider=systemd-coredump storage=encrypted-var max-use=1G keep-free=2G"

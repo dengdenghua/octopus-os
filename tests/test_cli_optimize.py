@@ -27,8 +27,7 @@ def _write_llm_cfg(tmp_path: Path) -> Path:
 def _write_static_cfg(tmp_path: Path) -> Path:
     path = tmp_path / "cfg.yaml"
     path.write_text(
-        "planner:\n  type: static\n"
-        "budget:\n  max_tokens: 5000\n  max_usd: 0.05\n",
+        "planner:\n  type: static\nbudget:\n  max_tokens: 5000\n  max_usd: 0.05\n",
         encoding="utf-8",
     )
     return path
@@ -48,10 +47,14 @@ class TestArgValidation:
             config_path=tmp_path / "nope.yaml",
             variants_path=None,
             journal_path=tmp_path / "events.jsonl",
-            rounds=1, tasks_per_round=1,
-            mutator_model="mock/m", mutator_response=None,
-            max_variants=4, retire_min_uses=3,
-            export_path=None, color=False,
+            rounds=1,
+            tasks_per_round=1,
+            mutator_model="mock/m",
+            mutator_response=None,
+            max_variants=4,
+            retire_min_uses=3,
+            export_path=None,
+            color=False,
         )
         assert rc == 2
         assert "config" in capsys.readouterr().err
@@ -65,10 +68,14 @@ class TestArgValidation:
             config_path=cfg,
             variants_path=None,
             journal_path=tmp_path / "events.jsonl",
-            rounds=1, tasks_per_round=1,
-            mutator_model="mock/m", mutator_response=None,
-            max_variants=4, retire_min_uses=3,
-            export_path=None, color=False,
+            rounds=1,
+            tasks_per_round=1,
+            mutator_model="mock/m",
+            mutator_response=None,
+            max_variants=4,
+            retire_min_uses=3,
+            export_path=None,
+            color=False,
         )
         assert rc == 2
         err = capsys.readouterr().err
@@ -91,11 +98,14 @@ class TestBasicEvolution:
             config_path=cfg,
             variants_path=None,
             journal_path=journal,
-            rounds=2, tasks_per_round=2,
+            rounds=2,
+            tasks_per_round=2,
             mutator_model="mock/m",
             mutator_response="<suffix>try harder</suffix>",
-            max_variants=4, retire_min_uses=3,
-            export_path=None, color=False,
+            max_variants=4,
+            retire_min_uses=3,
+            export_path=None,
+            color=False,
         )
         assert rc == 0
         out = capsys.readouterr().out
@@ -117,12 +127,17 @@ class TestBasicEvolution:
         journal = tmp_path / "events.jsonl"
         run_optimize(
             goal="list cwd",
-            config_path=cfg, variants_path=None, journal_path=journal,
-            rounds=2, tasks_per_round=2,
+            config_path=cfg,
+            variants_path=None,
+            journal_path=journal,
+            rounds=2,
+            tasks_per_round=2,
             mutator_model="mock/m",
             mutator_response="<suffix>improved</suffix>",
-            max_variants=4, retire_min_uses=3,
-            export_path=None, color=False,
+            max_variants=4,
+            retire_min_uses=3,
+            export_path=None,
+            color=False,
         )
         j = JSONLJournal(journal)
         # Implementation note.
@@ -152,14 +167,18 @@ class TestVariantsFromYaml:
         )
         cfg = _write_llm_cfg(tmp_path)
         rc = run_optimize(
-            goal="list", config_path=cfg,
+            goal="list",
+            config_path=cfg,
             variants_path=variants_yaml,
             journal_path=tmp_path / "events.jsonl",
-            rounds=1, tasks_per_round=1,
+            rounds=1,
+            tasks_per_round=1,
             mutator_model="mock/m",
             mutator_response="<suffix>evolved</suffix>",
-            max_variants=6, retire_min_uses=3,
-            export_path=None, color=False,
+            max_variants=6,
+            retire_min_uses=3,
+            export_path=None,
+            color=False,
         )
         assert rc == 0
         out = capsys.readouterr().out
@@ -180,13 +199,18 @@ class TestExport:
         cfg = _write_llm_cfg(tmp_path)
         export_path = tmp_path / "winners.yaml"
         rc = run_optimize(
-            goal="list", config_path=cfg, variants_path=None,
+            goal="list",
+            config_path=cfg,
+            variants_path=None,
             journal_path=tmp_path / "events.jsonl",
-            rounds=2, tasks_per_round=2,
+            rounds=2,
+            tasks_per_round=2,
             mutator_model="mock/m",
             mutator_response="<suffix>go faster</suffix>",
-            max_variants=6, retire_min_uses=3,
-            export_path=export_path, color=False,
+            max_variants=6,
+            retire_min_uses=3,
+            export_path=export_path,
+            color=False,
         )
         assert rc == 0
         assert export_path.exists()
@@ -225,34 +249,42 @@ class TestMutatorIntegration:
         for _ in range(3):
             call = ToolCall(caller="arms/a", sucker_id="read_file", args={})
             step = Step(
-                step_id=0, node_id="n0", action=call,
+                step_id=0,
+                node_id="n0",
+                action=call,
                 result=ExecutionResult(
-                    call_id=call.call_id, status="failed",
+                    call_id=call.call_id,
+                    status="failed",
                     error_type="timeout",
                 ),
             )
-            j.write_trajectory(Trajectory(
-                task_id=TaskId(uuid4()), arm_id=ArmId("a"),
-                recipe_id="preseeded",  # Implementation note.
-                steps=[step],
-                outcome=TrajectoryOutcome(success=False),
-            ))
+            j.write_trajectory(
+                Trajectory(
+                    task_id=TaskId(uuid4()),
+                    arm_id=ArmId("a"),
+                    recipe_id="preseeded",  # Implementation note.
+                    steps=[step],
+                    outcome=TrajectoryOutcome(success=False),
+                )
+            )
 
         cfg = _write_llm_cfg(tmp_path)
         run_optimize(
-            goal="list", config_path=cfg, variants_path=None,
+            goal="list",
+            config_path=cfg,
+            variants_path=None,
             journal_path=journal_path,
-            rounds=2, tasks_per_round=2,
+            rounds=2,
+            tasks_per_round=2,
             mutator_model="mock/m",
             mutator_response="<suffix>improved-by-mutator</suffix>",
-            max_variants=6, retire_min_uses=20,  # Implementation note.
-            export_path=None, color=False,
+            max_variants=6,
+            retire_min_uses=20,  # Implementation note.
+            export_path=None,
+            color=False,
         )
         out = capsys.readouterr().out
-        has_mutation = (
-            "mutated=" in out
-            or "pool=2" in out or "pool=3" in out or "pool=4" in out
-        )
+        has_mutation = "mutated=" in out or "pool=2" in out or "pool=3" in out or "pool=4" in out
         assert has_mutation, f"no evidence of mutation in output:\n{out[-500:]}"
 
 
@@ -266,15 +298,25 @@ class TestCLIWire:
         from runtime.cli import main
 
         cfg = _write_llm_cfg(tmp_path)
-        rc = main([
-            "--no-color", "optimize", "list stuff",
-            "--config", str(cfg),
-            "--journal", str(tmp_path / "events.jsonl"),
-            "--rounds", "1",
-            "--tasks-per-round", "1",
-            "--mutator-model", "mock/m",
-            "--mutator-response", "<suffix>x</suffix>",
-        ])
+        rc = main(
+            [
+                "--no-color",
+                "optimize",
+                "list stuff",
+                "--config",
+                str(cfg),
+                "--journal",
+                str(tmp_path / "events.jsonl"),
+                "--rounds",
+                "1",
+                "--tasks-per-round",
+                "1",
+                "--mutator-model",
+                "mock/m",
+                "--mutator-response",
+                "<suffix>x</suffix>",
+            ]
+        )
         assert rc == 0
         out = capsys.readouterr().out
         assert "optimize" in out

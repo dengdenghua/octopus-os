@@ -1,6 +1,7 @@
 """Diff baseline failures vs post-refactor failures."""
 import sys
 
+
 def parse(path):
     s = set()
     with open(path) as f:

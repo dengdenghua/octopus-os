@@ -1,0 +1,6 @@
+mkosi.cache/
+mkosi.builddir/
+mkosi.local.conf
+mkosi.output/
+mkosi.agent-runtime/
+.mkosi.agent-runtime.*/

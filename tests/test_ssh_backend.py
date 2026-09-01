@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from runtime.sensing.server.ssh import (
     SshBackend,
     SshSandbox,
@@ -78,9 +77,13 @@ class TestSshMantleValidation:
 class TestRequireAvailable:
     def test_cli_mode_missing_ssh_raises(self):
         m = SshBackend(host="x")
-        with patch(
-            "runtime.sensing.server.ssh.shutil.which", return_value=None,
-        ), pytest.raises(SshUnavailableError, match="ssh CLI"):
+        with (
+            patch(
+                "runtime.sensing.server.ssh.shutil.which",
+                return_value=None,
+            ),
+            pytest.raises(SshUnavailableError, match="ssh CLI"),
+        ):
             m.require_available()
 
     def test_cli_mode_with_ssh_ok(self):
@@ -93,6 +96,7 @@ class TestRequireAvailable:
         with patch.dict("sys.modules", {"paramiko": None}):
             # Implementation note.
             import builtins
+
             orig = builtins.__import__
 
             def fake_import(name, *a, **kw):
@@ -100,9 +104,13 @@ class TestRequireAvailable:
                     raise ImportError("no paramiko")
                 return orig(name, *a, **kw)
 
-            with patch(
-                "builtins.__import__", side_effect=fake_import,
-            ), pytest.raises(SshUnavailableError, match="paramiko"):
+            with (
+                patch(
+                    "builtins.__import__",
+                    side_effect=fake_import,
+                ),
+                pytest.raises(SshUnavailableError, match="paramiko"),
+            ):
                 m.require_available()
 
 
@@ -142,7 +150,7 @@ class TestBuildSshArgv:
         argv = box._build_ssh_argv(["echo"], cwd=None)
         joined = " ".join(argv)
         assert "-i" in argv
-        assert "id_rsa" in joined       # Implementation note.
+        assert "id_rsa" in joined  # Implementation note.
         assert "IdentitiesOnly=yes" in joined
 
     def test_strict_host_key_off_uses_dev_null(self):
@@ -155,7 +163,7 @@ class TestBuildSshArgv:
         box = self._box(host="h", known_hosts_file="/tmp/kh")
         joined = " ".join(box._build_ssh_argv(["echo"], cwd=None))
         assert "UserKnownHostsFile=" in joined
-        assert "kh" in joined           # Implementation note.
+        assert "kh" in joined  # Implementation note.
 
     def test_inner_argv_after_double_dash(self):
         box = self._box(host="h")
@@ -219,11 +227,14 @@ class TestRunCommand:
             "stdout_truncated": False,
             "stderr_truncated": False,
         }
-        with patch(
-            "runtime.sensing.server.ssh.shutil.which", return_value="/usr/bin/ssh"
-        ), patch(
-            "runtime.sensing.server._streaming.stream_run", return_value=stream_result,
-        ), m.sandbox("test") as box:
+        with (
+            patch("runtime.sensing.server.ssh.shutil.which", return_value="/usr/bin/ssh"),
+            patch(
+                "runtime.sensing.server._streaming.stream_run",
+                return_value=stream_result,
+            ),
+            m.sandbox("test") as box,
+        ):
             r = box.run_command(["echo", "ok"])
         assert r["exit_code"] == 0
         assert r["stdout"] == "ok\n"
@@ -240,12 +251,14 @@ class TestRunCommand:
             "stdout_truncated": False,
             "stderr_truncated": False,
         }
-        with patch(
-            "runtime.sensing.server.ssh.shutil.which", return_value="/usr/bin/ssh"
-        ), patch(
-            "runtime.sensing.server._streaming.stream_run",
-            return_value=stream_result,
-        ), m.sandbox("test") as box:
+        with (
+            patch("runtime.sensing.server.ssh.shutil.which", return_value="/usr/bin/ssh"),
+            patch(
+                "runtime.sensing.server._streaming.stream_run",
+                return_value=stream_result,
+            ),
+            m.sandbox("test") as box,
+        ):
             r = box.run_command(["sleep", "10"])
         assert r["timed_out"] is True
         assert r["exit_code"] is None
@@ -253,9 +266,14 @@ class TestRunCommand:
 
     def test_missing_ssh_binary_raises(self):
         m = SshBackend(host="h")
-        with patch(
-            "runtime.sensing.server.ssh.shutil.which", return_value=None,
-        ), m.sandbox("test") as box, pytest.raises(SshUnavailableError):
+        with (
+            patch(
+                "runtime.sensing.server.ssh.shutil.which",
+                return_value=None,
+            ),
+            m.sandbox("test") as box,
+            pytest.raises(SshUnavailableError),
+        ):
             box.run_command(["echo", "x"])
 
     def test_stdout_truncation(self):
@@ -269,11 +287,14 @@ class TestRunCommand:
             "stdout_truncated": True,
             "stderr_truncated": False,
         }
-        with patch(
-            "runtime.sensing.server.ssh.shutil.which", return_value="/usr/bin/ssh"
-        ), patch(
-            "runtime.sensing.server._streaming.stream_run", return_value=stream_result,
-        ), m.sandbox("test") as box:
+        with (
+            patch("runtime.sensing.server.ssh.shutil.which", return_value="/usr/bin/ssh"),
+            patch(
+                "runtime.sensing.server._streaming.stream_run",
+                return_value=stream_result,
+            ),
+            m.sandbox("test") as box,
+        ):
             r = box.run_command(["cat", "big"])
         assert len(r["stdout"]) == 200_000
         assert r["stdout_truncated"] is True
@@ -288,11 +309,14 @@ class TestRunCommand:
             "stdout_truncated": False,
             "stderr_truncated": False,
         }
-        with patch(
-            "runtime.sensing.server.ssh.shutil.which", return_value="/usr/bin/ssh"
-        ), patch(
-            "runtime.sensing.server._streaming.stream_run", return_value=stream_result,
-        ), m.sandbox("test") as box:
+        with (
+            patch("runtime.sensing.server.ssh.shutil.which", return_value="/usr/bin/ssh"),
+            patch(
+                "runtime.sensing.server._streaming.stream_run",
+                return_value=stream_result,
+            ),
+            m.sandbox("test") as box,
+        ):
             box.run_command(["echo"])
             box.run_command(["echo"])
             assert box.run_command_count == 2

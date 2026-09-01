@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 
 import pytest
-
 from runtime.safety.auth import (
     Identity,
     IdentityStore,
@@ -29,12 +29,17 @@ class TestIdentityBasics:
         assert i.roles == ()
         assert i.metadata == {}
 
-    def test_hash_api_key_deterministic(self):
+    def test_hash_api_key_uses_unique_salts_and_verifies(self):
         h1 = hash_api_key("sk-test-123")
         h2 = hash_api_key("sk-test-123")
-        assert h1 == h2
-        assert h1.startswith("sha256:")
-        assert len(h1) == len("sha256:") + 64  # 64 hex chars
+        assert h1 != h2
+        assert h1.startswith("pbkdf2_sha256$")
+        first = Identity(actor_id="first")
+        second = Identity(actor_id="second")
+        s = IdentityStore()
+        s.add(first, api_key_hash=h1)
+        s.add(second, api_key_hash=h2)
+        assert s.verify_api_key("sk-test-123") == first
 
     def test_hash_api_key_different_for_different_input(self):
         assert hash_api_key("a") != hash_api_key("b")
@@ -80,7 +85,7 @@ class TestStoreCRUD:
     def test_add_with_bare_hex_hash(self):
         """Implementation note."""
         s = IdentityStore()
-        raw_hex = hash_api_key("sk-raw")[len("sha256:"):]
+        raw_hex = hashlib.sha256(b"sk-raw").hexdigest()
         s.add(Identity(actor_id="carol"), api_key_hash=raw_hex)
         assert s.verify_api_key("sk-raw").actor_id == "carol"
 
@@ -193,19 +198,23 @@ class TestYAMLLoad:
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config  # noqa: E402
 from runtime.sensing.gateway import create_openai_router  # noqa: E402
 
 
 def _stack():
-    cfg = AgentConfig(planner=PlannerConfig(
-        type="llm", model="mock/g",
-        mock_response=json.dumps({
-            "reasoning": "r",
-            "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
-        }),
-    ))
+    cfg = AgentConfig(
+        planner=PlannerConfig(
+            type="llm",
+            model="mock/g",
+            mock_response=json.dumps(
+                {
+                    "reasoning": "r",
+                    "nodes": [{"skill": "list_cwd", "args": {"path": "."}}],
+                }
+            ),
+        )
+    )
     return build_from_config(cfg)
 
 
@@ -228,7 +237,7 @@ class TestGatewayBearerActor:
         )
         assert r.status_code == 200
         data = r.json()
-        assert data["octopus"].get("actor") == "alice"
+        assert data["echo"].get("actor") == "alice"
 
         # Implementation note.
         alice_events = stack.journal.read_by_actor("alice")
@@ -240,9 +249,13 @@ class TestGatewayBearerActor:
         store = IdentityStore()
         store.add(Identity(actor_id="alice"), api_key_plaintext="sk-alice")
         app = FastAPI()
-        app.include_router(create_openai_router(
-            stack, identity_store=store, require_auth=False,
-        ))
+        app.include_router(
+            create_openai_router(
+                stack,
+                identity_store=store,
+                require_auth=False,
+            )
+        )
         client = TestClient(app)
 
         r = client.post(
@@ -252,7 +265,7 @@ class TestGatewayBearerActor:
         )
         assert r.status_code == 200
         # Implementation note.
-        assert "actor" not in r.json()["octopus"]
+        assert "actor" not in r.json()["echo"]
 
     def test_no_auth_header_no_require_auth_anonymous(self):
         stack = _stack()
@@ -267,15 +280,19 @@ class TestGatewayBearerActor:
         )
         assert r.status_code == 200
         # Implementation note.
-        assert "actor" not in r.json()["octopus"]
+        assert "actor" not in r.json()["echo"]
 
     def test_require_auth_missing_header_401(self):
         stack = _stack()
         store = IdentityStore()
         app = FastAPI()
-        app.include_router(create_openai_router(
-            stack, identity_store=store, require_auth=True,
-        ))
+        app.include_router(
+            create_openai_router(
+                stack,
+                identity_store=store,
+                require_auth=True,
+            )
+        )
         client = TestClient(app)
 
         r = client.post(
@@ -290,9 +307,13 @@ class TestGatewayBearerActor:
         store = IdentityStore()
         store.add(Identity(actor_id="alice"), api_key_plaintext="sk-alice")
         app = FastAPI()
-        app.include_router(create_openai_router(
-            stack, identity_store=store, require_auth=True,
-        ))
+        app.include_router(
+            create_openai_router(
+                stack,
+                identity_store=store,
+                require_auth=True,
+            )
+        )
         client = TestClient(app)
 
         r = client.post(
@@ -320,7 +341,7 @@ class TestGatewayBearerActor:
         assert r.status_code in (200, 401)
         if r.status_code == 200:
             resp = r.json()
-            actor = resp.get("octopus", {}).get("actor", "")
+            actor = resp.get("echo", {}).get("actor", "")
             assert actor != "from-proxy-header"
 
 
@@ -355,12 +376,12 @@ class TestMultiUserAudit:
         )
 
         alice_tasks = {
-            e.task_id for e in stack.journal.read_by_actor("alice")
+            e.task_id
+            for e in stack.journal.read_by_actor("alice")
             if e.event_type == "task_started"
         }
         bob_tasks = {
-            e.task_id for e in stack.journal.read_by_actor("bob")
-            if e.event_type == "task_started"
+            e.task_id for e in stack.journal.read_by_actor("bob") if e.event_type == "task_started"
         }
         assert len(alice_tasks) == 2
         assert len(bob_tasks) == 1

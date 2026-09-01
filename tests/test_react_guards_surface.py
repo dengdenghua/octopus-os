@@ -7,12 +7,12 @@
 * §34: ``_secret_in_payload_guard`` — credential-shaped string in a
   write payload (sk-..., ghp_..., AKIA..., private key block, etc.).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
 from runtime.core.cerebrum.react_guards import (
     _frontend_outside_tsconfig_include_guard,
     _oversized_single_edit_guard,
@@ -106,72 +106,114 @@ class TestMatchesTsconfigPattern:
 class TestIsFrontendPathOutsideTsconfig:
     def test_in_include_silent(self, fake_repo_with_tsconfig: Path) -> None:
         assert not _is_frontend_path_outside_tsconfig(
-            "frontend/src/main.tsx", repo_root=str(fake_repo_with_tsconfig),
+            "frontend/src/main.tsx",
+            repo_root=str(fake_repo_with_tsconfig),
         )
 
     def test_not_in_include_fires(self, fake_repo_with_tsconfig: Path) -> None:
         assert _is_frontend_path_outside_tsconfig(
-            "frontend/src/utils/lonely.ts", repo_root=str(fake_repo_with_tsconfig),
+            "frontend/src/utils/lonely.ts",
+            repo_root=str(fake_repo_with_tsconfig),
         )
 
     def test_excluded_silent(self, fake_repo_with_tsconfig: Path) -> None:
         # `src/app/api` is in exclude — matching there means tsc *intentionally*
         # skips it, so no guard nag.
         assert not _is_frontend_path_outside_tsconfig(
-            "frontend/src/app/api/foo.ts", repo_root=str(fake_repo_with_tsconfig),
+            "frontend/src/app/api/foo.ts",
+            repo_root=str(fake_repo_with_tsconfig),
         )
 
     def test_non_frontend_path_silent(self, fake_repo_with_tsconfig: Path) -> None:
         assert not _is_frontend_path_outside_tsconfig(
-            "runtime/foo.py", repo_root=str(fake_repo_with_tsconfig),
+            "runtime/foo.py",
+            repo_root=str(fake_repo_with_tsconfig),
         )
 
     def test_no_tsconfig_silent(self, tmp_path: Path) -> None:
         # No oracle → don't nag.
         assert not _is_frontend_path_outside_tsconfig(
-            "frontend/src/foo.tsx", repo_root=str(tmp_path),
+            "frontend/src/foo.tsx",
+            repo_root=str(tmp_path),
         )
 
 
 class TestFrontendOutsideTsconfigGuard:
-    def test_non_code_mode_silent(self, fake_repo_with_tsconfig: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_non_code_mode_silent(
+        self, fake_repo_with_tsconfig: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.chdir(fake_repo_with_tsconfig)
         steps = [
-            _step(1, action='edit_file({"path": "frontend/src/utils/lonely.ts", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "frontend/src/utils/lonely.ts", "old_string": "x", "new_string": "y"})',
+            ),
         ]
-        assert _frontend_outside_tsconfig_include_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _frontend_outside_tsconfig_include_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
-    def test_in_include_silent(self, fake_repo_with_tsconfig: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_in_include_silent(
+        self, fake_repo_with_tsconfig: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.chdir(fake_repo_with_tsconfig)
         steps = [
-            _step(1, action='edit_file({"path": "frontend/src/main.tsx", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "frontend/src/main.tsx", "old_string": "x", "new_string": "y"})',
+            ),
         ]
-        assert _frontend_outside_tsconfig_include_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _frontend_outside_tsconfig_include_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
-    def test_outside_include_fires(self, fake_repo_with_tsconfig: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_outside_include_fires(
+        self, fake_repo_with_tsconfig: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.chdir(fake_repo_with_tsconfig)
         steps = [
-            _step(1, action='edit_file({"path": "frontend/src/utils/lonely.ts", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "frontend/src/utils/lonely.ts", "old_string": "x", "new_string": "y"})',
+            ),
         ]
         msg = _frontend_outside_tsconfig_include_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "lonely.ts" in msg
         assert "tsconfig" in msg.lower() or "include" in msg.lower()
 
-    def test_help_request_short_circuits(self, fake_repo_with_tsconfig: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_help_request_short_circuits(
+        self, fake_repo_with_tsconfig: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.chdir(fake_repo_with_tsconfig)
         steps = [
-            _step(1, action='edit_file({"path": "frontend/src/utils/lonely.ts", "old_string": "x", "new_string": "y"})'),
+            _step(
+                1,
+                action='edit_file({"path": "frontend/src/utils/lonely.ts", "old_string": "x", "new_string": "y"})',
+            ),
         ]
-        assert _frontend_outside_tsconfig_include_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _frontend_outside_tsconfig_include_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -231,15 +273,30 @@ class TestOversizedSingleEditGuard:
         steps = [
             _step(1, action=f'write_text_file({{"path": "runtime/foo.py", "content": "{big}"}})'),
         ]
-        assert _oversized_single_edit_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        assert (
+            _oversized_single_edit_guard(
+                steps,
+                "done",
+                is_code_mode=False,
+            )
+            is None
+        )
 
     def test_no_oversized_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _oversized_single_edit_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _oversized_single_edit_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_oversized_no_verify_fires(self) -> None:
         big = "\\n".join(["x = 1"] * 250)
@@ -247,7 +304,9 @@ class TestOversizedSingleEditGuard:
             _step(1, action=f'write_text_file({{"path": "runtime/foo.py", "content": "{big}"}})'),
         ]
         msg = _oversized_single_edit_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "200-line" in msg or "lines" in msg
@@ -258,18 +317,28 @@ class TestOversizedSingleEditGuard:
             _step(1, action=f'write_text_file({{"path": "runtime/foo.py", "content": "{big}"}})'),
             _step(2, action='exec_shell({"command": "pytest tests/"})'),
         ]
-        assert _oversized_single_edit_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        assert (
+            _oversized_single_edit_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_help_request_short_circuits(self) -> None:
         big = "\\n".join(["x = 1"] * 250)
         steps = [
             _step(1, action=f'write_text_file({{"path": "runtime/foo.py", "content": "{big}"}})'),
         ]
-        assert _oversized_single_edit_guard(
-            steps, "I cannot continue — please provide the API key.", is_code_mode=True,
-        ) is None
+        assert (
+            _oversized_single_edit_guard(
+                steps,
+                "I cannot continue — please provide the API key.",
+                is_code_mode=True,
+            )
+            is None
+        )
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -340,7 +409,7 @@ class TestStepIntroducesSecret:
 
 
 class TestSecretInPayloadGuard:
-    def test_non_code_mode_silent(self) -> None:
+    def test_non_code_mode_still_blocks_secret(self) -> None:
         sk = "sk-abcdefghijklmnopqrstuvwxyz1234567890"
         steps = [
             _step(
@@ -352,15 +421,25 @@ class TestSecretInPayloadGuard:
                 ),
             ),
         ]
-        assert _secret_in_payload_guard(
-            steps, "done", is_code_mode=False,
-        ) is None
+        msg = _secret_in_payload_guard(steps, "done", is_code_mode=False)
+        assert msg is not None
+        assert "credential" in msg.lower()
 
     def test_no_secret_silent(self) -> None:
-        steps = [_step(1, action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})')]
-        assert _secret_in_payload_guard(
-            steps, "done", is_code_mode=True,
-        ) is None
+        steps = [
+            _step(
+                1,
+                action='edit_file({"path": "runtime/foo.py", "old_string": "x", "new_string": "y"})',
+            )
+        ]
+        assert (
+            _secret_in_payload_guard(
+                steps,
+                "done",
+                is_code_mode=True,
+            )
+            is None
+        )
 
     def test_secret_fires(self) -> None:
         sk = "sk-abcdefghijklmnopqrstuvwxyz1234567890"
@@ -375,7 +454,9 @@ class TestSecretInPayloadGuard:
             ),
         ]
         msg = _secret_in_payload_guard(
-            steps, "done", is_code_mode=True,
+            steps,
+            "done",
+            is_code_mode=True,
         )
         assert msg is not None
         assert "credential" in msg.lower() or "secret" in msg.lower()
@@ -396,6 +477,11 @@ class TestSecretInPayloadGuard:
                 ),
             ),
         ]
-        assert _secret_in_payload_guard(
-            steps, "I cannot continue — please provide a real API key.", is_code_mode=True,
-        ) is not None
+        assert (
+            _secret_in_payload_guard(
+                steps,
+                "I cannot continue — please provide a real API key.",
+                is_code_mode=True,
+            )
+            is not None
+        )

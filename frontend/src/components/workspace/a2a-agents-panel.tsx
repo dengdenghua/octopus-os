@@ -80,7 +80,9 @@ interface TaskResult {
 
 const api = {
   async listAgents(): Promise<{ agents: RemoteAgent[]; count: number }> {
-    const res = await fetch(`${getBackendBaseURL()}/api/a2a/agents`, { headers: authHeaders() });
+    const res = await fetch(`${getBackendBaseURL()}/api/a2a/agents`, {
+      headers: authHeaders(),
+    });
     if (!res.ok) throw new Error(`Failed to list agents: ${res.statusText}`);
     return res.json();
   },
@@ -117,10 +119,7 @@ const api = {
     return res.json();
   },
 
-  async sendTask(
-    agentId: string,
-    text: string,
-  ): Promise<TaskResult> {
+  async sendTask(agentId: string, text: string): Promise<TaskResult> {
     const res = await fetch(
       `${getBackendBaseURL()}/api/a2a/agents/${agentId}/send`,
       {
@@ -221,7 +220,7 @@ export function A2AAgentsPanel({ className }: { className?: string }) {
 
       {/* Error banner */}
       {error && (
-        <div className="flex items-center gap-2 border-b bg-red-500/5 px-4 py-2 text-xs text-red-500">
+        <div className="flex items-center gap-2 border-b bg-destructive/5 px-4 py-2 text-xs text-destructive">
           <AlertCircleIcon className="size-3.5 shrink-0" />
           <span className="truncate">{error}</span>
         </div>
@@ -297,7 +296,7 @@ function RegisterForm({
 
   return (
     <form onSubmit={handleSubmit} className="border-b px-4 py-3">
-      <label className="text-muted-foreground mb-1.5 block text-[11px] font-medium">
+      <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
         {t.a2a.remoteAgentUrl}
       </label>
       <div className="flex gap-2">
@@ -306,14 +305,14 @@ function RegisterForm({
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://agent.example.com"
-          className="border-input bg-background flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+          className="border-input bg-background flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-info"
           disabled={registering}
           autoFocus
         />
         <button
           type="submit"
           disabled={!url.trim() || registering}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-info px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-info disabled:opacity-50"
         >
           {registering ? (
             <Loader2Icon className="size-3 animate-spin" />
@@ -323,9 +322,7 @@ function RegisterForm({
           {t.a2a.connect}
         </button>
       </div>
-      {error && (
-        <p className="mt-1.5 text-[11px] text-red-500">{error}</p>
-      )}
+      {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
     </form>
   );
 }
@@ -371,29 +368,27 @@ function AgentCard({
         <button
           type="button"
           onClick={onClick}
-          className="bg-card flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all hover:shadow-sm"
+          className="bg-card flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all hover:shadow-[var(--shadow-xs)]"
         >
           {/* Status indicator */}
           <div
             className={cn(
               "flex size-9 shrink-0 items-center justify-center rounded-lg",
-              isActive ? "bg-green-500/10" : "bg-red-500/10",
+              isActive ? "bg-success/10" : "bg-destructive/10",
             )}
           >
             {isActive ? (
-              <WifiIcon className="size-4 text-green-500" />
+              <WifiIcon className="size-4 text-success" />
             ) : (
-              <WifiOffIcon className="size-4 text-red-400" />
+              <WifiOffIcon className="size-4 text-destructive" />
             )}
           </div>
 
           {/* Info */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-medium">
-                {agent.name}
-              </span>
-              <span className="text-muted-foreground text-[10px]">
+              <span className="truncate text-sm font-medium">{agent.name}</span>
+              <span className="text-muted-foreground text-xs">
                 v{agent.version}
               </span>
             </div>
@@ -405,13 +400,13 @@ function AgentCard({
                 {agent.skills.slice(0, 3).map((skill) => (
                   <span
                     key={skill.id}
-                    className="bg-muted rounded px-1.5 py-0.5 text-[10px]"
+                    className="bg-muted rounded px-1.5 py-0.5 text-xs"
                   >
                     {skill.name}
                   </span>
                 ))}
                 {agent.skills.length > 3 && (
-                  <span className="text-muted-foreground text-[10px]">
+                  <span className="text-muted-foreground text-xs">
                     +{agent.skills.length - 3}
                   </span>
                 )}
@@ -424,7 +419,7 @@ function AgentCard({
       </TooltipTrigger>
       <TooltipContent side="left" className="max-w-64">
         <p className="text-xs">{agent.base_url}</p>
-        <p className="text-muted-foreground mt-1 text-[10px]">
+        <p className="text-muted-foreground mt-1 text-xs">
           {t.a2a.status}: {agent.status} | {t.a2a.skills}: {agent.skills.length}
         </p>
       </TooltipContent>
@@ -514,6 +509,7 @@ function AgentDetailView({
         <button
           type="button"
           onClick={onBack}
+          aria-label={t.common.back}
           className="text-muted-foreground hover:text-foreground"
         >
           <ChevronRightIcon className="size-4 rotate-180" />
@@ -521,18 +517,18 @@ function AgentDetailView({
         <div
           className={cn(
             "flex size-7 items-center justify-center rounded-lg",
-            isActive ? "bg-green-500/10" : "bg-red-500/10",
+            isActive ? "bg-success/10" : "bg-destructive/10",
           )}
         >
           {isActive ? (
-            <WifiIcon className="size-3.5 text-green-500" />
+            <WifiIcon className="size-3.5 text-success" />
           ) : (
-            <WifiOffIcon className="size-3.5 text-red-400" />
+            <WifiOffIcon className="size-3.5 text-destructive" />
           )}
         </div>
         <div className="min-w-0 flex-1">
           <span className="text-sm font-semibold">{agent.name}</span>
-          <span className="text-muted-foreground ml-1.5 text-[10px]">
+          <span className="text-muted-foreground ml-1.5 text-xs">
             v{agent.version}
           </span>
         </div>
@@ -541,14 +537,14 @@ function AgentDetailView({
       {/* Info section */}
       <div className="space-y-3 border-b px-4 py-3">
         <div>
-          <span className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+          <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
             {t.a2a.endpoint}
           </span>
           <p className="mt-0.5 truncate text-xs">{agent.base_url}</p>
         </div>
         {agent.description && (
           <div>
-            <span className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+            <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
               {t.a2a.description}
             </span>
             <p className="text-foreground/80 mt-0.5 text-xs leading-relaxed">
@@ -557,7 +553,7 @@ function AgentDetailView({
           </div>
         )}
         <div>
-          <span className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+          <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
             {t.a2a.capabilities}
           </span>
           <div className="mt-1 flex flex-wrap gap-1.5">
@@ -580,18 +576,15 @@ function AgentDetailView({
       {/* Skills */}
       {agent.skills.length > 0 && (
         <div className="border-b px-4 py-3">
-          <span className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+          <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
             {t.a2a.skills} ({agent.skills.length})
           </span>
           <div className="mt-2 space-y-2">
             {agent.skills.map((skill) => (
-              <div
-                key={skill.id}
-                className="rounded-lg bg-muted/30 px-3 py-2"
-              >
+              <div key={skill.id} className="rounded-lg bg-muted/30 px-3 py-2">
                 <p className="text-xs font-medium">{skill.name}</p>
                 {skill.description && (
-                  <p className="text-muted-foreground mt-0.5 text-[11px]">
+                  <p className="text-muted-foreground mt-0.5 text-xs">
                     {skill.description}
                   </p>
                 )}
@@ -600,7 +593,7 @@ function AgentDetailView({
                     {skill.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="rounded bg-muted px-1 py-0.5 text-[9px]"
+                        className="rounded bg-muted px-1 py-0.5 text-xs"
                       >
                         {tag}
                       </span>
@@ -633,7 +626,7 @@ function AgentDetailView({
             type="button"
             onClick={handleDelete}
             disabled={deleting}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:hover:bg-red-950"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/5 disabled:opacity-50 dark:hover:bg-destructive/20"
           >
             {deleting ? (
               <Loader2Icon className="size-3 animate-spin" />
@@ -650,8 +643,8 @@ function AgentDetailView({
             className={cn(
               "mt-2 flex items-center gap-2 rounded-lg px-3 py-2 text-xs",
               healthResult.healthy
-                ? "bg-green-500/10 text-green-600"
-                : "bg-red-500/10 text-red-500",
+                ? "bg-success/10 text-success"
+                : "bg-destructive/10 text-destructive",
             )}
           >
             {healthResult.healthy ? (
@@ -668,7 +661,7 @@ function AgentDetailView({
 
       {/* Send task */}
       <div className="px-4 py-3">
-        <span className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+        <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
           {t.a2a.sendTask}
         </span>
         <form onSubmit={handleSendTask} className="mt-2 flex gap-2">
@@ -677,13 +670,13 @@ function AgentDetailView({
             value={taskText}
             onChange={(e) => setTaskText(e.target.value)}
             placeholder={t.a2a.sendTaskPlaceholder}
-            className="border-input bg-background flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+            className="border-input bg-background flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-info"
             disabled={sending}
           />
           <button
             type="submit"
             disabled={!taskText.trim() || sending}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-info px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-info disabled:opacity-50"
           >
             {sending ? (
               <Loader2Icon className="size-3 animate-spin" />
@@ -696,7 +689,7 @@ function AgentDetailView({
 
         {/* Task error */}
         {taskError && (
-          <div className="mt-2 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-500">
+          <div className="mt-2 flex items-center gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
             <AlertCircleIcon className="size-3.5 shrink-0" />
             {taskError}
           </div>
@@ -708,17 +701,17 @@ function AgentDetailView({
             <div className="flex items-center gap-2">
               <span
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-medium",
+                  "inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-medium",
                   taskResult.status.state === "completed"
-                    ? "bg-green-500/10 text-green-600"
+                    ? "bg-success/10 text-success"
                     : taskResult.status.state === "failed"
-                      ? "bg-red-500/10 text-red-500"
-                      : "bg-blue-500/10 text-blue-500",
+                      ? "bg-destructive/10 text-destructive"
+                      : "bg-info/10 text-info",
                 )}
               >
                 {taskResult.status.state}
               </span>
-              <span className="text-muted-foreground text-[10px]">
+              <span className="text-muted-foreground text-xs">
                 Task {taskResult.id.slice(0, 8)}
               </span>
             </div>
@@ -727,10 +720,7 @@ function AgentDetailView({
             {taskResult.messages
               .filter((m) => m.role === "agent")
               .map((msg, i) => (
-                <div
-                  key={i}
-                  className="mt-2 rounded-lg bg-muted/30 px-3 py-2"
-                >
+                <div key={i} className="mt-2 rounded-lg bg-muted/30 px-3 py-2">
                   {msg.parts.map((part, j) => (
                     <p key={j} className="text-xs leading-relaxed">
                       {part.text || t.a2a.nonTextContent}
@@ -742,7 +732,7 @@ function AgentDetailView({
             {/* Show artifacts */}
             {taskResult.artifacts.length > 0 && (
               <div className="mt-2">
-                <span className="text-muted-foreground text-[10px]">
+                <span className="text-muted-foreground text-xs">
                   {t.a2a.artifacts}: {taskResult.artifacts.length}
                 </span>
                 {taskResult.artifacts.map((artifact, i) => (
@@ -786,16 +776,16 @@ function CapabilityBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-medium",
+        "inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-medium",
         enabled
-          ? "bg-green-500/10 text-green-600"
+          ? "bg-success/10 text-success"
           : "bg-muted text-muted-foreground",
       )}
     >
       <span
         className={cn(
           "size-1.5 rounded-lg",
-          enabled ? "bg-green-500" : "bg-muted-foreground/30",
+          enabled ? "bg-success" : "bg-muted-foreground/30",
         )}
       />
       {label}

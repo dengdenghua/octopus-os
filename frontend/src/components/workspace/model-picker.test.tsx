@@ -1,10 +1,13 @@
 /**
  * Tests for the chat-input model picker — compact dropdown variant.
  *
- * Focus: classification (official vs custom) + selection plumbing.
- * We don't re-test Radix Tabs / DropdownMenu internals.
+ * Focus: one flat model list + selection plumbing. The Official/Custom
+ * tab split was removed — with a handful of configured endpoints it cost
+ * two clicks to reach a neighbouring model and hid the selected row behind
+ * whichever tab opened by default. We don't re-test Radix DropdownMenu
+ * internals.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -12,54 +15,11 @@ import { AllProviders } from "@/test/harness";
 
 import { ModelPicker, type PickerModel } from "./model-picker";
 
-const authState = vi.hoisted(() => ({
-  isGuest: false,
-  isAuthenticated: true,
+// Stub useOctLink — picker reads `link.oct_user_id` to auto-enable
+// unconfigured models.
+vi.mock("@/core/oct/hooks", () => ({
+  useOctLink: () => ({ data: null }),
 }));
-
-// Stub useMoliliLink + useQueryClient consumers — picker now reads
-// `link.molili_user_id` to auto-enable unconfigured models.
-vi.mock("@/core/molili", () => ({
-  useMoliliLink: () => ({ data: null }),
-}));
-
-// Picker's `useAuth()` is for read-only identity · stub with a
-// minimal guest identity so the hook doesn't throw.
-vi.mock("@/providers/AuthProvider", () => ({
-  useAuth: () => ({
-    isLoading: false,
-    authStatus: { enabled: false, allow_registration: false },
-    user: null,
-    isAuthenticated: authState.isAuthenticated,
-    isGuest: authState.isGuest,
-    login: vi.fn(),
-    smsLogin: vi.fn(),
-    guestLogin: vi.fn(),
-    register: vi.fn(),
-    logout: vi.fn(),
-    refresh: vi.fn(),
-  }),
-}));
-const CATALOG = [
-  { id: "minimax-m2.5", display_name: "MiniMax M2.5", multiplier: "0.2x", recommended: true },
-  { id: "glm-4.7", display_name: "GLM-4.7", multiplier: "0.6x", recommended: true },
-  { id: "kimi-k2.5", display_name: "Kimi K2.5", multiplier: "0.3x", recommended: false },
-  { id: "deepseek-v3.2", display_name: "DeepSeek-V3.2", multiplier: "0.5x", recommended: false },
-  { id: "qwen3-max", display_name: "Qwen3-Max", multiplier: "0.2x", recommended: false },
-];
-
-beforeEach(() => {
-  authState.isGuest = false;
-  authState.isAuthenticated = true;
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ data: CATALOG }),
-    }),
-  );
-});
 
 function withProviders(node: React.ReactNode) {
   // Test assertions reference zh-CN copy, so prime the I18nProvider to zh-CN.
@@ -69,19 +29,15 @@ function withProviders(node: React.ReactNode) {
 // Backwards-compat alias used in older tests.
 const withRouter = withProviders;
 
-// Keep display_names aligned with the CURRENT OFFICIAL_META.displayName
-// values (MiniMax M2.5 / GLM-4.7 / Kimi K2.5 / DeepSeek-V3.2 / Qwen3-Max).
-// The component now routes a model to the "custom" tab if its
-// display_name differs from the curated pack label · so mismatched
-// names would make the "5 official rows" assertion fail even though
-// the backend model is recognized by the regex.
+// MODELS includes echo-mix (official) plus several custom models.
+// The picker opens on the category that contains the current selection.
 const MODELS: PickerModel[] = [
+  { name: "echo-mix", display_name: "mix", provider: "echo" },
   { name: "kimi-k2.5", display_name: "Kimi K2.5", model: "kimi" },
-  { name: "minimax-m2.7", display_name: "MiniMax M2.5", model: "minimax" },
-  { name: "glm-5", display_name: "GLM-4.7", model: "glm" },
+  { name: "minimax-m2.7", display_name: "MiniMax M2.7", model: "minimax" },
+  { name: "glm-5", display_name: "GLM-5", model: "glm" },
   { name: "deepseek-v3.2", display_name: "DeepSeek-V3.2", model: "deepseek" },
   { name: "qwen3-max", display_name: "Qwen3-Max", model: "qwen" },
-  // Implementation note.
   {
     name: "claude-opus-4-6-mirror",
     display_name: "Claude Opus 4.6 (mirror)",
@@ -103,19 +59,356 @@ describe("<ModelPicker />", () => {
 
   it("renders the default trigger with the resolved model name", () => {
     setup();
-    expect(
-      screen.getByRole("button", { name: "选择模型" }),
-    ).toHaveTextContent("Kimi K2.5");
+    expect(screen.getByRole("button", { name: "选择模型" })).toHaveTextContent(
+      "Kimi K2.5",
+    );
   });
 
-  it("opens the dropdown with the official tab active by default", async () => {
+  it("renders OpenCode Zen free model names in green without a duplicate badge", async () => {
+    const user = userEvent.setup();
+    render(
+      withRouter(
+        <ModelPicker
+          models={[
+            {
+              name: "big-pickle",
+              display_name: "big-pickle",
+              model: "big-pickle",
+              entry_id: "opencode-zen",
+              selection_id: "zen-big-pickle",
+            },
+            {
+              name: "mimo-v2.5-free",
+              display_name: "mimo-v2.5-free",
+              model: "mimo-v2.5-free",
+              entry_id: "opencode-zen",
+              selection_id: "zen-mimo-v2.5-free",
+            },
+          ]}
+          value="zen-big-pickle"
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    const trigger = screen.getByTestId("model-picker-trigger");
+    expect(within(trigger).getByText("big-pickle")).toHaveClass(
+      "text-emerald-600",
+    );
+
+    await user.click(trigger);
+    const menu = await screen.findByTestId("model-picker-menu");
+    expect(within(menu).getByText("big-pickle")).toHaveClass(
+      "text-emerald-600",
+    );
+    expect(within(menu).getByText("mimo-v2.5-free")).toHaveClass(
+      "text-emerald-600",
+    );
+    expect(within(menu).queryByText("FREE")).not.toBeInTheDocument();
+  });
+
+  it("lists every model in one flat list, no tabs", async () => {
     const user = userEvent.setup();
     setup();
 
-    await user.click(screen.getByRole("button", { name: "选择模型" }));
-    const officialTab = await screen.findByRole("tab", { name: "官方模型" });
-    expect(officialTab).toHaveAttribute("data-state", "active");
-    expect(screen.getByRole("tab", { name: "自定义" })).toBeInTheDocument();
+    await user.click(screen.getByTestId("model-picker-trigger"));
+    const menu = await screen.findByTestId("model-picker-menu");
+    expect(menu).toBeInTheDocument();
+    // No tab strip at all — every model is reachable without a category hop.
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    for (const label of [
+      "mix",
+      "Kimi K2.5",
+      "GLM-5",
+      "Claude Opus 4.6 (mirror)",
+    ]) {
+      expect(within(menu).getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it("folds the 1M variant into its base row instead of a second row", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      withRouter(
+        <ModelPicker
+          models={[
+            {
+              name: "deepseek-v4-pro",
+              model: "deepseek-v4-pro",
+              display_name: "DeepSeek V4 Pro",
+              context_window: 256_000,
+              context_profile: "default",
+            },
+            {
+              name: "deepseek-v4-pro::1m",
+              model: "deepseek-v4-pro",
+              display_name: "DeepSeek V4 Pro",
+              context_window: 1_000_000,
+              context_profile: "1m",
+            },
+          ]}
+          value="deepseek-v4-pro"
+          onChange={onChange}
+        />,
+      ),
+    );
+
+    await user.click(screen.getByTestId("model-picker-trigger"));
+    const menu = await screen.findByTestId("model-picker-menu");
+    expect(menu).toHaveClass("w-56");
+    expect(menu.querySelector("button button")).toBeNull();
+    // One row for the model, not two near-identical ones. Scoped to the menu
+    // because the trigger also renders the selected model's label.
+    expect(within(menu).getAllByText("DeepSeek V4 Pro")).toHaveLength(1);
+    // Context length is a first-class quick setting instead of a tiny row badge.
+    const context = within(menu).getByRole("radiogroup", {
+      name: "上下文长度",
+    });
+    expect(
+      within(context).getByRole("radio", { name: "标准 · 256K" }),
+    ).toHaveAttribute("aria-checked", "true");
+    await user.click(within(context).getByRole("radio", { name: "Max · 1M" }));
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(onChange).toHaveBeenLastCalledWith("deepseek-v4-pro::1m");
+    expect(menu).toBeVisible();
+  });
+
+  it("selecting the row itself keeps the default context window", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      withRouter(
+        <ModelPicker
+          models={[
+            {
+              name: "deepseek-v4-pro",
+              model: "deepseek-v4-pro",
+              display_name: "DeepSeek V4 Pro",
+              context_profile: "default",
+            },
+            {
+              name: "deepseek-v4-pro::1m",
+              model: "deepseek-v4-pro",
+              display_name: "DeepSeek V4 Pro",
+              context_profile: "1m",
+            },
+          ]}
+          value="deepseek-v4-pro"
+          onChange={onChange}
+        />,
+      ),
+    );
+
+    await user.click(screen.getByTestId("model-picker-trigger"));
+    const menu = await screen.findByTestId("model-picker-menu");
+    await user.click(
+      within(menu).getByText("DeepSeek V4 Pro").closest("button")!,
+    );
+    expect(onChange).toHaveBeenCalledWith("deepseek-v4-pro");
+  });
+
+  it("distinguishes two custom entries sharing the same wire model id", async () => {
+    // A primary provider and its backup can both advertise the same wire
+    // model id ("deepseek-v4-flash") while carrying distinct entry_ids.
+    // Selecting one must send its own entry_id and resolve its own label —
+    // never highlight or echo the other.
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const DUP_MODELS: PickerModel[] = [
+      {
+        name: "deepseek-v4-flash",
+        model: "deepseek-v4-flash",
+        display_name: "deepseek-v4-flash",
+        entry_id: "deepseek-v4-flash",
+        context_profile: "default",
+      },
+      {
+        name: "deepseek-v4-flash",
+        model: "deepseek-v4-flash",
+        display_name: "deepseek-v4-flash (api.b.ai)",
+        entry_id: "deepseek-v4-flash-bai",
+        context_profile: "default",
+      },
+    ];
+    const { rerender } = render(
+      withRouter(
+        <ModelPicker
+          models={DUP_MODELS}
+          value="deepseek-v4-flash"
+          onChange={onChange}
+        />,
+      ),
+    );
+
+    // Both rows render side by side even though their wire id is identical.
+    await user.click(screen.getByTestId("model-picker-trigger"));
+    const menu = await screen.findByTestId("model-picker-menu");
+    expect(within(menu).getByText("deepseek-v4-flash")).toBeInTheDocument();
+    expect(
+      within(menu).getByText("deepseek-v4-flash (api.b.ai)"),
+    ).toBeInTheDocument();
+
+    // Selecting the backup row sends its unique entry_id, not the shared
+    // wire id.
+    await user.click(
+      within(menu).getByText("deepseek-v4-flash (api.b.ai)").closest("button")!,
+    );
+    expect(onChange).toHaveBeenLastCalledWith("deepseek-v4-flash-bai");
+
+    // Selecting the primary row sends its own entry_id.
+    await user.click(screen.getByTestId("model-picker-trigger"));
+    const menu2 = await screen.findByTestId("model-picker-menu");
+    await user.click(
+      within(menu2).getByText("deepseek-v4-flash").closest("button")!,
+    );
+    expect(onChange).toHaveBeenLastCalledWith("deepseek-v4-flash");
+
+    // With the backup selected, the trigger resolves the label via
+    // entry_id instead of falling back to the raw model string.
+    rerender(
+      withRouter(
+        <ModelPicker
+          models={DUP_MODELS}
+          value="deepseek-v4-flash-bai"
+          onChange={onChange}
+        />,
+      ),
+    );
+    expect(screen.getByRole("button", { name: "选择模型" })).toHaveTextContent(
+      "deepseek-v4-flash (api.b.ai)",
+    );
+  });
+
+  it("collapses exact duplicate catalog rows without hiding distinct endpoints", async () => {
+    const user = userEvent.setup();
+    const duplicate: PickerModel = {
+      name: "deepseek-v4-flash",
+      display_name: "DeepSeek V4 Flash",
+      entry_id: "deepseek-v4-flash",
+      context_profile: "default",
+    };
+    render(
+      withRouter(
+        <ModelPicker
+          models={[duplicate, { ...duplicate }]}
+          value="deepseek-v4-flash"
+          onChange={vi.fn()}
+        />,
+      ),
+    );
+
+    await user.click(screen.getByTestId("model-picker-trigger"));
+    const menu = await screen.findByTestId("model-picker-menu");
+    expect(within(menu).getAllByText("DeepSeek V4 Flash")).toHaveLength(1);
+  });
+
+  it("uses row selection ids for variants, duplicate endpoints, and 1M siblings", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const rows: PickerModel[] = [
+      {
+        name: "economy-model",
+        model: "economy-model",
+        display_name: "Primary economy",
+        entry_id: "primary",
+        selection_id: "selection-primary-economy-default",
+        context_profile: "default",
+      },
+      {
+        name: "economy-model::1m",
+        model: "economy-model",
+        display_name: "Primary economy",
+        entry_id: "primary",
+        selection_id: "selection-primary-economy-1m",
+        context_profile: "1m",
+      },
+      {
+        name: "shared-model",
+        model: "shared-model",
+        display_name: "Primary performance",
+        entry_id: "primary",
+        selection_id: "selection-primary-shared-default",
+        context_profile: "default",
+      },
+      {
+        name: "shared-model::1m",
+        model: "shared-model",
+        display_name: "Primary performance",
+        entry_id: "primary",
+        selection_id: "selection-primary-shared-1m",
+        context_profile: "1m",
+      },
+      {
+        name: "shared-model",
+        model: "shared-model",
+        display_name: "Backup performance",
+        entry_id: "backup",
+        selection_id: "selection-backup-shared-default",
+        context_profile: "default",
+      },
+      {
+        name: "shared-model::1m",
+        model: "shared-model",
+        display_name: "Backup performance",
+        entry_id: "backup",
+        selection_id: "selection-backup-shared-1m",
+        context_profile: "1m",
+      },
+    ];
+    const { rerender } = render(
+      withRouter(
+        <ModelPicker
+          models={rows}
+          value="selection-primary-economy-default"
+          onChange={onChange}
+        />,
+      ),
+    );
+
+    await user.click(screen.getByTestId("model-picker-trigger"));
+    const backupDefault = screen.getByRole("button", {
+      name: "Backup performance",
+    });
+    backupDefault.focus();
+    expect(backupDefault).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith(
+      "selection-backup-shared-default",
+    );
+    expect(onChange).toHaveBeenCalledOnce();
+    onChange.mockClear();
+
+    rerender(
+      withRouter(
+        <ModelPicker
+          models={rows}
+          value="selection-primary-shared-default"
+          onChange={onChange}
+        />,
+      ),
+    );
+    await user.click(screen.getByTestId("model-picker-trigger"));
+    const primaryLong = screen.getByRole("radio", { name: "Max · 1M" });
+    primaryLong.focus();
+    expect(primaryLong).toHaveFocus();
+    await user.keyboard(" ");
+    expect(onChange).toHaveBeenLastCalledWith("selection-primary-shared-1m");
+    expect(onChange).toHaveBeenCalledOnce();
+    onChange.mockClear();
+
+    rerender(
+      withRouter(
+        <ModelPicker
+          models={rows}
+          value="selection-backup-shared-default"
+          onChange={onChange}
+        />,
+      ),
+    );
+    await user.click(screen.getByRole("radio", { name: "Max · 1M" }));
+    expect(onChange).toHaveBeenLastCalledWith("selection-backup-shared-1m");
+    expect(onChange).toHaveBeenCalledOnce();
   });
 
   it("keeps reasoning effort inside the model dropdown", async () => {
@@ -147,86 +440,130 @@ describe("<ModelPicker />", () => {
     expect(onReasoningEffortChange).toHaveBeenCalledWith("xhigh");
   });
 
-  it("renders all 5 official rows with multipliers", async () => {
+  it("only offers the effort tiers the selected model genuinely supports", async () => {
     const user = userEvent.setup();
-    setup();
-    await user.click(screen.getByRole("button", { name: "选择模型" }));
+    render(
+      withRouter(
+        <ModelPicker
+          models={[
+            {
+              name: "deepseek-v4",
+              model: "deepseek-v4",
+              display_name: "DeepSeek V4",
+              reasoning_efforts: ["off", "high", "xhigh"],
+            },
+          ]}
+          value="deepseek-v4"
+          onChange={vi.fn()}
+          reasoningEffort="medium"
+          onReasoningEffortChange={vi.fn()}
+        />,
+      ),
+    );
 
-    const menu = await screen.findByRole("menu");
-    // Labels are nested spans · menu.textContent flattens them but
-    // Radix Tabs content sits in a sibling of the menu container, so
-    // scope at the dropdown root instead.
-    const allText = (menu.parentElement ?? menu).textContent ?? "";
-    for (const display of [
-      "MiniMax M2.5",
-      "GLM-4.7",
-      "Kimi K2.5",
-      "DeepSeek-V3.2",
-      "Qwen3-Max",
-    ]) {
-      expect(allText).toContain(display);
-    }
-    // Multipliers come from OFFICIAL_META — minimax + qwen both 0.2x,
-    // so we assert >=2 occurrences rather than exactly-one.
-    expect(within(menu).getAllByText("0.2x").length).toBeGreaterThanOrEqual(2);
-    expect(within(menu).getByText("0.6x")).toBeInTheDocument(); // glm
-    // The current selection (Kimi K2.5) renders 0.3x in the header AND
-    // again in the list, so we can't assert exactly-one.
-    expect(within(menu).getAllByText("0.3x").length).toBeGreaterThanOrEqual(1);
+    await user.click(screen.getByRole("button", { name: "选择模型" }));
+    const group = await screen.findByRole("radiogroup", {
+      name: "推理等级",
+    });
+    const radios = within(group).getAllByRole("radio");
+    // Only off / high / xhigh — the low/medium tiers DeepSeek collapses
+    // onto "high" on the wire are not offered.
+    expect(radios.map((r) => r.textContent)).toEqual(["关闭", "高", "超高"]);
   });
 
-  it("MiniMax + GLM carry the 推荐 badge", async () => {
+  it("hides the effort control when the model has no meaningful tiers", async () => {
     const user = userEvent.setup();
-    setup();
+    render(
+      withRouter(
+        <ModelPicker
+          models={[
+            {
+              name: "minimax-m2",
+              model: "minimax-m2",
+              display_name: "MiniMax M2",
+              reasoning_efforts: [],
+            },
+          ]}
+          value="minimax-m2"
+          onChange={vi.fn()}
+          reasoningEffort="medium"
+          onReasoningEffortChange={vi.fn()}
+        />,
+      ),
+    );
+
     await user.click(screen.getByRole("button", { name: "选择模型" }));
-    const menu = await screen.findByRole("menu");
-    // Implementation note.
-    // visible text. Query by attribute at the dropdown root since
-    // Tabs content is a sibling of the menu role.
-    const root = menu.parentElement ?? menu;
-    const badges = root.querySelectorAll('[title="推荐"]');
-    expect(badges.length).toBe(2);
+    expect(
+      screen.queryByRole("radiogroup", { name: "推理等级" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("selecting an official row invokes onChange with the backend name", async () => {
+  it("shows a mapping hint when the current effort is not offered", async () => {
+    const user = userEvent.setup();
+    render(
+      withRouter(
+        <ModelPicker
+          models={[
+            {
+              name: "deepseek-v4",
+              model: "deepseek-v4",
+              display_name: "DeepSeek V4",
+              reasoning_efforts: ["off", "high", "xhigh"],
+            },
+          ]}
+          value="deepseek-v4"
+          onChange={vi.fn()}
+          reasoningEffort="medium"
+          onReasoningEffortChange={vi.fn()}
+        />,
+      ),
+    );
+
+    await user.click(screen.getByRole("button", { name: "选择模型" }));
+    const menu = await screen.findByTestId("model-picker-menu");
+    // "中" isn't offered for DeepSeek — it maps to "高" on the wire, and the
+    // UI surfaces that instead of silently rewriting it.
+    expect(within(menu).getByText(/将按.*高.*发送/)).toBeInTheDocument();
+    expect(within(menu).getByRole("radio", { name: "高" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  });
+
+  it("selecting the official mix row invokes onChange with its backend name", async () => {
     const user = userEvent.setup();
     const { onChange } = setup("kimi-k2.5");
     await user.click(screen.getByRole("button", { name: "选择模型" }));
 
-    // Click MiniMax row — its label is the curated "MiniMax M2.5" but
-    // onChange must surface the backend name from MODELS.
     const menu = await screen.findByRole("menu");
-    // Tabs content is a sibling of the menu · search the whole
-    // dropdown portal. Label is in a nested span · find the button
-    // via textContent.
     const root = menu.parentElement ?? menu;
-    const miniMaxBtn = Array.from(
-      root.querySelectorAll("button"),
-    ).find((b) => (b.textContent ?? "").includes("MiniMax M2.5"));
-    expect(miniMaxBtn).toBeTruthy();
-    await user.click(miniMaxBtn!);
+    const mixBtn = Array.from(root.querySelectorAll("button")).find((b) =>
+      (b.textContent ?? "").includes("mix"),
+    );
+    expect(mixBtn).toBeTruthy();
+    await user.click(mixBtn!);
 
-    expect(onChange).toHaveBeenCalledWith("minimax-m2.7");
+    expect(onChange).toHaveBeenCalledWith("echo-mix");
   });
 
-  it("自定义 tab lists non-official models with provider hints", async () => {
+  it("shows a bare model name with no guessed vendor label", async () => {
     const user = userEvent.setup();
     setup();
     await user.click(screen.getByRole("button", { name: "选择模型" }));
-
-    await user.click(screen.getByRole("tab", { name: "自定义" }));
 
     const menu = await screen.findByRole("menu");
-    expect(within(menu).getByText("Claude Opus 4.6 (mirror)")).toBeInTheDocument();
-    // Right-hint resolves "claude" → "Claude" provider label.
-    expect(within(menu).getByText("Claude")).toBeInTheDocument();
+    expect(
+      within(menu).getByText("Claude Opus 4.6 (mirror)"),
+    ).toBeInTheDocument();
+    // The old right column guessed a vendor from the model name ("claude" →
+    // "Claude"), which restated what the label already said.
+    expect(within(menu).queryByText("Claude")).not.toBeInTheDocument();
   });
 
-  it("自定义 tab shows 添加模型 CTA", async () => {
+  it("shows the 添加模型 CTA", async () => {
     const user = userEvent.setup();
     setup();
     await user.click(screen.getByRole("button", { name: "选择模型" }));
-    await user.click(screen.getByRole("tab", { name: "自定义" }));
 
     const menu = await screen.findByRole("menu");
     expect(
@@ -238,7 +575,6 @@ describe("<ModelPicker />", () => {
     const user = userEvent.setup();
     const { onChange } = setup();
     await user.click(screen.getByRole("button", { name: "选择模型" }));
-    await user.click(screen.getByRole("tab", { name: "自定义" }));
 
     const menu = await screen.findByRole("menu");
     await user.click(
@@ -247,79 +583,25 @@ describe("<ModelPicker />", () => {
     expect(onChange).toHaveBeenCalledWith("claude-opus-4-6-mirror");
   });
 
-  it("guest users see disabled official models and can only select custom models", async () => {
-    authState.isGuest = true;
-    authState.isAuthenticated = false;
-    const user = userEvent.setup();
-    const { onChange } = setup("claude-opus-4-6-mirror");
-
-    await user.click(screen.getByRole("button", { name: "选择模型" }));
-
-    const customTab = await screen.findByRole("tab", { name: "自定义" });
-    expect(customTab).toHaveAttribute("data-state", "active");
-    expect(screen.getByRole("tab", { name: "官方模型" })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: "官方模型" }));
-    const menu = await screen.findByRole("menu");
-    const root = menu.parentElement ?? menu;
-    const miniMaxBtn = Array.from(root.querySelectorAll("button")).find((b) =>
-      (b.textContent ?? "").includes("MiniMax M2.5"),
+  it("trigger shows mix label when that model is selected", () => {
+    setup("echo-mix");
+    expect(screen.getByRole("button", { name: "选择模型" })).toHaveTextContent(
+      "mix",
     );
-    expect(miniMaxBtn).toBeTruthy();
-    expect(miniMaxBtn).toBeDisabled();
-    expect(root.textContent ?? "").toContain("登录后可用");
-    await user.click(miniMaxBtn!);
-    expect(onChange).not.toHaveBeenCalledWith("minimax-m2.7");
-
-    await user.click(screen.getByRole("tab", { name: "自定义" }));
-    const customBtn = Array.from(root.querySelectorAll("button")).find(
-      (b) =>
-        (b.textContent ?? "").includes("Claude Opus 4.6 (mirror)") &&
-        !(b.textContent ?? "").includes("1.0x"),
-    );
-    expect(customBtn).toBeTruthy();
-    await user.click(customBtn!);
-    expect(onChange).toHaveBeenCalledWith("claude-opus-4-6-mirror");
   });
 
-  it("header shows the curated displayName + multiplier of the current model", async () => {
-    const user = userEvent.setup();
-    setup("minimax-m2.7");
-    await user.click(screen.getByRole("button", { name: "选择模型" }));
-
-    const menu = await screen.findByRole("menu");
-    // Tabs content (including the official tab's row for MiniMax) is
-    // a sibling of the menu container, so walk up to the dropdown
-    // root. The header shows the raw display_name ("MiniMax M2.7" in
-    // the test MODELS) but the list row still shows the curated
-    // "MiniMax M2.5" from OFFICIAL_META.
-    const root = menu.parentElement ?? menu;
-    const all = root.textContent ?? "";
-    expect(all).toContain("MiniMax M2.5");
-    expect(all).toContain("0.2x");
-  });
-
-  it("falls back to 自定义 tab when no official models exist", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ data: [] }),
-    } as Response);
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
-      withRouter(
-        <ModelPicker
-          models={[{ name: "only-custom", display_name: "Only Custom" }]}
-          value="only-custom"
-          onChange={onChange}
-        />,
-      ),
+  it("keeps a stored-but-unavailable model instead of snapping to mix", () => {
+    // A thread override may point at a model the current catalog no longer
+    // advertises (removed/renamed custom model). The trigger must keep showing
+    // the stored value — silently swapping to models[0] (mix) would make the
+    // picker lie about what the thread actually uses after a reload.
+    setup("glm-5.3");
+    expect(screen.getByRole("button", { name: "选择模型" })).toHaveTextContent(
+      "glm-5.3",
     );
-    await user.click(screen.getByRole("button", { name: "选择模型" }));
-
-    const customTab = await screen.findByRole("tab", { name: "自定义" });
-    expect(customTab).toHaveAttribute("data-state", "active");
+    expect(
+      screen.getByRole("button", { name: "选择模型" }),
+    ).not.toHaveTextContent("mix");
   });
 
   it("supports a renderTrigger override", async () => {
@@ -342,5 +624,31 @@ describe("<ModelPicker />", () => {
     });
     await user.click(trigger);
     expect(await screen.findByRole("menu")).toBeInTheDocument();
+  });
+
+  it("surfaces echo-mix in the Official tab when advertised", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      withProviders(
+        <ModelPicker
+          models={[
+            {
+              name: "echo-mix",
+              display_name: "mix",
+              provider: "echo",
+            },
+            { name: "minimax-m2.5", display_name: "MiniMax M2.5" },
+          ]}
+          value="echo-mix"
+          onChange={onChange}
+        />,
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "选择模型" }));
+    const menu = await screen.findByRole("menu");
+    const root = menu.parentElement ?? menu;
+    // models advertises echo-mix → it classifies as Official (not Custom)
+    expect(root.textContent ?? "").toContain("mix");
   });
 });

@@ -1,4 +1,3 @@
-
 import { Github as GitHubLogoIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -16,15 +15,11 @@ export function CommunitySection() {
           Join the Community
         </AuroraText>
       }
-      subtitle="Contribute brilliant ideas to shape the future of Octopus. Collaborate, innovate, and make impacts."
+      subtitle="Contribute brilliant ideas to shape the future of Echo. Collaborate, innovate, and make impacts."
     >
       <div className="flex justify-center">
         <Button className="text-xl" size="lg" asChild>
-          <Link
-            to={GITHUB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <Link to={GITHUB_URL} target="_blank" rel="noopener noreferrer">
             <GitHubLogoIcon />
             Contribute Now
           </Link>

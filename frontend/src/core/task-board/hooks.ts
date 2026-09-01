@@ -15,11 +15,11 @@ const POLL_INTERVAL = 5_000; // 5 seconds
 /**
  * Hook to fetch and poll all unified tasks.
  */
-export function useTaskBoardTasks(params?: {
-  type?: string;
-  status?: string;
-}) {
-  const [data, setData] = useState<TaskBoardAllResponse>({ tasks: [], total: 0 });
+export function useTaskBoardTasks(params?: { type?: string; status?: string }) {
+  const [data, setData] = useState<TaskBoardAllResponse>({
+    tasks: [],
+    total: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const paramsRef = useRef(params);

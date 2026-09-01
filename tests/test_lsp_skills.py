@@ -1,4 +1,5 @@
 """Tests for runtime.execution.suckers.lsp_skills."""
+
 from __future__ import annotations
 
 import shutil
@@ -6,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from runtime.execution.suckers import lsp_skills
 from runtime.execution.suckers.lsp_skills import (
     _detect_language,
@@ -94,25 +94,30 @@ class _FakeClient:
 
 def _patch_client(monkeypatch: pytest.MonkeyPatch, fake: _FakeClient) -> None:
     monkeypatch.setattr(
-        lsp_skills, "_get_or_start_client",
+        lsp_skills,
+        "_get_or_start_client",
         lambda language, workspace_root: fake,
     )
 
 
-def test_lsp_definition_translates_lsp_to_octopus(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lsp_definition_translates_lsp_to_echo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     f = tmp_path / "x.py"
     f.write_text("def foo():\n    pass\n", encoding="utf-8")
-    fake = _FakeClient(canned={
-        "textDocument/definition": [
-            {
-                "uri": _path_to_uri(str(f)),
-                "range": {
-                    "start": {"line": 9, "character": 4},
-                    "end":   {"line": 9, "character": 7},
-                },
-            }
-        ],
-    })
+    fake = _FakeClient(
+        canned={
+            "textDocument/definition": [
+                {
+                    "uri": _path_to_uri(str(f)),
+                    "range": {
+                        "start": {"line": 9, "character": 4},
+                        "end": {"line": 9, "character": 7},
+                    },
+                }
+            ],
+        }
+    )
     _patch_client(monkeypatch, fake)
 
     result = _lsp_definition(path=str(f), line=10, column=5, sandbox_dir=str(tmp_path))
@@ -130,17 +135,39 @@ def test_lsp_definition_translates_lsp_to_octopus(tmp_path: Path, monkeypatch: p
     assert params["position"] == {"line": 9, "character": 4}
 
 
-def test_lsp_references_translates_locations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lsp_references_translates_locations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     f = tmp_path / "x.py"
     f.write_text("x = 1\n", encoding="utf-8")
     uri = _path_to_uri(str(f))
-    fake = _FakeClient(canned={
-        "textDocument/references": [
-            {"uri": uri, "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}},
-            {"uri": uri, "range": {"start": {"line": 4, "character": 8}, "end": {"line": 4, "character": 9}}},
-            {"uri": uri, "range": {"start": {"line": 9, "character": 0}, "end": {"line": 9, "character": 1}}},
-        ],
-    })
+    fake = _FakeClient(
+        canned={
+            "textDocument/references": [
+                {
+                    "uri": uri,
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 1},
+                    },
+                },
+                {
+                    "uri": uri,
+                    "range": {
+                        "start": {"line": 4, "character": 8},
+                        "end": {"line": 4, "character": 9},
+                    },
+                },
+                {
+                    "uri": uri,
+                    "range": {
+                        "start": {"line": 9, "character": 0},
+                        "end": {"line": 9, "character": 1},
+                    },
+                },
+            ],
+        }
+    )
     _patch_client(monkeypatch, fake)
 
     result = _lsp_references(path=str(f), line=1, column=1, sandbox_dir=str(tmp_path))
@@ -154,28 +181,32 @@ def test_lsp_references_translates_locations(tmp_path: Path, monkeypatch: pytest
 def test_lsp_hover_extracts_markup_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     f = tmp_path / "x.py"
     f.write_text("x = 1\n", encoding="utf-8")
-    fake = _FakeClient(canned={
-        "textDocument/hover": {
-            "contents": {"kind": "markdown", "value": "**foo**: int"}
-        },
-    })
+    fake = _FakeClient(
+        canned={
+            "textDocument/hover": {"contents": {"kind": "markdown", "value": "**foo**: int"}},
+        }
+    )
     _patch_client(monkeypatch, fake)
     result = _lsp_hover(path=str(f), line=1, column=1, sandbox_dir=str(tmp_path))
     assert result["ok"] is True
     assert result["contents"] == "**foo**: int"
 
 
-def test_lsp_hover_extracts_marked_string_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lsp_hover_extracts_marked_string_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     f = tmp_path / "x.py"
     f.write_text("x = 1\n", encoding="utf-8")
-    fake = _FakeClient(canned={
-        "textDocument/hover": {
-            "contents": [
-                {"language": "python", "value": "def foo() -> int"},
-                "Returns the answer.",
-            ]
-        },
-    })
+    fake = _FakeClient(
+        canned={
+            "textDocument/hover": {
+                "contents": [
+                    {"language": "python", "value": "def foo() -> int"},
+                    "Returns the answer.",
+                ]
+            },
+        }
+    )
     _patch_client(monkeypatch, fake)
     result = _lsp_hover(path=str(f), line=1, column=1, sandbox_dir=str(tmp_path))
     assert result["ok"] is True
@@ -189,27 +220,43 @@ def test_extract_hover_contents_handles_string_form() -> None:
     assert _extract_hover_contents([]) == ""
 
 
-def test_lsp_document_symbols_translates_kind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lsp_document_symbols_translates_kind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     f = tmp_path / "x.py"
     f.write_text("class A:\n    def m(self): ...\n", encoding="utf-8")
-    fake = _FakeClient(canned={
-        "textDocument/documentSymbol": [
-            {
-                "name": "A",
-                "kind": 5,  # Class
-                "range":          {"start": {"line": 0, "character": 0}, "end": {"line": 1, "character": 22}},
-                "selectionRange": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 7}},
-                "children": [
-                    {
-                        "name": "m",
-                        "kind": 6,  # Method
-                        "range":          {"start": {"line": 1, "character": 4}, "end": {"line": 1, "character": 22}},
-                        "selectionRange": {"start": {"line": 1, "character": 8}, "end": {"line": 1, "character": 9}},
-                    }
-                ],
-            }
-        ],
-    })
+    fake = _FakeClient(
+        canned={
+            "textDocument/documentSymbol": [
+                {
+                    "name": "A",
+                    "kind": 5,  # Class
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 1, "character": 22},
+                    },
+                    "selectionRange": {
+                        "start": {"line": 0, "character": 6},
+                        "end": {"line": 0, "character": 7},
+                    },
+                    "children": [
+                        {
+                            "name": "m",
+                            "kind": 6,  # Method
+                            "range": {
+                                "start": {"line": 1, "character": 4},
+                                "end": {"line": 1, "character": 22},
+                            },
+                            "selectionRange": {
+                                "start": {"line": 1, "character": 8},
+                                "end": {"line": 1, "character": 9},
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
     _patch_client(monkeypatch, fake)
 
     result = _lsp_document_symbols(path=str(f), sandbox_dir=str(tmp_path))
@@ -225,23 +272,30 @@ def test_lsp_document_symbols_translates_kind(tmp_path: Path, monkeypatch: pytes
     assert syms[1]["container"] == "A"
 
 
-def test_lsp_document_symbols_handles_flat_symbol_information(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lsp_document_symbols_handles_flat_symbol_information(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     f = tmp_path / "x.py"
     f.write_text("def f(): pass\n", encoding="utf-8")
     uri = _path_to_uri(str(f))
-    fake = _FakeClient(canned={
-        "textDocument/documentSymbol": [
-            {
-                "name": "f",
-                "kind": 12,  # Function
-                "location": {
-                    "uri": uri,
-                    "range": {"start": {"line": 0, "character": 4}, "end": {"line": 0, "character": 5}},
-                },
-                "containerName": "module",
-            }
-        ],
-    })
+    fake = _FakeClient(
+        canned={
+            "textDocument/documentSymbol": [
+                {
+                    "name": "f",
+                    "kind": 12,  # Function
+                    "location": {
+                        "uri": uri,
+                        "range": {
+                            "start": {"line": 0, "character": 4},
+                            "end": {"line": 0, "character": 5},
+                        },
+                    },
+                    "containerName": "module",
+                }
+            ],
+        }
+    )
     _patch_client(monkeypatch, fake)
 
     result = _lsp_document_symbols(path=str(f), sandbox_dir=str(tmp_path))
@@ -255,13 +309,19 @@ def test_lsp_document_symbols_handles_flat_symbol_information(tmp_path: Path, mo
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def test_dependency_missing_when_no_server_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dependency_missing_when_no_server_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     f = tmp_path / "x.py"
     f.write_text("x = 1\n", encoding="utf-8")
-    # No server resolves; the bare 'pyright-langserver' executable check returns None,
-    # and we patch sys.executable too so the pylsp fallback also fails.
+    # No server resolves: isolate both the PATH lookup and the module fallback
+    # without mutating sys.executable underneath the module's prebuilt argv.
     monkeypatch.setattr(lsp_skills.shutil, "which", lambda _exe: None)
-    monkeypatch.setattr(lsp_skills.sys, "executable", "/no/such/python/no_lsp")
+    monkeypatch.setitem(
+        lsp_skills._SERVER_CANDIDATES,
+        "python",
+        [["pyright-langserver", "--stdio"], ["/no/such/python", "-m", "pylsp"]],
+    )
 
     result = _lsp_definition(path=str(f), line=1, column=1, sandbox_dir=str(tmp_path))
     assert result["ok"] is False
@@ -302,7 +362,8 @@ def test_path_outside_sandbox(tmp_path: Path) -> None:
     outside.write_text("x = 1\n", encoding="utf-8")
     result = _lsp_definition(
         path=str(outside),
-        line=1, column=1,
+        line=1,
+        column=1,
         sandbox_dir=str(sandbox),
     )
     assert result["ok"] is False
@@ -312,9 +373,11 @@ def test_path_outside_sandbox(tmp_path: Path) -> None:
 def test_timeout_surfaced_to_caller(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     f = tmp_path / "x.py"
     f.write_text("x = 1\n", encoding="utf-8")
-    fake = _FakeClient(canned={
-        "textDocument/definition": lsp_skills._LSPTimeoutError("boom"),
-    })
+    fake = _FakeClient(
+        canned={
+            "textDocument/definition": lsp_skills._LSPTimeoutError("boom"),
+        }
+    )
     _patch_client(monkeypatch, fake)
 
     result = _lsp_definition(path=str(f), line=1, column=1, sandbox_dir=str(tmp_path))
@@ -325,9 +388,11 @@ def test_timeout_surfaced_to_caller(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 def test_transport_error_surfaced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     f = tmp_path / "x.py"
     f.write_text("x = 1\n", encoding="utf-8")
-    fake = _FakeClient(canned={
-        "textDocument/hover": lsp_skills._LSPTransportError("pipe broken"),
-    })
+    fake = _FakeClient(
+        canned={
+            "textDocument/hover": lsp_skills._LSPTransportError("pipe broken"),
+        }
+    )
     _patch_client(monkeypatch, fake)
 
     result = _lsp_hover(path=str(f), line=1, column=1, sandbox_dir=str(tmp_path))
@@ -368,19 +433,26 @@ def test_flatten_document_symbols_sets_container_for_nested() -> None:
     assert out[1]["container"] == "Outer"
 
 
-def test_resolve_server_argv_returns_none_when_nothing_found(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_server_argv_returns_none_when_nothing_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(lsp_skills.shutil, "which", lambda _exe: None)
-    monkeypatch.setattr(lsp_skills.sys, "executable", "/nope/python_no_lsp")
+    monkeypatch.setitem(
+        lsp_skills._SERVER_CANDIDATES,
+        "python",
+        [["pyright-langserver", "--stdio"], ["/nope/python_no_lsp", "-m", "pylsp"]],
+    )
     assert _resolve_server_argv("python") is None
 
 
 def test_resolve_server_argv_finds_pyright(monkeypatch: pytest.MonkeyPatch) -> None:
     def which(name: str) -> str | None:
         return "/usr/bin/" + name if name == "pyright-langserver" else None
+
     monkeypatch.setattr(lsp_skills.shutil, "which", which)
     argv = _resolve_server_argv("python")
     assert argv is not None
-    assert argv[0] == "pyright-langserver"
+    assert argv[0] == "/usr/bin/pyright-langserver"
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -408,11 +480,7 @@ def test_register_lsp_skills_registers_four() -> None:
 def test_real_pyright_definition_lookup(tmp_path: Path) -> None:
     f = tmp_path / "demo.py"
     f.write_text(
-        "def helper():\n"
-        "    return 1\n"
-        "\n"
-        "def main():\n"
-        "    return helper()\n",
+        "def helper():\n    return 1\n\ndef main():\n    return helper()\n",
         encoding="utf-8",
     )
     # Position on the call to ``helper`` in line 5, column 12 (1-indexed).
@@ -420,6 +488,5 @@ def test_real_pyright_definition_lookup(tmp_path: Path) -> None:
     if not result.get("ok"):
         pytest.skip(f"server returned {result}")
     assert any(
-        Path(d["path"]).resolve() == f.resolve() and d["line"] == 1
-        for d in result["definitions"]
+        Path(d["path"]).resolve() == f.resolve() and d["line"] == 1 for d in result["definitions"]
     )

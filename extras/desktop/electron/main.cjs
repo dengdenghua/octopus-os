@@ -1,5 +1,5 @@
 /**
- * Octopus desktop · Electron main process.
+ * Echo desktop · Electron main process.
  *
  * Responsibilities:
  *   1. Single-instance lock that forwards URLs/files to the running instance.
@@ -9,7 +9,7 @@
  *   5. Native dialogs used in place of a Tauri dialog plugin.
  *   6. Auto-update through electron-updater and GitHub releases.
  *   7. Local crash reporting for renderer crashes.
- *   8. octopus:// deep-link protocol handling.
+ *   8. echo:// deep-link protocol handling.
  */
 
 const {
@@ -53,7 +53,7 @@ const iconFile =
       : "icon.png";
 const iconPath = path.join(__dirname, "..", "build", iconFile);
 if (fs.existsSync(iconPath)) {
-  app.setAppUserModelId("ai.octopus.desktop");
+  app.setAppUserModelId("ai.echo.desktop");
 }
 
 // ─── Single-instance lock ─────────────────────────────
@@ -68,8 +68,8 @@ if (!gotSingleInstanceLock) {
 // ─── Crash reporter ───────────────────────────────────
 // uploadToServer=false keeps crash data local.
 crashReporter.start({
-  productName: "Octopus",
-  companyName: "Octopus AI",
+  productName: "Echo",
+  companyName: "Echo AI",
   submitURL: "",
   uploadToServer: false,
 });
@@ -78,13 +78,13 @@ const isDev =
   process.env.NODE_ENV === "development" ||
   process.env.ELECTRON_ENV === "development" ||
   (!app.isPackaged && process.env.FORCE_PROD !== "1");
-const APP_PROTOCOL = "octopus";
+const APP_PROTOCOL = "echo";
 // Use process.resourcesPath so packaged builds find dist inside or outside asar.
 const indexPath = isDev
   ? path.join(__dirname, "..", "dist", "index.html")
   : path.join(process.resourcesPath, "app.asar", "dist", "index.html");
 const DESKTOP_CONTEXT_MENU_KEY =
-  "HKCU\\Software\\Classes\\Directory\\Background\\shell\\OctopusOrganizeDesktop";
+  "HKCU\\Software\\Classes\\Directory\\Background\\shell\\EchoOrganizeDesktop";
 
 function rendererRoute(hashPath, customIndexPath) {
   const hash = hashPath.startsWith("#") ? hashPath : `#${hashPath}`;
@@ -93,7 +93,7 @@ function rendererRoute(hashPath, customIndexPath) {
   }
   // Use the custom index path when provided, otherwise use the default indexPath.
   const targetPath = customIndexPath || indexPath;
-  const params = new URLSearchParams({ octopusBackend: backendBaseURL });
+  const params = new URLSearchParams({ echoBackend: backendBaseURL });
   return `${pathToFileURL(targetPath).toString()}?${params.toString()}${hash}`;
 }
 
@@ -115,7 +115,7 @@ function handleAppDeepLink(deepLink) {
   return false;
 }
 
-// Register the octopus:// deep link handler.
+// Register the echo:// deep link handler.
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
     app.setAsDefaultProtocolClient(APP_PROTOCOL, process.execPath, [
@@ -184,7 +184,7 @@ let mainWindow = null;
 let backendProcess = null;
 let backendRestartCount = 0;
 const BACKEND_MAX_RESTARTS = 3;
-const BACKEND_DEFAULT_PORT = Number(process.env.OCTOPUS_BACKEND_PORT || 8000);
+const BACKEND_DEFAULT_PORT = Number(process.env.ECHO_BACKEND_PORT || 8000);
 let backendPort = BACKEND_DEFAULT_PORT;
 let backendBaseURL = `http://127.0.0.1:${backendPort}`;
 
@@ -449,13 +449,13 @@ function backendBinaryPath() {
   return path.join(
     process.resourcesPath,
     "backend",
-    `octopus-backend${ext}`
+    `echo-backend${ext}`
   );
 }
 
 function desktopDataDir() {
-  if (process.env.OCTOPUS_DATA_DIR) {
-    return process.env.OCTOPUS_DATA_DIR;
+  if (process.env.ECHO_DATA_DIR) {
+    return process.env.ECHO_DATA_DIR;
   }
   if (isDev) {
     return path.resolve(__dirname, "..", "..", "data");
@@ -464,8 +464,8 @@ function desktopDataDir() {
 }
 
 function bundledAgentsRoot() {
-  if (process.env.OCTOPUS_AGENTS_ROOT) {
-    return process.env.OCTOPUS_AGENTS_ROOT;
+  if (process.env.ECHO_AGENTS_ROOT) {
+    return process.env.ECHO_AGENTS_ROOT;
   }
   if (isDev) {
     return path.resolve(__dirname, "..", "..", "agents");
@@ -481,36 +481,13 @@ function backendConfigTemplatePath() {
 }
 
 function backendConfigPath() {
-  if (process.env.OCTOPUS_CONFIG_PATH) {
-    return process.env.OCTOPUS_CONFIG_PATH;
+  if (process.env.ECHO_CONFIG_PATH) {
+    return process.env.ECHO_CONFIG_PATH;
   }
   if (isDev) {
     return path.resolve(__dirname, "..", "..", "config.local.yaml");
   }
   return path.join(app.getPath("userData"), "config.yaml");
-}
-
-function migrateDesktopConfig(configPath) {
-  if (isDev || !fs.existsSync(configPath)) return;
-  try {
-    const raw = fs.readFileSync(configPath, "utf8");
-    if (
-      !/name:\s*octopus-desktop\b/.test(raw) ||
-      !/planner:\s*\r?\n\s*type:\s*static\b/.test(raw)
-    ) {
-      return;
-    }
-    const migrated = raw.replace(
-      /planner:\s*\r?\n\s*type:\s*static\s*(?:\r?\n\s*model:\s*.*)?\r?\n(\s*max_nodes:\s*\d+)/,
-      "planner:\n  type: llm\n  model: molili\n$1",
-    );
-    if (migrated !== raw) {
-      fs.writeFileSync(configPath, migrated);
-      console.log("[backend] migrated desktop config planner to llm/molili");
-    }
-  } catch (e) {
-    console.warn("[backend] desktop config migration failed:", e?.message || e);
-  }
 }
 
 function backendRuntimeStatePath() {
@@ -576,8 +553,8 @@ function prepareDesktopRuntime() {
   const dataDir = desktopDataDir();
   const agentsRoot = bundledAgentsRoot();
   fs.mkdirSync(dataDir, { recursive: true });
-  process.env.OCTOPUS_DATA_DIR = dataDir;
-  process.env.OCTOPUS_AGENTS_ROOT = agentsRoot;
+  process.env.ECHO_DATA_DIR = dataDir;
+  process.env.ECHO_AGENTS_ROOT = agentsRoot;
 
   const configPath = backendConfigPath();
   if (!fs.existsSync(configPath)) {
@@ -587,7 +564,6 @@ function prepareDesktopRuntime() {
     }
     fs.copyFileSync(templatePath, configPath);
   }
-  migrateDesktopConfig(configPath);
   return { configPath, dataDir, agentsRoot };
 }
 
@@ -677,9 +653,9 @@ async function startBackend() {
     cwd: path.dirname(bin),
     env: {
       ...process.env,
-      OCTOPUS_DESKTOP: "1",
-      OCTOPUS_DATA_DIR: dataDir,
-      OCTOPUS_AGENTS_ROOT: agentsRoot,
+      ECHO_DESKTOP: "1",
+      ECHO_DATA_DIR: dataDir,
+      ECHO_AGENTS_ROOT: agentsRoot,
     },
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
@@ -758,7 +734,7 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       additionalArguments: [
-        `--octopus-backend-base-url=${backendBaseURL}`,
+        `--echo-backend-base-url=${backendBaseURL}`,
       ],
       webviewTag: true,
       sandbox: false,
@@ -810,7 +786,7 @@ function createMainWindow() {
         console.error("[electron] FATAL: Could not find index.html in any location");
         dialog.showErrorBox(
           "启动错误",
-          "无法找到应用程序文件。请重新安装 Octopus。"
+          "无法找到应用程序文件。请重新安装 Echo。"
         );
         app.quit();
       }
@@ -818,7 +794,7 @@ function createMainWindow() {
       mainWindow.loadURL(rendererRoute("#/login"));
     }
   }
-  if (isDev || process.env.OCTOPUS_OPEN_DEVTOOLS === "1") {
+  if (isDev || process.env.ECHO_OPEN_DEVTOOLS === "1") {
     mainWindow.webContents.openDevTools({ mode: "detach" });
   }
 
@@ -1972,7 +1948,7 @@ ipcMain.handle("desktop:install-context-menu", async () => {
   }
   const command = `"${process.execPath}" "${APP_PROTOCOL}://desktop-organize"`;
   const steps = [
-    ["add", DESKTOP_CONTEXT_MENU_KEY, "/ve", "/d", "Octopus 一键整理桌面", "/f"],
+    ["add", DESKTOP_CONTEXT_MENU_KEY, "/ve", "/d", "Echo 一键整理桌面", "/f"],
     ["add", DESKTOP_CONTEXT_MENU_KEY, "/v", "Icon", "/d", process.execPath, "/f"],
     ["add", `${DESKTOP_CONTEXT_MENU_KEY}\\command`, "/ve", "/d", command, "/f"],
   ];

@@ -16,7 +16,6 @@
  */
 
 import { swallow } from "@/core/utils/log";
-import { getBackendBaseURL } from "@/core/config";
 import {
   ActivityIcon,
   BarChart3Icon,
@@ -36,7 +35,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   WorkspaceBody,
   WorkspaceContainer,
-  WorkspaceHeader,
 } from "@/components/workspace/workspace-container";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
@@ -45,6 +43,7 @@ import { cn } from "@/lib/utils";
 // for historical reasons (original branch branding); the file is
 // kept under that filename to avoid a noisy `git mv` in history.
 // The public export name + all user-facing labels say "RecipeForge".
+import { reflexFetch } from "./api";
 import { GepaPanel as RecipeForgePanel } from "./gepa-panel";
 import { VariantPerformancePanel } from "./variant-performance-panel";
 import { GeneLockBadge } from "@/components/workspace/gene-lock-badge";
@@ -86,7 +85,11 @@ type Rule = {
   enabled_when?: Record<string, unknown>;
 };
 
-type TimeseriesBucket = { ts: number; count: number; by_rule: Record<string, number> };
+type TimeseriesBucket = {
+  ts: number;
+  count: number;
+  by_rule: Record<string, number>;
+};
 type Timeseries = {
   window_minutes: number;
   bucket_seconds: number;
@@ -106,9 +109,16 @@ type TierInfo = {
   similarity?: number;
 };
 
+type ReloadResp = {
+  ok: boolean;
+  rules_loaded: number;
+  stats_reset: boolean;
+  error: string;
+};
+
 const POLL_INTERVAL_MS = 2000;
 
-export default function ReflexMonitorPage() {
+export function ReflexMonitorContent() {
   const { t } = useI18n();
   const [stats, setStats] = useState<Stats | null>(null);
   const [rules, setRules] = useState<Rule[]>([]);
@@ -116,20 +126,18 @@ export default function ReflexMonitorPage() {
   const [tiers, setTiers] = useState<TierInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [reloadMsg, setReloadMsg] = useState<string | null>(null);
+  const [reloadHasError, setReloadHasError] = useState(false);
   const [tickedAt, setTickedAt] = useState<Date | null>(null);
 
   const fetchAll = useCallback(async () => {
     try {
       const [s, r, t, ti] = await Promise.all([
-        fetch(`${getBackendBaseURL()}/api/reflex/stats`).then((r) => r.json() as Promise<Stats>),
-        fetch(`${getBackendBaseURL()}/api/reflex/rules`).then(
-          (r) => r.json() as Promise<{ rules: Rule[] }>,
+        reflexFetch<Stats>("/api/reflex/stats"),
+        reflexFetch<{ rules: Rule[] }>("/api/reflex/rules"),
+        reflexFetch<Timeseries>(
+          "/api/reflex/timeseries?window_minutes=60&bucket_seconds=60",
         ),
-        fetch(
-          `${getBackendBaseURL()}/api/reflex/timeseries?window_minutes=60&bucket_seconds=60`,
-        ).then((r) => r.json() as Promise<Timeseries>),
-        fetch(`${getBackendBaseURL()}/api/reflex/tiers`)
-          .then((r) => r.json() as Promise<{ tiers: TierInfo[] }>)
+        reflexFetch<{ tiers: TierInfo[] }>("/api/reflex/tiers")
           // The /api/reflex/tiers endpoint is opt-in (post-tier-feature
           // backends may not expose it). Treat 404 as "no tiers" rather
           // than a hard error so the page still works on older builds.
@@ -143,9 +151,9 @@ export default function ReflexMonitorPage() {
       setTickedAt(new Date());
     } catch (e) {
       swallow(e);
-      setError(e instanceof Error ? e.message : t.reflexPage.fetchFailed);
+      setError(t.reflexPage.fetchFailed);
     }
-  }, []);
+  }, [t.reflexPage.fetchFailed]);
 
   useEffect(() => {
     void fetchAll();
@@ -158,24 +166,30 @@ export default function ReflexMonitorPage() {
   const reload = useCallback(
     async (resetStats: boolean) => {
       setReloadMsg(t.reflexPage.reloadingStatus);
+      setReloadHasError(false);
       try {
-        const r = await fetch(
-          `${getBackendBaseURL()}/api/reflex/reload${resetStats ? "?reset_stats=true" : ""}`,
+        const r = await reflexFetch<ReloadResp>(
+          `/api/reflex/reload${resetStats ? "?reset_stats=true" : ""}`,
           { method: "POST" },
-        ).then((r) => r.json());
+        );
         if (r.ok) {
           setReloadMsg(
             t.reflexPage.reloadLoaded(r.rules_loaded, r.stats_reset),
           );
         } else {
-          setReloadMsg(t.reflexPage.reloadError(r.error));
+          setReloadMsg(t.reflexPage.reloadFailed);
+          setReloadHasError(true);
         }
         void fetchAll();
       } catch (e) {
         swallow(e);
-        setReloadMsg(e instanceof Error ? e.message : t.reflexPage.reloadFailed);
+        setReloadMsg(t.reflexPage.reloadFailed);
+        setReloadHasError(true);
       }
-      window.setTimeout(() => setReloadMsg(null), 4000);
+      window.setTimeout(() => {
+        setReloadMsg(null);
+        setReloadHasError(false);
+      }, 4000);
     },
     [fetchAll, t],
   );
@@ -192,198 +206,263 @@ export default function ReflexMonitorPage() {
     () => [...rules].sort((a, b) => b.priority - a.priority),
     [rules],
   );
+  const hasReflexSnapshot = stats !== null && series !== null;
 
   return (
-    <WorkspaceContainer>
-      <WorkspaceHeader />
-      <WorkspaceBody className="px-4 pb-4">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-          {/* Hero / actions */}
-          <section className="workspace-panel rounded-[1.75rem] px-6 py-5">
-            <div className="flex items-center gap-4">
-              <div className="flex size-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 text-white shadow-lg shadow-emerald-500/20">
-                <ZapIcon className="size-5" />
-              </div>
-              <div className="flex-1">
-                <h1 className="text-2xl font-bold tracking-tight">
-                  {t.reflexPage.pageTitle}
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  {t.reflexPage.subtitle}
-                  {tickedAt ? t.reflexPage.lastRefreshPrefix(tickedAt.toLocaleTimeString()) : ""}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Gene-lock badge · shows current maturity level +
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+      {/* Hero / actions */}
+      <section className="workspace-panel px-4 py-4 sm:px-6 sm:py-5">
+        <div className="flex flex-col items-start gap-4 md:flex-row md:items-center">
+          <div className="flex size-11 items-center justify-center rounded-lg bg-gradient-to-br from-success to-cyan-500 text-white shadow-[var(--shadow-md)] shadow-success/20">
+            <ZapIcon className="size-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-bold tracking-tight">
+              {t.reflexPage.pageTitle}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {t.reflexPage.subtitle}
+              {tickedAt
+                ? t.reflexPage.lastRefreshPrefix(tickedAt.toLocaleTimeString())
+                : ""}
+            </p>
+          </div>
+          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
+            {/* Gene-lock badge · shows current maturity level +
                     panic state · click to drill into governance
                     controls. Auto-hides when the /api/gene-locks/
                     endpoint isn't available (older backends). */}
-                <GeneLockBadge />
-                <Button asChild variant="outline" size="sm">
-                  <Link to="/workspace/reflex/edit">
-                    <EditIcon className="mr-2 size-4" />
-                    {t.reflexPage.editRulesButton}
-                  </Link>
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => reload(false)}>
-                  <RefreshCwIcon className="mr-2 size-4" />
-                  {t.reflexPage.reloadButton}
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => reload(true)}>
-                  {t.reflexPage.reloadResetButton}
-                </Button>
-              </div>
-            </div>
-            {(reloadMsg || error) && (
-              <div className="mt-3 text-xs">
-                {reloadMsg && (
-                  <span className="rounded-md bg-emerald-500/10 px-2 py-1 text-emerald-300">
-                    {reloadMsg}
-                  </span>
+            <GeneLockBadge />
+            <Button asChild variant="outline" size="sm">
+              <Link to="/workspace/reflex/edit">
+                <EditIcon className="mr-2 size-4" />
+                {t.reflexPage.editRulesButton}
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => reload(false)}>
+              <RefreshCwIcon className="mr-2 size-4" />
+              {t.reflexPage.reloadButton}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => reload(true)}>
+              {t.reflexPage.reloadResetButton}
+            </Button>
+          </div>
+        </div>
+        {(reloadMsg || error) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            {reloadMsg && (
+              <span
+                role={reloadHasError ? "alert" : "status"}
+                className={cn(
+                  "rounded-md px-2 py-1",
+                  reloadHasError
+                    ? "bg-destructive/10 text-destructive"
+                    : "bg-success/10 text-success",
                 )}
-                {error && (
-                  <span className="ml-2 rounded-md bg-rose-500/10 px-2 py-1 text-rose-300">
-                    {error}
-                  </span>
-                )}
+              >
+                {reloadMsg}
+              </span>
+            )}
+            {error && (
+              <div
+                role="alert"
+                className="flex items-center gap-2 rounded-md bg-destructive/10 px-2 py-1 text-destructive"
+              >
+                <span>
+                  {hasReflexSnapshot
+                    ? t.reflexPage.dataRefreshFailed
+                    : t.reflexPage.dataUnavailable}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => void fetchAll()}
+                >
+                  {t.reflexPage.retryButton}
+                </Button>
               </div>
             )}
-          </section>
-
-          {/* Stat cards */}
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-            <StatCard
-              icon={<TargetIcon className="size-4" />}
-              label={t.reflexPage.statTry}
-              value={stats?.try_count ?? 0}
-            />
-            <StatCard
-              icon={<ZapIcon className="size-4" />}
-              label={t.reflexPage.statHit}
-              value={stats?.hit_count ?? 0}
-              tone="good"
-            />
-            <StatCard
-              icon={<BarChart3Icon className="size-4" />}
-              label={t.reflexPage.statHitRate}
-              value={
-                stats ? `${(stats.hit_rate * 100).toFixed(1)}%` : "0%"
-              }
-              tone="good"
-            />
-            <StatCard
-              icon={<ActivityIcon className="size-4" />}
-              label={t.reflexPage.statRules}
-              value={rules.length}
-            />
-            <StatCard
-              icon={<HourglassIcon className="size-4" />}
-              label={t.reflexPage.statStale}
-              value={stats?.coverage?.stale.length ?? 0}
-              tone={(stats?.coverage?.stale.length ?? 0) > 0 ? "warn" : undefined}
-            />
-            <StatCard
-              icon={<ClockIcon className="size-4" />}
-              label={t.reflexPage.statLastHourHits}
-              value={series?.total_events ?? 0}
-            />
           </div>
+        )}
+      </section>
 
-          {/* Sparkline */}
-          <Card className="workspace-panel rounded-[1.5rem] border-white/40 shadow-none dark:border-white/10">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">
-                {t.reflexPage.sparklineTitle}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Sparkline buckets={series?.buckets ?? []} />
-            </CardContent>
-          </Card>
+      {/* Stat cards */}
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <StatCard
+          icon={<TargetIcon className="size-4" />}
+          label={t.reflexPage.statTry}
+          value={stats?.try_count ?? "—"}
+        />
+        <StatCard
+          icon={<ZapIcon className="size-4" />}
+          label={t.reflexPage.statHit}
+          value={stats?.hit_count ?? "—"}
+          tone="good"
+        />
+        <StatCard
+          icon={<BarChart3Icon className="size-4" />}
+          label={t.reflexPage.statHitRate}
+          value={stats ? `${(stats.hit_rate * 100).toFixed(1)}%` : "—"}
+          tone="good"
+        />
+        <StatCard
+          icon={<ActivityIcon className="size-4" />}
+          label={t.reflexPage.statRules}
+          value={stats ? rules.length : "—"}
+        />
+        <StatCard
+          icon={<HourglassIcon className="size-4" />}
+          label={t.reflexPage.statStale}
+          value={stats?.coverage?.stale.length ?? "—"}
+          tone={(stats?.coverage?.stale.length ?? 0) > 0 ? "warn" : undefined}
+        />
+        <StatCard
+          icon={<ClockIcon className="size-4" />}
+          label={t.reflexPage.statLastHourHits}
+          value={series?.total_events ?? "—"}
+        />
+      </div>
 
-          {/* RecipeForge · 7th reflection path · prompt evolution */}
-          <RecipeForgePanel />
+      {/* Sparkline */}
+      <Card className="workspace-panel border-white/40 shadow-none dark:border-white/10">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">
+            {t.reflexPage.sparklineTitle}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {series ? (
+            <Sparkline buckets={series.buckets ?? []} />
+          ) : (
+            <DataPlaceholder
+              text={
+                error
+                  ? t.reflexPage.sparklineUnavailable
+                  : t.reflexPage.dataLoading
+              }
+            />
+          )}
+        </CardContent>
+      </Card>
 
-          {/* Variant A/B performance · auto-hides when no recipes
+      {/* RecipeForge · 7th reflection path · prompt evolution */}
+      <RecipeForgePanel />
+
+      {/* Variant A/B performance · auto-hides when no recipes
               have manifests (fresh deployments won't see it until
               the operator applies a variant for the first time). */}
-          <VariantPerformancePanel />
+      <VariantPerformancePanel />
 
-          {/* Tiers (fuzzy_cache + slm) */}
-          {tiers.length > 0 && (
-            <Card className="workspace-panel rounded-[1.5rem] border-white/40 shadow-none dark:border-white/10">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">{t.reflexPage.responseTiersTitle}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {tiers.map((t) => (
-                    <TierCard key={t.name} tier={t} />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+      {/* Tiers (fuzzy_cache + slm) */}
+      {tiers.length > 0 && (
+        <Card className="workspace-panel border-white/40 shadow-none dark:border-white/10">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              {t.reflexPage.responseTiersTitle}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 md:grid-cols-2">
+              {tiers.map((t) => (
+                <TierCard key={t.name} tier={t} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-          {/* Rules table */}
-          <Card className="workspace-panel rounded-[1.5rem] border-white/40 shadow-none dark:border-white/10">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">{t.reflexPage.rulesTableTitle}</CardTitle>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr className="border-b border-border/60">
-                    <th className="pb-2 text-left font-medium">{t.reflexPage.colRule}</th>
-                    <th className="pb-2 text-left font-medium">{t.reflexPage.colKind}</th>
-                    <th className="pb-2 text-left font-medium">
-                      {t.reflexPage.colPatternType}
-                    </th>
-                    <th className="pb-2 text-right font-medium">{t.reflexPage.colPrio}</th>
-                    <th className="pb-2 text-right font-medium">{t.reflexPage.colTries}</th>
-                    <th className="pb-2 text-right font-medium">{t.reflexPage.colHits}</th>
-                    <th className="pb-2 text-right font-medium">{t.reflexPage.colRate}</th>
-                    <th className="pb-2 text-right font-medium">{t.reflexPage.colLast}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRules.map((r) => {
-                    const s = stats?.by_rule[r.rule_id] ?? {
-                      tries: 0,
-                      hits: 0,
-                      hit_rate: 0,
-                    };
-                    const pat =
-                      r.pattern ||
-                      r.intent_type ||
-                      (r.kind === "cache" ? `ttl=${r.ttl_seconds}s` : "");
-                    return (
-                      <RuleRow
-                        key={r.rule_id}
-                        rule={r}
-                        stats={s}
-                        pat={pat}
-                        stale={staleSet.has(r.rule_id)}
-                        unexercised={unexercisedSet.has(r.rule_id)}
-                        lastHit={formatLastHit(r.last_hit_at, t)}
-                      />
-                    );
-                  })}
-                  {sortedRules.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="py-6 text-center text-xs text-muted-foreground"
-                      >
-                        {t.reflexPage.noRulesLoaded}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-        </div>
+      {/* Rules table */}
+      <Card className="workspace-panel border-white/40 shadow-none dark:border-white/10">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">
+            {t.reflexPage.rulesTableTitle}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase tracking-wide text-muted-foreground">
+              <tr className="border-b border-border-default">
+                <th className="pb-2 text-left font-medium">
+                  {t.reflexPage.colRule}
+                </th>
+                <th className="pb-2 text-left font-medium">
+                  {t.reflexPage.colKind}
+                </th>
+                <th className="pb-2 text-left font-medium">
+                  {t.reflexPage.colPatternType}
+                </th>
+                <th className="pb-2 text-right font-medium">
+                  {t.reflexPage.colPrio}
+                </th>
+                <th className="pb-2 text-right font-medium">
+                  {t.reflexPage.colTries}
+                </th>
+                <th className="pb-2 text-right font-medium">
+                  {t.reflexPage.colHits}
+                </th>
+                <th className="pb-2 text-right font-medium">
+                  {t.reflexPage.colRate}
+                </th>
+                <th className="pb-2 text-right font-medium">
+                  {t.reflexPage.colLast}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRules.map((r) => {
+                const s = stats?.by_rule[r.rule_id] ?? {
+                  tries: 0,
+                  hits: 0,
+                  hit_rate: 0,
+                };
+                const pat =
+                  r.pattern ||
+                  r.intent_type ||
+                  (r.kind === "cache"
+                    ? r.ttl_seconds != null
+                      ? `ttl=${r.ttl_seconds}s`
+                      : "默认 TTL"
+                    : "");
+                return (
+                  <RuleRow
+                    key={r.rule_id}
+                    rule={r}
+                    stats={s}
+                    pat={pat}
+                    stale={staleSet.has(r.rule_id)}
+                    unexercised={unexercisedSet.has(r.rule_id)}
+                    lastHit={formatLastHit(r.last_hit_at, t)}
+                  />
+                );
+              })}
+              {sortedRules.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="py-6 text-center text-xs text-muted-foreground"
+                  >
+                    {error && !stats
+                      ? t.reflexPage.rulesUnavailable
+                      : !stats
+                        ? t.reflexPage.dataLoading
+                        : t.reflexPage.noRulesLoaded}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export default function ReflexMonitorPage() {
+  return (
+    <WorkspaceContainer>
+      <WorkspaceBody className="px-4 pb-4">
+        <ReflexMonitorContent />
       </WorkspaceBody>
     </WorkspaceContainer>
   );
@@ -401,7 +480,7 @@ function StatCard({
   tone?: "good" | "warn";
 }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-3">
+    <div className="rounded-lg border border-border-default bg-background/60 px-3 py-3">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {icon}
         {label}
@@ -409,12 +488,20 @@ function StatCard({
       <div
         className={cn(
           "mt-1 text-2xl font-semibold tabular-nums",
-          tone === "good" && "text-emerald-400",
-          tone === "warn" && "text-amber-400",
+          tone === "good" && "text-success",
+          tone === "warn" && "text-warning",
         )}
       >
         {value}
       </div>
+    </div>
+  );
+}
+
+function DataPlaceholder({ text }: { text: string }) {
+  return (
+    <div className="flex h-[60px] w-full items-center justify-center rounded-md border border-dashed border-border-default text-xs text-muted-foreground">
+      {text}
     </div>
   );
 }
@@ -452,7 +539,7 @@ function Sparkline({ buckets }: { buckets: TimeseriesBucket[] }) {
   }, [buckets, totalHits]);
   if (totalHits === 0) {
     return (
-      <div className="flex h-[60px] w-full items-center justify-center rounded-md border border-dashed border-border/50 text-xs text-muted-foreground">
+      <div className="flex h-[60px] w-full items-center justify-center rounded-md border border-dashed border-border-default text-xs text-muted-foreground">
         {t.reflexPage.sparklineEmpty}
       </div>
     );
@@ -471,7 +558,7 @@ function Sparkline({ buckets }: { buckets: TimeseriesBucket[] }) {
 function TierCard({ tier }: { tier: TierInfo }) {
   const { t } = useI18n();
   return (
-    <div className="rounded-xl border border-border/60 bg-background/60 px-4 py-3">
+    <div className="rounded-lg border border-border-default bg-background/60 px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="font-medium">{tier.name}</div>
         <Badge
@@ -491,7 +578,7 @@ function TierCard({ tier }: { tier: TierInfo }) {
         {tier.hits !== undefined && (
           <span>
             {t.reflexPage.tierHits}:{" "}
-            <span className="text-emerald-400">{tier.hits}</span>{" "}
+            <span className="text-success">{tier.hits}</span>{" "}
             <span className="text-muted-foreground">
               / {t.reflexPage.tierMisses} {tier.misses ?? 0}
             </span>
@@ -500,7 +587,7 @@ function TierCard({ tier }: { tier: TierInfo }) {
         {tier.hit_rate !== undefined && (
           <span>
             {t.reflexPage.tierRate}:{" "}
-            <span className="text-emerald-400">
+            <span className="text-success">
               {(tier.hit_rate * 100).toFixed(0)}%
             </span>
           </span>
@@ -538,30 +625,27 @@ function RuleRow({
   const { t } = useI18n();
   const ratePct = (stats.hit_rate * 100).toFixed(0);
   return (
-    <tr className="border-b border-border/30 align-top hover:bg-background/40">
+    <tr className="border-b border-border-subtle align-top hover:bg-background/40">
       <td className="py-2 pr-3">
         <div className="flex flex-wrap items-center gap-1 font-mono">
           <span>{rule.rule_id}</span>
           {(rule.actions ?? []).map((a) => (
-            <Badge
-              key={a}
-              className="bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/15"
-            >
+            <Badge key={a} className="bg-info/15 text-info hover:bg-info/15">
               {a}
             </Badge>
           ))}
           {rule.variants && rule.variants.length > 1 && (
-            <Badge className="bg-amber-500/15 text-amber-300 hover:bg-amber-500/15">
+            <Badge className="bg-warning/15 text-warning hover:bg-warning/15">
               {t.reflexPage.badgeAB(rule.variants.length)}
             </Badge>
           )}
           {rule.enabled_when && (
-            <Badge className="bg-violet-500/15 text-violet-300 hover:bg-violet-500/15">
+            <Badge className="bg-chart-1/15 text-chart-1 hover:bg-chart-1/15">
               {t.reflexPage.badgeGated}
             </Badge>
           )}
           {stale && (
-            <Badge className="bg-rose-500/15 text-rose-300 hover:bg-rose-500/15">
+            <Badge className="bg-destructive/15 text-destructive hover:bg-destructive/15">
               {t.reflexPage.badgeStale}
             </Badge>
           )}
@@ -575,17 +659,17 @@ function RuleRow({
           <div className="mt-1 space-y-0.5 pl-2 text-xs text-muted-foreground">
             {rule.variants!.map((v) => (
               <div key={v.variant_id} className="flex items-center gap-2">
-                <span className="w-16 font-mono text-amber-400">
+                <span className="w-16 font-mono text-warning">
                   {v.variant_id}
                 </span>
                 <span className="flex-1 truncate">{v.preview}</span>
-                <span className="text-emerald-400">
+                <span className="text-success">
                   {v.hits}× (w={v.weight})
                 </span>
               </div>
             ))}
             {rule.per_actor && (
-              <div className="text-[11px]">
+              <div className="text-xs">
                 {t.reflexPage.perActor}:{" "}
                 {Object.entries(rule.per_actor)
                   .map(([a, vid]) => `${a}→${vid}`)
@@ -595,21 +679,19 @@ function RuleRow({
           </div>
         )}
       </td>
-      <td className="py-2 pr-3 font-mono text-xs text-fuchsia-400">
-        {rule.kind}
-      </td>
-      <td className="max-w-[280px] truncate py-2 pr-3 font-mono text-xs text-cyan-300">
+      <td className="py-2 pr-3 font-mono text-xs text-chart-3">{rule.kind}</td>
+      <td className="max-w-[280px] truncate py-2 pr-3 font-mono text-xs text-info">
         {pat}
       </td>
       <td className="py-2 pr-3 text-right font-mono">{rule.priority}</td>
       <td className="py-2 pr-3 text-right font-mono">{stats.tries}</td>
-      <td className="py-2 pr-3 text-right font-mono text-emerald-400">
+      <td className="py-2 pr-3 text-right font-mono text-success">
         {stats.hits}
       </td>
       <td
         className={cn(
           "py-2 pr-3 text-right font-mono",
-          stats.hits > 0 ? "text-emerald-400" : "text-muted-foreground",
+          stats.hits > 0 ? "text-success" : "text-muted-foreground",
         )}
       >
         {ratePct}%

@@ -23,7 +23,7 @@ import type { LiveToolEvent } from "./live-tool-timeline";
 
 interface TodoItem {
   content: string;
-  status: "pending" | "in_progress" | "completed" | "interrupted";
+  status: "pending" | "in_progress" | "completed" | "blocked" | "interrupted";
   activeForm: string;
 }
 
@@ -55,7 +55,14 @@ function extractLatestTodos(events: LiveToolEvent[]): TodoItem[] {
   const todoWrites = events
     .filter((event) => event.name === "todo_write" && event.input)
     .sort((a, b) => a.startedAt - b.startedAt);
-  const latest = todoWrites[todoWrites.length - 1];
+  const sourceTodos = todoWrites.filter(
+    (event) => event.input?.source !== "turn.phases",
+  );
+  // turn.phases is a compatibility projection, not a second checklist. Prefer
+  // the latest source todo so this panel and the workbench consume the same
+  // statuses even when the projection arrives later over the socket.
+  const latest =
+    sourceTodos[sourceTodos.length - 1] ?? todoWrites[todoWrites.length - 1];
   if (!latest?.input) return [];
 
   const rawItems = coerceTodoItems(latest.input.items ?? latest.input.todos);
@@ -79,12 +86,13 @@ function extractLatestTodos(events: LiveToolEvent[]): TodoItem[] {
         ? "completed"
         : record.status === "in_progress" || record.status === "running"
           ? "in_progress"
-          : record.status === "interrupted" ||
-              record.status === "failed" ||
-              record.status === "error" ||
-              record.status === "blocked"
-            ? "interrupted"
-            : "pending";
+          : record.status === "blocked"
+            ? "blocked"
+            : record.status === "interrupted" ||
+                record.status === "failed" ||
+                record.status === "error"
+              ? "interrupted"
+              : "pending";
     const activeForm =
       typeof record.activeForm === "string" && record.activeForm.trim()
         ? record.activeForm.trim()
@@ -98,20 +106,21 @@ function extractLatestTodos(events: LiveToolEvent[]): TodoItem[] {
 
 function isLiveTodoStream(events: LiveToolEvent[]): boolean {
   return events.some(
-    (event) => event.status === "running" || event.status === "waiting_approval",
+    (event) =>
+      event.status === "running" || event.status === "waiting_approval",
   );
 }
 
 function TodoRow({ item, live }: { item: TodoItem; live: boolean }) {
   const displayStatus =
-    item.status !== "completed" && !live ? "interrupted" : item.status;
+    item.status === "in_progress" && !live ? "pending" : item.status;
   const icon =
     displayStatus === "completed" ? (
-      <CheckCircle2Icon className="size-4 shrink-0 text-emerald-500" />
-    ) : displayStatus === "interrupted" ? (
+      <CheckCircle2Icon className="size-4 shrink-0 text-success" />
+    ) : displayStatus === "interrupted" || displayStatus === "blocked" ? (
       <XCircleIcon className="size-4 shrink-0 text-destructive" />
     ) : displayStatus === "in_progress" ? (
-      <Loader2Icon className="size-4 shrink-0 animate-spin text-blue-500" />
+      <Loader2Icon className="size-4 shrink-0 animate-spin text-info" />
     ) : (
       <CircleIcon className="size-4 shrink-0 text-muted-foreground/50" />
     );
@@ -125,7 +134,8 @@ function TodoRow({ item, live }: { item: TodoItem; live: boolean }) {
           "text-sm leading-5",
           displayStatus === "completed" && "text-muted-foreground line-through",
           displayStatus === "in_progress" && "font-medium",
-          displayStatus === "interrupted" && "font-medium text-destructive",
+          (displayStatus === "interrupted" || displayStatus === "blocked") &&
+            "font-medium text-destructive",
         )}
       >
         {label}
@@ -146,7 +156,10 @@ export function TodoPanel({
     () => extractLatestTodos(liveToolEvents),
     [liveToolEvents],
   );
-  const live = useMemo(() => isLiveTodoStream(liveToolEvents), [liveToolEvents]);
+  const live = useMemo(
+    () => isLiveTodoStream(liveToolEvents),
+    [liveToolEvents],
+  );
   if (todos.length === 0) return null;
 
   const completed = todos.filter((item) => item.status === "completed").length;
@@ -158,7 +171,7 @@ export function TodoPanel({
       <button
         type="button"
         className={cn(
-          "ml-auto flex w-fit max-w-full items-center gap-2 rounded-full border border-border/70 bg-background/90 px-3 py-1.5 text-xs shadow-sm backdrop-blur-xl transition-colors hover:bg-muted/60",
+          "ml-auto flex w-fit max-w-full items-center gap-2 rounded-full border border-border-default bg-background/90 px-3 py-1.5 text-xs shadow-[var(--shadow-xs)] backdrop-blur-xl transition-colors hover:bg-muted/60",
           className,
         )}
         onClick={() => {
@@ -178,7 +191,7 @@ export function TodoPanel({
   return (
     <div
       className={cn(
-        "workspace-panel-subtle overflow-hidden rounded-2xl border border-border/70 shadow-lg shadow-black/5 backdrop-blur-xl",
+        "workspace-panel-subtle overflow-hidden rounded-lg border border-border-default shadow-[var(--shadow-md)] shadow-black/5 backdrop-blur-xl",
         className,
       )}
     >
@@ -193,14 +206,14 @@ export function TodoPanel({
             <div className="truncate text-xs font-semibold text-foreground">
               {t.todoPanel.title}
             </div>
-            <div className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+            <div className="shrink-0 text-xs tabular-nums text-muted-foreground">
               {completed}/{total} · {percent}%
             </div>
           </div>
         </button>
         <button
           type="button"
-          className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
           onClick={() => setOpen((value) => !value)}
         >
           <span>{open ? t.todoPanel.collapse : t.todoPanel.expand}</span>
@@ -223,13 +236,15 @@ export function TodoPanel({
       </div>
       <button
         type="button"
-        aria-label={open ? t.todoPanel.collapseTaskPlan : t.todoPanel.expandTaskPlan}
+        aria-label={
+          open ? t.todoPanel.collapseTaskPlan : t.todoPanel.expandTaskPlan
+        }
         className="block w-full px-3 pb-0.5"
         onClick={() => setOpen((value) => !value)}
       >
         <div className="h-1 overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full bg-emerald-500 transition-all duration-300"
+            className="h-full bg-success transition-all duration-slow"
             style={{ width: `${percent}%` }}
           />
         </div>
@@ -237,7 +252,11 @@ export function TodoPanel({
       {open && (
         <div className="max-h-44 overflow-y-auto px-3 py-2">
           {todos.map((item, index) => (
-            <TodoRow key={`${index}-${item.content}`} item={item} live={live} />
+            <TodoRow
+              key={`${item.status}-${index}-${item.content}`}
+              item={item}
+              live={live}
+            />
           ))}
         </div>
       )}

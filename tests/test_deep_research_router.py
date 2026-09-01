@@ -4,7 +4,6 @@ import time
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.execution.parallel_agents import ParallelAgentOrchestrator
 from runtime.research.deep_research import (
     DeepResearchPlanner,
@@ -21,12 +20,14 @@ from runtime.sensing.gateway.deep_research_router import (
 
 def test_deep_research_planner_builds_roles_sources_and_steps():
     planner = DeepResearchPlanner()
-    job = planner.build_plan(DeepResearchRequest(
-        topic="NAS市场调研",
-        urls=["https://www.synology.com/"],
-        max_searches=274,
-        max_subagents=5,
-    ))
+    job = planner.build_plan(
+        DeepResearchRequest(
+            topic="NAS市场调研",
+            urls=["https://www.synology.com/"],
+            max_searches=274,
+            max_subagents=5,
+        )
+    )
 
     assert job.topic == "NAS市场调研"
     assert job.max_searches == 274
@@ -44,12 +45,14 @@ def test_deep_research_planner_builds_roles_sources_and_steps():
     assert any(ev.url == "https://www.synology.com/" for ev in job.evidence)
 
 
-def test_default_deep_research_store_prefers_octopus_state(tmp_path, monkeypatch):
+def test_default_deep_research_store_prefers_echo_state(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    assert _default_job_store_path() == tmp_path / ".octopus" / "research" / "deep-research-jobs.jsonl"
+    assert (
+        _default_job_store_path() == tmp_path / ".echo" / "research" / "deep-research-jobs.jsonl"
+    )
 
-    legacy = tmp_path / ".octopus-research" / "deep-research-jobs.jsonl"
+    legacy = tmp_path / ".echo-research" / "deep-research-jobs.jsonl"
     legacy.parent.mkdir()
     legacy.write_text("", encoding="utf-8")
 
@@ -58,10 +61,12 @@ def test_default_deep_research_store_prefers_octopus_state(tmp_path, monkeypatch
 
 def test_deep_research_dispatch_uses_virtual_ephemeral_roles():
     planner = DeepResearchPlanner()
-    job = planner.build_plan(DeepResearchRequest(
-        topic="NAS market research",
-        max_subagents=5,
-    ))
+    job = planner.build_plan(
+        DeepResearchRequest(
+            topic="NAS market research",
+            max_subagents=5,
+        )
+    )
 
     tasks = planner.dispatch_tasks(job)
     names = {task["subagent_name"] for task in tasks}
@@ -73,20 +78,22 @@ def test_deep_research_dispatch_uses_virtual_ephemeral_roles():
 
 def test_custom_deep_research_roles_are_virtualized():
     planner = DeepResearchPlanner()
-    job = planner.build_plan(DeepResearchRequest(
-        topic="NAS market research",
-        max_subagents=2,
-        roles=[
-            ResearchRole(
-                id="competitor analyst",
-                name="Competitor Analyst",
-                subagent_name="researcher",
-                focus="Competitor positioning",
-                deliverable="Competitor findings",
-                search_angles=["vendor comparison"],
-            ),
-        ],
-    ))
+    job = planner.build_plan(
+        DeepResearchRequest(
+            topic="NAS market research",
+            max_subagents=2,
+            roles=[
+                ResearchRole(
+                    id="competitor analyst",
+                    name="Competitor Analyst",
+                    subagent_name="researcher",
+                    focus="Competitor positioning",
+                    deliverable="Competitor findings",
+                    search_angles=["vendor comparison"],
+                ),
+            ],
+        )
+    )
 
     assert len(job.roles) == 1
     assert job.roles[0].id == "competitor-analyst"
@@ -109,11 +116,13 @@ def test_research_prefetcher_records_search_logs():
         }
 
     planner = DeepResearchPlanner()
-    job = planner.build_plan(DeepResearchRequest(
-        topic="NAS market research",
-        source_kinds=["web"],
-        max_subagents=1,
-    ))
+    job = planner.build_plan(
+        DeepResearchRequest(
+            topic="NAS market research",
+            source_kinds=["web"],
+            max_subagents=1,
+        )
+    )
     result = ResearchPrefetcher(
         search_handler=search_handler,
         max_queries=1,
@@ -136,11 +145,14 @@ def test_plan_endpoint_includes_thread_uploads(tmp_path):
     app.include_router(create_deep_research_router(upload_root=upload_root))
     client = TestClient(app)
 
-    response = client.post("/api/research/deep/plan", json={
-        "topic": "NAS市场调研",
-        "thread_id": "t1",
-        "source_kinds": ["web", "uploaded_file"],
-    })
+    response = client.post(
+        "/api/research/deep/plan",
+        json={
+            "topic": "NAS市场调研",
+            "thread_id": "t1",
+            "source_kinds": ["web", "uploaded_file"],
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
@@ -158,33 +170,37 @@ def test_plan_endpoint_merges_explicit_materials_thread_uploads_and_dedupes_urls
     app.include_router(create_deep_research_router(upload_root=upload_root))
     client = TestClient(app)
 
-    response = client.post("/api/research/deep/plan", json={
-        "topic": "NAS market research",
-        "thread_id": "t1",
-        "materials": [
-            {
-                "kind": "url",
-                "title": "Synology",
-                "url": "https://www.synology.com/",
-                "notes": "official site",
-            },
-            {
-                "kind": "text",
-                "title": "Internal notes",
-                "text": "Users care about backup and media streaming.",
-            },
-        ],
-        "urls": ["https://www.synology.com/"],
-        "source_kinds": ["web", "uploaded_file", "provided_url"],
-    })
+    response = client.post(
+        "/api/research/deep/plan",
+        json={
+            "topic": "NAS market research",
+            "thread_id": "t1",
+            "materials": [
+                {
+                    "kind": "url",
+                    "title": "Synology",
+                    "url": "https://www.synology.com/",
+                    "notes": "official site",
+                },
+                {
+                    "kind": "text",
+                    "title": "Internal notes",
+                    "text": "Users care about backup and media streaming.",
+                },
+            ],
+            "urls": ["https://www.synology.com/"],
+            "source_kinds": ["web", "uploaded_file", "provided_url"],
+        },
+    )
 
     assert response.status_code == 200
     data = response.json()
     assert any(mat["title"] == "brief.md" for mat in data["materials"])
-    assert any(mat["kind"] == "text" and mat["title"] == "Internal notes" for mat in data["materials"])
+    assert any(
+        mat["kind"] == "text" and mat["title"] == "Internal notes" for mat in data["materials"]
+    )
     synology_materials = [
-        mat for mat in data["materials"]
-        if mat.get("url") == "https://www.synology.com/"
+        mat for mat in data["materials"] if mat.get("url") == "https://www.synology.com/"
     ]
     assert len(synology_materials) == 1
     assert any(ev["url"] == "https://www.synology.com/" for ev in data["evidence"])
@@ -197,11 +213,14 @@ def test_research_jobs_persist_across_router_instances(tmp_path):
     app1.include_router(create_deep_research_router(job_store_path=store_path))
     client1 = TestClient(app1)
 
-    response = client1.post("/api/research/deep/plan", json={
-        "topic": "NAS market research",
-        "lead_agent_name": "lead",
-        "urls": ["https://www.synology.com/"],
-    })
+    response = client1.post(
+        "/api/research/deep/plan",
+        json={
+            "topic": "NAS market research",
+            "lead_agent_name": "lead",
+            "urls": ["https://www.synology.com/"],
+        },
+    )
     assert response.status_code == 200
     job = response.json()
     assert store_path.exists()
@@ -232,18 +251,23 @@ def test_completed_research_extracts_structured_evidence(tmp_path):
     orchestrator = ParallelAgentOrchestrator(max_concurrency=2, task_runner=runner)
     try:
         app = FastAPI()
-        app.include_router(create_deep_research_router(
-            orchestrator=orchestrator,
-            agents_root=tmp_path / "agents",
-            job_store_path=tmp_path / "jobs.jsonl",
-        ))
+        app.include_router(
+            create_deep_research_router(
+                orchestrator=orchestrator,
+                agents_root=tmp_path / "agents",
+                job_store_path=tmp_path / "jobs.jsonl",
+            )
+        )
         client = TestClient(app)
 
-        response = client.post("/api/research/deep/start", json={
-            "topic": "NAS market research",
-            "lead_agent_name": "lead",
-            "max_subagents": 1,
-        })
+        response = client.post(
+            "/api/research/deep/start",
+            json={
+                "topic": "NAS market research",
+                "lead_agent_name": "lead",
+                "max_subagents": 1,
+            },
+        )
         assert response.status_code == 200
         job = response.json()
         for _ in range(100):
@@ -276,18 +300,23 @@ def test_start_endpoint_dispatches_parallel_research_tasks(tmp_path):
     orchestrator = ParallelAgentOrchestrator(max_concurrency=4, task_runner=runner)
     try:
         app = FastAPI()
-        app.include_router(create_deep_research_router(
-            orchestrator=orchestrator,
-            agents_root=tmp_path / "agents",
-        ))
+        app.include_router(
+            create_deep_research_router(
+                orchestrator=orchestrator,
+                agents_root=tmp_path / "agents",
+            )
+        )
         client = TestClient(app)
 
-        response = client.post("/api/research/deep/start", json={
-            "topic": "NAS市场调研",
-            "lead_agent_name": "general",
-            "max_subagents": 3,
-            "max_searches": 30,
-        })
+        response = client.post(
+            "/api/research/deep/start",
+            json={
+                "topic": "NAS市场调研",
+                "lead_agent_name": "general",
+                "max_subagents": 3,
+                "max_searches": 30,
+            },
+        )
 
         assert response.status_code == 200
         job = response.json()
@@ -355,20 +384,25 @@ def test_start_endpoint_prefetches_evidence_pool_before_dispatch(tmp_path):
     orchestrator = ParallelAgentOrchestrator(max_concurrency=1, task_runner=runner)
     try:
         app = FastAPI()
-        app.include_router(create_deep_research_router(
-            orchestrator=orchestrator,
-            agents_root=tmp_path / "agents",
-            prefetcher=DummyPrefetcher(),
-        ))
+        app.include_router(
+            create_deep_research_router(
+                orchestrator=orchestrator,
+                agents_root=tmp_path / "agents",
+                prefetcher=DummyPrefetcher(),
+            )
+        )
         client = TestClient(app)
 
-        response = client.post("/api/research/deep/start", json={
-            "topic": "NAS market research",
-            "lead_agent_name": "lead",
-            "max_subagents": 1,
-            "source_kinds": ["web"],
-            "prefetch_sources": True,
-        })
+        response = client.post(
+            "/api/research/deep/start",
+            json={
+                "topic": "NAS market research",
+                "lead_agent_name": "lead",
+                "max_subagents": 1,
+                "source_kinds": ["web"],
+                "prefetch_sources": True,
+            },
+        )
         assert response.status_code == 200
         job = response.json()
         assert any(ev["url"] == "https://example.com/nas-report" for ev in job["evidence"])
@@ -402,17 +436,22 @@ def test_completed_research_writes_memory_to_lead_agent_only(tmp_path):
     orchestrator = ParallelAgentOrchestrator(max_concurrency=4, task_runner=runner)
     try:
         app = FastAPI()
-        app.include_router(create_deep_research_router(
-            orchestrator=orchestrator,
-            agents_root=agents_root,
-        ))
+        app.include_router(
+            create_deep_research_router(
+                orchestrator=orchestrator,
+                agents_root=agents_root,
+            )
+        )
         client = TestClient(app)
 
-        response = client.post("/api/research/deep/start", json={
-            "topic": "NAS market research",
-            "lead_agent_name": "lead",
-            "max_subagents": 2,
-        })
+        response = client.post(
+            "/api/research/deep/start",
+            json={
+                "topic": "NAS market research",
+                "lead_agent_name": "lead",
+                "max_subagents": 2,
+            },
+        )
         assert response.status_code == 200
         job = response.json()
 
@@ -448,17 +487,22 @@ def test_cancelled_research_refreshes_job_status(tmp_path):
     orchestrator = ParallelAgentOrchestrator(max_concurrency=1, task_runner=runner)
     try:
         app = FastAPI()
-        app.include_router(create_deep_research_router(
-            orchestrator=orchestrator,
-            agents_root=tmp_path / "agents",
-        ))
+        app.include_router(
+            create_deep_research_router(
+                orchestrator=orchestrator,
+                agents_root=tmp_path / "agents",
+            )
+        )
         client = TestClient(app)
 
-        response = client.post("/api/research/deep/start", json={
-            "topic": "NAS market research",
-            "lead_agent_name": "lead",
-            "max_subagents": 2,
-        })
+        response = client.post(
+            "/api/research/deep/start",
+            json={
+                "topic": "NAS market research",
+                "lead_agent_name": "lead",
+                "max_subagents": 2,
+            },
+        )
         assert response.status_code == 200
         job = response.json()
         batch = orchestrator.get_batch(job["dispatch_batch_id"])

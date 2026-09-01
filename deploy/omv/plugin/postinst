@@ -1,0 +1,83 @@
+#!/usr/bin/env dash
+set -eu
+
+service=echo-omv-bridge.service
+
+case "$1" in
+  configure)
+    if ! /usr/bin/python3 /usr/lib/echo-os/omv-bridge/platform_preflight.py --quiet; then
+      echo "Echo OS left OpenMediaVault unchanged; resolve the reported host issue and retry package configuration." >&2
+      exit 1
+    fi
+    if ! getent group echo-omv >/dev/null 2>&1; then
+      echo "Adding system group 'echo-omv' ..."
+      addgroup --system echo-omv
+    fi
+    dpkg-trigger update-workbench
+    systemctl --system daemon-reload || true
+    deb-systemd-helper unmask "$service" >/dev/null || true
+    deb-systemd-helper enable "$service" >/dev/null || true
+    deb-systemd-invoke restart "$service"
+    if ! /usr/bin/python3 - <<'PY'
+import grp
+import json
+import os
+import socket
+import stat
+import sys
+import time
+
+path = "/run/echo-omv/omv.sock"
+deadline = time.monotonic() + 15
+last_error = "socket was not created"
+while time.monotonic() < deadline:
+    try:
+        info = os.lstat(path)
+        expected_gid = grp.getgrnam("echo-omv").gr_gid
+        if not stat.S_ISSOCK(info.st_mode):
+            raise RuntimeError("bridge path is not a Unix socket")
+        if info.st_uid != 0 or info.st_gid != expected_gid:
+            raise RuntimeError("bridge socket owner is not root:echo-omv")
+        if stat.S_IMODE(info.st_mode) != 0o660:
+            raise RuntimeError("bridge socket mode is not 0660")
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(2)
+        try:
+            client.connect(path)
+            client.sendall(
+                b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+            )
+            response = b""
+            while True:
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                response += chunk
+                if len(response) > 65536:
+                    raise RuntimeError("bridge health response is oversized")
+        finally:
+            client.close()
+        head, body = response.split(b"\r\n\r\n", 1)
+        if not head.startswith(b"HTTP/1.1 200 ") or json.loads(body) != {"ok": True}:
+            raise RuntimeError("bridge health response is invalid")
+        sys.exit(0)
+    except (FileNotFoundError, KeyError, OSError, ValueError, RuntimeError) as exc:
+        last_error = str(exc)
+        time.sleep(0.2)
+print(f"Echo OMV bridge failed its post-install health check: {last_error}", file=sys.stderr)
+sys.exit(1)
+PY
+    then
+      deb-systemd-invoke stop "$service" || true
+      exit 1
+    fi
+  ;;
+  abort-upgrade|abort-remove|abort-deconfigure)
+  ;;
+  *)
+    echo "postinst called with unknown argument '$1'" >&2
+    exit 1
+  ;;
+esac
+
+exit 0

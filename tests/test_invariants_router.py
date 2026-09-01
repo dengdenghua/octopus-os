@@ -23,6 +23,7 @@ That dual approach is intentional: it pins the contract that
 discovery works on **any** loaded module, not just on packages with a
 specific prefix.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -119,6 +120,7 @@ def client() -> Iterator[TestClient]:
     # and the catalog tests fail. Invalidate before each test so
     # discovery re-walks the now-fully-loaded sys.modules.
     from runtime.sensing.gateway.invariants_router import _invalidate_cache
+
     _invalidate_cache()
     app = FastAPI()
     app.include_router(create_invariants_router())
@@ -149,7 +151,8 @@ class TestListEndpoint:
         assert body["total_enforcers"] >= len(body["rules"])
 
     def test_each_entry_has_required_shape(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         """Every rule entry must expose ``rule_id`` and ``enforcers``."""
         r = client.get("/api/invariants")
@@ -187,7 +190,8 @@ class TestDetailEndpoint:
 
 class TestRefreshEndpoint:
     def test_refresh_returns_200_and_catalog(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         """POST /api/invariants/refresh rebuilds the cache and returns
         the same shape as the listing endpoint."""
@@ -206,13 +210,12 @@ class TestRefreshEndpoint:
 
 class TestCacheStability:
     def test_two_consecutive_gets_match(
-        self, client: TestClient,
+        self,
+        client: TestClient,
     ) -> None:
         """Cache contract: two GETs with no intervening refresh return
         identical rule_id sets. Frontend relies on this for stable
         list rendering across re-fetches."""
         a = client.get("/api/invariants").json()
         b = client.get("/api/invariants").json()
-        assert {e["rule_id"] for e in a["rules"]} == {
-            e["rule_id"] for e in b["rules"]
-        }
+        assert {e["rule_id"] for e in a["rules"]} == {e["rule_id"] for e in b["rules"]}

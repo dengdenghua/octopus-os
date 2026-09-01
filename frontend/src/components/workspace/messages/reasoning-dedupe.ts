@@ -8,9 +8,7 @@ type ReasoningDedupeEvent =
       text?: string;
     };
 
-export function normalizeReasoningTextForDedupe(
-  value?: string | null,
-): string {
+export function normalizeReasoningTextForDedupe(value?: string | null): string {
   return (value ?? "")
     .replace(/^\s*(?:[-*•]|\d+[.)])\s+/gm, "")
     .replace(/\b(?:Thought|思考|想法)\s*[:：]\s*/gi, "")

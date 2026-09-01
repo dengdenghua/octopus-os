@@ -9,12 +9,29 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { I18nContext } from "@/core/i18n/context";
-import { enUS } from "@/core/i18n/locales/en-US";
 import type { Translations } from "@/core/i18n/locales";
+
+const FALLBACK_ERROR_BOUNDARY_TRANSLATIONS: Translations["errorBoundary"] = {
+  title: "Something went wrong",
+  description:
+    "An error occurred while loading this component. Try refreshing the page.",
+  chunkTitle: "Page resources were updated",
+  chunkDescription:
+    "The frontend bundle changed. Refresh the page to load the latest version.",
+  unexpectedDescription: "An unexpected error occurred.",
+  retry: "Retry",
+  refreshPage: "Refresh page",
+};
 
 interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
+  // Error reporting integration point: callers (or a future diagnostics /
+  // telemetry channel) can inject onError to receive render errors. The
+  // existing stream-telemetry channel only covers streaming turn metrics,
+  // not render errors, so an injectable callback is the minimal hook;
+  // defaults to console.error when not provided.
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
 interface ErrorBoundaryState {
@@ -40,9 +57,17 @@ export class ErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error("[ErrorBoundary] Uncaught error:", error, errorInfo);
+    if (this.isHmrRefreshError(error, errorInfo)) {
+      setTimeout(() => this.setState({ hasError: false, error: null }), 0);
+      return;
+    }
+    if (this.props.onError) {
+      this.props.onError(error, errorInfo);
+    } else {
+      console.error("[ErrorBoundary] Uncaught error:", error, errorInfo);
+    }
     if (this.isChunkLoadError(error)) {
-      const key = "octopus:chunk-reload-once";
+      const key = "echo:chunk-reload-once";
       if (window.sessionStorage.getItem(key) !== "1") {
         window.sessionStorage.setItem(key, "1");
         window.location.reload();
@@ -68,8 +93,18 @@ export class ErrorBoundary extends Component<
     );
   }
 
+  private isHmrRefreshError(err: Error, errorInfo: ErrorInfo): boolean {
+    if (import.meta.env.PROD) return false;
+    const stack = errorInfo.componentStack || "";
+    const combined = `${err.message}\n${err.stack || ""}\n${stack}`;
+    return (
+      /@react-refresh|performReactRefresh|scheduleRefresh/i.test(combined) &&
+      /must be used within an|Context\.Provider/i.test(combined)
+    );
+  }
+
   handleReload = (): void => {
-    window.sessionStorage.removeItem("octopus:chunk-reload-once");
+    window.sessionStorage.removeItem("echo:chunk-reload-once");
     window.location.reload();
   };
 
@@ -77,7 +112,7 @@ export class ErrorBoundary extends Component<
     const chunkFailed = this.isChunkLoadError(this.state.error);
     return (
       <div className="flex items-center justify-center p-8">
-        <Card className="max-w-lg border-border/70 bg-background/92 shadow-sm">
+        <Card className="max-w-lg border-border-default bg-background/92 shadow-[var(--shadow-xs)]">
           <CardHeader>
             <CardTitle className="text-base text-foreground">
               {chunkFailed ? t.chunkTitle : t.title}
@@ -116,7 +151,7 @@ export class ErrorBoundary extends Component<
         <I18nContext.Consumer>
           {(context) =>
             this.renderErrorCard(
-              (context?.t ?? enUS).errorBoundary,
+              context?.t.errorBoundary ?? FALLBACK_ERROR_BOUNDARY_TRANSLATIONS,
             )
           }
         </I18nContext.Consumer>

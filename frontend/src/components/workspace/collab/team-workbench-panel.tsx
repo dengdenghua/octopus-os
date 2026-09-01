@@ -1,4 +1,5 @@
 import {
+  BotIcon,
   ClipboardListIcon,
   FolderIcon,
   MonitorIcon,
@@ -8,10 +9,14 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { FileTree } from "@/components/workspace/file-tree";
+import { WorkstationSeat } from "@/components/workspace/workstation-seat";
 import { WorkDirSelector } from "@/components/workspace/workdir-selector";
+import { withAgentAvatarVersion } from "@/core/agents/avatar";
+import { useI18n } from "@/core/i18n/hooks";
 import type { Team } from "@/core/teams";
 import { cn } from "@/lib/utils";
 
+import { TeamRoster } from "./team-roster";
 import { TeamTasksPanel } from "./team-tasks-panel";
 
 export type TeamWorkbenchTabId = "tasks" | "workspace" | "members";
@@ -26,18 +31,9 @@ interface TeamWorkbenchPanelProps {
   onWorkDirChange: (path: string) => void;
   currentParticipantId?: string;
   canManageTasks?: boolean;
+  onMention?: (name: string) => void;
   className?: string;
 }
-
-const TABS: Array<{
-  id: TeamWorkbenchTabId;
-  label: string;
-  Icon: typeof ClipboardListIcon;
-}> = [
-  { id: "tasks", label: "待办 plan", Icon: ClipboardListIcon },
-  { id: "workspace", label: "工作区", Icon: FolderIcon },
-  { id: "members", label: "成员", Icon: UsersIcon },
-];
 
 export function TeamWorkbenchPanel({
   activeTab,
@@ -49,24 +45,39 @@ export function TeamWorkbenchPanel({
   onWorkDirChange,
   currentParticipantId,
   canManageTasks = true,
+  onMention,
   className,
 }: TeamWorkbenchPanelProps) {
+  const { t } = useI18n();
+
+  const TABS: Array<{
+    id: TeamWorkbenchTabId;
+    label: string;
+    Icon: typeof ClipboardListIcon;
+  }> = [
+    { id: "members", label: t.collab.workbench.tabMembers, Icon: UsersIcon },
+    { id: "tasks", label: t.collab.workbench.tabTasks, Icon: ClipboardListIcon },
+    { id: "workspace", label: t.collab.workbench.tabWorkspace, Icon: FolderIcon },
+  ];
+
   return (
     <div
+      data-testid="team-workbench-panel"
       className={cn(
         "flex size-full min-h-0 flex-col bg-[color:color-mix(in_oklch,var(--muted)_46%,var(--background))]",
         className,
       )}
     >
-      <header className="relative shrink-0 border-b border-border/60 bg-background/95 px-3 pt-2">
-        <div className="flex items-end gap-2">
-          <div className="mb-1.5 flex h-8 shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-background/85 px-2 text-xs font-medium text-muted-foreground shadow-sm">
+      <header className="relative shrink-0 border-b border-border-default bg-background/95 px-2 pt-2 sm:px-3">
+        <div className="flex min-w-0 items-end gap-1.5 sm:gap-2">
+          <div className="mb-1.5 hidden h-8 shrink-0 items-center gap-2 rounded-lg border border-border-default bg-background/85 px-2 text-xs font-medium text-muted-foreground shadow-[var(--shadow-xs)] min-[520px]:flex">
             <MonitorIcon className="size-4" />
-            <span className="hidden min-[520px]:inline">Team 工作台</span>
+            <span>{t.collab.workbench.title}</span>
           </div>
           <div
+            data-testid="team-workbench-tabs"
             role="tablist"
-            aria-label="Team 工作台"
+            aria-label={t.collab.workbench.title}
             className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {TABS.map(({ id, label, Icon }) => {
@@ -75,13 +86,14 @@ export function TeamWorkbenchPanel({
                 <button
                   key={id}
                   type="button"
+                  data-testid={`team-workbench-tab-${id}`}
                   role="tab"
                   aria-selected={active}
                   onClick={() => onSelectTab(id)}
                   className={cn(
-                    "inline-flex h-9 max-w-[11rem] shrink-0 items-center gap-1.5 rounded-lg border border-transparent px-3 text-sm font-medium transition-all",
+                    "inline-flex h-9 max-w-[9rem] shrink-0 items-center gap-1 rounded-lg border border-transparent px-2 text-xs font-medium transition-all sm:max-w-[11rem] sm:gap-1.5 sm:px-3 sm:text-sm",
                     active
-                      ? "-mb-px h-10 rounded-b-none border-border/70 border-b-background bg-background text-foreground shadow-sm"
+                      ? "-mb-px h-10 rounded-b-none border-border-default border-b-background bg-background text-foreground shadow-[var(--shadow-xs)]"
                       : "mb-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                   )}
                 >
@@ -100,14 +112,20 @@ export function TeamWorkbenchPanel({
             <Button
               variant="ghost"
               size="icon"
-              className="mb-1 size-8 shrink-0 rounded-lg border border-transparent text-muted-foreground hover:border-border/60 hover:bg-muted/60 hover:text-foreground"
+              className="mb-1 size-8 shrink-0 rounded-lg border border-transparent text-muted-foreground hover:border-border-default hover:bg-muted/60 hover:text-foreground"
               onClick={onClose}
-              title="关闭工作台"
+              title={t.collab.workbench.closeTitle}
             >
               <XIcon className="size-4" />
             </Button>
           )}
         </div>
+        <TeamMachineRail
+          team={team}
+          currentParticipantId={currentParticipantId}
+          onMention={onMention}
+          onSelectMembers={() => onSelectTab("members")}
+        />
         {activeTab === "workspace" && (
           <WorkspacePathBar
             workDir={workDir}
@@ -126,12 +144,106 @@ export function TeamWorkbenchPanel({
         ) : activeTab === "workspace" ? (
           <WorkspacePage workDir={workDir} />
         ) : (
-          <MembersPage
+          <TeamRoster
             team={team}
             currentParticipantId={currentParticipantId}
+            onMention={onMention}
           />
         )}
       </main>
+    </div>
+  );
+}
+
+function TeamMachineRail({
+  team,
+  currentParticipantId,
+  onMention,
+  onSelectMembers,
+}: {
+  team: Team | null;
+  currentParticipantId?: string;
+  onMention?: (name: string) => void;
+  onSelectMembers: () => void;
+}) {
+  const { t } = useI18n();
+  const humans = (team?.participants ?? []).filter(
+    (participant) => participant.status !== "removed",
+  );
+  const agents = team?.members ?? [];
+  if (agents.length === 0 && humans.length === 0) return null;
+
+  return (
+    <div className="mt-1.5 flex min-w-0 items-center gap-2 border-t border-border-subtle py-1.5">
+      <UsersIcon className="size-3.5 shrink-0 text-muted-foreground" />
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {agents.map((agent) => {
+          const name = agent.display_name ?? agent.name;
+          const isLeader = team?.leaderId === agent.name;
+          const rawAvatar =
+            agent.avatar_url ??
+            (agent.name.startsWith("local_")
+              ? `/api/agents/${agent.name}/avatar`
+              : undefined);
+          const avatarSrc = rawAvatar
+            ? withAgentAvatarVersion(rawAvatar)
+            : undefined;
+          return (
+            <WorkstationSeat
+              key={agent.name}
+              name={name}
+              avatar={agent.icon}
+              avatarUrl={avatarSrc}
+              avatarNode={
+                <BotIcon
+                  className="size-3.5 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              }
+              showBotBadge
+              fallbackInitial={name.charAt(0)}
+              dotClassName="bg-muted-foreground/45"
+              dotLabel={isLeader ? t.collab.workbench.leaderStandby : t.collab.workbench.standby}
+              title={
+                agent.description ||
+                t.collab.workbench.memberNameWithRole(name, isLeader)
+              }
+              ariaLabel={`@${name}`}
+              selected={isLeader}
+              iconOnly
+              iconCaption={isLeader ? t.collab.common.leader : undefined}
+              onClick={() => {
+                onSelectMembers();
+                onMention?.(agent.name);
+              }}
+              className="shrink-0"
+            />
+          );
+        })}
+        {humans.map((participant) => {
+          const isSelf = participant.id === currentParticipantId;
+          const isOnline = participant.status === "active";
+          const statusText = isOnline ? t.collab.common.online : t.collab.common.offline;
+          return (
+            <WorkstationSeat
+              key={participant.id}
+              name={participant.display_name}
+              fallbackInitial={participant.display_name.charAt(0)}
+              dotClassName={
+                isOnline ? "bg-success" : "bg-muted-foreground/35"
+              }
+              dotLabel={statusText}
+              title={`${participant.display_name} · ${statusText} · ${participant.role}`}
+              ariaLabel={`${participant.display_name} · ${statusText}`}
+              selected={isSelf}
+              iconOnly
+              iconCaption={isSelf ? "You" : undefined}
+              onClick={onSelectMembers}
+              className="shrink-0"
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -143,16 +255,17 @@ function WorkspacePathBar({
   workDir: string;
   onWorkDirChange: (path: string) => void;
 }) {
+  const { t } = useI18n();
   return (
-    <div className="mt-2 flex items-center gap-2 border-t border-border/45 py-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/60 bg-muted/25 px-2.5 py-1.5">
+    <div className="mt-2 flex items-center gap-2 border-t border-border-subtle py-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border-default bg-muted/25 px-2.5 py-1.5">
         <FolderIcon className="size-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-medium text-muted-foreground">
-            当前工作区
+          <div className="text-xs font-medium text-muted-foreground">
+            {t.collab.workbench.currentWorkspace}
           </div>
-          <div className="truncate font-mono text-[11px] text-foreground">
-            {workDir || "未选择目录"}
+          <div className="truncate font-mono text-xs text-foreground">
+            {workDir || t.collab.workbench.noDirectorySelected}
           </div>
         </div>
       </div>
@@ -170,69 +283,6 @@ function WorkspacePage({ workDir }: { workDir: string }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 p-1">
         <FileTree workDir={workDir} className="h-full" />
-      </div>
-    </div>
-  );
-}
-
-function MembersPage({
-  team,
-  currentParticipantId,
-}: {
-  team: Team | null;
-  currentParticipantId?: string;
-}) {
-  const participants = (team?.participants ?? []).filter(
-    (participant) => participant.status !== "removed",
-  );
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      <div className="mb-3">
-        <div className="text-sm font-medium text-foreground">成员</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">
-          {team?.name ?? "未选择 Team"} · {participants.length} 位在线/协作成员
-        </div>
-      </div>
-      <div className="space-y-2">
-        {participants.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border/70 bg-muted/15 px-4 py-8 text-center text-sm text-muted-foreground">
-            暂无成员
-          </div>
-        ) : (
-          participants.map((participant) => (
-            <div
-              key={participant.id}
-              className="flex items-center gap-2 rounded-lg border border-border/60 bg-background/85 px-3 py-2"
-            >
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-xs font-semibold text-muted-foreground">
-                {participant.display_name.charAt(0)}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {participant.display_name}
-                  </span>
-                  {participant.id === currentParticipantId && (
-                    <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                      You
-                    </span>
-                  )}
-                </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {participant.role}
-                </span>
-              </span>
-              <span
-                className={cn(
-                  "size-2 rounded-full",
-                  participant.status === "active"
-                    ? "bg-emerald-500"
-                    : "bg-muted-foreground/35",
-                )}
-              />
-            </div>
-          ))
-        )}
       </div>
     </div>
   );

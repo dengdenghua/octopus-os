@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过 signal-cli 或 signald 桥接将 Octopus-Agent 接入 Signal，实现端到端加密环境下的智能对话。
+通过 signal-cli 或 signald 桥接将 Echo Agent 接入 Signal，实现端到端加密环境下的智能对话。
 
 ## 前置条件
 
@@ -26,7 +26,7 @@
    ```
 3. 获取设备 ID 和账号凭证
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 Signal，填写以下字段：
 
@@ -36,7 +36,7 @@
 | 桥接模式 | signal-cli 或 signald | `signald` |
 | signald 套接字路径 | signald Unix Socket 路径 | `/var/run/signald/signald.sock` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -49,7 +49,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -69,7 +69,7 @@ octopus serve
 
 ## Webhook 配置
 
-Signal 不使用传统 Webhook，而是通过 signal-cli/signald 的本地接口接收消息。Octopus-Agent 通过监听 signald 的 WebSocket 或 signal-cli 的 JSON RPC 接口获取新消息事件。
+Signal 不使用传统 Webhook，而是通过 signal-cli/signald 的本地接口接收消息。Echo Agent 通过监听 signald 的 WebSocket 或 signal-cli 的 JSON RPC 接口获取新消息事件。
 
 如需远程部署，可使用 signal-cli 的 JSON RPC 模式：
 
@@ -102,4 +102,4 @@ A: 在 Signal 中将机器人号码邀请到群组，机器人会自动接收群
 - [signal-cli GitHub](https://github.com/AsamK/signal-cli)
 - [signald GitHub](https://gitlab.com/signald/signald)
 - [Signal 官方网站](https://signal.org/)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/signal)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/signal)

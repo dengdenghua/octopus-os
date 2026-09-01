@@ -22,7 +22,7 @@ def test_memory_tiers_include_team_layers_when_metadata_present(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("ECHO_HOME", str(tmp_path / "home"))
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     monkeypatch.chdir(workspace)
@@ -45,7 +45,7 @@ def test_memory_tiers_include_team_layers_when_metadata_present(
         "agent",
     ]
     assert tiers[0][1] == tmp_path / "home" / "MEMORY.md"
-    assert tiers[1][1] == workspace / ".octopus" / "MEMORY.md"
+    assert tiers[1][1] == workspace / ".echo" / "MEMORY.md"
     assert tiers[2][1] == tmp_path / "teams" / "Alpha-Team" / "team-core" / "MEMORY.md"
     assert tiers[3][1] == tmp_path / "teams" / "Alpha-Team" / "agents" / "coder" / "MEMORY.md"
     assert tiers[4][1] == core / "MEMORY.md"
@@ -55,11 +55,11 @@ def test_runtime_soul_strips_stale_static_memory_and_injects_team_layers(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv("OCTOPUS_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("ECHO_HOME", str(tmp_path / "home"))
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    (workspace / ".octopus").mkdir()
-    (workspace / ".octopus" / "MEMORY.md").write_text(
+    (workspace / ".echo").mkdir()
+    (workspace / ".echo" / "MEMORY.md").write_text(
         "project convention: use pytest",
         encoding="utf-8",
     )
@@ -132,7 +132,13 @@ def test_remember_and_recall_support_team_and_team_agent_scopes(
     assert Path(team["path"]).exists()
     assert Path(member["path"]).exists()
     assert Path(project["path"]).exists()
-    assert any("[team] " in entry and "shared team decision" in entry for entry in recalled["entries"])
-    assert any("[team-agent] " in entry and "member-specific finding" in entry for entry in recalled["entries"])
-    assert any("[project] " in entry and "repo uses pytest" in entry for entry in recalled["entries"])
-
+    assert any(
+        "[team] " in entry and "shared team decision" in entry for entry in recalled["entries"]
+    )
+    assert any(
+        "[team-agent] " in entry and "member-specific finding" in entry
+        for entry in recalled["entries"]
+    )
+    assert any(
+        "[project] " in entry and "repo uses pytest" in entry for entry in recalled["entries"]
+    )

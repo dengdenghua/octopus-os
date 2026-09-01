@@ -9,12 +9,26 @@ import {
   MIN_AGGREGATION_SIZE,
 } from "./message-grouping";
 
-function aiToolCallMsg(id: string, name: string, args: any = {}, tcId?: string) {
+function aiToolCallMsg(
+  id: string,
+  name: string,
+  args: any = {},
+  tcId?: string,
+) {
   return {
     id,
     type: "ai",
     content: "",
     tool_calls: [{ id: tcId ?? `tc-${id}`, name, args }],
+  };
+}
+
+function thinkingMsg(id: string, thinking: string) {
+  return {
+    id,
+    type: "ai",
+    content: [{ type: "thinking", thinking }],
+    tool_calls: [],
   };
 }
 
@@ -30,6 +44,19 @@ describe("groupActivities", () => {
   test("returns empty for empty messages", () => {
     const result = groupActivities([]);
     expect(result).toEqual([]);
+  });
+
+  test("keeps conversationally worded thinking in the reasoning lane", () => {
+    const chunks = groupActivities([
+      thinkingMsg("thinking-1", "接下来我会检查项目配置。"),
+      thinkingMsg("thinking-2", "然后我会运行测试。"),
+    ] as any);
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toMatchObject({
+      kind: "activity",
+      activityKind: "think",
+    });
   });
 
   test("aggregates continuous write_file calls into file_ops", () => {
@@ -143,7 +170,7 @@ describe("groupActivities", () => {
     }
   });
 
-  test("bash label truncates long commands", () => {
+  test("bash label avoids raw command text", () => {
     const longCmd = "a".repeat(60);
     const messages = [
       aiToolCallMsg("a1", "bash", { command: longCmd }),
@@ -152,12 +179,13 @@ describe("groupActivities", () => {
     const chunks = groupActivities(messages as any);
     expect(chunks.length).toBe(1);
     if (chunks[0].kind === "activity") {
-      expect(chunks[0].items[0].label.length < longCmd.length + 10).toBeTruthy();
-      expect(chunks[0].items[0].label.endsWith("...")).toBeTruthy();
+      expect(chunks[0].items[0].label).toBe("Run checks");
+      expect(chunks[0].items[0].label).not.toContain(longCmd);
+      expect(chunks[0].items[1].label).not.toContain("ls");
     }
   });
 
-  test("realtime shell tool names aggregate and label the actual command", () => {
+  test("realtime shell tool names aggregate without labeling the raw command", () => {
     const messages = [
       aiToolCallMsg("a1", "exec_shell", {
         tool: "exec_shell",
@@ -170,15 +198,23 @@ describe("groupActivities", () => {
     expect(chunks.length).toBe(1);
     if (chunks[0].kind === "activity") {
       expect(chunks[0].activityKind).toBe("tool_calls");
-      expect(chunks[0].items[0].label).toContain("npm test");
-      expect(chunks[0].items[1].label).toContain("npm run typecheck");
+      expect(chunks[0].items[0].label).toBe("Run checks");
+      expect(chunks[0].items[1].label).toBe("Run checks");
+      expect(chunks[0].items[0].label).not.toContain("npm test");
+      expect(chunks[0].items[1].label).not.toContain("npm run typecheck");
     }
   });
 
   test("tool result message with error status marks item as error", () => {
     const messages = [
       aiToolCallMsg("a1", "bash", { command: "ls" }, "tc-a1"),
-      { id: "t1", type: "tool", content: "boom", tool_call_id: "tc-a1", status: "error" },
+      {
+        id: "t1",
+        type: "tool",
+        content: "boom",
+        tool_call_id: "tc-a1",
+        status: "error",
+      },
       aiToolCallMsg("a2", "bash", { command: "pwd" }, "tc-a2"),
       toolResultMsg("t2", "tc-a2"),
     ];
@@ -213,9 +249,33 @@ describe("groupActivities", () => {
     }
   });
 
+  test("read tool aggregation uses public labels instead of raw tool names", () => {
+    const messages = [
+      aiToolCallMsg("a1", "read_file", { path: "/repo/src/chat.ts" }),
+      aiToolCallMsg("a2", "grep", { pattern: "TODO" }),
+      aiToolCallMsg("a3", "read_file", { path: "~/.ssh/id_rsa" }),
+    ];
+    const chunks = groupActivities(messages as any);
+    expect(chunks.length).toBe(1);
+    if (chunks[0].kind === "activity") {
+      const labels = chunks[0].items.map((item) => item.label).join("\n");
+      expect(labels).toContain("Read file: chat.ts");
+      expect(labels).toContain("Search sources: TODO");
+      expect(labels).toContain("Read file");
+      expect(labels).not.toContain("read_file");
+      expect(labels).not.toContain("grep ");
+      expect(labels).not.toContain("/repo/src");
+      expect(labels).not.toContain("id_rsa");
+    }
+  });
+
   test("realtime file edits classify as file_ops", () => {
     const messages = [
-      aiToolCallMsg("a1", "edit_text_file", { path: "/a.ts", lines_added: 5, lines_removed: 2 }),
+      aiToolCallMsg("a1", "edit_text_file", {
+        path: "/a.ts",
+        lines_added: 5,
+        lines_removed: 2,
+      }),
       aiToolCallMsg("a2", "write_text_file", { path: "/b.ts", lines_added: 1 }),
     ];
     const chunks = groupActivities(messages as any);
@@ -344,5 +404,93 @@ describe("extractThinkingText", () => {
   test("returns empty string when no thinking parts are present", () => {
     const content = [{ type: "text", text: "x" }];
     expect(extractThinkingText(content as any)).toBe("");
+  });
+});
+
+describe("groupActivities file diffs", () => {
+  test("carries unified diffs from edit_file args into file_ops meta", () => {
+    const diff = [
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,3 +1,4 @@",
+      " const ctx = 1;",
+      "-const oldLine = 2;",
+      "+const newLine = 2;",
+      "+const another = 3;",
+    ].join("\n");
+    const messages = [
+      humanMsg("h1", "edit files"),
+      aiToolCallMsg("a1", "edit_file", {
+        path: "/src/a.ts",
+        changes: [{ path: "/src/a.ts", op: "update", diff }],
+      }),
+      toolResultMsg("t1", "tc-a1"),
+      aiToolCallMsg("a2", "write_file", { path: "/src/b.ts", content: "z" }),
+      toolResultMsg("t2", "tc-a2"),
+    ];
+    const chunks = groupActivities(messages as any);
+    const activity = chunks.find((c) => c.kind === "activity");
+    expect(activity?.kind).toBe("activity");
+    if (activity?.kind === "activity") {
+      expect(activity.activityKind).toBe("file_ops");
+      const first = activity.items[0];
+      expect(Array.isArray(first.meta?.diffs)).toBe(true);
+      const diffs = first.meta?.diffs as string[];
+      expect(diffs[0]).toContain("+const newLine");
+      expect(diffs[0]).toContain("-const oldLine");
+    }
+  });
+
+  test("leaves meta.diffs absent when no diff is available", () => {
+    const messages = [
+      humanMsg("h1", "write"),
+      aiToolCallMsg("a1", "write_file", { path: "/src/a.ts", content: "x" }),
+      toolResultMsg("t1", "tc-a1"),
+      aiToolCallMsg("a2", "write_file", { path: "/src/b.ts", content: "z" }),
+      toolResultMsg("t2", "tc-a2"),
+    ];
+    const chunks = groupActivities(messages as any);
+    const activity = chunks.find((c) => c.kind === "activity");
+    expect(activity?.kind).toBe("activity");
+    if (activity?.kind === "activity") {
+      for (const item of activity.items) {
+        expect(item.meta?.diffs).toBeUndefined();
+      }
+    }
+  });
+});
+
+describe("groupActivities thinking visibility", () => {
+  test("plan narration remains a think row regardless of wording", () => {
+    const messages = [
+      humanMsg("h1", "检查一下项目"),
+      thinkingMsg("a1", "我将先检查项目的目录结构和依赖配置，确认技术栈。"),
+      thinkingMsg("a2", "接下来我会查看 pyproject.toml 确认依赖声明。"),
+    ];
+    const chunks = groupActivities(messages as any);
+    const activity = chunks.find((chunk) => chunk.kind === "activity");
+    expect(activity?.kind).toBe("activity");
+    if (activity?.kind === "activity") {
+      expect(activity.activityKind).toBe("think");
+      expect(activity.items).toHaveLength(2);
+    }
+  });
+
+  test("inner chain-of-thought still folds into a think activity", () => {
+    const messages = [
+      humanMsg("h1", "为什么"),
+      thinkingMsg(
+        "a1",
+        "用户可能期望 A，但方案 B 的成本更高，需要权衡影响面。",
+      ),
+      thinkingMsg("a2", "如果直接改接口会影响下游三个调用方，先评估风险。"),
+    ];
+    const chunks = groupActivities(messages as any);
+    const activity = chunks.find((c) => c.kind === "activity");
+    expect(activity?.kind).toBe("activity");
+    if (activity?.kind === "activity") {
+      expect(activity.activityKind).toBe("think");
+      expect(activity.items.length).toBe(2);
+    }
   });
 });

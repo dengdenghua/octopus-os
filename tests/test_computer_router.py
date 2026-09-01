@@ -5,7 +5,6 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from runtime.execution.suckers import computer_skills, computer_uia_skills
 from runtime.sensing.gateway.computer_router import create_computer_router
 
@@ -130,10 +129,14 @@ def test_plan_actions_uses_uia_grounding(monkeypatch):
     monkeypatch.setattr(computer_uia_skills, "uiautomation", _FakeUia())
     monkeypatch.setattr(computer_uia_skills, "_UIA_LOAD_ERROR", None)
 
-    data = TestClient(_app()).post(
-        "/api/computer/actions/plan",
-        json={"goal": "click Router", "capture": False},
-    ).json()
+    data = (
+        TestClient(_app())
+        .post(
+            "/api/computer/actions/plan",
+            json={"goal": "click Router", "capture": False},
+        )
+        .json()
+    )
     assert data["ok"] is True
     action = data["suggestions"][0]["action"]
     assert action["action"] == "click"
@@ -150,10 +153,14 @@ def test_plan_actions_prefers_interactive_uia_match(monkeypatch):
     monkeypatch.setattr(computer_uia_skills, "uiautomation", _FakeRankedUia())
     monkeypatch.setattr(computer_uia_skills, "_UIA_LOAD_ERROR", None)
 
-    data = TestClient(_app()).post(
-        "/api/computer/actions/plan",
-        json={"goal": "click Router", "capture": False},
-    ).json()
+    data = (
+        TestClient(_app())
+        .post(
+            "/api/computer/actions/plan",
+            json={"goal": "click Router", "capture": False},
+        )
+        .json()
+    )
     action = data["suggestions"][0]["action"]
     assert action["x"] == 360
     assert action["y"] == 230

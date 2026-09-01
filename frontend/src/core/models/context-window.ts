@@ -40,7 +40,9 @@ function modelProbe(model: Model | undefined | null): string {
     .toLowerCase();
 }
 
-function inferContextWindowFromName(model: Model | undefined | null): number | null {
+function inferContextWindowFromName(
+  model: Model | undefined | null,
+): number | null {
   const probe = modelProbe(model);
   if (!probe) return null;
   if (/\b1m\b|1000k|1,000k|1000000|1m-token/.test(probe)) return 1_000_000;

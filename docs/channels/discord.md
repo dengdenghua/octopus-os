@@ -2,7 +2,7 @@
 
 ## 概述
 
-通过 Discord Bot 将 Octopus-Agent 接入 Discord 服务器，支持在频道和私信中与用户进行智能对话。
+通过 Discord Bot 将 Echo Agent 接入 Discord 服务器，支持在频道和私信中与用户进行智能对话。
 
 ## 前置条件
 
@@ -25,7 +25,7 @@
    - Bot Permissions: `Send Messages`、`Read Message History`、`Add Reactions`、`Attach Files`、`Use Slash Commands`
 6. 复制生成的邀请链接，在浏览器中打开并选择目标服务器添加机器人
 
-### 2. 配置 Octopus-Agent
+### 2. 配置 Echo Agent
 
 在 Web UI 的「渠道」页面选择 Discord，填写以下字段：
 
@@ -35,7 +35,7 @@
 | Application ID | Discord 应用的 Client ID | `1234567890123456789` |
 | 响应模式 | 回复或追加 | `reply` |
 
-或通过配置文件 `~/.octopus/config.yaml`：
+或通过配置文件 `~/.echo/config.yaml`：
 
 ```yaml
 channels:
@@ -48,7 +48,7 @@ channels:
 ### 3. 启动服务
 
 ```bash
-octopus serve
+echo serve
 ```
 
 ### 4. 验证
@@ -68,7 +68,7 @@ octopus serve
 
 ## Webhook 配置
 
-Discord 使用 WebSocket Gateway 接收事件，无需额外配置 Webhook URL。Octopus-Agent 启动后会自动连接 Discord Gateway 并监听消息事件。
+Discord 使用 WebSocket Gateway 接收事件，无需额外配置 Webhook URL。Echo Agent 启动后会自动连接 Discord Gateway 并监听消息事件。
 
 如需接收 Slash Command 交互事件，需在 Developer Portal 中注册 Slash Command 并配置 Interaction Endpoint URL：
 
@@ -98,4 +98,4 @@ channels:
 - [Discord Developer Portal](https://discord.com/developers/applications)
 - [Discord API 官方文档](https://discord.com/developers/docs/intro)
 - [Discord.js 官方文档](https://discord.js.org/)
-- [Octopus-Agent 渠道配置文档](https://docs.octopus-agent.dev/channels/discord)
+- [Echo Agent 渠道配置文档](https://docs.echo-agent.dev/channels/discord)

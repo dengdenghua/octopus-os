@@ -5,6 +5,7 @@ preserved, that disabled specs are skipped, and that the security
 cluster fires before quality guards. The individual guard behaviors
 are covered by the per-guard test files; here we test the harness.
 """
+
 from __future__ import annotations
 
 from runtime.core.cerebrum.react_guards import (
@@ -54,7 +55,14 @@ class TestRegistryShape:
         assert GUARD_REGISTRY[-1].label == "code-mode guard"
 
     def test_every_spec_has_category(self) -> None:
-        valid = {"security", "protocol", "verification", "test-quality", "code-smell"}
+        valid = {
+            "security",
+            "protocol",
+            "verification",
+            "test-quality",
+            "code-smell",
+            "research",
+        }
         for spec in GUARD_REGISTRY:
             assert spec.category in valid, f"{spec.label} has bad category {spec.category}"
 
@@ -63,7 +71,11 @@ class TestEvaluateGuards:
     def test_clean_trajectory_returns_none(self) -> None:
         # A simple read-only inspection with a todo checklist completed.
         steps = [
-            _step(1, action='todo_write({"items": [{"content": "Read", "status": "completed"}]})', observation="ok"),
+            _step(
+                1,
+                action='todo_write({"items": [{"content": "Read", "status": "completed"}]})',
+                observation="ok",
+            ),
             _step(2, action='read_file({"path": "runtime/foo.py"})', observation="contents"),
         ]
         ctx = GuardContext(
@@ -128,9 +140,9 @@ class TestEvaluateGuards:
         if hit is not None:
             assert hit[0] != "secret-leak guard"
 
-    def test_non_code_mode_only_protocol(self) -> None:
-        # In non-code mode, code-only guards are inert; a secret in the
-        # payload should NOT fire (is_code_mode gates it).
+    def test_non_code_mode_still_runs_security(self) -> None:
+        # Quality/code-style guards are mode-scoped, but credential leakage
+        # must remain blocked in every mode.
         sk = "sk-abcdefghijklmnopqrstuvwxyz1234567890"
         steps = [
             _step(
@@ -148,8 +160,9 @@ class TestEvaluateGuards:
             is_code_mode=False,
             todo_protocol_required=False,
         )
-        # No code-mode guards run, no todo protocol required → None.
-        assert evaluate_guards(ctx) is None
+        hit = evaluate_guards(ctx)
+        assert hit is not None
+        assert hit[0] == "secret-leak guard"
 
     def test_empty_registry_returns_none(self) -> None:
         ctx = GuardContext(steps=[_step(1)], final_answer="done", is_code_mode=True)

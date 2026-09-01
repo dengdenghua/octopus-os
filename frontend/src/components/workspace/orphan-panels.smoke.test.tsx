@@ -2,15 +2,14 @@
  * Smoke tests for workspace panels that used to be easy to orphan:
  *
  *   - /workspace/intelligence -> <intelligence-panel.tsx>
- *   - agent collaboration status -> <swarm-panel.tsx>
  *   - /workspace/knowledge    -> <knowledge-graph-panel.tsx>
  *
  * What we verify
  * --------------
  *
  * 1. Each panel mounts without throwing (catches Rules-of-Hooks
- *    violations like the one in ``SwarmPanel`` where ``useMemo`` was
- *    called after an ``if (loading) return`` · that bug was silent
+ *    violations where ``useMemo`` was called after an ``if (loading) return``;
+ *    those bugs were silent
  *    under ``tsc`` + all the other tests · the only way to catch
  *    it is to actually render).
  * 2. After the loading indicator resolves, the empty-state content
@@ -25,8 +24,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 
-// ArenaPanel uses useI18n heavily (``t.arena.title`` / ``t.arena.prompt``
-// etc.). Build a stub ``t`` where the top level is a plain object
+// Build a stub ``t`` where the top level is a plain object
 // (no render-a-Proxy-as-child hazard) · each top-level key is itself
 // a Proxy that returns its own property NAME as a string on any read ·
 // so ``t.arena.XYZ`` JSX just shows "XYZ" instead of throwing.
@@ -49,13 +47,32 @@ vi.mock("@/core/i18n/hooks", () => {
       itemsCount: (count: number) => `${count} 条`,
       reportGenerated: (count: number) => `${count} 条情报已生成`,
       reportsGenerated: (count: number) => `${count} 份报告已生成`,
+      selectSubscription: (name: string) => `查看订阅报告：${name}`,
+      runSubscription: (name: string) => `立即运行订阅：${name}`,
+      enableSubscription: (name: string) => `启用订阅：${name}`,
+      disableSubscription: (name: string) => `停用订阅：${name}`,
+      deleteSubscriptionNamed: (name: string) => `删除订阅：${name}`,
+      deleteConfirmDescription: (name: string) =>
+        `确定删除自动订阅「${name}」吗？已有报告不会被删除，此操作不可撤销。`,
     },
     intelligencePanel: {
       examplePrompts: [
-        "每天跟踪 Octopus Agent 相关 GitHub release、issue 和竞品动态",
+        "每天跟踪 Echo Agent 相关 GitHub release、issue 和竞品动态",
         "每周汇总 AI Agent、浏览器自动化、多智能体框架的新论文",
       ],
       goalPlaceholder: "描述你想持续追踪的情报目标",
+      noSubscriptionsYet: "还没有自动订阅",
+      scheduleHighFrequency: (timezone: string) => `高频检查 · ${timezone}`,
+      scheduleWeekly: (weekday: string, time: string, timezone: string) =>
+        `每周 ${weekday} ${time} · ${timezone}`,
+      scheduleMonthly: (day: string, time: string, timezone: string) =>
+        `每月 ${day} 号 ${time} · ${timezone}`,
+      scheduleDaily: (time: string, timezone: string) =>
+        `每天 ${time} · ${timezone}`,
+      itemsCount: (count: number) => `${count} 条情报`,
+      skillsCount: (count: number) => `${count} 个能力`,
+      expectedRun: (schedule: string) => `预计执行：${schedule}`,
+      monthDayLabel: (day: string) => `${day} 号`,
     },
   };
   const makeLeaf = (section: string) =>
@@ -85,17 +102,18 @@ vi.mock("@/core/i18n/hooks", () => {
 });
 
 vi.mock("./messages/markdown-content", () => ({
-  MarkdownContent: ({ content, className }: { content: string; className?: string }) => (
-    <div className={className}>{content}</div>
-  ),
+  MarkdownContent: ({
+    content,
+    className,
+  }: {
+    content: string;
+    className?: string;
+  }) => <div className={className}>{content}</div>,
 }));
 
-import { ArenaPanel } from "./arena-panel";
 import EvolutionDashboard from "./evolution-dashboard";
 import { IntelligencePanel } from "./intelligence-panel";
 import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
-import { SwarmPanel } from "./swarm-panel";
-import { WikiPanel } from "./wiki-panel";
 
 // ─── Global fetch stub ───────────────────────────────────────────
 //
@@ -201,26 +219,6 @@ function withProviders(node: React.ReactNode) {
   );
 }
 
-
-describe("SwarmPanel", () => {
-  it("mounts without throwing (hook-order regression guard)", async () => {
-    render(withProviders(<SwarmPanel />));
-    await waitFor(() => {
-      // Either the empty state OR the stats grid rendered · both
-      // are proof the post-loading code path ran without the
-      // "Rendered more hooks than during the previous render" crash.
-      expect(
-        screen.queryByText(/暂无并行任务/) ??
-          screen.queryByText(/总任务/),
-      ).toBeTruthy();
-    });
-    // React prints hook-order mismatches to console.error · assert
-    // we saw none.
-    expect(consoleErrorSpy).not.toHaveBeenCalled();
-  });
-});
-
-
 describe("KnowledgeGraphPanel", () => {
   it("renders empty-state content when KG is empty", async () => {
     render(withProviders(<KnowledgeGraphPanel />));
@@ -229,8 +227,28 @@ describe("KnowledgeGraphPanel", () => {
     });
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
-});
 
+  it("opts into the global control plane and renders a stable 403 gate", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ detail: "forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    render(withProviders(<KnowledgeGraphPanel />));
+
+    expect(
+      await screen.findByText("crossTenantAdminRequired"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/知识图谱为空/)).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [input] of fetchMock.mock.calls) {
+      expect(String(input)).toContain("cross_tenant=true");
+    }
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+});
 
 describe("IntelligencePanel", () => {
   it("renders empty subscription prompt when no subs configured", async () => {
@@ -271,7 +289,8 @@ describe("IntelligencePanel", () => {
           topic: "browser-automation",
           title: "AI 浏览器自动化周报",
           summary: "验证浏览器回归测试交互是否更自然。",
-          markdown: "## 核心结论\n浏览器回归应放在预览面板内，报告详情像文章一样阅读。",
+          markdown:
+            "## 核心结论\n浏览器回归应放在预览面板内，报告详情像文章一样阅读。",
           created_at: "2026-05-27T08:00:00Z",
           items_analyzed: 3,
           findings: ["预览内开关比顶栏按钮更轻量"],
@@ -296,33 +315,21 @@ describe("IntelligencePanel", () => {
     });
     expect(screen.getByText(/旧内容/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /AI 浏览器自动化周报/ }));
+    await user.click(
+      screen.getByRole("button", { name: /AI 浏览器自动化周报/ }),
+    );
 
     await waitFor(() => {
-      expect(screen.getByText(/浏览器回归应放在预览面板内，报告详情像文章一样阅读。/)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          /浏览器回归应放在预览面板内，报告详情像文章一样阅读。/,
+        ),
+      ).toBeInTheDocument();
     });
     expect(screen.getByText("预览内开关比顶栏按钮更轻量")).toBeInTheDocument();
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 });
-
-
-describe("ArenaPanel", () => {
-  it("mounts in idle phase without throwing (hook-order regression guard)", async () => {
-    render(withProviders(<ArenaPanel />));
-    // Idle phase renders the prompt form first · the battle flow
-    // only starts after user submits · so we don't wait for any
-    // specific text, just for the next microtask to drain so any
-    // fetch-on-mount has had a chance to blow up.
-    await waitFor(() => {
-      // ArenaPanel has NO fetch-on-mount in idle phase · so the
-      // mount itself is the assertion. Just confirm React didn't
-      // emit any error during the sync render + microtask flush.
-      expect(consoleErrorSpy).not.toHaveBeenCalled();
-    });
-  });
-});
-
 
 describe("EvolutionDashboard", () => {
   it("mounts + fetches in parallel without hook-order or render errors", async () => {
@@ -337,32 +344,8 @@ describe("EvolutionDashboard", () => {
       // its presence confirms we got past the loading early return.
       // Use Proxy-stubbed t so the actual text is "title".
       expect(
-        screen.queryByText("title") ??
-          screen.queryByText(/loading/i),
+        screen.queryByText("title") ?? screen.queryByText(/loading/i),
       ).toBeTruthy();
-    });
-    expect(consoleErrorSpy).not.toHaveBeenCalled();
-  });
-});
-
-
-describe("WikiPanel", () => {
-  it("mounts and clears loading without render errors", async () => {
-    // WikiPanel does a lot on mount: /api/wiki/status + /api/wiki/docs
-    // + 8 parallel /api/fs/read calls for LEGACY_CANDIDATES. All stubs
-    // above resolve fast · the panel should land on a non-loading
-    // branch (either generate-wiki CTA when no docs exist, or the
-    // content shell when legacyDocs populated).
-    render(withProviders(<WikiPanel workDir="/tmp/mock-project" />));
-    await waitFor(() => {
-      // Loading path renders ``t.wiki.loadingWiki`` ("loadingWiki"
-      // under our i18n Proxy). Once the 10 parallel fetches settle,
-      // the loading branch should give way to either "noWikiYet" /
-      // "generateWiki" / the docs shell ("repoWiki" / "docs"). Any
-      // of these indicates successful mount; we just assert we're
-      // out of the loading spinner.
-      const loading = screen.queryByText("loadingWiki");
-      expect(loading).toBeNull();
     });
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });

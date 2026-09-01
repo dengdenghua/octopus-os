@@ -1,4 +1,3 @@
-
 import { swallow } from "@/core/utils/log";
 import { authHeaders } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
@@ -418,13 +417,23 @@ export function useSlashCommands({
       description: t.slashCommands.settings,
       icon: SettingsIcon,
       action: () => {
-        window.location.hash = "#settings";
+        window.dispatchEvent(new Event("echo:open-settings"));
         setIsOpen(false);
       },
     });
 
     return cmds;
-  }, [t, onChange, onClear, onCompact, onModeChange, onModelChange, onSendMessage, onSwitchPanel, models]);
+  }, [
+    t,
+    onChange,
+    onClear,
+    onCompact,
+    onModeChange,
+    onModelChange,
+    onSendMessage,
+    onSwitchPanel,
+    models,
+  ]);
 
   const modeCommands: SlashCommand[] = useMemo(() => {
     if (!onModeChange) return [];
@@ -502,12 +511,17 @@ export function useSlashCommands({
           onPersonalityApply(p.name);
         } else {
           // Fallback: call the overlay API directly
-          fetch(`${getBackendBaseURL()}/api/personality/templates/${p.name}/overlay`, {
-            method: "POST",
-            headers: authHeaders(),
-          })
+          fetch(
+            `${getBackendBaseURL()}/api/personality/templates/${p.name}/overlay`,
+            {
+              method: "POST",
+              headers: authHeaders(),
+            },
+          )
             .then((res) => res.json())
-            .catch((e) => { swallow(e); });
+            .catch((e) => {
+              swallow(e);
+            });
         }
         onChange("");
         setIsOpen(false);
@@ -588,7 +602,15 @@ export function useSlashCommands({
         c.label.toLowerCase().includes(query) ||
         c.description.toLowerCase().includes(query),
     );
-  }, [filter, commands, modeCommands, modelCommands, personalityCommands, pluginCommands, skillCommands]);
+  }, [
+    filter,
+    commands,
+    modeCommands,
+    modelCommands,
+    personalityCommands,
+    pluginCommands,
+    skillCommands,
+  ]);
 
   useEffect(() => {
     setSelectedIndex(0);
@@ -670,7 +692,7 @@ export function SlashCommandPopup({
   return (
     <div
       className={cn(
-        "bg-popover text-popover-foreground absolute bottom-full left-0 z-50 mb-1 w-72 overflow-hidden rounded-lg border shadow-lg",
+        "bg-popover text-popover-foreground absolute bottom-full left-0 z-50 mb-1 w-72 overflow-hidden rounded-lg border shadow-[var(--shadow-md)]",
         className,
       )}
     >

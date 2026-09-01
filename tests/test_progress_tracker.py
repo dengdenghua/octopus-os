@@ -6,7 +6,6 @@ import time
 from uuid import uuid4
 
 import pytest
-
 from runtime.memory.journal import (
     InMemoryJournal,
     TaskProgressTracker,
@@ -32,7 +31,9 @@ from runtime.sensing.gateway import StreamingJournal
 def _step(sid: int, sucker: str, success: bool = True) -> Step:
     call = ToolCall(caller="arms/x", sucker_id=sucker, args={})
     return Step(
-        step_id=sid, node_id=f"n{sid}", action=call,
+        step_id=sid,
+        node_id=f"n{sid}",
+        action=call,
         result=ExecutionResult(
             call_id=call.call_id,
             status="success" if success else "failed",
@@ -124,14 +125,17 @@ class TestIncrementalUpdates:
         j.write_task_started(tid, arm_id=ArmId("a"), total_nodes=1, strategy="s")
         j.write_node_started(tid, ArmId("a"), node_id="n0", skill_ref="list_cwd", node_index=0)
         j.write_step(tid, ArmId("a"), _step(0, "list_cwd"))
-        j.write_trajectory(Trajectory(
-            task_id=tid, arm_id=ArmId("a"),
-            steps=[_step(0, "list_cwd")],
-            outcome=TrajectoryOutcome(
-                success=True,
-                cost=CostEntry(tokens_in=50, tokens_out=30, usd=0.002),
-            ),
-        ))
+        j.write_trajectory(
+            Trajectory(
+                task_id=tid,
+                arm_id=ArmId("a"),
+                steps=[_step(0, "list_cwd")],
+                outcome=TrajectoryOutcome(
+                    success=True,
+                    cost=CostEntry(tokens_in=50, tokens_out=30, usd=0.002),
+                ),
+            )
+        )
         snap = tracker.get(tid)
         assert snap.status == "completed"
         assert snap.tokens_spent == 80
@@ -147,9 +151,12 @@ class TestIncrementalUpdates:
 
         j.write_task_started(tid, arm_id=ArmId("a"), total_nodes=5, strategy="s")
         j.write_checkpoint(
-            tid, arm_id=ArmId("a"),
-            nodes_completed=2, total_nodes=5,
-            tokens_spent=150, usd_spent=0.015,
+            tid,
+            arm_id=ArmId("a"),
+            nodes_completed=2,
+            total_nodes=5,
+            tokens_spent=150,
+            usd_spent=0.015,
         )
         snap = tracker.get(tid)
         assert snap.tokens_spent == 150
@@ -207,11 +214,14 @@ class TestMultipleTasks:
         assert tracker.running_count() == 2
 
         # Implementation note.
-        j.write_trajectory(Trajectory(
-            task_id=t1, arm_id=ArmId("a"),
-            steps=[_step(0, "list_cwd")],
-            outcome=TrajectoryOutcome(success=True),
-        ))
+        j.write_trajectory(
+            Trajectory(
+                task_id=t1,
+                arm_id=ArmId("a"),
+                steps=[_step(0, "list_cwd")],
+                outcome=TrajectoryOutcome(success=True),
+            )
+        )
         assert tracker.running_count() == 1
         tracker.close()
 
@@ -232,8 +242,12 @@ class TestEquivalenceWithPureFunction:
         j.write_step(tid, ArmId("a"), _step(0, "list_cwd"))
         j.write_node_started(tid, ArmId("a"), node_id="n1", skill_ref="list_cwd", node_index=1)
         j.write_checkpoint(
-            tid, arm_id=ArmId("a"), nodes_completed=1, total_nodes=3,
-            tokens_spent=50, usd_spent=0.001,
+            tid,
+            arm_id=ArmId("a"),
+            nodes_completed=1,
+            total_nodes=3,
+            tokens_spent=50,
+            usd_spent=0.001,
         )
 
         from_tracker = tracker.get(tid)
@@ -301,7 +315,6 @@ class TestIncrementalPerformance:
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
-
 from runtime.platform.ui import create_app  # noqa: E402
 
 

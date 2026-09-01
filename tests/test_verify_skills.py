@@ -39,6 +39,7 @@ def test_python_syntax_check_avoids_unix_pipes(tmp_path: Path) -> None:
     # Inline code still uses py_compile — no shell piping required.
     assert "py_compile" in joined
 
+
 def test_python_typecheck_offered_only_when_mypy_installed(tmp_path: Path) -> None:
     # A missing checker must not become a check: "No module named mypy"
     # would be reported as a typecheck FAILURE and injected into the
@@ -80,13 +81,9 @@ def test_node_typecheck_offered_only_when_tsc_installed(tmp_path: Path) -> None:
 def test_auto_diagnostics_skips_missing_tool_output() -> None:
     from runtime.core.cerebrum.react_execution import _output_indicates_missing_tool
 
-    assert _output_indicates_missing_tool(
-        "/usr/bin/python3: No module named mypy"
-    )
+    assert _output_indicates_missing_tool("/usr/bin/python3: No module named mypy")
     assert _output_indicates_missing_tool("sh: tsc: command not found")
-    assert _output_indicates_missing_tool(
-        "npm error could not determine executable to run"
-    )
+    assert _output_indicates_missing_tool("npm error could not determine executable to run")
     assert not _output_indicates_missing_tool(
         "error TS2345: Argument of type 'string' is not assignable"
     )

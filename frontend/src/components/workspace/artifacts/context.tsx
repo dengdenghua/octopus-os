@@ -10,6 +10,7 @@ import {
   type SetStateAction,
 } from "react";
 
+import { useWorkspaceArtifacts } from "@/core/artifacts/use-workspace-artifacts";
 import { useSidebar } from "@/components/ui/sidebar";
 import { env } from "@/env";
 
@@ -21,6 +22,7 @@ export interface ArtifactsContextType {
   autoSelect: boolean;
   select: (artifact: string, autoSelect?: boolean) => void;
   deselect: () => void;
+  clearSelection: () => void;
 
   open: boolean;
   autoOpen: boolean;
@@ -36,13 +38,14 @@ interface ArtifactsProviderProps {
   threadId?: string | null;
 }
 
-export function ArtifactsProvider({ children, threadId }: ArtifactsProviderProps) {
+export function ArtifactsProvider({
+  children,
+  threadId,
+}: ArtifactsProviderProps) {
   const [artifacts, setArtifacts] = useState<string[]>([]);
   const [selectedArtifact, setSelectedArtifact] = useState<string | null>(null);
   const [autoSelect, setAutoSelect] = useState(true);
-  const [open, setOpen] = useState(
-    env.STATIC_WEBSITE_ONLY,
-  );
+  const [open, setOpen] = useState(env.STATIC_WEBSITE_ONLY);
   const [autoOpen, setAutoOpen] = useState(true);
   const { setOpen: setSidebarOpen } = useSidebar();
 
@@ -57,6 +60,26 @@ export function ArtifactsProvider({ children, threadId }: ArtifactsProviderProps
       setAutoOpen(true);
     }
   }, [threadId]);
+
+  // Hydrate the artifact list from the backend on mount / thread change.
+  // Historically this was only triggered from chat-box after the assistant
+  // message settled; switching to the workbench "产物" tab before that
+  // point (or clicking an artifact summary row while the list was empty)
+  // showed `暂无预览内容` even though files were already persisted on disk.
+  //
+  // Now using the shared useWorkspaceArtifacts hook which is also used by
+  // chat-box, so React Query deduplicates requests. This fallback only runs
+  // when the shared query hasn't populated the list yet.
+  const { data: fallbackArtifacts } = useWorkspaceArtifacts(threadId, {
+    enabled: !env.STATIC_WEBSITE_ONLY && artifacts.length === 0,
+  });
+
+  useEffect(() => {
+    if (!fallbackArtifacts || fallbackArtifacts.length === 0) return;
+    setArtifacts((prev) =>
+      prev.length === 0 ? fallbackArtifacts : Array.from(new Set([...prev, ...fallbackArtifacts])),
+    );
+  }, [fallbackArtifacts]);
 
   const select = useCallback(
     (artifact: string, autoSelect = false) => {
@@ -77,6 +100,11 @@ export function ArtifactsProvider({ children, threadId }: ArtifactsProviderProps
     setOpen(false);
   }, []);
 
+  const clearSelection = useCallback(() => {
+    setSelectedArtifact(null);
+    setAutoSelect(true);
+  }, []);
+
   const value: ArtifactsContextType = {
     artifacts,
     setArtifacts,
@@ -95,6 +123,7 @@ export function ArtifactsProvider({ children, threadId }: ArtifactsProviderProps
     selectedArtifact,
     select,
     deselect,
+    clearSelection,
   };
 
   return (

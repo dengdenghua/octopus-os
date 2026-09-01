@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+# Fetch a signed HTTPS update into a private cache and optionally apply it.
+set -euo pipefail
+umask 077
+
+ACTION="${1:-}"
+CHANNEL_CLIENT=/usr/lib/echo-os/echo_update_channel.py
+SYSTEM_CHANNEL=/usr/lib/echo-os/update-channel
+ADMIN_CHANNEL=/etc/echo-os/update-channel
+SYSTEM_KEYRING=/usr/lib/echo-os/update-keyring.gpg
+ADMIN_KEYRING=/etc/echo-os/update-keyring.gpg
+TRUST_TOOL=/usr/lib/echo-os/echo_update_trust.py
+TRUST_POLICY=/usr/lib/echo-os/update-trust-policy.json
+TRUST_STATE_ROOT=/var/lib/echo-os/update-trust
+STATUS_TOOL=/usr/lib/echo-os/echo_update_status.py
+STATUS_ROOT=/var/lib/echo-os-update
+VERIFY_KEYRING=/usr/lib/echo-os/verify-public-keyring.py
+VERIFY_BUNDLE=/usr/lib/echo-os/verify-update-bundle.py
+UPDATE_COMMAND=/usr/bin/echo-os-update
+CACHE_ROOT=/var/cache/echo-os/updates
+FETCH_LOCK=/run/echo-os-update-channel/fetch.lock
+GPGV=/usr/bin/gpgv
+
+# Portable regression overrides are available only behind a conspicuous
+# source-test sentinel. Installed devices always use the immutable paths above.
+if [[ "${ECHO_UPDATE_CHANNEL_SOURCE_TEST:-}" == USE-SOURCE-RUNTIME ]]; then
+  CHANNEL_CLIENT="${ECHO_UPDATE_CHANNEL_CLIENT:-$CHANNEL_CLIENT}"
+  SYSTEM_CHANNEL="${ECHO_UPDATE_CHANNEL_SYSTEM_CONFIG:-$SYSTEM_CHANNEL}"
+  ADMIN_CHANNEL="${ECHO_UPDATE_CHANNEL_ADMIN_CONFIG:-$ADMIN_CHANNEL}"
+  SYSTEM_KEYRING="${ECHO_UPDATE_CHANNEL_SYSTEM_KEYRING:-$SYSTEM_KEYRING}"
+  ADMIN_KEYRING="${ECHO_UPDATE_CHANNEL_ADMIN_KEYRING:-$ADMIN_KEYRING}"
+  TRUST_TOOL="${ECHO_UPDATE_CHANNEL_TRUST_TOOL:-$TRUST_TOOL}"
+  TRUST_POLICY="${ECHO_UPDATE_CHANNEL_TRUST_POLICY:-$TRUST_POLICY}"
+  TRUST_STATE_ROOT="${ECHO_UPDATE_CHANNEL_TRUST_STATE_ROOT:-$TRUST_STATE_ROOT}"
+  STATUS_TOOL="${ECHO_UPDATE_CHANNEL_STATUS_TOOL:-$STATUS_TOOL}"
+  STATUS_ROOT="${ECHO_UPDATE_CHANNEL_STATUS_ROOT:-$STATUS_ROOT}"
+  VERIFY_KEYRING="${ECHO_UPDATE_CHANNEL_VERIFY_KEYRING:-$VERIFY_KEYRING}"
+  VERIFY_BUNDLE="${ECHO_UPDATE_CHANNEL_VERIFY_BUNDLE:-$VERIFY_BUNDLE}"
+  UPDATE_COMMAND="${ECHO_UPDATE_CHANNEL_UPDATE_COMMAND:-$UPDATE_COMMAND}"
+  CACHE_ROOT="${ECHO_UPDATE_CHANNEL_CACHE_ROOT:-$CACHE_ROOT}"
+  FETCH_LOCK="${ECHO_UPDATE_CHANNEL_LOCK:-$FETCH_LOCK}"
+  GPGV="${ECHO_UPDATE_CHANNEL_GPGV:-$GPGV}"
+fi
+
+usage() {
+  echo "usage: echo-os-update-channel {fetch|apply}" >&2
+}
+
+[[ "$ACTION" == fetch || "$ACTION" == apply ]] || {
+  usage
+  exit 2
+}
+[[ $# -eq 1 ]] || {
+  usage
+  exit 2
+}
+[[ "$(id -u)" -eq 0 ]] || {
+  echo "Echo OS update-channel operations require root privileges" >&2
+  exit 1
+}
+for command_name in chmod flock install python3 realpath stat; do
+  command -v "$command_name" >/dev/null 2>&1 || {
+    echo "update-channel dependency missing: $command_name" >&2
+    exit 1
+  }
+done
+for runtime_path in \
+  "$CHANNEL_CLIENT" "$SYSTEM_CHANNEL" "$ADMIN_CHANNEL" "$SYSTEM_KEYRING" \
+  "$ADMIN_KEYRING" "$TRUST_TOOL" "$TRUST_POLICY" "$TRUST_STATE_ROOT" \
+  "$STATUS_TOOL" "$STATUS_ROOT" \
+  "$VERIFY_KEYRING" "$VERIFY_BUNDLE" "$UPDATE_COMMAND" \
+  "$CACHE_ROOT" "$FETCH_LOCK" "$GPGV"; do
+  [[ "$runtime_path" == /* ]] || {
+    echo "Echo OS update-channel paths must be absolute" >&2
+    exit 1
+  }
+done
+
+require_root_immutable() {
+  local path="$1"
+  local label="$2"
+  local owner mode
+  owner="$(stat -c '%u:%g' "$path")"
+  mode="$(stat -c '%a' "$path")"
+  [[ "$owner" == 0:0 ]] || {
+    echo "$label must be owned by root:root" >&2
+    exit 1
+  }
+  (( (8#$mode & 8#022) == 0 )) || {
+    echo "$label must not be group/other writable" >&2
+    exit 1
+  }
+}
+
+if [[ -f "$ADMIN_CHANNEL" && ! -L "$ADMIN_CHANNEL" && -s "$ADMIN_CHANNEL" ]]; then
+  CHANNEL_CONFIG="$ADMIN_CHANNEL"
+elif [[ -e "$ADMIN_CHANNEL" || -L "$ADMIN_CHANNEL" ]]; then
+  echo "administrator update channel is not a regular non-symlink file" >&2
+  exit 1
+elif [[ -f "$SYSTEM_CHANNEL" && ! -L "$SYSTEM_CHANNEL" && -s "$SYSTEM_CHANNEL" ]]; then
+  CHANNEL_CONFIG="$SYSTEM_CHANNEL"
+else
+  echo "no Echo OS update channel is installed" >&2
+  exit 1
+fi
+for trust_runtime in \
+  "$TRUST_TOOL" "$TRUST_POLICY" "$SYSTEM_KEYRING" "$VERIFY_KEYRING" "$STATUS_TOOL"; do
+  [[ -f "$trust_runtime" && ! -L "$trust_runtime" ]] || {
+    echo "update-channel trust runtime is missing or redirected: $trust_runtime" >&2
+    exit 1
+  }
+  require_root_immutable "$trust_runtime" "update-channel trust runtime"
+done
+[[ -x "$TRUST_TOOL" && -x "$VERIFY_KEYRING" && -x "$STATUS_TOOL" ]] || {
+  echo "update-channel trust selection runtime is incomplete" >&2
+  exit 1
+}
+if [[ -f "$ADMIN_KEYRING" && ! -L "$ADMIN_KEYRING" && -s "$ADMIN_KEYRING" ]]; then
+  KEYRING="$ADMIN_KEYRING"
+elif [[ -e "$ADMIN_KEYRING" || -L "$ADMIN_KEYRING" ]]; then
+  echo "administrator update keyring is not a regular non-symlink file" >&2
+  exit 1
+else
+  TRUST_RECORD="$(
+    python3 "$TRUST_TOOL" select \
+      --system-policy "$TRUST_POLICY" \
+      --system-keyring "$SYSTEM_KEYRING" \
+      --state-root "$TRUST_STATE_ROOT" \
+      --verifier "$VERIFY_KEYRING" \
+      --machine
+  )"
+  IFS=$'\t' read -r TRUST_GENERATION KEYRING TRUST_KEYRING_SHA256 TRUST_SOURCE \
+    <<<"$TRUST_RECORD"
+  [[ "$TRUST_GENERATION" =~ ^[1-9][0-9]*$ && "$KEYRING" == /* && \
+     "$TRUST_KEYRING_SHA256" =~ ^[0-9a-f]{64}$ && \
+     ( "$TRUST_SOURCE" == system || "$TRUST_SOURCE" == managed ) ]] || {
+    echo "update-channel trust selector returned an invalid record" >&2
+    exit 1
+  }
+fi
+for trusted_path in \
+  "$CHANNEL_CONFIG" "$KEYRING" "$CHANNEL_CLIENT" "$VERIFY_KEYRING" \
+  "$VERIFY_BUNDLE" "$UPDATE_COMMAND" "$GPGV"; do
+  [[ -f "$trusted_path" && ! -L "$trusted_path" ]] || {
+    echo "update-channel trusted runtime is missing or redirected: $trusted_path" >&2
+    exit 1
+  }
+  require_root_immutable "$trusted_path" "update-channel trusted runtime"
+done
+[[ -x "$CHANNEL_CLIENT" && -x "$VERIFY_KEYRING" && -x "$VERIFY_BUNDLE" && \
+   -x "$UPDATE_COMMAND" && -x "$GPGV" ]] || {
+  echo "update-channel executable runtime is incomplete" >&2
+  exit 1
+}
+python3 "$VERIFY_KEYRING" "$KEYRING"
+
+CACHE_PARENT="${CACHE_ROOT%/*}"
+LOCK_DIRECTORY="${FETCH_LOCK%/*}"
+[[ -n "$CACHE_PARENT" && "$CACHE_PARENT" != "$CACHE_ROOT" && \
+   -n "$LOCK_DIRECTORY" && "$LOCK_DIRECTORY" != "$FETCH_LOCK" ]] || {
+  echo "update-channel cache or lock path has no parent" >&2
+  exit 1
+}
+install -d -m 0700 "$CACHE_PARENT" "$CACHE_ROOT" "$LOCK_DIRECTORY"
+for private_directory in "$CACHE_PARENT" "$CACHE_ROOT" "$LOCK_DIRECTORY"; do
+  [[ -d "$private_directory" && ! -L "$private_directory" ]] || {
+    echo "update-channel private directory is unsafe" >&2
+    exit 1
+  }
+  require_root_immutable "$private_directory" "update-channel private directory"
+done
+CACHE_PARENT="$(realpath "$CACHE_PARENT")"
+CACHE_ROOT="$(realpath "$CACHE_ROOT")"
+LOCK_DIRECTORY="$(realpath "$LOCK_DIRECTORY")"
+if [[ -e "$FETCH_LOCK" || -L "$FETCH_LOCK" ]]; then
+  [[ -f "$FETCH_LOCK" && ! -L "$FETCH_LOCK" ]] || {
+    echo "update-channel lock is unsafe" >&2
+    exit 1
+  }
+else
+  : >"$FETCH_LOCK"
+  chmod 0600 "$FETCH_LOCK"
+fi
+require_root_immutable "$FETCH_LOCK" "update-channel lock"
+exec 8<>"$FETCH_LOCK"
+flock -n 8 || {
+  echo "another Echo OS channel fetch is already running" >&2
+  exit 1
+}
+
+STATUS_PHASE=fetch
+STATUS_INITIALIZED=0
+write_status() {
+  python3 "$STATUS_TOOL" --state-root "$STATUS_ROOT" write "$@"
+}
+record_failed_status() {
+  local exit_code=$?
+  if [[ "$exit_code" -ne 0 && "$STATUS_INITIALIZED" -eq 1 ]]; then
+    write_status \
+      --state failed \
+      --phase "$STATUS_PHASE" \
+      --error-code "$exit_code" >/dev/null 2>&1 || true
+  fi
+  return "$exit_code"
+}
+trap record_failed_status EXIT
+write_status --state checking --phase fetch
+STATUS_INITIALIZED=1
+
+FETCH_RECORD="$(
+  python3 "$CHANNEL_CLIENT" \
+    --channel-config "$CHANNEL_CONFIG" \
+    --cache-root "$CACHE_ROOT" \
+    --keyring "$KEYRING" \
+    --verifier "$VERIFY_BUNDLE" \
+    --gpgv "$GPGV" \
+    --machine
+)"
+IFS=$'\t' read -r VERSION BUNDLE_PATH MANIFEST_SHA256 <<<"$FETCH_RECORD"
+[[ "$VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+:~_-]*$ && \
+   "$MANIFEST_SHA256" =~ ^[0-9a-f]{64}$ && "$BUNDLE_PATH" == /* ]] || {
+  echo "update-channel client returned an invalid cache record" >&2
+  exit 1
+}
+# Reject an obviously escaped record before resolving it so a missing outside
+# path cannot turn the security failure into an opaque realpath error.  The
+# second, canonical comparison below still rejects symlink escapes.
+[[ "$BUNDLE_PATH" == "$CACHE_ROOT/$VERSION" ]] || {
+  echo "update-channel client escaped its private version cache" >&2
+  exit 1
+}
+BUNDLE_PATH="$(realpath "$BUNDLE_PATH")" || {
+  echo "update-channel client returned a missing version cache" >&2
+  exit 1
+}
+[[ -d "$BUNDLE_PATH" && ! -L "$BUNDLE_PATH" && \
+   "$BUNDLE_PATH" == "$CACHE_ROOT/$VERSION" ]] || {
+  echo "update-channel client escaped its private version cache" >&2
+  exit 1
+}
+echo "ECHO_UPDATE_CHANNEL_FETCHED version=$VERSION manifest=$MANIFEST_SHA256 cache=verified"
+write_status \
+  --state ready \
+  --phase fetch \
+  --version "$VERSION" \
+  --manifest-sha256 "$MANIFEST_SHA256"
+
+if [[ "$ACTION" == fetch ]]; then
+  flock -u 8
+  exec 8>&-
+  echo "Echo OS update $VERSION is authenticated in the private cache"
+  exit 0
+fi
+# Keep the exclusive channel lock inherited by the production updater so a
+# scheduled fetch cannot vacuum this authenticated bundle during an apply.
+STATUS_PHASE=apply
+write_status \
+  --state installing \
+  --phase apply \
+  --version "$VERSION" \
+  --manifest-sha256 "$MANIFEST_SHA256"
+"$UPDATE_COMMAND" apply "$BUNDLE_PATH"
+write_status \
+  --state reboot-required \
+  --phase apply \
+  --version "$VERSION" \
+  --manifest-sha256 "$MANIFEST_SHA256"

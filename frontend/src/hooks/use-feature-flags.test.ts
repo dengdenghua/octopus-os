@@ -12,7 +12,7 @@ const _SAMPLE = {
       default: false,
       description: "Ambient suggestions panel",
       experimental: true,
-      primary_env: "OCTOPUS_FF_UI_AMBIENT_SUGGESTIONS",
+      primary_env: "ECHO_FF_UI_AMBIENT_SUGGESTIONS",
       legacy_env: [],
     },
     {
@@ -22,8 +22,8 @@ const _SAMPLE = {
       default: true,
       description: "Self-repair scheduler",
       experimental: false,
-      primary_env: "OCTOPUS_FF_REGENERATION_ENABLED",
-      legacy_env: ["OCTOPUS_REGEN_ENABLED"],
+      primary_env: "ECHO_FF_REGENERATION_ENABLED",
+      legacy_env: ["ECHO_REGEN_ENABLED"],
     },
   ],
 };
@@ -97,9 +97,7 @@ describe("useFeatureFlags", () => {
   });
 
   it("manual mode does not auto-fetch", async () => {
-    const { result } = renderHook(() =>
-      useFeatureFlags({ manual: true }),
-    );
+    const { result } = renderHook(() => useFeatureFlags({ manual: true }));
     // Let the effect settle.
     await new Promise((r) => setTimeout(r, 10));
     expect(fetchMock).not.toHaveBeenCalled();
@@ -133,13 +131,35 @@ describe("useFeatureFlags", () => {
 
   it("respects baseUrl override", async () => {
     mockOnce(_SAMPLE);
-    renderHook(() =>
-      useFeatureFlags({ baseUrl: "http://remote:9000" }),
-    );
+    renderHook(() => useFeatureFlags({ baseUrl: "http://remote:9000" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(fetchMock).toHaveBeenCalledWith(
       "http://remote:9000/api/feature-flags",
       expect.any(Object),
     );
+  });
+
+  it("shares one in-flight catalog request across simultaneous consumers", async () => {
+    let resolveResponse!: (value: unknown) => void;
+    fetchMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveResponse = resolve;
+      }),
+    );
+
+    const first = renderHook(() => useFeatureFlags());
+    const second = renderHook(() => useFeatureFlags());
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveResponse({
+      ok: true,
+      status: 200,
+      json: async () => _SAMPLE,
+    });
+
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    await waitFor(() => expect(second.result.current.loading).toBe(false));
+    expect(first.result.current.flags).toHaveLength(2);
+    expect(second.result.current.flags).toHaveLength(2);
   });
 });

@@ -1,6 +1,6 @@
 # Self-Evolution Minimum Loop
 
-This document defines the near-term self-evolution loop for Octopus. The target
+This document defines the near-term self-evolution loop for Echo. The target
 is not blind self-modification. The target is governed improvement: propose,
 attach evidence, evaluate, review, promote, monitor, and roll back.
 

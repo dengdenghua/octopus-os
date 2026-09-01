@@ -16,21 +16,60 @@ interface CodeWelcomeProps {
   className?: string;
 }
 
-export function CodeWelcome({ workDir, onSubmit, className }: CodeWelcomeProps) {
+export function CodeWelcome({
+  workDir,
+  onSubmit,
+  className,
+}: CodeWelcomeProps) {
   const { t } = useI18n();
   const shortDir = workDir.split(/[\\/]/).pop() || workDir;
 
   const actions = [
-    { icon: BugIcon, label: t.codeWelcome.fixBug, prompt: t.codeWelcome.fixBugPrompt, color: "text-rose-500" },
-    { icon: PlusIcon, label: t.codeWelcome.addFeature, prompt: t.codeWelcome.addFeaturePrompt, color: "text-emerald-500" },
-    { icon: RefreshCwIcon, label: t.codeWelcome.refactor, prompt: t.codeWelcome.refactorPrompt, color: "text-sky-500" },
-    { icon: TestTubeIcon, label: t.codeWelcome.writeTests, prompt: t.codeWelcome.writeTestsPrompt, color: "text-amber-500" },
-    { icon: SearchIcon, label: t.codeWelcome.explainCode, prompt: t.codeWelcome.explainCodePrompt, color: "text-violet-500" },
-    { icon: WrenchIcon, label: t.codeWelcome.optimize, prompt: t.codeWelcome.optimizePrompt, color: "text-orange-500" },
+    {
+      icon: BugIcon,
+      label: t.codeWelcome.fixBug,
+      prompt: t.codeWelcome.fixBugPrompt,
+      color: "text-destructive",
+    },
+    {
+      icon: PlusIcon,
+      label: t.codeWelcome.addFeature,
+      prompt: t.codeWelcome.addFeaturePrompt,
+      color: "text-success",
+    },
+    {
+      icon: RefreshCwIcon,
+      label: t.codeWelcome.refactor,
+      prompt: t.codeWelcome.refactorPrompt,
+      color: "text-info",
+    },
+    {
+      icon: TestTubeIcon,
+      label: t.codeWelcome.writeTests,
+      prompt: t.codeWelcome.writeTestsPrompt,
+      color: "text-warning",
+    },
+    {
+      icon: SearchIcon,
+      label: t.codeWelcome.explainCode,
+      prompt: t.codeWelcome.explainCodePrompt,
+      color: "text-chart-1",
+    },
+    {
+      icon: WrenchIcon,
+      label: t.codeWelcome.optimize,
+      prompt: t.codeWelcome.optimizePrompt,
+      color: "text-chart-7",
+    },
   ];
 
   return (
-    <div className={cn("mx-auto flex w-full max-w-lg flex-col items-center gap-6 px-4 py-6", className)}>
+    <div
+      className={cn(
+        "mx-auto flex w-full max-w-lg flex-col items-center gap-6 px-4 py-6",
+        className,
+      )}
+    >
       <div className="flex flex-col items-center gap-2">
         <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10">
           <RocketIcon className="size-6 text-primary" />
@@ -38,7 +77,9 @@ export function CodeWelcome({ workDir, onSubmit, className }: CodeWelcomeProps) 
         <div className="text-center">
           <h2 className="text-lg font-semibold">{t.codeWelcome.title}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">{shortDir}</code>
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
+              {shortDir}
+            </code>
           </p>
         </div>
       </div>
@@ -52,9 +93,9 @@ export function CodeWelcome({ workDir, onSubmit, className }: CodeWelcomeProps) 
               type="button"
               onClick={() => onSubmit?.(action.prompt)}
               className={cn(
-                "flex flex-col items-center gap-2 rounded-xl border border-border/50 bg-card/50 px-3 py-4",
-                "text-center transition-all duration-150",
-                "hover:border-border hover:bg-muted/50 hover:shadow-sm",
+                "flex flex-col items-center gap-2 rounded-lg border border-border-default bg-card/50 px-3 py-4",
+                "text-center transition-all duration-fast",
+                "hover:border-border hover:bg-muted/50 hover:shadow-[var(--shadow-xs)]",
                 "active:scale-[0.98]",
               )}
             >

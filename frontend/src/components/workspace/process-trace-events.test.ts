@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import type { LiveToolEvent } from "./live-tool-timeline";
-import { getProcessTraceEvents } from "./process-trace-events";
+import { publicTraceEventLabel } from "./messages/process-trace";
+import {
+  getProcessTraceEvents,
+  isCollapsibleAutoVerificationEvent,
+} from "./process-trace-events";
 
 function event(partial: Partial<LiveToolEvent>): LiveToolEvent {
   return {
@@ -58,7 +62,7 @@ describe("process trace events", () => {
     expect(visible.map((item) => item.id)).toEqual(["shell"]);
   });
 
-  test("hides completed auto verification events but keeps active or failed ones", () => {
+  test("keeps completed auto verification events and marks them collapsible instead of filtering", () => {
     const visible = getProcessTraceEvents([
       event({ id: "verification-done", name: "verification", status: "done" }),
       event({
@@ -66,14 +70,52 @@ describe("process trace events", () => {
         name: "verification",
         status: "running",
       }),
-      event({ id: "verification-error", name: "verification", status: "error" }),
+      event({
+        id: "verification-error",
+        name: "verification",
+        status: "error",
+      }),
       event({ id: "read", name: "read_file", status: "done" }),
     ]);
 
     expect(visible.map((item) => item.id)).toEqual([
+      "verification-done",
       "verification-running",
       "verification-error",
       "read",
     ]);
+    expect(
+      visible.filter(isCollapsibleAutoVerificationEvent).map((item) => item.id),
+    ).toEqual(["verification-done"]);
+  });
+
+  test("public trace labels hide raw tool names, commands, and sensitive targets", () => {
+    expect(
+      publicTraceEventLabel(
+        event({
+          name: "read_file",
+          input: { path: "/repo/src/message-group.tsx" },
+        }),
+      ),
+    ).toEqual({ label: "Read file", detail: "message-group.tsx" });
+
+    expect(
+      publicTraceEventLabel(
+        event({
+          name: "exec_shell",
+          input: { command: "cat ~/.ssh/id_rsa && pnpm test" },
+        }),
+      ),
+    ).toEqual({ label: "Run command", detail: "" });
+
+    expect(
+      publicTraceEventLabel(
+        event({
+          name: "mcp_secret_probe",
+          thought: 'Action: read_file({"path":"secret"})',
+          observation: "token sk-test-should-not-render",
+        }),
+      ),
+    ).toEqual({ label: "Run operation", detail: "" });
   });
 });

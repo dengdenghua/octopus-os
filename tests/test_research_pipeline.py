@@ -15,8 +15,10 @@ from runtime.research.pipeline import (
 from runtime.sensing.model_router import MockModelRouter
 
 
-def _router(rewrite_reply: str = '["alt query 1", "alt query 2"]',
-            synth_reply: str = "Answer with citations [1][2].") -> MockModelRouter:
+def _router(
+    rewrite_reply: str = '["alt query 1", "alt query 2"]',
+    synth_reply: str = "Answer with citations [1][2].",
+) -> MockModelRouter:
     def _fn(req):
         prompt = req.messages[0].content if req.messages else ""
         low = prompt.lower()
@@ -24,22 +26,24 @@ def _router(rewrite_reply: str = '["alt query 1", "alt query 2"]',
             return synth_reply
         # Any other prompt is the query_rewrite call.
         return rewrite_reply
+
     return MockModelRouter(response_fn=_fn)
 
 
 def _fake_search(results_by_query: dict[str, list[dict]] | list[dict]):
     """Returns a search_fn that either uses a per-query map or a single list."""
+
     def _search(query: str = "", max_results: int = 5, **_):
         if isinstance(results_by_query, dict):
             hits = results_by_query.get(query, [])
         else:
             hits = results_by_query
         return {"results": hits[:max_results]}
+
     return _search
 
 
-def _fake_fetch(content_by_url: dict[str, str] | None = None,
-                 fail_urls: set[str] | None = None):
+def _fake_fetch(content_by_url: dict[str, str] | None = None, fail_urls: set[str] | None = None):
     content_by_url = content_by_url or {}
     fail_urls = fail_urls or set()
 
@@ -52,6 +56,7 @@ def _fake_fetch(content_by_url: dict[str, str] | None = None,
             "content": body,
             "metadata": {"date": "2026-01-01"},
         }
+
     return _fetch
 
 
@@ -63,18 +68,26 @@ def _fake_fetch(content_by_url: dict[str, str] | None = None,
 class TestResearchAnswerHappyPath:
     def test_full_pipeline(self):
         router = _router()
-        search = _fake_search([
-            {"url": "https://a.example/1", "title": "Python sort", "snippet": "sorted()"},
-            {"url": "https://a.example/2", "title": "Sort tutorial", "snippet": "list.sort()"},
-        ])
-        fetch = _fake_fetch({
-            "https://a.example/1": "How to sort python lists with sorted().",
-            "https://a.example/2": "The list.sort() method sorts in place.",
-        })
+        search = _fake_search(
+            [
+                {"url": "https://a.example/1", "title": "Python sort", "snippet": "sorted()"},
+                {"url": "https://a.example/2", "title": "Sort tutorial", "snippet": "list.sort()"},
+            ]
+        )
+        fetch = _fake_fetch(
+            {
+                "https://a.example/1": "How to sort python lists with sorted().",
+                "https://a.example/2": "The list.sort() method sorts in place.",
+            }
+        )
         r = research_answer(
             "how to sort a python list",
-            router=router, search_fn=search, fetch_fn=fetch,
-            n_queries=2, hits_per_query=2, top_k=2,
+            router=router,
+            search_fn=search,
+            fetch_fn=fetch,
+            n_queries=2,
+            hits_per_query=2,
+            top_k=2,
             today=date(2026, 5, 9),
         )
         assert r.question == "how to sort a python list"
@@ -88,20 +101,28 @@ class TestResearchAnswerHappyPath:
 
     def test_dedupes_urls_across_queries(self):
         router = _router()
-        shared_hit = {"url": "https://shared.example/",
-                      "title": "Shared", "snippet": "appears twice"}
-        unique_hit = {"url": "https://unique.example/",
-                      "title": "Unique", "snippet": "only once"}
-        search = _fake_search({
-            "original q": [shared_hit, unique_hit],
-            "alt query 1": [shared_hit],
-            "alt query 2": [shared_hit],
-        })
+        shared_hit = {
+            "url": "https://shared.example/",
+            "title": "Shared",
+            "snippet": "appears twice",
+        }
+        unique_hit = {"url": "https://unique.example/", "title": "Unique", "snippet": "only once"}
+        search = _fake_search(
+            {
+                "original q": [shared_hit, unique_hit],
+                "alt query 1": [shared_hit],
+                "alt query 2": [shared_hit],
+            }
+        )
         fetch = _fake_fetch()
         r = research_answer(
             "original q",
-            router=router, search_fn=search, fetch_fn=fetch,
-            n_queries=3, hits_per_query=5, top_k=5,
+            router=router,
+            search_fn=search,
+            fetch_fn=fetch,
+            n_queries=3,
+            hits_per_query=5,
+            top_k=5,
         )
         # Shared URL must appear exactly once in the final sources.
         urls = [s.url for s in r.sources]
@@ -110,15 +131,25 @@ class TestResearchAnswerHappyPath:
 
     def test_fetch_failure_falls_back_to_snippet(self):
         router = _router()
-        search = _fake_search([
-            {"url": "https://dead.example/", "title": "Dead",
-             "snippet": "only snippet survives"},
-            {"url": "https://alive.example/", "title": "Alive", "snippet": "hi"},
-        ])
+        search = _fake_search(
+            [
+                {
+                    "url": "https://dead.example/",
+                    "title": "Dead",
+                    "snippet": "only snippet survives",
+                },
+                {"url": "https://alive.example/", "title": "Alive", "snippet": "hi"},
+            ]
+        )
         fetch = _fake_fetch(fail_urls={"https://dead.example/"})
         r = research_answer(
-            "q", router=router, search_fn=search, fetch_fn=fetch,
-            n_queries=1, hits_per_query=5, top_k=5,
+            "q",
+            router=router,
+            search_fn=search,
+            fetch_fn=fetch,
+            n_queries=1,
+            hits_per_query=5,
+            top_k=5,
         )
         urls = [s.url for s in r.sources]
         assert "https://dead.example/" in urls
@@ -145,7 +176,10 @@ class TestResearchAnswerFailures:
         search = _fake_search([])
         fetch = _fake_fetch()
         r = research_answer(
-            "obscure q", router=router, search_fn=search, fetch_fn=fetch,
+            "obscure q",
+            router=router,
+            search_fn=search,
+            fetch_fn=fetch,
         )
         assert r.answer == ""
         assert r.sources == []
@@ -157,15 +191,21 @@ class TestResearchAnswerFailures:
         def search(query="", max_results=5, **_):
             if query == "alt query 1":
                 raise RuntimeError("search provider down")
-            return {"results": [
-                {"url": f"https://ok.example/{query}", "title": "OK",
-                 "snippet": "hi"},
-            ]}
+            return {
+                "results": [
+                    {"url": f"https://ok.example/{query}", "title": "OK", "snippet": "hi"},
+                ]
+            }
 
         fetch = _fake_fetch()
         r = research_answer(
-            "original q", router=router, search_fn=search, fetch_fn=fetch,
-            n_queries=3, hits_per_query=5, top_k=5,
+            "original q",
+            router=router,
+            search_fn=search,
+            fetch_fn=fetch,
+            n_queries=3,
+            hits_per_query=5,
+            top_k=5,
         )
         # Two queries succeed ("original q" + "alt query 2"), one failed.
         assert len(r.sources) == 2
@@ -177,13 +217,19 @@ class TestResearchAnswerFailures:
             if "research assistant" in prompt.lower():
                 raise RuntimeError("LLM down")
             return '["alt"]'
+
         router = MockModelRouter(response_fn=_fn)
-        search = _fake_search([
-            {"url": "https://a.example/", "title": "t", "snippet": "s"},
-        ])
+        search = _fake_search(
+            [
+                {"url": "https://a.example/", "title": "t", "snippet": "s"},
+            ]
+        )
         fetch = _fake_fetch()
         r = research_answer(
-            "q", router=router, search_fn=search, fetch_fn=fetch,
+            "q",
+            router=router,
+            search_fn=search,
+            fetch_fn=fetch,
         )
         assert r.answer == ""
         assert len(r.sources) >= 1
@@ -198,16 +244,27 @@ class TestResearchAnswerFailures:
 class TestResearchAnswerSerialization:
     def test_to_json_schema(self):
         router = _router()
-        search = _fake_search([
-            {"url": "https://a.example/", "title": "T", "snippet": "S"},
-        ])
+        search = _fake_search(
+            [
+                {"url": "https://a.example/", "title": "T", "snippet": "S"},
+            ]
+        )
         r = research_answer(
-            "q", router=router, search_fn=search, fetch_fn=_fake_fetch(),
+            "q",
+            router=router,
+            search_fn=search,
+            fetch_fn=_fake_fetch(),
         )
         j = r.to_json()
         assert set(j.keys()) >= {
-            "question", "answer", "queries", "sources",
-            "used_indices", "invalid_indices", "backend", "stats",
+            "question",
+            "answer",
+            "queries",
+            "sources",
+            "used_indices",
+            "invalid_indices",
+            "backend",
+            "stats",
         }
         assert isinstance(j["sources"], list)
         if j["sources"]:
@@ -230,9 +287,11 @@ class TestResearchSkillRegistration:
         monkeypatch.setattr(
             web_skills,
             "_web_search",
-            _fake_search([
-                {"url": "https://a.example/", "title": "T", "snippet": "S"},
-            ]),
+            _fake_search(
+                [
+                    {"url": "https://a.example/", "title": "T", "snippet": "S"},
+                ]
+            ),
         )
         monkeypatch.setattr(web_skills, "_fetch_url", _fake_fetch())
 
@@ -295,11 +354,16 @@ class TestCitationRetry:
             return '["alt"]'  # query rewrite
 
         router = MockModelRouter(response_fn=_fn)
-        search = _fake_search([
-            {"url": "https://a.example/", "title": "T", "snippet": "S"},
-        ])
+        search = _fake_search(
+            [
+                {"url": "https://a.example/", "title": "T", "snippet": "S"},
+            ]
+        )
         r = research_answer(
-            "q", router=router, search_fn=search, fetch_fn=_fake_fetch(),
+            "q",
+            router=router,
+            search_fn=search,
+            fetch_fn=_fake_fetch(),
             max_citation_retries=1,
         )
         assert r.answer == "Corrected answer [1]."
@@ -309,22 +373,32 @@ class TestCitationRetry:
 
     def test_no_retry_when_all_citations_valid(self):
         router = _router(synth_reply="Answer [1].")
-        search = _fake_search([
-            {"url": "https://a.example/", "title": "T", "snippet": "S"},
-        ])
+        search = _fake_search(
+            [
+                {"url": "https://a.example/", "title": "T", "snippet": "S"},
+            ]
+        )
         r = research_answer(
-            "q", router=router, search_fn=search, fetch_fn=_fake_fetch(),
+            "q",
+            router=router,
+            search_fn=search,
+            fetch_fn=_fake_fetch(),
             max_citation_retries=1,
         )
         assert r.stats.get("citation_retries") == 0
 
     def test_retries_disabled_by_max_zero(self):
         router = _router(synth_reply="Bad [99].")
-        search = _fake_search([
-            {"url": "https://a.example/", "title": "T", "snippet": "S"},
-        ])
+        search = _fake_search(
+            [
+                {"url": "https://a.example/", "title": "T", "snippet": "S"},
+            ]
+        )
         r = research_answer(
-            "q", router=router, search_fn=search, fetch_fn=_fake_fetch(),
+            "q",
+            router=router,
+            search_fn=search,
+            fetch_fn=_fake_fetch(),
             max_citation_retries=0,
         )
         # invalid marker left intact when retries disabled
@@ -359,15 +433,22 @@ class TestResearchLoop:
                 if synth_idx["v"] == 0:
                     synth_idx["v"] += 1
                     return round1_answer
-                reply = later_answers[synth_idx["v"] - 1] if synth_idx["v"] - 1 < len(later_answers) else round1_answer
+                reply = (
+                    later_answers[synth_idx["v"] - 1]
+                    if synth_idx["v"] - 1 < len(later_answers)
+                    else round1_answer
+                )
                 synth_idx["v"] += 1
                 return reply
             if "gap" in low or "review a draft" in low:
                 # gap analysis
                 import json
-                dec = (gap_decisions[gap_idx["v"]]
-                       if gap_idx["v"] < len(gap_decisions)
-                       else {"done": True, "follow_up_queries": []})
+
+                dec = (
+                    gap_decisions[gap_idx["v"]]
+                    if gap_idx["v"] < len(gap_decisions)
+                    else {"done": True, "follow_up_queries": []}
+                )
                 gap_idx["v"] += 1
                 return json.dumps(dec)
             # query rewrite (first non-synth, non-gap call)
@@ -384,11 +465,16 @@ class TestResearchLoop:
             gap_decisions=[{"done": True, "follow_up_queries": []}],
             later_answers=[],
         )
-        search = _fake_search([
-            {"url": "https://a.example/", "title": "T", "snippet": "S"},
-        ])
+        search = _fake_search(
+            [
+                {"url": "https://a.example/", "title": "T", "snippet": "S"},
+            ]
+        )
         r = research_loop(
-            "q", router=router, search_fn=search, fetch_fn=_fake_fetch(),
+            "q",
+            router=router,
+            search_fn=search,
+            fetch_fn=_fake_fetch(),
             max_rounds=3,
         )
         assert r.stats["rounds"] == 1
@@ -400,13 +486,16 @@ class TestResearchLoop:
         def _search(query="", max_results=5, **_):
             call_log.append(query)
             if query == "missing_fact":
-                return {"results": [
-                    {"url": "https://new.example/", "title": "New",
-                     "snippet": "newly found"},
-                ]}
-            return {"results": [
-                {"url": "https://a.example/", "title": "Old", "snippet": "S"},
-            ]}
+                return {
+                    "results": [
+                        {"url": "https://new.example/", "title": "New", "snippet": "newly found"},
+                    ]
+                }
+            return {
+                "results": [
+                    {"url": "https://a.example/", "title": "Old", "snippet": "S"},
+                ]
+            }
 
         router = self._loop_router(
             round1_answer="Partial answer [1].",
@@ -417,7 +506,10 @@ class TestResearchLoop:
             later_answers=["Complete answer [1][2]."],
         )
         r = research_loop(
-            "q", router=router, search_fn=_search, fetch_fn=_fake_fetch(),
+            "q",
+            router=router,
+            search_fn=_search,
+            fetch_fn=_fake_fetch(),
             max_rounds=3,
         )
         assert r.stats["rounds"] == 2
@@ -440,13 +532,17 @@ class TestResearchLoop:
 
         # Each follow-up query returns a fresh URL so new_urls_added > 0.
         def _search(query="", max_results=5, **_):
-            return {"results": [
-                {"url": f"https://{query}.example/", "title": query,
-                 "snippet": "s"},
-            ]}
+            return {
+                "results": [
+                    {"url": f"https://{query}.example/", "title": query, "snippet": "s"},
+                ]
+            }
 
         r = research_loop(
-            "q", router=router, search_fn=_search, fetch_fn=_fake_fetch(),
+            "q",
+            router=router,
+            search_fn=_search,
+            fetch_fn=_fake_fetch(),
             max_rounds=2,
         )
         assert r.stats["rounds"] == 2  # capped
@@ -464,7 +560,10 @@ class TestResearchLoop:
             return {"results": [shared]}
 
         r = research_loop(
-            "q", router=router, search_fn=_search, fetch_fn=_fake_fetch(),
+            "q",
+            router=router,
+            search_fn=_search,
+            fetch_fn=_fake_fetch(),
             max_rounds=5,
         )
         # Round 1 succeeded; round 2 produced 0 new URLs → loop broke.
@@ -482,10 +581,11 @@ class TestResearchLoop:
 
         def _search(query="", max_results=5, **_):
             call_log.append(query)
-            return {"results": [
-                {"url": f"https://{query}.example/", "title": query,
-                 "snippet": "s"},
-            ]}
+            return {
+                "results": [
+                    {"url": f"https://{query}.example/", "title": query, "snippet": "s"},
+                ]
+            }
 
         # Follow-up proposes the original question's rewrite again — must be
         # filtered out.
@@ -495,7 +595,10 @@ class TestResearchLoop:
             later_answers=["Draft 2 [1]."],
         )
         r = research_loop(
-            "q", router=router, search_fn=_search, fetch_fn=_fake_fetch(),
+            "q",
+            router=router,
+            search_fn=_search,
+            fetch_fn=_fake_fetch(),
             max_rounds=3,
         )
         # "alt" was in round 1 rewrite, must not run again in round 2.
@@ -528,9 +631,11 @@ class TestDeepResearchSkill:
         monkeypatch.setattr(
             web_skills,
             "_web_search",
-            _fake_search([
-                {"url": "https://a.example/", "title": "T", "snippet": "S"},
-            ]),
+            _fake_search(
+                [
+                    {"url": "https://a.example/", "title": "T", "snippet": "S"},
+                ]
+            ),
         )
         monkeypatch.setattr(web_skills, "_fetch_url", _fake_fetch())
 
@@ -582,6 +687,7 @@ class TestDeepResearchSkill:
             captured["max_rounds"] = kw.get("max_rounds")
             # Return a minimal valid ResearchAnswer
             from runtime.research.pipeline import ResearchAnswer
+
             return ResearchAnswer(
                 question=a[0] if a else "",
                 answer="ok",
@@ -594,11 +700,14 @@ class TestDeepResearchSkill:
             )
 
         import runtime.research.pipeline as pipeline
+
         monkeypatch.setattr(pipeline, "research_loop", _capture)
 
         registry = SkillRegistry()
         register_deep_research_skill(
-            registry, router=_router(), default_max_rounds=5,
+            registry,
+            router=_router(),
+            default_max_rounds=5,
         )
         registry.get("deep_research_answer").handler(question="q")
         assert captured["max_rounds"] == 5

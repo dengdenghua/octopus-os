@@ -6,7 +6,7 @@
 
 > **目标读者**：另一个 AI agent（接手人）
 > **任务**：从零开始，编译一份裁剪过的 Chromium Android WebView，打成 AAR，交付给本仓库
-> **产物路径**：`../octopus-mobile/app/libs/octopus-webview-arm64-v8a-1.0.0.aar`
+> **产物路径**：`../echo-mobile/app/libs/echo-webview-arm64-v8a-1.0.0.aar`
 > **时间预算**：1-3 周（含首次编译 4-8 小时 + 排错）
 
 ---
@@ -32,7 +32,7 @@
 
 ```
 1. AAR 文件
-   ../octopus-mobile/app/libs/octopus-webview-arm64-v8a-1.0.0.aar
+   ../echo-mobile/app/libs/echo-webview-arm64-v8a-1.0.0.aar
    · 大小目标：15-20 MB（裁剪后）
    · 包含 jni/arm64-v8a/*.so + AndroidManifest.xml + proguard.txt
 
@@ -143,10 +143,10 @@ bash docs/mobile/chromium-build/build_scripts/fetch_chromium.sh $HOME/chromium
 
 **关键决策**：用激进裁剪（目标 15-20 MB），保留 WebRTC + Bluetooth + USB（自动化场景需要）。
 
-在 `$HOME/chromium/src/out/OctopusWebView_arm64/args.gn` 写入：
+在 `$HOME/chromium/src/out/EchoWebView_arm64/args.gn` 写入：
 
 ```gn
-# Octopus Mobile WebView · Aggressive Trim Config
+# Echo Mobile WebView · Aggressive Trim Config
 # 目标：从 80 MB 砍到 15-20 MB
 
 target_os = "android"
@@ -221,7 +221,7 @@ android_webview_use_incremental_install = true
 ```
 
 **成功标志**：
-- `gn gen out/OctopusWebView_arm64 --check` 无错
+- `gn gen out/EchoWebView_arm64 --check` 无错
 - 生成的 ninja 文件大小 > 100 MB
 
 ---
@@ -238,7 +238,7 @@ bash docs/mobile/chromium-build/build_scripts/build_webview.sh $HOME/chromium/sr
 
 # 2. 后台跑（如果想断网也行）
 cd $HOME/chromium/src
-nohup ninja -C out/OctopusWebView_arm64 -j8 webview > out/build.log 2>&1 &
+nohup ninja -C out/EchoWebView_arm64 -j8 webview > out/build.log 2>&1 &
 echo $! > out/build.pid
 ```
 
@@ -248,18 +248,18 @@ echo $! > out/build.pid
 
 ```bash
 # 进度
-tail -f $HOME/chromium/src/out/OctopusWebView_arm64/build.log
+tail -f $HOME/chromium/src/out/EchoWebView_arm64/build.log
 
 # 是否还在跑
-ps -p $(cat $HOME/chromium/src/out/OctopusWebView_arm64/build.pid)
+ps -p $(cat $HOME/chromium/src/out/EchoWebView_arm64/build.pid)
 
 # 剩余时间估算
-ninja -C $HOME/chromium/src/out/OctopusWebView_arm64 -j8 webview  # 再跑一次会显示
+ninja -C $HOME/chromium/src/out/EchoWebView_arm64 -j8 webview  # 再跑一次会显示
 ```
 
 **成功标志**：
-- `out/OctopusWebView_arm64/lib.unstripped/libwebviewchromium.so` 存在
-- `out/OctopusWebView_arm64/lib.unstripped/libwebviewchromium_plat_support.so` 存在
+- `out/EchoWebView_arm64/lib.unstripped/libwebviewchromium.so` 存在
+- `out/EchoWebView_arm64/lib.unstripped/libwebviewchromium_plat_support.so` 存在
 - `libwebviewchromium.so` 大小 ≤ 20 MB（裁剪后），如果 > 30 MB 说明裁剪没生效
 
 **失败处理（编译错误的 5 个常见模式）**：
@@ -281,19 +281,19 @@ ninja -C $HOME/chromium/src/out/OctopusWebView_arm64 -j8 webview  # 再跑一次
 **步骤**：
 
 ```bash
-bash docs/mobile/chromium-build/build_scripts/build_aar.sh $HOME/chromium/src/out/OctopusWebView_arm64
+bash docs/mobile/chromium-build/build_scripts/build_aar.sh $HOME/chromium/src/out/EchoWebView_arm64
 ```
 
 **产物**：
 
 ```
-$HOME/chromium/dist/octopus-webview-arm64-v8a-1.0.0.aar
+$HOME/chromium/dist/echo-webview-arm64-v8a-1.0.0.aar
 ```
 
 **验证 AAR 内容**：
 
 ```bash
-unzip -l $HOME/chromium/dist/octopus-webview-arm64-v8a-1.0.0.aar
+unzip -l $HOME/chromium/dist/echo-webview-arm64-v8a-1.0.0.aar
 # 应看到：
 #   AndroidManifest.xml
 #   proguard.txt
@@ -314,11 +314,11 @@ unzip -l $HOME/chromium/dist/octopus-webview-arm64-v8a-1.0.0.aar
 
 ```bash
 # 1. 复制 AAR
-mkdir -p ../octopus-mobile/app/libs
-cp $HOME/chromium/dist/octopus-webview-arm64-v8a-1.0.0.aar ../octopus-mobile/app/libs/
+mkdir -p ../echo-mobile/app/libs
+cp $HOME/chromium/dist/echo-webview-arm64-v8a-1.0.0.aar ../echo-mobile/app/libs/
 
 # 2. 算 SHA256
-sha256sum ../octopus-mobile/app/libs/octopus-webview-arm64-v8a-1.0.0.aar
+sha256sum ../echo-mobile/app/libs/echo-webview-arm64-v8a-1.0.0.aar
 # 记录到 BUILD_REPORT.md
 ```
 
@@ -358,7 +358,7 @@ sha256sum ../octopus-mobile/app/libs/octopus-webview-arm64-v8a-1.0.0.aar
 | **合计** | XX MB |
 
 ## AAR 信息
-- 文件：octopus-webview-arm64-v8a-1.0.0.aar
+- 文件：echo-webview-arm64-v8a-1.0.0.aar
 - 大小：XX MB
 - SHA256：xxx
 

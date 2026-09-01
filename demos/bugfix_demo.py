@@ -9,10 +9,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from runtime.execution.tool_engine import ToolExecutor
 from runtime.core.graph_runtime import GraphRuntime
+from runtime.execution.suckers import SkillRegistry
+from runtime.execution.suckers.builtins import register_all
+from runtime.execution.suckers.write_skills import register_exec_skill
+from runtime.execution.tool_engine import ToolExecutor
 from runtime.memory.journal import JSONLJournal
-from runtime.safety.auth import TrustEngine
 from runtime.platform.models import (
     ArmId,
     Budget,
@@ -23,9 +25,7 @@ from runtime.platform.models import (
     TaskNode,
     WorkflowEdge,
 )
-from runtime.execution.suckers import SkillRegistry
-from runtime.execution.suckers.builtins import register_all
-from runtime.execution.suckers.write_skills import register_exec_skill
+from runtime.safety.auth import TrustEngine
 
 # ═══════════════════════════════════════════════════════════
 # Implementation note.
@@ -69,7 +69,7 @@ def setup_buggy_project(root: Path) -> Path:
         )
 
     _git("init", "-b", "main")
-    _git("config", "user.email", "demo@octopus-agent.local")
+    _git("config", "user.email", "demo@echo-agent.local")
     _git("config", "user.name", "demo-bot")
     _git("config", "commit.gpgsign", "false")
     _git("add", ".")
@@ -98,6 +98,9 @@ def build_bugfix_graph(proj: Path) -> TaskGraph:
         TaskNode(
             node_id="n2",
             skill_ref=SkillId("exec_shell"),
+            # This is the red phase of the red/green repair loop.  A failing
+            # test is expected evidence and must not terminate the fix graph.
+            continue_on_failure=True,
             args_template={
                 # -B is load-bearing: the n4 fix edit is same-length and
                 # lands in the same wall-clock second as this run, so a
@@ -173,7 +176,7 @@ def build_bugfix_graph(proj: Path) -> TaskGraph:
 # ═══════════════════════════════════════════════════════════
 
 
-def _print_step(step: Any, c: "_C") -> None:
+def _print_step(step: Any, c: _C) -> None:
     """Implementation note."""
     status = step.result.status
     node = step.node_id
@@ -229,7 +232,7 @@ def run_demo(
     c = _C(color)
     tmp_ctx = None
     if workdir is None:
-        tmp_ctx = tempfile.TemporaryDirectory(prefix="octopus-bugfix-")
+        tmp_ctx = tempfile.TemporaryDirectory(prefix="echo-bugfix-")
         root = Path(tmp_ctx.name)
     else:
         root = Path(workdir)
@@ -238,7 +241,7 @@ def run_demo(
     try:
         if verbose:
             print(c.bold("╭─────────────────────────────────────────────────╮"))
-            print(c.bold("│ octopus-agent · Bug Fix Demo                    │"))
+            print(c.bold("│ Echo Agent · Bug Fix Demo                       │"))
             print(c.bold("╰─────────────────────────────────────────────────╯"))
             print()
             print(c.dim(f"  workdir: {root}"))

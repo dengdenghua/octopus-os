@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { OctopusClient, STUB_RESPONSE_EVENT } from "./client";
+import { EchoClient, STUB_RESPONSE_EVENT } from "./client";
 
-describe("OctopusClient", () => {
+describe("EchoClient", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
   test("can be instantiated with an API URL", () => {
-    const client = new OctopusClient({ apiUrl: "http://localhost:8001" });
+    const client = new EchoClient({ apiUrl: "http://localhost:8001" });
     expect(client).toBeTruthy();
     // The client exposes namespaced API groups (threads / runs /
     // agents / ...). Just assert the instance was constructed;
@@ -18,27 +18,27 @@ describe("OctopusClient", () => {
   });
 
   test("resolves gateway /api paths against absolute desktop backend origin", () => {
-    const client = new OctopusClient({ apiUrl: "http://127.0.0.1:4105/api" });
+    const client = new EchoClient({ apiUrl: "http://127.0.0.1:4105/api" });
 
     expect(
-      (client as unknown as { _resolveUrl: (path: string) => string })._resolveUrl(
-        "/api/models",
-      ),
+      (
+        client as unknown as { _resolveUrl: (path: string) => string }
+      )._resolveUrl("/api/models"),
     ).toBe("http://127.0.0.1:4105/api/models");
   });
 
   test("keeps gateway /api paths relative for dev proxy base", () => {
-    const client = new OctopusClient({ apiUrl: "/api" });
+    const client = new EchoClient({ apiUrl: "/api" });
 
     expect(
-      (client as unknown as { _resolveUrl: (path: string) => string })._resolveUrl(
-        "/api/models",
-      ),
+      (
+        client as unknown as { _resolveUrl: (path: string) => string }
+      )._resolveUrl("/api/models"),
     ).toBe("/api/models");
   });
 
   test("warns once when a generic API call receives a stub response", async () => {
-    const client = new OctopusClient({ apiUrl: "/api" });
+    const client = new EchoClient({ apiUrl: "/api" });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -57,7 +57,7 @@ describe("OctopusClient", () => {
   });
 
   test("emits a window event when a generic API call receives a stub response", async () => {
-    const client = new OctopusClient({ apiUrl: "/api" });
+    const client = new EchoClient({ apiUrl: "/api" });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -126,8 +126,8 @@ describe("SSE line parsing", () => {
     }
 
     processLine("event: values");
-    processLine('data: {}');
-    processLine('data: {}');
+    processLine("data: {}");
+    processLine("data: {}");
 
     expect(events[0]).toBe("values");
     expect(events[1]).toBe("unknown");
@@ -152,7 +152,7 @@ describe("SSE line parsing", () => {
     processLine("event: values");
     processLine('data: {"messages":[]}');
     processLine("event: end");
-    processLine('data: {}');
+    processLine("data: {}");
 
     expect(events.length).toBe(3);
     expect(events[0]!.event).toBe("metadata");
