@@ -1,0 +1,15 @@
+# Octopus OS · 管理员提权白名单
+#
+# 原则:按命令白名单授权,不给 blanket NOPASSWD:ALL。
+# appliance 后端以 root 运行,这里只给 octopus 用户做运维排障用。
+
+octopus ALL=(root) NOPASSWD: \
+    /usr/bin/systemctl, \
+    /usr/bin/journalctl, \
+    /usr/sbin/zfs, \
+    /usr/sbin/zpool, \
+    /usr/sbin/smbcontrol, \
+    /usr/sbin/exportfs, \
+    /usr/sbin/smartctl, \
+    /usr/sbin/nginx, \
+    /usr/bin/docker

@@ -1,0 +1,20 @@
+[Unit]
+Description=Octopus OS first-boot provisioning
+Documentation=https://github.com/dengdenghua/octopus-os
+After=network-online.target
+Wants=network-online.target
+# 全部阶段跑完才会生成 services 哨兵;未跑完时重开机会自动续跑(脚本幂等)。
+ConditionPathExists=!/var/lib/octopus-os/firstboot/services
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=DEBIAN_FRONTEND=noninteractive
+ExecStart=/opt/octopus-os/deploy/fnos/base/setup-base.sh
+TimeoutStartSec=60min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=octopus-firstboot
+
+[Install]
+WantedBy=multi-user.target

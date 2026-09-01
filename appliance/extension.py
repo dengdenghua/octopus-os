@@ -62,3 +62,10 @@ def register_app(app: Any, context: Any) -> None:
         )
     except OSError as fs_exc:
         _alog.warning("NAS file manager not mounted (%s): %s", nas_root, fs_exc)
+
+    # P3 NAS 管控面:存储池 / 磁盘健康 / SMB-NFS 共享。
+    # 与文件管理器共用 OCTOPUS_NAS_ROOT;工具缺失(zfs/smartctl)时内部降级,
+    # 因此这里不做 try/except —— 挂载本身不会失败。
+    from appliance.nas import create_nas_router
+
+    app.include_router(create_nas_router(jwt_secret=auth_cfg.jwt_secret))
