@@ -633,7 +633,9 @@ function createMainWindow() {
   // 会话 shell 从源码跑时也加载构建好的 dist(设备上不连 vite dev)。
   const _distIndex = path.join(__dirname, "..", "dist", "index.html");
   if (app.isPackaged || (NATIVE_SHELL && fs.existsSync(_distIndex))) {
-    win.loadFile(_distIndex);
+    // 原生桌面:直接进 /desktop(桌面即系统主页),而不是登录页/欢迎页。
+    // hash 路由 → loadFile 第二参 {hash: "/desktop"} 即 file:///#/desktop。
+    win.loadFile(_distIndex, NATIVE_SHELL ? { hash: "/desktop" } : undefined);
   } else {
     win.loadURL(DEV_URL);
     win.webContents.on("did-fail-load", (_e, code, desc) => {
