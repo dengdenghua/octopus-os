@@ -13,7 +13,14 @@ cd "$APP_DIR"
 
 # Electron on Wayland(cage 提供 Wayland)+ 设备上常见的最小化标志。
 # --no-sandbox 仅在内核 userns 受限的精简镜像里需要;真机可去掉。
+EXTRA=()
+# 调试/远程截图:设 OCTOPUS_ELECTRON_DEBUG_PORT 开 CDP(如 9222),
+# 宿主机可 curl http://127.0.0.1:9222/json 看页面,或走 screencap。
+if [ -n "${OCTOPUS_ELECTRON_DEBUG_PORT:-}" ]; then
+  EXTRA+=(--remote-debugging-port="$OCTOPUS_ELECTRON_DEBUG_PORT")
+fi
 exec npx --no-install electron electron/main.cjs \
   --ozone-platform-hint=auto \
   --enable-features=UseOzonePlatform \
-  --disable-gpu-compositing
+  --disable-gpu-compositing \
+  "${EXTRA[@]}"
