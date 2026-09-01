@@ -267,7 +267,7 @@ jobs:
         run: make production-readiness-static
 
       - name: Upload static readiness report (not release proof)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-readiness-static-report-${{ github.sha }}-${{ matrix.python-version }}
           path: ${{ runner.temp }}/echo-readiness/readiness_static.json
@@ -281,7 +281,7 @@ jobs:
 
       - name: Upload full-stack smoke proof
         if: matrix.python-version == '3.11.9'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: full-stack-smoke-proof-${{ github.sha }}
           path: test-results/local-verify-state
@@ -298,7 +298,7 @@ jobs:
 
       - name: Upload replay latency proof
         if: matrix.python-version == '3.11.9'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: replay-latency-proof
           path: test-results/replay-latency-budget.json
@@ -306,7 +306,7 @@ jobs:
 
       - name: Upload coverage
         if: matrix.python-version == '3.11.9'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
           path: .coverage
@@ -449,7 +449,7 @@ jobs:
           subject-path: dist/openmediavault-echo-os_*_all.deb
           sbom-path: dist/openmediavault-echo-os_*_all.spdx.json
       - name: Upload host bundle
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: echo-omv-host
           path: |
