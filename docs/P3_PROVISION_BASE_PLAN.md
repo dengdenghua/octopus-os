@@ -20,7 +20,7 @@ echo-os 的 P3 卡在一个具体的地方 —— 它自己的计划里写着:
 |---|---|---|
 | 装机镜像 | d-i + 自研选盘 TUI | 抄**模式**,换官方钩子(§3.1) |
 | 存储栈 | ZFS / mdadm / Samba / SMART | 直接用上游官方包,不碰参考 NAS二进制 |
-| 统一命名空间 | `trimafs2.ko` 挂 `/fs` | **不抄**,改 ZFS dataset + bind mount(§4.1) |
+| 统一命名空间 | `nasfs.ko` 挂 `/fs` | **不抄**,改 ZFS dataset + bind mount(§4.1) |
 | 应用生态约定 | `/usr/local/apps/@appcenter/` | 抄目录约定(§3.3) |
 | 单入口反向代理 | nginx + 每模块 unix socket | 抄架构(§3.2) |
 
@@ -31,15 +31,15 @@ echo-os 的 P3 卡在一个具体的地方 —— 它自己的计划里写着:
 
 ## 2. 法律红线(先划清楚,再动手)
 
-参考 NAS 的 `trim`、`trim_app_center`、`trimafs2.ko` 等是**闭源自研二进制**。
+参考 NAS 的 `nas-bundle`、`app_center`、`nasfs.ko` 等是**闭源自研二进制**。
 解包产物在我们手上只用于**学习架构决策**,以下三条是硬约束:
 
 1. **不复制任何参考 NAS二进制、库、前端资源到 echo-os**;
-2. **不反向分发**参考 NAS的 ISO、`trimfs.tgz` 或其中任何片段;
+2. **不反向分发**参考 NAS的 ISO、`rootfs.tgz` 或其中任何片段;
 3. 本分支只实现**从参考 NAS学到的架构模式**,所有代码自己写。
 
 这不是保守 —— 复制二进制除了法律风险,技术上也是死路:那些二进制绑定
-`6.18.18.c1032-trim` 内核和参考 NAS私有 ABI,换个内核版本就跑不起来。
+`6.18.18.c1032-nas` 内核和参考 NAS私有 ABI,换个内核版本就跑不起来。
 
 **判定标准很简单:我们抄的是"决策",不是"代码"。**
 
@@ -52,12 +52,12 @@ echo-os 的 P3 卡在一个具体的地方 —— 它自己的计划里写着:
 **参考 NAS的做法**(解包证据):
 
 ```
-initrd/usr/sbin/debian-installer-startup:19   → 跑 trim-install(自研选盘 TUI)后 chvt 2
-initrd/usr/lib/debian-installer-startup.d/S15lowmem:128 → 借 lowmem 钩子跑 trimtemplates
+initrd/usr/sbin/debian-installer-startup:19   → 跑 nas-install(自研选盘 TUI)后 chvt 2
+initrd/usr/lib/debian-installer-startup.d/S15lowmem:128 → 借 lowmem 钩子跑 nas-templates
 ```
 
-整个 initrd 里只多 3 个自研文件:`trim-install`(600KB TUI)、`trim-grub`、
-`trimtemplates`(20KB,改写 debconf 模板做汉化)。**分区、网络、镜像校验、
+整个 initrd 里只多 3 个自研文件:`nas-install`(600KB TUI)、`nas-grub`、
+`nas-templates`(20KB,改写 debconf 模板做汉化)。**分区、网络、镜像校验、
 grub 安装全部白拿。**
 
 **我们的做法(更稳一档)**:不动 initrd,用 d-i 官方的 `preseed/early_command`
@@ -81,7 +81,7 @@ initrd 是**多段拼接**(early microcode + 压缩主段),重打包容易出错
 
 ### 3.2 单 nginx 入口 + 功能模块各自 socket
 
-参考 NAS的 `usr/trim/nginx/conf/conf.d/` 下有 30 个 location 片段,每个功能模块
+参考 NAS的 `usr/nas/nginx/conf/conf.d/` 下有 30 个 location 片段,每个功能模块
 一个独立进程一个 unix socket(accountsrv、dsmgr、thumbnailer、photos、vm、
 iscsi…),对外只暴露 80/443。
 
@@ -103,8 +103,8 @@ iscsi…),对外只暴露 80/443。
 
 ### 3.4 能力内置 / 应用外置
 
-参考 NAS解包里最反直觉的一层:相册(`trim.photos`)、播放器(`trim.media`)、音乐
-(`trim.music`)**都不在基础镜像里**,`trim_photos.sock` 全系统只有 nginx 配置
+参考 NAS解包里最反直觉的一层:相册(`nas.photos`)、播放器(`nas.media`)、音乐
+(`nas.music`)**都不在基础镜像里**,`nas_photos.sock` 全系统只有 nginx 配置
 引用,没有任何二进制创建它 —— 它们是应用中心的可选应用。
 
 但**底座是内置的而且很重**:`mediasrv` 自带 FFmpeg 7.2.2 + 45 个私有库(Intel
@@ -118,11 +118,11 @@ HEIC)+ libraw + libexiv2。
 
 ## 4. 四条明确不抄的
 
-### 4.1 `trimafs2` —— 自研内核文件系统
+### 4.1 `nasfs` —— 自研内核文件系统
 
-参考 NAS用 `trimafs2.ko.xz` 挂 `/fs`,做 `/fs/<uid>/{smb,nfs,ftp,webdav}` 统一命名
-空间,并自研 `trim_acl`(内核头 `trim_acl.h` + `trimacl` 命令 + `libtrimacl.so`),
-为此**整个 Samba 全家桶 19 个包全部打补丁重建**(`4.22.8+dfsg-0+deb13u1~bpo12+trim.0+b20260812.47`)。
+参考 NAS用 `nasfs.ko.xz` 挂 `/fs`,做 `/fs/<uid>/{smb,nfs,ftp,webdav}` 统一命名
+空间,并自研 `nas_acl`(内核头 `nas_acl.h` + `nasacl` 命令 + `libnasacl.so`),
+为此**整个 Samba 全家桶 19 个包全部打补丁重建**(`4.22.8+dfsg-0+deb13u1~bpo12+nas.0+b20260812.47`)。
 
 代价:每跟一个内核版本都要重新适配。
 
@@ -131,7 +131,7 @@ HEIC)+ libraw + libexiv2。
 
 ### 4.2 单包 1.2 GB
 
-参考 NAS的 `trim` 一个包 1.2 GB,包含 99 个二进制 + www + nginx。升级粒度太粗,
+参考 NAS的 `nas-bundle` 一个包 1.2 GB,包含 99 个二进制 + www + nginx。升级粒度太粗,
 改一行 Web UI 要重下 1.2 GB。**按功能域拆细**。
 
 ### 4.3 随包 TLS 私钥
@@ -140,7 +140,7 @@ HEIC)+ libraw + libexiv2。
 
 ### 4.4 rootfs 无独立校验
 
-参考 NAS的 `md5sum.txt` 只覆盖 ISO 层,**不覆盖 `trimfs.tgz`**(2.8G 的根文件系统
+参考 NAS的 `md5sum.txt` 只覆盖 ISO 层,**不覆盖 `rootfs.tgz`**(2.8G 的根文件系统
 没有任何完整性校验)。我们自己做得补上:已实现的做法是共享清单
 `shares.json` 作为唯一真源,配置可全量重建并留 `.bak`;系统级完整性走
 A/B 原子更新(见 §6 M4)。
