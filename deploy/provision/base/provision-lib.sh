@@ -180,6 +180,12 @@ step_echo_web() {
   if ! command -v pnpm >/dev/null 2>&1; then
     npm install -g pnpm@10
   fi
+  # 首启由 firstboot.service 经 nohup 后台拉起 —— 进程无控制终端(TTY)。
+  # 此时 pnpm install 在 lockfile/已装依赖不一致、需清理 node_modules 时会
+  # 弹 "Remove the existing node_modules directory?" 确认,pnpm 检测无 TTY
+  # 直接 abort(ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY),整段 firstboot
+  # 在 5c/7 卡死(VM 实测)。CI=true 让 pnpm 走非交互,跳过确认直接清理继续。
+  export CI=true
   (cd "$OS_DIR/frontend" && pnpm install --frozen-lockfile && pnpm build)
   [ -f "$OS_DIR/frontend/dist/index.html" ] || { log "✗ 前端构建失败"; exit 1; }
   done_mark echo-web
