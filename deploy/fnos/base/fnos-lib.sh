@@ -127,10 +127,22 @@ step_echo_src() {
         || { log "✗ os-main 回退对齐也失败"; exit 1; }
     fi
   fi
+  # A 路线 overlay:安装介质/首次开机阶段若投放了 overlay 包(由 build-iso.sh
+  # 生成、preseed late_command 落到 $ECHO_OVERLAY),解压覆盖到克隆树之上,
+  # 等价于直接 clone p3-fnos —— 无需把分支 push 到远程即可拿到完整 NAS 产品。
+  # 典型内容:appliance/nas/ 路由、deploy/fnos/ 装机路线、品牌重命名等。
+  local OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
+  if [ -f "$OVERLAY" ]; then
+    log "  应用 A 路线 overlay: $OVERLAY"
+    tar xzf "$OVERLAY" -C "$OS_DIR"
+    rm -f "$OVERLAY"
+    log "  overlay 已应用(含 appliance/nas 路由 + deploy/fnos 装机路线)"
+  fi
   done_mark echo-src
   # clone/reset 后仓库版本(0644)会覆盖 late_command 投放的引导脚本,
   # 而 firstboot.service 的 ExecStart 直接执行它 —— 无执行位会 203/EXEC
   # (VM 实测:重启后服务起不来)。每次重拉后强制恢复执行位。
+  # 注意:overlay 可能已覆盖此文件,这里确保执行位恢复。
   chmod +x "$OS_DIR/deploy/fnos/base/setup-base.sh" 2>/dev/null || true
 }
 

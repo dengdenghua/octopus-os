@@ -104,8 +104,31 @@ cat >"$PAYLOAD/echo-env.sh" <<EOF
 # 由 build-iso.sh 生成;首次开机脚本会 source 它
 ECHO_OS_REPO="${ECHO_OS_REPO:-https://github.com/dengdenghua/octopus-os.git}"
 ECHO_OS_BRANCH="${ECHO_OS_BRANCH:-p3-fnos}"
+ECHO_OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 EOF
+
+# ── 3b. A 路线 overlay(自包含首启,无需 push p3-fnos)──────────
+# 把"当前分支相对上游 os-main 的改动"打成 tar.gz 嵌进 ISO。首次开机
+# step_echo_src 在 clone 基线后解压覆盖,等价于直接 clone p3-fnos。
+# 这样全新机器首启拿到完整 NAS 产品,且不依赖分支是否发布到远程。
+OVERLAY_BASE="$(git merge-base HEAD upstream/os-main 2>/dev/null \
+              || git merge-base HEAD os-main 2>/dev/null \
+              || true)"
+if [ -n "$OVERLAY_BASE" ]; then
+  OVERLAY_FILES="$(git diff --no-renames --name-only "$OVERLAY_BASE" HEAD 2>/dev/null)"
+  if [ -n "$OVERLAY_FILES" ]; then
+    log "生成 A 路线 overlay (相对 $OVERLAY_BASE, $(echo "$OVERLAY_FILES" | wc -l) 文件)"
+    # shellcheck disable=SC2086
+    git archive HEAD -- $OVERLAY_FILES -o "$PAYLOAD/echo-overlay.tar.gz" \
+      && install -m0644 "$PAYLOAD/echo-overlay.tar.gz" "$PAYLOAD/echo-overlay.tar.gz" \
+      || warn "overlay 生成失败,跳过(首次开机将仅克隆基线)"
+  else
+    warn "相对 $OVERLAY_BASE 无改动,跳过 overlay"
+  fi
+else
+  warn "找不到上游 os-main 基线,跳过 overlay(请先 git fetch upstream)"
+fi
 
 # ── 4. 改引导配置:指向我们的 preseed ─────────────────────
 log "改写引导参数"
