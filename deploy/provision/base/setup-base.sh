@@ -28,6 +28,14 @@ DEBIAN_MIRROR="${DEBIAN_MIRROR:-https://deb.debian.org/debian}"
 # 引入 A 路线步骤库(桌面/备份恢复等上游收敛步骤亦在其中)
 # shellcheck source=provision-lib.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# 自愈: 装机介质的 late_command 名单若漏投 provision-lib.sh(常见漏项 ——
+# 它随 deploy/provision/base/ 一起在 overlay 里,却不在引导文件清单中),
+# 首次开机 source 会直接失败、整台机器装不起来。overlay 包本身是
+# late_command 必投项,这里从包里单独取回本文件,兼容已流出的装机介质。
+if [ ! -r "$SCRIPT_DIR/provision-lib.sh" ] && [ -f /opt/echo-os-overlay.tar.gz ]; then
+  tar xzf /opt/echo-os-overlay.tar.gz -C /opt/echo-os \
+    deploy/provision/base/provision-lib.sh 2>/dev/null || true
+fi
 source "$SCRIPT_DIR/provision-lib.sh"
 
 [ "$(id -u)" -eq 0 ] || { echo "请用 root 运行" >&2; exit 1; }

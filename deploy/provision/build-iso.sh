@@ -78,6 +78,10 @@ mkdir -p "$PAYLOAD"
 install -m0755 "$SCRIPT_DIR/installer/echo-install"  "$PAYLOAD/echo-install"
 install -m0644 "$SCRIPT_DIR/installer/preseed.cfg"      "$PAYLOAD/preseed.cfg"
 install -m0755 "$SCRIPT_DIR/base/setup-base.sh"         "$PAYLOAD/setup-base.sh"
+# provision-lib.sh 必须随引导文件一起投放: setup-base.sh 在第 31 行就 source 它,
+# 而它只随 overlay(clone 之后才解包)交付 —— 漏投会让首次开机直接 source 失败。
+# self-heal 见 setup-base.sh(从 overlay 包单独取回)。
+install -m0644 "$SCRIPT_DIR/base/provision-lib.sh"      "$PAYLOAD/provision-lib.sh"
 install -m0644 "$SCRIPT_DIR/echo-firstboot.service"   "$PAYLOAD/echo-firstboot.service"
 install -m0644 "$SCRIPT_DIR/99-echo-os"                  "$PAYLOAD/99-echo-os"
 
