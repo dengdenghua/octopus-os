@@ -158,6 +158,10 @@ step_echo_py() {
     python3 -m venv "$OS_DIR/.venv"
     "$OS_DIR/.venv/bin/pip" install --upgrade pip
     "$OS_DIR/.venv/bin/pip" install -e "$OS_DIR[minimal]"
+    # minimal 不依赖 packaging,但 echo-agent serve 运行期需要
+    # (runtime/platform/plugins/marketplace_package.py: from packaging.specifiers import ...)
+    # 缺失会致服务启动即崩;补齐以保证无凭据环境也能起后端。
+    "$OS_DIR/.venv/bin/pip" install packaging
   elif command -v uv >/dev/null 2>&1; then
     (cd "$OS_DIR" && uv sync --extra serve --extra web --extra appliance --extra dev)
   else
