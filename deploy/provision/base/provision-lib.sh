@@ -241,13 +241,28 @@ step_echo_web() {
 # 无 GPU / 轻量 NAS / 显式 ECHO_DESKTOP=cage 时回退 cage 极简 kiosk。
 #   ECHO_DESKTOP=kwin  上游 KWin 会话(需 Xorg seat + echo.os.ci-session 凭据)
 #   ECHO_DESKTOP=cage  默认,NAS 友好,不引整套 KDE/打印/扫描栈
-step_shell() {
+  # ── 桌面壳跑在哪个系统账号下:探测,不写死 ──────────────
+  # 历史教训: rebrand 曾把 unit 的 User=octopus 一并改成 echo,但两代装机
+  # 介质建的用户不一致(vmtest preseed 建 echo; 更早的裸机/老 ISO 建 octopus),
+  # 写死任一名字在另一种装机上就是 217/USER crash-loop。以机器上真实存在的
+  # 账号为准:显式 ECHO_USER 优先,否则按常见名探测(echo=现行产品,
+  # octopus=历史装机,admin=保守兜底)。
+  probe_run_user() {
+    local u
+    [ -n "${ECHO_USER:-}" ] && { echo "$ECHO_USER"; return; }
+    for u in echo octopus admin; do
+      if id -u "$u" >/dev/null 2>&1; then echo "$u"; return; fi
+    done
+    echo echo
+  }
+  step_shell() {
   DESKTOP_MODE="${ECHO_DESKTOP:-cage}"
+  RUN_USER="$(probe_run_user)"
   if [ "$DESKTOP_MODE" = "kwin" ] && [ -x "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh" ]; then
     log "== 6/7 安装 KWin 通用桌面会话(上游) =="
-    # 复用既有 NAS 用户(octopus),避免上游脚本默认新建 echo 用户;
+    # 复用既有系统账号($RUN_USER),避免上游脚本默认新建 echo 用户;
     # 上游脚本读 ECHO_USER / ECHO_OS_DIR 两个 env。
-    ECHO_USER=octopus ECHO_OS_DIR="$OS_DIR" "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh"
+    ECHO_USER="$RUN_USER" ECHO_OS_DIR="$OS_DIR" "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh"
   elif [ "${ECHO_HDMI_SHELL:-auto}" = "off" ]; then
     log "== 6/7 跳过原生 shell (ECHO_HDMI_SHELL=off) =="
   elif ls /dev/dri/card* >/dev/null 2>&1 || [ "${ECHO_HDMI_SHELL:-auto}" = "on" ] || [ "$DESKTOP_MODE" = "cage" ]; then
@@ -262,11 +277,8 @@ step_shell() {
     systemctl enable seatd
     install -m644 "$OS_DIR/deploy/native-shell/echo-shell.service" \
       /etc/systemd/system/echo-shell.service
-    # unit 里的 User= 是占位(重命名回归: 曾把 User=octopus 一并改成 User=echo,
-    # 但系统账号由 preseed 创建为 octopus,不新建 echo 用户 → 217/USER crash-loop,
-    # VM 重启实测)。以 provisioning 实际创建的账号为准渲染,与 kwin 分支的
-    # ECHO_USER 同源。
-    local RUN_USER="${ECHO_USER:-octopus}"
+    # unit 里的 User= 是占位,以探测到的真实账号渲染(见顶部 probe_run_user);
+    # 写死任一名字(echo 或 octopus)在另一种装机上都会 217/USER crash-loop。
     sed -i "s/^User=.*/User=${RUN_USER}/" /etc/systemd/system/echo-shell.service
     chmod +x "$OS_DIR/deploy/native-shell/echo-shell-launch.sh"
     systemctl daemon-reload
