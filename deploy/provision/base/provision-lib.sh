@@ -93,6 +93,13 @@ step_node() {
 # ── 5/7 Echo OS 源码 ───────────────────────────────────
 step_echo_src() {
   log "== 5/7 拉取 Echo OS 源码 =="
+  # safe.directory 必须落 /etc/gitconfig(系统级): firstboot.service 由 systemd
+  # 拉起,环境无 HOME → ~/.gitconfig 不会被读;而 /opt/echo-os 可能由其他用户
+  # (octopus)创建,root 跑 git 会报 dubious ownership 直接 fatal(VM 开机实测)。
+  # 系统级配置任何用户/任何环境都读,幂等不重复追加。
+  git config --system --get-all safe.directory 2>/dev/null | grep -qxF "$OS_DIR" \
+    || git config --system --add safe.directory "$OS_DIR" 2>/dev/null \
+    || git config --global --add safe.directory "$OS_DIR" 2>/dev/null || true
   mkdir -p "$OS_DIR"
   # 目标分支不存在于远程时(如 p3-provision 尚未 push),自动回退到 os-main
   # 上游基线,保证首启不 brick;仅缺失 A 路线 NAS 特性,运维可据 WARN 修复。
