@@ -101,11 +101,24 @@ step_echo_src() {
     || git config --system --add safe.directory "$OS_DIR" 2>/dev/null \
     || git config --global --add safe.directory "$OS_DIR" 2>/dev/null || true
   mkdir -p "$OS_DIR"
+  # 开机自跑(firstboot.service)时 DHCP/DNS 可能晚于 network-online.target
+  # 就绪,git 网络操作报 "Could not resolve host"(VM 开机实测)。对 git 网络
+  # 操作做退避重试(6 次 x10s);目标分支 fetch 不重试 —— 分支缺失是确定性
+  # 失败,本来就走 os-main 回退,重试逻辑加在回退与 clone 上。
+  git_retry() {
+    local n
+    for n in 1 2 3 4 5 6; do
+      if "$@"; then return 0; fi
+      log "  git 网络操作失败(第 $n/6 次,10s 后重试)"
+      sleep 10
+    done
+    return 1
+  }
   # 目标分支不存在于远程时(如 p3-provision 尚未 push),自动回退到 os-main
   # 上游基线,保证首启不 brick;仅缺失 A 路线 NAS 特性,运维可据 WARN 修复。
   clone_branch() {
     local br="$1"
-    git clone --depth 1 --branch "$br" "$OS_REPO" "$OS_DIR" 2>/dev/null
+    git_retry git clone --depth 1 --branch "$br" "$OS_REPO" "$OS_DIR" 2>/dev/null
   }
   if [ ! -d "$OS_DIR/.git" ]; then
     # late_command 会先投放 setup-base.sh 引导文件,目录因此非空,
@@ -129,7 +142,7 @@ step_echo_src() {
     if ! git -C "$OS_DIR" fetch --depth 1 origin "$OS_BRANCH" 2>/dev/null \
        || ! git -C "$OS_DIR" reset --hard FETCH_HEAD 2>/dev/null; then
       log "⚠ 分支 '$OS_BRANCH' 对齐失败,回退到 os-main"
-      git -C "$OS_DIR" fetch --depth 1 origin os-main \
+      git_retry git -C "$OS_DIR" fetch --depth 1 origin os-main \
         && git -C "$OS_DIR" reset --hard FETCH_HEAD \
         || { log "✗ os-main 回退对齐也失败"; exit 1; }
     fi
