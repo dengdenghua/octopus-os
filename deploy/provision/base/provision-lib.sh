@@ -186,6 +186,11 @@ step_echo_web() {
   # 直接 abort(ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY),整段 firstboot
   # 在 5c/7 卡死(VM 实测)。CI=true 让 pnpm 走非交互,跳过确认直接清理继续。
   export CI=true
+  # 低内存设备(VM 2GB 实测): node 默认旧生代上限按物理内存自动算,2GB 机器
+  # 只有 ~1GB,主应用 vite build(1798+ 模块, shiki/mermaid/three/codemirror)
+  # 在 transforming 阶段堆到 ~973MB 即 OOM abort(exit 134)。显式放宽堆上限。
+  # 注意只放开 V8 堆,不动系统:1536MB 在 2GB 机器上留有余量。
+  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=1536"
   (cd "$OS_DIR/frontend" && pnpm install --frozen-lockfile && pnpm build)
   [ -f "$OS_DIR/frontend/dist/index.html" ] || { log "✗ 前端构建失败"; exit 1; }
   done_mark echo-web
