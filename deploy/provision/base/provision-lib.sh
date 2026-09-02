@@ -186,11 +186,31 @@ step_echo_web() {
   # 直接 abort(ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY),整段 firstboot
   # 在 5c/7 卡死(VM 实测)。CI=true 让 pnpm 走非交互,跳过确认直接清理继续。
   export CI=true
-  # 低内存设备(VM 2GB 实测): node 默认旧生代上限按物理内存自动算,2GB 机器
-  # 只有 ~1GB,主应用 vite build(1798+ 模块, shiki/mermaid/three/codemirror)
-  # 在 transforming 阶段堆到 ~973MB 即 OOM abort(exit 134)。显式放宽堆上限。
-  # 注意只放开 V8 堆,不动系统:1536MB 在 2GB 机器上留有余量。
-  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=1536"
+  # 低内存设备加固(VM 2GB RAM 实测): 主应用 vite build(1798+ 模块,
+  # shiki/mermaid/three/codemirror)真实需求 >1.5GB V8 堆,而 node 默认旧生代
+  # 上限按物理内存自动算,2GB 机器仅 ~1GB → OOM abort(exit 134)。两步保底:
+  #   1) 确保 swap >= 2GB:不足则补 swapfile 并写入 fstab(重启后仍生效)。
+  #      2GB 机器实测自带 1.1GB swap,构建时已被内核用到 391MB。
+  #   2) V8 堆上限显式放到 2560MB,超出物理内存的部分由 swap 兜底(构建变慢
+  #      但能完成)。只影响本步构建进程,不动系统其他部分。
+  ensure_swap() {
+    local need_mb=2048 have_mb add_mb sf=/var/lib/echo-os/swapfile
+    have_mb=$(awk '/SwapTotal/{printf "%d", $2/1024}' /proc/meminfo)
+    if [ "${have_mb:-0}" -lt "$need_mb" ]; then
+      add_mb=$((need_mb - have_mb))
+      if [ ! -f "$sf" ]; then
+        mkdir -p "$(dirname "$sf")"
+        dd if=/dev/zero of="$sf" bs=1M count="$add_mb" status=none
+        chmod 600 "$sf"
+        /usr/sbin/mkswap -q "$sf"
+      fi
+      /usr/sbin/swapon "$sf" 2>/dev/null || true
+      grep -qs "^$sf " /etc/fstab || echo "$sf none swap sw 0 0" >> /etc/fstab
+      log "  低内存设备: 已补充 swap ${add_mb}MB"
+    fi
+  }
+  ensure_swap
+  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=2560"
   (cd "$OS_DIR/frontend" && pnpm install --frozen-lockfile && pnpm build)
   [ -f "$OS_DIR/frontend/dist/index.html" ] || { log "✗ 前端构建失败"; exit 1; }
   done_mark echo-web
