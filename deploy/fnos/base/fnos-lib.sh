@@ -92,8 +92,14 @@ step_node() {
 
 # ── 5/7 Echo OS 源码 ───────────────────────────────────
 step_echo_src() {
-  log "== 5/7 拉取 Echo OS ($OS_BRANCH) =="
+  log "== 5/7 拉取 Echo OS 源码 =="
   mkdir -p "$OS_DIR"
+  # 目标分支不存在于远程时(如 p3-fnos 尚未 push),自动回退到 os-main
+  # 上游基线,保证首启不 brick;仅缺失 A 路线 NAS 特性,运维可据 WARN 修复。
+  clone_branch() {
+    local br="$1"
+    git clone --depth 1 --branch "$br" "$OS_REPO" "$OS_DIR" 2>/dev/null
+  }
   if [ ! -d "$OS_DIR/.git" ]; then
     # late_command 会先投放 setup-base.sh 引导文件,目录因此非空,
     # 直接 clone 会报 "already exists"(VM 实测)。备份后重克隆。
@@ -101,13 +107,25 @@ step_echo_src() {
       mv "$OS_DIR" "$OS_DIR.pre-clone.$$"
       mkdir -p "$OS_DIR"
     fi
-    git clone --depth 1 --branch "$OS_BRANCH" "$OS_REPO" "$OS_DIR"
+    if clone_branch "$OS_BRANCH"; then
+      log "  已克隆目标分支 $OS_BRANCH"
+    else
+      log "⚠ 分支 '$OS_BRANCH' 在 $OS_REPO 不存在,回退克隆 os-main(上游基线)"
+      log "  ⚠ 回退后不含 p3-fnos 的 A 路线 NAS 特性(appliance/nas 路由、deploy/fnos 装机路线)。"
+      log "  ⚠ 修复:把 p3-fnos push 到远程,或设 ECHO_OS_REPO/ECHO_OS_BRANCH 指向已发布分支后重跑本步。"
+      clone_branch os-main || { log "✗ os-main 回退克隆也失败,仓库不可达"; exit 1; }
+    fi
   else
     # 已有仓库时对齐 bundle/远程快照。注意:fetch 只更新 origin/$BRANCH,
     # checkout 不会让本地分支快进(bundle 场景实测 HEAD 停留在旧提交),
     # 必须 reset --hard 对齐;工作区脏文件会被覆盖,本脚本即被覆盖源。
-    git -C "$OS_DIR" fetch --depth 1 origin "$OS_BRANCH"
-    git -C "$OS_DIR" reset --hard FETCH_HEAD
+    if ! git -C "$OS_DIR" fetch --depth 1 origin "$OS_BRANCH" 2>/dev/null \
+       || ! git -C "$OS_DIR" reset --hard FETCH_HEAD 2>/dev/null; then
+      log "⚠ 分支 '$OS_BRANCH' 对齐失败,回退到 os-main"
+      git -C "$OS_DIR" fetch --depth 1 origin os-main \
+        && git -C "$OS_DIR" reset --hard FETCH_HEAD \
+        || { log "✗ os-main 回退对齐也失败"; exit 1; }
+    fi
   fi
   done_mark echo-src
   # clone/reset 后仓库版本(0644)会覆盖 late_command 投放的引导脚本,
