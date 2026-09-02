@@ -242,6 +242,12 @@ step_shell() {
     systemctl enable seatd
     install -m644 "$OS_DIR/deploy/native-shell/echo-shell.service" \
       /etc/systemd/system/echo-shell.service
+    # unit 里的 User= 是占位(重命名回归: 曾把 User=octopus 一并改成 User=echo,
+    # 但系统账号由 preseed 创建为 octopus,不新建 echo 用户 → 217/USER crash-loop,
+    # VM 重启实测)。以 provisioning 实际创建的账号为准渲染,与 kwin 分支的
+    # ECHO_USER 同源。
+    local RUN_USER="${ECHO_USER:-octopus}"
+    sed -i "s/^User=.*/User=${RUN_USER}/" /etc/systemd/system/echo-shell.service
     chmod +x "$OS_DIR/deploy/native-shell/echo-shell-launch.sh"
     systemctl daemon-reload
     systemctl set-default graphical.target
