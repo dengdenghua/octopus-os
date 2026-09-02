@@ -184,10 +184,17 @@ step_echo_py() {
     "$OS_DIR/.venv/bin/pip" install packaging
   elif command -v uv >/dev/null 2>&1; then
     (cd "$OS_DIR" && uv sync --extra serve --extra web --extra appliance --extra dev)
+    # 与 minimal 分支同因: runtime/platform/plugins/marketplace_package.py
+    # 顶层 import packaging.specifiers,pyproject 的 extras 却未声明 packaging
+    # (fresh 装机无 firstboot.env、走完整分支时实测服务启动即崩)。
+    "$OS_DIR/.venv/bin/pip" install packaging
   else
     python3 -m venv "$OS_DIR/.venv"
     "$OS_DIR/.venv/bin/pip" install --upgrade pip
     "$OS_DIR/.venv/bin/pip" install -e "$OS_DIR[serve,web,appliance]"
+    # 同上: 完整分支同样需要 packaging(fresh 装机无 firstboot.env 实测:
+    # echo-agent serve → ModuleNotFoundError: packaging.specifiers → 循环重启)
+    "$OS_DIR/.venv/bin/pip" install packaging
   fi
   done_mark echo-py
 }
