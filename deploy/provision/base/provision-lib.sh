@@ -250,6 +250,34 @@ step_services() {
   # 数据根目录:统一命名空间挂在这里(参考 NAS用 /fs,我们用 /data)
   mkdir -p /data/nas /data/apps
 
+  # ── 配置:首启从模板生成 /etc/echo-os/config.yaml ───────────────
+  # echo-appliance.service 的 --config 指向它;缺失则后端起不来。
+  # 仅缺失时生成,绝不覆盖运维后期的手动改动。
+  mkdir -p /etc/echo-os
+  if [ ! -f /etc/echo-os/config.yaml ]; then
+    if [ -f "$OS_DIR/config.example.yaml" ]; then
+      cp "$OS_DIR/config.example.yaml" /etc/echo-os/config.yaml
+      log "  已生成 /etc/echo-os/config.yaml(模板副本,按需改)"
+    else
+      # 极小兜底配置:保证 echo-agent serve 能起(无 LLM key 时走 stub)
+      cat >/etc/echo-os/config.yaml <<'YAML'
+appliance:
+  data_dir: /data
+  nas_root: /data/nas
+YAML
+      log "  已生成 /etc/echo-os/config.yaml(极小兜底)"
+    fi
+  fi
+
+  # ── 清理上游/历史遗留 octopus 标识 ───────────────────────────
+  # 重命名前装机的残留会与 echo 冲突:nginx 双 default_server 让 nginx -t 失败;
+  # 8000 端口被 octopus-appliance 占用会让 echo-appliance 起不来。必须清掉。
+  rm -f /etc/nginx/sites-enabled/octopus /etc/nginx/sites-enabled/default
+  for u in $(systemctl list-unit-files 2>/dev/null | awk '{print $1}' | grep -E '^octopus-[a-z-]*\.service$'); do
+    log "  停用遗留 $u"
+    systemctl disable --now "$u" 2>/dev/null || true
+  done
+
   install -m644 "$OS_DIR/deploy/provision/base/echo-appliance.service" \
     /etc/systemd/system/echo-appliance.service
 
