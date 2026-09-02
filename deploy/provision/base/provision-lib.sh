@@ -322,6 +322,17 @@ YAML
   install -m644 "$OS_DIR/deploy/provision/base/echo-appliance.service" \
     /etc/systemd/system/echo-appliance.service
 
+  # ── 首启引导服务自举 ─────────────────────────────────────────
+  # echo-firstboot.service 负责"开机自动续跑 firstboot"(幂等,marks 齐 +
+  # ConditionPathExists 后自动跳过)。ISO 路线由 preseed late_command 安装,
+  # 但裸机/非 ISO 路线(直接跑 setup-base.sh)没有任何人装它 → 装机中断后
+  # 只能手工拉起,开机自愈链断裂(VM 实测 not-found)。这里统一兜底装上。
+  if [ -f "$OS_DIR/deploy/provision/echo-firstboot.service" ]; then
+    install -m644 "$OS_DIR/deploy/provision/echo-firstboot.service" \
+      /etc/systemd/system/echo-firstboot.service
+    systemctl enable echo-firstboot.service 2>/dev/null || true
+  fi
+
   # nginx 反代:对外只暴露 80/443,后端 appliance 只听 127.0.0.1:8000。
   # 与参考 NAS同一手法 —— 单 nginx 入口,功能模块各自 unix socket / 本地端口。
   install -m644 "$OS_DIR/deploy/provision/base/echo-nginx.conf" \
