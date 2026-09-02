@@ -5,7 +5,7 @@
 # 改一下引导配置的 append 行,再重新打包。**不动 initrd** —— 这是刻意的。
 #
 # 为什么不动 initrd:
-#   飞牛的做法是把自研 TUI 塞进 initrd,并 patch debian-installer-startup 两行
+#   参考 NAS的做法是把自研 TUI 塞进 initrd,并 patch debian-installer-startup 两行
 #   (usr/sbin/debian-installer-startup:19 与 S15lowmem:128)。这很精巧,但依赖
 #   d-i 内部文件结构 —— 上游一改就碎。而且 Debian initrd 是多段拼接
 #   (early microcode + 压缩主段),重打包容易出错。
@@ -103,14 +103,14 @@ fi
 cat >"$PAYLOAD/echo-env.sh" <<EOF
 # 由 build-iso.sh 生成;首次开机脚本会 source 它
 ECHO_OS_REPO="${ECHO_OS_REPO:-https://github.com/dengdenghua/octopus-os.git}"
-ECHO_OS_BRANCH="${ECHO_OS_BRANCH:-p3-fnos}"
+ECHO_OS_BRANCH="${ECHO_OS_BRANCH:-p3-provision}"
 ECHO_OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 EOF
 
-# ── 3b. A 路线 overlay(自包含首启,无需 push p3-fnos)──────────
+# ── 3b. A 路线 overlay(自包含首启,无需 push p3-provision)──────────
 # 把"当前分支相对上游 os-main 的改动"打成 tar.gz 嵌进 ISO。首次开机
-# step_echo_src 在 clone 基线后解压覆盖,等价于直接 clone p3-fnos。
+# step_echo_src 在 clone 基线后解压覆盖,等价于直接 clone p3-provision。
 # 这样全新机器首启拿到完整 NAS 产品,且不依赖分支是否发布到远程。
 OVERLAY_BASE="$(git merge-base HEAD upstream/os-main 2>/dev/null \
               || git merge-base HEAD os-main 2>/dev/null \

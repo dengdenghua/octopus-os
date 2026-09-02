@@ -1,8 +1,8 @@
 #!/bin/bash
 # Echo OS 装机 TUI —— 寄生在 Debian Installer 之前跑,只负责"问清几件事"。
 #
-# 为什么这么做(直接来自飞牛 OS 逆向的结论):
-#   飞牛的 initrd 里只多了 3 个自研文件,注入点只有两行 —— 选盘 TUI 跑在
+# 为什么这么做(直接来自参考 NAS 逆向的结论):
+#   参考 NAS的 initrd 里只多了 3 个自研文件,注入点只有两行 —— 选盘 TUI 跑在
 #   debian-installer-startup 里,跑完 chvt 交给 d-i。分区、网络、镜像校验、
 #   grub 安装全是白拿的。这是成本最低、也最稳的装机改造方式。
 #

@@ -4,7 +4,7 @@
 > 上验证;在此之前的所有功能均已用 pytest + 浏览器预览验证过(见各 commit)。
 > 跑完把结果按"反馈给开发"一节回填即可。
 
-适用环境:任意装了 Docker 的 Linux 主机 / 群晖 / 飞牛 / CasaOS / ZimaOS / 绿联,
+适用环境:任意装了 Docker 的 Linux 主机 / 群晖 / 参考 NAS / CasaOS / ZimaOS / 绿联,
 或 Mac/Windows 上的 Docker Desktop。
 
 ---

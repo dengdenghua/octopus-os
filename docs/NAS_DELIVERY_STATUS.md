@@ -9,7 +9,7 @@
 ## 结论
 
 Echo OS 目前已经形成一个可运行的 **NAS 桌面与 Agent 应用层**，基础文件传输闭环也
-已打通；但它还不是可替代群晖、飞牛或 OpenMediaVault 的完整 NAS 发行版。
+已打通；但它还不是可替代群晖、参考 NAS或 OpenMediaVault 的完整 NAS 发行版。
 
 推荐交付架构保持清晰分层：
 

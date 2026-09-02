@@ -2,7 +2,7 @@
 """往 d-i 的 initrd.gz 末尾追加一段 gzip 压缩的 newc cpio。
 
 原理:Linux 内核 initramfs 解包器支持多个"压缩 cpio 段"首尾拼接
-(这正是 EFI 微码 pre-sale 段的机制,也是飞牛 initrd 多段结构的成因)。
+(这正是 EFI 微码 pre-sale 段的机制,也是参考 NAS initrd 多段结构的成因)。
 利用它,无需重打包 ISO 就能把 preseed / 载荷送进安装器环境 ——
 QEMU 直接 -kernel vmlinuz -initrd initrd-appended.gz 即可验证。
 

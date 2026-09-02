@@ -115,7 +115,7 @@ User asks about private contract
 
 ## Deployment
 
-- **P1**: Docker app on existing NAS (CasaOS / OMV / 飞牛)
+- **P1**: Docker app on existing NAS (CasaOS / OMV / 参考 NAS)
 - **P2**: Windowed desktop + app skills + semantic index
 - **P2.5**: HDMI local desktop (kiosk mode)
 - **P3**: Full OS image (Debian + OMV, immutable system + A/B atomic updates)

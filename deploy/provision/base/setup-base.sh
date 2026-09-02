@@ -8,7 +8,7 @@
 # 幂等:每个阶段有哨兵文件,重跑会跳过已完成的部分。
 # 日志:journalctl -u echo-firstboot
 #
-# 步骤实现在 fnos-lib.sh(被本脚本 source),本文件只做编排 + 变量声明。
+# 步骤实现在 provision-lib.sh(被本脚本 source),本文件只做编排 + 变量声明。
 set -euo pipefail
 
 OS_DIR=/opt/echo-os
@@ -22,13 +22,13 @@ LOG_TAG="echo-firstboot"
 
 # 由 build-iso.sh 或环境变量注入
 OS_REPO="${ECHO_OS_REPO:-https://github.com/dengdenghua/octopus-os.git}"
-OS_BRANCH="${ECHO_OS_BRANCH:-p3-fnos}"
+OS_BRANCH="${ECHO_OS_BRANCH:-p3-provision}"
 DEBIAN_MIRROR="${DEBIAN_MIRROR:-https://deb.debian.org/debian}"
 
 # 引入 A 路线步骤库(桌面/备份恢复等上游收敛步骤亦在其中)
-# shellcheck source=fnos-lib.sh
+# shellcheck source=provision-lib.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/fnos-lib.sh"
+source "$SCRIPT_DIR/provision-lib.sh"
 
 [ "$(id -u)" -eq 0 ] || { echo "请用 root 运行" >&2; exit 1; }
 

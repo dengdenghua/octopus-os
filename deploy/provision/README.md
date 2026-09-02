@@ -1,14 +1,14 @@
-# deploy/fnos — Echo OS 装机链路
+# deploy/provision — Echo OS 装机链路
 
 把 Debian 13 (trixie) 官方 netinst 改造成 Echo OS 装机镜像。
 
-设计依据见 [`docs/P3_FNOS_BASE_PLAN.md`](../../docs/P3_FNOS_BASE_PLAN.md)。
+设计依据见 [`docs/P3_provision_BASE_PLAN.md`](../../docs/P3_provision_BASE_PLAN.md)。
 一句话:**寄生式改造 d-i,不 fork 安装器一行代码。**
 
 ## 目录
 
 ```
-deploy/fnos/
+deploy/provision/
 ├── build-iso.sh                     # 组装 ISO(解包 → 塞载荷 → 改引导 → 重打包)
 ├── echo-firstboot.service        # 首次开机跑 setup-base.sh
 ├── 99-echo-os                       # sudoers 命令白名单
@@ -71,8 +71,8 @@ ZFS 编译、Docker 安装、前端构建都要联网且耗时。放进 d-i,失�
 
 | 决策 | 选择 | 理由 |
 |---|---|---|
-| 装机 TUI 注入方式 | `preseed/early_command` | 官方钩子跨版本稳定;飞牛的 initrd 注入依赖 d-i 内部结构,上游一改就碎 |
-| 系统与数据 | 分离(系统盘 ext4 / 数据盘 ZFS 后组) | 与飞牛同思路,重刷系统不动数据 |
+| 装机 TUI 注入方式 | `preseed/early_command` | 官方钩子跨版本稳定;参考 NAS的 initrd 注入依赖 d-i 内部结构,上游一改就碎 |
+| 系统与数据 | 分离(系统盘 ext4 / 数据盘 ZFS 后组) | 与参考 NAS同思路,重刷系统不动数据 |
 | 软硬件 | 无 GPU 自动跳过原生 shell | 纯无头 NAS 不该背几百 MB 图形栈 |
-| TLS 证书 | 每设备首启生成 | 飞牛随包带固定私钥是隐患 |
+| TLS 证书 | 每设备首启生成 | 参考 NAS随包带固定私钥是隐患 |
 | 提权 | 命令白名单,不给 `NOPASSWD:ALL` | 最小权限 |

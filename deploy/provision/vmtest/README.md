@@ -1,6 +1,6 @@
 # Stage A · Windows + QEMU 装机验证(无需 Linux)
 
-目标:在一台只有 Windows 的机器上,完整验证 `deploy/fnos/installer/preseed.cfg`
+目标:在一台只有 Windows 的机器上,完整验证 `deploy/provision/installer/preseed.cfg`
 的静态策略与 late_command 投放逻辑 —— 装出的 Debian 13 真实可引导。
 
 ## 原理
@@ -10,7 +10,7 @@
 1. 从 netinst ISO 抽出 `install.amd/vmlinuz` + `initrd.gz`(PowerShell 挂载复制)
 2. 用 `tools/make_initrd_segment.py` 往 initrd.gz **末尾追加一段 gzip cpio**,
    内含 `preseed.cfg` 与 `echo-vmtest/` 载荷 —— Linux 内核 initramfs
-   支持多段拼接(飞牛镜像里就是这种结构),无需重打包任何东西
+   支持多段拼接(参考 NAS镜像里就是这种结构),无需重打包任何东西
 3. QEMU `-kernel/-initrd` 直启,`-append` 指向 initrd 内的 preseed
 
 ## 前置

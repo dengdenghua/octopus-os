@@ -10,7 +10,7 @@ ConditionPathExists=!/var/lib/echo-os/firstboot/services
 Type=oneshot
 RemainAfterExit=yes
 Environment=DEBIAN_FRONTEND=noninteractive
-ExecStart=/opt/echo-os/deploy/fnos/base/setup-base.sh
+ExecStart=/opt/echo-os/deploy/provision/base/setup-base.sh
 TimeoutStartSec=60min
 StandardOutput=journal
 StandardError=journal

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fnos A 路线首次开机步骤库 —— 被 setup-base.sh `source`,不单独执行。
+# provision A 路线首次开机步骤库 —— 被 setup-base.sh `source`,不单独执行。
 #
 # 拆分目的(收敛 P2):把"装机步骤"从"编排"里抽出来,让 A 路线特有步骤与
 # 上游收敛步骤泾渭分明:
@@ -41,7 +41,7 @@ EOF
 }
 
 # ── 2/7 存储栈(全部用上游官方包,不自研)─────────────────
-# 飞牛逆向结论:存储栈一律集成,一个补丁都不打。ZFS 用 OpenZFS 官方源。
+# 参考 NAS逆向结论:存储栈一律集成,一个补丁都不打。ZFS 用 OpenZFS 官方源。
 step_storage() {
   log "== 2/7 安装存储栈 =="
   # 注意:lsblk 在 util-linux 里,不是独立 apt 包(VM 实测写成包名会
@@ -94,7 +94,7 @@ step_node() {
 step_echo_src() {
   log "== 5/7 拉取 Echo OS 源码 =="
   mkdir -p "$OS_DIR"
-  # 目标分支不存在于远程时(如 p3-fnos 尚未 push),自动回退到 os-main
+  # 目标分支不存在于远程时(如 p3-provision 尚未 push),自动回退到 os-main
   # 上游基线,保证首启不 brick;仅缺失 A 路线 NAS 特性,运维可据 WARN 修复。
   clone_branch() {
     local br="$1"
@@ -111,8 +111,8 @@ step_echo_src() {
       log "  已克隆目标分支 $OS_BRANCH"
     else
       log "⚠ 分支 '$OS_BRANCH' 在 $OS_REPO 不存在,回退克隆 os-main(上游基线)"
-      log "  ⚠ 回退后不含 p3-fnos 的 A 路线 NAS 特性(appliance/nas 路由、deploy/fnos 装机路线)。"
-      log "  ⚠ 修复:把 p3-fnos push 到远程,或设 ECHO_OS_REPO/ECHO_OS_BRANCH 指向已发布分支后重跑本步。"
+      log "  ⚠ 回退后不含 p3-provision 的 A 路线 NAS 特性(appliance/nas 路由、deploy/provision 装机路线)。"
+      log "  ⚠ 修复:把 p3-provision push 到远程,或设 ECHO_OS_REPO/ECHO_OS_BRANCH 指向已发布分支后重跑本步。"
       clone_branch os-main || { log "✗ os-main 回退克隆也失败,仓库不可达"; exit 1; }
     fi
   else
@@ -129,21 +129,21 @@ step_echo_src() {
   fi
   # A 路线 overlay:安装介质/首次开机阶段若投放了 overlay 包(由 build-iso.sh
   # 生成、preseed late_command 落到 $ECHO_OVERLAY),解压覆盖到克隆树之上,
-  # 等价于直接 clone p3-fnos —— 无需把分支 push 到远程即可拿到完整 NAS 产品。
-  # 典型内容:appliance/nas/ 路由、deploy/fnos/ 装机路线、品牌重命名等。
+  # 等价于直接 clone p3-provision —— 无需把分支 push 到远程即可拿到完整 NAS 产品。
+  # 典型内容:appliance/nas/ 路由、deploy/provision/ 装机路线、品牌重命名等。
   local OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
   if [ -f "$OVERLAY" ]; then
     log "  应用 A 路线 overlay: $OVERLAY"
     tar xzf "$OVERLAY" -C "$OS_DIR"
     rm -f "$OVERLAY"
-    log "  overlay 已应用(含 appliance/nas 路由 + deploy/fnos 装机路线)"
+    log "  overlay 已应用(含 appliance/nas 路由 + deploy/provision 装机路线)"
   fi
   done_mark echo-src
   # clone/reset 后仓库版本(0644)会覆盖 late_command 投放的引导脚本,
   # 而 firstboot.service 的 ExecStart 直接执行它 —— 无执行位会 203/EXEC
   # (VM 实测:重启后服务起不来)。每次重拉后强制恢复执行位。
   # 注意:overlay 可能已覆盖此文件,这里确保执行位恢复。
-  chmod +x "$OS_DIR/deploy/fnos/base/setup-base.sh" 2>/dev/null || true
+  chmod +x "$OS_DIR/deploy/provision/base/setup-base.sh" 2>/dev/null || true
 }
 
 # ── 5b/7 Python 依赖 ───────────────────────────────────
@@ -218,7 +218,7 @@ step_shell() {
   done_mark shell
 }
 
-# ── 6b/7 备份/恢复(上游收敛,fnos 原缺)────────────────
+# ── 6b/7 备份/恢复(上游收敛,provision 原缺)────────────────
 # 复用上游 deploy/backup + deploy/recovery,不自研。两类服务都带条件:
 # 缺挂载点/凭据时自动跳过,systemctl enable 不会失败。
 step_backup_recovery() {
@@ -247,21 +247,21 @@ step_backup_recovery() {
 step_services() {
   log "== 7/7 安装服务单元 =="
 
-  # 数据根目录:统一命名空间挂在这里(飞牛用 /fs,我们用 /data)
+  # 数据根目录:统一命名空间挂在这里(参考 NAS用 /fs,我们用 /data)
   mkdir -p /data/nas /data/apps
 
-  install -m644 "$OS_DIR/deploy/fnos/base/echo-appliance.service" \
+  install -m644 "$OS_DIR/deploy/provision/base/echo-appliance.service" \
     /etc/systemd/system/echo-appliance.service
 
   # nginx 反代:对外只暴露 80/443,后端 appliance 只听 127.0.0.1:8000。
-  # 与飞牛同一手法 —— 单 nginx 入口,功能模块各自 unix socket / 本地端口。
-  install -m644 "$OS_DIR/deploy/fnos/base/echo-nginx.conf" \
+  # 与参考 NAS同一手法 —— 单 nginx 入口,功能模块各自 unix socket / 本地端口。
+  install -m644 "$OS_DIR/deploy/provision/base/echo-nginx.conf" \
     /etc/nginx/sites-available/echo
   ln -sf /etc/nginx/sites-available/echo /etc/nginx/sites-enabled/echo
   rm -f /etc/nginx/sites-enabled/default
 
   # 随机生成 TLS 自签证书(每设备独立)。
-  # 飞牛的一个隐患:nginx conf 里随包带了 server.crt/key,若全系共用则等于
+  # 参考 NAS的一个隐患:nginx conf 里随包带了 server.crt/key,若全系共用则等于
   # TLS 私钥公开。这里强制每设备首启重新生成。
   if [ ! -f /etc/ssl/private/echo-selfsigned.key ]; then
     openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
