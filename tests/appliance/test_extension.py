@@ -35,7 +35,8 @@ def test_extension_passes_one_authenticator_to_routes_instead_of_raw_jwt() -> No
         "create_device_sync_router",
         "create_files_router",
         "create_hub_router",
-        "create_omv_router",
+        "create_native_storage_router",
+        "create_omv_alias_router",
         "create_photos_router",
         "create_task_projection_router",
     }

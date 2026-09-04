@@ -302,8 +302,15 @@ def register_app(app: Any, context: Any) -> None:
         )
     )
     app.include_router(create_native_storage_router(authenticator=authenticator))
-    # 兼容别名:存量面板仍请求 /api/appliance/omv/*,由原生面同构应答。
-    app.include_router(create_omv_alias_router(authenticator=authenticator))
+    # 兼容别名:存量面板仍请求 /api/appliance/omv/*,由原生面同构应答;
+    # 共享文件夹创建(第一刀写面)带完整审批+审计语义。
+    app.include_router(
+        create_omv_alias_router(
+            authenticator=authenticator,
+            approval=approval,
+            audit=audit,
+        )
+    )
 
     # Publish the verified Agent runtime/config identity. Echo OS owns the only
     # browser workbench and deliberately does not mount a second Agent WebUI.

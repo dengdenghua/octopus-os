@@ -1,6 +1,6 @@
 """Native (OpenMediaVault-free) storage plane.
 
-Read-only storage source built exclusively on standard Linux tooling that
+Storage source built exclusively on standard Linux tooling that
 already ships with the appliance: ``zpool``, ``lsblk``, ``df`` and
 ``smartctl``. The kernel — not a third-party NAS panel — is the single source
 of truth for device state, so no parallel storage state is ever maintained.
@@ -16,22 +16,41 @@ identically with or without OpenMediaVault installed:
     /smart/devices-> OmvSmartDevice[]
     /topology     -> OmvStorageTopology
 
-Everything here is read-only; writes (format, share, quota) stay out of this
-module on purpose.
+Most surfaces remain read-only. Shared-folder creation is the first deliberately
+narrow write slice: it can only create one portable-name directory on an
+already-mounted writable volume, fixes its group/mode, and records the result in
+an atomic local registry. Formatting, deletion, ACL, share protocols, and quota
+changes stay out of this module.
 """
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
+import os
 import re
+import stat as stat_module
 import subprocess
+import tempfile
+import threading
+import uuid as uuid_module
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
-from appliance.omv_protocol import validate_devicefile
+from appliance.omv_protocol import validate_devicefile, validate_shared_folder_desired
 
 SCHEMA_VERSION = 1
+
+SHARED_FOLDER_PLAN_SCHEMA = "echo.omv.shared-folder-plan.v1"
+_NATIVE_SHARE_REGISTRY = Path("/var/lib/echo-os/native-shared-folders.json")
+_STORAGE_UUID_NAMESPACE = uuid_module.UUID("6f1e0d5c-3a34-4f5e-9a52-1f65c3b07a11")
+_REGISTRY_THREAD_LOCK = threading.RLock()
+_NATIVE_DATA_MOUNT_ROOTS = ("/data", "/mnt", "/srv", "/fs", "/volume")
 
 # Filesystem types that carry no persistent user data; they would otherwise
 # dominate the list on any Debian host.
@@ -94,7 +113,7 @@ _MIN_DISK_BYTES = 1024**3
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _run(*args: str, timeout: float = 20.0) -> str:
@@ -162,7 +181,10 @@ def _percent(used: int | None, total: int | None) -> int | None:
 def block_devices() -> list[dict[str, Any]]:
     """Enumerate physical disks via ``lsblk`` (kernel is the authority)."""
     out = _run(
-        "lsblk", "-J", "-b", "-o",
+        "lsblk",
+        "-J",
+        "-b",
+        "-o",
         "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,ROTA,PKNAME",
     )
     if not out:
@@ -177,20 +199,26 @@ def block_devices() -> list[dict[str, Any]]:
     def walk(node: dict[str, Any]) -> None:
         name = node.get("name")
         node_type = node.get("type") or "disk"
-        if node_type in {"disk", "rom", "part", "lvm", "md", "raid0", "raid1", "raid5", "raid6", "raid10"}:
-            if node_type == "disk" and (_int(node.get("size")) or 0) >= _MIN_DISK_BYTES:
-                devices.append(
-                    {
-                        "devicefile": f"/dev/{name}",
-                        "type": node_type,
-                        "sizeBytes": _int(node.get("size")),
-                        "filesystemType": node.get("fstype") or None,
-                        "rotational": None if node.get("rota") is None else bool(node.get("rota") == "1" or node.get("rota") is True),
-                        "model": (node.get("model") or "").strip() or None,
-                        "serial": (node.get("serial") or "").strip() or None,
-                        "parentDevicefiles": [],
-                    }
-                )
+        if (
+            node_type
+            in {"disk", "rom", "part", "lvm", "md", "raid0", "raid1", "raid5", "raid6", "raid10"}
+            and node_type == "disk"
+            and (_int(node.get("size")) or 0) >= _MIN_DISK_BYTES
+        ):
+            devices.append(
+                {
+                    "devicefile": f"/dev/{name}",
+                    "type": node_type,
+                    "sizeBytes": _int(node.get("size")),
+                    "filesystemType": node.get("fstype") or None,
+                    "rotational": None
+                    if node.get("rota") is None
+                    else bool(node.get("rota") == "1" or node.get("rota") is True),
+                    "model": (node.get("model") or "").strip() or None,
+                    "serial": (node.get("serial") or "").strip() or None,
+                    "parentDevicefiles": [],
+                }
+            )
         for child in node.get("children") or []:
             walk(child)
 
@@ -301,7 +329,9 @@ def zfs_pools() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
 
 def _zfs_level(pool: str) -> str:
     status = _run("zpool", "status", pool, timeout=10.0)
-    match = re.search(r"^\s*(\S+)-\d+\s+(ONLINE|DEGRADED|FAULTED|OFFLINE|UNAVAIL)", status, re.MULTILINE)
+    match = re.search(
+        r"^\s*(\S+)-\d+\s+(ONLINE|DEGRADED|FAULTED|OFFLINE|UNAVAIL)", status, re.MULTILINE
+    )
     if match:
         return match.group(1)
     if "raidz2" in status:
@@ -318,7 +348,10 @@ def _zfs_scrubbing(pool: str) -> bool:
 
 
 def _zfs_scrub_percent(pool: str) -> int | None:
-    match = re.search(r"scrub in progress[^\n]*?(\d+(?:\.\d+)?)% done", _run("zpool", "status", pool, timeout=10.0))
+    match = re.search(
+        r"scrub in progress[^\n]*?(\d+(?:\.\d+)?)% done",
+        _run("zpool", "status", pool, timeout=10.0),
+    )
     if match:
         return int(float(match.group(1)))
     return None
@@ -349,8 +382,14 @@ def filesystems() -> list[dict[str, Any]]:
         parts = line.split()
         if len(parts) < 7:
             continue
-        devicefile, fstype, size, used, available, used_percent, mountpoint = (
-            parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], " ".join(parts[6:])
+        devicefile, fstype, size, used, available, _used_percent, mountpoint = (
+            parts[0],
+            parts[1],
+            parts[2],
+            parts[3],
+            parts[4],
+            parts[5],
+            " ".join(parts[6:]),
         )
         if fstype in _PSEUDO_FS or devicefile in seen:
             continue
@@ -399,7 +438,7 @@ def smart_report(devicefile: str) -> dict[str, Any]:
         "health": health,
         "temperatureC": _int(temperature),
         "powerOnHours": _int((payload.get("power_on_time") or {}).get("hours")),
-        "powerCycles": _int((payload.get("power_cycle_count") or 0)) or None,
+        "powerCycles": _int(payload.get("power_cycle_count") or 0) or None,
     }
 
 
@@ -508,8 +547,7 @@ def storage_health() -> dict[str, Any]:
         "persistenceHealthy": True,
         "monitoring": False,
         "activeAlerts": [
-            {**alert, "firstSeenAt": now, "lastSeenAt": now, "occurrences": 1}
-            for alert in alerts
+            {**alert, "firstSeenAt": now, "lastSeenAt": now, "occurrences": 1} for alert in alerts
         ],
         "events": [],
         "summary": {"critical": critical, "warning": warning, "total": len(alerts)},
@@ -525,9 +563,9 @@ def status() -> dict[str, Any]:
     return {
         "configured": True,
         "available": bool(block_devices()),
-        "readOnly": True,
+        "readOnly": False,
         "adminUrl": None,
-        "capabilities": [],
+        "capabilities": ["shared-folder.create.simple.v1"],
         "source": "native",
     }
 
@@ -605,12 +643,18 @@ def sharing_overview() -> dict[str, Any]:
                 "gid": gid,
                 "comment": gecos.split(",")[0],
                 "groups": [
-                    g[0] for g in _etc_entries("/etc/group") if name in (g[3].split(",") if len(g) > 3 else [])
+                    g[0]
+                    for g in _etc_entries("/etc/group")
+                    if name in (g[3].split(",") if len(g) > 3 else [])
                 ],
             }
         )
     groups = [
-        {"name": fields[0], "gid": _int(fields[2]) or 0, "members": fields[3].split(",") if len(fields) > 3 else []}
+        {
+            "name": fields[0],
+            "gid": _int(fields[2]) or 0,
+            "members": fields[3].split(",") if len(fields) > 3 else [],
+        }
         for fields in _etc_entries("/etc/group")
         if len(fields) > 3 and _SYSTEM_UID_FLOOR <= (_int(fields[2]) or 0) < 65534
     ]
@@ -618,7 +662,7 @@ def sharing_overview() -> dict[str, Any]:
     fs_entries = filesystems()
     shared_folders = [
         {
-            "uuid": entry["devicefile"],
+            "uuid": volume_uuid(entry["mountpoint"]),
             "name": entry["label"],
             "comment": "",
             "relativePath": entry["mountpoint"],
@@ -629,9 +673,32 @@ def sharing_overview() -> dict[str, Any]:
         }
         for entry in fs_entries
     ]
+    # 原生写面登记的共享文件夹(2770, users 组)也并入清单。
+    for entry in _registry_load():
+        shared_folders.append(
+            {
+                "uuid": entry["uuid"],
+                "name": entry["name"],
+                "comment": entry.get("comment", ""),
+                "relativePath": entry.get("relativePath", entry["name"]),
+                "device": entry.get("device", ""),
+                "status": "MOUNTED",
+                "inUse": True,
+                "supportsAcl": False,
+            }
+        )
     shared_folder_targets = [
-        {"mountPointRef": entry["devicefile"], "path": entry["mountpoint"]}
+        {
+            "mountPointRef": volume_uuid(entry["mountpoint"]),
+            "filesystemUuid": entry.get("uuid"),
+            "label": entry["label"],
+            "type": entry["type"],
+            "sizeBytes": entry["sizeBytes"],
+            "availableBytes": entry["availableBytes"],
+            "readOnly": False,
+        }
         for entry in fs_entries
+        if _is_native_share_target(entry)
     ]
     smb_shares = _samba_usershares()
     return {
@@ -645,13 +712,372 @@ def sharing_overview() -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------------------- #
+# Native write plane: shared folders (first slice)
+# --------------------------------------------------------------------------- #
+
+
+def volume_uuid(mountpoint: str) -> str:
+    """Deterministic UUID for a mountpoint (stable across reboots)."""
+    return str(uuid_module.uuid5(_STORAGE_UUID_NAMESPACE, f"echo-storage:{mountpoint}"))
+
+
+def _registry_load(*, strict: bool = False) -> list[dict[str, Any]]:
+    try:
+        with open(_NATIVE_SHARE_REGISTRY, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except FileNotFoundError:
+        return []
+    except (OSError, json.JSONDecodeError) as exc:
+        if strict:
+            raise OSError("native shared-folder registry is unreadable") from exc
+        return []
+    if not isinstance(payload, list) or any(not isinstance(entry, dict) for entry in payload):
+        if strict:
+            raise OSError("native shared-folder registry has an invalid shape")
+        return []
+    return payload
+
+
+def _registry_save(entries: list[dict[str, Any]]) -> None:
+    _NATIVE_SHARE_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{_NATIVE_SHARE_REGISTRY.name}.",
+        suffix=".tmp",
+        dir=_NATIVE_SHARE_REGISTRY.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        _make_private(descriptor, temporary)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            json.dump(entries, handle, ensure_ascii=False, indent=1)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, _NATIVE_SHARE_REGISTRY)
+        with contextlib.suppress(OSError):
+            directory_fd = os.open(_NATIVE_SHARE_REGISTRY.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        with contextlib.suppress(FileNotFoundError):
+            temporary.unlink()
+
+
+def _make_private(descriptor: int, path: Path) -> None:
+    fchmod = getattr(os, "fchmod", None)
+    if callable(fchmod):
+        fchmod(descriptor, 0o600)
+    else:  # pragma: no cover - exercised by the Windows CI job
+        path.chmod(0o600)
+
+
+@contextmanager
+def _registry_transaction() -> Iterator[None]:
+    """Serialize registry and directory state changes across threads/processes."""
+    with _REGISTRY_THREAD_LOCK:
+        _NATIVE_SHARE_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = _NATIVE_SHARE_REGISTRY.with_name(f".{_NATIVE_SHARE_REGISTRY.name}.lock")
+        flags = os.O_RDWR | os.O_CREAT
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(lock_path, flags, 0o600)
+        try:
+            info = os.fstat(descriptor)
+            if not stat_module.S_ISREG(info.st_mode):
+                raise OSError("native shared-folder lock is not a regular file")
+            _make_private(descriptor, lock_path)
+            try:
+                import fcntl
+            except ImportError:  # pragma: no cover - Windows tests use the thread lock
+                fcntl = None  # type: ignore[assignment]
+            if fcntl is not None:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(descriptor)
+
+
+def _writable_targets() -> dict[str, str]:
+    """mountPointRef(uuid) -> dedicated NAS data mount, never the system root."""
+    targets: dict[str, str] = {}
+    for entry in filesystems():
+        if not _is_native_share_target(entry):
+            continue
+        mountpoint = str(entry["mountpoint"])
+        targets[volume_uuid(mountpoint)] = mountpoint
+    return targets
+
+
+def _is_native_share_target(entry: dict[str, Any]) -> bool:
+    """Only expose mounts below explicit NAS namespaces as write targets.
+
+    ``df`` always includes ``/``. Treating every writable filesystem as a NAS
+    volume would therefore let a fresh install create a share on the system
+    partition before a data pool is mounted. The allowed namespaces mirror the
+    legacy share manager and still cover ZFS datasets mounted below ``/data``
+    or ``/fs`` plus conventional removable/server mounts.
+    """
+    if entry.get("readOnly"):
+        return False
+    mountpoint = str(entry.get("mountpoint") or "")
+    if not mountpoint or not os.path.isabs(mountpoint):
+        return False
+    normalized = os.path.normpath(mountpoint)
+    for root in _NATIVE_DATA_MOUNT_ROOTS:
+        normalized_root = os.path.normpath(root)
+        try:
+            if os.path.commonpath((normalized, normalized_root)) == normalized_root:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _canonical_hash(payload: Any) -> str:
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _share_uuid(volume_ref: str, name: str) -> str:
+    return str(uuid_module.uuid5(_STORAGE_UUID_NAMESPACE, f"echo-share:{volume_ref}:{name}"))
+
+
+def _target_state(path: Path) -> dict[str, Any]:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return {"kind": "absent"}
+    return {
+        "kind": "directory" if stat_module.S_ISDIR(info.st_mode) else "other",
+        "mode": info.st_mode & 0o7777,
+        "uid": info.st_uid,
+        "gid": info.st_gid,
+    }
+
+
+def _users_group_gid() -> int:
+    try:
+        import grp
+    except ImportError as exc:  # pragma: no cover - native storage is Unix-only
+        raise OSError("native shared-folder creation requires a Unix host") from exc
+    try:
+        return grp.getgrnam("users").gr_gid
+    except KeyError:
+        try:
+            return grp.getgrgid(100).gr_gid
+        except KeyError as exc:
+            raise OSError("native shared-folder creation requires the users group") from exc
+
+
+def _configure_shared_folder(path: Path, group_gid: int) -> None:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags)
+    try:
+        os.fchown(descriptor, 0, group_gid)
+        os.fchmod(descriptor, 0o2770)
+    finally:
+        os.close(descriptor)
+
+
+def _verify_shared_folder(path: Path, group_gid: int) -> bool:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return False
+    try:
+        info = os.fstat(descriptor)
+        return (
+            stat_module.S_ISDIR(info.st_mode)
+            and (info.st_mode & 0o7777) == 0o2770
+            and info.st_uid == 0
+            and info.st_gid == group_gid
+        )
+    finally:
+        os.close(descriptor)
+
+
+def _registry_folder_entry(
+    *, volume_ref: str, volume_path: str, name: str, comment: str
+) -> dict[str, Any]:
+    return {
+        "uuid": _share_uuid(volume_ref, name),
+        "name": name,
+        "comment": comment,
+        "relativePath": name,
+        "device": next(
+            (e["devicefile"] for e in filesystems() if e["mountpoint"] == volume_path),
+            volume_ref,
+        ),
+        "volumePath": volume_path,
+        "mountPointRef": volume_ref,
+        "createdAt": _now(),
+    }
+
+
+def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    targets = _writable_targets()
+    volume_ref = desired["mountPointRef"]
+    volume_path = targets.get(volume_ref)
+    if volume_path is None:
+        raise ValueError("mountPointRef does not match any mounted writable volume")
+
+    registry = _registry_load(strict=True)
+    existing = next(
+        (
+            entry
+            for entry in registry
+            if entry.get("mountPointRef") == volume_ref and entry.get("name") == desired["name"]
+        ),
+        None,
+    )
+    target_dir = Path(volume_path) / desired["name"]
+    target_state = _target_state(target_dir)
+    if existing is None and target_state["kind"] != "absent":
+        raise ValueError("shared folder target already exists outside the native registry")
+    if existing is not None:
+        if target_state["kind"] != "directory":
+            raise OSError("native shared-folder registry does not match the filesystem")
+        if existing.get("comment", "") != desired["comment"]:
+            raise ValueError(
+                "shared folder already exists with different metadata; updates are not managed"
+            )
+
+    operation = "none" if existing is not None else "create"
+    base_revision = _canonical_hash(
+        {
+            "volume": volume_ref,
+            "registry": registry,
+            "target": target_state,
+        }
+    )
+    plan_id = _canonical_hash(
+        {
+            "schema": SHARED_FOLDER_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+            "operation": operation,
+        }
+    )
+    changes = (
+        []
+        if existing is not None
+        else [
+            {"field": "name", "before": None, "after": desired["name"]},
+            {"field": "comment", "before": None, "after": desired["comment"]},
+        ]
+    )
+    return {
+        "schema": SHARED_FOLDER_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": operation,
+        "requiresApproval": operation == "create",
+        "shareUuid": existing.get("uuid") if existing else _share_uuid(volume_ref, desired["name"]),
+        "target": {"mountPointRef": volume_ref, "mountPoint": volume_path},
+        "desired": desired,
+        "changes": changes,
+        "safety": {
+            "filesystem": "existingMountedWritableOnly",
+            "relativePath": "derivedFromPortableName",
+            "directoryMode": "2770UsersGroup",
+            "acl": "notManaged",
+            "update": "notManaged",
+            "delete": "notManaged",
+        },
+        "source": "native",
+    }
+
+
+def plan_shared_folder(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview a shared-folder creation on a native writable volume."""
+    desired = validate_shared_folder_desired(dict(desired_state))
+    with _registry_transaction():
+        return _build_shared_folder_plan(desired)
+
+
+def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Create the directory (2770, users group) and record it in the registry."""
+    desired = validate_shared_folder_desired(dict(desired_state))
+    with _registry_transaction():
+        plan = _build_shared_folder_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("shared folder plan is stale; preview the change again")
+
+        group_gid = _users_group_gid()
+        volume_path = plan["target"]["mountPoint"]
+        target_dir = Path(volume_path) / desired["name"]
+        if plan["operation"] == "none":
+            if not _verify_shared_folder(target_dir, group_gid):
+                raise OSError("registered shared folder has unsafe owner, group, or mode")
+            existing = next(
+                entry
+                for entry in _registry_load(strict=True)
+                if entry.get("uuid") == plan["shareUuid"]
+            )
+            return {
+                **plan,
+                "applied": False,
+                "verified": True,
+                "sharedFolder": existing,
+            }
+
+        created = False
+        try:
+            target_dir.mkdir(mode=0o2770, exist_ok=False)
+            created = True
+            _configure_shared_folder(target_dir, group_gid)
+            if not _verify_shared_folder(target_dir, group_gid):
+                raise OSError("shared folder directory was not created with root:users 2770")
+
+            entry = _registry_folder_entry(
+                volume_ref=desired["mountPointRef"],
+                volume_path=volume_path,
+                name=desired["name"],
+                comment=desired["comment"],
+            )
+            registry = _registry_load(strict=True)
+            registry = [item for item in registry if item.get("uuid") != entry["uuid"]]
+            registry.append(entry)
+            _registry_save(registry)
+        except Exception:
+            if created:
+                try:
+                    target_dir.rmdir()
+                except OSError as rollback_exc:
+                    raise OSError(
+                        "shared folder creation failed and the empty directory could not be rolled back"
+                    ) from rollback_exc
+            raise
+        return {**plan, "applied": True, "verified": True, "sharedFolder": entry}
+
+
 class NativeStorageAuthority:
     """Drop-in replacement for the OMV client's read surface.
 
     Accounts directory and the family data-access policy previously treated
     OpenMediaVault as the storage identity authority; this class provides the
     same duck-typed surface backed by the host itself (system users, mounts,
-    Samba usershares). Read-only by design.
+    Samba usershares).
     """
 
     configured = True
@@ -687,9 +1113,11 @@ def validated_devicefile(devicefile: str) -> str:
 
 __all__ = [
     "NativeStorageAuthority",
+    "apply_shared_folder",
     "block_devices",
     "filesystems",
     "md_arrays",
+    "plan_shared_folder",
     "sharing_overview",
     "smart_devices",
     "smart_report",
@@ -697,5 +1125,6 @@ __all__ = [
     "storage_health",
     "storage_topology",
     "validated_devicefile",
+    "volume_uuid",
     "zfs_pools",
 ]
