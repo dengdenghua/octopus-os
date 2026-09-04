@@ -558,6 +558,57 @@ export function fetchOmvHealth(): Promise<OmvHealthSnapshot> {
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * 原生存储面:不经 OMV,直接读内核 / zpool / smartctl。
+ * 载荷与 OMV 桥完全同构,页面可无缝切换数据源。
+ * ------------------------------------------------------------------ */
+
+const NATIVE = "/api/appliance/storage";
+
+export type StorageSource = "omv" | "native";
+
+export function fetchNativeStatus(): Promise<OmvStatus> {
+  return readJson(`${NATIVE}/status`, "无法读取原生存储接入状态");
+}
+
+export async function fetchNativeFilesystems(): Promise<OmvFilesystem[]> {
+  const result = await readJson<{ filesystems: OmvFilesystem[] }>(
+    `${NATIVE}/filesystems`,
+    "无法读取存储卷",
+  );
+  return result.filesystems;
+}
+
+export async function fetchNativeSmart(devicefile: string): Promise<OmvSmart> {
+  const result = await readJson<{ smart: OmvSmart }>(
+    `${NATIVE}/smart?devicefile=${encodeURIComponent(devicefile)}`,
+    "无法读取磁盘 SMART 状态",
+  );
+  return result.smart;
+}
+
+export async function fetchNativeSmartDevices(): Promise<OmvSmartDevice[]> {
+  const result = await readJson<{ devices: OmvSmartDevice[] }>(
+    `${NATIVE}/smart/devices`,
+    "无法读取物理磁盘",
+  );
+  return result.devices;
+}
+
+export async function fetchNativeStorageTopology(): Promise<OmvStorageTopology> {
+  return readJson<OmvStorageTopology>(
+    `${NATIVE}/topology`,
+    "无法读取磁盘、阵列与逻辑卷关系",
+  );
+}
+
+export function fetchNativeHealth(): Promise<OmvHealthSnapshot> {
+  return readJson<OmvHealthSnapshot>(
+    `${NATIVE}/health`,
+    "无法读取原生存储健康状态",
+  );
+}
+
 export function fetchOmvSharingOverview(): Promise<OmvSharingOverview> {
   return readJson<OmvSharingOverview>(
     "/api/appliance/omv/sharing",

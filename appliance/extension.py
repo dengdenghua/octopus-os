@@ -271,24 +271,24 @@ def register_app(app: Any, context: Any) -> None:
         )
     )
 
-    # OpenMediaVault stays the storage authority. Echo reads storage health,
-    # topology and redacted sharing/account inventory through a fixed host
-    # bridge. Its constrained writes cover create-only simple shared folders,
-    # private SMB/NFS rules and filesystem owner quotas; every mutation is
-    # previewed, approval-bound, audited and verified without arbitrary RPC.
-    from appliance.omv_client import OmvClient
-    from appliance.omv_health import HEALTH_STATE_FILENAME, OmvHealthMonitor
-    from appliance.omv_router import create_omv_router
-
-    omv_client = OmvClient()
+    # 原生存储面:存储权威是主机本身(内核 / zpool / smartctl / 系统账号),
+    # 不再依赖 OpenMediaVault。读取全部走标准件;plan/apply 写路径由原生写面
+    # 逐步接管(未接管的操作返回 501,面板给出明确提示而不是静默失败)。
     from appliance.accounts import (
         ApplianceAccountDirectory,
         create_account_directory_router,
     )
+    from appliance.native_storage import NativeStorageAuthority
+    from appliance.native_storage_routes import (
+        create_native_storage_router,
+        create_omv_alias_router,
+    )
+
+    native_authority = NativeStorageAuthority()
 
     account_directory = ApplianceAccountDirectory(
         auth_config=auth_cfg,
-        omv=omv_client,
+        omv=native_authority,
         jwt_secret=auth_cfg.jwt_secret,
         account_security=account_security,
     )
@@ -301,22 +301,9 @@ def register_app(app: Any, context: Any) -> None:
             audit=audit,
         )
     )
-    omv_health = OmvHealthMonitor.from_environment(
-        omv_client,
-        Path(data_dir) / HEALTH_STATE_FILENAME,
-    )
-    app.state.echo_appliance_omv_health = omv_health
-    app.router.add_event_handler("startup", omv_health.start)
-    app.router.add_event_handler("shutdown", omv_health.stop)
-    app.include_router(
-        create_omv_router(
-            omv_client,
-            monitor=omv_health,
-            authenticator=authenticator,
-            approval=approval,
-            audit=audit,
-        )
-    )
+    app.include_router(create_native_storage_router(authenticator=authenticator))
+    # 兼容别名:存量面板仍请求 /api/appliance/omv/*,由原生面同构应答。
+    app.include_router(create_omv_alias_router(authenticator=authenticator))
 
     # Publish the verified Agent runtime/config identity. Echo OS owns the only
     # browser workbench and deliberately does not mount a second Agent WebUI.
@@ -335,7 +322,7 @@ def register_app(app: Any, context: Any) -> None:
         file_manager = FileManager(nas_root)
         family_data_access = OmvDataAccessPolicy(
             accounts=account_directory,
-            omv=omv_client,
+            omv=native_authority,
             root=file_manager.root,
             mounted_share_uuid=os.environ.get(
                 "ECHO_NAS_OMV_SHARED_FOLDER_REF",

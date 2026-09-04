@@ -3,41 +3,43 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  fetchOmvFilesystems,
-  fetchOmvHealth,
-  fetchOmvSmart,
-  fetchOmvSmartDevices,
-  fetchOmvStorageTopology,
-  fetchOmvStatus,
+  fetchNativeFilesystems,
+  fetchNativeHealth,
+  fetchNativeSmart,
+  fetchNativeSmartDevices,
+  fetchNativeStatus,
+  fetchNativeStorageTopology,
 } from "./omv";
 import { OmvStorageHealth } from "./omv-storage-health";
 
 vi.mock("./omv", () => ({
-  fetchOmvFilesystems: vi.fn(),
-  fetchOmvHealth: vi.fn(),
-  fetchOmvSmart: vi.fn(),
-  fetchOmvSmartDevices: vi.fn(),
-  fetchOmvStorageTopology: vi.fn(),
-  fetchOmvStatus: vi.fn(),
+  fetchNativeFilesystems: vi.fn(),
+  fetchNativeHealth: vi.fn(),
+  fetchNativeSmart: vi.fn(),
+  fetchNativeSmartDevices: vi.fn(),
+  fetchNativeStatus: vi.fn(),
+  fetchNativeStorageTopology: vi.fn(),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(fetchOmvStatus).mockResolvedValue({
+  vi.mocked(fetchNativeStatus).mockResolvedValue({
     configured: true,
     available: true,
     readOnly: true,
-    adminUrl: "https://nas.example.test",
+    adminUrl: null,
+    capabilities: [],
+    source: "native",
   });
-  vi.mocked(fetchOmvHealth).mockResolvedValue({
+  vi.mocked(fetchNativeHealth).mockResolvedValue({
     schemaVersion: 1,
     state: "critical",
     stale: false,
     checkedAt: "2026-08-26T01:05:00Z",
     lastSuccessfulAt: "2026-08-26T01:05:00Z",
-    intervalSeconds: 300,
+    intervalSeconds: 0,
     persistenceHealthy: true,
-    monitoring: true,
+    monitoring: false,
     activeAlerts: [
       {
         id: "111111111111111111111111",
@@ -64,8 +66,9 @@ beforeEach(() => {
     ],
     summary: { critical: 1, warning: 0, total: 1 },
     readOnly: true,
+    source: "native",
   });
-  vi.mocked(fetchOmvFilesystems).mockResolvedValue([
+  vi.mocked(fetchNativeFilesystems).mockResolvedValue([
     {
       devicefile: "/dev/sda1",
       parentdevicefile: "/dev/sda",
@@ -81,7 +84,7 @@ beforeEach(() => {
       supportsQuota: true,
     },
   ]);
-  vi.mocked(fetchOmvSmartDevices).mockResolvedValue([
+  vi.mocked(fetchNativeSmartDevices).mockResolvedValue([
     {
       devicefile: "/dev/sda",
       model: "Example Disk",
@@ -90,7 +93,7 @@ beforeEach(() => {
       temperatureC: 31,
     },
   ]);
-  vi.mocked(fetchOmvStorageTopology).mockResolvedValue({
+  vi.mocked(fetchNativeStorageTopology).mockResolvedValue({
     devices: [
       {
         devicefile: "/dev/sda",
@@ -144,8 +147,9 @@ beforeEach(() => {
         operationPercent: null,
       },
     ],
+    readOnly: true,
   });
-  vi.mocked(fetchOmvSmart).mockResolvedValue({
+  vi.mocked(fetchNativeSmart).mockResolvedValue({
     devicefile: "/dev/sda",
     model: "Example Disk",
     health: "PASSED",
@@ -155,8 +159,8 @@ beforeEach(() => {
   });
 });
 
-describe("OMV storage health settings", () => {
-  it("shows mounted capacity and loads sanitized SMART data on demand", async () => {
+describe("native storage health settings", () => {
+  it("shows mounted capacity and loads SMART data on demand", async () => {
     const user = userEvent.setup();
     render(<OmvStorageHealth />);
 
@@ -169,75 +173,26 @@ describe("OMV storage health settings", () => {
     expect(screen.getByText("RAID1 · 已降级 1/2")).toBeInTheDocument();
     expect(screen.getByText("持续监测发现严重故障")).toBeInTheDocument();
     expect(screen.getByText("软件阵列已降级")).toBeInTheDocument();
-    expect(screen.getByText(/连续 2 次/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "查看 SMART" }));
 
-    await waitFor(() => expect(fetchOmvSmart).toHaveBeenCalledWith("/dev/sda"));
+    await waitFor(() => expect(fetchNativeSmart).toHaveBeenCalledWith("/dev/sda"));
     expect(await screen.findByText("PASSED")).toBeInTheDocument();
     expect(screen.getAllByText("31°C")).toHaveLength(2);
   });
 
-  it("explains that an unconfigured bridge does not block other features", async () => {
-    vi.mocked(fetchOmvStatus).mockResolvedValue({
-      configured: false,
-      available: false,
-      readOnly: true,
-      adminUrl: null,
-    });
+  it("reports the native plane as connected without any OMV wording", async () => {
     render(<OmvStorageHealth />);
 
-    expect(
-      await screen.findByText("尚未接入 OpenMediaVault"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Echo 其他桌面、Agent 和文件功能不受影响。"),
-    ).toBeInTheDocument();
-    expect(fetchOmvFilesystems).not.toHaveBeenCalled();
-    expect(fetchOmvHealth).not.toHaveBeenCalled();
-    expect(fetchOmvSmartDevices).not.toHaveBeenCalled();
-    expect(fetchOmvStorageTopology).not.toHaveBeenCalled();
+    expect(await screen.findByText("原生存储面已连接")).toBeInTheDocument();
+    expect(screen.getByText(/只读显示本机存储卷/)).toBeInTheDocument();
+    expect(screen.queryByText(/OpenMediaVault/i)).not.toBeInTheDocument();
+    expect(fetchNativeFilesystems).toHaveBeenCalledOnce();
   });
 
-  it("keeps the persistent alert visible while the OMV bridge is offline", async () => {
-    vi.mocked(fetchOmvStatus).mockResolvedValue({
-      configured: true,
-      available: false,
-      readOnly: true,
-      adminUrl: "https://nas.example.test",
-    });
-    vi.mocked(fetchOmvHealth).mockResolvedValue({
-      schemaVersion: 1,
-      state: "unavailable",
-      stale: true,
-      checkedAt: "2026-08-26T01:10:00Z",
-      lastSuccessfulAt: "2026-08-26T01:05:00Z",
-      intervalSeconds: 300,
-      persistenceHealthy: true,
-      monitoring: true,
-      activeAlerts: [
-        {
-          id: "333333333333333333333333",
-          code: "bridge.unavailable",
-          severity: "critical",
-          resource: "openmediavault",
-          message: "OMV 只读桥暂时不可用，之前的存储状态已标记为过期",
-          firstSeenAt: "2026-08-26T01:10:00Z",
-          lastSeenAt: "2026-08-26T01:10:00Z",
-          occurrences: 1,
-        },
-      ],
-      events: [],
-      summary: { critical: 1, warning: 0, total: 1 },
-      readOnly: true,
-    });
-
+  it("surfaces degraded arrays from the native health snapshot", async () => {
     render(<OmvStorageHealth />);
 
-    expect(
-      await screen.findByText("持续监测：OMV 连接中断"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/当前数据已过期/)).toBeInTheDocument();
-    expect(fetchOmvHealth).toHaveBeenCalledOnce();
-    expect(fetchOmvFilesystems).not.toHaveBeenCalled();
+    expect(await screen.findByText("软件阵列已降级")).toBeInTheDocument();
+    expect(screen.getByText(/连续 2 次/)).toBeInTheDocument();
   });
 });

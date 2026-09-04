@@ -12,12 +12,12 @@ import {
 } from "lucide-react";
 
 import {
-  fetchOmvFilesystems,
-  fetchOmvHealth,
-  fetchOmvSmart,
-  fetchOmvSmartDevices,
-  fetchOmvStorageTopology,
-  fetchOmvStatus,
+  fetchNativeFilesystems,
+  fetchNativeHealth,
+  fetchNativeSmart,
+  fetchNativeSmartDevices,
+  fetchNativeStatus,
+  fetchNativeStorageTopology,
   type OmvFilesystem,
   type OmvHealthSnapshot,
   type OmvSmart,
@@ -87,29 +87,18 @@ export function OmvStorageHealth() {
     setError(null);
     setSmart({});
     setHealthSnapshot(null);
-    fetchOmvStatus()
+    // 存储面完全原生化:数据权威是主机本身(内核 / zpool / smartctl)。
+    fetchNativeStatus()
       .then(async (nextStatus) => {
         if (!alive) return;
         setStatus(nextStatus);
-        if (!nextStatus.configured) {
-          setFilesystems([]);
-          setDevices([]);
-          setTopology(null);
-          return;
-        }
-        const nextHealth = await fetchOmvHealth();
+        const nextHealth = await fetchNativeHealth();
         if (!alive) return;
         setHealthSnapshot(nextHealth);
-        if (!nextStatus.available) {
-          setFilesystems([]);
-          setDevices([]);
-          setTopology(null);
-          return;
-        }
         const [volumes, physicalDevices, storageTopology] = await Promise.all([
-          fetchOmvFilesystems(),
-          fetchOmvSmartDevices(),
-          fetchOmvStorageTopology(),
+          fetchNativeFilesystems(),
+          fetchNativeSmartDevices(),
+          fetchNativeStorageTopology(),
         ]);
         if (alive) {
           setFilesystems(volumes);
@@ -140,7 +129,7 @@ export function OmvStorageHealth() {
     setSmartLoading(device);
     setError(null);
     try {
-      const report = await fetchOmvSmart(device);
+      const report = await fetchNativeSmart(device);
       setSmart((current) => ({ ...current, [device]: report }));
     } catch (reason) {
       setError(
@@ -169,7 +158,7 @@ export function OmvStorageHealth() {
         <div>
           <h1 className="text-[24px] font-semibold tracking-tight">存储健康</h1>
           <p className="mt-1 text-[13px] text-slate-500">
-            只读显示 OpenMediaVault 管理的存储卷和磁盘健康
+            只读显示本机存储卷、磁盘健康与阵列状态
           </p>
         </div>
         <button
@@ -205,9 +194,9 @@ export function OmvStorageHealth() {
           <div>
             <h2 className="text-[15px] font-semibold">
               {loading
-                ? "正在连接 OMV…"
+                ? "正在读取存储状态…"
                 : status?.available
-                  ? "OMV 只读桥已连接"
+                  ? "原生存储面已连接"
                   : status?.configured
                     ? "OMV 只读桥不可用"
                     : "尚未接入 OpenMediaVault"}
@@ -336,7 +325,7 @@ export function OmvStorageHealth() {
             <div>
               <h2 className="text-[15px] font-semibold">物理磁盘</h2>
               <p className="mt-0.5 text-[11px] text-slate-400">
-                OMV SMART 枚举 · 已隐藏序列号和 by-id 路径
+                原生 SMART 枚举 · 已隐藏序列号和 by-id 路径
               </p>
             </div>
             <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-600">
