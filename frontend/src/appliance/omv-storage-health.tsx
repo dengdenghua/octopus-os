@@ -198,8 +198,8 @@ export function OmvStorageHealth() {
                 : status?.available
                   ? "原生存储面已连接"
                   : status?.configured
-                    ? "OMV 只读桥不可用"
-                    : "尚未接入 OpenMediaVault"}
+                    ? "存储面暂不可用"
+                    : "未检测到存储设备"}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
               {status?.available
@@ -226,7 +226,7 @@ export function OmvStorageHealth() {
             <div>
               <strong className="font-semibold">
                 {healthSnapshot.state === "unavailable"
-                  ? "持续监测：OMV 连接中断"
+                  ? "持续监测：存储面连接中断"
                   : healthSnapshot.state === "critical"
                     ? "持续监测发现严重故障"
                     : healthSnapshot.state === "warning"
@@ -315,7 +315,7 @@ export function OmvStorageHealth() {
 
       {!loading && status?.available && filesystems.length === 0 && (
         <p className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
-          OMV 当前没有返回可显示的已挂载数据卷。
+          当前没有可显示的已挂载数据卷。
         </p>
       )}
 
@@ -627,9 +627,9 @@ export function OmvStorageHealth() {
       </div>
 
       <p className="mt-4 text-[11px] leading-5 text-slate-400">
-        Echo 会在后台持续检测并保留最近告警变化；如需邮件或推送，请同时配置 OMV
+        Echo 会在后台持续检测并保留最近告警变化；如需邮件或推送，请同时配置
         官方通知。序列号和原始 SMART 文本不会进入
-        Echo；阵列修复、格式化、共享和权限修改 仍请在 OMV 中完成。
+        Echo。阵列修复、格式化、共享和权限修改将在原生写面逐步提供。
       </p>
     </>
   );

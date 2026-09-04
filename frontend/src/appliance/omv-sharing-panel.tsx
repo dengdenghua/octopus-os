@@ -1195,17 +1195,17 @@ export function OmvSharingPanel() {
         <div className="min-w-0 flex-1">
           <h2 className="text-[15px] font-semibold">
             {loading
-              ? "正在读取 OMV 配置…"
+              ? "正在读取存储配置…"
               : status?.available
-                ? "OMV 是共享与账户的管理底座"
-                : "OMV 共享管理尚不可用"}
+                ? "存储面为本机原生平面（系统账号 + Samba/ZFS）"
+                : "共享管理暂不可用"}
           </h2>
           <p className="mt-0.5 text-xs leading-5 text-slate-500">
             Echo
             展示脱敏概览，可在现有可写卷上安全新建基础共享文件夹，并为其预览和应用简单私有
             SMB / NFS
             规则、普通家庭账户/组、受限成员密码重置及已有用户/组访问权限；其他账户修改/删除、文件系统
-            ACL 和复杂协议配置仍在 OMV 完成。
+            ACL 和复杂协议配置将在原生写面逐步提供。
           </p>
         </div>
         {status?.adminUrl && (
@@ -1215,7 +1215,7 @@ export function OmvSharingPanel() {
             rel="noreferrer noopener"
             className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white transition hover:bg-blue-700"
           >
-            在 OMV 中管理
+            在本机管理
             <ExternalLinkIcon className="size-3.5" />
           </a>
         )}
@@ -1232,8 +1232,7 @@ export function OmvSharingPanel() {
 
       {!loading && status?.available && !status.adminUrl && (
         <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          已能查看配置；部署时设置 ECHO_OMV_ADMIN_URL 后，这里会出现安全的 OMV
-          管理入口。
+          已能查看配置；原生存储面的专用管理入口暂未开通。
         </p>
       )}
 
@@ -1417,7 +1416,7 @@ export function OmvSharingPanel() {
                   {planning ? "正在预览…" : "预览变更"}
                 </button>
                 <span className="text-[11px] text-slate-500">
-                  预览不会修改 OMV
+                  预览不会修改系统配置
                 </span>
               </div>
 
@@ -1546,7 +1545,7 @@ export function OmvSharingPanel() {
                   {nfsPlanning ? "正在预览…" : "预览 NFS 变更"}
                 </button>
                 <span className="text-[11px] text-slate-500">
-                  预览不会修改 OMV
+                  预览不会修改系统配置
                 </span>
               </div>
               {nfsPlan && (
@@ -1607,14 +1606,13 @@ export function OmvSharingPanel() {
                   </p>
                 </div>
                 <span className="rounded-full bg-white px-2 py-1 text-[10px] font-medium text-violet-700 ring-1 ring-violet-200">
-                  OMV 原生配额
+                  原生配额
                 </span>
               </div>
 
               {eligibleQuotaFilesystems.length === 0 ? (
                 <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] leading-5 text-amber-800">
-                  当前没有同时满足“已挂载、可写、支持配额”的文件系统。请先在 OMV
-                  中启用并检查卷配额能力。
+                  当前没有同时满足“已挂载、可写、支持配额”的文件系统。请先准备文件系统并启用配额能力。
                 </p>
               ) : (
                 <>
@@ -1706,7 +1704,7 @@ export function OmvSharingPanel() {
                       {quotaPlanning ? "正在预览…" : "预览配额变更"}
                     </button>
                     <span className="pb-2 text-[10px] text-slate-500">
-                      输入 0 表示取消硬限制；预览不会修改 OMV
+                      输入 0 表示取消硬限制；预览不会修改系统配置
                     </span>
                   </div>
 
@@ -1772,9 +1770,8 @@ export function OmvSharingPanel() {
                     用户/组访问权限 · {editingPrivilegeFolder.name}
                   </h2>
                   <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
-                    只管理 OMV
-                    中已经存在的用户或组及其共享服务权限；不会创建账户、修改
-                    POSIX ACL、递归改文件权限或删除数据。
+                    只管理系统中已经存在的用户或组及其共享服务权限；
+                    不会创建账户、修改 POSIX ACL、递归改文件权限或删除数据。
                   </p>
                 </div>
                 <button
@@ -1862,7 +1859,7 @@ export function OmvSharingPanel() {
                   {privilegePlanning ? "正在预览…" : "预览权限变更"}
                 </button>
                 <span className="text-[10px] text-slate-500">
-                  预览不会修改 OMV 或文件内容
+                  预览不会修改系统配置或文件内容
                 </span>
               </div>
 
@@ -1943,8 +1940,7 @@ export function OmvSharingPanel() {
             {status?.capabilities?.includes("shared-folder.create.simple.v1") &&
               overview.sharedFolderTargets.length === 0 && (
                 <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] leading-5 text-amber-800">
-                  当前没有可用于新建共享文件夹的已挂载可写卷。请先在 OMV
-                  中准备文件系统并完成挂载。
+                  当前没有可用于新建共享文件夹的已挂载可写卷。请先准备文件系统并完成挂载。
                 </p>
               )}
 
@@ -2246,7 +2242,7 @@ export function OmvSharingPanel() {
                       创建空用户组
                     </strong>
                     <p className="mt-1 text-[10px] leading-5 text-slate-500">
-                      只创建普通 OMV
+                      只创建普通
                       用户组，初始成员为空；不允许系统组、修改或删除已有组。
                     </p>
                   </div>
@@ -2305,7 +2301,7 @@ export function OmvSharingPanel() {
                     {groupPlanning ? "正在预览…" : "预览用户组创建"}
                   </button>
                   <span className="text-[10px] text-slate-500">
-                    预览不会修改 OMV
+                    预览不会修改系统配置
                   </span>
                 </div>
                 {groupPlan && (
@@ -2467,7 +2463,7 @@ export function OmvSharingPanel() {
                     {userPlanning ? "正在预览…" : "预览成员创建"}
                   </button>
                   <span className="text-[10px] text-slate-500">
-                    OMV 自动 home 开启时会安全拒绝
+                    系统自动 home 开启时会安全拒绝
                   </span>
                 </div>
                 {userPlan && (
@@ -2500,9 +2496,9 @@ export function OmvSharingPanel() {
                       开通 Echo 登录 · {echoMemberName}
                     </strong>
                     <p className="mt-1 text-[10px] leading-5 text-slate-500">
-                      仅把这个已存在的 OMV 成员映射为 Echo 家庭账号。Echo
-                      使用独立密码，不读取或复用 OMV 密码，也不会访问 Agent /
-                      OMV 私有数据库。
+                      仅把这个已存在的 存储成员映射为 Echo 家庭账号。Echo
+                      使用独立密码，不读取或复用 NAS 密码，也不会访问 Agent /
+                      系统私有数据库。
                     </p>
                   </div>
                   <button
@@ -2595,7 +2591,7 @@ export function OmvSharingPanel() {
                         将为 {echoLinkPlan.account.displayName} 开通 Echo 登录
                       </strong>
                       <span className="mt-1 block text-[10px] text-slate-500">
-                        独立登录 · 独立 Agent 身份 · 关联 OMV 用户{" "}
+                        独立登录 · 独立 Agent 身份 · 关联系统用户{" "}
                         {echoMemberName}
                       </span>
                     </div>
@@ -2901,7 +2897,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={echoLinkApprovalOpen && Boolean(echoLinkPlan)}
         title="开通 Echo 家庭登录"
-        description="Echo 只会为这个现有 OMV 成员创建独立的本地登录和 Agent 身份映射；不会读取或复用 NAS / SMB 密码，也不会修改 OMV 用户。"
+        description="Echo 只会为这个现有存储成员创建独立的本地登录和 Agent 身份映射；不会读取或复用 NAS / SMB 密码，也不会修改系统账号。"
         targetLabel={
           echoLinkPlan
             ? `${echoLinkPlan.account.displayName} · ${echoLinkPlan.account.username} · ${echoLinkPlan.planId.slice(0, 12)}`
@@ -2924,7 +2920,7 @@ export function OmvSharingPanel() {
         description={
           echoStatusDesired?.active
             ? "重新开放该成员的 Echo 登录；之前签发的会话仍保持失效，需要使用现有 Echo 密码重新登录。"
-            : "立即阻止该成员继续登录 Echo，并撤销其现有网页、Bearer 和 WebSocket 会话；不会删除 OMV 用户或 NAS 数据。"
+            : "立即阻止该成员继续登录 Echo，并撤销其现有网页、Bearer 和 WebSocket 会话；不会删除系统账号或 NAS 数据。"
         }
         targetLabel={
           echoLifecyclePlan
@@ -2944,7 +2940,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={echoPasswordApprovalOpen && Boolean(echoPasswordDesired)}
         title="重置 Echo 家庭登录密码"
-        description="只替换该成员的 Echo 登录密码并立即撤销其现有会话；不会修改或读取 OMV、SMB 密码，密码不会出现在计划、响应或审计中。"
+        description="只替换该成员的 Echo 登录密码并立即撤销其现有会话；不会修改或读取 存储面、SMB 密码，密码不会出现在计划、响应或审计中。"
         targetLabel={
           echoLifecyclePlan
             ? `${echoLifecycleMember} · ${echoLifecyclePlan.planId.slice(0, 12)}`
@@ -2963,7 +2959,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={echoUnlinkApprovalOpen && Boolean(echoUnlinkDesired)}
         title="移除 Echo 家庭登录"
-        description="移除已停用成员的 Echo 本地登录和 Agent 身份映射。OMV 用户、SMB 密码、共享权限及 NAS 文件不会删除；以后可重新开通并设置新的 Echo 密码。"
+        description="移除已停用成员的 Echo 本地登录和 Agent 身份映射。系统账号、SMB 密码、共享权限及 NAS 文件不会删除；以后可重新开通并设置新的 Echo 密码。"
         targetLabel={
           echoLifecyclePlan
             ? `${echoLifecycleMember} · ${echoLifecyclePlan.planId.slice(0, 12)}`
@@ -2980,7 +2976,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={groupApprovalOpen && Boolean(groupPlan)}
         title="创建 NAS 用户组"
-        description="Echo 将创建一个初始成员为空的普通 OMV 用户组并回读验证；不会修改系统组、已有组或文件权限。失败时只回滚本次尚未使用的新组。"
+        description="Echo 将创建一个初始成员为空的普通 系统用户组并回读验证；不会修改系统组、已有组或文件权限。失败时只回滚本次尚未使用的新组。"
         targetLabel={
           groupPlan
             ? `${groupPlan.desired.name} · ${groupPlan.planId.slice(0, 12)}`
@@ -2993,7 +2989,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={userApprovalOpen && Boolean(userPlan)}
         title="创建家庭成员账号"
-        description="Echo 将创建禁用命令行登录、无 SSH 密钥和无邮箱的普通 OMV 用户，并加入预览中的普通组。成员密码只用于本次创建，不会出现在计划、响应或审计；取消或失败后会从界面清除。"
+        description="Echo 将创建禁用命令行登录、无 SSH 密钥和无邮箱的普通存储用户，并加入预览中的普通组。成员密码只用于本次创建，不会出现在计划、响应或审计；取消或失败后会从界面清除。"
         targetLabel={
           userPlan
             ? `${userPlan.desired.displayName} · ${userPlan.desired.name} · ${userPlan.planId.slice(0, 12)}`
@@ -3009,7 +3005,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={passwordApprovalOpen && Boolean(passwordPlan)}
         title="重置家庭成员密码"
-        description="Echo 将通过秘密宿主通道替换这个受限 OMV 用户的系统与 SMB 密码，并回读确认账号、用户组、nologin、邮箱和 SSH 边界没有变化。密码一旦被 OMV 接受便无法自动恢复旧值；结果不确定时请使用新密码重新预览并验证登录。"
+        description="Echo 将通过秘密宿主通道替换这个受限存储用户的系统与 SMB 密码，并回读确认账号、用户组、nologin、邮箱和 SSH 边界没有变化。密码一旦被存储面接受便无法自动恢复旧值；结果不确定时请使用新密码重新预览并验证登录。"
         targetLabel={
           passwordPlan
             ? `${passwordPlan.desired.name} · ${passwordPlan.planId.slice(0, 12)}`
@@ -3025,7 +3021,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={privilegeApprovalOpen && Boolean(privilegePlan)}
         title="应用共享访问权限"
-        description="Echo 只会更新所选已有用户或组在这个共享文件夹上的 OMV 服务权限，并按需部署 Samba/Rsync 配置；不会修改文件系统 ACL、递归权限或文件内容。失败时会恢复原权限并回读验证。"
+        description="Echo 只会更新所选已有用户或组在这个共享文件夹上的 共享服务权限，并按需部署 Samba/Rsync 配置；不会修改文件系统 ACL、递归权限或文件内容。失败时会恢复原权限并回读验证。"
         targetLabel={
           privilegePlan
             ? [
@@ -3043,7 +3039,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={folderApprovalOpen && Boolean(folderPlan)}
         title="创建共享文件夹"
-        description="Echo 将在所选 OMV 可写卷上按名称创建同名相对目录，固定使用 users 组 2770 权限并回读验证。失败回滚只移除 OMV 配置，不删除目录或其中的数据。"
+        description="Echo 将在所选可写卷上按名称创建同名相对目录，固定使用 users 组 2770 权限并回读验证。失败回滚只移除共享配置，不删除目录或其中的数据。"
         targetLabel={
           folderPlan
             ? `${folderPlan.target.label || "未命名卷"} · ${folderPlan.desired.name}/ · ${folderPlan.planId.slice(0, 12)}`
@@ -3056,7 +3052,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={approvalOpen && Boolean(plan)}
         title="应用 SMB 配置"
-        description="Echo 将把刚才预览的私有 SMB 期望状态交给 OMV 同步部署，并在失败时尝试恢复原规则。"
+        description="Echo 将把刚才预览的私有 SMB 期望状态交给本机存储面同步部署，并在失败时尝试恢复原规则。"
         targetLabel={
           editingFolder
             ? `${editingFolder.name} · ${plan?.planId.slice(0, 12)}`
@@ -3069,7 +3065,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={quotaApprovalOpen && Boolean(quotaPlan)}
         title="应用文件系统硬配额"
-        description="Echo 将把刚才预览的用户或组硬限制交给 OMV 部署，回读验证失败时会尝试恢复原配额。该限制按文件所有者覆盖本机、SMB 和 NFS。"
+        description="Echo 将把刚才预览的用户或组硬限制交给 本机存储面部署，回读验证失败时会尝试恢复原配额。该限制按文件所有者覆盖本机、SMB 和 NFS。"
         targetLabel={
           quotaPlan
             ? [
@@ -3086,7 +3082,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={nfsApprovalOpen && Boolean(nfsPlan)}
         title="应用 NFS 私网规则"
-        description="Echo 将把刚才预览的私网 NFS 规则交给 OMV 同步部署，强制 root_squash 和同步写入；回读验证失败时会尝试恢复原规则。"
+        description="Echo 将把刚才预览的私网 NFS 规则交给本机存储面同步部署，强制 root_squash 和同步写入；回读验证失败时会尝试恢复原规则。"
         targetLabel={
           editingNfsFolder && nfsPlan
             ? `${editingNfsFolder.name} · ${nfsPlan.desired.clientCidr} · ${nfsPlan.planId.slice(0, 12)}`
