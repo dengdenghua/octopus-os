@@ -15,8 +15,18 @@ from starlette.concurrency import run_in_threadpool
 
 from appliance import native_storage
 from appliance.omv_models import (
+    GroupApplyRequest,
+    GroupDesiredState,
+    QuotaApplyRequest,
+    QuotaDesiredState,
     SharedFolderApplyRequest,
     SharedFolderDesiredState,
+    SmbApplyRequest,
+    SmbDesiredState,
+    UserApplyRequest,
+    UserDesiredState,
+    UserPasswordApplyRequest,
+    UserPasswordDesiredState,
 )
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
 
@@ -227,21 +237,209 @@ def create_omv_alias_router(
         )
         return result
 
+    async def _apply_write(
+        request: Request,
+        *,
+        actor: str,
+        action: str,
+        plan_fn: Any,
+        apply_fn: Any,
+        desired: dict[str, Any],
+        plan_id: str,
+    ) -> dict[str, Any]:
+        """Shared stall/approval/audit envelope for every native write slice."""
+        try:
+            current_plan = await run_in_threadpool(plan_fn, desired)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+        if current_plan.get("planId") != plan_id:
+            raise HTTPException(status_code=409, detail=f"{action} plan is stale; preview again")
+        if current_plan.get("operation") in ("none",):
+            try:
+                return await run_in_threadpool(apply_fn, desired, plan_id)
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except OSError as exc:
+                raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+        _consume_approval(request, actor=actor, action=action, target=plan_id)
+        metadata = {"operation": current_plan.get("operation"), "source": "native"}
+        _record(
+            request, action=action, actor=actor, target=plan_id, outcome="attempted", metadata=metadata
+        )
+        try:
+            result = await run_in_threadpool(apply_fn, desired, plan_id)
+        except ValueError as exc:
+            _record(
+                request,
+                action=action,
+                actor=actor,
+                target=plan_id,
+                outcome="failed",
+                metadata={**metadata, "errorType": type(exc).__name__},
+            )
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            _record(
+                request,
+                action=action,
+                actor=actor,
+                target=plan_id,
+                outcome="failed",
+                metadata={**metadata, "errorType": type(exc).__name__},
+            )
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+        _record(
+            request, action=action, actor=actor, target=plan_id, outcome="succeeded", metadata=metadata
+        )
+        return result
+
+    # --- Group creation --------------------------------------------------
+    @router.post("/accounts/groups/plan")
+    async def plan_group(body: GroupDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_group, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/accounts/groups/apply")
+    async def apply_group_route(
+        body: GroupApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.group.create",
+            plan_fn=native_storage.plan_group,
+            apply_fn=native_storage.apply_group,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+        )
+
+    # --- User creation ---------------------------------------------------
+    @router.post("/accounts/users/plan")
+    async def plan_user(body: UserDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_user, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/accounts/users/apply")
+    async def apply_user_route(
+        body: UserApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.user.create",
+            plan_fn=native_storage.plan_user,
+            apply_fn=native_storage.apply_user,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+        )
+
+    # --- User password reset --------------------------------------------
+    @router.post("/accounts/users/password/plan")
+    async def plan_user_password(body: UserPasswordDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_user_password, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/accounts/users/password/apply")
+    async def apply_user_password_route(
+        body: UserPasswordApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.user.password.reset",
+            plan_fn=native_storage.plan_user_password,
+            apply_fn=native_storage.apply_user_password,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+        )
+
+    # --- SMB usershare ---------------------------------------------------
+    @router.post("/sharing/smb/plan")
+    async def plan_smb(body: SmbDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_smb, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/sharing/smb/apply")
+    async def apply_smb_route(
+        body: SmbApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.smb.share",
+            plan_fn=native_storage.plan_smb,
+            apply_fn=native_storage.apply_smb,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+        )
+
+    # --- ZFS quota -------------------------------------------------------
+    @router.post("/quota/plan")
+    async def plan_quota(body: QuotaDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_quota, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/quota/apply")
+    async def apply_quota_route(
+        body: QuotaApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.quota.set",
+            plan_fn=native_storage.plan_quota,
+            apply_fn=native_storage.apply_quota,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+        )
+
     removed_paths = (
-        "/accounts/groups/plan",
-        "/accounts/groups/apply",
-        "/accounts/users/plan",
-        "/accounts/users/apply",
-        "/accounts/users/password/plan",
-        "/accounts/users/password/apply",
         "/sharing/privileges/plan",
         "/sharing/privileges/apply",
-        "/sharing/smb/plan",
-        "/sharing/smb/apply",
         "/sharing/nfs/plan",
         "/sharing/nfs/apply",
-        "/quota/plan",
-        "/quota/apply",
     )
 
     def _removed() -> dict[str, Any]:

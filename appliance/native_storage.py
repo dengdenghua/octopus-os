@@ -42,7 +42,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from appliance.omv_protocol import validate_devicefile, validate_shared_folder_desired
+from appliance.omv_protocol import (
+    QUOTA_PLAN_SCHEMA,
+    SMB_PLAN_SCHEMA,
+    USER_PASSWORD_PLAN_SCHEMA,
+    USER_PLAN_SCHEMA,
+    GROUP_PLAN_SCHEMA,
+    validate_devicefile,
+    validate_group_desired,
+    validate_quota_desired,
+    validate_smb_desired,
+    validate_shared_folder_desired,
+    validate_user_desired,
+    validate_user_password_desired,
+)
 
 SCHEMA_VERSION = 1
 
@@ -558,6 +571,18 @@ def storage_health() -> dict[str, Any]:
     }
 
 
+# Write slices the native plane can actually perform on this host. Slices that
+# are still 501 (privileges, NFS) are intentionally absent until implemented.
+_NATIVE_WRITE_CAPABILITIES = (
+    "shared-folder.create.simple.v1",
+    "account.group.create.v1",
+    "account.user.create.v1",
+    "account.user.password.reset.v1",
+    "smb.share.desired.v1",
+    "filesystem.quota.user-group.v1",
+)
+
+
 def status() -> dict[str, Any]:
     """The native plane is always 'configured' — it needs no external panel."""
     return {
@@ -565,7 +590,7 @@ def status() -> dict[str, Any]:
         "available": bool(block_devices()),
         "readOnly": False,
         "adminUrl": None,
-        "capabilities": ["shared-folder.create.simple.v1"],
+        "capabilities": list(_NATIVE_WRITE_CAPABILITIES),
         "source": "native",
     }
 
@@ -1071,6 +1096,529 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
         return {**plan, "applied": True, "verified": True, "sharedFolder": entry}
 
 
+# ---------------------------------------------------------------------------
+# Native write plane — accounts, SMB shares, quota
+#
+# Mirrors the shared-folder slice: a deterministic plan (operation + planId +
+# requiresApproval) that can be previewed, then an apply guarded by the same
+# high-risk approval + audit path. The host itself (system users/groups,
+# Samba usershares, ZFS datasets) is the source of truth, so accounts need no
+# parallel registry — SMB shares are read back from ``net usershare``.
+# ---------------------------------------------------------------------------
+
+
+def _run_write(*args: str, timeout: float = 60.0) -> None:
+    """Run a mutating command; raise OSError with stderr on any failure."""
+    try:
+        completed = subprocess.run(
+            list(args), capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OSError(f"native command failed to start: {' '.join(args)}") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip() or f"exit {completed.returncode}"
+        raise OSError(f"{args[0]} failed: {detail}")
+
+
+def _run_write_stdin(*args: str, input_text: str, timeout: float = 30.0) -> None:
+    """Run a mutating command that reads a secret from stdin."""
+    try:
+        completed = subprocess.run(
+            list(args),
+            input=input_text,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OSError(f"native command failed to start: {' '.join(args)}") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip() or f"exit {completed.returncode}"
+        raise OSError(f"{args[0]} failed: {detail}")
+
+
+def _require_posix_accounts() -> tuple[Any, Any]:
+    try:
+        import grp
+        import pwd
+    except ImportError as exc:  # pragma: no cover - Unix-only module
+        raise OSError("native account management requires a Unix host") from exc
+    return grp, pwd
+
+
+def _group_exists(name: str) -> bool:
+    grp, _ = _require_posix_accounts()
+    try:
+        grp.getgrnam(name)
+        return True
+    except KeyError:
+        return False
+
+
+def _user_exists(name: str) -> bool:
+    _, pwd = _require_posix_accounts()
+    try:
+        pwd.getpwnam(name)
+        return True
+    except KeyError:
+        return False
+
+
+# --- POSIX group creation -------------------------------------------------
+
+
+def _build_group_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    operation = "none" if _group_exists(desired["name"]) else "create"
+    base_revision = _canonical_hash({"group": desired["name"], "exists": operation == "none"})
+    plan_id = _canonical_hash(
+        {
+            "schema": GROUP_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+            "operation": operation,
+        }
+    )
+    changes = (
+        []
+        if operation == "none"
+        else [
+            {"field": "name", "before": None, "after": desired["name"]},
+            {"field": "comment", "before": None, "after": desired["comment"]},
+        ]
+    )
+    return {
+        "schema": GROUP_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": operation,
+        "requiresApproval": operation == "create",
+        "desired": {k: desired[k] for k in ("schema", "name", "comment")},
+        "changes": changes,
+        "safety": {
+            "kind": "posixSystemGroup",
+            "comment": "storedInSystemGroupDatabase",
+            "delete": "notManaged",
+        },
+        "source": "native",
+    }
+
+
+def plan_group(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview creation of a POSIX system group as a storage identity."""
+    desired = validate_group_desired(dict(desired_state))
+    return _build_group_plan(desired)
+
+
+def apply_group(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Create the POSIX group (``groupadd``)."""
+    desired = validate_group_desired(dict(desired_state))
+    plan = _build_group_plan(desired)
+    if plan["planId"] != plan_id:
+        raise ValueError("group plan is stale; preview the change again")
+    if plan["operation"] == "none":
+        if not _group_exists(desired["name"]):
+            raise OSError("planned group no longer exists on the host")
+        return {**plan, "applied": False, "verified": True, "group": {"name": desired["name"]}}
+    _run_write("groupadd", desired["name"])
+    if not _group_exists(desired["name"]):
+        raise OSError("groupadd reported success but the group is missing")
+    return {**plan, "applied": True, "verified": True, "group": {"name": desired["name"]}}
+
+
+# --- POSIX user creation / password reset ---------------------------------
+
+
+def _build_user_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    operation = "none" if _user_exists(desired["name"]) else "create"
+    base_revision = _canonical_hash({"user": desired["name"], "exists": operation == "none"})
+    plan_id = _canonical_hash(
+        {
+            "schema": USER_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+            "operation": operation,
+        }
+    )
+    changes = (
+        []
+        if operation == "none"
+        else [
+            {"field": "name", "before": None, "after": desired["name"]},
+            {"field": "displayName", "before": None, "after": desired["displayName"]},
+            {"field": "groups", "before": [], "after": desired["groups"]},
+            {"field": "loginShell", "before": None, "after": "/usr/sbin/nologin"},
+            {"field": "samba", "before": None, "after": "enabled"},
+        ]
+    )
+    return {
+        "schema": USER_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": operation,
+        "requiresApproval": operation == "create",
+        # The password is never echoed back; the plan only proves one was bound.
+        "desired": {
+            "schema": desired["schema"],
+            "name": desired["name"],
+            "displayName": desired["displayName"],
+            "groups": desired["groups"],
+            "passwordBound": True,
+        },
+        "changes": changes,
+        "safety": {
+            "kind": "posixNormalUser",
+            "loginShell": "nologin",
+            "home": "createdUnderHomeRoot",
+            "samba": "enabledViaSmbpasswd",
+            "password": "hashedAndStoredInShadowAndSamba",
+            "sshKeys": "none",
+            "rollback": "notAvailableAfterAcceptedSecret",
+        },
+        "source": "native",
+    }
+
+
+def plan_user(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview creation of a POSIX storage user (system + Samba account)."""
+    desired = validate_user_desired(dict(desired_state))
+    for group in desired["groups"]:
+        if not _group_exists(group):
+            raise ValueError(f"group '{group}' does not exist on the host")
+    return _build_user_plan(desired)
+
+
+def _set_user_secret(name: str, password: str) -> None:
+    """Set the system password and enable the Samba account atomically."""
+    _run_write_stdin("chpasswd", input_text=f"{name}:{password}\n")
+    _run_write_stdin("smbpasswd", "-a", "-s", name, input_text=f"{password}\n{password}\n")
+
+
+def apply_user(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Create the POSIX user, set the password, and enable Samba access."""
+    desired = validate_user_desired(dict(desired_state))
+    for group in desired["groups"]:
+        if not _group_exists(group):
+            raise ValueError(f"group '{group}' does not exist on the host")
+    plan = _build_user_plan(desired)
+    if plan["planId"] != plan_id:
+        raise ValueError("user plan is stale; preview the change again")
+    if plan["operation"] == "none":
+        if not _user_exists(desired["name"]):
+            raise OSError("planned user no longer exists on the host")
+        return {**plan, "applied": False, "verified": True, "user": {"name": desired["name"]}}
+    extra_args: list[str] = []
+    if desired["groups"]:
+        extra_args += ["-G", ",".join(desired["groups"])]
+    _run_write(
+        "useradd",
+        "--create-home",
+        "--shell", "/usr/sbin/nologin",
+        *extra_args,
+        desired["name"],
+    )
+    if not _user_exists(desired["name"]):
+        raise OSError("useradd reported success but the user is missing")
+    try:
+        _set_user_secret(desired["name"], desired["password"])
+    except OSError:
+        # Roll back the half-created account so the host is not left inconsistent.
+        try:
+            _run_write("userdel", desired["name"])
+        except OSError:
+            pass
+        raise
+    return {**plan, "applied": True, "verified": True, "user": {"name": desired["name"]}}
+
+
+def _build_user_password_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    if not _user_exists(desired["name"]):
+        raise ValueError("user does not exist on the host")
+    base_revision = _canonical_hash({"user": desired["name"], "passwordReset": True})
+    plan_id = _canonical_hash(
+        {
+            "schema": USER_PASSWORD_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+            "operation": "resetPassword",
+        }
+    )
+    return {
+        "schema": USER_PASSWORD_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": "resetPassword",
+        "requiresApproval": True,
+        "desired": {
+            "schema": desired["schema"],
+            "name": desired["name"],
+            "passwordBound": True,
+        },
+        "changes": [
+            {
+                "field": "password",
+                "before": "currentCredential",
+                "after": "replacementCredential",
+            }
+        ],
+        "safety": {
+            "scope": "existingConstrainedNormalUser",
+            "password": "hashedAndStoredInShadowAndSamba",
+            "accountFields": "preservedAndVerified",
+            "loginShell": "nologin",
+            "sshKeys": "none",
+            "rollback": "notAvailableAfterAcceptedSecret",
+        },
+        "source": "native",
+    }
+
+
+def plan_user_password(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview a password reset for an existing storage user."""
+    desired = validate_user_password_desired(dict(desired_state))
+    return _build_user_password_plan(desired)
+
+
+def apply_user_password(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Reset the system and Samba password for an existing user."""
+    desired = validate_user_password_desired(dict(desired_state))
+    plan = _build_user_password_plan(desired)
+    if plan["planId"] != plan_id:
+        raise ValueError("password plan is stale; preview the change again")
+    _set_user_secret(desired["name"], desired["password"])
+    return {**plan, "applied": True, "verified": True, "user": {"name": desired["name"]}}
+
+
+# --- SMB usershare enable / update / remove ------------------------------
+
+
+def _resolve_shared_folder(reference: str) -> dict[str, Any]:
+    registry = _registry_load(strict=False) or []
+    for entry in registry:
+        if entry.get("uuid") == reference:
+            return entry
+    raise ValueError("sharedFolderRef does not match any native shared folder")
+
+
+def _smb_usershare_info(name: str) -> dict[str, Any] | None:
+    try:
+        completed = subprocess.run(
+            ["net", "usershare", "info", name],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return None
+    info: dict[str, Any] = {}
+    for line in completed.stdout.splitlines():
+        key, separator, value = line.partition(":")
+        if separator:
+            info[key.strip().lower()] = value.strip()
+    return info
+
+
+def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    desired = validate_smb_desired(dict(desired))
+    entry = _resolve_shared_folder(desired["sharedFolderRef"])
+    path = os.path.normpath(os.path.join(entry["volumePath"], entry["relativePath"]))
+    if not os.path.isdir(path):
+        raise ValueError("shared folder directory does not exist on the host")
+    name = entry["name"]
+    existing = _smb_usershare_info(name)
+
+    if existing is None:
+        operation = "create" if desired["enabled"] else "none"
+    elif not desired["enabled"]:
+        operation = "remove"
+    else:
+        current_comment = existing.get("comment", "")
+        operation = "none" if current_comment == desired["comment"] else "update"
+
+    base_revision = _canonical_hash(
+        {"share": name, "path": path, "exists": existing is not None}
+    )
+    plan_id = _canonical_hash(
+        {
+            "schema": SMB_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+            "operation": operation,
+        }
+    )
+    changes = (
+        []
+        if operation in ("none",)
+        else [
+            {"field": "enabled", "before": existing is not None, "after": desired["enabled"]},
+            {"field": "comment", "before": (existing or {}).get("comment"), "after": desired["comment"]},
+            {"field": "readOnly", "before": None, "after": desired["readOnly"]},
+        ]
+    )
+    return {
+        "schema": SMB_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": operation,
+        "requiresApproval": operation in ("create", "update", "remove"),
+        "shareName": name,
+        "target": {"path": path},
+        "desired": {
+            k: desired[k]
+            for k in (
+                "schema",
+                "sharedFolderRef",
+                "enabled",
+                "readOnly",
+                "browseable",
+                "recycleBin",
+                "comment",
+            )
+        },
+        "changes": changes,
+        "safety": {
+            "kind": "sambaUsershare",
+            "acl": "guestDeniedByDefault",
+            "recycleBin": "notManagedByUsershare",
+            "browseable": "notManagedByUsershare",
+        },
+        "source": "native",
+    }
+
+
+def plan_smb(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview enabling (or disabling) a Samba usershare for a native folder."""
+    desired = validate_smb_desired(dict(desired_state))
+    return _build_smb_plan(desired)
+
+
+def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Create, update, or remove the Samba usershare via ``net usershare``."""
+    desired = validate_smb_desired(dict(desired_state))
+    plan = _build_smb_plan(desired)
+    if plan["planId"] != plan_id:
+        raise ValueError("SMB plan is stale; preview the change again")
+    name = plan["shareName"]
+    path = plan["target"]["path"]
+    operation = plan["operation"]
+    if operation == "none":
+        if _smb_usershare_info(name) is None and desired["enabled"]:
+            raise OSError("planned SMB share is missing on the host")
+        return {**plan, "applied": False, "verified": True, "share": {"name": name}}
+    if operation == "remove":
+        _run_write("net", "usershare", "delete", name)
+        return {**plan, "applied": True, "verified": True, "share": {"name": name}}
+    # create or update: (re)declare the usershare. Read/write is expressed via
+    # the usershare ACL (Samba has no --rw/--ro flag). The storage ``users``
+    # group covers every NAS identity, so it is the natural grantee; fall back
+    # to Samba's read-only ``Everyone`` default when that group is absent.
+    if _group_exists("users"):
+        acl = "users:r" if desired["readOnly"] else "users:f"
+    else:
+        acl = "Everyone:r"
+    _run_write(
+        "net",
+        "usershare",
+        "add",
+        name,
+        path,
+        desired["comment"] or name,
+        acl,
+    )
+    if _smb_usershare_info(name) is None:
+        raise OSError("Samba usershare was not registered after net usershare add")
+    return {**plan, "applied": True, "verified": True, "share": {"name": name, "path": path}}
+
+
+# --- ZFS quota ------------------------------------------------------------
+
+
+def _build_quota_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    desired = validate_quota_desired(dict(desired))
+    filesystem = next(
+        (entry for entry in filesystems() if entry.get("uuid") == desired["filesystemUuid"]),
+        None,
+    )
+    if filesystem is None:
+        raise ValueError("filesystemUuid does not match any mounted filesystem")
+    fstype = filesystem.get("type")
+    if fstype != "zfs":
+        raise ValueError("native quota is only supported on ZFS datasets on this host")
+    dataset = filesystem.get("devicefile")
+    base_revision = _canonical_hash(
+        {
+            "dataset": dataset,
+            "subject": f"{desired['subjectType']}:{desired['subjectName']}",
+        }
+    )
+    plan_id = _canonical_hash(
+        {
+            "schema": QUOTA_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+            "operation": "set",
+        }
+    )
+    changes = [
+        {
+            "field": "hardLimitBytes",
+            "before": None,
+            "after": desired["hardLimitBytes"],
+        }
+    ]
+    return {
+        "schema": QUOTA_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": "set",
+        "requiresApproval": True,
+        "desired": {
+            k: desired[k]
+            for k in (
+                "schema",
+                "filesystemUuid",
+                "subjectType",
+                "subjectName",
+                "hardLimitBytes",
+            )
+        },
+        "changes": changes,
+        "safety": {
+            "kind": "zfsUserOrGroupQuota",
+            "dataset": dataset,
+            "zero": "removesLimit",
+            "delete": "notManaged",
+        },
+        "source": "native",
+    }
+
+
+def plan_quota(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview a ZFS user/group quota on a mounted dataset."""
+    desired = validate_quota_desired(dict(desired_state))
+    return _build_quota_plan(desired)
+
+
+def apply_quota(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Apply ``zfs set userquota@/groupquota@`` for the subject."""
+    desired = validate_quota_desired(dict(desired_state))
+    plan = _build_quota_plan(desired)
+    if plan["planId"] != plan_id:
+        raise ValueError("quota plan is stale; preview the change again")
+    dataset = plan["safety"]["dataset"]
+    subject = (
+        f"userquota@{desired['subjectName']}"
+        if desired["subjectType"] == "user"
+        else f"groupquota@{desired['subjectName']}"
+    )
+    limit = "none" if desired["hardLimitBytes"] == 0 else str(desired["hardLimitBytes"])
+    _run_write("zfs", "set", f"{subject}={limit}", dataset)
+    return {**plan, "applied": True, "verified": True, "quota": {"dataset": dataset, "subject": subject}}
+
+
 class NativeStorageAuthority:
     """Drop-in replacement for the OMV client's read surface.
 
@@ -1113,11 +1661,21 @@ def validated_devicefile(devicefile: str) -> str:
 
 __all__ = [
     "NativeStorageAuthority",
+    "apply_group",
+    "apply_quota",
     "apply_shared_folder",
+    "apply_smb",
+    "apply_user",
+    "apply_user_password",
     "block_devices",
     "filesystems",
     "md_arrays",
+    "plan_group",
+    "plan_quota",
     "plan_shared_folder",
+    "plan_smb",
+    "plan_user",
+    "plan_user_password",
     "sharing_overview",
     "smart_devices",
     "smart_report",
