@@ -1601,8 +1601,11 @@ def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
     if len(matches) != 1:
         raise OSError("native shared-folder registry contains duplicate UUIDs")
     entry = matches[0]
-    # Resolve and validate the mounted directory, but never remove or rename it.
-    path = _native_folder_path(entry)
+    # Resolve and validate registry metadata, but never remove or rename the
+    # directory.  Detaching is registry-only, so it remains possible while a
+    # data volume is temporarily unavailable.
+    path = _native_registered_path(entry)
+    folder_status = _native_registered_folder_status(entry)
     smb_present, nfs_entries = _shared_folder_detach_dependencies(entry)
     if smb_present:
         raise ValueError("disable the SMB share before detaching this folder")
@@ -1616,6 +1619,7 @@ def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
                 "name": entry["name"],
                 "path": str(path),
             },
+            "status": folder_status,
             "smb": smb_present,
             "nfs": nfs_entries,
         }
@@ -1627,6 +1631,8 @@ def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "desired": desired,
         }
     )
+    shared_folder = _public_shared_folder_entry(entry)
+    shared_folder["status"] = folder_status
     return {
         "schema": SHARED_FOLDER_DETACH_PLAN_SCHEMA,
         "planId": plan_id,
@@ -1634,7 +1640,7 @@ def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
         "operation": "remove",
         "requiresApproval": True,
         "shareUuid": entry["uuid"],
-        "sharedFolder": _public_shared_folder_entry(entry),
+        "sharedFolder": shared_folder,
         "desired": desired,
         "changes": [
             {
@@ -1649,6 +1655,7 @@ def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "dependentShares": "mustBeAbsent",
             "acl": "untouched",
             "rollback": "registryOnly",
+            "mount": "notRequiredForDetach",
         },
         "source": "native",
     }

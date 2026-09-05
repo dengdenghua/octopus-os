@@ -470,6 +470,7 @@ def test_shared_folder_detach_preserves_directory_and_removes_only_registry_entr
         "dependentShares": "mustBeAbsent",
         "acl": "untouched",
         "rollback": "registryOnly",
+        "mount": "notRequiredForDetach",
     }
     applied = native_storage.apply_shared_folder_detach(detach, plan["planId"])
 
@@ -481,6 +482,35 @@ def test_shared_folder_detach_preserves_directory_and_removes_only_registry_entr
     assert json.loads(registry.read_text(encoding="utf-8")) == []
     with pytest.raises(ValueError, match="does not match any native shared folder"):
         native_storage.plan_shared_folder_detach(detach)
+
+
+def test_shared_folder_detach_can_unregister_after_volume_is_unmounted(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    folder = _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    marker = folder / "keep.txt"
+    marker.write_text("preserve detach data", encoding="utf-8")
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    monkeypatch.setattr(native_storage, "filesystems", lambda: [])
+    detach = {
+        "schema": "echo.omv.shared-folder-detach-desired.v1",
+        "sharedFolderRef": folder_uuid,
+        "preserveData": True,
+    }
+
+    plan = native_storage.plan_shared_folder_detach(detach)
+    assert plan["sharedFolder"]["status"] == "UNAVAILABLE"
+    applied = native_storage.apply_shared_folder_detach(detach, plan["planId"])
+
+    assert applied["applied"] is True
+    assert applied["verified"] is True
+    assert applied["dataPreserved"] is True
+    assert marker.read_text(encoding="utf-8") == "preserve detach data"
+    assert json.loads(registry.read_text(encoding="utf-8")) == []
 
 
 @pytest.mark.parametrize("dependency", ["smb", "nfs"])
