@@ -182,7 +182,7 @@ A/B 原子更新(见 §6 M4)。
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | **M1** | NAS 管控面(存储/共享/健康) | ✅ 41 测试全绿 |
-| **M2** | 装机 ISO 在 VM 跑通 | 开机 → TUI → 装完 → 首启 → Web 可达 |
+| **M2** | 装机 ISO 在 VM 跑通 | 🟡 Stage A 已完成全新盘装机、首启与重启验证；正式 ISO 的 UEFI/BIOS 双引导仍待验收 |
 | **M3** | 存储池与共享端到端 | UI 建 ZFS 池 → 建 SMB 共享 → 局域网可访问 |
 | **M4** | 不可变系统 + A/B 原子更新 | 更新失败自动回滚 |
 | **M5** | 应用中心(Docker label 级联) | 装 Jellyfin → Dock 出图标 → 可打开 |
@@ -191,12 +191,21 @@ A/B 原子更新(见 §6 M4)。
 ### 真机验证清单(M2 起)
 
 - [ ] VM(UEFI + BIOS 各一遍):装机全流程
-- [ ] 首次开机:`journalctl -u echo-firstboot` 无 ERROR,7 步全过
+- [x] 首次开机:`journalctl -u echo-firstboot` 无 ERROR,10 个可重入哨兵全过
 - [ ] `zpool status` / `smbclient -L localhost` 正常
 - [ ] HDMI 接显示器:cage → Electron 全屏桌面,点图标起应用
 - [ ] 无头模式:`ECHO_HDMI_SHELL=off` 不装图形栈
 - [ ] N100 迷你主机实机(16GB 内存基线)
 - [ ] 断电测试:装机中途断电 → 重启能续跑
+
+2026-09-06 在提交 `1aad5a80b88829f58b2fd65c6d27f85e705dbcc7` 上完成一次
+20 GiB 空白系统盘的 Stage A 全新安装与冷重启验证。安装器使用当前 preseed/initrd
+载荷并挂载 Debian 13.6 netinst ISO；首启 10/10 哨兵完成，error-priority 日志为空，
+安装后的 provision 源码哈希与当前提交一致。重启后 `echo-appliance`、nginx、
+`echo-shell` 均为 active，Web/API 可从宿主机访问，五个存储维护 timer 已启用；
+ZFS 2.3.9 已针对运行内核完成 DKMS 安装并可加载，`zfs-import-cache` 成功执行。
+本地证据 `_vmtest/clean_firstboot_current_result.json` 的 SHA-256 为
+`a58b25bde64afc40dbd7d18c634cf6f8b697e317d6bd0545c24d92ae8344f363`。
 
 ---
 
