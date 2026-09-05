@@ -780,9 +780,14 @@ def smart_report(devicefile: str) -> dict[str, Any]:
 
 
 def _probe_smart_device(
-    devicefile: str, *, size_bytes: int | None = None, extra: tuple[str, ...] = ("-H", "-i")
+    devicefile: str,
+    *,
+    size_bytes: int | None = None,
+    extra: tuple[str, ...] = ("-H", "-i"),
+    preserve_standby: bool = False,
 ) -> Probe:
-    payload = _smart_json(devicefile, extra)
+    arguments = ("-n", "standby,0", *extra) if preserve_standby else extra
+    payload = _smart_json(devicefile, arguments)
     probe_evidence = dict(
         getattr(payload, "probe_evidence", evidence("smart", _now(), target=devicefile))
     )
@@ -793,6 +798,38 @@ def _probe_smart_device(
     def field(name: str, key: str) -> Any:
         value = payload.get(name)
         return value.get(key) if isinstance(value, dict) else None
+
+    raw_power_mode = payload.get("power_mode")
+    if isinstance(raw_power_mode, dict):
+        raw_power_mode = raw_power_mode.get("string")
+    power_mode = (
+        raw_power_mode.strip().split(maxsplit=1)[0].casefold()
+        if isinstance(raw_power_mode, str) and raw_power_mode.strip()
+        else None
+    )
+    if preserve_standby and power_mode in {"sleep", "standby"}:
+        # A sleeping HDD is intentionally not a failed SMART read. Excluding
+        # this one deferred probe from aggregate coverage prevents the health
+        # poll itself from defeating the configured idle policy.
+        probe_evidence.update(
+            state="not-applicable",
+            code="device_standby",
+            required=False,
+            count=0,
+        )
+        result = {
+            "devicefile": devicefile,
+            "model": payload.get("model_name") or None,
+            "health": "UNKNOWN",
+            "temperatureC": None,
+            "powerOnHours": None,
+            "powerCycles": None,
+            "powerState": power_mode,
+            **observation([probe_evidence]),
+        }
+        if size_bytes is not None:
+            result["sizeBytes"] = size_bytes
+        return Probe(result, probe_evidence)
 
     passed = field("smart_status", "passed")
     exit_code = probe_evidence.get("exitCode", 0)
@@ -847,7 +884,11 @@ def smart_devices() -> list[dict[str, Any]]:
 
 def _probe_smart_devices(known: list[dict[str, Any]]) -> list[Probe]:
     def probe(device: dict[str, Any]) -> Probe:
-        return _probe_smart_device(device["devicefile"], size_bytes=device.get("sizeBytes"))
+        return _probe_smart_device(
+            device["devicefile"],
+            size_bytes=device.get("sizeBytes"),
+            preserve_standby=device.get("rotational") is True,
+        )
 
     if not known:
         return []

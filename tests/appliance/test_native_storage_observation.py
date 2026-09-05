@@ -257,6 +257,48 @@ def test_smart_unsupported_is_not_an_all_clear(commands):
     assert report["probeEvidence"][0]["code"] == "unsupported"
 
 
+def test_background_smart_probe_preserves_rotational_disk_standby(commands):
+    outputs, calls = commands
+    outputs["lsblk"] = json.dumps({"blockdevices": [{**DISK, "rota": "1"}]})
+    outputs["smartctl"] = json.dumps({"power_mode": "STANDBY"})
+
+    disk_probe = storage._probe_block_devices()
+    report = storage._probe_smart_devices(disk_probe.value)[0]
+
+    assert calls[-1] == (
+        "smartctl",
+        "-j",
+        "-n",
+        "standby,0",
+        "-H",
+        "-i",
+        "/dev/sda",
+    )
+    assert report.value["health"] == "UNKNOWN"
+    assert report.value["powerState"] == "standby"
+    assert report.evidence["state"] == "not-applicable"
+    assert report.evidence["code"] == "device_standby"
+    assert report.evidence["required"] is False
+    assert report.evidence["count"] == 0
+
+    health = storage.storage_health()
+    assert health["state"] == "healthy"
+    assert health["coverage"] == "complete"
+    assert not any(item["code"].startswith("smart.") for item in health["activeAlerts"])
+
+
+def test_explicit_smart_detail_read_may_wake_a_standby_disk(commands):
+    outputs, calls = commands
+    outputs["smartctl"] = json.dumps(
+        {"smart_status": {"passed": True}, "temperature": {"current": 31}}
+    )
+
+    report = storage.smart_report("/dev/sda")
+
+    assert calls[-1] == ("smartctl", "-j", "-H", "-A", "-i", "/dev/sda")
+    assert report["health"] == "PASSED"
+
+
 def test_command_wrapper_preserves_empty_output_failure_metadata(commands):
     outputs, _ = commands
     outputs["df"] = FileNotFoundError()

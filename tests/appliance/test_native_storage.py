@@ -88,6 +88,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "storage.array.mdraid.check.start.v1",
         "storage.array.mdraid.check.schedule.v1",
         "storage.volume.ext4.create-mount.v1",
+        "storage.volume.ext4.offline-check.v1",
         "storage.volume.btrfs-raid1.create-mount.v1",
         "storage.volume.btrfs-raid1.replace-missing.blank.v1",
         "storage.volume.btrfs.scrub.start.v1",
