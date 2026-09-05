@@ -275,6 +275,18 @@ port to host loopback and exposes only the pinned, zero-capability gateway.
   three separately confirmed phases require completed recovery, unchanged data,
   and a healthy replacement array after a real reboot. It never runs cleanup and
   must only be used on a disposable VM or dedicated acceptance host.
+- `btrfs_replacement_lab.py` is the equivalent three-disk Btrfs RAID1 harness.
+  Its private plan binds a completed Btrfs provisioning run, the persisted data
+  probe, both original members, the third blank disk and this exact executable.
+  The harness never detaches or wipes a disk: after planning, an operator must
+  hot-detach the named sacrificial member without rebooting. The separately
+  confirmed `repair` phase accepts only one Echo-managed, writable, degraded
+  RAID1 whose survivor and replacement identities still match, then exercises
+  the real replacement candidate/plan/one-shot-approval/apply API. `rebuild`
+  waits for a clean completed replace before any reboot; `reboot-verify` proves
+  both members, RAID1 profiles, writable mounting and the original probe. No
+  phase resizes or cleans up the filesystem, and failures preserve the host for
+  inspection. Use only a disposable VM or dedicated acceptance host.
 
 The A/B source contract additionally renders these same units inside a Debian
 13 container and passes them to that release's native `systemd-analyze verify`.

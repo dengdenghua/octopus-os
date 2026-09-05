@@ -826,6 +826,8 @@ require_pattern "$REPO_ROOT/deploy/appliance/run_public_source_tests.py" '^EMBED
 require_pattern "$REPO_ROOT/deploy/appliance/run_public_source_tests.py" '^    if discovered != classified:$' "public CI rejects every unclassified or stale appliance test file"
 require_pattern "$REPO_ROOT/deploy/appliance/run_public_source_tests.py" '^        if not \(REPO_ROOT / relative\)\.is_file\(\) or \(REPO_ROOT / relative\)\.is_symlink\(\)$' "public CI accepts only real non-symlink classified test files"
 require_pattern "$REPO_ROOT/deploy/appliance/operations_bundle.py" 'protocolInteroperabilityLab' "operations bundle publishes the real-client SMB/NFS lab entrypoint"
+require_pattern "$REPO_ROOT/deploy/appliance/operations_bundle.py" 'btrfsReplacementLab' "operations bundle publishes the Btrfs missing-member replacement lab"
+require_pattern "$REPO_ROOT/deploy/appliance/btrfs_replacement_lab.py" '^PHASES = \("repair", "rebuild", "reboot-verify"\)$' "Btrfs replacement requires repair, completed rebuild, and reboot verification"
 require_pattern "$REPO_ROOT/deploy/appliance/operations_bundle.py" 'nasDataBackup' "operations bundle publishes encrypted NAS data backup and empty-volume restore"
 require_pattern "$REPO_ROOT/deploy/appliance/nas_data_backup.py" '^RENAME_EXCHANGE = 2$' "NAS data restore promotes one complete tree atomically"
 require_pattern "$REPO_ROOT/deploy/appliance/nas_data_backup.py" '"check", "--read-data"' "NAS data backup authenticates repository contents with a full read"

@@ -68,6 +68,9 @@ def test_operations_bundle_has_fixed_inventory_modes_and_release_reference(tmp_p
     assert manifest["artifact"]["entrypoints"]["btrfsProvisioningLab"] == (
         "./btrfs_provisioning_lab.py plan|run"
     )
+    assert manifest["artifact"]["entrypoints"]["btrfsReplacementLab"] == (
+        "./btrfs_replacement_lab.py plan|run"
+    )
     assert manifest["artifact"]["entrypoints"]["deviceEnduranceLab"] == (
         "./device_endurance_lab.py plan|run"
     )
@@ -107,6 +110,7 @@ def test_operations_bundle_has_fixed_inventory_modes_and_release_reference(tmp_p
     assert manifest["files"]["protocol_interoperability_lab.py"]["mode"] == "0755"
     assert manifest["files"]["bare_metal_recovery_lab.py"]["mode"] == "0755"
     assert manifest["files"]["btrfs_provisioning_lab.py"]["mode"] == "0755"
+    assert manifest["files"]["btrfs_replacement_lab.py"]["mode"] == "0755"
     assert manifest["files"]["power_state_recovery_lab.py"]["mode"] == "0755"
     assert manifest["files"]["device_endurance_lab.py"]["mode"] == "0755"
     assert manifest["files"]["hub_lifecycle_lab.py"]["mode"] == "0755"
