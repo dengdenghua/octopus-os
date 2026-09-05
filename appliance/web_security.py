@@ -29,6 +29,7 @@ REMOTE_ACCESS_URL_ENV = "ECHO_REMOTE_ACCESS_URL"
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _LAN_HOSTNAME = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.IGNORECASE)
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 def _csv_values(value: str | None) -> tuple[str, ...]:
@@ -147,6 +148,29 @@ def _scope_origin(scope: dict[str, Any], host_header: str) -> str:
     default_port = 443 if scheme == "https" else 80
     suffix = "" if port in {None, default_port} else f":{port}"
     return _normalized_origin(f"{scheme}://{display_host}{suffix}")
+
+
+def _loopback_alias_origins(scope: dict[str, Any], host_header: str) -> set[str]:
+    """Return same-port origins for the equivalent local loopback names."""
+    try:
+        current = _scope_origin(scope, host_header)
+        parsed = urlsplit(current)
+        hostname = (parsed.hostname or "").rstrip(".").casefold()
+        if hostname not in _LOOPBACK_HOSTS:
+            return set()
+        port = parsed.port
+    except ValueError:
+        return set()
+
+    scheme = parsed.scheme.casefold()
+    default_port = 443 if scheme == "https" else 80
+    port_suffix = "" if port in {None, default_port} else f":{port}"
+    return {
+        _normalized_origin(
+            f"{scheme}://{'[' + alias + ']' if ':' in alias else alias}{port_suffix}"
+        )
+        for alias in _LOOPBACK_HOSTS
+    }
 
 
 class ApplianceWebSecurityMiddleware:
@@ -333,7 +357,11 @@ class ApplianceWebSecurityMiddleware:
         if origin:
             try:
                 normalized_origin = _normalized_origin(origin)
-                allowed_origins = self.trusted_origins | {_scope_origin(scope, host_header)}
+                allowed_origins = (
+                    self.trusted_origins
+                    | {_scope_origin(scope, host_header)}
+                    | _loopback_alias_origins(scope, host_header)
+                )
             except ValueError:
                 normalized_origin = ""
                 allowed_origins = self.trusted_origins

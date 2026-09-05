@@ -143,6 +143,32 @@ def test_cross_origin_preflight_for_state_change_is_rejected() -> None:
     assert response.status_code == 403
 
 
+@pytest.mark.parametrize(
+    ("host", "origin"),
+    [
+        ("127.0.0.1:8080", "http://localhost:8080"),
+        ("localhost:8080", "http://127.0.0.1:8080"),
+        ("localhost:8080", "http://[::1]:8080"),
+    ],
+)
+def test_same_port_loopback_alias_origins_are_allowed(host: str, origin: str) -> None:
+    """The browser may resolve the same local service through another loopback name."""
+    with TestClient(_app(), base_url=f"http://{host}") as client:
+        response = client.post("/api/state", headers={"Origin": origin})
+
+    assert response.status_code == 200
+
+
+def test_loopback_alias_with_a_different_port_is_rejected() -> None:
+    with TestClient(_app(), base_url="http://127.0.0.1:8080") as client:
+        response = client.post(
+            "/api/state",
+            headers={"Origin": "http://localhost:8081"},
+        )
+
+    assert response.status_code == 403
+
+
 def test_untrusted_fqdn_host_is_rejected_but_private_ip_is_allowed() -> None:
     with TestClient(_app()) as client:
         rebound = client.get("/api/state", headers={"Host": "rebind.example:8000"})
