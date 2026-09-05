@@ -28,9 +28,12 @@ outside this module.
 from __future__ import annotations
 
 import contextlib
+import csv
 import hashlib
+import io
 import json
 import os
+import posixpath
 import re
 import shutil
 import stat as stat_module
@@ -42,6 +45,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +80,8 @@ _NATIVE_DATA_MOUNT_ROOTS = ("/data", "/mnt", "/srv", "/fs", "/volume")
 _ZFS_DATASET_PATTERN = re.compile(
     r"[A-Za-z0-9][A-Za-z0-9._:-]*(?:/[A-Za-z0-9][A-Za-z0-9._:-]*)*"
 )
+_NATIVE_KERNEL_QUOTA_FILESYSTEMS = frozenset({"ext2", "ext3", "ext4", "xfs"})
+_QUOTA_REPORT_MAX_BYTES = 1024 * 1024
 
 # Filesystem types that carry no persistent user data; they would otherwise
 # dominate the list on any Debian host.
@@ -165,6 +171,43 @@ def _mount_read_only(mountpoint: str) -> bool:
     options = _run("findmnt", "-n", "-o", "OPTIONS", "-T", mountpoint, timeout=10.0)
     tokens = {item.strip().casefold() for item in options.split(",") if item.strip()}
     return "ro" in tokens and "rw" not in tokens
+
+
+def _native_quota_tools_available() -> bool:
+    """Return whether the standard kernel-quota command pair is installed."""
+    return all(shutil.which(binary) is not None for binary in ("repquota", "setquota"))
+
+
+def _kernel_quota_enabled(mountpoint: str, subject_type: str) -> bool:
+    """Return whether the mounted filesystem advertises the requested quota mode.
+
+    ``repquota`` exits with a generic command error when a supported filesystem
+    has the quota package installed but was mounted without quota accounting.
+    Checking the kernel mount options first lets the API report that expected
+    configuration gap as a validation error while retaining a best-effort
+    fallback on hosts without ``findmnt``.
+    """
+    if shutil.which("findmnt") is None:
+        return True
+    options = _run("findmnt", "-n", "-o", "OPTIONS", "-T", mountpoint, timeout=10.0)
+    if not options:
+        return True
+    tokens = {item.strip().casefold() for item in options.split(",") if item.strip()}
+    if subject_type == "user":
+        enabled = any(
+            token in {"quota", "usrquota", "uquota"}
+            or token.startswith("usrjquota=")
+            for token in tokens
+        )
+    else:
+        enabled = any(
+            token in {"quota", "grpquota", "gquota"}
+            or token.startswith("grpjquota=")
+            for token in tokens
+        )
+    if not enabled:
+        raise ValueError(f"kernel {subject_type} quotas are not enabled on this filesystem")
+    return True
 
 
 def _run_json(*args: str, timeout: float = 25.0) -> dict[str, Any]:
@@ -412,6 +455,7 @@ def filesystems() -> list[dict[str, Any]]:
         return []
     entries: list[dict[str, Any]] = []
     seen: set[str] = set()
+    quota_tools_available = _native_quota_tools_available()
     for line in out.strip().splitlines()[1:]:
         parts = line.split()
         if len(parts) < 7:
@@ -433,6 +477,9 @@ def filesystems() -> list[dict[str, Any]]:
         if size_i is None or available_i is None:
             continue
         read_only = _mount_read_only(mountpoint)
+        supports_quota = fstype == "zfs" or (
+            fstype in _NATIVE_KERNEL_QUOTA_FILESYSTEMS and quota_tools_available
+        )
         entries.append(
             {
                 "devicefile": devicefile,
@@ -450,11 +497,10 @@ def filesystems() -> list[dict[str, Any]]:
                 "usedPercent": _percent(_int(used), size_i),
                 "readOnly": read_only,
                 "supportsAcl": False,
-                # The native write slice uses ZFS' userquota/groupquota
-                # properties. Other filesystems remain visible for capacity
-                # and health, but are not advertised as writable quota targets
-                # until a matching kernel quota adapter is implemented.
-                "supportsQuota": fstype == "zfs",
+                # ZFS uses native userquota/groupquota properties. ext2/3/4
+                # and XFS use the standard kernel quota tools when installed;
+                # the plan path still verifies that quotas are enabled.
+                "supportsQuota": supports_quota,
             }
         )
     return entries
@@ -2470,9 +2516,136 @@ def _read_zfs_quota(dataset: str, desired: dict[str, Any]) -> int:
     return limit
 
 
+def _validated_quota_mountpoint(value: Any) -> str:
+    """Validate a kernel-reported mountpoint before passing it to quota tools."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 4096
+        or "\x00" in value
+        or not posixpath.isabs(value)
+    ):
+        raise OSError("mounted quota filesystem path is invalid")
+    return posixpath.normpath(value)
+
+
+def _quota_report_bytes(value: str) -> int:
+    """Convert repquota's raw KiB value (and compatible unit suffixes) to bytes."""
+    text = value.strip()
+    if text.casefold() in {"", "-", "none"}:
+        return 0
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?)", text, re.IGNORECASE)
+    if match is None:
+        raise OSError("kernel quota report contains an invalid numeric value")
+    try:
+        number = Decimal(match.group(1))
+    except (InvalidOperation, ValueError) as exc:
+        raise OSError("kernel quota report contains an invalid numeric value") from exc
+    multiplier = {
+        "": 1024,
+        "k": 1024,
+        "m": 1024**2,
+        "g": 1024**3,
+        "t": 1024**4,
+    }[match.group(2).casefold()]
+    exact = number * multiplier
+    if not exact.is_finite() or exact != exact.to_integral_value():
+        raise OSError("kernel quota report contains a fractional byte value")
+    result = int(exact)
+    if result < 0 or result > 2**63 - 1:
+        raise OSError("kernel quota report is outside the supported range")
+    return result
+
+
+def _quota_usage_text(value: int) -> str:
+    for multiplier, suffix in (
+        (1024**4, "TiB"),
+        (1024**3, "GiB"),
+        (1024**2, "MiB"),
+        (1024, "KiB"),
+    ):
+        if value and value % multiplier == 0:
+            return f"{value // multiplier} {suffix}"
+    return f"{value} B"
+
+
+def _read_kernel_quota(mountpoint: str, desired: dict[str, Any]) -> dict[str, Any]:
+    """Read one existing user/group limit through the kernel quota report."""
+    subject_type = desired["subjectType"]
+    report = _run_read_checked(
+        "repquota",
+        "-v",
+        "-O",
+        "csv",
+        "-u" if subject_type == "user" else "-g",
+        mountpoint,
+        timeout=60.0,
+    )
+    if len(report.encode("utf-8", errors="replace")) > _QUOTA_REPORT_MAX_BYTES:
+        raise OSError("kernel quota report is too large")
+    expected_header = "User" if subject_type == "user" else "Group"
+    header_found = False
+    matching: list[list[str]] = []
+    try:
+        rows = csv.reader(io.StringIO(report))
+        for row in rows:
+            if not row:
+                continue
+            if not header_found:
+                if (
+                    len(row) >= 11
+                    and row[0].strip() == expected_header
+                    and row[1].strip() in {"SpaceStatus", "BlockStatus"}
+                ):
+                    header_found = True
+                continue
+            if len(row) < 11:
+                continue
+            if row[0].strip() == desired["subjectName"]:
+                matching.append(row)
+    except csv.Error as exc:
+        raise OSError("kernel quota report is not valid CSV") from exc
+    if not header_found:
+        raise OSError("kernel quota report has no recognized header")
+    if len(matching) > 1:
+        raise OSError("kernel quota subject is not unique")
+    if not matching:
+        return {
+            "type": subject_type,
+            "name": desired["subjectName"],
+            "hardLimitBytes": 0,
+            "used": "0 B",
+        }
+    row = matching[0]
+    return {
+        "type": subject_type,
+        "name": desired["subjectName"],
+        "hardLimitBytes": _quota_report_bytes(row[5]),
+        "used": _quota_usage_text(_quota_report_bytes(row[3])),
+    }
+
+
+def _set_kernel_quota(
+    mountpoint: str,
+    desired: dict[str, Any],
+    hard_limit_bytes: int,
+) -> None:
+    """Set only the block hard limit; inode and soft limits remain unlimited."""
+    _run_write(
+        "setquota",
+        "-u" if desired["subjectType"] == "user" else "-g",
+        desired["subjectName"],
+        "0",
+        str(hard_limit_bytes // 1024),
+        "0",
+        "0",
+        mountpoint,
+    )
+
+
 def _native_quota_context(
     desired: dict[str, Any],
-) -> tuple[dict[str, Any], str, dict[str, Any]]:
+) -> tuple[dict[str, Any], tuple[str, str], dict[str, Any]]:
     filesystem = next(
         (entry for entry in filesystems() if _filesystem_ref(entry) == desired["filesystemUuid"]),
         None,
@@ -2481,17 +2654,29 @@ def _native_quota_context(
         raise ValueError("filesystemUuid does not match any mounted filesystem")
     if filesystem.get("readOnly"):
         raise ValueError("quota filesystem is read-only")
-    if filesystem.get("type") != "zfs" or filesystem.get("supportsQuota") is False:
-        raise ValueError("native quota is only supported on ZFS datasets on this host")
-    dataset = _validated_zfs_dataset(filesystem.get("devicefile"))
-    _principal_id(desired["subjectType"], desired["subjectName"])
-    current = {
-        "type": desired["subjectType"],
-        "name": desired["subjectName"],
-        "hardLimitBytes": _read_zfs_quota(dataset, desired),
-        "used": "unknown",
-    }
-    return filesystem, dataset, current
+    filesystem_type = str(filesystem.get("type") or "").casefold()
+    if filesystem_type == "zfs":
+        if filesystem.get("supportsQuota") is False:
+            raise ValueError("native quota is not enabled on this ZFS dataset")
+        dataset = _validated_zfs_dataset(filesystem.get("devicefile"))
+        _principal_id(desired["subjectType"], desired["subjectName"])
+        current = {
+            "type": desired["subjectType"],
+            "name": desired["subjectName"],
+            "hardLimitBytes": _read_zfs_quota(dataset, desired),
+            "used": "unknown",
+        }
+        return filesystem, ("zfs", dataset), current
+    if filesystem_type in _NATIVE_KERNEL_QUOTA_FILESYSTEMS:
+        if not _native_quota_tools_available():
+            raise ValueError("native kernel quota tools are not installed on this host")
+        mountpoint = _validated_quota_mountpoint(filesystem.get("mountpoint"))
+        if _mount_read_only(mountpoint):
+            raise ValueError("quota filesystem is read-only")
+        _principal_id(desired["subjectType"], desired["subjectName"])
+        _kernel_quota_enabled(mountpoint, desired["subjectType"])
+        return filesystem, ("kernel", mountpoint), _read_kernel_quota(mountpoint, desired)
+    raise ValueError("native quota requires a ZFS dataset or ext2/3/4/XFS kernel quota")
 
 
 def _public_quota_filesystem(filesystem: dict[str, Any], filesystem_ref: str) -> dict[str, Any]:
@@ -2502,21 +2687,23 @@ def _public_quota_filesystem(filesystem: dict[str, Any], filesystem_ref: str) ->
         "uuid": filesystem_ref,
         "label": label[:256],
         "type": str(filesystem.get("type") or "")[:64],
-        "readOnly": False,
+        "readOnly": bool(filesystem.get("readOnly")),
         "supportsQuota": True,
     }
 
 
 def _build_quota_plan(desired: dict[str, Any]) -> dict[str, Any]:
     desired = validate_quota_desired(dict(desired))
-    filesystem, dataset, current = _native_quota_context(desired)
+    filesystem, backend, current = _native_quota_context(desired)
+    backend_kind, backend_target = backend
     filesystem_ref = _filesystem_ref(filesystem)
     changed = current["hardLimitBytes"] != desired["hardLimitBytes"]
     base_revision = _canonical_hash(
         {
             "filesystem": {
                 "uuid": filesystem_ref,
-                "dataset": dataset,
+                "backend": backend_kind,
+                "target": backend_target,
                 "type": filesystem.get("type"),
                 "readOnly": filesystem.get("readOnly", False),
                 "supportsQuota": filesystem.get("supportsQuota", True),
@@ -2556,6 +2743,7 @@ def _build_quota_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "scope": "filesystemUserOrGroup",
             "protocolCoverage": ["local", "SMB", "NFS"],
             "sharedFolderQuota": "notSupportedByOmvQuotaRpc",
+            "adapter": "zfs-userquota" if backend_kind == "zfs" else "kernel-setquota",
             "minimumUnitBytes": 1024,
         },
         "source": "native",
@@ -2563,13 +2751,13 @@ def _build_quota_plan(desired: dict[str, Any]) -> dict[str, Any]:
 
 
 def plan_quota(desired_state: dict[str, Any]) -> dict[str, Any]:
-    """Preview a ZFS user/group quota on a mounted dataset."""
+    """Preview a user/group quota on a mounted ZFS or kernel-quota filesystem."""
     desired = validate_quota_desired(dict(desired_state))
     return _build_quota_plan(desired)
 
 
 def apply_quota(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
-    """Apply ``zfs set userquota@/groupquota@`` for the subject."""
+    """Apply a user/group quota through the filesystem's native quota adapter."""
     desired = validate_quota_desired(dict(desired_state))
     plan = _build_quota_plan(desired)
     if plan["planId"] != plan_id:
@@ -2577,27 +2765,43 @@ def apply_quota(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     if plan["operation"] == "none":
         return {**plan, "applied": False, "verified": True}
 
-    _filesystem, dataset, current = _native_quota_context(desired)
-    subject = _quota_property(desired)
+    _filesystem, backend, current = _native_quota_context(desired)
+    backend_kind, backend_target = backend
     original_limit = current["hardLimitBytes"]
-    limit = "none" if desired["hardLimitBytes"] == 0 else str(desired["hardLimitBytes"])
+    failure_label = "ZFS quota" if backend_kind == "zfs" else "kernel quota"
     try:
-        _run_write("zfs", "set", f"{subject}={limit}", dataset)
-        if _read_zfs_quota(dataset, desired) != desired["hardLimitBytes"]:
-            raise OSError("ZFS quota write-back verification failed")
+        if backend_kind == "zfs":
+            subject = _quota_property(desired)
+            limit = "none" if desired["hardLimitBytes"] == 0 else str(desired["hardLimitBytes"])
+            _run_write("zfs", "set", f"{subject}={limit}", backend_target)
+            observed_limit = _read_zfs_quota(backend_target, desired)
+            verification_error = "ZFS quota write-back verification failed"
+        else:
+            _set_kernel_quota(backend_target, desired, desired["hardLimitBytes"])
+            observed_limit = _read_kernel_quota(backend_target, desired)["hardLimitBytes"]
+            verification_error = "kernel quota write-back verification failed"
+        if observed_limit != desired["hardLimitBytes"]:
+            raise OSError(verification_error)
     except Exception as exc:
         try:
-            rollback = "none" if original_limit == 0 else str(original_limit)
-            _run_write("zfs", "set", f"{subject}={rollback}", dataset)
-            if _read_zfs_quota(dataset, desired) != original_limit:
-                raise OSError("ZFS quota rollback was not verified")
+            if backend_kind == "zfs":
+                rollback = "none" if original_limit == 0 else str(original_limit)
+                _run_write("zfs", "set", f"{subject}={rollback}", backend_target)
+                restored_limit = _read_zfs_quota(backend_target, desired)
+                rollback_error = "ZFS quota rollback was not verified"
+            else:
+                _set_kernel_quota(backend_target, desired, original_limit)
+                restored_limit = _read_kernel_quota(backend_target, desired)["hardLimitBytes"]
+                rollback_error = "kernel quota rollback was not verified"
+            if restored_limit != original_limit:
+                raise OSError(rollback_error)
         except Exception as rollback_exc:
             raise OSError(
-                "ZFS quota update failed and rollback also failed; inspect the dataset immediately"
+                f"{failure_label} update failed and rollback also failed; inspect the filesystem immediately"
             ) from rollback_exc
         if isinstance(exc, (OSError, ValueError)):
             raise
-        raise OSError("ZFS quota update failed") from exc
+        raise OSError(f"{failure_label} update failed") from exc
     return {
         **plan,
         "applied": True,

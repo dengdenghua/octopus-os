@@ -84,7 +84,11 @@ def test_filesystems_reports_kernel_read_only_mount(monkeypatch: pytest.MonkeyPa
         return ""
 
     monkeypatch.setattr(native_storage, "_run", fake_run)
-    monkeypatch.setattr(native_storage.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+    monkeypatch.setattr(
+        native_storage.shutil,
+        "which",
+        lambda binary: "/usr/bin/findmnt" if binary == "findmnt" else None,
+    )
 
     entries = native_storage.filesystems()
 
@@ -715,7 +719,7 @@ def test_native_smb_rejects_unmanaged_usershare_options() -> None:
         native_storage.plan_smb({**base, "browseable": False})
 
 
-def test_quota_requires_zfs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_quota_requires_a_supported_native_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
     fs_uuid = "11111111-2222-4333-8444-555555555555"
     monkeypatch.setattr(
         native_storage,
@@ -729,7 +733,8 @@ def test_quota_requires_zfs(monkeypatch: pytest.MonkeyPatch) -> None:
         "subjectName": "mother",
         "hardLimitBytes": 1024**3,
     }
-    with pytest.raises(ValueError, match="ZFS"):
+    monkeypatch.setattr(native_storage, "_native_quota_tools_available", lambda: False)
+    with pytest.raises(ValueError, match="kernel quota tools"):
         native_storage.plan_quota(desired)
 
 
@@ -798,6 +803,120 @@ def test_quota_plan_on_zfs(monkeypatch: pytest.MonkeyPatch) -> None:
         "hardLimitBytes": 1024**3,
     }
     assert "dataset" not in json.dumps(applied, ensure_ascii=False)
+
+
+def test_quota_plan_and_apply_on_ext4_kernel_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    fs_uuid = "22222222-3333-4444-8555-666666666666"
+    mountpoint = "/srv/family"
+    monkeypatch.setattr(
+        native_storage,
+        "filesystems",
+        lambda: [
+            {
+                "uuid": fs_uuid,
+                "type": "ext4",
+                "mountpoint": mountpoint,
+                "label": "family",
+                "readOnly": False,
+                "supportsQuota": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(native_storage, "_native_quota_tools_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_mount_read_only", lambda _path: False)
+    monkeypatch.setattr(native_storage, "_principal_id", lambda _kind, _name: 1001)
+    quota_bytes = {"hard": 4 * 1024}
+
+    def fake_report(*_args: str, **_kwargs: Any) -> str:
+        hard_kib = quota_bytes["hard"] // 1024
+        return (
+            "User,BlockStatus,FileStatus,BlockUsed,BlockSoftLimit,BlockHardLimit,"
+            "BlockGrace,FileUsed,FileSoftLimit,FileHardLimit,FileGrace\n"
+            f"mother,-,-,1,0,{hard_kib},0,0,0,0,0\n"
+        )
+
+    monkeypatch.setattr(native_storage, "_run_read_checked", fake_report)
+    setquota_calls: list[tuple[str, ...]] = []
+
+    def fake_setquota(*args: str, **_kwargs: Any) -> None:
+        setquota_calls.append(args)
+        quota_bytes["hard"] = int(args[4]) * 1024
+
+    monkeypatch.setattr(native_storage, "_run_write", fake_setquota)
+    desired = {
+        "schema": "echo.omv.filesystem-quota-desired.v1",
+        "filesystemUuid": fs_uuid,
+        "subjectType": "user",
+        "subjectName": "mother",
+        "hardLimitBytes": 1024**2,
+    }
+
+    plan = native_storage.plan_quota(desired)
+
+    assert plan["operation"] == "update"
+    assert plan["filesystem"] == {
+        "uuid": fs_uuid,
+        "label": "family",
+        "type": "ext4",
+        "readOnly": False,
+        "supportsQuota": True,
+    }
+    assert plan["subject"] == {
+        "type": "user",
+        "name": "mother",
+        "hardLimitBytes": 4 * 1024,
+        "used": "1 KiB",
+    }
+    assert mountpoint not in json.dumps(plan, ensure_ascii=False)
+
+    applied = native_storage.apply_quota(desired, plan["planId"])
+
+    assert applied["applied"] is True
+    assert applied["verified"] is True
+    assert setquota_calls == [
+        ("setquota", "-u", "mother", "0", "1024", "0", "0", mountpoint)
+    ]
+    assert applied["quota"] == {
+        "filesystemUuid": fs_uuid,
+        "subjectType": "user",
+        "subjectName": "mother",
+        "hardLimitBytes": 1024**2,
+    }
+    assert mountpoint not in json.dumps(applied, ensure_ascii=False)
+
+
+def test_quota_rejects_kernel_filesystem_without_mount_quota(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fs_uuid = "33333333-4444-4555-8666-777777777777"
+    mountpoint = "/srv/family"
+    monkeypatch.setattr(
+        native_storage,
+        "filesystems",
+        lambda: [
+            {
+                "uuid": fs_uuid,
+                "type": "ext4",
+                "mountpoint": mountpoint,
+                "readOnly": False,
+                "supportsQuota": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(native_storage, "_native_quota_tools_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_mount_read_only", lambda _path: False)
+    monkeypatch.setattr(native_storage, "_principal_id", lambda _kind, _name: 1001)
+    monkeypatch.setattr(native_storage.shutil, "which", lambda _binary: "/usr/bin/findmnt")
+    monkeypatch.setattr(native_storage, "_run", lambda *_args, **_kwargs: "rw,relatime\n")
+    desired = {
+        "schema": "echo.omv.filesystem-quota-desired.v1",
+        "filesystemUuid": fs_uuid,
+        "subjectType": "user",
+        "subjectName": "mother",
+        "hardLimitBytes": 1024**2,
+    }
+    with pytest.raises(ValueError, match="not enabled"):
+        native_storage.plan_quota(desired)
 
 
 # --- Native privilege and NFS slices ------------------------------------
