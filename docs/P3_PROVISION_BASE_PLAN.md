@@ -184,6 +184,11 @@ Broadcom、MediaTek、AMD GPU 固件，以及 Intel/AMD microcode；同时固定
 温度传感器问题可以在离线现场被诊断。包名已在当前 Debian 13 基线的 apt 索引逐项确认，
 镜像静态门会防止这些包被后续瘦身误删。
 
+低内存 VM 暴露出把存储栈和全部固件放进一笔 apt 事务会导致异常内存峰值。首启路线现把
+核心存储、通用/GPU 固件、网络固件/微码和诊断工具拆成独立事务；2 GiB 实装派生盘测得
+后三组峰值约 632 MiB、742 MiB、165 MiB。所有 `apt-get update/install` 另加 4 次有界
+指数退避，短时 DNS/镜像故障可以自动恢复，持续故障仍保留真实退出码并让 systemd 报错。
+
 这里没有复制解包系统的 Realtek/NVIDIA 私有模块，也不把“包已安装”算作硬件通过。
 OOT 驱动只应在明确设备 ID、上游内核确实不支持、具备 Secure Boot 签名与目标机回归矩阵时
 独立引入；当前仍需 N100、常见 2.5/10 GbE、SATA HBA、NVMe、Intel/AMD/NVIDIA 转码和
@@ -196,7 +201,7 @@ OOT 驱动只应在明确设备 ID、上游内核确实不支持、具备 Secure
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | **M1** | NAS 管控面(存储/共享/健康) | ✅ 41 测试全绿 |
-| **M2** | 装机 ISO 在 VM 跑通 | 🟡 Stage A 已完成全新盘装机、首启与重启验证；正式 ISO 的 UEFI/BIOS 双引导仍待验收 |
+| **M2** | 装机 ISO 在 VM 跑通 | 🟡 Stage A 直启内核/preseed 已完成 BIOS + UEFI 全新盘装机、首启与重启验证；正式组装 ISO 的 UEFI/BIOS 双引导仍待验收 |
 | **M3** | 存储池与共享端到端 | UI 建 ZFS 池 → 建 SMB 共享 → 局域网可访问 |
 | **M4** | 不可变系统 + A/B 原子更新 | 更新失败自动回滚 |
 | **M5** | 应用中心(Docker label 级联) | 装 Jellyfin → Dock 出图标 → 可打开 |
@@ -204,7 +209,8 @@ OOT 驱动只应在明确设备 ID、上游内核确实不支持、具备 Secure
 
 ### 真机验证清单(M2 起)
 
-- [ ] VM(UEFI + BIOS 各一遍):装机全流程
+- [x] Stage A VM(UEFI + BIOS 各一遍):直启内核/preseed 装机全流程
+- [ ] 正式 `echo-os.iso` 的 UEFI/BIOS 引导菜单与整盘装机各一遍
 - [x] 首次开机:`journalctl -u echo-firstboot` 无 ERROR,10 个可重入哨兵全过
 - [ ] `zpool status` / `smbclient -L localhost` 正常
 - [ ] HDMI 接显示器:cage → Electron 全屏桌面,点图标起应用
@@ -220,6 +226,20 @@ OOT 驱动只应在明确设备 ID、上游内核确实不支持、具备 Secure
 ZFS 2.3.9 已针对运行内核完成 DKMS 安装并可加载，`zfs-import-cache` 成功执行。
 本地证据 `_vmtest/clean_firstboot_current_result.json` 的 SHA-256 为
 `a58b25bde64afc40dbd7d18c634cf6f8b697e317d6bd0545c24d92ae8344f363`。
+
+2026-09-06 又在提交 `639dba4ff2ff9e1d64a25ce1ac3f7947bad22ece` 的完整 overlay 上，
+使用 Q35 + OVMF、20 GiB 空白盘完成 UEFI Stage A 安装和冷重启。客体回读为 GPT、
+`/dev/vda1` vfat ESP、`grub-efi-amd64`，EFI 目录同时含 shim 与 GRUB；17 个固件/微码/
+诊断包、10/10 首启哨兵、三个服务、五个维护 timer、Web/API 和单系统盘约束全部通过。
+最终 provisioning 源文件 SHA-256 为
+`35e5928c58a3bf1d26a03b2893c9d5436540e00e93630fb31f4e685a0604ad96`；本地证据
+`_vmtest/clean_firstboot_uefi_current_result.json` 的 SHA-256 为
+`fa92b181452753dc1470ecdbb3f8b2d0e268bc267fedc7dbb3e33ad1f1fbf89a`。
+
+同轮 2 GiB 压力测试证明：拆分 apt 后存储/固件阶段可完成且不再 OOM，但源码 overlay 的
+前端回退构建会让 SSH 长时间不可用，并未在 60 分钟 firstboot 合同内恢复；因此 4 GiB 是
+Stage A 源码构建路线的最低推荐内存。正式 mkosi 镜像在构建机预生成前端与 Electron 载荷，
+不应把这一回退路径的现场编译性能当作正式镜像体验。
 
 ---
 

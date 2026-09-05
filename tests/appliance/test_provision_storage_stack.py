@@ -38,12 +38,61 @@ def test_storage_step_builds_zfs_for_the_running_kernel_before_marking_done() ->
     import_service = "systemctl enable --now zfs-import-cache"
     done = "done_mark storage"
 
+    assert storage.index("ensure_swap") < storage.index(headers)
     assert 'kernel_release="$(uname -r)"' in storage
     assert storage.index(headers) < storage.index(zfs_package)
     assert storage.index(zfs_package) < storage.index(autoinstall)
     assert storage.index(autoinstall) < storage.index(load)
     assert storage.index(load) < storage.index(import_service) < storage.index(done)
     assert f"{import_service} || true" not in storage
+
+
+def test_low_memory_swap_is_ready_before_the_storage_package_transaction() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    helper = provision.split("ensure_swap() {", 1)[1].split("\n}\n", 1)[0]
+    storage = provision.split("step_storage() {", 1)[1].split("\n}\n", 1)[0]
+
+    assert "need_mb=2048" in helper
+    assert 'of="$sf.partial"' in helper
+    assert helper.index('mkswap -q "$sf.partial"') < helper.index('mv "$sf.partial" "$sf"')
+    assert storage.index("ensure_swap") < storage.index("apt-get install")
+
+
+def test_hardware_packages_are_split_out_of_the_core_storage_transaction() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    storage = provision.split("step_storage() {", 1)[1].split("\n}\n", 1)[0]
+
+    assert storage.count("apt-get install -y --no-install-recommends") == 3
+    assert storage.index("zfsutils-linux zfs-dkms") < storage.index(
+        "firmware-linux-free firmware-linux-nonfree"
+    )
+    assert storage.index("firmware-amd-graphics firmware-intel-graphics") < storage.index(
+        "firmware-realtek firmware-iwlwifi"
+    )
+    assert storage.index("intel-microcode amd64-microcode") < storage.index(
+        "nvme-cli pciutils usbutils ethtool lm-sensors"
+    )
+
+
+def test_every_apt_operation_has_bounded_firstboot_retries() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    helper = provision.split("apt_retry() {", 1)[1].split("\n}\n", 1)[0]
+    apt_lines = [
+        line.strip()
+        for line in provision.splitlines()
+        if "apt-get " in line and not line.lstrip().startswith("#")
+    ]
+
+    assert "max_attempts=4" in helper
+    assert "delay_seconds=$((delay_seconds * 2))" in helper
+    assert apt_lines
+    assert all(line.startswith("apt_retry ") for line in apt_lines)
 
 
 def test_both_image_paths_keep_the_nas_hardware_support_baseline() -> None:

@@ -18,6 +18,42 @@ skip() { log "skip: $1 (已完成)"; }
 done_mark() { mkdir -p "$STATE_DIR"; touch "$STATE_DIR/$1"; }
 is_done()   { [ -f "$STATE_DIR/$1" ]; }
 
+# network-online.target 只保证网络管理器已就绪，不保证 DNS/镜像在长时间
+# 首启期间始终可达。给每笔 apt 操作一个有上限的外层重试；最终仍失败时
+# 保留原始退出码，让 systemd 正确标记 firstboot 失败。
+apt_retry() {
+  local attempt=1 max_attempts=4 delay_seconds=10 status
+  while true; do
+    if "$@"; then return 0; else status=$?; fi
+    if [ "$attempt" -ge "$max_attempts" ]; then return "$status"; fi
+    log "  apt 暂时失败(exit=$status)，${delay_seconds}s 后重试 ($attempt/$max_attempts)"
+    sleep "$delay_seconds"
+    attempt=$((attempt + 1))
+    delay_seconds=$((delay_seconds * 2))
+  done
+}
+
+# 大型 apt 事务与前端构建在 2GB 设备上都可能短时超过物理内存。必须在
+# 第一个高峰步骤（存储栈）之前补足 swap，不能等到前端构建才处理。
+ensure_swap() {
+  local need_mb=2048 have_mb add_mb sf=/var/lib/echo-os/swapfile
+  have_mb=$(awk '/SwapTotal/{printf "%d", $2/1024}' /proc/meminfo)
+  if [ "${have_mb:-0}" -lt "$need_mb" ]; then
+    add_mb=$((need_mb - have_mb))
+    if [ ! -f "$sf" ]; then
+      mkdir -p "$(dirname "$sf")"
+      rm -f "$sf.partial"
+      dd if=/dev/zero of="$sf.partial" bs=1M count="$add_mb" status=none
+      chmod 600 "$sf.partial"
+      /usr/sbin/mkswap -q "$sf.partial"
+      mv "$sf.partial" "$sf"
+    fi
+    /usr/sbin/swapon "$sf" 2>/dev/null || true
+    grep -qs "^$sf " /etc/fstab || echo "$sf none swap sw 0 0" >> /etc/fstab
+    log "  低内存设备: 已补充 swap ${add_mb}MB"
+  fi
+}
+
 # ── 1/7 软件源 ──────────────────────────────────────────
 step_apt() {
   log "== 1/7 配置软件源 =="
@@ -34,8 +70,8 @@ Suites: trixie-security
 Components: main contrib non-free non-free-firmware
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  apt_retry apt-get update
+  apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg lsb-release
   done_mark apt
 }
@@ -44,6 +80,7 @@ EOF
 # 参考 NAS逆向结论:存储栈一律集成,一个补丁都不打。ZFS 用 OpenZFS 官方源。
 step_storage() {
   log "== 2/7 安装存储栈 =="
+  ensure_swap
   # 注意:lsblk 在 util-linux 里,不是独立 apt 包(VM 实测写成包名会
   # E: Unable to locate package → firstboot 卡死在 2/7 反复重试)
   # zfs-dkms 不依赖当前内核的 headers；全新 netinst 只带内核镜像时，
@@ -52,21 +89,28 @@ step_storage() {
   # 显式 autoinstall + modprobe，把“包已安装但模块不可用”挡在哨兵之前。
   local kernel_release
   kernel_release="$(uname -r)"
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     "linux-headers-${kernel_release}"
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     zfsutils-linux zfs-dkms \
     samba samba-common-bin smbclient \
     nfs-kernel-server acl \
     nut-client nut-server \
+    smartmontools hdparm mdadm lvm2 btrfs-progs \
+    parted util-linux
+
+  # 固件包解包 + initramfs 触发器与 ZFS/Samba 放在同一笔 apt 事务时，
+  # 2GB VM 实测 apt-get 会增长到吃满 RAM+swap。拆分后每笔进程都能退出
+  # 释放内存；三组实测峰值分别约 632MB、742MB、165MB。
+  apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     firmware-linux-free firmware-linux-nonfree firmware-misc-nonfree \
+    firmware-amd-graphics firmware-intel-graphics
+  apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     firmware-realtek firmware-iwlwifi firmware-atheros \
     firmware-brcm80211 firmware-mediatek \
-    firmware-amd-graphics firmware-intel-graphics \
-    intel-microcode amd64-microcode \
-    smartmontools hdparm mdadm lvm2 btrfs-progs \
-    nvme-cli pciutils usbutils ethtool lm-sensors \
-    parted util-linux
+    intel-microcode amd64-microcode
+  apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    nvme-cli pciutils usbutils ethtool lm-sensors
 
   dkms autoinstall -k "$kernel_release"
   modprobe zfs
@@ -91,8 +135,8 @@ Suites: trixie
 Components: stable
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
-  apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  apt_retry apt-get update
+  apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   systemctl enable --now docker
   done_mark docker
@@ -103,7 +147,7 @@ step_node() {
   log "== 4/7 安装 Node 20 =="
   if ! command -v node >/dev/null 2>&1; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+    apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
   fi
   done_mark node
 }
@@ -235,25 +279,9 @@ step_echo_web() {
   # shiki/mermaid/three/codemirror)真实需求 >1.5GB V8 堆,而 node 默认旧生代
   # 上限按物理内存自动算,2GB 机器仅 ~1GB → OOM abort(exit 134)。两步保底:
   #   1) 确保 swap >= 2GB:不足则补 swapfile 并写入 fstab(重启后仍生效)。
-  #      2GB 机器实测自带 1.1GB swap,构建时已被内核用到 391MB。
+  #      存储与固件已拆成低峰值事务；2GB swap 同时为后续前端构建兜底。
   #   2) V8 堆上限显式放到 2560MB,超出物理内存的部分由 swap 兜底(构建变慢
   #      但能完成)。只影响本步构建进程,不动系统其他部分。
-  ensure_swap() {
-    local need_mb=2048 have_mb add_mb sf=/var/lib/echo-os/swapfile
-    have_mb=$(awk '/SwapTotal/{printf "%d", $2/1024}' /proc/meminfo)
-    if [ "${have_mb:-0}" -lt "$need_mb" ]; then
-      add_mb=$((need_mb - have_mb))
-      if [ ! -f "$sf" ]; then
-        mkdir -p "$(dirname "$sf")"
-        dd if=/dev/zero of="$sf" bs=1M count="$add_mb" status=none
-        chmod 600 "$sf"
-        /usr/sbin/mkswap -q "$sf"
-      fi
-      /usr/sbin/swapon "$sf" 2>/dev/null || true
-      grep -qs "^$sf " /etc/fstab || echo "$sf none swap sw 0 0" >> /etc/fstab
-      log "  低内存设备: 已补充 swap ${add_mb}MB"
-    fi
-  }
   ensure_swap
   export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=2560"
   (cd "$OS_DIR/frontend" && pnpm install --frozen-lockfile && pnpm build)
@@ -292,11 +320,11 @@ step_echo_web() {
     log "== 6/7 跳过原生 shell (ECHO_HDMI_SHELL=off) =="
   elif ls /dev/dri/card* >/dev/null 2>&1 || [ "${ECHO_HDMI_SHELL:-auto}" = "on" ] || [ "$DESKTOP_MODE" = "cage" ]; then
     log "== 6/7 安装 cage 原生 shell(回退) =="
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
       cage plymouth plymouth-themes seatd rsync
     # Electron 运行时依赖:精简 Debian 默认没有,不装桌面起不来
     # (VM 实测 echo-shell 循环重启,status=127,ldd 缺 libnss3/libasound2)
-    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
       libnss3 libasound2 libgbm1 libgtk-3-0 libxss1 libxtst6 libcups2 \
       libxrandr2 libatk-bridge2.0-0 libdrm2
     systemctl enable seatd
