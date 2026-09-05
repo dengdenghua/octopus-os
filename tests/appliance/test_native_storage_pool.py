@@ -240,3 +240,365 @@ def test_candidate_inventory_returns_only_disks_that_pass_plan_checks(
     monkeypatch.setattr(native_storage_pool, "_inspect_zfs_mirror_devices", inspect)
 
     assert native_storage_pool.zfs_mirror_candidates() == _identities()
+
+
+def _export_desired(**overrides: Any) -> dict[str, Any]:
+    return {
+        "schema": "echo.omv.zfs-pool-export-desired.v1",
+        "name": "family",
+        "poolGuid": "15451357997522795478",
+        "dataPreserved": True,
+        **overrides,
+    }
+
+
+def _import_desired(**overrides: Any) -> dict[str, Any]:
+    return {
+        "schema": "echo.omv.zfs-pool-import-desired.v1",
+        "name": "family",
+        "poolGuid": "15451357997522795478",
+        "mountPolicy": "echoDataRootOnly",
+        **overrides,
+    }
+
+
+def _pool_snapshot() -> dict[str, Any]:
+    return {
+        "name": "family",
+        "poolGuid": "15451357997522795478",
+        "health": "ONLINE",
+        "sizeBytes": 16 * 1024**3,
+    }
+
+
+def _import_candidate() -> dict[str, Any]:
+    return {
+        "name": "family",
+        "poolGuid": "15451357997522795478",
+        "state": "ONLINE",
+        "layout": "mirror",
+        "configHash": "c" * 64,
+        "safeToImport": True,
+    }
+
+
+def test_importable_pool_parser_binds_documented_name_guid_state_and_layout() -> None:
+    output = """
+      pool: family
+        id: 15451357997522795478
+     state: ONLINE
+    action: The pool can be imported using its name or numeric identifier.
+    config:
+
+            family      ONLINE
+              mirror-0  ONLINE
+                sdb     ONLINE
+                sdc     ONLINE
+    """
+
+    candidates = native_storage_pool._parse_importable_pools(output)
+
+    assert candidates == [
+        {
+            "name": "family",
+            "poolGuid": "15451357997522795478",
+            "state": "ONLINE",
+            "layout": "mirror",
+            "configHash": candidates[0]["configHash"],
+            "safeToImport": True,
+        }
+    ]
+    assert len(candidates[0]["configHash"]) == 64
+
+
+@pytest.mark.parametrize(
+    "state,action",
+    [
+        ("DEGRADED", "The pool can be imported using its name or numeric identifier."),
+        ("ONLINE", "The pool was last accessed by another system and requires -f."),
+    ],
+)
+def test_importable_pool_inventory_hides_degraded_or_force_required_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+    action: str,
+) -> None:
+    monkeypatch.setattr(native_storage_pool, "_require_lifecycle_tools", lambda: None)
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_checked",
+        lambda *_args, **_kwargs: (
+            f"""
+          pool: family
+            id: 15451357997522795478
+         state: {state}
+        action: {action}
+        config:
+                family ONLINE
+                  mirror-0 ONLINE
+                    sdb ONLINE
+                    sdc ONLINE
+        """
+        ),
+    )
+
+    assert native_storage_pool.importable_zfs_pools() == []
+
+
+def test_exportable_pool_inventory_only_returns_idle_echo_layout_pools(
+    monkeypatch: pytest.MonkeyPatch,
+    zfs_lifecycle_host: Path,
+) -> None:
+    monkeypatch.setattr(native_storage_pool, "_imported_pool_snapshots", lambda: [_pool_snapshot()])
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_dataset_snapshots",
+        lambda _name: [
+            {
+                "name": "family",
+                "mountpoint": str(zfs_lifecycle_host / "family"),
+                "canmount": "on",
+                "mounted": "yes",
+                "encryption": "off",
+            }
+        ],
+    )
+    monkeypatch.setattr(native_storage_pool, "_run_checked", lambda *_args, **_kwargs: "")
+
+    assert native_storage_pool.exportable_zfs_pools() == [
+        {
+            **_pool_snapshot(),
+            "rootMountpoint": str(zfs_lifecycle_host / "family"),
+            "datasetCount": 1,
+            "mountedCount": 1,
+            "safeToExport": True,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "health,status,mountpoint",
+    [
+        ("DEGRADED", "", "echo"),
+        ("ONLINE", "scan: scrub in progress", "echo"),
+        ("ONLINE", "", "/srv/external"),
+    ],
+)
+def test_exportable_pool_inventory_hides_unsafe_pools(
+    monkeypatch: pytest.MonkeyPatch,
+    zfs_lifecycle_host: Path,
+    health: str,
+    status: str,
+    mountpoint: str,
+) -> None:
+    pool = {**_pool_snapshot(), "health": health}
+    resolved_mountpoint = str(zfs_lifecycle_host / "family") if mountpoint == "echo" else mountpoint
+    monkeypatch.setattr(native_storage_pool, "_imported_pool_snapshots", lambda: [pool])
+    monkeypatch.setattr(native_storage_pool, "_run_checked", lambda *_args, **_kwargs: status)
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_dataset_snapshots",
+        lambda _name: [
+            {
+                "name": "family",
+                "mountpoint": resolved_mountpoint,
+                "canmount": "on",
+                "mounted": "yes",
+                "encryption": "off",
+            }
+        ],
+    )
+
+    assert native_storage_pool.exportable_zfs_pools() == []
+
+
+@pytest.fixture
+def zfs_lifecycle_host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    mount_root = tmp_path / "data"
+    mount_root.mkdir()
+    monkeypatch.setattr(native_storage_pool, "_ZFS_MOUNT_ROOT", mount_root)
+    monkeypatch.setattr(native_storage_pool, "_ZFS_LOCK_PATH", tmp_path / "zfs.lock")
+    monkeypatch.setattr(native_storage_pool, "_require_lifecycle_tools", lambda: None)
+    return mount_root
+
+
+def test_zfs_pool_export_is_guid_bound_non_force_and_rediscovers_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    zfs_lifecycle_host: Path,
+) -> None:
+    imported = {"value": True}
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_imported_pool_snapshots",
+        lambda: [_pool_snapshot()] if imported["value"] else [],
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_dataset_snapshots",
+        lambda _name: [
+            {
+                "name": "family",
+                "mountpoint": str(zfs_lifecycle_host / "family"),
+                "canmount": "on",
+                "mounted": "yes",
+                "encryption": "off",
+            }
+        ],
+    )
+    monkeypatch.setattr(native_storage_pool, "_run_checked", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(
+        native_storage_pool,
+        "importable_zfs_pools",
+        lambda: [_import_candidate()] if not imported["value"] else [],
+    )
+
+    def mutate(*args: str, **_kwargs: Any) -> None:
+        commands.append(args)
+        if args[:2] == ("zpool", "export"):
+            imported["value"] = False
+
+    monkeypatch.setattr(native_storage_pool, "_run_mutating", mutate)
+    desired = _export_desired()
+    plan = native_storage_pool.plan_zfs_pool_export(desired, [])
+    applied = native_storage_pool.apply_zfs_pool_export(desired, plan["planId"], [])
+
+    assert plan["pool"] == _pool_snapshot()
+    assert plan["datasetCount"] == 1
+    assert plan["mountedCount"] == 1
+    assert plan["safety"]["force"] is False
+    assert commands == [("zpool", "sync", "family"), ("zpool", "export", "family")]
+    assert all("-f" not in command for command in commands)
+    assert applied["verified"] is True
+    assert applied["dataPreserved"] is True
+    assert applied["pool"]["availability"] == "exported"
+
+
+def test_zfs_pool_export_rejects_managed_share_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+    zfs_lifecycle_host: Path,
+) -> None:
+    monkeypatch.setattr(native_storage_pool, "_imported_pool_snapshots", lambda: [_pool_snapshot()])
+    writes: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_mutating",
+        lambda *args, **_kwargs: writes.append(args),
+    )
+
+    with pytest.raises(ValueError, match="detach every Echo shared folder"):
+        native_storage_pool.plan_zfs_pool_export(
+            _export_desired(),
+            [{"uuid": "11111111-2222-4333-8444-555555555555", "name": "Photos"}],
+        )
+
+    assert writes == []
+
+
+def test_zfs_pool_import_uses_readonly_no_mount_inspection_then_mounts_exact_tree(
+    monkeypatch: pytest.MonkeyPatch,
+    zfs_lifecycle_host: Path,
+) -> None:
+    state = {"imported": False, "mounted": False}
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_imported_pool_snapshots",
+        lambda: [_pool_snapshot()] if state["imported"] else [],
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "importable_zfs_pools",
+        lambda: [] if state["imported"] else [_import_candidate()],
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_dataset_snapshots",
+        lambda _name: [
+            {
+                "name": "family",
+                "mountpoint": str(zfs_lifecycle_host / "family"),
+                "canmount": "on",
+                "mounted": "yes" if state["mounted"] else "no",
+                "encryption": "off",
+            }
+        ],
+    )
+
+    def mutate(*args: str, **_kwargs: Any) -> None:
+        commands.append(args)
+        if args[:2] == ("zpool", "import"):
+            state["imported"] = True
+        elif args[:2] == ("zpool", "export"):
+            state["imported"] = False
+            state["mounted"] = False
+        elif args[:2] == ("zfs", "mount"):
+            state["mounted"] = True
+
+    monkeypatch.setattr(native_storage_pool, "_run_mutating", mutate)
+    desired = _import_desired()
+    plan = native_storage_pool.plan_zfs_pool_import(desired)
+    applied = native_storage_pool.apply_zfs_pool_import(desired, plan["planId"])
+
+    assert commands == [
+        ("zpool", "import", "-N", "-o", "readonly=on", desired["poolGuid"]),
+        ("zpool", "export", "family"),
+        ("zpool", "import", "-N", desired["poolGuid"]),
+        ("zfs", "mount", "family"),
+    ]
+    forbidden = {"-f", "-F", "-X", "-m", "-D", "-a"}
+    assert all(forbidden.isdisjoint(command) for command in commands)
+    assert applied["verified"] is True
+    assert applied["pool"]["availability"] == "imported"
+    assert applied["pool"]["mountedCount"] == 1
+
+
+def test_zfs_pool_import_rejects_unsafe_mountpoint_and_restores_exported_state(
+    monkeypatch: pytest.MonkeyPatch,
+    zfs_lifecycle_host: Path,
+) -> None:
+    state = {"imported": False}
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_imported_pool_snapshots",
+        lambda: [_pool_snapshot()] if state["imported"] else [],
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "importable_zfs_pools",
+        lambda: [] if state["imported"] else [_import_candidate()],
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_dataset_snapshots",
+        lambda _name: [
+            {
+                "name": "family",
+                "mountpoint": "/etc",
+                "canmount": "on",
+                "mounted": "no",
+                "encryption": "off",
+            }
+        ],
+    )
+
+    def mutate(*args: str, **_kwargs: Any) -> None:
+        commands.append(args)
+        if args[:2] == ("zpool", "import"):
+            state["imported"] = True
+        elif args[:2] == ("zpool", "export"):
+            state["imported"] = False
+
+    monkeypatch.setattr(native_storage_pool, "_run_mutating", mutate)
+    desired = _import_desired()
+    plan = native_storage_pool.plan_zfs_pool_import(desired)
+
+    with pytest.raises(ValueError, match="outside the Echo data root"):
+        native_storage_pool.apply_zfs_pool_import(desired, plan["planId"])
+
+    assert commands == [
+        ("zpool", "import", "-N", "-o", "readonly=on", desired["poolGuid"]),
+        ("zpool", "export", "family"),
+    ]
+    assert state["imported"] is False

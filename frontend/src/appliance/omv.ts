@@ -661,6 +661,103 @@ export type OmvZfsMirrorPlan = {
   };
 };
 
+export type OmvZfsPool = {
+  name: string;
+  poolGuid: string;
+  health: "ONLINE" | string;
+  sizeBytes: number;
+  rootMountpoint: string;
+  datasetCount: number;
+  mountedCount: number;
+  safeToExport: true;
+};
+
+export type OmvZfsImportCandidate = {
+  name: string;
+  poolGuid: string;
+  state: "ONLINE" | string;
+  layout: "mirror" | "raidz1" | "raidz2" | "raidz3" | "stripe";
+  configHash: string;
+  safeToImport: true;
+};
+
+export type OmvZfsPoolExportDesiredState = {
+  schema: "echo.omv.zfs-pool-export-desired.v1";
+  name: string;
+  poolGuid: string;
+  dataPreserved: true;
+};
+
+export type OmvZfsPoolImportDesiredState = {
+  schema: "echo.omv.zfs-pool-import-desired.v1";
+  name: string;
+  poolGuid: string;
+  mountPolicy: "echoDataRootOnly";
+};
+
+export type OmvZfsPoolExportPlan = {
+  schema: "echo.omv.zfs-pool-export-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "export";
+  requiresApproval: true;
+  desired: OmvZfsPoolExportDesiredState;
+  pool: {
+    name: string;
+    poolGuid: string;
+    health: "ONLINE" | string;
+    sizeBytes: number;
+    availability?: "exported";
+  };
+  datasetCount: number;
+  mountedCount: number;
+  safety: {
+    data: "preserved";
+    force: false;
+    poolState: "onlineOnly";
+    mounts: "echoDataRootOnly";
+    dependentShares: "mustBeDetached";
+    activeMaintenance: "mustBeAbsent";
+    rollback: "notAttemptedAfterConfirmedExport";
+  };
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: true;
+};
+
+export type OmvZfsPoolImportPlan = {
+  schema: "echo.omv.zfs-pool-import-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "import";
+  requiresApproval: true;
+  desired: OmvZfsPoolImportDesiredState;
+  candidate: OmvZfsImportCandidate;
+  safety: {
+    data: "preserved";
+    identity: "guidBound";
+    force: false;
+    recoveryFlags: false;
+    destroyedPools: false;
+    inspection: "readOnlyNoMountBeforeWritableImport";
+    mounts: "echoDataRootOnly";
+    encryption: "notYetSupported";
+    rollback: "exportOnFailure";
+  };
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: true;
+  pool?: {
+    name: string;
+    poolGuid: string;
+    health: "ONLINE" | string;
+    sizeBytes: number;
+    availability: "imported";
+    datasetCount: number;
+    mountedCount: number;
+  };
+};
+
 async function readJson<T>(url: string, fallback: string): Promise<T> {
   const response = await fetch(url, { headers: authHeader() });
   if (!response.ok) {
@@ -1119,6 +1216,70 @@ export function applyOmvZfsMirror(
     "/api/appliance/omv/pools/zfs-mirror/apply",
     { desired, planId },
     "无法创建 ZFS 镜像存储池",
+    approvalHeader(approvalToken),
+  );
+}
+
+export async function fetchOmvZfsPools(): Promise<OmvZfsPool[]> {
+  const result = await readJson<{ pools: OmvZfsPool[] }>(
+    "/api/appliance/omv/pools/zfs",
+    "无法读取可安全导出的 ZFS 存储池",
+  );
+  return result.pools;
+}
+
+export async function fetchOmvZfsImportCandidates(): Promise<
+  OmvZfsImportCandidate[]
+> {
+  const result = await readJson<{ pools: OmvZfsImportCandidate[] }>(
+    "/api/appliance/omv/pools/zfs/import-candidates",
+    "无法读取可安全导入的 ZFS 存储池",
+  );
+  return result.pools;
+}
+
+export function planOmvZfsPoolExport(
+  desired: OmvZfsPoolExportDesiredState,
+): Promise<OmvZfsPoolExportPlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs/export/plan",
+    desired,
+    "无法生成 ZFS 存储池导出预览",
+  );
+}
+
+export function applyOmvZfsPoolExport(
+  desired: OmvZfsPoolExportDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvZfsPoolExportPlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs/export/apply",
+    { desired, planId },
+    "无法安全导出 ZFS 存储池",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function planOmvZfsPoolImport(
+  desired: OmvZfsPoolImportDesiredState,
+): Promise<OmvZfsPoolImportPlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs/import/plan",
+    desired,
+    "无法生成 ZFS 存储池导入预览",
+  );
+}
+
+export function applyOmvZfsPoolImport(
+  desired: OmvZfsPoolImportDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvZfsPoolImportPlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs/import/apply",
+    { desired, planId },
+    "无法安全导入 ZFS 存储池",
     approvalHeader(approvalToken),
   );
 }

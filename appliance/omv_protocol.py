@@ -47,6 +47,12 @@ USER_PASSWORD_CONTROL_CAPABILITY = "account.user.password.reset.v1"  # nosec B10
 ZFS_MIRROR_DESIRED_SCHEMA = "echo.omv.zfs-mirror-desired.v1"
 ZFS_MIRROR_PLAN_SCHEMA = "echo.omv.zfs-mirror-plan.v1"
 ZFS_MIRROR_CONTROL_CAPABILITY = "storage.pool.zfs-mirror.create.v1"
+ZFS_POOL_EXPORT_DESIRED_SCHEMA = "echo.omv.zfs-pool-export-desired.v1"
+ZFS_POOL_EXPORT_PLAN_SCHEMA = "echo.omv.zfs-pool-export-plan.v1"
+ZFS_POOL_EXPORT_CONTROL_CAPABILITY = "storage.pool.zfs.export.safe.v1"
+ZFS_POOL_IMPORT_DESIRED_SCHEMA = "echo.omv.zfs-pool-import-desired.v1"
+ZFS_POOL_IMPORT_PLAN_SCHEMA = "echo.omv.zfs-pool-import-plan.v1"
+ZFS_POOL_IMPORT_CONTROL_CAPABILITY = "storage.pool.zfs.import.echo-root.v1"
 HMAC_SAFETY_CONTRACT = "hmacBoundNeverReturnedOrAudited"
 MAX_QUOTA_BYTES = 2**63 - 1
 _DEVICEFILE_PATTERN = re.compile(r"/dev/[A-Za-z0-9._/+:-]+")
@@ -156,6 +162,50 @@ def validate_zfs_mirror_desired(value: Any) -> dict[str, Any]:
         "name": name,
         "devices": normalized,
         "dataLossConfirmed": True,
+    }
+
+
+def _validate_zfs_pool_identity(value: Any, schema: str) -> tuple[str, str]:
+    if not isinstance(value, dict) or value.get("schema") != schema:
+        raise ValueError("ZFS pool lifecycle desired-state schema is unsupported")
+    name = value.get("name")
+    if not isinstance(name, str) or _ZFS_POOL_NAME_PATTERN.fullmatch(name) is None:
+        raise ValueError("ZFS pool name must be a lowercase portable name of at most 32 characters")
+    raw_guid = value.get("poolGuid")
+    if not isinstance(raw_guid, str) or re.fullmatch(r"[1-9][0-9]{0,19}", raw_guid) is None:
+        raise ValueError("ZFS pool GUID must be a canonical unsigned decimal identifier")
+    if int(raw_guid) > 2**64 - 1:
+        raise ValueError("ZFS pool GUID is outside the unsigned 64-bit range")
+    return name, raw_guid
+
+
+def validate_zfs_pool_export_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "name", "poolGuid", "dataPreserved"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("ZFS pool export desired state has unexpected fields")
+    name, pool_guid = _validate_zfs_pool_identity(value, ZFS_POOL_EXPORT_DESIRED_SCHEMA)
+    if value.get("dataPreserved") is not True:
+        raise ValueError("ZFS pool export requires dataPreserved=true")
+    return {
+        "schema": ZFS_POOL_EXPORT_DESIRED_SCHEMA,
+        "name": name,
+        "poolGuid": pool_guid,
+        "dataPreserved": True,
+    }
+
+
+def validate_zfs_pool_import_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "name", "poolGuid", "mountPolicy"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("ZFS pool import desired state has unexpected fields")
+    name, pool_guid = _validate_zfs_pool_identity(value, ZFS_POOL_IMPORT_DESIRED_SCHEMA)
+    if value.get("mountPolicy") != "echoDataRootOnly":
+        raise ValueError("ZFS pool import requires the Echo data-root-only mount policy")
+    return {
+        "schema": ZFS_POOL_IMPORT_DESIRED_SCHEMA,
+        "name": name,
+        "poolGuid": pool_guid,
+        "mountPolicy": "echoDataRootOnly",
     }
 
 

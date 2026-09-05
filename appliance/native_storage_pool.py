@@ -1,10 +1,11 @@
 """Destructive native storage-pool operations with fail-closed disk binding.
 
-Only one deliberately narrow operation lives here: create a two-disk ZFS
-mirror from whole, blank, non-removable disks.  The caller must preview a
-deterministic plan and apply that exact plan through the appliance approval
-and audit envelope.  Expansion, replacement, destroy, force-import, and
-signature wiping are intentionally not implemented.
+Operations here are deliberately narrow: create a two-disk ZFS mirror from
+whole blank disks, export an idle Echo-layout pool without force, or import
+one exact exported pool by GUID after a no-mount read-only inspection.  Every
+mutation is plan-bound and must pass the appliance approval/audit envelope.
+Expansion, replacement, destroy, force-import, recovery rewind, missing-log
+import, destroyed-pool import, and signature wiping remain unsupported.
 """
 
 from __future__ import annotations
@@ -22,21 +23,35 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from appliance.omv_protocol import ZFS_MIRROR_PLAN_SCHEMA, validate_zfs_mirror_desired
+from appliance.omv_protocol import (
+    ZFS_MIRROR_PLAN_SCHEMA,
+    ZFS_POOL_EXPORT_PLAN_SCHEMA,
+    ZFS_POOL_IMPORT_PLAN_SCHEMA,
+    validate_zfs_mirror_desired,
+    validate_zfs_pool_export_desired,
+    validate_zfs_pool_import_desired,
+)
 
 _MIN_DISK_BYTES = 1024**3
 _ZFS_MOUNT_ROOT = Path("/data")
 _ZFS_LOCK_PATH = Path("/run/lock/echo-os-zfs-pool.lock")
 _ZFS_THREAD_LOCK = threading.RLock()
-_WHOLE_DISK_PATTERN = re.compile(
-    r"/dev/(?:sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+|mmcblk\d+)"
-)
+_WHOLE_DISK_PATTERN = re.compile(r"/dev/(?:sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+|mmcblk\d+)")
+_POOL_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,31}")
+_POOL_GUID_PATTERN = re.compile(r"[1-9][0-9]{0,19}")
+_POOL_HEALTH = frozenset({"ONLINE", "DEGRADED", "FAULTED", "OFFLINE", "REMOVED", "UNAVAIL"})
 
 
 def _require_tools() -> None:
     missing = [name for name in ("zpool", "zfs", "lsblk", "wipefs") if shutil.which(name) is None]
     if missing:
         raise OSError(f"native ZFS mirror tools are unavailable: {', '.join(missing)}")
+
+
+def _require_lifecycle_tools() -> None:
+    missing = [name for name in ("zpool", "zfs") if shutil.which(name) is None]
+    if missing:
+        raise OSError(f"native ZFS lifecycle tools are unavailable: {', '.join(missing)}")
 
 
 def _canonical_hash(payload: Any) -> str:
@@ -131,7 +146,9 @@ def _inspect_zfs_mirror_devices(devicefiles: list[str]) -> list[dict[str, Any]]:
             raise ValueError(f"selected disk has no persistent serial or WWN: {devicefile}")
         signatures = _run_checked("wipefs", "--noheadings", "--output", "TYPE", devicefile)
         if signatures.strip():
-            raise ValueError(f"selected disk still has a filesystem or RAID signature: {devicefile}")
+            raise ValueError(
+                f"selected disk still has a filesystem or RAID signature: {devicefile}"
+            )
         identities.append(
             {
                 "devicefile": devicefile,
@@ -284,7 +301,9 @@ def _verify_created_pool(plan: dict[str, Any]) -> dict[str, Any]:
     if "mirror-0" not in status:
         raise OSError("new ZFS pool is not a mirror")
     for device in plan["devices"]:
-        if not re.search(rf"^\s*{re.escape(device['devicefile'])}\s+ONLINE\b", status, re.MULTILINE):
+        if not re.search(
+            rf"^\s*{re.escape(device['devicefile'])}\s+ONLINE\b", status, re.MULTILINE
+        ):
             raise OSError("new ZFS mirror did not retain every planned disk")
     properties = {
         prop: _run_checked("zfs", "get", "-H", "-o", "value", prop, name).strip()
@@ -365,4 +384,534 @@ def apply_zfs_mirror(desired_state: dict[str, Any], plan_id: str) -> dict[str, A
         return {**plan, "applied": True, "verified": True, "pool": pool}
 
 
-__all__ = ["apply_zfs_mirror", "plan_zfs_mirror", "zfs_mirror_candidates"]
+def _valid_pool_guid(value: str) -> bool:
+    return bool(_POOL_GUID_PATTERN.fullmatch(value) and 0 < int(value) <= 2**64 - 1)
+
+
+def _imported_pool_snapshots() -> list[dict[str, Any]]:
+    """Read stable identities for pools currently imported into the kernel."""
+    output = _run_checked("zpool", "list", "-H", "-p", "-o", "name,guid,health,size")
+    if not output.strip() or output.strip() == "no pools available":
+        return []
+    pools: list[dict[str, Any]] = []
+    for line in output.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 4:
+            raise OSError("zpool returned an invalid imported-pool inventory")
+        name, guid, health, raw_size = parts
+        if (
+            _POOL_NAME_PATTERN.fullmatch(name) is None
+            or not _valid_pool_guid(guid)
+            or health not in _POOL_HEALTH
+        ):
+            raise OSError("zpool returned an unsafe imported-pool identity")
+        try:
+            size_bytes = int(raw_size)
+        except ValueError as exc:
+            raise OSError("zpool returned an invalid imported-pool size") from exc
+        if size_bytes < 0:
+            raise OSError("zpool returned an invalid imported-pool size")
+        pools.append(
+            {
+                "name": name,
+                "poolGuid": guid,
+                "health": health,
+                "sizeBytes": size_bytes,
+            }
+        )
+    identities = [(pool["name"], pool["poolGuid"]) for pool in pools]
+    if len(identities) != len(set(identities)):
+        raise OSError("zpool returned duplicate imported-pool identities")
+    return sorted(pools, key=lambda pool: (pool["name"], pool["poolGuid"]))
+
+
+def _parse_importable_pools(output: str) -> list[dict[str, Any]]:
+    """Parse the documented C-locale ``zpool import`` summary format."""
+    if not output.strip() or "no pools available to import" in output.casefold():
+        return []
+    starts = list(re.finditer(r"(?m)^\s*pool:\s*(\S+)\s*$", output))
+    if not starts:
+        raise OSError("zpool import returned an unrecognized inventory")
+    candidates: list[dict[str, Any]] = []
+    for index, match in enumerate(starts):
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(output)
+        block = output[match.start() : end]
+        name = match.group(1)
+        guid_match = re.search(r"(?m)^\s*id:\s*([0-9]+)\s*$", block)
+        state_match = re.search(r"(?m)^\s*state:\s*(\S+)\s*$", block)
+        config_match = re.search(r"(?m)^\s*config:\s*$", block)
+        if (
+            _POOL_NAME_PATTERN.fullmatch(name) is None
+            or guid_match is None
+            or not _valid_pool_guid(guid_match.group(1))
+            or state_match is None
+            or state_match.group(1) not in _POOL_HEALTH
+            or config_match is None
+        ):
+            raise OSError("zpool import returned an unsafe pool identity")
+        action_is_safe = "can be imported using its name or numeric identifier" in block.casefold()
+        config_lines = [
+            line.rstrip() for line in block[config_match.end() :].splitlines() if line.strip()
+        ]
+        if not config_lines:
+            raise OSError("zpool import omitted the pool configuration")
+        config_text = "\n".join(config_lines)
+        layout = (
+            "raidz3"
+            if re.search(r"(?m)^\s*raidz3(?:-\d+)?\s+", config_text)
+            else "raidz2"
+            if re.search(r"(?m)^\s*raidz2(?:-\d+)?\s+", config_text)
+            else "raidz1"
+            if re.search(r"(?m)^\s*raidz(?:1)?(?:-\d+)?\s+", config_text)
+            else "mirror"
+            if re.search(r"(?m)^\s*mirror(?:-\d+)?\s+", config_text)
+            else "stripe"
+        )
+        candidates.append(
+            {
+                "name": name,
+                "poolGuid": guid_match.group(1),
+                "state": state_match.group(1),
+                "layout": layout,
+                "configHash": _canonical_hash(config_text),
+                "safeToImport": action_is_safe and state_match.group(1) == "ONLINE",
+            }
+        )
+    guids = [candidate["poolGuid"] for candidate in candidates]
+    if len(guids) != len(set(guids)):
+        raise OSError("zpool import returned duplicate pool GUIDs")
+    return sorted(candidates, key=lambda pool: (pool["name"], pool["poolGuid"]))
+
+
+def importable_zfs_pools() -> list[dict[str, Any]]:
+    """List exported ONLINE pools that do not require a forced import."""
+    _require_lifecycle_tools()
+    candidates = _parse_importable_pools(_run_checked("zpool", "import", timeout=60.0))
+    return [candidate for candidate in candidates if candidate["safeToImport"]]
+
+
+def exportable_zfs_pools() -> list[dict[str, Any]]:
+    """List imported pools that satisfy the non-force Echo export policy."""
+    _require_lifecycle_tools()
+    pools: list[dict[str, Any]] = []
+    for pool in _imported_pool_snapshots():
+        if pool["health"] != "ONLINE":
+            continue
+        status = _run_checked("zpool", "status", pool["name"])
+        if "scrub in progress" in status or "resilver in progress" in status:
+            continue
+        try:
+            policy = _dataset_mount_policy(
+                pool["name"],
+                _dataset_snapshots(pool["name"]),
+                check_targets=False,
+            )
+        except ValueError:
+            continue
+        pools.append(
+            {
+                **pool,
+                "rootMountpoint": policy["rootMountpoint"],
+                "datasetCount": policy["datasetCount"],
+                "mountedCount": policy["mountedCount"],
+                "safeToExport": True,
+            }
+        )
+    return pools
+
+
+def _pool_snapshot(name: str, guid: str) -> dict[str, Any]:
+    matches = [
+        pool
+        for pool in _imported_pool_snapshots()
+        if pool["name"] == name and pool["poolGuid"] == guid
+    ]
+    if len(matches) != 1:
+        raise ValueError("ZFS pool name/GUID does not match one imported pool")
+    return matches[0]
+
+
+def _dataset_snapshots(pool_name: str) -> list[dict[str, str]]:
+    output = _run_checked(
+        "zfs",
+        "list",
+        "-H",
+        "-p",
+        "-t",
+        "filesystem",
+        "-o",
+        "name,mountpoint,canmount,mounted,encryption",
+        "-r",
+        pool_name,
+    )
+    datasets: list[dict[str, str]] = []
+    for line in output.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 5:
+            raise OSError("zfs returned an invalid dataset inventory")
+        name, mountpoint, canmount, mounted, encryption = parts
+        if (
+            not (name == pool_name or name.startswith(f"{pool_name}/"))
+            or any(character < " " for character in mountpoint)
+            or canmount not in {"on", "off", "noauto"}
+            or mounted not in {"yes", "no"}
+        ):
+            raise OSError("zfs returned unsafe dataset metadata")
+        datasets.append(
+            {
+                "name": name,
+                "mountpoint": mountpoint,
+                "canmount": canmount,
+                "mounted": mounted,
+                "encryption": encryption,
+            }
+        )
+    if not datasets or sum(dataset["name"] == pool_name for dataset in datasets) != 1:
+        raise OSError("ZFS pool root dataset is absent or ambiguous")
+    return sorted(datasets, key=lambda dataset: (dataset["name"].count("/"), dataset["name"]))
+
+
+def _mount_target_is_safe(path: Path) -> bool:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return True
+    if not stat_module.S_ISDIR(info.st_mode) or path.is_symlink() or os.path.ismount(path):
+        return False
+    try:
+        return next(path.iterdir(), None) is None
+    except OSError:
+        return False
+
+
+def _dataset_mount_policy(
+    pool_name: str,
+    datasets: list[dict[str, str]],
+    *,
+    check_targets: bool,
+) -> dict[str, Any]:
+    root = _ZFS_MOUNT_ROOT / pool_name
+    root_text = str(root)
+    mountable: list[str] = []
+    mounted = 0
+    for dataset in datasets:
+        if dataset["encryption"] != "off":
+            raise ValueError("encrypted ZFS datasets require a separate key-management workflow")
+        mountpoint = dataset["mountpoint"]
+        if dataset["name"] == pool_name and mountpoint != root_text:
+            raise ValueError("ZFS pool root mountpoint is outside the Echo data root")
+        if mountpoint not in {"none", "legacy", "-"}:
+            if not os.path.isabs(mountpoint) or os.path.normpath(mountpoint) != mountpoint:
+                raise ValueError("ZFS dataset has a non-canonical mountpoint")
+            if mountpoint != root_text and not mountpoint.startswith(f"{root_text}{os.sep}"):
+                raise ValueError("ZFS dataset mountpoint is outside the Echo pool root")
+            if dataset["canmount"] == "on":
+                if check_targets and not _mount_target_is_safe(Path(mountpoint)):
+                    raise ValueError("ZFS dataset mountpoint is occupied or unsafe")
+                mountable.append(dataset["name"])
+        if dataset["mounted"] == "yes":
+            mounted += 1
+    policy_material = [
+        {
+            "name": dataset["name"],
+            "mountpoint": dataset["mountpoint"],
+            "canmount": dataset["canmount"],
+            "encryption": dataset["encryption"],
+        }
+        for dataset in datasets
+    ]
+    return {
+        "rootMountpoint": root_text,
+        "datasetCount": len(datasets),
+        "mountedCount": mounted,
+        "mountableDatasets": mountable,
+        "policyHash": _canonical_hash(policy_material),
+    }
+
+
+def _build_zfs_pool_export_plan(
+    desired: dict[str, Any], managed_dependencies: list[dict[str, str]]
+) -> dict[str, Any]:
+    _require_lifecycle_tools()
+    pool = _pool_snapshot(desired["name"], desired["poolGuid"])
+    if pool["health"] != "ONLINE":
+        raise ValueError("only an ONLINE ZFS pool can be safely exported")
+    if managed_dependencies:
+        raise ValueError("detach every Echo shared folder before exporting this ZFS pool")
+    status = _run_checked("zpool", "status", pool["name"])
+    if "scrub in progress" in status or "resilver in progress" in status:
+        raise ValueError("wait for the active ZFS maintenance operation before exporting")
+    datasets = _dataset_snapshots(pool["name"])
+    policy = _dataset_mount_policy(pool["name"], datasets, check_targets=False)
+    dependencies = sorted(
+        managed_dependencies, key=lambda item: (item.get("name", ""), item.get("uuid", ""))
+    )
+    base_revision = _canonical_hash(
+        {
+            "pool": pool,
+            "datasetPolicyHash": policy["policyHash"],
+            "mountedCount": policy["mountedCount"],
+            "dependencies": dependencies,
+            "status": _canonical_hash(status),
+        }
+    )
+    plan_material = {
+        "schema": ZFS_POOL_EXPORT_PLAN_SCHEMA,
+        "baseRevision": base_revision,
+        "operation": "export",
+        "desired": desired,
+        "pool": pool,
+        "datasetCount": policy["datasetCount"],
+        "mountedCount": policy["mountedCount"],
+    }
+    return {
+        **plan_material,
+        "planId": _canonical_hash(plan_material),
+        "requiresApproval": True,
+        "changes": [{"field": "availability", "before": "imported", "after": "exported"}],
+        "safety": {
+            "data": "preserved",
+            "force": False,
+            "poolState": "onlineOnly",
+            "mounts": "echoDataRootOnly",
+            "dependentShares": "mustBeDetached",
+            "activeMaintenance": "mustBeAbsent",
+            "rollback": "notAttemptedAfterConfirmedExport",
+        },
+        "source": "native",
+    }
+
+
+def plan_zfs_pool_export(
+    desired_state: dict[str, Any], managed_dependencies: list[dict[str, str]]
+) -> dict[str, Any]:
+    desired = validate_zfs_pool_export_desired(dict(desired_state))
+    with _pool_transaction():
+        return _build_zfs_pool_export_plan(desired, managed_dependencies)
+
+
+def apply_zfs_pool_export(
+    desired_state: dict[str, Any],
+    plan_id: str,
+    managed_dependencies: list[dict[str, str]],
+) -> dict[str, Any]:
+    desired = validate_zfs_pool_export_desired(dict(desired_state))
+    with _pool_transaction():
+        plan = _build_zfs_pool_export_plan(desired, managed_dependencies)
+        if plan["planId"] != plan_id:
+            raise ValueError("ZFS pool export plan is stale; preview the change again")
+        _run_mutating("zpool", "sync", desired["name"])
+        _run_mutating("zpool", "export", desired["name"])
+        if any(pool["poolGuid"] == desired["poolGuid"] for pool in _imported_pool_snapshots()):
+            raise OSError("ZFS pool remained imported after export")
+        candidates = importable_zfs_pools()
+        if not any(
+            candidate["name"] == desired["name"] and candidate["poolGuid"] == desired["poolGuid"]
+            for candidate in candidates
+        ):
+            raise OSError("exported ZFS pool was not rediscovered by GUID")
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "dataPreserved": True,
+            "pool": {
+                **plan["pool"],
+                "availability": "exported",
+            },
+        }
+
+
+def _build_zfs_pool_import_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    _require_lifecycle_tools()
+    imported = _imported_pool_snapshots()
+    if any(
+        pool["name"] == desired["name"] or pool["poolGuid"] == desired["poolGuid"]
+        for pool in imported
+    ):
+        raise ValueError("the requested ZFS pool name or GUID is already imported")
+    matches = [
+        candidate
+        for candidate in importable_zfs_pools()
+        if candidate["name"] == desired["name"] and candidate["poolGuid"] == desired["poolGuid"]
+    ]
+    if len(matches) != 1:
+        raise ValueError("ZFS pool name/GUID does not match one safe import candidate")
+    candidate = matches[0]
+    base_revision = _canonical_hash(
+        {
+            "candidate": candidate,
+            "imported": [{"name": pool["name"], "poolGuid": pool["poolGuid"]} for pool in imported],
+        }
+    )
+    plan_material = {
+        "schema": ZFS_POOL_IMPORT_PLAN_SCHEMA,
+        "baseRevision": base_revision,
+        "operation": "import",
+        "desired": desired,
+        "candidate": candidate,
+    }
+    return {
+        **plan_material,
+        "planId": _canonical_hash(plan_material),
+        "requiresApproval": True,
+        "changes": [{"field": "availability", "before": "exported", "after": "imported"}],
+        "safety": {
+            "data": "preserved",
+            "identity": "guidBound",
+            "force": False,
+            "recoveryFlags": False,
+            "destroyedPools": False,
+            "inspection": "readOnlyNoMountBeforeWritableImport",
+            "mounts": "echoDataRootOnly",
+            "encryption": "notYetSupported",
+            "rollback": "exportOnFailure",
+        },
+        "source": "native",
+    }
+
+
+def plan_zfs_pool_import(desired_state: dict[str, Any]) -> dict[str, Any]:
+    desired = validate_zfs_pool_import_desired(dict(desired_state))
+    with _pool_transaction():
+        return _build_zfs_pool_import_plan(desired)
+
+
+def _inspect_imported_pool_policy(
+    desired: dict[str, Any], *, check_targets: bool
+) -> dict[str, Any]:
+    pool = _pool_snapshot(desired["name"], desired["poolGuid"])
+    if pool["health"] != "ONLINE":
+        raise ValueError("imported ZFS pool is not ONLINE")
+    datasets = _dataset_snapshots(pool["name"])
+    return {
+        "pool": pool,
+        "datasets": datasets,
+        "policy": _dataset_mount_policy(pool["name"], datasets, check_targets=check_targets),
+    }
+
+
+def apply_zfs_pool_import(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    desired = validate_zfs_pool_import_desired(dict(desired_state))
+    with _pool_transaction():
+        plan = _build_zfs_pool_import_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("ZFS pool import plan is stale; preview the change again")
+
+        readonly_imported = False
+        try:
+            try:
+                _run_mutating(
+                    "zpool",
+                    "import",
+                    "-N",
+                    "-o",
+                    "readonly=on",
+                    desired["poolGuid"],
+                )
+            except Exception:
+                try:
+                    readonly_imported = any(
+                        pool["poolGuid"] == desired["poolGuid"]
+                        for pool in _imported_pool_snapshots()
+                    )
+                except Exception as state_exc:
+                    raise OSError(
+                        "ZFS read-only import failed and the resulting pool state is unknown"
+                    ) from state_exc
+                raise
+            readonly_imported = True
+            inspection = _inspect_imported_pool_policy(desired, check_targets=True)
+        finally:
+            if readonly_imported:
+                try:
+                    _run_mutating("zpool", "export", desired["name"])
+                    if any(
+                        pool["poolGuid"] == desired["poolGuid"]
+                        for pool in _imported_pool_snapshots()
+                    ):
+                        raise OSError("read-only inspected pool remained imported")
+                except Exception as export_exc:
+                    raise OSError(
+                        "ZFS read-only import inspection could not restore the exported state"
+                    ) from export_exc
+
+        refreshed = _build_zfs_pool_import_plan(desired)
+        if refreshed["planId"] != plan_id:
+            raise ValueError("ZFS pool import candidate changed during inspection; preview again")
+
+        imported = False
+        try:
+            _run_mutating("zpool", "import", "-N", desired["poolGuid"])
+            imported = True
+            current = _inspect_imported_pool_policy(desired, check_targets=True)
+            if current["policy"]["policyHash"] != inspection["policy"]["policyHash"]:
+                raise ValueError("ZFS dataset mount policy changed during import")
+            mountpoints = {
+                dataset["name"]: dataset["mountpoint"] for dataset in current["datasets"]
+            }
+            for dataset in current["policy"]["mountableDatasets"]:
+                if not _mount_target_is_safe(Path(mountpoints[dataset])):
+                    raise ValueError("ZFS dataset mountpoint became occupied during ordered import")
+                _run_mutating("zfs", "mount", dataset)
+            verified = _inspect_imported_pool_policy(desired, check_targets=False)
+            mounted_by_name = {
+                dataset["name"]: dataset["mounted"] for dataset in verified["datasets"]
+            }
+            if any(
+                mounted_by_name.get(dataset) != "yes"
+                for dataset in current["policy"]["mountableDatasets"]
+            ):
+                raise OSError("one or more ZFS datasets failed mount verification")
+        except Exception as exc:
+            if not imported:
+                try:
+                    imported = any(
+                        pool["poolGuid"] == desired["poolGuid"]
+                        for pool in _imported_pool_snapshots()
+                    )
+                except Exception as state_exc:
+                    raise OSError(
+                        "ZFS pool import failed and the resulting pool state is unknown"
+                    ) from state_exc
+            if imported:
+                try:
+                    _run_mutating("zpool", "export", desired["name"])
+                    if any(
+                        pool["poolGuid"] == desired["poolGuid"]
+                        for pool in _imported_pool_snapshots()
+                    ):
+                        raise OSError("failed import rollback left the pool imported")
+                except Exception as rollback_exc:
+                    raise OSError(
+                        "ZFS pool import failed and export rollback also failed"
+                    ) from rollback_exc
+            if isinstance(exc, (OSError, ValueError)):
+                raise
+            raise OSError("ZFS pool import failed") from exc
+
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "dataPreserved": True,
+            "pool": {
+                **verified["pool"],
+                "availability": "imported",
+                "datasetCount": verified["policy"]["datasetCount"],
+                "mountedCount": len(current["policy"]["mountableDatasets"]),
+            },
+        }
+
+
+__all__ = [
+    "apply_zfs_mirror",
+    "apply_zfs_pool_export",
+    "apply_zfs_pool_import",
+    "exportable_zfs_pools",
+    "importable_zfs_pools",
+    "plan_zfs_mirror",
+    "plan_zfs_pool_export",
+    "plan_zfs_pool_import",
+    "zfs_mirror_candidates",
+]

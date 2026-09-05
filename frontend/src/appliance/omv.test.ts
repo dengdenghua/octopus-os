@@ -13,6 +13,8 @@ import {
   applyOmvUser,
   applyOmvUserPassword,
   applyOmvZfsMirror,
+  applyOmvZfsPoolExport,
+  applyOmvZfsPoolImport,
   fetchOmvFilesystems,
   fetchOmvHealth,
   fetchOmvSharePrivileges,
@@ -22,6 +24,8 @@ import {
   fetchOmvStorageTopology,
   fetchOmvStatus,
   fetchOmvZfsMirrorCandidates,
+  fetchOmvZfsImportCandidates,
+  fetchOmvZfsPools,
   planOmvNfsShare,
   planOmvNfsShareRemove,
   planOmvGroup,
@@ -34,6 +38,8 @@ import {
   planOmvUser,
   planOmvUserPassword,
   planOmvZfsMirror,
+  planOmvZfsPoolExport,
+  planOmvZfsPoolImport,
 } from "./omv";
 
 beforeEach(() => {
@@ -1019,6 +1025,116 @@ describe("OMV read-only API client", () => {
     });
     expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
       "zfs-approval-token",
+    );
+  });
+
+  it("keeps ZFS export/import discovery, preview and approvals separate", async () => {
+    const pool = {
+      name: "family",
+      poolGuid: "15451357997522795478",
+      health: "ONLINE",
+      sizeBytes: 16 * 1024 ** 3,
+      rootMountpoint: "/data/family",
+      datasetCount: 1,
+      mountedCount: 1,
+      safeToExport: true as const,
+    };
+    const candidate = {
+      name: "archive",
+      poolGuid: "9876543210123456789",
+      state: "ONLINE",
+      layout: "mirror" as const,
+      configHash: "c".repeat(64),
+      safeToImport: true as const,
+    };
+    const exportDesired = {
+      schema: "echo.omv.zfs-pool-export-desired.v1" as const,
+      name: pool.name,
+      poolGuid: pool.poolGuid,
+      dataPreserved: true as const,
+    };
+    const importDesired = {
+      schema: "echo.omv.zfs-pool-import-desired.v1" as const,
+      name: candidate.name,
+      poolGuid: candidate.poolGuid,
+      mountPolicy: "echoDataRootOnly" as const,
+    };
+    const exportPlan = {
+      schema: "echo.omv.zfs-pool-export-plan.v1",
+      planId: "1".repeat(64),
+      operation: "export",
+      desired: exportDesired,
+    };
+    const importPlan = {
+      schema: "echo.omv.zfs-pool-import-plan.v1",
+      planId: "2".repeat(64),
+      operation: "import",
+      desired: importDesired,
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ pools: [pool] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ pools: [candidate] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(exportPlan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...exportPlan, verified: true }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(importPlan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...importPlan, verified: true }), {
+          status: 200,
+        }),
+      );
+
+    expect(await fetchOmvZfsPools()).toEqual([pool]);
+    expect(await fetchOmvZfsImportCandidates()).toEqual([candidate]);
+    expect((await planOmvZfsPoolExport(exportDesired)).planId).toBe(
+      exportPlan.planId,
+    );
+    expect(
+      (
+        await applyOmvZfsPoolExport(
+          exportDesired,
+          exportPlan.planId,
+          "export-token",
+        )
+      ).verified,
+    ).toBe(true);
+    expect((await planOmvZfsPoolImport(importDesired)).planId).toBe(
+      importPlan.planId,
+    );
+    expect(
+      (
+        await applyOmvZfsPoolImport(
+          importDesired,
+          importPlan.planId,
+          "import-token",
+        )
+      ).verified,
+    ).toBe(true);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/pools/zfs",
+      "/api/appliance/omv/pools/zfs/import-candidates",
+      "/api/appliance/omv/pools/zfs/export/plan",
+      "/api/appliance/omv/pools/zfs/export/apply",
+      "/api/appliance/omv/pools/zfs/import/plan",
+      "/api/appliance/omv/pools/zfs/import/apply",
+    ]);
+    expect((fetchMock.mock.calls[3]?.[1] as RequestInit).headers).toMatchObject(
+      { "X-Echo-Approval": "export-token" },
+    );
+    expect((fetchMock.mock.calls[5]?.[1] as RequestInit).headers).toMatchObject(
+      { "X-Echo-Approval": "import-token" },
     );
   });
 });

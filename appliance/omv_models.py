@@ -25,6 +25,8 @@ from appliance.omv_protocol import (
     USER_DESIRED_SCHEMA,
     USER_PASSWORD_DESIRED_SCHEMA,
     ZFS_MIRROR_DESIRED_SCHEMA,
+    ZFS_POOL_EXPORT_DESIRED_SCHEMA,
+    ZFS_POOL_IMPORT_DESIRED_SCHEMA,
     validate_group_desired,
     validate_nfs_remove_desired,
     validate_omv_uuid,
@@ -36,6 +38,8 @@ from appliance.omv_protocol import (
     validate_user_desired,
     validate_user_password_desired,
     validate_zfs_mirror_desired,
+    validate_zfs_pool_export_desired,
+    validate_zfs_pool_import_desired,
 )
 
 
@@ -496,6 +500,89 @@ class ZfsMirrorApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class ZfsPoolExportDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.zfs-pool-export-desired.v1"] = Field(
+        default=ZFS_POOL_EXPORT_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    name: str = Field(min_length=1, max_length=32)
+    pool_guid: str = Field(min_length=1, max_length=20, alias="poolGuid")
+    data_preserved: Literal[True] = Field(alias="dataPreserved")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        try:
+            return validate_zfs_pool_export_desired(
+                {
+                    "schema": ZFS_POOL_EXPORT_DESIRED_SCHEMA,
+                    "name": value,
+                    "poolGuid": "1",
+                    "dataPreserved": True,
+                }
+            )["name"]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("pool_guid")
+    @classmethod
+    def validate_pool_guid(cls, value: str) -> str:
+        try:
+            return validate_zfs_pool_export_desired(
+                {
+                    "schema": ZFS_POOL_EXPORT_DESIRED_SCHEMA,
+                    "name": "tank",
+                    "poolGuid": value,
+                    "dataPreserved": True,
+                }
+            )["poolGuid"]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class ZfsPoolExportApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: ZfsPoolExportDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
+class ZfsPoolImportDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.zfs-pool-import-desired.v1"] = Field(
+        default=ZFS_POOL_IMPORT_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    name: str = Field(min_length=1, max_length=32)
+    pool_guid: str = Field(min_length=1, max_length=20, alias="poolGuid")
+    mount_policy: Literal["echoDataRootOnly"] = Field(alias="mountPolicy")
+
+    @field_validator("name", "pool_guid")
+    @classmethod
+    def validate_identity_field(cls, value: str, info: Any) -> str:
+        payload = {
+            "schema": ZFS_POOL_IMPORT_DESIRED_SCHEMA,
+            "name": value if info.field_name == "name" else "tank",
+            "poolGuid": value if info.field_name == "pool_guid" else "1",
+            "mountPolicy": "echoDataRootOnly",
+        }
+        try:
+            normalized = validate_zfs_pool_import_desired(payload)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return normalized["name" if info.field_name == "name" else "poolGuid"]
+
+
+class ZfsPoolImportApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: ZfsPoolImportDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 __all__ = [
     "GroupApplyRequest",
     "GroupDesiredState",
@@ -521,4 +608,8 @@ __all__ = [
     "UserPasswordDesiredState",
     "ZfsMirrorApplyRequest",
     "ZfsMirrorDesiredState",
+    "ZfsPoolExportApplyRequest",
+    "ZfsPoolExportDesiredState",
+    "ZfsPoolImportApplyRequest",
+    "ZfsPoolImportDesiredState",
 ]

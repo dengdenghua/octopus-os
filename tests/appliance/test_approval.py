@@ -201,6 +201,19 @@ def test_zfs_mirror_creation_uses_a_plan_bound_approval(tmp_path):
     )
 
 
+@pytest.mark.parametrize("action", ["omv.zfs-pool.export", "omv.zfs-pool.import"])
+def test_zfs_pool_lifecycle_uses_plan_bound_approvals(tmp_path, action):
+    service, _audit = _service(tmp_path)
+    token = _issue(service, action=action, target="e" * 64)
+
+    service.consume(
+        token=token,
+        actor="local:admin",
+        action=action,
+        target="e" * 64,
+    )
+
+
 def test_wrong_password_is_rate_limited_without_logging_password(tmp_path):
     service, audit = _service(tmp_path, max_failures=2)
 

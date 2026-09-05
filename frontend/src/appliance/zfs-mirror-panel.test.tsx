@@ -14,9 +14,15 @@ import { ZfsMirrorPanel } from "./zfs-mirror-panel";
 vi.mock("./approval", () => ({ requestHighRiskApproval: vi.fn() }));
 vi.mock("./omv", () => ({
   applyOmvZfsMirror: vi.fn(),
+  applyOmvZfsPoolExport: vi.fn(),
+  applyOmvZfsPoolImport: vi.fn(),
   fetchNativeStatus: vi.fn(),
+  fetchOmvZfsImportCandidates: vi.fn(),
   fetchOmvZfsMirrorCandidates: vi.fn(),
+  fetchOmvZfsPools: vi.fn(),
   planOmvZfsMirror: vi.fn(),
+  planOmvZfsPoolExport: vi.fn(),
+  planOmvZfsPoolImport: vi.fn(),
 }));
 
 const candidates = [
@@ -155,7 +161,7 @@ describe("ZFS mirror panel", () => {
     render(<ZfsMirrorPanel />);
 
     expect(
-      await screen.findByText(/当前主机未提供 ZFS 镜像创建能力/),
+      await screen.findByText(/当前主机未提供受控 ZFS 存储池能力/),
     ).toBeInTheDocument();
     expect(fetchOmvZfsMirrorCandidates).not.toHaveBeenCalled();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();

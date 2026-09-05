@@ -79,6 +79,8 @@ def test_native_status_advertises_only_the_available_write_slice(
         "nfs.share.remove.safe.v1",
         "filesystem.quota.user-group.v1",
         "storage.pool.zfs-mirror.create.v1",
+        "storage.pool.zfs.export.safe.v1",
+        "storage.pool.zfs.import.echo-root.v1",
     ]
 
 
@@ -673,6 +675,43 @@ def test_shared_folder_rename_rejects_collision_and_rolls_back_registry_failure(
     assert not (volume / "Family").exists()
     persisted = json.loads(registry.read_text(encoding="utf-8"))[0]
     assert persisted["name"] == persisted["relativePath"] == "Photos"
+
+
+def test_zfs_pool_export_dependency_inventory_is_path_scoped_and_sanitized(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, _registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_ZFS_MOUNT_ROOT", volume.parent)
+    created = native_storage.apply_shared_folder(
+        _desired(mount_point_ref),
+        native_storage.plan_shared_folder(_desired(mount_point_ref))["planId"],
+    )
+
+    dependencies = native_storage._zfs_pool_managed_dependencies(volume.name)
+
+    assert dependencies == [{"uuid": created["sharedFolder"]["uuid"], "name": "Photos"}]
+    assert str(volume) not in json.dumps(dependencies)
+    assert native_storage._zfs_pool_managed_dependencies("other") == []
+
+
+def test_exportable_zfs_pool_inventory_hides_pool_with_managed_share(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, _registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_ZFS_MOUNT_ROOT", volume.parent)
+    native_storage.apply_shared_folder(
+        _desired(mount_point_ref),
+        native_storage.plan_shared_folder(_desired(mount_point_ref))["planId"],
+    )
+    pools = [
+        {"name": volume.name, "poolGuid": "123", "safeToExport": True},
+        {"name": "other", "poolGuid": "456", "safeToExport": True},
+    ]
+    monkeypatch.setattr(native_storage, "_exportable_zfs_pools", lambda: pools)
+
+    assert native_storage.exportable_zfs_pools() == [pools[1]]
 
 
 def test_shared_folder_detach_preserves_directory_and_removes_only_registry_entry(
@@ -1383,6 +1422,117 @@ def test_native_alias_exposes_only_server_validated_zfs_candidates(
 
     assert response.status_code == 200
     assert response.json() == {"devices": expected, "readOnly": True, "source": "native"}
+
+
+def test_native_alias_exposes_only_safe_zfs_import_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    expected = [
+        {
+            "name": "family",
+            "poolGuid": "15451357997522795478",
+            "state": "ONLINE",
+            "layout": "mirror",
+            "configHash": "c" * 64,
+            "safeToImport": True,
+        }
+    ]
+    monkeypatch.setattr(native_storage, "importable_zfs_pools", lambda: expected)
+    app = FastAPI()
+    app.include_router(create_omv_alias_router())
+
+    response = TestClient(app).get("/api/appliance/omv/pools/zfs/import-candidates")
+
+    assert response.status_code == 200
+    assert response.json() == {"pools": expected, "readOnly": True, "source": "native"}
+
+
+def test_native_alias_exposes_only_safe_zfs_export_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    expected = [
+        {
+            "name": "family",
+            "poolGuid": "15451357997522795478",
+            "health": "ONLINE",
+            "sizeBytes": 16 * 1024**3,
+            "rootMountpoint": "/data/family",
+            "datasetCount": 1,
+            "mountedCount": 1,
+            "safeToExport": True,
+        }
+    ]
+    monkeypatch.setattr(native_storage, "exportable_zfs_pools", lambda: expected)
+    app = FastAPI()
+    app.include_router(create_omv_alias_router())
+
+    response = TestClient(app).get("/api/appliance/omv/pools/zfs")
+
+    assert response.status_code == 200
+    assert response.json() == {"pools": expected, "readOnly": True, "source": "native"}
+
+
+@pytest.mark.parametrize(
+    ("operation", "action"),
+    [("export", "omv.zfs-pool.export"), ("import", "omv.zfs-pool.import")],
+)
+def test_native_alias_binds_zfs_lifecycle_to_exact_approval_action(
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    action: str,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    plan_id = "e" * 64
+    current_plan = {"planId": plan_id, "operation": operation, "requiresApproval": True}
+    applied = {**current_plan, "applied": True, "verified": True, "dataPreserved": True}
+    approval_calls: list[dict[str, Any]] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            approval_calls.append(kwargs)
+
+    class Audit:
+        def record(self, **kwargs: Any) -> None:
+            audit_calls.append(kwargs)
+
+    desired = (
+        {
+            "schema": "echo.omv.zfs-pool-export-desired.v1",
+            "name": "family",
+            "poolGuid": "15451357997522795478",
+            "dataPreserved": True,
+        }
+        if operation == "export"
+        else {
+            "schema": "echo.omv.zfs-pool-import-desired.v1",
+            "name": "family",
+            "poolGuid": "15451357997522795478",
+            "mountPolicy": "echoDataRootOnly",
+        }
+    )
+    plan_name = f"plan_zfs_pool_{operation}"
+    apply_name = f"apply_zfs_pool_{operation}"
+    monkeypatch.setattr(native_storage, plan_name, lambda _desired: current_plan)
+    monkeypatch.setattr(
+        native_storage,
+        apply_name,
+        lambda _desired, _plan_id: applied,
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+
+    response = TestClient(app).post(
+        f"/api/appliance/omv/pools/zfs/{operation}/apply",
+        json={"desired": desired, "planId": plan_id},
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+
+    assert response.status_code == 200
+    assert approval_calls[0]["action"] == action
+    assert {entry["action"] for entry in audit_calls} == {action}
 
 
 # --- Write-plane slices: accounts, SMB, quota (subprocess mocked) --------

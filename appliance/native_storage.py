@@ -52,8 +52,20 @@ from typing import Any
 
 from appliance.native_storage_pool import (
     apply_zfs_mirror,
+    apply_zfs_pool_import,
+    importable_zfs_pools,
     plan_zfs_mirror,
+    plan_zfs_pool_import,
     zfs_mirror_candidates,
+)
+from appliance.native_storage_pool import (
+    apply_zfs_pool_export as _apply_zfs_pool_export,
+)
+from appliance.native_storage_pool import (
+    exportable_zfs_pools as _exportable_zfs_pools,
+)
+from appliance.native_storage_pool import (
+    plan_zfs_pool_export as _plan_zfs_pool_export,
 )
 from appliance.native_storage_probe import (
     Probe,
@@ -91,6 +103,7 @@ from appliance.omv_protocol import (
     validate_smb_desired,
     validate_user_desired,
     validate_user_password_desired,
+    validate_zfs_pool_export_desired,
 )
 
 SCHEMA_VERSION = 1
@@ -98,6 +111,7 @@ SCHEMA_VERSION = 1
 SHARED_FOLDER_PLAN_SCHEMA = "echo.omv.shared-folder-plan.v1"
 _NATIVE_SHARE_REGISTRY = Path("/var/lib/echo-os/native-shared-folders.json")
 _NATIVE_NFS_EXPORTS = Path("/etc/exports.d/echo-os.exports")
+_NATIVE_ZFS_MOUNT_ROOT = Path("/data")
 _STORAGE_UUID_NAMESPACE = uuid_module.UUID("6f1e0d5c-3a34-4f5e-9a52-1f65c3b07a11")
 _REGISTRY_THREAD_LOCK = threading.RLock()
 _NATIVE_DATA_MOUNT_ROOTS = ("/data", "/mnt", "/srv", "/fs", "/volume")
@@ -889,6 +903,8 @@ _NATIVE_WRITE_CAPABILITIES = (
     "nfs.share.remove.safe.v1",
     "filesystem.quota.user-group.v1",
     "storage.pool.zfs-mirror.create.v1",
+    "storage.pool.zfs.export.safe.v1",
+    "storage.pool.zfs.import.echo-root.v1",
 )
 
 
@@ -919,6 +935,9 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("filesystem.quota.user-group.v1")
     if not _native_command_tools_available("zpool", "zfs", "lsblk", "wipefs"):
         unavailable.add("storage.pool.zfs-mirror.create.v1")
+    if not _native_command_tools_available("zpool", "zfs"):
+        unavailable.add("storage.pool.zfs.export.safe.v1")
+        unavailable.add("storage.pool.zfs.import.echo-root.v1")
     return [
         capability for capability in _NATIVE_WRITE_CAPABILITIES if capability not in unavailable
     ]
@@ -3894,6 +3913,50 @@ def apply_quota(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     }
 
 
+def _zfs_pool_managed_dependencies(pool_name: str) -> list[dict[str, str]]:
+    """Return managed shares rooted anywhere inside one Echo ZFS pool."""
+    pool_root = _NATIVE_ZFS_MOUNT_ROOT / pool_name
+    dependencies: list[dict[str, str]] = []
+    for entry in _registry_load(strict=True):
+        path = _native_registered_path(entry)
+        try:
+            path.relative_to(pool_root)
+        except ValueError:
+            continue
+        folder_uuid = _registered_uuid(entry, strict=True)
+        folder_name = _registered_relative_name(entry, strict=True)
+        assert folder_uuid is not None
+        assert folder_name is not None
+        dependencies.append({"uuid": folder_uuid, "name": folder_name})
+    return sorted(dependencies, key=lambda item: (item["name"], item["uuid"]))
+
+
+def exportable_zfs_pools() -> list[dict[str, Any]]:
+    """List Echo-layout pools with no managed share dependency."""
+    with _registry_transaction():
+        return [
+            pool
+            for pool in _exportable_zfs_pools()
+            if not _zfs_pool_managed_dependencies(pool["name"])
+        ]
+
+
+def plan_zfs_pool_export(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview a non-force export after proving managed shares are detached."""
+    desired = validate_zfs_pool_export_desired(dict(desired_state))
+    with _registry_transaction():
+        dependencies = _zfs_pool_managed_dependencies(desired["name"])
+        return _plan_zfs_pool_export(desired, dependencies)
+
+
+def apply_zfs_pool_export(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Export one exact pool while holding the share registry snapshot stable."""
+    desired = validate_zfs_pool_export_desired(dict(desired_state))
+    with _registry_transaction():
+        dependencies = _zfs_pool_managed_dependencies(desired["name"])
+        return _apply_zfs_pool_export(desired, plan_id, dependencies)
+
+
 class NativeStorageAuthority:
     """Storage-provider surface used by the account and data-access layers.
 
@@ -3937,8 +4000,11 @@ __all__ = [
     "apply_user",
     "apply_user_password",
     "apply_zfs_mirror",
+    "apply_zfs_pool_export",
+    "apply_zfs_pool_import",
     "block_devices",
     "filesystems",
+    "exportable_zfs_pools",
     "md_arrays",
     "plan_group",
     "plan_nfs",
@@ -3952,6 +4018,8 @@ __all__ = [
     "plan_user",
     "plan_user_password",
     "plan_zfs_mirror",
+    "plan_zfs_pool_export",
+    "plan_zfs_pool_import",
     "sharing_overview",
     "share_privileges",
     "smart_devices",
@@ -3961,6 +4029,7 @@ __all__ = [
     "storage_topology",
     "validated_devicefile",
     "volume_uuid",
+    "importable_zfs_pools",
     "zfs_mirror_candidates",
     "zfs_pools",
 ]

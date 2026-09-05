@@ -41,6 +41,10 @@ from appliance.omv_models import (
     UserPasswordDesiredState,
     ZfsMirrorApplyRequest,
     ZfsMirrorDesiredState,
+    ZfsPoolExportApplyRequest,
+    ZfsPoolExportDesiredState,
+    ZfsPoolImportApplyRequest,
+    ZfsPoolImportDesiredState,
 )
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
 
@@ -77,6 +81,22 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 ZFS 候选磁盘探测不可用") from exc
         return {"devices": devices, "readOnly": True, "source": "native"}
+
+    @router.get("/pools/zfs/import-candidates")
+    async def zfs_pool_import_candidates() -> dict[str, Any]:
+        try:
+            pools = await run_in_threadpool(native_storage.importable_zfs_pools)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 ZFS 导入候选探测不可用") from exc
+        return {"pools": pools, "readOnly": True, "source": "native"}
+
+    @router.get("/pools/zfs")
+    async def zfs_pools() -> dict[str, Any]:
+        try:
+            pools = await run_in_threadpool(native_storage.exportable_zfs_pools)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 ZFS 存储池探测不可用") from exc
+        return {"pools": pools, "readOnly": True, "source": "native"}
 
     @router.get("/smart/devices")
     async def smart_devices() -> dict[str, Any]:
@@ -713,6 +733,71 @@ def create_omv_alias_router(
             desired=body.desired.model_dump(by_alias=True),
             plan_id=body.plan_id,
             metadata={"name": body.desired.name, "devices": body.desired.devices},
+        )
+
+    # --- Data-preserving ZFS pool export/import -------------------------
+    @router.post("/pools/zfs/export/plan")
+    async def plan_zfs_pool_export(body: ZfsPoolExportDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_zfs_pool_export, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 ZFS 存储池暂不可用") from exc
+
+    @router.post("/pools/zfs/export/apply")
+    async def apply_zfs_pool_export_route(
+        body: ZfsPoolExportApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.zfs-pool.export",
+            plan_fn=native_storage.plan_zfs_pool_export,
+            apply_fn=native_storage.apply_zfs_pool_export,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "name": body.desired.name,
+                "poolGuid": body.desired.pool_guid,
+                "dataPreserved": True,
+            },
+        )
+
+    @router.post("/pools/zfs/import/plan")
+    async def plan_zfs_pool_import(body: ZfsPoolImportDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_zfs_pool_import, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 ZFS 存储池暂不可用") from exc
+
+    @router.post("/pools/zfs/import/apply")
+    async def apply_zfs_pool_import_route(
+        body: ZfsPoolImportApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.zfs-pool.import",
+            plan_fn=native_storage.plan_zfs_pool_import,
+            apply_fn=native_storage.apply_zfs_pool_import,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "name": body.desired.name,
+                "poolGuid": body.desired.pool_guid,
+                "mountPolicy": body.desired.mount_policy,
+            },
         )
 
     return router
