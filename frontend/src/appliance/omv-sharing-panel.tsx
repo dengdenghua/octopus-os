@@ -519,7 +519,8 @@ export function OmvSharingPanel() {
       enabled: existing?.enabled ?? true,
       readOnly: existing?.readOnly ?? true,
       browseable: existing?.browseable ?? true,
-      recycleBin: existing?.recycleBin ?? true,
+      recycleBin:
+        existing?.recycleBin ?? (status?.source === "native" ? false : true),
       comment: existing?.comment ?? folder.comment ?? "",
     });
   };
@@ -1162,6 +1163,7 @@ export function OmvSharingPanel() {
     .map((entry) => entry.name)
     .filter(validFamilyAccountName)
     .sort();
+  const nativeSmb = status?.source === "native";
 
   return (
     <>
@@ -1388,12 +1390,22 @@ export function OmvSharingPanel() {
                       onChange={(event) =>
                         updateDesired({ [field]: event.currentTarget.checked })
                       }
+                      disabled={
+                        nativeSmb &&
+                        (field === "browseable" || field === "recycleBin")
+                      }
                       className="size-3.5 rounded border-slate-300"
                     />
                     {label}
                   </label>
                 ))}
               </div>
+              {nativeSmb && (
+                <p className="mt-2 text-[10px] leading-5 text-slate-500">
+                  原生 usershare 固定为可发现；回收站由文件面管理，当前不在 SMB
+                  写面内。
+                </p>
+              )}
               <label className="mt-3 block text-xs font-medium text-slate-600">
                 备注
                 <input

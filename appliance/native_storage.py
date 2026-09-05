@@ -2253,8 +2253,27 @@ def _smb_usershare_info(name: str) -> dict[str, Any] | None:
     return info
 
 
+def _smb_info_read_only(info: dict[str, Any]) -> bool:
+    """Infer the effective usershare ACL without exposing its raw text."""
+    acl = info.get("usershare_acl")
+    if not isinstance(acl, str) or not acl.strip():
+        return False
+    permissions = re.findall(r":([A-Za-z]+)(?:,|$)", acl)
+    if not permissions:
+        return False
+    return all(
+        "r" in value.casefold()
+        and not {"f", "w"}.intersection(value.casefold())
+        for value in permissions
+    )
+
+
 def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
     desired = validate_smb_desired(dict(desired))
+    if desired["browseable"] is not True:
+        raise ValueError("native SMB usershare discovery cannot be disabled")
+    if desired["recycleBin"] is not False:
+        raise ValueError("native SMB usershare does not manage a recycle bin")
     entry = _resolve_shared_folder(desired["sharedFolderRef"])
     path = _native_folder_path(entry)
     if not path.is_dir():
@@ -2262,13 +2281,32 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
     name = entry["name"]
     existing = _smb_usershare_info(name)
 
+    current = (
+        None
+        if existing is None
+        else {
+            "enabled": True,
+            "readOnly": _smb_info_read_only(existing),
+            "browseable": True,
+            "recycleBin": False,
+            "comment": existing.get("comment", ""),
+        }
+    )
+    wanted = {
+        "enabled": desired["enabled"],
+        "readOnly": desired["readOnly"],
+        "browseable": desired["browseable"],
+        "recycleBin": desired["recycleBin"],
+        "comment": desired["comment"],
+    }
     if existing is None:
         operation = "create" if desired["enabled"] else "none"
     elif not desired["enabled"]:
         operation = "remove"
     else:
-        current_comment = existing.get("comment", "")
-        operation = "none" if current_comment == desired["comment"] else "update"
+        operation = "none" if all(
+            current[field] == after for field, after in wanted.items()
+        ) else "update"
 
     base_revision = _canonical_hash(
         {"share": name, "path": str(path), "exists": existing is not None}
@@ -2281,15 +2319,15 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "operation": operation,
         }
     )
-    changes = (
-        []
-        if operation in ("none",)
-        else [
-            {"field": "enabled", "before": existing is not None, "after": desired["enabled"]},
-            {"field": "comment", "before": (existing or {}).get("comment"), "after": desired["comment"]},
-            {"field": "readOnly", "before": None, "after": desired["readOnly"]},
-        ]
-    )
+    changes = [
+        {
+            "field": field,
+            "before": None if current is None else current[field],
+            "after": after,
+        }
+        for field, after in wanted.items()
+        if current is None or current[field] != after
+    ]
     return {
         "schema": SMB_PLAN_SCHEMA,
         "planId": plan_id,
@@ -2355,8 +2393,15 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
         desired["comment"] or name,
         acl,
     )
-    if _smb_usershare_info(name) is None:
+    observed = _smb_usershare_info(name)
+    if observed is None:
         raise OSError("Samba usershare was not registered after net usershare add")
+    expected_comment = desired["comment"] or name
+    if (
+        observed.get("comment") != expected_comment
+        or _smb_info_read_only(observed) != desired["readOnly"]
+    ):
+        raise OSError("Samba usershare did not persist the requested state")
     return {**plan, "applied": True, "verified": True, "share": {"name": name}}
 
 

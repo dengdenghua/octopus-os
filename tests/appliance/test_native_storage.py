@@ -646,6 +646,22 @@ def test_smb_share_enable(
     assert calls and calls[0][:3] == ("net", "usershare", "add")
 
 
+def test_native_smb_rejects_unmanaged_usershare_options() -> None:
+    base = {
+        "schema": "echo.omv.smb-share-desired.v1",
+        "sharedFolderRef": "11111111-2222-4333-8444-555555555555",
+        "enabled": True,
+        "readOnly": False,
+        "browseable": True,
+        "recycleBin": False,
+        "comment": "Media",
+    }
+    with pytest.raises(ValueError, match="recycle bin"):
+        native_storage.plan_smb({**base, "recycleBin": True})
+    with pytest.raises(ValueError, match="discovery"):
+        native_storage.plan_smb({**base, "browseable": False})
+
+
 def test_quota_requires_zfs(monkeypatch: pytest.MonkeyPatch) -> None:
     fs_uuid = "11111111-2222-4333-8444-555555555555"
     monkeypatch.setattr(
