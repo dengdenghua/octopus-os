@@ -23,6 +23,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -44,6 +45,11 @@ IMAGE_ROOT = Path("/var/tmp")
 IMAGE_BYTES = 512 * 1024 * 1024
 MAX_RESPONSE_BYTES = 1024 * 1024
 SHA256_LENGTH = 64
+TIMER_PATH = Path("/etc/systemd/system/echo-btrfs-snapshot.timer")
+SERVICE_PATH = Path("/etc/systemd/system/echo-btrfs-snapshot.service")
+TIMER_DROP_IN = Path("/run/systemd/system/echo-btrfs-snapshot.timer.d/override.conf")
+TIMER_UNIT = "echo-btrfs-snapshot.timer"
+SERVICE_UNIT = "echo-btrfs-snapshot.service"
 
 
 class BtrfsSnapshotFunctionalLabError(RuntimeError):
@@ -455,6 +461,87 @@ def _delete_subvolume(path: Path, runner: CommandRunner) -> None:
         _checked(["btrfs", "subvolume", "delete", str(path)], runner, "subvolume cleanup")
 
 
+def _systemd_property(runner: CommandRunner, unit: str, name: str) -> str:
+    return _checked(
+        ["systemctl", "show", unit, f"--property={name}", "--value"],
+        runner,
+        f"systemd {name} probe",
+    ).strip()
+
+
+def _run_schedule_via_timer(runner: CommandRunner) -> dict[str, Any]:
+    if not TIMER_PATH.is_file() or not SERVICE_PATH.is_file():
+        raise BtrfsSnapshotFunctionalLabError("production Btrfs snapshot systemd units are absent")
+    TIMER_DROP_IN.parent.mkdir(parents=True, mode=0o755, exist_ok=True)
+    if TIMER_DROP_IN.is_symlink():
+        raise BtrfsSnapshotFunctionalLabError("Btrfs snapshot timer drop-in path is unsafe")
+    override = (
+        b"[Timer]\n"
+        b"OnCalendar=\n"
+        b"OnActiveSec=3s\n"
+        b"RandomizedDelaySec=0\n"
+        b"AccuracySec=1us\n"
+        b"Persistent=false\n"
+    )
+    try:
+        _atomic_write(TIMER_DROP_IN, override, mode=0o644)
+        _checked(["systemctl", "daemon-reload"], runner, "systemd reload before timer evidence")
+        _checked(["systemctl", "stop", TIMER_UNIT], runner, "Btrfs snapshot timer reset")
+        runner(["systemctl", "reset-failed", SERVICE_UNIT])
+        before_invocation = _systemd_property(runner, SERVICE_UNIT, "InvocationID")
+        _checked(["systemctl", "start", TIMER_UNIT], runner, "Btrfs snapshot timer start")
+        deadline = time.monotonic() + 60
+        invocation = before_invocation
+        while time.monotonic() < deadline:
+            invocation = _systemd_property(runner, SERVICE_UNIT, "InvocationID")
+            active = _systemd_property(runner, SERVICE_UNIT, "ActiveState")
+            if invocation and invocation != before_invocation and active != "activating":
+                break
+            time.sleep(0.5)
+        else:
+            raise BtrfsSnapshotFunctionalLabError(
+                "systemd timer did not invoke the snapshot service"
+            )
+        result = _systemd_property(runner, SERVICE_UNIT, "Result")
+        status = _systemd_property(runner, SERVICE_UNIT, "ExecMainStatus")
+        last_trigger = _systemd_property(runner, TIMER_UNIT, "LastTriggerUSec")
+        journal = _checked(
+            ["journalctl", "--unit", SERVICE_UNIT, "--no-pager", "--output", "cat", "--lines", "20"],
+            runner,
+            "Btrfs snapshot service journal",
+        )
+        payloads: list[dict[str, Any]] = []
+        for line in journal.splitlines():
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                payloads.append(value)
+        expected = {"outcome": "completed", "created": 1, "pruned": 0, "errors": 0}
+        if result != "success" or status != "0" or expected not in payloads:
+            detail = " | ".join(line.strip() for line in journal.splitlines() if line.strip())[-768:]
+            raise BtrfsSnapshotFunctionalLabError(
+                "timer-started snapshot service did not complete cleanly: "
+                f"result={result!r} status={status!r}; journal={detail}"
+            )
+        return {
+            **expected,
+            "timerTriggered": True,
+            "serviceResult": result,
+            "serviceExecMainStatus": int(status),
+            "invocationIdChanged": invocation != before_invocation,
+            "lastTrigger": last_trigger,
+            "journalResult": expected,
+        }
+    finally:
+        runner(["systemctl", "stop", TIMER_UNIT])
+        TIMER_DROP_IN.unlink(missing_ok=True)
+        with suppress(OSError):
+            TIMER_DROP_IN.parent.rmdir()
+        runner(["systemctl", "daemon-reload"])
+
+
 def _cleanup(
     *,
     image: Path,
@@ -555,7 +642,7 @@ def run_lab(
     old_auto_name = old_time.strftime("auto-%Y%m%dt%H%M%Sz")
     current_auto_name = timestamp.strftime("auto-%Y%m%dt%H%M%Sz")
     later_auto_name = (timestamp + timedelta(seconds=1)).strftime("auto-%Y%m%dt%H%M%Sz")
-    snapshot_names = (manual_name, old_auto_name, current_auto_name, later_auto_name)
+    snapshot_names = [manual_name, old_auto_name, current_auto_name, later_auto_name]
     saved_files: list[SavedFile] = []
     mounted = False
     share_ref: str | None = None
@@ -854,6 +941,37 @@ def run_lab(
             raise BtrfsSnapshotFunctionalLabError("age retention host readback is invalid")
         _assert_private_response(final_inventory, image, mountpoint)
 
+        natural_timer: dict[str, Any] | None = None
+        if os.environ.get("ECHO_TIMER_NATURAL_TRIGGER") == "1":
+            natural_timer = _run_schedule_via_timer(runner)
+            timer_inventory = _request(
+                caller, base_url, "GET", inventory_path, expected=200, token=token
+            )
+            timer_snapshots = [
+                item
+                for item in timer_inventory.get("snapshots", [])
+                if isinstance(item, dict)
+                and item.get("kind") == "automatic"
+                and item.get("name") not in final_names
+            ]
+            if len(timer_snapshots) != 1 or not isinstance(timer_snapshots[0].get("name"), str):
+                raise BtrfsSnapshotFunctionalLabError(
+                    "timer did not create exactly one new automatic snapshot"
+                )
+            timer_name = str(timer_snapshots[0]["name"])
+            snapshot_names.append(timer_name)
+            timer_path = mountpoint / ".echo-snapshots" / share_ref / timer_name
+            property_output = _checked(
+                ["btrfs", "property", "get", "-ts", str(timer_path), "ro"],
+                runner,
+                "automatic snapshot read-only probe",
+            )
+            if property_output.strip() != "ro=true":
+                raise BtrfsSnapshotFunctionalLabError(
+                    "timer-created automatic snapshot is not read-only"
+                )
+            _assert_private_response(timer_inventory, image, mountpoint)
+
         filesystem_uuid = _checked(
             ["findmnt", "-n", "-o", "UUID", "-T", str(mountpoint)],
             runner,
@@ -882,6 +1000,21 @@ def run_lab(
                 "value": 1,
                 "lockedOldSnapshotPreserved": True,
                 "unlockedOldSnapshotPruned": True,
+            },
+            "schedule": {
+                "naturalTimerTriggerVerified": natural_timer is not None,
+                "automaticSnapshotReadOnly": natural_timer is not None,
+                "systemdServiceResult": (
+                    natural_timer.get("serviceResult") if natural_timer is not None else None
+                ),
+                "systemdInvocationChanged": (
+                    natural_timer.get("invocationIdChanged") is True
+                    if natural_timer is not None
+                    else False
+                ),
+                "systemdLastTrigger": (
+                    natural_timer.get("lastTrigger") if natural_timer is not None else None
+                ),
             },
         }
     finally:

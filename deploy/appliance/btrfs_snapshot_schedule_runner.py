@@ -73,6 +73,7 @@ def run_schedule(
     create_applier: Callable[[str, str, str], dict[str, Any]] = apply_automatic_snapshot,
     delete_planner: Callable[[dict[str, Any]], dict[str, Any]] = plan_snapshot_delete,
     delete_applier: Callable[[dict[str, Any], str], dict[str, Any]] = apply_snapshot_delete,
+    error_reporter: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     configured, policy = policy_reader()
     shares = policy.get("shares")
@@ -150,8 +151,11 @@ def run_schedule(
             )
             for snapshot in _retention_candidates(automatic, retention, timestamp):
                 prune(snapshot, reference)
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError, KeyError, TypeError) as exc:
             errors += 1
+            if error_reporter is not None:
+                detail = " ".join(str(exc).split())[:256]
+                error_reporter(f"{type(exc).__name__}: {detail}")
     return {
         "outcome": "completed" if errors == 0 else "completedWithErrors",
         "created": created,
@@ -162,7 +166,12 @@ def run_schedule(
 
 def main() -> int:
     try:
-        result = run_schedule()
+        result = run_schedule(
+            error_reporter=lambda detail: print(
+                f"Btrfs snapshot schedule skipped one share: {detail}",
+                file=__import__("sys").stderr,
+            )
+        )
     except (OSError, ValueError) as exc:
         print(f"Btrfs snapshot schedule refused to run: {exc}", file=__import__("sys").stderr)
         return 2

@@ -58,7 +58,8 @@ def _run_read(*args: str, timeout: float = 15.0) -> str:
     if len(stdout) > _MAX_COMMAND_OUTPUT_BYTES or len(stderr) > _MAX_COMMAND_OUTPUT_BYTES:
         raise OSError("Btrfs inspection output exceeded the safety limit")
     if completed.returncode != 0:
-        raise OSError("Btrfs inspection command failed")
+        command_label = " ".join(args[:3])[:64]
+        raise OSError(f"Btrfs inspection command failed: {command_label}")
     try:
         return stdout.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
@@ -122,7 +123,43 @@ def _subvolume_identity(path: Path) -> dict[str, Any]:
 
 
 def _btrfs_filesystem_uuid(path: Path) -> str:
-    raw_uuid = _run_read("findmnt", "-n", "-o", "UUID", "-T", str(path)).strip()
+    uuid_candidates = {
+        line.strip().lower()
+        for line in _run_read(
+            "findmnt", "-n", "-o", "UUID", "-T", str(path)
+        ).splitlines()
+        if line.strip()
+    }
+    if len(uuid_candidates) == 1:
+        raw_uuid = next(iter(uuid_candidates))
+        if _BTRFS_UUID_PATTERN.fullmatch(raw_uuid) is not None:
+            return raw_uuid
+    elif len(uuid_candidates) > 1:
+        raise OSError("Btrfs path has no stable filesystem UUID")
+    # systemd ReadWritePaths creates a bind mount inside the service's mount
+    # namespace.  findmnt may report both mount layers (with the same value),
+    # or report the top-level bind without an UUID even though the selected
+    # path still belongs to the same Btrfs filesystem.
+    # Resolve the backing block device instead: unlike `btrfs filesystem show`,
+    # findmnt and blkid remain usable in the hardened service namespace.
+    source_candidates = {
+        line.strip().partition("[")[0]
+        for line in _run_read(
+            "findmnt", "-n", "-o", "SOURCE", "-T", str(path)
+        ).splitlines()
+        if line.strip()
+    }
+    if len(source_candidates) != 1:
+        raise OSError("Btrfs path has no stable filesystem UUID")
+    source = next(iter(source_candidates))
+    if (
+        not source.startswith("/dev/")
+        or source == "/dev/"
+        or "\x00" in source
+        or "\n" in source
+    ):
+        raise OSError("Btrfs path has no stable filesystem UUID")
+    raw_uuid = _run_read("blkid", "-s", "UUID", "-o", "value", "--", source).strip()
     if _BTRFS_UUID_PATTERN.fullmatch(raw_uuid) is None:
         raise OSError("Btrfs path has no stable filesystem UUID")
     return raw_uuid.lower()

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -492,6 +494,39 @@ def test_runner_never_prunes_locked_automatic_snapshots() -> None:
     assert locked["snapshotId"] not in deleted
 
 
+def test_runner_reports_bounded_error_without_share_identity() -> None:
+    reported: list[str] = []
+
+    result = runner.run_schedule(
+        policy_reader=lambda: (
+            True,
+            {
+                "shares": [
+                    {
+                        "sharedFolderRef": SHARE_UUID,
+                        "retention": {"mode": "count", "value": 2},
+                    }
+                ]
+            },
+        ),
+        inventory_reader=lambda _reference: (_ for _ in ()).throw(
+            OSError("snapshot refused\n" + "x" * 400)
+        ),
+        error_reporter=reported.append,
+    )
+
+    assert result == {
+        "outcome": "completedWithErrors",
+        "created": 0,
+        "pruned": 0,
+        "errors": 1,
+    }
+    assert len(reported) == 1
+    assert reported[0].startswith("OSError: snapshot refused ")
+    assert len(reported[0]) <= len("OSError: ") + 256
+    assert SHARE_UUID not in reported[0]
+
+
 def test_schedule_route_binds_exact_approval_action(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -551,6 +586,7 @@ def test_daily_timer_and_runner_are_constrained() -> None:
     assert "NoNewPrivileges=true" in service
     assert "PrivateNetwork=true" in service
     assert "ProtectSystem=strict" in service
+    assert "-/var/lib/echo-os" in service
     assert "CapabilityBoundingSet=CAP_SYS_ADMIN" in service
     assert "ReadWritePaths=-/data -/mnt -/srv -/fs -/volume" in service
     assert "OnCalendar=*-*-* 02:15:00" in timer
@@ -558,3 +594,53 @@ def test_daily_timer_and_runner_are_constrained() -> None:
     assert "RandomizedDelaySec=45min" in timer
     assert "echo-btrfs-snapshot.timer" in provision
     assert "systemctl enable --now echo-btrfs-snapshot.timer" in provision
+
+
+def test_functional_lab_can_verify_natural_snapshot_timer_trigger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from deploy.appliance import btrfs_snapshot_functional_lab as lab
+
+    timer = tmp_path / "echo-btrfs-snapshot.timer"
+    service = tmp_path / "echo-btrfs-snapshot.service"
+    timer.write_text("[Timer]\n", encoding="utf-8")
+    service.write_text("[Service]\n", encoding="utf-8")
+    drop_in = tmp_path / "run" / "echo-btrfs-snapshot.timer.d" / "override.conf"
+    monkeypatch.setattr(lab, "TIMER_PATH", timer)
+    monkeypatch.setattr(lab, "SERVICE_PATH", service)
+    monkeypatch.setattr(lab, "TIMER_DROP_IN", drop_in)
+    properties = {
+        "InvocationID": iter(["old-invocation", "new-invocation"]),
+        "ActiveState": iter(["inactive"]),
+        "Result": iter(["success"]),
+        "ExecMainStatus": iter(["0"]),
+        "LastTriggerUSec": iter(["Sat 2026-09-06 04:00:00 CST"]),
+    }
+    monkeypatch.setattr(
+        lab,
+        "_systemd_property",
+        lambda _runner, _unit, name: next(properties[name]),
+    )
+    calls: list[list[str]] = []
+
+    def command(args: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(list(args))
+        output = (
+            '{"created":1,"errors":0,"outcome":"completed","pruned":0}\n'
+            if args[0] == "journalctl"
+            else ""
+        )
+        return subprocess.CompletedProcess(args, 0, output, "")
+
+    result = lab._run_schedule_via_timer(command)
+
+    assert result["timerTriggered"] is True
+    assert result["serviceResult"] == "success"
+    assert result["journalResult"] == {
+        "outcome": "completed",
+        "created": 1,
+        "pruned": 0,
+        "errors": 0,
+    }
+    assert not drop_in.exists()
+    assert ["systemctl", "stop", "echo-btrfs-snapshot.timer"] in calls

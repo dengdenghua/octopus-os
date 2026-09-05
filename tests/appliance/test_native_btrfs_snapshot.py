@@ -164,6 +164,71 @@ def test_btrfs_filesystem_uuid_accepts_non_rfc_kernel_identifier(
     )
 
 
+def test_btrfs_filesystem_uuid_accepts_duplicate_systemd_mount_observations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    filesystem_uuid = "5c04a402-be13-f81f-2116-addffc088e0c"
+    monkeypatch.setattr(
+        native_btrfs_snapshot,
+        "_run_read",
+        lambda *args: f"{filesystem_uuid}\n{filesystem_uuid}\n",
+    )
+
+    assert (
+        native_btrfs_snapshot._btrfs_filesystem_uuid(Path("/mnt/volume/source"))
+        == filesystem_uuid
+    )
+
+
+def test_btrfs_filesystem_uuid_falls_back_across_systemd_bind_mount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def read(*args: str) -> str:
+        calls.append(args)
+        if args[:4] == ("findmnt", "-n", "-o", "UUID"):
+            return "\n"
+        if args[0] == "findmnt":
+            return "/dev/mapper/archive[/photos]\n/dev/mapper/archive[/photos]\n"
+        return "5c04a402-be13-f81f-2116-addffc088e0c\n"
+
+    monkeypatch.setattr(native_btrfs_snapshot, "_run_read", read)
+
+    assert (
+        native_btrfs_snapshot._btrfs_filesystem_uuid(Path("/mnt/volume/source"))
+        == "5c04a402-be13-f81f-2116-addffc088e0c"
+    )
+    assert calls[1][:4] == ("findmnt", "-n", "-o", "SOURCE")
+    assert Path(calls[1][5]) == Path("/mnt/volume/source")
+    assert calls[2] == (
+        "blkid",
+        "-s",
+        "UUID",
+        "-o",
+        "value",
+        "--",
+        "/dev/mapper/archive",
+    )
+
+
+def test_btrfs_filesystem_uuid_rejects_non_device_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        native_btrfs_snapshot,
+        "_run_read",
+        lambda *args: (
+            "\n"
+            if args[:4] == ("findmnt", "-n", "-o", "UUID")
+            else "/run/systemd/unit-root/mnt/volume\n"
+        ),
+    )
+
+    with pytest.raises(OSError, match="stable filesystem UUID"):
+        native_btrfs_snapshot._btrfs_filesystem_uuid(Path("/mnt/volume/source"))
+
+
 def test_inventory_projects_the_root_managed_lock_state(
     monkeypatch: pytest.MonkeyPatch, snapshot_share
 ) -> None:
