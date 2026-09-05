@@ -1,0 +1,23 @@
+[Unit]
+Description=Echo OS consistency checks for managed md RAID1 arrays
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/echo-os
+ExecStart=/opt/echo-os/.venv/bin/python -m deploy.appliance.mdraid_check_schedule_runner
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=echo-mdraid-check

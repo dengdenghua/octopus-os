@@ -13,7 +13,12 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
 
-from appliance import native_storage, nut_device_config, smart_schedule_policy
+from appliance import (
+    mdraid_check_schedule_policy,
+    native_storage,
+    nut_device_config,
+    smart_schedule_policy,
+)
 from appliance.native_smart import (
     apply_smart_self_test,
     plan_smart_self_test,
@@ -31,6 +36,8 @@ from appliance.omv_models import (
     MdRaid1ReplaceDesiredState,
     MdRaidCheckApplyRequest,
     MdRaidCheckDesiredState,
+    MdRaidCheckSchedulePolicyApplyRequest,
+    MdRaidCheckSchedulePolicyDesiredState,
     NfsApplyRequest,
     NfsDesiredState,
     NfsRemoveApplyRequest,
@@ -150,6 +157,13 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=503, detail="原生 md RAID1 校验状态不可用") from exc
         return {"arrays": arrays, "readOnly": True, "source": "native"}
+
+    @router.get("/arrays/mdraid1/check/schedule")
+    async def mdraid1_check_schedule() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(mdraid_check_schedule_policy.policy_status)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="md RAID1 定时校验策略读取失败") from exc
 
     @router.get("/volumes/ext4/candidates")
     async def ext4_volume_candidates() -> dict[str, Any]:
@@ -943,6 +957,43 @@ def create_omv_alias_router(
                 "arrayUuid": body.desired.array_uuid,
                 "operation": "start",
                 "repair": False,
+            },
+        )
+
+    @router.post("/arrays/mdraid1/check/schedule/plan")
+    async def plan_mdraid_check_schedule(
+        body: MdRaidCheckSchedulePolicyDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                mdraid_check_schedule_policy.plan_policy,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="md RAID1 定时校验策略暂不可用") from exc
+
+    @router.post("/arrays/mdraid1/check/schedule/apply")
+    async def apply_mdraid_check_schedule(
+        body: MdRaidCheckSchedulePolicyApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="storage.mdraid.check.schedule",
+            plan_fn=mdraid_check_schedule_policy.plan_policy,
+            apply_fn=mdraid_check_schedule_policy.apply_policy,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "enabled": body.desired.enabled,
+                "operation": "check",
+                "explicitRepair": False,
+                "scope": "echoManagedHealthyRaid1Only",
+                "schedule": "monthlyFirstSundayLocal",
             },
         )
 

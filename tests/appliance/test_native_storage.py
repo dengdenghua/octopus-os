@@ -62,6 +62,7 @@ def test_native_status_advertises_only_the_available_write_slice(
     monkeypatch.setattr(native_storage.shutil, "which", lambda _binary: "/usr/bin/tool")
     monkeypatch.setattr(native_storage, "_native_quota_tools_available", lambda: True)
     monkeypatch.setattr(native_storage, "_native_nut_usb_driver_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_mdraid_check_scheduler_available", lambda: True)
 
     payload = native_storage.status()
 
@@ -83,6 +84,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "storage.array.mdraid1.create.v1",
         "storage.array.mdraid1.replace-failed.blank.v1",
         "storage.array.mdraid.check.start.v1",
+        "storage.array.mdraid.check.schedule.v1",
         "storage.volume.ext4.create-mount.v1",
         "storage.pool.zfs-mirror.replace.blank.v1",
         "storage.pool.zfs.export.safe.v1",
@@ -116,6 +118,20 @@ def test_native_status_hides_write_slices_without_host_tools(
         "account.user.create.v1",
         "account.user.password.reset.v1",
     ]
+
+
+def test_native_status_hides_mdraid_schedule_without_installed_timer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(native_storage.shutil, "which", lambda _binary: "/usr/bin/tool")
+    monkeypatch.setattr(native_storage, "_native_quota_tools_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_nut_usb_driver_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_mdraid_check_scheduler_available", lambda: False)
+
+    capabilities = native_storage.status()["capabilities"]
+
+    assert "storage.array.mdraid.check.start.v1" in capabilities
+    assert "storage.array.mdraid.check.schedule.v1" not in capabilities
 
 
 def test_native_status_keeps_group_creation_when_only_groupadd_is_present(

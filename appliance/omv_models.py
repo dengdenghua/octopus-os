@@ -626,6 +626,23 @@ class MdRaidCheckApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class MdRaidCheckSchedulePolicyDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.mdraid-check-schedule-desired.v1"] = Field(
+        default="echo.mdraid-check-schedule-desired.v1",
+        alias="schema",
+    )
+    enabled: bool
+
+
+class MdRaidCheckSchedulePolicyApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: MdRaidCheckSchedulePolicyDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class Ext4VolumeDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -928,6 +945,10 @@ __all__ = [
     "GroupDesiredState",
     "MdRaid1ApplyRequest",
     "MdRaid1DesiredState",
+    "MdRaidCheckApplyRequest",
+    "MdRaidCheckDesiredState",
+    "MdRaidCheckSchedulePolicyApplyRequest",
+    "MdRaidCheckSchedulePolicyDesiredState",
     "NfsApplyRequest",
     "NfsDesiredState",
     "NfsRemoveApplyRequest",

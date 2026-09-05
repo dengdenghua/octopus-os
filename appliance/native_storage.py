@@ -52,6 +52,9 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from appliance.mdraid_check_schedule_policy import (
+    scheduler_installed as _mdraid_scheduler_installed,
+)
 from appliance.native_ext4 import apply_ext4_volume, ext4_volume_candidates, plan_ext4_volume
 from appliance.native_mdraid import apply_mdraid1, mdraid1_candidates, plan_mdraid1
 from appliance.native_mdraid_check import (
@@ -226,6 +229,10 @@ def _native_quota_tools_available() -> bool:
 def _native_command_tools_available(*binaries: str) -> bool:
     """Return whether every host command needed by one native write slice exists."""
     return all(shutil.which(binary) is not None for binary in binaries)
+
+
+def _native_mdraid_check_scheduler_available() -> bool:
+    return _mdraid_scheduler_installed()
 
 
 def _native_nut_usb_driver_available() -> bool:
@@ -940,6 +947,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.array.mdraid1.create.v1",
     "storage.array.mdraid1.replace-failed.blank.v1",
     "storage.array.mdraid.check.start.v1",
+    "storage.array.mdraid.check.schedule.v1",
     "storage.volume.ext4.create-mount.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
@@ -986,6 +994,11 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("storage.array.mdraid1.replace-failed.blank.v1")
     if not _native_command_tools_available("mdadm", "lsblk"):
         unavailable.add("storage.array.mdraid.check.start.v1")
+    if (
+        not _native_command_tools_available("mdadm", "lsblk", "systemctl")
+        or not _native_mdraid_check_scheduler_available()
+    ):
+        unavailable.add("storage.array.mdraid.check.schedule.v1")
     if not _native_command_tools_available(
         "mdadm",
         "blkid",

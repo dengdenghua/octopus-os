@@ -369,6 +369,10 @@ YAML
     /etc/systemd/system/echo-smart-self-test.service
   install -m644 "$OS_DIR/deploy/appliance/systemd/echo-smart-self-test.timer" \
     /etc/systemd/system/echo-smart-self-test.timer
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-mdraid-check.service" \
+    /etc/systemd/system/echo-mdraid-check.service
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-mdraid-check.timer" \
+    /etc/systemd/system/echo-mdraid-check.timer
 
   # ── 首启引导服务自举 ─────────────────────────────────────────
   # echo-firstboot.service 负责"开机自动续跑 firstboot"(幂等,marks 齐 +
@@ -401,6 +405,7 @@ YAML
   systemctl daemon-reload
   systemctl enable --now echo-ups-shutdown-guard.timer
   systemctl enable --now echo-smart-self-test.timer
+  systemctl enable --now echo-mdraid-check.timer
   systemctl enable --now echo-appliance.service
   # nginx 可能已在跑(apt 安装时自启),`enable --now` 不会重载已运行进程
   # 的配置 → 80 端口仍服务旧 default 站点(VM 实测)。必须 restart。

@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Echo-managed md RAID1 arrays monthly
+
+[Timer]
+OnCalendar=Sun *-*-1..7 00:45:00
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=24h
+Unit=echo-mdraid-check.service
+
+[Install]
+WantedBy=timers.target
