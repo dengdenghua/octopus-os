@@ -1,0 +1,25 @@
+[Unit]
+Description=Echo OS scrubs for managed Btrfs RAID1 filesystems
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/echo-os
+ExecStart=/opt/echo-os/.venv/bin/python -m deploy.appliance.btrfs_scrub_schedule_runner
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
+ReadWritePaths=-/data -/mnt -/srv -/fs -/volume
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=echo-btrfs-scrub

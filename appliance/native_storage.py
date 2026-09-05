@@ -53,6 +53,9 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from appliance.btrfs_scrub_schedule_policy import (
+    scheduler_installed as _btrfs_scrub_scheduler_installed,
+)
 from appliance.mdraid_check_schedule_policy import (
     scheduler_installed as _mdraid_scheduler_installed,
 )
@@ -246,6 +249,10 @@ def _native_command_tools_available(*binaries: str) -> bool:
 
 def _native_mdraid_check_scheduler_available() -> bool:
     return _mdraid_scheduler_installed()
+
+
+def _native_btrfs_scrub_scheduler_available() -> bool:
+    return _btrfs_scrub_scheduler_installed()
 
 
 def _native_nut_usb_driver_available() -> bool:
@@ -1008,6 +1015,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.volume.btrfs-raid1.create-mount.v1",
     "storage.volume.btrfs-raid1.replace-missing.blank.v1",
     "storage.volume.btrfs.scrub.start.v1",
+    "storage.volume.btrfs.scrub.schedule.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
     "storage.pool.zfs.import.echo-root.v1",
@@ -1083,6 +1091,11 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("storage.volume.btrfs-raid1.create-mount.v1")
     if not _native_command_tools_available("btrfs", "findmnt"):
         unavailable.add("storage.volume.btrfs.scrub.start.v1")
+    if (
+        not _native_command_tools_available("btrfs", "findmnt", "systemctl")
+        or not _native_btrfs_scrub_scheduler_available()
+    ):
+        unavailable.add("storage.volume.btrfs.scrub.schedule.v1")
     if not _native_command_tools_available("btrfs", "findmnt", "lsblk", "wipefs"):
         unavailable.add("storage.volume.btrfs-raid1.replace-missing.blank.v1")
     if not _native_command_tools_available("zpool", "zfs"):

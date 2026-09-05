@@ -4,6 +4,7 @@ import {
   applyOmvBtrfsRaid1,
   applyOmvBtrfsReplace,
   applyOmvBtrfsScrub,
+  applyOmvBtrfsScrubSchedule,
   applyOmvExt4Volume,
   applyOmvGroup,
   applyOmvMdRaid1,
@@ -24,6 +25,7 @@ import {
   applyOmvZfsScrub,
   fetchOmvFilesystems,
   fetchOmvBtrfsMaintenance,
+  fetchOmvBtrfsScrubSchedule,
   fetchOmvBtrfsRaid1Candidates,
   fetchOmvBtrfsReplacementCandidates,
   fetchOmvExt4VolumeCandidates,
@@ -45,6 +47,7 @@ import {
   planOmvBtrfsRaid1,
   planOmvBtrfsReplace,
   planOmvBtrfsScrub,
+  planOmvBtrfsScrubSchedule,
   planOmvExt4Volume,
   planOmvMdRaid1,
   planOmvNfsShareRemove,
@@ -1320,6 +1323,79 @@ describe("OMV read-only API client", () => {
     expect((fetchMock.mock.calls[8]?.[1] as RequestInit).headers).toMatchObject(
       {
         "X-Echo-Approval": "replace-token",
+      },
+    );
+  });
+
+  it("keeps Btrfs scrub schedule read, preview, and approved apply separate", async () => {
+    const desired = {
+      schema: "echo.btrfs-scrub-schedule-desired.v1" as const,
+      enabled: true,
+    };
+    const status = {
+      schemaVersion: 1 as const,
+      enabled: false,
+      configured: false,
+      schedulerInstalled: true,
+      source: "localPolicy" as const,
+      operation: "scrub" as const,
+      scope: "echoManagedHealthyBtrfsRaid1Only" as const,
+      schedule: "monthly",
+    };
+    const plan = {
+      schema: desired.schema,
+      planId: "8".repeat(64),
+      operation: "enable" as const,
+      requiresApproval: true,
+      current: { schemaVersion: 1 as const, enabled: false },
+      desired: { schemaVersion: 1 as const, enabled: true },
+      configured: false,
+      schedulerInstalled: true,
+      scrubAction: "scrub" as const,
+      scope: status.scope,
+      schedule: status.schedule,
+      safety: {
+        replicaRepair: true as const,
+        ioLoad: "high" as const,
+        degradedFilesystems: "skipped" as const,
+        readOnlyFilesystems: "skipped" as const,
+        knownDeviceErrors: "skipped" as const,
+        activeMaintenance: "skipped" as const,
+        force: false as const,
+        cancel: false as const,
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(status), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ...plan, applied: true, verified: true }),
+          {
+            status: 200,
+          },
+        ),
+      );
+
+    expect((await fetchOmvBtrfsScrubSchedule()).enabled).toBe(false);
+    expect((await planOmvBtrfsScrubSchedule(desired)).operation).toBe("enable");
+    expect(
+      (await applyOmvBtrfsScrubSchedule(desired, plan.planId, "schedule-token"))
+        .verified,
+    ).toBe(true);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/volumes/btrfs-raid1/scrub/schedule",
+      "/api/appliance/omv/volumes/btrfs-raid1/scrub/schedule/plan",
+      "/api/appliance/omv/volumes/btrfs-raid1/scrub/schedule/apply",
+    ]);
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).headers).toMatchObject(
+      {
+        "X-Echo-Approval": "schedule-token",
       },
     );
   });

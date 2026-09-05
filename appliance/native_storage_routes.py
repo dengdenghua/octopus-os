@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
 
 from appliance import (
+    btrfs_scrub_schedule_policy,
     mdraid_check_schedule_policy,
     native_storage,
     nut_device_config,
@@ -32,6 +33,8 @@ from appliance.omv_models import (
     BtrfsReplaceDesiredState,
     BtrfsScrubApplyRequest,
     BtrfsScrubDesiredState,
+    BtrfsScrubSchedulePolicyApplyRequest,
+    BtrfsScrubSchedulePolicyDesiredState,
     Ext4VolumeApplyRequest,
     Ext4VolumeDesiredState,
     GroupApplyRequest,
@@ -196,6 +199,13 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 Btrfs 维护状态不可用") from exc
         return {"filesystems": filesystems, "readOnly": True, "source": "native"}
+
+    @router.get("/volumes/btrfs-raid1/scrub/schedule")
+    async def btrfs_scrub_schedule() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(btrfs_scrub_schedule_policy.policy_status)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="Btrfs scrub 定时策略读取失败") from exc
 
     @router.get("/volumes/btrfs-raid1/replacement-candidates")
     async def btrfs_replacement_candidates() -> dict[str, Any]:
@@ -1128,6 +1138,43 @@ def create_omv_alias_router(
                 "operation": "start",
                 "repairFromRedundantCopy": True,
                 "force": False,
+            },
+        )
+
+    @router.post("/volumes/btrfs-raid1/scrub/schedule/plan")
+    async def plan_btrfs_scrub_schedule(
+        body: BtrfsScrubSchedulePolicyDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                btrfs_scrub_schedule_policy.plan_policy,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="Btrfs scrub 定时策略暂不可用") from exc
+
+    @router.post("/volumes/btrfs-raid1/scrub/schedule/apply")
+    async def apply_btrfs_scrub_schedule(
+        body: BtrfsScrubSchedulePolicyApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="storage.btrfs.scrub.schedule",
+            plan_fn=btrfs_scrub_schedule_policy.plan_policy,
+            apply_fn=btrfs_scrub_schedule_policy.apply_policy,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "enabled": body.desired.enabled,
+                "operation": "scrub",
+                "replicaRepair": True,
+                "scope": "echoManagedHealthyBtrfsRaid1Only",
+                "schedule": "monthlyFirstSundayLocal",
             },
         )
 

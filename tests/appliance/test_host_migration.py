@@ -40,7 +40,7 @@ def test_plan_reports_only_missing_packages_changed_units_and_disabled_timers(
 
     assert plan["operation"] == "migrate"
     assert plan["packages"]["missing"] == ["nut-server"]
-    assert plan["enableTimers"] == [host_migration.TIMERS[1]]
+    assert plan["enableTimers"] == list(host_migration.TIMERS[1:])
     assert plan["restartServices"] == ["echo-appliance.service"]
     assert plan["units"][0]["operation"] == "none"
     assert all(item["operation"] == "install" for item in plan["units"][1:])
@@ -101,7 +101,7 @@ def test_apply_installs_fixed_dependencies_units_timers_and_marker(tmp_path: Pat
     )
 
     assert result["verified"] is True
-    assert result["packagesInstalled"] == ["nut-client", "nut-server"]
+    assert result["packagesInstalled"] == ["btrfs-progs", "nut-client", "nut-server"]
     assert enabled == set(host_migration.TIMERS)
     assert calls[0] == [str(apt_get), "update"]
     assert calls[1] == [
@@ -109,6 +109,7 @@ def test_apply_installs_fixed_dependencies_units_timers_and_marker(tmp_path: Pat
         "install",
         "--yes",
         "--no-install-recommends",
+        "btrfs-progs",
         "nut-client",
         "nut-server",
     ]

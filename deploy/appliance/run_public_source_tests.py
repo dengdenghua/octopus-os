@@ -19,6 +19,7 @@ TESTS = (
     "tests/appliance/test_bare_metal_recovery_lab.py",
     "tests/appliance/test_btrfs_provisioning_lab.py",
     "tests/appliance/test_btrfs_replacement_lab.py",
+    "tests/appliance/test_btrfs_scrub_schedule.py",
     "tests/appliance/test_compose_security.py",
     "tests/appliance/test_delivery_source_preflight.py",
     "tests/appliance/test_delivery_workflow_policy.py",

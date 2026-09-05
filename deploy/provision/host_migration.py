@@ -20,23 +20,32 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
-MIGRATION_ID = "nas-power-v1"
+MIGRATION_ID = "nas-maintenance-v2"
 SOURCE_ROOT = Path("/opt/echo-os")
 UNIT_DIRECTORY = Path("/etc/systemd/system")
-MARKER_PATH = Path("/var/lib/echo-os/host-migration-nas-power-v1.json")
+MARKER_PATH = Path("/var/lib/echo-os/host-migration-nas-maintenance-v2.json")
 DPKG_QUERY = Path("/usr/bin/dpkg-query")
 APT_GET = Path("/usr/bin/apt-get")
 SYSTEMCTL = Path("/usr/bin/systemctl")
 MAX_UNIT_BYTES = 64 * 1024
-PACKAGES = ("nut-client", "nut-server", "smartmontools")
+PACKAGES = ("btrfs-progs", "nut-client", "nut-server", "smartmontools")
 UNIT_SOURCES = {
     "echo-appliance.service": "deploy/provision/base/echo-appliance.service",
     "echo-ups-shutdown-guard.service": ("deploy/appliance/systemd/echo-ups-shutdown-guard.service"),
     "echo-ups-shutdown-guard.timer": ("deploy/appliance/systemd/echo-ups-shutdown-guard.timer"),
     "echo-smart-self-test.service": ("deploy/appliance/systemd/echo-smart-self-test.service"),
     "echo-smart-self-test.timer": ("deploy/appliance/systemd/echo-smart-self-test.timer"),
+    "echo-mdraid-check.service": ("deploy/appliance/systemd/echo-mdraid-check.service"),
+    "echo-mdraid-check.timer": ("deploy/appliance/systemd/echo-mdraid-check.timer"),
+    "echo-btrfs-scrub.service": ("deploy/appliance/systemd/echo-btrfs-scrub.service"),
+    "echo-btrfs-scrub.timer": ("deploy/appliance/systemd/echo-btrfs-scrub.timer"),
 }
-TIMERS = ("echo-ups-shutdown-guard.timer", "echo-smart-self-test.timer")
+TIMERS = (
+    "echo-ups-shutdown-guard.timer",
+    "echo-smart-self-test.timer",
+    "echo-mdraid-check.timer",
+    "echo-btrfs-scrub.timer",
+)
 
 
 class HostMigrationError(RuntimeError):

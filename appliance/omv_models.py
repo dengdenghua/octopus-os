@@ -585,6 +585,23 @@ class BtrfsScrubApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class BtrfsScrubSchedulePolicyDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.btrfs-scrub-schedule-desired.v1"] = Field(
+        default="echo.btrfs-scrub-schedule-desired.v1",
+        alias="schema",
+    )
+    enabled: bool = Field(strict=True)
+
+
+class BtrfsScrubSchedulePolicyApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: BtrfsScrubSchedulePolicyDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class BtrfsReplaceDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -1059,6 +1076,8 @@ __all__ = [
     "BtrfsRaid1DesiredState",
     "BtrfsScrubApplyRequest",
     "BtrfsScrubDesiredState",
+    "BtrfsScrubSchedulePolicyApplyRequest",
+    "BtrfsScrubSchedulePolicyDesiredState",
     "Ext4VolumeApplyRequest",
     "Ext4VolumeDesiredState",
     "GroupApplyRequest",

@@ -810,6 +810,48 @@ export type OmvBtrfsScrubPlan = {
   scan?: OmvBtrfsScan;
 };
 
+export type OmvBtrfsScrubSchedule = {
+  schemaVersion: 1;
+  enabled: boolean;
+  configured: boolean;
+  schedulerInstalled: boolean;
+  source: "localPolicy";
+  operation: "scrub";
+  scope: "echoManagedHealthyBtrfsRaid1Only";
+  schedule: string;
+};
+
+export type OmvBtrfsScrubScheduleDesiredState = {
+  schema: "echo.btrfs-scrub-schedule-desired.v1";
+  enabled: boolean;
+};
+
+export type OmvBtrfsScrubSchedulePlan = {
+  schema: "echo.btrfs-scrub-schedule-desired.v1";
+  planId: string;
+  operation: "none" | "enable" | "disable";
+  requiresApproval: boolean;
+  current: { schemaVersion: 1; enabled: boolean };
+  desired: { schemaVersion: 1; enabled: boolean };
+  configured: boolean;
+  schedulerInstalled: boolean;
+  scrubAction: "scrub";
+  scope: "echoManagedHealthyBtrfsRaid1Only";
+  schedule: string;
+  safety: {
+    replicaRepair: true;
+    ioLoad: "high";
+    degradedFilesystems: "skipped";
+    readOnlyFilesystems: "skipped";
+    knownDeviceErrors: "skipped";
+    activeMaintenance: "skipped";
+    force: false;
+    cancel: false;
+  };
+  applied?: boolean;
+  verified?: boolean;
+};
+
 export type OmvBtrfsReplacementMember = {
   devid: number;
   sizeBytes: number;
@@ -1834,6 +1876,36 @@ export function applyOmvBtrfsScrub(
     "/api/appliance/omv/volumes/btrfs-raid1/scrub/apply",
     { desired, planId },
     "无法启动 Btrfs scrub",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function fetchOmvBtrfsScrubSchedule(): Promise<OmvBtrfsScrubSchedule> {
+  return readJson(
+    "/api/appliance/omv/volumes/btrfs-raid1/scrub/schedule",
+    "无法读取 Btrfs scrub 定时策略",
+  );
+}
+
+export function planOmvBtrfsScrubSchedule(
+  desired: OmvBtrfsScrubScheduleDesiredState,
+): Promise<OmvBtrfsScrubSchedulePlan> {
+  return postJson(
+    "/api/appliance/omv/volumes/btrfs-raid1/scrub/schedule/plan",
+    desired,
+    "无法生成 Btrfs scrub 定时策略预览",
+  );
+}
+
+export function applyOmvBtrfsScrubSchedule(
+  desired: OmvBtrfsScrubScheduleDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvBtrfsScrubSchedulePlan> {
+  return postJson(
+    "/api/appliance/omv/volumes/btrfs-raid1/scrub/schedule/apply",
+    { desired, planId },
+    "无法更新 Btrfs scrub 定时策略",
     approvalHeader(approvalToken),
   );
 }

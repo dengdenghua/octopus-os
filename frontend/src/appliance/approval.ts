@@ -45,6 +45,7 @@ export type HighRiskAction =
   | "omv.btrfs-raid1.create"
   | "omv.btrfs-raid1.replace"
   | "omv.btrfs.scrub.start"
+  | "storage.btrfs.scrub.schedule"
   | "omv.ext4-volume.create"
   | "omv.zfs-mirror.create"
   | "omv.zfs-mirror.replace"

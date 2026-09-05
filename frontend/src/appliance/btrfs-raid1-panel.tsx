@@ -13,13 +13,16 @@ import {
   applyOmvBtrfsRaid1,
   applyOmvBtrfsReplace,
   applyOmvBtrfsScrub,
+  applyOmvBtrfsScrubSchedule,
   fetchNativeStatus,
   fetchOmvBtrfsMaintenance,
+  fetchOmvBtrfsScrubSchedule,
   fetchOmvBtrfsRaid1Candidates,
   fetchOmvBtrfsReplacementCandidates,
   planOmvBtrfsRaid1,
   planOmvBtrfsReplace,
   planOmvBtrfsScrub,
+  planOmvBtrfsScrubSchedule,
   type OmvBtrfsMaintenance,
   type OmvBtrfsRaid1Candidate,
   type OmvBtrfsRaid1DesiredState,
@@ -27,6 +30,8 @@ import {
   type OmvBtrfsReplacementCandidate,
   type OmvBtrfsReplacePlan,
   type OmvBtrfsScrubPlan,
+  type OmvBtrfsScrubSchedule,
+  type OmvBtrfsScrubSchedulePlan,
   type OmvStatus,
 } from "@/appliance/omv";
 import { cn } from "@/lib/utils";
@@ -75,6 +80,11 @@ export function BtrfsRaid1Panel() {
   const [createPassword, setCreatePassword] = useState("");
   const [scrubPlan, setScrubPlan] = useState<OmvBtrfsScrubPlan | null>(null);
   const [scrubPassword, setScrubPassword] = useState("");
+  const [scrubSchedule, setScrubSchedule] =
+    useState<OmvBtrfsScrubSchedule | null>(null);
+  const [scrubSchedulePlan, setScrubSchedulePlan] =
+    useState<OmvBtrfsScrubSchedulePlan | null>(null);
+  const [scrubSchedulePassword, setScrubSchedulePassword] = useState("");
   const [replacePlan, setReplacePlan] = useState<OmvBtrfsReplacePlan | null>(
     null,
   );
@@ -90,6 +100,9 @@ export function BtrfsRaid1Panel() {
   const scrubAvailable = status?.capabilities.includes(
     "storage.volume.btrfs.scrub.start.v1",
   );
+  const scrubScheduleAvailable = status?.capabilities.includes(
+    "storage.volume.btrfs.scrub.schedule.v1",
+  );
   const replaceAvailable = status?.capabilities.includes(
     "storage.volume.btrfs-raid1.replace-missing.blank.v1",
   );
@@ -101,34 +114,44 @@ export function BtrfsRaid1Panel() {
     setStatus(null);
     setCreatePlan(null);
     setScrubPlan(null);
+    setScrubSchedulePlan(null);
     setReplacePlan(null);
     setCreatePassword("");
     setScrubPassword("");
+    setScrubSchedulePassword("");
     setReplacePassword("");
     try {
       const nextStatus = await fetchNativeStatus();
       setStatus(nextStatus);
-      const [nextCandidates, nextMaintenance, nextReplacements] =
-        await Promise.all([
-          nextStatus.capabilities.includes(
-            "storage.volume.btrfs-raid1.create-mount.v1",
-          )
-            ? fetchOmvBtrfsRaid1Candidates()
-            : Promise.resolve([]),
-          nextStatus.capabilities.includes(
-            "storage.volume.btrfs.scrub.start.v1",
-          )
-            ? fetchOmvBtrfsMaintenance()
-            : Promise.resolve([]),
-          nextStatus.capabilities.includes(
-            "storage.volume.btrfs-raid1.replace-missing.blank.v1",
-          )
-            ? fetchOmvBtrfsReplacementCandidates()
-            : Promise.resolve([]),
-        ]);
+      const [
+        nextCandidates,
+        nextMaintenance,
+        nextReplacements,
+        nextScrubSchedule,
+      ] = await Promise.all([
+        nextStatus.capabilities.includes(
+          "storage.volume.btrfs-raid1.create-mount.v1",
+        )
+          ? fetchOmvBtrfsRaid1Candidates()
+          : Promise.resolve([]),
+        nextStatus.capabilities.includes("storage.volume.btrfs.scrub.start.v1")
+          ? fetchOmvBtrfsMaintenance()
+          : Promise.resolve([]),
+        nextStatus.capabilities.includes(
+          "storage.volume.btrfs-raid1.replace-missing.blank.v1",
+        )
+          ? fetchOmvBtrfsReplacementCandidates()
+          : Promise.resolve([]),
+        nextStatus.capabilities.includes(
+          "storage.volume.btrfs.scrub.schedule.v1",
+        )
+          ? fetchOmvBtrfsScrubSchedule()
+          : Promise.resolve(null),
+      ]);
       setCandidates(nextCandidates);
       setMaintenance(nextMaintenance);
       setReplacements(nextReplacements);
+      setScrubSchedule(nextScrubSchedule);
       setReplacementChoices((current) =>
         Object.fromEntries(
           nextReplacements.map((item) => {
@@ -154,6 +177,7 @@ export function BtrfsRaid1Panel() {
       setCandidates([]);
       setMaintenance([]);
       setReplacements([]);
+      setScrubSchedule(null);
       setError(
         reason instanceof Error ? reason.message : "无法读取 Btrfs 存储能力",
       );
@@ -294,6 +318,66 @@ export function BtrfsRaid1Panel() {
     }
   };
 
+  const previewScrubSchedule = async () => {
+    if (!scrubSchedule) return;
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    setScrubSchedulePassword("");
+    try {
+      setScrubSchedulePlan(
+        await planOmvBtrfsScrubSchedule({
+          schema: "echo.btrfs-scrub-schedule-desired.v1",
+          enabled: !scrubSchedule.enabled,
+        }),
+      );
+    } catch (reason) {
+      setScrubSchedulePlan(null);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "无法生成 scrub 定时策略预览",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyScrubSchedule = async () => {
+    if (!scrubSchedulePlan || !scrubSchedulePassword) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const desired = {
+        schema: "echo.btrfs-scrub-schedule-desired.v1" as const,
+        enabled: scrubSchedulePlan.desired.enabled,
+      };
+      const approval = await requestHighRiskApproval(
+        "storage.btrfs.scrub.schedule",
+        scrubSchedulePlan.planId,
+        scrubSchedulePassword,
+      );
+      await applyOmvBtrfsScrubSchedule(
+        desired,
+        scrubSchedulePlan.planId,
+        approval.approvalToken,
+      );
+      await refresh();
+      setSuccess(
+        desired.enabled ? "Btrfs 月度 scrub 已启用" : "Btrfs 月度 scrub 已停用",
+      );
+    } catch (reason) {
+      setScrubSchedulePassword("");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Btrfs scrub 定时策略更新失败",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const previewReplacement = async (item: OmvBtrfsReplacementCandidate) => {
     const replacementDevice = replacementChoices[item.filesystem.uuid];
     if (!replacementDevice) return;
@@ -401,7 +485,10 @@ export function BtrfsRaid1Panel() {
             <Loader2Icon className="size-5 animate-spin" /> 正在核验 Btrfs 能力…
           </span>
         </div>
-      ) : !createAvailable && !scrubAvailable && !replaceAvailable ? (
+      ) : !createAvailable &&
+        !scrubAvailable &&
+        !scrubScheduleAvailable &&
+        !replaceAvailable ? (
         <section className="mt-5 rounded-[22px] bg-white/78 p-5 text-sm text-slate-600 ring-1 ring-white/90">
           当前主机未提供受控 Btrfs RAID1 创建、换盘或 scrub 能力。
         </section>
@@ -717,6 +804,71 @@ export function BtrfsRaid1Panel() {
                   </p>
                 )}
               </div>
+            </section>
+          )}
+
+          {scrubScheduleAvailable && scrubSchedule && (
+            <section className="mt-4 rounded-[22px] bg-white/78 p-5 shadow-sm ring-1 ring-white/90">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-900">
+                    月度 Btrfs scrub
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-[11px] leading-5 text-slate-500">
+                    当前{scrubSchedule.enabled ? "已启用" : "未启用"}
+                    。每月首个周日 01:45 后随机延迟最多 24
+                    小时，只处理健康、完整、可写、无历史设备错误且空闲的 Echo
+                    RAID1；高 I/O，可能从冗余副本修复数据。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void previewScrubSchedule()}
+                  disabled={busy}
+                  className="h-9 rounded-xl bg-violet-700 px-3 text-[11px] font-semibold text-white disabled:opacity-40"
+                >
+                  {scrubSchedule.enabled
+                    ? "预览停用月度 scrub"
+                    : "预览启用月度 scrub"}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {scrubSchedulePlan && (
+            <section className="mt-4 rounded-[22px] bg-violet-950 p-5 text-white shadow-lg">
+              <div className="flex items-center gap-2">
+                <ShieldAlertIcon className="size-5 text-violet-300" />
+                <h2 className="text-sm font-semibold">
+                  确认{scrubSchedulePlan.desired.enabled ? "启用" : "停用"}月度
+                  scrub
+                </h2>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-violet-100/80">
+                调度固定且不可自定义；不会处理降级、只读、有设备错误或已有维护任务的卷，不使用
+                force，也不自动取消正在运行的 scrub。
+              </p>
+              <label className="mt-4 block text-xs font-medium text-violet-50">
+                scrub 调度管理员密码
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={scrubSchedulePassword}
+                  onChange={(event) =>
+                    setScrubSchedulePassword(event.target.value)
+                  }
+                  className="mt-2 h-10 w-full rounded-xl border border-violet-700/60 bg-white/10 px-3 text-sm text-white outline-none focus:border-violet-300"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void applyScrubSchedule()}
+                disabled={!scrubSchedulePassword || busy}
+                className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-violet-500 px-4 text-xs font-semibold text-white disabled:opacity-40"
+              >
+                {busy && <Loader2Icon className="size-4 animate-spin" />}
+                确认更新月度 scrub
+              </button>
             </section>
           )}
 

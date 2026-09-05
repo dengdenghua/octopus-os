@@ -1,0 +1,12 @@
+[Unit]
+Description=Scrub Echo-managed Btrfs RAID1 filesystems monthly
+
+[Timer]
+OnCalendar=Sun *-*-1..7 01:45:00
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=24h
+Unit=echo-btrfs-scrub.service
+
+[Install]
+WantedBy=timers.target

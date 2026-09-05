@@ -7,18 +7,23 @@ import {
   applyOmvBtrfsRaid1,
   applyOmvBtrfsReplace,
   applyOmvBtrfsScrub,
+  applyOmvBtrfsScrubSchedule,
   fetchNativeStatus,
   fetchOmvBtrfsMaintenance,
+  fetchOmvBtrfsScrubSchedule,
   fetchOmvBtrfsRaid1Candidates,
   fetchOmvBtrfsReplacementCandidates,
   planOmvBtrfsRaid1,
   planOmvBtrfsReplace,
   planOmvBtrfsScrub,
+  planOmvBtrfsScrubSchedule,
   type OmvBtrfsMaintenance,
   type OmvBtrfsRaid1Plan,
   type OmvBtrfsReplacementCandidate,
   type OmvBtrfsReplacePlan,
   type OmvBtrfsScrubPlan,
+  type OmvBtrfsScrubSchedule,
+  type OmvBtrfsScrubSchedulePlan,
 } from "./omv";
 import { BtrfsRaid1Panel } from "./btrfs-raid1-panel";
 
@@ -27,13 +32,16 @@ vi.mock("./omv", () => ({
   applyOmvBtrfsRaid1: vi.fn(),
   applyOmvBtrfsReplace: vi.fn(),
   applyOmvBtrfsScrub: vi.fn(),
+  applyOmvBtrfsScrubSchedule: vi.fn(),
   fetchNativeStatus: vi.fn(),
   fetchOmvBtrfsMaintenance: vi.fn(),
+  fetchOmvBtrfsScrubSchedule: vi.fn(),
   fetchOmvBtrfsRaid1Candidates: vi.fn(),
   fetchOmvBtrfsReplacementCandidates: vi.fn(),
   planOmvBtrfsRaid1: vi.fn(),
   planOmvBtrfsReplace: vi.fn(),
   planOmvBtrfsScrub: vi.fn(),
+  planOmvBtrfsScrubSchedule: vi.fn(),
 }));
 
 const filesystemUuid = "11111111-2222-3333-4444-555555555555";
@@ -139,6 +147,42 @@ const scrubPlan: OmvBtrfsScrubPlan = {
   },
 };
 
+const scrubSchedule: OmvBtrfsScrubSchedule = {
+  schemaVersion: 1,
+  enabled: false,
+  configured: false,
+  schedulerInstalled: true,
+  source: "localPolicy",
+  operation: "scrub",
+  scope: "echoManagedHealthyBtrfsRaid1Only",
+  schedule:
+    "first Sunday of each month after 01:45 local time, randomized within 24 hours",
+};
+
+const scrubSchedulePlan: OmvBtrfsScrubSchedulePlan = {
+  schema: "echo.btrfs-scrub-schedule-desired.v1",
+  planId: "9".repeat(64),
+  operation: "enable",
+  requiresApproval: true,
+  current: { schemaVersion: 1, enabled: false },
+  desired: { schemaVersion: 1, enabled: true },
+  configured: false,
+  schedulerInstalled: true,
+  scrubAction: "scrub",
+  scope: "echoManagedHealthyBtrfsRaid1Only",
+  schedule: scrubSchedule.schedule,
+  safety: {
+    replicaRepair: true,
+    ioLoad: "high",
+    degradedFilesystems: "skipped",
+    readOnlyFilesystems: "skipped",
+    knownDeviceErrors: "skipped",
+    activeMaintenance: "skipped",
+    force: false,
+    cancel: false,
+  },
+};
+
 const replacementUuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const replacementCandidate: OmvBtrfsReplacementCandidate = {
   filesystem: {
@@ -222,16 +266,19 @@ beforeEach(() => {
       "storage.volume.btrfs-raid1.create-mount.v1",
       "storage.volume.btrfs-raid1.replace-missing.blank.v1",
       "storage.volume.btrfs.scrub.start.v1",
+      "storage.volume.btrfs.scrub.schedule.v1",
     ],
     source: "native",
   });
   vi.mocked(fetchOmvBtrfsRaid1Candidates).mockResolvedValue([...candidates]);
   vi.mocked(fetchOmvBtrfsMaintenance).mockResolvedValue([maintenance]);
+  vi.mocked(fetchOmvBtrfsScrubSchedule).mockResolvedValue(scrubSchedule);
   vi.mocked(fetchOmvBtrfsReplacementCandidates).mockResolvedValue([
     replacementCandidate,
   ]);
   vi.mocked(planOmvBtrfsRaid1).mockResolvedValue(createPlan);
   vi.mocked(planOmvBtrfsScrub).mockResolvedValue(scrubPlan);
+  vi.mocked(planOmvBtrfsScrubSchedule).mockResolvedValue(scrubSchedulePlan);
   vi.mocked(planOmvBtrfsReplace).mockResolvedValue(replacePlan);
   vi.mocked(requestHighRiskApproval).mockImplementation(
     async (action, target) => ({
@@ -262,6 +309,11 @@ beforeEach(() => {
     verified: true,
     maintenanceState: "scrubbing",
     scan: { ...maintenance.scan, state: "inProgress", progressPercent: 0 },
+  });
+  vi.mocked(applyOmvBtrfsScrubSchedule).mockResolvedValue({
+    ...scrubSchedulePlan,
+    applied: true,
+    verified: true,
   });
   vi.mocked(applyOmvBtrfsReplace).mockResolvedValue({
     ...replacePlan,
@@ -353,6 +405,51 @@ describe("Btrfs RAID1 panel", () => {
     expect(await screen.findByText(/scrub 已启动/)).toBeInTheDocument();
   });
 
+  it("previews and approves the fixed safe monthly scrub policy", async () => {
+    const user = userEvent.setup();
+    render(<BtrfsRaid1Panel />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "预览启用月度 scrub" }),
+    );
+    await waitFor(() =>
+      expect(planOmvBtrfsScrubSchedule).toHaveBeenCalledWith({
+        schema: "echo.btrfs-scrub-schedule-desired.v1",
+        enabled: true,
+      }),
+    );
+    expect(
+      screen.getByText(/不会处理降级、只读、有设备错误/),
+    ).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText("scrub 调度管理员密码"),
+      "schedule-password",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "确认更新月度 scrub" }),
+    );
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "storage.btrfs.scrub.schedule",
+        scrubSchedulePlan.planId,
+        "schedule-password",
+      ),
+    );
+    expect(applyOmvBtrfsScrubSchedule).toHaveBeenCalledWith(
+      {
+        schema: "echo.btrfs-scrub-schedule-desired.v1",
+        enabled: true,
+      },
+      scrubSchedulePlan.planId,
+      "approval-storage.btrfs.scrub.schedule",
+    );
+    expect(
+      await screen.findByText("Btrfs 月度 scrub 已启用"),
+    ).toBeInTheDocument();
+  });
+
   it("previews a server-approved missing member replacement and uses a distinct approval", async () => {
     const user = userEvent.setup();
     render(<BtrfsRaid1Panel />);
@@ -405,6 +502,7 @@ describe("Btrfs RAID1 panel", () => {
     ).toBeInTheDocument();
     expect(fetchOmvBtrfsRaid1Candidates).not.toHaveBeenCalled();
     expect(fetchOmvBtrfsMaintenance).not.toHaveBeenCalled();
+    expect(fetchOmvBtrfsScrubSchedule).not.toHaveBeenCalled();
     expect(fetchOmvBtrfsReplacementCandidates).not.toHaveBeenCalled();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
