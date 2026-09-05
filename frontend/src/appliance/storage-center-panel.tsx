@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArchiveIcon,
   AudioLinesIcon,
+  DatabaseIcon,
   FileTextIcon,
   FilmIcon,
   FolderIcon,
@@ -25,9 +26,10 @@ import {
 } from "@/appliance/files";
 import { OmvSharingPanel } from "@/appliance/omv-sharing-panel";
 import { OmvStorageHealth } from "@/appliance/omv-storage-health";
+import { ZfsMirrorPanel } from "@/appliance/zfs-mirror-panel";
 import { cn } from "@/lib/utils";
 
-type StorageCenterSection = "overview" | "health" | "sharing";
+type StorageCenterSection = "overview" | "health" | "pools" | "sharing";
 
 const CATEGORY_META = {
   photos: { label: "照片", icon: ImageIcon, color: "bg-rose-500" },
@@ -377,6 +379,7 @@ export function StorageCenterPanel({
   const sections = [
     { id: "overview" as const, label: "容量概览", icon: HardDriveIcon },
     { id: "health" as const, label: "磁盘健康", icon: ShieldCheckIcon },
+    { id: "pools" as const, label: "存储池", icon: DatabaseIcon },
     { id: "sharing" as const, label: "共享与用户", icon: FoldersIcon },
   ];
 
@@ -448,6 +451,8 @@ export function StorageCenterPanel({
             <div className="mx-auto w-full max-w-[980px] px-7 py-7">
               <OmvStorageHealth />
             </div>
+          ) : section === "pools" ? (
+            <ZfsMirrorPanel />
           ) : (
             <div className="mx-auto w-full max-w-[980px] px-7 py-7">
               <OmvSharingPanel />

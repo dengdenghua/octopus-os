@@ -581,6 +581,53 @@ export type OmvQuotaPlan = {
   verified?: boolean;
 };
 
+export type OmvZfsMirrorCandidate = {
+  devicefile: string;
+  sizeBytes: number;
+  serial: string | null;
+  wwn: string | null;
+  model: string | null;
+};
+
+export type OmvZfsMirrorDesiredState = {
+  schema: "echo.omv.zfs-mirror-desired.v1";
+  name: string;
+  devices: [string, string];
+  dataLossConfirmed: true;
+};
+
+export type OmvZfsMirrorPlan = {
+  schema: "echo.omv.zfs-mirror-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "create";
+  requiresApproval: true;
+  desired: OmvZfsMirrorDesiredState;
+  devices: [OmvZfsMirrorCandidate, OmvZfsMirrorCandidate];
+  mountpoint: string;
+  safety: {
+    destructive: true;
+    dataLossConfirmed: true;
+    layout: "twoDiskMirrorOnly";
+    devices: "wholeBlankNonRemovableWithPersistentIdentity";
+    force: false;
+    rollback: "bestEffortPoolDestroyBeforeHandoff";
+    unsupported: string[];
+  };
+  applied?: boolean;
+  verified?: boolean;
+  pool?: {
+    name: string;
+    health: "ONLINE" | string;
+    layout: "mirror";
+    mountpoint: string;
+    compression: string;
+    atime: string;
+    xattr: string;
+    acltype: string;
+  };
+};
+
 async function readJson<T>(url: string, fallback: string): Promise<T> {
   const response = await fetch(url, { headers: authHeader() });
   if (!response.ok) {
@@ -983,6 +1030,39 @@ export function applyOmvFilesystemQuota(
     "/api/appliance/omv/quota/apply",
     { desired, planId },
     "无法应用文件系统配额",
+    approvalHeader(approvalToken),
+  );
+}
+
+export async function fetchOmvZfsMirrorCandidates(): Promise<
+  OmvZfsMirrorCandidate[]
+> {
+  const result = await readJson<{ devices: OmvZfsMirrorCandidate[] }>(
+    "/api/appliance/omv/pools/zfs-mirror/candidates",
+    "无法读取 ZFS 镜像候选磁盘",
+  );
+  return result.devices;
+}
+
+export function planOmvZfsMirror(
+  desired: OmvZfsMirrorDesiredState,
+): Promise<OmvZfsMirrorPlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs-mirror/plan",
+    desired,
+    "无法生成 ZFS 镜像创建预览",
+  );
+}
+
+export function applyOmvZfsMirror(
+  desired: OmvZfsMirrorDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvZfsMirrorPlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs-mirror/apply",
+    { desired, planId },
+    "无法创建 ZFS 镜像存储池",
     approvalHeader(approvalToken),
   );
 }

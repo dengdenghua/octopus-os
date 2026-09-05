@@ -11,6 +11,7 @@ import {
   applyOmvSmbShare,
   applyOmvUser,
   applyOmvUserPassword,
+  applyOmvZfsMirror,
   fetchOmvFilesystems,
   fetchOmvHealth,
   fetchOmvSharePrivileges,
@@ -19,6 +20,7 @@ import {
   fetchOmvSmartDevices,
   fetchOmvStorageTopology,
   fetchOmvStatus,
+  fetchOmvZfsMirrorCandidates,
   planOmvNfsShare,
   planOmvNfsShareRemove,
   planOmvGroup,
@@ -29,6 +31,7 @@ import {
   planOmvSmbShare,
   planOmvUser,
   planOmvUserPassword,
+  planOmvZfsMirror,
 } from "./omv";
 
 beforeEach(() => {
@@ -847,6 +850,85 @@ describe("OMV read-only API client", () => {
     });
     expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
       "nfs-remove-token",
+    );
+  });
+
+  it("keeps ZFS candidate read, destructive preview and approved apply separate", async () => {
+    const desired = {
+      schema: "echo.omv.zfs-mirror-desired.v1" as const,
+      name: "family",
+      devices: ["/dev/sdb", "/dev/sdc"] as [string, string],
+      dataLossConfirmed: true as const,
+    };
+    const plan = {
+      schema: "echo.omv.zfs-mirror-plan.v1" as const,
+      planId: "f".repeat(64),
+      baseRevision: "e".repeat(64),
+      operation: "create" as const,
+      requiresApproval: true as const,
+      desired,
+      devices: [
+        {
+          devicefile: "/dev/sdb",
+          sizeBytes: 8 * 1024 ** 3,
+          serial: "disk-b",
+          wwn: null,
+          model: "QEMU HARDDISK",
+        },
+        {
+          devicefile: "/dev/sdc",
+          sizeBytes: 8 * 1024 ** 3,
+          serial: "disk-c",
+          wwn: null,
+          model: "QEMU HARDDISK",
+        },
+      ] as const,
+      mountpoint: "/data/family",
+      safety: {
+        destructive: true as const,
+        dataLossConfirmed: true as const,
+        layout: "twoDiskMirrorOnly" as const,
+        devices: "wholeBlankNonRemovableWithPersistentIdentity" as const,
+        force: false as const,
+        rollback: "bestEffortPoolDestroyBeforeHandoff" as const,
+        unsupported: ["expand"],
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ devices: plan.devices }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ...plan, applied: true, verified: true }),
+          { status: 200 },
+        ),
+      );
+
+    expect(await fetchOmvZfsMirrorCandidates()).toHaveLength(2);
+    expect((await planOmvZfsMirror(desired)).planId).toBe(plan.planId);
+    expect(
+      (await applyOmvZfsMirror(desired, plan.planId, "zfs-approval-token"))
+        .verified,
+    ).toBe(true);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/pools/zfs-mirror/candidates",
+      "/api/appliance/omv/pools/zfs-mirror/plan",
+      "/api/appliance/omv/pools/zfs-mirror/apply",
+    ]);
+    const apply = fetchMock.mock.calls[2]?.[1] as RequestInit;
+    expect(JSON.parse(String(apply.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
+      "zfs-approval-token",
     );
   });
 });
