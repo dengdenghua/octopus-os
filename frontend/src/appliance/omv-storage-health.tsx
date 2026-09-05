@@ -25,6 +25,7 @@ import {
   type OmvStorageTopology,
   type OmvStatus,
 } from "@/appliance/omv";
+import { SmartSelfTestControls } from "@/appliance/smart-self-test-controls";
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -410,6 +411,14 @@ export function OmvStorageHealth() {
                             : "读取通电详情"}
                         </button>
                       )}
+                      {detail &&
+                        status?.capabilities.includes(
+                          "storage.smart.self-test.start.v1",
+                        ) && (
+                          <SmartSelfTestControls
+                            devicefile={device.devicefile}
+                          />
+                        )}
                     </div>
                   </div>
                 </article>

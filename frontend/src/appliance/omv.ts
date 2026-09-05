@@ -940,6 +940,44 @@ export type OmvUpsShutdownPolicyPlan = {
   verified?: boolean;
 };
 
+export type OmvSmartSelfTestDesiredState = {
+  schema: "echo.omv.smart-self-test-desired.v1";
+  devicefile: string;
+  test: "short" | "long";
+};
+
+export type OmvSmartSelfTestStatus = {
+  devicefile: string;
+  model: string | null;
+  identityHash: string;
+  supported: boolean;
+  state: "idle" | "inProgress" | "unknown";
+  kind: "short" | "long" | "unknown" | null;
+  progressPercent: number | null;
+  readOnly: true;
+  source: "smartctl";
+};
+
+export type OmvSmartSelfTestPlan = {
+  schema: "echo.omv.smart-self-test-plan.v1";
+  planId: string;
+  operation: "start";
+  requiresApproval: true;
+  desired: OmvSmartSelfTestDesiredState;
+  identityHash: string;
+  before: Pick<OmvSmartSelfTestStatus, "state" | "kind" | "progressPercent">;
+  safety: {
+    target: "enumeratedWholeDisk";
+    allowedTests: ["short", "long"];
+    activeTest: "mustBeAbsent";
+    captive: false;
+    abort: false;
+  };
+  applied?: boolean;
+  verified?: boolean;
+  selfTest?: OmvSmartSelfTestStatus;
+};
+
 async function readJson<T>(url: string, fallback: string): Promise<T> {
   const response = await fetch(url, { headers: authHeader() });
   if (!response.ok) {
@@ -1564,6 +1602,38 @@ export function applyOmvUpsShutdownPolicy(
     "/api/appliance/omv/power/ups/shutdown-policy/apply",
     { desired, planId },
     "无法更新 UPS 自动关机策略",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function fetchOmvSmartSelfTest(
+  devicefile: string,
+): Promise<OmvSmartSelfTestStatus> {
+  return readJson(
+    `/api/appliance/omv/smart/self-test?devicefile=${encodeURIComponent(devicefile)}`,
+    "无法读取 SMART 自检状态",
+  );
+}
+
+export function planOmvSmartSelfTest(
+  desired: OmvSmartSelfTestDesiredState,
+): Promise<OmvSmartSelfTestPlan> {
+  return postJson(
+    "/api/appliance/omv/smart/self-test/plan",
+    desired,
+    "无法生成 SMART 自检预览",
+  );
+}
+
+export function applyOmvSmartSelfTest(
+  desired: OmvSmartSelfTestDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvSmartSelfTestPlan> {
+  return postJson(
+    "/api/appliance/omv/smart/self-test/apply",
+    { desired, planId },
+    "无法启动 SMART 自检",
     approvalHeader(approvalToken),
   );
 }

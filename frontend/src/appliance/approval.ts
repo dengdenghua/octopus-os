@@ -44,6 +44,7 @@ export type HighRiskAction =
   | "omv.zfs-pool.import"
   | "omv.zfs.scrub.start"
   | "power.ups-shutdown-policy.set"
+  | "storage.smart.self-test.start"
   | "account.member.link"
   | "account.member.status.set"
   | "account.member.password.reset"
