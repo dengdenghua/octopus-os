@@ -63,6 +63,8 @@ from appliance.omv_protocol import (
     NFS_REMOVE_PLAN_SCHEMA,
     QUOTA_PLAN_SCHEMA,
     SHARE_PRIVILEGE_PLAN_SCHEMA,
+    SHARED_FOLDER_DELETE_CONTROL_CAPABILITY,
+    SHARED_FOLDER_DELETE_PLAN_SCHEMA,
     SHARED_FOLDER_DESIRED_SCHEMA,
     SHARED_FOLDER_DETACH_PLAN_SCHEMA,
     SMB_PLAN_SCHEMA,
@@ -74,6 +76,7 @@ from appliance.omv_protocol import (
     validate_nfs_remove_desired,
     validate_quota_desired,
     validate_share_privilege_desired,
+    validate_shared_folder_delete_desired,
     validate_shared_folder_desired,
     validate_shared_folder_detach_desired,
     validate_smb_desired,
@@ -866,6 +869,7 @@ def storage_health() -> dict[str, Any]:
 _NATIVE_WRITE_CAPABILITIES = (
     "shared-folder.create.simple.v1",
     "shared-folder.detach.safe.v1",
+    SHARED_FOLDER_DELETE_CONTROL_CAPABILITY,
     "account.group.create.v1",
     "account.user.create.v1",
     "account.user.password.reset.v1",
@@ -1899,6 +1903,171 @@ def apply_shared_folder_detach(
             "applied": True,
             "verified": True,
             "dataPreserved": True,
+        }
+
+
+def _directory_is_empty(path: Path) -> bool:
+    """Check one directory without traversing or following its children."""
+    try:
+        with os.scandir(path) as entries:
+            return next(entries, None) is None
+    except FileNotFoundError as exc:
+        raise ValueError("shared folder directory does not exist on the host") from exc
+    except NotADirectoryError as exc:
+        raise OSError("registered shared folder is not a directory") from exc
+    except OSError as exc:
+        raise OSError("shared folder directory cannot be inspected") from exc
+
+
+def _restore_deleted_shared_folder(path: Path, group_gid: int) -> None:
+    """Recreate the known empty 2770/users directory during a failed delete."""
+    try:
+        path.mkdir(mode=0o2770, exist_ok=False)
+        _configure_shared_folder(path, group_gid)
+        if not _verify_shared_folder(path, group_gid) or not _directory_is_empty(path):
+            raise OSError("restored shared folder directory did not pass verification")
+    except Exception:
+        with contextlib.suppress(OSError):
+            path.rmdir()
+        raise
+
+
+def _build_shared_folder_delete_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    """Build a destructive plan that can only remove an empty native folder."""
+    registry = _registry_load(strict=True)
+    matches = [entry for entry in registry if _registered_uuid(entry) == desired["sharedFolderRef"]]
+    if not matches:
+        raise ValueError("sharedFolderRef does not match any native shared folder")
+    if len(matches) != 1:
+        raise OSError("native shared-folder registry contains duplicate UUIDs")
+    entry = matches[0]
+    path = _native_folder_path(entry)
+    group_gid = _users_group_gid()
+    if not _verify_shared_folder(path, group_gid):
+        raise OSError("registered shared folder has unsafe owner, group, or mode")
+    if not _directory_is_empty(path):
+        raise ValueError(
+            "shared folder directory is not empty; only empty directories can be deleted"
+        )
+
+    smb_present, nfs_entries = _shared_folder_detach_dependencies(entry)
+    if smb_present:
+        raise ValueError("disable the SMB share before deleting this folder")
+    if nfs_entries:
+        raise ValueError("remove the NFS rule before deleting this folder")
+
+    target_state = _target_state(path)
+    base_revision = _canonical_hash(
+        {
+            "registry": registry,
+            "folder": {
+                "uuid": entry["uuid"],
+                "name": entry["name"],
+                "path": str(path),
+            },
+            "target": target_state,
+            "empty": True,
+            "smb": smb_present,
+            "nfs": nfs_entries,
+        }
+    )
+    plan_id = _canonical_hash(
+        {
+            "schema": SHARED_FOLDER_DELETE_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+        }
+    )
+    shared_folder = _public_shared_folder_entry(entry)
+    return {
+        "schema": SHARED_FOLDER_DELETE_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": "remove",
+        "requiresApproval": True,
+        "shareUuid": entry["uuid"],
+        "sharedFolder": shared_folder,
+        "desired": desired,
+        "changes": [
+            {"field": "directory", "before": "empty", "after": "deleted"},
+            {"field": "registration", "before": "managed", "after": "removed"},
+        ],
+        "safety": {
+            "data": "emptyDirectoryOnly",
+            "directory": "deleted",
+            "dependentShares": "mustBeAbsent",
+            "recursive": "never",
+            "mount": "mountedWritableOnly",
+            "rollback": "registryAndEmptyDirectory",
+        },
+        "source": "native",
+    }
+
+
+def plan_shared_folder_delete(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview deletion of one registered empty shared-folder directory."""
+    desired = validate_shared_folder_delete_desired(dict(desired_state))
+    with _registry_transaction():
+        return _build_shared_folder_delete_plan(desired)
+
+
+def apply_shared_folder_delete(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Delete only an empty native folder and its registration, with rollback."""
+    desired = validate_shared_folder_delete_desired(dict(desired_state))
+    with _registry_transaction():
+        plan = _build_shared_folder_delete_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("shared folder delete plan is stale; preview the change again")
+
+        entry = _resolve_shared_folder(desired["sharedFolderRef"])
+        path = _native_folder_path(entry)
+        group_gid = _users_group_gid()
+        if not _verify_shared_folder(path, group_gid):
+            raise OSError("registered shared folder has unsafe owner, group, or mode")
+        if not _directory_is_empty(path):
+            raise ValueError(
+                "shared folder directory is not empty; only empty directories can be deleted"
+            )
+
+        registry = _registry_load(strict=True)
+        original_registry = list(registry)
+        wanted = [item for item in registry if _registered_uuid(item) != desired["sharedFolderRef"]]
+        if len(wanted) == len(registry):
+            raise ValueError("sharedFolderRef does not match any native shared folder")
+
+        removed_directory = False
+        try:
+            _registry_save(wanted)
+            if any(
+                _registered_uuid(item) == desired["sharedFolderRef"]
+                for item in _registry_load(strict=True)
+            ):
+                raise OSError("shared folder registry delete was not verified")
+            path.rmdir()
+            removed_directory = True
+            if _target_state(path)["kind"] != "absent":
+                raise OSError("shared folder directory delete was not verified")
+        except Exception as exc:
+            try:
+                if removed_directory:
+                    _restore_deleted_shared_folder(path, group_gid)
+                _registry_save(original_registry)
+                if _registry_load(strict=True) != original_registry:
+                    raise OSError("shared folder delete rollback was not verified")
+            except Exception as rollback_exc:
+                raise OSError(
+                    "shared folder delete failed and rollback also failed; inspect the empty share"
+                ) from rollback_exc
+            if isinstance(exc, (OSError, ValueError)):
+                raise
+            raise OSError("shared folder delete failed") from exc
+
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "directoryDeleted": True,
+            "dataDeleted": False,
         }
 
 
@@ -3601,6 +3770,7 @@ __all__ = [
     "apply_quota",
     "apply_share_privilege",
     "apply_shared_folder",
+    "apply_shared_folder_delete",
     "apply_smb",
     "apply_user",
     "apply_user_password",
@@ -3613,6 +3783,7 @@ __all__ = [
     "plan_quota",
     "plan_share_privilege",
     "plan_shared_folder",
+    "plan_shared_folder_delete",
     "plan_smb",
     "plan_user",
     "plan_user_password",

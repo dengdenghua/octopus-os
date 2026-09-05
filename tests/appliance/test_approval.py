@@ -169,6 +169,22 @@ def test_nfs_rule_removal_uses_a_plan_bound_approval(tmp_path):
     )
 
 
+def test_empty_shared_folder_delete_uses_a_plan_bound_approval(tmp_path):
+    service, _audit = _service(tmp_path)
+    token = _issue(
+        service,
+        action="omv.shared-folder.delete",
+        target="c" * 64,
+    )
+
+    service.consume(
+        token=token,
+        actor="local:admin",
+        action="omv.shared-folder.delete",
+        target="c" * 64,
+    )
+
+
 def test_wrong_password_is_rate_limited_without_logging_password(tmp_path):
     service, audit = _service(tmp_path, max_failures=2)
 

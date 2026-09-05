@@ -103,6 +103,7 @@ def _valid_target(action: str, target: str) -> bool:
         "omv.shared-folder.create",
         "omv.shared-folder.update",
         "omv.shared-folder.detach",
+        "omv.shared-folder.delete",
         "omv.share-privilege.apply",
         "omv.smb.apply",
         "omv.nfs.apply",

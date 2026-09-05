@@ -14,6 +14,9 @@ SHARED_FOLDER_CONTROL_CAPABILITY = "shared-folder.create.simple.v1"
 SHARED_FOLDER_DETACH_DESIRED_SCHEMA = "echo.omv.shared-folder-detach-desired.v1"
 SHARED_FOLDER_DETACH_PLAN_SCHEMA = "echo.omv.shared-folder-detach-plan.v1"
 SHARED_FOLDER_DETACH_CONTROL_CAPABILITY = "shared-folder.detach.safe.v1"
+SHARED_FOLDER_DELETE_DESIRED_SCHEMA = "echo.omv.shared-folder-delete-desired.v1"
+SHARED_FOLDER_DELETE_PLAN_SCHEMA = "echo.omv.shared-folder-delete-plan.v1"
+SHARED_FOLDER_DELETE_CONTROL_CAPABILITY = "shared-folder.delete.empty.v1"
 SHARE_PRIVILEGE_DESIRED_SCHEMA = "echo.omv.share-privilege-desired.v1"
 SHARE_PRIVILEGE_PLAN_SCHEMA = "echo.omv.share-privilege-plan.v1"
 SHARE_PRIVILEGE_CONTROL_CAPABILITY = "shared-folder.privilege.simple.v1"
@@ -278,6 +281,25 @@ def validate_shared_folder_detach_desired(value: Any) -> dict[str, Any]:
         "schema": SHARED_FOLDER_DETACH_DESIRED_SCHEMA,
         "sharedFolderRef": validate_omv_uuid(shared_folder_ref).lower(),
         "preserveData": True,
+    }
+
+
+def validate_shared_folder_delete_desired(value: Any) -> dict[str, Any]:
+    """Validate the explicit empty-directory-only shared-folder deletion."""
+    expected = {"schema", "sharedFolderRef", "emptyOnly"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("shared folder delete desired state has unexpected fields")
+    if value.get("schema") != SHARED_FOLDER_DELETE_DESIRED_SCHEMA:
+        raise ValueError("shared folder delete desired-state schema is unsupported")
+    if value.get("emptyOnly") is not True:
+        raise ValueError("shared folder delete requires emptyOnly=true")
+    shared_folder_ref = value.get("sharedFolderRef")
+    if not isinstance(shared_folder_ref, str):
+        raise ValueError("sharedFolderRef must be an OMV UUID")
+    return {
+        "schema": SHARED_FOLDER_DELETE_DESIRED_SCHEMA,
+        "sharedFolderRef": validate_omv_uuid(shared_folder_ref).lower(),
+        "emptyOnly": True,
     }
 
 

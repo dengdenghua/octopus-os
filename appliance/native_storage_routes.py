@@ -24,6 +24,8 @@ from appliance.omv_models import (
     QuotaApplyRequest,
     QuotaDesiredState,
     SharedFolderApplyRequest,
+    SharedFolderDeleteApplyRequest,
+    SharedFolderDeleteDesiredState,
     SharedFolderDesiredState,
     SharedFolderDetachApplyRequest,
     SharedFolderDetachDesiredState,
@@ -294,6 +296,40 @@ def create_omv_alias_router(
             metadata={
                 "sharedFolderRef": body.desired.shared_folder_ref,
                 "preserveData": body.desired.preserve_data,
+            },
+        )
+
+    @router.post("/sharing/folders/delete/plan")
+    async def plan_shared_folder_delete(
+        body: SharedFolderDeleteDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_shared_folder_delete,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/sharing/folders/delete/apply")
+    async def apply_shared_folder_delete_route(
+        body: SharedFolderDeleteApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.shared-folder.delete",
+            plan_fn=native_storage.plan_shared_folder_delete,
+            apply_fn=native_storage.apply_shared_folder_delete,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "emptyOnly": body.desired.empty_only,
             },
         )
 

@@ -17,6 +17,7 @@ from appliance.omv_protocol import (
     NFS_REMOVE_DESIRED_SCHEMA,
     QUOTA_DESIRED_SCHEMA,
     SHARE_PRIVILEGE_DESIRED_SCHEMA,
+    SHARED_FOLDER_DELETE_DESIRED_SCHEMA,
     SHARED_FOLDER_DESIRED_SCHEMA,
     SHARED_FOLDER_DETACH_DESIRED_SCHEMA,
     SMB_DESIRED_SCHEMA,
@@ -26,6 +27,7 @@ from appliance.omv_protocol import (
     validate_nfs_remove_desired,
     validate_omv_uuid,
     validate_share_privilege_desired,
+    validate_shared_folder_delete_desired,
     validate_shared_folder_desired,
     validate_shared_folder_detach_desired,
     validate_user_desired,
@@ -208,6 +210,38 @@ class SharedFolderDetachApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class SharedFolderDeleteDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.shared-folder-delete-desired.v1"] = Field(
+        default=SHARED_FOLDER_DELETE_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    shared_folder_ref: str = Field(min_length=36, max_length=36, alias="sharedFolderRef")
+    empty_only: Literal[True] = Field(alias="emptyOnly")
+
+    @field_validator("shared_folder_ref")
+    @classmethod
+    def validate_shared_folder_ref(cls, value: str) -> str:
+        try:
+            return validate_shared_folder_delete_desired(
+                {
+                    "schema": SHARED_FOLDER_DELETE_DESIRED_SCHEMA,
+                    "sharedFolderRef": value,
+                    "emptyOnly": True,
+                }
+            )["sharedFolderRef"]
+        except ValueError as exc:
+            raise ValueError("sharedFolderRef must be an OMV UUID") from exc
+
+
+class SharedFolderDeleteApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: SharedFolderDeleteDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class SharePrivilegeDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -385,6 +419,8 @@ __all__ = [
     "SharePrivilegeApplyRequest",
     "SharePrivilegeDesiredState",
     "SharedFolderApplyRequest",
+    "SharedFolderDeleteApplyRequest",
+    "SharedFolderDeleteDesiredState",
     "SharedFolderDetachApplyRequest",
     "SharedFolderDetachDesiredState",
     "SharedFolderDesiredState",

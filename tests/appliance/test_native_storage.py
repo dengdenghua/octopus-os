@@ -68,6 +68,7 @@ def test_native_status_advertises_only_the_available_write_slice(
     assert payload["capabilities"] == [
         "shared-folder.create.simple.v1",
         "shared-folder.detach.safe.v1",
+        "shared-folder.delete.empty.v1",
         "account.group.create.v1",
         "account.user.create.v1",
         "account.user.password.reset.v1",
@@ -94,6 +95,7 @@ def test_native_status_hides_write_slices_without_host_tools(
     assert payload["capabilities"] == [
         "shared-folder.create.simple.v1",
         "shared-folder.detach.safe.v1",
+        "shared-folder.delete.empty.v1",
         "account.group.create.v1",
         "account.user.create.v1",
         "account.user.password.reset.v1",
@@ -112,6 +114,7 @@ def test_native_status_keeps_group_creation_when_only_groupadd_is_present(
     assert native_storage.status()["capabilities"] == [
         "shared-folder.create.simple.v1",
         "shared-folder.detach.safe.v1",
+        "shared-folder.delete.empty.v1",
         "account.group.create.v1",
     ]
 
@@ -668,6 +671,146 @@ def test_shared_folder_detach_rolls_back_registry_on_write_failure(
     assert (volume / "Photos").is_dir()
 
 
+def test_shared_folder_delete_removes_only_an_empty_registered_directory(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    desired = _desired(mount_point_ref)
+    created = native_storage.apply_shared_folder(
+        desired, native_storage.plan_shared_folder(desired)["planId"]
+    )
+    delete = {
+        "schema": "echo.omv.shared-folder-delete-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "emptyOnly": True,
+    }
+
+    plan = native_storage.plan_shared_folder_delete(delete)
+
+    assert plan["operation"] == "remove"
+    assert plan["requiresApproval"] is True
+    assert plan["safety"] == {
+        "data": "emptyDirectoryOnly",
+        "directory": "deleted",
+        "dependentShares": "mustBeAbsent",
+        "recursive": "never",
+        "mount": "mountedWritableOnly",
+        "rollback": "registryAndEmptyDirectory",
+    }
+    assert str(volume) not in json.dumps(plan, ensure_ascii=False)
+
+    applied = native_storage.apply_shared_folder_delete(delete, plan["planId"])
+
+    assert applied["applied"] is True
+    assert applied["verified"] is True
+    assert applied["directoryDeleted"] is True
+    assert applied["dataDeleted"] is False
+    assert not (volume / "Photos").exists()
+    assert json.loads(registry.read_text(encoding="utf-8")) == []
+
+
+def test_shared_folder_delete_rejects_nonempty_directory(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    desired = _desired(mount_point_ref)
+    created = native_storage.apply_shared_folder(
+        desired, native_storage.plan_shared_folder(desired)["planId"]
+    )
+    (volume / "Photos" / "keep.txt").write_text("keep", encoding="utf-8")
+    delete = {
+        "schema": "echo.omv.shared-folder-delete-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "emptyOnly": True,
+    }
+
+    with pytest.raises(ValueError, match="not empty"):
+        native_storage.plan_shared_folder_delete(delete)
+
+    assert (volume / "Photos" / "keep.txt").read_text(encoding="utf-8") == "keep"
+    assert len(json.loads(registry.read_text(encoding="utf-8"))) == 1
+
+
+@pytest.mark.parametrize("dependency", ["smb", "nfs"])
+def test_shared_folder_delete_requires_dependent_shares_to_be_removed(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    dependency: str,
+) -> None:
+    _volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    desired = _desired(mount_point_ref)
+    created = native_storage.apply_shared_folder(
+        desired, native_storage.plan_shared_folder(desired)["planId"]
+    )
+    if dependency == "smb":
+        monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: {"path": "x"})
+        match = "disable the SMB share"
+    else:
+        monkeypatch.setattr(
+            native_storage,
+            "_nfs_exports_load",
+            lambda **_kwargs: [
+                {
+                    "uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "sharedFolderRef": created["sharedFolder"]["uuid"],
+                    "client": "192.168.1.0/24",
+                    "readOnly": False,
+                    "comment": "test",
+                }
+            ],
+        )
+        match = "remove the NFS rule"
+
+    delete = {
+        "schema": "echo.omv.shared-folder-delete-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "emptyOnly": True,
+    }
+    with pytest.raises(ValueError, match=match):
+        native_storage.plan_shared_folder_delete(delete)
+    assert (_volume / "Photos").is_dir()
+
+
+def test_shared_folder_delete_rolls_back_registry_when_directory_removal_fails(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    desired = _desired(mount_point_ref)
+    created = native_storage.apply_shared_folder(
+        desired, native_storage.plan_shared_folder(desired)["planId"]
+    )
+    delete = {
+        "schema": "echo.omv.shared-folder-delete-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "emptyOnly": True,
+    }
+    plan = native_storage.plan_shared_folder_delete(delete)
+
+    def fail_rmdir(_path: Path) -> None:
+        raise OSError("simulated directory removal failure")
+
+    monkeypatch.setattr(Path, "rmdir", fail_rmdir)
+    with pytest.raises(OSError, match="simulated directory removal failure"):
+        native_storage.apply_shared_folder_delete(delete, plan["planId"])
+
+    assert (volume / "Photos").is_dir()
+    assert (
+        json.loads(registry.read_text(encoding="utf-8"))[0]["uuid"]
+        == created["sharedFolder"]["uuid"]
+    )
+
+
 def test_apply_rejects_a_plan_after_the_target_state_changes(
     native_volume: tuple[Path, Path, str],
 ) -> None:
@@ -854,6 +997,62 @@ def test_native_alias_binds_folder_detach_to_data_preserving_approval_action(
     assert response.status_code == 200
     assert approval_calls[0]["action"] == "omv.shared-folder.detach"
     assert {entry["action"] for entry in audit_calls} == {"omv.shared-folder.detach"}
+
+
+def test_native_alias_binds_empty_folder_delete_to_approval_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    plan_id = "d" * 64
+    current_plan = {
+        "planId": plan_id,
+        "operation": "remove",
+        "requiresApproval": True,
+    }
+    applied = {
+        **current_plan,
+        "applied": True,
+        "verified": True,
+        "directoryDeleted": True,
+        "dataDeleted": False,
+    }
+    approval_calls: list[dict[str, Any]] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            approval_calls.append(kwargs)
+
+    class Audit:
+        def record(self, **kwargs: Any) -> None:
+            audit_calls.append(kwargs)
+
+    monkeypatch.setattr(native_storage, "plan_shared_folder_delete", lambda _desired: current_plan)
+    monkeypatch.setattr(
+        native_storage,
+        "apply_shared_folder_delete",
+        lambda _desired, _plan_id: applied,
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/appliance/omv/sharing/folders/delete/apply",
+        json={
+            "desired": {
+                "schema": "echo.omv.shared-folder-delete-desired.v1",
+                "sharedFolderRef": MOUNT_POINT_REF,
+                "emptyOnly": True,
+            },
+            "planId": plan_id,
+        },
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+
+    assert response.status_code == 200
+    assert approval_calls[0]["action"] == "omv.shared-folder.delete"
+    assert {entry["action"] for entry in audit_calls} == {"omv.shared-folder.delete"}
 
 
 def test_native_alias_maps_apply_io_failure_to_service_unavailable(
