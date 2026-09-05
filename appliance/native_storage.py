@@ -65,6 +65,7 @@ from appliance.native_storage_pool import (
     zfs_mirror_candidates,
     zfs_mirror_replacement_candidates,
     zfs_pool_maintenance,
+    zfs_scan_snapshot,
 )
 from appliance.native_storage_pool import (
     apply_zfs_pool_export as _apply_zfs_pool_export,
@@ -523,6 +524,7 @@ def _probe_zfs_pools(*, expected: bool = False) -> Probe:
                 probe_evidence.update(state="partial", code="conflicting_health")
         level = _zfs_level(name, detail)
         status = _ZFS_HEALTH_TO_STATE.get(health, "unknown")
+        operation, operation_percent = _zfs_maintenance_operation(name, detail)
         arrays.append(
             {
                 "devicefile": name,
@@ -530,8 +532,8 @@ def _probe_zfs_pools(*, expected: bool = False) -> Probe:
                 "status": status,
                 "totalDevices": None,
                 "activeDevices": None,
-                "operation": "scrub" if _zfs_scrubbing(name, detail) else None,
-                "operationPercent": _zfs_scrub_percent(name, detail),
+                "operation": operation,
+                "operationPercent": operation_percent,
                 "sizeBytes": _int(size),
                 "health": health,
                 "kind": "zfs",
@@ -571,22 +573,19 @@ def _zfs_level(pool: str, status: str | None = None) -> str:
     return "zfs"
 
 
-def _zfs_scrubbing(pool: str, status: str | None = None) -> bool:
+def _zfs_maintenance_operation(
+    pool: str, status: str | None = None
+) -> tuple[str | None, int | None]:
     if status is None:
         status = _run("zpool", "status", pool, timeout=10.0)
-    return "scrub in progress" in status
-
-
-def _zfs_scrub_percent(pool: str, status: str | None = None) -> int | None:
-    if status is None:
-        status = _run("zpool", "status", pool, timeout=10.0)
-    match = re.search(
-        r"scrub in progress[^\n]*?(\d+(?:\.\d+)?)% done",
-        status,
-    )
-    if match:
-        return int(float(match.group(1)))
-    return None
+    try:
+        scan = zfs_scan_snapshot(status)
+    except OSError:
+        return None, None
+    if scan["state"] != "inProgress" or scan["kind"] not in {"scrub", "resilver"}:
+        return None, None
+    progress = scan["progressPercent"]
+    return scan["kind"], int(progress) if progress is not None else None
 
 
 def storage_topology() -> dict[str, Any]:

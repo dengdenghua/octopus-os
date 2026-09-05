@@ -620,6 +620,11 @@ def _zfs_scan_snapshot(output: str) -> dict[str, Any]:
     }
 
 
+def zfs_scan_snapshot(output: str) -> dict[str, Any]:
+    """Public bounded parser shared by read-only topology and write workflows."""
+    return _zfs_scan_snapshot(output)
+
+
 def _device_size_bytes(devicefile: str) -> int:
     if (
         not devicefile.startswith("/dev/")
@@ -1372,4 +1377,5 @@ __all__ = [
     "zfs_mirror_candidates",
     "zfs_mirror_replacement_candidates",
     "zfs_pool_maintenance",
+    "zfs_scan_snapshot",
 ]

@@ -169,6 +169,32 @@ def test_absent_array_technologies_are_not_machine_failures(commands):
     assert storage._probe_zfs_pools().evidence["state"] == "not-applicable"
 
 
+@pytest.mark.parametrize("operation", ["scrub", "resilver"])
+def test_zfs_topology_reports_multiline_maintenance_progress(commands, operation):
+    outputs, _ = commands
+
+    def zpool(argv):
+        if argv[1] == "list":
+            return "family\t10000\t1000\t9000\tONLINE\t10\t0\n"
+        return (
+            "  pool: family\n"
+            " state: ONLINE\n"
+            f"  scan: {operation} in progress since Sun Sep 5 01:00:00 2026\n"
+            "        0B repaired, 25.9% done, 00:10:00 to go\n"
+            "config:\n\n"
+            "        NAME      STATE     READ WRITE CKSUM\n"
+            "        family    ONLINE       0     0     0\n\n"
+            "errors: No known data errors\n"
+        )
+
+    outputs["zpool"] = zpool
+
+    pool = storage._probe_zfs_pools().value[0][0]
+
+    assert pool["operation"] == operation
+    assert pool["operationPercent"] == 25
+
+
 def test_missing_tools_are_gaps_when_inventory_proves_zfs_or_md(commands):
     outputs, _ = commands
     outputs["mdstat"] = FileNotFoundError()
