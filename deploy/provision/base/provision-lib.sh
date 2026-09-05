@@ -59,7 +59,13 @@ step_storage() {
     samba samba-common-bin smbclient \
     nfs-kernel-server acl \
     nut-client nut-server \
+    firmware-linux-free firmware-linux-nonfree firmware-misc-nonfree \
+    firmware-realtek firmware-iwlwifi firmware-atheros \
+    firmware-brcm80211 firmware-mediatek \
+    firmware-amd-graphics firmware-intel-graphics \
+    intel-microcode amd64-microcode \
     smartmontools hdparm mdadm lvm2 btrfs-progs \
+    nvme-cli pciutils usbutils ethtool lm-sensors \
     parted util-linux
 
   dkms autoinstall -k "$kernel_release"

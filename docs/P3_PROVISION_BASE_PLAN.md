@@ -175,6 +175,20 @@ A/B 原子更新(见 §6 M4)。
   空目录安全删除、根目录 POSIX ACL、私有 SMB/NFS 规则、受限账户/组和用户/组硬配额；复杂磁盘与池生命周期继续关闭，
   不以兼容路由代替审批。
 
+### 硬件兼容基线（2026-09-06）
+
+对照解包系统单独维护 firmware/OOT 驱动包的做法，Echo 的 netinst 首启路线与 mkosi
+镜像现在都显式安装 Debian 官方的 Linux 通用、Realtek、Intel Wi-Fi/核显、Atheros、
+Broadcom、MediaTek、AMD GPU 固件，以及 Intel/AMD microcode；同时固定安装 `nvme-cli`、
+`pciutils`、`usbutils`、`ethtool` 和 `lm-sensors`，使 NVMe、PCI、USB、网卡驱动/链路和
+温度传感器问题可以在离线现场被诊断。包名已在当前 Debian 13 基线的 apt 索引逐项确认，
+镜像静态门会防止这些包被后续瘦身误删。
+
+这里没有复制解包系统的 Realtek/NVIDIA 私有模块，也不把“包已安装”算作硬件通过。
+OOT 驱动只应在明确设备 ID、上游内核确实不支持、具备 Secure Boot 签名与目标机回归矩阵时
+独立引入；当前仍需 N100、常见 2.5/10 GbE、SATA HBA、NVMe、Intel/AMD/NVIDIA 转码和
+休眠/唤醒的实体机验收。
+
 ---
 
 ## 6. 里程碑

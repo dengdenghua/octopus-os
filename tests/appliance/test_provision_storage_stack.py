@@ -2,8 +2,27 @@
 
 from pathlib import Path
 
-
 REPOSITORY = Path(__file__).resolve().parents[2]
+
+HARDWARE_SUPPORT_PACKAGES = {
+    "firmware-linux-free",
+    "firmware-linux-nonfree",
+    "firmware-misc-nonfree",
+    "firmware-realtek",
+    "firmware-iwlwifi",
+    "firmware-atheros",
+    "firmware-brcm80211",
+    "firmware-mediatek",
+    "firmware-amd-graphics",
+    "firmware-intel-graphics",
+    "intel-microcode",
+    "amd64-microcode",
+    "nvme-cli",
+    "pciutils",
+    "usbutils",
+    "ethtool",
+    "lm-sensors",
+}
 
 
 def test_storage_step_builds_zfs_for_the_running_kernel_before_marking_done() -> None:
@@ -25,6 +44,22 @@ def test_storage_step_builds_zfs_for_the_running_kernel_before_marking_done() ->
     assert storage.index(autoinstall) < storage.index(load)
     assert storage.index(load) < storage.index(import_service) < storage.index(done)
     assert f"{import_service} || true" not in storage
+
+
+def test_both_image_paths_keep_the_nas_hardware_support_baseline() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    storage = provision.split("step_storage() {", 1)[1].split("\n}\n", 1)[0]
+    mkosi = (REPOSITORY / "packaging/image/mkosi.conf").read_text(encoding="utf-8")
+    image_gate = (REPOSITORY / "packaging/image/verify-image.sh").read_text(
+        encoding="utf-8"
+    )
+
+    for package in HARDWARE_SUPPORT_PACKAGES:
+        assert package in storage
+        assert f"        {package}\n" in mkosi
+        assert f"'^        {package}$'" in image_gate
 
 
 def test_vmtest_installer_attaches_and_validates_netinst_iso() -> None:
