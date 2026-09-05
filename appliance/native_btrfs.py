@@ -225,7 +225,7 @@ def _restore_fstab(path: Path, original: bytes | None) -> None:
 
 
 @contextmanager
-def _volume_transaction() -> Iterator[None]:
+def btrfs_volume_transaction() -> Iterator[None]:
     with _THREAD_LOCK:
         _LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
         flags = os.O_CREAT | os.O_RDWR
@@ -270,6 +270,28 @@ def btrfs_raid1_candidates() -> list[dict[str, Any]]:
         except ValueError:
             continue
     return sorted(candidates, key=lambda item: item["devicefile"])
+
+
+def managed_btrfs_filesystems(
+    *, fstab_path: Path = _FSTAB_PATH
+) -> list[dict[str, str]]:
+    """Return only filesystems registered in Echo's owned Btrfs fstab block."""
+    payload = _read_fstab(fstab_path)
+    if payload is None:
+        return []
+    _begin, _end, entries = _managed_entries(payload.decode("utf-8"))
+    filesystems: list[dict[str, str]] = []
+    for entry in entries:
+        source, mountpoint, fstype, *_rest = entry.split()
+        if fstype != "btrfs" or not source.startswith("UUID="):
+            raise OSError("fstab Echo Btrfs managed block contains an unsupported entry")
+        filesystems.append(
+            {
+                "uuid": source.removeprefix("UUID="),
+                "mountpoint": mountpoint,
+            }
+        )
+    return sorted(filesystems, key=lambda item: item["uuid"])
 
 
 def _mount_target_state(name: str, mount_root: Path) -> dict[str, str]:
@@ -344,7 +366,7 @@ def plan_btrfs_raid1(
     mount_root: Path = _MOUNT_ROOT,
 ) -> dict[str, Any]:
     desired = validate_btrfs_raid1_desired(dict(desired_state))
-    with _volume_transaction():
+    with btrfs_volume_transaction():
         return _build_plan(desired, fstab_path=fstab_path, mount_root=mount_root)
 
 
@@ -444,7 +466,7 @@ def apply_btrfs_raid1(
     mount_root: Path = _MOUNT_ROOT,
 ) -> dict[str, Any]:
     desired = validate_btrfs_raid1_desired(dict(desired_state))
-    with _volume_transaction():
+    with btrfs_volume_transaction():
         plan = _build_plan(desired, fstab_path=fstab_path, mount_root=mount_root)
         if plan["planId"] != plan_id:
             raise ValueError("Btrfs RAID1 plan is stale; preview the change again")
@@ -550,4 +572,10 @@ def apply_btrfs_raid1(
         }
 
 
-__all__ = ["apply_btrfs_raid1", "btrfs_raid1_candidates", "plan_btrfs_raid1"]
+__all__ = [
+    "apply_btrfs_raid1",
+    "btrfs_raid1_candidates",
+    "btrfs_volume_transaction",
+    "managed_btrfs_filesystems",
+    "plan_btrfs_raid1",
+]

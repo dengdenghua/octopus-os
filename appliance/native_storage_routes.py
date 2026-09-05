@@ -28,6 +28,8 @@ from appliance.native_ups import ups_status
 from appliance.omv_models import (
     BtrfsRaid1ApplyRequest,
     BtrfsRaid1DesiredState,
+    BtrfsScrubApplyRequest,
+    BtrfsScrubDesiredState,
     Ext4VolumeApplyRequest,
     Ext4VolumeDesiredState,
     GroupApplyRequest,
@@ -182,6 +184,14 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 Btrfs RAID1 候选磁盘探测不可用") from exc
         return {"devices": devices, "readOnly": True, "source": "native"}
+
+    @router.get("/volumes/btrfs-raid1/maintenance")
+    async def btrfs_scrub_maintenance() -> dict[str, Any]:
+        try:
+            filesystems = await run_in_threadpool(native_storage.btrfs_scrub_maintenance)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 Btrfs 维护状态不可用") from exc
+        return {"filesystems": filesystems, "readOnly": True, "source": "native"}
 
     @router.get("/pools/zfs-mirror/replacement-candidates")
     async def zfs_mirror_replacement_candidates() -> dict[str, Any]:
@@ -1072,6 +1082,40 @@ def create_omv_alias_router(
                 "devices": body.desired.devices,
                 "dataProfile": "raid1",
                 "metadataProfile": "raid1",
+            },
+        )
+
+    @router.post("/volumes/btrfs-raid1/scrub/plan")
+    async def plan_btrfs_scrub(body: BtrfsScrubDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_btrfs_scrub,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 Btrfs scrub 暂不可用") from exc
+
+    @router.post("/volumes/btrfs-raid1/scrub/apply")
+    async def apply_btrfs_scrub_route(
+        body: BtrfsScrubApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.btrfs.scrub.start",
+            plan_fn=native_storage.plan_btrfs_scrub,
+            apply_fn=native_storage.apply_btrfs_scrub,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "filesystemUuid": body.desired.filesystem_uuid,
+                "operation": "start",
+                "repairFromRedundantCopy": True,
+                "force": False,
             },
         )
 

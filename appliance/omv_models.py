@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from appliance.omv_protocol import (
     BTRFS_RAID1_DESIRED_SCHEMA,
+    BTRFS_SCRUB_DESIRED_SCHEMA,
     EXT4_VOLUME_DESIRED_SCHEMA,
     GROUP_DESIRED_SCHEMA,
     MDRAID1_DESIRED_SCHEMA,
@@ -36,6 +37,7 @@ from appliance.omv_protocol import (
     ZFS_POOL_IMPORT_DESIRED_SCHEMA,
     ZFS_SCRUB_DESIRED_SCHEMA,
     validate_btrfs_raid1_desired,
+    validate_btrfs_scrub_desired,
     validate_ext4_volume_desired,
     validate_group_desired,
     validate_mdraid1_desired,
@@ -549,6 +551,38 @@ class BtrfsRaid1ApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class BtrfsScrubDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.btrfs-scrub-desired.v1"] = Field(
+        default=BTRFS_SCRUB_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    filesystem_uuid: str = Field(alias="filesystemUuid")
+    operation: Literal["start"] = "start"
+
+    @field_validator("filesystem_uuid")
+    @classmethod
+    def validate_filesystem_uuid(cls, value: str) -> str:
+        try:
+            return validate_btrfs_scrub_desired(
+                {
+                    "schema": BTRFS_SCRUB_DESIRED_SCHEMA,
+                    "filesystemUuid": value,
+                    "operation": "start",
+                }
+            )["filesystemUuid"]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class BtrfsScrubApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: BtrfsScrubDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class MdRaid1DesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -976,6 +1010,8 @@ class SmartSchedulePolicyApplyRequest(BaseModel):
 __all__ = [
     "BtrfsRaid1ApplyRequest",
     "BtrfsRaid1DesiredState",
+    "BtrfsScrubApplyRequest",
+    "BtrfsScrubDesiredState",
     "Ext4VolumeApplyRequest",
     "Ext4VolumeDesiredState",
     "GroupApplyRequest",

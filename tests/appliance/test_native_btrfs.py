@@ -362,4 +362,5 @@ def test_native_status_hides_btrfs_without_btrfs_progs(
     capabilities = native_storage.status()["capabilities"]
 
     assert "storage.volume.btrfs-raid1.create-mount.v1" not in capabilities
+    assert "storage.volume.btrfs.scrub.start.v1" not in capabilities
     assert "storage.pool.zfs-mirror.create.v1" in capabilities

@@ -62,6 +62,9 @@ EXT4_VOLUME_CONTROL_CAPABILITY = "storage.volume.ext4.create-mount.v1"
 BTRFS_RAID1_DESIRED_SCHEMA = "echo.omv.btrfs-raid1-desired.v1"
 BTRFS_RAID1_PLAN_SCHEMA = "echo.omv.btrfs-raid1-plan.v1"
 BTRFS_RAID1_CONTROL_CAPABILITY = "storage.volume.btrfs-raid1.create-mount.v1"
+BTRFS_SCRUB_DESIRED_SCHEMA = "echo.omv.btrfs-scrub-desired.v1"
+BTRFS_SCRUB_PLAN_SCHEMA = "echo.omv.btrfs-scrub-plan.v1"
+BTRFS_SCRUB_CONTROL_CAPABILITY = "storage.volume.btrfs.scrub.start.v1"
 ZFS_POOL_EXPORT_DESIRED_SCHEMA = "echo.omv.zfs-pool-export-desired.v1"
 ZFS_POOL_EXPORT_PLAN_SCHEMA = "echo.omv.zfs-pool-export-plan.v1"
 ZFS_POOL_EXPORT_CONTROL_CAPABILITY = "storage.pool.zfs.export.safe.v1"
@@ -337,6 +340,27 @@ def validate_btrfs_raid1_desired(value: Any) -> dict[str, Any]:
         "name": name,
         "devices": normalized,
         "dataLossConfirmed": True,
+    }
+
+
+def validate_btrfs_scrub_desired(value: Any) -> dict[str, str]:
+    expected = {"schema", "filesystemUuid", "operation"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("Btrfs scrub desired state has unexpected fields")
+    if value.get("schema") != BTRFS_SCRUB_DESIRED_SCHEMA:
+        raise ValueError("Btrfs scrub desired-state schema is unsupported")
+    filesystem_uuid = value.get("filesystemUuid")
+    if (
+        not isinstance(filesystem_uuid, str)
+        or _OMV_UUID_PATTERN.fullmatch(filesystem_uuid) is None
+    ):
+        raise ValueError("Btrfs scrub requires a canonical filesystem UUID")
+    if value.get("operation") != "start":
+        raise ValueError("Btrfs scrub operation must be start")
+    return {
+        "schema": BTRFS_SCRUB_DESIRED_SCHEMA,
+        "filesystemUuid": filesystem_uuid.lower(),
+        "operation": "start",
     }
 
 

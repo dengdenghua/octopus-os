@@ -20,10 +20,11 @@ not load the optional bridge client or its HTTP transport:
 Write support is deliberately split into narrow desired/plan/apply slices.
 Shared folders are limited to registered directories on mounted NAS volumes;
 privileges only touch the selected directory's non-recursive POSIX ACL; NFS
-only owns one generated file below ``/etc/exports.d``. Pool writes are limited
-to separately reviewed two-blank-disk ZFS and md RAID1 creators, Echo-layout
-export/import, and one-failed-member blank-disk replacement for either mirror. Pool
-scrub start is exposed with read-back maintenance state. Pool deletion,
+only owns one generated file below ``/etc/exports.d``. Pool and volume writes
+are limited to separately reviewed two-blank-disk ZFS, md RAID1, and Btrfs
+RAID1 creators, Echo-layout ZFS export/import, and one-failed-member blank-disk
+replacement for the ZFS/md mirrors. ZFS and Btrfs scrub start is exposed with
+read-back maintenance state. Pool deletion,
 expansion, general replacement, recursive permission changes,
 signature wiping, and arbitrary protocol options remain outside this module.
 """
@@ -57,6 +58,11 @@ from appliance.mdraid_check_schedule_policy import (
 )
 from appliance.native_btrfs import apply_btrfs_raid1, btrfs_raid1_candidates, plan_btrfs_raid1
 from appliance.native_btrfs_health import probe_btrfs_filesystems as _probe_btrfs_filesystems
+from appliance.native_btrfs_scrub import (
+    apply_btrfs_scrub,
+    btrfs_scrub_maintenance,
+    plan_btrfs_scrub,
+)
 from appliance.native_ext4 import apply_ext4_volume, ext4_volume_candidates, plan_ext4_volume
 from appliance.native_mdraid import apply_mdraid1, mdraid1_candidates, plan_mdraid1
 from appliance.native_mdraid_check import (
@@ -995,6 +1001,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.array.mdraid.check.schedule.v1",
     "storage.volume.ext4.create-mount.v1",
     "storage.volume.btrfs-raid1.create-mount.v1",
+    "storage.volume.btrfs.scrub.start.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
     "storage.pool.zfs.import.echo-root.v1",
@@ -1068,6 +1075,8 @@ def _native_write_capabilities() -> list[str]:
         "wipefs",
     ):
         unavailable.add("storage.volume.btrfs-raid1.create-mount.v1")
+    if not _native_command_tools_available("btrfs", "findmnt"):
+        unavailable.add("storage.volume.btrfs.scrub.start.v1")
     if not _native_command_tools_available("zpool", "zfs"):
         unavailable.add("storage.pool.zfs.export.safe.v1")
         unavailable.add("storage.pool.zfs.import.echo-root.v1")
@@ -4133,6 +4142,7 @@ def validated_devicefile(devicefile: str) -> str:
 __all__ = [
     "NativeStorageAuthority",
     "apply_btrfs_raid1",
+    "apply_btrfs_scrub",
     "apply_group",
     "apply_mdraid1",
     "apply_mdraid1_replace",
@@ -4155,6 +4165,7 @@ __all__ = [
     "apply_zfs_scrub",
     "block_devices",
     "btrfs_raid1_candidates",
+    "btrfs_scrub_maintenance",
     "filesystems",
     "ext4_volume_candidates",
     "exportable_zfs_pools",
@@ -4164,6 +4175,7 @@ __all__ = [
     "mdraid_maintenance",
     "plan_group",
     "plan_btrfs_raid1",
+    "plan_btrfs_scrub",
     "plan_ext4_volume",
     "plan_mdraid1",
     "plan_mdraid1_replace",
