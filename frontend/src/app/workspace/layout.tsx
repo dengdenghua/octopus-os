@@ -25,6 +25,7 @@ import { useActiveAgentId } from "@/core/agents/active";
 import { workspacePresetForAgent } from "@/core/workspace/workspace-presets";
 import { useWorkbenchAvailabilitySync } from "@/core/workbench/availability";
 import { cn } from "@/lib/utils";
+import { NasAlertNotifications } from "@/appliance/nas-alert-notifications";
 
 const CommandPalette = lazy(() =>
   import("@/components/workspace/command-palette").then((m) => ({
@@ -114,6 +115,7 @@ export default function WorkspaceLayout({
   );
   return (
     <Fragment>
+      <NasAlertNotifications />
       {embeddedWorkspace ? (
         <SidebarProvider
           data-persona-theme={personaThemeId}
