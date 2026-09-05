@@ -748,7 +748,9 @@ def sharing_overview() -> dict[str, Any]:
             "uuid": volume_uuid(entry["mountpoint"]),
             "name": entry["label"],
             "comment": "",
-            "relativePath": entry["mountpoint"],
+            # A filesystem root is inventory-only, not an Echo-registered
+            # share.  Never expose its host mountpoint through this field.
+            "relativePath": "/",
             "device": entry["devicefile"],
             "status": "MOUNTED",
             "inUse": True,

@@ -149,6 +149,8 @@ def test_system_mounts_are_never_offered_as_shared_folder_targets(
 
     assert [target["label"] for target in overview["sharedFolderTargets"]] == ["family"]
     assert native_storage.volume_uuid("/") not in native_storage._writable_targets()
+    assert [folder["relativePath"] for folder in overview["sharedFolders"]] == ["/", "/"]
+    assert all("/data/family" not in json.dumps(folder) for folder in overview["sharedFolders"])
 
 
 def test_sharing_overview_keeps_the_users_group_and_empty_smb_service_enabled(
