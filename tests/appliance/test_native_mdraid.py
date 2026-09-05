@@ -233,6 +233,52 @@ def test_mdraid_detail_parser_requires_exact_two_device_raid1() -> None:
         native_mdraid._parse_detail(valid.replace("MD_LEVEL=raid1", "MD_LEVEL=raid0"), plan)
 
 
+def test_managed_mdraid_inventory_requires_persisted_healthy_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    mdraid_host: Path,
+) -> None:
+    monkeypatch.setattr(native_mdraid.shutil, "which", lambda _binary: "/usr/bin/mdadm")
+    mdraid_host.write_text(
+        "# BEGIN ECHO OS MANAGED MDRAID\n"
+        "ARRAY /dev/md/echo-family UUID=11111111:22222222:33333333:44444444 metadata=1.2\n"
+        "# END ECHO OS MANAGED MDRAID\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        native_mdraid,
+        "_run",
+        lambda *_args, **_kwargs: type("Result", (), {"returncode": 0})(),
+    )
+    monkeypatch.setattr(
+        native_mdraid,
+        "_run_checked",
+        lambda *_args, **_kwargs: "\n".join(
+            [
+                "MD_LEVEL=raid1",
+                "MD_DEVICES=2",
+                "MD_METADATA=1.2",
+                "MD_UUID=11111111:22222222:33333333:44444444",
+                "MD_DEVNAME=echo-family",
+                "MD_DEVICE_dev_sdb_DEV=/dev/sdb",
+                "MD_DEVICE_dev_sdb_ROLE=0",
+                "MD_DEVICE_dev_sdc_DEV=/dev/sdc",
+                "MD_DEVICE_dev_sdc_ROLE=1",
+            ]
+        ),
+    )
+
+    assert native_mdraid.managed_mdraid1_arrays(config_path=mdraid_host) == [
+        {
+            "name": "family",
+            "devicefile": "/dev/md/echo-family",
+            "uuid": "11111111:22222222:33333333:44444444",
+            "level": "raid1",
+            "devices": ["/dev/sdb", "/dev/sdc"],
+            "filesystem": None,
+        }
+    ]
+
+
 def test_mdraid_candidates_hide_disks_that_fail_the_plan_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

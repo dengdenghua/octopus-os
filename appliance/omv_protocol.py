@@ -50,6 +50,9 @@ ZFS_MIRROR_CONTROL_CAPABILITY = "storage.pool.zfs-mirror.create.v1"
 MDRAID1_DESIRED_SCHEMA = "echo.omv.mdraid1-desired.v1"
 MDRAID1_PLAN_SCHEMA = "echo.omv.mdraid1-plan.v1"
 MDRAID1_CONTROL_CAPABILITY = "storage.array.mdraid1.create.v1"
+EXT4_VOLUME_DESIRED_SCHEMA = "echo.omv.ext4-volume-desired.v1"
+EXT4_VOLUME_PLAN_SCHEMA = "echo.omv.ext4-volume-plan.v1"
+EXT4_VOLUME_CONTROL_CAPABILITY = "storage.volume.ext4.create-mount.v1"
 ZFS_POOL_EXPORT_DESIRED_SCHEMA = "echo.omv.zfs-pool-export-desired.v1"
 ZFS_POOL_EXPORT_PLAN_SCHEMA = "echo.omv.zfs-pool-export-plan.v1"
 ZFS_POOL_EXPORT_CONTROL_CAPABILITY = "storage.pool.zfs.export.safe.v1"
@@ -102,6 +105,8 @@ _WINDOWS_RESERVED_NAMES = {
 _ZFS_POOL_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,31}")
 _ZFS_WHOLE_DISK_PATTERN = re.compile(r"/dev/(?:sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+|mmcblk\d+)")
 _MDRAID_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,26}")
+_EXT4_VOLUME_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,15}")
+_MD_UUID_PATTERN = re.compile(r"[0-9a-f]{8}(?::[0-9a-f]{8}){3}")
 
 
 class OmvUnavailable(RuntimeError):
@@ -219,6 +224,28 @@ def validate_mdraid1_desired(value: Any) -> dict[str, Any]:
         "schema": MDRAID1_DESIRED_SCHEMA,
         "name": name,
         "devices": normalized,
+        "dataLossConfirmed": True,
+    }
+
+
+def validate_ext4_volume_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "arrayUuid", "name", "dataLossConfirmed"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("EXT4 volume desired state has unexpected fields")
+    if value.get("schema") != EXT4_VOLUME_DESIRED_SCHEMA:
+        raise ValueError("EXT4 volume desired-state schema is unsupported")
+    array_uuid = value.get("arrayUuid")
+    if not isinstance(array_uuid, str) or _MD_UUID_PATTERN.fullmatch(array_uuid) is None:
+        raise ValueError("EXT4 volume requires a canonical managed md RAID UUID")
+    name = value.get("name")
+    if not isinstance(name, str) or _EXT4_VOLUME_NAME_PATTERN.fullmatch(name) is None:
+        raise ValueError("EXT4 volume name must be a lowercase portable name of at most 16 characters")
+    if value.get("dataLossConfirmed") is not True:
+        raise ValueError("EXT4 volume creation requires dataLossConfirmed=true")
+    return {
+        "schema": EXT4_VOLUME_DESIRED_SCHEMA,
+        "arrayUuid": array_uuid,
+        "name": name,
         "dataLossConfirmed": True,
     }
 

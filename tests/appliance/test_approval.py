@@ -217,6 +217,22 @@ def test_mdraid1_creation_uses_a_plan_bound_approval(tmp_path):
     )
 
 
+def test_ext4_volume_creation_uses_a_plan_bound_approval(tmp_path):
+    service, _audit = _service(tmp_path)
+    token = _issue(
+        service,
+        action="omv.ext4-volume.create",
+        target="a" * 64,
+    )
+
+    service.consume(
+        token=token,
+        actor="local:admin",
+        action="omv.ext4-volume.create",
+        target="a" * 64,
+    )
+
+
 @pytest.mark.parametrize(
     "action",
     [

@@ -81,6 +81,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "filesystem.quota.user-group.v1",
         "storage.pool.zfs-mirror.create.v1",
         "storage.array.mdraid1.create.v1",
+        "storage.volume.ext4.create-mount.v1",
         "storage.pool.zfs-mirror.replace.blank.v1",
         "storage.pool.zfs.export.safe.v1",
         "storage.pool.zfs.import.echo-root.v1",

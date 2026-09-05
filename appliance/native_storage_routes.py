@@ -21,6 +21,8 @@ from appliance.native_smart import (
 )
 from appliance.native_ups import ups_status
 from appliance.omv_models import (
+    Ext4VolumeApplyRequest,
+    Ext4VolumeDesiredState,
     GroupApplyRequest,
     GroupDesiredState,
     MdRaid1ApplyRequest,
@@ -128,6 +130,14 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 md RAID1 候选磁盘探测不可用") from exc
         return {"devices": devices, "readOnly": True, "source": "native"}
+
+    @router.get("/volumes/ext4/candidates")
+    async def ext4_volume_candidates() -> dict[str, Any]:
+        try:
+            arrays = await run_in_threadpool(native_storage.ext4_volume_candidates)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 EXT4 候选阵列探测不可用") from exc
+        return {"arrays": arrays, "readOnly": True, "source": "native"}
 
     @router.get("/pools/zfs-mirror/replacement-candidates")
     async def zfs_mirror_replacement_candidates() -> dict[str, Any]:
@@ -844,6 +854,39 @@ def create_omv_alias_router(
             desired=body.desired.model_dump(by_alias=True),
             plan_id=body.plan_id,
             metadata={"name": body.desired.name, "devices": body.desired.devices},
+        )
+
+    # --- Destructive EXT4 creation on an Echo-managed md RAID1 ---------
+    @router.post("/volumes/ext4/plan")
+    async def plan_ext4_volume(body: Ext4VolumeDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_ext4_volume,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 EXT4 卷暂不可用") from exc
+
+    @router.post("/volumes/ext4/apply")
+    async def apply_ext4_volume_route(
+        body: Ext4VolumeApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.ext4-volume.create",
+            plan_fn=native_storage.plan_ext4_volume,
+            apply_fn=native_storage.apply_ext4_volume,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "arrayUuid": body.desired.array_uuid,
+                "name": body.desired.name,
+            },
         )
 
     @router.post("/pools/zfs-mirror/replace/plan")

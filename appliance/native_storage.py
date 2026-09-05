@@ -52,6 +52,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from appliance.native_ext4 import apply_ext4_volume, ext4_volume_candidates, plan_ext4_volume
 from appliance.native_mdraid import apply_mdraid1, mdraid1_candidates, plan_mdraid1
 from appliance.native_storage_pool import (
     apply_zfs_mirror,
@@ -927,6 +928,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "filesystem.quota.user-group.v1",
     "storage.pool.zfs-mirror.create.v1",
     "storage.array.mdraid1.create.v1",
+    "storage.volume.ext4.create-mount.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
     "storage.pool.zfs.import.echo-root.v1",
@@ -968,6 +970,17 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("storage.pool.zfs-mirror.replace.blank.v1")
     if not _native_command_tools_available("mdadm", "lsblk", "wipefs", "update-initramfs"):
         unavailable.add("storage.array.mdraid1.create.v1")
+    if not _native_command_tools_available(
+        "mdadm",
+        "blkid",
+        "findmnt",
+        "mkfs.ext4",
+        "mount",
+        "systemctl",
+        "umount",
+        "wipefs",
+    ):
+        unavailable.add("storage.volume.ext4.create-mount.v1")
     if not _native_command_tools_available("zpool", "zfs"):
         unavailable.add("storage.pool.zfs.export.safe.v1")
         unavailable.add("storage.pool.zfs.import.echo-root.v1")
@@ -4034,6 +4047,7 @@ __all__ = [
     "NativeStorageAuthority",
     "apply_group",
     "apply_mdraid1",
+    "apply_ext4_volume",
     "apply_nfs",
     "apply_nfs_remove",
     "apply_quota",
@@ -4051,10 +4065,12 @@ __all__ = [
     "apply_zfs_scrub",
     "block_devices",
     "filesystems",
+    "ext4_volume_candidates",
     "exportable_zfs_pools",
     "md_arrays",
     "mdraid1_candidates",
     "plan_group",
+    "plan_ext4_volume",
     "plan_mdraid1",
     "plan_nfs",
     "plan_nfs_remove",

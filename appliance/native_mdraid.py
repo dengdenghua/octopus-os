@@ -419,6 +419,11 @@ def plan_mdraid1(
 
 
 def _parse_detail(output: str, plan: dict[str, Any]) -> dict[str, Any]:
+    fields = _parse_export_fields(output)
+    return _array_from_export_fields(fields, plan)
+
+
+def _parse_export_fields(output: str) -> dict[str, str]:
     fields: dict[str, str] = {}
     for raw_line in output.splitlines():
         if not raw_line:
@@ -431,6 +436,10 @@ def _parse_detail(output: str, plan: dict[str, Any]) -> dict[str, Any]:
         if key in fields:
             raise OSError("mdadm detail output contains duplicate fields")
         fields[key] = value
+    return fields
+
+
+def _array_from_export_fields(fields: dict[str, str], plan: dict[str, Any]) -> dict[str, Any]:
     array_uuid = fields.get("MD_UUID", "")
     devices = sorted(value for key, value in fields.items() if key.endswith("_DEV"))
     roles = sorted(value for key, value in fields.items() if key.endswith("_ROLE"))
@@ -453,6 +462,51 @@ def _parse_detail(output: str, plan: dict[str, Any]) -> dict[str, Any]:
         "devices": expected_devices,
         "filesystem": None,
     }
+
+
+def managed_mdraid1_arrays(*, config_path: Path = _MDADM_CONFIG) -> list[dict[str, Any]]:
+    """Return healthy assembled RAID1 arrays owned by the Echo config block."""
+    if shutil.which("mdadm") is None:
+        raise OSError("native md RAID1 inventory tool is unavailable: mdadm")
+    config = _read_config(config_path)
+    _begin, _end, entries = _managed_entries(
+        config.decode("utf-8") if config is not None else ""
+    )
+    arrays: list[dict[str, Any]] = []
+    for entry in entries:
+        tokens = entry.split()
+        target = tokens[1]
+        configured_uuid = tokens[2].removeprefix("UUID=")
+        name = target.removeprefix("/dev/md/echo-")
+        if _run("mdadm", "--detail", "--test", target).returncode != 0:
+            continue
+        fields = _parse_export_fields(_run_checked("mdadm", "--detail", "--export", target))
+        devices = sorted(value for key, value in fields.items() if key.endswith("_DEV"))
+        roles = sorted(value for key, value in fields.items() if key.endswith("_ROLE"))
+        if (
+            fields.get("MD_LEVEL") != "raid1"
+            or fields.get("MD_DEVICES") != "2"
+            or fields.get("MD_METADATA") != "1.2"
+            or fields.get("MD_DEVNAME") != f"echo-{name}"
+            or fields.get("MD_UUID", "").lower() != configured_uuid
+            or len(devices) != 2
+            or roles != ["0", "1"]
+        ):
+            raise OSError("managed md RAID1 no longer matches its persisted identity")
+        arrays.append(
+            {
+                "name": name,
+                "devicefile": target,
+                "uuid": configured_uuid,
+                "level": "raid1",
+                "devices": devices,
+                "filesystem": None,
+            }
+        )
+    uuids = [array["uuid"] for array in arrays]
+    if len(uuids) != len(set(uuids)):
+        raise OSError("managed md RAID1 inventory contains duplicate UUIDs")
+    return sorted(arrays, key=lambda array: (array["name"], array["uuid"]))
 
 
 def _verify_created_array(plan: dict[str, Any]) -> dict[str, Any]:
@@ -552,6 +606,7 @@ def apply_mdraid1(
 
 __all__ = [
     "apply_mdraid1",
+    "managed_mdraid1_arrays",
     "mdraid1_candidates",
     "plan_mdraid1",
 ]

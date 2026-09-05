@@ -39,6 +39,7 @@ export type HighRiskAction =
   | "omv.user.create"
   | "omv.user.password.reset"
   | "omv.mdraid1.create"
+  | "omv.ext4-volume.create"
   | "omv.zfs-mirror.create"
   | "omv.zfs-mirror.replace"
   | "omv.zfs-pool.export"

@@ -12,6 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from appliance.omv_protocol import (
+    EXT4_VOLUME_DESIRED_SCHEMA,
     GROUP_DESIRED_SCHEMA,
     MDRAID1_DESIRED_SCHEMA,
     NFS_DESIRED_SCHEMA,
@@ -31,6 +32,7 @@ from appliance.omv_protocol import (
     ZFS_POOL_EXPORT_DESIRED_SCHEMA,
     ZFS_POOL_IMPORT_DESIRED_SCHEMA,
     ZFS_SCRUB_DESIRED_SCHEMA,
+    validate_ext4_volume_desired,
     validate_group_desired,
     validate_mdraid1_desired,
     validate_nfs_remove_desired,
@@ -541,6 +543,45 @@ class MdRaid1ApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class Ext4VolumeDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.ext4-volume-desired.v1"] = Field(
+        default=EXT4_VOLUME_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    array_uuid: str = Field(alias="arrayUuid")
+    name: str = Field(min_length=1, max_length=16)
+    data_loss_confirmed: Literal[True] = Field(alias="dataLossConfirmed")
+
+    @field_validator("array_uuid", "name")
+    @classmethod
+    def validate_ext4_volume_field(cls, value: Any, info: Any) -> Any:
+        payload = {
+            "schema": EXT4_VOLUME_DESIRED_SCHEMA,
+            "arrayUuid": (
+                value
+                if info.field_name == "array_uuid"
+                else "11111111:22222222:33333333:44444444"
+            ),
+            "name": value if info.field_name == "name" else "family",
+            "dataLossConfirmed": True,
+        }
+        try:
+            return validate_ext4_volume_desired(payload)[
+                "arrayUuid" if info.field_name == "array_uuid" else "name"
+            ]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class Ext4VolumeApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: Ext4VolumeDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class ZfsMirrorReplaceDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -800,6 +841,8 @@ class SmartSchedulePolicyApplyRequest(BaseModel):
 
 
 __all__ = [
+    "Ext4VolumeApplyRequest",
+    "Ext4VolumeDesiredState",
     "GroupApplyRequest",
     "GroupDesiredState",
     "MdRaid1ApplyRequest",
