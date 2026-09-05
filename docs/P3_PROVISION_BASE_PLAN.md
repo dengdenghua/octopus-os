@@ -1,7 +1,7 @@
 # P3 · 整机镜像:Echo OS × 参考 NAS
 
 > 分支:`p3-provision`(upstream = dengdenghua/echo-os @ `5b82381`)
-> 状态:**规划 + 骨架已落地**(NAS 管控面 41 测试全绿;装机链路待 Linux 验证)
+> 状态:**规划 + 骨架已落地**(历史 NAS 管控面 41 测试全绿；当前 P3 原生窄写已接入并完成本机/VM 回归；装机链路待 Linux 验证)
 > 前情:`docs/ECHO_OS_PLAN.md` §6 P3 / `docs/NATIVE_SHELL_PLAN.md`
 
 ---
@@ -151,11 +151,13 @@ A/B 原子更新(见 §6 M4)。
 
 | 路径 | 说明 | 状态 |
 |---|---|---|
-| `appliance/nas/storage.py` | 磁盘/池/数据集/SMART 只读探测 | ✅ 41 测试 |
-| `appliance/nas/shares.py` | SMB/NFS 共享:配置片段 + 原子落盘 + reload | ✅ 41 测试 |
-| `appliance/nas/router.py` | NAS 管控面 HTTP API | ✅ 41 测试 |
-| `appliance/extension.py` | 挂载 NAS 路由(改) | ✅ |
-| `tests/appliance/test_nas.py` | 41 个用例,含注入测试 | ✅ 全绿 |
+| `appliance/nas/storage.py` | 历史磁盘/池/数据集/SMART 只读探测 | ✅ 41 测试(兼容保留) |
+| `appliance/nas/shares.py` | 历史 SMB/NFS 共享配置面 | ✅ 41 测试(兼容保留) |
+| `appliance/nas/router.py` | 历史 NAS HTTP API,生产扩展未挂载 | ✅ 兼容测试 |
+| `appliance/native_storage.py` | 当前主机原生存储探测与受控窄写面 | ✅ 当前 P3 入口 |
+| `appliance/native_storage_routes.py` | `/storage` 与 `/omv` 兼容路由、审批/审计封装 | ✅ 当前 P3 入口 |
+| `appliance/extension.py` | 挂载原生存储路由(OMV 可选桥不再是默认权威) | ✅ |
+| `tests/appliance/test_native_storage.py` | 原生账户、共享、ACL、SMB/NFS、配额回归 | ✅ |
 | `deploy/provision/**` | 装机 ISO 组装 + 首次开机脚本 | ⚠️ 待 Linux 验证 |
 
 ### NAS 管控面设计要点
@@ -168,7 +170,10 @@ A/B 原子更新(见 §6 M4)。
 - **输入校验到字节级**:设备名白名单 `^(sd[a-z]+|nvme\d+n\d+|md\d+|vd[a-z]+)$`;
   共享名 `[A-Za-z0-9._-]{1,64}`;路径必须落在允许根内。SMB 注释值剔除
   `[] ; #` 与换行 —— 不留任何"依赖解析器行为"的余地。
-- **写操作留了审批门接入点**:每个写路由上方标 `TODO(P3-approval)`。
+- **写操作边界**:旧 `appliance/nas` 路由仍仅作兼容测试，不进入生产扩展；当前原生窄写面统一使用
+  `desired → plan → 管理员单次审批 → apply → 回读验证/安全回滚 → 审计`。已开放基础共享文件夹、
+  根目录 POSIX ACL、私有 SMB/NFS 规则、受限账户/组和用户/组硬配额；复杂磁盘与池生命周期继续关闭，
+  不以兼容路由代替审批。
 
 ---
 
