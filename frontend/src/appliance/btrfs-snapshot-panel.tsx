@@ -3,6 +3,8 @@ import {
   CameraIcon,
   FolderSyncIcon,
   Loader2Icon,
+  LockIcon,
+  LockOpenIcon,
   RefreshCwIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -11,17 +13,20 @@ import { requestHighRiskApproval } from "@/appliance/approval";
 import {
   applyBtrfsSnapshot,
   applyBtrfsSnapshotDelete,
+  applyBtrfsSnapshotLock,
   applyBtrfsSnapshotRestoreCopy,
   applyBtrfsSnapshotSchedule,
   fetchBtrfsSnapshotSchedule,
   fetchBtrfsSnapshots,
   planBtrfsSnapshot,
   planBtrfsSnapshotDelete,
+  planBtrfsSnapshotLock,
   planBtrfsSnapshotRestoreCopy,
   planBtrfsSnapshotSchedule,
   type BtrfsSnapshot,
   type BtrfsSnapshotDeletePlan,
   type BtrfsSnapshotDesired,
+  type BtrfsSnapshotLockPlan,
   type BtrfsSnapshotPlan,
   type BtrfsSnapshotRestoreCopyPlan,
   type BtrfsSnapshotSchedule,
@@ -35,6 +40,7 @@ const SHARE_NAME = /^(?=.{1,64}$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9_-])?$/;
 type PendingApproval =
   | { kind: "create"; plan: BtrfsSnapshotPlan }
   | { kind: "delete"; plan: BtrfsSnapshotDeletePlan }
+  | { kind: "lock"; plan: BtrfsSnapshotLockPlan }
   | { kind: "restore"; plan: BtrfsSnapshotRestoreCopyPlan }
   | { kind: "schedule"; plan: BtrfsSnapshotSchedulePlan };
 
@@ -43,6 +49,7 @@ export function BtrfsSnapshotPanel({
   sharedFolderName,
   canCreate,
   canDelete,
+  canLock,
   canRestore,
   canSchedule,
   onRecovered,
@@ -51,6 +58,7 @@ export function BtrfsSnapshotPanel({
   sharedFolderName: string;
   canCreate: boolean;
   canDelete: boolean;
+  canLock: boolean;
   canRestore: boolean;
   canSchedule: boolean;
   onRecovered?: () => void;
@@ -155,6 +163,28 @@ export function BtrfsSnapshotPanel({
     }
   };
 
+  const previewLock = async (snapshot: BtrfsSnapshot) => {
+    setPlanning(true);
+    setError(null);
+    try {
+      const lockPlan = await planBtrfsSnapshotLock({
+        schema: "echo.btrfs-snapshot-lock-desired.v1",
+        sharedFolderRef,
+        snapshotId: snapshot.snapshotId,
+        locked: !snapshot.locked,
+      });
+      if (lockPlan.requiresApproval)
+        setPending({ kind: "lock", plan: lockPlan });
+      else await refresh();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "无法生成快照锁定预览",
+      );
+    } finally {
+      setPlanning(false);
+    }
+  };
+
   const beginRestore = (snapshot: BtrfsSnapshot) => {
     const base = sharedFolderName.slice(0, 54).replace(/[.-]+$/, "") || "share";
     setRestoreSnapshot(snapshot);
@@ -240,6 +270,17 @@ export function BtrfsSnapshotPanel({
         password,
       );
       await applyBtrfsSnapshotDelete(
+        pending.plan.desired,
+        pending.plan.planId,
+        approval.approvalToken,
+      );
+    } else if (pending.kind === "lock") {
+      const approval = await requestHighRiskApproval(
+        "omv.btrfs-snapshot.lock",
+        pending.plan.planId,
+        password,
+      );
+      await applyBtrfsSnapshotLock(
         pending.plan.desired,
         pending.plan.planId,
         approval.approvalToken,
@@ -485,7 +526,23 @@ export function BtrfsSnapshotPanel({
               </span>
               <span className="text-violet-500">
                 {snapshot.kind === "automatic" ? "自动 · 只读" : "手工 · 只读"}
+                {snapshot.locked ? " · 已锁定" : ""}
               </span>
+              {canLock && (
+                <button
+                  type="button"
+                  aria-label={`${snapshot.locked ? "解锁" : "锁定"}快照 ${snapshot.name}`}
+                  disabled={planning}
+                  onClick={() => void previewLock(snapshot)}
+                  className="rounded p-1 text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+                >
+                  {snapshot.locked ? (
+                    <LockOpenIcon className="size-3" />
+                  ) : (
+                    <LockIcon className="size-3" />
+                  )}
+                </button>
+              )}
               {canRestore && (
                 <button
                   type="button"
@@ -498,7 +555,7 @@ export function BtrfsSnapshotPanel({
                   恢复副本
                 </button>
               )}
-              {canDelete && (
+              {canDelete && !snapshot.locked && (
                 <button
                   type="button"
                   aria-label={`删除快照 ${snapshot.name}`}
@@ -526,38 +583,52 @@ export function BtrfsSnapshotPanel({
         title={
           pending?.kind === "delete"
             ? "删除只读快照"
-            : pending?.kind === "restore"
-              ? "创建恢复副本"
-              : pending?.kind === "schedule"
-                ? "更新自动快照策略"
-                : "创建只读快照"
+            : pending?.kind === "lock"
+              ? pending.plan.desired.locked
+                ? "锁定快照"
+                : "解锁快照"
+              : pending?.kind === "restore"
+                ? "创建恢复副本"
+                : pending?.kind === "schedule"
+                  ? "更新自动快照策略"
+                  : "创建只读快照"
         }
         description={
           pending?.kind === "delete"
             ? "只删除所选快照子卷，不触碰共享文件夹源数据。删除后不能通过 Echo 恢复。"
-            : pending?.kind === "restore"
-              ? "从只读快照创建新的可写 Btrfs 共享目录；不会覆盖原共享，也不会自动发布 SMB/NFS。"
-              : pending?.kind === "schedule"
-                ? "后续计划任务将无需再次输入密码创建自动快照，并只裁剪由调度器创建的旧快照。"
-                : "创建同一 Btrfs 文件系统内的只读、崩溃一致快照；不会暂停正在写入的应用。"
+            : pending?.kind === "lock"
+              ? pending.plan.desired.locked
+                ? "锁定后，手工删除和自动保留清理都会跳过该快照。快照数据本身不会改变。"
+                : "解锁后，该快照可以被手工删除；自动快照也会重新进入保留策略范围。"
+              : pending?.kind === "restore"
+                ? "从只读快照创建新的可写 Btrfs 共享目录；不会覆盖原共享，也不会自动发布 SMB/NFS。"
+                : pending?.kind === "schedule"
+                  ? "后续计划任务将无需再次输入密码创建自动快照，并只裁剪由调度器创建的旧快照。"
+                  : "创建同一 Btrfs 文件系统内的只读、崩溃一致快照；不会暂停正在写入的应用。"
         }
         targetLabel={
           pending?.kind === "delete"
             ? pending.plan.snapshot.name
-            : pending?.kind === "restore"
-              ? `${pending.plan.sourceSnapshot.name} → ${pending.plan.desired.name}`
-              : pending?.kind === "schedule"
-                ? `${sharedFolderName} · 保留 ${pending.plan.desired.keepLatest} 个`
-                : pending?.plan.desired.name
+            : pending?.kind === "lock"
+              ? pending.plan.snapshot.name
+              : pending?.kind === "restore"
+                ? `${pending.plan.sourceSnapshot.name} → ${pending.plan.desired.name}`
+                : pending?.kind === "schedule"
+                  ? `${sharedFolderName} · 保留 ${pending.plan.desired.keepLatest} 个`
+                  : pending?.plan.desired.name
         }
         confirmLabel={
           pending?.kind === "delete"
             ? "确认删除"
-            : pending?.kind === "restore"
-              ? "确认创建副本"
-              : pending?.kind === "schedule"
-                ? "确认更新"
-                : "确认创建"
+            : pending?.kind === "lock"
+              ? pending.plan.desired.locked
+                ? "确认锁定"
+                : "确认解锁"
+              : pending?.kind === "restore"
+                ? "确认创建副本"
+                : pending?.kind === "schedule"
+                  ? "确认更新"
+                  : "确认创建"
         }
         destructive={pending?.kind === "delete"}
         onCancel={() => setPending(null)}

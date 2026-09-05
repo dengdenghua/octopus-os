@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from appliance import native_storage as storage
+from appliance.btrfs_snapshot_lock_policy import locked_snapshot_ids
 from appliance.omv_protocol import (
     BTRFS_SNAPSHOT_DELETE_PLAN_SCHEMA,
     BTRFS_SNAPSHOT_PLAN_SCHEMA,
@@ -197,13 +198,20 @@ def _ensure_snapshot_directory(entry: dict[str, Any], source: Path) -> Path:
     return directory
 
 
-def _public_snapshot(shared_folder_ref: str, name: str, identity: dict[str, Any]) -> dict[str, Any]:
+def _public_snapshot(
+    shared_folder_ref: str,
+    name: str,
+    identity: dict[str, Any],
+    *,
+    locked: bool = False,
+) -> dict[str, Any]:
     return {
         "snapshotId": _snapshot_id(shared_folder_ref, name),
         "name": name,
         "subvolumeUuid": identity["subvolumeUuid"],
         "readOnly": identity["readOnly"],
         "kind": "automatic" if _AUTOMATIC_NAME_PATTERN.fullmatch(name) else "manual",
+        "locked": locked,
     }
 
 
@@ -223,6 +231,7 @@ def _inventory(
     _private_directory(directory, expected_device=source.lstat().st_dev)
     shared_folder_ref = storage._registered_uuid(entry, strict=True)
     assert shared_folder_ref is not None
+    locked_ids = locked_snapshot_ids(shared_folder_ref)
     snapshots: list[dict[str, Any]] = []
     try:
         with os.scandir(directory) as entries:
@@ -251,7 +260,15 @@ def _inventory(
         identity = _subvolume_identity(path)
         if not identity["readOnly"] or identity["parentUuid"] != source_identity["subvolumeUuid"]:
             raise OSError("managed Btrfs snapshot identity does not match its source")
-        snapshots.append(_public_snapshot(shared_folder_ref, normalized_name, identity))
+        snapshot_id = _snapshot_id(shared_folder_ref, normalized_name)
+        snapshots.append(
+            _public_snapshot(
+                shared_folder_ref,
+                normalized_name,
+                identity,
+                locked=snapshot_id in locked_ids,
+            )
+        )
     if len(snapshots) > MAX_SNAPSHOTS_PER_SHARE:
         raise OSError("managed Btrfs snapshot count exceeds the supported limit")
     return snapshots
@@ -268,6 +285,16 @@ def list_snapshots(shared_folder_ref: str) -> dict[str, Any]:
         "snapshots": snapshots,
         "limit": MAX_SNAPSHOTS_PER_SHARE,
         "source": "native",
+    }
+
+
+def _lock_policy_inventory(shared_folder_ref: str) -> dict[str, Any]:
+    """Read inventory while the caller already owns the shared-folder transaction."""
+    normalized_ref = validate_omv_uuid(shared_folder_ref).lower()
+    entry, source, source_identity = _resolve_share(normalized_ref)
+    return {
+        "sharedFolderRef": normalized_ref,
+        "snapshots": _inventory(entry, source, source_identity),
     }
 
 
@@ -588,6 +615,8 @@ def _delete_context(
     )
     if selected is None:
         raise ValueError("snapshotId does not match a managed snapshot for this shared folder")
+    if selected.get("locked") is True:
+        raise ValueError("locked snapshots must be unlocked before deletion")
     base_revision = storage._canonical_hash(
         {
             "registryEntry": entry,

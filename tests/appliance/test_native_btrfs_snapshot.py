@@ -111,6 +111,31 @@ def test_subvolume_parser_requires_stable_uuid_and_id() -> None:
         native_btrfs_snapshot._parse_subvolume_show("UUID: -\nSubvolume ID: 257\n")
 
 
+def test_inventory_projects_the_root_managed_lock_state(
+    monkeypatch: pytest.MonkeyPatch, snapshot_share
+) -> None:
+    entry, source, source_identity = snapshot_share
+    snapshot_path = source.parent / ".echo-snapshots" / SHARE_UUID / "before_upgrade"
+    snapshot_path.mkdir(parents=True)
+    snapshot_id = native_btrfs_snapshot._snapshot_id(SHARE_UUID, "before_upgrade")
+    monkeypatch.setattr(native_btrfs_snapshot, "_private_directory", lambda *_a, **_kw: None)
+    monkeypatch.setattr(
+        native_btrfs_snapshot, "locked_snapshot_ids", lambda _ref: frozenset({snapshot_id})
+    )
+    monkeypatch.setattr(
+        native_btrfs_snapshot,
+        "_subvolume_identity",
+        lambda path: (
+            _identity(parent=source_identity["subvolumeUuid"], read_only=True)
+            if path == snapshot_path
+            else source_identity
+        ),
+    )
+    snapshots = native_btrfs_snapshot._inventory(entry, source, source_identity)
+    assert snapshots[0]["snapshotId"] == snapshot_id
+    assert snapshots[0]["locked"] is True
+
+
 def test_create_plan_is_path_free_and_idempotent(
     monkeypatch: pytest.MonkeyPatch, snapshot_share
 ) -> None:
@@ -198,6 +223,7 @@ def test_apply_creates_read_only_snapshot_and_reconciles_late_error(
     assert result["verified"] is True
     assert result["snapshot"]["readOnly"] is True
     assert result["snapshot"]["kind"] == "manual"
+    assert result["snapshot"]["locked"] is False
     assert str(directory) not in json.dumps(result)
 
 
@@ -417,6 +443,22 @@ def test_delete_is_bound_to_inventory_and_preserves_source(
     assert str(directory) not in json.dumps(result)
 
 
+def test_locked_snapshot_must_be_unlocked_before_delete(
+    monkeypatch: pytest.MonkeyPatch, snapshot_share
+) -> None:
+    snapshot = {
+        "snapshotId": SNAPSHOT_UUID,
+        "name": "before_upgrade",
+        "subvolumeUuid": SNAPSHOT_UUID,
+        "readOnly": True,
+        "kind": "manual",
+        "locked": True,
+    }
+    monkeypatch.setattr(native_btrfs_snapshot, "_inventory", lambda *_args: [snapshot])
+    with pytest.raises(ValueError, match="must be unlocked"):
+        native_btrfs_snapshot.plan_snapshot_delete(_delete_desired(SNAPSHOT_UUID))
+
+
 def test_snapshot_route_consumes_exact_plan_bound_action(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -540,6 +582,8 @@ def test_snapshot_list_route_returns_only_public_inventory(
                 "name": "before_upgrade",
                 "subvolumeUuid": SOURCE_UUID,
                 "readOnly": True,
+                "kind": "manual",
+                "locked": False,
             }
         ],
         "limit": 256,

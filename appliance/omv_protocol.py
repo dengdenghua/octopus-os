@@ -29,6 +29,9 @@ BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY = "shared-folder.snapshot.delete.v1"
 BTRFS_SNAPSHOT_RESTORE_COPY_DESIRED_SCHEMA = "echo.omv.btrfs-snapshot-restore-copy-desired.v1"
 BTRFS_SNAPSHOT_RESTORE_COPY_PLAN_SCHEMA = "echo.omv.btrfs-snapshot-restore-copy-plan.v1"
 BTRFS_SNAPSHOT_RESTORE_COPY_CONTROL_CAPABILITY = "shared-folder.snapshot.restore-copy.v1"
+BTRFS_SNAPSHOT_LOCK_DESIRED_SCHEMA = "echo.btrfs-snapshot-lock-desired.v1"
+BTRFS_SNAPSHOT_LOCK_PLAN_SCHEMA = "echo.btrfs-snapshot-lock-plan.v1"
+BTRFS_SNAPSHOT_LOCK_CONTROL_CAPABILITY = "shared-folder.snapshot.lock.v1"
 SHARE_PRIVILEGE_DESIRED_SCHEMA = "echo.omv.share-privilege-desired.v1"
 SHARE_PRIVILEGE_PLAN_SCHEMA = "echo.omv.share-privilege-plan.v1"
 SHARE_PRIVILEGE_CONTROL_CAPABILITY = "shared-folder.privilege.simple.v1"
@@ -818,6 +821,36 @@ def validate_btrfs_snapshot_restore_copy_desired(value: Any) -> dict[str, Any]:
         "sharedFolderRef": normalized_shared_folder_ref,
         "snapshotId": normalized_snapshot_id,
         "name": name,
+    }
+
+
+def validate_btrfs_snapshot_lock_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "sharedFolderRef", "snapshotId", "locked"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("Btrfs snapshot lock desired state has unexpected fields")
+    if value.get("schema") != BTRFS_SNAPSHOT_LOCK_DESIRED_SCHEMA:
+        raise ValueError("Btrfs snapshot lock desired-state schema is unsupported")
+    if not isinstance(value.get("locked"), bool):
+        raise ValueError("Btrfs snapshot locked field must be boolean")
+    shared_folder_ref = value.get("sharedFolderRef")
+    snapshot_id = value.get("snapshotId")
+    if not isinstance(shared_folder_ref, str):
+        raise ValueError("sharedFolderRef must be an OMV UUID")
+    if not isinstance(snapshot_id, str):
+        raise ValueError("snapshotId must be an OMV UUID")
+    try:
+        normalized_shared_folder_ref = validate_omv_uuid(shared_folder_ref).lower()
+    except ValueError as exc:
+        raise ValueError("sharedFolderRef must be an OMV UUID") from exc
+    try:
+        normalized_snapshot_id = validate_omv_uuid(snapshot_id).lower()
+    except ValueError as exc:
+        raise ValueError("snapshotId must be an OMV UUID") from exc
+    return {
+        "schema": BTRFS_SNAPSHOT_LOCK_DESIRED_SCHEMA,
+        "sharedFolderRef": normalized_shared_folder_ref,
+        "snapshotId": normalized_snapshot_id,
+        "locked": value["locked"],
     }
 
 

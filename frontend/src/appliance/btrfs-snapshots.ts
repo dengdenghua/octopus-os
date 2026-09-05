@@ -7,6 +7,30 @@ export type BtrfsSnapshot = {
   subvolumeUuid: string;
   readOnly: true;
   kind: "manual" | "automatic";
+  locked: boolean;
+};
+
+export type BtrfsSnapshotLockDesired = {
+  schema: "echo.btrfs-snapshot-lock-desired.v1";
+  sharedFolderRef: string;
+  snapshotId: string;
+  locked: boolean;
+};
+
+export type BtrfsSnapshotLockPlan = {
+  schema: "echo.btrfs-snapshot-lock-plan.v1";
+  planId: string;
+  operation: "none" | "lock" | "unlock";
+  requiresApproval: boolean;
+  desired: BtrfsSnapshotLockDesired;
+  snapshot: Pick<BtrfsSnapshot, "snapshotId" | "name" | "kind" | "readOnly">;
+  safety: {
+    preventsManualDelete: boolean;
+    excludedFromAutomaticRetention: boolean;
+    snapshotDataChanged: false;
+  };
+  applied?: boolean;
+  verified?: boolean;
 };
 
 export type BtrfsSnapshotSchedule = {
@@ -189,6 +213,27 @@ export function applyBtrfsSnapshotDelete(
     "/api/appliance/omv/sharing/snapshots/delete/apply",
     { desired, planId },
     "无法删除只读快照",
+    approvalToken,
+  );
+}
+
+export function planBtrfsSnapshotLock(desired: BtrfsSnapshotLockDesired) {
+  return postJson<BtrfsSnapshotLockPlan>(
+    "/api/appliance/omv/sharing/snapshots/lock/plan",
+    desired,
+    "无法生成快照锁定预览",
+  );
+}
+
+export function applyBtrfsSnapshotLock(
+  desired: BtrfsSnapshotLockDesired,
+  planId: string,
+  approvalToken: string,
+) {
+  return postJson<BtrfsSnapshotLockPlan>(
+    "/api/appliance/omv/sharing/snapshots/lock/apply",
+    { desired, planId },
+    "无法更新快照锁定状态",
     approvalToken,
   );
 }

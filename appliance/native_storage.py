@@ -123,6 +123,7 @@ from appliance.native_storage_probe import (
 from appliance.omv_protocol import (
     BTRFS_SNAPSHOT_CONTROL_CAPABILITY,
     BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY,
+    BTRFS_SNAPSHOT_LOCK_CONTROL_CAPABILITY,
     BTRFS_SNAPSHOT_RESTORE_COPY_CONTROL_CAPABILITY,
     GROUP_PLAN_SCHEMA,
     NFS_PLAN_SCHEMA,
@@ -1057,6 +1058,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     SHARED_FOLDER_DELETE_CONTROL_CAPABILITY,
     BTRFS_SNAPSHOT_CONTROL_CAPABILITY,
     BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY,
+    BTRFS_SNAPSHOT_LOCK_CONTROL_CAPABILITY,
     BTRFS_SNAPSHOT_RESTORE_COPY_CONTROL_CAPABILITY,
     "shared-folder.snapshot.schedule.latest.v1",
     "account.group.create.v1",
@@ -1111,6 +1113,7 @@ def _native_write_capabilities() -> list[str]:
     if not _native_command_tools_available("btrfs"):
         unavailable.add(BTRFS_SNAPSHOT_CONTROL_CAPABILITY)
         unavailable.add(BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY)
+        unavailable.add(BTRFS_SNAPSHOT_LOCK_CONTROL_CAPABILITY)
         unavailable.add(BTRFS_SNAPSHOT_RESTORE_COPY_CONTROL_CAPABILITY)
         unavailable.add("shared-folder.snapshot.schedule.latest.v1")
     elif not _native_btrfs_snapshot_scheduler_available():

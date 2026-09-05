@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from appliance import (
     btrfs_scrub_schedule_policy,
+    btrfs_snapshot_lock_policy,
     btrfs_snapshot_schedule_policy,
     disk_idle_policy,
     mdraid_check_schedule_policy,
@@ -42,6 +43,8 @@ from appliance.omv_models import (
     BtrfsSnapshotDeleteApplyRequest,
     BtrfsSnapshotDeleteDesiredState,
     BtrfsSnapshotDesiredState,
+    BtrfsSnapshotLockApplyRequest,
+    BtrfsSnapshotLockDesiredState,
     BtrfsSnapshotRestoreCopyApplyRequest,
     BtrfsSnapshotRestoreCopyDesiredState,
     BtrfsSnapshotSchedulePolicyApplyRequest,
@@ -704,6 +707,41 @@ def create_omv_alias_router(
                 "snapshotId": body.desired.snapshot_id,
                 "recoveredShareName": body.desired.name,
                 "sourceUntouched": True,
+            },
+        )
+
+    @router.post("/sharing/snapshots/lock/plan")
+    async def plan_btrfs_snapshot_lock(
+        body: BtrfsSnapshotLockDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                btrfs_snapshot_lock_policy.plan_lock,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="Btrfs 快照锁定状态暂不可用") from exc
+
+    @router.post("/sharing/snapshots/lock/apply")
+    async def apply_btrfs_snapshot_lock_route(
+        body: BtrfsSnapshotLockApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.btrfs-snapshot.lock",
+            plan_fn=btrfs_snapshot_lock_policy.plan_lock,
+            apply_fn=btrfs_snapshot_lock_policy.apply_lock,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "snapshotId": body.desired.snapshot_id,
+                "locked": body.desired.locked,
             },
         )
 

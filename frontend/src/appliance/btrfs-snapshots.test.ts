@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyBtrfsSnapshot,
+  applyBtrfsSnapshotLock,
   applyBtrfsSnapshotRestoreCopy,
   applyBtrfsSnapshotSchedule,
   fetchBtrfsSnapshots,
   planBtrfsSnapshot,
+  planBtrfsSnapshotLock,
   planBtrfsSnapshotRestoreCopy,
   planBtrfsSnapshotSchedule,
 } from "./btrfs-snapshots";
@@ -133,6 +135,36 @@ describe("Btrfs snapshot API", () => {
     );
     expect(applyOptions.headers).toMatchObject({
       "X-Echo-Approval": "restore-approval",
+    });
+  });
+
+  it("uses a dedicated approval-bound endpoint for snapshot locks", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ planId: "d".repeat(64) }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const lockDesired = {
+      schema: "echo.btrfs-snapshot-lock-desired.v1" as const,
+      sharedFolderRef: desired.sharedFolderRef,
+      snapshotId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      locked: true,
+    };
+    await planBtrfsSnapshotLock(lockDesired);
+    await applyBtrfsSnapshotLock(lockDesired, "d".repeat(64), "lock-approval");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/appliance/omv/sharing/snapshots/lock/plan",
+    );
+    const applyOptions = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/appliance/omv/sharing/snapshots/lock/apply",
+    );
+    expect(applyOptions.headers).toMatchObject({
+      "X-Echo-Approval": "lock-approval",
     });
   });
 });

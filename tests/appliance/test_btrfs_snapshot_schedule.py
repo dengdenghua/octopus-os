@@ -279,6 +279,51 @@ def test_runner_frees_one_automatic_slot_at_the_256_limit() -> None:
     assert len(snapshots) == 256
 
 
+def test_runner_never_prunes_locked_automatic_snapshots() -> None:
+    locked = {
+        "snapshotId": "00000000-0000-4000-8000-000000000001",
+        "name": "auto-20260801t000000z",
+        "kind": "automatic",
+        "locked": True,
+    }
+    unlocked = {
+        "snapshotId": "00000000-0000-4000-8000-000000000002",
+        "name": "auto-20260802t000000z",
+        "kind": "automatic",
+        "locked": False,
+    }
+    newest = {
+        "snapshotId": "00000000-0000-4000-8000-000000000003",
+        "name": "auto-20260905t000000z",
+        "kind": "automatic",
+        "locked": False,
+    }
+    deleted: list[str] = []
+    result = runner.run_schedule(
+        now=datetime(2026, 9, 5, tzinfo=UTC),
+        policy_reader=lambda: (
+            True,
+            {
+                "schemaVersion": 1,
+                "shares": [{"sharedFolderRef": SHARE_UUID, "keepLatest": 1}],
+            },
+        ),
+        inventory_reader=lambda _ref: {"snapshots": [locked, unlocked, newest]},
+        create_planner=lambda _ref, _name: {"planId": "c" * 64, "operation": "create"},
+        create_applier=lambda _ref, _name, _plan_id: {
+            "verified": True,
+            "snapshot": {"kind": "automatic"},
+        },
+        delete_planner=lambda _desired: {"planId": "d" * 64},
+        delete_applier=lambda desired, _plan_id: (
+            deleted.append(desired["snapshotId"]) or {"verified": True, "snapshotDeleted": True}
+        ),
+    )
+    assert result == {"outcome": "completed", "created": 1, "pruned": 1, "errors": 0}
+    assert deleted == [unlocked["snapshotId"]]
+    assert locked["snapshotId"] not in deleted
+
+
 def test_schedule_route_binds_exact_approval_action(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

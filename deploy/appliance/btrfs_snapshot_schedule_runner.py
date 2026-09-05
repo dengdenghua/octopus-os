@@ -48,7 +48,9 @@ def run_schedule(
                 (
                     item
                     for item in before_snapshots
-                    if isinstance(item, dict) and item.get("kind") == "automatic"
+                    if isinstance(item, dict)
+                    and item.get("kind") == "automatic"
+                    and item.get("locked") is not True
                 ),
                 key=lambda item: item.get("name", ""),
             )
@@ -91,7 +93,9 @@ def run_schedule(
                 (
                     item
                     for item in inventory.get("snapshots", [])
-                    if isinstance(item, dict) and item.get("kind") == "automatic"
+                    if isinstance(item, dict)
+                    and item.get("kind") == "automatic"
+                    and item.get("locked") is not True
                 ),
                 key=lambda item: item.get("name", ""),
             )

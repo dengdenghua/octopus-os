@@ -7,6 +7,7 @@ import {
   fetchBtrfsSnapshots,
   planBtrfsSnapshot,
   planBtrfsSnapshotDelete,
+  planBtrfsSnapshotLock,
   planBtrfsSnapshotRestoreCopy,
   planBtrfsSnapshotSchedule,
 } from "./btrfs-snapshots";
@@ -21,6 +22,7 @@ vi.mock("./btrfs-snapshots", () => ({
   fetchBtrfsSnapshots: vi.fn(),
   planBtrfsSnapshot: vi.fn(),
   planBtrfsSnapshotDelete: vi.fn(),
+  planBtrfsSnapshotLock: vi.fn(),
   planBtrfsSnapshotRestoreCopy: vi.fn(),
   planBtrfsSnapshotSchedule: vi.fn(),
 }));
@@ -32,6 +34,7 @@ const snapshot = {
   subvolumeUuid: "12345678-1234-4234-9234-123456789abc",
   readOnly: true as const,
   kind: "manual" as const,
+  locked: false,
 };
 
 describe("BtrfsSnapshotPanel", () => {
@@ -70,6 +73,7 @@ describe("BtrfsSnapshotPanel", () => {
         sharedFolderName="Photos"
         canCreate
         canDelete
+        canLock={false}
         canRestore={false}
         canSchedule={false}
       />,
@@ -109,6 +113,7 @@ describe("BtrfsSnapshotPanel", () => {
         sharedFolderName="Photos"
         canCreate
         canDelete
+        canLock={false}
         canRestore={false}
         canSchedule={false}
       />,
@@ -157,6 +162,7 @@ describe("BtrfsSnapshotPanel", () => {
         sharedFolderName="Photos"
         canCreate
         canDelete
+        canLock={false}
         canRestore={false}
         canSchedule
       />,
@@ -205,6 +211,7 @@ describe("BtrfsSnapshotPanel", () => {
         sharedFolderName="Photos"
         canCreate
         canDelete
+        canLock={false}
         canRestore
         canSchedule={false}
       />,
@@ -227,5 +234,51 @@ describe("BtrfsSnapshotPanel", () => {
     expect(screen.getByText(/源共享和只读快照保持不变/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "管理员确认" }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("previews a deletion lock before asking for approval", async () => {
+    vi.mocked(planBtrfsSnapshotLock).mockResolvedValue({
+      schema: "echo.btrfs-snapshot-lock-plan.v1",
+      planId: "e".repeat(64),
+      operation: "lock",
+      requiresApproval: true,
+      desired: {
+        schema: "echo.btrfs-snapshot-lock-desired.v1",
+        sharedFolderRef: share,
+        snapshotId: snapshot.snapshotId,
+        locked: true,
+      },
+      snapshot,
+      safety: {
+        preventsManualDelete: true,
+        excludedFromAutomaticRetention: true,
+        snapshotDataChanged: false,
+      },
+    });
+    render(
+      <BtrfsSnapshotPanel
+        sharedFolderRef={share}
+        sharedFolderName="Photos"
+        canCreate
+        canDelete
+        canLock
+        canRestore={false}
+        canSchedule={false}
+      />,
+    );
+    await screen.findByText("before_upgrade");
+    await userEvent.click(
+      screen.getByRole("button", { name: "锁定快照 before_upgrade" }),
+    );
+    await waitFor(() =>
+      expect(planBtrfsSnapshotLock).toHaveBeenCalledWith({
+        schema: "echo.btrfs-snapshot-lock-desired.v1",
+        sharedFolderRef: share,
+        snapshotId: snapshot.snapshotId,
+        locked: true,
+      }),
+    );
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.getByText(/自动保留清理都会跳过/)).toBeInTheDocument();
   });
 });

@@ -106,6 +106,7 @@ def _valid_target(action: str, target: str) -> bool:
         "omv.shared-folder.delete",
         "omv.btrfs-snapshot.create",
         "omv.btrfs-snapshot.delete",
+        "omv.btrfs-snapshot.lock",
         "omv.btrfs-snapshot.restore-copy",
         "storage.btrfs.snapshot.schedule",
         "omv.share-privilege.apply",
