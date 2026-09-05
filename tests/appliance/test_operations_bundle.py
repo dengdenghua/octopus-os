@@ -98,6 +98,9 @@ def test_operations_bundle_has_fixed_inventory_modes_and_release_reference(tmp_p
     assert manifest["artifact"]["entrypoints"]["storageProvisioningLab"] == (
         "./storage_provisioning_lab.py plan|run"
     )
+    assert manifest["artifact"]["entrypoints"]["mdraidReplacementLab"] == (
+        "./mdraid_replacement_lab.py plan|run"
+    )
     assert manifest["files"]["protocol_interoperability_lab.py"]["mode"] == "0755"
     assert manifest["files"]["bare_metal_recovery_lab.py"]["mode"] == "0755"
     assert manifest["files"]["power_state_recovery_lab.py"]["mode"] == "0755"
@@ -108,6 +111,7 @@ def test_operations_bundle_has_fixed_inventory_modes_and_release_reference(tmp_p
     assert manifest["files"]["recover-appliance-upgrade.sh"]["mode"] == "0755"
     assert manifest["files"]["storage_recovery_lab.py"]["mode"] == "0755"
     assert manifest["files"]["storage_provisioning_lab.py"]["mode"] == "0755"
+    assert manifest["files"]["mdraid_replacement_lab.py"]["mode"] == "0755"
     assert manifest["files"]["upgrade_transaction.py"]["mode"] == "0755"
     assert manifest["artifact"]["imageReference"] == IMAGE_REFERENCE
 
@@ -256,6 +260,34 @@ def test_bundled_storage_provisioning_lab_runs_with_sibling_dependencies(
         (extracted / name).write_bytes(files[name][0])
     completed = subprocess.run(
         [sys.executable, "-E", str(extracted / "storage_provisioning_lab.py"), "--help"],
+        cwd=extracted,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "{plan,run}" in completed.stdout
+
+
+def test_bundled_mdraid_replacement_lab_runs_with_sibling_dependencies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if not hasattr(os, "fchmod"):
+        monkeypatch.setattr(bundle.os, "fchmod", lambda _fd, _mode: None, raising=False)
+    report = _built(tmp_path / "build")
+    _root, files = bundle._read_archive(Path(report["archive"]))
+    extracted = tmp_path / "standalone"
+    extracted.mkdir()
+    for name in (
+        "mdraid_replacement_lab.py",
+        "storage_provisioning_lab.py",
+        "storage_recovery_lab.py",
+        "operations_systemd.py",
+        "operations_systemd_lab.py",
+    ):
+        (extracted / name).write_bytes(files[name][0])
+    completed = subprocess.run(
+        [sys.executable, "-E", str(extracted / "mdraid_replacement_lab.py"), "--help"],
         cwd=extracted,
         capture_output=True,
         text=True,

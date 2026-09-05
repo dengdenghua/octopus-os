@@ -268,6 +268,13 @@ port to host loopback and exposes only the pinned, zero-capability gateway.
   array, UUID-mounted writable EXT4 filesystem and probe digest. It intentionally
   retains the volume for `storage_recovery_lab.py`; never point it at production
   disks or disks containing the only copy of any data.
+- `mdraid_replacement_lab.py` is the candidate-bound three-disk companion. It
+  consumes a completed provisioning plan, binds all three disk identities, then
+  deliberately fails/removes one original member and exercises the appliance's
+  real replacement candidate, plan, one-shot approval and apply endpoints. Its
+  three separately confirmed phases require completed recovery, unchanged data,
+  and a healthy replacement array after a real reboot. It never runs cleanup and
+  must only be used on a disposable VM or dedicated acceptance host.
 
 The A/B source contract additionally renders these same units inside a Debian
 13 container and passes them to that release's native `systemd-analyze verify`.

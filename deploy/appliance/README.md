@@ -625,6 +625,30 @@ sudo -E ./storage_provisioning_lab.py run \
   --confirm 'RUN ECHO STORAGE PROVISIONING LAB reboot-verify <64位planId>'
 ```
 
+要单独验收“坏盘换成第三块新盘”的原生控制面，在上述两阶段均完成后使用
+`mdraid_replacement_lab.py`。计划同时绑定原 provisioning plan、三块整盘身份、候选与运维包；
+`repair` 会真实 fail/remove 指定牺牲盘，再经 Echo HTTP 候选、plan、密码审批和 apply 换入第三块
+空盘；`rebuild` 必须等到双成员健康且探针未变；最后真实重启并执行 `reboot-verify`。三盘都必须是
+4--64 GiB 的专用可丢弃实验盘，不能用于生产阵列。
+
+```bash
+sudo -E ./mdraid_replacement_lab.py plan \
+  --candidate-index /root/echo-candidate/echo-delivery-release-evidence-index.json \
+  --bundle-root "$PWD" \
+  --provisioning-plan /root/echo-storage-provisioning-lab-plan.json \
+  --sacrificial-device /dev/vdb --replacement-device /dev/vdd \
+  --evidence-directory "$PWD/physical-evidence/mdraid-replacement" \
+  --output /root/echo-mdraid-replacement-lab-plan.json
+
+sudo -E ./mdraid_replacement_lab.py run \
+  --plan /root/echo-mdraid-replacement-lab-plan.json --phase repair \
+  --candidate-index /root/echo-candidate/echo-delivery-release-evidence-index.json \
+  --bundle-root "$PWD" \
+  --confirm 'RUN ECHO MDRAID REPLACEMENT LAB repair <64位planId>'
+
+# recovery 完成后执行 rebuild；真实重启后执行 reboot-verify。两阶段均使用计划输出的精确确认串。
+```
+
 ```bash
 sudo install -o root -g root -m 0444 reviewed-storage-lab-marker.json \
   /mnt/echo-storage-lab/.echo-storage-recovery-lab.json

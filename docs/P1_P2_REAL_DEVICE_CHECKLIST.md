@@ -117,6 +117,12 @@ UUID 挂载恢复且 1 MiB fsync 探针摘要未变。计划仅保留稳定磁�
 辅助附件随 G2 归档，但不能替代既有八阶段 `storage_recovery_lab.py` 证据。该工具保留创建结果供 G2
 继续破坏性测试，不负责自动擦盘。
 
+新增第三块 4–64 GiB 空白实验盘时，还必须运行候选运维包中的
+`mdraid_replacement_lab.py plan/run`，补足“同盘重连”无法证明的新盘替换路径。它消费已完成的
+provisioning plan，三阶段分别执行受绑定牺牲盘 fail/remove 后的真实 HTTP 换盘审批、等待新盘重建
+并复核原探针、真实重启后再次核对双成员健康/UUID 挂载/数据摘要。缺任一固定日志、使用生产盘、
+替换盘身份变化、跳过审批或只看到 recovery 启动而没有重建与重启验证，均不能作为换盘证据。
+
 G3 协议门必须使用候选运维包内的 `protocol_interoperability_lab.py`。计划绑定候选、运维包、服务器
 名称和专用共享 UUID；每个 SMB/NFS 挂载根在探针开始前只能含同一候选授权标记。分别在真实 Windows
 SMB、macOS SMB/NFS、Linux SMB/NFS 客户端完成 8 MiB 写入、读回、重命名和删除；再由 Linux 专用

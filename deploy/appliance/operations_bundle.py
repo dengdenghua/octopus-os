@@ -96,6 +96,10 @@ SOURCE_FILES: dict[str, tuple[str, int]] = {
         "deploy/appliance/storage_provisioning_lab.py",
         0o755,
     ),
+    "mdraid_replacement_lab.py": (
+        "deploy/appliance/mdraid_replacement_lab.py",
+        0o755,
+    ),
     "restore-state.sh": ("deploy/appliance/restore-state.sh", 0o755),
     "start-tls.sh": ("deploy/appliance/start-tls.sh", 0o755),
     "systemd/echo-audit-evidence.service.example": (
@@ -245,6 +249,7 @@ def _manifest(payload: dict[str, bytes], artifact_id: str, image_reference: str)
                 ),
                 "storageRecoveryLab": "./storage_recovery_lab.py plan|run",
                 "storageProvisioningLab": "./storage_provisioning_lab.py plan|run",
+                "mdraidReplacementLab": "./mdraid_replacement_lab.py plan|run",
             },
         },
         "files": {
@@ -533,6 +538,7 @@ def _validated_manifest(data: bytes) -> dict[str, Any]:
         ),
         "storageRecoveryLab": "./storage_recovery_lab.py plan|run",
         "storageProvisioningLab": "./storage_provisioning_lab.py plan|run",
+        "mdraidReplacementLab": "./mdraid_replacement_lab.py plan|run",
     }
     if (
         not isinstance(value, dict)
