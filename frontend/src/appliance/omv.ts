@@ -906,6 +906,40 @@ export type OmvUpsSnapshot = {
   devices: OmvUpsDevice[];
 };
 
+export type OmvUpsShutdownPolicyDesiredState = {
+  schema: "echo.ups-shutdown-policy-desired.v1";
+  enabled: boolean;
+  requiredConsecutiveSamples: number;
+};
+
+export type OmvUpsShutdownPolicy = {
+  schemaVersion: 1;
+  enabled: boolean;
+  requiredConsecutiveSamples: number;
+  configured?: boolean;
+  source?: "localPolicy";
+  shutdownTrigger: "FSD or persistent OB+LB";
+};
+
+export type OmvUpsShutdownPolicyPlan = {
+  schema: "echo.ups-shutdown-policy-desired.v1";
+  planId: string;
+  operation: "none" | "enable" | "disable" | "update";
+  requiresApproval: boolean;
+  configured: boolean;
+  current: Omit<
+    OmvUpsShutdownPolicy,
+    "configured" | "source" | "shutdownTrigger"
+  >;
+  desired: Omit<
+    OmvUpsShutdownPolicy,
+    "configured" | "source" | "shutdownTrigger"
+  >;
+  shutdownTrigger: "FSD or persistent OB+LB";
+  applied?: boolean;
+  verified?: boolean;
+};
+
 async function readJson<T>(url: string, fallback: string): Promise<T> {
   const response = await fetch(url, { headers: authHeader() });
   if (!response.ok) {
@@ -1502,4 +1536,34 @@ export function applyOmvZfsScrub(
 
 export function fetchOmvUpsStatus(): Promise<OmvUpsSnapshot> {
   return readJson("/api/appliance/omv/power/ups", "无法读取 UPS 电源状态");
+}
+
+export function fetchOmvUpsShutdownPolicy(): Promise<OmvUpsShutdownPolicy> {
+  return readJson(
+    "/api/appliance/omv/power/ups/shutdown-policy",
+    "无法读取 UPS 自动关机策略",
+  );
+}
+
+export function planOmvUpsShutdownPolicy(
+  desired: OmvUpsShutdownPolicyDesiredState,
+): Promise<OmvUpsShutdownPolicyPlan> {
+  return postJson(
+    "/api/appliance/omv/power/ups/shutdown-policy/plan",
+    desired,
+    "无法生成 UPS 自动关机策略预览",
+  );
+}
+
+export function applyOmvUpsShutdownPolicy(
+  desired: OmvUpsShutdownPolicyDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvUpsShutdownPolicyPlan> {
+  return postJson(
+    "/api/appliance/omv/power/ups/shutdown-policy/apply",
+    { desired, planId },
+    "无法更新 UPS 自动关机策略",
+    approvalHeader(approvalToken),
+  );
 }

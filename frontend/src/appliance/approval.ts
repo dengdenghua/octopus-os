@@ -43,6 +43,7 @@ export type HighRiskAction =
   | "omv.zfs-pool.export"
   | "omv.zfs-pool.import"
   | "omv.zfs.scrub.start"
+  | "power.ups-shutdown-policy.set"
   | "account.member.link"
   | "account.member.status.set"
   | "account.member.password.reset"
