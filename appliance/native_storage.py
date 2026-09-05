@@ -56,6 +56,7 @@ from appliance.mdraid_check_schedule_policy import (
     scheduler_installed as _mdraid_scheduler_installed,
 )
 from appliance.native_btrfs import apply_btrfs_raid1, btrfs_raid1_candidates, plan_btrfs_raid1
+from appliance.native_btrfs_health import probe_btrfs_filesystems as _probe_btrfs_filesystems
 from appliance.native_ext4 import apply_ext4_volume, ext4_volume_candidates, plan_ext4_volume
 from appliance.native_mdraid import apply_mdraid1, mdraid1_candidates, plan_mdraid1
 from appliance.native_mdraid_check import (
@@ -370,11 +371,12 @@ def _probe_block_devices() -> Probe:
 
     devices: list[dict[str, Any]] = []
     invalid = False
+    has_btrfs = False
     has_md = False
     has_zfs = False
 
     def walk(node: Any) -> None:
-        nonlocal invalid, has_md, has_zfs
+        nonlocal invalid, has_btrfs, has_md, has_zfs
         if not isinstance(node, dict):
             invalid = True
             return
@@ -392,6 +394,7 @@ def _probe_block_devices() -> Probe:
             invalid = True
             filesystem_type = None
         has_zfs = has_zfs or filesystem_type in {"zfs", "zfs_member"}
+        has_btrfs = has_btrfs or filesystem_type == "btrfs"
         if (
             node_type
             in {"disk", "rom", "part", "lvm", "md", "raid0", "raid1", "raid5", "raid6", "raid10"}
@@ -424,6 +427,7 @@ def _probe_block_devices() -> Probe:
     parsed(probe_evidence, len(devices), invalid=invalid)
     probe_evidence["mdraidPresent"] = has_md
     probe_evidence["zfsPresent"] = has_zfs
+    probe_evidence["btrfsPresent"] = has_btrfs
     return Probe(devices, probe_evidence)
 
 
@@ -624,16 +628,23 @@ def _zfs_maintenance_operation(
 
 
 def storage_topology() -> dict[str, Any]:
-    """Devices + arrays (mdraid and ZFS) in the OMV topology shape."""
+    """Devices + arrays (mdraid, Btrfs, and ZFS) in the OMV topology shape."""
     device_probe = _probe_block_devices()
     md_probe = _probe_md_arrays(expected=device_probe.evidence.get("mdraidPresent", False))
     zfs_probe = _probe_zfs_pools(expected=device_probe.evidence.get("zfsPresent", False))
     zfs, _alerts = zfs_probe.value
+    btrfs_probe = _probe_btrfs_filesystems(
+        expected=device_probe.evidence.get("btrfsPresent", False),
+        runner=_run,
+        checked_at=_now(),
+    )
     return {
         "devices": device_probe.value,
-        "arrays": [*md_probe.value, *zfs],
+        "arrays": [*md_probe.value, *btrfs_probe.value, *zfs],
         "readOnly": True,
-        **observation([device_probe.evidence, md_probe.evidence, zfs_probe.evidence]),
+        **observation(
+            [device_probe.evidence, md_probe.evidence, btrfs_probe.evidence, zfs_probe.evidence]
+        ),
     }
 
 
@@ -881,11 +892,21 @@ def storage_health() -> dict[str, Any]:
     zfs, zfs_alerts = zfs_probe.value
     md_probe = _probe_md_arrays(expected=device_probe.evidence.get("mdraidPresent", False))
     arrays = md_probe.value
+    btrfs_probe = _probe_btrfs_filesystems(
+        expected=(
+            device_probe.evidence.get("btrfsPresent", False)
+            or any(item.get("type") == "btrfs" for item in fs_entries)
+        ),
+        runner=_run,
+        checked_at=checked_at,
+    )
+    btrfs = btrfs_probe.value
     smart_probes = _probe_smart_devices(device_probe.value)
     probes = [
         device_probe.evidence,
         filesystem_probe.evidence,
         md_probe.evidence,
+        btrfs_probe.evidence,
         zfs_probe.evidence,
         *(probe.evidence for probe in smart_probes),
     ]
@@ -898,6 +919,29 @@ def storage_health() -> dict[str, Any]:
                     severity="critical" if array["status"] == "critical" else "warning",
                     resource=array["devicefile"],
                     message=f"软阵列 {array['devicefile']} 未处于健康状态",
+                    at=checked_at,
+                )
+            )
+    for filesystem in btrfs:
+        if filesystem["status"] in {"degraded", "critical", "warning"}:
+            if filesystem["status"] == "degraded":
+                code = "btrfs.device.missing"
+                message = f"Btrfs 卷 {filesystem['mountpoint']} 缺少成员设备"
+            elif filesystem["readOnly"]:
+                code = "btrfs.mount.read-only"
+                message = f"Btrfs 卷 {filesystem['mountpoint']} 当前为只读挂载"
+            else:
+                code = "btrfs.device.errors"
+                message = (
+                    f"Btrfs 卷 {filesystem['mountpoint']} 累计设备或校验错误 "
+                    f"{filesystem['deviceErrorCount']} 次"
+                )
+            alerts.append(
+                _native_health_alert(
+                    code=code,
+                    severity="critical" if filesystem["status"] == "critical" else "warning",
+                    resource=filesystem["mountpoint"],
+                    message=message,
                     at=checked_at,
                 )
             )
@@ -923,8 +967,8 @@ def storage_health() -> dict[str, Any]:
         **health_observation(probes, alerts, checked_at=checked_at),
         "readOnly": True,
         "source": "native",
-        "pools": len(zfs),
-        "arrays": len(arrays) + len(zfs),
+        "pools": len(zfs) + len(btrfs),
+        "arrays": len(arrays) + len(btrfs) + len(zfs),
         "filesystems": len(fs_entries),
         "devices": len(device_probe.value),
     }
