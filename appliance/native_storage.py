@@ -1061,6 +1061,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     BTRFS_SNAPSHOT_LOCK_CONTROL_CAPABILITY,
     BTRFS_SNAPSHOT_RESTORE_COPY_CONTROL_CAPABILITY,
     "shared-folder.snapshot.schedule.latest.v1",
+    "shared-folder.snapshot.schedule.retention.v2",
     "account.group.create.v1",
     "account.user.create.v1",
     "account.user.password.reset.v1",
@@ -1116,8 +1117,10 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add(BTRFS_SNAPSHOT_LOCK_CONTROL_CAPABILITY)
         unavailable.add(BTRFS_SNAPSHOT_RESTORE_COPY_CONTROL_CAPABILITY)
         unavailable.add("shared-folder.snapshot.schedule.latest.v1")
+        unavailable.add("shared-folder.snapshot.schedule.retention.v2")
     elif not _native_btrfs_snapshot_scheduler_available():
         unavailable.add("shared-folder.snapshot.schedule.latest.v1")
+        unavailable.add("shared-folder.snapshot.schedule.retention.v2")
     if not _native_command_tools_available("net", "smbd"):
         unavailable.add("smb.share.desired.v1")
     if not _native_command_tools_available("exportfs"):

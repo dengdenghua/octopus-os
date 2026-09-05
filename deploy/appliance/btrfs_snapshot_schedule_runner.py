@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import json
+from calendar import monthrange
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from appliance.btrfs_snapshot_schedule_policy import read_policy
+from appliance.btrfs_snapshot_schedule_policy import (
+    MAX_KEEP_DAYS,
+    MAX_KEEP_LATEST,
+    MAX_KEEP_MONTHS,
+    read_policy,
+)
 from appliance.native_btrfs_snapshot import (
     apply_automatic_snapshot,
     apply_snapshot_delete,
@@ -15,6 +21,47 @@ from appliance.native_btrfs_snapshot import (
     plan_automatic_snapshot,
     plan_snapshot_delete,
 )
+
+
+def _automatic_timestamp(snapshot: dict[str, Any]) -> datetime:
+    name = snapshot.get("name")
+    if not isinstance(name, str):
+        raise OSError("scheduled Btrfs snapshot name is invalid")
+    try:
+        return datetime.strptime(name, "auto-%Y%m%dt%H%M%Sz").replace(tzinfo=UTC)
+    except ValueError as exc:
+        raise OSError("scheduled Btrfs snapshot name is invalid") from exc
+
+
+def _subtract_months(value: datetime, months: int) -> datetime:
+    absolute_month = value.year * 12 + value.month - 1 - months
+    year, zero_based_month = divmod(absolute_month, 12)
+    month = zero_based_month + 1
+    day = min(value.day, monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def _retention_candidates(
+    snapshots: list[dict[str, Any]], retention: dict[str, Any], now: datetime
+) -> list[dict[str, Any]]:
+    mode = retention.get("mode")
+    amount = retention.get("value")
+    if isinstance(amount, bool) or not isinstance(amount, int) or amount < 1:
+        raise OSError("scheduled Btrfs snapshot retention is invalid")
+    maximum = {
+        "latest": MAX_KEEP_LATEST,
+        "days": MAX_KEEP_DAYS,
+        "months": MAX_KEEP_MONTHS,
+    }.get(mode)
+    if maximum is None or amount > maximum:
+        raise OSError("scheduled Btrfs snapshot retention is invalid")
+    if mode == "latest":
+        return snapshots[: max(0, len(snapshots) - amount)]
+    if mode == "days":
+        cutoff = now - timedelta(days=amount)
+    elif mode == "months":
+        cutoff = _subtract_months(now, amount)
+    return [snapshot for snapshot in snapshots if _automatic_timestamp(snapshot) < cutoff]
 
 
 def run_schedule(
@@ -39,7 +86,9 @@ def run_schedule(
     for rule in shares:
         try:
             reference = rule["sharedFolderRef"]
-            keep_latest = rule["keepLatest"]
+            retention = rule["retention"]
+            if not isinstance(retention, dict):
+                raise OSError("scheduled Btrfs snapshot retention is invalid")
             before = inventory_reader(reference)
             before_snapshots = before.get("snapshots", [])
             if not isinstance(before_snapshots, list):
@@ -99,7 +148,7 @@ def run_schedule(
                 ),
                 key=lambda item: item.get("name", ""),
             )
-            for snapshot in automatic[: max(0, len(automatic) - keep_latest)]:
+            for snapshot in _retention_candidates(automatic, retention, timestamp):
                 prune(snapshot, reference)
         except (OSError, ValueError, KeyError, TypeError):
             errors += 1

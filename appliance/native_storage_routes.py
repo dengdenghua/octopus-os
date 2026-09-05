@@ -764,7 +764,7 @@ def create_omv_alias_router(
         try:
             return await run_in_threadpool(
                 btrfs_snapshot_schedule_policy.plan_policy,
-                body.model_dump(by_alias=True),
+                body.model_dump(by_alias=True, exclude_none=True),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -783,12 +783,12 @@ def create_omv_alias_router(
             action="storage.btrfs.snapshot.schedule",
             plan_fn=btrfs_snapshot_schedule_policy.plan_policy,
             apply_fn=btrfs_snapshot_schedule_policy.apply_policy,
-            desired=body.desired.model_dump(by_alias=True),
+            desired=body.desired.model_dump(by_alias=True, exclude_none=True),
             plan_id=body.plan_id,
             metadata={
                 "sharedFolderRef": body.desired.shared_folder_ref,
                 "enabled": body.desired.enabled,
-                "keepLatest": body.desired.keep_latest,
+                "retention": body.desired.normalized_retention(),
                 "scope": "automaticSnapshotsOnly",
                 "schedule": "dailyLocal",
             },

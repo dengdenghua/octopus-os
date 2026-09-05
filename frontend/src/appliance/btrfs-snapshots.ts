@@ -34,21 +34,27 @@ export type BtrfsSnapshotLockPlan = {
 };
 
 export type BtrfsSnapshotSchedule = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   sharedFolderRef: string;
   enabled: boolean;
-  keepLatest: number;
+  retention: BtrfsSnapshotRetention;
+  keepLatest: number | null;
   configured: boolean;
   schedulerInstalled: boolean;
   schedule: string;
   scope: "automaticSnapshotsOnly";
 };
 
+export type BtrfsSnapshotRetention = {
+  mode: "latest" | "days" | "months";
+  value: number;
+};
+
 export type BtrfsSnapshotScheduleDesired = {
-  schema: "echo.btrfs-snapshot-schedule-desired.v1";
+  schema: "echo.btrfs-snapshot-schedule-desired.v2";
   sharedFolderRef: string;
   enabled: boolean;
-  keepLatest: number;
+  retention: BtrfsSnapshotRetention;
 };
 
 export type BtrfsSnapshotSchedulePlan = {

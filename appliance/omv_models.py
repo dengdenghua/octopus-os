@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from appliance.omv_protocol import (
     BTRFS_RAID1_DESIRED_SCHEMA,
@@ -483,16 +483,34 @@ class BtrfsSnapshotRestoreCopyApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class BtrfsSnapshotRetentionPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["latest", "days", "months"]
+    value: int = Field(strict=True, ge=1, le=3650)
+
+    @model_validator(mode="after")
+    def validate_mode_limit(self) -> BtrfsSnapshotRetentionPolicy:
+        maximum = {"latest": 64, "days": 3650, "months": 120}[self.mode]
+        if self.value > maximum:
+            raise ValueError(f"retention value for {self.mode} must not exceed {maximum}")
+        return self
+
+
 class BtrfsSnapshotSchedulePolicyDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    schema_name: Literal["echo.btrfs-snapshot-schedule-desired.v1"] = Field(
-        default="echo.btrfs-snapshot-schedule-desired.v1",
+    schema_name: Literal[
+        "echo.btrfs-snapshot-schedule-desired.v1",
+        "echo.btrfs-snapshot-schedule-desired.v2",
+    ] = Field(
+        default="echo.btrfs-snapshot-schedule-desired.v2",
         alias="schema",
     )
     shared_folder_ref: str = Field(min_length=36, max_length=36, alias="sharedFolderRef")
     enabled: bool = Field(strict=True)
-    keep_latest: int = Field(strict=True, ge=1, le=64, alias="keepLatest")
+    keep_latest: int | None = Field(default=None, strict=True, ge=1, le=64, alias="keepLatest")
+    retention: BtrfsSnapshotRetentionPolicy | None = None
 
     @field_validator("shared_folder_ref")
     @classmethod
@@ -501,6 +519,21 @@ class BtrfsSnapshotSchedulePolicyDesiredState(BaseModel):
             return validate_omv_uuid(value).lower()
         except ValueError as exc:
             raise ValueError("sharedFolderRef must be an OMV UUID") from exc
+
+    @model_validator(mode="after")
+    def validate_versioned_retention(self) -> BtrfsSnapshotSchedulePolicyDesiredState:
+        if self.schema_name.endswith(".v1"):
+            if self.keep_latest is None or self.retention is not None:
+                raise ValueError("v1 schedule requires only keepLatest")
+        elif self.retention is None or self.keep_latest is not None:
+            raise ValueError("v2 schedule requires only retention")
+        return self
+
+    def normalized_retention(self) -> dict[str, Any]:
+        if self.retention is not None:
+            return self.retention.model_dump()
+        assert self.keep_latest is not None
+        return {"mode": "latest", "value": self.keep_latest}
 
 
 class BtrfsSnapshotSchedulePolicyApplyRequest(BaseModel):
@@ -1342,6 +1375,7 @@ __all__ = [
     "BtrfsSnapshotLockDesiredState",
     "BtrfsSnapshotRestoreCopyApplyRequest",
     "BtrfsSnapshotRestoreCopyDesiredState",
+    "BtrfsSnapshotRetentionPolicy",
     "BtrfsSnapshotSchedulePolicyApplyRequest",
     "BtrfsSnapshotSchedulePolicyDesiredState",
     "BtrfsScrubApplyRequest",

@@ -29,7 +29,7 @@ def _desired(**overrides: Any) -> dict[str, Any]:
         "schema": policy.DESIRED_SCHEMA,
         "sharedFolderRef": SHARE_UUID,
         "enabled": True,
-        "keepLatest": 8,
+        "retention": {"mode": "latest", "value": 8},
         **overrides,
     }
 
@@ -45,6 +45,7 @@ def test_absent_policy_is_disabled_and_enable_requires_installed_timer(tmp_path:
     )
     assert status["enabled"] is False
     assert status["keepLatest"] == 8
+    assert status["retention"] == {"mode": "latest", "value": 8}
     assert status["schedulerInstalled"] is False
 
     with pytest.raises(OSError, match="not installed"):
@@ -64,15 +65,16 @@ def test_policy_apply_updates_one_share_and_disable_works_offline(tmp_path: Path
     def eligibility(reference: str) -> dict[str, Any]:
         return {"sharedFolderRef": reference, "snapshots": []}
 
+    enabled = _desired(retention={"mode": "days", "value": 30})
     plan = policy.plan_policy(
-        _desired(),
+        enabled,
         path=path,
         timer_path=timer,
         trusted_uid=tmp_path.stat().st_uid,
         eligibility_reader=eligibility,
     )
     result = policy.apply_policy(
-        _desired(),
+        enabled,
         plan["planId"],
         path=path,
         timer_path=timer,
@@ -81,9 +83,22 @@ def test_policy_apply_updates_one_share_and_disable_works_offline(tmp_path: Path
     )
     assert result["verified"] is True
     assert json.loads(path.read_text(encoding="utf-8")) == {
-        "schemaVersion": 1,
-        "shares": [{"keepLatest": 8, "sharedFolderRef": SHARE_UUID}],
+        "schemaVersion": 2,
+        "shares": [
+            {
+                "retention": {"mode": "days", "value": 30},
+                "sharedFolderRef": SHARE_UUID,
+            }
+        ],
     }
+    status = policy.policy_status(
+        SHARE_UUID,
+        path,
+        timer_path=timer,
+        trusted_uid=tmp_path.stat().st_uid,
+    )
+    assert status["retention"] == {"mode": "days", "value": 30}
+    assert status["keepLatest"] is None
 
     disabled = _desired(enabled=False)
     disable_plan = policy.plan_policy(
@@ -96,7 +111,7 @@ def test_policy_apply_updates_one_share_and_disable_works_offline(tmp_path: Path
     assert disable_plan["operation"] == "disable"
 
 
-def test_policy_plan_binds_but_does_not_disclose_other_share_rules(tmp_path: Path) -> None:
+def test_policy_migrates_v1_and_does_not_disclose_other_share_rules(tmp_path: Path) -> None:
     path = tmp_path / "schedule.json"
     path.write_text(
         json.dumps(
@@ -129,13 +144,38 @@ def test_policy_plan_binds_but_does_not_disclose_other_share_rules(tmp_path: Pat
     )
     assert result["verified"] is True
     stored = json.loads(path.read_text(encoding="utf-8"))
+    assert stored["schemaVersion"] == 2
     assert {item["sharedFolderRef"] for item in stored["shares"]} == {
         SHARE_UUID,
         OTHER_SHARE_UUID,
     }
 
 
+def test_legacy_latest_desired_state_normalizes_to_v2(tmp_path: Path) -> None:
+    timer = _timer(tmp_path)
+    plan = policy.plan_policy(
+        {
+            "schema": policy.LEGACY_DESIRED_SCHEMA,
+            "sharedFolderRef": SHARE_UUID,
+            "enabled": True,
+            "keepLatest": 4,
+        },
+        path=tmp_path / "schedule.json",
+        timer_path=timer,
+        trusted_uid=tmp_path.stat().st_uid,
+        eligibility_reader=lambda reference: {"sharedFolderRef": reference, "snapshots": []},
+    )
+    assert plan["desired"] == {
+        "schema": policy.DESIRED_SCHEMA,
+        "sharedFolderRef": SHARE_UUID,
+        "enabled": True,
+        "retention": {"mode": "latest", "value": 4},
+    }
+
+
 def test_policy_rejects_duplicate_shares_and_coerced_retention() -> None:
+    with pytest.raises(policy.BtrfsSnapshotSchedulePolicyError, match="unexpected schema"):
+        policy.validate_policy({"schemaVersion": True, "shares": []})
     with pytest.raises(policy.BtrfsSnapshotSchedulePolicyError, match="duplicate"):
         policy.validate_policy(
             {
@@ -146,8 +186,22 @@ def test_policy_rejects_duplicate_shares_and_coerced_retention() -> None:
                 ],
             }
         )
-    with pytest.raises(policy.BtrfsSnapshotSchedulePolicyError, match="keepLatest"):
-        policy.plan_policy(_desired(keepLatest=True))
+    with pytest.raises(policy.BtrfsSnapshotSchedulePolicyError, match="retention value"):
+        policy.plan_policy(_desired(retention={"mode": "latest", "value": True}))
+
+
+@pytest.mark.parametrize(
+    ("retention", "message"),
+    [
+        ({"mode": "latest", "value": 65}, "retention value"),
+        ({"mode": "days", "value": 3651}, "retention value"),
+        ({"mode": "months", "value": 121}, "retention value"),
+        ({"mode": "forever", "value": 1}, "retention mode"),
+    ],
+)
+def test_policy_rejects_out_of_range_retention(retention: dict[str, Any], message: str) -> None:
+    with pytest.raises(policy.BtrfsSnapshotSchedulePolicyError, match=message):
+        policy.plan_policy(_desired(retention=retention))
 
 
 def test_runner_creates_one_snapshot_and_prunes_only_old_automatic_entries() -> None:
@@ -184,8 +238,13 @@ def test_runner_creates_one_snapshot_and_prunes_only_old_automatic_entries() -> 
         policy_reader=lambda: (
             True,
             {
-                "schemaVersion": 1,
-                "shares": [{"sharedFolderRef": SHARE_UUID, "keepLatest": 2}],
+                "schemaVersion": 2,
+                "shares": [
+                    {
+                        "sharedFolderRef": SHARE_UUID,
+                        "retention": {"mode": "latest", "value": 2},
+                    }
+                ],
             },
         ),
         create_planner=lambda ref, name: {
@@ -216,12 +275,111 @@ def test_runner_creates_one_snapshot_and_prunes_only_old_automatic_entries() -> 
     assert SHARE_UUID not in json.dumps(result)
 
 
+@pytest.mark.parametrize(
+    ("retention", "names", "deleted_names"),
+    [
+        (
+            {"mode": "days", "value": 7},
+            [
+                "auto-20260828t235959z",
+                "auto-20260829t000000z",
+                "auto-20260901t000000z",
+            ],
+            ["auto-20260828t235959z"],
+        ),
+        (
+            {"mode": "months", "value": 1},
+            [
+                "auto-20260804t235959z",
+                "auto-20260805t000000z",
+                "auto-20260901t000000z",
+            ],
+            ["auto-20260804t235959z"],
+        ),
+    ],
+)
+def test_runner_prunes_automatic_snapshots_by_utc_age(
+    retention: dict[str, Any], names: list[str], deleted_names: list[str]
+) -> None:
+    snapshots = [
+        {
+            "snapshotId": f"00000000-0000-4000-8000-{index:012d}",
+            "name": name,
+            "kind": "automatic",
+            "locked": False,
+        }
+        for index, name in enumerate(names, start=1)
+    ]
+    deleted: list[str] = []
+
+    result = runner.run_schedule(
+        now=datetime(2026, 9, 5, tzinfo=UTC),
+        policy_reader=lambda: (
+            True,
+            {
+                "schemaVersion": 2,
+                "shares": [
+                    {"sharedFolderRef": SHARE_UUID, "retention": retention},
+                ],
+            },
+        ),
+        inventory_reader=lambda _ref: {"snapshots": snapshots},
+        create_planner=lambda _ref, _name: {"planId": "c" * 64, "operation": "create"},
+        create_applier=lambda _ref, _name, _plan_id: {
+            "verified": True,
+            "snapshot": {"kind": "automatic"},
+        },
+        delete_planner=lambda desired: {
+            "planId": "d" * 64,
+            "desired": desired,
+        },
+        delete_applier=lambda desired, _plan_id: (
+            deleted.append(
+                next(
+                    snapshot["name"]
+                    for snapshot in snapshots
+                    if snapshot["snapshotId"] == desired["snapshotId"]
+                )
+            )
+            or {"verified": True, "snapshotDeleted": True}
+        ),
+    )
+
+    assert result == {"outcome": "completed", "created": 1, "pruned": 1, "errors": 0}
+    assert deleted == deleted_names
+
+
+def test_calendar_month_cutoff_clamps_to_the_last_valid_day() -> None:
+    assert runner._subtract_months(datetime(2024, 3, 31, 8, 15, tzinfo=UTC), 1) == datetime(
+        2024, 2, 29, 8, 15, tzinfo=UTC
+    )
+
+
 def test_runner_fails_closed_when_policy_is_absent() -> None:
     result = runner.run_schedule(
-        policy_reader=lambda: (False, {"schemaVersion": 1, "shares": []}),
+        policy_reader=lambda: (False, {"schemaVersion": 2, "shares": []}),
         inventory_reader=lambda _ref: pytest.fail("disabled runner must not inspect shares"),
     )
     assert result == {"outcome": "disabled", "created": 0, "pruned": 0, "errors": 0}
+
+
+def test_runner_fails_one_share_closed_for_an_invalid_retention_contract() -> None:
+    result = runner.run_schedule(
+        policy_reader=lambda: (
+            True,
+            {
+                "schemaVersion": 2,
+                "shares": [{"sharedFolderRef": SHARE_UUID, "retention": []}],
+            },
+        ),
+        inventory_reader=lambda _ref: pytest.fail("invalid policy must not inspect shares"),
+    )
+    assert result == {
+        "outcome": "completedWithErrors",
+        "created": 0,
+        "pruned": 0,
+        "errors": 1,
+    }
 
 
 def test_runner_frees_one_automatic_slot_at_the_256_limit() -> None:
@@ -261,8 +419,13 @@ def test_runner_frees_one_automatic_slot_at_the_256_limit() -> None:
         policy_reader=lambda: (
             True,
             {
-                "schemaVersion": 1,
-                "shares": [{"sharedFolderRef": SHARE_UUID, "keepLatest": 8}],
+                "schemaVersion": 2,
+                "shares": [
+                    {
+                        "sharedFolderRef": SHARE_UUID,
+                        "retention": {"mode": "latest", "value": 8},
+                    }
+                ],
             },
         ),
         inventory_reader=lambda _ref: {"snapshots": list(snapshots)},
@@ -304,8 +467,13 @@ def test_runner_never_prunes_locked_automatic_snapshots() -> None:
         policy_reader=lambda: (
             True,
             {
-                "schemaVersion": 1,
-                "shares": [{"sharedFolderRef": SHARE_UUID, "keepLatest": 1}],
+                "schemaVersion": 2,
+                "shares": [
+                    {
+                        "sharedFolderRef": SHARE_UUID,
+                        "retention": {"mode": "latest", "value": 1},
+                    }
+                ],
             },
         ),
         inventory_reader=lambda _ref: {"snapshots": [locked, unlocked, newest]},
@@ -362,7 +530,11 @@ def test_schedule_route_rejects_coerced_values() -> None:
     app.include_router(create_omv_alias_router())
     response = TestClient(app).post(
         "/api/appliance/omv/sharing/snapshots/schedule/plan",
-        json={**_desired(), "enabled": "true", "keepLatest": "8"},
+        json={
+            **_desired(),
+            "enabled": "true",
+            "retention": {"mode": "days", "value": "8"},
+        },
     )
     assert response.status_code == 422
 

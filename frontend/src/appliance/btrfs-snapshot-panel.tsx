@@ -29,6 +29,7 @@ import {
   type BtrfsSnapshotLockPlan,
   type BtrfsSnapshotPlan,
   type BtrfsSnapshotRestoreCopyPlan,
+  type BtrfsSnapshotRetention,
   type BtrfsSnapshotSchedule,
   type BtrfsSnapshotSchedulePlan,
 } from "@/appliance/btrfs-snapshots";
@@ -36,6 +37,19 @@ import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
 
 const SNAPSHOT_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 const SHARE_NAME = /^(?=.{1,64}$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9_-])?$/;
+const RETENTION_MAX: Record<BtrfsSnapshotRetention["mode"], number> = {
+  latest: 64,
+  days: 3650,
+  months: 120,
+};
+
+function retentionLabel(retention: BtrfsSnapshotRetention) {
+  if (retention.mode === "latest")
+    return `仅保留最新 ${retention.value} 个自动快照`;
+  if (retention.mode === "days")
+    return `保留最近 ${retention.value} 天内的自动快照`;
+  return `保留最近 ${retention.value} 个月内的自动快照`;
+}
 
 type PendingApproval =
   | { kind: "create"; plan: BtrfsSnapshotPlan }
@@ -77,7 +91,9 @@ export function BtrfsSnapshotPanel({
     useState<BtrfsSnapshotRestoreCopyPlan | null>(null);
   const [schedule, setSchedule] = useState<BtrfsSnapshotSchedule | null>(null);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
-  const [keepLatest, setKeepLatest] = useState(8);
+  const [retentionMode, setRetentionMode] =
+    useState<BtrfsSnapshotRetention["mode"]>("latest");
+  const [retentionValue, setRetentionValue] = useState(8);
   const [schedulePlan, setSchedulePlan] =
     useState<BtrfsSnapshotSchedulePlan | null>(null);
   const [schedulePlanning, setSchedulePlanning] = useState(false);
@@ -106,7 +122,8 @@ export function BtrfsSnapshotPanel({
       const result = await fetchBtrfsSnapshotSchedule(sharedFolderRef);
       setSchedule(result);
       setScheduleEnabled(result.enabled);
-      setKeepLatest(result.keepLatest);
+      setRetentionMode(result.retention.mode);
+      setRetentionValue(result.retention.value);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "无法读取自动快照策略",
@@ -223,8 +240,13 @@ export function BtrfsSnapshotPanel({
   };
 
   const previewSchedule = async () => {
-    if (!Number.isInteger(keepLatest) || keepLatest < 1 || keepLatest > 64) {
-      setError("自动快照保留数量必须在 1 到 64 之间");
+    const maximum = RETENTION_MAX[retentionMode];
+    if (
+      !Number.isInteger(retentionValue) ||
+      retentionValue < 1 ||
+      retentionValue > maximum
+    ) {
+      setError(`当前保留值必须在 1 到 ${maximum} 之间`);
       return;
     }
     setSchedulePlanning(true);
@@ -233,10 +255,10 @@ export function BtrfsSnapshotPanel({
     try {
       setSchedulePlan(
         await planBtrfsSnapshotSchedule({
-          schema: "echo.btrfs-snapshot-schedule-desired.v1",
+          schema: "echo.btrfs-snapshot-schedule-desired.v2",
           sharedFolderRef,
           enabled: scheduleEnabled,
-          keepLatest,
+          retention: { mode: retentionMode, value: retentionValue },
         }),
       );
     } catch (reason) {
@@ -355,21 +377,44 @@ export function BtrfsSnapshotPanel({
               每日自动快照
             </label>
             <label className="ml-auto inline-flex items-center gap-1.5">
-              仅保留最新
-              <input
-                aria-label={`${sharedFolderName} 自动快照保留数量`}
-                type="number"
-                min={1}
-                max={64}
-                value={keepLatest}
+              保留方式
+              <select
+                aria-label={`${sharedFolderName} 自动快照保留方式`}
+                value={retentionMode}
                 disabled={!scheduleEnabled}
                 onChange={(event) => {
-                  setKeepLatest(event.currentTarget.valueAsNumber);
+                  const mode = event.currentTarget
+                    .value as BtrfsSnapshotRetention["mode"];
+                  setRetentionMode(mode);
+                  setRetentionValue((current) =>
+                    Math.min(current, RETENTION_MAX[mode]),
+                  );
+                  setSchedulePlan(null);
+                }}
+                className="h-7 rounded border border-violet-200 bg-white px-1.5 outline-none focus:border-violet-500 disabled:opacity-50"
+              >
+                <option value="latest">最新数量</option>
+                <option value="days">最近天数</option>
+                <option value="months">最近月数</option>
+              </select>
+              <input
+                aria-label={`${sharedFolderName} 自动快照保留值`}
+                type="number"
+                min={1}
+                max={RETENTION_MAX[retentionMode]}
+                value={retentionValue}
+                disabled={!scheduleEnabled}
+                onChange={(event) => {
+                  setRetentionValue(event.currentTarget.valueAsNumber);
                   setSchedulePlan(null);
                 }}
                 className="h-7 w-14 rounded border border-violet-200 bg-white px-1.5 text-center outline-none focus:border-violet-500 disabled:opacity-50"
               />
-              个
+              {retentionMode === "latest"
+                ? "个"
+                : retentionMode === "days"
+                  ? "天"
+                  : "月"}
             </label>
             <button
               type="button"
@@ -391,7 +436,7 @@ export function BtrfsSnapshotPanel({
                   ? "策略没有变化。"
                   : schedulePlan.operation === "disable"
                     ? "将停用自动创建；已有快照不会立即删除。"
-                    : `将启用每日自动快照，并仅保留最新 ${schedulePlan.desired.keepLatest} 个自动快照。`}
+                    : `将启用每日自动快照，并${retentionLabel(schedulePlan.desired.retention)}。`}
               </span>
               {schedulePlan.requiresApproval && (
                 <button
@@ -614,7 +659,7 @@ export function BtrfsSnapshotPanel({
               : pending?.kind === "restore"
                 ? `${pending.plan.sourceSnapshot.name} → ${pending.plan.desired.name}`
                 : pending?.kind === "schedule"
-                  ? `${sharedFolderName} · 保留 ${pending.plan.desired.keepLatest} 个`
+                  ? `${sharedFolderName} · ${retentionLabel(pending.plan.desired.retention)}`
                   : pending?.plan.desired.name
         }
         confirmLabel={

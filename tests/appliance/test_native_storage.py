@@ -80,6 +80,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "shared-folder.snapshot.lock.v1",
         "shared-folder.snapshot.restore-copy.v1",
         "shared-folder.snapshot.schedule.latest.v1",
+        "shared-folder.snapshot.schedule.retention.v2",
         "account.group.create.v1",
         "account.user.create.v1",
         "account.user.password.reset.v1",

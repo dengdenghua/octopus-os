@@ -1,4 +1,4 @@
-"""Approval-bound daily snapshot and latest-count retention policy per share."""
+"""Approval-bound daily snapshots with bounded count or age retention."""
 
 from __future__ import annotations
 
@@ -14,8 +14,10 @@ from typing import Any
 
 from appliance.omv_protocol import validate_omv_uuid
 
-SCHEMA_VERSION = 1
-DESIRED_SCHEMA = "echo.btrfs-snapshot-schedule-desired.v1"
+SCHEMA_VERSION = 2
+LEGACY_SCHEMA_VERSION = 1
+DESIRED_SCHEMA = "echo.btrfs-snapshot-schedule-desired.v2"
+LEGACY_DESIRED_SCHEMA = "echo.btrfs-snapshot-schedule-desired.v1"
 POLICY_PATH = Path("/etc/echo-os/btrfs-snapshot-schedule.json")
 TIMER_PATH = Path("/etc/systemd/system/echo-btrfs-snapshot.timer")
 SCHEDULE = "daily after 02:15 local time, randomized within 45 minutes"
@@ -24,6 +26,11 @@ MAX_TIMER_BYTES = 16 * 1024
 MAX_CONFIGURED_SHARES = 64
 MIN_KEEP_LATEST = 1
 MAX_KEEP_LATEST = 64
+MIN_KEEP_DAYS = 1
+MAX_KEEP_DAYS = 3650
+MIN_KEEP_MONTHS = 1
+MAX_KEEP_MONTHS = 120
+RETENTION_MODES = frozenset({"latest", "days", "months"})
 _POLICY_LOCK = threading.RLock()
 
 
@@ -31,30 +38,64 @@ class BtrfsSnapshotSchedulePolicyError(ValueError):
     """A scheduled-snapshot policy or desired state is invalid."""
 
 
-def _share(value: Mapping[str, Any]) -> dict[str, Any]:
-    if set(value) != {"sharedFolderRef", "keepLatest"}:
+def _retention(value: Mapping[str, Any]) -> dict[str, Any]:
+    if set(value) != {"mode", "value"}:
+        raise BtrfsSnapshotSchedulePolicyError("snapshot retention policy has an invalid schema")
+    mode = value.get("mode")
+    amount = value.get("value")
+    if not isinstance(mode, str) or mode not in RETENTION_MODES:
+        raise BtrfsSnapshotSchedulePolicyError("snapshot retention mode is invalid")
+    if isinstance(amount, bool) or not isinstance(amount, int):
+        raise BtrfsSnapshotSchedulePolicyError("snapshot retention value is invalid")
+    maximum = {
+        "latest": MAX_KEEP_LATEST,
+        "days": MAX_KEEP_DAYS,
+        "months": MAX_KEEP_MONTHS,
+    }[mode]
+    if amount < 1 or amount > maximum:
+        raise BtrfsSnapshotSchedulePolicyError("snapshot retention value is invalid")
+    return {"mode": mode, "value": amount}
+
+
+def _share(value: Mapping[str, Any], *, legacy: bool = False) -> dict[str, Any]:
+    expected = (
+        {"sharedFolderRef", "keepLatest"}
+        if legacy
+        else {
+            "sharedFolderRef",
+            "retention",
+        }
+    )
+    if set(value) != expected:
         raise BtrfsSnapshotSchedulePolicyError("snapshot policy share has an invalid schema")
     reference = value.get("sharedFolderRef")
-    keep_latest = value.get("keepLatest")
     if not isinstance(reference, str):
         raise BtrfsSnapshotSchedulePolicyError("snapshot policy share UUID is invalid")
     try:
         reference = validate_omv_uuid(reference).lower()
     except ValueError as exc:
         raise BtrfsSnapshotSchedulePolicyError("snapshot policy share UUID is invalid") from exc
-    if (
-        isinstance(keep_latest, bool)
-        or not isinstance(keep_latest, int)
-        or not MIN_KEEP_LATEST <= keep_latest <= MAX_KEEP_LATEST
-    ):
-        raise BtrfsSnapshotSchedulePolicyError("snapshot keepLatest value is invalid")
-    return {"sharedFolderRef": reference, "keepLatest": keep_latest}
+    if legacy:
+        keep_latest = value.get("keepLatest")
+        retention = _retention({"mode": "latest", "value": keep_latest})
+    else:
+        raw_retention = value.get("retention")
+        if not isinstance(raw_retention, Mapping):
+            raise BtrfsSnapshotSchedulePolicyError("snapshot retention policy is invalid")
+        retention = _retention(raw_retention)
+    return {"sharedFolderRef": reference, "retention": retention}
 
 
 def validate_policy(value: Mapping[str, Any] | None) -> dict[str, Any]:
     if value is None:
         return {"schemaVersion": SCHEMA_VERSION, "shares": []}
-    if set(value) != {"schemaVersion", "shares"} or value.get("schemaVersion") != SCHEMA_VERSION:
+    if set(value) != {"schemaVersion", "shares"}:
+        raise BtrfsSnapshotSchedulePolicyError("Btrfs snapshot policy has an unexpected schema")
+    schema_version = value.get("schemaVersion")
+    if isinstance(schema_version, bool) or schema_version not in {
+        LEGACY_SCHEMA_VERSION,
+        SCHEMA_VERSION,
+    }:
         raise BtrfsSnapshotSchedulePolicyError("Btrfs snapshot policy has an unexpected schema")
     raw_shares = value.get("shares")
     if not isinstance(raw_shares, list) or len(raw_shares) > MAX_CONFIGURED_SHARES:
@@ -63,7 +104,7 @@ def validate_policy(value: Mapping[str, Any] | None) -> dict[str, Any]:
     for value in raw_shares:
         if not isinstance(value, dict):
             raise BtrfsSnapshotSchedulePolicyError("Btrfs snapshot policy share is invalid")
-        shares.append(_share(value))
+        shares.append(_share(value, legacy=schema_version == LEGACY_SCHEMA_VERSION))
     references = [item["sharedFolderRef"] for item in shares]
     if len(references) != len(set(references)):
         raise BtrfsSnapshotSchedulePolicyError("Btrfs snapshot policy has duplicate shares")
@@ -119,19 +160,35 @@ def scheduler_installed(timer_path: Path = TIMER_PATH, *, trusted_uid: int = 0) 
 
 
 def _desired(value: Mapping[str, Any]) -> dict[str, Any]:
-    if set(value) != {"schema", "sharedFolderRef", "enabled", "keepLatest"}:
+    schema = value.get("schema")
+    expected = (
+        {"schema", "sharedFolderRef", "enabled", "keepLatest"}
+        if schema == LEGACY_DESIRED_SCHEMA
+        else {"schema", "sharedFolderRef", "enabled", "retention"}
+    )
+    if set(value) != expected:
         raise BtrfsSnapshotSchedulePolicyError(
             "Btrfs snapshot schedule desired state has an unexpected schema"
         )
-    if value.get("schema") != DESIRED_SCHEMA or not isinstance(value.get("enabled"), bool):
+    if schema not in {LEGACY_DESIRED_SCHEMA, DESIRED_SCHEMA} or not isinstance(
+        value.get("enabled"), bool
+    ):
         raise BtrfsSnapshotSchedulePolicyError("Btrfs snapshot schedule desired state is invalid")
     share = _share(
-        {
-            "sharedFolderRef": value.get("sharedFolderRef"),
-            "keepLatest": value.get("keepLatest"),
-        }
+        (
+            {
+                "sharedFolderRef": value.get("sharedFolderRef"),
+                "keepLatest": value.get("keepLatest"),
+            }
+            if schema == LEGACY_DESIRED_SCHEMA
+            else {
+                "sharedFolderRef": value.get("sharedFolderRef"),
+                "retention": value.get("retention"),
+            }
+        ),
+        legacy=schema == LEGACY_DESIRED_SCHEMA,
     )
-    return {**share, "enabled": value["enabled"]}
+    return {"schema": DESIRED_SCHEMA, **share, "enabled": value["enabled"]}
 
 
 def _canonical(value: Mapping[str, Any]) -> bytes:
@@ -157,7 +214,14 @@ def policy_status(
         "schemaVersion": SCHEMA_VERSION,
         "sharedFolderRef": reference,
         "enabled": selected is not None,
-        "keepLatest": selected["keepLatest"] if selected else 8,
+        "retention": selected["retention"] if selected else {"mode": "latest", "value": 8},
+        "keepLatest": (
+            selected["retention"]["value"]
+            if selected and selected["retention"]["mode"] == "latest"
+            else 8
+            if selected is None
+            else None
+        ),
         "configured": configured,
         "schedulerInstalled": scheduler_installed(timer_path, trusted_uid=trusted_uid),
         "schedule": SCHEDULE,
@@ -193,7 +257,7 @@ def _plan_context(
     if desired["enabled"]:
         wanted_by_ref[desired["sharedFolderRef"]] = {
             "sharedFolderRef": desired["sharedFolderRef"],
-            "keepLatest": desired["keepLatest"],
+            "retention": desired["retention"],
         }
     else:
         wanted_by_ref.pop(desired["sharedFolderRef"], None)
@@ -228,7 +292,7 @@ def _plan_context(
         "safety": {
             "readOnlySnapshots": True,
             "manualSnapshotsPreserved": True,
-            "retention": "keepLatestAutomaticOnly",
+            "retention": "boundedAutomaticOnly",
             "applicationQuiesce": False,
             "maximumConfiguredShares": MAX_CONFIGURED_SHARES,
         },
@@ -340,6 +404,7 @@ def apply_policy(
 __all__ = [
     "BtrfsSnapshotSchedulePolicyError",
     "DESIRED_SCHEMA",
+    "LEGACY_DESIRED_SCHEMA",
     "POLICY_PATH",
     "SCHEDULE",
     "TIMER_PATH",

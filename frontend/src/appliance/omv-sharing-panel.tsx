@@ -2492,7 +2492,7 @@ export function OmvSharingPanel() {
                   snapshotCapable &&
                   Boolean(
                     status?.capabilities?.includes(
-                      "shared-folder.snapshot.schedule.latest.v1",
+                      "shared-folder.snapshot.schedule.retention.v2",
                     ),
                   );
                 const canRestoreSnapshot =

@@ -132,12 +132,13 @@ describe("BtrfsSnapshotPanel", () => {
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   });
 
-  it("previews latest-count retention without including manual snapshots", async () => {
+  it("previews age retention without including manual snapshots", async () => {
     vi.mocked(fetchBtrfsSnapshotSchedule).mockResolvedValue({
-      schemaVersion: 1,
+      schemaVersion: 2,
       sharedFolderRef: share,
       enabled: false,
       keepLatest: 8,
+      retention: { mode: "latest", value: 8 },
       configured: false,
       schedulerInstalled: true,
       schedule: "daily after 02:15 local time, randomized within 45 minutes",
@@ -148,10 +149,10 @@ describe("BtrfsSnapshotPanel", () => {
       operation: "enable",
       requiresApproval: true,
       desired: {
-        schema: "echo.btrfs-snapshot-schedule-desired.v1",
+        schema: "echo.btrfs-snapshot-schedule-desired.v2",
         sharedFolderRef: share,
         enabled: true,
-        keepLatest: 8,
+        retention: { mode: "days", value: 30 },
       },
       schedule: "daily after 02:15 local time, randomized within 45 minutes",
       scope: "automaticSnapshotsOnly",
@@ -169,16 +170,24 @@ describe("BtrfsSnapshotPanel", () => {
     );
     await screen.findByText("每日自动快照");
     await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.selectOptions(
+      screen.getByLabelText("Photos 自动快照保留方式"),
+      "days",
+    );
+    const value = screen.getByLabelText("Photos 自动快照保留值");
+    await userEvent.clear(value);
+    await userEvent.type(value, "30");
     await userEvent.click(screen.getByRole("button", { name: "预览策略" }));
     await waitFor(() =>
       expect(planBtrfsSnapshotSchedule).toHaveBeenCalledWith({
-        schema: "echo.btrfs-snapshot-schedule-desired.v1",
+        schema: "echo.btrfs-snapshot-schedule-desired.v2",
         sharedFolderRef: share,
         enabled: true,
-        keepLatest: 8,
+        retention: { mode: "days", value: 30 },
       }),
     );
     expect(screen.getByText(/手工快照不受影响/)).toBeInTheDocument();
+    expect(screen.getByText(/保留最近 30 天内/)).toBeInTheDocument();
   });
 
   it("previews recovery as a new share without replacing the source", async () => {

@@ -80,10 +80,10 @@ describe("Btrfs snapshot API", () => {
       ),
     );
     const scheduleDesired = {
-      schema: "echo.btrfs-snapshot-schedule-desired.v1" as const,
+      schema: "echo.btrfs-snapshot-schedule-desired.v2" as const,
       sharedFolderRef: desired.sharedFolderRef,
       enabled: true,
-      keepLatest: 8,
+      retention: { mode: "months" as const, value: 6 },
     };
     await planBtrfsSnapshotSchedule(scheduleDesired);
     await applyBtrfsSnapshotSchedule(
@@ -101,6 +101,10 @@ describe("Btrfs snapshot API", () => {
     );
     expect(applyOptions.headers).toMatchObject({
       "X-Echo-Approval": "schedule-approval",
+    });
+    expect(JSON.parse(String(applyOptions.body))).toEqual({
+      desired: scheduleDesired,
+      planId: "b".repeat(64),
     });
   });
 
