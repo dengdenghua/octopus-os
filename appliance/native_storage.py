@@ -55,6 +55,7 @@ from appliance.omv_protocol import (
     QUOTA_PLAN_SCHEMA,
     SHARE_PRIVILEGE_PLAN_SCHEMA,
     SHARED_FOLDER_DESIRED_SCHEMA,
+    SHARED_FOLDER_DETACH_PLAN_SCHEMA,
     SMB_PLAN_SCHEMA,
     USER_PASSWORD_PLAN_SCHEMA,
     USER_PLAN_SCHEMA,
@@ -64,6 +65,7 @@ from appliance.omv_protocol import (
     validate_quota_desired,
     validate_share_privilege_desired,
     validate_shared_folder_desired,
+    validate_shared_folder_detach_desired,
     validate_smb_desired,
     validate_user_desired,
     validate_user_password_desired,
@@ -684,6 +686,7 @@ def storage_health() -> dict[str, Any]:
 # Write slices the native plane can actually perform on this host.
 _NATIVE_WRITE_CAPABILITIES = (
     "shared-folder.create.simple.v1",
+    "shared-folder.detach.safe.v1",
     "account.group.create.v1",
     "account.user.create.v1",
     "account.user.password.reset.v1",
@@ -1564,6 +1567,136 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
             "applied": True,
             "verified": True,
             "sharedFolder": _public_shared_folder_entry(entry),
+        }
+
+
+def _shared_folder_detach_dependencies(
+    entry: dict[str, Any],
+) -> tuple[bool, list[dict[str, Any]]]:
+    """Return live dependent shares that must be removed before detaching."""
+    smb_present = _smb_usershare_info(str(entry["name"])) is not None
+    nfs_entries = [
+        item
+        for item in _nfs_exports_load(strict=True)
+        if item.get("sharedFolderRef") == entry.get("uuid")
+    ]
+    return smb_present, nfs_entries
+
+
+def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    registry = _registry_load(strict=True)
+    matches = [
+        entry
+        for entry in registry
+        if _registered_uuid(entry) == desired["sharedFolderRef"]
+    ]
+    if not matches:
+        raise ValueError("sharedFolderRef does not match any native shared folder")
+    if len(matches) != 1:
+        raise OSError("native shared-folder registry contains duplicate UUIDs")
+    entry = matches[0]
+    # Resolve and validate the mounted directory, but never remove or rename it.
+    path = _native_folder_path(entry)
+    smb_present, nfs_entries = _shared_folder_detach_dependencies(entry)
+    if smb_present:
+        raise ValueError("disable the SMB share before detaching this folder")
+    if nfs_entries:
+        raise ValueError("remove the NFS rule before detaching this folder")
+    base_revision = _canonical_hash(
+        {
+            "registry": registry,
+            "folder": {
+                "uuid": entry["uuid"],
+                "name": entry["name"],
+                "path": str(path),
+            },
+            "smb": smb_present,
+            "nfs": nfs_entries,
+        }
+    )
+    plan_id = _canonical_hash(
+        {
+            "schema": SHARED_FOLDER_DETACH_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+        }
+    )
+    return {
+        "schema": SHARED_FOLDER_DETACH_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": "remove",
+        "requiresApproval": True,
+        "shareUuid": entry["uuid"],
+        "sharedFolder": _public_shared_folder_entry(entry),
+        "desired": desired,
+        "changes": [
+            {
+                "field": "registration",
+                "before": "managed",
+                "after": "detached",
+            }
+        ],
+        "safety": {
+            "data": "preserved",
+            "directory": "neverDeleted",
+            "dependentShares": "mustBeAbsent",
+            "acl": "untouched",
+            "rollback": "registryOnly",
+        },
+        "source": "native",
+    }
+
+
+def plan_shared_folder_detach(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview unregistering a native folder while preserving all data."""
+    desired = validate_shared_folder_detach_desired(dict(desired_state))
+    with _registry_transaction():
+        return _build_shared_folder_detach_plan(desired)
+
+
+def apply_shared_folder_detach(
+    desired_state: dict[str, Any], plan_id: str
+) -> dict[str, Any]:
+    """Remove only the native registry entry; never delete the folder or data."""
+    desired = validate_shared_folder_detach_desired(dict(desired_state))
+    with _registry_transaction():
+        plan = _build_shared_folder_detach_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("shared folder detach plan is stale; preview the change again")
+        registry = _registry_load(strict=True)
+        original_registry = list(registry)
+        wanted = [
+            entry
+            for entry in registry
+            if _registered_uuid(entry) != desired["sharedFolderRef"]
+        ]
+        if len(wanted) == len(registry):
+            raise ValueError("sharedFolderRef does not match any native shared folder")
+        try:
+            _registry_save(wanted)
+            if any(
+                _registered_uuid(entry) == desired["sharedFolderRef"]
+                for entry in _registry_load(strict=True)
+            ):
+                raise OSError("shared folder registry detach was not verified")
+        except Exception as exc:
+            try:
+                _registry_save(original_registry)
+                if _registry_load(strict=True) != original_registry:
+                    raise OSError("shared folder registry rollback was not verified")
+            except Exception as rollback_exc:
+                raise OSError(
+                    "shared folder detach failed and registry rollback also failed"
+                ) from rollback_exc
+            if isinstance(exc, (OSError, ValueError)):
+                raise
+            raise OSError("shared folder detach failed") from exc
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "dataPreserved": True,
         }
 
 

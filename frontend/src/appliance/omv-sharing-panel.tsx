@@ -43,6 +43,7 @@ import {
   applyOmvFilesystemQuota,
   applyOmvNfsShare,
   applyOmvSharedFolder,
+  applyOmvSharedFolderDetach,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
   fetchOmvFilesystems,
@@ -53,6 +54,7 @@ import {
   planOmvGroup,
   planOmvNfsShare,
   planOmvSharedFolder,
+  planOmvSharedFolderDetach,
   planOmvSharePrivilege,
   planOmvSmbShare,
   planOmvUser,
@@ -66,6 +68,8 @@ import {
   type OmvQuotaPlan,
   type OmvSharedFolder,
   type OmvSharedFolderDesiredState,
+  type OmvSharedFolderDetachDesiredState,
+  type OmvSharedFolderDetachPlan,
   type OmvSharedFolderPlan,
   type OmvSharePrivilege,
   type OmvSharePrivilegeDesiredState,
@@ -190,6 +194,13 @@ export function OmvSharingPanel() {
   );
   const [folderPlanning, setFolderPlanning] = useState(false);
   const [folderApprovalOpen, setFolderApprovalOpen] = useState(false);
+  const [folderDetachDesired, setFolderDetachDesired] =
+    useState<OmvSharedFolderDetachDesiredState | null>(null);
+  const [folderDetachPlan, setFolderDetachPlan] =
+    useState<OmvSharedFolderDetachPlan | null>(null);
+  const [folderDetachPlanning, setFolderDetachPlanning] = useState(false);
+  const [folderDetachApprovalOpen, setFolderDetachApprovalOpen] =
+    useState(false);
   const [editingNfsFolder, setEditingNfsFolder] =
     useState<OmvSharedFolder | null>(null);
   const [nfsDesired, setNfsDesired] = useState<OmvNfsDesiredState | null>(null);
@@ -508,6 +519,55 @@ export function OmvSharingPanel() {
     setFolderName("");
     setFolderComment("");
     clearFolderPreview();
+    setReloadKey((value) => value + 1);
+  };
+
+  const previewSharedFolderDetach = async (folder: OmvSharedFolder) => {
+    if (
+      status?.source !== "native" ||
+      !status.capabilities?.includes("shared-folder.detach.safe.v1") ||
+      folder.relativePath.startsWith("/")
+    ) {
+      return;
+    }
+    const nextDesired: OmvSharedFolderDetachDesiredState = {
+      schema: "echo.omv.shared-folder-detach-desired.v1",
+      sharedFolderRef: folder.uuid,
+      preserveData: true,
+    };
+    setFolderDetachPlanning(true);
+    setFolderDetachDesired(nextDesired);
+    setFolderDetachPlan(null);
+    setError(null);
+    try {
+      setFolderDetachPlan(await planOmvSharedFolderDetach(nextDesired));
+    } catch (reason) {
+      setFolderDetachPlan(null);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "无法生成共享文件夹解除登记预览",
+      );
+    } finally {
+      setFolderDetachPlanning(false);
+    }
+  };
+
+  const confirmSharedFolderDetach = async (password: string) => {
+    if (!folderDetachDesired || !folderDetachPlan) return;
+    const approval = await requestHighRiskApproval(
+      "omv.shared-folder.detach",
+      folderDetachPlan.planId,
+      password,
+    );
+    await applyOmvSharedFolderDetach(
+      folderDetachDesired,
+      folderDetachPlan.planId,
+      approval.approvalToken,
+    );
+    setFolderDetachApprovalOpen(false);
+    setFolderDetachDesired(null);
+    setFolderDetachPlan(null);
     setReloadKey((value) => value + 1);
   };
 
@@ -2124,6 +2184,10 @@ export function OmvSharingPanel() {
                   status?.capabilities?.includes(
                     "shared-folder.privilege.simple.v1",
                   );
+                const canDetach =
+                  status?.source === "native" &&
+                  folderControlsAllowed &&
+                  status.capabilities?.includes("shared-folder.detach.safe.v1");
                 return (
                   <article
                     key={folder.uuid}
@@ -2172,7 +2236,44 @@ export function OmvSharingPanel() {
                           {nfsRule ? "管理 NFS" : "启用 NFS"}
                         </button>
                       )}
+                      {canDetach && (
+                        <button
+                          type="button"
+                          onClick={() => void previewSharedFolderDetach(folder)}
+                          disabled={
+                            folderDetachPlanning &&
+                            folderDetachDesired?.sharedFolderRef === folder.uuid
+                          }
+                          className="inline-flex h-7 items-center gap-1 rounded-lg border border-rose-200 bg-white px-2.5 text-[10px] font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
+                        >
+                          {folderDetachPlanning &&
+                          folderDetachDesired?.sharedFolderRef ===
+                            folder.uuid ? (
+                            <Loader2Icon className="size-3 animate-spin" />
+                          ) : (
+                            <ExternalLinkIcon className="size-3" />
+                          )}
+                          解除登记
+                        </button>
+                      )}
                     </div>
+                    {folderDetachPlan?.sharedFolder.uuid === folder.uuid && (
+                      <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] text-rose-800">
+                        <div className="flex items-center justify-between gap-3">
+                          <span>
+                            将解除 Echo 登记；目录、文件和现有 POSIX ACL
+                            均保留。 SMB/NFS 规则需先停用。
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setFolderDetachApprovalOpen(true)}
+                            className="h-7 shrink-0 rounded-lg bg-rose-600 px-2.5 text-[10px] font-medium text-white hover:bg-rose-700"
+                          >
+                            管理员确认
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {entries ? (
                       <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-200 pt-2">
                         {entries.map((entry) => (
@@ -3115,6 +3216,19 @@ export function OmvSharingPanel() {
         }
         onCancel={() => setFolderApprovalOpen(false)}
         onConfirm={confirmSharedFolder}
+      />
+      <HighRiskApprovalDialog
+        open={folderDetachApprovalOpen && Boolean(folderDetachPlan)}
+        title="解除共享文件夹登记"
+        description="Echo 只会移除本机共享文件夹注册元数据，不会删除目录、文件或 POSIX ACL。若 SMB 或 NFS 规则仍存在，预览会拒绝本次操作。"
+        targetLabel={
+          folderDetachPlan
+            ? `${folderDetachPlan.sharedFolder.name}/ · 数据保留 · ${folderDetachPlan.planId.slice(0, 12)}`
+            : undefined
+        }
+        confirmLabel="确认解除登记"
+        onCancel={() => setFolderDetachApprovalOpen(false)}
+        onConfirm={confirmSharedFolderDetach}
       />
       <HighRiskApprovalDialog
         open={approvalOpen && Boolean(plan)}

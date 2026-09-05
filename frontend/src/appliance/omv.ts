@@ -317,6 +317,38 @@ export type OmvSharedFolderPlan = {
   verified?: boolean;
 };
 
+export type OmvSharedFolderDetachDesiredState = {
+  schema: "echo.omv.shared-folder-detach-desired.v1";
+  sharedFolderRef: string;
+  preserveData: true;
+};
+
+export type OmvSharedFolderDetachPlan = {
+  schema: "echo.omv.shared-folder-detach-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "remove";
+  requiresApproval: true;
+  shareUuid: string;
+  sharedFolder: OmvSharedFolder;
+  desired: OmvSharedFolderDetachDesiredState;
+  changes: Array<{
+    field: "registration";
+    before: "managed";
+    after: "detached";
+  }>;
+  safety: {
+    data: "preserved";
+    directory: "neverDeleted";
+    dependentShares: "mustBeAbsent";
+    acl: "untouched";
+    rollback: "registryOnly";
+  };
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: true;
+};
+
 export type OmvSharePrivilege = {
   type: "user" | "group";
   id: number;
@@ -714,6 +746,29 @@ export function applyOmvSharedFolder(
     "/api/appliance/omv/sharing/folders/apply",
     { desired, planId },
     "无法应用共享文件夹变更",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function planOmvSharedFolderDetach(
+  desired: OmvSharedFolderDetachDesiredState,
+): Promise<OmvSharedFolderDetachPlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/folders/detach/plan",
+    desired,
+    "无法生成共享文件夹解除登记预览",
+  );
+}
+
+export function applyOmvSharedFolderDetach(
+  desired: OmvSharedFolderDetachDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvSharedFolderDetachPlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/folders/detach/apply",
+    { desired, planId },
+    "无法解除共享文件夹登记",
     approvalHeader(approvalToken),
   );
 }

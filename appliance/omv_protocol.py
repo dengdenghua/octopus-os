@@ -11,6 +11,9 @@ MAX_DEVICEFILE_LENGTH = 256
 SHARED_FOLDER_DESIRED_SCHEMA = "echo.omv.shared-folder-desired.v1"
 SHARED_FOLDER_PLAN_SCHEMA = "echo.omv.shared-folder-plan.v1"
 SHARED_FOLDER_CONTROL_CAPABILITY = "shared-folder.create.simple.v1"
+SHARED_FOLDER_DETACH_DESIRED_SCHEMA = "echo.omv.shared-folder-detach-desired.v1"
+SHARED_FOLDER_DETACH_PLAN_SCHEMA = "echo.omv.shared-folder-detach-plan.v1"
+SHARED_FOLDER_DETACH_CONTROL_CAPABILITY = "shared-folder.detach.safe.v1"
 SHARE_PRIVILEGE_DESIRED_SCHEMA = "echo.omv.share-privilege-desired.v1"
 SHARE_PRIVILEGE_PLAN_SCHEMA = "echo.omv.share-privilege-plan.v1"
 SHARE_PRIVILEGE_CONTROL_CAPABILITY = "shared-folder.privilege.simple.v1"
@@ -253,6 +256,25 @@ def validate_shared_folder_desired(value: Any) -> dict[str, Any]:
         "mountPointRef": validate_omv_uuid(mount_point_ref).lower(),
         "name": name,
         "comment": comment,
+    }
+
+
+def validate_shared_folder_detach_desired(value: Any) -> dict[str, Any]:
+    """Validate the explicit, data-preserving shared-folder detach request."""
+    expected = {"schema", "sharedFolderRef", "preserveData"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("shared folder detach desired state has unexpected fields")
+    if value.get("schema") != SHARED_FOLDER_DETACH_DESIRED_SCHEMA:
+        raise ValueError("shared folder detach desired-state schema is unsupported")
+    if value.get("preserveData") is not True:
+        raise ValueError("shared folder detach requires preserveData=true")
+    shared_folder_ref = value.get("sharedFolderRef")
+    if not isinstance(shared_folder_ref, str):
+        raise ValueError("sharedFolderRef must be an OMV UUID")
+    return {
+        "schema": SHARED_FOLDER_DETACH_DESIRED_SCHEMA,
+        "sharedFolderRef": validate_omv_uuid(shared_folder_ref).lower(),
+        "preserveData": True,
     }
 
 

@@ -17,6 +17,7 @@ from appliance.omv_protocol import (
     QUOTA_DESIRED_SCHEMA,
     SHARE_PRIVILEGE_DESIRED_SCHEMA,
     SHARED_FOLDER_DESIRED_SCHEMA,
+    SHARED_FOLDER_DETACH_DESIRED_SCHEMA,
     SMB_DESIRED_SCHEMA,
     USER_DESIRED_SCHEMA,
     USER_PASSWORD_DESIRED_SCHEMA,
@@ -24,6 +25,7 @@ from appliance.omv_protocol import (
     validate_omv_uuid,
     validate_share_privilege_desired,
     validate_shared_folder_desired,
+    validate_shared_folder_detach_desired,
     validate_user_desired,
     validate_user_password_desired,
 )
@@ -172,6 +174,38 @@ class SharedFolderApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class SharedFolderDetachDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.shared-folder-detach-desired.v1"] = Field(
+        default=SHARED_FOLDER_DETACH_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    shared_folder_ref: str = Field(min_length=36, max_length=36, alias="sharedFolderRef")
+    preserve_data: Literal[True] = Field(alias="preserveData")
+
+    @field_validator("shared_folder_ref")
+    @classmethod
+    def validate_shared_folder_ref(cls, value: str) -> str:
+        try:
+            return validate_shared_folder_detach_desired(
+                {
+                    "schema": SHARED_FOLDER_DETACH_DESIRED_SCHEMA,
+                    "sharedFolderRef": value,
+                    "preserveData": True,
+                }
+            )["sharedFolderRef"]
+        except ValueError as exc:
+            raise ValueError("sharedFolderRef must be an OMV UUID") from exc
+
+
+class SharedFolderDetachApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: SharedFolderDetachDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class SharePrivilegeDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -301,6 +335,8 @@ __all__ = [
     "SharePrivilegeApplyRequest",
     "SharePrivilegeDesiredState",
     "SharedFolderApplyRequest",
+    "SharedFolderDetachApplyRequest",
+    "SharedFolderDetachDesiredState",
     "SharedFolderDesiredState",
     "SmbApplyRequest",
     "SmbDesiredState",

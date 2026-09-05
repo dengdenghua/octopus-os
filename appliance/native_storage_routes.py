@@ -23,6 +23,8 @@ from appliance.omv_models import (
     QuotaDesiredState,
     SharedFolderApplyRequest,
     SharedFolderDesiredState,
+    SharedFolderDetachApplyRequest,
+    SharedFolderDetachDesiredState,
     SharePrivilegeApplyRequest,
     SharePrivilegeDesiredState,
     SmbApplyRequest,
@@ -252,6 +254,40 @@ def create_omv_alias_router(
             metadata=metadata,
         )
         return result
+
+    @router.post("/sharing/folders/detach/plan")
+    async def plan_shared_folder_detach(
+        body: SharedFolderDetachDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_shared_folder_detach,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/sharing/folders/detach/apply")
+    async def apply_shared_folder_detach_route(
+        body: SharedFolderDetachApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.shared-folder.detach",
+            plan_fn=native_storage.plan_shared_folder_detach,
+            apply_fn=native_storage.apply_shared_folder_detach,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "preserveData": body.desired.preserve_data,
+            },
+        )
 
     async def _apply_write(
         request: Request,

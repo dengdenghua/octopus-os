@@ -7,6 +7,7 @@ import {
   applyOmvGroup,
   applyOmvNfsShare,
   applyOmvSharedFolder,
+  applyOmvSharedFolderDetach,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
   applyOmvUser,
@@ -19,6 +20,7 @@ import {
   planOmvGroup,
   planOmvNfsShare,
   planOmvSharedFolder,
+  planOmvSharedFolderDetach,
   planOmvSharePrivilege,
   planOmvSmbShare,
   planOmvUser,
@@ -43,6 +45,7 @@ vi.mock("./omv", () => ({
   applyOmvGroup: vi.fn(),
   applyOmvNfsShare: vi.fn(),
   applyOmvSharedFolder: vi.fn(),
+  applyOmvSharedFolderDetach: vi.fn(),
   applyOmvSharePrivilege: vi.fn(),
   applyOmvSmbShare: vi.fn(),
   applyOmvUser: vi.fn(),
@@ -55,6 +58,7 @@ vi.mock("./omv", () => ({
   planOmvGroup: vi.fn(),
   planOmvNfsShare: vi.fn(),
   planOmvSharedFolder: vi.fn(),
+  planOmvSharedFolderDetach: vi.fn(),
   planOmvSharePrivilege: vi.fn(),
   planOmvSmbShare: vi.fn(),
   planOmvUser: vi.fn(),
@@ -1057,6 +1061,93 @@ describe("OMV sharing and users settings", () => {
       desired,
       plan.planId,
       "folder-approval-token",
+    );
+  });
+
+  it("detaches a native shared folder without deleting its data", async () => {
+    const user = userEvent.setup();
+    const desired = {
+      schema: "echo.omv.shared-folder-detach-desired.v1" as const,
+      sharedFolderRef: shareUuid,
+      preserveData: true as const,
+    };
+    const plan = {
+      schema: "echo.omv.shared-folder-detach-plan.v1" as const,
+      planId: "8".repeat(64),
+      baseRevision: "9".repeat(64),
+      operation: "remove" as const,
+      requiresApproval: true as const,
+      shareUuid,
+      sharedFolder: {
+        uuid: shareUuid,
+        name: "Family",
+        comment: "Family files",
+        relativePath: "Family/",
+        device: "/dev/md0",
+        status: "MOUNTED",
+        inUse: true,
+        supportsAcl: true,
+      },
+      desired,
+      changes: [
+        {
+          field: "registration" as const,
+          before: "managed" as const,
+          after: "detached" as const,
+        },
+      ],
+      safety: {
+        data: "preserved" as const,
+        directory: "neverDeleted" as const,
+        dependentShares: "mustBeAbsent" as const,
+        acl: "untouched" as const,
+        rollback: "registryOnly" as const,
+      },
+    };
+    vi.mocked(fetchOmvStatus).mockResolvedValueOnce({
+      configured: true,
+      available: true,
+      readOnly: false,
+      adminUrl: null,
+      capabilities: ["shared-folder.detach.safe.v1"],
+      source: "native",
+    });
+    vi.mocked(fetchOmvSharingOverview).mockResolvedValueOnce({
+      ...(await fetchOmvSharingOverview()),
+      smb: { enabled: false, shares: [] },
+      nfs: { enabled: false, shares: [] },
+    });
+    vi.mocked(planOmvSharedFolderDetach).mockResolvedValue(plan);
+    vi.mocked(applyOmvSharedFolderDetach).mockResolvedValue({
+      ...plan,
+      applied: true,
+      verified: true,
+      dataPreserved: true,
+    });
+    render(<OmvSharingPanel />);
+
+    await user.click(await screen.findByRole("button", { name: "解除登记" }));
+    await waitFor(() =>
+      expect(planOmvSharedFolderDetach).toHaveBeenCalledWith(desired),
+    );
+    expect(
+      screen.getByText(/将解除 Echo 登记；目录、文件和现有 POSIX ACL 均保留/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "管理员确认" }));
+    await user.type(screen.getByLabelText("设备管理员密码"), "device-password");
+    await user.click(screen.getByRole("button", { name: "确认解除登记" }));
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "omv.shared-folder.detach",
+        plan.planId,
+        "device-password",
+      ),
+    );
+    expect(applyOmvSharedFolderDetach).toHaveBeenCalledWith(
+      desired,
+      plan.planId,
+      "approval-token",
     );
   });
 

@@ -67,6 +67,7 @@ def test_native_status_advertises_only_the_available_write_slice(
     assert payload["readOnly"] is False
     assert payload["capabilities"] == [
         "shared-folder.create.simple.v1",
+        "shared-folder.detach.safe.v1",
         "account.group.create.v1",
         "account.user.create.v1",
         "account.user.password.reset.v1",
@@ -91,6 +92,7 @@ def test_native_status_hides_write_slices_without_host_tools(
 
     assert payload["capabilities"] == [
         "shared-folder.create.simple.v1",
+        "shared-folder.detach.safe.v1",
         "account.group.create.v1",
         "account.user.create.v1",
         "account.user.password.reset.v1",
@@ -108,6 +110,7 @@ def test_native_status_keeps_group_creation_when_only_groupadd_is_present(
 
     assert native_storage.status()["capabilities"] == [
         "shared-folder.create.simple.v1",
+        "shared-folder.detach.safe.v1",
         "account.group.create.v1",
     ]
 
@@ -439,6 +442,126 @@ def test_shared_folder_comment_update_preserves_directory_and_registry_identity(
     assert str(volume) not in json.dumps(applied, ensure_ascii=False)
 
 
+def test_shared_folder_detach_preserves_directory_and_removes_only_registry_entry(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    desired = _desired(mount_point_ref)
+    created = native_storage.apply_shared_folder(
+        desired, native_storage.plan_shared_folder(desired)["planId"]
+    )
+    detach = {
+        "schema": "echo.omv.shared-folder-detach-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "preserveData": True,
+    }
+
+    plan = native_storage.plan_shared_folder_detach(detach)
+
+    assert plan["operation"] == "remove"
+    assert plan["requiresApproval"] is True
+    assert plan["safety"] == {
+        "data": "preserved",
+        "directory": "neverDeleted",
+        "dependentShares": "mustBeAbsent",
+        "acl": "untouched",
+        "rollback": "registryOnly",
+    }
+    applied = native_storage.apply_shared_folder_detach(detach, plan["planId"])
+
+    assert applied["applied"] is True
+    assert applied["verified"] is True
+    assert applied["dataPreserved"] is True
+    assert applied["sharedFolder"]["uuid"] == created["sharedFolder"]["uuid"]
+    assert (volume / "Photos").is_dir()
+    assert json.loads(registry.read_text(encoding="utf-8")) == []
+    with pytest.raises(ValueError, match="does not match any native shared folder"):
+        native_storage.plan_shared_folder_detach(detach)
+
+
+@pytest.mark.parametrize("dependency", ["smb", "nfs"])
+def test_shared_folder_detach_requires_dependent_shares_to_be_removed(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    dependency: str,
+) -> None:
+    _volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    desired = _desired(mount_point_ref)
+    created = native_storage.apply_shared_folder(
+        desired, native_storage.plan_shared_folder(desired)["planId"]
+    )
+    if dependency == "smb":
+        monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: {"path": "x"})
+        match = "disable the SMB share"
+    else:
+        monkeypatch.setattr(
+            native_storage,
+            "_nfs_exports_load",
+            lambda **_kwargs: [
+                {
+                    "uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "sharedFolderRef": created["sharedFolder"]["uuid"],
+                    "client": "192.168.1.0/24",
+                    "readOnly": False,
+                    "comment": "test",
+                }
+            ],
+        )
+        match = "remove the NFS rule"
+
+    detach = {
+        "schema": "echo.omv.shared-folder-detach-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "preserveData": True,
+    }
+    with pytest.raises(ValueError, match=match):
+        native_storage.plan_shared_folder_detach(detach)
+    assert (native_volume[0] / "Photos").is_dir()
+
+
+def test_shared_folder_detach_rolls_back_registry_on_write_failure(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    desired = _desired(mount_point_ref)
+    created = native_storage.apply_shared_folder(
+        desired, native_storage.plan_shared_folder(desired)["planId"]
+    )
+    detach = {
+        "schema": "echo.omv.shared-folder-detach-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "preserveData": True,
+    }
+    plan = native_storage.plan_shared_folder_detach(detach)
+    original_save = native_storage._registry_save
+    calls = 0
+
+    def fail_once(entries: list[dict[str, Any]]) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("simulated registry failure")
+        original_save(entries)
+
+    monkeypatch.setattr(native_storage, "_registry_save", fail_once)
+    with pytest.raises(OSError, match="simulated registry failure"):
+        native_storage.apply_shared_folder_detach(detach, plan["planId"])
+
+    assert calls == 2
+    assert json.loads(registry.read_text(encoding="utf-8"))[0]["uuid"] == created[
+        "sharedFolder"
+    ]["uuid"]
+    assert (volume / "Photos").is_dir()
+
+
 def test_apply_rejects_a_plan_after_the_target_state_changes(
     native_volume: tuple[Path, Path, str],
 ) -> None:
@@ -575,6 +698,56 @@ def test_native_alias_binds_comment_update_to_update_approval_action(
     assert response.status_code == 200
     assert approval_calls[0]["action"] == "omv.shared-folder.update"
     assert {entry["action"] for entry in audit_calls} == {"omv.shared-folder.update"}
+
+
+def test_native_alias_binds_folder_detach_to_data_preserving_approval_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    plan_id = "a" * 64
+    current_plan = {
+        "planId": plan_id,
+        "operation": "remove",
+        "requiresApproval": True,
+    }
+    applied = {**current_plan, "applied": True, "verified": True, "dataPreserved": True}
+    approval_calls: list[dict[str, Any]] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            approval_calls.append(kwargs)
+
+    class Audit:
+        def record(self, **kwargs: Any) -> None:
+            audit_calls.append(kwargs)
+
+    monkeypatch.setattr(native_storage, "plan_shared_folder_detach", lambda _desired: current_plan)
+    monkeypatch.setattr(
+        native_storage,
+        "apply_shared_folder_detach",
+        lambda _desired, _plan_id: applied,
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/appliance/omv/sharing/folders/detach/apply",
+        json={
+            "desired": {
+                "schema": "echo.omv.shared-folder-detach-desired.v1",
+                "sharedFolderRef": MOUNT_POINT_REF,
+                "preserveData": True,
+            },
+            "planId": plan_id,
+        },
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+
+    assert response.status_code == 200
+    assert approval_calls[0]["action"] == "omv.shared-folder.detach"
+    assert {entry["action"] for entry in audit_calls} == {"omv.shared-folder.detach"}
 
 
 def test_native_alias_maps_apply_io_failure_to_service_unavailable(
