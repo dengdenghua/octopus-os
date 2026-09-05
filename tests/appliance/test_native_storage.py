@@ -561,6 +561,179 @@ def test_shared_folder_create_is_atomic_and_idempotent(
     assert repeated["verified"] is True
 
 
+def test_btrfs_shared_folder_uses_a_snapshot_capable_subvolume(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(
+        native_storage,
+        "filesystems",
+        lambda: [
+            {
+                "devicefile": "/dev/test0",
+                "uuid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+                "label": "family",
+                "type": "btrfs",
+                "mountpoint": str(volume),
+                "sizeBytes": 10_000,
+                "availableBytes": 8_000,
+                "readOnly": False,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        native_storage.shutil,
+        "which",
+        lambda name: "/usr/bin/btrfs" if name == "btrfs" else None,
+    )
+    monkeypatch.setattr(
+        native_storage,
+        "_verify_btrfs_subvolume",
+        lambda path: path.is_dir(),
+    )
+    commands: list[tuple[str, ...]] = []
+
+    def mutate(*args: str, **_kwargs: Any) -> None:
+        commands.append(args)
+        target = Path(args[-1])
+        if args[2] == "create":
+            target.mkdir()
+        else:
+            target.rmdir()
+
+    monkeypatch.setattr(native_storage, "_run_write", mutate)
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    desired = _desired(mount_point_ref)
+
+    plan = native_storage.plan_shared_folder(desired)
+    created = native_storage.apply_shared_folder(desired, plan["planId"])
+
+    assert plan["storageKind"] == "btrfsSubvolume"
+    assert plan["safety"]["snapshot"] == "eligible"
+    assert created["sharedFolder"]["snapshotCapable"] is True
+    assert json.loads(registry.read_text(encoding="utf-8"))[0]["storageKind"] == ("btrfsSubvolume")
+    assert commands == [("btrfs", "subvolume", "create", str(volume / "Photos"))]
+
+    delete = {
+        "schema": "echo.omv.shared-folder-delete-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "emptyOnly": True,
+    }
+    delete_plan = native_storage.plan_shared_folder_delete(delete)
+    removed = native_storage.apply_shared_folder_delete(delete, delete_plan["planId"])
+
+    assert delete_plan["safety"]["storageKind"] == "btrfsSubvolume"
+    assert removed["directoryDeleted"] is True
+    assert commands[-1] == ("btrfs", "subvolume", "delete", str(volume / "Photos"))
+    assert not (volume / "Photos").exists()
+
+
+def test_legacy_directory_on_btrfs_is_not_silently_upgraded_to_a_subvolume(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    monkeypatch.setattr(
+        native_storage,
+        "filesystems",
+        lambda: [
+            {
+                "devicefile": "/dev/test0",
+                "type": "btrfs",
+                "mountpoint": str(volume),
+                "readOnly": False,
+            }
+        ],
+    )
+    monkeypatch.setattr(native_storage.shutil, "which", lambda _name: "/usr/bin/tool")
+
+    plan = native_storage.plan_shared_folder(_desired(mount_point_ref))
+
+    assert plan["operation"] == "none"
+    assert plan["storageKind"] == "directory"
+    assert plan["safety"]["snapshot"] == "unsupported"
+    result = native_storage.apply_shared_folder(_desired(mount_point_ref), plan["planId"])
+    assert result["sharedFolder"]["snapshotCapable"] is False
+
+
+def test_btrfs_subvolume_helpers_reconcile_commands_accepted_before_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "Photos"
+    monkeypatch.setattr(
+        native_storage,
+        "_verify_btrfs_subvolume",
+        lambda path: path.is_dir(),
+    )
+
+    def create_then_fail(*args: str, **_kwargs: Any) -> None:
+        Path(args[-1]).mkdir()
+        raise OSError("client lost the create response")
+
+    monkeypatch.setattr(native_storage, "_run_write", create_then_fail)
+    native_storage._create_shared_folder_storage(target, "btrfsSubvolume")
+    assert target.is_dir()
+
+    def delete_then_fail(*args: str, **_kwargs: Any) -> None:
+        Path(args[-1]).rmdir()
+        raise OSError("client lost the delete response")
+
+    monkeypatch.setattr(native_storage, "_run_write", delete_then_fail)
+    native_storage._delete_shared_folder_storage(target, "btrfsSubvolume")
+    assert not target.exists()
+
+
+def test_btrfs_shared_folder_registry_failure_removes_created_subvolume(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, _registry, mount_point_ref = native_volume
+    monkeypatch.setattr(
+        native_storage,
+        "filesystems",
+        lambda: [
+            {
+                "devicefile": "/dev/test0",
+                "type": "btrfs",
+                "mountpoint": str(volume),
+                "readOnly": False,
+            }
+        ],
+    )
+    monkeypatch.setattr(native_storage.shutil, "which", lambda _name: "/usr/bin/tool")
+    monkeypatch.setattr(
+        native_storage,
+        "_verify_btrfs_subvolume",
+        lambda path: path.is_dir(),
+    )
+    commands: list[tuple[str, ...]] = []
+
+    def mutate(*args: str, **_kwargs: Any) -> None:
+        commands.append(args)
+        target = Path(args[-1])
+        target.mkdir() if args[2] == "create" else target.rmdir()
+
+    monkeypatch.setattr(native_storage, "_run_write", mutate)
+    monkeypatch.setattr(
+        native_storage,
+        "_registry_save",
+        lambda _entries: (_ for _ in ()).throw(OSError("registry failure")),
+    )
+    desired = _desired(mount_point_ref)
+    plan = native_storage.plan_shared_folder(desired)
+
+    with pytest.raises(OSError, match="registry failure"):
+        native_storage.apply_shared_folder(desired, plan["planId"])
+
+    assert [command[2] for command in commands] == ["create", "delete"]
+    assert not (volume / "Photos").exists()
+
+
 def test_shared_folder_comment_update_preserves_directory_and_registry_identity(
     native_volume: tuple[Path, Path, str],
 ) -> None:
@@ -954,6 +1127,7 @@ def test_shared_folder_delete_removes_only_an_empty_registered_directory(
     assert plan["safety"] == {
         "data": "emptyDirectoryOnly",
         "directory": "deleted",
+        "storageKind": "directory",
         "dependentShares": "mustBeAbsent",
         "recursive": "never",
         "mount": "mountedWritableOnly",

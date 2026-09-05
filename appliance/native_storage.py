@@ -1362,6 +1362,7 @@ def sharing_overview() -> dict[str, Any]:
             "device": _public_devicefile(entry.get("devicefile")),
             "status": "MOUNTED",
             "inUse": True,
+            "snapshotCapable": False,
             "supportsAcl": bool(entry.get("supportsAcl")),
         }
         for entry in fs_entries
@@ -1372,6 +1373,10 @@ def sharing_overview() -> dict[str, Any]:
         relative_name = _registered_relative_name(entry)
         if folder_uuid is None or relative_name is None or not isinstance(entry.get("name"), str):
             continue
+        try:
+            snapshot_capable = _registered_storage_kind(entry) == "btrfsSubvolume"
+        except OSError:
+            continue
         shared_folders.append(
             {
                 "uuid": folder_uuid,
@@ -1381,6 +1386,7 @@ def sharing_overview() -> dict[str, Any]:
                 "device": _public_devicefile(entry.get("device")),
                 "status": _native_registered_folder_status(entry),
                 "inUse": True,
+                "snapshotCapable": snapshot_capable,
                 "supportsAcl": shutil.which("getfacl") is not None
                 and shutil.which("setfacl") is not None,
             }
@@ -1745,7 +1751,12 @@ def _verify_shared_folder(path: Path, group_gid: int) -> bool:
 
 
 def _registry_folder_entry(
-    *, volume_ref: str, volume_path: str, name: str, comment: str
+    *,
+    volume_ref: str,
+    volume_path: str,
+    name: str,
+    comment: str,
+    storage_kind: str = "directory",
 ) -> dict[str, Any]:
     return {
         "uuid": _share_uuid(volume_ref, name),
@@ -1758,8 +1769,60 @@ def _registry_folder_entry(
         ),
         "volumePath": volume_path,
         "mountPointRef": volume_ref,
+        "storageKind": storage_kind,
         "createdAt": _now(),
     }
+
+
+def _registered_storage_kind(entry: dict[str, Any]) -> str:
+    """Return the creation kind without upgrading legacy directories."""
+    value = entry.get("storageKind", "directory")
+    if value not in {"directory", "btrfsSubvolume"}:
+        raise OSError("native shared-folder registry contains an invalid storage kind")
+    return str(value)
+
+
+def _verify_btrfs_subvolume(path: Path) -> bool:
+    try:
+        _run_read_checked("btrfs", "subvolume", "show", str(path), timeout=15.0)
+    except OSError:
+        return False
+    return True
+
+
+def _verify_shared_folder_storage(path: Path, entry: dict[str, Any]) -> bool:
+    storage_kind = _registered_storage_kind(entry)
+    return storage_kind == "directory" or _verify_btrfs_subvolume(path)
+
+
+def _create_shared_folder_storage(path: Path, storage_kind: str) -> None:
+    if storage_kind == "directory":
+        path.mkdir(mode=0o2770, exist_ok=False)
+        return
+    if storage_kind != "btrfsSubvolume":
+        raise OSError("unsupported shared-folder storage kind")
+    try:
+        _run_write("btrfs", "subvolume", "create", str(path))
+    except OSError:
+        # A client timeout may happen after the kernel accepted the command.
+        # Reconcile the exact target before deciding whether rollback owns it.
+        if _target_state(path)["kind"] == "directory" and _verify_btrfs_subvolume(path):
+            return
+        raise
+
+
+def _delete_shared_folder_storage(path: Path, storage_kind: str) -> None:
+    if storage_kind == "directory":
+        path.rmdir()
+        return
+    if storage_kind != "btrfsSubvolume":
+        raise OSError("unsupported shared-folder storage kind")
+    try:
+        _run_write("btrfs", "subvolume", "delete", str(path))
+    except OSError:
+        if _target_state(path)["kind"] == "absent":
+            return
+        raise
 
 
 def _public_shared_folder_entry(entry: dict[str, Any]) -> dict[str, Any]:
@@ -1776,6 +1839,7 @@ def _public_shared_folder_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "device": _public_devicefile(entry.get("device")),
         "status": "MOUNTED",
         "inUse": True,
+        "snapshotCapable": _registered_storage_kind(entry) == "btrfsSubvolume",
         "supportsAcl": shutil.which("getfacl") is not None and shutil.which("setfacl") is not None,
     }
 
@@ -1825,6 +1889,8 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
     )
     target_dir = Path(volume_path) / desired["name"]
     target_state = _target_state(target_dir)
+    target = _shared_folder_target_payload(volume_ref, volume_path)
+    storage_kind = "btrfsSubvolume" if target["type"].casefold() == "btrfs" else "directory"
     if existing is None and target_state["kind"] != "absent":
         raise ValueError("shared folder target already exists outside the native registry")
     if existing is not None:
@@ -1837,6 +1903,9 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
             raise OSError(
                 "native shared-folder registry identity does not match the mounted target"
             )
+        storage_kind = _registered_storage_kind(existing)
+        if not _verify_shared_folder_storage(target_dir, existing):
+            raise OSError("native shared-folder storage kind does not match the filesystem")
         existing_comment = existing.get("comment")
         if (
             not isinstance(existing_comment, str)
@@ -1846,6 +1915,8 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
             raise OSError("native shared-folder registry contains an invalid comment")
     else:
         existing_comment = None
+    if storage_kind == "btrfsSubvolume" and shutil.which("btrfs") is None:
+        raise OSError("Btrfs shared-folder management requires the btrfs tool")
 
     operation = (
         "create"
@@ -1857,6 +1928,7 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
     base_revision = _canonical_hash(
         {
             "volume": volume_ref,
+            "filesystem": target,
             "registry": registry,
             "target": target_state,
         }
@@ -1894,13 +1966,16 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
         "operation": operation,
         "requiresApproval": operation != "none",
         "shareUuid": existing.get("uuid") if existing else _share_uuid(volume_ref, desired["name"]),
-        "target": _shared_folder_target_payload(volume_ref, volume_path),
+        "target": target,
+        "storageKind": storage_kind,
         "desired": desired,
         "changes": changes,
         "safety": {
             "filesystem": "existingMountedWritableOnly",
             "relativePath": "derivedFromPortableName",
             "directoryMode": "2770UsersGroup",
+            "storageKind": storage_kind,
+            "snapshot": "eligible" if storage_kind == "btrfsSubvolume" else "unsupported",
             "acl": "notManaged",
             "update": "commentOnly",
             "delete": "notManaged",
@@ -1930,13 +2005,15 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
             raise ValueError("mountPointRef no longer matches a mounted writable volume")
         target_dir = Path(volume_path) / desired["name"]
         if plan["operation"] == "none":
-            if not _verify_shared_folder(target_dir, group_gid):
-                raise OSError("registered shared folder has unsafe owner, group, or mode")
             existing = next(
                 entry
                 for entry in _registry_load(strict=True)
                 if entry.get("uuid") == plan["shareUuid"]
             )
+            if not _verify_shared_folder(
+                target_dir, group_gid
+            ) or not _verify_shared_folder_storage(target_dir, existing):
+                raise OSError("registered shared folder has unsafe owner, group, or mode")
             return {
                 **plan,
                 "applied": False,
@@ -1945,8 +2022,6 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
             }
 
         if plan["operation"] == "update":
-            if not _verify_shared_folder(target_dir, group_gid):
-                raise OSError("registered shared folder has unsafe owner, group, or mode")
             registry = _registry_load(strict=True)
             existing_index = next(
                 (
@@ -1959,6 +2034,10 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
             if existing_index is None:
                 raise ValueError("shared folder registry changed during apply; preview again")
             existing = registry[existing_index]
+            if not _verify_shared_folder(
+                target_dir, group_gid
+            ) or not _verify_shared_folder_storage(target_dir, existing):
+                raise OSError("registered shared folder has unsafe owner, group, mode, or kind")
             updated = {**existing, "comment": desired["comment"]}
             original_registry = list(registry)
             registry[existing_index] = updated
@@ -1991,18 +2070,24 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
             }
 
         created = False
+        storage_kind = str(plan["storageKind"])
         try:
-            target_dir.mkdir(mode=0o2770, exist_ok=False)
+            _create_shared_folder_storage(target_dir, storage_kind)
             created = True
             _configure_shared_folder(target_dir, group_gid)
-            if not _verify_shared_folder(target_dir, group_gid):
-                raise OSError("shared folder directory was not created with root:users 2770")
+            if not _verify_shared_folder(target_dir, group_gid) or (
+                storage_kind == "btrfsSubvolume" and not _verify_btrfs_subvolume(target_dir)
+            ):
+                raise OSError(
+                    "shared folder storage was not created with the planned kind and root:users 2770"
+                )
 
             entry = _registry_folder_entry(
                 volume_ref=desired["mountPointRef"],
                 volume_path=volume_path,
                 name=desired["name"],
                 comment=desired["comment"],
+                storage_kind=storage_kind,
             )
             registry = _registry_load(strict=True)
             registry = [item for item in registry if item.get("uuid") != entry["uuid"]]
@@ -2011,7 +2096,7 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
         except Exception:
             if created:
                 try:
-                    target_dir.rmdir()
+                    _delete_shared_folder_storage(target_dir, storage_kind)
                 except OSError as rollback_exc:
                     raise OSError(
                         "shared folder creation failed and the empty directory could not be rolled back"
@@ -2049,8 +2134,10 @@ def _build_shared_folder_rename_plan(desired: dict[str, Any]) -> dict[str, Any]:
     entry = matches[0]
     source = _native_folder_path(entry)
     group_gid = _users_group_gid()
-    if not _verify_shared_folder(source, group_gid):
-        raise OSError("registered shared folder has unsafe owner, group, or mode")
+    if not _verify_shared_folder(source, group_gid) or not _verify_shared_folder_storage(
+        source, entry
+    ):
+        raise OSError("registered shared folder has unsafe owner, group, mode, or kind")
 
     old_name = _registered_relative_name(entry, strict=True)
     assert old_name is not None
@@ -2135,8 +2222,10 @@ def apply_shared_folder_rename(desired_state: dict[str, Any], plan_id: str) -> d
         entry = _resolve_shared_folder(desired["sharedFolderRef"])
         source = _native_folder_path(entry)
         if plan["operation"] == "none":
-            if not _verify_shared_folder(source, _users_group_gid()):
-                raise OSError("registered shared folder has unsafe owner, group, or mode")
+            if not _verify_shared_folder(
+                source, _users_group_gid()
+            ) or not _verify_shared_folder_storage(source, entry):
+                raise OSError("registered shared folder has unsafe owner, group, mode, or kind")
             return {
                 **plan,
                 "applied": False,
@@ -2168,8 +2257,10 @@ def apply_shared_folder_rename(desired_state: dict[str, Any], plan_id: str) -> d
         try:
             source.rename(target)
             renamed = True
-            if _target_state(source)["kind"] != "absent" or not _verify_shared_folder(
-                target, _users_group_gid()
+            if (
+                _target_state(source)["kind"] != "absent"
+                or not _verify_shared_folder(target, _users_group_gid())
+                or not _verify_shared_folder_storage(target, updated)
             ):
                 raise OSError("shared folder directory rename was not verified")
             _registry_save(registry)
@@ -2185,7 +2276,9 @@ def apply_shared_folder_rename(desired_state: dict[str, Any], plan_id: str) -> d
                     if _target_state(source)["kind"] != "absent":
                         raise OSError("shared folder rename rollback source is occupied")
                     target.rename(source)
-                    if not _verify_shared_folder(source, _users_group_gid()):
+                    if not _verify_shared_folder(
+                        source, _users_group_gid()
+                    ) or not _verify_shared_folder_storage(source, entry):
                         raise OSError("shared folder directory rename rollback was not verified")
                 _registry_save(original_registry)
                 if _registry_load(strict=True) != original_registry:
@@ -2336,16 +2429,23 @@ def _directory_is_empty(path: Path) -> bool:
         raise OSError("shared folder directory cannot be inspected") from exc
 
 
-def _restore_deleted_shared_folder(path: Path, group_gid: int) -> None:
+def _restore_deleted_shared_folder(path: Path, group_gid: int, storage_kind: str) -> None:
     """Recreate the known empty 2770/users directory during a failed delete."""
+    created = False
     try:
-        path.mkdir(mode=0o2770, exist_ok=False)
+        _create_shared_folder_storage(path, storage_kind)
+        created = True
         _configure_shared_folder(path, group_gid)
-        if not _verify_shared_folder(path, group_gid) or not _directory_is_empty(path):
+        if (
+            not _verify_shared_folder(path, group_gid)
+            or (storage_kind == "btrfsSubvolume" and not _verify_btrfs_subvolume(path))
+            or not _directory_is_empty(path)
+        ):
             raise OSError("restored shared folder directory did not pass verification")
     except Exception:
-        with contextlib.suppress(OSError):
-            path.rmdir()
+        if created:
+            with contextlib.suppress(OSError):
+                _delete_shared_folder_storage(path, storage_kind)
         raise
 
 
@@ -2360,8 +2460,9 @@ def _build_shared_folder_delete_plan(desired: dict[str, Any]) -> dict[str, Any]:
     entry = matches[0]
     path = _native_folder_path(entry)
     group_gid = _users_group_gid()
-    if not _verify_shared_folder(path, group_gid):
-        raise OSError("registered shared folder has unsafe owner, group, or mode")
+    storage_kind = _registered_storage_kind(entry)
+    if not _verify_shared_folder(path, group_gid) or not _verify_shared_folder_storage(path, entry):
+        raise OSError("registered shared folder has unsafe owner, group, mode, or kind")
     if not _directory_is_empty(path):
         raise ValueError(
             "shared folder directory is not empty; only empty directories can be deleted"
@@ -2381,6 +2482,7 @@ def _build_shared_folder_delete_plan(desired: dict[str, Any]) -> dict[str, Any]:
                 "uuid": entry["uuid"],
                 "name": entry["name"],
                 "path": str(path),
+                "storageKind": storage_kind,
             },
             "target": target_state,
             "empty": True,
@@ -2412,6 +2514,7 @@ def _build_shared_folder_delete_plan(desired: dict[str, Any]) -> dict[str, Any]:
         "safety": {
             "data": "emptyDirectoryOnly",
             "directory": "deleted",
+            "storageKind": storage_kind,
             "dependentShares": "mustBeAbsent",
             "recursive": "never",
             "mount": "mountedWritableOnly",
@@ -2439,8 +2542,11 @@ def apply_shared_folder_delete(desired_state: dict[str, Any], plan_id: str) -> d
         entry = _resolve_shared_folder(desired["sharedFolderRef"])
         path = _native_folder_path(entry)
         group_gid = _users_group_gid()
-        if not _verify_shared_folder(path, group_gid):
-            raise OSError("registered shared folder has unsafe owner, group, or mode")
+        storage_kind = _registered_storage_kind(entry)
+        if not _verify_shared_folder(path, group_gid) or not _verify_shared_folder_storage(
+            path, entry
+        ):
+            raise OSError("registered shared folder has unsafe owner, group, mode, or kind")
         if not _directory_is_empty(path):
             raise ValueError(
                 "shared folder directory is not empty; only empty directories can be deleted"
@@ -2460,14 +2566,14 @@ def apply_shared_folder_delete(desired_state: dict[str, Any], plan_id: str) -> d
                 for item in _registry_load(strict=True)
             ):
                 raise OSError("shared folder registry delete was not verified")
-            path.rmdir()
+            _delete_shared_folder_storage(path, storage_kind)
             removed_directory = True
             if _target_state(path)["kind"] != "absent":
                 raise OSError("shared folder directory delete was not verified")
         except Exception as exc:
             try:
                 if removed_directory:
-                    _restore_deleted_shared_folder(path, group_gid)
+                    _restore_deleted_shared_folder(path, group_gid, storage_kind)
                 _registry_save(original_registry)
                 if _registry_load(strict=True) != original_registry:
                     raise OSError("shared folder delete rollback was not verified")
