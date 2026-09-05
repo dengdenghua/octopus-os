@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import { requestHighRiskApproval } from "@/appliance/approval";
+import { Ext4CheckPanel } from "@/appliance/ext4-check-panel";
 import {
   applyOmvExt4Volume,
   fetchNativeStatus,
@@ -298,6 +299,7 @@ export function Ext4VolumePanel() {
           )}
         </>
       )}
+      <Ext4CheckPanel />
     </div>
   );
 }

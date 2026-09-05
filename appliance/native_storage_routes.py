@@ -38,6 +38,8 @@ from appliance.omv_models import (
     BtrfsScrubSchedulePolicyDesiredState,
     DiskIdlePolicyApplyRequest,
     DiskIdlePolicyDesiredState,
+    Ext4CheckApplyRequest,
+    Ext4CheckDesiredState,
     Ext4VolumeApplyRequest,
     Ext4VolumeDesiredState,
     GroupApplyRequest,
@@ -184,6 +186,14 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 EXT4 候选阵列探测不可用") from exc
         return {"arrays": arrays, "readOnly": True, "source": "native"}
+
+    @router.get("/volumes/ext4/checks")
+    async def ext4_checks() -> dict[str, Any]:
+        try:
+            filesystems = await run_in_threadpool(native_storage.ext4_check_inventory)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="原生 EXT4 离线检查状态不可用") from exc
+        return {"filesystems": filesystems, "readOnly": True, "source": "native"}
 
     @router.get("/volumes/btrfs-raid1/candidates")
     async def btrfs_raid1_candidates() -> dict[str, Any]:
@@ -1079,6 +1089,40 @@ def create_omv_alias_router(
             metadata={
                 "arrayUuid": body.desired.array_uuid,
                 "name": body.desired.name,
+            },
+        )
+
+    @router.post("/volumes/ext4/check/plan")
+    async def plan_ext4_check(body: Ext4CheckDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_ext4_check,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 EXT4 离线检查暂不可用") from exc
+
+    @router.post("/volumes/ext4/check/apply")
+    async def apply_ext4_check_route(
+        body: Ext4CheckApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.ext4.offline-check",
+            plan_fn=native_storage.plan_ext4_check,
+            apply_fn=native_storage.apply_ext4_check,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "filesystemUuid": body.desired.filesystem_uuid,
+                "operation": "offlineReadOnlyCheck",
+                "automaticUnmount": False,
+                "repair": False,
             },
         )
 

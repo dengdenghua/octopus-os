@@ -48,6 +48,7 @@ export type HighRiskAction =
   | "storage.btrfs.scrub.schedule"
   | "storage.disk.idle.configure"
   | "omv.ext4-volume.create"
+  | "omv.ext4.offline-check"
   | "omv.zfs-mirror.create"
   | "omv.zfs-mirror.replace"
   | "omv.zfs-pool.export"

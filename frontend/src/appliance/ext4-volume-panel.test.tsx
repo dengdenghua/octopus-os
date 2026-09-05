@@ -12,6 +12,7 @@ import {
 import { Ext4VolumePanel } from "./ext4-volume-panel";
 
 vi.mock("./approval", () => ({ requestHighRiskApproval: vi.fn() }));
+vi.mock("./ext4-check-panel", () => ({ Ext4CheckPanel: () => null }));
 vi.mock("./omv", () => ({
   applyOmvExt4Volume: vi.fn(),
   fetchNativeStatus: vi.fn(),

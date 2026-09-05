@@ -73,6 +73,7 @@ from appliance.native_btrfs_scrub import (
     plan_btrfs_scrub,
 )
 from appliance.native_ext4 import apply_ext4_volume, ext4_volume_candidates, plan_ext4_volume
+from appliance.native_ext4_check import apply_ext4_check, ext4_check_inventory, plan_ext4_check
 from appliance.native_mdraid import apply_mdraid1, mdraid1_candidates, plan_mdraid1
 from appliance.native_mdraid_check import (
     apply_mdraid_check,
@@ -1017,6 +1018,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.array.mdraid.check.start.v1",
     "storage.array.mdraid.check.schedule.v1",
     "storage.volume.ext4.create-mount.v1",
+    "storage.volume.ext4.offline-check.v1",
     "storage.volume.btrfs-raid1.create-mount.v1",
     "storage.volume.btrfs-raid1.replace-missing.blank.v1",
     "storage.volume.btrfs.scrub.start.v1",
@@ -1083,6 +1085,10 @@ def _native_write_capabilities() -> list[str]:
         "wipefs",
     ):
         unavailable.add("storage.volume.ext4.create-mount.v1")
+    if not _native_command_tools_available(
+        "blkid", "e2fsck", "findmnt", "mdadm", "systemctl", "systemd-escape"
+    ):
+        unavailable.add("storage.volume.ext4.offline-check.v1")
     if not _native_command_tools_available(
         "blkid",
         "btrfs",
@@ -4181,6 +4187,7 @@ __all__ = [
     "apply_mdraid1_replace",
     "apply_mdraid_check",
     "apply_ext4_volume",
+    "apply_ext4_check",
     "apply_nfs",
     "apply_nfs_remove",
     "apply_quota",
@@ -4202,6 +4209,7 @@ __all__ = [
     "btrfs_scrub_maintenance",
     "filesystems",
     "ext4_volume_candidates",
+    "ext4_check_inventory",
     "exportable_zfs_pools",
     "md_arrays",
     "mdraid1_candidates",
@@ -4212,6 +4220,7 @@ __all__ = [
     "plan_btrfs_replace",
     "plan_btrfs_scrub",
     "plan_ext4_volume",
+    "plan_ext4_check",
     "plan_mdraid1",
     "plan_mdraid1_replace",
     "plan_mdraid_check",

@@ -15,6 +15,7 @@ from appliance.omv_protocol import (
     BTRFS_RAID1_DESIRED_SCHEMA,
     BTRFS_REPLACE_DESIRED_SCHEMA,
     BTRFS_SCRUB_DESIRED_SCHEMA,
+    EXT4_CHECK_DESIRED_SCHEMA,
     EXT4_VOLUME_DESIRED_SCHEMA,
     GROUP_DESIRED_SCHEMA,
     MDRAID1_DESIRED_SCHEMA,
@@ -40,6 +41,7 @@ from appliance.omv_protocol import (
     validate_btrfs_raid1_desired,
     validate_btrfs_replace_desired,
     validate_btrfs_scrub_desired,
+    validate_ext4_check_desired,
     validate_ext4_volume_desired,
     validate_group_desired,
     validate_mdraid1_desired,
@@ -813,6 +815,38 @@ class Ext4VolumeApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class Ext4CheckDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.ext4-check-desired.v1"] = Field(
+        default=EXT4_CHECK_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    filesystem_uuid: str = Field(min_length=36, max_length=36, alias="filesystemUuid")
+    operation: Literal["check"] = "check"
+
+    @field_validator("filesystem_uuid")
+    @classmethod
+    def validate_filesystem_uuid(cls, value: str) -> str:
+        try:
+            return validate_ext4_check_desired(
+                {
+                    "schema": EXT4_CHECK_DESIRED_SCHEMA,
+                    "filesystemUuid": value,
+                    "operation": "check",
+                }
+            )["filesystemUuid"]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class Ext4CheckApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: Ext4CheckDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class ZfsMirrorReplaceDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -1104,6 +1138,8 @@ __all__ = [
     "BtrfsScrubSchedulePolicyDesiredState",
     "DiskIdlePolicyApplyRequest",
     "DiskIdlePolicyDesiredState",
+    "Ext4CheckApplyRequest",
+    "Ext4CheckDesiredState",
     "Ext4VolumeApplyRequest",
     "Ext4VolumeDesiredState",
     "GroupApplyRequest",

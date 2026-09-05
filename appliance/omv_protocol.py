@@ -59,6 +59,9 @@ MDRAID_CHECK_CONTROL_CAPABILITY = "storage.array.mdraid.check.start.v1"
 EXT4_VOLUME_DESIRED_SCHEMA = "echo.omv.ext4-volume-desired.v1"
 EXT4_VOLUME_PLAN_SCHEMA = "echo.omv.ext4-volume-plan.v1"
 EXT4_VOLUME_CONTROL_CAPABILITY = "storage.volume.ext4.create-mount.v1"
+EXT4_CHECK_DESIRED_SCHEMA = "echo.omv.ext4-check-desired.v1"
+EXT4_CHECK_PLAN_SCHEMA = "echo.omv.ext4-check-plan.v1"
+EXT4_CHECK_CONTROL_CAPABILITY = "storage.volume.ext4.offline-check.v1"
 BTRFS_RAID1_DESIRED_SCHEMA = "echo.omv.btrfs-raid1-desired.v1"
 BTRFS_RAID1_PLAN_SCHEMA = "echo.omv.btrfs-raid1-plan.v1"
 BTRFS_RAID1_CONTROL_CAPABILITY = "storage.volume.btrfs-raid1.create-mount.v1"
@@ -312,6 +315,24 @@ def validate_ext4_volume_desired(value: Any) -> dict[str, Any]:
         "arrayUuid": array_uuid,
         "name": name,
         "dataLossConfirmed": True,
+    }
+
+
+def validate_ext4_check_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "filesystemUuid", "operation"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("EXT4 offline check desired state has unexpected fields")
+    if value.get("schema") != EXT4_CHECK_DESIRED_SCHEMA:
+        raise ValueError("EXT4 offline check desired-state schema is unsupported")
+    filesystem_uuid = value.get("filesystemUuid")
+    if not isinstance(filesystem_uuid, str):
+        raise ValueError("EXT4 offline check filesystem UUID is invalid")
+    if value.get("operation") != "check":
+        raise ValueError("EXT4 offline check operation must be check")
+    return {
+        "schema": EXT4_CHECK_DESIRED_SCHEMA,
+        "filesystemUuid": validate_omv_uuid(filesystem_uuid).lower(),
+        "operation": "check",
     }
 
 

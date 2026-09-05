@@ -245,6 +245,7 @@ def test_ext4_volume_creation_uses_a_plan_bound_approval(tmp_path):
         "omv.btrfs.scrub.start",
         "storage.btrfs.scrub.schedule",
         "storage.disk.idle.configure",
+        "omv.ext4.offline-check",
         "omv.mdraid.check.start",
         "storage.mdraid.check.schedule",
         "omv.smb.apply",
