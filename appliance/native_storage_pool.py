@@ -325,22 +325,33 @@ def _verify_created_pool(plan: dict[str, Any]) -> dict[str, Any]:
     if "mirror-0" not in status:
         raise OSError("new ZFS pool is not a mirror")
     for device in plan["devices"]:
-        if not re.search(
-            rf"^\s*{re.escape(device['devicefile'])}\s+ONLINE\b", status, re.MULTILINE
+        devicefile = device["devicefile"]
+        partition_suffix = "p1" if re.fullmatch(
+            r"/dev/(?:nvme\d+n\d+|mmcblk\d+)", devicefile
+        ) else "1"
+        accepted_paths = (devicefile, f"{devicefile}{partition_suffix}")
+        if not any(
+            re.search(rf"^\s*{re.escape(path)}\s+ONLINE\b", status, re.MULTILINE)
+            for path in accepted_paths
         ):
             raise OSError("new ZFS mirror did not retain every planned disk")
     properties = {
         prop: _run_checked("zfs", "get", "-H", "-o", "value", prop, name).strip()
-        for prop in ("mountpoint", "compression", "atime", "xattr", "acltype")
+        for prop in ("mountpoint", "compression", "atime", "xattr", "acltype", "dnodesize")
     }
     expected = {
         "mountpoint": plan["mountpoint"],
         "compression": "lz4",
         "atime": "off",
-        "xattr": "sa",
         "acltype": "posix",
+        "dnodesize": "auto",
     }
-    if properties != expected:
+    # OpenZFS 2.3 canonicalizes xattr=sa to "on" because SA-backed xattrs
+    # became the default and the two values are aliases. Older supported
+    # releases may still report the explicit value as "sa".
+    if properties.get("xattr") not in {"on", "sa"} or any(
+        properties.get(prop) != value for prop, value in expected.items()
+    ):
         raise OSError("new ZFS pool properties failed read-back verification")
     return {"name": name, "health": health, "layout": "mirror", **properties}
 
@@ -374,6 +385,8 @@ def apply_zfs_mirror(desired_state: dict[str, Any], plan_id: str) -> dict[str, A
                 "atime=off",
                 "-O",
                 "xattr=sa",
+                "-O",
+                "dnodesize=auto",
                 "-O",
                 "acltype=posixacl",
                 "-O",

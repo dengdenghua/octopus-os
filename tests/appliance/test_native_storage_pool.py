@@ -104,6 +104,8 @@ def test_zfs_mirror_apply_uses_exact_non_force_command_and_verifies(
             "-O",
             "xattr=sa",
             "-O",
+            "dnodesize=auto",
+            "-O",
             "acltype=posixacl",
             "-O",
             f"mountpoint={safe_pool_host / 'family'}",
@@ -114,6 +116,75 @@ def test_zfs_mirror_apply_uses_exact_non_force_command_and_verifies(
         )
     ]
     assert "-f" not in commands[0]
+
+
+def test_zfs_mirror_verification_accepts_openzfs_whole_disk_partition_and_xattr_alias(
+    monkeypatch: pytest.MonkeyPatch, safe_pool_host: Path
+) -> None:
+    status = """  pool: family
+ state: ONLINE
+config:
+
+        NAME           STATE     READ WRITE CKSUM
+        family         ONLINE       0     0     0
+          mirror-0     ONLINE       0     0     0
+            /dev/sdb1  ONLINE       0     0     0
+            /dev/sdc1  ONLINE       0     0     0
+"""
+    properties = {
+        "mountpoint": str(safe_pool_host / "family"),
+        "compression": "lz4",
+        "atime": "off",
+        "xattr": "on",
+        "acltype": "posix",
+        "dnodesize": "auto",
+    }
+
+    def run_checked(*args: str, **_kwargs: Any) -> str:
+        if args[:4] == ("zpool", "list", "-H", "-o"):
+            return "ONLINE\n"
+        if args[:4] == ("zpool", "status", "-P", "-L"):
+            return status
+        if args[:5] == ("zfs", "get", "-H", "-o", "value"):
+            return f"{properties[args[5]]}\n"
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    monkeypatch.setattr(native_storage_pool, "_run_checked", run_checked)
+    plan = native_storage_pool.plan_zfs_mirror(_desired())
+
+    pool = native_storage_pool._verify_created_pool(plan)
+
+    assert pool["health"] == "ONLINE"
+    assert pool["xattr"] == "on"
+    assert pool["dnodesize"] == "auto"
+
+
+def test_zfs_mirror_verification_rejects_unplanned_partition(
+    monkeypatch: pytest.MonkeyPatch, safe_pool_host: Path
+) -> None:
+    status = """  pool: family
+ state: ONLINE
+config:
+
+        NAME           STATE     READ WRITE CKSUM
+        family         ONLINE       0     0     0
+          mirror-0     ONLINE       0     0     0
+            /dev/sdb2  ONLINE       0     0     0
+            /dev/sdc1  ONLINE       0     0     0
+"""
+
+    def run_checked(*args: str, **_kwargs: Any) -> str:
+        if args[:4] == ("zpool", "list", "-H", "-o"):
+            return "ONLINE\n"
+        if args[:4] == ("zpool", "status", "-P", "-L"):
+            return status
+        raise AssertionError(f"unexpected command: {args!r}")
+
+    monkeypatch.setattr(native_storage_pool, "_run_checked", run_checked)
+    plan = native_storage_pool.plan_zfs_mirror(_desired())
+
+    with pytest.raises(OSError, match="retain every planned disk"):
+        native_storage_pool._verify_created_pool(plan)
 
 
 def test_zfs_mirror_apply_rejects_rebound_disk_before_writing(
