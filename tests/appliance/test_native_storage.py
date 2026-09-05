@@ -227,13 +227,20 @@ def test_shared_folder_create_is_atomic_and_idempotent(
 
     assert plan["operation"] == "create"
     assert plan["requiresApproval"] is True
+    assert plan["target"]["mountPointRef"] == mount_point_ref
+    assert plan["target"]["label"] == "volume"
+    assert "mountPoint" not in plan["target"]
+    assert str(volume) not in json.dumps(plan, ensure_ascii=False)
     applied = native_storage.apply_shared_folder(desired, plan["planId"])
 
     assert applied["applied"] is True
     assert applied["verified"] is True
     assert (volume / "Photos").is_dir()
     persisted = json.loads(registry.read_text(encoding="utf-8"))
-    assert persisted == [applied["sharedFolder"]]
+    assert persisted[0]["volumePath"] == str(volume)
+    assert "volumePath" not in applied["sharedFolder"]
+    assert str(volume) not in json.dumps(applied, ensure_ascii=False)
+    assert applied["sharedFolder"]["relativePath"] == "Photos"
     assert plan["shareUuid"] == applied["sharedFolder"]["uuid"]
 
     repeated_plan = native_storage.plan_shared_folder(desired)

@@ -1076,6 +1076,54 @@ def _registry_folder_entry(
     }
 
 
+def _public_shared_folder_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Project an internal registry entry into the public sharing contract."""
+    return {
+        "uuid": str(entry.get("uuid") or ""),
+        "name": str(entry.get("name") or ""),
+        "comment": str(entry.get("comment") or ""),
+        "relativePath": str(entry.get("relativePath") or ""),
+        "device": str(entry.get("device") or ""),
+        "status": "MOUNTED",
+        "inUse": True,
+        "supportsAcl": shutil.which("getfacl") is not None
+        and shutil.which("setfacl") is not None,
+    }
+
+
+def _shared_folder_target_payload(volume_ref: str, volume_path: str) -> dict[str, Any]:
+    """Return the public target shape without exposing the host mount path."""
+    filesystem = next(
+        (
+            entry
+            for entry in filesystems()
+            if os.path.normpath(str(entry.get("mountpoint") or ""))
+            == os.path.normpath(volume_path)
+        ),
+        {},
+    )
+    raw_label = filesystem.get("label")
+    label = raw_label if isinstance(raw_label, str) else Path(volume_path).name
+    if any(character < " " for character in label):
+        label = ""
+    label = label[:256]
+    raw_filesystem_uuid = filesystem.get("uuid")
+    filesystem_uuid = (
+        str(raw_filesystem_uuid)
+        if isinstance(raw_filesystem_uuid, str) and raw_filesystem_uuid
+        else None
+    )
+    return {
+        "mountPointRef": volume_ref,
+        "filesystemUuid": filesystem_uuid,
+        "label": label,
+        "type": str(filesystem.get("type") or "")[:64],
+        "sizeBytes": max(0, _int(filesystem.get("sizeBytes")) or 0),
+        "availableBytes": max(0, _int(filesystem.get("availableBytes")) or 0),
+        "readOnly": False,
+    }
+
+
 def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
     targets = _writable_targets()
     volume_ref = desired["mountPointRef"]
@@ -1135,7 +1183,7 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
         "operation": operation,
         "requiresApproval": operation == "create",
         "shareUuid": existing.get("uuid") if existing else _share_uuid(volume_ref, desired["name"]),
-        "target": {"mountPointRef": volume_ref, "mountPoint": volume_path},
+        "target": _shared_folder_target_payload(volume_ref, volume_path),
         "desired": desired,
         "changes": changes,
         "safety": {
@@ -1166,7 +1214,9 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
             raise ValueError("shared folder plan is stale; preview the change again")
 
         group_gid = _users_group_gid()
-        volume_path = plan["target"]["mountPoint"]
+        volume_path = _writable_targets().get(desired["mountPointRef"])
+        if volume_path is None:
+            raise ValueError("mountPointRef no longer matches a mounted writable volume")
         target_dir = Path(volume_path) / desired["name"]
         if plan["operation"] == "none":
             if not _verify_shared_folder(target_dir, group_gid):
@@ -1180,7 +1230,7 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
                 **plan,
                 "applied": False,
                 "verified": True,
-                "sharedFolder": existing,
+                "sharedFolder": _public_shared_folder_entry(existing),
             }
 
         created = False
@@ -1210,7 +1260,12 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
                         "shared folder creation failed and the empty directory could not be rolled back"
                     ) from rollback_exc
             raise
-        return {**plan, "applied": True, "verified": True, "sharedFolder": entry}
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "sharedFolder": _public_shared_folder_entry(entry),
+        }
 
 
 # ---------------------------------------------------------------------------
