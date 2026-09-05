@@ -705,6 +705,111 @@ export type OmvMdRaid1Plan = {
 
 export type OmvManagedMdRaid1 = NonNullable<OmvMdRaid1Plan["array"]>;
 
+export type OmvBtrfsRaid1Candidate = OmvZfsMirrorCandidate;
+
+export type OmvBtrfsRaid1DesiredState = {
+  schema: "echo.omv.btrfs-raid1-desired.v1";
+  name: string;
+  devices: [string, string];
+  dataLossConfirmed: true;
+};
+
+export type OmvBtrfsFilesystem = {
+  uuid: string;
+  mountpoint: string;
+  dataProfile: "raid1" | string;
+  metadataProfile: "raid1" | string;
+  readOnly: boolean;
+};
+
+export type OmvBtrfsRaid1Plan = {
+  schema: "echo.omv.btrfs-raid1-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "createAndMount";
+  requiresApproval: true;
+  desired: OmvBtrfsRaid1DesiredState;
+  devices: [OmvBtrfsRaid1Candidate, OmvBtrfsRaid1Candidate];
+  mountpoint: string;
+  safety: {
+    destructive: true;
+    dataLossConfirmed: true;
+    source: "twoBlankWholeDisksWithStableIdentityOnly";
+    dataProfile: "raid1";
+    metadataProfile: "raid1";
+    mountRoot: string;
+    persistentIdentity: "filesystemUuid";
+    force: false;
+  };
+  rollback: "unmountRestoreFstabAndClearNewFilesystemSignatures";
+  applied?: boolean;
+  verified?: boolean;
+  filesystem?: OmvBtrfsFilesystem & {
+    label: string;
+    type: "btrfs";
+    devices: string[];
+  };
+};
+
+export type OmvBtrfsScan = {
+  kind: "scrub";
+  state: "idle" | "inProgress" | "completed" | "failed";
+  progressPercent: number | null;
+  errors: number | null;
+};
+
+export type OmvBtrfsMaintenanceFilesystem = OmvBtrfsFilesystem & {
+  devicefile: string;
+  level: string;
+  status: "healthy" | "warning" | "degraded" | string;
+  totalDevices: number;
+  activeDevices: number;
+  missingDevices: number;
+  operation: string | null;
+  operationPercent: number | null;
+  deviceErrors: Record<string, number>;
+  deviceErrorCount: number;
+  kind: "btrfs";
+};
+
+export type OmvBtrfsMaintenance = {
+  filesystem: OmvBtrfsMaintenanceFilesystem;
+  scan: OmvBtrfsScan;
+  canStartScrub: boolean;
+};
+
+export type OmvBtrfsScrubDesiredState = {
+  schema: "echo.omv.btrfs-scrub-desired.v1";
+  filesystemUuid: string;
+  operation: "start";
+};
+
+export type OmvBtrfsScrubPlan = {
+  schema: "echo.omv.btrfs-scrub-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "start";
+  requiresApproval: true;
+  desired: OmvBtrfsScrubDesiredState;
+  filesystem: OmvBtrfsMaintenanceFilesystem;
+  before: OmvBtrfsScan;
+  safety: {
+    scope: "echoManagedMountedBtrfsRaid1Only";
+    data: "checksummedReplicasMayBeReadAndRepaired";
+    activeMaintenance: "mustBeAbsent";
+    ioLoad: "high";
+    wait: false;
+    readOnly: false;
+    force: false;
+    cancel: false;
+    rollback: "noneAfterScrubAccepted";
+  };
+  applied?: boolean;
+  verified?: boolean;
+  maintenanceState?: "scrubbing" | "completed" | "completedWithErrors";
+  scan?: OmvBtrfsScan;
+};
+
 export type OmvMdRaid1ReplacementMember = {
   devicefile: string;
   slot: number | null;
@@ -1599,6 +1704,72 @@ export function applyOmvMdRaid1(
     "/api/appliance/omv/arrays/mdraid1/apply",
     { desired, planId },
     "无法创建 Linux RAID1 阵列",
+    approvalHeader(approvalToken),
+  );
+}
+
+export async function fetchOmvBtrfsRaid1Candidates(): Promise<
+  OmvBtrfsRaid1Candidate[]
+> {
+  const result = await readJson<{ devices: OmvBtrfsRaid1Candidate[] }>(
+    "/api/appliance/omv/volumes/btrfs-raid1/candidates",
+    "无法读取 Btrfs RAID1 候选磁盘",
+  );
+  return result.devices;
+}
+
+export function planOmvBtrfsRaid1(
+  desired: OmvBtrfsRaid1DesiredState,
+): Promise<OmvBtrfsRaid1Plan> {
+  return postJson(
+    "/api/appliance/omv/volumes/btrfs-raid1/plan",
+    desired,
+    "无法生成 Btrfs RAID1 创建预览",
+  );
+}
+
+export function applyOmvBtrfsRaid1(
+  desired: OmvBtrfsRaid1DesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvBtrfsRaid1Plan> {
+  return postJson(
+    "/api/appliance/omv/volumes/btrfs-raid1/apply",
+    { desired, planId },
+    "无法创建 Btrfs RAID1 卷",
+    approvalHeader(approvalToken),
+  );
+}
+
+export async function fetchOmvBtrfsMaintenance(): Promise<
+  OmvBtrfsMaintenance[]
+> {
+  const result = await readJson<{ filesystems: OmvBtrfsMaintenance[] }>(
+    "/api/appliance/omv/volumes/btrfs-raid1/maintenance",
+    "无法读取 Btrfs scrub 状态",
+  );
+  return result.filesystems;
+}
+
+export function planOmvBtrfsScrub(
+  desired: OmvBtrfsScrubDesiredState,
+): Promise<OmvBtrfsScrubPlan> {
+  return postJson(
+    "/api/appliance/omv/volumes/btrfs-raid1/scrub/plan",
+    desired,
+    "无法生成 Btrfs scrub 预览",
+  );
+}
+
+export function applyOmvBtrfsScrub(
+  desired: OmvBtrfsScrubDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvBtrfsScrubPlan> {
+  return postJson(
+    "/api/appliance/omv/volumes/btrfs-raid1/scrub/apply",
+    { desired, planId },
+    "无法启动 Btrfs scrub",
     approvalHeader(approvalToken),
   );
 }

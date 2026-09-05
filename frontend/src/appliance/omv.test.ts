@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyOmvBtrfsRaid1,
+  applyOmvBtrfsScrub,
   applyOmvExt4Volume,
   applyOmvGroup,
   applyOmvMdRaid1,
@@ -20,6 +22,8 @@ import {
   applyOmvZfsPoolImport,
   applyOmvZfsScrub,
   fetchOmvFilesystems,
+  fetchOmvBtrfsMaintenance,
+  fetchOmvBtrfsRaid1Candidates,
   fetchOmvExt4VolumeCandidates,
   fetchOmvHealth,
   fetchOmvMdRaid1Candidates,
@@ -36,6 +40,8 @@ import {
   fetchOmvZfsPools,
   fetchOmvZfsMaintenance,
   planOmvNfsShare,
+  planOmvBtrfsRaid1,
+  planOmvBtrfsScrub,
   planOmvExt4Volume,
   planOmvMdRaid1,
   planOmvNfsShareRemove,
@@ -1161,6 +1167,105 @@ describe("OMV read-only API client", () => {
     });
     expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
       "mdraid-approval-token",
+    );
+  });
+
+  it("binds Btrfs RAID1 creation and scrub to distinct approved endpoints", async () => {
+    const createDesired = {
+      schema: "echo.omv.btrfs-raid1-desired.v1" as const,
+      name: "family",
+      devices: ["/dev/sdb", "/dev/sdc"] as [string, string],
+      dataLossConfirmed: true as const,
+    };
+    const createPlan = {
+      schema: "echo.omv.btrfs-raid1-plan.v1",
+      planId: "b".repeat(64),
+      desired: createDesired,
+    };
+    const scrubDesired = {
+      schema: "echo.omv.btrfs-scrub-desired.v1" as const,
+      filesystemUuid: "11111111-2222-3333-4444-555555555555",
+      operation: "start" as const,
+    };
+    const scrubPlan = {
+      schema: "echo.omv.btrfs-scrub-plan.v1",
+      planId: "c".repeat(64),
+      desired: scrubDesired,
+    };
+    const devices = [{ devicefile: "/dev/sdb" }, { devicefile: "/dev/sdc" }];
+    const filesystems = [{ filesystem: { uuid: scrubDesired.filesystemUuid } }];
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ devices }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(createPlan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ...createPlan, applied: true, verified: true }),
+          {
+            status: 200,
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ filesystems }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(scrubPlan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...scrubPlan,
+            applied: true,
+            verified: true,
+            maintenanceState: "scrubbing",
+          }),
+          { status: 200 },
+        ),
+      );
+
+    expect(await fetchOmvBtrfsRaid1Candidates()).toHaveLength(2);
+    expect((await planOmvBtrfsRaid1(createDesired)).planId).toBe(
+      createPlan.planId,
+    );
+    expect(
+      (
+        await applyOmvBtrfsRaid1(
+          createDesired,
+          createPlan.planId,
+          "create-token",
+        )
+      ).verified,
+    ).toBe(true);
+    expect(await fetchOmvBtrfsMaintenance()).toEqual(filesystems);
+    expect((await planOmvBtrfsScrub(scrubDesired)).planId).toBe(
+      scrubPlan.planId,
+    );
+    expect(
+      (await applyOmvBtrfsScrub(scrubDesired, scrubPlan.planId, "scrub-token"))
+        .maintenanceState,
+    ).toBe("scrubbing");
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/volumes/btrfs-raid1/candidates",
+      "/api/appliance/omv/volumes/btrfs-raid1/plan",
+      "/api/appliance/omv/volumes/btrfs-raid1/apply",
+      "/api/appliance/omv/volumes/btrfs-raid1/maintenance",
+      "/api/appliance/omv/volumes/btrfs-raid1/scrub/plan",
+      "/api/appliance/omv/volumes/btrfs-raid1/scrub/apply",
+    ]);
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).headers).toMatchObject(
+      {
+        "X-Echo-Approval": "create-token",
+      },
+    );
+    expect((fetchMock.mock.calls[5]?.[1] as RequestInit).headers).toMatchObject(
+      {
+        "X-Echo-Approval": "scrub-token",
+      },
     );
   });
 
