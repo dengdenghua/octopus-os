@@ -1,4 +1,10 @@
-"""NAS 管控面的 HTTP API。
+"""Legacy NAS 管控面的 HTTP API。
+
+This router is retained for isolated compatibility tests and callers that
+explicitly construct it.  ``appliance.extension.register_app`` deliberately
+does not mount it: its historical ShareManager write endpoints predate the
+native storage plan/approval/audit envelope.  Production traffic must use the
+native storage routes instead.
 
     GET    /api/appliance/nas/status                 各子系统可用性(公开)
     GET    /api/appliance/nas/disks                  磁盘与分区
@@ -12,9 +18,9 @@
 鉴权沿用 app_registry 的做法:同一 jwt_secret 校验 Bearer;``jwt_secret`` 为 None
 时全部放行,便于本地开发。
 
-**写操作必须过审批门**:POST/DELETE/apply 会改动系统级配置(SMB/NFS),P3 阶段
-在此接入 ``runtime/safety/approval``。当前由登录 + 前端二次确认把关,
-接入点已在每个写路由上方用 TODO(P3-approval) 标出。
+历史写操作仍只有登录保护，不能用于生产 NAS 控制面；需要实际写入时请改走
+``native_storage_routes.create_omv_alias_router`` 的 desired → plan → approval → apply
+接口。
 """
 
 from __future__ import annotations
@@ -109,7 +115,7 @@ def create_nas_router(
 
     @router.post("/shares", dependencies=[Depends(_require_auth)])
     async def upsert_share(payload: ShareIn) -> dict[str, Any]:
-        # TODO(P3-approval): 接入 runtime/safety/approval 审批门。
+        # Legacy compatibility path; production does not mount this router.
         try:
             saved = await run_in_threadpool(
                 mgr.add_share,
@@ -128,7 +134,7 @@ def create_nas_router(
 
     @router.delete("/shares/{name}", dependencies=[Depends(_require_auth)])
     async def delete_share(name: str) -> dict[str, Any]:
-        # TODO(P3-approval): 接入审批门。
+        # Legacy compatibility path; production does not mount this router.
         try:
             removed = await run_in_threadpool(mgr.remove_share, name)
         except ShareError as exc:
@@ -140,7 +146,7 @@ def create_nas_router(
     @router.post("/shares/apply", dependencies=[Depends(_require_auth)])
     async def apply_shares() -> dict[str, Any]:
         """渲染 + 原子落盘 + reload smbd/nfs。"""
-        # TODO(P3-approval): 接入审批门 —— 这是唯一会动系统配置的写操作。
+        # Legacy compatibility path; production does not mount this router.
         return await run_in_threadpool(mgr.apply)
 
     return router
