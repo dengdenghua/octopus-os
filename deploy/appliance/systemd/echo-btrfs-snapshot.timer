@@ -1,0 +1,12 @@
+[Unit]
+Description=Create Echo-managed Btrfs share snapshots daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=45min
+Unit=echo-btrfs-snapshot.service
+
+[Install]
+WantedBy=timers.target

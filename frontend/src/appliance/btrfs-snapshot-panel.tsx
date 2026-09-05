@@ -10,13 +10,18 @@ import { requestHighRiskApproval } from "@/appliance/approval";
 import {
   applyBtrfsSnapshot,
   applyBtrfsSnapshotDelete,
+  applyBtrfsSnapshotSchedule,
+  fetchBtrfsSnapshotSchedule,
   fetchBtrfsSnapshots,
   planBtrfsSnapshot,
   planBtrfsSnapshotDelete,
+  planBtrfsSnapshotSchedule,
   type BtrfsSnapshot,
   type BtrfsSnapshotDeletePlan,
   type BtrfsSnapshotDesired,
   type BtrfsSnapshotPlan,
+  type BtrfsSnapshotSchedule,
+  type BtrfsSnapshotSchedulePlan,
 } from "@/appliance/btrfs-snapshots";
 import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
 
@@ -24,18 +29,21 @@ const SNAPSHOT_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 
 type PendingApproval =
   | { kind: "create"; plan: BtrfsSnapshotPlan }
-  | { kind: "delete"; plan: BtrfsSnapshotDeletePlan };
+  | { kind: "delete"; plan: BtrfsSnapshotDeletePlan }
+  | { kind: "schedule"; plan: BtrfsSnapshotSchedulePlan };
 
 export function BtrfsSnapshotPanel({
   sharedFolderRef,
   sharedFolderName,
   canCreate,
   canDelete,
+  canSchedule,
 }: {
   sharedFolderRef: string;
   sharedFolderName: string;
   canCreate: boolean;
   canDelete: boolean;
+  canSchedule: boolean;
 }) {
   const [snapshots, setSnapshots] = useState<BtrfsSnapshot[]>([]);
   const [name, setName] = useState("");
@@ -43,6 +51,12 @@ export function BtrfsSnapshotPanel({
   const [pending, setPending] = useState<PendingApproval | null>(null);
   const [loading, setLoading] = useState(true);
   const [planning, setPlanning] = useState(false);
+  const [schedule, setSchedule] = useState<BtrfsSnapshotSchedule | null>(null);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [keepLatest, setKeepLatest] = useState(8);
+  const [schedulePlan, setSchedulePlan] =
+    useState<BtrfsSnapshotSchedulePlan | null>(null);
+  const [schedulePlanning, setSchedulePlanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -62,10 +76,33 @@ export function BtrfsSnapshotPanel({
     void refresh();
   }, [refresh]);
 
+  const refreshSchedule = useCallback(async () => {
+    if (!canSchedule) return;
+    try {
+      const result = await fetchBtrfsSnapshotSchedule(sharedFolderRef);
+      setSchedule(result);
+      setScheduleEnabled(result.enabled);
+      setKeepLatest(result.keepLatest);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "无法读取自动快照策略",
+      );
+    }
+  }, [canSchedule, sharedFolderRef]);
+
+  useEffect(() => {
+    void refreshSchedule();
+  }, [refreshSchedule]);
+
   const previewCreate = async () => {
     const normalizedName = name.trim();
-    if (!SNAPSHOT_NAME.test(normalizedName)) {
-      setError("名称须以小写字母开头，只能包含小写字母、数字、下划线或连字符");
+    if (
+      !SNAPSHOT_NAME.test(normalizedName) ||
+      normalizedName.startsWith("auto-")
+    ) {
+      setError(
+        "名称须以小写字母开头，只能包含小写字母、数字、下划线或连字符；auto- 前缀由调度器保留",
+      );
       return;
     }
     const desired: BtrfsSnapshotDesired = {
@@ -102,6 +139,32 @@ export function BtrfsSnapshotPanel({
     }
   };
 
+  const previewSchedule = async () => {
+    if (!Number.isInteger(keepLatest) || keepLatest < 1 || keepLatest > 64) {
+      setError("自动快照保留数量必须在 1 到 64 之间");
+      return;
+    }
+    setSchedulePlanning(true);
+    setSchedulePlan(null);
+    setError(null);
+    try {
+      setSchedulePlan(
+        await planBtrfsSnapshotSchedule({
+          schema: "echo.btrfs-snapshot-schedule-desired.v1",
+          sharedFolderRef,
+          enabled: scheduleEnabled,
+          keepLatest,
+        }),
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "无法生成自动快照策略预览",
+      );
+    } finally {
+      setSchedulePlanning(false);
+    }
+  };
+
   const confirm = async (password: string) => {
     if (!pending) return;
     if (pending.kind === "create") {
@@ -117,7 +180,7 @@ export function BtrfsSnapshotPanel({
       );
       setName("");
       setPlan(null);
-    } else {
+    } else if (pending.kind === "delete") {
       const approval = await requestHighRiskApproval(
         "omv.btrfs-snapshot.delete",
         pending.plan.planId,
@@ -128,9 +191,21 @@ export function BtrfsSnapshotPanel({
         pending.plan.planId,
         approval.approvalToken,
       );
+    } else {
+      const approval = await requestHighRiskApproval(
+        "storage.btrfs.snapshot.schedule",
+        pending.plan.planId,
+        password,
+      );
+      await applyBtrfsSnapshotSchedule(
+        pending.plan.desired,
+        pending.plan.planId,
+        approval.approvalToken,
+      );
+      setSchedulePlan(null);
     }
     setPending(null);
-    await refresh();
+    await Promise.all([refresh(), refreshSchedule()]);
   };
 
   return (
@@ -154,8 +229,76 @@ export function BtrfsSnapshotPanel({
         </button>
       </div>
       <p className="mt-1 leading-4 text-violet-700">
-        同卷、只读、崩溃一致；不会暂停应用，也暂不提供整卷恢复或自动保留策略。
+        同卷、只读、崩溃一致；不会暂停应用，也暂不提供整卷恢复。
       </p>
+      {canSchedule && schedule && (
+        <div className="mt-2 rounded-md border border-violet-200 bg-white/75 p-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 font-medium">
+              <input
+                type="checkbox"
+                checked={scheduleEnabled}
+                onChange={(event) => {
+                  setScheduleEnabled(event.currentTarget.checked);
+                  setSchedulePlan(null);
+                }}
+              />
+              每日自动快照
+            </label>
+            <label className="ml-auto inline-flex items-center gap-1.5">
+              仅保留最新
+              <input
+                aria-label={`${sharedFolderName} 自动快照保留数量`}
+                type="number"
+                min={1}
+                max={64}
+                value={keepLatest}
+                disabled={!scheduleEnabled}
+                onChange={(event) => {
+                  setKeepLatest(event.currentTarget.valueAsNumber);
+                  setSchedulePlan(null);
+                }}
+                className="h-7 w-14 rounded border border-violet-200 bg-white px-1.5 text-center outline-none focus:border-violet-500 disabled:opacity-50"
+              />
+              个
+            </label>
+            <button
+              type="button"
+              onClick={() => void previewSchedule()}
+              disabled={schedulePlanning}
+              className="h-7 rounded-lg border border-violet-300 bg-white px-2.5 font-medium text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+            >
+              {schedulePlanning ? "正在预览…" : "预览策略"}
+            </button>
+          </div>
+          <p className="mt-1 text-violet-600">
+            每日 02:15
+            后随机错峰；只自动清理调度器创建的快照，手工快照不受影响。
+          </p>
+          {schedulePlan && (
+            <div className="mt-2 flex items-center justify-between gap-2 border-t border-violet-100 pt-2">
+              <span>
+                {schedulePlan.operation === "none"
+                  ? "策略没有变化。"
+                  : schedulePlan.operation === "disable"
+                    ? "将停用自动创建；已有快照不会立即删除。"
+                    : `将启用每日自动快照，并仅保留最新 ${schedulePlan.desired.keepLatest} 个自动快照。`}
+              </span>
+              {schedulePlan.requiresApproval && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPending({ kind: "schedule", plan: schedulePlan })
+                  }
+                  className="h-7 shrink-0 rounded-lg bg-amber-500 px-2.5 font-medium text-white hover:bg-amber-600"
+                >
+                  管理员确认
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {canCreate && (
         <div className="mt-2 flex flex-wrap gap-2">
           <input
@@ -211,7 +354,9 @@ export function BtrfsSnapshotPanel({
               <span className="min-w-0 flex-1 truncate font-medium">
                 {snapshot.name}
               </span>
-              <span className="text-violet-500">只读</span>
+              <span className="text-violet-500">
+                {snapshot.kind === "automatic" ? "自动 · 只读" : "手工 · 只读"}
+              </span>
               {canDelete && (
                 <button
                   type="button"
@@ -237,18 +382,34 @@ export function BtrfsSnapshotPanel({
       )}
       <HighRiskApprovalDialog
         open={Boolean(pending)}
-        title={pending?.kind === "delete" ? "删除只读快照" : "创建只读快照"}
+        title={
+          pending?.kind === "delete"
+            ? "删除只读快照"
+            : pending?.kind === "schedule"
+              ? "更新自动快照策略"
+              : "创建只读快照"
+        }
         description={
           pending?.kind === "delete"
             ? "只删除所选快照子卷，不触碰共享文件夹源数据。删除后不能通过 Echo 恢复。"
-            : "创建同一 Btrfs 文件系统内的只读、崩溃一致快照；不会暂停正在写入的应用。"
+            : pending?.kind === "schedule"
+              ? "后续计划任务将无需再次输入密码创建自动快照，并只裁剪由调度器创建的旧快照。"
+              : "创建同一 Btrfs 文件系统内的只读、崩溃一致快照；不会暂停正在写入的应用。"
         }
         targetLabel={
           pending?.kind === "delete"
             ? pending.plan.snapshot.name
-            : pending?.plan.desired.name
+            : pending?.kind === "schedule"
+              ? `${sharedFolderName} · 保留 ${pending.plan.desired.keepLatest} 个`
+              : pending?.plan.desired.name
         }
-        confirmLabel={pending?.kind === "delete" ? "确认删除" : "确认创建"}
+        confirmLabel={
+          pending?.kind === "delete"
+            ? "确认删除"
+            : pending?.kind === "schedule"
+              ? "确认更新"
+              : "确认创建"
+        }
         destructive={pending?.kind === "delete"}
         onCancel={() => setPending(null)}
         onConfirm={confirm}

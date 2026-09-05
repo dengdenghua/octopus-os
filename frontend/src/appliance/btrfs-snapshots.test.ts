@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyBtrfsSnapshot,
+  applyBtrfsSnapshotSchedule,
   fetchBtrfsSnapshots,
   planBtrfsSnapshot,
+  planBtrfsSnapshotSchedule,
 } from "./btrfs-snapshots";
 
 const desired = {
@@ -61,6 +63,40 @@ describe("Btrfs snapshot API", () => {
     expect(JSON.parse(String(applyOptions.body))).toEqual({
       desired,
       planId: "a".repeat(64),
+    });
+  });
+
+  it("uses a separate approval-bound endpoint for automatic retention", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ planId: "b".repeat(64) }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const scheduleDesired = {
+      schema: "echo.btrfs-snapshot-schedule-desired.v1" as const,
+      sharedFolderRef: desired.sharedFolderRef,
+      enabled: true,
+      keepLatest: 8,
+    };
+    await planBtrfsSnapshotSchedule(scheduleDesired);
+    await applyBtrfsSnapshotSchedule(
+      scheduleDesired,
+      "b".repeat(64),
+      "schedule-approval",
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/appliance/omv/sharing/snapshots/schedule/plan",
+    );
+    const applyOptions = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/appliance/omv/sharing/snapshots/schedule/apply",
+    );
+    expect(applyOptions.headers).toMatchObject({
+      "X-Echo-Approval": "schedule-approval",
     });
   });
 });

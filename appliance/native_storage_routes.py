@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from appliance import (
     btrfs_scrub_schedule_policy,
+    btrfs_snapshot_schedule_policy,
     disk_idle_policy,
     mdraid_check_schedule_policy,
     native_btrfs_snapshot,
@@ -41,6 +42,8 @@ from appliance.omv_models import (
     BtrfsSnapshotDeleteApplyRequest,
     BtrfsSnapshotDeleteDesiredState,
     BtrfsSnapshotDesiredState,
+    BtrfsSnapshotSchedulePolicyApplyRequest,
+    BtrfsSnapshotSchedulePolicyDesiredState,
     DiskIdlePolicyApplyRequest,
     DiskIdlePolicyDesiredState,
     Ext4CheckApplyRequest,
@@ -663,6 +666,55 @@ def create_omv_alias_router(
             metadata={
                 "sharedFolderRef": body.desired.shared_folder_ref,
                 "snapshotId": body.desired.snapshot_id,
+            },
+        )
+
+    @router.get("/sharing/{shared_folder_ref}/snapshots/schedule")
+    async def btrfs_snapshot_schedule(shared_folder_ref: str) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                btrfs_snapshot_schedule_policy.policy_status,
+                shared_folder_ref,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="Btrfs 快照定时策略暂不可用") from exc
+
+    @router.post("/sharing/snapshots/schedule/plan")
+    async def plan_btrfs_snapshot_schedule(
+        body: BtrfsSnapshotSchedulePolicyDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                btrfs_snapshot_schedule_policy.plan_policy,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="Btrfs 快照定时策略暂不可用") from exc
+
+    @router.post("/sharing/snapshots/schedule/apply")
+    async def apply_btrfs_snapshot_schedule_route(
+        body: BtrfsSnapshotSchedulePolicyApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="storage.btrfs.snapshot.schedule",
+            plan_fn=btrfs_snapshot_schedule_policy.plan_policy,
+            apply_fn=btrfs_snapshot_schedule_policy.apply_policy,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "enabled": body.desired.enabled,
+                "keepLatest": body.desired.keep_latest,
+                "scope": "automaticSnapshotsOnly",
+                "schedule": "dailyLocal",
             },
         )
 

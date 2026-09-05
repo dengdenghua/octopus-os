@@ -1,0 +1,25 @@
+[Unit]
+Description=Echo OS automatic read-only Btrfs share snapshots
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/echo-os
+ExecStart=/opt/echo-os/.venv/bin/python -m deploy.appliance.btrfs_snapshot_schedule_runner
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_SYS_ADMIN
+ReadWritePaths=-/data -/mnt -/srv -/fs -/volume
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=echo-btrfs-snapshot

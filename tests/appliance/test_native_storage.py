@@ -64,6 +64,7 @@ def test_native_status_advertises_only_the_available_write_slice(
     monkeypatch.setattr(native_storage, "_native_nut_usb_driver_available", lambda: True)
     monkeypatch.setattr(native_storage, "_native_mdraid_check_scheduler_available", lambda: True)
     monkeypatch.setattr(native_storage, "_native_btrfs_scrub_scheduler_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_btrfs_snapshot_scheduler_available", lambda: True)
     monkeypatch.setattr(native_storage, "_native_disk_idle_service_available", lambda: True)
 
     payload = native_storage.status()
@@ -76,6 +77,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "shared-folder.delete.empty.v1",
         "shared-folder.snapshot.create.read-only.v1",
         "shared-folder.snapshot.delete.v1",
+        "shared-folder.snapshot.schedule.latest.v1",
         "account.group.create.v1",
         "account.user.create.v1",
         "account.user.password.reset.v1",

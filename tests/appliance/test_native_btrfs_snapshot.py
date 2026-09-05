@@ -74,6 +74,8 @@ def test_snapshot_validators_reject_paths_and_cross_share_delete() -> None:
     assert validate_btrfs_snapshot_desired(_desired())["name"] == "before_upgrade"
     with pytest.raises(ValueError, match="snapshot name"):
         validate_btrfs_snapshot_desired(_desired(name="../escape"))
+    with pytest.raises(ValueError, match="reserved"):
+        validate_btrfs_snapshot_desired(_desired(name="auto-20260905t010203z"))
     with pytest.raises(ValueError, match="snapshotId"):
         validate_btrfs_snapshot_delete_desired(_delete_desired("not-a-uuid"))
 
@@ -178,7 +180,38 @@ def test_apply_creates_read_only_snapshot_and_reconciles_late_error(
     ]
     assert result["verified"] is True
     assert result["snapshot"]["readOnly"] is True
+    assert result["snapshot"]["kind"] == "manual"
     assert str(directory) not in json.dumps(result)
+
+
+def test_scheduler_can_use_the_reserved_automatic_namespace(
+    monkeypatch: pytest.MonkeyPatch, snapshot_share
+) -> None:
+    _entry, source, source_identity = snapshot_share
+    monkeypatch.setattr(native_btrfs_snapshot, "_inventory", lambda *_args: [])
+    directory = source.parent / ".echo-snapshots" / SHARE_UUID
+    directory.mkdir(parents=True)
+    monkeypatch.setattr(
+        native_btrfs_snapshot, "_ensure_snapshot_directory", lambda *_args: directory
+    )
+
+    def create(*args: str, **_kwargs: Any) -> None:
+        Path(args[-1]).mkdir()
+
+    monkeypatch.setattr(native_btrfs_snapshot, "_run_mutation", create)
+    monkeypatch.setattr(
+        native_btrfs_snapshot,
+        "_subvolume_identity",
+        lambda path: (
+            _identity(parent=source_identity["subvolumeUuid"], read_only=True)
+            if path != source
+            else source_identity
+        ),
+    )
+    name = "auto-20260905t010203z"
+    plan = native_btrfs_snapshot.plan_automatic_snapshot(SHARE_UUID, name)
+    result = native_btrfs_snapshot.apply_automatic_snapshot(SHARE_UUID, name, plan["planId"])
+    assert result["snapshot"]["kind"] == "automatic"
 
 
 def test_apply_rejects_stale_inventory(monkeypatch: pytest.MonkeyPatch, snapshot_share) -> None:

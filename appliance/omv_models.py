@@ -389,6 +389,33 @@ class BtrfsSnapshotDeleteApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class BtrfsSnapshotSchedulePolicyDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.btrfs-snapshot-schedule-desired.v1"] = Field(
+        default="echo.btrfs-snapshot-schedule-desired.v1",
+        alias="schema",
+    )
+    shared_folder_ref: str = Field(min_length=36, max_length=36, alias="sharedFolderRef")
+    enabled: bool = Field(strict=True)
+    keep_latest: int = Field(strict=True, ge=1, le=64, alias="keepLatest")
+
+    @field_validator("shared_folder_ref")
+    @classmethod
+    def validate_shared_folder_ref(cls, value: str) -> str:
+        try:
+            return validate_omv_uuid(value).lower()
+        except ValueError as exc:
+            raise ValueError("sharedFolderRef must be an OMV UUID") from exc
+
+
+class BtrfsSnapshotSchedulePolicyApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: BtrfsSnapshotSchedulePolicyDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class SharePrivilegeDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -1213,6 +1240,12 @@ class DiskIdlePolicyApplyRequest(BaseModel):
 __all__ = [
     "BtrfsRaid1ApplyRequest",
     "BtrfsRaid1DesiredState",
+    "BtrfsSnapshotApplyRequest",
+    "BtrfsSnapshotDeleteApplyRequest",
+    "BtrfsSnapshotDeleteDesiredState",
+    "BtrfsSnapshotDesiredState",
+    "BtrfsSnapshotSchedulePolicyApplyRequest",
+    "BtrfsSnapshotSchedulePolicyDesiredState",
     "BtrfsScrubApplyRequest",
     "BtrfsScrubDesiredState",
     "BtrfsScrubSchedulePolicyApplyRequest",

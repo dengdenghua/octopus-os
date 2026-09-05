@@ -377,6 +377,10 @@ YAML
     /etc/systemd/system/echo-btrfs-scrub.service
   install -m644 "$OS_DIR/deploy/appliance/systemd/echo-btrfs-scrub.timer" \
     /etc/systemd/system/echo-btrfs-scrub.timer
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-btrfs-snapshot.service" \
+    /etc/systemd/system/echo-btrfs-snapshot.service
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-btrfs-snapshot.timer" \
+    /etc/systemd/system/echo-btrfs-snapshot.timer
   install -m644 "$OS_DIR/deploy/appliance/systemd/echo-disk-idle.service" \
     /etc/systemd/system/echo-disk-idle.service
 
@@ -413,6 +417,7 @@ YAML
   systemctl enable --now echo-smart-self-test.timer
   systemctl enable --now echo-mdraid-check.timer
   systemctl enable --now echo-btrfs-scrub.timer
+  systemctl enable --now echo-btrfs-snapshot.timer
   systemctl enable --now echo-disk-idle.service
   systemctl enable --now echo-appliance.service
   # nginx 可能已在跑(apt 安装时自启),`enable --now` 不会重载已运行进程

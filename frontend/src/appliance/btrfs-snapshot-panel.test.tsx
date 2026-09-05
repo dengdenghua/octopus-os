@@ -3,18 +3,23 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  fetchBtrfsSnapshotSchedule,
   fetchBtrfsSnapshots,
   planBtrfsSnapshot,
   planBtrfsSnapshotDelete,
+  planBtrfsSnapshotSchedule,
 } from "./btrfs-snapshots";
 import { BtrfsSnapshotPanel } from "./btrfs-snapshot-panel";
 
 vi.mock("./btrfs-snapshots", () => ({
   applyBtrfsSnapshot: vi.fn(),
   applyBtrfsSnapshotDelete: vi.fn(),
+  applyBtrfsSnapshotSchedule: vi.fn(),
+  fetchBtrfsSnapshotSchedule: vi.fn(),
   fetchBtrfsSnapshots: vi.fn(),
   planBtrfsSnapshot: vi.fn(),
   planBtrfsSnapshotDelete: vi.fn(),
+  planBtrfsSnapshotSchedule: vi.fn(),
 }));
 
 const share = "11111111-2222-4333-8444-555555555555";
@@ -23,6 +28,7 @@ const snapshot = {
   name: "before_upgrade",
   subvolumeUuid: "12345678-1234-4234-9234-123456789abc",
   readOnly: true as const,
+  kind: "manual" as const,
 };
 
 describe("BtrfsSnapshotPanel", () => {
@@ -61,6 +67,7 @@ describe("BtrfsSnapshotPanel", () => {
         sharedFolderName="Photos"
         canCreate
         canDelete
+        canSchedule={false}
       />,
     );
     expect(await screen.findByText(/崩溃一致/)).toBeInTheDocument();
@@ -98,6 +105,7 @@ describe("BtrfsSnapshotPanel", () => {
         sharedFolderName="Photos"
         canCreate
         canDelete
+        canSchedule={false}
       />,
     );
     await screen.findByText("before_upgrade");
@@ -112,5 +120,52 @@ describe("BtrfsSnapshotPanel", () => {
       }),
     );
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+  });
+
+  it("previews latest-count retention without including manual snapshots", async () => {
+    vi.mocked(fetchBtrfsSnapshotSchedule).mockResolvedValue({
+      schemaVersion: 1,
+      sharedFolderRef: share,
+      enabled: false,
+      keepLatest: 8,
+      configured: false,
+      schedulerInstalled: true,
+      schedule: "daily after 02:15 local time, randomized within 45 minutes",
+      scope: "automaticSnapshotsOnly",
+    });
+    vi.mocked(planBtrfsSnapshotSchedule).mockResolvedValue({
+      planId: "c".repeat(64),
+      operation: "enable",
+      requiresApproval: true,
+      desired: {
+        schema: "echo.btrfs-snapshot-schedule-desired.v1",
+        sharedFolderRef: share,
+        enabled: true,
+        keepLatest: 8,
+      },
+      schedule: "daily after 02:15 local time, randomized within 45 minutes",
+      scope: "automaticSnapshotsOnly",
+    });
+    render(
+      <BtrfsSnapshotPanel
+        sharedFolderRef={share}
+        sharedFolderName="Photos"
+        canCreate
+        canDelete
+        canSchedule
+      />,
+    );
+    await screen.findByText("每日自动快照");
+    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "预览策略" }));
+    await waitFor(() =>
+      expect(planBtrfsSnapshotSchedule).toHaveBeenCalledWith({
+        schema: "echo.btrfs-snapshot-schedule-desired.v1",
+        sharedFolderRef: share,
+        enabled: true,
+        keepLatest: 8,
+      }),
+    );
+    expect(screen.getByText(/手工快照不受影响/)).toBeInTheDocument();
   });
 });

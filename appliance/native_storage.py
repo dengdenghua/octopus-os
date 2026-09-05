@@ -56,6 +56,9 @@ from typing import Any
 from appliance.btrfs_scrub_schedule_policy import (
     scheduler_installed as _btrfs_scrub_scheduler_installed,
 )
+from appliance.btrfs_snapshot_schedule_policy import (
+    scheduler_installed as _btrfs_snapshot_scheduler_installed,
+)
 from appliance.disk_idle_policy import service_installed as _disk_idle_service_installed
 from appliance.mdraid_check_schedule_policy import (
     scheduler_installed as _mdraid_scheduler_installed,
@@ -257,6 +260,10 @@ def _native_mdraid_check_scheduler_available() -> bool:
 
 def _native_btrfs_scrub_scheduler_available() -> bool:
     return _btrfs_scrub_scheduler_installed()
+
+
+def _native_btrfs_snapshot_scheduler_available() -> bool:
+    return _btrfs_snapshot_scheduler_installed()
 
 
 def _native_disk_idle_service_available() -> bool:
@@ -1049,6 +1056,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     SHARED_FOLDER_DELETE_CONTROL_CAPABILITY,
     BTRFS_SNAPSHOT_CONTROL_CAPABILITY,
     BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY,
+    "shared-folder.snapshot.schedule.latest.v1",
     "account.group.create.v1",
     "account.user.create.v1",
     "account.user.password.reset.v1",
@@ -1101,6 +1109,9 @@ def _native_write_capabilities() -> list[str]:
     if not _native_command_tools_available("btrfs"):
         unavailable.add(BTRFS_SNAPSHOT_CONTROL_CAPABILITY)
         unavailable.add(BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY)
+        unavailable.add("shared-folder.snapshot.schedule.latest.v1")
+    elif not _native_btrfs_snapshot_scheduler_available():
+        unavailable.add("shared-folder.snapshot.schedule.latest.v1")
     if not _native_command_tools_available("net", "smbd"):
         unavailable.add("smb.share.desired.v1")
     if not _native_command_tools_available("exportfs"):

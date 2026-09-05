@@ -744,6 +744,8 @@ def validate_btrfs_snapshot_desired(value: Any) -> dict[str, Any]:
             "snapshot name must start with a lowercase letter and contain only "
             "lowercase letters, digits, underscores, or hyphens"
         )
+    if name.startswith("auto-"):
+        raise ValueError("snapshot names beginning with auto- are reserved for the scheduler")
     return {
         "schema": BTRFS_SNAPSHOT_DESIRED_SCHEMA,
         "sharedFolderRef": validate_omv_uuid(shared_folder_ref).lower(),

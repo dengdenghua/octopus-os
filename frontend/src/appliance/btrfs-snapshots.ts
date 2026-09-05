@@ -6,6 +6,36 @@ export type BtrfsSnapshot = {
   name: string;
   subvolumeUuid: string;
   readOnly: true;
+  kind: "manual" | "automatic";
+};
+
+export type BtrfsSnapshotSchedule = {
+  schemaVersion: 1;
+  sharedFolderRef: string;
+  enabled: boolean;
+  keepLatest: number;
+  configured: boolean;
+  schedulerInstalled: boolean;
+  schedule: string;
+  scope: "automaticSnapshotsOnly";
+};
+
+export type BtrfsSnapshotScheduleDesired = {
+  schema: "echo.btrfs-snapshot-schedule-desired.v1";
+  sharedFolderRef: string;
+  enabled: boolean;
+  keepLatest: number;
+};
+
+export type BtrfsSnapshotSchedulePlan = {
+  planId: string;
+  operation: "none" | "enable" | "update" | "disable";
+  requiresApproval: boolean;
+  desired: BtrfsSnapshotScheduleDesired;
+  schedule: string;
+  scope: "automaticSnapshotsOnly";
+  applied?: boolean;
+  verified?: boolean;
 };
 
 export type BtrfsSnapshotDesired = {
@@ -131,6 +161,38 @@ export function applyBtrfsSnapshotDelete(
     "/api/appliance/omv/sharing/snapshots/delete/apply",
     { desired, planId },
     "无法删除只读快照",
+    approvalToken,
+  );
+}
+
+export async function fetchBtrfsSnapshotSchedule(sharedFolderRef: string) {
+  const response = await fetch(
+    `/api/appliance/omv/sharing/${encodeURIComponent(sharedFolderRef)}/snapshots/schedule`,
+    { headers: authHeader() },
+  );
+  if (!response.ok) throw await responseError(response, "无法读取自动快照策略");
+  return (await response.json()) as BtrfsSnapshotSchedule;
+}
+
+export function planBtrfsSnapshotSchedule(
+  desired: BtrfsSnapshotScheduleDesired,
+) {
+  return postJson<BtrfsSnapshotSchedulePlan>(
+    "/api/appliance/omv/sharing/snapshots/schedule/plan",
+    desired,
+    "无法生成自动快照策略预览",
+  );
+}
+
+export function applyBtrfsSnapshotSchedule(
+  desired: BtrfsSnapshotScheduleDesired,
+  planId: string,
+  approvalToken: string,
+) {
+  return postJson<BtrfsSnapshotSchedulePlan>(
+    "/api/appliance/omv/sharing/snapshots/schedule/apply",
+    { desired, planId },
+    "无法更新自动快照策略",
     approvalToken,
   );
 }

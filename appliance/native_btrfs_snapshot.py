@@ -31,6 +31,7 @@ _UUID_PATTERN = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
     re.IGNORECASE,
 )
+_AUTOMATIC_NAME_PATTERN = re.compile(r"auto-[0-9]{8}t[0-9]{6}z")
 
 
 def _run_read(*args: str, timeout: float = 15.0) -> str:
@@ -200,6 +201,7 @@ def _public_snapshot(shared_folder_ref: str, name: str, identity: dict[str, Any]
         "name": name,
         "subvolumeUuid": identity["subvolumeUuid"],
         "readOnly": identity["readOnly"],
+        "kind": "automatic" if _AUTOMATIC_NAME_PATTERN.fullmatch(name) else "manual",
     }
 
 
@@ -226,16 +228,19 @@ def _inventory(
     except OSError as exc:
         raise OSError("managed Btrfs snapshots cannot be inspected") from exc
     for child in children:
-        try:
-            normalized = validate_btrfs_snapshot_desired(
-                {
-                    "schema": "echo.omv.btrfs-snapshot-desired.v1",
-                    "sharedFolderRef": shared_folder_ref,
-                    "name": child.name,
-                }
-            )
-        except ValueError as exc:
-            raise OSError("managed Btrfs snapshot tree contains an unsafe entry") from exc
+        if _AUTOMATIC_NAME_PATTERN.fullmatch(child.name):
+            normalized_name = child.name
+        else:
+            try:
+                normalized_name = validate_btrfs_snapshot_desired(
+                    {
+                        "schema": "echo.omv.btrfs-snapshot-desired.v1",
+                        "sharedFolderRef": shared_folder_ref,
+                        "name": child.name,
+                    }
+                )["name"]
+            except ValueError as exc:
+                raise OSError("managed Btrfs snapshot tree contains an unsafe entry") from exc
         if not child.is_dir(follow_symlinks=False) or child.is_symlink():
             raise OSError("managed Btrfs snapshot tree contains a non-directory entry")
         path = Path(child.path)
@@ -244,7 +249,7 @@ def _inventory(
         identity = _subvolume_identity(path)
         if not identity["readOnly"] or identity["parentUuid"] != source_identity["subvolumeUuid"]:
             raise OSError("managed Btrfs snapshot identity does not match its source")
-        snapshots.append(_public_snapshot(shared_folder_ref, normalized["name"], identity))
+        snapshots.append(_public_snapshot(shared_folder_ref, normalized_name, identity))
     if len(snapshots) > MAX_SNAPSHOTS_PER_SHARE:
         raise OSError("managed Btrfs snapshot count exceeds the supported limit")
     return snapshots
@@ -320,8 +325,7 @@ def plan_snapshot(desired_state: dict[str, Any]) -> dict[str, Any]:
         return _create_plan(desired)
 
 
-def apply_snapshot(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
-    desired = validate_btrfs_snapshot_desired(dict(desired_state))
+def _apply_snapshot_desired(desired: dict[str, Any], plan_id: str) -> dict[str, Any]:
     with storage._registry_transaction():
         plan, entry, source, source_identity = _create_context(desired)
         if plan["planId"] != plan_id:
@@ -363,6 +367,34 @@ def apply_snapshot(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any
             raise OSError("created Btrfs snapshot could not be verified") from verify_error
         snapshot = _public_snapshot(desired["sharedFolderRef"], desired["name"], identity)
         return {**plan, "applied": True, "verified": True, "snapshot": snapshot}
+
+
+def apply_snapshot(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    desired = validate_btrfs_snapshot_desired(dict(desired_state))
+    return _apply_snapshot_desired(desired, plan_id)
+
+
+def _automatic_desired(shared_folder_ref: str, name: str) -> dict[str, Any]:
+    normalized_ref = validate_omv_uuid(shared_folder_ref).lower()
+    if _AUTOMATIC_NAME_PATTERN.fullmatch(name) is None:
+        raise ValueError("automatic snapshot name is invalid")
+    return {
+        "schema": "echo.omv.btrfs-snapshot-desired.v1",
+        "sharedFolderRef": normalized_ref,
+        "name": name,
+    }
+
+
+def plan_automatic_snapshot(shared_folder_ref: str, name: str) -> dict[str, Any]:
+    """Plan one scheduler-owned snapshot; this is not exposed as an HTTP route."""
+    desired = _automatic_desired(shared_folder_ref, name)
+    with storage._registry_transaction():
+        return _create_plan(desired)
+
+
+def apply_automatic_snapshot(shared_folder_ref: str, name: str, plan_id: str) -> dict[str, Any]:
+    """Apply a pre-authorized scheduled snapshot using the normal safety checks."""
+    return _apply_snapshot_desired(_automatic_desired(shared_folder_ref, name), plan_id)
 
 
 def _delete_context(

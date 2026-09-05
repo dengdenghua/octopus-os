@@ -39,6 +39,8 @@ UNIT_SOURCES = {
     "echo-mdraid-check.timer": ("deploy/appliance/systemd/echo-mdraid-check.timer"),
     "echo-btrfs-scrub.service": ("deploy/appliance/systemd/echo-btrfs-scrub.service"),
     "echo-btrfs-scrub.timer": ("deploy/appliance/systemd/echo-btrfs-scrub.timer"),
+    "echo-btrfs-snapshot.service": ("deploy/appliance/systemd/echo-btrfs-snapshot.service"),
+    "echo-btrfs-snapshot.timer": ("deploy/appliance/systemd/echo-btrfs-snapshot.timer"),
     "echo-disk-idle.service": ("deploy/appliance/systemd/echo-disk-idle.service"),
 }
 TIMERS = (
@@ -46,6 +48,7 @@ TIMERS = (
     "echo-smart-self-test.timer",
     "echo-mdraid-check.timer",
     "echo-btrfs-scrub.timer",
+    "echo-btrfs-snapshot.timer",
 )
 SERVICES = ("echo-disk-idle.service",)
 ENABLED_UNITS = (*TIMERS, *SERVICES)
