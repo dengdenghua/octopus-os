@@ -16,6 +16,10 @@ from deploy.appliance import storage_recovery_lab as lab
 REPOSITORY = Path(__file__).resolve().parents[2]
 OPERATIONS_ARTIFACT_ID = "9" * 16
 IMAGE_REFERENCE = f"ghcr.io/echo-os/echo-os@sha256:{'7' * 64}"
+pytestmark = pytest.mark.skipif(
+    os.name != "posix",
+    reason="storage recovery lab safety checks require POSIX ownership and path semantics",
+)
 
 
 def _candidate_index(tmp_path: Path) -> Path:
