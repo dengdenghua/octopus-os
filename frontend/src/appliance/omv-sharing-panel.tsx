@@ -1204,7 +1204,7 @@ export function OmvSharingPanel() {
             Echo
             展示脱敏概览，可在现有可写卷上安全新建基础共享文件夹，并为其预览和应用简单私有
             SMB / NFS
-            规则、普通家庭账户/组、受限成员密码重置及已有用户/组访问权限；其他账户修改/删除、文件系统
+            规则、普通家庭账户/组、受限成员密码重置及已有用户/组访问权限；其他账户修改/删除、递归
             ACL 和复杂协议配置将在原生写面逐步提供。
           </p>
         </div>
@@ -1476,7 +1476,7 @@ export function OmvSharingPanel() {
                   <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
                     只允许一个 RFC1918 或 IPv6 ULA 网段，强制
                     root_squash、同步写入和
-                    subtree_check；通配符、公网和高级参数不会被开放。
+                    no_subtree_check；通配符、公网和高级参数不会被开放。
                   </p>
                 </div>
                 <button
@@ -1770,8 +1770,9 @@ export function OmvSharingPanel() {
                     用户/组访问权限 · {editingPrivilegeFolder.name}
                   </h2>
                   <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
-                    只管理系统中已经存在的用户或组及其共享服务权限；
-                    不会创建账户、修改 POSIX ACL、递归改文件权限或删除数据。
+                    不会创建账户、修改已有文件内容、递归权限或删除数据；OMV
+                    更新共享配置，原生存储面只更新共享根目录的 POSIX 访问/默认
+                    ACL。
                   </p>
                 </div>
                 <button
@@ -1873,7 +1874,10 @@ export function OmvSharingPanel() {
                           : `将更新${privilegePlan.principal.type === "user" ? "用户" : "用户组"} ${privilegePlan.principal.name} 的访问权限`}
                       </strong>
                       <span className="mt-1 block text-[10px] text-slate-500">
-                        只更新共享配置权限；文件系统 ACL 与现有文件权限保持不变
+                        {privilegePlan.safety.filesystemAcl ===
+                        "accessAndDefaultOnly"
+                          ? "只更新共享根目录的访问/默认 ACL；不递归修改已有文件权限"
+                          : "只更新共享配置权限；文件系统 ACL 与现有文件权限保持不变"}
                       </span>
                     </div>
                     {privilegePlan.requiresApproval && (
@@ -2075,17 +2079,24 @@ export function OmvSharingPanel() {
                 const nfsRule = overview.nfs.shares.find(
                   (share) => share.sharedFolderRef === folder.uuid,
                 );
+                const nativeManagedFolder =
+                  status?.source !== "native" ||
+                  !folder.relativePath.startsWith("/");
                 const canControlSmb =
+                  nativeManagedFolder &&
                   overview.smb.enabled &&
                   status?.capabilities?.includes("smb.share.desired.v1");
                 const canControlNfs =
+                  nativeManagedFolder &&
                   overview.nfs.enabled &&
                   status?.capabilities?.includes(
                     "nfs.share.private-network.v1",
                   );
-                const canControlPrivileges = status?.capabilities?.includes(
-                  "shared-folder.privilege.simple.v1",
-                );
+                const canControlPrivileges =
+                  nativeManagedFolder &&
+                  status?.capabilities?.includes(
+                    "shared-folder.privilege.simple.v1",
+                  );
                 return (
                   <article
                     key={folder.uuid}
@@ -3021,7 +3032,11 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={privilegeApprovalOpen && Boolean(privilegePlan)}
         title="应用共享访问权限"
-        description="Echo 只会更新所选已有用户或组在这个共享文件夹上的 共享服务权限，并按需部署 Samba/Rsync 配置；不会修改文件系统 ACL、递归权限或文件内容。失败时会恢复原权限并回读验证。"
+        description={
+          privilegePlan?.safety.filesystemAcl === "accessAndDefaultOnly"
+            ? "Echo 只会更新所选共享根目录上该用户或组的访问 ACL 与默认 ACL，不递归修改已有文件或内容。失败时会恢复整份原 ACL 并回读验证。"
+            : "Echo 只会更新所选已有用户或组在这个共享文件夹上的共享服务权限，并按需部署 Samba/Rsync 配置；不会修改文件系统 ACL、递归权限或文件内容。失败时会恢复原权限并回读验证。"
+        }
         targetLabel={
           privilegePlan
             ? [

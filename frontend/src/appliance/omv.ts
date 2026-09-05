@@ -7,6 +7,7 @@ export type OmvStatus = {
   readOnly: boolean;
   adminUrl: string | null;
   capabilities: string[];
+  source?: "native";
 };
 
 export type OmvFilesystem = {
@@ -353,14 +354,23 @@ export type OmvSharePrivilegePlan = {
     before: OmvSharePermission;
     after: OmvSharePermission;
   }>;
-  safety: {
-    scope: "sharedFolderConfigPrivilege";
-    principal: "existingOmvUserOrGroup";
-    filesystemAcl: "notModified";
-    recursive: "never";
-    serviceDeploy: "sambaAndRsyncdWhenDirty";
-    delete: "notManaged";
-  };
+  safety:
+    | {
+        scope: "sharedFolderConfigPrivilege";
+        principal: "existingOmvUserOrGroup";
+        filesystemAcl: "notModified";
+        recursive: "never";
+        serviceDeploy: "sambaAndRsyncdWhenDirty";
+        delete: "notManaged";
+      }
+    | {
+        scope: "registeredSharedFolderRootAcl";
+        principal: "existingPosixUserOrGroup";
+        filesystemAcl: "accessAndDefaultOnly";
+        recursive: "never";
+        rollback: "fullAclSnapshot";
+        delete: "notManaged";
+      };
   applied?: boolean;
   verified?: boolean;
   deployedServices?: Array<"samba" | "rsyncd">;

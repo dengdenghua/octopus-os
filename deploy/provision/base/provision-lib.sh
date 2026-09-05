@@ -49,7 +49,7 @@ step_storage() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     zfsutils-linux zfs-dkms \
     samba samba-common-bin smbclient \
-    nfs-kernel-server \
+    nfs-kernel-server acl \
     smartmontools mdadm lvm2 btrfs-progs \
     parted util-linux
 

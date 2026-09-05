@@ -16,11 +16,12 @@ identically with or without OpenMediaVault installed:
     /smart/devices-> OmvSmartDevice[]
     /topology     -> OmvStorageTopology
 
-Most surfaces remain read-only. Shared-folder creation is the first deliberately
-narrow write slice: it can only create one portable-name directory on an
-already-mounted writable volume, fixes its group/mode, and records the result in
-an atomic local registry. Formatting, deletion, ACL, share protocols, and quota
-changes stay out of this module.
+Write support is deliberately split into narrow desired/plan/apply slices.
+Shared folders are limited to registered directories on mounted NAS volumes;
+privileges only touch the selected directory's non-recursive POSIX ACL; NFS
+only owns one generated file below ``/etc/exports.d``. Formatting, pool
+deletion, recursive permission changes, and arbitrary protocol options remain
+outside this module.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat as stat_module
 import subprocess
 import tempfile
@@ -43,16 +45,20 @@ from pathlib import Path
 from typing import Any
 
 from appliance.omv_protocol import (
+    GROUP_PLAN_SCHEMA,
+    NFS_PLAN_SCHEMA,
     QUOTA_PLAN_SCHEMA,
+    SHARE_PRIVILEGE_PLAN_SCHEMA,
     SMB_PLAN_SCHEMA,
     USER_PASSWORD_PLAN_SCHEMA,
     USER_PLAN_SCHEMA,
-    GROUP_PLAN_SCHEMA,
     validate_devicefile,
     validate_group_desired,
+    validate_nfs_desired,
     validate_quota_desired,
-    validate_smb_desired,
+    validate_share_privilege_desired,
     validate_shared_folder_desired,
+    validate_smb_desired,
     validate_user_desired,
     validate_user_password_desired,
 )
@@ -61,6 +67,7 @@ SCHEMA_VERSION = 1
 
 SHARED_FOLDER_PLAN_SCHEMA = "echo.omv.shared-folder-plan.v1"
 _NATIVE_SHARE_REGISTRY = Path("/var/lib/echo-os/native-shared-folders.json")
+_NATIVE_NFS_EXPORTS = Path("/etc/exports.d/echo-os.exports")
 _STORAGE_UUID_NAMESPACE = uuid_module.UUID("6f1e0d5c-3a34-4f5e-9a52-1f65c3b07a11")
 _REGISTRY_THREAD_LOCK = threading.RLock()
 _NATIVE_DATA_MOUNT_ROOTS = ("/data", "/mnt", "/srv", "/fs", "/volume")
@@ -571,14 +578,15 @@ def storage_health() -> dict[str, Any]:
     }
 
 
-# Write slices the native plane can actually perform on this host. Slices that
-# are still 501 (privileges, NFS) are intentionally absent until implemented.
+# Write slices the native plane can actually perform on this host.
 _NATIVE_WRITE_CAPABILITIES = (
     "shared-folder.create.simple.v1",
     "account.group.create.v1",
     "account.user.create.v1",
     "account.user.password.reset.v1",
+    "shared-folder.privilege.simple.v1",
     "smb.share.desired.v1",
+    "nfs.share.private-network.v1",
     "filesystem.quota.user-group.v1",
 )
 
@@ -608,6 +616,26 @@ def _etc_entries(path: str) -> list[list[str]]:
             return [line.rstrip("\n").split(":") for line in handle if line.strip()]
     except OSError:
         return []
+
+
+def _is_visible_nas_user(uid: int) -> bool:
+    """Return whether a POSIX uid is safe to expose as a NAS identity."""
+    return _SYSTEM_UID_FLOOR <= uid < 65534
+
+
+def _is_visible_nas_group(name: str, gid: int) -> bool:
+    """Keep normal groups visible, plus Debian's shared ``users`` group."""
+    return 0 <= gid < 65534 and (gid >= _SYSTEM_UID_FLOOR or name == "users")
+
+
+def _samba_service_available() -> bool:
+    """Report whether the native usershare tool and daemon are installed.
+
+    An empty usershare inventory is a valid initial state.  Using the number
+    of existing shares as the service flag makes the first SMB share appear
+    disabled and prevents the UI from offering its create action.
+    """
+    return all(shutil.which(binary) is not None for binary in ("net", "smbd"))
 
 
 def _samba_usershares() -> list[dict[str, Any]]:
@@ -645,6 +673,31 @@ def _samba_usershares() -> list[dict[str, Any]]:
     return shares
 
 
+def _nfs_service_available() -> bool:
+    return shutil.which("exportfs") is not None
+
+
+def _native_nfs_shares() -> list[dict[str, Any]]:
+    """Return only Echo-managed NFS rules; never infer ownership of other exports."""
+    folders = {entry.get("uuid"): entry for entry in _registry_load()}
+    result: list[dict[str, Any]] = []
+    for entry in _nfs_exports_load():
+        folder = folders.get(entry.get("sharedFolderRef"))
+        if folder is None:
+            continue
+        result.append(
+            {
+                "uuid": entry["uuid"],
+                "sharedFolderRef": entry["sharedFolderRef"],
+                "sharedFolderName": folder.get("name", ""),
+                "client": entry["client"],
+                "options": "ro" if entry["readOnly"] else "rw",
+                "comment": entry["comment"],
+            }
+        )
+    return result
+
+
 def sharing_overview() -> dict[str, Any]:
     """Inventory straight from the host: getent + mounts + Samba usershares.
 
@@ -659,7 +712,7 @@ def sharing_overview() -> dict[str, Any]:
             continue
         name, _pw, uid_s, gid_s, gecos, _home = fields[:6]
         uid, gid = _int(uid_s), _int(gid_s)
-        if uid is None or gid is None or uid < _SYSTEM_UID_FLOOR or uid >= 65534:
+        if uid is None or gid is None or not _is_visible_nas_user(uid):
             continue
         users.append(
             {
@@ -681,7 +734,11 @@ def sharing_overview() -> dict[str, Any]:
             "members": fields[3].split(",") if len(fields) > 3 else [],
         }
         for fields in _etc_entries("/etc/group")
-        if len(fields) > 3 and _SYSTEM_UID_FLOOR <= (_int(fields[2]) or 0) < 65534
+        if (
+            len(fields) > 3
+            and (gid := _int(fields[2])) is not None
+            and _is_visible_nas_group(fields[0], gid)
+        )
     ]
 
     fs_entries = filesystems()
@@ -709,7 +766,8 @@ def sharing_overview() -> dict[str, Any]:
                 "device": entry.get("device", ""),
                 "status": "MOUNTED",
                 "inUse": True,
-                "supportsAcl": False,
+                "supportsAcl": shutil.which("getfacl") is not None
+                and shutil.which("setfacl") is not None,
             }
         )
     shared_folder_targets = [
@@ -725,14 +783,16 @@ def sharing_overview() -> dict[str, Any]:
         for entry in fs_entries
         if _is_native_share_target(entry)
     ]
+    smb_available = _samba_service_available()
     smb_shares = _samba_usershares()
+    nfs_shares = _native_nfs_shares()
     return {
         "sharedFolders": shared_folders,
         "sharedFolderTargets": shared_folder_targets,
         "users": users,
         "groups": groups,
-        "smb": {"enabled": bool(smb_shares), "shares": smb_shares},
-        "nfs": {"enabled": False, "shares": []},
+        "smb": {"enabled": smb_available, "shares": smb_shares},
+        "nfs": {"enabled": _nfs_service_available(), "shares": nfs_shares},
         "readOnly": True,
     }
 
@@ -791,6 +851,62 @@ def _registry_save(entries: list[dict[str, Any]]) -> None:
             os.close(descriptor)
         with contextlib.suppress(FileNotFoundError):
             temporary.unlink()
+
+
+def _read_regular_text(path: Path, *, missing_ok: bool = False) -> str | None:
+    """Read a managed file without following a final-component symlink."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        if missing_ok:
+            return None
+        raise
+    if not stat_module.S_ISREG(info.st_mode):
+        raise OSError(f"managed file is not a regular file: {path}")
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise OSError(f"managed file is unreadable: {path}") from exc
+
+
+def _atomic_text_save(path: Path, content: str, *, mode: int) -> None:
+    """Atomically replace a small root-managed UTF-8 configuration file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        fchmod = getattr(os, "fchmod", None)
+        if callable(fchmod):
+            fchmod(descriptor, mode)
+        else:  # pragma: no cover - exercised by the Windows CI job
+            temporary.chmod(mode)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        with contextlib.suppress(OSError):
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        with contextlib.suppress(FileNotFoundError):
+            temporary.unlink()
+
+
+def _restore_managed_text(path: Path, content: str | None, *, mode: int) -> None:
+    if content is None:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+        return
+    _atomic_text_save(path, content, mode=mode)
 
 
 def _make_private(descriptor: int, path: Path) -> None:
@@ -1138,6 +1254,20 @@ def _run_write_stdin(*args: str, input_text: str, timeout: float = 30.0) -> None
         raise OSError(f"{args[0]} failed: {detail}")
 
 
+def _run_read_checked(*args: str, timeout: float = 30.0) -> str:
+    """Run a required read-back command and fail closed on missing/invalid state."""
+    try:
+        completed = subprocess.run(
+            list(args), capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OSError(f"native command failed to start: {' '.join(args)}") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip() or f"exit {completed.returncode}"
+        raise OSError(f"{args[0]} failed: {detail}")
+    return completed.stdout or ""
+
+
 def _require_posix_accounts() -> tuple[Any, Any]:
     try:
         import grp
@@ -1323,10 +1453,8 @@ def apply_user(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
         _set_user_secret(desired["name"], desired["password"])
     except OSError:
         # Roll back the half-created account so the host is not left inconsistent.
-        try:
+        with contextlib.suppress(OSError):
             _run_write("userdel", desired["name"])
-        except OSError:
-            pass
         raise
     return {**plan, "applied": True, "verified": True, "user": {"name": desired["name"]}}
 
@@ -1389,11 +1517,475 @@ def apply_user_password(desired_state: dict[str, Any], plan_id: str) -> dict[str
     return {**plan, "applied": True, "verified": True, "user": {"name": desired["name"]}}
 
 
+# --- POSIX ACL share privileges ------------------------------------------
+
+_ACL_TO_PERMISSION = {"---": "none", "r-x": "read", "rwx": "readWrite"}
+_PERMISSION_TO_ACL = {"none": "---", "read": "r-x", "readWrite": "rwx"}
+
+
+def _native_folder_path(entry: dict[str, Any]) -> Path:
+    """Resolve one registered folder without accepting symlinks or stale mounts."""
+    volume_path = str(entry.get("volumePath") or "")
+    relative_path = str(entry.get("relativePath") or "")
+    mount_ref = str(entry.get("mountPointRef") or "")
+    current_volume = _writable_targets().get(mount_ref)
+    if not current_volume or os.path.normpath(current_volume) != os.path.normpath(volume_path):
+        raise ValueError("shared folder volume is not mounted as a writable NAS target")
+    if (
+        not relative_path
+        or os.path.isabs(relative_path)
+        or relative_path in {".", ".."}
+        or ".." in Path(relative_path).parts
+    ):
+        raise OSError("native shared-folder registry contains an unsafe relative path")
+    path = Path(volume_path) / relative_path
+    try:
+        info = path.lstat()
+    except FileNotFoundError as exc:
+        raise ValueError("shared folder directory does not exist on the host") from exc
+    if not stat_module.S_ISDIR(info.st_mode) or stat_module.S_ISLNK(info.st_mode):
+        raise OSError("registered shared folder is not a real directory")
+    return path
+
+
+def _principal_id(principal_type: str, name: str) -> int:
+    grp, pwd = _require_posix_accounts()
+    try:
+        if principal_type == "user":
+            identifier = int(pwd.getpwnam(name).pw_uid)
+            visible = _is_visible_nas_user(identifier)
+        else:
+            account = grp.getgrnam(name)
+            identifier = int(account.gr_gid)
+            visible = _is_visible_nas_group(name, identifier)
+    except KeyError as exc:
+        raise ValueError(f"{principal_type} '{name}' does not exist on the host") from exc
+    if not visible:
+        raise ValueError(f"{principal_type} '{name}' is not an exposed NAS identity")
+    return identifier
+
+
+def _read_acl(path: Path) -> str:
+    return _run_read_checked("getfacl", "--absolute-names", str(path))
+
+
+def _acl_entries(
+    acl_text: str, principal_type: str, principal_name: str
+) -> tuple[str | None, str | None]:
+    kind = "user" if principal_type == "user" else "group"
+    access: str | None = None
+    default: str | None = None
+    for raw_line in acl_text.splitlines():
+        line = raw_line.split("#effective:", 1)[0].strip()
+        prefix = "default:"
+        is_default = line.startswith(prefix)
+        if is_default:
+            line = line[len(prefix) :]
+        fields = line.split(":")
+        if len(fields) != 3 or fields[0] != kind or fields[1] != principal_name:
+            continue
+        permissions = fields[2]
+        if permissions not in _ACL_TO_PERMISSION:
+            raise OSError("share privilege uses an ACL shape outside the managed slice")
+        if is_default:
+            default = permissions
+        else:
+            access = permissions
+    return access, default
+
+
+def _acl_permission(acl_text: str, principal_type: str, principal_name: str) -> str:
+    access, default = _acl_entries(acl_text, principal_type, principal_name)
+    if (access is None) != (default is None):
+        raise OSError(
+            "share access and default ACL entries are incomplete; repair them manually first"
+        )
+    if access is not None and default is not None and access != default:
+        raise OSError("share access and default ACL entries disagree; repair them manually first")
+    value = access if access is not None else default
+    return "inherit" if value is None else _ACL_TO_PERMISSION[value]
+
+
+def share_privileges(share_uuid: str) -> list[dict[str, Any]]:
+    entry = _resolve_shared_folder(share_uuid)
+    path = _native_folder_path(entry)
+    acl_text = _read_acl(path)
+    overview = sharing_overview()
+    privileges = [
+        {
+            "type": "user",
+            "id": user["uid"],
+            "name": user["name"],
+            "permission": _acl_permission(acl_text, "user", user["name"]),
+        }
+        for user in overview["users"]
+    ]
+    privileges.extend(
+        {
+            "type": "group",
+            "id": group["gid"],
+            "name": group["name"],
+            "permission": _acl_permission(acl_text, "group", group["name"]),
+        }
+        for group in overview["groups"]
+    )
+    return privileges
+
+
+def _share_privilege_context(
+    desired: dict[str, Any],
+) -> tuple[dict[str, Any], Path, int, str]:
+    entry = _resolve_shared_folder(desired["sharedFolderRef"])
+    path = _native_folder_path(entry)
+    identifier = _principal_id(desired["principalType"], desired["principalName"])
+    acl_text = _read_acl(path)
+    return entry, path, identifier, acl_text
+
+
+def _build_share_privilege_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    entry, _path, identifier, acl_text = _share_privilege_context(desired)
+    current = _acl_permission(acl_text, desired["principalType"], desired["principalName"])
+    operation = "none" if current == desired["permission"] else "update"
+    base_revision = _canonical_hash(
+        {
+            "sharedFolder": {
+                "uuid": entry["uuid"],
+                "name": entry["name"],
+                "status": "MOUNTED",
+            },
+            "acl": acl_text,
+        }
+    )
+    plan_id = _canonical_hash(
+        {
+            "schema": SHARE_PRIVILEGE_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+        }
+    )
+    return {
+        "schema": SHARE_PRIVILEGE_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": operation,
+        "requiresApproval": operation == "update",
+        "sharedFolder": {"uuid": entry["uuid"], "name": entry["name"], "status": "MOUNTED"},
+        "principal": {
+            "type": desired["principalType"],
+            "id": identifier,
+            "name": desired["principalName"],
+            "before": current,
+            "after": desired["permission"],
+        },
+        "desired": desired,
+        "changes": (
+            []
+            if operation == "none"
+            else [{"field": "permission", "before": current, "after": desired["permission"]}]
+        ),
+        "safety": {
+            "scope": "registeredSharedFolderRootAcl",
+            "principal": "existingPosixUserOrGroup",
+            "filesystemAcl": "accessAndDefaultOnly",
+            "recursive": "never",
+            "rollback": "fullAclSnapshot",
+            "delete": "notManaged",
+        },
+        "source": "native",
+    }
+
+
+def plan_share_privilege(desired_state: dict[str, Any]) -> dict[str, Any]:
+    desired = validate_share_privilege_desired(dict(desired_state))
+    with _registry_transaction():
+        return _build_share_privilege_plan(desired)
+
+
+def apply_share_privilege(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    desired = validate_share_privilege_desired(dict(desired_state))
+    with _registry_transaction():
+        plan = _build_share_privilege_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("share privilege plan is stale; preview the change again")
+        entry, path, _identifier, original_acl = _share_privilege_context(desired)
+        observed_revision = _canonical_hash(
+            {
+                "sharedFolder": {
+                    "uuid": entry["uuid"],
+                    "name": entry["name"],
+                    "status": "MOUNTED",
+                },
+                "acl": original_acl,
+            }
+        )
+        if observed_revision != plan["baseRevision"]:
+            raise ValueError("share privilege changed during apply; preview again")
+        if plan["operation"] == "none":
+            return {**plan, "applied": False, "verified": True, "deployedServices": []}
+
+        kind = "u" if desired["principalType"] == "user" else "g"
+        access, default = _acl_entries(
+            original_acl, desired["principalType"], desired["principalName"]
+        )
+        try:
+            if desired["permission"] == "inherit":
+                if access is not None:
+                    _run_write("setfacl", "-x", f"{kind}:{desired['principalName']}", str(path))
+                if default is not None:
+                    _run_write(
+                        "setfacl", "-x", f"d:{kind}:{desired['principalName']}", str(path)
+                    )
+            else:
+                acl_mode = _PERMISSION_TO_ACL[desired["permission"]]
+                _run_write(
+                    "setfacl",
+                    "-m",
+                    f"{kind}:{desired['principalName']}:{acl_mode},"
+                    f"d:{kind}:{desired['principalName']}:{acl_mode}",
+                    str(path),
+                )
+            observed_acl = _read_acl(path)
+            observed = _acl_permission(
+                observed_acl, desired["principalType"], desired["principalName"]
+            )
+            if observed != desired["permission"]:
+                raise OSError("setfacl did not persist the requested share privilege")
+        except Exception as exc:
+            try:
+                _run_write_stdin("setfacl", "--restore=-", input_text=original_acl)
+                if _read_acl(path) != original_acl:
+                    raise OSError("ACL rollback was not verified")
+            except Exception as rollback_exc:
+                raise OSError(
+                    "share privilege update failed and ACL rollback also failed; inspect the share"
+                ) from rollback_exc
+            if isinstance(exc, (OSError, ValueError)):
+                raise
+            raise OSError("share privilege update failed") from exc
+        return {**plan, "applied": True, "verified": True, "deployedServices": []}
+
+
+# --- NFS exports ----------------------------------------------------------
+
+_NFS_EXPORT_OPTIONS = ("sync", "no_subtree_check", "root_squash", "secure")
+
+
+def _nfs_uuid(folder_ref: str, client: str) -> str:
+    return str(uuid_module.uuid5(_STORAGE_UUID_NAMESPACE, f"echo-nfs:{folder_ref}:{client}"))
+
+
+def _nfs_rule_path(folder_ref: str) -> tuple[dict[str, Any], Path]:
+    entry = _resolve_shared_folder(folder_ref)
+    path = _native_folder_path(entry)
+    if any(character.isspace() for character in str(path)) or (
+        os.name != "nt" and "\\" in str(path)
+    ):
+        raise ValueError("NFS cannot publish a shared-folder path containing whitespace")
+    return entry, path
+
+
+def _render_nfs_exports(entries: list[dict[str, Any]]) -> str:
+    lines = ["# Generated by Echo OS. Manual edits are rejected and never merged."]
+    for item in sorted(entries, key=lambda value: (value["sharedFolderRef"], value["client"])):
+        _folder, path = _nfs_rule_path(item["sharedFolderRef"])
+        access = "ro" if item["readOnly"] else "rw"
+        options = ",".join((access, *_NFS_EXPORT_OPTIONS))
+        metadata = json.dumps(item, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        lines.append(f"# echo-os-rule {metadata}")
+        lines.append(f"{path} {item['client']}({options})")
+    return "\n".join(lines) + "\n"
+
+
+def _validated_nfs_export_entries(entries: list[Any]) -> list[dict[str, Any]]:
+    expected = {"uuid", "sharedFolderRef", "client", "readOnly", "comment"}
+    validated: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != expected:
+            raise OSError("Echo-managed NFS exports contain invalid metadata")
+        try:
+            normalized = validate_nfs_desired(
+                {
+                    "schema": "echo.omv.nfs-share-desired.v1",
+                    "sharedFolderRef": entry["sharedFolderRef"],
+                    "clientCidr": entry["client"],
+                    "readOnly": entry["readOnly"],
+                    "comment": entry["comment"],
+                }
+            )
+            share_uuid = str(uuid_module.UUID(str(entry["uuid"])))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise OSError("Echo-managed NFS exports contain invalid metadata") from exc
+        if (
+            share_uuid != entry["uuid"]
+            or normalized["sharedFolderRef"] != entry["sharedFolderRef"]
+            or normalized["clientCidr"] != entry["client"]
+            or share_uuid != _nfs_uuid(entry["sharedFolderRef"], entry["client"])
+        ):
+            raise OSError("Echo-managed NFS exports contain non-canonical metadata")
+        validated.append(dict(entry))
+    identities = [(entry["sharedFolderRef"], entry["client"]) for entry in validated]
+    if len(identities) != len(set(identities)):
+        raise OSError("Echo-managed NFS exports contain duplicate rules")
+    return sorted(validated, key=lambda item: (item["sharedFolderRef"], item["client"]))
+
+
+def _nfs_exports_load(*, strict: bool = False) -> list[dict[str, Any]]:
+    try:
+        text = _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True)
+        if text is None:
+            return []
+        prefix = "# echo-os-rule "
+        raw_entries = [json.loads(line[len(prefix) :]) for line in text.splitlines() if line.startswith(prefix)]
+        entries = _validated_nfs_export_entries(raw_entries)
+        if text != _render_nfs_exports(entries):
+            raise OSError("Echo-managed NFS exports contain unrecognized or modified rules")
+        return entries
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        if strict:
+            if isinstance(exc, OSError):
+                raise
+            raise OSError("Echo-managed NFS exports are unreadable") from exc
+        return []
+
+
+def _build_nfs_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    folder, path = _nfs_rule_path(desired["sharedFolderRef"])
+    exports = _nfs_exports_load(strict=True)
+    exports_text = _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True)
+    existing = next(
+        (
+            item
+            for item in exports
+            if item["sharedFolderRef"] == desired["sharedFolderRef"]
+            and item["client"] == desired["clientCidr"]
+        ),
+        None,
+    )
+    current = (
+        None
+        if existing is None
+        else {"readOnly": existing["readOnly"], "comment": existing["comment"]}
+    )
+    wanted = {"readOnly": desired["readOnly"], "comment": desired["comment"]}
+    changes = [
+        {
+            "field": field,
+            "before": None if current is None else current[field],
+            "after": after,
+        }
+        for field, after in wanted.items()
+        if current is None or current[field] != after
+    ]
+    operation = "create" if existing is None else ("update" if changes else "none")
+    base_revision = _canonical_hash(
+        {
+            "folder": {"uuid": folder["uuid"], "name": folder["name"], "path": str(path)},
+            "exports": exports_text,
+        }
+    )
+    plan_id = _canonical_hash(
+        {"schema": NFS_PLAN_SCHEMA, "baseRevision": base_revision, "desired": desired}
+    )
+    return {
+        "schema": NFS_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": operation,
+        "requiresApproval": operation != "none",
+        "shareUuid": existing["uuid"] if existing else _nfs_uuid(
+            desired["sharedFolderRef"], desired["clientCidr"]
+        ),
+        "sharedFolder": {"uuid": folder["uuid"], "name": folder["name"], "status": "MOUNTED"},
+        "desired": desired,
+        "changes": changes,
+        "safety": {
+            "clientScope": "privateCidrOnly",
+            "rootSquash": "required",
+            "syncWrites": "required",
+            "advancedOptions": "notManaged",
+            "delete": "notManaged",
+        },
+        "source": "native",
+    }
+
+
+def plan_nfs(desired_state: dict[str, Any]) -> dict[str, Any]:
+    desired = validate_nfs_desired(dict(desired_state))
+    with _registry_transaction():
+        return _build_nfs_plan(desired)
+
+
+def _verify_live_nfs(path: Path, desired: dict[str, Any]) -> None:
+    output = _run_read_checked("exportfs", "-v")
+    match = re.search(
+        rf"{re.escape(str(path))}\s+{re.escape(desired['clientCidr'])}\(([^)]*)\)",
+        output,
+    )
+    if match is None:
+        raise OSError("NFS rule is absent from the live export table")
+    options = set(match.group(1).split(","))
+    required = {"ro" if desired["readOnly"] else "rw", *_NFS_EXPORT_OPTIONS}
+    if not required.issubset(options):
+        raise OSError("live NFS rule does not preserve the required safety options")
+
+
+def apply_nfs(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    desired = validate_nfs_desired(dict(desired_state))
+    with _registry_transaction():
+        plan = _build_nfs_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("NFS plan is stale; preview the change again")
+        _folder, path = _nfs_rule_path(desired["sharedFolderRef"])
+        if plan["operation"] == "none":
+            _verify_live_nfs(path, desired)
+            return {**plan, "applied": False, "verified": True}
+
+        old_exports = _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True)
+        exports = _nfs_exports_load(strict=True)
+        replacement = {
+            "uuid": plan["shareUuid"],
+            "sharedFolderRef": desired["sharedFolderRef"],
+            "client": desired["clientCidr"],
+            "readOnly": desired["readOnly"],
+            "comment": desired["comment"],
+        }
+        wanted = [
+            item
+            for item in exports
+            if not (
+                item["sharedFolderRef"] == desired["sharedFolderRef"]
+                and item["client"] == desired["clientCidr"]
+            )
+        ]
+        wanted.append(replacement)
+        wanted.sort(key=lambda item: (item["sharedFolderRef"], item["client"]))
+        try:
+            _atomic_text_save(_NATIVE_NFS_EXPORTS, _render_nfs_exports(wanted), mode=0o644)
+            _run_write("exportfs", "-ra")
+            if _nfs_exports_load(strict=True) != wanted:
+                raise OSError("native NFS export write-back verification failed")
+            _verify_live_nfs(path, desired)
+        except Exception as exc:
+            try:
+                _restore_managed_text(_NATIVE_NFS_EXPORTS, old_exports, mode=0o644)
+                _run_write("exportfs", "-ra")
+                if _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True) != old_exports:
+                    raise OSError("NFS exports rollback was not verified")
+            except Exception as rollback_exc:
+                raise OSError(
+                    "NFS update failed and rollback also failed; inspect exports immediately"
+                ) from rollback_exc
+            if isinstance(exc, (OSError, ValueError)):
+                raise
+            raise OSError("NFS update failed") from exc
+        return {**plan, "applied": True, "verified": True, "share": replacement}
+
+
 # --- SMB usershare enable / update / remove ------------------------------
 
 
 def _resolve_shared_folder(reference: str) -> dict[str, Any]:
-    registry = _registry_load(strict=False) or []
+    registry = _registry_load(strict=True)
     for entry in registry:
         if entry.get("uuid") == reference:
             return entry
@@ -1638,17 +2230,7 @@ class NativeStorageAuthority:
         return sharing_overview()
 
     def share_privileges(self, share_uuid: str) -> list[dict[str, Any]]:
-        # 原生语义:本机系统用户/组对挂载的存储卷拥有读写权。
-        overview = sharing_overview()
-        privileges = [
-            {"type": "user", "id": u["name"], "name": u["name"], "permission": "readWrite"}
-            for u in overview["users"]
-        ]
-        privileges.extend(
-            {"type": "group", "id": g["name"], "name": g["name"], "permission": "readWrite"}
-            for g in overview["groups"]
-        )
-        return privileges
+        return share_privileges(share_uuid)
 
 
 def validated_devicefile(devicefile: str) -> str:
@@ -1662,7 +2244,9 @@ def validated_devicefile(devicefile: str) -> str:
 __all__ = [
     "NativeStorageAuthority",
     "apply_group",
+    "apply_nfs",
     "apply_quota",
+    "apply_share_privilege",
     "apply_shared_folder",
     "apply_smb",
     "apply_user",
@@ -1671,12 +2255,15 @@ __all__ = [
     "filesystems",
     "md_arrays",
     "plan_group",
+    "plan_nfs",
     "plan_quota",
+    "plan_share_privilege",
     "plan_shared_folder",
     "plan_smb",
     "plan_user",
     "plan_user_password",
     "sharing_overview",
+    "share_privileges",
     "smart_devices",
     "smart_report",
     "status",

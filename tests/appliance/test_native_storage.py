@@ -4,6 +4,7 @@ import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -64,7 +65,9 @@ def test_native_status_advertises_only_the_available_write_slice() -> None:
         "account.group.create.v1",
         "account.user.create.v1",
         "account.user.password.reset.v1",
+        "shared-folder.privilege.simple.v1",
         "smb.share.desired.v1",
+        "nfs.share.private-network.v1",
         "filesystem.quota.user-group.v1",
     ]
 
@@ -146,6 +149,73 @@ def test_system_mounts_are_never_offered_as_shared_folder_targets(
 
     assert [target["label"] for target in overview["sharedFolderTargets"]] == ["family"]
     assert native_storage.volume_uuid("/") not in native_storage._writable_targets()
+
+
+def test_sharing_overview_keeps_the_users_group_and_empty_smb_service_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries = {
+        "/etc/passwd": [
+            ["root", "x", "0", "0", "root", "/root"],
+            ["mother", "x", "1001", "100", "Mom", "/home/mother"],
+        ],
+        "/etc/group": [
+            ["root", "x", "0", ""],
+            ["users", "x", "100", "mother"],
+            ["media", "x", "1001", "mother"],
+            ["daemon", "x", "999", ""],
+        ],
+    }
+    monkeypatch.setattr(native_storage, "_etc_entries", lambda path: entries[path])
+    monkeypatch.setattr(native_storage, "filesystems", lambda: [])
+    monkeypatch.setattr(native_storage, "_registry_load", lambda **_kwargs: [])
+    monkeypatch.setattr(native_storage, "_samba_usershares", lambda: [])
+    monkeypatch.setattr(
+        native_storage.shutil,
+        "which",
+        lambda binary: f"/usr/bin/{binary}" if binary in {"net", "smbd"} else None,
+    )
+
+    overview = native_storage.sharing_overview()
+
+    assert overview["smb"] == {"enabled": True, "shares": []}
+    assert [group["name"] for group in overview["groups"]] == ["users", "media"]
+    assert overview["users"][0]["groups"] == ["users", "media"]
+
+
+def test_principal_id_rejects_system_accounts_but_allows_nas_users_and_users_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_ids = {"root": 0, "mother": 1001}
+    group_ids = {"root": 0, "users": 100, "media": 1001}
+
+    def getpwnam(name: str) -> SimpleNamespace:
+        return SimpleNamespace(pw_uid=user_ids[name])
+
+    def getgrnam(name: str) -> SimpleNamespace:
+        return SimpleNamespace(gr_gid=group_ids[name])
+
+    monkeypatch.setattr(
+        native_storage,
+        "_require_posix_accounts",
+        lambda: (SimpleNamespace(getgrnam=getgrnam), SimpleNamespace(getpwnam=getpwnam)),
+    )
+
+    assert native_storage._principal_id("user", "mother") == 1001
+    assert native_storage._principal_id("group", "users") == 100
+    with pytest.raises(ValueError, match="not an exposed NAS identity"):
+        native_storage._principal_id("user", "root")
+    with pytest.raises(ValueError, match="not an exposed NAS identity"):
+        native_storage._principal_id("group", "root")
+
+
+@pytest.mark.parametrize(
+    "acl_text",
+    ["user:mother:rwx\n", "default:user:mother:rwx\n"],
+)
+def test_partial_share_acl_fails_closed_until_access_and_default_match(acl_text: str) -> None:
+    with pytest.raises(OSError, match="access and default ACL entries are incomplete"):
+        native_storage._acl_permission(acl_text, "user", "mother")
 
 
 def test_shared_folder_create_is_atomic_and_idempotent(
@@ -513,3 +583,236 @@ def test_quota_plan_on_zfs(monkeypatch: pytest.MonkeyPatch) -> None:
     assert applied["applied"] is True
     assert zfs_calls and zfs_calls[0][:2] == ("zfs", "set")
     assert "userquota@mother" in zfs_calls[0][2]
+
+
+# --- Native privilege and NFS slices ------------------------------------
+
+
+def _register_folder(
+    volume: Path, registry: Path, mount_point_ref: str, folder_uuid: str
+) -> Path:
+    folder = volume / "Photos"
+    folder.mkdir()
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(
+        json.dumps(
+            [
+                {
+                    "uuid": folder_uuid,
+                    "name": "Photos",
+                    "comment": "Family photos",
+                    "relativePath": "Photos",
+                    "device": "/dev/test0",
+                    "volumePath": str(volume),
+                    "mountPointRef": mount_point_ref,
+                    "createdAt": "2026-09-05T00:00:00+00:00",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return folder
+
+
+def _privilege_desired(folder_uuid: str, permission: str = "readWrite") -> dict[str, Any]:
+    return {
+        "schema": "echo.omv.share-privilege-desired.v1",
+        "sharedFolderRef": folder_uuid,
+        "principalType": "user",
+        "principalName": "mother",
+        "permission": permission,
+    }
+
+
+def _nfs_desired(folder_uuid: str, **overrides: Any) -> dict[str, Any]:
+    return {
+        "schema": "echo.omv.nfs-share-desired.v1",
+        "sharedFolderRef": folder_uuid,
+        "clientCidr": "192.168.50.0/24",
+        "readOnly": False,
+        "comment": "Family LAN",
+        **overrides,
+    }
+
+
+def test_share_privilege_plan_and_apply_use_non_recursive_acl(
+    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    folder = _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    original_acl = (
+        f"# file: {folder}\n# owner: root\n# group: users\n"
+        "user::rwx\ngroup::rwx\nmask::rwx\nother::---\n"
+    )
+    acl = {"text": original_acl}
+    calls: list[tuple[str, ...]] = []
+
+    monkeypatch.setattr(native_storage, "_principal_id", lambda _kind, _name: 1001)
+    monkeypatch.setattr(native_storage, "_read_acl", lambda _path: acl["text"])
+
+    def fake_write(*args: str, timeout: float = 60.0) -> None:
+        calls.append(args)
+        acl["text"] = original_acl + "user:mother:rwx\ndefault:user:mother:rwx\n"
+
+    monkeypatch.setattr(native_storage, "_run_write", fake_write)
+    desired = _privilege_desired(folder_uuid)
+    plan = native_storage.plan_share_privilege(desired)
+
+    assert plan["operation"] == "update"
+    assert plan["principal"]["before"] == "inherit"
+    applied = native_storage.apply_share_privilege(desired, plan["planId"])
+
+    assert applied["applied"] is True
+    assert applied["verified"] is True
+    assert calls == [
+        (
+            "setfacl",
+            "-m",
+            "u:mother:rwx,d:u:mother:rwx",
+            str(folder),
+        )
+    ]
+    assert all("-R" not in call for call in calls)
+
+
+def test_share_privilege_failure_restores_full_acl_snapshot(
+    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    folder = _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    original_acl = f"# file: {folder}\nuser::rwx\ngroup::rwx\nmask::rwx\nother::---\n"
+    acl = {"text": original_acl}
+    restored: list[str] = []
+    monkeypatch.setattr(native_storage, "_principal_id", lambda _kind, _name: 1001)
+    monkeypatch.setattr(native_storage, "_read_acl", lambda _path: acl["text"])
+    monkeypatch.setattr(native_storage, "_run_write", lambda *a, **_kw: None)
+
+    def restore(*_args: str, input_text: str, timeout: float = 30.0) -> None:
+        restored.append(input_text)
+        acl["text"] = input_text
+
+    monkeypatch.setattr(native_storage, "_run_write_stdin", restore)
+    desired = _privilege_desired(folder_uuid)
+    plan = native_storage.plan_share_privilege(desired)
+
+    with pytest.raises(OSError, match="did not persist"):
+        native_storage.apply_share_privilege(desired, plan["planId"])
+
+    assert restored == [original_acl]
+    assert acl["text"] == original_acl
+
+
+def test_nfs_apply_writes_only_echo_managed_exports_and_verifies_live_state(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    folder = _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    exports = tmp_path / "exports.d" / "echo-os.exports"
+    exportfs_calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", exports)
+    monkeypatch.setattr(
+        native_storage, "_run_write", lambda *args, **_kwargs: exportfs_calls.append(args)
+    )
+    monkeypatch.setattr(
+        native_storage,
+        "_run_read_checked",
+        lambda *_args, **_kwargs: (
+            f"{folder} 192.168.50.0/24(rw,sync,no_subtree_check,root_squash,secure)\n"
+        ),
+    )
+    desired = _nfs_desired(folder_uuid)
+    plan = native_storage.plan_nfs(desired)
+
+    assert plan["operation"] == "create"
+    applied = native_storage.apply_nfs(desired, plan["planId"])
+
+    assert applied["applied"] is True
+    assert exportfs_calls == [("exportfs", "-ra")]
+    text = exports.read_text(encoding="utf-8")
+    assert text.startswith(
+        "# Generated by Echo OS. Manual edits are rejected and never merged.\n"
+        "# echo-os-rule {"
+    )
+    assert text.endswith(
+        f"{folder} 192.168.50.0/24(rw,sync,no_subtree_check,root_squash,secure)\n"
+    )
+    assert native_storage._nfs_exports_load(strict=True) == [applied["share"]]
+
+    repeated_plan = native_storage.plan_nfs(desired)
+    assert repeated_plan["operation"] == "none"
+    repeated = native_storage.apply_nfs(desired, repeated_plan["planId"])
+    assert repeated["applied"] is False
+
+    exports.write_text(text + "# out-of-band edit\n", encoding="utf-8")
+    with pytest.raises(OSError, match="unrecognized or modified"):
+        native_storage.plan_nfs(desired)
+
+
+def test_nfs_live_verify_failure_rolls_back_managed_exports(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    exports = tmp_path / "exports.d" / "echo-os.exports"
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", exports)
+    monkeypatch.setattr(native_storage, "_run_write", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(native_storage, "_run_read_checked", lambda *_args, **_kwargs: "")
+    desired = _nfs_desired(folder_uuid)
+    plan = native_storage.plan_nfs(desired)
+
+    with pytest.raises(OSError, match="absent from the live export table"):
+        native_storage.apply_nfs(desired, plan["planId"])
+
+    assert not exports.exists()
+
+
+def test_nfs_rejects_public_client_network_before_touching_host(
+    native_volume: tuple[Path, Path, str],
+) -> None:
+    _volume, _registry, _mount_point_ref = native_volume
+    with pytest.raises(ValueError, match="RFC1918"):
+        native_storage.plan_nfs(
+            _nfs_desired("11111111-2222-4333-8444-555555555555", clientCidr="8.8.8.0/24")
+        )
+
+
+def test_native_alias_exposes_privilege_and_nfs_routes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    privilege_plan = {"planId": "a" * 64, "operation": "none"}
+    nfs_plan = {"planId": "b" * 64, "operation": "none"}
+    monkeypatch.setattr(native_storage, "plan_share_privilege", lambda _desired: privilege_plan)
+    monkeypatch.setattr(native_storage, "plan_nfs", lambda _desired: nfs_plan)
+    monkeypatch.setattr(
+        native_storage,
+        "share_privileges",
+        lambda _uuid: [{"type": "user", "id": 1001, "name": "mother", "permission": "read"}],
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router())
+    client = TestClient(app)
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+
+    privilege = client.post(
+        "/api/appliance/omv/sharing/privileges/plan",
+        json=_privilege_desired(folder_uuid, "read"),
+    )
+    nfs = client.post(
+        "/api/appliance/omv/sharing/nfs/plan",
+        json=_nfs_desired(folder_uuid),
+    )
+    inventory = client.get(f"/api/appliance/omv/sharing/{folder_uuid}/privileges")
+
+    assert privilege.status_code == 200
+    assert nfs.status_code == 200
+    assert inventory.status_code == 200
+    assert inventory.json()["privileges"][0]["id"] == 1001

@@ -1,4 +1,4 @@
-"""Read-only native storage routes (no OpenMediaVault required).
+"""Native storage routes (no OpenMediaVault required).
 
 Exposed under ``/api/appliance/storage`` with the same payload shapes as
 ``/api/appliance/omv`` so the appliance UI can fall back to the native plane
@@ -17,10 +17,14 @@ from appliance import native_storage
 from appliance.omv_models import (
     GroupApplyRequest,
     GroupDesiredState,
+    NfsApplyRequest,
+    NfsDesiredState,
     QuotaApplyRequest,
     QuotaDesiredState,
     SharedFolderApplyRequest,
     SharedFolderDesiredState,
+    SharePrivilegeApplyRequest,
+    SharePrivilegeDesiredState,
     SmbApplyRequest,
     SmbDesiredState,
     UserApplyRequest,
@@ -61,6 +65,16 @@ def register_native_storage_routes(router: APIRouter) -> None:
     async def sharing() -> dict[str, Any]:
         return {**native_storage.sharing_overview(), "readOnly": True}
 
+    @router.get("/sharing/{share_uuid}/privileges")
+    async def share_privileges(share_uuid: str) -> dict[str, Any]:
+        try:
+            privileges = await run_in_threadpool(native_storage.share_privileges, share_uuid)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生共享权限读取失败") from exc
+        return {"privileges": privileges, "readOnly": True}
+
     @router.get("/smart")
     async def smart(
         devicefile: str = Query(min_length=5, max_length=256),
@@ -98,10 +112,9 @@ def create_omv_alias_router(
 ) -> APIRouter:
     """Serve the legacy ``/api/appliance/omv`` paths from the native plane.
 
-    Read paths answer from the host. ``/sharing/folders/plan|apply`` is the
-    first native write slice (directory 2770 users-group + registry). The
-    remaining mutation endpoints respond 501 until the native write plane
-    covers them — they used to mutate an OMV backend that no longer exists.
+    Read paths answer from the host. Mutation routes expose only implemented,
+    narrow desired/plan/apply slices and retain the OMV-compatible URL and
+    approval contract used by the appliance UI.
     """
     from appliance.approval import consume_request_approval, request_intent_id
     from appliance.audit import AuditIntegrityError
@@ -114,8 +127,6 @@ def create_omv_alias_router(
         dependencies=[Depends(require_operator)],
     )
     register_native_storage_routes(router)
-
-    removed = "该存储变更操作的原生写面尚未开通"
 
     def _consume_approval(request: Request, *, actor: str, action: str, target: str) -> None:
         if approval is None:
@@ -246,6 +257,7 @@ def create_omv_alias_router(
         apply_fn: Any,
         desired: dict[str, Any],
         plan_id: str,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Shared stall/approval/audit envelope for every native write slice."""
         try:
@@ -264,9 +276,18 @@ def create_omv_alias_router(
             except OSError as exc:
                 raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
         _consume_approval(request, actor=actor, action=action, target=plan_id)
-        metadata = {"operation": current_plan.get("operation"), "source": "native"}
+        audit_metadata = {
+            "operation": current_plan.get("operation"),
+            "source": "native",
+            **(metadata or {}),
+        }
         _record(
-            request, action=action, actor=actor, target=plan_id, outcome="attempted", metadata=metadata
+            request,
+            action=action,
+            actor=actor,
+            target=plan_id,
+            outcome="attempted",
+            metadata=audit_metadata,
         )
         try:
             result = await run_in_threadpool(apply_fn, desired, plan_id)
@@ -277,7 +298,7 @@ def create_omv_alias_router(
                 actor=actor,
                 target=plan_id,
                 outcome="failed",
-                metadata={**metadata, "errorType": type(exc).__name__},
+                metadata={**audit_metadata, "errorType": type(exc).__name__},
             )
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except OSError as exc:
@@ -287,11 +308,16 @@ def create_omv_alias_router(
                 actor=actor,
                 target=plan_id,
                 outcome="failed",
-                metadata={**metadata, "errorType": type(exc).__name__},
+                metadata={**audit_metadata, "errorType": type(exc).__name__},
             )
             raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
         _record(
-            request, action=action, actor=actor, target=plan_id, outcome="succeeded", metadata=metadata
+            request,
+            action=action,
+            actor=actor,
+            target=plan_id,
+            outcome="succeeded",
+            metadata=audit_metadata,
         )
         return result
 
@@ -379,6 +405,40 @@ def create_omv_alias_router(
             plan_id=body.plan_id,
         )
 
+    # --- Shared-folder POSIX ACL ---------------------------------------
+    @router.post("/sharing/privileges/plan")
+    async def plan_share_privilege(body: SharePrivilegeDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_share_privilege, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/sharing/privileges/apply")
+    async def apply_share_privilege_route(
+        body: SharePrivilegeApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.share-privilege.apply",
+            plan_fn=native_storage.plan_share_privilege,
+            apply_fn=native_storage.apply_share_privilege,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "principalType": body.desired.principal_type,
+                "principalName": body.desired.principal_name,
+                "permission": body.desired.permission,
+            },
+        )
+
     # --- SMB usershare ---------------------------------------------------
     @router.post("/sharing/smb/plan")
     async def plan_smb(body: SmbDesiredState) -> dict[str, Any]:
@@ -407,6 +467,39 @@ def create_omv_alias_router(
             plan_id=body.plan_id,
         )
 
+    # --- NFS private-network export ------------------------------------
+    @router.post("/sharing/nfs/plan")
+    async def plan_nfs(body: NfsDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_nfs, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/sharing/nfs/apply")
+    async def apply_nfs_route(
+        body: NfsApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.nfs.apply",
+            plan_fn=native_storage.plan_nfs,
+            apply_fn=native_storage.apply_nfs,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "clientCidr": body.desired.client_cidr,
+                "readOnly": body.desired.read_only,
+            },
+        )
+
     # --- ZFS quota -------------------------------------------------------
     @router.post("/quota/plan")
     async def plan_quota(body: QuotaDesiredState) -> dict[str, Any]:
@@ -433,24 +526,6 @@ def create_omv_alias_router(
             apply_fn=native_storage.apply_quota,
             desired=body.desired.model_dump(by_alias=True),
             plan_id=body.plan_id,
-        )
-
-    removed_paths = (
-        "/sharing/privileges/plan",
-        "/sharing/privileges/apply",
-        "/sharing/nfs/plan",
-        "/sharing/nfs/apply",
-    )
-
-    def _removed() -> dict[str, Any]:
-        raise HTTPException(status_code=501, detail=removed)
-
-    for path in removed_paths:
-        router.add_api_route(
-            path,
-            _removed,
-            methods=["POST"],
-            name=f"removed{path.replace('/', '_')}",
         )
 
     return router

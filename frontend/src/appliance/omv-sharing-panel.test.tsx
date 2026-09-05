@@ -195,7 +195,7 @@ describe("OMV sharing and users settings", () => {
     expect(screen.getByText("1 位成员 · 1 个组")).toBeInTheDocument();
     expect(screen.getByText(/已启用 · 读写 ·/)).toBeInTheDocument();
     expect(screen.getByText("没有 NFS 共享规则")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /在 OMV 中管理/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /在本机管理/ })).toHaveAttribute(
       "href",
       "https://nas.example.test",
     );
@@ -423,7 +423,9 @@ describe("OMV sharing and users settings", () => {
     await waitFor(() =>
       expect(planEchoAccountUnlink).toHaveBeenCalledWith({ username: "alice" }),
     );
-    expect(screen.getByText(/OMV 用户、SMB 密码/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/系统账号、SMB 密码、共享权限/),
+    ).toBeInTheDocument();
     await user.type(screen.getByLabelText("设备管理员密码"), "device-password");
     await user.click(
       screen.getByRole("button", { name: "确认移除 Echo 登录" }),

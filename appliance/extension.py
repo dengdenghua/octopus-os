@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 _alog = logging.getLogger("echo.appliance")
@@ -273,7 +272,7 @@ def register_app(app: Any, context: Any) -> None:
 
     # 原生存储面:存储权威是主机本身(内核 / zpool / smartctl / 系统账号),
     # 不再依赖 OpenMediaVault。读取全部走标准件;plan/apply 写路径由原生写面
-    # 逐步接管(未接管的操作返回 501,面板给出明确提示而不是静默失败)。
+    # 按能力逐步接管，未接管的复杂操作仍明确返回 501，面板给出提示而非静默失败。
     from appliance.accounts import (
         ApplianceAccountDirectory,
         create_account_directory_router,
@@ -303,7 +302,7 @@ def register_app(app: Any, context: Any) -> None:
     )
     app.include_router(create_native_storage_router(authenticator=authenticator))
     # 兼容别名:存量面板仍请求 /api/appliance/omv/*,由原生面同构应答;
-    # 共享文件夹创建(第一刀写面)带完整审批+审计语义。
+    # 已接管的窄写切片均保留完整审批+审计语义。
     app.include_router(
         create_omv_alias_router(
             authenticator=authenticator,
