@@ -73,6 +73,8 @@ from appliance.omv_protocol import (
     SHARED_FOLDER_DELETE_PLAN_SCHEMA,
     SHARED_FOLDER_DESIRED_SCHEMA,
     SHARED_FOLDER_DETACH_PLAN_SCHEMA,
+    SHARED_FOLDER_RENAME_CONTROL_CAPABILITY,
+    SHARED_FOLDER_RENAME_PLAN_SCHEMA,
     SMB_PLAN_SCHEMA,
     USER_PASSWORD_PLAN_SCHEMA,
     USER_PLAN_SCHEMA,
@@ -85,6 +87,7 @@ from appliance.omv_protocol import (
     validate_shared_folder_delete_desired,
     validate_shared_folder_desired,
     validate_shared_folder_detach_desired,
+    validate_shared_folder_rename_desired,
     validate_smb_desired,
     validate_user_desired,
     validate_user_password_desired,
@@ -874,6 +877,7 @@ def storage_health() -> dict[str, Any]:
 # Write slices the native plane can actually perform on this host.
 _NATIVE_WRITE_CAPABILITIES = (
     "shared-folder.create.simple.v1",
+    SHARED_FOLDER_RENAME_CONTROL_CAPABILITY,
     "shared-folder.detach.safe.v1",
     SHARED_FOLDER_DELETE_CONTROL_CAPABILITY,
     "account.group.create.v1",
@@ -1182,9 +1186,7 @@ def _filesystem_ref(entry: dict[str, Any]) -> str:
     raw_uuid = entry.get("uuid")
     if isinstance(raw_uuid, str) and raw_uuid:
         return raw_uuid.lower()
-    return _filesystem_uuid(
-        str(entry.get("devicefile") or ""), str(entry.get("mountpoint") or "")
-    )
+    return _filesystem_uuid(str(entry.get("devicefile") or ""), str(entry.get("mountpoint") or ""))
 
 
 def _public_devicefile(value: Any) -> str:
@@ -1523,8 +1525,7 @@ def _public_shared_folder_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "device": _public_devicefile(entry.get("device")),
         "status": "MOUNTED",
         "inUse": True,
-        "supportsAcl": shutil.which("getfacl") is not None
-        and shutil.which("setfacl") is not None,
+        "supportsAcl": shutil.which("getfacl") is not None and shutil.which("setfacl") is not None,
     }
 
 
@@ -1534,8 +1535,7 @@ def _shared_folder_target_payload(volume_ref: str, volume_path: str) -> dict[str
         (
             entry
             for entry in filesystems()
-            if os.path.normpath(str(entry.get("mountpoint") or ""))
-            == os.path.normpath(volume_path)
+            if os.path.normpath(str(entry.get("mountpoint") or "")) == os.path.normpath(volume_path)
         ),
         {},
     )
@@ -1579,13 +1579,13 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
     if existing is not None:
         if target_state["kind"] != "directory":
             raise OSError("native shared-folder registry does not match the filesystem")
-        if (
-            _registered_uuid(existing, strict=True) != _share_uuid(volume_ref, desired["name"])
-            or _registered_relative_name(existing, strict=True) != desired["name"]
-            or os.path.normpath(str(existing.get("volumePath") or ""))
-            != os.path.normpath(volume_path)
-        ):
-            raise OSError("native shared-folder registry identity does not match the mounted target")
+        _registered_uuid(existing, strict=True)
+        if _registered_relative_name(existing, strict=True) != desired["name"] or os.path.normpath(
+            str(existing.get("volumePath") or "")
+        ) != os.path.normpath(volume_path):
+            raise OSError(
+                "native shared-folder registry identity does not match the mounted target"
+            )
         existing_comment = existing.get("comment")
         if (
             not isinstance(existing_comment, str)
@@ -1715,11 +1715,7 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
                 _registry_save(registry)
                 observed_registry = _registry_load(strict=True)
                 observed = next(
-                    (
-                        item
-                        for item in observed_registry
-                        if item.get("uuid") == plan["shareUuid"]
-                    ),
+                    (item for item in observed_registry if item.get("uuid") == plan["shareUuid"]),
                     None,
                 )
                 if observed is None or observed.get("comment") != desired["comment"]:
@@ -1791,13 +1787,178 @@ def _shared_folder_detach_dependencies(
     return smb_present, nfs_entries
 
 
+def _build_shared_folder_rename_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    """Build a same-volume rename plan without changing the share identity."""
+    registry = _registry_load(strict=True)
+    matches = [entry for entry in registry if _registered_uuid(entry) == desired["sharedFolderRef"]]
+    if not matches:
+        raise ValueError("sharedFolderRef does not match any native shared folder")
+    if len(matches) != 1:
+        raise OSError("native shared-folder registry contains duplicate UUIDs")
+    entry = matches[0]
+    source = _native_folder_path(entry)
+    group_gid = _users_group_gid()
+    if not _verify_shared_folder(source, group_gid):
+        raise OSError("registered shared folder has unsafe owner, group, or mode")
+
+    old_name = _registered_relative_name(entry, strict=True)
+    assert old_name is not None
+    target = source.parent / desired["name"]
+    target_state = _target_state(target)
+    if desired["name"] == old_name:
+        operation = "none"
+    else:
+        operation = "rename"
+        if target_state["kind"] != "absent":
+            raise ValueError("shared folder rename target already exists")
+
+    smb_present, nfs_entries = _shared_folder_detach_dependencies(entry)
+    if operation != "none":
+        if smb_present:
+            raise ValueError("disable the SMB share before renaming this folder")
+        if nfs_entries:
+            raise ValueError("remove the NFS rule before renaming this folder")
+
+    base_revision = _canonical_hash(
+        {
+            "registry": registry,
+            "folder": {
+                "uuid": entry["uuid"],
+                "name": old_name,
+                "state": _target_state(source),
+            },
+            "target": {"name": desired["name"], "state": target_state},
+            "smb": smb_present,
+            "nfs": nfs_entries,
+        }
+    )
+    plan_id = _canonical_hash(
+        {
+            "schema": SHARED_FOLDER_RENAME_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+            "operation": operation,
+        }
+    )
+    return {
+        "schema": SHARED_FOLDER_RENAME_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": operation,
+        "requiresApproval": operation != "none",
+        "shareUuid": entry["uuid"],
+        "sharedFolder": _public_shared_folder_entry(entry),
+        "desired": desired,
+        "changes": (
+            []
+            if operation == "none"
+            else [{"field": "name", "before": old_name, "after": desired["name"]}]
+        ),
+        "safety": {
+            "filesystem": "sameMountedWritableVolume",
+            "data": "preserved",
+            "identity": "uuidPreserved",
+            "acl": "preservedWithDirectory",
+            "dependentShares": "mustBeAbsent",
+            "rollback": "directoryAndRegistry",
+        },
+        "source": "native",
+    }
+
+
+def plan_shared_folder_rename(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview a data-preserving rename of one registered shared folder."""
+    desired = validate_shared_folder_rename_desired(dict(desired_state))
+    with _registry_transaction():
+        return _build_shared_folder_rename_plan(desired)
+
+
+def apply_shared_folder_rename(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Rename one directory and its registry row, rolling both back together."""
+    desired = validate_shared_folder_rename_desired(dict(desired_state))
+    with _registry_transaction():
+        plan = _build_shared_folder_rename_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("shared folder rename plan is stale; preview the change again")
+
+        entry = _resolve_shared_folder(desired["sharedFolderRef"])
+        source = _native_folder_path(entry)
+        if plan["operation"] == "none":
+            if not _verify_shared_folder(source, _users_group_gid()):
+                raise OSError("registered shared folder has unsafe owner, group, or mode")
+            return {
+                **plan,
+                "applied": False,
+                "verified": True,
+                "dataPreserved": True,
+                "sharedFolder": _public_shared_folder_entry(entry),
+            }
+
+        target = source.parent / desired["name"]
+        registry = _registry_load(strict=True)
+        original_registry = list(registry)
+        entry_index = next(
+            (
+                index
+                for index, item in enumerate(registry)
+                if _registered_uuid(item) == desired["sharedFolderRef"]
+            ),
+            None,
+        )
+        if entry_index is None:
+            raise ValueError("shared folder registry changed during apply; preview again")
+        updated = {
+            **registry[entry_index],
+            "name": desired["name"],
+            "relativePath": desired["name"],
+        }
+        registry[entry_index] = updated
+        renamed = False
+        try:
+            source.rename(target)
+            renamed = True
+            if _target_state(source)["kind"] != "absent" or not _verify_shared_folder(
+                target, _users_group_gid()
+            ):
+                raise OSError("shared folder directory rename was not verified")
+            _registry_save(registry)
+            observed = _resolve_shared_folder(desired["sharedFolderRef"])
+            if (
+                _registered_relative_name(observed, strict=True) != desired["name"]
+                or _native_folder_path(observed) != target
+            ):
+                raise OSError("shared folder registry rename was not verified")
+        except Exception as exc:
+            try:
+                if renamed:
+                    if _target_state(source)["kind"] != "absent":
+                        raise OSError("shared folder rename rollback source is occupied")
+                    target.rename(source)
+                    if not _verify_shared_folder(source, _users_group_gid()):
+                        raise OSError("shared folder directory rename rollback was not verified")
+                _registry_save(original_registry)
+                if _registry_load(strict=True) != original_registry:
+                    raise OSError("shared folder registry rename rollback was not verified")
+            except Exception as rollback_exc:
+                raise OSError(
+                    "shared folder rename failed and rollback also failed; inspect the share"
+                ) from rollback_exc
+            if isinstance(exc, (OSError, ValueError)):
+                raise
+            raise OSError("shared folder rename failed") from exc
+
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "dataPreserved": True,
+            "sharedFolder": _public_shared_folder_entry(updated),
+        }
+
+
 def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
     registry = _registry_load(strict=True)
-    matches = [
-        entry
-        for entry in registry
-        if _registered_uuid(entry) == desired["sharedFolderRef"]
-    ]
+    matches = [entry for entry in registry if _registered_uuid(entry) == desired["sharedFolderRef"]]
     if not matches:
         raise ValueError("sharedFolderRef does not match any native shared folder")
     if len(matches) != 1:
@@ -1870,9 +2031,7 @@ def plan_shared_folder_detach(desired_state: dict[str, Any]) -> dict[str, Any]:
         return _build_shared_folder_detach_plan(desired)
 
 
-def apply_shared_folder_detach(
-    desired_state: dict[str, Any], plan_id: str
-) -> dict[str, Any]:
+def apply_shared_folder_detach(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     """Remove only the native registry entry; never delete the folder or data."""
     desired = validate_shared_folder_detach_desired(dict(desired_state))
     with _registry_transaction():
@@ -1882,9 +2041,7 @@ def apply_shared_folder_detach(
         registry = _registry_load(strict=True)
         original_registry = list(registry)
         wanted = [
-            entry
-            for entry in registry
-            if _registered_uuid(entry) != desired["sharedFolderRef"]
+            entry for entry in registry if _registered_uuid(entry) != desired["sharedFolderRef"]
         ]
         if len(wanted) == len(registry):
             raise ValueError("sharedFolderRef does not match any native shared folder")
@@ -2168,13 +2325,7 @@ def _posix_user_snapshot(name: str) -> dict[str, Any] | None:
     grp, pwd = _require_posix_accounts()
     try:
         account = pwd.getpwnam(name)
-        groups = sorted(
-            {
-                entry.gr_name
-                for entry in grp.getgrall()
-                if name in (entry.gr_mem or ())
-            }
-        )
+        groups = sorted({entry.gr_name for entry in grp.getgrall() if name in (entry.gr_mem or ())})
     except (KeyError, OSError):
         return None
     return {
@@ -2380,8 +2531,10 @@ def apply_user(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     _run_write(
         "useradd",
         "--create-home",
-        "--shell", "/usr/sbin/nologin",
-        "--comment", desired["displayName"],
+        "--shell",
+        "/usr/sbin/nologin",
+        "--comment",
+        desired["displayName"],
         *extra_args,
         desired["name"],
     )
@@ -2700,9 +2853,7 @@ def apply_share_privilege(desired_state: dict[str, Any], plan_id: str) -> dict[s
                 if access is not None:
                     _run_write("setfacl", "-x", f"{kind}:{desired['principalName']}", str(path))
                 if default is not None:
-                    _run_write(
-                        "setfacl", "-x", f"d:{kind}:{desired['principalName']}", str(path)
-                    )
+                    _run_write("setfacl", "-x", f"d:{kind}:{desired['principalName']}", str(path))
             else:
                 acl_mode = _PERMISSION_TO_ACL[desired["permission"]]
                 _run_write(
@@ -2784,9 +2935,7 @@ def _nfs_rule_path(folder_ref: str) -> tuple[dict[str, Any], Path]:
     return entry, path
 
 
-def _render_nfs_exports(
-    entries: list[dict[str, Any]], *, allow_unmounted: bool = False
-) -> str:
+def _render_nfs_exports(entries: list[dict[str, Any]], *, allow_unmounted: bool = False) -> str:
     lines = ["# Generated by Echo OS. Manual edits are rejected and never merged."]
     for item in sorted(entries, key=lambda value: (value["sharedFolderRef"], value["client"])):
         if allow_unmounted:
@@ -2843,7 +2992,9 @@ def _nfs_exports_load(
         if text is None:
             return []
         prefix = "# echo-os-rule "
-        raw_entries = [json.loads(line[len(prefix) :]) for line in text.splitlines() if line.startswith(prefix)]
+        raw_entries = [
+            json.loads(line[len(prefix) :]) for line in text.splitlines() if line.startswith(prefix)
+        ]
         entries = _validated_nfs_export_entries(raw_entries)
         rendered = (
             _render_nfs_exports(entries, allow_unmounted=True)
@@ -2905,9 +3056,9 @@ def _build_nfs_plan(desired: dict[str, Any]) -> dict[str, Any]:
         "baseRevision": base_revision,
         "operation": operation,
         "requiresApproval": operation != "none",
-        "shareUuid": existing["uuid"] if existing else _nfs_uuid(
-            desired["sharedFolderRef"], desired["clientCidr"]
-        ),
+        "shareUuid": existing["uuid"]
+        if existing
+        else _nfs_uuid(desired["sharedFolderRef"], desired["clientCidr"]),
         "sharedFolder": {"uuid": folder["uuid"], "name": folder["name"], "status": "MOUNTED"},
         "desired": desired,
         "changes": changes,
@@ -3028,8 +3179,10 @@ def _build_nfs_remove_plan(desired: dict[str, Any]) -> dict[str, Any]:
         None,
     )
     operation = "remove" if existing is not None else "none"
-    share_uuid = existing["uuid"] if existing else _nfs_uuid(
-        desired["sharedFolderRef"], desired["clientCidr"]
+    share_uuid = (
+        existing["uuid"]
+        if existing
+        else _nfs_uuid(desired["sharedFolderRef"], desired["clientCidr"])
     )
     base_revision = _canonical_hash(
         {
@@ -3207,8 +3360,7 @@ def _smb_info_read_only(info: dict[str, Any]) -> bool:
     if not permissions:
         return False
     return all(
-        "r" in value.casefold()
-        and not {"f", "w"}.intersection(value.casefold())
+        "r" in value.casefold() and not {"f", "w"}.intersection(value.casefold())
         for value in permissions
     )
 
@@ -3272,9 +3424,9 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
     elif not desired["enabled"]:
         operation = "remove"
     else:
-        operation = "none" if all(
-            current[field] == after for field, after in wanted.items()
-        ) else "update"
+        operation = (
+            "none" if all(current[field] == after for field, after in wanted.items()) else "update"
+        )
 
     if operation in {"create", "update"} and folder_status != "MOUNTED":
         raise ValueError("shared folder volume is not mounted as a writable NAS target")
@@ -3780,6 +3932,7 @@ __all__ = [
     "apply_share_privilege",
     "apply_shared_folder",
     "apply_shared_folder_delete",
+    "apply_shared_folder_rename",
     "apply_smb",
     "apply_user",
     "apply_user_password",
@@ -3794,6 +3947,7 @@ __all__ = [
     "plan_share_privilege",
     "plan_shared_folder",
     "plan_shared_folder_delete",
+    "plan_shared_folder_rename",
     "plan_smb",
     "plan_user",
     "plan_user_password",

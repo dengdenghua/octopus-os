@@ -10,6 +10,7 @@ import {
   applyOmvSharedFolder,
   applyOmvSharedFolderDelete,
   applyOmvSharedFolderDetach,
+  applyOmvSharedFolderRename,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
   applyOmvUser,
@@ -25,6 +26,7 @@ import {
   planOmvSharedFolder,
   planOmvSharedFolderDelete,
   planOmvSharedFolderDetach,
+  planOmvSharedFolderRename,
   planOmvSharePrivilege,
   planOmvSmbShare,
   planOmvUser,
@@ -52,6 +54,7 @@ vi.mock("./omv", () => ({
   applyOmvSharedFolder: vi.fn(),
   applyOmvSharedFolderDelete: vi.fn(),
   applyOmvSharedFolderDetach: vi.fn(),
+  applyOmvSharedFolderRename: vi.fn(),
   applyOmvSharePrivilege: vi.fn(),
   applyOmvSmbShare: vi.fn(),
   applyOmvUser: vi.fn(),
@@ -67,6 +70,7 @@ vi.mock("./omv", () => ({
   planOmvSharedFolder: vi.fn(),
   planOmvSharedFolderDelete: vi.fn(),
   planOmvSharedFolderDetach: vi.fn(),
+  planOmvSharedFolderRename: vi.fn(),
   planOmvSharePrivilege: vi.fn(),
   planOmvSmbShare: vi.fn(),
   planOmvUser: vi.fn(),
@@ -1069,6 +1073,97 @@ describe("OMV sharing and users settings", () => {
       desired,
       plan.planId,
       "folder-approval-token",
+    );
+  });
+
+  it("renames a native shared folder while preserving data and identity", async () => {
+    const user = userEvent.setup();
+    const desired = {
+      schema: "echo.omv.shared-folder-rename-desired.v1" as const,
+      sharedFolderRef: shareUuid,
+      name: "Family_Archive",
+    };
+    const plan = {
+      schema: "echo.omv.shared-folder-rename-plan.v1" as const,
+      planId: "8".repeat(64),
+      baseRevision: "9".repeat(64),
+      operation: "rename" as const,
+      requiresApproval: true,
+      shareUuid,
+      sharedFolder: {
+        uuid: shareUuid,
+        name: "Family",
+        comment: "Family files",
+        relativePath: "Family/",
+        device: "/dev/md0",
+        status: "MOUNTED",
+        inUse: true,
+        supportsAcl: true,
+      },
+      desired,
+      changes: [
+        {
+          field: "name" as const,
+          before: "Family",
+          after: desired.name,
+        },
+      ],
+      safety: {
+        filesystem: "sameMountedWritableVolume" as const,
+        data: "preserved" as const,
+        identity: "uuidPreserved" as const,
+        acl: "preservedWithDirectory" as const,
+        dependentShares: "mustBeAbsent" as const,
+        rollback: "directoryAndRegistry" as const,
+      },
+    };
+    vi.mocked(fetchOmvStatus).mockResolvedValueOnce({
+      configured: true,
+      available: true,
+      readOnly: false,
+      adminUrl: null,
+      capabilities: ["shared-folder.rename.safe.v1"],
+      source: "native",
+    });
+    vi.mocked(fetchOmvSharingOverview).mockResolvedValueOnce({
+      ...(await fetchOmvSharingOverview()),
+      smb: { enabled: false, shares: [] },
+      nfs: { enabled: false, shares: [] },
+    });
+    vi.mocked(planOmvSharedFolderRename).mockResolvedValue(plan);
+    vi.mocked(applyOmvSharedFolderRename).mockResolvedValue({
+      ...plan,
+      applied: true,
+      verified: true,
+      dataPreserved: true,
+    });
+    render(<OmvSharingPanel />);
+
+    await user.click(await screen.findByRole("button", { name: "重命名" }));
+    const input = screen.getByLabelText("新名称");
+    await user.clear(input);
+    await user.type(input, desired.name);
+    await user.click(screen.getByRole("button", { name: "预览重命名" }));
+
+    await waitFor(() =>
+      expect(planOmvSharedFolderRename).toHaveBeenCalledWith(desired),
+    );
+    expect(screen.getByText(/数据、UUID 与 ACL 保留/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "管理员确认" }));
+    await user.type(screen.getByLabelText("设备管理员密码"), "device-password");
+    await user.click(screen.getByRole("button", { name: "确认重命名" }));
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "omv.shared-folder.update",
+        plan.planId,
+        "device-password",
+      ),
+    );
+    expect(applyOmvSharedFolderRename).toHaveBeenCalledWith(
+      desired,
+      plan.planId,
+      "approval-token",
     );
   });
 

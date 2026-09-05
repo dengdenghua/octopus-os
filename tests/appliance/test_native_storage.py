@@ -67,6 +67,7 @@ def test_native_status_advertises_only_the_available_write_slice(
     assert payload["readOnly"] is False
     assert payload["capabilities"] == [
         "shared-folder.create.simple.v1",
+        "shared-folder.rename.safe.v1",
         "shared-folder.detach.safe.v1",
         "shared-folder.delete.empty.v1",
         "account.group.create.v1",
@@ -95,6 +96,7 @@ def test_native_status_hides_write_slices_without_host_tools(
 
     assert payload["capabilities"] == [
         "shared-folder.create.simple.v1",
+        "shared-folder.rename.safe.v1",
         "shared-folder.detach.safe.v1",
         "shared-folder.delete.empty.v1",
         "account.group.create.v1",
@@ -114,6 +116,7 @@ def test_native_status_keeps_group_creation_when_only_groupadd_is_present(
 
     assert native_storage.status()["capabilities"] == [
         "shared-folder.create.simple.v1",
+        "shared-folder.rename.safe.v1",
         "shared-folder.detach.safe.v1",
         "shared-folder.delete.empty.v1",
         "account.group.create.v1",
@@ -522,6 +525,156 @@ def test_shared_folder_comment_update_preserves_directory_and_registry_identity(
     assert str(volume) not in json.dumps(applied, ensure_ascii=False)
 
 
+def test_shared_folder_rename_preserves_data_acl_identity_and_comment_updates(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    initial = _desired(mount_point_ref)
+    created = native_storage.apply_shared_folder(
+        initial, native_storage.plan_shared_folder(initial)["planId"]
+    )
+    marker = volume / "Photos" / "nested" / "keep.txt"
+    marker.parent.mkdir()
+    marker.write_text("preserved", encoding="utf-8")
+    desired = {
+        "schema": "echo.omv.shared-folder-rename-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "name": "Family",
+    }
+
+    plan = native_storage.plan_shared_folder_rename(desired)
+
+    assert plan["operation"] == "rename"
+    assert plan["requiresApproval"] is True
+    assert plan["shareUuid"] == created["sharedFolder"]["uuid"]
+    assert plan["changes"] == [{"field": "name", "before": "Photos", "after": "Family"}]
+    assert plan["safety"] == {
+        "filesystem": "sameMountedWritableVolume",
+        "data": "preserved",
+        "identity": "uuidPreserved",
+        "acl": "preservedWithDirectory",
+        "dependentShares": "mustBeAbsent",
+        "rollback": "directoryAndRegistry",
+    }
+    assert str(volume) not in json.dumps(plan, ensure_ascii=False)
+
+    applied = native_storage.apply_shared_folder_rename(desired, plan["planId"])
+
+    assert applied["applied"] is True
+    assert applied["verified"] is True
+    assert applied["dataPreserved"] is True
+    assert applied["sharedFolder"]["uuid"] == created["sharedFolder"]["uuid"]
+    assert applied["sharedFolder"]["name"] == "Family"
+    assert not (volume / "Photos").exists()
+    assert (volume / "Family" / "nested" / "keep.txt").read_text(encoding="utf-8") == "preserved"
+    persisted = json.loads(registry.read_text(encoding="utf-8"))[0]
+    assert persisted["uuid"] == created["sharedFolder"]["uuid"]
+    assert persisted["name"] == persisted["relativePath"] == "Family"
+
+    # A rename keeps the UUID stable, and subsequent comment-only updates
+    # must continue to address the same registry row.
+    comment_update = _desired(
+        mount_point_ref,
+        name="Family",
+        comment="Renamed family archive",
+    )
+    comment_plan = native_storage.plan_shared_folder(comment_update)
+    assert comment_plan["operation"] == "update"
+    assert comment_plan["shareUuid"] == created["sharedFolder"]["uuid"]
+    comment_result = native_storage.apply_shared_folder(comment_update, comment_plan["planId"])
+    assert comment_result["sharedFolder"]["uuid"] == created["sharedFolder"]["uuid"]
+
+
+@pytest.mark.parametrize("dependency", ["smb", "nfs"])
+def test_shared_folder_rename_requires_dependent_shares_to_be_removed(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    dependency: str,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    created = native_storage.apply_shared_folder(
+        _desired(mount_point_ref),
+        native_storage.plan_shared_folder(_desired(mount_point_ref))["planId"],
+    )
+    if dependency == "smb":
+        monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: {"path": "x"})
+        match = "disable the SMB share"
+    else:
+        monkeypatch.setattr(
+            native_storage,
+            "_nfs_exports_load",
+            lambda **_kwargs: [
+                {
+                    "uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "sharedFolderRef": created["sharedFolder"]["uuid"],
+                    "client": "192.168.1.0/24",
+                    "readOnly": False,
+                    "comment": "test",
+                }
+            ],
+        )
+        match = "remove the NFS rule"
+    desired = {
+        "schema": "echo.omv.shared-folder-rename-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "name": "Family",
+    }
+
+    with pytest.raises(ValueError, match=match):
+        native_storage.plan_shared_folder_rename(desired)
+
+    assert (volume / "Photos").is_dir()
+    assert not (volume / "Family").exists()
+
+
+def test_shared_folder_rename_rejects_collision_and_rolls_back_registry_failure(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", registry.parent / "exports")
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: None)
+    created = native_storage.apply_shared_folder(
+        _desired(mount_point_ref),
+        native_storage.plan_shared_folder(_desired(mount_point_ref))["planId"],
+    )
+    desired = {
+        "schema": "echo.omv.shared-folder-rename-desired.v1",
+        "sharedFolderRef": created["sharedFolder"]["uuid"],
+        "name": "Family",
+    }
+    (volume / "Family").mkdir()
+    with pytest.raises(ValueError, match="target already exists"):
+        native_storage.plan_shared_folder_rename(desired)
+    (volume / "Family").rmdir()
+
+    plan = native_storage.plan_shared_folder_rename(desired)
+    original_save = native_storage._registry_save
+    calls = 0
+
+    def fail_once(entries: list[dict[str, Any]]) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("simulated registry failure")
+        original_save(entries)
+
+    monkeypatch.setattr(native_storage, "_registry_save", fail_once)
+    with pytest.raises(OSError, match="simulated registry failure"):
+        native_storage.apply_shared_folder_rename(desired, plan["planId"])
+
+    assert calls == 2
+    assert (volume / "Photos").is_dir()
+    assert not (volume / "Family").exists()
+    persisted = json.loads(registry.read_text(encoding="utf-8"))[0]
+    assert persisted["name"] == persisted["relativePath"] == "Photos"
+
+
 def test_shared_folder_detach_preserves_directory_and_removes_only_registry_entry(
     native_volume: tuple[Path, Path, str],
     monkeypatch: pytest.MonkeyPatch,
@@ -666,9 +819,10 @@ def test_shared_folder_detach_rolls_back_registry_on_write_failure(
         native_storage.apply_shared_folder_detach(detach, plan["planId"])
 
     assert calls == 2
-    assert json.loads(registry.read_text(encoding="utf-8"))[0]["uuid"] == created[
-        "sharedFolder"
-    ]["uuid"]
+    assert (
+        json.loads(registry.read_text(encoding="utf-8"))[0]["uuid"]
+        == created["sharedFolder"]["uuid"]
+    )
     assert (volume / "Photos").is_dir()
 
 
@@ -950,6 +1104,58 @@ def test_native_alias_binds_comment_update_to_update_approval_action(
     assert {entry["action"] for entry in audit_calls} == {"omv.shared-folder.update"}
 
 
+def test_native_alias_binds_folder_rename_to_update_approval_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    plan_id = "e" * 64
+    current_plan = {"planId": plan_id, "operation": "rename", "requiresApproval": True}
+    applied = {
+        **current_plan,
+        "applied": True,
+        "verified": True,
+        "dataPreserved": True,
+    }
+    approval_calls: list[dict[str, Any]] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            approval_calls.append(kwargs)
+
+    class Audit:
+        def record(self, **kwargs: Any) -> None:
+            audit_calls.append(kwargs)
+
+    monkeypatch.setattr(native_storage, "plan_shared_folder_rename", lambda _desired: current_plan)
+    monkeypatch.setattr(
+        native_storage,
+        "apply_shared_folder_rename",
+        lambda _desired, _plan_id: applied,
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/appliance/omv/sharing/folders/rename/apply",
+        json={
+            "desired": {
+                "schema": "echo.omv.shared-folder-rename-desired.v1",
+                "sharedFolderRef": MOUNT_POINT_REF,
+                "name": "Family",
+            },
+            "planId": plan_id,
+        },
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+
+    assert response.status_code == 200
+    assert approval_calls[0]["action"] == "omv.shared-folder.update"
+    assert {entry["action"] for entry in audit_calls} == {"omv.shared-folder.update"}
+    assert audit_calls[0]["metadata"]["dataPreserved"] is True
+
+
 def test_native_alias_binds_folder_detach_to_data_preserving_approval_action(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1173,9 +1379,7 @@ def test_native_alias_exposes_only_server_validated_zfs_candidates(
     app = FastAPI()
     app.include_router(create_omv_alias_router())
 
-    response = TestClient(app).get(
-        "/api/appliance/omv/pools/zfs-mirror/candidates"
-    )
+    response = TestClient(app).get("/api/appliance/omv/pools/zfs-mirror/candidates")
 
     assert response.status_code == 200
     assert response.json() == {"devices": expected, "readOnly": True, "source": "native"}
@@ -1432,9 +1636,9 @@ def test_smb_share_remove_can_clean_rule_when_volume_is_unmounted(
     monkeypatch.setattr(
         native_storage,
         "_smb_usershare_info",
-        lambda _name: {"comment": "Media", "usershare_acl": "users:f"}
-        if present["value"]
-        else None,
+        lambda _name: (
+            {"comment": "Media", "usershare_acl": "users:f"} if present["value"] else None
+        ),
     )
 
     def fake_write(*args: str, **_kwargs: Any) -> None:
@@ -1477,11 +1681,7 @@ def test_smb_disabled_noop_fails_if_share_appears_during_apply(
         info_calls["n"] += 1
         # The plan and apply re-plan both see no share; the final read-back
         # simulates another actor creating it before the no-op is verified.
-        return (
-            {"comment": "race", "usershare_acl": "users:f"}
-            if info_calls["n"] >= 3
-            else None
-        )
+        return {"comment": "race", "usershare_acl": "users:f"} if info_calls["n"] >= 3 else None
 
     monkeypatch.setattr(native_storage, "_smb_usershare_info", fake_info)
     desired = {
@@ -1679,9 +1879,7 @@ def test_quota_plan_and_apply_on_ext4_kernel_adapter(monkeypatch: pytest.MonkeyP
 
     assert applied["applied"] is True
     assert applied["verified"] is True
-    assert setquota_calls == [
-        ("setquota", "-u", "mother", "0", "1024", "0", "0", mountpoint)
-    ]
+    assert setquota_calls == [("setquota", "-u", "mother", "0", "1024", "0", "0", mountpoint)]
     assert applied["quota"] == {
         "filesystemUuid": fs_uuid,
         "subjectType": "user",
@@ -1728,9 +1926,7 @@ def test_quota_rejects_kernel_filesystem_without_mount_quota(
 # --- Native privilege and NFS slices ------------------------------------
 
 
-def _register_folder(
-    volume: Path, registry: Path, mount_point_ref: str, folder_uuid: str
-) -> Path:
+def _register_folder(volume: Path, registry: Path, mount_point_ref: str, folder_uuid: str) -> Path:
     folder = volume / "Photos"
     folder.mkdir()
     registry.parent.mkdir(parents=True, exist_ok=True)
@@ -1875,12 +2071,9 @@ def test_nfs_apply_writes_only_echo_managed_exports_and_verifies_live_state(
     assert exportfs_calls == [("exportfs", "-ra")]
     text = exports.read_text(encoding="utf-8")
     assert text.startswith(
-        "# Generated by Echo OS. Manual edits are rejected and never merged.\n"
-        "# echo-os-rule {"
+        "# Generated by Echo OS. Manual edits are rejected and never merged.\n# echo-os-rule {"
     )
-    assert text.endswith(
-        f"{folder} 192.168.50.0/24(rw,sync,no_subtree_check,root_squash,secure)\n"
-    )
+    assert text.endswith(f"{folder} 192.168.50.0/24(rw,sync,no_subtree_check,root_squash,secure)\n")
     assert native_storage._nfs_exports_load(strict=True) == [applied["share"]]
 
     repeated_plan = native_storage.plan_nfs(desired)

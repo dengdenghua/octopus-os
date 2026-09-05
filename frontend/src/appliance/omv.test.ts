@@ -7,6 +7,7 @@ import {
   applyOmvSharedFolder,
   applyOmvSharedFolderDelete,
   applyOmvSharedFolderDetach,
+  applyOmvSharedFolderRename,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
   applyOmvUser,
@@ -27,6 +28,7 @@ import {
   planOmvSharedFolder,
   planOmvSharedFolderDelete,
   planOmvSharedFolderDetach,
+  planOmvSharedFolderRename,
   planOmvSharePrivilege,
   planOmvSmbShare,
   planOmvUser,
@@ -380,6 +382,94 @@ describe("OMV read-only API client", () => {
         "X-Echo-Approval"
       ],
     ).toBe("one-shot-folder-token");
+  });
+
+  it("keeps shared-folder rename data-preserving and approval-bound", async () => {
+    const desired = {
+      schema: "echo.omv.shared-folder-rename-desired.v1" as const,
+      sharedFolderRef: "11111111-2222-4333-8444-555555555555",
+      name: "Family_Archive",
+    };
+    const plan = {
+      schema: "echo.omv.shared-folder-rename-plan.v1" as const,
+      planId: "8".repeat(64),
+      baseRevision: "9".repeat(64),
+      operation: "rename" as const,
+      requiresApproval: true,
+      shareUuid: desired.sharedFolderRef,
+      sharedFolder: {
+        uuid: desired.sharedFolderRef,
+        name: "Family_Photos",
+        comment: "Family photos",
+        relativePath: "Family_Photos",
+        device: "/dev/sdb1",
+        status: "MOUNTED",
+        inUse: true,
+        supportsAcl: true,
+      },
+      desired,
+      changes: [
+        {
+          field: "name" as const,
+          before: "Family_Photos",
+          after: desired.name,
+        },
+      ],
+      safety: {
+        filesystem: "sameMountedWritableVolume" as const,
+        data: "preserved" as const,
+        identity: "uuidPreserved" as const,
+        acl: "preservedWithDirectory" as const,
+        dependentShares: "mustBeAbsent" as const,
+        rollback: "directoryAndRegistry" as const,
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...plan,
+            applied: true,
+            verified: true,
+            dataPreserved: true,
+          }),
+          { status: 200 },
+        ),
+      );
+
+    expect((await planOmvSharedFolderRename(desired)).planId).toBe(plan.planId);
+    expect(
+      (
+        await applyOmvSharedFolderRename(
+          desired,
+          plan.planId,
+          "one-shot-rename-token",
+        )
+      ).dataPreserved,
+    ).toBe(true);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/appliance/omv/sharing/folders/rename/plan",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/appliance/omv/sharing/folders/rename/apply",
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual(
+      desired,
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect(
+      (fetchMock.mock.calls[1]?.[1]?.headers as Record<string, string>)[
+        "X-Echo-Approval"
+      ],
+    ).toBe("one-shot-rename-token");
   });
 
   it("keeps data-preserving shared-folder detach preview and apply separate", async () => {

@@ -29,6 +29,8 @@ from appliance.omv_models import (
     SharedFolderDesiredState,
     SharedFolderDetachApplyRequest,
     SharedFolderDetachDesiredState,
+    SharedFolderRenameApplyRequest,
+    SharedFolderRenameDesiredState,
     SharePrivilegeApplyRequest,
     SharePrivilegeDesiredState,
     SmbApplyRequest,
@@ -224,9 +226,7 @@ def create_omv_alias_router(
             if current_plan.get("operation") == "update"
             else "omv.shared-folder.create"
         )
-        _consume_approval(
-            request, actor=actor, action=action, target=body.plan_id
-        )
+        _consume_approval(request, actor=actor, action=action, target=body.plan_id)
         metadata = {
             "operation": current_plan.get("operation"),
             "mountPointRef": desired["mountPointRef"],
@@ -274,6 +274,41 @@ def create_omv_alias_router(
             metadata=metadata,
         )
         return result
+
+    @router.post("/sharing/folders/rename/plan")
+    async def plan_shared_folder_rename(
+        body: SharedFolderRenameDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_shared_folder_rename,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/sharing/folders/rename/apply")
+    async def apply_shared_folder_rename_route(
+        body: SharedFolderRenameApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.shared-folder.update",
+            plan_fn=native_storage.plan_shared_folder_rename,
+            apply_fn=native_storage.apply_shared_folder_rename,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "name": body.desired.name,
+                "dataPreserved": True,
+            },
+        )
 
     @router.post("/sharing/folders/detach/plan")
     async def plan_shared_folder_detach(
@@ -448,9 +483,7 @@ def create_omv_alias_router(
     @router.post("/accounts/users/plan")
     async def plan_user(body: UserDesiredState) -> dict[str, Any]:
         try:
-            return await run_in_threadpool(
-                native_storage.plan_user, body.model_dump(by_alias=True)
-            )
+            return await run_in_threadpool(native_storage.plan_user, body.model_dump(by_alias=True))
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -538,9 +571,7 @@ def create_omv_alias_router(
     @router.post("/sharing/smb/plan")
     async def plan_smb(body: SmbDesiredState) -> dict[str, Any]:
         try:
-            return await run_in_threadpool(
-                native_storage.plan_smb, body.model_dump(by_alias=True)
-            )
+            return await run_in_threadpool(native_storage.plan_smb, body.model_dump(by_alias=True))
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -566,9 +597,7 @@ def create_omv_alias_router(
     @router.post("/sharing/nfs/plan")
     async def plan_nfs(body: NfsDesiredState) -> dict[str, Any]:
         try:
-            return await run_in_threadpool(
-                native_storage.plan_nfs, body.model_dump(by_alias=True)
-            )
+            return await run_in_threadpool(native_storage.plan_nfs, body.model_dump(by_alias=True))
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:

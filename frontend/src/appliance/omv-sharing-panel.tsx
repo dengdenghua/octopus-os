@@ -7,6 +7,7 @@ import {
   GaugeIcon,
   KeyRoundIcon,
   Loader2Icon,
+  PencilIcon,
   RefreshCwIcon,
   ServerIcon,
   ShieldCheckIcon,
@@ -47,6 +48,7 @@ import {
   applyOmvSharedFolder,
   applyOmvSharedFolderDelete,
   applyOmvSharedFolderDetach,
+  applyOmvSharedFolderRename,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
   fetchOmvFilesystems,
@@ -60,6 +62,7 @@ import {
   planOmvSharedFolder,
   planOmvSharedFolderDelete,
   planOmvSharedFolderDetach,
+  planOmvSharedFolderRename,
   planOmvSharePrivilege,
   planOmvSmbShare,
   planOmvUser,
@@ -79,6 +82,8 @@ import {
   type OmvSharedFolderDesiredState,
   type OmvSharedFolderDetachDesiredState,
   type OmvSharedFolderDetachPlan,
+  type OmvSharedFolderRenameDesiredState,
+  type OmvSharedFolderRenamePlan,
   type OmvSharedFolderPlan,
   type OmvSharePrivilege,
   type OmvSharePrivilegeDesiredState,
@@ -210,6 +215,16 @@ export function OmvSharingPanel() {
   const [folderDetachPlanning, setFolderDetachPlanning] = useState(false);
   const [folderDetachApprovalOpen, setFolderDetachApprovalOpen] =
     useState(false);
+  const [folderRenameTarget, setFolderRenameTarget] =
+    useState<OmvSharedFolder | null>(null);
+  const [folderRenameName, setFolderRenameName] = useState("");
+  const [folderRenameDesired, setFolderRenameDesired] =
+    useState<OmvSharedFolderRenameDesiredState | null>(null);
+  const [folderRenamePlan, setFolderRenamePlan] =
+    useState<OmvSharedFolderRenamePlan | null>(null);
+  const [folderRenamePlanning, setFolderRenamePlanning] = useState(false);
+  const [folderRenameApprovalOpen, setFolderRenameApprovalOpen] =
+    useState(false);
   const [folderDeleteDesired, setFolderDeleteDesired] =
     useState<OmvSharedFolderDeleteDesiredState | null>(null);
   const [folderDeletePlan, setFolderDeletePlan] =
@@ -317,6 +332,11 @@ export function OmvSharingPanel() {
     setFolderDeletePlan(null);
     setFolderDeleteDesired(null);
     setFolderDeleteApprovalOpen(false);
+    setFolderRenameTarget(null);
+    setFolderRenameName("");
+    setFolderRenameDesired(null);
+    setFolderRenamePlan(null);
+    setFolderRenameApprovalOpen(false);
     setGroupPlan(null);
     setGroupDesired(null);
     setUserPlan(null);
@@ -545,6 +565,77 @@ export function OmvSharingPanel() {
     setFolderName("");
     setFolderComment("");
     clearFolderPreview();
+    setReloadKey((value) => value + 1);
+  };
+
+  const beginSharedFolderRename = (folder: OmvSharedFolder) => {
+    if (
+      status?.source !== "native" ||
+      !status.capabilities?.includes("shared-folder.rename.safe.v1") ||
+      folder.relativePath.startsWith("/")
+    ) {
+      return;
+    }
+    setFolderRenameTarget(folder);
+    setFolderRenameName(folder.name);
+    setFolderRenameDesired(null);
+    setFolderRenamePlan(null);
+    setFolderDetachDesired(null);
+    setFolderDetachPlan(null);
+    setFolderDeleteDesired(null);
+    setFolderDeletePlan(null);
+  };
+
+  const previewSharedFolderRename = async () => {
+    if (!folderRenameTarget) return;
+    const name = folderRenameName.trim();
+    if (!PORTABLE_SHARE_NAME.test(name) || name.includes("..")) {
+      setError(
+        "文件夹名称只能用 1–64 位英文、数字、点、短横线或下划线，不能以点开头/结尾或包含连续两点",
+      );
+      setFolderRenamePlan(null);
+      return;
+    }
+    const nextDesired: OmvSharedFolderRenameDesiredState = {
+      schema: "echo.omv.shared-folder-rename-desired.v1",
+      sharedFolderRef: folderRenameTarget.uuid,
+      name,
+    };
+    setFolderRenamePlanning(true);
+    setFolderRenameDesired(nextDesired);
+    setFolderRenamePlan(null);
+    setError(null);
+    try {
+      setFolderRenamePlan(await planOmvSharedFolderRename(nextDesired));
+    } catch (reason) {
+      setFolderRenamePlan(null);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "无法生成共享文件夹重命名预览",
+      );
+    } finally {
+      setFolderRenamePlanning(false);
+    }
+  };
+
+  const confirmSharedFolderRename = async (password: string) => {
+    if (!folderRenameDesired || !folderRenamePlan) return;
+    const approval = await requestHighRiskApproval(
+      "omv.shared-folder.update",
+      folderRenamePlan.planId,
+      password,
+    );
+    await applyOmvSharedFolderRename(
+      folderRenameDesired,
+      folderRenamePlan.planId,
+      approval.approvalToken,
+    );
+    setFolderRenameApprovalOpen(false);
+    setFolderRenameTarget(null);
+    setFolderRenameName("");
+    setFolderRenameDesired(null);
+    setFolderRenamePlan(null);
     setReloadKey((value) => value + 1);
   };
 
@@ -2360,6 +2451,11 @@ export function OmvSharingPanel() {
                   status?.capabilities?.includes(
                     "shared-folder.privilege.simple.v1",
                   );
+                const canRename =
+                  status?.source === "native" &&
+                  folderControlsAllowed &&
+                  status.capabilities?.includes("shared-folder.rename.safe.v1");
+                const renameBlockedByShare = Boolean(smbRule || nfsRule);
                 const canDetach =
                   status?.source === "native" &&
                   folderControlsAllowed &&
@@ -2418,6 +2514,22 @@ export function OmvSharingPanel() {
                           {nfsRule ? "管理 NFS" : "启用 NFS"}
                         </button>
                       )}
+                      {canRename && (
+                        <button
+                          type="button"
+                          onClick={() => beginSharedFolderRename(folder)}
+                          disabled={renameBlockedByShare}
+                          title={
+                            renameBlockedByShare
+                              ? "请先停用这个文件夹的 SMB/NFS 规则"
+                              : "保留数据和 UUID，仅修改目录名称"
+                          }
+                          className="inline-flex h-7 items-center gap-1 rounded-lg border border-cyan-200 bg-white px-2.5 text-[10px] font-medium text-cyan-700 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <PencilIcon className="size-3" />
+                          重命名
+                        </button>
+                      )}
                       {canDetach && (
                         <button
                           type="button"
@@ -2459,6 +2571,70 @@ export function OmvSharingPanel() {
                         </button>
                       )}
                     </div>
+                    {folderRenameTarget?.uuid === folder.uuid && (
+                      <div className="mt-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-[10px] text-cyan-900">
+                        <div className="flex flex-wrap items-end gap-2">
+                          <label className="min-w-[180px] flex-1 font-medium">
+                            新名称
+                            <input
+                              value={folderRenameName}
+                              maxLength={64}
+                              autoComplete="off"
+                              onChange={(event) => {
+                                setFolderRenameName(event.currentTarget.value);
+                                setFolderRenameDesired(null);
+                                setFolderRenamePlan(null);
+                              }}
+                              className="mt-1 h-8 w-full rounded-lg border border-cyan-200 bg-white px-2.5 text-[11px] outline-none focus:border-cyan-500"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => void previewSharedFolderRename()}
+                            disabled={
+                              folderRenamePlanning || !folderRenameName.trim()
+                            }
+                            className="inline-flex h-8 items-center gap-1 rounded-lg bg-cyan-600 px-3 text-[10px] font-medium text-white hover:bg-cyan-700 disabled:opacity-50"
+                          >
+                            {folderRenamePlanning && (
+                              <Loader2Icon className="size-3 animate-spin" />
+                            )}
+                            {folderRenamePlanning ? "正在预览…" : "预览重命名"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFolderRenameTarget(null);
+                              setFolderRenameDesired(null);
+                              setFolderRenamePlan(null);
+                            }}
+                            className="h-8 px-2 text-[10px] text-slate-500 hover:text-slate-800"
+                          >
+                            取消
+                          </button>
+                        </div>
+                        {folderRenamePlan && (
+                          <div className="mt-2 flex items-center justify-between gap-3 border-t border-cyan-200 pt-2">
+                            <span>
+                              {folderRenamePlan.operation === "rename"
+                                ? `${folder.name}/ → ${folderRenamePlan.desired.name}/；数据、UUID 与 ACL 保留`
+                                : "名称没有变化，无需应用"}
+                            </span>
+                            {folderRenamePlan.requiresApproval && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setFolderRenameApprovalOpen(true)
+                                }
+                                className="h-7 shrink-0 rounded-lg bg-amber-500 px-2.5 text-[10px] font-medium text-white hover:bg-amber-600"
+                              >
+                                管理员确认
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {folderDetachPlan?.sharedFolder.uuid === folder.uuid && (
                       <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] text-rose-800">
                         <div className="flex items-center justify-between gap-3">
@@ -3435,6 +3611,19 @@ export function OmvSharingPanel() {
         }
         onCancel={() => setFolderApprovalOpen(false)}
         onConfirm={confirmSharedFolder}
+      />
+      <HighRiskApprovalDialog
+        open={folderRenameApprovalOpen && Boolean(folderRenamePlan)}
+        title="重命名共享文件夹"
+        description="Echo 只在同一已挂载可写卷内重命名目录，并保留文件、POSIX ACL 与共享 UUID；若存在 SMB/NFS 规则会拒绝预览。目录或注册表写入失败时会一并回滚。"
+        targetLabel={
+          folderRenamePlan
+            ? `${folderRenamePlan.sharedFolder.name}/ → ${folderRenamePlan.desired.name}/ · ${folderRenamePlan.planId.slice(0, 12)}`
+            : undefined
+        }
+        confirmLabel="确认重命名"
+        onCancel={() => setFolderRenameApprovalOpen(false)}
+        onConfirm={confirmSharedFolderRename}
       />
       <HighRiskApprovalDialog
         open={folderDetachApprovalOpen && Boolean(folderDetachPlan)}

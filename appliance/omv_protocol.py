@@ -17,6 +17,9 @@ SHARED_FOLDER_DETACH_CONTROL_CAPABILITY = "shared-folder.detach.safe.v1"
 SHARED_FOLDER_DELETE_DESIRED_SCHEMA = "echo.omv.shared-folder-delete-desired.v1"
 SHARED_FOLDER_DELETE_PLAN_SCHEMA = "echo.omv.shared-folder-delete-plan.v1"
 SHARED_FOLDER_DELETE_CONTROL_CAPABILITY = "shared-folder.delete.empty.v1"
+SHARED_FOLDER_RENAME_DESIRED_SCHEMA = "echo.omv.shared-folder-rename-desired.v1"
+SHARED_FOLDER_RENAME_PLAN_SCHEMA = "echo.omv.shared-folder-rename-plan.v1"
+SHARED_FOLDER_RENAME_CONTROL_CAPABILITY = "shared-folder.rename.safe.v1"
 SHARE_PRIVILEGE_DESIRED_SCHEMA = "echo.omv.share-privilege-desired.v1"
 SHARE_PRIVILEGE_PLAN_SCHEMA = "echo.omv.share-privilege-plan.v1"
 SHARE_PRIVILEGE_CONTROL_CAPABILITY = "shared-folder.privilege.simple.v1"
@@ -79,9 +82,7 @@ _WINDOWS_RESERVED_NAMES = {
     *(f"lpt{index}" for index in range(1, 10)),
 }
 _ZFS_POOL_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,31}")
-_ZFS_WHOLE_DISK_PATTERN = re.compile(
-    r"/dev/(?:sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+|mmcblk\d+)"
-)
+_ZFS_WHOLE_DISK_PATTERN = re.compile(r"/dev/(?:sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+|mmcblk\d+)")
 
 
 class OmvUnavailable(RuntimeError):
@@ -136,9 +137,7 @@ def validate_zfs_mirror_desired(value: Any) -> dict[str, Any]:
     name = value.get("name")
     if not isinstance(name, str) or _ZFS_POOL_NAME_PATTERN.fullmatch(name) is None:
         raise ValueError("ZFS pool name must be a lowercase portable name of at most 32 characters")
-    if name.startswith(("mirror", "raidz", "draid", "spare", "log")) or re.match(
-        r"c\d", name
-    ):
+    if name.startswith(("mirror", "raidz", "draid", "spare", "log")) or re.match(r"c\d", name):
         raise ValueError("ZFS pool name uses a reserved OpenZFS prefix")
     devices = value.get("devices")
     if not isinstance(devices, list) or len(devices) != 2:
@@ -340,6 +339,31 @@ def validate_shared_folder_delete_desired(value: Any) -> dict[str, Any]:
         "schema": SHARED_FOLDER_DELETE_DESIRED_SCHEMA,
         "sharedFolderRef": validate_omv_uuid(shared_folder_ref).lower(),
         "emptyOnly": True,
+    }
+
+
+def validate_shared_folder_rename_desired(value: Any) -> dict[str, Any]:
+    """Validate a same-volume, single-component shared-folder rename."""
+    expected = {"schema", "sharedFolderRef", "name"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("shared folder rename desired state has unexpected fields")
+    if value.get("schema") != SHARED_FOLDER_RENAME_DESIRED_SCHEMA:
+        raise ValueError("shared folder rename desired-state schema is unsupported")
+    shared_folder_ref = value.get("sharedFolderRef")
+    if not isinstance(shared_folder_ref, str):
+        raise ValueError("sharedFolderRef must be an OMV UUID")
+    name = value.get("name")
+    if (
+        not isinstance(name, str)
+        or _PORTABLE_SHARE_NAME_PATTERN.fullmatch(name) is None
+        or ".." in name
+        or name.casefold() in _WINDOWS_RESERVED_NAMES
+    ):
+        raise ValueError("shared folder name is not portable across network clients")
+    return {
+        "schema": SHARED_FOLDER_RENAME_DESIRED_SCHEMA,
+        "sharedFolderRef": validate_omv_uuid(shared_folder_ref).lower(),
+        "name": name,
     }
 
 

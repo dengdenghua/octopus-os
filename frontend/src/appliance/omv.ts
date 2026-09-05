@@ -317,6 +317,39 @@ export type OmvSharedFolderPlan = {
   verified?: boolean;
 };
 
+export type OmvSharedFolderRenameDesiredState = {
+  schema: "echo.omv.shared-folder-rename-desired.v1";
+  sharedFolderRef: string;
+  name: string;
+};
+
+export type OmvSharedFolderRenamePlan = {
+  schema: "echo.omv.shared-folder-rename-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "rename" | "none";
+  requiresApproval: boolean;
+  shareUuid: string;
+  sharedFolder: OmvSharedFolder;
+  desired: OmvSharedFolderRenameDesiredState;
+  changes: Array<{
+    field: "name";
+    before: string;
+    after: string;
+  }>;
+  safety: {
+    filesystem: "sameMountedWritableVolume";
+    data: "preserved";
+    identity: "uuidPreserved";
+    acl: "preservedWithDirectory";
+    dependentShares: "mustBeAbsent";
+    rollback: "directoryAndRegistry";
+  };
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: true;
+};
+
 export type OmvSharedFolderDetachDesiredState = {
   schema: "echo.omv.shared-folder-detach-desired.v1";
   sharedFolderRef: string;
@@ -859,6 +892,29 @@ export function applyOmvSharedFolder(
     "/api/appliance/omv/sharing/folders/apply",
     { desired, planId },
     "无法应用共享文件夹变更",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function planOmvSharedFolderRename(
+  desired: OmvSharedFolderRenameDesiredState,
+): Promise<OmvSharedFolderRenamePlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/folders/rename/plan",
+    desired,
+    "无法生成共享文件夹重命名预览",
+  );
+}
+
+export function applyOmvSharedFolderRename(
+  desired: OmvSharedFolderRenameDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvSharedFolderRenamePlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/folders/rename/apply",
+    { desired, planId },
+    "无法重命名共享文件夹",
     approvalHeader(approvalToken),
   );
 }

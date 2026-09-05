@@ -20,6 +20,7 @@ from appliance.omv_protocol import (
     SHARED_FOLDER_DELETE_DESIRED_SCHEMA,
     SHARED_FOLDER_DESIRED_SCHEMA,
     SHARED_FOLDER_DETACH_DESIRED_SCHEMA,
+    SHARED_FOLDER_RENAME_DESIRED_SCHEMA,
     SMB_DESIRED_SCHEMA,
     USER_DESIRED_SCHEMA,
     USER_PASSWORD_DESIRED_SCHEMA,
@@ -31,6 +32,7 @@ from appliance.omv_protocol import (
     validate_shared_folder_delete_desired,
     validate_shared_folder_desired,
     validate_shared_folder_detach_desired,
+    validate_shared_folder_rename_desired,
     validate_user_desired,
     validate_user_password_desired,
     validate_zfs_mirror_desired,
@@ -241,6 +243,42 @@ class SharedFolderDeleteApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     desired: SharedFolderDeleteDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
+class SharedFolderRenameDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.shared-folder-rename-desired.v1"] = Field(
+        default=SHARED_FOLDER_RENAME_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    shared_folder_ref: str = Field(min_length=36, max_length=36, alias="sharedFolderRef")
+    name: str = Field(min_length=1, max_length=64)
+
+    @field_validator("shared_folder_ref", "name")
+    @classmethod
+    def validate_rename_field(cls, value: str, info: Any) -> str:
+        payload = {
+            "schema": SHARED_FOLDER_RENAME_DESIRED_SCHEMA,
+            "sharedFolderRef": (
+                value
+                if info.field_name == "shared_folder_ref"
+                else "11111111-2222-4333-8444-555555555555"
+            ),
+            "name": value if info.field_name == "name" else "share",
+        }
+        try:
+            normalized = validate_shared_folder_rename_desired(payload)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return normalized["sharedFolderRef" if info.field_name == "shared_folder_ref" else "name"]
+
+
+class SharedFolderRenameApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: SharedFolderRenameDesiredState
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
