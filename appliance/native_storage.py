@@ -5,9 +5,10 @@ already ships with the appliance: ``zpool``, ``lsblk``, ``df`` and
 ``smartctl``. The kernel — not a third-party NAS panel — is the single source
 of truth for device state, so no parallel storage state is ever maintained.
 
-Payloads are intentionally isomorphic to the OMV bridge responses
-(:class:`appliance.omv_client.OmvClient`) so the existing appliance UI works
-identically with or without OpenMediaVault installed:
+Payloads intentionally match the versioned OMV-compatible API contracts, so
+the existing appliance UI works identically with or without OpenMediaVault
+installed. The native runtime imports only the protocol definitions; it does
+not load the optional bridge client or its HTTP transport:
 
     /status       -> OmvStatus
     /health       -> OmvHealthSnapshot

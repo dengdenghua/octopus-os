@@ -1,4 +1,9 @@
-"""Validated request models for the Echo OMV API."""
+"""Validated request models for the Echo storage-compatible API.
+
+These Pydantic models are shared by the native routes and the optional OMV
+router. Keep their validators on ``omv_protocol`` so importing the native
+surface never loads the bridge client's HTTP transport.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from appliance.omv_client import (
+from appliance.omv_protocol import (
     GROUP_DESIRED_SCHEMA,
     NFS_DESIRED_SCHEMA,
     QUOTA_DESIRED_SCHEMA,

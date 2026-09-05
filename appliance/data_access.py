@@ -1,4 +1,4 @@
-"""OMV-backed, fail-closed data-path authorization for Echo family members."""
+"""Storage-backed, fail-closed data-path authorization for Echo family members."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
-from appliance.omv_client import OmvControlRejected, OmvUnavailable
+from appliance.omv_protocol import OmvControlRejected, OmvUnavailable
 
 _PERMISSION_RANK = {"none": 0, "read": 1, "readWrite": 2}
 _OMV_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")

@@ -70,7 +70,7 @@ Echo 主容器与代理自身也受标签保护、不可被启动器停止。应
 设备控制面固定只接受 `local:admin`：OMV 健康/拓扑/用户共享管理、设备连接、容器启停、Hub
 设备应用生命周期以及管理员密码轮换均不会因家庭成员知道管理员复核密码而越权。家庭成员仍可
 打开已运行的家庭应用、浏览 Hub、连接自己名下的 Agent 账户凭据，并只看到自己的 Echo 账号记录。
-管理员可把已有普通 OMV 用户开通为独立 Echo 登录，也可停用、重新启用或单独重置其 Echo 密码；
+管理员可把存储面已有普通用户开通为独立 Echo 登录，也可停用、重新启用或单独重置其 Echo 密码；
 每次变更只吊销该成员旧 Cookie/Bearer/WebSocket，会话不会连带踢出其他家庭成员，也不会修改
 OMV 密码。
 
@@ -191,11 +191,17 @@ Echo 复用 Device Link 的一机一凭据身份，但不会让“已配对”�
 恢复或跳过；同名异内容固定保留冲突副本。每个上传会话绑定设备，另一台已配对设备也不能续传、
 完成或取消。照片提交只使照片扫描缓存失效，不直接改 Agent 语义索引库；索引仍由照片应用受控重建。
 
-## omv_bridge — OpenMediaVault 受限存储接入
+## omv_bridge — 可选 OpenMediaVault 兼容存储接入
+
+默认 appliance 运行时由 `NativeStorageAuthority` 直接读取 Linux 存储栈，并挂载
+`/api/appliance/storage/*`；为兼容存量面板，同一原生实现也提供
+`/api/appliance/omv/*` 别名。它不会加载 `omv_client` 或 Unix-socket HTTP 传输层。
+本节只描述显式部署 `deploy/omv/` 时的可选 OMV 主机桥接合同；桥接代码不属于默认
+NAS 数据面，也不会替代原生控制面。
 
 OMV 宿主可运行 `python -m appliance.omv_bridge`，通过权限为 `0660` 的 Unix socket 暴露
-挂载文件系统、物理盘摘要、单设备 SMART、脱敏块设备拓扑及共享/用户概览。Echo 主进程经
-`ECHO_OMV_SOCKET` 接入后提供八条仅设备管理员可用的只读 API：
+挂载文件系统、物理盘摘要、单设备 SMART、脱敏块设备拓扑及共享/用户概览。显式启用
+兼容客户端并配置 `ECHO_OMV_SOCKET` 后，可提供八条仅设备管理员可用的只读 API：
 
 - `GET /api/appliance/omv/status`
 - `GET /api/appliance/omv/health`
@@ -226,7 +232,7 @@ OMV 配置且绝不递归删除目录或数据。`POST /api/appliance/omv/sharin
 密码签发的单次审批，并写 HMAC 审计链。它只能创建或更新已有 OMV 共享文件夹对应的私有 SMB
 规则；不开放 guest、不接收 hosts/extra options，也不修改 ACL。
 `POST /api/appliance/omv/sharing/nfs/plan|apply` 只创建或更新一个已有共享文件夹面向单一
-RFC1918/IPv6 ULA CIDR 的规则，强制 `root_squash,sync,subtree_check`；通配符、公网、主机名、
+RFC1918/IPv6 ULA CIDR 的规则，强制 `root_squash,sync,no_subtree_check`；通配符、公网、主机名、
 高级导出选项和删除继续由 OMV 管理。两者都使用 planId 绑定的独立密码审批并回读验证/回滚。
 
 桥内不接受调用方提供 OMV service/method，只能执行官方 `FileSystemMgmt.enumerateMountedFilesystems`

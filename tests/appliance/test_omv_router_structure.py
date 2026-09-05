@@ -117,6 +117,30 @@ def test_omv_client_preserves_the_legacy_validation_import_surface() -> None:
         assert getattr(omv_client, name) is getattr(omv_protocol, name)
 
 
+def test_native_storage_surface_does_not_import_optional_bridge_client() -> None:
+    """The default appliance must not pull the OMV HTTP transport into memory."""
+    for relative in (
+        "native_storage.py",
+        "native_storage_routes.py",
+        "omv_models.py",
+        "accounts.py",
+        "data_access.py",
+    ):
+        tree = _tree(relative)
+        imported_modules = {
+            node.module
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom) and node.module
+        }
+        imported_modules.update(
+            alias.name
+            for node in tree.body
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        )
+        assert "appliance.omv_client" not in imported_modules, relative
+
+
 def test_omv_bridge_business_module_does_not_own_http_transport() -> None:
     tree = _tree("omv_bridge.py")
     class_names = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import socket
 import socketserver
 import stat
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.parse import parse_qs, urlsplit
 
 from appliance.omv_bridge_errors import (
@@ -56,7 +57,26 @@ class OmvBridgeService(Protocol):
     def apply_filesystem_quota(self, desired: Any, plan_id: Any) -> dict[str, Any]: ...
 
 
-class _ThreadingUnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+_UNIX_ADDRESS_FAMILY = cast(int | None, getattr(socket, "AF_UNIX", None))
+
+
+class _UnixStreamServer(socketserver.TCPServer):
+    """Small stdlib-compatible Unix stream server on supported hosts.
+
+    ``socketserver.UnixStreamServer`` is absent on some platforms (notably
+    Windows). Keep the optional bridge importable there, but fail explicitly
+    if a caller tries to start a Unix-socket server.
+    """
+
+    address_family = _UNIX_ADDRESS_FAMILY or socket.AF_INET
+
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        if _UNIX_ADDRESS_FAMILY is None:
+            raise OSError("Echo OMV bridge requires Unix-domain socket support")
+        super().__init__(*_args, **_kwargs)
+
+
+class _ThreadingUnixServer(socketserver.ThreadingMixIn, _UnixStreamServer):
     daemon_threads = True
 
 

@@ -1,9 +1,11 @@
-"""Echo family login directory backed by public OMV account projections.
+"""Echo family login directory backed by the public storage projection.
 
-OMV remains the storage identity authority and Agent remains the authentication
-implementation.  Echo owns only a small, explicit mapping between them.  A
-member can be linked only after the corresponding normal OMV user is visible
-through ``sharing_overview``; no OMV or Agent private database is opened.
+The active storage provider (native Linux by default, optional OMV bridge for
+compatibility) remains the identity authority and Agent remains the
+authentication implementation. Echo owns only a small, explicit mapping
+between them. A member can be linked only after the corresponding normal
+storage user is visible through ``sharing_overview``; no provider or Agent
+private database is opened.
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ from appliance.auth import (
     read_auth_store,
     write_auth_store,
 )
-from appliance.omv_client import OmvControlRejected, OmvUnavailable
+from appliance.omv_protocol import OmvControlRejected, OmvUnavailable
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
 
 ACCOUNT_DIRECTORY_SCHEMA = "echo.account-directory.v1"
