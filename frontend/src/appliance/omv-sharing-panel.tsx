@@ -480,7 +480,7 @@ export function OmvSharingPanel() {
     } catch (reason) {
       setFolderPlan(null);
       setError(
-        reason instanceof Error ? reason.message : "无法生成共享文件夹创建预览",
+        reason instanceof Error ? reason.message : "无法生成共享文件夹预览",
       );
     } finally {
       setFolderPlanning(false);
@@ -489,8 +489,12 @@ export function OmvSharingPanel() {
 
   const confirmSharedFolder = async (password: string) => {
     if (!folderDesired || !folderPlan) return;
+    const action =
+      folderPlan.operation === "update"
+        ? "omv.shared-folder.update"
+        : "omv.shared-folder.create";
     const approval = await requestHighRiskApproval(
-      "omv.shared-folder.create",
+      action,
       folderPlan.planId,
       password,
     );
@@ -1973,8 +1977,10 @@ export function OmvSharingPanel() {
                       在现有可写卷上创建
                     </strong>
                     <p className="mt-1 text-[10px] leading-5 text-slate-500">
-                      Echo 只按名称创建同名相对目录，固定为 users 组可读写的
-                      2770 权限；不提供任意路径、ACL、修改或删除。
+                      Echo
+                      只按名称创建同名相对目录；已有登记目录仅允许更新备注，
+                      不改名、不移动、不修改权限或删除数据。新目录固定为 users
+                      组 可读写的 2770 权限。
                     </p>
                   </div>
                   <button
@@ -2053,7 +2059,7 @@ export function OmvSharingPanel() {
                     {folderPlanning && (
                       <Loader2Icon className="size-3.5 animate-spin" />
                     )}
-                    {folderPlanning ? "正在预览…" : "预览创建"}
+                    {folderPlanning ? "正在预览…" : "预览创建/更新"}
                   </button>
                   <span className="text-[10px] text-slate-500">
                     预览不会创建目录
@@ -2066,7 +2072,9 @@ export function OmvSharingPanel() {
                         <strong className="block text-xs text-slate-800">
                           {folderPlan.operation === "create"
                             ? `将创建 ${folderPlan.desired.name}/`
-                            : "同名共享文件夹已经符合要求"}
+                            : folderPlan.operation === "update"
+                              ? `将更新 ${folderPlan.desired.name}/ 的备注`
+                              : "同名共享文件夹已经符合要求"}
                         </strong>
                         <span className="mt-1 block text-[10px] text-slate-500">
                           {folderPlan.target.label || "未命名卷"} · 目录权限
@@ -2079,7 +2087,9 @@ export function OmvSharingPanel() {
                           onClick={() => setFolderApprovalOpen(true)}
                           className="h-8 shrink-0 rounded-lg bg-amber-500 px-3 text-[11px] font-medium text-white hover:bg-amber-600"
                         >
-                          管理员确认并创建
+                          {folderPlan.operation === "update"
+                            ? "管理员确认并更新"
+                            : "管理员确认并创建"}
                         </button>
                       )}
                     </div>
@@ -3085,14 +3095,24 @@ export function OmvSharingPanel() {
       />
       <HighRiskApprovalDialog
         open={folderApprovalOpen && Boolean(folderPlan)}
-        title="创建共享文件夹"
-        description="Echo 将在所选可写卷上按名称创建同名相对目录，固定使用 users 组 2770 权限并回读验证。失败回滚只移除共享配置，不删除目录或其中的数据。"
+        title={
+          folderPlan?.operation === "update"
+            ? "更新共享文件夹备注"
+            : "创建共享文件夹"
+        }
+        description={
+          folderPlan?.operation === "update"
+            ? "Echo 只会更新已登记共享文件夹的备注，不改名、不移动目录、不修改权限，也不删除目录或其中的数据。"
+            : "Echo 将在所选可写卷上按名称创建同名相对目录，固定使用 users 组 2770 权限并回读验证。失败回滚只移除共享配置，不删除目录或其中的数据。"
+        }
         targetLabel={
           folderPlan
             ? `${folderPlan.target.label || "未命名卷"} · ${folderPlan.desired.name}/ · ${folderPlan.planId.slice(0, 12)}`
             : undefined
         }
-        confirmLabel="确认创建"
+        confirmLabel={
+          folderPlan?.operation === "update" ? "确认更新备注" : "确认创建"
+        }
         onCancel={() => setFolderApprovalOpen(false)}
         onConfirm={confirmSharedFolder}
       />

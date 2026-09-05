@@ -137,6 +137,22 @@ def test_token_expires_and_dies_on_service_restart(tmp_path):
         )
 
 
+def test_shared_folder_comment_update_uses_a_plan_bound_approval(tmp_path):
+    service, _audit = _service(tmp_path)
+    token = _issue(
+        service,
+        action="omv.shared-folder.update",
+        target="a" * 64,
+    )
+
+    service.consume(
+        token=token,
+        actor="local:admin",
+        action="omv.shared-folder.update",
+        target="a" * 64,
+    )
+
+
 def test_wrong_password_is_rate_limited_without_logging_password(tmp_path):
     service, audit = _service(tmp_path, max_failures=2)
 

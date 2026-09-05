@@ -408,6 +408,37 @@ def test_shared_folder_create_is_atomic_and_idempotent(
     assert repeated["verified"] is True
 
 
+def test_shared_folder_comment_update_preserves_directory_and_registry_identity(
+    native_volume: tuple[Path, Path, str],
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    initial = _desired(mount_point_ref)
+    created = native_storage.apply_shared_folder(
+        initial, native_storage.plan_shared_folder(initial)["planId"]
+    )
+    updated = {**initial, "comment": "Updated family photos"}
+
+    plan = native_storage.plan_shared_folder(updated)
+
+    assert plan["operation"] == "update"
+    assert plan["requiresApproval"] is True
+    assert plan["shareUuid"] == created["sharedFolder"]["uuid"]
+    assert plan["changes"] == [
+        {"field": "comment", "before": "Family photos", "after": "Updated family photos"}
+    ]
+    assert plan["safety"]["update"] == "commentOnly"
+
+    applied = native_storage.apply_shared_folder(updated, plan["planId"])
+
+    assert applied["applied"] is True
+    assert applied["verified"] is True
+    assert applied["sharedFolder"]["uuid"] == created["sharedFolder"]["uuid"]
+    assert (volume / "Photos").is_dir()
+    persisted = json.loads(registry.read_text(encoding="utf-8"))
+    assert persisted[0]["comment"] == "Updated family photos"
+    assert str(volume) not in json.dumps(applied, ensure_ascii=False)
+
+
 def test_apply_rejects_a_plan_after_the_target_state_changes(
     native_volume: tuple[Path, Path, str],
 ) -> None:
@@ -505,6 +536,45 @@ def test_native_alias_exposes_create_capability_and_stale_plan_conflict(
     assert status.status_code == 200
     assert "shared-folder.create.simple.v1" in status.json()["capabilities"]
     assert response.status_code == 409
+
+
+def test_native_alias_binds_comment_update_to_update_approval_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    plan_id = "a" * 64
+    current_plan = {"planId": plan_id, "operation": "update", "requiresApproval": True}
+    applied = {**current_plan, "applied": True, "verified": True}
+    approval_calls: list[dict[str, Any]] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            approval_calls.append(kwargs)
+
+    class Audit:
+        def record(self, **kwargs: Any) -> None:
+            audit_calls.append(kwargs)
+
+    monkeypatch.setattr(native_storage, "plan_shared_folder", lambda _desired: current_plan)
+    monkeypatch.setattr(
+        native_storage,
+        "apply_shared_folder",
+        lambda _desired, _plan_id: applied,
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/appliance/omv/sharing/folders/apply",
+        json={"desired": _desired(MOUNT_POINT_REF), "planId": plan_id},
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+
+    assert response.status_code == 200
+    assert approval_calls[0]["action"] == "omv.shared-folder.update"
+    assert {entry["action"] for entry in audit_calls} == {"omv.shared-folder.update"}
 
 
 def test_native_alias_maps_apply_io_failure_to_service_unavailable(

@@ -295,14 +295,14 @@ export type OmvSharedFolderPlan = {
   schema: "echo.omv.shared-folder-plan.v1";
   planId: string;
   baseRevision: string;
-  operation: "create" | "none";
+  operation: "create" | "update" | "none";
   requiresApproval: boolean;
   shareUuid: string;
   target: OmvSharedFolderTarget;
   desired: OmvSharedFolderDesiredState;
   changes: Array<{
     field: "name" | "comment";
-    before: null;
+    before: string | null;
     after: string;
   }>;
   safety: {
@@ -310,7 +310,7 @@ export type OmvSharedFolderPlan = {
     relativePath: "derivedFromPortableName";
     directoryMode: "2770UsersGroup";
     acl: "notManaged";
-    update: "notManaged";
+    update: "notManaged" | "commentOnly";
     delete: "notManaged";
   };
   applied?: boolean;
@@ -701,7 +701,7 @@ export function planOmvSharedFolder(
   return postJson(
     "/api/appliance/omv/sharing/folders/plan",
     desired,
-    "无法生成共享文件夹创建预览",
+    "无法生成共享文件夹预览",
   );
 }
 
@@ -713,7 +713,7 @@ export function applyOmvSharedFolder(
   return postJson(
     "/api/appliance/omv/sharing/folders/apply",
     { desired, planId },
-    "无法创建共享文件夹",
+    "无法应用共享文件夹变更",
     approvalHeader(approvalToken),
   );
 }

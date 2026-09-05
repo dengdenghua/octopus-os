@@ -101,6 +101,7 @@ def _valid_target(action: str, target: str) -> bool:
         "hub.app.restart",
         "photos.index.build",
         "omv.shared-folder.create",
+        "omv.shared-folder.update",
         "omv.share-privilege.apply",
         "omv.smb.apply",
         "omv.nfs.apply",

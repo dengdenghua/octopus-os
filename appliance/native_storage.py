@@ -1368,12 +1368,30 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
     if existing is not None:
         if target_state["kind"] != "directory":
             raise OSError("native shared-folder registry does not match the filesystem")
-        if existing.get("comment", "") != desired["comment"]:
-            raise ValueError(
-                "shared folder already exists with different metadata; updates are not managed"
-            )
+        if (
+            _registered_uuid(existing, strict=True) != _share_uuid(volume_ref, desired["name"])
+            or _registered_relative_name(existing, strict=True) != desired["name"]
+            or os.path.normpath(str(existing.get("volumePath") or ""))
+            != os.path.normpath(volume_path)
+        ):
+            raise OSError("native shared-folder registry identity does not match the mounted target")
+        existing_comment = existing.get("comment")
+        if (
+            not isinstance(existing_comment, str)
+            or len(existing_comment) > 512
+            or any(character < " " for character in existing_comment)
+        ):
+            raise OSError("native shared-folder registry contains an invalid comment")
+    else:
+        existing_comment = None
 
-    operation = "none" if existing is not None else "create"
+    operation = (
+        "create"
+        if existing is None
+        else "update"
+        if existing_comment != desired["comment"]
+        else "none"
+    )
     base_revision = _canonical_hash(
         {
             "volume": volume_ref,
@@ -1390,19 +1408,29 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
         }
     )
     changes = (
-        []
-        if existing is not None
-        else [
+        [
             {"field": "name", "before": None, "after": desired["name"]},
             {"field": "comment", "before": None, "after": desired["comment"]},
         ]
+        if operation == "create"
+        else (
+            []
+            if operation == "none"
+            else [
+                {
+                    "field": "comment",
+                    "before": existing_comment,
+                    "after": desired["comment"],
+                }
+            ]
+        )
     )
     return {
         "schema": SHARED_FOLDER_PLAN_SCHEMA,
         "planId": plan_id,
         "baseRevision": base_revision,
         "operation": operation,
-        "requiresApproval": operation == "create",
+        "requiresApproval": operation != "none",
         "shareUuid": existing.get("uuid") if existing else _share_uuid(volume_ref, desired["name"]),
         "target": _shared_folder_target_payload(volume_ref, volume_path),
         "desired": desired,
@@ -1412,7 +1440,7 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "relativePath": "derivedFromPortableName",
             "directoryMode": "2770UsersGroup",
             "acl": "notManaged",
-            "update": "notManaged",
+            "update": "commentOnly",
             "delete": "notManaged",
         },
         "source": "native",
@@ -1420,14 +1448,14 @@ def _build_shared_folder_plan(desired: dict[str, Any]) -> dict[str, Any]:
 
 
 def plan_shared_folder(desired_state: dict[str, Any]) -> dict[str, Any]:
-    """Preview a shared-folder creation on a native writable volume."""
+    """Preview creation or comment-only update on a native writable volume."""
     desired = validate_shared_folder_desired(dict(desired_state))
     with _registry_transaction():
         return _build_shared_folder_plan(desired)
 
 
 def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
-    """Create the directory (2770, users group) and record it in the registry."""
+    """Create a directory or atomically update its registry comment."""
     desired = validate_shared_folder_desired(dict(desired_state))
     with _registry_transaction():
         plan = _build_shared_folder_plan(desired)
@@ -1452,6 +1480,56 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
                 "applied": False,
                 "verified": True,
                 "sharedFolder": _public_shared_folder_entry(existing),
+            }
+
+        if plan["operation"] == "update":
+            if not _verify_shared_folder(target_dir, group_gid):
+                raise OSError("registered shared folder has unsafe owner, group, or mode")
+            registry = _registry_load(strict=True)
+            existing_index = next(
+                (
+                    index
+                    for index, item in enumerate(registry)
+                    if item.get("uuid") == plan["shareUuid"]
+                ),
+                None,
+            )
+            if existing_index is None:
+                raise ValueError("shared folder registry changed during apply; preview again")
+            existing = registry[existing_index]
+            updated = {**existing, "comment": desired["comment"]}
+            original_registry = list(registry)
+            registry[existing_index] = updated
+            try:
+                _registry_save(registry)
+                observed_registry = _registry_load(strict=True)
+                observed = next(
+                    (
+                        item
+                        for item in observed_registry
+                        if item.get("uuid") == plan["shareUuid"]
+                    ),
+                    None,
+                )
+                if observed is None or observed.get("comment") != desired["comment"]:
+                    raise OSError("shared folder comment write-back verification failed")
+            except Exception as exc:
+                try:
+                    _registry_save(original_registry)
+                    if _registry_load(strict=True) != original_registry:
+                        raise OSError("shared folder registry rollback was not verified")
+                except Exception as rollback_exc:
+                    raise OSError(
+                        "shared folder comment update failed and registry rollback also failed"
+                    ) from rollback_exc
+                if isinstance(exc, (OSError, ValueError)):
+                    raise
+                raise OSError("shared folder comment update failed") from exc
+            return {
+                **plan,
+                "applied": True,
+                "verified": True,
+                "sharedFolder": _public_shared_folder_entry(updated),
             }
 
         created = False

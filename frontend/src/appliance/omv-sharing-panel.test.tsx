@@ -1029,13 +1029,13 @@ describe("OMV sharing and users settings", () => {
     );
     const folderName = screen.getByLabelText("文件夹名称");
     await user.type(folderName, "a..b");
-    await user.click(screen.getByRole("button", { name: "预览创建" }));
+    await user.click(screen.getByRole("button", { name: "预览创建/更新" }));
     expect(screen.getByRole("alert")).toHaveTextContent("包含连续两点");
     expect(planOmvSharedFolder).not.toHaveBeenCalled();
     await user.clear(folderName);
     await user.type(folderName, desired.name);
     await user.type(screen.getByLabelText("备注"), desired.comment);
-    await user.click(screen.getByRole("button", { name: "预览创建" }));
+    await user.click(screen.getByRole("button", { name: "预览创建/更新" }));
 
     await waitFor(() =>
       expect(planOmvSharedFolder).toHaveBeenCalledWith(desired),

@@ -197,8 +197,13 @@ def create_omv_alias_router(
             except OSError as exc:
                 raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
 
+        action = (
+            "omv.shared-folder.update"
+            if current_plan.get("operation") == "update"
+            else "omv.shared-folder.create"
+        )
         _consume_approval(
-            request, actor=actor, action="omv.shared-folder.create", target=body.plan_id
+            request, actor=actor, action=action, target=body.plan_id
         )
         metadata = {
             "operation": current_plan.get("operation"),
@@ -208,7 +213,7 @@ def create_omv_alias_router(
         }
         _record(
             request,
-            action="omv.shared-folder.create",
+            action=action,
             actor=actor,
             target=body.plan_id,
             outcome="attempted",
@@ -221,7 +226,7 @@ def create_omv_alias_router(
         except ValueError as exc:
             _record(
                 request,
-                action="omv.shared-folder.create",
+                action=action,
                 actor=actor,
                 target=body.plan_id,
                 outcome="failed",
@@ -231,7 +236,7 @@ def create_omv_alias_router(
         except OSError as exc:
             _record(
                 request,
-                action="omv.shared-folder.create",
+                action=action,
                 actor=actor,
                 target=body.plan_id,
                 outcome="failed",
@@ -240,7 +245,7 @@ def create_omv_alias_router(
             raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
         _record(
             request,
-            action="omv.shared-folder.create",
+            action=action,
             actor=actor,
             target=body.plan_id,
             outcome="succeeded",

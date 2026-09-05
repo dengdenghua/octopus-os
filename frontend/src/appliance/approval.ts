@@ -27,6 +27,7 @@ export type HighRiskAction =
   | "device-sync.files.enable"
   | "device-sync.files.disable"
   | "omv.shared-folder.create"
+  | "omv.shared-folder.update"
   | "omv.share-privilege.apply"
   | "omv.smb.apply"
   | "omv.nfs.apply"
