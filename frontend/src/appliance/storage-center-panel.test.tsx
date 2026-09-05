@@ -16,6 +16,9 @@ vi.mock("./omv-storage-health", () => ({
 vi.mock("./omv-sharing-panel", () => ({
   OmvSharingPanel: () => <div>真实共享管理页</div>,
 }));
+vi.mock("./mdraid1-panel", () => ({
+  MdRaid1Panel: () => <div>真实 RAID1 管理页</div>,
+}));
 vi.mock("./zfs-mirror-panel", () => ({
   ZfsMirrorPanel: () => <div>真实存储池管理页</div>,
 }));
@@ -101,6 +104,7 @@ describe("storage center", () => {
     expect(screen.getByText("真实磁盘健康页")).toBeInTheDocument();
     expect(screen.getByText("UPS 电源保护页")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "存储池" }));
+    expect(screen.getByText("真实 RAID1 管理页")).toBeInTheDocument();
     expect(screen.getByText("真实存储池管理页")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "共享与用户" }));
     expect(screen.getByText("真实共享管理页")).toBeInTheDocument();

@@ -661,6 +661,48 @@ export type OmvZfsMirrorPlan = {
   };
 };
 
+export type OmvMdRaid1Candidate = OmvZfsMirrorCandidate;
+
+export type OmvMdRaid1DesiredState = {
+  schema: "echo.omv.mdraid1-desired.v1";
+  name: string;
+  devices: [string, string];
+  dataLossConfirmed: true;
+};
+
+export type OmvMdRaid1Plan = {
+  schema: "echo.omv.mdraid1-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "create";
+  target: string;
+  requiresApproval: true;
+  desired: OmvMdRaid1DesiredState;
+  devices: [OmvMdRaid1Candidate, OmvMdRaid1Candidate];
+  usableBytes: number;
+  filesystemCreated: false;
+  safety: {
+    destructive: true;
+    dataLossConfirmed: true;
+    layout: "twoDiskRaid1Only";
+    devices: "wholeBlankNonRemovableWithPersistentIdentity";
+    force: false;
+    degradedStart: false;
+    filesystemCreated: false;
+    unsupported: string[];
+  };
+  applied?: boolean;
+  verified?: boolean;
+  array?: {
+    name: string;
+    devicefile: string;
+    uuid: string;
+    level: "raid1";
+    devices: [string, string] | string[];
+    filesystem: null;
+  };
+};
+
 export type OmvZfsPool = {
   name: string;
   poolGuid: string;
@@ -1436,6 +1478,39 @@ export function applyOmvZfsMirror(
     "/api/appliance/omv/pools/zfs-mirror/apply",
     { desired, planId },
     "无法创建 ZFS 镜像存储池",
+    approvalHeader(approvalToken),
+  );
+}
+
+export async function fetchOmvMdRaid1Candidates(): Promise<
+  OmvMdRaid1Candidate[]
+> {
+  const result = await readJson<{ devices: OmvMdRaid1Candidate[] }>(
+    "/api/appliance/omv/arrays/mdraid1/candidates",
+    "无法读取 Linux RAID1 候选磁盘",
+  );
+  return result.devices;
+}
+
+export function planOmvMdRaid1(
+  desired: OmvMdRaid1DesiredState,
+): Promise<OmvMdRaid1Plan> {
+  return postJson(
+    "/api/appliance/omv/arrays/mdraid1/plan",
+    desired,
+    "无法生成 Linux RAID1 创建预览",
+  );
+}
+
+export function applyOmvMdRaid1(
+  desired: OmvMdRaid1DesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvMdRaid1Plan> {
+  return postJson(
+    "/api/appliance/omv/arrays/mdraid1/apply",
+    { desired, planId },
+    "无法创建 Linux RAID1 阵列",
     approvalHeader(approvalToken),
   );
 }

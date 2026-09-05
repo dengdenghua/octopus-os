@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyOmvGroup,
+  applyOmvMdRaid1,
   applyOmvNfsShare,
   applyOmvNfsShareRemove,
   applyOmvSharedFolder,
@@ -19,6 +20,7 @@ import {
   applyOmvZfsScrub,
   fetchOmvFilesystems,
   fetchOmvHealth,
+  fetchOmvMdRaid1Candidates,
   fetchOmvSharePrivileges,
   fetchOmvSharingOverview,
   fetchOmvSmart,
@@ -32,6 +34,7 @@ import {
   fetchOmvZfsPools,
   fetchOmvZfsMaintenance,
   planOmvNfsShare,
+  planOmvMdRaid1,
   planOmvNfsShareRemove,
   planOmvGroup,
   planOmvSharedFolder,
@@ -1072,6 +1075,89 @@ describe("OMV read-only API client", () => {
     });
     expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
       "zfs-approval-token",
+    );
+  });
+
+  it("keeps md RAID1 candidate read, destructive preview and approved apply separate", async () => {
+    const desired = {
+      schema: "echo.omv.mdraid1-desired.v1" as const,
+      name: "family",
+      devices: ["/dev/sdb", "/dev/sdc"] as [string, string],
+      dataLossConfirmed: true as const,
+    };
+    const devices = [
+      {
+        devicefile: "/dev/sdb",
+        sizeBytes: 8 * 1024 ** 3,
+        serial: "disk-b",
+        wwn: null,
+        model: "QEMU HARDDISK",
+      },
+      {
+        devicefile: "/dev/sdc",
+        sizeBytes: 8 * 1024 ** 3,
+        serial: "disk-c",
+        wwn: null,
+        model: "QEMU HARDDISK",
+      },
+    ] as const;
+    const plan = {
+      schema: "echo.omv.mdraid1-plan.v1" as const,
+      planId: "d".repeat(64),
+      baseRevision: "c".repeat(64),
+      operation: "create" as const,
+      target: "/dev/md/echo-family",
+      requiresApproval: true as const,
+      desired,
+      devices,
+      usableBytes: 8 * 1024 ** 3,
+      filesystemCreated: false as const,
+      safety: {
+        destructive: true as const,
+        dataLossConfirmed: true as const,
+        layout: "twoDiskRaid1Only" as const,
+        devices: "wholeBlankNonRemovableWithPersistentIdentity" as const,
+        force: false as const,
+        degradedStart: false as const,
+        filesystemCreated: false as const,
+        unsupported: ["filesystemCreate", "mount"],
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ devices }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ...plan, applied: true, verified: true }),
+          {
+            status: 200,
+          },
+        ),
+      );
+
+    expect(await fetchOmvMdRaid1Candidates()).toHaveLength(2);
+    expect((await planOmvMdRaid1(desired)).planId).toBe(plan.planId);
+    expect(
+      (await applyOmvMdRaid1(desired, plan.planId, "mdraid-approval-token"))
+        .verified,
+    ).toBe(true);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/arrays/mdraid1/candidates",
+      "/api/appliance/omv/arrays/mdraid1/plan",
+      "/api/appliance/omv/arrays/mdraid1/apply",
+    ]);
+    const apply = fetchMock.mock.calls[2]?.[1] as RequestInit;
+    expect(JSON.parse(String(apply.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
+      "mdraid-approval-token",
     );
   });
 

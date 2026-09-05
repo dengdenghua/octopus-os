@@ -25,6 +25,7 @@ import {
   type StorageUsage,
 } from "@/appliance/files";
 import { OmvSharingPanel } from "@/appliance/omv-sharing-panel";
+import { MdRaid1Panel } from "@/appliance/mdraid1-panel";
 import { OmvStorageHealth } from "@/appliance/omv-storage-health";
 import { NutDeviceConfigPanel } from "@/appliance/nut-device-config-panel";
 import { SmartSchedulePanel } from "@/appliance/smart-schedule-panel";
@@ -458,7 +459,10 @@ export function StorageCenterPanel({
               <UpsPanel />
             </div>
           ) : section === "pools" ? (
-            <ZfsMirrorPanel />
+            <>
+              <MdRaid1Panel />
+              <ZfsMirrorPanel />
+            </>
           ) : (
             <div className="mx-auto w-full max-w-[980px] px-7 py-7">
               <OmvSharingPanel />
