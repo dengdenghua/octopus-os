@@ -5,14 +5,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { requestHighRiskApproval } from "./approval";
 import {
   applyOmvBtrfsRaid1,
+  applyOmvBtrfsReplace,
   applyOmvBtrfsScrub,
   fetchNativeStatus,
   fetchOmvBtrfsMaintenance,
   fetchOmvBtrfsRaid1Candidates,
+  fetchOmvBtrfsReplacementCandidates,
   planOmvBtrfsRaid1,
+  planOmvBtrfsReplace,
   planOmvBtrfsScrub,
   type OmvBtrfsMaintenance,
   type OmvBtrfsRaid1Plan,
+  type OmvBtrfsReplacementCandidate,
+  type OmvBtrfsReplacePlan,
   type OmvBtrfsScrubPlan,
 } from "./omv";
 import { BtrfsRaid1Panel } from "./btrfs-raid1-panel";
@@ -20,11 +25,14 @@ import { BtrfsRaid1Panel } from "./btrfs-raid1-panel";
 vi.mock("./approval", () => ({ requestHighRiskApproval: vi.fn() }));
 vi.mock("./omv", () => ({
   applyOmvBtrfsRaid1: vi.fn(),
+  applyOmvBtrfsReplace: vi.fn(),
   applyOmvBtrfsScrub: vi.fn(),
   fetchNativeStatus: vi.fn(),
   fetchOmvBtrfsMaintenance: vi.fn(),
   fetchOmvBtrfsRaid1Candidates: vi.fn(),
+  fetchOmvBtrfsReplacementCandidates: vi.fn(),
   planOmvBtrfsRaid1: vi.fn(),
+  planOmvBtrfsReplace: vi.fn(),
   planOmvBtrfsScrub: vi.fn(),
 }));
 
@@ -131,6 +139,78 @@ const scrubPlan: OmvBtrfsScrubPlan = {
   },
 };
 
+const replacementUuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+const replacementCandidate: OmvBtrfsReplacementCandidate = {
+  filesystem: {
+    ...maintenance.filesystem,
+    devicefile: replacementUuid,
+    uuid: replacementUuid,
+    mountpoint: "/data/archive",
+    status: "degraded",
+    activeDevices: 1,
+    missingDevices: 1,
+  },
+  missingMember: {
+    devid: 2,
+    sizeBytes: 0,
+    usedBytes: 0,
+    devicefile: null,
+    missing: true,
+  },
+  survivingMember: {
+    devid: 1,
+    sizeBytes: 8 * 1024 ** 3,
+    usedBytes: 1024,
+    devicefile: "/dev/sdb",
+    missing: false,
+    replaceTarget: false,
+    writeable: true,
+    errorStats: {},
+    errorCount: 0,
+    serial: "disk-b",
+    wwn: null,
+    model: "QEMU HARDDISK",
+  },
+  minimumReplacementBytes: 8 * 1024 ** 3,
+  replacementDevices: [
+    {
+      devicefile: "/dev/sdd",
+      sizeBytes: 12 * 1024 ** 3,
+      serial: "disk-d",
+      wwn: null,
+      model: "QEMU HARDDISK",
+    },
+  ],
+};
+
+const replaceDesired = {
+  schema: "echo.omv.btrfs-replace-desired.v1" as const,
+  filesystemUuid: replacementUuid,
+  missingDevid: 2,
+  replacementDevice: "/dev/sdd",
+  dataPreserved: true as const,
+};
+
+const replacePlan: OmvBtrfsReplacePlan = {
+  schema: "echo.omv.btrfs-replace-plan.v1",
+  planId: "e".repeat(64),
+  baseRevision: "f".repeat(64),
+  operation: "replaceMissingMember",
+  requiresApproval: true,
+  desired: replaceDesired,
+  filesystem: replacementCandidate.filesystem,
+  missingMember: replacementCandidate.missingMember,
+  survivingMember: replacementCandidate.survivingMember,
+  replacement: replacementCandidate.replacementDevices[0],
+  minimumReplacementBytes: replacementCandidate.minimumReplacementBytes,
+  before: {
+    kind: "deviceReplace",
+    state: "idle",
+    progressPercent: null,
+    errors: null,
+  },
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(fetchNativeStatus).mockResolvedValue({
@@ -140,14 +220,19 @@ beforeEach(() => {
     adminUrl: null,
     capabilities: [
       "storage.volume.btrfs-raid1.create-mount.v1",
+      "storage.volume.btrfs-raid1.replace-missing.blank.v1",
       "storage.volume.btrfs.scrub.start.v1",
     ],
     source: "native",
   });
   vi.mocked(fetchOmvBtrfsRaid1Candidates).mockResolvedValue([...candidates]);
   vi.mocked(fetchOmvBtrfsMaintenance).mockResolvedValue([maintenance]);
+  vi.mocked(fetchOmvBtrfsReplacementCandidates).mockResolvedValue([
+    replacementCandidate,
+  ]);
   vi.mocked(planOmvBtrfsRaid1).mockResolvedValue(createPlan);
   vi.mocked(planOmvBtrfsScrub).mockResolvedValue(scrubPlan);
+  vi.mocked(planOmvBtrfsReplace).mockResolvedValue(replacePlan);
   vi.mocked(requestHighRiskApproval).mockImplementation(
     async (action, target) => ({
       approvalToken: `approval-${action}`,
@@ -177,6 +262,19 @@ beforeEach(() => {
     verified: true,
     maintenanceState: "scrubbing",
     scan: { ...maintenance.scan, state: "inProgress", progressPercent: 0 },
+  });
+  vi.mocked(applyOmvBtrfsReplace).mockResolvedValue({
+    ...replacePlan,
+    applied: true,
+    verified: true,
+    dataPreserved: true,
+    maintenanceState: "replacing",
+    replacementStatus: {
+      kind: "deviceReplace",
+      state: "inProgress",
+      progressPercent: 1,
+      errors: 0,
+    },
   });
 });
 
@@ -255,6 +353,42 @@ describe("Btrfs RAID1 panel", () => {
     expect(await screen.findByText(/scrub 已启动/)).toBeInTheDocument();
   });
 
+  it("previews a server-approved missing member replacement and uses a distinct approval", async () => {
+    const user = userEvent.setup();
+    render(<BtrfsRaid1Panel />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "预览缺盘换盘" }),
+    );
+    await waitFor(() =>
+      expect(planOmvBtrfsReplace).toHaveBeenCalledWith(replaceDesired),
+    );
+    expect(screen.getByText(/不使用 force、-r、-B/)).toBeInTheDocument();
+    expect(screen.getByText(/请勿休眠/)).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText("Btrfs 换盘管理员密码"),
+      "replace-password",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "启动 Btrfs 缺盘换盘" }),
+    );
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "omv.btrfs-raid1.replace",
+        replacePlan.planId,
+        "replace-password",
+      ),
+    );
+    expect(applyOmvBtrfsReplace).toHaveBeenCalledWith(
+      replaceDesired,
+      replacePlan.planId,
+      "approval-omv.btrfs-raid1.replace",
+    );
+    expect(await screen.findByText(/换盘已启动/)).toBeInTheDocument();
+  });
+
   it("does not probe or display mutation controls without capabilities", async () => {
     vi.mocked(fetchNativeStatus).mockResolvedValue({
       configured: true,
@@ -267,10 +401,11 @@ describe("Btrfs RAID1 panel", () => {
     render(<BtrfsRaid1Panel />);
 
     expect(
-      await screen.findByText(/未提供受控 Btrfs RAID1 创建或 scrub 能力/),
+      await screen.findByText(/未提供受控 Btrfs RAID1 创建、换盘或 scrub 能力/),
     ).toBeInTheDocument();
     expect(fetchOmvBtrfsRaid1Candidates).not.toHaveBeenCalled();
     expect(fetchOmvBtrfsMaintenance).not.toHaveBeenCalled();
+    expect(fetchOmvBtrfsReplacementCandidates).not.toHaveBeenCalled();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 

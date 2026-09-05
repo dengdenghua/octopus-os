@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyOmvBtrfsRaid1,
+  applyOmvBtrfsReplace,
   applyOmvBtrfsScrub,
   applyOmvExt4Volume,
   applyOmvGroup,
@@ -24,6 +25,7 @@ import {
   fetchOmvFilesystems,
   fetchOmvBtrfsMaintenance,
   fetchOmvBtrfsRaid1Candidates,
+  fetchOmvBtrfsReplacementCandidates,
   fetchOmvExt4VolumeCandidates,
   fetchOmvHealth,
   fetchOmvMdRaid1Candidates,
@@ -41,6 +43,7 @@ import {
   fetchOmvZfsMaintenance,
   planOmvNfsShare,
   planOmvBtrfsRaid1,
+  planOmvBtrfsReplace,
   planOmvBtrfsScrub,
   planOmvExt4Volume,
   planOmvMdRaid1,
@@ -1170,7 +1173,7 @@ describe("OMV read-only API client", () => {
     );
   });
 
-  it("binds Btrfs RAID1 creation and scrub to distinct approved endpoints", async () => {
+  it("binds Btrfs creation, scrub and replacement to distinct endpoints", async () => {
     const createDesired = {
       schema: "echo.omv.btrfs-raid1-desired.v1" as const,
       name: "family",
@@ -1191,6 +1194,18 @@ describe("OMV read-only API client", () => {
       schema: "echo.omv.btrfs-scrub-plan.v1",
       planId: "c".repeat(64),
       desired: scrubDesired,
+    };
+    const replaceDesired = {
+      schema: "echo.omv.btrfs-replace-desired.v1" as const,
+      filesystemUuid: scrubDesired.filesystemUuid,
+      missingDevid: 2,
+      replacementDevice: "/dev/sdd",
+      dataPreserved: true as const,
+    };
+    const replacePlan = {
+      schema: "echo.omv.btrfs-replace-plan.v1",
+      planId: "d".repeat(64),
+      desired: replaceDesired,
     };
     const devices = [{ devicefile: "/dev/sdb" }, { devicefile: "/dev/sdc" }];
     const filesystems = [{ filesystem: { uuid: scrubDesired.filesystemUuid } }];
@@ -1226,6 +1241,25 @@ describe("OMV read-only API client", () => {
           }),
           { status: 200 },
         ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ replacements: [{ filesystem: {} }] }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(replacePlan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...replacePlan,
+            applied: true,
+            verified: true,
+            maintenanceState: "replacing",
+          }),
+          { status: 200 },
+        ),
       );
 
     expect(await fetchOmvBtrfsRaid1Candidates()).toHaveLength(2);
@@ -1249,6 +1283,19 @@ describe("OMV read-only API client", () => {
       (await applyOmvBtrfsScrub(scrubDesired, scrubPlan.planId, "scrub-token"))
         .maintenanceState,
     ).toBe("scrubbing");
+    expect(await fetchOmvBtrfsReplacementCandidates()).toHaveLength(1);
+    expect((await planOmvBtrfsReplace(replaceDesired)).planId).toBe(
+      replacePlan.planId,
+    );
+    expect(
+      (
+        await applyOmvBtrfsReplace(
+          replaceDesired,
+          replacePlan.planId,
+          "replace-token",
+        )
+      ).maintenanceState,
+    ).toBe("replacing");
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
       "/api/appliance/omv/volumes/btrfs-raid1/candidates",
       "/api/appliance/omv/volumes/btrfs-raid1/plan",
@@ -1256,6 +1303,9 @@ describe("OMV read-only API client", () => {
       "/api/appliance/omv/volumes/btrfs-raid1/maintenance",
       "/api/appliance/omv/volumes/btrfs-raid1/scrub/plan",
       "/api/appliance/omv/volumes/btrfs-raid1/scrub/apply",
+      "/api/appliance/omv/volumes/btrfs-raid1/replacement-candidates",
+      "/api/appliance/omv/volumes/btrfs-raid1/replace/plan",
+      "/api/appliance/omv/volumes/btrfs-raid1/replace/apply",
     ]);
     expect((fetchMock.mock.calls[2]?.[1] as RequestInit).headers).toMatchObject(
       {
@@ -1265,6 +1315,11 @@ describe("OMV read-only API client", () => {
     expect((fetchMock.mock.calls[5]?.[1] as RequestInit).headers).toMatchObject(
       {
         "X-Echo-Approval": "scrub-token",
+      },
+    );
+    expect((fetchMock.mock.calls[8]?.[1] as RequestInit).headers).toMatchObject(
+      {
+        "X-Echo-Approval": "replace-token",
       },
     );
   });

@@ -41,6 +41,7 @@ export type HighRiskAction =
   | "omv.mdraid1.create"
   | "omv.mdraid1.replace"
   | "omv.btrfs-raid1.create"
+  | "omv.btrfs-raid1.replace"
   | "omv.btrfs.scrub.start"
   | "omv.ext4-volume.create"
   | "omv.zfs-mirror.create"

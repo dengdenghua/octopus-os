@@ -810,6 +810,70 @@ export type OmvBtrfsScrubPlan = {
   scan?: OmvBtrfsScan;
 };
 
+export type OmvBtrfsReplacementMember = {
+  devid: number;
+  sizeBytes: number;
+  usedBytes: number;
+  devicefile: string | null;
+  missing: boolean;
+};
+
+export type OmvBtrfsReplacementCandidate = {
+  filesystem: OmvBtrfsMaintenanceFilesystem;
+  missingMember: OmvBtrfsReplacementMember & {
+    devicefile: null;
+    missing: true;
+  };
+  survivingMember: OmvBtrfsReplacementMember &
+    OmvBtrfsRaid1Candidate & {
+      missing: false;
+      replaceTarget: false;
+      writeable: true;
+      errorStats: Record<string, number>;
+      errorCount: 0;
+    };
+  minimumReplacementBytes: number;
+  replacementDevices: OmvBtrfsRaid1Candidate[];
+};
+
+export type OmvBtrfsReplaceDesiredState = {
+  schema: "echo.omv.btrfs-replace-desired.v1";
+  filesystemUuid: string;
+  missingDevid: number;
+  replacementDevice: string;
+  dataPreserved: true;
+};
+
+export type OmvBtrfsReplaceStatus = {
+  kind: "deviceReplace";
+  state: "idle" | "inProgress" | "completed" | "failed";
+  progressPercent: number | null;
+  errors: number | null;
+};
+
+export type OmvBtrfsReplacePlan = {
+  schema: "echo.omv.btrfs-replace-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "replaceMissingMember";
+  requiresApproval: true;
+  desired: OmvBtrfsReplaceDesiredState;
+  filesystem: OmvBtrfsMaintenanceFilesystem;
+  missingMember: OmvBtrfsReplacementCandidate["missingMember"];
+  survivingMember: OmvBtrfsReplacementCandidate["survivingMember"];
+  replacement: OmvBtrfsRaid1Candidate;
+  minimumReplacementBytes: number;
+  before: OmvBtrfsReplaceStatus;
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: true;
+  maintenanceState?:
+    | "replacing"
+    | "acceptedOrCompleted"
+    | "completedWithErrors";
+  replacementStatus?: OmvBtrfsReplaceStatus;
+};
+
 export type OmvMdRaid1ReplacementMember = {
   devicefile: string;
   slot: number | null;
@@ -1770,6 +1834,41 @@ export function applyOmvBtrfsScrub(
     "/api/appliance/omv/volumes/btrfs-raid1/scrub/apply",
     { desired, planId },
     "无法启动 Btrfs scrub",
+    approvalHeader(approvalToken),
+  );
+}
+
+export async function fetchOmvBtrfsReplacementCandidates(): Promise<
+  OmvBtrfsReplacementCandidate[]
+> {
+  const result = await readJson<{
+    replacements: OmvBtrfsReplacementCandidate[];
+  }>(
+    "/api/appliance/omv/volumes/btrfs-raid1/replacement-candidates",
+    "无法读取 Btrfs RAID1 换盘候选",
+  );
+  return result.replacements;
+}
+
+export function planOmvBtrfsReplace(
+  desired: OmvBtrfsReplaceDesiredState,
+): Promise<OmvBtrfsReplacePlan> {
+  return postJson(
+    "/api/appliance/omv/volumes/btrfs-raid1/replace/plan",
+    desired,
+    "无法生成 Btrfs RAID1 换盘预览",
+  );
+}
+
+export function applyOmvBtrfsReplace(
+  desired: OmvBtrfsReplaceDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvBtrfsReplacePlan> {
+  return postJson(
+    "/api/appliance/omv/volumes/btrfs-raid1/replace/apply",
+    { desired, planId },
+    "无法启动 Btrfs RAID1 换盘",
     approvalHeader(approvalToken),
   );
 }

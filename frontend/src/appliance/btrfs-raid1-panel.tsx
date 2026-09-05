@@ -11,16 +11,21 @@ import {
 import { requestHighRiskApproval } from "@/appliance/approval";
 import {
   applyOmvBtrfsRaid1,
+  applyOmvBtrfsReplace,
   applyOmvBtrfsScrub,
   fetchNativeStatus,
   fetchOmvBtrfsMaintenance,
   fetchOmvBtrfsRaid1Candidates,
+  fetchOmvBtrfsReplacementCandidates,
   planOmvBtrfsRaid1,
+  planOmvBtrfsReplace,
   planOmvBtrfsScrub,
   type OmvBtrfsMaintenance,
   type OmvBtrfsRaid1Candidate,
   type OmvBtrfsRaid1DesiredState,
   type OmvBtrfsRaid1Plan,
+  type OmvBtrfsReplacementCandidate,
+  type OmvBtrfsReplacePlan,
   type OmvBtrfsScrubPlan,
   type OmvStatus,
 } from "@/appliance/omv";
@@ -57,6 +62,12 @@ export function BtrfsRaid1Panel() {
   const [status, setStatus] = useState<OmvStatus | null>(null);
   const [candidates, setCandidates] = useState<OmvBtrfsRaid1Candidate[]>([]);
   const [maintenance, setMaintenance] = useState<OmvBtrfsMaintenance[]>([]);
+  const [replacements, setReplacements] = useState<
+    OmvBtrfsReplacementCandidate[]
+  >([]);
+  const [replacementChoices, setReplacementChoices] = useState<
+    Record<string, string>
+  >({});
   const [selected, setSelected] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -64,6 +75,10 @@ export function BtrfsRaid1Panel() {
   const [createPassword, setCreatePassword] = useState("");
   const [scrubPlan, setScrubPlan] = useState<OmvBtrfsScrubPlan | null>(null);
   const [scrubPassword, setScrubPassword] = useState("");
+  const [replacePlan, setReplacePlan] = useState<OmvBtrfsReplacePlan | null>(
+    null,
+  );
+  const [replacePassword, setReplacePassword] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +90,9 @@ export function BtrfsRaid1Panel() {
   const scrubAvailable = status?.capabilities.includes(
     "storage.volume.btrfs.scrub.start.v1",
   );
+  const replaceAvailable = status?.capabilities.includes(
+    "storage.volume.btrfs-raid1.replace-missing.blank.v1",
+  );
   const validName = /^[a-z][a-z0-9_-]{0,15}$/.test(name);
 
   const refresh = async () => {
@@ -83,23 +101,50 @@ export function BtrfsRaid1Panel() {
     setStatus(null);
     setCreatePlan(null);
     setScrubPlan(null);
+    setReplacePlan(null);
     setCreatePassword("");
     setScrubPassword("");
+    setReplacePassword("");
     try {
       const nextStatus = await fetchNativeStatus();
       setStatus(nextStatus);
-      const [nextCandidates, nextMaintenance] = await Promise.all([
-        nextStatus.capabilities.includes(
-          "storage.volume.btrfs-raid1.create-mount.v1",
-        )
-          ? fetchOmvBtrfsRaid1Candidates()
-          : Promise.resolve([]),
-        nextStatus.capabilities.includes("storage.volume.btrfs.scrub.start.v1")
-          ? fetchOmvBtrfsMaintenance()
-          : Promise.resolve([]),
-      ]);
+      const [nextCandidates, nextMaintenance, nextReplacements] =
+        await Promise.all([
+          nextStatus.capabilities.includes(
+            "storage.volume.btrfs-raid1.create-mount.v1",
+          )
+            ? fetchOmvBtrfsRaid1Candidates()
+            : Promise.resolve([]),
+          nextStatus.capabilities.includes(
+            "storage.volume.btrfs.scrub.start.v1",
+          )
+            ? fetchOmvBtrfsMaintenance()
+            : Promise.resolve([]),
+          nextStatus.capabilities.includes(
+            "storage.volume.btrfs-raid1.replace-missing.blank.v1",
+          )
+            ? fetchOmvBtrfsReplacementCandidates()
+            : Promise.resolve([]),
+        ]);
       setCandidates(nextCandidates);
       setMaintenance(nextMaintenance);
+      setReplacements(nextReplacements);
+      setReplacementChoices((current) =>
+        Object.fromEntries(
+          nextReplacements.map((item) => {
+            const currentChoice = current[item.filesystem.uuid] ?? "";
+            const retained = item.replacementDevices.some(
+              (disk) => disk.devicefile === currentChoice,
+            );
+            return [
+              item.filesystem.uuid,
+              retained
+                ? currentChoice
+                : (item.replacementDevices[0]?.devicefile ?? ""),
+            ];
+          }),
+        ),
+      );
       setSelected((current) =>
         current.filter((devicefile) =>
           nextCandidates.some((item) => item.devicefile === devicefile),
@@ -108,6 +153,7 @@ export function BtrfsRaid1Panel() {
     } catch (reason) {
       setCandidates([]);
       setMaintenance([]);
+      setReplacements([]);
       setError(
         reason instanceof Error ? reason.message : "无法读取 Btrfs 存储能力",
       );
@@ -248,6 +294,66 @@ export function BtrfsRaid1Panel() {
     }
   };
 
+  const previewReplacement = async (item: OmvBtrfsReplacementCandidate) => {
+    const replacementDevice = replacementChoices[item.filesystem.uuid];
+    if (!replacementDevice) return;
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    setCreatePlan(null);
+    setScrubPlan(null);
+    setReplacePassword("");
+    try {
+      setReplacePlan(
+        await planOmvBtrfsReplace({
+          schema: "echo.omv.btrfs-replace-desired.v1",
+          filesystemUuid: item.filesystem.uuid,
+          missingDevid: item.missingMember.devid,
+          replacementDevice,
+          dataPreserved: true,
+        }),
+      );
+    } catch (reason) {
+      setReplacePlan(null);
+      setError(
+        reason instanceof Error ? reason.message : "无法生成 Btrfs 换盘预览",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startReplacement = async () => {
+    if (!replacePlan || !replacePassword) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const approval = await requestHighRiskApproval(
+        "omv.btrfs-raid1.replace",
+        replacePlan.planId,
+        replacePassword,
+      );
+      const result = await applyOmvBtrfsReplace(
+        replacePlan.desired,
+        replacePlan.planId,
+        approval.approvalToken,
+      );
+      await refresh();
+      setSuccess(
+        result.maintenanceState === "acceptedOrCompleted"
+          ? "Btrfs 换盘已完成并回读验证"
+          : result.maintenanceState === "completedWithErrors"
+            ? "Btrfs 换盘已完成但报告错误，请立即检查存储健康"
+            : "Btrfs 换盘已启动；请保持设备运行并刷新查看状态",
+      );
+    } catch (reason) {
+      setReplacePassword("");
+      setError(reason instanceof Error ? reason.message : "Btrfs 换盘启动失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="mx-auto w-full max-w-[980px] px-7 pt-7">
       <header className="flex items-start justify-between gap-4">
@@ -295,9 +401,9 @@ export function BtrfsRaid1Panel() {
             <Loader2Icon className="size-5 animate-spin" /> 正在核验 Btrfs 能力…
           </span>
         </div>
-      ) : !createAvailable && !scrubAvailable ? (
+      ) : !createAvailable && !scrubAvailable && !replaceAvailable ? (
         <section className="mt-5 rounded-[22px] bg-white/78 p-5 text-sm text-slate-600 ring-1 ring-white/90">
-          当前主机未提供受控 Btrfs RAID1 创建或 scrub 能力。
+          当前主机未提供受控 Btrfs RAID1 创建、换盘或 scrub 能力。
         </section>
       ) : (
         <>
@@ -426,6 +532,132 @@ export function BtrfsRaid1Panel() {
               >
                 {busy && <Loader2Icon className="size-4 animate-spin" />}{" "}
                 确认清空并创建 Btrfs RAID1
+              </button>
+            </section>
+          )}
+
+          {replaceAvailable && (
+            <section className="mt-4 rounded-[22px] bg-white/78 p-5 shadow-sm ring-1 ring-white/90">
+              <div className="flex items-center gap-2">
+                <ShieldAlertIcon className="size-5 text-amber-700" />
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Btrfs RAID1 缺盘换盘
+                </h2>
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-slate-500">
+                只显示服务端确认的 Echo 自管双盘 RAID1：已挂载可写、恰好一个
+                devid 缺失、存活盘无历史错误且没有 scrub、balance
+                或其他换盘任务。新盘必须为空白整盘并达到保守容量下限。
+              </p>
+              <div className="mt-4 space-y-3">
+                {replacements.map((item) => {
+                  const selectedReplacement =
+                    replacementChoices[item.filesystem.uuid] ?? "";
+                  return (
+                    <article
+                      key={item.filesystem.uuid}
+                      className="rounded-2xl bg-amber-50/70 p-4 ring-1 ring-amber-200"
+                    >
+                      <div className="flex flex-wrap items-end justify-between gap-3">
+                        <div>
+                          <strong className="block text-sm text-slate-900">
+                            {item.filesystem.mountpoint}
+                          </strong>
+                          <span className="mt-1 block text-[11px] text-slate-600">
+                            缺失 devid {item.missingMember.devid} · 存活盘{" "}
+                            {item.survivingMember.devicefile} · 最小安全容量{" "}
+                            {formatBytes(item.minimumReplacementBytes)}
+                          </span>
+                          <span className="mt-1 block break-all font-mono text-[10px] text-slate-400">
+                            {item.filesystem.uuid}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <label className="text-[10px] font-medium text-slate-600">
+                            空白替换盘
+                            <select
+                              aria-label={`${item.filesystem.mountpoint} 空白替换盘`}
+                              value={selectedReplacement}
+                              onChange={(event) => {
+                                setReplacementChoices((current) => ({
+                                  ...current,
+                                  [item.filesystem.uuid]: event.target.value,
+                                }));
+                                setReplacePlan(null);
+                                setSuccess(null);
+                              }}
+                              className="mt-1 block h-9 min-w-48 rounded-xl border border-amber-200 bg-white px-3 text-xs outline-none focus:border-amber-500"
+                            >
+                              {item.replacementDevices.length === 0 && (
+                                <option value="">没有合格空盘</option>
+                              )}
+                              {item.replacementDevices.map((disk) => (
+                                <option
+                                  key={disk.devicefile}
+                                  value={disk.devicefile}
+                                >
+                                  {disk.devicefile} ·{" "}
+                                  {formatBytes(disk.sizeBytes)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => void previewReplacement(item)}
+                            disabled={!selectedReplacement || busy}
+                            className="h-9 rounded-xl bg-amber-700 px-3 text-[11px] font-semibold text-white disabled:opacity-40"
+                          >
+                            预览缺盘换盘
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+                {replacements.length === 0 && (
+                  <p className="rounded-xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                    当前没有满足严格安全条件的 Btrfs 单缺盘卷。
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {replacePlan && (
+            <section className="mt-4 rounded-[22px] bg-amber-950 p-5 text-white shadow-lg">
+              <div className="flex items-center gap-2">
+                <ShieldAlertIcon className="size-5 text-amber-300" />
+                <h2 className="text-sm font-semibold">确认 Btrfs 缺盘换盘</h2>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-amber-100/80">
+                将用空白盘 {replacePlan.replacement.devicefile} 替换{" "}
+                {replacePlan.filesystem.mountpoint} 的缺失 devid{" "}
+                {replacePlan.missingMember.devid}。数据从剩余 RAID1
+                副本重建；不使用 force、-r、-B 或队列等待，也不自动扩容。
+                一旦内核接受任务，此页面不会伪造回滚或提前宣称完成。
+              </p>
+              <p className="mt-2 text-[11px] leading-5 text-amber-200">
+                换盘期间请勿休眠、冻结文件系统或关机；新内核可能因此取消任务，需要重新预览并启动。
+              </p>
+              <label className="mt-4 block text-xs font-medium text-amber-50">
+                Btrfs 换盘管理员密码
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={replacePassword}
+                  onChange={(event) => setReplacePassword(event.target.value)}
+                  className="mt-2 h-10 w-full rounded-xl border border-amber-700/60 bg-white/10 px-3 text-sm text-white outline-none focus:border-amber-300"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void startReplacement()}
+                disabled={!replacePassword || busy}
+                className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-amber-500 px-4 text-xs font-semibold text-amber-950 disabled:opacity-40"
+              >
+                {busy && <Loader2Icon className="size-4 animate-spin" />} 启动
+                Btrfs 缺盘换盘
               </button>
             </section>
           )}
