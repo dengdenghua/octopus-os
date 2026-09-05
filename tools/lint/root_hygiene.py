@@ -88,6 +88,7 @@ ROOT_ALLOWLIST: set[str] = {
     "package.json",
     "pnpm-lock.yaml",
     "commitlint.config.js",
+    ".gitmodules",
     # ── Documentation ───────────────────────────────────────
     "README.md",
     "README.en.md",
@@ -165,8 +166,10 @@ def _git_tracked_root_entries() -> list[str] | None:
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="strict",
         )
-    except (subprocess.CalledProcessError, OSError):
+    except (subprocess.CalledProcessError, OSError, UnicodeError):
         return None
     names: set[str] = set()
     for line in result.stdout.splitlines():

@@ -54,6 +54,12 @@ as a repository-root child.
 | `.env.example` | Commit-safe environment template |
 | `.env` | Local-only secret file |
 
+## Repository Metadata
+
+| Path | Purpose |
+|---|---|
+| `.gitmodules` | Pinned source definition for optional repository submodules |
+
 ## Local State
 
 These paths are not source. They may exist during development, but should not be
