@@ -58,6 +58,21 @@ sudo dd if=dist/echo-os.iso of=/dev/sdX bs=4M status=progress && sync
 
 需要 `xorriso` 和 `isolinux`(提供 `isohdpfx.bin`),仅支持 Linux。
 
+## 已安装设备升级
+
+裸机主机升级与 `deploy/appliance/upgrade-appliance.sh` 的容器镜像事务是两条
+独立边界。更新 `/opt/echo-os` 源码后，先生成主机迁移计划，再用同一计划 ID
+应用；计划只允许增量安装 NUT/SMART 包、更新固定 systemd unit，并启用 UPS
+守卫与 SMART 定时器，不修改数据盘：
+
+```bash
+sudo /opt/echo-os/deploy/provision/upgrade-host.sh --plan
+sudo /opt/echo-os/deploy/provision/upgrade-host.sh --apply <planId>
+```
+
+unit 或 systemd 操作失败时会恢复原 unit；已成功安装的 Debian 包不会自动卸载，
+这一不可逆边界会明确写入计划和迁移凭据。
+
 ## 为什么重活不放装机阶段
 
 ZFS 编译、Docker 安装、前端构建都要联网且耗时。放进 d-i,失败会让整台机器
