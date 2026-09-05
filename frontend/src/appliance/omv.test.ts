@@ -13,6 +13,7 @@ import {
   applyOmvUser,
   applyOmvUserPassword,
   applyOmvZfsMirror,
+  applyOmvZfsMirrorReplace,
   applyOmvZfsPoolExport,
   applyOmvZfsPoolImport,
   fetchOmvFilesystems,
@@ -24,6 +25,7 @@ import {
   fetchOmvStorageTopology,
   fetchOmvStatus,
   fetchOmvZfsMirrorCandidates,
+  fetchOmvZfsMirrorReplacementCandidates,
   fetchOmvZfsImportCandidates,
   fetchOmvZfsPools,
   planOmvNfsShare,
@@ -38,6 +40,7 @@ import {
   planOmvUser,
   planOmvUserPassword,
   planOmvZfsMirror,
+  planOmvZfsMirrorReplace,
   planOmvZfsPoolExport,
   planOmvZfsPoolImport,
 } from "./omv";
@@ -1135,6 +1138,87 @@ describe("OMV read-only API client", () => {
     );
     expect((fetchMock.mock.calls[5]?.[1] as RequestInit).headers).toMatchObject(
       { "X-Echo-Approval": "import-token" },
+    );
+  });
+
+  it("binds ZFS mirror replacement discovery and apply to the failed vdev GUID", async () => {
+    const replacement = {
+      pool: {
+        name: "family",
+        poolGuid: "15451357997522795478",
+        health: "DEGRADED",
+        sizeBytes: 16 * 1024 ** 3,
+      },
+      layout: "twoDiskMirror" as const,
+      replaceableMember: {
+        slot: 2,
+        vdevGuid: "2222222222222222222",
+        state: "UNAVAIL" as const,
+      },
+      minimumReplacementBytes: 16 * 1024 ** 3,
+      replacementDevices: [
+        {
+          devicefile: "/dev/sdd",
+          sizeBytes: 20 * 1024 ** 3,
+          serial: "disk-d",
+          wwn: null,
+          model: "QEMU HARDDISK",
+        },
+      ],
+    };
+    const desired = {
+      schema: "echo.omv.zfs-mirror-replace-desired.v1" as const,
+      name: "family",
+      poolGuid: "15451357997522795478",
+      oldVdevGuid: "2222222222222222222",
+      replacementDevice: "/dev/sdd",
+      dataPreserved: true as const,
+    };
+    const plan = {
+      schema: "echo.omv.zfs-mirror-replace-plan.v1",
+      planId: "7".repeat(64),
+      operation: "replace",
+      desired,
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ replacements: [replacement] }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ...plan, applied: true, verified: true }),
+          {
+            status: 200,
+          },
+        ),
+      );
+
+    expect(await fetchOmvZfsMirrorReplacementCandidates()).toEqual([
+      replacement,
+    ]);
+    expect((await planOmvZfsMirrorReplace(desired)).planId).toBe(plan.planId);
+    expect(
+      (await applyOmvZfsMirrorReplace(desired, plan.planId, "replace-token"))
+        .verified,
+    ).toBe(true);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/pools/zfs-mirror/replacement-candidates",
+      "/api/appliance/omv/pools/zfs-mirror/replace/plan",
+      "/api/appliance/omv/pools/zfs-mirror/replace/apply",
+    ]);
+    const apply = fetchMock.mock.calls[2]?.[1] as RequestInit;
+    expect(JSON.parse(String(apply.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
+      "replace-token",
     );
   });
 });

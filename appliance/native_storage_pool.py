@@ -4,8 +4,9 @@ Operations here are deliberately narrow: create a two-disk ZFS mirror from
 whole blank disks, export an idle Echo-layout pool without force, or import
 one exact exported pool by GUID after a no-mount read-only inspection.  Every
 mutation is plan-bound and must pass the appliance approval/audit envelope.
-Expansion, replacement, destroy, force-import, recovery rewind, missing-log
-import, destroyed-pool import, and signature wiping remain unsupported.
+Expansion, healthy-member or multi-vdev replacement, destroy, force-import,
+recovery rewind, missing-log import, destroyed-pool import, and signature
+wiping remain unsupported.
 """
 
 from __future__ import annotations
@@ -25,9 +26,11 @@ from typing import Any
 
 from appliance.omv_protocol import (
     ZFS_MIRROR_PLAN_SCHEMA,
+    ZFS_MIRROR_REPLACE_PLAN_SCHEMA,
     ZFS_POOL_EXPORT_PLAN_SCHEMA,
     ZFS_POOL_IMPORT_PLAN_SCHEMA,
     validate_zfs_mirror_desired,
+    validate_zfs_mirror_replace_desired,
     validate_zfs_pool_export_desired,
     validate_zfs_pool_import_desired,
 )
@@ -258,7 +261,13 @@ def _build_zfs_mirror_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "devices": "wholeBlankNonRemovableWithPersistentIdentity",
             "force": False,
             "rollback": "bestEffortPoolDestroyBeforeHandoff",
-            "unsupported": ["expand", "replace", "destroy", "forceImport", "signatureWipe"],
+            "unsupported": [
+                "expand",
+                "generalReplace",
+                "destroy",
+                "forceImport",
+                "signatureWipe",
+            ],
         },
         "source": "native",
     }
@@ -518,6 +527,262 @@ def exportable_zfs_pools() -> list[dict[str, Any]]:
             }
         )
     return pools
+
+
+_STATUS_ROW_PATTERN = re.compile(
+    r"^(?P<indent>[ \t]+)(?P<name>\S+)\s+"
+    r"(?P<state>ONLINE|DEGRADED|FAULTED|OFFLINE|REMOVED|UNAVAIL)\s+"
+    r"(?P<read>\d+|-)\s+(?P<write>\d+|-)\s+(?P<cksum>\d+|-)"
+    r"(?:\s+(?P<detail>.*))?$"
+)
+_REPLACEABLE_VDEV_STATES = frozenset({"DEGRADED", "FAULTED", "OFFLINE", "REMOVED", "UNAVAIL"})
+
+
+def _status_config_rows(output: str) -> list[dict[str, Any]]:
+    config_match = re.search(r"(?m)^config:\s*$", output)
+    errors_match = re.search(r"(?m)^errors:\s*", output)
+    if config_match is None or errors_match is None or errors_match.start() <= config_match.end():
+        raise OSError("zpool status omitted a bounded configuration table")
+    rows: list[dict[str, Any]] = []
+    for raw_line in output[config_match.end() : errors_match.start()].splitlines():
+        line = raw_line.expandtabs(8).rstrip()
+        match = _STATUS_ROW_PATTERN.fullmatch(line)
+        if match is None:
+            continue
+        rows.append(
+            {
+                "indent": len(match.group("indent")),
+                "name": match.group("name"),
+                "state": match.group("state"),
+                "readErrors": int(match.group("read")) if match.group("read").isdigit() else None,
+                "writeErrors": (
+                    int(match.group("write")) if match.group("write").isdigit() else None
+                ),
+                "checksumErrors": (
+                    int(match.group("cksum")) if match.group("cksum").isdigit() else None
+                ),
+                "detail": match.group("detail") or "",
+            }
+        )
+    if not rows:
+        raise OSError("zpool status returned no configuration rows")
+    return rows
+
+
+def _device_size_bytes(devicefile: str) -> int:
+    if (
+        not devicefile.startswith("/dev/")
+        or len(devicefile) > 128
+        or any(character <= " " for character in devicefile)
+    ):
+        raise OSError("zpool status returned an unsafe online mirror device path")
+    output = _run_checked("lsblk", "-b", "-d", "-n", "-o", "SIZE", devicefile).strip()
+    if not output.isdigit() or int(output) < _MIN_DISK_BYTES:
+        raise OSError("lsblk returned an invalid online mirror device size")
+    return int(output)
+
+
+def _mirror_replacement_topology(name: str, pool_guid: str) -> dict[str, Any]:
+    pool = _pool_snapshot(name, pool_guid)
+    if pool["health"] not in {"ONLINE", "DEGRADED"}:
+        raise ValueError("ZFS mirror is not healthy enough for an online replacement")
+    normal_status = _run_checked("zpool", "status", "-LP", name)
+    guid_status = _run_checked("zpool", "status", "-gP", name)
+    if any(
+        marker in normal_status
+        for marker in ("scrub in progress", "resilver in progress", "replacing-")
+    ):
+        raise ValueError("wait for the active ZFS maintenance operation before replacing a disk")
+    if re.search(r"(?m)^errors:\s+No known data errors\s*$", normal_status) is None:
+        raise ValueError("ZFS mirror reports known data errors and needs manual recovery review")
+    normal_rows = _status_config_rows(normal_status)
+    guid_rows = _status_config_rows(guid_status)
+    if len(normal_rows) != 4 or len(guid_rows) != 4:
+        raise ValueError("only a single two-disk ZFS mirror can use this replacement workflow")
+    if [row["indent"] for row in normal_rows] != [row["indent"] for row in guid_rows]:
+        raise OSError("zpool status GUID and path topologies do not agree")
+    if [row["state"] for row in normal_rows] != [row["state"] for row in guid_rows]:
+        raise OSError("zpool status GUID and path health do not agree")
+    root, mirror, first, second = normal_rows
+    _guid_root, _guid_mirror, guid_first, guid_second = guid_rows
+    if (
+        root["name"] != name
+        or root["state"] != pool["health"]
+        or not mirror["name"].startswith("mirror-")
+        or not root["indent"] < mirror["indent"] < first["indent"]
+        or first["indent"] != second["indent"]
+    ):
+        raise ValueError("only a single two-disk ZFS mirror can use this replacement workflow")
+    members: list[dict[str, Any]] = []
+    for index, (normal, guid) in enumerate(((first, guid_first), (second, guid_second)), start=1):
+        if not _valid_pool_guid(guid["name"]):
+            raise OSError("zpool status did not provide a canonical leaf vdev GUID")
+        members.append(
+            {
+                "slot": index,
+                "vdevGuid": guid["name"],
+                "state": normal["state"],
+            }
+        )
+    failed = [member for member in members if member["state"] in _REPLACEABLE_VDEV_STATES]
+    online = [member for member in members if member["state"] == "ONLINE"]
+    if len(failed) != 1 or len(online) != 1:
+        raise ValueError(
+            "replacement requires exactly one failed mirror member and one ONLINE member"
+        )
+    online_path = (first, second)[online[0]["slot"] - 1]["name"]
+    online_row = (first, second)[online[0]["slot"] - 1]
+    if any(online_row[field] != 0 for field in ("readErrors", "writeErrors", "checksumErrors")):
+        raise ValueError("the surviving ZFS mirror member has I/O errors")
+    minimum_replacement_bytes = _device_size_bytes(online_path)
+    datasets = _dataset_snapshots(name)
+    policy = _dataset_mount_policy(name, datasets, check_targets=False)
+    return {
+        "pool": pool,
+        "layout": "twoDiskMirror",
+        "members": members,
+        "replaceableMember": failed[0],
+        "minimumReplacementBytes": minimum_replacement_bytes,
+        "datasetPolicyHash": policy["policyHash"],
+        "topologyHash": _canonical_hash(
+            {
+                "normalStatus": normal_status,
+                "guidStatus": guid_status,
+                "datasetPolicyHash": policy["policyHash"],
+            }
+        ),
+    }
+
+
+def zfs_mirror_replacement_candidates() -> list[dict[str, Any]]:
+    """Return degraded two-disk mirrors and blank disks large enough to repair them."""
+    _require_tools()
+    blank_devices = zfs_mirror_candidates()
+    candidates: list[dict[str, Any]] = []
+    for pool in _imported_pool_snapshots():
+        if pool["health"] not in {"ONLINE", "DEGRADED"}:
+            continue
+        try:
+            topology = _mirror_replacement_topology(pool["name"], pool["poolGuid"])
+        except ValueError:
+            continue
+        compatible = [
+            device
+            for device in blank_devices
+            if device["sizeBytes"] >= topology["minimumReplacementBytes"]
+        ]
+        candidates.append(
+            {
+                "pool": topology["pool"],
+                "layout": topology["layout"],
+                "replaceableMember": topology["replaceableMember"],
+                "minimumReplacementBytes": topology["minimumReplacementBytes"],
+                "replacementDevices": compatible,
+            }
+        )
+    return candidates
+
+
+def _build_zfs_mirror_replace_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    _require_tools()
+    topology = _mirror_replacement_topology(desired["name"], desired["poolGuid"])
+    if topology["replaceableMember"]["vdevGuid"] != desired["oldVdevGuid"]:
+        raise ValueError("the selected failed ZFS vdev no longer matches this mirror")
+    replacement = _inspect_zfs_mirror_devices([desired["replacementDevice"]])[0]
+    if replacement["sizeBytes"] < topology["minimumReplacementBytes"]:
+        raise ValueError("replacement disk is smaller than the ONLINE mirror member")
+    base_revision = _canonical_hash(
+        {
+            "pool": topology["pool"],
+            "topologyHash": topology["topologyHash"],
+            "replacement": replacement,
+        }
+    )
+    plan_material = {
+        "schema": ZFS_MIRROR_REPLACE_PLAN_SCHEMA,
+        "baseRevision": base_revision,
+        "operation": "replace",
+        "desired": desired,
+        "pool": topology["pool"],
+        "failedMember": topology["replaceableMember"],
+        "replacement": replacement,
+        "minimumReplacementBytes": topology["minimumReplacementBytes"],
+    }
+    return {
+        **plan_material,
+        "planId": _canonical_hash(plan_material),
+        "requiresApproval": True,
+        "changes": [
+            {
+                "field": "mirrorMember",
+                "before": topology["replaceableMember"]["vdevGuid"],
+                "after": replacement["devicefile"],
+            }
+        ],
+        "safety": {
+            "data": "preservedDuringResilver",
+            "scope": "singleTwoDiskMirrorOnly",
+            "target": "failedLeafVdevGuid",
+            "replacement": "wholeBlankNonRemovableWithPersistentIdentity",
+            "minimumSize": "onlineSiblingDeviceSize",
+            "force": False,
+            "sequentialReconstruction": False,
+            "wait": False,
+            "activeMaintenance": "mustBeAbsent",
+            "rollback": "noneAfterReplacementAccepted",
+        },
+        "source": "native",
+    }
+
+
+def plan_zfs_mirror_replace(desired_state: dict[str, Any]) -> dict[str, Any]:
+    desired = validate_zfs_mirror_replace_desired(dict(desired_state))
+    with _pool_transaction():
+        return _build_zfs_mirror_replace_plan(desired)
+
+
+def _replacement_path_present(status: str, devicefile: str) -> bool:
+    pattern = re.compile(rf"^{re.escape(devicefile)}(?:p?[0-9]+)?$")
+    return any(pattern.fullmatch(row["name"]) for row in _status_config_rows(status))
+
+
+def apply_zfs_mirror_replace(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    desired = validate_zfs_mirror_replace_desired(dict(desired_state))
+    with _pool_transaction():
+        plan = _build_zfs_mirror_replace_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("ZFS mirror replacement plan is stale; preview the change again")
+        try:
+            _run_mutating(
+                "zpool",
+                "replace",
+                desired["name"],
+                desired["oldVdevGuid"],
+                desired["replacementDevice"],
+            )
+        except Exception:
+            try:
+                status = _run_checked("zpool", "status", "-LP", desired["name"])
+            except Exception as state_exc:
+                raise OSError(
+                    "ZFS replacement command failed and the resulting pool state is unknown"
+                ) from state_exc
+            if not _replacement_path_present(status, desired["replacementDevice"]):
+                raise
+        else:
+            status = _run_checked("zpool", "status", "-LP", desired["name"])
+        if not _replacement_path_present(status, desired["replacementDevice"]):
+            raise OSError("ZFS did not retain the planned replacement disk")
+        pool = _pool_snapshot(desired["name"], desired["poolGuid"])
+        maintenance = "resilvering" if "resilver in progress" in status else "acceptedOrCompleted"
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "dataPreserved": True,
+            "maintenanceState": maintenance,
+            "pool": pool,
+        }
 
 
 def _pool_snapshot(name: str, guid: str) -> dict[str, Any]:
@@ -905,13 +1170,16 @@ def apply_zfs_pool_import(desired_state: dict[str, Any], plan_id: str) -> dict[s
 
 
 __all__ = [
+    "apply_zfs_mirror_replace",
     "apply_zfs_mirror",
     "apply_zfs_pool_export",
     "apply_zfs_pool_import",
     "exportable_zfs_pools",
     "importable_zfs_pools",
     "plan_zfs_mirror",
+    "plan_zfs_mirror_replace",
     "plan_zfs_pool_export",
     "plan_zfs_pool_import",
     "zfs_mirror_candidates",
+    "zfs_mirror_replacement_candidates",
 ]

@@ -602,3 +602,294 @@ def test_zfs_pool_import_rejects_unsafe_mountpoint_and_restores_exported_state(
         ("zpool", "export", "family"),
     ]
     assert state["imported"] is False
+
+
+def _replacement_status(*, guid: bool, replaced: bool = False) -> str:
+    if guid:
+        first = "1111111111111111111"
+        second = "3333333333333333333" if replaced else "2222222222222222222"
+        mirror = "4444444444444444444"
+    else:
+        first = "/dev/sdb"
+        second = "/dev/sdd1" if replaced else "2222222222222222222"
+        mirror = "mirror-0"
+    pool_state = "ONLINE" if replaced else "DEGRADED"
+    second_state = "ONLINE" if replaced else "UNAVAIL"
+    scan = "scan: resilvered 8G in 00:00:01 with 0 errors" if replaced else "scan: none requested"
+    return f"""
+  pool: family
+ state: {pool_state}
+  {scan}
+config:
+
+        NAME                         STATE     READ WRITE CKSUM
+        family                       {pool_state}       0     0     0
+          {mirror}                   {pool_state}       0     0     0
+            {first}                  ONLINE       0     0     0
+            {second}                 {second_state}     0     0     0
+
+errors: No known data errors
+"""
+
+
+def _replace_desired(**overrides: Any) -> dict[str, Any]:
+    return {
+        "schema": "echo.omv.zfs-mirror-replace-desired.v1",
+        "name": "family",
+        "poolGuid": "15451357997522795478",
+        "oldVdevGuid": "2222222222222222222",
+        "replacementDevice": "/dev/sdd",
+        "dataPreserved": True,
+        **overrides,
+    }
+
+
+@pytest.fixture
+def degraded_mirror_host(
+    monkeypatch: pytest.MonkeyPatch,
+    zfs_lifecycle_host: Path,
+) -> dict[str, bool]:
+    state = {"replaced": False}
+    monkeypatch.setattr(native_storage_pool, "_require_tools", lambda: None)
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_imported_pool_snapshots",
+        lambda: [
+            {
+                **_pool_snapshot(),
+                "health": "ONLINE" if state["replaced"] else "DEGRADED",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_dataset_snapshots",
+        lambda _name: [
+            {
+                "name": "family",
+                "mountpoint": str(zfs_lifecycle_host / "family"),
+                "canmount": "on",
+                "mounted": "yes",
+                "encryption": "off",
+            }
+        ],
+    )
+
+    def run_checked(*args: str, **_kwargs: Any) -> str:
+        if args[:2] == ("zpool", "status"):
+            return _replacement_status(
+                guid="-gP" in args,
+                replaced=state["replaced"],
+            )
+        if args[:1] == ("lsblk",):
+            return str(16 * 1024**3)
+        raise AssertionError(f"unexpected command {args}")
+
+    monkeypatch.setattr(native_storage_pool, "_run_checked", run_checked)
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_inspect_zfs_mirror_devices",
+        lambda _devices: [
+            {
+                "devicefile": "/dev/sdd",
+                "sizeBytes": 20 * 1024**3,
+                "serial": "disk-d",
+                "wwn": None,
+                "model": "QEMU HARDDISK",
+            }
+        ],
+    )
+    return state
+
+
+def test_zfs_mirror_replace_plan_binds_failed_guid_and_blank_disk_identity(
+    degraded_mirror_host: dict[str, bool],
+) -> None:
+    plan = native_storage_pool.plan_zfs_mirror_replace(_replace_desired())
+
+    assert plan["schema"] == "echo.omv.zfs-mirror-replace-plan.v1"
+    assert plan["operation"] == "replace"
+    assert plan["failedMember"] == {
+        "slot": 2,
+        "vdevGuid": "2222222222222222222",
+        "state": "UNAVAIL",
+    }
+    assert plan["replacement"]["serial"] == "disk-d"
+    assert plan["safety"]["force"] is False
+    assert plan["safety"]["sequentialReconstruction"] is False
+    assert plan["safety"]["wait"] is False
+
+
+def test_zfs_mirror_replace_apply_starts_checksum_verified_resilver_without_force(
+    monkeypatch: pytest.MonkeyPatch,
+    degraded_mirror_host: dict[str, bool],
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def mutate(*args: str, **_kwargs: Any) -> None:
+        commands.append(args)
+        degraded_mirror_host["replaced"] = True
+
+    monkeypatch.setattr(native_storage_pool, "_run_mutating", mutate)
+    desired = _replace_desired()
+    plan = native_storage_pool.plan_zfs_mirror_replace(desired)
+    applied = native_storage_pool.apply_zfs_mirror_replace(desired, plan["planId"])
+
+    assert commands == [
+        (
+            "zpool",
+            "replace",
+            "family",
+            "2222222222222222222",
+            "/dev/sdd",
+        )
+    ]
+    assert {"-f", "-s", "-w"}.isdisjoint(commands[0])
+    assert applied["verified"] is True
+    assert applied["dataPreserved"] is True
+    assert applied["maintenanceState"] == "acceptedOrCompleted"
+    assert applied["pool"]["health"] == "ONLINE"
+
+
+def test_zfs_mirror_replace_recognizes_partial_command_success_from_live_topology(
+    monkeypatch: pytest.MonkeyPatch,
+    degraded_mirror_host: dict[str, bool],
+) -> None:
+    desired = _replace_desired()
+    plan = native_storage_pool.plan_zfs_mirror_replace(desired)
+
+    def accepted_then_error(*_args: str, **_kwargs: Any) -> None:
+        degraded_mirror_host["replaced"] = True
+        raise OSError("simulated late CLI failure")
+
+    monkeypatch.setattr(native_storage_pool, "_run_mutating", accepted_then_error)
+
+    applied = native_storage_pool.apply_zfs_mirror_replace(desired, plan["planId"])
+
+    assert applied["verified"] is True
+    assert applied["maintenanceState"] == "acceptedOrCompleted"
+
+
+def test_zfs_mirror_replace_rejects_rebound_disk_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+    degraded_mirror_host: dict[str, bool],
+) -> None:
+    identities = iter(
+        (
+            [
+                {
+                    "devicefile": "/dev/sdd",
+                    "sizeBytes": 20 * 1024**3,
+                    "serial": "disk-d",
+                    "wwn": None,
+                    "model": "QEMU HARDDISK",
+                }
+            ],
+            [
+                {
+                    "devicefile": "/dev/sdd",
+                    "sizeBytes": 20 * 1024**3,
+                    "serial": "replacement-different",
+                    "wwn": None,
+                    "model": "QEMU HARDDISK",
+                }
+            ],
+        )
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_inspect_zfs_mirror_devices",
+        lambda _devices: next(identities),
+    )
+    writes: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_mutating",
+        lambda *args, **_kwargs: writes.append(args),
+    )
+    desired = _replace_desired()
+    plan = native_storage_pool.plan_zfs_mirror_replace(desired)
+
+    with pytest.raises(ValueError, match="stale"):
+        native_storage_pool.apply_zfs_mirror_replace(desired, plan["planId"])
+
+    assert writes == []
+
+
+def test_zfs_mirror_replace_rejects_non_mirror_or_ambiguous_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    degraded_mirror_host: dict[str, bool],
+) -> None:
+    ambiguous = _replacement_status(guid=False).replace(
+        "/dev/sdb                  ONLINE",
+        "/dev/sdb                  UNAVAIL",
+    )
+    original = native_storage_pool._run_checked
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_checked",
+        lambda *args, **kwargs: (
+            ambiguous
+            if args[:2] == ("zpool", "status") and "-LP" in args
+            else original(*args, **kwargs)
+        ),
+    )
+
+    with pytest.raises((OSError, ValueError), match="health do not agree|exactly one failed"):
+        native_storage_pool.plan_zfs_mirror_replace(_replace_desired())
+
+
+def test_zfs_mirror_replace_rejects_surviving_member_io_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    degraded_mirror_host: dict[str, bool],
+) -> None:
+    original = native_storage_pool._run_checked
+    unsafe = _replacement_status(guid=False).replace(
+        "ONLINE       0     0     0",
+        "ONLINE       0     0     1",
+        1,
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_checked",
+        lambda *args, **kwargs: (
+            unsafe
+            if args[:2] == ("zpool", "status") and "-LP" in args
+            else original(*args, **kwargs)
+        ),
+    )
+
+    with pytest.raises(ValueError, match="surviving.*I/O errors"):
+        native_storage_pool.plan_zfs_mirror_replace(_replace_desired())
+
+
+def test_zfs_mirror_replacement_candidates_filter_too_small_blank_disks(
+    monkeypatch: pytest.MonkeyPatch,
+    degraded_mirror_host: dict[str, bool],
+) -> None:
+    monkeypatch.setattr(
+        native_storage_pool,
+        "zfs_mirror_candidates",
+        lambda: [
+            {
+                "devicefile": "/dev/sdd",
+                "sizeBytes": 20 * 1024**3,
+                "serial": "disk-d",
+                "wwn": None,
+                "model": "large",
+            },
+            {
+                "devicefile": "/dev/sde",
+                "sizeBytes": 4 * 1024**3,
+                "serial": "disk-e",
+                "wwn": None,
+                "model": "small",
+            },
+        ],
+    )
+
+    candidates = native_storage_pool.zfs_mirror_replacement_candidates()
+
+    assert len(candidates) == 1
+    assert candidates[0]["replaceableMember"]["vdevGuid"] == "2222222222222222222"
+    assert [item["devicefile"] for item in candidates[0]["replacementDevices"]] == ["/dev/sdd"]

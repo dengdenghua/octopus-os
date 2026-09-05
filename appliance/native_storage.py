@@ -21,9 +21,10 @@ Write support is deliberately split into narrow desired/plan/apply slices.
 Shared folders are limited to registered directories on mounted NAS volumes;
 privileges only touch the selected directory's non-recursive POSIX ACL; NFS
 only owns one generated file below ``/etc/exports.d``. Pool writes are limited
-to a separately reviewed two-blank-disk ZFS mirror creator. Pool deletion,
-expansion, replacement, recursive permission changes, signature wiping, and
-arbitrary protocol options remain outside this module.
+to a separately reviewed two-blank-disk ZFS mirror creator, Echo-layout
+export/import, and one-failed-member blank-disk mirror replacement. Pool
+deletion, expansion, general replacement, recursive permission changes,
+signature wiping, and arbitrary protocol options remain outside this module.
 """
 
 from __future__ import annotations
@@ -52,11 +53,14 @@ from typing import Any
 
 from appliance.native_storage_pool import (
     apply_zfs_mirror,
+    apply_zfs_mirror_replace,
     apply_zfs_pool_import,
     importable_zfs_pools,
     plan_zfs_mirror,
+    plan_zfs_mirror_replace,
     plan_zfs_pool_import,
     zfs_mirror_candidates,
+    zfs_mirror_replacement_candidates,
 )
 from appliance.native_storage_pool import (
     apply_zfs_pool_export as _apply_zfs_pool_export,
@@ -903,6 +907,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "nfs.share.remove.safe.v1",
     "filesystem.quota.user-group.v1",
     "storage.pool.zfs-mirror.create.v1",
+    "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
     "storage.pool.zfs.import.echo-root.v1",
 )
@@ -935,6 +940,7 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("filesystem.quota.user-group.v1")
     if not _native_command_tools_available("zpool", "zfs", "lsblk", "wipefs"):
         unavailable.add("storage.pool.zfs-mirror.create.v1")
+        unavailable.add("storage.pool.zfs-mirror.replace.blank.v1")
     if not _native_command_tools_available("zpool", "zfs"):
         unavailable.add("storage.pool.zfs.export.safe.v1")
         unavailable.add("storage.pool.zfs.import.echo-root.v1")
@@ -4000,6 +4006,7 @@ __all__ = [
     "apply_user",
     "apply_user_password",
     "apply_zfs_mirror",
+    "apply_zfs_mirror_replace",
     "apply_zfs_pool_export",
     "apply_zfs_pool_import",
     "block_devices",
@@ -4018,6 +4025,7 @@ __all__ = [
     "plan_user",
     "plan_user_password",
     "plan_zfs_mirror",
+    "plan_zfs_mirror_replace",
     "plan_zfs_pool_export",
     "plan_zfs_pool_import",
     "sharing_overview",
@@ -4031,5 +4039,6 @@ __all__ = [
     "volume_uuid",
     "importable_zfs_pools",
     "zfs_mirror_candidates",
+    "zfs_mirror_replacement_candidates",
     "zfs_pools",
 ]

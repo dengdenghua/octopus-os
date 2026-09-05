@@ -4,12 +4,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requestHighRiskApproval } from "./approval";
 import {
+  applyOmvZfsMirrorReplace,
   applyOmvZfsPoolExport,
   applyOmvZfsPoolImport,
   fetchOmvZfsImportCandidates,
+  fetchOmvZfsMirrorReplacementCandidates,
   fetchOmvZfsPools,
   planOmvZfsPoolExport,
   planOmvZfsPoolImport,
+  planOmvZfsMirrorReplace,
+  type OmvZfsMirrorReplacePlan,
   type OmvZfsPoolExportPlan,
   type OmvZfsPoolImportPlan,
 } from "./omv";
@@ -17,12 +21,15 @@ import { ZfsLifecyclePanel } from "./zfs-lifecycle-panel";
 
 vi.mock("./approval", () => ({ requestHighRiskApproval: vi.fn() }));
 vi.mock("./omv", () => ({
+  applyOmvZfsMirrorReplace: vi.fn(),
   applyOmvZfsPoolExport: vi.fn(),
   applyOmvZfsPoolImport: vi.fn(),
   fetchOmvZfsImportCandidates: vi.fn(),
+  fetchOmvZfsMirrorReplacementCandidates: vi.fn(),
   fetchOmvZfsPools: vi.fn(),
   planOmvZfsPoolExport: vi.fn(),
   planOmvZfsPoolImport: vi.fn(),
+  planOmvZfsMirrorReplace: vi.fn(),
 }));
 
 const pool = {
@@ -97,6 +104,63 @@ const importPlan: OmvZfsPoolImportPlan = {
   },
 };
 
+const replacementCandidate = {
+  pool: {
+    name: "family",
+    poolGuid: "15451357997522795478",
+    health: "DEGRADED",
+    sizeBytes: 16 * 1024 ** 3,
+  },
+  layout: "twoDiskMirror" as const,
+  replaceableMember: {
+    slot: 2,
+    vdevGuid: "2222222222222222222",
+    state: "UNAVAIL" as const,
+  },
+  minimumReplacementBytes: 16 * 1024 ** 3,
+  replacementDevices: [
+    {
+      devicefile: "/dev/sdd",
+      sizeBytes: 20 * 1024 ** 3,
+      serial: "disk-d",
+      wwn: null,
+      model: "QEMU HARDDISK",
+    },
+  ],
+};
+
+const replacePlan: OmvZfsMirrorReplacePlan = {
+  schema: "echo.omv.zfs-mirror-replace-plan.v1",
+  planId: "5".repeat(64),
+  baseRevision: "6".repeat(64),
+  operation: "replace",
+  requiresApproval: true,
+  desired: {
+    schema: "echo.omv.zfs-mirror-replace-desired.v1",
+    name: "family",
+    poolGuid: "15451357997522795478",
+    oldVdevGuid: "2222222222222222222",
+    replacementDevice: "/dev/sdd",
+    dataPreserved: true,
+  },
+  pool: replacementCandidate.pool,
+  failedMember: replacementCandidate.replaceableMember,
+  replacement: replacementCandidate.replacementDevices[0],
+  minimumReplacementBytes: 16 * 1024 ** 3,
+  safety: {
+    data: "preservedDuringResilver",
+    scope: "singleTwoDiskMirrorOnly",
+    target: "failedLeafVdevGuid",
+    replacement: "wholeBlankNonRemovableWithPersistentIdentity",
+    minimumSize: "onlineSiblingDeviceSize",
+    force: false,
+    sequentialReconstruction: false,
+    wait: false,
+    activeMaintenance: "mustBeAbsent",
+    rollback: "noneAfterReplacementAccepted",
+  },
+};
+
 const status = {
   configured: true,
   available: true,
@@ -113,8 +177,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(fetchOmvZfsPools).mockResolvedValue([pool]);
   vi.mocked(fetchOmvZfsImportCandidates).mockResolvedValue([candidate]);
+  vi.mocked(fetchOmvZfsMirrorReplacementCandidates).mockResolvedValue([]);
   vi.mocked(planOmvZfsPoolExport).mockResolvedValue(exportPlan);
   vi.mocked(planOmvZfsPoolImport).mockResolvedValue(importPlan);
+  vi.mocked(planOmvZfsMirrorReplace).mockResolvedValue(replacePlan);
   vi.mocked(requestHighRiskApproval).mockResolvedValue({
     approvalToken: "one-shot",
     expiresIn: 90,
@@ -133,9 +199,65 @@ beforeEach(() => {
     verified: true,
     dataPreserved: true,
   });
+  vi.mocked(applyOmvZfsMirrorReplace).mockResolvedValue({
+    ...replacePlan,
+    applied: true,
+    verified: true,
+    dataPreserved: true,
+    maintenanceState: "resilvering",
+  });
 });
 
 describe("ZFS data-preserving lifecycle panel", () => {
+  it("replaces the exact failed vdev with a server-approved blank disk", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchOmvZfsMirrorReplacementCandidates).mockResolvedValue([
+      replacementCandidate,
+    ]);
+    vi.mocked(requestHighRiskApproval).mockResolvedValue({
+      approvalToken: "replace-token",
+      expiresIn: 90,
+      action: "omv.zfs-mirror.replace",
+      target: replacePlan.planId,
+    });
+    render(
+      <ZfsLifecyclePanel
+        status={{
+          ...status,
+          capabilities: ["storage.pool.zfs-mirror.replace.blank.v1"],
+        }}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "预览用 /dev/sdd 修复 family",
+      }),
+    );
+    expect(planOmvZfsMirrorReplace).toHaveBeenCalledWith(replacePlan.desired);
+    expect(screen.getByText(/启动带校验的 resilver/)).toBeInTheDocument();
+    expect(screen.getByText(/disk-d/)).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText("设备管理员密码（换盘）"),
+      "correct-password",
+    );
+    await user.click(screen.getByRole("button", { name: "确认启动校验重建" }));
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "omv.zfs-mirror.replace",
+        replacePlan.planId,
+        "correct-password",
+      ),
+    );
+    expect(applyOmvZfsMirrorReplace).toHaveBeenCalledWith(
+      replacePlan.desired,
+      replacePlan.planId,
+      "replace-token",
+    );
+  });
+
   it("exports an exact GUID only after preview and step-up approval", async () => {
     const user = userEvent.setup();
     render(<ZfsLifecyclePanel status={status} />);

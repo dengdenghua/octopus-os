@@ -14,13 +14,16 @@ import { ZfsMirrorPanel } from "./zfs-mirror-panel";
 vi.mock("./approval", () => ({ requestHighRiskApproval: vi.fn() }));
 vi.mock("./omv", () => ({
   applyOmvZfsMirror: vi.fn(),
+  applyOmvZfsMirrorReplace: vi.fn(),
   applyOmvZfsPoolExport: vi.fn(),
   applyOmvZfsPoolImport: vi.fn(),
   fetchNativeStatus: vi.fn(),
   fetchOmvZfsImportCandidates: vi.fn(),
+  fetchOmvZfsMirrorReplacementCandidates: vi.fn(),
   fetchOmvZfsMirrorCandidates: vi.fn(),
   fetchOmvZfsPools: vi.fn(),
   planOmvZfsMirror: vi.fn(),
+  planOmvZfsMirrorReplace: vi.fn(),
   planOmvZfsPoolExport: vi.fn(),
   planOmvZfsPoolImport: vi.fn(),
 }));

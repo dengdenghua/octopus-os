@@ -56,6 +56,7 @@ export function ZfsMirrorPanel() {
   const lifecycleAvailable = Boolean(
     status?.capabilities?.some((capability) =>
       [
+        "storage.pool.zfs-mirror.replace.blank.v1",
         "storage.pool.zfs.export.safe.v1",
         "storage.pool.zfs.import.echo-root.v1",
       ].includes(capability),

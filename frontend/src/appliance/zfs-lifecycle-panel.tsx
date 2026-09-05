@@ -5,24 +5,31 @@ import {
   Loader2Icon,
   LogOutIcon,
   ShieldCheckIcon,
+  WrenchIcon,
 } from "lucide-react";
 
 import { requestHighRiskApproval } from "@/appliance/approval";
 import {
+  applyOmvZfsMirrorReplace,
   applyOmvZfsPoolExport,
   applyOmvZfsPoolImport,
   fetchOmvZfsImportCandidates,
+  fetchOmvZfsMirrorReplacementCandidates,
   fetchOmvZfsPools,
+  planOmvZfsMirrorReplace,
   planOmvZfsPoolExport,
   planOmvZfsPoolImport,
   type OmvStatus,
   type OmvZfsImportCandidate,
+  type OmvZfsMirrorReplacementCandidate,
+  type OmvZfsMirrorReplacePlan,
   type OmvZfsPool,
   type OmvZfsPoolExportPlan,
   type OmvZfsPoolImportPlan,
 } from "@/appliance/omv";
 
 type PendingPlan =
+  | { kind: "replace"; plan: OmvZfsMirrorReplacePlan }
   | { kind: "export"; plan: OmvZfsPoolExportPlan }
   | { kind: "import"; plan: OmvZfsPoolImportPlan };
 
@@ -42,6 +49,9 @@ function shortGuid(guid: string) {
 }
 
 export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
+  const replaceAvailable = Boolean(
+    status?.capabilities?.includes("storage.pool.zfs-mirror.replace.blank.v1"),
+  );
   const exportAvailable = Boolean(
     status?.capabilities?.includes("storage.pool.zfs.export.safe.v1"),
   );
@@ -50,6 +60,9 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
   );
   const [pools, setPools] = useState<OmvZfsPool[]>([]);
   const [candidates, setCandidates] = useState<OmvZfsImportCandidate[]>([]);
+  const [replacements, setReplacements] = useState<
+    OmvZfsMirrorReplacementCandidate[]
+  >([]);
   const [pending, setPending] = useState<PendingPlan | null>(null);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -58,14 +71,18 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
   const [success, setSuccess] = useState<string | null>(null);
 
   const refresh = async () => {
-    if (!exportAvailable && !importAvailable) return;
+    if (!replaceAvailable && !exportAvailable && !importAvailable) return;
     setLoading(true);
     setError(null);
     try {
-      const [nextPools, nextCandidates] = await Promise.all([
+      const [nextReplacements, nextPools, nextCandidates] = await Promise.all([
+        replaceAvailable
+          ? fetchOmvZfsMirrorReplacementCandidates()
+          : Promise.resolve([]),
         exportAvailable ? fetchOmvZfsPools() : Promise.resolve([]),
         importAvailable ? fetchOmvZfsImportCandidates() : Promise.resolve([]),
       ]);
+      setReplacements(nextReplacements);
       setPools(nextPools);
       setCandidates(nextCandidates);
       setPending(null);
@@ -83,7 +100,35 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
     void refresh();
     // The capability booleans are the lifecycle boundary; status identity is irrelevant.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exportAvailable, importAvailable]);
+  }, [replaceAvailable, exportAvailable, importAvailable]);
+
+  const previewReplace = async (
+    replacement: OmvZfsMirrorReplacementCandidate,
+    devicefile: string,
+  ) => {
+    setBusy(true);
+    setError(null);
+    setSuccess(null);
+    setPassword("");
+    try {
+      const plan = await planOmvZfsMirrorReplace({
+        schema: "echo.omv.zfs-mirror-replace-desired.v1",
+        name: replacement.pool.name,
+        poolGuid: replacement.pool.poolGuid,
+        oldVdevGuid: replacement.replaceableMember.vdevGuid,
+        replacementDevice: devicefile,
+        dataPreserved: true,
+      });
+      setPending({ kind: "replace", plan });
+    } catch (reason) {
+      setPending(null);
+      setError(
+        reason instanceof Error ? reason.message : "无法生成镜像换盘预览",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const previewExport = async (pool: OmvZfsPool) => {
     setBusy(true);
@@ -136,16 +181,26 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
     setBusy(true);
     setError(null);
     try {
-      const action =
-        pending.kind === "export"
-          ? "omv.zfs-pool.export"
-          : "omv.zfs-pool.import";
+      const action = {
+        replace: "omv.zfs-mirror.replace",
+        export: "omv.zfs-pool.export",
+        import: "omv.zfs-pool.import",
+      } as const;
       const approval = await requestHighRiskApproval(
-        action,
+        action[pending.kind],
         pending.plan.planId,
         password,
       );
-      if (pending.kind === "export") {
+      if (pending.kind === "replace") {
+        await applyOmvZfsMirrorReplace(
+          pending.plan.desired,
+          pending.plan.planId,
+          approval.approvalToken,
+        );
+        setSuccess(
+          `存储池 ${pending.plan.desired.name} 已接受新盘，正在或已经完成 resilver`,
+        );
+      } else if (pending.kind === "export") {
         await applyOmvZfsPoolExport(
           pending.plan.desired,
           pending.plan.planId,
@@ -171,7 +226,26 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
     }
   };
 
-  if (!exportAvailable && !importAvailable) return null;
+  if (!replaceAvailable && !exportAvailable && !importAvailable) return null;
+
+  const pendingTitle =
+    pending?.kind === "replace"
+      ? "故障镜像盘换盘复核"
+      : pending?.kind === "export"
+        ? "数据保留导出复核"
+        : "GUID 导入复核";
+  const pendingOperation =
+    pending?.kind === "replace"
+      ? "换盘"
+      : pending?.kind === "export"
+        ? "导出"
+        : "导入";
+  const pendingButton =
+    pending?.kind === "replace"
+      ? "启动校验重建"
+      : pending?.kind === "export"
+        ? "安全导出"
+        : "按 GUID 导入";
 
   return (
     <section className="mt-5 rounded-[22px] bg-white/78 p-5 shadow-sm ring-1 ring-white/90">
@@ -179,7 +253,7 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
         <div className="flex items-center gap-2">
           <DatabaseIcon className="size-5 text-emerald-600" />
           <h2 className="text-sm font-semibold text-slate-900">
-            数据保留导出 / 导入
+            故障换盘 / 数据保留导出与导入
           </h2>
         </div>
         {loading && (
@@ -190,8 +264,9 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
         )}
       </div>
       <p className="mt-2 text-[11px] leading-5 text-slate-500">
-        只接受 ONLINE、无维护任务、无受管共享且挂载在 /data/&lt;池名&gt;
-        的未加密池。操作按数字 GUID 绑定，不使用强制、回退或恢复参数。
+        换盘只接受单一双盘 mirror
+        的唯一故障成员与足够大的空白整盘；生命周期操作只接受 Echo
+        数据根布局。所有目标按数字 GUID 与磁盘稳定身份绑定，不使用强制参数。
       </p>
 
       {error && (
@@ -208,6 +283,60 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
           className="mt-4 rounded-2xl bg-emerald-50 p-3 text-xs text-emerald-800"
         >
           {success}
+        </div>
+      )}
+
+      {replaceAvailable && (
+        <div className="mt-4 rounded-2xl bg-amber-50/80 p-4 ring-1 ring-amber-200">
+          <h3 className="flex items-center gap-2 text-xs font-semibold text-amber-900">
+            <WrenchIcon className="size-4" /> 故障镜像修复
+          </h3>
+          <p className="mt-1 text-[10px] leading-5 text-amber-800/80">
+            仅列出恰有一个故障成员、另一个成员 ONLINE，且当前没有
+            scrub、resilver 或既有 replacing 树的双盘镜像。
+          </p>
+          <div className="mt-3 space-y-2">
+            {replacements.map((replacement) => (
+              <div
+                key={`${replacement.pool.poolGuid}:${replacement.replaceableMember.vdevGuid}`}
+                className="rounded-xl bg-white p-3 ring-1 ring-amber-200"
+              >
+                <p className="text-xs font-semibold text-slate-900">
+                  {replacement.pool.name} · {replacement.pool.health}
+                </p>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  故障槽位 {replacement.replaceableMember.slot}（
+                  {replacement.replaceableMember.state}）· 最小盘容量{" "}
+                  {formatBytes(replacement.minimumReplacementBytes)}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {replacement.replacementDevices.map((device) => (
+                    <button
+                      key={device.devicefile}
+                      type="button"
+                      onClick={() =>
+                        void previewReplace(replacement, device.devicefile)
+                      }
+                      disabled={busy}
+                      className="rounded-lg bg-amber-600 px-3 py-1.5 text-[10px] font-semibold text-white disabled:opacity-40"
+                    >
+                      预览用 {device.devicefile} 修复 {replacement.pool.name}
+                    </button>
+                  ))}
+                  {replacement.replacementDevices.length === 0 && (
+                    <span className="text-[10px] text-amber-800">
+                      没有通过空白、稳定身份和容量检查的新盘
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+            {!loading && replacements.length === 0 && (
+              <p className="text-[11px] leading-5 text-amber-800/70">
+                当前没有符合窄修复策略的故障双盘镜像。
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -299,18 +428,30 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
         <div className="mt-4 rounded-2xl bg-emerald-950 p-4 text-white">
           <h3 className="flex items-center gap-2 text-xs font-semibold">
             <ShieldCheckIcon className="size-4 text-emerald-300" />
-            {pending.kind === "export" ? "数据保留导出复核" : "GUID 导入复核"}
+            {pendingTitle}
           </h3>
           <p className="mt-2 text-[11px] leading-5 text-emerald-100/80">
-            {pending.kind === "export"
-              ? `将同步并非强制导出 ${pending.plan.desired.name}；导出完成后数据仍保留在磁盘上。`
-              : `将先以只读且不挂载方式检查 ${pending.plan.desired.name}，恢复导出状态后再按 GUID 正常导入，仅挂载 /data/${pending.plan.desired.name} 树。`}
+            {pending.kind === "replace"
+              ? `将以空白整盘 ${pending.plan.desired.replacementDevice} 替换故障 vdev GUID ${pending.plan.desired.oldVdevGuid}，启动带校验的 resilver；接受后不会自动拆除新盘。`
+              : pending.kind === "export"
+                ? `将同步并非强制导出 ${pending.plan.desired.name}；导出完成后数据仍保留在磁盘上。`
+                : `将先以只读且不挂载方式检查 ${pending.plan.desired.name}，恢复导出状态后再按 GUID 正常导入，仅挂载 /data/${pending.plan.desired.name} 树。`}
           </p>
           <p className="mt-1 break-all font-mono text-[10px] text-emerald-100/60">
             GUID {pending.plan.desired.poolGuid}
           </p>
+          {pending.kind === "replace" && (
+            <p className="mt-1 break-all font-mono text-[10px] text-emerald-100/70">
+              新盘 {pending.plan.replacement.devicefile} ·{" "}
+              {formatBytes(pending.plan.replacement.sizeBytes)} ·{" "}
+              {pending.plan.replacement.model || "未知型号"} ·{" "}
+              {pending.plan.replacement.wwn ||
+                pending.plan.replacement.serial ||
+                "无稳定标识"}
+            </p>
+          )}
           <label className="mt-3 block text-xs font-medium text-emerald-50">
-            设备管理员密码（{pending.kind === "export" ? "导出" : "导入"}）
+            设备管理员密码（{pendingOperation}）
             <input
               type="password"
               autoComplete="current-password"
@@ -326,7 +467,7 @@ export function ZfsLifecyclePanel({ status }: { status: OmvStatus | null }) {
             className="mt-3 inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-500 px-4 text-[11px] font-semibold text-emerald-950 disabled:opacity-40"
           >
             {busy && <Loader2Icon className="size-4 animate-spin" />}
-            确认{pending.kind === "export" ? "安全导出" : "按 GUID 导入"}
+            确认{pendingButton}
           </button>
         </div>
       )}

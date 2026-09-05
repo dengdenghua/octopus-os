@@ -681,6 +681,61 @@ export type OmvZfsImportCandidate = {
   safeToImport: true;
 };
 
+export type OmvZfsMirrorReplacementCandidate = {
+  pool: {
+    name: string;
+    poolGuid: string;
+    health: "DEGRADED" | "ONLINE" | string;
+    sizeBytes: number;
+  };
+  layout: "twoDiskMirror";
+  replaceableMember: {
+    slot: number;
+    vdevGuid: string;
+    state: "DEGRADED" | "FAULTED" | "OFFLINE" | "REMOVED" | "UNAVAIL";
+  };
+  minimumReplacementBytes: number;
+  replacementDevices: OmvZfsMirrorCandidate[];
+};
+
+export type OmvZfsMirrorReplaceDesiredState = {
+  schema: "echo.omv.zfs-mirror-replace-desired.v1";
+  name: string;
+  poolGuid: string;
+  oldVdevGuid: string;
+  replacementDevice: string;
+  dataPreserved: true;
+};
+
+export type OmvZfsMirrorReplacePlan = {
+  schema: "echo.omv.zfs-mirror-replace-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "replace";
+  requiresApproval: true;
+  desired: OmvZfsMirrorReplaceDesiredState;
+  pool: OmvZfsMirrorReplacementCandidate["pool"];
+  failedMember: OmvZfsMirrorReplacementCandidate["replaceableMember"];
+  replacement: OmvZfsMirrorCandidate;
+  minimumReplacementBytes: number;
+  safety: {
+    data: "preservedDuringResilver";
+    scope: "singleTwoDiskMirrorOnly";
+    target: "failedLeafVdevGuid";
+    replacement: "wholeBlankNonRemovableWithPersistentIdentity";
+    minimumSize: "onlineSiblingDeviceSize";
+    force: false;
+    sequentialReconstruction: false;
+    wait: false;
+    activeMaintenance: "mustBeAbsent";
+    rollback: "noneAfterReplacementAccepted";
+  };
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: true;
+  maintenanceState?: "resilvering" | "acceptedOrCompleted";
+};
+
 export type OmvZfsPoolExportDesiredState = {
   schema: "echo.omv.zfs-pool-export-desired.v1";
   name: string;
@@ -1226,6 +1281,41 @@ export async function fetchOmvZfsPools(): Promise<OmvZfsPool[]> {
     "无法读取可安全导出的 ZFS 存储池",
   );
   return result.pools;
+}
+
+export async function fetchOmvZfsMirrorReplacementCandidates(): Promise<
+  OmvZfsMirrorReplacementCandidate[]
+> {
+  const result = await readJson<{
+    replacements: OmvZfsMirrorReplacementCandidate[];
+  }>(
+    "/api/appliance/omv/pools/zfs-mirror/replacement-candidates",
+    "无法读取 ZFS 镜像换盘候选",
+  );
+  return result.replacements;
+}
+
+export function planOmvZfsMirrorReplace(
+  desired: OmvZfsMirrorReplaceDesiredState,
+): Promise<OmvZfsMirrorReplacePlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs-mirror/replace/plan",
+    desired,
+    "无法生成 ZFS 镜像换盘预览",
+  );
+}
+
+export function applyOmvZfsMirrorReplace(
+  desired: OmvZfsMirrorReplaceDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvZfsMirrorReplacePlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs-mirror/replace/apply",
+    { desired, planId },
+    "无法启动 ZFS 镜像换盘",
+    approvalHeader(approvalToken),
+  );
 }
 
 export async function fetchOmvZfsImportCandidates(): Promise<

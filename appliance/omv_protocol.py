@@ -53,6 +53,9 @@ ZFS_POOL_EXPORT_CONTROL_CAPABILITY = "storage.pool.zfs.export.safe.v1"
 ZFS_POOL_IMPORT_DESIRED_SCHEMA = "echo.omv.zfs-pool-import-desired.v1"
 ZFS_POOL_IMPORT_PLAN_SCHEMA = "echo.omv.zfs-pool-import-plan.v1"
 ZFS_POOL_IMPORT_CONTROL_CAPABILITY = "storage.pool.zfs.import.echo-root.v1"
+ZFS_MIRROR_REPLACE_DESIRED_SCHEMA = "echo.omv.zfs-mirror-replace-desired.v1"
+ZFS_MIRROR_REPLACE_PLAN_SCHEMA = "echo.omv.zfs-mirror-replace-plan.v1"
+ZFS_MIRROR_REPLACE_CONTROL_CAPABILITY = "storage.pool.zfs-mirror.replace.blank.v1"
 HMAC_SAFETY_CONTRACT = "hmacBoundNeverReturnedOrAudited"
 MAX_QUOTA_BYTES = 2**63 - 1
 _DEVICEFILE_PATTERN = re.compile(r"/dev/[A-Za-z0-9._/+:-]+")
@@ -206,6 +209,40 @@ def validate_zfs_pool_import_desired(value: Any) -> dict[str, Any]:
         "name": name,
         "poolGuid": pool_guid,
         "mountPolicy": "echoDataRootOnly",
+    }
+
+
+def validate_zfs_mirror_replace_desired(value: Any) -> dict[str, Any]:
+    expected = {
+        "schema",
+        "name",
+        "poolGuid",
+        "oldVdevGuid",
+        "replacementDevice",
+        "dataPreserved",
+    }
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("ZFS mirror replacement desired state has unexpected fields")
+    name, pool_guid = _validate_zfs_pool_identity(value, ZFS_MIRROR_REPLACE_DESIRED_SCHEMA)
+    old_vdev_guid = value.get("oldVdevGuid")
+    if (
+        not isinstance(old_vdev_guid, str)
+        or re.fullmatch(r"[1-9][0-9]{0,19}", old_vdev_guid) is None
+        or int(old_vdev_guid) > 2**64 - 1
+    ):
+        raise ValueError("ZFS old vdev GUID must be a canonical unsigned decimal identifier")
+    replacement = value.get("replacementDevice")
+    if not isinstance(replacement, str) or _ZFS_WHOLE_DISK_PATTERN.fullmatch(replacement) is None:
+        raise ValueError("ZFS replacement must be a supported whole-disk path")
+    if value.get("dataPreserved") is not True:
+        raise ValueError("ZFS mirror replacement requires dataPreserved=true")
+    return {
+        "schema": ZFS_MIRROR_REPLACE_DESIRED_SCHEMA,
+        "name": name,
+        "poolGuid": pool_guid,
+        "oldVdevGuid": old_vdev_guid,
+        "replacementDevice": replacement,
+        "dataPreserved": True,
     }
 
 

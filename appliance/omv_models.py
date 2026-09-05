@@ -25,6 +25,7 @@ from appliance.omv_protocol import (
     USER_DESIRED_SCHEMA,
     USER_PASSWORD_DESIRED_SCHEMA,
     ZFS_MIRROR_DESIRED_SCHEMA,
+    ZFS_MIRROR_REPLACE_DESIRED_SCHEMA,
     ZFS_POOL_EXPORT_DESIRED_SCHEMA,
     ZFS_POOL_IMPORT_DESIRED_SCHEMA,
     validate_group_desired,
@@ -38,6 +39,7 @@ from appliance.omv_protocol import (
     validate_user_desired,
     validate_user_password_desired,
     validate_zfs_mirror_desired,
+    validate_zfs_mirror_replace_desired,
     validate_zfs_pool_export_desired,
     validate_zfs_pool_import_desired,
 )
@@ -500,6 +502,50 @@ class ZfsMirrorApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class ZfsMirrorReplaceDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.zfs-mirror-replace-desired.v1"] = Field(
+        default=ZFS_MIRROR_REPLACE_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    name: str = Field(min_length=1, max_length=32)
+    pool_guid: str = Field(min_length=1, max_length=20, alias="poolGuid")
+    old_vdev_guid: str = Field(min_length=1, max_length=20, alias="oldVdevGuid")
+    replacement_device: str = Field(min_length=8, max_length=128, alias="replacementDevice")
+    data_preserved: Literal[True] = Field(alias="dataPreserved")
+
+    @field_validator("name", "pool_guid", "old_vdev_guid", "replacement_device")
+    @classmethod
+    def validate_identity_field(cls, value: str, info: Any) -> str:
+        payload = {
+            "schema": ZFS_MIRROR_REPLACE_DESIRED_SCHEMA,
+            "name": value if info.field_name == "name" else "tank",
+            "poolGuid": value if info.field_name == "pool_guid" else "1",
+            "oldVdevGuid": value if info.field_name == "old_vdev_guid" else "2",
+            "replacementDevice": (value if info.field_name == "replacement_device" else "/dev/sdb"),
+            "dataPreserved": True,
+        }
+        try:
+            normalized = validate_zfs_mirror_replace_desired(payload)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        field = {
+            "name": "name",
+            "pool_guid": "poolGuid",
+            "old_vdev_guid": "oldVdevGuid",
+            "replacement_device": "replacementDevice",
+        }[info.field_name]
+        return normalized[field]
+
+
+class ZfsMirrorReplaceApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: ZfsMirrorReplaceDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class ZfsPoolExportDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -608,6 +654,8 @@ __all__ = [
     "UserPasswordDesiredState",
     "ZfsMirrorApplyRequest",
     "ZfsMirrorDesiredState",
+    "ZfsMirrorReplaceApplyRequest",
+    "ZfsMirrorReplaceDesiredState",
     "ZfsPoolExportApplyRequest",
     "ZfsPoolExportDesiredState",
     "ZfsPoolImportApplyRequest",
