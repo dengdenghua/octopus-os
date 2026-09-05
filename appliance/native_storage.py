@@ -660,16 +660,19 @@ def _samba_usershares() -> list[dict[str, Any]]:
         if not line:
             continue
         if not line.startswith("[") or not line.endswith("]"):
-            if current is not None and ":" in line:
-                key, _, value = line.partition(":")
+            if current is not None:
+                key, value = _samba_setting(line)
+                if not key:
+                    continue
                 key, value = key.strip(), value.strip()
                 if key == "path":
                     current["sharedFolderName"] = value.rstrip("/").split("/")[-1]
                 elif key == "comment":
                     current["comment"] = value
                 elif key == "usershare_acl":
-                    current["readOnly"] = "R" in value and "F" not in value
-                    current["guest"] = "guest_ok=y" if "Guests" in value or "B" in value else "none"
+                    current["readOnly"] = _smb_info_read_only({"usershare_acl": value})
+                elif key == "guest_ok":
+                    current["guest"] = "yes" if value.casefold() == "y" else "no"
         else:
             current = {
                 "uuid": line.strip("[]"),
@@ -684,6 +687,14 @@ def _samba_usershares() -> list[dict[str, Any]]:
             }
             shares.append(current)
     return shares
+
+
+def _samba_setting(line: str) -> tuple[str, str]:
+    """Parse both ``key=value`` (Samba's output) and legacy ``key: value``."""
+    if "=" in line:
+        return line.split("=", 1)
+    key, separator, value = line.partition(":")
+    return (key, value) if separator else ("", "")
 
 
 def _nfs_service_available() -> bool:
@@ -2247,8 +2258,8 @@ def _smb_usershare_info(name: str) -> dict[str, Any] | None:
         return None
     info: dict[str, Any] = {}
     for line in completed.stdout.splitlines():
-        key, separator, value = line.partition(":")
-        if separator:
+        key, value = _samba_setting(line)
+        if key:
             info[key.strip().lower()] = value.strip()
     return info
 

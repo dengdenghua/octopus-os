@@ -218,6 +218,38 @@ def test_sharing_overview_keeps_the_users_group_and_empty_smb_service_enabled(
     assert overview["users"][0]["groups"] == ["users", "media"]
 
 
+def test_samba_usershare_inventory_parses_samba_key_value_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        native_storage,
+        "_run",
+        lambda *_args, **_kwargs: (
+            "[media]\n"
+            "path=/srv/media\n"
+            "comment=Family media\n"
+            "usershare_acl=BUILTIN\\\\Users:R,\n"
+            "guest_ok=n\n"
+        ),
+    )
+
+    shares = native_storage._samba_usershares()
+
+    assert shares == [
+        {
+            "uuid": "media",
+            "sharedFolderRef": "media",
+            "sharedFolderName": "media",
+            "enabled": True,
+            "readOnly": True,
+            "guest": "no",
+            "browseable": True,
+            "recycleBin": False,
+            "comment": "Family media",
+        }
+    ]
+
+
 def test_principal_id_rejects_system_accounts_but_allows_nas_users_and_users_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
