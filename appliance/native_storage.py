@@ -2125,10 +2125,19 @@ def _native_folder_path(entry: dict[str, Any]) -> Path:
 
 
 def _native_registered_folder_status(entry: dict[str, Any]) -> str:
-    """Project whether a registered folder is currently mounted and usable."""
+    """Project whether a registered folder is mounted, read-only, or absent."""
     try:
         _native_folder_path(entry)
     except (OSError, ValueError):
+        volume_path = str(entry.get("volumePath") or "")
+        for filesystem in filesystems():
+            if os.path.normpath(str(filesystem.get("mountpoint") or "")) != os.path.normpath(
+                volume_path
+            ):
+                continue
+            if filesystem.get("readOnly"):
+                return "READ_ONLY"
+            break
         return "UNAVAILABLE"
     return "MOUNTED"
 
@@ -2628,11 +2637,7 @@ def _nfs_removal_context(folder_ref: str) -> tuple[dict[str, Any], Path, str]:
     """
     folder = _resolve_shared_folder(folder_ref)
     path = _nfs_registered_path(folder)
-    try:
-        _native_folder_path(folder)
-    except (OSError, ValueError):
-        return folder, path, "UNAVAILABLE"
-    return folder, path, "MOUNTED"
+    return folder, path, _native_registered_folder_status(folder)
 
 
 def _build_nfs_remove_plan(desired: dict[str, Any]) -> dict[str, Any]:

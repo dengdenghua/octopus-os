@@ -1593,6 +1593,19 @@ def test_nfs_remove_can_clean_rule_when_volume_is_unmounted(
 
     # The registry and export file remain available while the data mount is
     # gone. Removal must not require a writable target or touch the directory.
+    monkeypatch.setattr(
+        native_storage,
+        "filesystems",
+        lambda: [{"mountpoint": str(volume), "readOnly": True}],
+    )
+    read_only_plan = native_storage.plan_nfs_remove(
+        {
+            "schema": "echo.omv.nfs-share-remove-desired.v1",
+            "sharedFolderRef": folder_uuid,
+            "clientCidr": "192.168.50.0/24",
+        }
+    )
+    assert read_only_plan["sharedFolder"]["status"] == "READ_ONLY"
     monkeypatch.setattr(native_storage, "filesystems", lambda: [])
     assert native_storage._native_nfs_shares()[0]["sharedFolderRef"] == folder_uuid
     remove_desired = {
