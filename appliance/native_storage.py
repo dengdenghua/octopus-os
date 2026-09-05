@@ -50,6 +50,7 @@ from appliance.omv_protocol import (
     NFS_PLAN_SCHEMA,
     QUOTA_PLAN_SCHEMA,
     SHARE_PRIVILEGE_PLAN_SCHEMA,
+    SHARED_FOLDER_DESIRED_SCHEMA,
     SMB_PLAN_SCHEMA,
     USER_PASSWORD_PLAN_SCHEMA,
     USER_PLAN_SCHEMA,
@@ -72,6 +73,9 @@ _NATIVE_NFS_EXPORTS = Path("/etc/exports.d/echo-os.exports")
 _STORAGE_UUID_NAMESPACE = uuid_module.UUID("6f1e0d5c-3a34-4f5e-9a52-1f65c3b07a11")
 _REGISTRY_THREAD_LOCK = threading.RLock()
 _NATIVE_DATA_MOUNT_ROOTS = ("/data", "/mnt", "/srv", "/fs", "/volume")
+_ZFS_DATASET_PATTERN = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._:-]*(?:/[A-Za-z0-9][A-Za-z0-9._:-]*)*"
+)
 
 # Filesystem types that carry no persistent user data; they would otherwise
 # dominate the list on any Debian host.
@@ -423,7 +427,11 @@ def filesystems() -> list[dict[str, Any]]:
             {
                 "devicefile": devicefile,
                 "parentdevicefile": None,
-                "uuid": None,
+                # Native Linux tooling does not expose an OMV UUID for every
+                # mounted dataset (notably ZFS). Keep a stable provider-local
+                # identity so quota and shared-folder plans can bind without
+                # returning a host path to the browser.
+                "uuid": _filesystem_uuid(devicefile, mountpoint),
                 "label": mountpoint.split("/")[-1] or mountpoint,
                 "type": fstype,
                 "mountpoint": mountpoint,
@@ -432,7 +440,11 @@ def filesystems() -> list[dict[str, Any]]:
                 "usedPercent": _percent(_int(used), size_i),
                 "readOnly": False,
                 "supportsAcl": False,
-                "supportsQuota": fstype in {"zfs", "btrfs", "xfs", "ext4"},
+                # The native write slice uses ZFS' userquota/groupquota
+                # properties. Other filesystems remain visible for capacity
+                # and health, but are not advertised as writable quota targets
+                # until a matching kernel quota adapter is implemented.
+                "supportsQuota": fstype == "zfs",
             }
         )
     return entries
@@ -680,7 +692,11 @@ def _nfs_service_available() -> bool:
 
 def _native_nfs_shares() -> list[dict[str, Any]]:
     """Return only Echo-managed NFS rules; never infer ownership of other exports."""
-    folders = {entry.get("uuid"): entry for entry in _registry_load()}
+    folders = {
+        folder_uuid: entry
+        for entry in _registry_load()
+        if (folder_uuid := _registered_uuid(entry)) is not None
+    }
     result: list[dict[str, Any]] = []
     for entry in _nfs_exports_load():
         folder = folders.get(entry.get("sharedFolderRef"))
@@ -751,7 +767,7 @@ def sharing_overview() -> dict[str, Any]:
             # A filesystem root is inventory-only, not an Echo-registered
             # share.  Never expose its host mountpoint through this field.
             "relativePath": "/",
-            "device": entry["devicefile"],
+            "device": _public_devicefile(entry.get("devicefile")),
             "status": "MOUNTED",
             "inUse": True,
             "supportsAcl": bool(entry.get("supportsAcl")),
@@ -760,13 +776,17 @@ def sharing_overview() -> dict[str, Any]:
     ]
     # 原生写面登记的共享文件夹(2770, users 组)也并入清单。
     for entry in _registry_load():
+        folder_uuid = _registered_uuid(entry)
+        relative_name = _registered_relative_name(entry)
+        if folder_uuid is None or relative_name is None or not isinstance(entry.get("name"), str):
+            continue
         shared_folders.append(
             {
-                "uuid": entry["uuid"],
+                "uuid": folder_uuid,
                 "name": entry["name"],
                 "comment": entry.get("comment", ""),
-                "relativePath": entry.get("relativePath", entry["name"]),
-                "device": entry.get("device", ""),
+                "relativePath": relative_name,
+                "device": _public_devicefile(entry.get("device")),
                 "status": "MOUNTED",
                 "inUse": True,
                 "supportsAcl": shutil.which("getfacl") is not None
@@ -776,7 +796,7 @@ def sharing_overview() -> dict[str, Any]:
     shared_folder_targets = [
         {
             "mountPointRef": volume_uuid(entry["mountpoint"]),
-            "filesystemUuid": entry.get("uuid"),
+            "filesystemUuid": _filesystem_ref(entry),
             "label": entry["label"],
             "type": entry["type"],
             "sizeBytes": entry["sizeBytes"],
@@ -808,6 +828,82 @@ def sharing_overview() -> dict[str, Any]:
 def volume_uuid(mountpoint: str) -> str:
     """Deterministic UUID for a mountpoint (stable across reboots)."""
     return str(uuid_module.uuid5(_STORAGE_UUID_NAMESPACE, f"echo-storage:{mountpoint}"))
+
+
+def _filesystem_uuid(devicefile: str, mountpoint: str) -> str:
+    """Return a stable native identity when the host has no filesystem UUID."""
+    return str(
+        uuid_module.uuid5(
+            _STORAGE_UUID_NAMESPACE,
+            f"echo-filesystem:{devicefile}:{mountpoint}",
+        )
+    )
+
+
+def _filesystem_ref(entry: dict[str, Any]) -> str:
+    """Project a filesystem UUID without exposing its mountpoint."""
+    raw_uuid = entry.get("uuid")
+    if isinstance(raw_uuid, str) and raw_uuid:
+        return raw_uuid.lower()
+    return _filesystem_uuid(
+        str(entry.get("devicefile") or ""), str(entry.get("mountpoint") or "")
+    )
+
+
+def _public_devicefile(value: Any) -> str:
+    """Keep only canonical device or ZFS dataset identifiers in public rows."""
+    if not isinstance(value, str) or not value or any(character < " " for character in value):
+        return ""
+    if os.path.normpath(value) != value or ".." in Path(value).parts:
+        return ""
+    if value.startswith("/dev/"):
+        try:
+            return validate_devicefile(value)
+        except ValueError:
+            return ""
+    return value if _ZFS_DATASET_PATTERN.fullmatch(value) else ""
+
+
+def _registered_uuid(entry: dict[str, Any], *, strict: bool = False) -> str | None:
+    raw_uuid = entry.get("uuid")
+    try:
+        parsed = uuid_module.UUID(raw_uuid) if isinstance(raw_uuid, str) else None
+        if parsed is None or str(parsed) != raw_uuid.lower():
+            raise ValueError
+        return str(parsed)
+    except (TypeError, ValueError, AttributeError):
+        if strict:
+            raise OSError("native shared-folder registry contains an invalid UUID") from None
+        return None
+
+
+def _registered_relative_name(entry: dict[str, Any], *, strict: bool = False) -> str | None:
+    """Accept only the single portable component created by the native plane."""
+    raw_relative = entry.get("relativePath")
+    raw_name = entry.get("name")
+    candidate = raw_relative if raw_relative is not None else raw_name
+    try:
+        if not isinstance(candidate, str):
+            raise ValueError
+        normalized = validate_shared_folder_desired(
+            {
+                "schema": SHARED_FOLDER_DESIRED_SCHEMA,
+                "mountPointRef": "11111111-2222-4333-8444-555555555555",
+                "name": candidate,
+                "comment": "",
+            }
+        )["name"]
+        if raw_name is not None and raw_name != normalized:
+            raise ValueError
+        if raw_relative is not None and raw_relative != normalized:
+            raise ValueError
+        return normalized
+    except (TypeError, ValueError, KeyError):
+        if strict:
+            raise OSError(
+                "native shared-folder registry contains an unsafe relative path"
+            ) from None
+        return None
 
 
 def _registry_load(*, strict: bool = False) -> list[dict[str, Any]]:
@@ -993,6 +1089,11 @@ def _share_uuid(volume_ref: str, name: str) -> str:
     return str(uuid_module.uuid5(_STORAGE_UUID_NAMESPACE, f"echo-share:{volume_ref}:{name}"))
 
 
+def _smb_share_uuid(folder_ref: str) -> str:
+    """Return the stable public identity for the usershare of one folder."""
+    return str(uuid_module.uuid5(_STORAGE_UUID_NAMESPACE, f"echo-smb:{folder_ref}"))
+
+
 def _target_state(path: Path) -> dict[str, Any]:
     try:
         info = path.lstat()
@@ -1080,12 +1181,16 @@ def _registry_folder_entry(
 
 def _public_shared_folder_entry(entry: dict[str, Any]) -> dict[str, Any]:
     """Project an internal registry entry into the public sharing contract."""
+    folder_uuid = _registered_uuid(entry, strict=True)
+    relative_name = _registered_relative_name(entry, strict=True)
+    assert folder_uuid is not None
+    assert relative_name is not None
     return {
-        "uuid": str(entry.get("uuid") or ""),
+        "uuid": folder_uuid,
         "name": str(entry.get("name") or ""),
         "comment": str(entry.get("comment") or ""),
-        "relativePath": str(entry.get("relativePath") or ""),
-        "device": str(entry.get("device") or ""),
+        "relativePath": relative_name,
+        "device": _public_devicefile(entry.get("device")),
         "status": "MOUNTED",
         "inUse": True,
         "supportsAcl": shutil.which("getfacl") is not None
@@ -1109,12 +1214,7 @@ def _shared_folder_target_payload(volume_ref: str, volume_path: str) -> dict[str
     if any(character < " " for character in label):
         label = ""
     label = label[:256]
-    raw_filesystem_uuid = filesystem.get("uuid")
-    filesystem_uuid = (
-        str(raw_filesystem_uuid)
-        if isinstance(raw_filesystem_uuid, str) and raw_filesystem_uuid
-        else None
-    )
+    filesystem_uuid = _filesystem_ref(filesystem) if filesystem else None
     return {
         "mountPointRef": volume_ref,
         "filesystemUuid": filesystem_uuid,
@@ -1672,18 +1772,12 @@ _PERMISSION_TO_ACL = {"none": "---", "read": "r-x", "readWrite": "rwx"}
 def _native_folder_path(entry: dict[str, Any]) -> Path:
     """Resolve one registered folder without accepting symlinks or stale mounts."""
     volume_path = str(entry.get("volumePath") or "")
-    relative_path = str(entry.get("relativePath") or "")
+    relative_path = _registered_relative_name(entry, strict=True)
     mount_ref = str(entry.get("mountPointRef") or "")
     current_volume = _writable_targets().get(mount_ref)
     if not current_volume or os.path.normpath(current_volume) != os.path.normpath(volume_path):
         raise ValueError("shared folder volume is not mounted as a writable NAS target")
-    if (
-        not relative_path
-        or os.path.isabs(relative_path)
-        or relative_path in {".", ".."}
-        or ".." in Path(relative_path).parts
-    ):
-        raise OSError("native shared-folder registry contains an unsafe relative path")
+    assert relative_path is not None
     path = Path(volume_path) / relative_path
     try:
         info = path.lstat()
@@ -2133,7 +2227,7 @@ def apply_nfs(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
 def _resolve_shared_folder(reference: str) -> dict[str, Any]:
     registry = _registry_load(strict=True)
     for entry in registry:
-        if entry.get("uuid") == reference:
+        if _registered_uuid(entry) == reference:
             return entry
     raise ValueError("sharedFolderRef does not match any native shared folder")
 
@@ -2162,8 +2256,8 @@ def _smb_usershare_info(name: str) -> dict[str, Any] | None:
 def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
     desired = validate_smb_desired(dict(desired))
     entry = _resolve_shared_folder(desired["sharedFolderRef"])
-    path = os.path.normpath(os.path.join(entry["volumePath"], entry["relativePath"]))
-    if not os.path.isdir(path):
+    path = _native_folder_path(entry)
+    if not path.is_dir():
         raise ValueError("shared folder directory does not exist on the host")
     name = entry["name"]
     existing = _smb_usershare_info(name)
@@ -2177,7 +2271,7 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
         operation = "none" if current_comment == desired["comment"] else "update"
 
     base_revision = _canonical_hash(
-        {"share": name, "path": path, "exists": existing is not None}
+        {"share": name, "path": str(path), "exists": existing is not None}
     )
     plan_id = _canonical_hash(
         {
@@ -2203,19 +2297,13 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
         "operation": operation,
         "requiresApproval": operation in ("create", "update", "remove"),
         "shareName": name,
-        "target": {"path": path},
-        "desired": {
-            k: desired[k]
-            for k in (
-                "schema",
-                "sharedFolderRef",
-                "enabled",
-                "readOnly",
-                "browseable",
-                "recycleBin",
-                "comment",
-            )
+        "shareUuid": _smb_share_uuid(desired["sharedFolderRef"]),
+        "sharedFolder": {
+            "uuid": entry["uuid"],
+            "name": entry["name"],
+            "status": "MOUNTED",
         },
+        "desired": desired,
         "changes": changes,
         "safety": {
             "kind": "sambaUsershare",
@@ -2240,7 +2328,8 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     if plan["planId"] != plan_id:
         raise ValueError("SMB plan is stale; preview the change again")
     name = plan["shareName"]
-    path = plan["target"]["path"]
+    entry = _resolve_shared_folder(desired["sharedFolderRef"])
+    path = _native_folder_path(entry)
     operation = plan["operation"]
     if operation == "none":
         if _smb_usershare_info(name) is None and desired["enabled"]:
@@ -2268,28 +2357,105 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     )
     if _smb_usershare_info(name) is None:
         raise OSError("Samba usershare was not registered after net usershare add")
-    return {**plan, "applied": True, "verified": True, "share": {"name": name, "path": path}}
+    return {**plan, "applied": True, "verified": True, "share": {"name": name}}
 
 
 # --- ZFS quota ------------------------------------------------------------
 
 
-def _build_quota_plan(desired: dict[str, Any]) -> dict[str, Any]:
-    desired = validate_quota_desired(dict(desired))
+def _validated_zfs_dataset(value: Any) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) > 255
+        or _ZFS_DATASET_PATTERN.fullmatch(value) is None
+    ):
+        raise OSError("mounted ZFS dataset name is invalid")
+    return value
+
+
+def _quota_property(desired: dict[str, Any]) -> str:
+    prefix = "userquota" if desired["subjectType"] == "user" else "groupquota"
+    return f"{prefix}@{desired['subjectName']}"
+
+
+def _read_zfs_quota(dataset: str, desired: dict[str, Any]) -> int:
+    """Read one quota in bytes; ``none`` and an unset value mean unlimited."""
+    output = _run_read_checked(
+        "zfs",
+        "get",
+        "-H",
+        "-p",
+        "-o",
+        "value",
+        _quota_property(desired),
+        dataset,
+    )
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if len(lines) != 1:
+        raise OSError("ZFS quota read-back returned an invalid value")
+    value = lines[0]
+    if value in {"none", "-"}:
+        return 0
+    if not value.isdigit():
+        raise OSError("ZFS quota read-back returned an invalid value")
+    limit = int(value)
+    if limit < 0 or limit > 2**63 - 1:
+        raise OSError("ZFS quota read-back is outside the supported range")
+    return limit
+
+
+def _native_quota_context(
+    desired: dict[str, Any],
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
     filesystem = next(
-        (entry for entry in filesystems() if entry.get("uuid") == desired["filesystemUuid"]),
+        (entry for entry in filesystems() if _filesystem_ref(entry) == desired["filesystemUuid"]),
         None,
     )
     if filesystem is None:
         raise ValueError("filesystemUuid does not match any mounted filesystem")
-    fstype = filesystem.get("type")
-    if fstype != "zfs":
+    if filesystem.get("readOnly"):
+        raise ValueError("quota filesystem is read-only")
+    if filesystem.get("type") != "zfs" or filesystem.get("supportsQuota") is False:
         raise ValueError("native quota is only supported on ZFS datasets on this host")
-    dataset = filesystem.get("devicefile")
+    dataset = _validated_zfs_dataset(filesystem.get("devicefile"))
+    _principal_id(desired["subjectType"], desired["subjectName"])
+    current = {
+        "type": desired["subjectType"],
+        "name": desired["subjectName"],
+        "hardLimitBytes": _read_zfs_quota(dataset, desired),
+        "used": "unknown",
+    }
+    return filesystem, dataset, current
+
+
+def _public_quota_filesystem(filesystem: dict[str, Any], filesystem_ref: str) -> dict[str, Any]:
+    label = filesystem.get("label")
+    if not isinstance(label, str) or any(character < " " for character in label):
+        label = ""
+    return {
+        "uuid": filesystem_ref,
+        "label": label[:256],
+        "type": str(filesystem.get("type") or "")[:64],
+        "readOnly": False,
+        "supportsQuota": True,
+    }
+
+
+def _build_quota_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    desired = validate_quota_desired(dict(desired))
+    filesystem, dataset, current = _native_quota_context(desired)
+    filesystem_ref = _filesystem_ref(filesystem)
+    changed = current["hardLimitBytes"] != desired["hardLimitBytes"]
     base_revision = _canonical_hash(
         {
-            "dataset": dataset,
-            "subject": f"{desired['subjectType']}:{desired['subjectName']}",
+            "filesystem": {
+                "uuid": filesystem_ref,
+                "dataset": dataset,
+                "type": filesystem.get("type"),
+                "readOnly": filesystem.get("readOnly", False),
+                "supportsQuota": filesystem.get("supportsQuota", True),
+            },
+            "subject": current,
         }
     )
     plan_id = _canonical_hash(
@@ -2297,38 +2463,34 @@ def _build_quota_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "schema": QUOTA_PLAN_SCHEMA,
             "baseRevision": base_revision,
             "desired": desired,
-            "operation": "set",
         }
     )
-    changes = [
-        {
-            "field": "hardLimitBytes",
-            "before": None,
-            "after": desired["hardLimitBytes"],
-        }
-    ]
+    changes = (
+        [
+            {
+                "field": "hardLimitBytes",
+                "before": current["hardLimitBytes"],
+                "after": desired["hardLimitBytes"],
+            }
+        ]
+        if changed
+        else []
+    )
     return {
         "schema": QUOTA_PLAN_SCHEMA,
         "planId": plan_id,
         "baseRevision": base_revision,
-        "operation": "set",
-        "requiresApproval": True,
-        "desired": {
-            k: desired[k]
-            for k in (
-                "schema",
-                "filesystemUuid",
-                "subjectType",
-                "subjectName",
-                "hardLimitBytes",
-            )
-        },
+        "operation": "update" if changed else "none",
+        "requiresApproval": changed,
+        "filesystem": _public_quota_filesystem(filesystem, filesystem_ref),
+        "subject": current,
+        "desired": desired,
         "changes": changes,
         "safety": {
-            "kind": "zfsUserOrGroupQuota",
-            "dataset": dataset,
-            "zero": "removesLimit",
-            "delete": "notManaged",
+            "scope": "filesystemUserOrGroup",
+            "protocolCoverage": ["local", "SMB", "NFS"],
+            "sharedFolderQuota": "notSupportedByOmvQuotaRpc",
+            "minimumUnitBytes": 1024,
         },
         "source": "native",
     }
@@ -2346,15 +2508,41 @@ def apply_quota(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     plan = _build_quota_plan(desired)
     if plan["planId"] != plan_id:
         raise ValueError("quota plan is stale; preview the change again")
-    dataset = plan["safety"]["dataset"]
-    subject = (
-        f"userquota@{desired['subjectName']}"
-        if desired["subjectType"] == "user"
-        else f"groupquota@{desired['subjectName']}"
-    )
+    if plan["operation"] == "none":
+        return {**plan, "applied": False, "verified": True}
+
+    _filesystem, dataset, current = _native_quota_context(desired)
+    subject = _quota_property(desired)
+    original_limit = current["hardLimitBytes"]
     limit = "none" if desired["hardLimitBytes"] == 0 else str(desired["hardLimitBytes"])
-    _run_write("zfs", "set", f"{subject}={limit}", dataset)
-    return {**plan, "applied": True, "verified": True, "quota": {"dataset": dataset, "subject": subject}}
+    try:
+        _run_write("zfs", "set", f"{subject}={limit}", dataset)
+        if _read_zfs_quota(dataset, desired) != desired["hardLimitBytes"]:
+            raise OSError("ZFS quota write-back verification failed")
+    except Exception as exc:
+        try:
+            rollback = "none" if original_limit == 0 else str(original_limit)
+            _run_write("zfs", "set", f"{subject}={rollback}", dataset)
+            if _read_zfs_quota(dataset, desired) != original_limit:
+                raise OSError("ZFS quota rollback was not verified")
+        except Exception as rollback_exc:
+            raise OSError(
+                "ZFS quota update failed and rollback also failed; inspect the dataset immediately"
+            ) from rollback_exc
+        if isinstance(exc, (OSError, ValueError)):
+            raise
+        raise OSError("ZFS quota update failed") from exc
+    return {
+        **plan,
+        "applied": True,
+        "verified": True,
+        "quota": {
+            "filesystemUuid": desired["filesystemUuid"],
+            "subjectType": desired["subjectType"],
+            "subjectName": desired["subjectName"],
+            "hardLimitBytes": desired["hardLimitBytes"],
+        },
+    }
 
 
 class NativeStorageAuthority:

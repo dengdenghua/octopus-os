@@ -1431,7 +1431,9 @@ export function OmvSharingPanel() {
                         ? "将创建 SMB 规则"
                         : plan.operation === "update"
                           ? "将更新 SMB 规则"
-                          : "当前已经符合期望状态"}
+                          : plan.operation === "remove"
+                            ? "将停用 SMB 规则"
+                            : "当前已经符合期望状态"}
                     </strong>
                     {plan.requiresApproval && (
                       <button
@@ -2326,19 +2328,25 @@ export function OmvSharingPanel() {
                   <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-blue-100 bg-white p-3">
                     <div>
                       <strong className="block text-xs text-slate-800">
-                        将创建空用户组 {groupPlan.desired.name}
+                        {groupPlan.operation === "none"
+                          ? `用户组 ${groupPlan.desired.name} 已存在`
+                          : `将创建空用户组 ${groupPlan.desired.name}`}
                       </strong>
                       <span className="mt-1 block text-[10px] text-slate-500">
-                        系统组不可选 · 不修改已有组 · 创建后回读验证
+                        {groupPlan.operation === "none"
+                          ? "未修改已有组"
+                          : "系统组不可选 · 不修改已有组 · 创建后回读验证"}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setGroupApprovalOpen(true)}
-                      className="h-8 shrink-0 rounded-lg bg-amber-500 px-3 text-[11px] font-medium text-white hover:bg-amber-600"
-                    >
-                      管理员确认并创建组
-                    </button>
+                    {groupPlan.requiresApproval && (
+                      <button
+                        type="button"
+                        onClick={() => setGroupApprovalOpen(true)}
+                        className="h-8 shrink-0 rounded-lg bg-amber-500 px-3 text-[11px] font-medium text-white hover:bg-amber-600"
+                      >
+                        管理员确认并创建组
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2488,20 +2496,25 @@ export function OmvSharingPanel() {
                   <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-white p-3">
                     <div>
                       <strong className="block text-xs text-slate-800">
-                        将创建家庭成员 {userPlan.desired.displayName}（
-                        {userPlan.desired.name}）
+                        {userPlan.operation === "none"
+                          ? `成员 ${userPlan.desired.displayName}（${userPlan.desired.name}）已存在`
+                          : `将创建家庭成员 ${userPlan.desired.displayName}（${userPlan.desired.name}）`}
                       </strong>
                       <span className="mt-1 block text-[10px] text-slate-500">
-                        无命令行登录 · 无 SSH 密钥 · 密码已绑定计划且不会回传
+                        {userPlan.operation === "none"
+                          ? "未修改已有成员"
+                          : "无命令行登录 · 无 SSH 密钥 · 密码已绑定计划且不会回传"}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setUserApprovalOpen(true)}
-                      className="h-8 shrink-0 rounded-lg bg-amber-500 px-3 text-[11px] font-medium text-white hover:bg-amber-600"
-                    >
-                      管理员确认并创建成员
-                    </button>
+                    {userPlan.requiresApproval && (
+                      <button
+                        type="button"
+                        onClick={() => setUserApprovalOpen(true)}
+                        className="h-8 shrink-0 rounded-lg bg-amber-500 px-3 text-[11px] font-medium text-white hover:bg-amber-600"
+                      >
+                        管理员确认并创建成员
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

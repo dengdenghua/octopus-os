@@ -191,8 +191,8 @@ export type OmvGroupPlan = {
   schema: "echo.omv.group-plan.v1";
   planId: string;
   baseRevision: string;
-  operation: "create";
-  requiresApproval: true;
+  operation: "create" | "none";
+  requiresApproval: boolean;
   desired: OmvGroupDesiredState;
   changes: Array<{
     field: "name" | "comment";
@@ -222,8 +222,8 @@ export type OmvUserPlan = {
   schema: "echo.omv.user-plan.v1";
   planId: string;
   baseRevision: string;
-  operation: "create";
-  requiresApproval: true;
+  operation: "create" | "none";
+  requiresApproval: boolean;
   desired: {
     schema: "echo.omv.user-desired.v1";
     name: string;
@@ -396,7 +396,7 @@ export type OmvSmbPlan = {
   schema: "echo.omv.smb-share-plan.v1";
   planId: string;
   baseRevision: string;
-  operation: "create" | "update" | "none";
+  operation: "create" | "update" | "remove" | "none";
   requiresApproval: boolean;
   shareUuid: string;
   sharedFolder: { uuid: string; name: string; status: string };

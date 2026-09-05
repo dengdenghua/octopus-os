@@ -102,7 +102,7 @@ def test_sharing_targets_match_the_frontend_contract_without_host_paths(
 
     assert target == {
         "mountPointRef": native_storage.volume_uuid("/srv/family"),
-        "filesystemUuid": None,
+        "filesystemUuid": native_storage._filesystem_uuid("/dev/test0", "/srv/family"),
         "label": "Family",
         "type": "ext4",
         "sizeBytes": 10_000,
@@ -151,6 +151,39 @@ def test_system_mounts_are_never_offered_as_shared_folder_targets(
     assert native_storage.volume_uuid("/") not in native_storage._writable_targets()
     assert [folder["relativePath"] for folder in overview["sharedFolders"]] == ["/", "/"]
     assert all("/data/family" not in json.dumps(folder) for folder in overview["sharedFolders"])
+
+
+def test_sharing_overview_skips_corrupt_registered_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    valid_uuid = "11111111-2222-4333-8444-555555555555"
+    monkeypatch.setattr(native_storage, "filesystems", lambda: [])
+    monkeypatch.setattr(native_storage, "_etc_entries", lambda _path: [])
+    monkeypatch.setattr(native_storage, "_samba_usershares", lambda: [])
+    monkeypatch.setattr(native_storage, "_native_nfs_shares", lambda: [])
+    monkeypatch.setattr(
+        native_storage,
+        "_registry_load",
+        lambda **_kwargs: [
+            {
+                "uuid": valid_uuid,
+                "name": "Private",
+                "relativePath": "/srv/private",
+                "device": "/dev/test0",
+            },
+            {
+                "uuid": valid_uuid,
+                "name": "Family",
+                "relativePath": "Family",
+                "device": "/dev/test0",
+            },
+        ],
+    )
+
+    overview = native_storage.sharing_overview()
+
+    assert [folder["name"] for folder in overview["sharedFolders"]] == ["Family"]
+    assert "/srv/private" not in json.dumps(overview, ensure_ascii=False)
 
 
 def test_sharing_overview_keeps_the_users_group_and_empty_smb_service_enabled(
@@ -568,10 +601,14 @@ def test_user_password_reset_rejects_unconstrained_account(
         native_storage.plan_user_password(desired)
 
 
-def test_smb_share_enable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_smb_share_enable(
+    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    folder = _register_folder(volume, registry, mount_point_ref, folder_uuid)
     calls: list[tuple[Any, ...]] = []
     info_calls = {"n": 0}
-    folder_uuid = "11111111-2222-4333-8444-555555555555"
 
     def fake_info(_name: str) -> dict[str, Any] | None:
         info_calls["n"] += 1
@@ -579,14 +616,6 @@ def test_smb_share_enable(monkeypatch: pytest.MonkeyPatch) -> None:
         # The post-create verify call sees the (simulated) registered share.
         return None if info_calls["n"] < 3 else {"comment": "Media"}
 
-    monkeypatch.setattr(
-        native_storage,
-        "_registry_load",
-        lambda **_kwargs: [
-            {"uuid": folder_uuid, "name": "media", "volumePath": "/srv", "relativePath": "media"}
-        ],
-    )
-    monkeypatch.setattr(native_storage.os.path, "isdir", lambda _path: True)
     monkeypatch.setattr(native_storage, "_group_exists", lambda _name: True)
     monkeypatch.setattr(native_storage, "_smb_usershare_info", fake_info)
     monkeypatch.setattr(native_storage, "_run_write", lambda *a, timeout=60.0: calls.append(a))
@@ -602,8 +631,18 @@ def test_smb_share_enable(monkeypatch: pytest.MonkeyPatch) -> None:
     }
     plan = native_storage.plan_smb(desired)
     assert plan["operation"] == "create"
+    assert plan["sharedFolder"] == {
+        "uuid": folder_uuid,
+        "name": "Photos",
+        "status": "MOUNTED",
+    }
+    assert plan["shareUuid"] == native_storage._smb_share_uuid(folder_uuid)
+    assert "target" not in plan
+    assert str(folder) not in json.dumps(plan, ensure_ascii=False)
     applied = native_storage.apply_smb(desired, plan["planId"])
     assert applied["applied"] is True
+    assert "path" not in applied["share"]
+    assert str(folder) not in json.dumps(applied, ensure_ascii=False)
     assert calls and calls[0][:3] == ("net", "usershare", "add")
 
 
@@ -630,10 +669,32 @@ def test_quota_plan_on_zfs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         native_storage,
         "filesystems",
-        lambda: [{"uuid": fs_uuid, "type": "zfs", "devicefile": "tank/share"}],
+        lambda: [
+            {
+                "uuid": fs_uuid,
+                "type": "zfs",
+                "devicefile": "tank/share",
+                "label": "share",
+                "readOnly": False,
+                "supportsQuota": True,
+            }
+        ],
     )
+    monkeypatch.setattr(native_storage, "_principal_id", lambda _kind, _name: 1001)
+    quota_value = {"bytes": 0}
+
+    def fake_read(*_args: str, **_kwargs: Any) -> str:
+        return "none\n" if quota_value["bytes"] == 0 else f"{quota_value['bytes']}\n"
+
+    monkeypatch.setattr(native_storage, "_run_read_checked", fake_read)
     zfs_calls: list[tuple[Any, ...]] = []
-    monkeypatch.setattr(native_storage, "_run_write", lambda *a, timeout=60.0: zfs_calls.append(a))
+
+    def fake_write(*args: str, timeout: float = 60.0) -> None:
+        zfs_calls.append(args)
+        value = args[2].split("=", 1)[1]
+        quota_value["bytes"] = 0 if value == "none" else int(value)
+
+    monkeypatch.setattr(native_storage, "_run_write", fake_write)
     desired = {
         "schema": "echo.omv.filesystem-quota-desired.v1",
         "filesystemUuid": fs_uuid,
@@ -642,11 +703,32 @@ def test_quota_plan_on_zfs(monkeypatch: pytest.MonkeyPatch) -> None:
         "hardLimitBytes": 1024**3,
     }
     plan = native_storage.plan_quota(desired)
-    assert plan["operation"] == "set"
+    assert plan["operation"] == "update"
+    assert plan["filesystem"] == {
+        "uuid": fs_uuid,
+        "label": "share",
+        "type": "zfs",
+        "readOnly": False,
+        "supportsQuota": True,
+    }
+    assert plan["subject"] == {
+        "type": "user",
+        "name": "mother",
+        "hardLimitBytes": 0,
+        "used": "unknown",
+    }
+    assert "dataset" not in json.dumps(plan, ensure_ascii=False)
     applied = native_storage.apply_quota(desired, plan["planId"])
     assert applied["applied"] is True
     assert zfs_calls and zfs_calls[0][:2] == ("zfs", "set")
     assert "userquota@mother" in zfs_calls[0][2]
+    assert applied["quota"] == {
+        "filesystemUuid": fs_uuid,
+        "subjectType": "user",
+        "subjectName": "mother",
+        "hardLimitBytes": 1024**3,
+    }
+    assert "dataset" not in json.dumps(applied, ensure_ascii=False)
 
 
 # --- Native privilege and NFS slices ------------------------------------
