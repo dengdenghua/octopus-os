@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
 
-from appliance import native_storage, smart_schedule_policy
+from appliance import native_storage, nut_device_config, smart_schedule_policy
 from appliance.native_smart import (
     apply_smart_self_test,
     plan_smart_self_test,
@@ -27,6 +27,8 @@ from appliance.omv_models import (
     NfsDesiredState,
     NfsRemoveApplyRequest,
     NfsRemoveDesiredState,
+    NutLocalUpsApplyRequest,
+    NutLocalUpsDesiredState,
     QuotaApplyRequest,
     QuotaDesiredState,
     SharedFolderApplyRequest,
@@ -83,6 +85,13 @@ def register_native_storage_routes(router: APIRouter) -> None:
     @router.get("/power/ups")
     async def power_ups() -> dict[str, Any]:
         return await run_in_threadpool(ups_status)
+
+    @router.get("/power/ups/config")
+    async def power_ups_config() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(nut_device_config.config_status)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="本机 UPS 配置读取失败") from exc
 
     @router.get("/power/ups/shutdown-policy")
     async def power_ups_shutdown_policy() -> dict[str, Any]:
@@ -932,6 +941,41 @@ def create_omv_alias_router(
         )
 
     # --- Local UPS low-battery shutdown policy -------------------------
+    @router.post("/power/ups/config/plan")
+    async def plan_local_ups_config(body: NutLocalUpsDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                nut_device_config.plan_config,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="本机 UPS 配置暂不可用") from exc
+
+    @router.post("/power/ups/config/apply")
+    async def apply_local_ups_config(
+        body: NutLocalUpsApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="power.ups.local-usb.configure",
+            plan_fn=nut_device_config.plan_config,
+            apply_fn=nut_device_config.apply_config,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "enabled": body.desired.enabled,
+                "driver": body.desired.driver,
+                "port": "auto",
+                "server": "loopbackOnly",
+                "shutdownOwner": "echo-ups-shutdown-guard",
+            },
+        )
+
     @router.post("/power/ups/shutdown-policy/plan")
     async def plan_ups_shutdown_policy(
         body: UpsShutdownPolicyDesiredState,

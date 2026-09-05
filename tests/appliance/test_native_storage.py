@@ -61,6 +61,7 @@ def test_native_status_advertises_only_the_available_write_slice(
 ) -> None:
     monkeypatch.setattr(native_storage.shutil, "which", lambda _binary: "/usr/bin/tool")
     monkeypatch.setattr(native_storage, "_native_quota_tools_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_nut_usb_driver_available", lambda: True)
 
     payload = native_storage.status()
 
@@ -84,6 +85,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "storage.pool.zfs.import.echo-root.v1",
         "storage.pool.zfs.scrub.start.v1",
         "power.ups-shutdown-policy.v1",
+        "power.ups.local-usb.configure.v1",
         "storage.smart.self-test.start.v1",
         "storage.smart.self-test.schedule.v1",
     ]

@@ -216,6 +216,21 @@ def _native_command_tools_available(*binaries: str) -> bool:
     return all(shutil.which(binary) is not None for binary in binaries)
 
 
+def _native_nut_usb_driver_available() -> bool:
+    return any(
+        (root / driver).is_file()
+        for root in (Path("/usr/lib/nut"), Path("/lib/nut"))
+        for driver in (
+            "usbhid-ups",
+            "blazer_usb",
+            "nutdrv_qx",
+            "bcmxcp_usb",
+            "richcomm_usb",
+            "tripplite_usb",
+        )
+    )
+
+
 def _native_data_mountpoint(value: Any) -> bool:
     """Return whether a mountpoint belongs to an explicitly managed NAS root."""
     if not isinstance(value, str) or not value:
@@ -915,6 +930,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.pool.zfs.import.echo-root.v1",
     "storage.pool.zfs.scrub.start.v1",
     "power.ups-shutdown-policy.v1",
+    "power.ups.local-usb.configure.v1",
     "storage.smart.self-test.start.v1",
     "storage.smart.self-test.schedule.v1",
 )
@@ -954,6 +970,11 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("storage.pool.zfs.scrub.start.v1")
     if not _native_command_tools_available("upsc", "systemctl"):
         unavailable.add("power.ups-shutdown-policy.v1")
+    if (
+        not _native_command_tools_available("upsc", "systemctl")
+        or not _native_nut_usb_driver_available()
+    ):
+        unavailable.add("power.ups.local-usb.configure.v1")
     if not _native_command_tools_available("smartctl"):
         unavailable.add("storage.smart.self-test.start.v1")
         unavailable.add("storage.smart.self-test.schedule.v1")

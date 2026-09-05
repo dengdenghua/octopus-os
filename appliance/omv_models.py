@@ -690,6 +690,31 @@ class UpsShutdownPolicyApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class NutLocalUpsDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.nut-local-ups-desired.v1"] = Field(
+        default="echo.nut-local-ups-desired.v1",
+        alias="schema",
+    )
+    enabled: bool
+    driver: Literal[
+        "usbhid-ups",
+        "blazer_usb",
+        "nutdrv_qx",
+        "bcmxcp_usb",
+        "richcomm_usb",
+        "tripplite_usb",
+    ] = "usbhid-ups"
+
+
+class NutLocalUpsApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: NutLocalUpsDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class SmartSelfTestDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -746,6 +771,8 @@ __all__ = [
     "NfsDesiredState",
     "NfsRemoveApplyRequest",
     "NfsRemoveDesiredState",
+    "NutLocalUpsApplyRequest",
+    "NutLocalUpsDesiredState",
     "QuotaApplyRequest",
     "QuotaDesiredState",
     "SharePrivilegeApplyRequest",
