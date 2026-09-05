@@ -27,6 +27,7 @@ import {
 import { Ext4VolumePanel } from "@/appliance/ext4-volume-panel";
 import { OmvSharingPanel } from "@/appliance/omv-sharing-panel";
 import { MdRaid1Panel } from "@/appliance/mdraid1-panel";
+import { MdRaid1RepairPanel } from "@/appliance/mdraid1-repair-panel";
 import { OmvStorageHealth } from "@/appliance/omv-storage-health";
 import { NutDeviceConfigPanel } from "@/appliance/nut-device-config-panel";
 import { SmartSchedulePanel } from "@/appliance/smart-schedule-panel";
@@ -462,6 +463,7 @@ export function StorageCenterPanel({
           ) : section === "pools" ? (
             <>
               <MdRaid1Panel />
+              <MdRaid1RepairPanel />
               <Ext4VolumePanel />
               <ZfsMirrorPanel />
             </>

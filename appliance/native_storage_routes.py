@@ -27,6 +27,8 @@ from appliance.omv_models import (
     GroupDesiredState,
     MdRaid1ApplyRequest,
     MdRaid1DesiredState,
+    MdRaid1ReplaceApplyRequest,
+    MdRaid1ReplaceDesiredState,
     NfsApplyRequest,
     NfsDesiredState,
     NfsRemoveApplyRequest,
@@ -130,6 +132,14 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 md RAID1 候选磁盘探测不可用") from exc
         return {"devices": devices, "readOnly": True, "source": "native"}
+
+    @router.get("/arrays/mdraid1/replacement-candidates")
+    async def mdraid1_replacement_candidates() -> dict[str, Any]:
+        try:
+            replacements = await run_in_threadpool(native_storage.mdraid1_replacement_candidates)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 md RAID1 换盘候选探测不可用") from exc
+        return {"replacements": replacements, "readOnly": True, "source": "native"}
 
     @router.get("/volumes/ext4/candidates")
     async def ext4_volume_candidates() -> dict[str, Any]:
@@ -854,6 +864,41 @@ def create_omv_alias_router(
             desired=body.desired.model_dump(by_alias=True),
             plan_id=body.plan_id,
             metadata={"name": body.desired.name, "devices": body.desired.devices},
+        )
+
+    # --- Data-preserving repair of one degraded Echo-managed RAID1 -----
+    @router.post("/arrays/mdraid1/replace/plan")
+    async def plan_mdraid1_replace(body: MdRaid1ReplaceDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_mdraid1_replace,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 md RAID1 换盘暂不可用") from exc
+
+    @router.post("/arrays/mdraid1/replace/apply")
+    async def apply_mdraid1_replace_route(
+        body: MdRaid1ReplaceApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.mdraid1.replace",
+            plan_fn=native_storage.plan_mdraid1_replace,
+            apply_fn=native_storage.apply_mdraid1_replace,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "name": body.desired.name,
+                "arrayUuid": body.desired.array_uuid,
+                "replacementDevice": body.desired.replacement_device,
+                "dataPreserved": True,
+            },
         )
 
     # --- Destructive EXT4 creation on an Echo-managed md RAID1 ---------

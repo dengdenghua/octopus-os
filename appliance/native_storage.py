@@ -22,7 +22,7 @@ Shared folders are limited to registered directories on mounted NAS volumes;
 privileges only touch the selected directory's non-recursive POSIX ACL; NFS
 only owns one generated file below ``/etc/exports.d``. Pool writes are limited
 to separately reviewed two-blank-disk ZFS and md RAID1 creators, Echo-layout
-export/import, and one-failed-member blank-disk mirror replacement. Pool
+export/import, and one-failed-member blank-disk replacement for either mirror. Pool
 scrub start is exposed with read-back maintenance state. Pool deletion,
 expansion, general replacement, recursive permission changes,
 signature wiping, and arbitrary protocol options remain outside this module.
@@ -54,6 +54,11 @@ from typing import Any
 
 from appliance.native_ext4 import apply_ext4_volume, ext4_volume_candidates, plan_ext4_volume
 from appliance.native_mdraid import apply_mdraid1, mdraid1_candidates, plan_mdraid1
+from appliance.native_mdraid_replace import (
+    apply_mdraid1_replace,
+    mdraid1_replacement_candidates,
+    plan_mdraid1_replace,
+)
 from appliance.native_storage_pool import (
     apply_zfs_mirror,
     apply_zfs_mirror_replace,
@@ -928,6 +933,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "filesystem.quota.user-group.v1",
     "storage.pool.zfs-mirror.create.v1",
     "storage.array.mdraid1.create.v1",
+    "storage.array.mdraid1.replace-failed.blank.v1",
     "storage.volume.ext4.create-mount.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
@@ -970,6 +976,8 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("storage.pool.zfs-mirror.replace.blank.v1")
     if not _native_command_tools_available("mdadm", "lsblk", "wipefs", "update-initramfs"):
         unavailable.add("storage.array.mdraid1.create.v1")
+    if not _native_command_tools_available("mdadm", "lsblk", "wipefs"):
+        unavailable.add("storage.array.mdraid1.replace-failed.blank.v1")
     if not _native_command_tools_available(
         "mdadm",
         "blkid",
@@ -4047,6 +4055,7 @@ __all__ = [
     "NativeStorageAuthority",
     "apply_group",
     "apply_mdraid1",
+    "apply_mdraid1_replace",
     "apply_ext4_volume",
     "apply_nfs",
     "apply_nfs_remove",
@@ -4069,9 +4078,11 @@ __all__ = [
     "exportable_zfs_pools",
     "md_arrays",
     "mdraid1_candidates",
+    "mdraid1_replacement_candidates",
     "plan_group",
     "plan_ext4_volume",
     "plan_mdraid1",
+    "plan_mdraid1_replace",
     "plan_nfs",
     "plan_nfs_remove",
     "plan_quota",

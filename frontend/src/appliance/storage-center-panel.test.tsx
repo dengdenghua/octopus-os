@@ -19,6 +19,9 @@ vi.mock("./omv-sharing-panel", () => ({
 vi.mock("./mdraid1-panel", () => ({
   MdRaid1Panel: () => <div>真实 RAID1 管理页</div>,
 }));
+vi.mock("./mdraid1-repair-panel", () => ({
+  MdRaid1RepairPanel: () => <div>RAID1 换盘修复页</div>,
+}));
 vi.mock("./ext4-volume-panel", () => ({
   Ext4VolumePanel: () => <div>真实 EXT4 卷管理页</div>,
 }));

@@ -705,6 +705,55 @@ export type OmvMdRaid1Plan = {
 
 export type OmvManagedMdRaid1 = NonNullable<OmvMdRaid1Plan["array"]>;
 
+export type OmvMdRaid1ReplacementMember = {
+  devicefile: string;
+  slot: number | null;
+  states: string[];
+  sizeBytes?: number;
+  serial?: string | null;
+  wwn?: string | null;
+};
+
+export type OmvMdRaid1ReplacementCandidate = {
+  array: {
+    name: string;
+    devicefile: string;
+    uuid: string;
+  };
+  survivingMember: OmvMdRaid1ReplacementMember & { sizeBytes: number };
+  failedMember: OmvMdRaid1ReplacementMember | null;
+  missingSlot: 0 | 1;
+  minimumReplacementBytes: number;
+  replacementDevices: OmvMdRaid1Candidate[];
+};
+
+export type OmvMdRaid1ReplaceDesiredState = {
+  schema: "echo.omv.mdraid1-replace-desired.v1";
+  name: string;
+  arrayUuid: string;
+  replacementDevice: string;
+  dataPreserved: true;
+};
+
+export type OmvMdRaid1ReplacePlan = {
+  schema: "echo.omv.mdraid1-replace-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "replaceFailedMember";
+  requiresApproval: true;
+  desired: OmvMdRaid1ReplaceDesiredState;
+  array: OmvMdRaid1ReplacementCandidate["array"];
+  survivingMember: OmvMdRaid1ReplacementCandidate["survivingMember"];
+  failedMember: OmvMdRaid1ReplacementCandidate["failedMember"];
+  missingSlot: 0 | 1;
+  replacement: OmvMdRaid1Candidate;
+  minimumReplacementBytes: number;
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: true;
+  maintenanceState?: "recovering" | "acceptedOrCompleted";
+};
+
 export type OmvExt4VolumeDesiredState = {
   schema: "echo.omv.ext4-volume-desired.v1";
   arrayUuid: string;
@@ -1550,6 +1599,41 @@ export function applyOmvMdRaid1(
     "/api/appliance/omv/arrays/mdraid1/apply",
     { desired, planId },
     "无法创建 Linux RAID1 阵列",
+    approvalHeader(approvalToken),
+  );
+}
+
+export async function fetchOmvMdRaid1ReplacementCandidates(): Promise<
+  OmvMdRaid1ReplacementCandidate[]
+> {
+  const result = await readJson<{
+    replacements: OmvMdRaid1ReplacementCandidate[];
+  }>(
+    "/api/appliance/omv/arrays/mdraid1/replacement-candidates",
+    "无法读取 Linux RAID1 换盘候选",
+  );
+  return result.replacements;
+}
+
+export function planOmvMdRaid1Replace(
+  desired: OmvMdRaid1ReplaceDesiredState,
+): Promise<OmvMdRaid1ReplacePlan> {
+  return postJson(
+    "/api/appliance/omv/arrays/mdraid1/replace/plan",
+    desired,
+    "无法生成 Linux RAID1 换盘预览",
+  );
+}
+
+export function applyOmvMdRaid1Replace(
+  desired: OmvMdRaid1ReplaceDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvMdRaid1ReplacePlan> {
+  return postJson(
+    "/api/appliance/omv/arrays/mdraid1/replace/apply",
+    { desired, planId },
+    "无法启动 Linux RAID1 换盘重建",
     approvalHeader(approvalToken),
   );
 }

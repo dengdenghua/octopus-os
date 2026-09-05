@@ -15,6 +15,7 @@ from appliance.omv_protocol import (
     EXT4_VOLUME_DESIRED_SCHEMA,
     GROUP_DESIRED_SCHEMA,
     MDRAID1_DESIRED_SCHEMA,
+    MDRAID1_REPLACE_DESIRED_SCHEMA,
     NFS_DESIRED_SCHEMA,
     NFS_REMOVE_DESIRED_SCHEMA,
     QUOTA_DESIRED_SCHEMA,
@@ -35,6 +36,7 @@ from appliance.omv_protocol import (
     validate_ext4_volume_desired,
     validate_group_desired,
     validate_mdraid1_desired,
+    validate_mdraid1_replace_desired,
     validate_nfs_remove_desired,
     validate_omv_uuid,
     validate_share_privilege_desired,
@@ -543,6 +545,49 @@ class MdRaid1ApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class MdRaid1ReplaceDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.mdraid1-replace-desired.v1"] = Field(
+        default=MDRAID1_REPLACE_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    name: str = Field(min_length=1, max_length=27)
+    array_uuid: str = Field(alias="arrayUuid")
+    replacement_device: str = Field(min_length=8, max_length=128, alias="replacementDevice")
+    data_preserved: Literal[True] = Field(alias="dataPreserved")
+
+    @field_validator("name", "array_uuid", "replacement_device")
+    @classmethod
+    def validate_mdraid_replace_field(cls, value: str, info: Any) -> str:
+        payload = {
+            "schema": MDRAID1_REPLACE_DESIRED_SCHEMA,
+            "name": value if info.field_name == "name" else "data",
+            "arrayUuid": (
+                value if info.field_name == "array_uuid" else "11111111:22222222:33333333:44444444"
+            ),
+            "replacementDevice": (value if info.field_name == "replacement_device" else "/dev/sdb"),
+            "dataPreserved": True,
+        }
+        try:
+            normalized = validate_mdraid1_replace_desired(payload)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        field = {
+            "name": "name",
+            "array_uuid": "arrayUuid",
+            "replacement_device": "replacementDevice",
+        }[info.field_name]
+        return normalized[field]
+
+
+class MdRaid1ReplaceApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: MdRaid1ReplaceDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class Ext4VolumeDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -560,9 +605,7 @@ class Ext4VolumeDesiredState(BaseModel):
         payload = {
             "schema": EXT4_VOLUME_DESIRED_SCHEMA,
             "arrayUuid": (
-                value
-                if info.field_name == "array_uuid"
-                else "11111111:22222222:33333333:44444444"
+                value if info.field_name == "array_uuid" else "11111111:22222222:33333333:44444444"
             ),
             "name": value if info.field_name == "name" else "family",
             "dataLossConfirmed": True,
