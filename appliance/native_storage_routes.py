@@ -763,7 +763,7 @@ def create_omv_alias_router(
         return await _apply_write(
             request,
             actor=actor,
-            action="omv.smb.share",
+            action="omv.smb.apply",
             plan_fn=native_storage.plan_smb,
             apply_fn=native_storage.apply_smb,
             desired=body.desired.model_dump(by_alias=True),
@@ -856,7 +856,7 @@ def create_omv_alias_router(
         return await _apply_write(
             request,
             actor=actor,
-            action="omv.quota.set",
+            action="omv.quota.apply",
             plan_fn=native_storage.plan_quota,
             apply_fn=native_storage.apply_quota,
             desired=body.desired.model_dump(by_alias=True),

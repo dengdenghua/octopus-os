@@ -40,6 +40,8 @@ export type HighRiskAction =
   | "omv.user.password.reset"
   | "omv.mdraid1.create"
   | "omv.mdraid1.replace"
+  | "omv.mdraid.check.start"
+  | "storage.mdraid.check.schedule"
   | "omv.btrfs-raid1.create"
   | "omv.btrfs-raid1.replace"
   | "omv.btrfs.scrub.start"

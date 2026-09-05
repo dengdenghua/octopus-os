@@ -240,7 +240,17 @@ def test_ext4_volume_creation_uses_a_plan_bound_approval(tmp_path):
         "omv.zfs-pool.import",
         "omv.zfs-mirror.replace",
         "omv.zfs.scrub.start",
+        "omv.btrfs-raid1.create",
         "omv.btrfs-raid1.replace",
+        "omv.btrfs.scrub.start",
+        "omv.mdraid.check.start",
+        "storage.mdraid.check.schedule",
+        "omv.smb.apply",
+        "omv.quota.apply",
+        "power.ups-shutdown-policy.set",
+        "power.ups.local-usb.configure",
+        "storage.smart.self-test.start",
+        "storage.smart.self-test.schedule",
     ],
 )
 def test_storage_lifecycle_uses_plan_bound_approvals(tmp_path, action):
