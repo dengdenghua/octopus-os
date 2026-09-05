@@ -207,6 +207,59 @@ describe("OMV sharing and users settings", () => {
     expect(screen.getByText("用户 alice · 读写")).toBeInTheDocument();
   });
 
+  it("limits native sharing controls to registered relative folders", async () => {
+    vi.mocked(fetchOmvStatus).mockResolvedValueOnce({
+      configured: true,
+      available: true,
+      readOnly: false,
+      adminUrl: null,
+      capabilities: [
+        "shared-folder.privilege.simple.v1",
+        "nfs.share.private-network.v1",
+      ],
+      source: "native",
+    });
+    vi.mocked(fetchOmvSharingOverview).mockResolvedValueOnce({
+      ...(await fetchOmvSharingOverview()),
+      sharedFolders: [
+        {
+          uuid: "22222222-3333-4444-8555-666666666666",
+          name: "Data volume",
+          comment: "Mounted volume root",
+          relativePath: "/srv/data",
+          device: "/dev/sda1",
+          status: "MOUNTED",
+          inUse: true,
+          supportsAcl: true,
+        },
+        {
+          uuid: shareUuid,
+          name: "Family",
+          comment: "Family files",
+          relativePath: "Family/",
+          device: "/dev/sda1",
+          status: "OK",
+          inUse: true,
+          supportsAcl: true,
+        },
+      ],
+      nfs: { enabled: true, shares: [] },
+    });
+
+    render(<OmvSharingPanel />);
+
+    expect(
+      await screen.findByText("原生卷根目录不提供目录权限管理"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "启用 NFS" })).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: "管理用户/组权限" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "查看用户/组权限" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("links an existing OMV member to an independent Echo login", async () => {
     const user = userEvent.setup();
     const desired = {

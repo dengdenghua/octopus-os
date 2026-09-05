@@ -373,12 +373,15 @@ export function OmvSharingPanel() {
   };
 
   const beginPrivilegeControl = async (folder: OmvSharedFolder) => {
+    const folderControlsAllowed =
+      status?.source !== "native" || !folder.relativePath.startsWith("/");
+    if (!folderControlsAllowed) return;
     const entries =
       privileges[folder.uuid] ?? (await readPrivileges(folder.uuid));
     const first = entries?.[0];
     if (
-      !status?.capabilities?.includes("shared-folder.privilege.simple.v1") ||
-      !first
+      !first ||
+      !status?.capabilities?.includes("shared-folder.privilege.simple.v1")
     ) {
       return;
     }
@@ -2079,21 +2082,21 @@ export function OmvSharingPanel() {
                 const nfsRule = overview.nfs.shares.find(
                   (share) => share.sharedFolderRef === folder.uuid,
                 );
-                const nativeManagedFolder =
+                const folderControlsAllowed =
                   status?.source !== "native" ||
                   !folder.relativePath.startsWith("/");
                 const canControlSmb =
-                  nativeManagedFolder &&
+                  folderControlsAllowed &&
                   overview.smb.enabled &&
                   status?.capabilities?.includes("smb.share.desired.v1");
                 const canControlNfs =
-                  nativeManagedFolder &&
+                  folderControlsAllowed &&
                   overview.nfs.enabled &&
                   status?.capabilities?.includes(
                     "nfs.share.private-network.v1",
                   );
                 const canControlPrivileges =
-                  nativeManagedFolder &&
+                  folderControlsAllowed &&
                   status?.capabilities?.includes(
                     "shared-folder.privilege.simple.v1",
                   );
@@ -2173,6 +2176,10 @@ export function OmvSharingPanel() {
                           </button>
                         )}
                       </div>
+                    ) : !folderControlsAllowed ? (
+                      <span className="mt-2 block text-[10px] text-slate-400">
+                        原生卷根目录不提供目录权限管理
+                      </span>
                     ) : (
                       <button
                         type="button"
