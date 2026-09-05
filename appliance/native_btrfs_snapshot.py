@@ -30,8 +30,11 @@ from appliance.omv_protocol import (
 MAX_SNAPSHOTS_PER_SHARE = 256
 _MAX_COMMAND_OUTPUT_BYTES = 64 * 1024
 _SNAPSHOT_NAMESPACE = uuid.UUID("b12e7b15-6c89-49ec-925f-129781c7bf50")
-_UUID_PATTERN = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+# Btrfs subvolume UUIDs are raw 128-bit identifiers, not RFC 4122 UUIDs.
+# Kernel-generated values may therefore have any hexadecimal nibble in the
+# RFC version/variant positions (for example ``...-9a46-aec9-...``).
+_BTRFS_UUID_PATTERN = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
     re.IGNORECASE,
 )
 _AUTOMATIC_NAME_PATTERN = re.compile(r"auto-[0-9]{8}t[0-9]{6}z")
@@ -91,7 +94,7 @@ def _parse_subvolume_show(output: str) -> dict[str, Any]:
         if separator and key in {"UUID", "Parent UUID", "Subvolume ID"}:
             values[key] = value.strip()
     raw_uuid = values.get("UUID", "")
-    if _UUID_PATTERN.fullmatch(raw_uuid) is None:
+    if _BTRFS_UUID_PATTERN.fullmatch(raw_uuid) is None:
         raise OSError("Btrfs subvolume has no stable UUID")
     raw_id = values.get("Subvolume ID", "")
     try:
@@ -101,7 +104,7 @@ def _parse_subvolume_show(output: str) -> dict[str, Any]:
     if subvolume_id <= 0:
         raise OSError("Btrfs subvolume has an invalid ID")
     parent_uuid = values.get("Parent UUID", "-")
-    if parent_uuid != "-" and _UUID_PATTERN.fullmatch(parent_uuid) is None:
+    if parent_uuid != "-" and _BTRFS_UUID_PATTERN.fullmatch(parent_uuid) is None:
         raise OSError("Btrfs subvolume has an invalid parent UUID")
     return {
         "subvolumeUuid": raw_uuid.lower(),

@@ -111,6 +111,21 @@ def test_subvolume_parser_requires_stable_uuid_and_id() -> None:
         native_btrfs_snapshot._parse_subvolume_show("UUID: -\nSubvolume ID: 257\n")
 
 
+def test_subvolume_parser_accepts_kernel_uuid_without_rfc_version_bits() -> None:
+    source_uuid = "a734eb52-4a56-9a46-aec9-388db1804cda"
+    snapshot_uuid = "f1234567-89ab-cdef-0123-456789abcdef"
+
+    parsed = native_btrfs_snapshot._parse_subvolume_show(
+        f"Name: manual\nUUID: {snapshot_uuid}\nParent UUID: {source_uuid}\nSubvolume ID: 258\n"
+    )
+
+    assert parsed == {
+        "subvolumeUuid": snapshot_uuid,
+        "subvolumeId": 258,
+        "parentUuid": source_uuid,
+    }
+
+
 def test_inventory_projects_the_root_managed_lock_state(
     monkeypatch: pytest.MonkeyPatch, snapshot_share
 ) -> None:
