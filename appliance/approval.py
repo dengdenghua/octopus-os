@@ -114,6 +114,7 @@ def _valid_target(action: str, target: str) -> bool:
         "omv.user.password.reset",
         "omv.mdraid1.create",
         "omv.mdraid1.replace",
+        "omv.btrfs-raid1.replace",
         "omv.ext4-volume.create",
         "omv.zfs-mirror.create",
         "omv.zfs-mirror.replace",

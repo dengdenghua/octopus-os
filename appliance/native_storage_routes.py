@@ -28,6 +28,8 @@ from appliance.native_ups import ups_status
 from appliance.omv_models import (
     BtrfsRaid1ApplyRequest,
     BtrfsRaid1DesiredState,
+    BtrfsReplaceApplyRequest,
+    BtrfsReplaceDesiredState,
     BtrfsScrubApplyRequest,
     BtrfsScrubDesiredState,
     Ext4VolumeApplyRequest,
@@ -182,7 +184,9 @@ def register_native_storage_routes(router: APIRouter) -> None:
         try:
             devices = await run_in_threadpool(native_storage.btrfs_raid1_candidates)
         except OSError as exc:
-            raise HTTPException(status_code=503, detail="原生 Btrfs RAID1 候选磁盘探测不可用") from exc
+            raise HTTPException(
+                status_code=503, detail="原生 Btrfs RAID1 候选磁盘探测不可用"
+            ) from exc
         return {"devices": devices, "readOnly": True, "source": "native"}
 
     @router.get("/volumes/btrfs-raid1/maintenance")
@@ -192,6 +196,14 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 Btrfs 维护状态不可用") from exc
         return {"filesystems": filesystems, "readOnly": True, "source": "native"}
+
+    @router.get("/volumes/btrfs-raid1/replacement-candidates")
+    async def btrfs_replacement_candidates() -> dict[str, Any]:
+        try:
+            replacements = await run_in_threadpool(native_storage.btrfs_replacement_candidates)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="原生 Btrfs 换盘候选探测不可用") from exc
+        return {"replacements": replacements, "readOnly": True, "source": "native"}
 
     @router.get("/pools/zfs-mirror/replacement-candidates")
     async def zfs_mirror_replacement_candidates() -> dict[str, Any]:
@@ -1115,6 +1127,41 @@ def create_omv_alias_router(
                 "filesystemUuid": body.desired.filesystem_uuid,
                 "operation": "start",
                 "repairFromRedundantCopy": True,
+                "force": False,
+            },
+        )
+
+    @router.post("/volumes/btrfs-raid1/replace/plan")
+    async def plan_btrfs_replace(body: BtrfsReplaceDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_btrfs_replace,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 Btrfs RAID1 换盘暂不可用") from exc
+
+    @router.post("/volumes/btrfs-raid1/replace/apply")
+    async def apply_btrfs_replace_route(
+        body: BtrfsReplaceApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.btrfs-raid1.replace",
+            plan_fn=native_storage.plan_btrfs_replace,
+            apply_fn=native_storage.apply_btrfs_replace,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "filesystemUuid": body.desired.filesystem_uuid,
+                "missingDevid": body.desired.missing_devid,
+                "replacementDevice": body.desired.replacement_device,
+                "dataPreserved": True,
                 "force": False,
             },
         )

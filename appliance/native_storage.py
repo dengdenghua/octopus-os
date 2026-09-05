@@ -23,8 +23,8 @@ privileges only touch the selected directory's non-recursive POSIX ACL; NFS
 only owns one generated file below ``/etc/exports.d``. Pool and volume writes
 are limited to separately reviewed two-blank-disk ZFS, md RAID1, and Btrfs
 RAID1 creators, Echo-layout ZFS export/import, and one-failed-member blank-disk
-replacement for the ZFS/md mirrors. ZFS and Btrfs scrub start is exposed with
-read-back maintenance state. Pool deletion,
+replacement for ZFS mirrors, md RAID1, and mounted Echo-managed Btrfs RAID1.
+ZFS and Btrfs scrub start is exposed with read-back maintenance state. Pool deletion,
 expansion, general replacement, recursive permission changes,
 signature wiping, and arbitrary protocol options remain outside this module.
 """
@@ -58,6 +58,11 @@ from appliance.mdraid_check_schedule_policy import (
 )
 from appliance.native_btrfs import apply_btrfs_raid1, btrfs_raid1_candidates, plan_btrfs_raid1
 from appliance.native_btrfs_health import probe_btrfs_filesystems as _probe_btrfs_filesystems
+from appliance.native_btrfs_replace import (
+    apply_btrfs_replace,
+    btrfs_replacement_candidates,
+    plan_btrfs_replace,
+)
 from appliance.native_btrfs_scrub import (
     apply_btrfs_scrub,
     btrfs_scrub_maintenance,
@@ -1001,6 +1006,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.array.mdraid.check.schedule.v1",
     "storage.volume.ext4.create-mount.v1",
     "storage.volume.btrfs-raid1.create-mount.v1",
+    "storage.volume.btrfs-raid1.replace-missing.blank.v1",
     "storage.volume.btrfs.scrub.start.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
@@ -1077,6 +1083,8 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("storage.volume.btrfs-raid1.create-mount.v1")
     if not _native_command_tools_available("btrfs", "findmnt"):
         unavailable.add("storage.volume.btrfs.scrub.start.v1")
+    if not _native_command_tools_available("btrfs", "findmnt", "lsblk", "wipefs"):
+        unavailable.add("storage.volume.btrfs-raid1.replace-missing.blank.v1")
     if not _native_command_tools_available("zpool", "zfs"):
         unavailable.add("storage.pool.zfs.export.safe.v1")
         unavailable.add("storage.pool.zfs.import.echo-root.v1")
@@ -4142,6 +4150,7 @@ def validated_devicefile(devicefile: str) -> str:
 __all__ = [
     "NativeStorageAuthority",
     "apply_btrfs_raid1",
+    "apply_btrfs_replace",
     "apply_btrfs_scrub",
     "apply_group",
     "apply_mdraid1",
@@ -4165,6 +4174,7 @@ __all__ = [
     "apply_zfs_scrub",
     "block_devices",
     "btrfs_raid1_candidates",
+    "btrfs_replacement_candidates",
     "btrfs_scrub_maintenance",
     "filesystems",
     "ext4_volume_candidates",
@@ -4175,6 +4185,7 @@ __all__ = [
     "mdraid_maintenance",
     "plan_group",
     "plan_btrfs_raid1",
+    "plan_btrfs_replace",
     "plan_btrfs_scrub",
     "plan_ext4_volume",
     "plan_mdraid1",

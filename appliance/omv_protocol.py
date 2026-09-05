@@ -65,6 +65,9 @@ BTRFS_RAID1_CONTROL_CAPABILITY = "storage.volume.btrfs-raid1.create-mount.v1"
 BTRFS_SCRUB_DESIRED_SCHEMA = "echo.omv.btrfs-scrub-desired.v1"
 BTRFS_SCRUB_PLAN_SCHEMA = "echo.omv.btrfs-scrub-plan.v1"
 BTRFS_SCRUB_CONTROL_CAPABILITY = "storage.volume.btrfs.scrub.start.v1"
+BTRFS_REPLACE_DESIRED_SCHEMA = "echo.omv.btrfs-replace-desired.v1"
+BTRFS_REPLACE_PLAN_SCHEMA = "echo.omv.btrfs-replace-plan.v1"
+BTRFS_REPLACE_CONTROL_CAPABILITY = "storage.volume.btrfs-raid1.replace-missing.blank.v1"
 ZFS_POOL_EXPORT_DESIRED_SCHEMA = "echo.omv.zfs-pool-export-desired.v1"
 ZFS_POOL_EXPORT_PLAN_SCHEMA = "echo.omv.zfs-pool-export-plan.v1"
 ZFS_POOL_EXPORT_CONTROL_CAPABILITY = "storage.pool.zfs.export.safe.v1"
@@ -350,10 +353,7 @@ def validate_btrfs_scrub_desired(value: Any) -> dict[str, str]:
     if value.get("schema") != BTRFS_SCRUB_DESIRED_SCHEMA:
         raise ValueError("Btrfs scrub desired-state schema is unsupported")
     filesystem_uuid = value.get("filesystemUuid")
-    if (
-        not isinstance(filesystem_uuid, str)
-        or _OMV_UUID_PATTERN.fullmatch(filesystem_uuid) is None
-    ):
+    if not isinstance(filesystem_uuid, str) or _OMV_UUID_PATTERN.fullmatch(filesystem_uuid) is None:
         raise ValueError("Btrfs scrub requires a canonical filesystem UUID")
     if value.get("operation") != "start":
         raise ValueError("Btrfs scrub operation must be start")
@@ -361,6 +361,42 @@ def validate_btrfs_scrub_desired(value: Any) -> dict[str, str]:
         "schema": BTRFS_SCRUB_DESIRED_SCHEMA,
         "filesystemUuid": filesystem_uuid.lower(),
         "operation": "start",
+    }
+
+
+def validate_btrfs_replace_desired(value: Any) -> dict[str, Any]:
+    expected = {
+        "schema",
+        "filesystemUuid",
+        "missingDevid",
+        "replacementDevice",
+        "dataPreserved",
+    }
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("Btrfs replacement desired state has unexpected fields")
+    if value.get("schema") != BTRFS_REPLACE_DESIRED_SCHEMA:
+        raise ValueError("Btrfs replacement desired-state schema is unsupported")
+    filesystem_uuid = value.get("filesystemUuid")
+    if not isinstance(filesystem_uuid, str) or _OMV_UUID_PATTERN.fullmatch(filesystem_uuid) is None:
+        raise ValueError("Btrfs replacement requires a canonical filesystem UUID")
+    missing_devid = value.get("missingDevid")
+    if (
+        isinstance(missing_devid, bool)
+        or not isinstance(missing_devid, int)
+        or not 1 <= missing_devid <= 2**32 - 1
+    ):
+        raise ValueError("Btrfs replacement requires a positive numeric missing device ID")
+    replacement = value.get("replacementDevice")
+    if not isinstance(replacement, str) or _ZFS_WHOLE_DISK_PATTERN.fullmatch(replacement) is None:
+        raise ValueError("Btrfs replacement requires one supported whole disk")
+    if value.get("dataPreserved") is not True:
+        raise ValueError("Btrfs replacement requires dataPreserved=true")
+    return {
+        "schema": BTRFS_REPLACE_DESIRED_SCHEMA,
+        "filesystemUuid": filesystem_uuid.lower(),
+        "missingDevid": missing_devid,
+        "replacementDevice": replacement,
+        "dataPreserved": True,
     }
 
 

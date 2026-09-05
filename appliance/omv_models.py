@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from appliance.omv_protocol import (
     BTRFS_RAID1_DESIRED_SCHEMA,
+    BTRFS_REPLACE_DESIRED_SCHEMA,
     BTRFS_SCRUB_DESIRED_SCHEMA,
     EXT4_VOLUME_DESIRED_SCHEMA,
     GROUP_DESIRED_SCHEMA,
@@ -37,6 +38,7 @@ from appliance.omv_protocol import (
     ZFS_POOL_IMPORT_DESIRED_SCHEMA,
     ZFS_SCRUB_DESIRED_SCHEMA,
     validate_btrfs_raid1_desired,
+    validate_btrfs_replace_desired,
     validate_btrfs_scrub_desired,
     validate_ext4_volume_desired,
     validate_group_desired,
@@ -580,6 +582,51 @@ class BtrfsScrubApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     desired: BtrfsScrubDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
+class BtrfsReplaceDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.btrfs-replace-desired.v1"] = Field(
+        default=BTRFS_REPLACE_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    filesystem_uuid: str = Field(alias="filesystemUuid")
+    missing_devid: int = Field(alias="missingDevid", strict=True, ge=1, le=2**32 - 1)
+    replacement_device: str = Field(alias="replacementDevice")
+    data_preserved: Literal[True] = Field(alias="dataPreserved")
+
+    @field_validator("filesystem_uuid", "missing_devid", "replacement_device")
+    @classmethod
+    def validate_replacement_field(cls, value: Any, info: Any) -> Any:
+        payload = {
+            "schema": BTRFS_REPLACE_DESIRED_SCHEMA,
+            "filesystemUuid": (
+                value
+                if info.field_name == "filesystem_uuid"
+                else "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+            ),
+            "missingDevid": value if info.field_name == "missing_devid" else 2,
+            "replacementDevice": (value if info.field_name == "replacement_device" else "/dev/sdc"),
+            "dataPreserved": True,
+        }
+        try:
+            normalized = validate_btrfs_replace_desired(payload)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        aliases = {
+            "filesystem_uuid": "filesystemUuid",
+            "missing_devid": "missingDevid",
+            "replacement_device": "replacementDevice",
+        }
+        return normalized[aliases[info.field_name]]
+
+
+class BtrfsReplaceApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: BtrfsReplaceDesiredState
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 

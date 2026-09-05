@@ -240,9 +240,10 @@ def test_ext4_volume_creation_uses_a_plan_bound_approval(tmp_path):
         "omv.zfs-pool.import",
         "omv.zfs-mirror.replace",
         "omv.zfs.scrub.start",
+        "omv.btrfs-raid1.replace",
     ],
 )
-def test_zfs_pool_lifecycle_uses_plan_bound_approvals(tmp_path, action):
+def test_storage_lifecycle_uses_plan_bound_approvals(tmp_path, action):
     service, _audit = _service(tmp_path)
     token = _issue(service, action=action, target="e" * 64)
 
