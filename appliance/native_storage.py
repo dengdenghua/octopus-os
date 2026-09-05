@@ -2494,6 +2494,8 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
         return {**plan, "applied": False, "verified": True, "share": {"name": name}}
     if operation == "remove":
         _run_write("net", "usershare", "delete", name)
+        if _smb_usershare_info(name) is not None:
+            raise OSError("Samba usershare remained after delete")
         return {**plan, "applied": True, "verified": True, "share": {"name": name}}
     # create or update: (re)declare the usershare. Read/write is expressed via
     # the usershare ACL (Samba has no --rw/--ro flag). The storage ``users``
