@@ -23,6 +23,8 @@ from appliance.native_ups import ups_status
 from appliance.omv_models import (
     GroupApplyRequest,
     GroupDesiredState,
+    MdRaid1ApplyRequest,
+    MdRaid1DesiredState,
     NfsApplyRequest,
     NfsDesiredState,
     NfsRemoveApplyRequest,
@@ -117,6 +119,14 @@ def register_native_storage_routes(router: APIRouter) -> None:
             devices = await run_in_threadpool(native_storage.zfs_mirror_candidates)
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 ZFS 候选磁盘探测不可用") from exc
+        return {"devices": devices, "readOnly": True, "source": "native"}
+
+    @router.get("/arrays/mdraid1/candidates")
+    async def mdraid1_candidates() -> dict[str, Any]:
+        try:
+            devices = await run_in_threadpool(native_storage.mdraid1_candidates)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 md RAID1 候选磁盘探测不可用") from exc
         return {"devices": devices, "readOnly": True, "source": "native"}
 
     @router.get("/pools/zfs-mirror/replacement-candidates")
@@ -801,6 +811,36 @@ def create_omv_alias_router(
             action="omv.zfs-mirror.create",
             plan_fn=native_storage.plan_zfs_mirror,
             apply_fn=native_storage.apply_zfs_mirror,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={"name": body.desired.name, "devices": body.desired.devices},
+        )
+
+    # --- Destructive Linux md RAID1 creation ----------------------------
+    @router.post("/arrays/mdraid1/plan")
+    async def plan_mdraid1(body: MdRaid1DesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_mdraid1,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 md RAID1 暂不可用") from exc
+
+    @router.post("/arrays/mdraid1/apply")
+    async def apply_mdraid1_route(
+        body: MdRaid1ApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.mdraid1.create",
+            plan_fn=native_storage.plan_mdraid1,
+            apply_fn=native_storage.apply_mdraid1,
             desired=body.desired.model_dump(by_alias=True),
             plan_id=body.plan_id,
             metadata={"name": body.desired.name, "devices": body.desired.devices},

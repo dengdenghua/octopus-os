@@ -21,7 +21,7 @@ Write support is deliberately split into narrow desired/plan/apply slices.
 Shared folders are limited to registered directories on mounted NAS volumes;
 privileges only touch the selected directory's non-recursive POSIX ACL; NFS
 only owns one generated file below ``/etc/exports.d``. Pool writes are limited
-to a separately reviewed two-blank-disk ZFS mirror creator, Echo-layout
+to separately reviewed two-blank-disk ZFS and md RAID1 creators, Echo-layout
 export/import, and one-failed-member blank-disk mirror replacement. Pool
 scrub start is exposed with read-back maintenance state. Pool deletion,
 expansion, general replacement, recursive permission changes,
@@ -52,6 +52,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from appliance.native_mdraid import apply_mdraid1, mdraid1_candidates, plan_mdraid1
 from appliance.native_storage_pool import (
     apply_zfs_mirror,
     apply_zfs_mirror_replace,
@@ -925,6 +926,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "nfs.share.remove.safe.v1",
     "filesystem.quota.user-group.v1",
     "storage.pool.zfs-mirror.create.v1",
+    "storage.array.mdraid1.create.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
     "storage.pool.zfs.import.echo-root.v1",
@@ -964,6 +966,8 @@ def _native_write_capabilities() -> list[str]:
     if not _native_command_tools_available("zpool", "zfs", "lsblk", "wipefs"):
         unavailable.add("storage.pool.zfs-mirror.create.v1")
         unavailable.add("storage.pool.zfs-mirror.replace.blank.v1")
+    if not _native_command_tools_available("mdadm", "lsblk", "wipefs", "update-initramfs"):
+        unavailable.add("storage.array.mdraid1.create.v1")
     if not _native_command_tools_available("zpool", "zfs"):
         unavailable.add("storage.pool.zfs.export.safe.v1")
         unavailable.add("storage.pool.zfs.import.echo-root.v1")
@@ -4029,6 +4033,7 @@ def validated_devicefile(devicefile: str) -> str:
 __all__ = [
     "NativeStorageAuthority",
     "apply_group",
+    "apply_mdraid1",
     "apply_nfs",
     "apply_nfs_remove",
     "apply_quota",
@@ -4048,7 +4053,9 @@ __all__ = [
     "filesystems",
     "exportable_zfs_pools",
     "md_arrays",
+    "mdraid1_candidates",
     "plan_group",
+    "plan_mdraid1",
     "plan_nfs",
     "plan_nfs_remove",
     "plan_quota",

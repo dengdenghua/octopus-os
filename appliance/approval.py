@@ -112,6 +112,7 @@ def _valid_target(action: str, target: str) -> bool:
         "omv.group.create",
         "omv.user.create",
         "omv.user.password.reset",
+        "omv.mdraid1.create",
         "omv.zfs-mirror.create",
         "omv.zfs-mirror.replace",
         "omv.zfs-pool.export",

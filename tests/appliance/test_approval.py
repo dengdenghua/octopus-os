@@ -201,6 +201,22 @@ def test_zfs_mirror_creation_uses_a_plan_bound_approval(tmp_path):
     )
 
 
+def test_mdraid1_creation_uses_a_plan_bound_approval(tmp_path):
+    service, _audit = _service(tmp_path)
+    token = _issue(
+        service,
+        action="omv.mdraid1.create",
+        target="f" * 64,
+    )
+
+    service.consume(
+        token=token,
+        actor="local:admin",
+        action="omv.mdraid1.create",
+        target="f" * 64,
+    )
+
+
 @pytest.mark.parametrize(
     "action",
     [

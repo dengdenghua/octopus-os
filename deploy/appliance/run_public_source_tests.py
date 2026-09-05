@@ -35,6 +35,7 @@ TESTS = (
     "tests/appliance/test_nas_data_backup.py",
     "tests/appliance/test_nas.py",
     "tests/appliance/test_native_agent_recovery_contract.py",
+    "tests/appliance/test_native_mdraid.py",
     "tests/appliance/test_native_storage.py",
     "tests/appliance/test_native_storage_pool.py",
     "tests/appliance/test_native_storage_observation.py",

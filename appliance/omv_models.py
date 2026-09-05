@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from appliance.omv_protocol import (
     GROUP_DESIRED_SCHEMA,
+    MDRAID1_DESIRED_SCHEMA,
     NFS_DESIRED_SCHEMA,
     NFS_REMOVE_DESIRED_SCHEMA,
     QUOTA_DESIRED_SCHEMA,
@@ -31,6 +32,7 @@ from appliance.omv_protocol import (
     ZFS_POOL_IMPORT_DESIRED_SCHEMA,
     ZFS_SCRUB_DESIRED_SCHEMA,
     validate_group_desired,
+    validate_mdraid1_desired,
     validate_nfs_remove_desired,
     validate_omv_uuid,
     validate_share_privilege_desired,
@@ -506,6 +508,39 @@ class ZfsMirrorApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class MdRaid1DesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.mdraid1-desired.v1"] = Field(
+        default=MDRAID1_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    name: str = Field(min_length=1, max_length=27)
+    devices: list[str] = Field(min_length=2, max_length=2)
+    data_loss_confirmed: Literal[True] = Field(alias="dataLossConfirmed")
+
+    @field_validator("name", "devices")
+    @classmethod
+    def validate_mdraid_field(cls, value: Any, info: Any) -> Any:
+        payload = {
+            "schema": MDRAID1_DESIRED_SCHEMA,
+            "name": value if info.field_name == "name" else "data",
+            "devices": value if info.field_name == "devices" else ["/dev/sdb", "/dev/sdc"],
+            "dataLossConfirmed": True,
+        }
+        try:
+            return validate_mdraid1_desired(payload)[info.field_name]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class MdRaid1ApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: MdRaid1DesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class ZfsMirrorReplaceDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -767,6 +802,8 @@ class SmartSchedulePolicyApplyRequest(BaseModel):
 __all__ = [
     "GroupApplyRequest",
     "GroupDesiredState",
+    "MdRaid1ApplyRequest",
+    "MdRaid1DesiredState",
     "NfsApplyRequest",
     "NfsDesiredState",
     "NfsRemoveApplyRequest",

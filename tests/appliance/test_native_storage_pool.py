@@ -202,6 +202,36 @@ def test_disk_inspection_rejects_existing_partition_without_calling_wipefs(
     assert [call[0] for call in calls] == ["lsblk"]
 
 
+def test_disk_inspection_rejects_duplicate_persistent_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {
+        "blockdevices": [
+            {
+                "path": device,
+                "type": "disk",
+                "size": 8 * 1024**3,
+                "serial": "duplicate",
+                "ro": False,
+                "rm": False,
+            }
+            for device in ("/dev/sdb", "/dev/sdc")
+        ]
+    }
+
+    def run(args: list[str], **_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload) if args[0] == "lsblk" else "",
+            stderr="",
+        )
+
+    monkeypatch.setattr(native_storage_pool.subprocess, "run", run)
+
+    with pytest.raises(ValueError, match="distinct physical disks"):
+        native_storage_pool.inspect_blank_whole_disks(["/dev/sdb", "/dev/sdc"])
+
+
 def test_zfs_mirror_requires_explicit_data_loss_confirmation() -> None:
     with pytest.raises(ValueError, match="dataLossConfirmed"):
         native_storage_pool.plan_zfs_mirror(_desired(dataLossConfirmed=False))

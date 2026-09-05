@@ -47,6 +47,9 @@ USER_PASSWORD_CONTROL_CAPABILITY = "account.user.password.reset.v1"  # nosec B10
 ZFS_MIRROR_DESIRED_SCHEMA = "echo.omv.zfs-mirror-desired.v1"
 ZFS_MIRROR_PLAN_SCHEMA = "echo.omv.zfs-mirror-plan.v1"
 ZFS_MIRROR_CONTROL_CAPABILITY = "storage.pool.zfs-mirror.create.v1"
+MDRAID1_DESIRED_SCHEMA = "echo.omv.mdraid1-desired.v1"
+MDRAID1_PLAN_SCHEMA = "echo.omv.mdraid1-plan.v1"
+MDRAID1_CONTROL_CAPABILITY = "storage.array.mdraid1.create.v1"
 ZFS_POOL_EXPORT_DESIRED_SCHEMA = "echo.omv.zfs-pool-export-desired.v1"
 ZFS_POOL_EXPORT_PLAN_SCHEMA = "echo.omv.zfs-pool-export-plan.v1"
 ZFS_POOL_EXPORT_CONTROL_CAPABILITY = "storage.pool.zfs.export.safe.v1"
@@ -98,6 +101,7 @@ _WINDOWS_RESERVED_NAMES = {
 }
 _ZFS_POOL_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,31}")
 _ZFS_WHOLE_DISK_PATTERN = re.compile(r"/dev/(?:sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+|mmcblk\d+)")
+_MDRAID_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,26}")
 
 
 class OmvUnavailable(RuntimeError):
@@ -184,6 +188,35 @@ def validate_zfs_mirror_desired(value: Any) -> dict[str, Any]:
         raise ValueError("ZFS mirror creation requires dataLossConfirmed=true")
     return {
         "schema": ZFS_MIRROR_DESIRED_SCHEMA,
+        "name": name,
+        "devices": normalized,
+        "dataLossConfirmed": True,
+    }
+
+
+def validate_mdraid1_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "name", "devices", "dataLossConfirmed"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("md RAID1 desired state has unexpected fields")
+    if value.get("schema") != MDRAID1_DESIRED_SCHEMA:
+        raise ValueError("md RAID1 desired-state schema is unsupported")
+    name = value.get("name")
+    if not isinstance(name, str) or _MDRAID_NAME_PATTERN.fullmatch(name) is None:
+        raise ValueError("md RAID1 name must be a lowercase portable name of at most 27 characters")
+    devices = value.get("devices")
+    if not isinstance(devices, list) or len(devices) != 2:
+        raise ValueError("md RAID1 creation requires exactly two whole disks")
+    if not all(isinstance(device, str) for device in devices):
+        raise ValueError("md RAID1 devices must be device paths")
+    normalized = sorted(devices)
+    if len(set(normalized)) != 2 or any(
+        _ZFS_WHOLE_DISK_PATTERN.fullmatch(device) is None for device in normalized
+    ):
+        raise ValueError("md RAID1 devices must be two distinct supported whole disks")
+    if value.get("dataLossConfirmed") is not True:
+        raise ValueError("md RAID1 creation requires dataLossConfirmed=true")
+    return {
+        "schema": MDRAID1_DESIRED_SCHEMA,
         "name": name,
         "devices": normalized,
         "dataLossConfirmed": True,

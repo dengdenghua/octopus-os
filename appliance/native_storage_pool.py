@@ -163,7 +163,20 @@ def _inspect_zfs_mirror_devices(devicefiles: list[str]) -> list[dict[str, Any]]:
                 "model": str(entry.get("model") or "").strip() or None,
             }
         )
+    stable_keys = [item["wwn"] or item["serial"] for item in identities]
+    if len(set(stable_keys)) != len(stable_keys):
+        raise ValueError("selected paths do not identify distinct physical disks")
     return identities
+
+
+def inspect_blank_whole_disks(devicefiles: list[str]) -> list[dict[str, Any]]:
+    """Inspect blank whole disks without granting authority to mutate them.
+
+    mdraid and ZFS deliberately share the exact same fail-closed blank-disk
+    identity gate.  Callers must repeat this inspection while holding their
+    own mutation lock and bind the returned identities into a plan ID.
+    """
+    return _inspect_zfs_mirror_devices(devicefiles)
 
 
 def zfs_mirror_candidates() -> list[dict[str, Any]]:
@@ -1369,6 +1382,7 @@ __all__ = [
     "apply_zfs_pool_import",
     "exportable_zfs_pools",
     "importable_zfs_pools",
+    "inspect_blank_whole_disks",
     "plan_zfs_mirror",
     "plan_zfs_mirror_replace",
     "plan_zfs_pool_export",
