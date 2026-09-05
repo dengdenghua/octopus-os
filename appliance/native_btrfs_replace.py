@@ -2,9 +2,11 @@
 
 This intentionally small repair surface accepts only a mounted, writable,
 two-device Btrfs filesystem whose data and metadata profiles are both RAID1.
-The kernel must identify exactly one member as missing and no other Btrfs
-maintenance may be active.  The replacement is one blank whole disk with a
-stable hardware identity and is never forced or automatically resized.
+The mounted filesystem and ``btrfs filesystem show`` must identify exactly one
+member as missing.  Sysfs is used to reject unsafe maintenance, error, and
+survivor states, while tolerating the stale missing flag observed after a live
+device loss.  The replacement is one blank whole disk with a stable hardware
+identity and is never forced or automatically resized.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import json
 import os
 import re
 import shutil
+import time
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,6 +40,8 @@ _SYS_FS_BTRFS = Path("/sys/fs/btrfs")
 _WHOLE_DISK_PATTERN = re.compile(r"/dev/(?:sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+|mmcblk\d+)")
 _UUID_PATTERN = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _MAX_SYSFS_BYTES = 4096
+_ACCEPTANCE_TIMEOUT_SECONDS = 15.0
+_ACCEPTANCE_POLL_SECONDS = 0.1
 _ERROR_NAMES = frozenset(
     {"write_errs", "read_errs", "flush_errs", "corruption_errs", "generation_errs"}
 )
@@ -161,7 +166,10 @@ def _parse_filesystem_show(output: str, *, expected_uuid: str) -> dict[str, Any]
     for match in pattern.finditer(output):
         devid, size_bytes, used_bytes = (int(match.group(index)) for index in (1, 2, 3))
         path = " ".join(match.group(4).split())
-        is_missing = path in {"missing", "MISSING", "<missing disk> MISSING"}
+        missing_source = path.removesuffix(" MISSING") if path.endswith(" MISSING") else None
+        is_missing = path in {"missing", "MISSING", "<missing disk> MISSING"} or (
+            missing_source is not None and _WHOLE_DISK_PATTERN.fullmatch(missing_source) is not None
+        )
         if (
             not 1 <= devid <= 2**32 - 1
             or used_bytes > size_bytes
@@ -329,7 +337,6 @@ def _degraded_topology(
         or filesystem["readOnly"] is not False
         or filesystem["dataProfile"] != "raid1"
         or filesystem["metadataProfile"] != "raid1"
-        or filesystem["deviceErrorCount"] != 0
     ):
         raise ValueError("replacement requires one missing member in a writable two-device RAID1")
     kernel = _sysfs_snapshot(filesystem_uuid, sysfs_root=sysfs_root)
@@ -337,14 +344,8 @@ def _degraded_topology(
         member["replaceTarget"] for member in kernel["members"]
     ):
         raise ValueError("Btrfs already has an active exclusive operation")
-    if len(kernel["members"]) != 2 or any(member["errorCount"] for member in kernel["members"]):
-        raise ValueError("Btrfs kernel topology or persistent error counters are unsafe")
-    missing = [member for member in kernel["members"] if member["missing"]]
-    survivors = [
-        member for member in kernel["members"] if not member["missing"] and member["writeable"]
-    ]
-    if len(missing) != 1 or len(survivors) != 1:
-        raise ValueError("Btrfs kernel must confirm one missing and one writable member")
+    if len(kernel["members"]) != 2:
+        raise ValueError("Btrfs kernel topology is unsafe")
     layout = _parse_filesystem_show(
         _run_checked("btrfs", "filesystem", "show", "--raw", filesystem["mountpoint"]),
         expected_uuid=filesystem_uuid,
@@ -355,14 +356,21 @@ def _degraded_topology(
         raise OSError("Btrfs command and kernel member inventories disagree")
     layout_missing = [item for item in layout["members"] if item["missing"]]
     layout_survivors = [item for item in layout["members"] if not item["missing"]]
-    if (
-        len(layout_missing) != 1
-        or len(layout_survivors) != 1
-        or layout_missing[0]["devid"] != missing[0]["devid"]
-        or layout_survivors[0]["devid"] != survivors[0]["devid"]
-    ):
+    if len(layout_missing) != 1 or len(layout_survivors) != 1:
         raise ValueError("Btrfs command output does not confirm the missing member")
-    survivor = {**survivors[0], **layout_survivors[0]}
+    kernel_by_devid = {member["devid"]: member for member in kernel["members"]}
+    layout_missing_devid = layout_missing[0]["devid"]
+    kernel_missing_devids = {member["devid"] for member in kernel["members"] if member["missing"]}
+    if kernel_missing_devids not in (set(), {layout_missing_devid}):
+        raise ValueError("Btrfs command and kernel missing-member states disagree")
+    survivor_kernel = kernel_by_devid[layout_survivors[0]["devid"]]
+    if (
+        survivor_kernel["missing"]
+        or not survivor_kernel["writeable"]
+        or survivor_kernel["errorCount"]
+    ):
+        raise ValueError("Btrfs kernel does not confirm a writable surviving member")
+    survivor = {**survivor_kernel, **layout_survivors[0]}
     survivor.update(_existing_disk_identity(layout_survivors[0]["devicefile"]))
     scrub, scrub_hash = _scrub_status(filesystem["mountpoint"], filesystem_uuid)
     if scrub["state"] == "inProgress":
@@ -576,9 +584,24 @@ def apply_btrfs_replace(
         except Exception as exc:
             command_error = exc
         try:
-            accepted = _replacement_accepted(
-                plan, previous_status_hash=previous_status_hash, sysfs_root=sysfs_root
-            )
+            deadline = time.monotonic() + _ACCEPTANCE_TIMEOUT_SECONDS
+            last_state_error: OSError | ValueError | None = None
+            while True:
+                try:
+                    accepted = _replacement_accepted(
+                        plan, previous_status_hash=previous_status_hash, sysfs_root=sysfs_root
+                    )
+                    last_state_error = None
+                except (OSError, ValueError) as exc:
+                    accepted = None
+                    last_state_error = exc
+                if accepted is not None:
+                    break
+                if time.monotonic() >= deadline:
+                    if last_state_error is not None:
+                        raise last_state_error
+                    break
+                time.sleep(_ACCEPTANCE_POLL_SECONDS)
         except Exception as state_exc:
             if command_error is not None:
                 raise OSError(

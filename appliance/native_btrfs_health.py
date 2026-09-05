@@ -60,13 +60,14 @@ def _mounted_filesystems(output: str) -> list[dict[str, Any]]:
         raise OSError("findmnt returned invalid Btrfs JSON") from exc
     by_uuid: dict[str, dict[str, Any]] = {}
     for item in filesystems:
-        filesystem_uuid = str(item.get("uuid") or "").lower()
+        raw_uuid = item.get("uuid")
+        filesystem_uuid = str(raw_uuid or "").lower()
         target = item.get("target")
         source = item.get("source")
         fstype = item.get("fstype")
         options = item.get("options")
         if (
-            _UUID.fullmatch(filesystem_uuid) is None
+            (filesystem_uuid and _UUID.fullmatch(filesystem_uuid) is None)
             or not isinstance(target, str)
             or not target.startswith("/")
             or len(target) > 4096
@@ -79,27 +80,24 @@ def _mounted_filesystems(output: str) -> list[dict[str, Any]]:
             raise OSError("findmnt returned an unsafe Btrfs mount identity")
         option_tokens = {token.strip().casefold() for token in options.split(",") if token.strip()}
         read_only = "ro" in option_tokens and "rw" not in option_tokens
-        current = by_uuid.get(filesystem_uuid)
+        identity = filesystem_uuid or f"source:{source}"
+        current = by_uuid.get(identity)
         record = {
-            "uuid": filesystem_uuid,
+            "uuid": filesystem_uuid or None,
             "source": source,
             "mountpoint": target,
             "readOnly": read_only,
         }
         if current is None or len(target) < len(current["mountpoint"]):
-            by_uuid[filesystem_uuid] = record
-    return sorted(by_uuid.values(), key=lambda item: item["uuid"])
+            by_uuid[identity] = record
+    return sorted(by_uuid.values(), key=lambda item: (item["uuid"] or "", item["mountpoint"]))
 
 
 def _filesystem_show(output: str, *, expected_uuid: str) -> dict[str, Any]:
     raw = _raw(output)
     uuid_match = re.search(r"\buuid:\s*([0-9a-fA-F-]+)\s*$", raw, re.MULTILINE)
     total_match = re.search(r"^\s*Total devices\s+(\d+)\b", raw, re.MULTILINE)
-    if (
-        uuid_match is None
-        or uuid_match.group(1).lower() != expected_uuid
-        or total_match is None
-    ):
+    if uuid_match is None or uuid_match.group(1).lower() != expected_uuid or total_match is None:
         raise OSError("btrfs filesystem show returned an invalid identity")
     total = int(total_match.group(1))
     if not 1 <= total <= 256:
@@ -154,7 +152,14 @@ def _inspect_mount(record: dict[str, Any], runner: Runner, probe: dict[str, Any]
     show = runner("btrfs", "filesystem", "show", "--raw", mountpoint, timeout=15.0)
     if getattr(show, "state", "ok") != "ok":
         _mark_partial(probe, show)
-    topology = _filesystem_show(show, expected_uuid=record["uuid"])
+    filesystem_uuid = record["uuid"]
+    if filesystem_uuid is None:
+        match = re.search(r"\buuid:\s*([0-9a-fA-F-]+)\s*$", _raw(show), re.MULTILINE)
+        recovered_uuid = match.group(1).casefold() if match else ""
+        if _UUID.fullmatch(recovered_uuid) is None:
+            raise OSError("btrfs filesystem show returned an invalid identity")
+        filesystem_uuid = recovered_uuid
+    topology = _filesystem_show(show, expected_uuid=filesystem_uuid)
     profile_output = runner("btrfs", "filesystem", "df", "--raw", mountpoint, timeout=15.0)
     if getattr(profile_output, "state", "ok") != "ok":
         _mark_partial(probe, profile_output)
@@ -181,8 +186,8 @@ def _inspect_mount(record: dict[str, Any], runner: Runner, probe: dict[str, Any]
         else "btrfs-mixed"
     )
     return {
-        "devicefile": record["uuid"],
-        "uuid": record["uuid"],
+        "devicefile": filesystem_uuid,
+        "uuid": filesystem_uuid,
         "mountpoint": mountpoint,
         "level": level,
         "status": status,
@@ -197,9 +202,7 @@ def _inspect_mount(record: dict[str, Any], runner: Runner, probe: dict[str, Any]
     }
 
 
-def probe_btrfs_filesystems(
-    *, expected: bool, runner: Runner, checked_at: str
-) -> Probe:
+def probe_btrfs_filesystems(*, expected: bool, runner: Runner, checked_at: str) -> Probe:
     probe = evidence("btrfs", checked_at, required=expected)
     if not expected:
         probe.update(state="not-applicable", code="not_present")

@@ -114,7 +114,9 @@ def test_protocol_rejects_expanded_or_unsafe_replacement(field: str, value: Any)
         validate_btrfs_replace_desired({**DESIRED, "force": True})
 
 
-@pytest.mark.parametrize("missing_path", ["MISSING", "<missing disk> MISSING", "missing"])
+@pytest.mark.parametrize(
+    "missing_path", ["MISSING", "<missing disk> MISSING", "missing", "/dev/sdc MISSING"]
+)
 def test_filesystem_show_requires_two_members_and_accepts_real_missing_marker(
     missing_path: str,
 ) -> None:
@@ -211,8 +213,10 @@ def test_sysfs_snapshot_reads_missing_member_and_rejects_errors(tmp_path: Path) 
     assert subject._sysfs_snapshot(FS_UUID, sysfs_root=tmp_path)["members"][0]["errorCount"] == 1
 
 
+@pytest.mark.parametrize("kernel_reports_missing", [True, False])
 def test_degraded_topology_binds_echo_mount_kernel_layout_and_maintenance(
     monkeypatch: pytest.MonkeyPatch,
+    kernel_reports_missing: bool,
 ) -> None:
     kernel = {
         "exclusiveOperation": "none",
@@ -227,11 +231,11 @@ def test_degraded_topology_binds_echo_mount_kernel_layout_and_maintenance(
             },
             {
                 "devid": 2,
-                "missing": True,
+                "missing": kernel_reports_missing,
                 "replaceTarget": False,
-                "writeable": False,
-                "errorStats": {},
-                "errorCount": 0,
+                "writeable": not kernel_reports_missing,
+                "errorStats": {"write_errs": 6, "flush_errs": 1},
+                "errorCount": 7,
             },
         ],
     }
@@ -291,6 +295,23 @@ def test_degraded_topology_binds_echo_mount_kernel_layout_and_maintenance(
     assert topology["missingMember"]["devid"] == 2
     assert topology["minimumReplacementBytes"] == 12 * 1024**3
     assert topology["survivingMember"]["serial"] == "survivor"
+
+    # A live detach records expected write/flush failures against the missing
+    # path in the aggregate health probe. Per-member sysfs counters above keep
+    # the surviving member fail-closed without making repair impossible.
+    filesystem = _filesystem(deviceErrorCount=7)
+    monkeypatch.setattr(subject, "_health_inventory", lambda: [filesystem])
+    assert (
+        subject._degraded_topology(FS_UUID, fstab_path=Path("fstab"), sysfs_root=Path("sysfs"))[
+            "missingMember"
+        ]["devid"]
+        == 2
+    )
+
+    kernel["members"][0]["errorCount"] = 1
+    with pytest.raises(ValueError, match="writable surviving"):
+        subject._degraded_topology(FS_UUID, fstab_path=Path("fstab"), sysfs_root=Path("sysfs"))
+    kernel["members"][0]["errorCount"] = 0
 
     kernel["exclusiveOperation"] = "balance"
     with pytest.raises(ValueError, match="active exclusive"):
@@ -449,6 +470,46 @@ def test_apply_accepts_transition_after_late_command_failure(
     result = subject.apply_btrfs_replace(DESIRED, plan["planId"])
 
     assert result["maintenanceState"] == "acceptedOrCompleted"
+
+
+def test_apply_polls_until_fast_replacement_state_settles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = {
+        "planId": "d" * 64,
+        "desired": DESIRED,
+        "filesystem": {"uuid": FS_UUID, "mountpoint": "/data/family"},
+        "replacement": _blank(),
+        "_replaceStatusHash": "before",
+    }
+    responses = iter(
+        [
+            OSError("sysfs is settling"),
+            None,
+            (
+                {"kind": "deviceReplace", "state": "completed", "errors": 0},
+                "acceptedOrCompleted",
+            ),
+        ]
+    )
+    sleeps: list[float] = []
+    monkeypatch.setattr(subject, "btrfs_volume_transaction", nullcontext)
+    monkeypatch.setattr(subject, "_build_plan", lambda *_args, **_kwargs: dict(plan))
+    monkeypatch.setattr(subject, "_run_mutating", lambda *_args: None)
+
+    def accepted(*_args, **_kwargs):
+        response = next(responses)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    monkeypatch.setattr(subject, "_replacement_accepted", accepted)
+    monkeypatch.setattr(subject.time, "sleep", sleeps.append)
+
+    result = subject.apply_btrfs_replace(DESIRED, plan["planId"])
+
+    assert result["maintenanceState"] == "acceptedOrCompleted"
+    assert sleeps == [subject._ACCEPTANCE_POLL_SECONDS] * 2
 
 
 def test_apply_rejects_stale_plan_before_mutation(monkeypatch: pytest.MonkeyPatch) -> None:

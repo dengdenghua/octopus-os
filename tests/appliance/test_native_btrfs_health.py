@@ -9,12 +9,12 @@ from appliance.native_storage_probe import Probe, ReadOutput, evidence
 FS_UUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
 
-def _inventory() -> str:
+def _inventory(*, uuid: str | None = FS_UUID) -> str:
     return json.dumps(
         {
             "filesystems": [
                 {
-                    "uuid": FS_UUID,
+                    "uuid": uuid,
                     "source": "/dev/sdb",
                     "target": "/data/family",
                     "fstype": "btrfs",
@@ -126,6 +126,23 @@ def test_btrfs_probe_reports_missing_member_as_degraded() -> None:
     assert result.value[0]["status"] == "degraded"
     assert result.value[0]["activeDevices"] == 1
     assert result.value[0]["missingDevices"] == 1
+
+
+def test_btrfs_probe_recovers_uuid_after_live_member_loss() -> None:
+    def runner(*args: str, **_kwargs: Any) -> str:
+        if args[0] == "findmnt":
+            return ReadOutput(_inventory(uuid=None), exit_code=0)
+        return _runner(missing=True)(*args)
+
+    result = native_btrfs_health.probe_btrfs_filesystems(
+        expected=True,
+        runner=runner,
+        checked_at="2026-09-05T00:00:00+00:00",
+    )
+
+    assert result.evidence["state"] == "ok"
+    assert result.value[0]["uuid"] == FS_UUID
+    assert result.value[0]["status"] == "degraded"
 
 
 def test_btrfs_probe_retains_nonzero_device_counters_as_warning_evidence() -> None:
