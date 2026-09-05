@@ -32,7 +32,7 @@ python vmtest\tools\make_initrd_segment.py C:\vmtest\initrd.gz C:\vmtest\initrd-
 qemu-img create -f qcow2 C:\vmtest\disk.qcow2 20G
 
 # 4. 启动(推荐放在常驻的后台 shell 里前台跑,见下"已知坑"第 4 条)
-powershell -File vmtest\tools\launch-vm.ps1 -WorkDir C:\vmtest -Mode install
+powershell -File vmtest\tools\launch-vm.ps1 -WorkDir C:\vmtest -Mode install -IsoPath C:\vmtest\debian-13.6.0-amd64-netinst.iso
 ```
 
 装完信号:QEMU 进程退出(`-no-reboot`,d-i 重启即退出)。然后验证引导:
@@ -68,6 +68,8 @@ late_command 与正式版逻辑一致,仅源路径 `/cdrom/echo-os` → `/echo-v
 5. **Start-Process -ArgumentList 数组形态不保留引号**:含空格的 `-append`
    会被拆散。用单个字符串传参,引号自带。
 6. **curl 在中文路径下写盘报错 23**。下载产物放 ASCII 路径。
+7. **d-i 直启内核仍需要安装介质**:脚本会用 `-cdrom` 挂载 netinst ISO;
+   未显式传 `-IsoPath` 时,默认使用 `$WorkDir\debian-13.6.0-amd64-netinst.iso`。
 
 ## 与正式链路(build-iso.sh)的关系
 

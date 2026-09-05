@@ -6,6 +6,7 @@
 param(
   [Parameter(Mandatory=$true)][string]$WorkDir,
   [Parameter(Mandatory=$true)][ValidateSet('install','boot')][string]$Mode,
+  [string]$IsoPath,
   [string]$Accel = 'whpx:tcg'
 )
 $ErrorActionPreference = 'Stop'
@@ -15,10 +16,18 @@ $log = @()
 # Pass args as ONE string: Start-Process array form does not preserve quotes,
 # so any value containing spaces must carry literal quotes in the string.
 if ($Mode -eq 'install') {
+  if (-not $IsoPath) {
+    $IsoPath = Join-Path $WorkDir 'debian-13.6.0-amd64-netinst.iso'
+  }
+  if (-not (Test-Path -LiteralPath $IsoPath -PathType Leaf)) {
+    throw "Installer ISO not found: $IsoPath"
+  }
   # Direct kernel boot; preseed rides in the appended initrd segment.
+  # Keep the ISO attached because d-i still mounts it as installation media.
   # -no-reboot: QEMU exits when d-i reboots after install => our completion signal.
   $qargs = "-m 2048 -smp 2 -machine accel=$Accel " +
     "-drive file=$WorkDir\disk.qcow2,if=virtio,format=qcow2 " +
+    "-cdrom `"$IsoPath`" " +
     "-nic user,model=virtio-net-pci " +
     "-display none -monitor none " +
     "-serial file:$WorkDir\serial-$Mode.log " +

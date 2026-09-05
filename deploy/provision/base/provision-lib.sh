@@ -46,6 +46,14 @@ step_storage() {
   log "== 2/7 安装存储栈 =="
   # 注意:lsblk 在 util-linux 里,不是独立 apt 包(VM 实测写成包名会
   # E: Unable to locate package → firstboot 卡死在 2/7 反复重试)
+  # zfs-dkms 不依赖当前内核的 headers；全新 netinst 只带内核镜像时，
+  # dpkg 会把 ZFS 留在 `dkms status: added`，随后 zfs-load-module 失败。
+  # 先单独安装并配置精确匹配当前内核的 headers，再装 DKMS 包；最后
+  # 显式 autoinstall + modprobe，把“包已安装但模块不可用”挡在哨兵之前。
+  local kernel_release
+  kernel_release="$(uname -r)"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    "linux-headers-${kernel_release}"
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     zfsutils-linux zfs-dkms \
     samba samba-common-bin smbclient \
@@ -54,8 +62,11 @@ step_storage() {
     smartmontools hdparm mdadm lvm2 btrfs-progs \
     parted util-linux
 
+  dkms autoinstall -k "$kernel_release"
+  modprobe zfs
+
   # ZFS 开机自动导入池 + 挂载
-  systemctl enable --now zfs-import-cache || true
+  systemctl enable --now zfs-import-cache
   systemctl enable zfs-mount zfs-import.target || true
   done_mark storage
 }
