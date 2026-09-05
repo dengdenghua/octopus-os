@@ -2359,14 +2359,14 @@ def _nfs_uuid(folder_ref: str, client: str) -> str:
     return str(uuid_module.uuid5(_STORAGE_UUID_NAMESPACE, f"echo-nfs:{folder_ref}:{client}"))
 
 
-def _nfs_registered_path(entry: dict[str, Any]) -> Path:
+def _native_registered_path(entry: dict[str, Any]) -> Path:
     """Resolve a registered folder path without requiring its mount to be live.
 
-    This is intentionally a metadata-only resolver.  It is used by the NFS
-    removal path so an administrator can clean an Echo export after a disk has
-    gone offline.  It never follows the path or mutates the directory; the
-    volume root, mount UUID and single portable folder component are still
-    checked before the path can enter an exports file or live-table probe.
+    This is intentionally a metadata-only resolver.  It is used by protocol
+    cleanup paths so an administrator can remove a stale share after a disk
+    has gone offline.  It never follows the path or mutates the directory;
+    the volume root, mount UUID and single portable folder component are still
+    checked before the path can enter a host command.
     """
     volume_path = entry.get("volumePath")
     if not isinstance(volume_path, str) or not os.path.isabs(volume_path):
@@ -2381,7 +2381,11 @@ def _nfs_registered_path(entry: dict[str, Any]) -> Path:
         raise OSError("native NFS registry volume identity does not match its path")
     relative_name = _registered_relative_name(entry, strict=True)
     assert relative_name is not None
-    path = Path(volume_path) / relative_name
+    return Path(volume_path) / relative_name
+
+
+def _nfs_registered_path(entry: dict[str, Any]) -> Path:
+    path = _native_registered_path(entry)
     if any(character.isspace() for character in str(path)) or (
         os.name != "nt" and "\\" in str(path)
     ):
@@ -2832,9 +2836,11 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
     if desired["recycleBin"] is not False:
         raise ValueError("native SMB usershare does not manage a recycle bin")
     entry = _resolve_shared_folder(desired["sharedFolderRef"])
-    path = _native_folder_path(entry)
-    if not path.is_dir():
-        raise ValueError("shared folder directory does not exist on the host")
+    # Resolve the path from the signed registry even when the volume is
+    # unavailable.  A delete is safe metadata cleanup; only create/update
+    # below require a currently mounted writable directory.
+    path = _native_registered_path(entry)
+    folder_status = _native_registered_folder_status(entry)
     name = entry["name"]
     existing = _smb_usershare_info(name)
 
@@ -2865,8 +2871,16 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
             current[field] == after for field, after in wanted.items()
         ) else "update"
 
+    if operation in {"create", "update"} and folder_status != "MOUNTED":
+        raise ValueError("shared folder volume is not mounted as a writable NAS target")
+
     base_revision = _canonical_hash(
-        {"share": name, "path": str(path), "exists": existing is not None}
+        {
+            "share": name,
+            "path": str(path),
+            "exists": existing is not None,
+            "status": folder_status,
+        }
     )
     plan_id = _canonical_hash(
         {
@@ -2896,7 +2910,7 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
         "sharedFolder": {
             "uuid": entry["uuid"],
             "name": entry["name"],
-            "status": "MOUNTED",
+            "status": folder_status,
         },
         "desired": desired,
         "changes": changes,
@@ -2924,7 +2938,6 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
         raise ValueError("SMB plan is stale; preview the change again")
     name = plan["shareName"]
     entry = _resolve_shared_folder(desired["sharedFolderRef"])
-    path = _native_folder_path(entry)
     operation = plan["operation"]
     if operation == "none":
         if _smb_usershare_info(name) is None and desired["enabled"]:
@@ -2935,6 +2948,7 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
         if _smb_usershare_info(name) is not None:
             raise OSError("Samba usershare remained after delete")
         return {**plan, "applied": True, "verified": True, "share": {"name": name}}
+    path = _native_folder_path(entry)
     # create or update: (re)declare the usershare. Read/write is expressed via
     # the usershare ACL (Samba has no --rw/--ro flag). The storage ``users``
     # group covers every NAS identity, so it is the natural grantee; fall back

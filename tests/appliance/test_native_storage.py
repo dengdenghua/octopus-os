@@ -1043,6 +1043,51 @@ def test_smb_share_remove_requires_a_verified_absent_usershare(
     assert calls == [("net", "usershare", "delete", "Photos")]
 
 
+def test_smb_share_remove_can_clean_rule_when_volume_is_unmounted(
+    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    folder = _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    calls: list[tuple[Any, ...]] = []
+    present = {"value": True}
+
+    monkeypatch.setattr(
+        native_storage,
+        "_smb_usershare_info",
+        lambda _name: {"comment": "Media", "usershare_acl": "users:f"}
+        if present["value"]
+        else None,
+    )
+
+    def fake_write(*args: str, **_kwargs: Any) -> None:
+        calls.append(args)
+        if args == ("net", "usershare", "delete", "Photos"):
+            present["value"] = False
+
+    monkeypatch.setattr(native_storage, "_run_write", fake_write)
+    monkeypatch.setattr(native_storage, "filesystems", lambda: [])
+    desired = {
+        "schema": "echo.omv.smb-share-desired.v1",
+        "sharedFolderRef": folder_uuid,
+        "enabled": False,
+        "readOnly": False,
+        "browseable": True,
+        "recycleBin": False,
+        "comment": "Media",
+    }
+
+    plan = native_storage.plan_smb(desired)
+    assert plan["operation"] == "remove"
+    assert plan["sharedFolder"]["status"] == "UNAVAILABLE"
+    applied = native_storage.apply_smb(desired, plan["planId"])
+
+    assert applied["applied"] is True
+    assert applied["verified"] is True
+    assert calls == [("net", "usershare", "delete", "Photos")]
+    assert folder.is_dir()
+
+
 def test_native_smb_rejects_unmanaged_usershare_options() -> None:
     base = {
         "schema": "echo.omv.smb-share-desired.v1",
