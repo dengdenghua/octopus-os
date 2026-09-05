@@ -866,6 +866,46 @@ export type OmvZfsScrubPlan = {
   scan?: OmvZfsScan;
 };
 
+export type OmvUpsDevice = {
+  name: string;
+  available: boolean;
+  state:
+    | "online"
+    | "onBattery"
+    | "lowBattery"
+    | "replaceBattery"
+    | "shutdownPending"
+    | "offline"
+    | "unknown";
+  statusFlags: string[];
+  chargePercent: number | null;
+  runtimeSeconds: number | null;
+  loadPercent: number | null;
+  inputVoltage: number | null;
+  outputVoltage: number | null;
+  batteryVoltage: number | null;
+  temperatureC: number | null;
+  manufacturer: string | null;
+  model: string | null;
+};
+
+export type OmvUpsSnapshot = {
+  schemaVersion: 1;
+  source: "nut";
+  readOnly: true;
+  configured: boolean;
+  available: boolean;
+  state: "ready" | "degraded" | "unavailable" | "notConfigured";
+  code:
+    | "toolMissing"
+    | "serviceUnavailable"
+    | "emptyInventory"
+    | "partialRead"
+    | "deviceUnavailable"
+    | null;
+  devices: OmvUpsDevice[];
+};
+
 async function readJson<T>(url: string, fallback: string): Promise<T> {
   const response = await fetch(url, { headers: authHeader() });
   if (!response.ok) {
@@ -1458,4 +1498,8 @@ export function applyOmvZfsScrub(
     "无法启动 ZFS 校验",
     approvalHeader(approvalToken),
   );
+}
+
+export function fetchOmvUpsStatus(): Promise<OmvUpsSnapshot> {
+  return readJson("/api/appliance/omv/power/ups", "无法读取 UPS 电源状态");
 }

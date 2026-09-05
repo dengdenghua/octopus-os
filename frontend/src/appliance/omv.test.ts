@@ -25,6 +25,7 @@ import {
   fetchOmvSmartDevices,
   fetchOmvStorageTopology,
   fetchOmvStatus,
+  fetchOmvUpsStatus,
   fetchOmvZfsMirrorCandidates,
   fetchOmvZfsMirrorReplacementCandidates,
   fetchOmvZfsImportCandidates,
@@ -156,6 +157,46 @@ describe("OMV read-only API client", () => {
         (call) => (call[1] as RequestInit).method == null,
       ),
     ).toBe(true);
+  });
+
+  it("reads the bounded local NUT UPS snapshot", async () => {
+    const snapshot = {
+      schemaVersion: 1,
+      source: "nut",
+      readOnly: true,
+      configured: true,
+      available: true,
+      state: "ready",
+      code: null,
+      devices: [
+        {
+          name: "family-ups",
+          available: true,
+          state: "online",
+          statusFlags: ["OL"],
+          chargePercent: 100,
+          runtimeSeconds: 3600,
+          loadPercent: 25,
+          inputVoltage: 230,
+          outputVoltage: 230,
+          batteryVoltage: 24,
+          temperatureC: 30,
+          manufacturer: "APC",
+          model: "Back-UPS",
+        },
+      ],
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(snapshot), { status: 200 }),
+      );
+
+    expect(await fetchOmvUpsStatus()).toEqual(snapshot);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/appliance/omv/power/ups",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
   });
 
   it("keeps group and family-user preview separate from approved apply", async () => {

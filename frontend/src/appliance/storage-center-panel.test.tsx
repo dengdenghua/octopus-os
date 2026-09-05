@@ -19,6 +19,9 @@ vi.mock("./omv-sharing-panel", () => ({
 vi.mock("./zfs-mirror-panel", () => ({
   ZfsMirrorPanel: () => <div>真实存储池管理页</div>,
 }));
+vi.mock("./ups-panel", () => ({
+  UpsPanel: () => <div>UPS 电源保护页</div>,
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -96,6 +99,7 @@ describe("storage center", () => {
 
     await user.click(screen.getByRole("button", { name: "磁盘健康" }));
     expect(screen.getByText("真实磁盘健康页")).toBeInTheDocument();
+    expect(screen.getByText("UPS 电源保护页")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "存储池" }));
     expect(screen.getByText("真实存储池管理页")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "共享与用户" }));

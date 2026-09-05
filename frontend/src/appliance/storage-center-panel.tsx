@@ -26,6 +26,7 @@ import {
 } from "@/appliance/files";
 import { OmvSharingPanel } from "@/appliance/omv-sharing-panel";
 import { OmvStorageHealth } from "@/appliance/omv-storage-health";
+import { UpsPanel } from "@/appliance/ups-panel";
 import { ZfsMirrorPanel } from "@/appliance/zfs-mirror-panel";
 import { cn } from "@/lib/utils";
 
@@ -450,6 +451,7 @@ export function StorageCenterPanel({
           ) : section === "health" ? (
             <div className="mx-auto w-full max-w-[980px] px-7 py-7">
               <OmvStorageHealth />
+              <UpsPanel />
             </div>
           ) : section === "pools" ? (
             <ZfsMirrorPanel />

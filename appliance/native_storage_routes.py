@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
 
 from appliance import native_storage
+from appliance.native_ups import ups_status
 from appliance.omv_models import (
     GroupApplyRequest,
     GroupDesiredState,
@@ -66,6 +67,10 @@ def register_native_storage_routes(router: APIRouter) -> None:
             return await run_in_threadpool(native_storage.storage_health)
         except OSError as exc:  # pragma: no cover - defensive
             raise HTTPException(status_code=503, detail="native storage read failed") from exc
+
+    @router.get("/power/ups")
+    async def power_ups() -> dict[str, Any]:
+        return await run_in_threadpool(ups_status)
 
     @router.get("/filesystems")
     async def filesystems() -> dict[str, Any]:
