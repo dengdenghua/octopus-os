@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { requestHighRiskApproval } from "@/appliance/approval";
+import { MdRaidMaintenancePanel } from "@/appliance/mdraid-maintenance-panel";
 import {
   applyOmvMdRaid1Replace,
   fetchNativeStatus,
@@ -268,6 +269,7 @@ export function MdRaid1RepairPanel() {
           </button>
         </section>
       )}
+      <MdRaidMaintenancePanel />
     </div>
   );
 }

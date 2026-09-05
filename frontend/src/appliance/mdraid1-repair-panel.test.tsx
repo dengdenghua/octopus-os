@@ -12,6 +12,9 @@ import {
 import { MdRaid1RepairPanel } from "./mdraid1-repair-panel";
 
 vi.mock("./approval", () => ({ requestHighRiskApproval: vi.fn() }));
+vi.mock("./mdraid-maintenance-panel", () => ({
+  MdRaidMaintenancePanel: () => null,
+}));
 vi.mock("./omv", () => ({
   applyOmvMdRaid1Replace: vi.fn(),
   fetchNativeStatus: vi.fn(),
