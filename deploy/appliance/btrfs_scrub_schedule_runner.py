@@ -16,12 +16,21 @@ from appliance.native_btrfs_scrub import (
 MAX_FILESYSTEMS = 16
 
 
+def _scheduled_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    return plan_btrfs_scrub(desired, wait_for_completion=True)
+
+
+def _scheduled_apply(desired: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    return apply_btrfs_scrub(desired, plan_id, wait_for_completion=True)
+
+
 def run_schedule(
     *,
     policy_reader: Callable[[], tuple[bool, dict[str, Any]]] = read_policy,
     inventory_reader: Callable[[], list[dict[str, Any]]] = btrfs_scrub_maintenance,
-    planner: Callable[[dict[str, Any]], dict[str, Any]] = plan_btrfs_scrub,
-    applier: Callable[[dict[str, Any], str], dict[str, Any]] = apply_btrfs_scrub,
+    planner: Callable[[dict[str, Any]], dict[str, Any]] = _scheduled_plan,
+    applier: Callable[[dict[str, Any], str], dict[str, Any]] = _scheduled_apply,
+    error_reporter: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Start scrub only for complete, idle, error-free Echo Btrfs RAID1."""
     configured, policy = policy_reader()
@@ -69,8 +78,11 @@ def run_schedule(
             ):
                 raise OSError("Btrfs scrub start was not verified")
             started += 1
-        except (OSError, ValueError, KeyError, TypeError):
+        except (OSError, ValueError, KeyError, TypeError) as exc:
             errors += 1
+            if error_reporter is not None:
+                detail = " ".join(str(exc).split())[:256]
+                error_reporter(f"{type(exc).__name__}: {detail}")
     return {
         "outcome": "completed" if errors == 0 else "completedWithErrors",
         "started": started,
@@ -81,7 +93,12 @@ def run_schedule(
 
 def main() -> int:
     try:
-        result = run_schedule()
+        result = run_schedule(
+            error_reporter=lambda detail: print(
+                f"Btrfs scrub schedule skipped one candidate: {detail}",
+                file=__import__("sys").stderr,
+            )
+        )
     except (OSError, ValueError) as exc:
         print(f"Btrfs scrub schedule refused to run: {exc}", file=__import__("sys").stderr)
         return 2

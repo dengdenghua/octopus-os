@@ -274,6 +274,54 @@ def test_btrfs_scrub_transition_polls_past_transient_no_stats(
     assert sleeps == [0.25]
 
 
+def test_scheduled_btrfs_scrub_waits_and_accepts_identical_completed_status(
+    monkeypatch: pytest.MonkeyPatch,
+    scrub_host: tuple[Path, dict[str, Any]],
+) -> None:
+    fstab, state = scrub_host
+    state["scan"] = {
+        "kind": "scrub",
+        "state": "completed",
+        "progressPercent": None,
+        "errors": 0,
+    }
+    state["hash"] = "same-low-resolution-status"
+    commands: list[tuple[tuple[str, ...], float]] = []
+
+    def run(*args: str, timeout: float = 120.0) -> SimpleNamespace:
+        commands.append((args, timeout))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(native_btrfs_scrub, "_run", run)
+    monkeypatch.setattr(
+        native_btrfs_scrub,
+        "_run_mutating",
+        lambda *_args, **_kwargs: pytest.fail("scheduled scrub must use foreground execution"),
+    )
+    desired = _desired()
+    plan = native_btrfs_scrub.plan_btrfs_scrub(
+        desired,
+        fstab_path=fstab,
+        wait_for_completion=True,
+    )
+    result = native_btrfs_scrub.apply_btrfs_scrub(
+        desired,
+        plan["planId"],
+        fstab_path=fstab,
+        wait_for_completion=True,
+    )
+
+    assert plan["execution"] == {"waitForCompletion": True}
+    assert plan["safety"]["wait"] is True
+    assert result["maintenanceState"] == "completed"
+    assert commands == [
+        (
+            ("btrfs", "scrub", "start", "-B", "/data/family"),
+            native_btrfs_scrub._SCHEDULED_SCRUB_TIMEOUT_SECONDS,
+        )
+    ]
+
+
 def test_btrfs_scrub_apply_rejects_stale_status(
     scrub_host: tuple[Path, dict[str, Any]],
 ) -> None:

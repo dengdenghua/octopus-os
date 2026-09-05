@@ -25,6 +25,7 @@ from appliance.omv_protocol import BTRFS_SCRUB_PLAN_SCHEMA, validate_btrfs_scrub
 _FSTAB_PATH = Path("/etc/fstab")
 _TRANSITION_ATTEMPTS = 21
 _TRANSITION_INTERVAL_SECONDS = 0.25
+_SCHEDULED_SCRUB_TIMEOUT_SECONDS = 7 * 24 * 60 * 60
 
 
 def _canonical_hash(payload: Any) -> str:
@@ -162,7 +163,9 @@ def btrfs_scrub_maintenance(*, fstab_path: Path = _FSTAB_PATH) -> list[dict[str,
         ]
 
 
-def _build_plan(desired: dict[str, str], *, fstab_path: Path) -> dict[str, Any]:
+def _build_plan(
+    desired: dict[str, str], *, fstab_path: Path, wait_for_completion: bool = False
+) -> dict[str, Any]:
     matches = [
         record
         for record in _maintenance_inventory(fstab_path=fstab_path)
@@ -183,6 +186,7 @@ def _build_plan(desired: dict[str, str], *, fstab_path: Path) -> dict[str, Any]:
         "filesystem": filesystem,
         "before": record["scan"],
         "exclusiveOperation": record["exclusiveOperation"],
+        "execution": {"waitForCompletion": wait_for_completion},
         "baseRevision": _canonical_hash(
             {
                 "filesystem": filesystem,
@@ -202,7 +206,7 @@ def _build_plan(desired: dict[str, str], *, fstab_path: Path) -> dict[str, Any]:
             "data": "checksummedReplicasMayBeReadAndRepaired",
             "activeMaintenance": "mustBeAbsent",
             "ioLoad": "high",
-            "wait": False,
+            "wait": wait_for_completion,
             "readOnly": False,
             "force": False,
             "cancel": False,
@@ -214,11 +218,18 @@ def _build_plan(desired: dict[str, str], *, fstab_path: Path) -> dict[str, Any]:
 
 
 def plan_btrfs_scrub(
-    desired_state: dict[str, Any], *, fstab_path: Path = _FSTAB_PATH
+    desired_state: dict[str, Any],
+    *,
+    fstab_path: Path = _FSTAB_PATH,
+    wait_for_completion: bool = False,
 ) -> dict[str, Any]:
     desired = validate_btrfs_scrub_desired(dict(desired_state))
     with btrfs_volume_transaction():
-        plan = _build_plan(desired, fstab_path=fstab_path)
+        plan = _build_plan(
+            desired,
+            fstab_path=fstab_path,
+            wait_for_completion=wait_for_completion,
+        )
         plan.pop("_statusHash", None)
         return plan
 
@@ -257,25 +268,51 @@ def apply_btrfs_scrub(
     plan_id: str,
     *,
     fstab_path: Path = _FSTAB_PATH,
+    wait_for_completion: bool = False,
 ) -> dict[str, Any]:
     desired = validate_btrfs_scrub_desired(dict(desired_state))
     with btrfs_volume_transaction():
-        plan = _build_plan(desired, fstab_path=fstab_path)
+        plan = _build_plan(
+            desired,
+            fstab_path=fstab_path,
+            wait_for_completion=wait_for_completion,
+        )
         if plan["planId"] != plan_id:
             raise ValueError("Btrfs scrub plan is stale; preview the change again")
         previous_status_hash = plan.pop("_statusHash")
         mountpoint = plan["filesystem"]["mountpoint"]
         command_error: Exception | None = None
         try:
-            _run_mutating("btrfs", "scrub", "start", mountpoint)
+            if wait_for_completion:
+                completed = _run(
+                    "btrfs",
+                    "scrub",
+                    "start",
+                    "-B",
+                    mountpoint,
+                    timeout=_SCHEDULED_SCRUB_TIMEOUT_SECONDS,
+                )
+                if completed.returncode != 0:
+                    detail = (completed.stderr or completed.stdout).strip()
+                    raise OSError(f"foreground Btrfs scrub failed: {detail[:512]}")
+            else:
+                _run_mutating("btrfs", "scrub", "start", mountpoint)
         except Exception as exc:
             command_error = exc
         try:
-            transition = _verified_transition(
-                mountpoint,
-                desired["filesystemUuid"],
-                previous_status_hash=previous_status_hash,
-            )
+            if wait_for_completion and command_error is None:
+                scan, _status_hash = _scrub_status(mountpoint, desired["filesystemUuid"])
+                transition = (
+                    (scan, "completedWithErrors" if scan["errors"] else "completed")
+                    if scan["state"] == "completed"
+                    else None
+                )
+            else:
+                transition = _verified_transition(
+                    mountpoint,
+                    desired["filesystemUuid"],
+                    previous_status_hash=previous_status_hash,
+                )
         except Exception as state_exc:
             if command_error is not None:
                 raise OSError(

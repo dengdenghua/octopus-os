@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import re
@@ -12,6 +13,7 @@ import sys
 import time
 import uuid
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -34,6 +36,10 @@ IMAGE_ROOT = Path("/var/tmp")
 MOUNT_ROOT = Path("/data")
 IMAGE_BYTES = 512 * 1024 * 1024
 PAYLOAD_BYTES = 64 * 1024 * 1024
+TIMER_DROP_IN = Path("/run/systemd/system/echo-btrfs-scrub.timer.d/override.conf")
+TIMER_UNIT = "echo-btrfs-scrub.timer"
+SERVICE_UNIT = "echo-btrfs-scrub.service"
+SERVICE_PATH = Path(f"/etc/systemd/system/{SERVICE_UNIT}")
 LOOP_DEVICE = re.compile(r"/dev/loop[0-9]+")
 BTRFS_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
@@ -177,6 +183,92 @@ def _wait_scrub(mountpoint: Path, filesystem_uuid: str) -> str:
             return latest
         time.sleep(0.25)
     raise BtrfsScrubFunctionalLabError("Btrfs scrub did not finish cleanly within the bound")
+
+
+def _systemd_property(unit: str, name: str) -> str:
+    return _checked(
+        ["systemctl", "show", unit, f"--property={name}", "--value"],
+        f"systemd {name} probe",
+    ).strip()
+
+
+def _run_schedule_via_timer(mountpoint: Path, filesystem_uuid: str) -> dict[str, Any]:
+    """Let systemd's timer invoke the production service without starting it directly."""
+    if not TIMER_PATH.is_file() or not SERVICE_PATH.is_file():
+        raise BtrfsScrubFunctionalLabError("production Btrfs scrub systemd units are absent")
+    TIMER_DROP_IN.parent.mkdir(parents=True, mode=0o755, exist_ok=True)
+    if TIMER_DROP_IN.is_symlink():
+        raise BtrfsScrubFunctionalLabError("Btrfs scrub timer drop-in path is unsafe")
+    override = (
+        b"[Timer]\n"
+        b"OnCalendar=\n"
+        b"OnActiveSec=3s\n"
+        b"RandomizedDelaySec=0\n"
+        b"AccuracySec=1us\n"
+        b"Persistent=false\n"
+    )
+    before_invocation = ""
+    try:
+        base._atomic_write(TIMER_DROP_IN, override, mode=0o644)
+        _checked(["systemctl", "daemon-reload"], "systemd reload before timer evidence")
+        _checked(["systemctl", "stop", TIMER_UNIT], "Btrfs scrub timer reset")
+        base._run(["systemctl", "reset-failed", SERVICE_UNIT])
+        before_invocation = _systemd_property(SERVICE_UNIT, "InvocationID")
+        _checked(["systemctl", "start", TIMER_UNIT], "Btrfs scrub timer start")
+        deadline = time.monotonic() + 60
+        invocation = before_invocation
+        while time.monotonic() < deadline:
+            invocation = _systemd_property(SERVICE_UNIT, "InvocationID")
+            if invocation and invocation != before_invocation:
+                active = _systemd_property(SERVICE_UNIT, "ActiveState")
+                if active != "activating":
+                    break
+            time.sleep(0.5)
+        else:
+            raise BtrfsScrubFunctionalLabError("systemd timer did not invoke the scrub service")
+        result = _systemd_property(SERVICE_UNIT, "Result")
+        status = _systemd_property(SERVICE_UNIT, "ExecMainStatus")
+        last_trigger = _systemd_property(TIMER_UNIT, "LastTriggerUSec")
+        journal = _checked(
+            ["journalctl", "--unit", SERVICE_UNIT, "--no-pager", "--output", "cat", "--lines", "20"],
+            "Btrfs scrub service journal",
+        )
+        payloads: list[dict[str, Any]] = []
+        for line in journal.splitlines():
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                payloads.append(value)
+        expected = {"outcome": "completed", "started": 1, "skipped": 0, "errors": 0}
+        if result != "success" or status != "0" or expected not in payloads:
+            current = base._run(["btrfs", "scrub", "status", "--raw", str(mountpoint)])
+            scrub_detail = " ".join(
+                f"{current.stdout or ''} {current.stderr or ''}".split()
+            )[:512]
+            journal_detail = " | ".join(line.strip() for line in journal.splitlines() if line.strip())[-768:]
+            raise BtrfsScrubFunctionalLabError(
+                "timer-started scrub service did not complete cleanly: "
+                f"result={result!r} status={status!r}; journal={journal_detail}; scrub={scrub_detail}"
+            )
+        final_status = _wait_scrub(mountpoint, filesystem_uuid)
+        return {
+            **expected,
+            "timerTriggered": True,
+            "serviceResult": result,
+            "serviceExecMainStatus": int(status),
+            "invocationIdChanged": invocation != before_invocation,
+            "lastTrigger": last_trigger,
+            "journalResult": expected,
+            "kernelCompletionVerified": _scrub_finished(final_status, filesystem_uuid),
+        }
+    finally:
+        base._run(["systemctl", "stop", TIMER_UNIT])
+        TIMER_DROP_IN.unlink(missing_ok=True)
+        with suppress(OSError):
+            TIMER_DROP_IN.parent.rmdir()
+        base._run(["systemctl", "daemon-reload"])
 
 
 def _restore(saved_files: Sequence[base.SavedFile]) -> None:
@@ -380,10 +472,18 @@ def run_lab(*, base_url: str, password: str) -> dict[str, Any]:
         ):
             raise BtrfsScrubFunctionalLabError("scrub schedule policy was not verified")
 
-        from deploy.appliance.btrfs_scrub_schedule_runner import run_schedule
+        if os.environ.get("ECHO_TIMER_NATURAL_TRIGGER") == "1":
+            scheduled = _run_schedule_via_timer(mountpoint, filesystem_uuid)
+        else:
+            from deploy.appliance.btrfs_scrub_schedule_runner import run_schedule
 
-        scheduled = run_schedule()
-        if scheduled != {"outcome": "completed", "started": 1, "skipped": 0, "errors": 0}:
+            scheduled = run_schedule()
+        if {key: scheduled.get(key) for key in ("outcome", "started", "skipped", "errors")} != {
+            "outcome": "completed",
+            "started": 1,
+            "skipped": 0,
+            "errors": 0,
+        }:
             raise BtrfsScrubFunctionalLabError("scheduled scrub runner did not verify")
         final_status = _wait_scrub(mountpoint, filesystem_uuid)
         final_inventory = base._request(
@@ -430,6 +530,10 @@ def run_lab(*, base_url: str, password: str) -> dict[str, Any]:
                 "timerContractPresent": TIMER_PATH.is_file(),
                 "runnerStarted": 1,
                 "runnerCompletionVerified": True,
+                "naturalTimerTriggerVerified": scheduled.get("timerTriggered") is True,
+                "systemdServiceResult": scheduled.get("serviceResult"),
+                "systemdInvocationChanged": scheduled.get("invocationIdChanged") is True,
+                "systemdLastTrigger": scheduled.get("lastTrigger"),
             },
             "observedAt": datetime.now(UTC).isoformat(),
         }

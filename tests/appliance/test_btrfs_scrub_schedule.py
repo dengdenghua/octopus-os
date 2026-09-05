@@ -157,6 +157,23 @@ def test_runner_is_fail_closed_when_enabled_value_has_no_policy_file() -> None:
     assert result["outcome"] == "disabled"
 
 
+def test_runner_reports_bounded_error_without_filesystem_identity() -> None:
+    reported: list[str] = []
+
+    result = runner.run_schedule(
+        policy_reader=lambda: (True, {"schemaVersion": 1, "enabled": True}),
+        inventory_reader=lambda: [{"filesystem": _filesystem(), "canStartScrub": True}],
+        planner=lambda _desired: (_ for _ in ()).throw(OSError("scrub refused\n" + "x" * 400)),
+        error_reporter=reported.append,
+    )
+
+    assert result == {"outcome": "completedWithErrors", "started": 0, "skipped": 0, "errors": 1}
+    assert len(reported) == 1
+    assert reported[0].startswith("OSError: scrub refused ")
+    assert len(reported[0]) <= len("OSError: ") + 256
+    assert FILESYSTEM_UUID not in reported[0]
+
+
 def test_alias_apply_binds_exact_schedule_approval_action(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -242,3 +259,63 @@ def test_systemd_timer_is_staggered_and_runner_is_constrained() -> None:
     assert "RandomizedDelaySec=24h" in timer
     assert "echo-btrfs-scrub.timer" in provision
     assert "systemctl enable --now echo-btrfs-scrub.timer" in provision
+
+
+def test_functional_lab_can_verify_natural_systemd_timer_trigger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from deploy.appliance import btrfs_scrub_functional_lab as lab
+
+    timer = tmp_path / "echo-btrfs-scrub.timer"
+    service = tmp_path / "echo-btrfs-scrub.service"
+    timer.write_text("[Timer]\n", encoding="utf-8")
+    service.write_text("[Service]\n", encoding="utf-8")
+    drop_in = tmp_path / "run" / "echo-btrfs-scrub.timer.d" / "override.conf"
+    monkeypatch.setattr(lab, "TIMER_PATH", timer)
+    monkeypatch.setattr(lab, "SERVICE_PATH", service)
+    monkeypatch.setattr(lab, "TIMER_DROP_IN", drop_in)
+
+    properties = {
+        "InvocationID": iter(["old-invocation", "new-invocation"]),
+        "ActiveState": iter(["inactive"]),
+        "Result": iter(["success"]),
+        "ExecMainStatus": iter(["0"]),
+        "LastTriggerUSec": iter(["Sat 2026-09-06 04:00:00 CST"]),
+    }
+    monkeypatch.setattr(lab, "_systemd_property", lambda _unit, name: next(properties[name]))
+    monkeypatch.setattr(
+        lab,
+        "_checked",
+        lambda command, _label: (
+            '{"errors":0,"outcome":"completed","skipped":0,"started":1}\n'
+            if command[0] == "journalctl"
+            else ""
+        ),
+    )
+    monkeypatch.setattr(
+        lab,
+        "_wait_scrub",
+        lambda _mountpoint, filesystem_uuid: (
+            f"UUID:             {filesystem_uuid}\nStatus:           finished\n"
+            "Error summary:    no errors found\n"
+        ),
+    )
+    cleanup_calls: list[list[str]] = []
+    monkeypatch.setattr(
+        lab.base,
+        "_run",
+        lambda command: cleanup_calls.append(list(command)),
+    )
+
+    result = lab._run_schedule_via_timer(tmp_path / "mount", "a6978489-5f78-48aa-9eb2-6ac6ff6ff690")
+
+    assert result["timerTriggered"] is True
+    assert result["serviceResult"] == "success"
+    assert result["journalResult"] == {
+        "outcome": "completed",
+        "started": 1,
+        "skipped": 0,
+        "errors": 0,
+    }
+    assert not drop_in.exists()
+    assert ["systemctl", "stop", "echo-btrfs-scrub.timer"] in cleanup_calls
