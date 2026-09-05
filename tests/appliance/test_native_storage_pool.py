@@ -728,6 +728,10 @@ errors: No known data errors
             {"kind": "none", "state": "idle", "progressPercent": None, "errors": None},
         ),
         (
+            _maintenance_status("none requested").replace("  scan: none requested\n", ""),
+            {"kind": "none", "state": "idle", "progressPercent": None, "errors": None},
+        ),
+        (
             _maintenance_status(
                 "scrub in progress since Sun Sep  5 01:00:00 2026",
                 "0B repaired, 16.91% done, 00:01:00 to go",
@@ -765,6 +769,11 @@ def test_zfs_scan_snapshot_parses_bounded_maintenance_state(
 
     assert {key: parsed[key] for key in expected} == expected
     assert len(parsed["summaryHash"]) == 64
+
+
+def test_zfs_scan_snapshot_rejects_unbounded_output_without_scan() -> None:
+    with pytest.raises(OSError, match="bounded configuration table"):
+        native_storage_pool._zfs_scan_snapshot("pool: family\nstate: ONLINE\n")
 
 
 @pytest.fixture

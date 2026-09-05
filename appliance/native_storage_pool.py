@@ -601,8 +601,13 @@ def _zfs_scan_snapshot(output: str) -> dict[str, Any]:
     """Parse only the bounded maintenance facts exposed by ``zpool status``."""
     match = re.search(r"(?m)^\s*scan:\s*(?P<summary>[^\r\n]+)\s*$", output)
     if match is None:
-        raise OSError("zpool status omitted the maintenance scan state")
-    summary = match.group("summary").strip()
+        # OpenZFS 2.3 may omit the scan row entirely until the first scrub or
+        # resilver. Only accept that version-specific idle form when the same
+        # output still contains a complete bounded config/errors table.
+        _status_config_rows(output)
+        summary = "none reported"
+    else:
+        summary = match.group("summary").strip()
     folded = summary.casefold()
     kind = (
         "scrub"
@@ -610,7 +615,7 @@ def _zfs_scan_snapshot(output: str) -> dict[str, Any]:
         else "resilver"
         if "resilver" in folded
         else "none"
-        if folded == "none requested"
+        if folded in {"none requested", "none reported"}
         else "unknown"
     )
     state = (
@@ -624,7 +629,7 @@ def _zfs_scan_snapshot(output: str) -> dict[str, Any]:
         else "unknown"
     )
     progress: float | None = None
-    if state == "inProgress":
+    if state == "inProgress" and match is not None:
         scan_end = re.search(r"(?m)^(?:config:|errors:)\s*", output[match.end() :])
         block_end = match.end() + scan_end.start() if scan_end else len(output)
         progress_match = re.search(
