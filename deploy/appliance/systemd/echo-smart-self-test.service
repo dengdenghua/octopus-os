@@ -1,0 +1,23 @@
+[Unit]
+Description=Echo OS scheduled whole-disk SMART short self-tests
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/echo-os
+ExecStart=/opt/echo-os/.venv/bin/python -m deploy.appliance.smart_schedule_runner
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_SYS_RAWIO
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=echo-smart-self-test

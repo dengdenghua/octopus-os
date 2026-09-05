@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
 
-from appliance import native_storage
+from appliance import native_storage, smart_schedule_policy
 from appliance.native_smart import (
     apply_smart_self_test,
     plan_smart_self_test,
@@ -39,6 +39,8 @@ from appliance.omv_models import (
     SharedFolderRenameDesiredState,
     SharePrivilegeApplyRequest,
     SharePrivilegeDesiredState,
+    SmartSchedulePolicyApplyRequest,
+    SmartSchedulePolicyDesiredState,
     SmartSelfTestApplyRequest,
     SmartSelfTestDesiredState,
     SmbApplyRequest,
@@ -181,6 +183,13 @@ def register_native_storage_routes(router: APIRouter) -> None:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
             raise HTTPException(status_code=503, detail="SMART 自检状态读取失败") from exc
+
+    @router.get("/smart/self-test/schedule")
+    async def smart_self_test_schedule() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(smart_schedule_policy.policy_status)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="SMART 定时自检策略读取失败") from exc
 
 
 def create_native_storage_router(
@@ -959,6 +968,41 @@ def create_omv_alias_router(
         )
 
     # --- SMART whole-disk self-test -----------------------------------
+    @router.post("/smart/self-test/schedule/plan")
+    async def plan_smart_self_test_schedule(
+        body: SmartSchedulePolicyDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                smart_schedule_policy.plan_policy,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="SMART 定时自检策略暂不可用") from exc
+
+    @router.post("/smart/self-test/schedule/apply")
+    async def apply_smart_self_test_schedule(
+        body: SmartSchedulePolicyApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="storage.smart.self-test.schedule",
+            plan_fn=smart_schedule_policy.plan_policy,
+            apply_fn=smart_schedule_policy.apply_policy,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "enabled": body.desired.enabled,
+                "test": "short",
+                "schedule": "weeklySundayLocal",
+            },
+        )
+
     @router.post("/smart/self-test/plan")
     async def plan_smart_self_test_route(
         body: SmartSelfTestDesiredState,

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Echo OS whole-disk SMART short self-tests weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30:00
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=30min
+Unit=echo-smart-self-test.service
+
+[Install]
+WantedBy=timers.target

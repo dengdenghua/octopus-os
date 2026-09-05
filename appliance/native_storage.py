@@ -916,6 +916,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.pool.zfs.scrub.start.v1",
     "power.ups-shutdown-policy.v1",
     "storage.smart.self-test.start.v1",
+    "storage.smart.self-test.schedule.v1",
 )
 
 
@@ -955,6 +956,7 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("power.ups-shutdown-policy.v1")
     if not _native_command_tools_available("smartctl"):
         unavailable.add("storage.smart.self-test.start.v1")
+        unavailable.add("storage.smart.self-test.schedule.v1")
     return [
         capability for capability in _NATIVE_WRITE_CAPABILITIES if capability not in unavailable
     ]

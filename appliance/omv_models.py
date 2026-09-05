@@ -722,6 +722,23 @@ class SmartSelfTestApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class SmartSchedulePolicyDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.smart-self-test-schedule-desired.v1"] = Field(
+        default="echo.smart-self-test-schedule-desired.v1",
+        alias="schema",
+    )
+    enabled: bool
+
+
+class SmartSchedulePolicyApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: SmartSchedulePolicyDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 __all__ = [
     "GroupApplyRequest",
     "GroupDesiredState",
@@ -741,6 +758,8 @@ __all__ = [
     "SharedFolderDesiredState",
     "SmartSelfTestApplyRequest",
     "SmartSelfTestDesiredState",
+    "SmartSchedulePolicyApplyRequest",
+    "SmartSchedulePolicyDesiredState",
     "SmbApplyRequest",
     "SmbDesiredState",
     "UserApplyRequest",
