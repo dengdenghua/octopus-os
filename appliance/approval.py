@@ -106,6 +106,7 @@ def _valid_target(action: str, target: str) -> bool:
         "omv.share-privilege.apply",
         "omv.smb.apply",
         "omv.nfs.apply",
+        "omv.nfs.remove",
         "omv.quota.apply",
         "omv.group.create",
         "omv.user.create",

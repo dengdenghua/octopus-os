@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from appliance.omv_protocol import (
     GROUP_DESIRED_SCHEMA,
     NFS_DESIRED_SCHEMA,
+    NFS_REMOVE_DESIRED_SCHEMA,
     QUOTA_DESIRED_SCHEMA,
     SHARE_PRIVILEGE_DESIRED_SCHEMA,
     SHARED_FOLDER_DESIRED_SCHEMA,
@@ -22,6 +23,7 @@ from appliance.omv_protocol import (
     USER_DESIRED_SCHEMA,
     USER_PASSWORD_DESIRED_SCHEMA,
     validate_group_desired,
+    validate_nfs_remove_desired,
     validate_omv_uuid,
     validate_share_privilege_desired,
     validate_shared_folder_desired,
@@ -277,6 +279,52 @@ class NfsApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class NfsRemoveDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.nfs-share-remove-desired.v1"] = Field(
+        default=NFS_REMOVE_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    shared_folder_ref: str = Field(min_length=36, max_length=36, alias="sharedFolderRef")
+    client_cidr: str = Field(min_length=1, max_length=64, alias="clientCidr")
+
+    @field_validator("shared_folder_ref")
+    @classmethod
+    def validate_shared_folder_ref(cls, value: str) -> str:
+        try:
+            return validate_nfs_remove_desired(
+                {
+                    "schema": NFS_REMOVE_DESIRED_SCHEMA,
+                    "sharedFolderRef": value,
+                    "clientCidr": "192.168.1.0/24",
+                }
+            )["sharedFolderRef"]
+        except ValueError as exc:
+            raise ValueError("sharedFolderRef must be an OMV UUID") from exc
+
+    @field_validator("client_cidr")
+    @classmethod
+    def validate_client_cidr(cls, value: str) -> str:
+        try:
+            return validate_nfs_remove_desired(
+                {
+                    "schema": NFS_REMOVE_DESIRED_SCHEMA,
+                    "sharedFolderRef": "11111111-2222-4333-8444-555555555555",
+                    "clientCidr": value,
+                }
+            )["clientCidr"]
+        except ValueError as exc:
+            raise ValueError("clientCidr must be one private network in CIDR form") from exc
+
+
+class NfsRemoveApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: NfsRemoveDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class QuotaDesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -330,6 +378,8 @@ __all__ = [
     "GroupDesiredState",
     "NfsApplyRequest",
     "NfsDesiredState",
+    "NfsRemoveApplyRequest",
+    "NfsRemoveDesiredState",
     "QuotaApplyRequest",
     "QuotaDesiredState",
     "SharePrivilegeApplyRequest",

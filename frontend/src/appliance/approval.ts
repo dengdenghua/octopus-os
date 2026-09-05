@@ -32,6 +32,7 @@ export type HighRiskAction =
   | "omv.share-privilege.apply"
   | "omv.smb.apply"
   | "omv.nfs.apply"
+  | "omv.nfs.remove"
   | "omv.quota.apply"
   | "omv.group.create"
   | "omv.user.create"

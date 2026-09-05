@@ -6,6 +6,7 @@ import {
   applyOmvFilesystemQuota,
   applyOmvGroup,
   applyOmvNfsShare,
+  applyOmvNfsShareRemove,
   applyOmvSharedFolder,
   applyOmvSharedFolderDetach,
   applyOmvSharePrivilege,
@@ -19,6 +20,7 @@ import {
   planOmvFilesystemQuota,
   planOmvGroup,
   planOmvNfsShare,
+  planOmvNfsShareRemove,
   planOmvSharedFolder,
   planOmvSharedFolderDetach,
   planOmvSharePrivilege,
@@ -44,6 +46,7 @@ vi.mock("./omv", () => ({
   applyOmvFilesystemQuota: vi.fn(),
   applyOmvGroup: vi.fn(),
   applyOmvNfsShare: vi.fn(),
+  applyOmvNfsShareRemove: vi.fn(),
   applyOmvSharedFolder: vi.fn(),
   applyOmvSharedFolderDetach: vi.fn(),
   applyOmvSharePrivilege: vi.fn(),
@@ -57,6 +60,7 @@ vi.mock("./omv", () => ({
   planOmvFilesystemQuota: vi.fn(),
   planOmvGroup: vi.fn(),
   planOmvNfsShare: vi.fn(),
+  planOmvNfsShareRemove: vi.fn(),
   planOmvSharedFolder: vi.fn(),
   planOmvSharedFolderDetach: vi.fn(),
   planOmvSharePrivilege: vi.fn(),
@@ -1217,6 +1221,97 @@ describe("OMV sharing and users settings", () => {
       ),
     );
     expect(applyOmvNfsShare).toHaveBeenCalledWith(
+      desired,
+      plan.planId,
+      "approval-token",
+    );
+  });
+
+  it("removes an existing native NFS rule without touching folder data", async () => {
+    const user = userEvent.setup();
+    const desired = {
+      schema: "echo.omv.nfs-share-remove-desired.v1" as const,
+      sharedFolderRef: shareUuid,
+      clientCidr: "192.168.1.0/24",
+    };
+    const plan = {
+      schema: "echo.omv.nfs-share-remove-plan.v1" as const,
+      planId: "6".repeat(64),
+      baseRevision: "7".repeat(64),
+      operation: "remove" as const,
+      requiresApproval: true as const,
+      shareUuid: "99999999-8888-4777-8666-555555555555",
+      sharedFolder: { uuid: shareUuid, name: "Family", status: "MOUNTED" },
+      desired,
+      changes: [
+        {
+          field: "registration" as const,
+          before: "managed" as const,
+          after: "removed" as const,
+        },
+      ],
+      safety: {
+        export: "managedRuleOnly" as const,
+        data: "preserved" as const,
+        directory: "neverModified" as const,
+        clientScope: "privateCidrOnly" as const,
+        rollback: "exportsAndLiveTable" as const,
+      },
+    };
+    vi.mocked(fetchOmvStatus).mockResolvedValueOnce({
+      configured: true,
+      available: true,
+      readOnly: false,
+      adminUrl: null,
+      capabilities: [
+        "nfs.share.private-network.v1",
+        "nfs.share.remove.safe.v1",
+      ],
+      source: "native",
+    });
+    vi.mocked(fetchOmvSharingOverview).mockResolvedValueOnce({
+      ...(await fetchOmvSharingOverview()),
+      nfs: {
+        enabled: true,
+        shares: [
+          {
+            uuid: plan.shareUuid,
+            sharedFolderRef: shareUuid,
+            sharedFolderName: "Family",
+            client: desired.clientCidr,
+            options: "rw",
+            comment: "Family NFS",
+          },
+        ],
+      },
+    });
+    vi.mocked(planOmvNfsShareRemove).mockResolvedValue(plan);
+    vi.mocked(applyOmvNfsShareRemove).mockResolvedValue({
+      ...plan,
+      applied: true,
+      verified: true,
+      dataPreserved: true,
+    });
+    render(<OmvSharingPanel />);
+
+    await user.click(await screen.findByRole("button", { name: "管理 NFS" }));
+    await user.click(screen.getByRole("button", { name: "移除 NFS 规则" }));
+    await waitFor(() =>
+      expect(planOmvNfsShareRemove).toHaveBeenCalledWith(desired),
+    );
+    expect(screen.getByText("将移除 NFS 私网规则")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "管理员确认并移除" }));
+    await user.type(screen.getByLabelText("设备管理员密码"), "device-password");
+    await user.click(screen.getByRole("button", { name: "确认移除 NFS" }));
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "omv.nfs.remove",
+        plan.planId,
+        "device-password",
+      ),
+    );
+    expect(applyOmvNfsShareRemove).toHaveBeenCalledWith(
       desired,
       plan.planId,
       "approval-token",

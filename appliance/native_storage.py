@@ -52,6 +52,7 @@ from typing import Any
 from appliance.omv_protocol import (
     GROUP_PLAN_SCHEMA,
     NFS_PLAN_SCHEMA,
+    NFS_REMOVE_PLAN_SCHEMA,
     QUOTA_PLAN_SCHEMA,
     SHARE_PRIVILEGE_PLAN_SCHEMA,
     SHARED_FOLDER_DESIRED_SCHEMA,
@@ -62,6 +63,7 @@ from appliance.omv_protocol import (
     validate_devicefile,
     validate_group_desired,
     validate_nfs_desired,
+    validate_nfs_remove_desired,
     validate_quota_desired,
     validate_share_privilege_desired,
     validate_shared_folder_desired,
@@ -693,6 +695,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "shared-folder.privilege.simple.v1",
     "smb.share.desired.v1",
     "nfs.share.private-network.v1",
+    "nfs.share.remove.safe.v1",
     "filesystem.quota.user-group.v1",
 )
 
@@ -719,6 +722,7 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("smb.share.desired.v1")
     if not _native_command_tools_available("exportfs"):
         unavailable.add("nfs.share.private-network.v1")
+        unavailable.add("nfs.share.remove.safe.v1")
     if not (
         _native_command_tools_available("zfs") or _native_quota_tools_available()
     ):
@@ -2499,6 +2503,12 @@ def _verify_live_nfs(path: Path, desired: dict[str, Any]) -> None:
         raise OSError("live NFS rule does not preserve the required safety options")
 
 
+def _verify_live_nfs_absent(path: Path, client: str) -> None:
+    output = _run_read_checked("exportfs", "-v")
+    if re.search(rf"{re.escape(str(path))}\s+{re.escape(client)}\([^)]*\)", output):
+        raise OSError("NFS rule remained in the live export table after removal")
+
+
 def apply_nfs(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     desired = validate_nfs_desired(dict(desired_state))
     with _registry_transaction():
@@ -2549,6 +2559,136 @@ def apply_nfs(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
                 raise
             raise OSError("NFS update failed") from exc
         return {**plan, "applied": True, "verified": True, "share": replacement}
+
+
+def _build_nfs_remove_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    folder, path = _nfs_rule_path(desired["sharedFolderRef"])
+    exports = _nfs_exports_load(strict=True)
+    exports_text = _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True)
+    existing = next(
+        (
+            item
+            for item in exports
+            if item["sharedFolderRef"] == desired["sharedFolderRef"]
+            and item["client"] == desired["clientCidr"]
+        ),
+        None,
+    )
+    if existing is None:
+        raise ValueError("NFS rule does not exist for this shared folder and client")
+    base_revision = _canonical_hash(
+        {
+            "folder": {"uuid": folder["uuid"], "name": folder["name"], "path": str(path)},
+            "exports": exports_text,
+        }
+    )
+    plan_id = _canonical_hash(
+        {
+            "schema": NFS_REMOVE_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+        }
+    )
+    return {
+        "schema": NFS_REMOVE_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": "remove",
+        "requiresApproval": True,
+        "shareUuid": existing["uuid"],
+        "sharedFolder": {"uuid": folder["uuid"], "name": folder["name"], "status": "MOUNTED"},
+        "desired": desired,
+        "changes": [
+            {
+                "field": "registration",
+                "before": "managed",
+                "after": "removed",
+            }
+        ],
+        "safety": {
+            "export": "managedRuleOnly",
+            "data": "preserved",
+            "directory": "neverModified",
+            "clientScope": "privateCidrOnly",
+            "rollback": "exportsAndLiveTable",
+        },
+        "source": "native",
+    }
+
+
+def plan_nfs_remove(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview removing one Echo-managed NFS export without touching data."""
+    desired = validate_nfs_remove_desired(dict(desired_state))
+    with _registry_transaction():
+        return _build_nfs_remove_plan(desired)
+
+
+def apply_nfs_remove(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Remove one managed NFS rule and verify it left the live export table."""
+    desired = validate_nfs_remove_desired(dict(desired_state))
+    with _registry_transaction():
+        plan = _build_nfs_remove_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("NFS remove plan is stale; preview the change again")
+        _folder, path = _nfs_rule_path(desired["sharedFolderRef"])
+        old_exports = _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True)
+        exports = _nfs_exports_load(strict=True)
+        existing = next(
+            item
+            for item in exports
+            if item["sharedFolderRef"] == desired["sharedFolderRef"]
+            and item["client"] == desired["clientCidr"]
+        )
+        wanted = [
+            item
+            for item in exports
+            if not (
+                item["sharedFolderRef"] == desired["sharedFolderRef"]
+                and item["client"] == desired["clientCidr"]
+            )
+        ]
+        restore_desired = {
+            "schema": "echo.omv.nfs-share-desired.v1",
+            "sharedFolderRef": existing["sharedFolderRef"],
+            "clientCidr": existing["client"],
+            "readOnly": existing["readOnly"],
+            "comment": existing["comment"],
+        }
+        try:
+            if wanted:
+                _atomic_text_save(_NATIVE_NFS_EXPORTS, _render_nfs_exports(wanted), mode=0o644)
+            else:
+                _restore_managed_text(_NATIVE_NFS_EXPORTS, None, mode=0o644)
+            _run_write("exportfs", "-ra")
+            if _nfs_exports_load(strict=True) != wanted:
+                raise OSError("native NFS export removal write-back verification failed")
+            _verify_live_nfs_absent(path, desired["clientCidr"])
+        except Exception as exc:
+            try:
+                _restore_managed_text(_NATIVE_NFS_EXPORTS, old_exports, mode=0o644)
+                _run_write("exportfs", "-ra")
+                if _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True) != old_exports:
+                    raise OSError("NFS exports rollback was not verified")
+                _verify_live_nfs(path, restore_desired)
+            except Exception as rollback_exc:
+                raise OSError(
+                    "NFS removal failed and rollback also failed; inspect exports immediately"
+                ) from rollback_exc
+            if isinstance(exc, (OSError, ValueError)):
+                raise
+            raise OSError("NFS removal failed") from exc
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "dataPreserved": True,
+            "share": {
+                "uuid": existing["uuid"],
+                "sharedFolderRef": existing["sharedFolderRef"],
+                "clientCidr": existing["client"],
+                "removed": True,
+            },
+        }
 
 
 # --- SMB usershare enable / update / remove ------------------------------
@@ -3115,6 +3255,7 @@ __all__ = [
     "NativeStorageAuthority",
     "apply_group",
     "apply_nfs",
+    "apply_nfs_remove",
     "apply_quota",
     "apply_share_privilege",
     "apply_shared_folder",
@@ -3126,6 +3267,7 @@ __all__ = [
     "md_arrays",
     "plan_group",
     "plan_nfs",
+    "plan_nfs_remove",
     "plan_quota",
     "plan_share_privilege",
     "plan_shared_folder",

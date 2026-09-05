@@ -19,6 +19,8 @@ from appliance.omv_models import (
     GroupDesiredState,
     NfsApplyRequest,
     NfsDesiredState,
+    NfsRemoveApplyRequest,
+    NfsRemoveDesiredState,
     QuotaApplyRequest,
     QuotaDesiredState,
     SharedFolderApplyRequest,
@@ -538,6 +540,40 @@ def create_omv_alias_router(
                 "sharedFolderRef": body.desired.shared_folder_ref,
                 "clientCidr": body.desired.client_cidr,
                 "readOnly": body.desired.read_only,
+            },
+        )
+
+    @router.post("/sharing/nfs/remove/plan")
+    async def plan_nfs_remove(
+        body: NfsRemoveDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_nfs_remove,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生存储面暂不可用") from exc
+
+    @router.post("/sharing/nfs/remove/apply")
+    async def apply_nfs_remove_route(
+        body: NfsRemoveApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.nfs.remove",
+            plan_fn=native_storage.plan_nfs_remove,
+            apply_fn=native_storage.apply_nfs_remove,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "clientCidr": body.desired.client_cidr,
             },
         )
 

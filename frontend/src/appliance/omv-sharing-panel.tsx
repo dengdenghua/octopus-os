@@ -42,6 +42,7 @@ import {
   applyOmvUserPassword,
   applyOmvFilesystemQuota,
   applyOmvNfsShare,
+  applyOmvNfsShareRemove,
   applyOmvSharedFolder,
   applyOmvSharedFolderDetach,
   applyOmvSharePrivilege,
@@ -53,6 +54,7 @@ import {
   planOmvFilesystemQuota,
   planOmvGroup,
   planOmvNfsShare,
+  planOmvNfsShareRemove,
   planOmvSharedFolder,
   planOmvSharedFolderDetach,
   planOmvSharePrivilege,
@@ -64,6 +66,8 @@ import {
   type OmvGroupPlan,
   type OmvNfsDesiredState,
   type OmvNfsPlan,
+  type OmvNfsRemoveDesiredState,
+  type OmvNfsRemovePlan,
   type OmvQuotaDesiredState,
   type OmvQuotaPlan,
   type OmvSharedFolder,
@@ -207,6 +211,13 @@ export function OmvSharingPanel() {
   const [nfsPlan, setNfsPlan] = useState<OmvNfsPlan | null>(null);
   const [nfsPlanning, setNfsPlanning] = useState(false);
   const [nfsApprovalOpen, setNfsApprovalOpen] = useState(false);
+  const [nfsRemoveDesired, setNfsRemoveDesired] =
+    useState<OmvNfsRemoveDesiredState | null>(null);
+  const [nfsRemovePlan, setNfsRemovePlan] = useState<OmvNfsRemovePlan | null>(
+    null,
+  );
+  const [nfsRemovePlanning, setNfsRemovePlanning] = useState(false);
+  const [nfsRemoveApprovalOpen, setNfsRemoveApprovalOpen] = useState(false);
   const [quotaFilesystemUuid, setQuotaFilesystemUuid] = useState("");
   const [quotaSubjectType, setQuotaSubjectType] = useState<"user" | "group">(
     "user",
@@ -670,6 +681,60 @@ export function OmvSharingPanel() {
     );
     await applyOmvNfsShare(nfsDesired, nfsPlan.planId, approval.approvalToken);
     setNfsApprovalOpen(false);
+    setEditingNfsFolder(null);
+    setNfsDesired(null);
+    setNfsPlan(null);
+    setReloadKey((value) => value + 1);
+  };
+
+  const previewNfsRemove = async () => {
+    if (
+      !editingNfsFolder ||
+      status?.source !== "native" ||
+      !status.capabilities?.includes("nfs.share.remove.safe.v1")
+    ) {
+      return;
+    }
+    const existing = overview?.nfs.shares.find(
+      (share) => share.sharedFolderRef === editingNfsFolder.uuid,
+    );
+    if (!existing) return;
+    const nextDesired: OmvNfsRemoveDesiredState = {
+      schema: "echo.omv.nfs-share-remove-desired.v1",
+      sharedFolderRef: existing.sharedFolderRef,
+      clientCidr: existing.client,
+    };
+    setNfsRemovePlanning(true);
+    setNfsRemoveDesired(nextDesired);
+    setNfsRemovePlan(null);
+    setError(null);
+    try {
+      setNfsRemovePlan(await planOmvNfsShareRemove(nextDesired));
+    } catch (reason) {
+      setNfsRemovePlan(null);
+      setError(
+        reason instanceof Error ? reason.message : "无法生成 NFS 规则移除预览",
+      );
+    } finally {
+      setNfsRemovePlanning(false);
+    }
+  };
+
+  const confirmNfsRemove = async (password: string) => {
+    if (!nfsRemoveDesired || !nfsRemovePlan) return;
+    const approval = await requestHighRiskApproval(
+      "omv.nfs.remove",
+      nfsRemovePlan.planId,
+      password,
+    );
+    await applyOmvNfsShareRemove(
+      nfsRemoveDesired,
+      nfsRemovePlan.planId,
+      approval.approvalToken,
+    );
+    setNfsRemoveApprovalOpen(false);
+    setNfsRemoveDesired(null);
+    setNfsRemovePlan(null);
     setEditingNfsFolder(null);
     setNfsDesired(null);
     setNfsPlan(null);
@@ -1566,6 +1631,8 @@ export function OmvSharingPanel() {
                     setEditingNfsFolder(null);
                     setNfsDesired(null);
                     setNfsPlan(null);
+                    setNfsRemoveDesired(null);
+                    setNfsRemovePlan(null);
                   }}
                   className="text-xs text-slate-500 hover:text-slate-800"
                 >
@@ -1628,6 +1695,23 @@ export function OmvSharingPanel() {
                 <span className="text-[11px] text-slate-500">
                   预览不会修改系统配置
                 </span>
+                {status?.source === "native" &&
+                  status.capabilities?.includes("nfs.share.remove.safe.v1") &&
+                  overview?.nfs.shares.some(
+                    (share) => share.sharedFolderRef === editingNfsFolder.uuid,
+                  ) && (
+                    <button
+                      type="button"
+                      onClick={() => void previewNfsRemove()}
+                      disabled={nfsRemovePlanning}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 text-xs font-medium text-rose-700 transition hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      {nfsRemovePlanning && (
+                        <Loader2Icon className="size-3.5 animate-spin" />
+                      )}
+                      {nfsRemovePlanning ? "正在预览…" : "移除 NFS 规则"}
+                    </button>
+                  )}
               </div>
               {nfsPlan && (
                 <div className="mt-4 rounded-xl border border-emerald-100 bg-white p-3">
@@ -1667,6 +1751,30 @@ export function OmvSharingPanel() {
                         </span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+              {nfsRemovePlan && (
+                <div className="mt-4 rounded-xl border border-rose-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <strong className="block text-xs text-slate-800">
+                        将移除 NFS 私网规则
+                      </strong>
+                      <span className="mt-1 block text-[10px] text-slate-500">
+                        只移除 Echo 管理的 exports
+                        规则；目录、文件和权限均保留。
+                      </span>
+                    </div>
+                    {nfsRemovePlan.requiresApproval && (
+                      <button
+                        type="button"
+                        onClick={() => setNfsRemoveApprovalOpen(true)}
+                        className="h-8 shrink-0 rounded-lg bg-rose-600 px-3 text-[11px] font-medium text-white hover:bg-rose-700"
+                      >
+                        管理员确认并移除
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -3272,6 +3380,19 @@ export function OmvSharingPanel() {
         confirmLabel="确认应用 NFS"
         onCancel={() => setNfsApprovalOpen(false)}
         onConfirm={confirmNfsChange}
+      />
+      <HighRiskApprovalDialog
+        open={nfsRemoveApprovalOpen && Boolean(nfsRemovePlan)}
+        title="移除 NFS 私网规则"
+        description="Echo 只会移除本机生成的 NFS exports 规则并回读 live export table；共享目录、文件和 POSIX ACL 均保留。"
+        targetLabel={
+          nfsRemovePlan
+            ? `${nfsRemovePlan.sharedFolder.name} · ${nfsRemovePlan.desired.clientCidr} · ${nfsRemovePlan.planId.slice(0, 12)}`
+            : undefined
+        }
+        confirmLabel="确认移除 NFS"
+        onCancel={() => setNfsRemoveApprovalOpen(false)}
+        onConfirm={confirmNfsRemove}
       />
     </>
   );

@@ -23,6 +23,9 @@ SMB_CONTROL_CAPABILITY = "smb.share.desired.v1"
 NFS_DESIRED_SCHEMA = "echo.omv.nfs-share-desired.v1"
 NFS_PLAN_SCHEMA = "echo.omv.nfs-share-plan.v1"
 NFS_CONTROL_CAPABILITY = "nfs.share.private-network.v1"
+NFS_REMOVE_DESIRED_SCHEMA = "echo.omv.nfs-share-remove-desired.v1"
+NFS_REMOVE_PLAN_SCHEMA = "echo.omv.nfs-share-remove-plan.v1"
+NFS_REMOVE_CONTROL_CAPABILITY = "nfs.share.remove.safe.v1"
 QUOTA_DESIRED_SCHEMA = "echo.omv.filesystem-quota-desired.v1"
 QUOTA_PLAN_SCHEMA = "echo.omv.filesystem-quota-plan.v1"
 QUOTA_CONTROL_CAPABILITY = "filesystem.quota.user-group.v1"
@@ -386,6 +389,23 @@ def validate_nfs_desired(value: Any) -> dict[str, Any]:
         "clientCidr": validate_private_network(value.get("clientCidr")),
         "readOnly": value["readOnly"],
         "comment": comment,
+    }
+
+
+def validate_nfs_remove_desired(value: Any) -> dict[str, Any]:
+    """Validate removal of one Echo-managed private-network export."""
+    expected = {"schema", "sharedFolderRef", "clientCidr"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("NFS remove desired state has unexpected fields")
+    if value.get("schema") != NFS_REMOVE_DESIRED_SCHEMA:
+        raise ValueError("NFS remove desired-state schema is unsupported")
+    folder_ref = value.get("sharedFolderRef")
+    if not isinstance(folder_ref, str):
+        raise ValueError("NFS shared folder UUID is invalid")
+    return {
+        "schema": NFS_REMOVE_DESIRED_SCHEMA,
+        "sharedFolderRef": validate_omv_uuid(folder_ref).lower(),
+        "clientCidr": validate_private_network(value.get("clientCidr")),
     }
 
 

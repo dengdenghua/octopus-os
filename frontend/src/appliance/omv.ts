@@ -472,6 +472,38 @@ export type OmvNfsPlan = {
   verified?: boolean;
 };
 
+export type OmvNfsRemoveDesiredState = {
+  schema: "echo.omv.nfs-share-remove-desired.v1";
+  sharedFolderRef: string;
+  clientCidr: string;
+};
+
+export type OmvNfsRemovePlan = {
+  schema: "echo.omv.nfs-share-remove-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "remove";
+  requiresApproval: true;
+  shareUuid: string;
+  sharedFolder: { uuid: string; name: string; status: string };
+  desired: OmvNfsRemoveDesiredState;
+  changes: Array<{
+    field: "registration";
+    before: "managed";
+    after: "removed";
+  }>;
+  safety: {
+    export: "managedRuleOnly";
+    data: "preserved";
+    directory: "neverModified";
+    clientScope: "privateCidrOnly";
+    rollback: "exportsAndLiveTable";
+  };
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: true;
+};
+
 export type OmvQuotaDesiredState = {
   schema: "echo.omv.filesystem-quota-desired.v1";
   filesystemUuid: string;
@@ -848,6 +880,29 @@ export function applyOmvNfsShare(
     "/api/appliance/omv/sharing/nfs/apply",
     { desired, planId },
     "无法应用 NFS 配置",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function planOmvNfsShareRemove(
+  desired: OmvNfsRemoveDesiredState,
+): Promise<OmvNfsRemovePlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/nfs/remove/plan",
+    desired,
+    "无法生成 NFS 规则移除预览",
+  );
+}
+
+export function applyOmvNfsShareRemove(
+  desired: OmvNfsRemoveDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvNfsRemovePlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/nfs/remove/apply",
+    { desired, planId },
+    "无法移除 NFS 规则",
     approvalHeader(approvalToken),
   );
 }

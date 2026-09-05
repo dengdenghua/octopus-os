@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyOmvGroup,
   applyOmvNfsShare,
+  applyOmvNfsShareRemove,
   applyOmvSharedFolder,
   applyOmvSharedFolderDetach,
   applyOmvSharePrivilege,
@@ -18,6 +19,7 @@ import {
   fetchOmvStorageTopology,
   fetchOmvStatus,
   planOmvNfsShare,
+  planOmvNfsShareRemove,
   planOmvGroup,
   planOmvSharedFolder,
   planOmvSharedFolderDetach,
@@ -679,6 +681,78 @@ describe("OMV read-only API client", () => {
     });
     expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
       "nfs-approval-token",
+    );
+  });
+
+  it("keeps NFS rule removal data-preserving and approval-bound", async () => {
+    const desired = {
+      schema: "echo.omv.nfs-share-remove-desired.v1" as const,
+      sharedFolderRef: "11111111-2222-4333-8444-555555555555",
+      clientCidr: "192.168.1.0/24",
+    };
+    const plan = {
+      schema: "echo.omv.nfs-share-remove-plan.v1" as const,
+      planId: "a".repeat(64),
+      baseRevision: "b".repeat(64),
+      operation: "remove" as const,
+      requiresApproval: true as const,
+      shareUuid: "99999999-8888-4777-8666-555555555555",
+      sharedFolder: {
+        uuid: desired.sharedFolderRef,
+        name: "Family",
+        status: "MOUNTED",
+      },
+      desired,
+      changes: [
+        {
+          field: "registration" as const,
+          before: "managed" as const,
+          after: "removed" as const,
+        },
+      ],
+      safety: {
+        export: "managedRuleOnly" as const,
+        data: "preserved" as const,
+        directory: "neverModified" as const,
+        clientScope: "privateCidrOnly" as const,
+        rollback: "exportsAndLiveTable" as const,
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...plan,
+            applied: true,
+            verified: true,
+            dataPreserved: true,
+          }),
+          { status: 200 },
+        ),
+      );
+
+    expect((await planOmvNfsShareRemove(desired)).planId).toBe(plan.planId);
+    expect(
+      (await applyOmvNfsShareRemove(desired, plan.planId, "nfs-remove-token"))
+        .dataPreserved,
+    ).toBe(true);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/appliance/omv/sharing/nfs/remove/plan",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/appliance/omv/sharing/nfs/remove/apply",
+    );
+    const apply = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(JSON.parse(String(apply.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
+      "nfs-remove-token",
     );
   });
 });
