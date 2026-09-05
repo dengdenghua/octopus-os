@@ -190,6 +190,7 @@ def test_empty_shared_folder_delete_uses_a_plan_bound_approval(tmp_path):
     [
         "omv.btrfs-snapshot.create",
         "omv.btrfs-snapshot.delete",
+        "omv.btrfs-snapshot.restore-copy",
         "storage.btrfs.snapshot.schedule",
     ],
 )

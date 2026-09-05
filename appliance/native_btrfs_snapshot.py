@@ -19,8 +19,10 @@ from appliance import native_storage as storage
 from appliance.omv_protocol import (
     BTRFS_SNAPSHOT_DELETE_PLAN_SCHEMA,
     BTRFS_SNAPSHOT_PLAN_SCHEMA,
+    BTRFS_SNAPSHOT_RESTORE_COPY_PLAN_SCHEMA,
     validate_btrfs_snapshot_delete_desired,
     validate_btrfs_snapshot_desired,
+    validate_btrfs_snapshot_restore_copy_desired,
     validate_omv_uuid,
 )
 
@@ -395,6 +397,185 @@ def plan_automatic_snapshot(shared_folder_ref: str, name: str) -> dict[str, Any]
 def apply_automatic_snapshot(shared_folder_ref: str, name: str, plan_id: str) -> dict[str, Any]:
     """Apply a pre-authorized scheduled snapshot using the normal safety checks."""
     return _apply_snapshot_desired(_automatic_desired(shared_folder_ref, name), plan_id)
+
+
+def _restore_copy_context(
+    desired: dict[str, Any],
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    Path,
+    dict[str, Any],
+    dict[str, Any],
+    Path,
+]:
+    entry, source, source_identity = _resolve_share(desired["sharedFolderRef"])
+    snapshots = _inventory(entry, source, source_identity)
+    selected = next(
+        (item for item in snapshots if item["snapshotId"] == desired["snapshotId"]), None
+    )
+    if selected is None:
+        raise ValueError("snapshotId does not match a managed snapshot for this shared folder")
+    volume_ref = entry.get("mountPointRef")
+    volume_path = entry.get("volumePath")
+    if not isinstance(volume_ref, str) or not isinstance(volume_path, str):
+        raise OSError("native shared-folder registry has no stable volume identity")
+    normalized_volume_ref = validate_omv_uuid(volume_ref).lower()
+    writable_path = storage._writable_targets().get(normalized_volume_ref)
+    if writable_path is None or os.path.normpath(writable_path) != os.path.normpath(volume_path):
+        raise ValueError("snapshot source volume is not currently mounted writable")
+    target = storage._shared_folder_target_payload(normalized_volume_ref, volume_path)
+    if str(target.get("type") or "").casefold() != "btrfs":
+        raise OSError("snapshot source registry no longer resolves to a Btrfs volume")
+    registry = storage._registry_load(strict=True)
+    target_uuid = storage._share_uuid(normalized_volume_ref, desired["name"])
+    if any(
+        item.get("uuid") == target_uuid
+        or (
+            item.get("mountPointRef") == normalized_volume_ref
+            and item.get("name") == desired["name"]
+        )
+        for item in registry
+    ):
+        raise ValueError("restore-copy shared folder already exists")
+    destination = Path(volume_path) / desired["name"]
+    target_state = storage._target_state(destination)
+    if target_state["kind"] != "absent":
+        raise ValueError("restore-copy target already exists outside the native registry")
+    snapshot_path = _snapshot_directory(entry, source) / selected["name"]
+    base_revision = storage._canonical_hash(
+        {
+            "registry": registry,
+            "sourceEntry": entry,
+            "sourceIdentity": source_identity,
+            "snapshots": snapshots,
+            "selected": selected,
+            "target": target,
+            "targetState": target_state,
+        }
+    )
+    plan_id = storage._canonical_hash(
+        {
+            "schema": BTRFS_SNAPSHOT_RESTORE_COPY_PLAN_SCHEMA,
+            "baseRevision": base_revision,
+            "desired": desired,
+        }
+    )
+    plan = {
+        "schema": BTRFS_SNAPSHOT_RESTORE_COPY_PLAN_SCHEMA,
+        "planId": plan_id,
+        "baseRevision": base_revision,
+        "operation": "createRecoveredShare",
+        "requiresApproval": True,
+        "desired": desired,
+        "sourceSnapshot": selected,
+        "recoveredShareUuid": target_uuid,
+        "target": target,
+        "changes": [{"field": "sharedFolder", "before": "absent", "after": desired["name"]}],
+        "safety": {
+            "sourceShareUntouched": True,
+            "sourceSnapshotUntouched": True,
+            "sameFilesystem": True,
+            "destinationMustBeAbsent": True,
+            "writableRecoveredCopy": True,
+            "applicationQuiesce": False,
+            "fullVolumeRollback": False,
+        },
+        "source": "native",
+    }
+    return plan, entry, source, selected, registry, snapshot_path
+
+
+def plan_snapshot_restore_copy(desired_state: dict[str, Any]) -> dict[str, Any]:
+    """Preview recovery as a new writable share without replacing live data."""
+    desired = validate_btrfs_snapshot_restore_copy_desired(dict(desired_state))
+    with storage._registry_transaction():
+        return _restore_copy_context(desired)[0]
+
+
+def apply_snapshot_restore_copy(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    """Clone one read-only snapshot into a new, registered writable share."""
+    desired = validate_btrfs_snapshot_restore_copy_desired(dict(desired_state))
+    with storage._registry_transaction():
+        plan, entry, _source, selected, original_registry, snapshot_path = _restore_copy_context(
+            desired
+        )
+        if plan["planId"] != plan_id:
+            raise ValueError("Btrfs snapshot restore-copy plan is stale; preview again")
+        volume_ref = validate_omv_uuid(str(entry["mountPointRef"])).lower()
+        volume_path = str(entry["volumePath"])
+        destination = Path(volume_path) / desired["name"]
+        group_gid = storage._users_group_gid()
+        created = False
+        registry_changed = False
+        try:
+            _run_mutation("btrfs", "subvolume", "snapshot", str(snapshot_path), str(destination))
+            created = True
+            identity = _subvolume_identity(destination)
+            if (
+                identity["readOnly"]
+                or identity["parentUuid"] != selected["subvolumeUuid"]
+                or destination.lstat().st_dev != snapshot_path.lstat().st_dev
+            ):
+                raise OSError("recovered Btrfs share does not match the selected snapshot")
+            storage._configure_shared_folder(destination, group_gid)
+            entry = storage._registry_folder_entry(
+                volume_ref=volume_ref,
+                volume_path=volume_path,
+                name=desired["name"],
+                comment=f"Recovered from snapshot {selected['name']}",
+                storage_kind="btrfsSubvolume",
+            )
+            if (
+                entry.get("uuid") != plan["recoveredShareUuid"]
+                or entry.get("mountPointRef") != volume_ref
+                or entry.get("name") != desired["name"]
+                or entry.get("storageKind") != "btrfsSubvolume"
+            ):
+                raise OSError("recovered shared-folder registry identity is invalid")
+            registry = [*original_registry, entry]
+            storage._registry_save(registry)
+            registry_changed = True
+            observed = storage._registry_load(strict=True)
+            observed_entry = next(
+                (item for item in observed if item.get("uuid") == plan["recoveredShareUuid"]),
+                None,
+            )
+            verified_identity = _subvolume_identity(destination)
+            if (
+                observed_entry != entry
+                or not storage._verify_shared_folder(destination, group_gid)
+                or verified_identity["readOnly"]
+                or verified_identity["parentUuid"] != selected["subvolumeUuid"]
+            ):
+                raise OSError("recovered Btrfs shared folder verification failed")
+        except Exception as exc:
+            rollback_errors: list[Exception] = []
+            if registry_changed:
+                try:
+                    storage._registry_save(original_registry)
+                    if storage._registry_load(strict=True) != original_registry:
+                        raise OSError("shared-folder registry rollback was not verified")
+                except Exception as rollback_exc:
+                    rollback_errors.append(rollback_exc)
+            if created and destination.exists() and not destination.is_symlink():
+                try:
+                    _run_mutation("btrfs", "subvolume", "delete", str(destination))
+                except Exception as rollback_exc:
+                    rollback_errors.append(rollback_exc)
+            if rollback_errors:
+                raise OSError(
+                    "Btrfs snapshot restore-copy failed and rollback was incomplete"
+                ) from rollback_errors[0]
+            if isinstance(exc, (OSError, ValueError)):
+                raise
+            raise OSError("Btrfs snapshot restore-copy failed") from exc
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "sharedFolder": storage._public_shared_folder_entry(entry),
+        }
 
 
 def _delete_context(

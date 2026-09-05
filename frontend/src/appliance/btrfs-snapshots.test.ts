@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyBtrfsSnapshot,
+  applyBtrfsSnapshotRestoreCopy,
   applyBtrfsSnapshotSchedule,
   fetchBtrfsSnapshots,
   planBtrfsSnapshot,
+  planBtrfsSnapshotRestoreCopy,
   planBtrfsSnapshotSchedule,
 } from "./btrfs-snapshots";
 
@@ -97,6 +99,40 @@ describe("Btrfs snapshot API", () => {
     );
     expect(applyOptions.headers).toMatchObject({
       "X-Echo-Approval": "schedule-approval",
+    });
+  });
+
+  it("binds non-destructive recovery to its own plan and approval", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ planId: "c".repeat(64) }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const restoreDesired = {
+      schema: "echo.omv.btrfs-snapshot-restore-copy-desired.v1" as const,
+      sharedFolderRef: desired.sharedFolderRef,
+      snapshotId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      name: "Photos_recovered",
+    };
+    await planBtrfsSnapshotRestoreCopy(restoreDesired);
+    await applyBtrfsSnapshotRestoreCopy(
+      restoreDesired,
+      "c".repeat(64),
+      "restore-approval",
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/appliance/omv/sharing/snapshots/restore-copy/plan",
+    );
+    const applyOptions = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/appliance/omv/sharing/snapshots/restore-copy/apply",
+    );
+    expect(applyOptions.headers).toMatchObject({
+      "X-Echo-Approval": "restore-approval",
     });
   });
 });

@@ -2495,6 +2495,13 @@ export function OmvSharingPanel() {
                       "shared-folder.snapshot.schedule.latest.v1",
                     ),
                   );
+                const canRestoreSnapshot =
+                  snapshotCapable &&
+                  Boolean(
+                    status?.capabilities?.includes(
+                      "shared-folder.snapshot.restore-copy.v1",
+                    ),
+                  );
                 return (
                   <article
                     key={folder.uuid}
@@ -2701,13 +2708,16 @@ export function OmvSharingPanel() {
                     {snapshotCapable &&
                       (canCreateSnapshot ||
                         canDeleteSnapshot ||
+                        canRestoreSnapshot ||
                         canScheduleSnapshot) && (
                         <BtrfsSnapshotPanel
                           sharedFolderRef={folder.uuid}
                           sharedFolderName={folder.name}
                           canCreate={canCreateSnapshot}
                           canDelete={canDeleteSnapshot}
+                          canRestore={canRestoreSnapshot}
                           canSchedule={canScheduleSnapshot}
+                          onRecovered={() => setReloadKey((value) => value + 1)}
                         />
                       )}
                     {entries ? (

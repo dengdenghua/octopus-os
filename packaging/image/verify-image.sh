@@ -833,6 +833,8 @@ require_pattern "$REPO_ROOT/deploy/appliance/btrfs_scrub_schedule_runner.py" 'co
 require_pattern "$REPO_ROOT/deploy/appliance/systemd/echo-btrfs-scrub.timer" '^OnCalendar=Sun \*-\*-1\.\.7 01:45:00$' "Btrfs scrub uses the fixed monthly maintenance window"
 require_pattern "$REPO_ROOT/deploy/provision/base/provision-lib.sh" 'systemctl enable --now echo-btrfs-scrub\.timer' "fresh appliances enable the guarded Btrfs scrub timer"
 require_pattern "$REPO_ROOT/appliance/native_storage.py" 'shared-folder\.snapshot\.schedule\.latest\.v1' "native storage advertises guarded automatic share snapshots"
+require_pattern "$REPO_ROOT/appliance/native_storage.py" 'shared-folder\.snapshot\.restore-copy\.v1' "native storage advertises non-destructive snapshot recovery"
+require_pattern "$REPO_ROOT/appliance/native_storage_routes.py" 'omv\.btrfs-snapshot\.restore-copy' "snapshot recovery requires a dedicated approval action"
 require_pattern "$REPO_ROOT/deploy/appliance/btrfs_snapshot_schedule_runner.py" 'item\.get\("kind"\) == "automatic"' "snapshot retention never prunes manual snapshots"
 require_pattern "$REPO_ROOT/deploy/appliance/systemd/echo-btrfs-snapshot.timer" '^OnCalendar=\*-\*-\* 02:15:00$' "automatic share snapshots use the fixed daily window"
 require_pattern "$REPO_ROOT/deploy/provision/base/provision-lib.sh" 'systemctl enable --now echo-btrfs-snapshot\.timer' "fresh appliances enable guarded automatic snapshots"

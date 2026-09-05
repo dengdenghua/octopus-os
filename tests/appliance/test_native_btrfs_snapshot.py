@@ -14,6 +14,7 @@ from appliance.native_storage_routes import create_omv_alias_router
 from appliance.omv_protocol import (
     validate_btrfs_snapshot_delete_desired,
     validate_btrfs_snapshot_desired,
+    validate_btrfs_snapshot_restore_copy_desired,
 )
 
 SHARE_UUID = "11111111-2222-4333-8444-555555555555"
@@ -35,6 +36,16 @@ def _delete_desired(snapshot_id: str) -> dict[str, Any]:
         "schema": "echo.omv.btrfs-snapshot-delete-desired.v1",
         "sharedFolderRef": SHARE_UUID,
         "snapshotId": snapshot_id,
+    }
+
+
+def _restore_desired(**overrides: Any) -> dict[str, Any]:
+    return {
+        "schema": "echo.omv.btrfs-snapshot-restore-copy-desired.v1",
+        "sharedFolderRef": SHARE_UUID,
+        "snapshotId": SNAPSHOT_UUID,
+        "name": "photos_recovered",
+        **overrides,
     }
 
 
@@ -78,6 +89,12 @@ def test_snapshot_validators_reject_paths_and_cross_share_delete() -> None:
         validate_btrfs_snapshot_desired(_desired(name="auto-20260905t010203z"))
     with pytest.raises(ValueError, match="snapshotId"):
         validate_btrfs_snapshot_delete_desired(_delete_desired("not-a-uuid"))
+    assert (
+        validate_btrfs_snapshot_restore_copy_desired(_restore_desired())["name"]
+        == "photos_recovered"
+    )
+    with pytest.raises(ValueError, match="portable"):
+        validate_btrfs_snapshot_restore_copy_desired(_restore_desired(name="../escape"))
 
 
 def test_subvolume_parser_requires_stable_uuid_and_id() -> None:
@@ -260,6 +277,115 @@ def test_failed_command_does_not_delete_an_unverified_racing_target(
     assert destination.exists()
 
 
+def test_restore_copy_creates_a_new_writable_registered_share_without_paths(
+    monkeypatch: pytest.MonkeyPatch, snapshot_share
+) -> None:
+    entry, source, _source_identity = snapshot_share
+    volume = source.parent
+    snapshot_directory = volume / ".echo-snapshots" / SHARE_UUID
+    snapshot_path = snapshot_directory / "before_upgrade"
+    snapshot_path.mkdir(parents=True)
+    snapshot = {
+        "snapshotId": SNAPSHOT_UUID,
+        "name": "before_upgrade",
+        "subvolumeUuid": SNAPSHOT_UUID,
+        "readOnly": True,
+        "kind": "manual",
+    }
+    registry = [entry]
+    monkeypatch.setattr(native_btrfs_snapshot, "_inventory", lambda *_args: [snapshot])
+    monkeypatch.setattr(
+        native_btrfs_snapshot.storage,
+        "_writable_targets",
+        lambda: {entry["mountPointRef"]: str(volume)},
+    )
+    monkeypatch.setattr(
+        native_btrfs_snapshot.storage,
+        "_shared_folder_target_payload",
+        lambda ref, path: {"mountPointRef": ref, "type": "btrfs", "readOnly": False},
+    )
+    monkeypatch.setattr(
+        native_btrfs_snapshot.storage, "_registry_load", lambda **_kwargs: list(registry)
+    )
+
+    def save(entries: list[dict[str, Any]]) -> None:
+        registry[:] = entries
+
+    monkeypatch.setattr(native_btrfs_snapshot.storage, "_registry_save", save)
+    monkeypatch.setattr(native_btrfs_snapshot.storage, "_users_group_gid", lambda: 100)
+    monkeypatch.setattr(
+        native_btrfs_snapshot.storage, "_configure_shared_folder", lambda *_args: None
+    )
+    monkeypatch.setattr(native_btrfs_snapshot.storage, "_verify_shared_folder", lambda *_args: True)
+    recovered_uuid = native_btrfs_snapshot.storage._share_uuid(
+        entry["mountPointRef"], "photos_recovered"
+    )
+
+    def recovered_entry(**kwargs: Any) -> dict[str, Any]:
+        return {
+            "uuid": recovered_uuid,
+            "name": kwargs["name"],
+            "comment": kwargs["comment"],
+            "relativePath": kwargs["name"],
+            "volumePath": kwargs["volume_path"],
+            "mountPointRef": kwargs["volume_ref"],
+            "storageKind": kwargs["storage_kind"],
+        }
+
+    monkeypatch.setattr(native_btrfs_snapshot.storage, "_registry_folder_entry", recovered_entry)
+    monkeypatch.setattr(
+        native_btrfs_snapshot.storage,
+        "_public_shared_folder_entry",
+        lambda value: {"uuid": value["uuid"], "name": value["name"]},
+    )
+    commands: list[tuple[str, ...]] = []
+
+    def mutate(*args: str, **_kwargs: Any) -> None:
+        commands.append(args)
+        if args[2] == "snapshot":
+            Path(args[-1]).mkdir()
+        else:
+            Path(args[-1]).rmdir()
+
+    monkeypatch.setattr(native_btrfs_snapshot, "_run_mutation", mutate)
+    monkeypatch.setattr(
+        native_btrfs_snapshot,
+        "_subvolume_identity",
+        lambda path: (
+            {
+                "subvolumeUuid": "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+                "subvolumeId": 258,
+                "parentUuid": SNAPSHOT_UUID,
+                "readOnly": False,
+            }
+            if path.name == "photos_recovered"
+            else _identity()
+        ),
+    )
+
+    plan = native_btrfs_snapshot.plan_snapshot_restore_copy(_restore_desired())
+    assert plan["operation"] == "createRecoveredShare"
+    assert plan["safety"]["sourceShareUntouched"] is True
+    assert str(volume) not in json.dumps(plan)
+    result = native_btrfs_snapshot.apply_snapshot_restore_copy(_restore_desired(), plan["planId"])
+
+    assert commands == [
+        (
+            "btrfs",
+            "subvolume",
+            "snapshot",
+            str(snapshot_path),
+            str(volume / "photos_recovered"),
+        )
+    ]
+    assert result["verified"] is True
+    assert result["sharedFolder"] == {"uuid": recovered_uuid, "name": "photos_recovered"}
+    assert source.exists()
+    assert snapshot_path.exists()
+    assert len(registry) == 2
+    assert str(volume) not in json.dumps(result)
+
+
 def test_delete_is_bound_to_inventory_and_preserves_source(
     monkeypatch: pytest.MonkeyPatch, snapshot_share
 ) -> None:
@@ -359,6 +485,46 @@ def test_snapshot_delete_route_consumes_exact_plan_bound_action(
     )
     assert response.status_code == 200
     assert approvals[0]["action"] == "omv.btrfs-snapshot.delete"
+    assert approvals[0]["target"] == plan_id
+
+
+def test_snapshot_restore_copy_route_consumes_exact_plan_bound_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    plan_id = "f" * 64
+    current_plan = {
+        "planId": plan_id,
+        "operation": "createRecoveredShare",
+        "requiresApproval": True,
+    }
+    approvals: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            approvals.append(kwargs)
+
+    class Audit:
+        def record(self, **_kwargs: Any) -> None:
+            pass
+
+    monkeypatch.setattr(
+        native_btrfs_snapshot, "plan_snapshot_restore_copy", lambda _desired: current_plan
+    )
+    monkeypatch.setattr(
+        native_btrfs_snapshot,
+        "apply_snapshot_restore_copy",
+        lambda _desired, _plan_id: {**current_plan, "applied": True, "verified": True},
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+    response = TestClient(app).post(
+        "/api/appliance/omv/sharing/snapshots/restore-copy/apply",
+        json={"desired": _restore_desired(), "planId": plan_id},
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+    assert response.status_code == 200
+    assert approvals[0]["action"] == "omv.btrfs-snapshot.restore-copy"
     assert approvals[0]["target"] == plan_id
 
 

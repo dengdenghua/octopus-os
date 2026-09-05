@@ -77,6 +77,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "shared-folder.delete.empty.v1",
         "shared-folder.snapshot.create.read-only.v1",
         "shared-folder.snapshot.delete.v1",
+        "shared-folder.snapshot.restore-copy.v1",
         "shared-folder.snapshot.schedule.latest.v1",
         "account.group.create.v1",
         "account.user.create.v1",

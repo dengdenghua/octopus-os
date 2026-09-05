@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   CameraIcon,
+  FolderSyncIcon,
   Loader2Icon,
   RefreshCwIcon,
   Trash2Icon,
@@ -10,26 +11,31 @@ import { requestHighRiskApproval } from "@/appliance/approval";
 import {
   applyBtrfsSnapshot,
   applyBtrfsSnapshotDelete,
+  applyBtrfsSnapshotRestoreCopy,
   applyBtrfsSnapshotSchedule,
   fetchBtrfsSnapshotSchedule,
   fetchBtrfsSnapshots,
   planBtrfsSnapshot,
   planBtrfsSnapshotDelete,
+  planBtrfsSnapshotRestoreCopy,
   planBtrfsSnapshotSchedule,
   type BtrfsSnapshot,
   type BtrfsSnapshotDeletePlan,
   type BtrfsSnapshotDesired,
   type BtrfsSnapshotPlan,
+  type BtrfsSnapshotRestoreCopyPlan,
   type BtrfsSnapshotSchedule,
   type BtrfsSnapshotSchedulePlan,
 } from "@/appliance/btrfs-snapshots";
 import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
 
 const SNAPSHOT_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
+const SHARE_NAME = /^(?=.{1,64}$)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9_-])?$/;
 
 type PendingApproval =
   | { kind: "create"; plan: BtrfsSnapshotPlan }
   | { kind: "delete"; plan: BtrfsSnapshotDeletePlan }
+  | { kind: "restore"; plan: BtrfsSnapshotRestoreCopyPlan }
   | { kind: "schedule"; plan: BtrfsSnapshotSchedulePlan };
 
 export function BtrfsSnapshotPanel({
@@ -37,13 +43,17 @@ export function BtrfsSnapshotPanel({
   sharedFolderName,
   canCreate,
   canDelete,
+  canRestore,
   canSchedule,
+  onRecovered,
 }: {
   sharedFolderRef: string;
   sharedFolderName: string;
   canCreate: boolean;
   canDelete: boolean;
+  canRestore: boolean;
   canSchedule: boolean;
+  onRecovered?: () => void;
 }) {
   const [snapshots, setSnapshots] = useState<BtrfsSnapshot[]>([]);
   const [name, setName] = useState("");
@@ -51,6 +61,12 @@ export function BtrfsSnapshotPanel({
   const [pending, setPending] = useState<PendingApproval | null>(null);
   const [loading, setLoading] = useState(true);
   const [planning, setPlanning] = useState(false);
+  const [restoreSnapshot, setRestoreSnapshot] = useState<BtrfsSnapshot | null>(
+    null,
+  );
+  const [restoreName, setRestoreName] = useState("");
+  const [restorePlan, setRestorePlan] =
+    useState<BtrfsSnapshotRestoreCopyPlan | null>(null);
   const [schedule, setSchedule] = useState<BtrfsSnapshotSchedule | null>(null);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [keepLatest, setKeepLatest] = useState(8);
@@ -139,6 +155,43 @@ export function BtrfsSnapshotPanel({
     }
   };
 
+  const beginRestore = (snapshot: BtrfsSnapshot) => {
+    const base = sharedFolderName.slice(0, 54).replace(/[.-]+$/, "") || "share";
+    setRestoreSnapshot(snapshot);
+    setRestoreName(`${base}_recovered`);
+    setRestorePlan(null);
+    setError(null);
+  };
+
+  const previewRestore = async () => {
+    const normalizedName = restoreName.trim();
+    if (!restoreSnapshot || !SHARE_NAME.test(normalizedName)) {
+      setError(
+        "恢复副本名称须为 1–64 位可跨 Windows/macOS/Linux 使用的单段名称",
+      );
+      return;
+    }
+    setPlanning(true);
+    setRestorePlan(null);
+    setError(null);
+    try {
+      setRestorePlan(
+        await planBtrfsSnapshotRestoreCopy({
+          schema: "echo.omv.btrfs-snapshot-restore-copy-desired.v1",
+          sharedFolderRef,
+          snapshotId: restoreSnapshot.snapshotId,
+          name: normalizedName,
+        }),
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "无法生成恢复副本预览",
+      );
+    } finally {
+      setPlanning(false);
+    }
+  };
+
   const previewSchedule = async () => {
     if (!Number.isInteger(keepLatest) || keepLatest < 1 || keepLatest > 64) {
       setError("自动快照保留数量必须在 1 到 64 之间");
@@ -191,6 +244,21 @@ export function BtrfsSnapshotPanel({
         pending.plan.planId,
         approval.approvalToken,
       );
+    } else if (pending.kind === "restore") {
+      const approval = await requestHighRiskApproval(
+        "omv.btrfs-snapshot.restore-copy",
+        pending.plan.planId,
+        password,
+      );
+      await applyBtrfsSnapshotRestoreCopy(
+        pending.plan.desired,
+        pending.plan.planId,
+        approval.approvalToken,
+      );
+      setRestoreSnapshot(null);
+      setRestoreName("");
+      setRestorePlan(null);
+      onRecovered?.();
     } else {
       const approval = await requestHighRiskApproval(
         "storage.btrfs.snapshot.schedule",
@@ -344,6 +412,67 @@ export function BtrfsSnapshotPanel({
           )}
         </div>
       )}
+      {canRestore && restoreSnapshot && (
+        <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50/80 p-2 text-emerald-950">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">
+              从 {restoreSnapshot.name} 创建可写恢复副本
+            </span>
+            <input
+              aria-label={`${restoreSnapshot.name} 的恢复副本名称`}
+              value={restoreName}
+              maxLength={64}
+              autoCapitalize="none"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => {
+                setRestoreName(event.currentTarget.value);
+                setRestorePlan(null);
+              }}
+              className="h-8 min-w-[190px] flex-1 rounded-lg border border-emerald-200 bg-white px-2.5 text-[11px] outline-none focus:border-emerald-500"
+            />
+            <button
+              type="button"
+              onClick={() => void previewRestore()}
+              disabled={planning || !restoreName.trim()}
+              className="h-8 rounded-lg bg-emerald-600 px-3 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              预览恢复
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRestoreSnapshot(null);
+                setRestorePlan(null);
+              }}
+              className="h-8 rounded-lg border border-emerald-200 bg-white px-3 text-emerald-700 hover:bg-emerald-100"
+            >
+              取消
+            </button>
+          </div>
+          <p className="mt-1 text-emerald-700">
+            新目录与原共享位于同一 Btrfs 卷；不会覆盖原共享，也不会自动启用
+            SMB/NFS。
+          </p>
+          {restorePlan && (
+            <div className="mt-2 flex items-center justify-between gap-2 border-t border-emerald-200 pt-2">
+              <span>
+                将创建可写共享目录 {restorePlan.desired.name}
+                ；源共享和只读快照保持不变。
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setPending({ kind: "restore", plan: restorePlan })
+                }
+                className="h-7 shrink-0 rounded-lg bg-amber-500 px-2.5 font-medium text-white hover:bg-amber-600"
+              >
+                管理员确认
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {!loading && snapshots.length > 0 && (
         <ul className="mt-2 space-y-1 border-t border-violet-200 pt-2">
           {snapshots.map((snapshot) => (
@@ -357,6 +486,18 @@ export function BtrfsSnapshotPanel({
               <span className="text-violet-500">
                 {snapshot.kind === "automatic" ? "自动 · 只读" : "手工 · 只读"}
               </span>
+              {canRestore && (
+                <button
+                  type="button"
+                  aria-label={`从快照 ${snapshot.name} 创建恢复副本`}
+                  disabled={planning}
+                  onClick={() => beginRestore(snapshot)}
+                  className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  <FolderSyncIcon className="size-3" />
+                  恢复副本
+                </button>
+              )}
               {canDelete && (
                 <button
                   type="button"
@@ -385,30 +526,38 @@ export function BtrfsSnapshotPanel({
         title={
           pending?.kind === "delete"
             ? "删除只读快照"
-            : pending?.kind === "schedule"
-              ? "更新自动快照策略"
-              : "创建只读快照"
+            : pending?.kind === "restore"
+              ? "创建恢复副本"
+              : pending?.kind === "schedule"
+                ? "更新自动快照策略"
+                : "创建只读快照"
         }
         description={
           pending?.kind === "delete"
             ? "只删除所选快照子卷，不触碰共享文件夹源数据。删除后不能通过 Echo 恢复。"
-            : pending?.kind === "schedule"
-              ? "后续计划任务将无需再次输入密码创建自动快照，并只裁剪由调度器创建的旧快照。"
-              : "创建同一 Btrfs 文件系统内的只读、崩溃一致快照；不会暂停正在写入的应用。"
+            : pending?.kind === "restore"
+              ? "从只读快照创建新的可写 Btrfs 共享目录；不会覆盖原共享，也不会自动发布 SMB/NFS。"
+              : pending?.kind === "schedule"
+                ? "后续计划任务将无需再次输入密码创建自动快照，并只裁剪由调度器创建的旧快照。"
+                : "创建同一 Btrfs 文件系统内的只读、崩溃一致快照；不会暂停正在写入的应用。"
         }
         targetLabel={
           pending?.kind === "delete"
             ? pending.plan.snapshot.name
-            : pending?.kind === "schedule"
-              ? `${sharedFolderName} · 保留 ${pending.plan.desired.keepLatest} 个`
-              : pending?.plan.desired.name
+            : pending?.kind === "restore"
+              ? `${pending.plan.sourceSnapshot.name} → ${pending.plan.desired.name}`
+              : pending?.kind === "schedule"
+                ? `${sharedFolderName} · 保留 ${pending.plan.desired.keepLatest} 个`
+                : pending?.plan.desired.name
         }
         confirmLabel={
           pending?.kind === "delete"
             ? "确认删除"
-            : pending?.kind === "schedule"
-              ? "确认更新"
-              : "确认创建"
+            : pending?.kind === "restore"
+              ? "确认创建副本"
+              : pending?.kind === "schedule"
+                ? "确认更新"
+                : "确认创建"
         }
         destructive={pending?.kind === "delete"}
         onCancel={() => setPending(null)}

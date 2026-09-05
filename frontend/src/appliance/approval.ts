@@ -32,6 +32,7 @@ export type HighRiskAction =
   | "omv.shared-folder.delete"
   | "omv.btrfs-snapshot.create"
   | "omv.btrfs-snapshot.delete"
+  | "omv.btrfs-snapshot.restore-copy"
   | "storage.btrfs.snapshot.schedule"
   | "omv.share-privilege.apply"
   | "omv.smb.apply"

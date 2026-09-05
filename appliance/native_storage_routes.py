@@ -42,6 +42,8 @@ from appliance.omv_models import (
     BtrfsSnapshotDeleteApplyRequest,
     BtrfsSnapshotDeleteDesiredState,
     BtrfsSnapshotDesiredState,
+    BtrfsSnapshotRestoreCopyApplyRequest,
+    BtrfsSnapshotRestoreCopyDesiredState,
     BtrfsSnapshotSchedulePolicyApplyRequest,
     BtrfsSnapshotSchedulePolicyDesiredState,
     DiskIdlePolicyApplyRequest,
@@ -666,6 +668,42 @@ def create_omv_alias_router(
             metadata={
                 "sharedFolderRef": body.desired.shared_folder_ref,
                 "snapshotId": body.desired.snapshot_id,
+            },
+        )
+
+    @router.post("/sharing/snapshots/restore-copy/plan")
+    async def plan_btrfs_snapshot_restore_copy(
+        body: BtrfsSnapshotRestoreCopyDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_btrfs_snapshot.plan_snapshot_restore_copy,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="Btrfs 快照恢复副本暂不可用") from exc
+
+    @router.post("/sharing/snapshots/restore-copy/apply")
+    async def apply_btrfs_snapshot_restore_copy_route(
+        body: BtrfsSnapshotRestoreCopyApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.btrfs-snapshot.restore-copy",
+            plan_fn=native_btrfs_snapshot.plan_snapshot_restore_copy,
+            apply_fn=native_btrfs_snapshot.apply_snapshot_restore_copy,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "snapshotId": body.desired.snapshot_id,
+                "recoveredShareName": body.desired.name,
+                "sourceUntouched": True,
             },
         )
 

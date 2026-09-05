@@ -7,6 +7,7 @@ import {
   fetchBtrfsSnapshots,
   planBtrfsSnapshot,
   planBtrfsSnapshotDelete,
+  planBtrfsSnapshotRestoreCopy,
   planBtrfsSnapshotSchedule,
 } from "./btrfs-snapshots";
 import { BtrfsSnapshotPanel } from "./btrfs-snapshot-panel";
@@ -14,11 +15,13 @@ import { BtrfsSnapshotPanel } from "./btrfs-snapshot-panel";
 vi.mock("./btrfs-snapshots", () => ({
   applyBtrfsSnapshot: vi.fn(),
   applyBtrfsSnapshotDelete: vi.fn(),
+  applyBtrfsSnapshotRestoreCopy: vi.fn(),
   applyBtrfsSnapshotSchedule: vi.fn(),
   fetchBtrfsSnapshotSchedule: vi.fn(),
   fetchBtrfsSnapshots: vi.fn(),
   planBtrfsSnapshot: vi.fn(),
   planBtrfsSnapshotDelete: vi.fn(),
+  planBtrfsSnapshotRestoreCopy: vi.fn(),
   planBtrfsSnapshotSchedule: vi.fn(),
 }));
 
@@ -67,6 +70,7 @@ describe("BtrfsSnapshotPanel", () => {
         sharedFolderName="Photos"
         canCreate
         canDelete
+        canRestore={false}
         canSchedule={false}
       />,
     );
@@ -105,6 +109,7 @@ describe("BtrfsSnapshotPanel", () => {
         sharedFolderName="Photos"
         canCreate
         canDelete
+        canRestore={false}
         canSchedule={false}
       />,
     );
@@ -152,6 +157,7 @@ describe("BtrfsSnapshotPanel", () => {
         sharedFolderName="Photos"
         canCreate
         canDelete
+        canRestore={false}
         canSchedule
       />,
     );
@@ -167,5 +173,59 @@ describe("BtrfsSnapshotPanel", () => {
       }),
     );
     expect(screen.getByText(/手工快照不受影响/)).toBeInTheDocument();
+  });
+
+  it("previews recovery as a new share without replacing the source", async () => {
+    vi.mocked(planBtrfsSnapshotRestoreCopy).mockResolvedValue({
+      schema: "echo.omv.btrfs-snapshot-restore-copy-plan.v1",
+      planId: "d".repeat(64),
+      operation: "createRecoveredShare",
+      requiresApproval: true,
+      desired: {
+        schema: "echo.omv.btrfs-snapshot-restore-copy-desired.v1",
+        sharedFolderRef: share,
+        snapshotId: snapshot.snapshotId,
+        name: "Photos_recovered",
+      },
+      sourceSnapshot: snapshot,
+      recoveredShareUuid: "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+      safety: {
+        sourceShareUntouched: true,
+        sourceSnapshotUntouched: true,
+        sameFilesystem: true,
+        destinationMustBeAbsent: true,
+        writableRecoveredCopy: true,
+        applicationQuiesce: false,
+        fullVolumeRollback: false,
+      },
+    });
+    render(
+      <BtrfsSnapshotPanel
+        sharedFolderRef={share}
+        sharedFolderName="Photos"
+        canCreate
+        canDelete
+        canRestore
+        canSchedule={false}
+      />,
+    );
+    await screen.findByText("before_upgrade");
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "从快照 before_upgrade 创建恢复副本",
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "预览恢复" }));
+    await waitFor(() =>
+      expect(planBtrfsSnapshotRestoreCopy).toHaveBeenCalledWith({
+        schema: "echo.omv.btrfs-snapshot-restore-copy-desired.v1",
+        sharedFolderRef: share,
+        snapshotId: snapshot.snapshotId,
+        name: "Photos_recovered",
+      }),
+    );
+    expect(screen.getByText(/源共享和只读快照保持不变/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "管理员确认" }));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
   });
 });

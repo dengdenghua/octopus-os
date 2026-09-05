@@ -17,6 +17,7 @@ from appliance.omv_protocol import (
     BTRFS_SCRUB_DESIRED_SCHEMA,
     BTRFS_SNAPSHOT_DELETE_DESIRED_SCHEMA,
     BTRFS_SNAPSHOT_DESIRED_SCHEMA,
+    BTRFS_SNAPSHOT_RESTORE_COPY_DESIRED_SCHEMA,
     EXT4_CHECK_DESIRED_SCHEMA,
     EXT4_VOLUME_DESIRED_SCHEMA,
     GROUP_DESIRED_SCHEMA,
@@ -45,6 +46,7 @@ from appliance.omv_protocol import (
     validate_btrfs_scrub_desired,
     validate_btrfs_snapshot_delete_desired,
     validate_btrfs_snapshot_desired,
+    validate_btrfs_snapshot_restore_copy_desired,
     validate_ext4_check_desired,
     validate_ext4_volume_desired,
     validate_group_desired,
@@ -386,6 +388,53 @@ class BtrfsSnapshotDeleteApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     desired: BtrfsSnapshotDeleteDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
+class BtrfsSnapshotRestoreCopyDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.btrfs-snapshot-restore-copy-desired.v1"] = Field(
+        default=BTRFS_SNAPSHOT_RESTORE_COPY_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    shared_folder_ref: str = Field(min_length=36, max_length=36, alias="sharedFolderRef")
+    snapshot_id: str = Field(min_length=36, max_length=36, alias="snapshotId")
+    name: str = Field(min_length=1, max_length=64)
+
+    @field_validator("shared_folder_ref", "snapshot_id", "name")
+    @classmethod
+    def validate_restore_copy_field(cls, value: str, info: Any) -> str:
+        payload = {
+            "schema": BTRFS_SNAPSHOT_RESTORE_COPY_DESIRED_SCHEMA,
+            "sharedFolderRef": (
+                value
+                if info.field_name == "shared_folder_ref"
+                else "11111111-2222-4333-8444-555555555555"
+            ),
+            "snapshotId": (
+                value
+                if info.field_name == "snapshot_id"
+                else "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+            ),
+            "name": value if info.field_name == "name" else "recovered_share",
+        }
+        try:
+            normalized = validate_btrfs_snapshot_restore_copy_desired(payload)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        key = {
+            "shared_folder_ref": "sharedFolderRef",
+            "snapshot_id": "snapshotId",
+            "name": "name",
+        }[info.field_name]
+        return normalized[key]
+
+
+class BtrfsSnapshotRestoreCopyApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: BtrfsSnapshotRestoreCopyDesiredState
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
@@ -1244,6 +1293,8 @@ __all__ = [
     "BtrfsSnapshotDeleteApplyRequest",
     "BtrfsSnapshotDeleteDesiredState",
     "BtrfsSnapshotDesiredState",
+    "BtrfsSnapshotRestoreCopyApplyRequest",
+    "BtrfsSnapshotRestoreCopyDesiredState",
     "BtrfsSnapshotSchedulePolicyApplyRequest",
     "BtrfsSnapshotSchedulePolicyDesiredState",
     "BtrfsScrubApplyRequest",

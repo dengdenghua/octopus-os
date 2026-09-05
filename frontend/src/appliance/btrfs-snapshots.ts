@@ -50,6 +50,13 @@ export type BtrfsSnapshotDeleteDesired = {
   snapshotId: string;
 };
 
+export type BtrfsSnapshotRestoreCopyDesired = {
+  schema: "echo.omv.btrfs-snapshot-restore-copy-desired.v1";
+  sharedFolderRef: string;
+  snapshotId: string;
+  name: string;
+};
+
 export type BtrfsSnapshotPlan = {
   schema: "echo.omv.btrfs-snapshot-plan.v1";
   planId: string;
@@ -75,6 +82,27 @@ export type BtrfsSnapshotDeletePlan = {
   requiresApproval: true;
   desired: BtrfsSnapshotDeleteDesired;
   snapshot: BtrfsSnapshot;
+  applied?: boolean;
+  verified?: boolean;
+};
+
+export type BtrfsSnapshotRestoreCopyPlan = {
+  schema: "echo.omv.btrfs-snapshot-restore-copy-plan.v1";
+  planId: string;
+  operation: "createRecoveredShare";
+  requiresApproval: true;
+  desired: BtrfsSnapshotRestoreCopyDesired;
+  sourceSnapshot: BtrfsSnapshot;
+  recoveredShareUuid: string;
+  safety: {
+    sourceShareUntouched: true;
+    sourceSnapshotUntouched: true;
+    sameFilesystem: true;
+    destinationMustBeAbsent: true;
+    writableRecoveredCopy: true;
+    applicationQuiesce: false;
+    fullVolumeRollback: false;
+  };
   applied?: boolean;
   verified?: boolean;
 };
@@ -161,6 +189,29 @@ export function applyBtrfsSnapshotDelete(
     "/api/appliance/omv/sharing/snapshots/delete/apply",
     { desired, planId },
     "无法删除只读快照",
+    approvalToken,
+  );
+}
+
+export function planBtrfsSnapshotRestoreCopy(
+  desired: BtrfsSnapshotRestoreCopyDesired,
+) {
+  return postJson<BtrfsSnapshotRestoreCopyPlan>(
+    "/api/appliance/omv/sharing/snapshots/restore-copy/plan",
+    desired,
+    "无法生成快照恢复副本预览",
+  );
+}
+
+export function applyBtrfsSnapshotRestoreCopy(
+  desired: BtrfsSnapshotRestoreCopyDesired,
+  planId: string,
+  approvalToken: string,
+) {
+  return postJson<BtrfsSnapshotRestoreCopyPlan>(
+    "/api/appliance/omv/sharing/snapshots/restore-copy/apply",
+    { desired, planId },
+    "无法从快照创建恢复副本",
     approvalToken,
   );
 }

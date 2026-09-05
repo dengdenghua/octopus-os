@@ -26,6 +26,9 @@ BTRFS_SNAPSHOT_CONTROL_CAPABILITY = "shared-folder.snapshot.create.read-only.v1"
 BTRFS_SNAPSHOT_DELETE_DESIRED_SCHEMA = "echo.omv.btrfs-snapshot-delete-desired.v1"
 BTRFS_SNAPSHOT_DELETE_PLAN_SCHEMA = "echo.omv.btrfs-snapshot-delete-plan.v1"
 BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY = "shared-folder.snapshot.delete.v1"
+BTRFS_SNAPSHOT_RESTORE_COPY_DESIRED_SCHEMA = "echo.omv.btrfs-snapshot-restore-copy-desired.v1"
+BTRFS_SNAPSHOT_RESTORE_COPY_PLAN_SCHEMA = "echo.omv.btrfs-snapshot-restore-copy-plan.v1"
+BTRFS_SNAPSHOT_RESTORE_COPY_CONTROL_CAPABILITY = "shared-folder.snapshot.restore-copy.v1"
 SHARE_PRIVILEGE_DESIRED_SCHEMA = "echo.omv.share-privilege-desired.v1"
 SHARE_PRIVILEGE_PLAN_SCHEMA = "echo.omv.share-privilege-plan.v1"
 SHARE_PRIVILEGE_CONTROL_CAPABILITY = "shared-folder.privilege.simple.v1"
@@ -778,6 +781,43 @@ def validate_btrfs_snapshot_delete_desired(value: Any) -> dict[str, Any]:
         "schema": BTRFS_SNAPSHOT_DELETE_DESIRED_SCHEMA,
         "sharedFolderRef": normalized_shared_folder_ref,
         "snapshotId": normalized_snapshot_id,
+    }
+
+
+def validate_btrfs_snapshot_restore_copy_desired(value: Any) -> dict[str, Any]:
+    """Validate a non-destructive restore into a new same-volume share."""
+    expected = {"schema", "sharedFolderRef", "snapshotId", "name"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("Btrfs snapshot restore-copy desired state has unexpected fields")
+    if value.get("schema") != BTRFS_SNAPSHOT_RESTORE_COPY_DESIRED_SCHEMA:
+        raise ValueError("Btrfs snapshot restore-copy desired-state schema is unsupported")
+    shared_folder_ref = value.get("sharedFolderRef")
+    snapshot_id = value.get("snapshotId")
+    if not isinstance(shared_folder_ref, str):
+        raise ValueError("sharedFolderRef must be an OMV UUID")
+    if not isinstance(snapshot_id, str):
+        raise ValueError("snapshotId must be an OMV UUID")
+    name = validate_shared_folder_desired(
+        {
+            "schema": SHARED_FOLDER_DESIRED_SCHEMA,
+            "mountPointRef": "11111111-2222-4333-8444-555555555555",
+            "name": value.get("name"),
+            "comment": "",
+        }
+    )["name"]
+    try:
+        normalized_shared_folder_ref = validate_omv_uuid(shared_folder_ref).lower()
+    except ValueError as exc:
+        raise ValueError("sharedFolderRef must be an OMV UUID") from exc
+    try:
+        normalized_snapshot_id = validate_omv_uuid(snapshot_id).lower()
+    except ValueError as exc:
+        raise ValueError("snapshotId must be an OMV UUID") from exc
+    return {
+        "schema": BTRFS_SNAPSHOT_RESTORE_COPY_DESIRED_SCHEMA,
+        "sharedFolderRef": normalized_shared_folder_ref,
+        "snapshotId": normalized_snapshot_id,
+        "name": name,
     }
 
 
