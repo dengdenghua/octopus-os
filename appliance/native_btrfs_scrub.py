@@ -6,6 +6,8 @@ import hashlib
 import json
 import re
 import shutil
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,8 @@ from appliance.native_storage_probe import run_readonly
 from appliance.omv_protocol import BTRFS_SCRUB_PLAN_SCHEMA, validate_btrfs_scrub_desired
 
 _FSTAB_PATH = Path("/etc/fstab")
+_TRANSITION_ATTEMPTS = 21
+_TRANSITION_INTERVAL_SECONDS = 0.25
 
 
 def _canonical_hash(payload: Any) -> str:
@@ -43,11 +47,7 @@ def _health_runner(*args: str, timeout: float) -> str:
 def _parse_scrub_status(output: str, *, expected_uuid: str) -> dict[str, Any]:
     uuid_match = re.search(r"^\s*UUID:\s*([0-9a-fA-F-]+)\s*$", output, re.MULTILINE)
     status_match = re.search(r"^\s*Status:\s*([A-Za-z -]+?)\s*$", output, re.MULTILINE)
-    if (
-        uuid_match is None
-        or uuid_match.group(1).lower() != expected_uuid
-        or status_match is None
-    ):
+    if uuid_match is None or uuid_match.group(1).lower() != expected_uuid or status_match is None:
         raise OSError("btrfs scrub status returned an invalid filesystem identity")
     raw_status = status_match.group(1).strip().casefold()
     state = {
@@ -153,9 +153,7 @@ def _maintenance_inventory(*, fstab_path: Path) -> list[dict[str, Any]]:
     return maintenance
 
 
-def btrfs_scrub_maintenance(
-    *, fstab_path: Path = _FSTAB_PATH
-) -> list[dict[str, Any]]:
+def btrfs_scrub_maintenance(*, fstab_path: Path = _FSTAB_PATH) -> list[dict[str, Any]]:
     with btrfs_volume_transaction():
         records = _maintenance_inventory(fstab_path=fstab_path)
         return [
@@ -198,9 +196,7 @@ def _build_plan(desired: dict[str, str], *, fstab_path: Path) -> dict[str, Any]:
         **material,
         "planId": _canonical_hash(material),
         "requiresApproval": True,
-        "changes": [
-            {"field": "maintenance", "before": record["scan"]["state"], "after": "scrub"}
-        ],
+        "changes": [{"field": "maintenance", "before": record["scan"]["state"], "after": "scrub"}],
         "safety": {
             "scope": "echoManagedMountedBtrfsRaid1Only",
             "data": "checksummedReplicasMayBeReadAndRepaired",
@@ -232,18 +228,28 @@ def _verified_transition(
     filesystem_uuid: str,
     *,
     previous_status_hash: str,
+    attempts: int = _TRANSITION_ATTEMPTS,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> tuple[dict[str, Any], str] | None:
-    scan, status_hash = _scrub_status(mountpoint, filesystem_uuid)
-    if status_hash == previous_status_hash or scan["state"] not in {"inProgress", "completed"}:
-        return None
-    state = (
-        "scrubbing"
-        if scan["state"] == "inProgress"
-        else "completedWithErrors"
-        if scan["errors"]
-        else "completed"
-    )
-    return scan, state
+    if attempts < 1:
+        raise ValueError("Btrfs scrub transition attempts must be positive")
+    for attempt in range(attempts):
+        scan, status_hash = _scrub_status(mountpoint, filesystem_uuid)
+        if status_hash != previous_status_hash and scan["state"] in {
+            "inProgress",
+            "completed",
+        }:
+            state = (
+                "scrubbing"
+                if scan["state"] == "inProgress"
+                else "completedWithErrors"
+                if scan["errors"]
+                else "completed"
+            )
+            return scan, state
+        if attempt + 1 < attempts:
+            sleeper(_TRANSITION_INTERVAL_SECONDS)
+    return None
 
 
 def apply_btrfs_scrub(

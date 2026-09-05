@@ -198,9 +198,7 @@ def test_btrfs_scrub_apply_starts_without_force_wait_cancel_or_read_only(
     monkeypatch.setattr(native_btrfs_scrub, "_run_mutating", mutate)
     desired = _desired()
     plan = native_btrfs_scrub.plan_btrfs_scrub(desired, fstab_path=fstab)
-    result = native_btrfs_scrub.apply_btrfs_scrub(
-        desired, plan["planId"], fstab_path=fstab
-    )
+    result = native_btrfs_scrub.apply_btrfs_scrub(desired, plan["planId"], fstab_path=fstab)
 
     assert commands == [("btrfs", "scrub", "start", "/data/family")]
     assert not {"-f", "--force", "-B", "-r", "cancel"} & set(commands[0])
@@ -228,11 +226,52 @@ def test_btrfs_scrub_apply_accepts_instant_completion_after_late_cli_failure(
     monkeypatch.setattr(native_btrfs_scrub, "_run_mutating", mutate)
     desired = _desired()
     plan = native_btrfs_scrub.plan_btrfs_scrub(desired, fstab_path=fstab)
-    result = native_btrfs_scrub.apply_btrfs_scrub(
-        desired, plan["planId"], fstab_path=fstab
-    )
+    result = native_btrfs_scrub.apply_btrfs_scrub(desired, plan["planId"], fstab_path=fstab)
 
     assert result["maintenanceState"] == "completed"
+
+
+def test_btrfs_scrub_transition_polls_past_transient_no_stats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statuses = iter(
+        [
+            (
+                {"kind": "scrub", "state": "idle", "progressPercent": None, "errors": None},
+                "before",
+            ),
+            (
+                {
+                    "kind": "scrub",
+                    "state": "completed",
+                    "progressPercent": None,
+                    "errors": 0,
+                },
+                "after",
+            ),
+        ]
+    )
+    sleeps: list[float] = []
+    monkeypatch.setattr(native_btrfs_scrub, "_scrub_status", lambda *_args: next(statuses))
+
+    transition = native_btrfs_scrub._verified_transition(
+        "/data/family",
+        FS_UUID,
+        previous_status_hash="before",
+        attempts=2,
+        sleeper=sleeps.append,
+    )
+
+    assert transition == (
+        {
+            "kind": "scrub",
+            "state": "completed",
+            "progressPercent": None,
+            "errors": 0,
+        },
+        "completed",
+    )
+    assert sleeps == [0.25]
 
 
 def test_btrfs_scrub_apply_rejects_stale_status(
@@ -249,9 +288,7 @@ def test_btrfs_scrub_apply_rejects_stale_status(
     state["hash"] = "changed-before-apply"
 
     with pytest.raises(ValueError, match="stale"):
-        native_btrfs_scrub.apply_btrfs_scrub(
-            _desired(), plan["planId"], fstab_path=fstab
-        )
+        native_btrfs_scrub.apply_btrfs_scrub(_desired(), plan["planId"], fstab_path=fstab)
 
 
 def test_btrfs_scrub_apply_rechecks_exclusive_operation(
@@ -269,9 +306,7 @@ def test_btrfs_scrub_apply_rechecks_exclusive_operation(
     operation["value"] = "resize"
 
     with pytest.raises(ValueError, match="exclusive operation"):
-        native_btrfs_scrub.apply_btrfs_scrub(
-            _desired(), plan["planId"], fstab_path=fstab
-        )
+        native_btrfs_scrub.apply_btrfs_scrub(_desired(), plan["planId"], fstab_path=fstab)
 
 
 def test_btrfs_scrub_status_parser_is_bounded_and_structured() -> None:
@@ -295,9 +330,7 @@ def test_btrfs_scrub_status_parser_is_bounded_and_structured() -> None:
         "Status:           finished\n"
         "Error summary:    no errors found\n"
     )
-    assert native_btrfs_scrub._parse_scrub_status(
-        completed, expected_uuid=FS_UUID
-    ) == {
+    assert native_btrfs_scrub._parse_scrub_status(completed, expected_uuid=FS_UUID) == {
         "kind": "scrub",
         "state": "completed",
         "progressPercent": None,
@@ -327,11 +360,7 @@ def test_btrfs_scrub_status_treats_no_prior_stats_as_idle(
 def test_btrfs_scrub_status_preserves_completed_error_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    output = (
-        f"UUID:             {FS_UUID}\n"
-        "Status:           finished\n"
-        "Error summary:    csum=2\n"
-    )
+    output = f"UUID:             {FS_UUID}\nStatus:           finished\nError summary:    csum=2\n"
     monkeypatch.setattr(
         native_btrfs_scrub,
         "_run",
