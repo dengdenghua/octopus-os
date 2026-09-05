@@ -1,0 +1,42 @@
+Template: echo-os/title
+Type: title
+Description: Echo OS
+
+Template: echo-os/welcome
+Type: note
+Description: Welcome to Echo OS
+ Echo OS starts in the Agent desktop and uses proven storage components such
+ as ZFS and Samba. Answer a few questions to begin the installation.
+
+Template: echo-os/disk
+Type: select
+Choices: ${CHOICES}
+Description: Select the system disk
+ The selected disk will be used entirely for Echo OS. An SSD is recommended.
+ Leave data disks unselected; storage pools can be created after installation.
+
+Template: echo-os/confirm
+Type: boolean
+Default: false
+Description: Erase ${DEVICE} and install Echo OS?
+ All data on this disk will be permanently removed.
+
+Template: echo-os/hostname
+Type: string
+Default: echo
+Description: Device name
+ This hostname identifies the NAS on your local network, for example echo.local.
+
+Template: echo-os/password
+Type: password
+Description: Administrator password
+ The administrator username is echo. Use at least 8 characters.
+
+Template: echo-os/password-again
+Type: password
+Description: Confirm the administrator password
+ Enter the same password again.
+
+Template: echo-os/error
+Type: error
+Description: ${MESSAGE}

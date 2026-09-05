@@ -119,3 +119,105 @@ def test_vmtest_installer_attaches_and_validates_netinst_iso() -> None:
     assert "[string]$IsoPath" in launcher
     assert "Test-Path -LiteralPath $IsoPath -PathType Leaf" in launcher
     assert '"-cdrom `"$IsoPath`" "' in launcher
+
+
+def test_iso_builder_writes_overlay_before_the_pathspec_separator() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        'git archive -o "$PAYLOAD/echo-overlay.tar.gz" HEAD -- "${OVERLAY_FILES[@]}"'
+        in builder
+    )
+    assert 'install -m0644 "$PAYLOAD/echo-overlay.tar.gz"' not in builder
+
+
+def test_iso_overlay_excludes_deleted_paths_and_preserves_spaces() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "mapfile -d '' -t OVERLAY_FILES" in builder
+    assert "--diff-filter=ACMRTUXB --name-only -z" in builder
+    assert '"${OVERLAY_FILES[@]}"' in builder
+
+
+def test_iso_checksum_refresh_does_not_follow_the_debian_directory_loop() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "find . -type f ! -name md5sum.txt -print0" in builder
+    assert "find . -follow" not in builder
+
+
+def test_iso_builder_injects_preseed_before_installer_separator() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "inject_installer_args append" in builder
+    assert "inject_installer_args linux" in builder
+    assert "auto=true priority=critical locale=zh_CN.UTF-8" in builder
+    assert "keyboard-configuration/xkb-keymap=us" in builder
+    assert "s|[[:space:]]---| $APPEND_ARGS ---|" in builder
+
+
+def test_iso_boot_menus_default_to_the_text_echo_installer() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ontimeout install" in builder
+    assert "timeout 50" in builder
+    assert "Echo OS installer (BIOS mode)" in builder
+    assert "menu label ^Echo OS installer" in builder
+    assert "set timeout=5\\nset default=1" in builder
+    assert "sed -i -E '/^[[:space:]]*ontimeout[[:space:]]/d'" in builder
+
+
+def test_iso_builder_appends_preseed_and_tui_to_every_installer_initrd() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "preseed/file=/preseed.cfg" in builder
+    assert "preseed/file=/cdrom/echo-os/preseed.cfg" not in builder
+    assert "s#/cdrom/echo-os/echo-install#/bin/sh /echo-install#" in builder
+    assert 'find . -print0 | cpio --null -o --format=newc' in builder
+    assert 'find "$WORK/iso/install.amd" -type f -name initrd.gz -print0' in builder
+    assert 'cat "$INITRD_SEGMENT" >>"$initrd"' in builder
+
+
+def test_installer_tui_uses_posix_arguments_and_normalizes_device_paths() -> None:
+    installer = (REPOSITORY / "deploy/provision/installer/echo-install").read_text(
+        encoding="utf-8"
+    )
+
+    assert installer.startswith("#!/bin/sh\n")
+    assert "menu_items=(" not in installer
+    assert "menu_items[@]" not in installer
+    assert 'set -- "$@" "$dev"' in installer
+    assert "dev=${dev#/dev/}" in installer
+    assert 'if [ -n "$devices" ]; then' in installer
+    assert 'log "disks=$DISKS"' in installer
+
+
+def test_installer_uses_the_native_debconf_frontend_without_whiptail() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+    installer = (REPOSITORY / "deploy/provision/installer/echo-install").read_text(
+        encoding="utf-8"
+    )
+    templates = (
+        REPOSITORY / "deploy/provision/installer/echo-install.templates"
+    ).read_text(encoding="utf-8")
+
+    assert 'debconf-loadtemplate echo-os /echo-install.templates' in installer
+    assert 'db_input critical echo-os/disk' in installer
+    assert 'db_input critical echo-os/password' in installer
+    assert '"$INITRD_ROOT/echo-install.templates"' in builder
+    assert "Template: echo-os/disk" in templates
+    assert "Type: password" in templates
