@@ -38,6 +38,10 @@ SOURCE_FILES: dict[str, tuple[str, int]] = {
     "README.md": ("deploy/appliance/OPERATIONS_BUNDLE_README.md", 0o644),
     "appliance.env.example": ("deploy/appliance/appliance.env.example", 0o644),
     "backup-state.sh": ("deploy/appliance/backup-state.sh", 0o755),
+    "btrfs_provisioning_lab.py": (
+        "deploy/appliance/btrfs_provisioning_lab.py",
+        0o755,
+    ),
     "bare_metal_recovery_lab.py": (
         "deploy/appliance/bare_metal_recovery_lab.py",
         0o755,
@@ -228,6 +232,7 @@ def _manifest(payload: dict[str, bytes], artifact_id: str, image_reference: str)
             "entrypoints": {
                 "install": "./install-appliance.sh",
                 "bareMetalRecoveryLab": "./bare_metal_recovery_lab.py plan|run|verify",
+                "btrfsProvisioningLab": "./btrfs_provisioning_lab.py plan|run",
                 "nasDataBackup": "./nas_data_backup.py init|backup|check|restore",
                 "deviceEnduranceLab": "./device_endurance_lab.py plan|run",
                 "hubLifecycleLab": "./hub_lifecycle_lab.py plan|run|verify",
@@ -519,6 +524,7 @@ def _validated_manifest(data: bytes) -> dict[str, Any]:
     expected_entrypoints = {
         "install": "./install-appliance.sh",
         "bareMetalRecoveryLab": "./bare_metal_recovery_lab.py plan|run|verify",
+        "btrfsProvisioningLab": "./btrfs_provisioning_lab.py plan|run",
         "nasDataBackup": "./nas_data_backup.py init|backup|check|restore",
         "deviceEnduranceLab": "./device_endurance_lab.py plan|run",
         "hubLifecycleLab": "./hub_lifecycle_lab.py plan|run|verify",

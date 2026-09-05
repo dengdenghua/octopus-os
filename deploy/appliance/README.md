@@ -625,6 +625,39 @@ sudo -E ./storage_provisioning_lab.py run \
   --confirm 'RUN ECHO STORAGE PROVISIONING LAB reboot-verify <64位planId>'
 ```
 
+双盘 Btrfs RAID1 使用独立的 `btrfs_provisioning_lab.py`，避免把 mdadm + EXT4 证据混入
+Btrfs 结论。它同样绑定发布候选、运维包、Debian/OMV 平台、两块 4--64 GiB 空白整盘身份和
+API plan；`provision` 经 `omv.btrfs-raid1.create` 单次审批创建卷，随后在宿主机核对两块成员共享
+同一文件系统 UUID、data/metadata 都是 RAID1、恰好两个活动成员、读写挂载，并写入 1 MiB fsync
+探针。`reboot-verify` 只在 kernel boot ID 已改变后复核 UUID 持久挂载、双 RAID1 profile 与探针。
+工具不会自动卸载或擦除成功卷，须在专用可丢弃双盘 VM/物理机上运行并由现场负责人手工清理。
+
+```bash
+sudo -E ./btrfs_provisioning_lab.py plan \
+  --candidate-index /root/echo-candidate/echo-delivery-release-evidence-index.json \
+  --bundle-root "$PWD" \
+  --device /dev/vdb --device /dev/vdc \
+  --volume-name btrfslab \
+  --evidence-directory "$PWD/physical-evidence/btrfs-provisioning" \
+  --base-url http://127.0.0.1:8000 \
+  --output /root/echo-btrfs-provisioning-lab-plan.json
+
+sudo -E ./btrfs_provisioning_lab.py run \
+  --plan /root/echo-btrfs-provisioning-lab-plan.json \
+  --phase provision \
+  --candidate-index /root/echo-candidate/echo-delivery-release-evidence-index.json \
+  --bundle-root "$PWD" \
+  --confirm 'RUN ECHO BTRFS PROVISIONING LAB provision <64位planId>'
+
+# 真实重启同一台实验机后：
+sudo -E ./btrfs_provisioning_lab.py run \
+  --plan /root/echo-btrfs-provisioning-lab-plan.json \
+  --phase reboot-verify \
+  --candidate-index /root/echo-candidate/echo-delivery-release-evidence-index.json \
+  --bundle-root "$PWD" \
+  --confirm 'RUN ECHO BTRFS PROVISIONING LAB reboot-verify <64位planId>'
+```
+
 要单独验收“坏盘换成第三块新盘”的原生控制面，在上述两阶段均完成后使用
 `mdraid_replacement_lab.py`。计划同时绑定原 provisioning plan、三块整盘身份、候选与运维包；
 `repair` 会真实 fail/remove 指定牺牲盘，再经 Echo HTTP 候选、plan、密码审批和 apply 换入第三块

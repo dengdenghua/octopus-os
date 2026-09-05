@@ -65,6 +65,9 @@ def test_operations_bundle_has_fixed_inventory_modes_and_release_reference(tmp_p
     assert manifest["artifact"]["entrypoints"]["bareMetalRecoveryLab"] == (
         "./bare_metal_recovery_lab.py plan|run|verify"
     )
+    assert manifest["artifact"]["entrypoints"]["btrfsProvisioningLab"] == (
+        "./btrfs_provisioning_lab.py plan|run"
+    )
     assert manifest["artifact"]["entrypoints"]["deviceEnduranceLab"] == (
         "./device_endurance_lab.py plan|run"
     )
@@ -103,6 +106,7 @@ def test_operations_bundle_has_fixed_inventory_modes_and_release_reference(tmp_p
     )
     assert manifest["files"]["protocol_interoperability_lab.py"]["mode"] == "0755"
     assert manifest["files"]["bare_metal_recovery_lab.py"]["mode"] == "0755"
+    assert manifest["files"]["btrfs_provisioning_lab.py"]["mode"] == "0755"
     assert manifest["files"]["power_state_recovery_lab.py"]["mode"] == "0755"
     assert manifest["files"]["device_endurance_lab.py"]["mode"] == "0755"
     assert manifest["files"]["hub_lifecycle_lab.py"]["mode"] == "0755"
@@ -260,6 +264,32 @@ def test_bundled_storage_provisioning_lab_runs_with_sibling_dependencies(
         (extracted / name).write_bytes(files[name][0])
     completed = subprocess.run(
         [sys.executable, "-E", str(extracted / "storage_provisioning_lab.py"), "--help"],
+        cwd=extracted,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "{plan,run}" in completed.stdout
+
+
+def test_bundled_btrfs_provisioning_lab_has_sibling_dependencies_and_runs_standalone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if not hasattr(os, "fchmod"):
+        monkeypatch.setattr(bundle.os, "fchmod", lambda _fd, _mode: None, raising=False)
+    report = _built(tmp_path / "build")
+    _root, files = bundle._read_archive(Path(report["archive"]))
+    extracted = tmp_path / "standalone-btrfs"
+    extracted.mkdir()
+    for name in (
+        "btrfs_provisioning_lab.py",
+        "operations_systemd.py",
+        "storage_provisioning_lab.py",
+    ):
+        (extracted / name).write_bytes(files[name][0])
+    completed = subprocess.run(
+        [sys.executable, "-E", str(extracted / "btrfs_provisioning_lab.py"), "--help"],
         cwd=extracted,
         capture_output=True,
         text=True,
