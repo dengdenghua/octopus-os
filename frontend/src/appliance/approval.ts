@@ -44,6 +44,7 @@ export type HighRiskAction =
   | "omv.zfs-pool.import"
   | "omv.zfs.scrub.start"
   | "power.ups-shutdown-policy.set"
+  | "power.ups.local-usb.configure"
   | "storage.smart.self-test.start"
   | "storage.smart.self-test.schedule"
   | "account.member.link"
