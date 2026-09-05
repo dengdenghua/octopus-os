@@ -56,6 +56,7 @@ from typing import Any
 from appliance.btrfs_scrub_schedule_policy import (
     scheduler_installed as _btrfs_scrub_scheduler_installed,
 )
+from appliance.disk_idle_policy import service_installed as _disk_idle_service_installed
 from appliance.mdraid_check_schedule_policy import (
     scheduler_installed as _mdraid_scheduler_installed,
 )
@@ -253,6 +254,10 @@ def _native_mdraid_check_scheduler_available() -> bool:
 
 def _native_btrfs_scrub_scheduler_available() -> bool:
     return _btrfs_scrub_scheduler_installed()
+
+
+def _native_disk_idle_service_available() -> bool:
+    return _disk_idle_service_installed()
 
 
 def _native_nut_usb_driver_available() -> bool:
@@ -1016,6 +1021,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.volume.btrfs-raid1.replace-missing.blank.v1",
     "storage.volume.btrfs.scrub.start.v1",
     "storage.volume.btrfs.scrub.schedule.v1",
+    "storage.disk.idle.configure.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
     "storage.pool.zfs.import.echo-root.v1",
@@ -1112,6 +1118,11 @@ def _native_write_capabilities() -> list[str]:
     if not _native_command_tools_available("smartctl"):
         unavailable.add("storage.smart.self-test.start.v1")
         unavailable.add("storage.smart.self-test.schedule.v1")
+    if (
+        not _native_command_tools_available("hdparm", "lsblk")
+        or not _native_disk_idle_service_available()
+    ):
+        unavailable.add("storage.disk.idle.configure.v1")
     return [
         capability for capability in _NATIVE_WRITE_CAPABILITIES if capability not in unavailable
     ]

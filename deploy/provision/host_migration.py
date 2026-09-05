@@ -28,7 +28,7 @@ DPKG_QUERY = Path("/usr/bin/dpkg-query")
 APT_GET = Path("/usr/bin/apt-get")
 SYSTEMCTL = Path("/usr/bin/systemctl")
 MAX_UNIT_BYTES = 64 * 1024
-PACKAGES = ("btrfs-progs", "nut-client", "nut-server", "smartmontools")
+PACKAGES = ("btrfs-progs", "hdparm", "nut-client", "nut-server", "smartmontools")
 UNIT_SOURCES = {
     "echo-appliance.service": "deploy/provision/base/echo-appliance.service",
     "echo-ups-shutdown-guard.service": ("deploy/appliance/systemd/echo-ups-shutdown-guard.service"),
@@ -39,6 +39,7 @@ UNIT_SOURCES = {
     "echo-mdraid-check.timer": ("deploy/appliance/systemd/echo-mdraid-check.timer"),
     "echo-btrfs-scrub.service": ("deploy/appliance/systemd/echo-btrfs-scrub.service"),
     "echo-btrfs-scrub.timer": ("deploy/appliance/systemd/echo-btrfs-scrub.timer"),
+    "echo-disk-idle.service": ("deploy/appliance/systemd/echo-disk-idle.service"),
 }
 TIMERS = (
     "echo-ups-shutdown-guard.timer",
@@ -46,6 +47,8 @@ TIMERS = (
     "echo-mdraid-check.timer",
     "echo-btrfs-scrub.timer",
 )
+SERVICES = ("echo-disk-idle.service",)
+ENABLED_UNITS = (*TIMERS, *SERVICES)
 
 
 class HostMigrationError(RuntimeError):
@@ -192,7 +195,7 @@ def unit_enabled(
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     systemctl: Path = SYSTEMCTL,
 ) -> bool:
-    if unit not in TIMERS:
+    if unit not in ENABLED_UNITS:
         raise HostMigrationError("unit probe escaped the migration allow-list")
     completed = _run(
         systemctl,
@@ -243,10 +246,12 @@ def plan_migration(
         )
     missing_packages = [package for package in PACKAGES if not package_probe(package)]
     enable_timers = [timer for timer in TIMERS if not enabled_probe(timer)]
+    enable_services = [service for service in SERVICES if not enabled_probe(service)]
     operation = (
         "none"
         if not missing_packages
         and not enable_timers
+        and not enable_services
         and evidence_current
         and all(item["operation"] == "none" for item in units)
         else "migrate"
@@ -261,6 +266,7 @@ def plan_migration(
         },
         "units": units,
         "enableTimers": enable_timers,
+        "enableServices": enable_services,
         "restartServices": ["echo-appliance.service"],
         "evidenceCurrent": evidence_current,
         "scope": "p3BareMetalHost",
@@ -369,7 +375,7 @@ def apply_migration(
         raise HostMigrationError(
             "host migration source or installed units changed after package installation"
         )
-    previously_enabled = {timer: enabled_probe(timer) for timer in TIMERS}
+    previously_enabled = {unit: enabled_probe(unit) for unit in ENABLED_UNITS}
     changed: list[str] = []
     marker = {
         "schemaVersion": SCHEMA_VERSION,
@@ -379,6 +385,7 @@ def apply_migration(
         "packagesInstalled": list(missing_packages),
         "unitSha256": {name: _sha256(payload) for name, payload in sources.items()},
         "enabledTimers": list(TIMERS),
+        "enabledServices": list(SERVICES),
     }
     try:
         for name, payload in sources.items():
@@ -393,12 +400,16 @@ def apply_migration(
         _systemctl("daemon-reload", runner=runner, systemctl=systemctl)
         for timer in TIMERS:
             _systemctl("enable", "--now", timer, runner=runner, systemctl=systemctl)
+        for service in SERVICES:
+            _systemctl("enable", "--now", service, runner=runner, systemctl=systemctl)
         _systemctl("restart", "echo-appliance.service", runner=runner, systemctl=systemctl)
         for name, payload in sources.items():
             if _target_payload(unit_directory / name, trusted_uid=trusted_uid) != payload:
                 raise HostMigrationError(f"installed unit verification failed: {name}")
         if any(not enabled_probe(timer) for timer in TIMERS):
             raise HostMigrationError("timer enablement verification failed")
+        if any(not enabled_probe(service) for service in SERVICES):
+            raise HostMigrationError("service enablement verification failed")
         if not active_probe():
             raise HostMigrationError("appliance service did not become active")
         _atomic_write(
@@ -429,9 +440,9 @@ def apply_migration(
                 rollback_errors.append(name)
         try:
             _systemctl("daemon-reload", runner=runner, systemctl=systemctl)
-            for timer, was_enabled in previously_enabled.items():
+            for unit, was_enabled in previously_enabled.items():
                 if not was_enabled:
-                    _systemctl("disable", "--now", timer, runner=runner, systemctl=systemctl)
+                    _systemctl("disable", "--now", unit, runner=runner, systemctl=systemctl)
             _systemctl("restart", "echo-appliance.service", runner=runner, systemctl=systemctl)
         except HostMigrationError:
             rollback_errors.append("systemd")

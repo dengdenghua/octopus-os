@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from appliance import (
     btrfs_scrub_schedule_policy,
+    disk_idle_policy,
     mdraid_check_schedule_policy,
     native_storage,
     nut_device_config,
@@ -35,6 +36,8 @@ from appliance.omv_models import (
     BtrfsScrubDesiredState,
     BtrfsScrubSchedulePolicyApplyRequest,
     BtrfsScrubSchedulePolicyDesiredState,
+    DiskIdlePolicyApplyRequest,
+    DiskIdlePolicyDesiredState,
     Ext4VolumeApplyRequest,
     Ext4VolumeDesiredState,
     GroupApplyRequest,
@@ -295,6 +298,13 @@ def register_native_storage_routes(router: APIRouter) -> None:
             return await run_in_threadpool(smart_schedule_policy.policy_status)
         except OSError as exc:
             raise HTTPException(status_code=503, detail="SMART 定时自检策略读取失败") from exc
+
+    @router.get("/disks/idle")
+    async def disk_idle_status() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(disk_idle_policy.policy_status)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="磁盘休眠策略读取失败") from exc
 
 
 def create_native_storage_router(
@@ -1419,6 +1429,41 @@ def create_omv_alias_router(
         )
 
     # --- SMART whole-disk self-test -----------------------------------
+    @router.post("/disks/idle/plan")
+    async def plan_disk_idle_policy(
+        body: DiskIdlePolicyDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                disk_idle_policy.plan_policy,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="磁盘休眠策略暂不可用") from exc
+
+    @router.post("/disks/idle/apply")
+    async def apply_disk_idle_policy(
+        body: DiskIdlePolicyApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="storage.disk.idle.configure",
+            plan_fn=disk_idle_policy.plan_policy,
+            apply_fn=disk_idle_policy.apply_policy,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "idleMinutes": body.desired.idle_minutes,
+                "scope": "stableInternalRotationalAtaSataWholeDisksOnly",
+                "hardwareVerification": "commandAcceptanceOnly",
+            },
+        )
+
     @router.post("/smart/self-test/schedule/plan")
     async def plan_smart_self_test_schedule(
         body: SmartSchedulePolicyDesiredState,

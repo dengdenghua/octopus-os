@@ -120,6 +120,7 @@ def _valid_target(action: str, target: str) -> bool:
         "omv.btrfs-raid1.replace",
         "omv.btrfs.scrub.start",
         "storage.btrfs.scrub.schedule",
+        "storage.disk.idle.configure",
         "omv.ext4-volume.create",
         "omv.zfs-mirror.create",
         "omv.zfs-mirror.replace",

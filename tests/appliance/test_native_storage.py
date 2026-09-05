@@ -64,6 +64,7 @@ def test_native_status_advertises_only_the_available_write_slice(
     monkeypatch.setattr(native_storage, "_native_nut_usb_driver_available", lambda: True)
     monkeypatch.setattr(native_storage, "_native_mdraid_check_scheduler_available", lambda: True)
     monkeypatch.setattr(native_storage, "_native_btrfs_scrub_scheduler_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_disk_idle_service_available", lambda: True)
 
     payload = native_storage.status()
 
@@ -91,6 +92,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "storage.volume.btrfs-raid1.replace-missing.blank.v1",
         "storage.volume.btrfs.scrub.start.v1",
         "storage.volume.btrfs.scrub.schedule.v1",
+        "storage.disk.idle.configure.v1",
         "storage.pool.zfs-mirror.replace.blank.v1",
         "storage.pool.zfs.export.safe.v1",
         "storage.pool.zfs.import.echo-root.v1",
@@ -152,6 +154,21 @@ def test_native_status_hides_btrfs_schedule_without_installed_timer(
 
     assert "storage.volume.btrfs.scrub.start.v1" in capabilities
     assert "storage.volume.btrfs.scrub.schedule.v1" not in capabilities
+
+
+def test_native_status_hides_disk_idle_without_installed_boot_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(native_storage.shutil, "which", lambda _binary: "/usr/bin/tool")
+    monkeypatch.setattr(native_storage, "_native_quota_tools_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_nut_usb_driver_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_mdraid_check_scheduler_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_btrfs_scrub_scheduler_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_disk_idle_service_available", lambda: False)
+
+    capabilities = native_storage.status()["capabilities"]
+
+    assert "storage.disk.idle.configure.v1" not in capabilities
 
 
 def test_native_status_keeps_group_creation_when_only_groupadd_is_present(

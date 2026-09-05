@@ -1,0 +1,26 @@
+[Unit]
+Description=Echo OS internal HDD standby timer policy
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/echo-os
+ExecStart=/opt/echo-os/.venv/bin/python -m deploy.appliance.disk_idle_runner
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_SYS_RAWIO
+ReadWritePaths=/run/lock
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=echo-disk-idle
+
+[Install]
+WantedBy=multi-user.target

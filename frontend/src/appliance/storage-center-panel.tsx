@@ -25,6 +25,7 @@ import {
   type StorageUsage,
 } from "@/appliance/files";
 import { BtrfsRaid1Panel } from "@/appliance/btrfs-raid1-panel";
+import { DiskIdlePanel } from "@/appliance/disk-idle-panel";
 import { Ext4VolumePanel } from "@/appliance/ext4-volume-panel";
 import { OmvSharingPanel } from "@/appliance/omv-sharing-panel";
 import { MdRaid1Panel } from "@/appliance/mdraid1-panel";
@@ -457,6 +458,7 @@ export function StorageCenterPanel({
           ) : section === "health" ? (
             <div className="mx-auto w-full max-w-[980px] px-7 py-7">
               <OmvStorageHealth />
+              <DiskIdlePanel />
               <SmartSchedulePanel />
               <NutDeviceConfigPanel />
               <UpsPanel />

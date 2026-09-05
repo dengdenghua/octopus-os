@@ -23,6 +23,7 @@ TESTS = (
     "tests/appliance/test_compose_security.py",
     "tests/appliance/test_delivery_source_preflight.py",
     "tests/appliance/test_delivery_workflow_policy.py",
+    "tests/appliance/test_disk_idle_policy.py",
     "tests/appliance/test_data_access.py",
     "tests/appliance/test_device_endurance_lab.py",
     "tests/appliance/test_dependency_lock.py",

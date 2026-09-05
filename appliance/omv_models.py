@@ -1071,6 +1071,30 @@ class SmartSchedulePolicyApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class DiskIdlePolicyDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.disk-idle-policy-desired.v1"] = Field(
+        default="echo.disk-idle-policy-desired.v1",
+        alias="schema",
+    )
+    idle_minutes: int = Field(strict=True, alias="idleMinutes")
+
+    @field_validator("idle_minutes")
+    @classmethod
+    def validate_idle_minutes(cls, value: int) -> int:
+        if value not in {0, 30, 60, 120, 240}:
+            raise ValueError("idleMinutes must be one of 0, 30, 60, 120, or 240")
+        return value
+
+
+class DiskIdlePolicyApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: DiskIdlePolicyDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 __all__ = [
     "BtrfsRaid1ApplyRequest",
     "BtrfsRaid1DesiredState",
@@ -1078,6 +1102,8 @@ __all__ = [
     "BtrfsScrubDesiredState",
     "BtrfsScrubSchedulePolicyApplyRequest",
     "BtrfsScrubSchedulePolicyDesiredState",
+    "DiskIdlePolicyApplyRequest",
+    "DiskIdlePolicyDesiredState",
     "Ext4VolumeApplyRequest",
     "Ext4VolumeDesiredState",
     "GroupApplyRequest",
