@@ -121,6 +121,17 @@ def _subvolume_identity(path: Path) -> dict[str, Any]:
     return {**identity, "readOnly": property_output == "ro=true"}
 
 
+def _btrfs_filesystem_uuid(path: Path) -> str:
+    raw_uuid = _run_read("findmnt", "-n", "-o", "UUID", "-T", str(path)).strip()
+    if _BTRFS_UUID_PATTERN.fullmatch(raw_uuid) is None:
+        raise OSError("Btrfs path has no stable filesystem UUID")
+    return raw_uuid.lower()
+
+
+def _same_btrfs_filesystem(left: Path, right: Path) -> bool:
+    return _btrfs_filesystem_uuid(left) == _btrfs_filesystem_uuid(right)
+
+
 def _snapshot_id(shared_folder_ref: str, name: str) -> str:
     return str(uuid.uuid5(_SNAPSHOT_NAMESPACE, f"{shared_folder_ref}:{name}"))
 
@@ -145,14 +156,14 @@ def _resolve_share(shared_folder_ref: str) -> tuple[dict[str, Any], Path, dict[s
     return entry, source, source_identity
 
 
-def _private_directory(path: Path, *, expected_device: int) -> None:
+def _private_directory(path: Path, *, expected_filesystem_uuid: str) -> None:
     info = path.lstat()
     if (
         not stat.S_ISDIR(info.st_mode)
         or stat.S_ISLNK(info.st_mode)
         or info.st_uid != 0
         or (info.st_mode & 0o777) != 0o700
-        or info.st_dev != expected_device
+        or _btrfs_filesystem_uuid(path) != expected_filesystem_uuid
     ):
         raise OSError("managed Btrfs snapshot directory is unsafe")
 
@@ -166,14 +177,17 @@ def _snapshot_directory(entry: dict[str, Any], source: Path) -> Path:
 
 def _ensure_snapshot_directory(entry: dict[str, Any], source: Path) -> Path:
     directory = _snapshot_directory(entry, source)
-    expected_device = source.lstat().st_dev
+    expected_filesystem_uuid = _btrfs_filesystem_uuid(source)
     root = directory.parent
     for candidate in (root, directory):
         created = False
         try:
             candidate.mkdir(mode=0o700)
         except FileExistsError:
-            _private_directory(candidate, expected_device=expected_device)
+            _private_directory(
+                candidate,
+                expected_filesystem_uuid=expected_filesystem_uuid,
+            )
         else:
             created = True
         flags = os.O_RDONLY
@@ -186,7 +200,7 @@ def _ensure_snapshot_directory(entry: dict[str, Any], source: Path) -> Path:
         descriptor = os.open(candidate, flags)
         try:
             info = os.fstat(descriptor)
-            if not stat.S_ISDIR(info.st_mode) or info.st_dev != expected_device:
+            if not stat.S_ISDIR(info.st_mode):
                 raise OSError("managed Btrfs snapshot directory is unsafe")
             if created:
                 os.fchown(descriptor, 0, 0)
@@ -194,7 +208,11 @@ def _ensure_snapshot_directory(entry: dict[str, Any], source: Path) -> Path:
             elif info.st_uid != 0 or (info.st_mode & 0o777) != 0o700:
                 raise OSError("managed Btrfs snapshot directory is unsafe")
             verified = os.fstat(descriptor)
-            if verified.st_uid != 0 or (verified.st_mode & 0o777) != 0o700:
+            if (
+                verified.st_uid != 0
+                or (verified.st_mode & 0o777) != 0o700
+                or _btrfs_filesystem_uuid(candidate) != expected_filesystem_uuid
+            ):
                 raise OSError("managed Btrfs snapshot directory is unsafe")
         finally:
             os.close(descriptor)
@@ -222,16 +240,20 @@ def _inventory(
     entry: dict[str, Any], source: Path, source_identity: dict[str, Any]
 ) -> list[dict[str, Any]]:
     directory = _snapshot_directory(entry, source)
+    filesystem_uuid = _btrfs_filesystem_uuid(source)
     if not directory.parent.exists():
         if directory.parent.is_symlink():
             raise OSError("managed Btrfs snapshot root is unsafe")
         return []
-    _private_directory(directory.parent, expected_device=source.lstat().st_dev)
+    _private_directory(
+        directory.parent,
+        expected_filesystem_uuid=filesystem_uuid,
+    )
     if not directory.exists():
         if directory.is_symlink():
             raise OSError("managed Btrfs snapshot directory is unsafe")
         return []
-    _private_directory(directory, expected_device=source.lstat().st_dev)
+    _private_directory(directory, expected_filesystem_uuid=filesystem_uuid)
     shared_folder_ref = storage._registered_uuid(entry, strict=True)
     assert shared_folder_ref is not None
     locked_ids = locked_snapshot_ids(shared_folder_ref)
@@ -258,7 +280,7 @@ def _inventory(
         if not child.is_dir(follow_symlinks=False) or child.is_symlink():
             raise OSError("managed Btrfs snapshot tree contains a non-directory entry")
         path = Path(child.path)
-        if path.lstat().st_dev != source.lstat().st_dev:
+        if _btrfs_filesystem_uuid(path) != filesystem_uuid:
             raise OSError("managed Btrfs snapshot is not on the source filesystem")
         identity = _subvolume_identity(path)
         if not identity["readOnly"] or identity["parentUuid"] != source_identity["subvolumeUuid"]:
@@ -378,7 +400,7 @@ def _apply_snapshot_desired(desired: dict[str, Any], plan_id: str) -> dict[str, 
             if (
                 not identity["readOnly"]
                 or identity["parentUuid"] != source_identity["subvolumeUuid"]
-                or destination.lstat().st_dev != source.lstat().st_dev
+                or not _same_btrfs_filesystem(destination, source)
             ):
                 raise OSError("created Btrfs snapshot did not match its source")
         except Exception as verify_error:
@@ -545,7 +567,7 @@ def apply_snapshot_restore_copy(desired_state: dict[str, Any], plan_id: str) -> 
             if (
                 identity["readOnly"]
                 or identity["parentUuid"] != selected["subvolumeUuid"]
-                or destination.lstat().st_dev != snapshot_path.lstat().st_dev
+                or not _same_btrfs_filesystem(destination, snapshot_path)
             ):
                 raise OSError("recovered Btrfs share does not match the selected snapshot")
             storage._configure_shared_folder(destination, group_gid)

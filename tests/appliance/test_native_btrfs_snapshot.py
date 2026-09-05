@@ -73,6 +73,12 @@ def snapshot_share(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     }
     source_identity = _identity()
     monkeypatch.setattr(native_btrfs_snapshot.storage, "_registry_transaction", nullcontext)
+    monkeypatch.setattr(native_btrfs_snapshot, "_same_btrfs_filesystem", lambda *_paths: True)
+    monkeypatch.setattr(
+        native_btrfs_snapshot,
+        "_btrfs_filesystem_uuid",
+        lambda _path: "01234567-89ab-cdef-0123-456789abcdef",
+    )
     monkeypatch.setattr(
         native_btrfs_snapshot,
         "_resolve_share",
@@ -124,6 +130,38 @@ def test_subvolume_parser_accepts_kernel_uuid_without_rfc_version_bits() -> None
         "subvolumeId": 258,
         "parentUuid": source_uuid,
     }
+
+
+def test_same_btrfs_filesystem_uses_fsid_not_subvolume_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[Path] = []
+
+    def filesystem_uuid(path: Path) -> str:
+        observed.append(path)
+        return "01234567-89ab-cdef-0123-456789abcdef"
+
+    monkeypatch.setattr(native_btrfs_snapshot, "_btrfs_filesystem_uuid", filesystem_uuid)
+
+    assert native_btrfs_snapshot._same_btrfs_filesystem(
+        Path("/mnt/volume/source"), Path("/mnt/volume/snapshot")
+    )
+    assert observed == [Path("/mnt/volume/source"), Path("/mnt/volume/snapshot")]
+
+
+def test_btrfs_filesystem_uuid_accepts_non_rfc_kernel_identifier(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        native_btrfs_snapshot,
+        "_run_read",
+        lambda *args: "5c04a402-be13-f81f-2116-addffc088e0c\n",
+    )
+
+    assert (
+        native_btrfs_snapshot._btrfs_filesystem_uuid(Path("/mnt/volume/source"))
+        == "5c04a402-be13-f81f-2116-addffc088e0c"
+    )
 
 
 def test_inventory_projects_the_root_managed_lock_state(
