@@ -590,6 +590,41 @@ G2 还必须生成固定名称、只读的 `storage-recovery-lifecycle.json`。�
 `candidateIndexId`、精确阵列设备、精确挂载点和 UUIDv4 `labVolumeId`。不要让工具替你创建授权标记：
 现场负责人应先核对设备拓扑和数据副本，再把审查过的标记安装进空测试卷。
 
+如果 G2 实验机从两块空白整盘开始，先用同一运维包内的
+`storage_provisioning_lab.py` 验证“原生 API 建阵列、格式化、持久挂载、真实重启”这一段。它只接受
+两块 4--64 GiB、具有不同稳定身份且仍由候选接口判定为空白的整盘；计划只保存稳定身份摘要，不保存
+序列号/WWN。`provision` 会真实调用 md RAID1 与 EXT4 的 plan、一次性审批和 apply 接口，随后校验
+`mdadm`/`blkid`/`findmnt` 并写入 1 MiB fsync 探针。`reboot-verify` 必须在新的 kernel boot ID 下再次
+验证阵列、UUID 挂载和探针摘要。工具不会自动拆阵列或擦盘，成功后的卷应直接交给下方 G2 恢复实验；
+只能在可丢弃专用 VM/物理机上使用。
+
+```bash
+export ECHO_ADMIN_PASSWORD='仅在当前 root shell 中设置，不要写入计划或日志'
+sudo -E ./storage_provisioning_lab.py plan \
+  --candidate-index /root/echo-candidate/echo-delivery-release-evidence-index.json \
+  --bundle-root "$PWD" \
+  --device /dev/vdb --device /dev/vdc \
+  --array-name labarray --volume-name labvolume \
+  --evidence-directory "$PWD/physical-evidence/storage-provisioning" \
+  --base-url http://127.0.0.1:8000 \
+  --output /root/echo-storage-provisioning-lab-plan.json
+
+sudo -E ./storage_provisioning_lab.py run \
+  --plan /root/echo-storage-provisioning-lab-plan.json \
+  --phase provision \
+  --candidate-index /root/echo-candidate/echo-delivery-release-evidence-index.json \
+  --bundle-root "$PWD" \
+  --confirm 'RUN ECHO STORAGE PROVISIONING LAB provision <64位planId>'
+
+# 真实重启同一台实验机后：
+sudo -E ./storage_provisioning_lab.py run \
+  --plan /root/echo-storage-provisioning-lab-plan.json \
+  --phase reboot-verify \
+  --candidate-index /root/echo-candidate/echo-delivery-release-evidence-index.json \
+  --bundle-root "$PWD" \
+  --confirm 'RUN ECHO STORAGE PROVISIONING LAB reboot-verify <64位planId>'
+```
+
 ```bash
 sudo install -o root -g root -m 0444 reviewed-storage-lab-marker.json \
   /mnt/echo-storage-lab/.echo-storage-recovery-lab.json

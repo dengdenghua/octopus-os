@@ -92,6 +92,10 @@ SOURCE_FILES: dict[str, tuple[str, int]] = {
         "deploy/appliance/storage_recovery_lab.py",
         0o755,
     ),
+    "storage_provisioning_lab.py": (
+        "deploy/appliance/storage_provisioning_lab.py",
+        0o755,
+    ),
     "restore-state.sh": ("deploy/appliance/restore-state.sh", 0o755),
     "start-tls.sh": ("deploy/appliance/start-tls.sh", 0o755),
     "systemd/echo-audit-evidence.service.example": (
@@ -154,7 +158,9 @@ def _canonical_json(value: Any) -> bytes:
 
 
 def _safe_read(path: Path, *, maximum: int) -> bytes:
-    flags = os.O_RDONLY
+    if path.is_symlink():
+        raise OperationsBundleError(f"cannot safely read operations bundle input: {path}")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -238,6 +244,7 @@ def _manifest(payload: dict[str, bytes], artifact_id: str, image_reference: str)
                     "plan|probe|permissions|quota|large-file|verify"
                 ),
                 "storageRecoveryLab": "./storage_recovery_lab.py plan|run",
+                "storageProvisioningLab": "./storage_provisioning_lab.py plan|run",
             },
         },
         "files": {
@@ -386,33 +393,37 @@ def _tar_info(name: str, *, mode: int, size: int = 0, directory: bool = False):
     return info
 
 
+def _stream_archive(raw: Any, root_name: str, files: dict[str, tuple[bytes, int]]) -> None:
+    with (
+        gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed,
+        tarfile.open(mode="w", fileobj=compressed, format=tarfile.USTAR_FORMAT) as archive,
+    ):
+        directories = {root_name}
+        for relative in files:
+            current = PurePosixPath(root_name) / PurePosixPath(relative).parent
+            while str(current) != ".":
+                directories.add(current.as_posix())
+                if current.as_posix() == root_name:
+                    break
+                current = current.parent
+        for directory in sorted(directories, key=lambda item: (item.count("/"), item)):
+            archive.addfile(_tar_info(directory, mode=0o755, directory=True))
+        for relative in sorted(files):
+            content, mode = files[relative]
+            archive.addfile(
+                _tar_info(f"{root_name}/{relative}", mode=mode, size=len(content)),
+                io.BytesIO(content),
+            )
+
+
 def _write_archive(path: Path, root_name: str, files: dict[str, tuple[bytes, int]]) -> None:
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
         owned = descriptor
         descriptor = -1
-        with (
-            os.fdopen(owned, "wb") as raw,
-            gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed,
-            tarfile.open(mode="w", fileobj=compressed, format=tarfile.USTAR_FORMAT) as archive,
-        ):
-            directories = {root_name}
-            for relative in files:
-                current = PurePosixPath(root_name) / PurePosixPath(relative).parent
-                while str(current) != ".":
-                    directories.add(current.as_posix())
-                    if current.as_posix() == root_name:
-                        break
-                    current = current.parent
-            for directory in sorted(directories, key=lambda item: (item.count("/"), item)):
-                archive.addfile(_tar_info(directory, mode=0o755, directory=True))
-            for relative in sorted(files):
-                content, mode = files[relative]
-                archive.addfile(
-                    _tar_info(f"{root_name}/{relative}", mode=mode, size=len(content)),
-                    io.BytesIO(content),
-                )
+        with os.fdopen(owned, "wb") as raw:
+            _stream_archive(raw, root_name, files)
             raw.flush()
             os.fsync(raw.fileno())
         os.replace(temporary, path)
@@ -430,7 +441,10 @@ def _atomic_write(path: Path, data: bytes, *, mode: int = 0o644) -> None:
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, mode)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, mode)
+        else:  # pragma: no cover - Windows packaging test host
+            os.chmod(temporary, mode)
         owned = descriptor
         descriptor = -1
         with os.fdopen(owned, "wb") as output:
@@ -518,6 +532,7 @@ def _validated_manifest(data: bytes) -> dict[str, Any]:
             "./protocol_interoperability_lab.py plan|probe|permissions|quota|large-file|verify"
         ),
         "storageRecoveryLab": "./storage_recovery_lab.py plan|run",
+        "storageProvisioningLab": "./storage_provisioning_lab.py plan|run",
     }
     if (
         not isinstance(value, dict)

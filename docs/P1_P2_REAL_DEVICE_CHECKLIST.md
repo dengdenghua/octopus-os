@@ -110,6 +110,13 @@ G2 存储门必须使用运维包内的 `storage_recovery_lab.py plan/run`。只
 再下载摘要；九项 G2 结论逐项绑定实际日志字节。缺少重连日志、跨候选计划、设备身份漂移、手写
 `true`、非 ENOSPC 写失败或仅做 API 冒烟都不能进入签名 manifest。
 
+当实验机最初只有两块空白牺牲整盘时，先运行同一运维包的
+`storage_provisioning_lab.py plan/run`。其 `provision` 阶段必须通过候选的真实 HTTP
+plan/一次性审批/apply 链创建 md RAID1 和 EXT4；真实重启后再运行 `reboot-verify`，证明阵列自动组装、
+UUID 挂载恢复且 1 MiB fsync 探针摘要未变。计划仅保留稳定磁盘身份摘要；两份 mode-0444 日志应作为
+辅助附件随 G2 归档，但不能替代既有八阶段 `storage_recovery_lab.py` 证据。该工具保留创建结果供 G2
+继续破坏性测试，不负责自动擦盘。
+
 G3 协议门必须使用候选运维包内的 `protocol_interoperability_lab.py`。计划绑定候选、运维包、服务器
 名称和专用共享 UUID；每个 SMB/NFS 挂载根在探针开始前只能含同一候选授权标记。分别在真实 Windows
 SMB、macOS SMB/NFS、Linux SMB/NFS 客户端完成 8 MiB 写入、读回、重命名和删除；再由 Linux 专用

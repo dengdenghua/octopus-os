@@ -258,6 +258,16 @@ port to host loopback and exposes only the pinned, zero-capability gateway.
   exact-member reconnect, completed rebuild, reboot persistence and an Echo API
   1 GiB recycle-bin restore. Every phase writes a fixed mode-`0444` JSON log.
   Never run it on a production array or on a volume containing user data.
+- `storage_provisioning_lab.py` closes the setup gap before that G2 harness.
+  On a fresh Debian 13 + OMV 8 acceptance VM, its private candidate-bound plan
+  selects exactly two blank 4--64 GiB whole disks and stores only hashed stable
+  identities. The confirmed `provision` phase logs in to the running appliance,
+  exercises its real md RAID1 and EXT4 plan/one-shot-approval/apply endpoints,
+  verifies the host topology, and fsyncs a 1 MiB persistence probe. After a real
+  reboot, `reboot-verify` requires a new kernel boot ID and rechecks the healthy
+  array, UUID-mounted writable EXT4 filesystem and probe digest. It intentionally
+  retains the volume for `storage_recovery_lab.py`; never point it at production
+  disks or disks containing the only copy of any data.
 
 The A/B source contract additionally renders these same units inside a Debian
 13 container and passes them to that release's native `systemd-analyze verify`.

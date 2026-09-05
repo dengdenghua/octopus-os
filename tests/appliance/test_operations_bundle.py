@@ -4,6 +4,8 @@ import io
 import json
 import os
 import stat
+import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
@@ -93,6 +95,9 @@ def test_operations_bundle_has_fixed_inventory_modes_and_release_reference(tmp_p
     assert manifest["artifact"]["entrypoints"]["storageRecoveryLab"] == (
         "./storage_recovery_lab.py plan|run"
     )
+    assert manifest["artifact"]["entrypoints"]["storageProvisioningLab"] == (
+        "./storage_provisioning_lab.py plan|run"
+    )
     assert manifest["files"]["protocol_interoperability_lab.py"]["mode"] == "0755"
     assert manifest["files"]["bare_metal_recovery_lab.py"]["mode"] == "0755"
     assert manifest["files"]["power_state_recovery_lab.py"]["mode"] == "0755"
@@ -102,6 +107,7 @@ def test_operations_bundle_has_fixed_inventory_modes_and_release_reference(tmp_p
     assert manifest["files"]["paperless_functional_lab.py"]["mode"] == "0755"
     assert manifest["files"]["recover-appliance-upgrade.sh"]["mode"] == "0755"
     assert manifest["files"]["storage_recovery_lab.py"]["mode"] == "0755"
+    assert manifest["files"]["storage_provisioning_lab.py"]["mode"] == "0755"
     assert manifest["files"]["upgrade_transaction.py"]["mode"] == "0755"
     assert manifest["artifact"]["imageReference"] == IMAGE_REFERENCE
 
@@ -119,10 +125,11 @@ def test_operations_bundle_extracts_only_verified_files_and_refuses_replace(tmp_
     }
     assert extracted["fileCount"] == len(bundle.PAYLOAD_MODES) + 2
     assert extracted["payloadFileCount"] == len(bundle.PAYLOAD_MODES)
-    assert stat.S_IMODE((root / "echo-release.env").stat().st_mode) == 0o600
-    assert stat.S_IMODE((root / "install-appliance.sh").stat().st_mode) == 0o755
-    assert stat.S_IMODE((root / bundle.MANIFEST_NAME).stat().st_mode) == 0o644
-    assert stat.S_IMODE((root / bundle.PAYLOAD_CHECKSUMS_NAME).stat().st_mode) == 0o644
+    if os.name == "posix":
+        assert stat.S_IMODE((root / "echo-release.env").stat().st_mode) == 0o600
+        assert stat.S_IMODE((root / "install-appliance.sh").stat().st_mode) == 0o755
+        assert stat.S_IMODE((root / bundle.MANIFEST_NAME).stat().st_mode) == 0o644
+        assert stat.S_IMODE((root / bundle.PAYLOAD_CHECKSUMS_NAME).stat().st_mode) == 0o644
     with pytest.raises(bundle.OperationsBundleError, match="already exists"):
         bundle.extract(Path(report["archive"]), destination)
 
@@ -132,7 +139,7 @@ def test_production_extraction_requires_root_before_writing(
 ) -> None:
     report = _built(tmp_path / "build")
     destination = tmp_path / "production"
-    monkeypatch.setattr(bundle.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(bundle.os, "geteuid", lambda: 1000, raising=False)
 
     with pytest.raises(bundle.OperationsBundleError, match="requires root"):
         bundle.extract(
@@ -229,3 +236,30 @@ def test_operations_bundle_rejects_wrong_outer_checksum_and_sbom(tmp_path: Path)
             sbom,
             expected_image_reference=IMAGE_REFERENCE,
         )
+
+
+def test_bundled_storage_provisioning_lab_runs_with_sibling_dependencies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if not hasattr(os, "fchmod"):
+        monkeypatch.setattr(bundle.os, "fchmod", lambda _fd, _mode: None, raising=False)
+    report = _built(tmp_path / "build")
+    _root, files = bundle._read_archive(Path(report["archive"]))
+    extracted = tmp_path / "standalone"
+    extracted.mkdir()
+    for name in (
+        "storage_provisioning_lab.py",
+        "storage_recovery_lab.py",
+        "operations_systemd.py",
+        "operations_systemd_lab.py",
+    ):
+        (extracted / name).write_bytes(files[name][0])
+    completed = subprocess.run(
+        [sys.executable, "-E", str(extracted / "storage_provisioning_lab.py"), "--help"],
+        cwd=extracted,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "{plan,run}" in completed.stdout
