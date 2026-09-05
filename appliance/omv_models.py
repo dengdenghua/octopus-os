@@ -16,6 +16,7 @@ from appliance.omv_protocol import (
     GROUP_DESIRED_SCHEMA,
     MDRAID1_DESIRED_SCHEMA,
     MDRAID1_REPLACE_DESIRED_SCHEMA,
+    MDRAID_CHECK_DESIRED_SCHEMA,
     NFS_DESIRED_SCHEMA,
     NFS_REMOVE_DESIRED_SCHEMA,
     QUOTA_DESIRED_SCHEMA,
@@ -37,6 +38,7 @@ from appliance.omv_protocol import (
     validate_group_desired,
     validate_mdraid1_desired,
     validate_mdraid1_replace_desired,
+    validate_mdraid_check_desired,
     validate_nfs_remove_desired,
     validate_omv_uuid,
     validate_share_privilege_desired,
@@ -585,6 +587,42 @@ class MdRaid1ReplaceApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     desired: MdRaid1ReplaceDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
+class MdRaidCheckDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.mdraid-check-desired.v1"] = Field(
+        default=MDRAID_CHECK_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    name: str = Field(min_length=1, max_length=27)
+    array_uuid: str = Field(alias="arrayUuid")
+    operation: Literal["start"] = "start"
+
+    @field_validator("name", "array_uuid")
+    @classmethod
+    def validate_mdraid_check_field(cls, value: str, info: Any) -> str:
+        payload = {
+            "schema": MDRAID_CHECK_DESIRED_SCHEMA,
+            "name": value if info.field_name == "name" else "data",
+            "arrayUuid": (
+                value if info.field_name == "array_uuid" else "11111111:22222222:33333333:44444444"
+            ),
+            "operation": "start",
+        }
+        try:
+            normalized = validate_mdraid_check_desired(payload)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return normalized["name" if info.field_name == "name" else "arrayUuid"]
+
+
+class MdRaidCheckApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: MdRaidCheckDesiredState
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 

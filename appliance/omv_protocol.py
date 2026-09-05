@@ -53,6 +53,9 @@ MDRAID1_CONTROL_CAPABILITY = "storage.array.mdraid1.create.v1"
 MDRAID1_REPLACE_DESIRED_SCHEMA = "echo.omv.mdraid1-replace-desired.v1"
 MDRAID1_REPLACE_PLAN_SCHEMA = "echo.omv.mdraid1-replace-plan.v1"
 MDRAID1_REPLACE_CONTROL_CAPABILITY = "storage.array.mdraid1.replace-failed.blank.v1"
+MDRAID_CHECK_DESIRED_SCHEMA = "echo.omv.mdraid-check-desired.v1"
+MDRAID_CHECK_PLAN_SCHEMA = "echo.omv.mdraid-check-plan.v1"
+MDRAID_CHECK_CONTROL_CAPABILITY = "storage.array.mdraid.check.start.v1"
 EXT4_VOLUME_DESIRED_SCHEMA = "echo.omv.ext4-volume-desired.v1"
 EXT4_VOLUME_PLAN_SCHEMA = "echo.omv.ext4-volume-plan.v1"
 EXT4_VOLUME_CONTROL_CAPABILITY = "storage.volume.ext4.create-mount.v1"
@@ -254,6 +257,28 @@ def validate_mdraid1_replace_desired(value: Any) -> dict[str, Any]:
         "arrayUuid": array_uuid,
         "replacementDevice": replacement,
         "dataPreserved": True,
+    }
+
+
+def validate_mdraid_check_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "name", "arrayUuid", "operation"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("md RAID1 consistency desired state has unexpected fields")
+    if value.get("schema") != MDRAID_CHECK_DESIRED_SCHEMA:
+        raise ValueError("md RAID1 consistency desired-state schema is unsupported")
+    name = value.get("name")
+    if not isinstance(name, str) or _MDRAID_NAME_PATTERN.fullmatch(name) is None:
+        raise ValueError("md RAID1 name must be a lowercase portable name of at most 27 characters")
+    array_uuid = value.get("arrayUuid")
+    if not isinstance(array_uuid, str) or _MD_UUID_PATTERN.fullmatch(array_uuid) is None:
+        raise ValueError("md RAID1 consistency check requires a canonical managed array UUID")
+    if value.get("operation") != "start":
+        raise ValueError("md RAID1 consistency operation must be start")
+    return {
+        "schema": MDRAID_CHECK_DESIRED_SCHEMA,
+        "name": name,
+        "arrayUuid": array_uuid,
+        "operation": "start",
     }
 
 

@@ -82,6 +82,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "storage.pool.zfs-mirror.create.v1",
         "storage.array.mdraid1.create.v1",
         "storage.array.mdraid1.replace-failed.blank.v1",
+        "storage.array.mdraid.check.start.v1",
         "storage.volume.ext4.create-mount.v1",
         "storage.pool.zfs-mirror.replace.blank.v1",
         "storage.pool.zfs.export.safe.v1",
@@ -1646,6 +1647,84 @@ def test_native_alias_binds_zfs_scrub_to_exact_approval_action(
     assert response.status_code == 200
     assert approval_calls[0]["action"] == "omv.zfs.scrub.start"
     assert {entry["action"] for entry in audit_calls} == {"omv.zfs.scrub.start"}
+
+
+def test_native_alias_exposes_mdraid_maintenance_without_raw_sysfs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    expected = [
+        {
+            "array": {
+                "name": "family",
+                "devicefile": "/dev/md/echo-family",
+                "uuid": "11111111:22222222:33333333:44444444",
+                "configSha256": "a" * 64,
+            },
+            "kernelDevice": "md7",
+            "members": [],
+            "healthy": True,
+            "degradedDevices": 0,
+            "action": "check",
+            "progressPercent": 12.5,
+            "mismatchCount": 0,
+            "stateHash": "b" * 64,
+            "canStartCheck": False,
+        }
+    ]
+    monkeypatch.setattr(native_storage, "mdraid_maintenance", lambda: expected)
+    app = FastAPI()
+    app.include_router(create_omv_alias_router())
+
+    response = TestClient(app).get("/api/appliance/omv/arrays/mdraid1/maintenance")
+
+    assert response.status_code == 200
+    assert response.json() == {"arrays": expected, "readOnly": True, "source": "native"}
+    assert "sys/class" not in response.text
+
+
+def test_native_alias_binds_mdraid_check_to_exact_approval_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    plan_id = "d" * 64
+    desired = {
+        "schema": "echo.omv.mdraid-check-desired.v1",
+        "name": "family",
+        "arrayUuid": "11111111:22222222:33333333:44444444",
+        "operation": "start",
+    }
+    current_plan = {"planId": plan_id, "operation": "start", "requiresApproval": True}
+    approval_calls: list[dict[str, Any]] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            approval_calls.append(kwargs)
+
+    class Audit:
+        def record(self, **kwargs: Any) -> None:
+            audit_calls.append(kwargs)
+
+    monkeypatch.setattr(native_storage, "plan_mdraid_check", lambda _desired: current_plan)
+    monkeypatch.setattr(
+        native_storage,
+        "apply_mdraid_check",
+        lambda _desired, _plan_id: {**current_plan, "applied": True, "verified": True},
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+
+    response = TestClient(app).post(
+        "/api/appliance/omv/arrays/mdraid1/check/apply",
+        json={"desired": desired, "planId": plan_id},
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+
+    assert response.status_code == 200
+    assert approval_calls[0]["action"] == "omv.mdraid.check.start"
+    assert {entry["action"] for entry in audit_calls} == {"omv.mdraid.check.start"}
+    assert audit_calls[0]["metadata"]["repair"] is False
 
 
 @pytest.mark.parametrize(

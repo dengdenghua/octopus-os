@@ -54,6 +54,11 @@ from typing import Any
 
 from appliance.native_ext4 import apply_ext4_volume, ext4_volume_candidates, plan_ext4_volume
 from appliance.native_mdraid import apply_mdraid1, mdraid1_candidates, plan_mdraid1
+from appliance.native_mdraid_check import (
+    apply_mdraid_check,
+    mdraid_maintenance,
+    plan_mdraid_check,
+)
 from appliance.native_mdraid_replace import (
     apply_mdraid1_replace,
     mdraid1_replacement_candidates,
@@ -934,6 +939,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.pool.zfs-mirror.create.v1",
     "storage.array.mdraid1.create.v1",
     "storage.array.mdraid1.replace-failed.blank.v1",
+    "storage.array.mdraid.check.start.v1",
     "storage.volume.ext4.create-mount.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
@@ -978,6 +984,8 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("storage.array.mdraid1.create.v1")
     if not _native_command_tools_available("mdadm", "lsblk", "wipefs"):
         unavailable.add("storage.array.mdraid1.replace-failed.blank.v1")
+    if not _native_command_tools_available("mdadm", "lsblk"):
+        unavailable.add("storage.array.mdraid.check.start.v1")
     if not _native_command_tools_available(
         "mdadm",
         "blkid",
@@ -4056,6 +4064,7 @@ __all__ = [
     "apply_group",
     "apply_mdraid1",
     "apply_mdraid1_replace",
+    "apply_mdraid_check",
     "apply_ext4_volume",
     "apply_nfs",
     "apply_nfs_remove",
@@ -4079,10 +4088,12 @@ __all__ = [
     "md_arrays",
     "mdraid1_candidates",
     "mdraid1_replacement_candidates",
+    "mdraid_maintenance",
     "plan_group",
     "plan_ext4_volume",
     "plan_mdraid1",
     "plan_mdraid1_replace",
+    "plan_mdraid_check",
     "plan_nfs",
     "plan_nfs_remove",
     "plan_quota",

@@ -29,6 +29,8 @@ from appliance.omv_models import (
     MdRaid1DesiredState,
     MdRaid1ReplaceApplyRequest,
     MdRaid1ReplaceDesiredState,
+    MdRaidCheckApplyRequest,
+    MdRaidCheckDesiredState,
     NfsApplyRequest,
     NfsDesiredState,
     NfsRemoveApplyRequest,
@@ -140,6 +142,14 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 md RAID1 换盘候选探测不可用") from exc
         return {"replacements": replacements, "readOnly": True, "source": "native"}
+
+    @router.get("/arrays/mdraid1/maintenance")
+    async def mdraid1_maintenance() -> dict[str, Any]:
+        try:
+            arrays = await run_in_threadpool(native_storage.mdraid_maintenance)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="原生 md RAID1 校验状态不可用") from exc
+        return {"arrays": arrays, "readOnly": True, "source": "native"}
 
     @router.get("/volumes/ext4/candidates")
     async def ext4_volume_candidates() -> dict[str, Any]:
@@ -898,6 +908,41 @@ def create_omv_alias_router(
                 "arrayUuid": body.desired.array_uuid,
                 "replacementDevice": body.desired.replacement_device,
                 "dataPreserved": True,
+            },
+        )
+
+    # --- Consistency check of a healthy Echo-managed RAID1 -------------
+    @router.post("/arrays/mdraid1/check/plan")
+    async def plan_mdraid_check(body: MdRaidCheckDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_mdraid_check,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 md RAID1 校验暂不可用") from exc
+
+    @router.post("/arrays/mdraid1/check/apply")
+    async def apply_mdraid_check_route(
+        body: MdRaidCheckApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.mdraid.check.start",
+            plan_fn=native_storage.plan_mdraid_check,
+            apply_fn=native_storage.apply_mdraid_check,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "name": body.desired.name,
+                "arrayUuid": body.desired.array_uuid,
+                "operation": "start",
+                "repair": False,
             },
         )
 
