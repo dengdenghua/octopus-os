@@ -44,30 +44,33 @@ def register_native_storage_routes(router: APIRouter) -> None:
 
     @router.get("/status")
     async def status() -> dict[str, Any]:
-        return native_storage.status()
+        return await run_in_threadpool(native_storage.status)
 
     @router.get("/health")
     async def health() -> dict[str, Any]:
         try:
-            return native_storage.storage_health()
+            return await run_in_threadpool(native_storage.storage_health)
         except OSError as exc:  # pragma: no cover - defensive
             raise HTTPException(status_code=503, detail="native storage read failed") from exc
 
     @router.get("/filesystems")
     async def filesystems() -> dict[str, Any]:
-        return {"filesystems": native_storage.filesystems(), "readOnly": True}
+        return {
+            "filesystems": await run_in_threadpool(native_storage.filesystems),
+            "readOnly": True,
+        }
 
     @router.get("/topology")
     async def topology() -> dict[str, Any]:
-        return native_storage.storage_topology()
+        return await run_in_threadpool(native_storage.storage_topology)
 
     @router.get("/smart/devices")
     async def smart_devices() -> dict[str, Any]:
-        return {"devices": native_storage.smart_devices(), "readOnly": True}
+        return {"devices": await run_in_threadpool(native_storage.smart_devices), "readOnly": True}
 
     @router.get("/sharing")
     async def sharing() -> dict[str, Any]:
-        return {**native_storage.sharing_overview(), "readOnly": True}
+        return {**await run_in_threadpool(native_storage.sharing_overview), "readOnly": True}
 
     @router.get("/sharing/{share_uuid}/privileges")
     async def share_privileges(share_uuid: str) -> dict[str, Any]:
@@ -87,7 +90,10 @@ def register_native_storage_routes(router: APIRouter) -> None:
             validated = native_storage.validated_devicefile(devicefile)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {"smart": native_storage.smart_report(validated), "readOnly": True}
+        return {
+            "smart": await run_in_threadpool(native_storage.smart_report, validated),
+            "readOnly": True,
+        }
 
 
 def create_native_storage_router(
