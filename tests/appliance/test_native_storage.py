@@ -400,9 +400,10 @@ def test_native_alias_groups_apply_rejects_a_stale_plan(
 
 
 @pytest.fixture
-def posix_accounts(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Any]]:
-    created_groups: list[str] = []
+def posix_accounts(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    created_groups: list[str] = ["users"]
     created_users: list[str] = []
+    user_records: dict[str, dict[str, Any]] = {}
     secrets: list[tuple[str, str]] = []
     samba: list[str] = []
 
@@ -412,13 +413,36 @@ def posix_accounts(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Any]]:
     def fake_user_exists(name: str) -> bool:
         return name in created_users
 
+    def default_user_record(name: str) -> dict[str, Any]:
+        return {
+            "name": name,
+            "uid": 1001,
+            "gid": 1001,
+            "comment": "Mom" if name == "mother" else name.title(),
+            "home": f"/home/{name}",
+            "shell": "/usr/sbin/nologin",
+            "groups": ["users"],
+        }
+
+    def fake_user_snapshot(name: str) -> dict[str, Any] | None:
+        if name not in created_users:
+            return None
+        record = user_records.setdefault(name, default_user_record(name))
+        return record if record["shell"] == "/usr/sbin/nologin" else None
+
     def fake_run_write(*args: str, timeout: float = 60.0) -> None:
         if args[:1] == ("groupadd",):
             created_groups.append(args[1])
         elif args[:1] == ("useradd",):
-            created_users.append(args[-1])
+            name = args[-1]
+            created_users.append(name)
+            group_index = args.index("-G") + 1
+            groups = sorted(set(args[group_index].split(",")))
+            comment = args[args.index("--comment") + 1]
+            user_records[name] = {**default_user_record(name), "comment": comment, "groups": groups}
         elif args[:2] == ("userdel",):
             created_users.remove(args[1])
+            user_records.pop(args[1], None)
         elif args[:1] == ("zfs",):
             pass
         else:
@@ -435,9 +459,16 @@ def posix_accounts(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Any]]:
 
     monkeypatch.setattr(native_storage, "_group_exists", fake_group_exists)
     monkeypatch.setattr(native_storage, "_user_exists", fake_user_exists)
+    monkeypatch.setattr(native_storage, "_constrained_user_snapshot", fake_user_snapshot)
     monkeypatch.setattr(native_storage, "_run_write", fake_run_write)
     monkeypatch.setattr(native_storage, "_run_write_stdin", fake_run_write_stdin)
-    return {"groups": created_groups, "users": created_users, "secrets": secrets, "samba": samba}
+    return {
+        "groups": created_groups,
+        "users": created_users,
+        "records": user_records,
+        "secrets": secrets,
+        "samba": samba,
+    }
 
 
 def test_group_create_is_idempotent(posix_accounts: dict[str, list[Any]]) -> None:
@@ -475,6 +506,8 @@ def test_user_create_enables_system_and_samba(posix_accounts: dict[str, list[Any
     assert "mother" in posix_accounts["users"]
     assert ("mother", "Family-Shared-2026!") in posix_accounts["secrets"]
     assert "mother" in posix_accounts["samba"]
+    assert posix_accounts["records"]["mother"]["comment"] == "Mom"
+    assert posix_accounts["records"]["mother"]["groups"] == ["users"]
 
 
 def test_user_create_requires_existing_group(posix_accounts: dict[str, list[Any]]) -> None:
@@ -489,7 +522,7 @@ def test_user_create_requires_existing_group(posix_accounts: dict[str, list[Any]
         native_storage.plan_user(desired)
 
 
-def test_user_password_reset(posix_accounts: dict[str, list[Any]]) -> None:
+def test_user_password_reset(posix_accounts: dict[str, Any]) -> None:
     posix_accounts["users"].append("mother")
     desired = {
         "schema": "echo.omv.user-password-desired.v1",
@@ -502,6 +535,28 @@ def test_user_password_reset(posix_accounts: dict[str, list[Any]]) -> None:
     applied = native_storage.apply_user_password(desired, plan["planId"])
     assert applied["applied"] is True
     assert ("mother", "New-Family-2026!") in posix_accounts["secrets"]
+
+
+def test_user_password_reset_rejects_unconstrained_account(
+    posix_accounts: dict[str, Any],
+) -> None:
+    posix_accounts["users"].append("service")
+    posix_accounts["records"]["service"] = {
+        "name": "service",
+        "uid": 1002,
+        "gid": 1002,
+        "comment": "Service",
+        "home": "/home/service",
+        "shell": "/bin/bash",
+        "groups": ["users"],
+    }
+    desired = {
+        "schema": "echo.omv.user-password-desired.v1",
+        "name": "service",
+        "password": "New-Service-2026!",
+    }
+    with pytest.raises(ValueError, match="constrained normal NAS user"):
+        native_storage.plan_user_password(desired)
 
 
 def test_smb_share_enable(monkeypatch: pytest.MonkeyPatch) -> None:

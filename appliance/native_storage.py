@@ -1296,6 +1296,71 @@ def _user_exists(name: str) -> bool:
         return False
 
 
+def _posix_user_snapshot(name: str) -> dict[str, Any] | None:
+    """Read the bounded account fields needed by the native safety contract."""
+    grp, pwd = _require_posix_accounts()
+    try:
+        account = pwd.getpwnam(name)
+        groups = sorted(
+            {
+                entry.gr_name
+                for entry in grp.getgrall()
+                if name in (entry.gr_mem or ())
+            }
+        )
+    except (KeyError, OSError):
+        return None
+    return {
+        "name": str(account.pw_name),
+        "uid": int(account.pw_uid),
+        "gid": int(account.pw_gid),
+        "comment": str(account.pw_gecos),
+        "home": str(account.pw_dir),
+        "shell": str(account.pw_shell),
+        "groups": groups,
+    }
+
+
+def _constrained_user_snapshot(name: str) -> dict[str, Any] | None:
+    """Return an existing user only when it matches the managed NAS contract."""
+    snapshot = _posix_user_snapshot(name)
+    if snapshot is None:
+        return None
+    if (
+        not _is_visible_nas_user(snapshot["uid"])
+        or snapshot["shell"] != "/usr/sbin/nologin"
+        or not snapshot["comment"].strip()
+    ):
+        return None
+    try:
+        grp, _ = _require_posix_accounts()
+        for group_name in snapshot["groups"]:
+            group = grp.getgrnam(group_name)
+            if not _is_visible_nas_group(group_name, int(group.gr_gid)):
+                return None
+        home = Path(snapshot["home"])
+        if not home.is_absolute():
+            return None
+        home_info = home.lstat()
+        if not stat_module.S_ISDIR(home_info.st_mode) or stat_module.S_ISLNK(home_info.st_mode):
+            return None
+        # A managed account has no SSH entry point. Reject the whole directory,
+        # not only authorized_keys, so a later key filename cannot bypass this
+        # contract.
+        ssh_dir = home / ".ssh"
+        try:
+            ssh_info = ssh_dir.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            if stat_module.S_ISLNK(ssh_info.st_mode) or stat_module.S_ISDIR(ssh_info.st_mode):
+                return None
+            return None
+    except (KeyError, OSError, ValueError, TypeError):
+        return None
+    return snapshot
+
+
 # --- POSIX group creation -------------------------------------------------
 
 
@@ -1362,6 +1427,8 @@ def apply_group(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
 
 def _build_user_plan(desired: dict[str, Any]) -> dict[str, Any]:
     operation = "none" if _user_exists(desired["name"]) else "create"
+    if operation == "create" and not _group_exists("users"):
+        raise ValueError("native user creation requires the users group")
     base_revision = _canonical_hash({"user": desired["name"], "exists": operation == "none"})
     plan_id = _canonical_hash(
         {
@@ -1401,6 +1468,7 @@ def _build_user_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "kind": "posixNormalUser",
             "loginShell": "nologin",
             "home": "createdUnderHomeRoot",
+            "baseGroup": "users",
             "samba": "enabledViaSmbpasswd",
             "password": "hashedAndStoredInShadowAndSamba",
             "sshKeys": "none",
@@ -1416,6 +1484,8 @@ def plan_user(desired_state: dict[str, Any]) -> dict[str, Any]:
     for group in desired["groups"]:
         if not _group_exists(group):
             raise ValueError(f"group '{group}' does not exist on the host")
+    if not _user_exists(desired["name"]) and not _group_exists("users"):
+        raise ValueError("native user creation requires the users group")
     return _build_user_plan(desired)
 
 
@@ -1439,19 +1509,31 @@ def apply_user(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
             raise OSError("planned user no longer exists on the host")
         return {**plan, "applied": False, "verified": True, "user": {"name": desired["name"]}}
     extra_args: list[str] = []
-    if desired["groups"]:
-        extra_args += ["-G", ",".join(desired["groups"])]
+    extra_args += ["-G", ",".join(["users", *desired["groups"]])]
     _run_write(
         "useradd",
         "--create-home",
         "--shell", "/usr/sbin/nologin",
+        "--comment", desired["displayName"],
         *extra_args,
         desired["name"],
     )
     if not _user_exists(desired["name"]):
         raise OSError("useradd reported success but the user is missing")
     try:
+        observed = _constrained_user_snapshot(desired["name"])
+        expected_groups = sorted({"users", *desired["groups"]})
+        if (
+            observed is None
+            or observed["name"] != desired["name"]
+            or observed["comment"] != desired["displayName"]
+            or observed["shell"] != "/usr/sbin/nologin"
+            or observed["groups"] != expected_groups
+        ):
+            raise OSError("useradd did not persist the constrained user settings")
         _set_user_secret(desired["name"], desired["password"])
+        if _constrained_user_snapshot(desired["name"]) != observed:
+            raise OSError("setting the user secret changed account constraints")
     except OSError:
         # Roll back the half-created account so the host is not left inconsistent.
         with contextlib.suppress(OSError):
@@ -1461,9 +1543,10 @@ def apply_user(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
 
 
 def _build_user_password_plan(desired: dict[str, Any]) -> dict[str, Any]:
-    if not _user_exists(desired["name"]):
-        raise ValueError("user does not exist on the host")
-    base_revision = _canonical_hash({"user": desired["name"], "passwordReset": True})
+    account = _constrained_user_snapshot(desired["name"])
+    if account is None:
+        raise ValueError("user is not an existing constrained normal NAS user")
+    base_revision = _canonical_hash({"user": account, "passwordReset": True})
     plan_id = _canonical_hash(
         {
             "schema": USER_PASSWORD_PLAN_SCHEMA,
@@ -1514,7 +1597,12 @@ def apply_user_password(desired_state: dict[str, Any], plan_id: str) -> dict[str
     plan = _build_user_password_plan(desired)
     if plan["planId"] != plan_id:
         raise ValueError("password plan is stale; preview the change again")
+    before = _constrained_user_snapshot(desired["name"])
+    if before is None:
+        raise OSError("password target is no longer a constrained normal NAS user")
     _set_user_secret(desired["name"], desired["password"])
+    if _constrained_user_snapshot(desired["name"]) != before:
+        raise OSError("password reset changed account constraints")
     return {**plan, "applied": True, "verified": True, "user": {"name": desired["name"]}}
 
 
@@ -2213,12 +2301,11 @@ def apply_quota(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
 
 
 class NativeStorageAuthority:
-    """Drop-in replacement for the OMV client's read surface.
+    """Storage-provider surface used by the account and data-access layers.
 
-    Accounts directory and the family data-access policy previously treated
-    OpenMediaVault as the storage identity authority; this class provides the
-    same duck-typed surface backed by the host itself (system users, mounts,
-    Samba usershares).
+    The active native provider is backed by the host itself (system users,
+    mounts, and Samba usershares). It keeps the same duck-typed read contract
+    as the optional OMV compatibility provider without importing that client.
     """
 
     configured = True
