@@ -166,6 +166,81 @@ def test_filesystems_does_not_advertise_system_root_as_quota_target(
     assert entries[1]["supportsQuota"] is True
 
 
+def _mock_native_health_reads(
+    monkeypatch: pytest.MonkeyPatch, *, present: bool, passed: bool | None
+) -> None:
+    import io
+    import subprocess
+
+    def read_command(argv, **_kwargs):
+        if argv[0] == "lsblk":
+            value = {
+                "blockdevices": [{"name": "sda", "type": "disk", "size": 2**40}] if present else []
+            }
+            return subprocess.CompletedProcess(argv, 0, json.dumps(value), "")
+        if argv[0] == "df":
+            value = "Filesystem Type 1B-blocks Used Available Capacity Mounted on\n"
+            if present:
+                value += "/dev/sda1 ext4 10000 2000 8000 20% /data\n"
+            return subprocess.CompletedProcess(argv, 0, value, "")
+        if argv[0] == "smartctl":
+            value = {"smart_status": {"passed": passed}} if passed is not None else {}
+            return subprocess.CompletedProcess(argv, 0, json.dumps(value), "")
+        if argv[0] == "findmnt":
+            return subprocess.CompletedProcess(argv, 0, "rw,relatime\n", "")
+        raise FileNotFoundError()
+
+    monkeypatch.setattr(native_storage.subprocess, "run", read_command)
+    monkeypatch.setattr(
+        native_storage.shutil,
+        "which",
+        lambda binary: "/usr/bin/findmnt" if binary == "findmnt" else None,
+    )
+    monkeypatch.setattr(
+        native_storage,
+        "open",
+        lambda *_args, **_kwargs: io.StringIO("Personalities : [raid1]\nunused devices: <none>\n"),
+        raising=False,
+    )
+
+
+def test_storage_health_does_not_report_healthy_when_all_probes_are_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_native_health_reads(monkeypatch, present=False, passed=None)
+    health = native_storage.storage_health()
+    assert health["state"] == "unknown"
+    assert health["coverage"] == "none"
+    assert health["stale"] is True
+    assert health["lastSuccessfulAt"] is None
+    assert health["summary"] == {"critical": 0, "warning": 0, "total": 0}
+    assert health["probeEvidence"][0]["code"] == "empty_inventory"
+
+
+def test_storage_health_marks_unknown_smart_as_degraded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_native_health_reads(monkeypatch, present=True, passed=None)
+    health = native_storage.storage_health()
+    assert health["state"] == "degraded"
+    assert health["coverage"] == "partial"
+    assert health["stale"] is True
+    assert health["lastSuccessfulAt"] is None
+    assert health["summary"] == {"critical": 0, "warning": 0, "total": 0}
+    assert health["probeEvidence"][-1]["code"] == "health_unreported"
+
+
+def test_storage_health_stays_healthy_only_with_a_positive_smart_observation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_native_health_reads(monkeypatch, present=True, passed=True)
+    health = native_storage.storage_health()
+    assert health["state"] == "healthy"
+    assert health["coverage"] == "complete"
+    assert health["stale"] is False
+    assert health["summary"] == {"critical": 0, "warning": 0, "total": 0}
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="path assertions are POSIX-specific")
 def test_sharing_targets_match_the_frontend_contract_without_host_paths(
     monkeypatch: pytest.MonkeyPatch,

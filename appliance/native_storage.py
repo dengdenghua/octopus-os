@@ -49,6 +49,14 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from appliance.native_storage_probe import (
+    Probe,
+    evidence,
+    health_observation,
+    observation,
+    parsed,
+    run_readonly,
+)
 from appliance.omv_protocol import (
     GROUP_PLAN_SCHEMA,
     NFS_PLAN_SCHEMA,
@@ -81,9 +89,7 @@ _NATIVE_NFS_EXPORTS = Path("/etc/exports.d/echo-os.exports")
 _STORAGE_UUID_NAMESPACE = uuid_module.UUID("6f1e0d5c-3a34-4f5e-9a52-1f65c3b07a11")
 _REGISTRY_THREAD_LOCK = threading.RLock()
 _NATIVE_DATA_MOUNT_ROOTS = ("/data", "/mnt", "/srv", "/fs", "/volume")
-_ZFS_DATASET_PATTERN = re.compile(
-    r"[A-Za-z0-9][A-Za-z0-9._:-]*(?:/[A-Za-z0-9][A-Za-z0-9._:-]*)*"
-)
+_ZFS_DATASET_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*(?:/[A-Za-z0-9][A-Za-z0-9._:-]*)*")
 _NATIVE_KERNEL_QUOTA_FILESYSTEMS = frozenset({"ext2", "ext3", "ext4", "xfs"})
 _QUOTA_REPORT_MAX_BYTES = 1024 * 1024
 
@@ -152,20 +158,8 @@ def _now() -> str:
 
 
 def _run(*args: str, timeout: float = 20.0) -> str:
-    """Run a read-only command; return stdout, or "" when it is unavailable."""
-    try:
-        completed = subprocess.run(
-            list(args),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    if completed.returncode != 0:
-        return ""
-    return completed.stdout or ""
+    """Return read-only stdout with failure evidence retained on the string."""
+    return run_readonly(args, timeout=timeout)
 
 
 def _mount_read_only(mountpoint: str) -> bool:
@@ -231,14 +225,12 @@ def _kernel_quota_enabled(mountpoint: str, subject_type: str) -> bool:
     tokens = {item.strip().casefold() for item in options.split(",") if item.strip()}
     if subject_type == "user":
         enabled = any(
-            token in {"quota", "usrquota", "uquota"}
-            or token.startswith("usrjquota=")
+            token in {"quota", "usrquota", "uquota"} or token.startswith("usrjquota=")
             for token in tokens
         )
     else:
         enabled = any(
-            token in {"quota", "grpquota", "gquota"}
-            or token.startswith("grpjquota=")
+            token in {"quota", "grpquota", "gquota"} or token.startswith("grpjquota=")
             for token in tokens
         )
     if not enabled:
@@ -246,42 +238,35 @@ def _kernel_quota_enabled(mountpoint: str, subject_type: str) -> bool:
     return True
 
 
-def _run_json(*args: str, timeout: float = 25.0) -> dict[str, Any]:
-    """Run ``smartctl -j`` and keep the JSON even on a non-zero exit.
+class _SmartPayload(dict[str, Any]):
+    probe_evidence: dict[str, Any]
 
-    smartctl exits non-zero for plenty of benign reasons (a virtio disk simply
-    has no SMART table, an old disk lacks a capability) while still printing a
-    perfectly usable JSON payload. Throwing the payload away would report every
-    such device as "UNKNOWN" for no reason.
-    """
+
+def _run_json(*args: str, timeout: float = 25.0) -> dict[str, Any]:
+    """Preserve usable SMART JSON and distinguish exit-status health bits."""
+    output = run_readonly(args, timeout=timeout, smart=True)
+    probe_evidence = evidence("smart", _now(), output, target=args[-1])
     try:
-        completed = subprocess.run(
-            list(args),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return {}
-    if not completed.stdout:
-        return {}
-    try:
-        payload = json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
+        payload = json.loads(output or getattr(output, "partial_stdout", ""))
+    except (json.JSONDecodeError, ValueError):
+        payload = None
+    if not isinstance(payload, dict):
+        parsed(probe_evidence, 0, invalid=True)
+        payload = {}
+    result = _SmartPayload(payload)
+    result.probe_evidence = probe_evidence
+    return result
 
 
 def _int(value: Any) -> int | None:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
 def _percent(used: int | None, total: int | None) -> int | None:
-    if not used or not total or total <= 0:
+    if used is None or not total or total <= 0:
         return None
     return max(0, min(100, int(round(used * 100.0 / total))))
 
@@ -293,6 +278,10 @@ def _percent(used: int | None, total: int | None) -> int | None:
 
 def block_devices() -> list[dict[str, Any]]:
     """Enumerate physical disks via ``lsblk`` (kernel is the authority)."""
+    return _probe_block_devices().value
+
+
+def _probe_block_devices() -> Probe:
     out = _run(
         "lsblk",
         "-J",
@@ -300,18 +289,39 @@ def block_devices() -> list[dict[str, Any]]:
         "-o",
         "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,ROTA,PKNAME",
     )
-    if not out:
-        return []
+    probe_evidence = evidence("block-devices", _now(), out)
     try:
-        payload = json.loads(out)
+        payload = json.loads(out or getattr(out, "partial_stdout", ""))
     except json.JSONDecodeError:
-        return []
+        payload = None
+    if not isinstance(payload, dict) or not isinstance(payload.get("blockdevices"), list):
+        parsed(probe_evidence, 0, invalid=True)
+        return Probe([], probe_evidence)
 
     devices: list[dict[str, Any]] = []
+    invalid = False
+    has_md = False
+    has_zfs = False
 
-    def walk(node: dict[str, Any]) -> None:
+    def walk(node: Any) -> None:
+        nonlocal invalid, has_md, has_zfs
+        if not isinstance(node, dict):
+            invalid = True
+            return
         name = node.get("name")
-        node_type = node.get("type") or "disk"
+        node_type = node.get("type")
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_.!+-]+", name):
+            invalid = True
+            return
+        if not isinstance(node_type, str) or _int(node.get("size")) is None:
+            invalid = True
+            return
+        has_md = has_md or node_type == "md" or node_type.startswith("raid")
+        filesystem_type = node.get("fstype")
+        if filesystem_type is not None and not isinstance(filesystem_type, str):
+            invalid = True
+            filesystem_type = None
+        has_zfs = has_zfs or filesystem_type in {"zfs", "zfs_member"}
         if (
             node_type
             in {"disk", "rom", "part", "lvm", "md", "raid0", "raid1", "raid5", "raid6", "raid10"}
@@ -323,46 +333,65 @@ def block_devices() -> list[dict[str, Any]]:
                     "devicefile": f"/dev/{name}",
                     "type": node_type,
                     "sizeBytes": _int(node.get("size")),
-                    "filesystemType": node.get("fstype") or None,
+                    "filesystemType": filesystem_type or None,
                     "rotational": None
                     if node.get("rota") is None
                     else bool(node.get("rota") == "1" or node.get("rota") is True),
-                    "model": (node.get("model") or "").strip() or None,
-                    "serial": (node.get("serial") or "").strip() or None,
+                    "model": str(node.get("model") or "").strip() or None,
+                    "serial": str(node.get("serial") or "").strip() or None,
                     "parentDevicefiles": [],
                 }
             )
-        for child in node.get("children") or []:
+        children = node.get("children") or []
+        if not isinstance(children, list):
+            invalid = True
+            return
+        for child in children:
             walk(child)
 
     for node in payload.get("blockdevices") or []:
         walk(node)
-    return devices
+    parsed(probe_evidence, len(devices), invalid=invalid)
+    probe_evidence["mdraidPresent"] = has_md
+    probe_evidence["zfsPresent"] = has_zfs
+    return Probe(devices, probe_evidence)
 
 
 def md_arrays() -> list[dict[str, Any]]:
     """Parse ``/proc/mdstat`` into the OMV RAID array shape."""
+    return _probe_md_arrays().value
+
+
+def _probe_md_arrays(*, expected: bool = False) -> Probe:
+    probe_evidence = evidence("mdraid", _now(), required=expected)
     try:
         with open("/proc/mdstat", encoding="utf-8", errors="replace") as handle:
             text = handle.read()
-    except OSError:
-        return []
+    except FileNotFoundError:
+        probe_evidence.update(
+            state="unavailable" if expected else "not-applicable", code="not_present"
+        )
+        return Probe([], probe_evidence)
+    except OSError as exc:
+        probe_evidence.update(
+            state="error",
+            required=True,
+            code="permission_denied" if isinstance(exc, PermissionError) else "read_failed",
+        )
+        return Probe([], probe_evidence)
 
     arrays: list[dict[str, Any]] = []
-    for line in text.splitlines():
-        match = re.match(r"^md\d+\s*:", line)
-        if not match:
-            continue
-        name = line.split(":", 1)[0].strip()
-        body = line.split(":", 1)[1]
+    invalid = not bool(re.search(r"^Personalities\s*:", text, re.MULTILINE))
+    for match in re.finditer(r"^(md\S+)\s*:\s*(.*(?:\n[ \t]+.*)*)", text, re.MULTILINE):
+        name, body = match.groups()
         level = "unknown"
-        for candidate in ("raid0", "raid1", "raid10", "raid5", "raid6", "linear"):
+        for candidate in ("raid0", "raid10", "raid1", "raid5", "raid6", "linear"):
             if candidate in body:
                 level = candidate
                 break
         status = "unknown"
         for token, mapped in _MD_STATE_MAP.items():
-            if token in body:
+            if re.search(rf"\b{re.escape(token)}\b", body):
                 status = mapped
                 break
         # "[UU]" / "[U_]" patterns describe member states
@@ -375,7 +404,7 @@ def md_arrays() -> list[dict[str, Any]]:
             if active < total:
                 status = "degraded"
         progress = None
-        progress_match = re.search(r"=\s*\S+\s*\((\d+(?:\.\d+)?)%\)", body)
+        progress_match = re.search(r"=\s*(\d+(?:\.\d+)?)%", body)
         if progress_match:
             progress = int(float(progress_match.group(1)))
         operation = None
@@ -394,23 +423,71 @@ def md_arrays() -> list[dict[str, Any]]:
                 "operationPercent": progress,
             }
         )
-    return arrays
+        invalid = invalid or status == "unknown"
+    parsed(probe_evidence, len(arrays), invalid=invalid)
+    if arrays or invalid or expected:
+        probe_evidence["required"] = True
+    if not arrays and not invalid and not expected:
+        probe_evidence.update(state="not-applicable", code="not_present")
+    return Probe(arrays, probe_evidence)
 
 
 def zfs_pools() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Return (arrays, alerts) derived from ``zpool list``/``zpool status``."""
+    return _probe_zfs_pools().value
+
+
+def _probe_zfs_pools(*, expected: bool = False) -> Probe:
     out = _run("zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,health,cap,frag")
+    probe_evidence = evidence("zfs", _now(), out, required=expected)
+    raw_output = out or getattr(out, "partial_stdout", "")
+    if probe_evidence["state"] != "ok" and not raw_output:
+        if probe_evidence.get("code") == "tool_missing" and not expected:
+            probe_evidence["state"] = "not-applicable"
+        else:
+            probe_evidence["required"] = True
+        return Probe(([], []), probe_evidence)
+    out = raw_output
     if not out:
-        return [], []
+        probe_evidence.update(
+            state="empty" if expected else "not-applicable",
+            code="empty_inventory" if expected else "not_present",
+        )
+        return Probe(([], []), probe_evidence)
+    if out.strip() == "no pools available" and not expected:
+        probe_evidence.update(state="not-applicable", code="not_present")
+        return Probe(([], []), probe_evidence)
 
     arrays: list[dict[str, Any]] = []
     alerts: list[dict[str, Any]] = []
+    invalid = False
     for line in out.strip().splitlines():
         parts = line.split("\t")
         if len(parts) < 5:
+            invalid = True
             continue
         name, size, _alloc, _free, health = parts[0], parts[1], parts[2], parts[3], parts[4]
-        level = _zfs_level(name)
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]*", name) or _int(size) is None:
+            invalid = True
+            continue
+        detail = _run("zpool", "status", name, timeout=10.0)
+        if getattr(detail, "state", "ok") != "ok" and probe_evidence["state"] == "ok":
+            probe_evidence.update(state="partial", code=getattr(detail, "code", "read_failed"))
+        elif not re.search(r"^\s*state:\s*\S+", detail, re.MULTILINE):
+            invalid = True
+        detail_state = re.search(r"^\s*state:\s*(\S+)", detail, re.MULTILINE)
+        if detail_state and detail_state.group(1) != health:
+            current_health = detail_state.group(1)
+            # Inventory and detail are not an atomic snapshot. Preserve a known
+            # fault from either read; a later positive read cannot erase it.
+            severity = {"healthy": 0, "warning": 1, "degraded": 2, "critical": 3}
+            if severity.get(_ZFS_HEALTH_TO_STATE.get(current_health, "unknown"), -1) > severity.get(
+                _ZFS_HEALTH_TO_STATE.get(health, "unknown"), -1
+            ):
+                health = current_health
+            if probe_evidence["state"] == "ok":
+                probe_evidence.update(state="partial", code="conflicting_health")
+        level = _zfs_level(name, detail)
         status = _ZFS_HEALTH_TO_STATE.get(health, "unknown")
         arrays.append(
             {
@@ -419,13 +496,14 @@ def zfs_pools() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                 "status": status,
                 "totalDevices": None,
                 "activeDevices": None,
-                "operation": "scrub" if _zfs_scrubbing(name) else None,
-                "operationPercent": _zfs_scrub_percent(name),
+                "operation": "scrub" if _zfs_scrubbing(name, detail) else None,
+                "operationPercent": _zfs_scrub_percent(name, detail),
                 "sizeBytes": _int(size),
                 "health": health,
                 "kind": "zfs",
             }
         )
+        invalid = invalid or status == "unknown"
         if status in {"degraded", "critical", "warning"}:
             severity = "critical" if status == "critical" else "warning"
             alerts.append(
@@ -437,11 +515,14 @@ def zfs_pools() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                     "message": f"ZFS 存储池 {name} 状态: {health}",
                 }
             )
-    return arrays, alerts
+    probe_evidence["required"] = True
+    parsed(probe_evidence, len(arrays), invalid=invalid)
+    return Probe((arrays, alerts), probe_evidence)
 
 
-def _zfs_level(pool: str) -> str:
-    status = _run("zpool", "status", pool, timeout=10.0)
+def _zfs_level(pool: str, status: str | None = None) -> str:
+    if status is None:
+        status = _run("zpool", "status", pool, timeout=10.0)
     match = re.search(
         r"^\s*(\S+)-\d+\s+(ONLINE|DEGRADED|FAULTED|OFFLINE|UNAVAIL)", status, re.MULTILINE
     )
@@ -456,14 +537,18 @@ def _zfs_level(pool: str) -> str:
     return "zfs"
 
 
-def _zfs_scrubbing(pool: str) -> bool:
-    return "scrub in progress" in _run("zpool", "status", pool, timeout=10.0)
+def _zfs_scrubbing(pool: str, status: str | None = None) -> bool:
+    if status is None:
+        status = _run("zpool", "status", pool, timeout=10.0)
+    return "scrub in progress" in status
 
 
-def _zfs_scrub_percent(pool: str) -> int | None:
+def _zfs_scrub_percent(pool: str, status: str | None = None) -> int | None:
+    if status is None:
+        status = _run("zpool", "status", pool, timeout=10.0)
     match = re.search(
         r"scrub in progress[^\n]*?(\d+(?:\.\d+)?)% done",
-        _run("zpool", "status", pool, timeout=10.0),
+        status,
     )
     if match:
         return int(float(match.group(1)))
@@ -472,11 +557,16 @@ def _zfs_scrub_percent(pool: str) -> int | None:
 
 def storage_topology() -> dict[str, Any]:
     """Devices + arrays (mdraid and ZFS) in the OMV topology shape."""
-    devices = block_devices()
-    arrays = md_arrays()
-    zfs, _alerts = zfs_pools()
-    arrays.extend(zfs)
-    return {"devices": devices, "arrays": arrays, "readOnly": True}
+    device_probe = _probe_block_devices()
+    md_probe = _probe_md_arrays(expected=device_probe.evidence.get("mdraidPresent", False))
+    zfs_probe = _probe_zfs_pools(expected=device_probe.evidence.get("zfsPresent", False))
+    zfs, _alerts = zfs_probe.value
+    return {
+        "devices": device_probe.value,
+        "arrays": [*md_probe.value, *zfs],
+        "readOnly": True,
+        **observation([device_probe.evidence, md_probe.evidence, zfs_probe.evidence]),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -486,15 +576,24 @@ def storage_topology() -> dict[str, Any]:
 
 def filesystems() -> list[dict[str, Any]]:
     """Mounted filesystems with capacity, in the OMV filesystem shape."""
+    return _probe_filesystems().value
+
+
+def _probe_filesystems() -> Probe:
     out = _run("df", "-B1", "-P", "-T")
+    probe_evidence = evidence("filesystems", _now(), out)
+    out = out or getattr(out, "partial_stdout", "")
     if not out:
-        return []
+        parsed(probe_evidence, 0, invalid=True)
+        return Probe([], probe_evidence)
     entries: list[dict[str, Any]] = []
     seen: set[str] = set()
     quota_tools_available = _native_quota_tools_available()
+    invalid = not out.splitlines()[0].startswith("Filesystem")
     for line in out.strip().splitlines()[1:]:
         parts = line.split()
         if len(parts) < 7:
+            invalid = True
             continue
         devicefile, fstype, size, used, available, _used_percent, mountpoint = (
             parts[0],
@@ -509,14 +608,31 @@ def filesystems() -> list[dict[str, Any]]:
             continue
         seen.add(devicefile)
         size_i = _int(size)
+        used_i = _int(used)
         available_i = _int(available)
-        if size_i is None or available_i is None:
+        if size_i is None or size_i <= 0 or available_i is None or used_i is None or used_i < 0:
+            invalid = True
             continue
-        read_only = _mount_read_only(mountpoint)
+        if shutil.which("findmnt") is None:
+            mount_known = False
+            read_only = False
+            if probe_evidence["state"] == "ok":
+                probe_evidence.update(state="partial", code="tool_missing")
+        else:
+            mount_options = _run("findmnt", "-n", "-o", "OPTIONS", "-T", mountpoint, timeout=10.0)
+            mount_tokens = {
+                item.strip().casefold() for item in mount_options.split(",") if item.strip()
+            }
+            mount_known = getattr(mount_options, "state", "ok") == "ok" and bool(
+                mount_tokens & {"ro", "rw"}
+            )
+            read_only = "ro" in mount_tokens and "rw" not in mount_tokens
+            if not mount_known and probe_evidence["state"] == "ok":
+                probe_evidence.update(
+                    state="partial", code=getattr(mount_options, "code", None) or "parse_failed"
+                )
         supports_quota = _native_data_mountpoint(mountpoint) and (
-            fstype == "zfs"
-            or fstype in _NATIVE_KERNEL_QUOTA_FILESYSTEMS
-            and quota_tools_available
+            fstype == "zfs" or fstype in _NATIVE_KERNEL_QUOTA_FILESYSTEMS and quota_tools_available
         )
         entries.append(
             {
@@ -532,8 +648,9 @@ def filesystems() -> list[dict[str, Any]]:
                 "mountpoint": mountpoint,
                 "sizeBytes": size_i,
                 "availableBytes": available_i,
-                "usedPercent": _percent(_int(used), size_i),
+                "usedPercent": _percent(used_i, size_i),
                 "readOnly": read_only,
+                "mountOptionsKnown": mount_known,
                 "supportsAcl": False,
                 # ZFS uses native userquota/groupquota properties. ext2/3/4
                 # and XFS use the standard kernel quota tools when installed;
@@ -541,7 +658,8 @@ def filesystems() -> list[dict[str, Any]]:
                 "supportsQuota": supports_quota,
             }
         )
-    return entries
+    parsed(probe_evidence, len(entries), invalid=invalid)
+    return Probe(entries, probe_evidence)
 
 
 # --------------------------------------------------------------------------- #
@@ -555,41 +673,83 @@ def _smart_json(devicefile: str, extra: tuple[str, ...] = ("-H",)) -> dict[str, 
 
 def smart_report(devicefile: str) -> dict[str, Any]:
     """Full SMART report for one device (OVM ``OmvSmart`` shape)."""
-    payload = _smart_json(devicefile, ("-H", "-A", "-i"))
-    passed = (payload.get("smart_status") or {}).get("passed")
-    health = "PASSED" if passed is True else "FAILED" if passed is False else "UNKNOWN"
-    temperature = (payload.get("temperature") or {}).get("current")
-    return {
+    return _probe_smart_device(devicefile, extra=("-H", "-A", "-i")).value
+
+
+def _probe_smart_device(
+    devicefile: str, *, size_bytes: int | None = None, extra: tuple[str, ...] = ("-H", "-i")
+) -> Probe:
+    payload = _smart_json(devicefile, extra)
+    probe_evidence = dict(
+        getattr(payload, "probe_evidence", evidence("smart", _now(), target=devicefile))
+    )
+    # Malformed nested JSON is an observation failure, never an endpoint 500.
+    nested_names = ("smart_status", "smart_support", "temperature", "power_on_time", "smartctl")
+    invalid = any(name in payload and not isinstance(payload[name], dict) for name in nested_names)
+
+    def field(name: str, key: str) -> Any:
+        value = payload.get(name)
+        return value.get(key) if isinstance(value, dict) else None
+
+    passed = field("smart_status", "passed")
+    exit_code = probe_evidence.get("exitCode", 0)
+    # Negative subprocess codes mean signals, not smartctl health bits.
+    exit_code = exit_code if isinstance(exit_code, int) and 0 <= exit_code <= 255 else 0
+    # Even when -H passes, bits 4-7 convey threshold/log evidence worth showing.
+    health = (
+        "FAILED"
+        if passed is False or exit_code & 24
+        else "WARNING"
+        if exit_code & 224
+        else "PASSED"
+        if passed is True
+        else "UNKNOWN"
+    )
+    if probe_evidence["state"] in {"error", "unavailable"}:
+        # A failed command cannot provide a fresh positive health conclusion.
+        if health == "PASSED":
+            health = "UNKNOWN"
+    elif invalid:
+        probe_evidence.update(
+            state="partial" if passed in (True, False) else "error", code="parse_failed"
+        )
+    elif passed is not True and passed is not False and not exit_code & 248:
+        probe_evidence.update(
+            state="unavailable",
+            code="unsupported"
+            if field("smart_support", "available") is False
+            else "health_unreported",
+        )
+    probe_evidence["count"] = int(
+        health != "UNKNOWN" or field("temperature", "current") is not None
+    )
+    result = {
         "devicefile": devicefile,
         "model": payload.get("model_name") or None,
         "health": health,
-        "temperatureC": _int(temperature),
-        "powerOnHours": _int((payload.get("power_on_time") or {}).get("hours")),
+        "temperatureC": _int(field("temperature", "current")),
+        "powerOnHours": _int(field("power_on_time", "hours")),
         "powerCycles": _int(payload.get("power_cycle_count") or 0) or None,
+        **observation([probe_evidence]),
     }
+    if size_bytes is not None:
+        result["sizeBytes"] = size_bytes
+    return Probe(result, probe_evidence)
 
 
 def smart_devices() -> list[dict[str, Any]]:
     """Quick SMART health for every physical disk (parallel, bounded)."""
-    known = block_devices()
-    disks = [d["devicefile"] for d in known if d.get("devicefile")]
-    if not disks:
+    return [probe.value for probe in _probe_smart_devices(block_devices())]
+
+
+def _probe_smart_devices(known: list[dict[str, Any]]) -> list[Probe]:
+    def probe(device: dict[str, Any]) -> Probe:
+        return _probe_smart_device(device["devicefile"], size_bytes=device.get("sizeBytes"))
+
+    if not known:
         return []
-    sizes = {d["devicefile"]: d.get("sizeBytes") for d in known}
-
-    def probe(dev: str) -> dict[str, Any]:
-        payload = _smart_json(dev, ("-H", "-i"))
-        passed = (payload.get("smart_status") or {}).get("passed")
-        return {
-            "devicefile": dev,
-            "model": payload.get("model_name") or None,
-            "sizeBytes": sizes.get(dev),
-            "health": "PASSED" if passed is True else "FAILED" if passed is False else "UNKNOWN",
-            "temperatureC": _int((payload.get("temperature") or {}).get("current")),
-        }
-
     with ThreadPoolExecutor(max_workers=8) as pool:
-        return list(pool.map(probe, disks))
+        return list(pool.map(probe, known))
 
 
 # --------------------------------------------------------------------------- #
@@ -621,67 +781,84 @@ def _usage_alerts(fs_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return alerts
 
 
+def _native_health_alert(
+    *, code: str, severity: str, resource: str, message: str, at: str
+) -> dict[str, Any]:
+    """Build a deterministic alert without claiming a failed probe is healthy."""
+    alert_id = hashlib.sha256(f"{code}\0{resource}".encode()).hexdigest()[:24]
+    return {
+        "id": alert_id,
+        "code": code,
+        "severity": severity,
+        "resource": resource,
+        "message": message,
+        "firstSeenAt": at,
+        "lastSeenAt": at,
+        "occurrences": 1,
+    }
+
+
 def storage_health() -> dict[str, Any]:
-    """Aggregate native signals into the OmvHealthSnapshot shape."""
+    """Aggregate current observations without inventing a successful monitor run."""
     checked_at = _now()
-    fs_entries = filesystems()
-    _zfs, zfs_alerts = zfs_pools()
-    arrays = md_arrays()
-    devices = smart_devices()
-
-    alerts: list[dict[str, Any]] = list(zfs_alerts)
-    alerts.extend(_usage_alerts(fs_entries))
-
+    filesystem_probe = _probe_filesystems()
+    device_probe = _probe_block_devices()
+    fs_entries = filesystem_probe.value
+    zfs_probe = _probe_zfs_pools(
+        expected=(
+            device_probe.evidence.get("zfsPresent", False)
+            or any(item.get("type") == "zfs" for item in fs_entries)
+        )
+    )
+    zfs, zfs_alerts = zfs_probe.value
+    md_probe = _probe_md_arrays(expected=device_probe.evidence.get("mdraidPresent", False))
+    arrays = md_probe.value
+    smart_probes = _probe_smart_devices(device_probe.value)
+    probes = [
+        device_probe.evidence,
+        filesystem_probe.evidence,
+        md_probe.evidence,
+        zfs_probe.evidence,
+        *(probe.evidence for probe in smart_probes),
+    ]
+    alerts = [*zfs_alerts, *_usage_alerts(fs_entries)]
     for array in arrays:
-        if array.get("status") in {"degraded", "critical"}:
+        if array.get("status") in {"degraded", "critical", "inactive"}:
             alerts.append(
-                {
-                    "id": f"md:{array['devicefile']}",
-                    "code": "raid.degraded",
-                    "severity": "critical" if array["status"] == "critical" else "warning",
-                    "resource": array["devicefile"],
-                    "message": f"软阵列 {array['devicefile']} 未处于健康状态",
-                }
+                _native_health_alert(
+                    code="raid.degraded",
+                    severity="critical" if array["status"] == "critical" else "warning",
+                    resource=array["devicefile"],
+                    message=f"软阵列 {array['devicefile']} 未处于健康状态",
+                    at=checked_at,
+                )
             )
-    for device in devices:
-        if device.get("health") == "FAILED":
+    for probe in smart_probes:
+        device = probe.value
+        if device["health"] in {"FAILED", "WARNING"}:
+            failed = device["health"] == "FAILED"
             alerts.append(
-                {
-                    "id": f"smart:{device['devicefile']}",
-                    "code": "smart.failed",
-                    "severity": "critical",
-                    "resource": device["devicefile"],
-                    "message": f"{device['devicefile']} SMART 自检失败,请尽快备份并更换硬盘",
-                }
+                _native_health_alert(
+                    code="smart.failed" if failed else "smart.history",
+                    severity="critical" if failed else "warning",
+                    resource=device["devicefile"],
+                    message=(
+                        f"{device['devicefile']} SMART 报告当前健康或阈值异常，请检查并保护数据"
+                        if failed
+                        else f"{device['devicefile']} SMART 报告历史阈值、错误或自检记录，请检查详情"
+                    ),
+                    at=checked_at,
+                )
             )
-
-    critical = sum(1 for a in alerts if a["severity"] == "critical")
-    warning = sum(1 for a in alerts if a["severity"] == "warning")
-    state = "healthy"
-    if critical:
-        state = "critical"
-    elif warning:
-        state = "warning"
-
-    now = checked_at
     return {
         "schemaVersion": SCHEMA_VERSION,
-        "state": state,
-        "stale": False,
-        "checkedAt": checked_at,
-        "lastSuccessfulAt": now,
-        "intervalSeconds": 0,
-        "persistenceHealthy": True,
-        "monitoring": False,
-        "activeAlerts": [
-            {**alert, "firstSeenAt": now, "lastSeenAt": now, "occurrences": 1} for alert in alerts
-        ],
-        "events": [],
-        "summary": {"critical": critical, "warning": warning, "total": len(alerts)},
+        **health_observation(probes, alerts, checked_at=checked_at),
         "readOnly": True,
         "source": "native",
-        "pools": len(_zfs),
-        "devices": len(devices),
+        "pools": len(zfs),
+        "arrays": len(arrays) + len(zfs),
+        "filesystems": len(fs_entries),
+        "devices": len(device_probe.value),
     }
 
 
@@ -723,22 +900,30 @@ def _native_write_capabilities() -> list[str]:
     if not _native_command_tools_available("exportfs"):
         unavailable.add("nfs.share.private-network.v1")
         unavailable.add("nfs.share.remove.safe.v1")
-    if not (
-        _native_command_tools_available("zfs") or _native_quota_tools_available()
-    ):
+    if not (_native_command_tools_available("zfs") or _native_quota_tools_available()):
         unavailable.add("filesystem.quota.user-group.v1")
-    return [capability for capability in _NATIVE_WRITE_CAPABILITIES if capability not in unavailable]
+    return [
+        capability for capability in _NATIVE_WRITE_CAPABILITIES if capability not in unavailable
+    ]
 
 
 def status() -> dict[str, Any]:
     """The native plane is always 'configured' — it needs no external panel."""
+    device_probe = _probe_block_devices()
+    observed = observation([device_probe.evidence])
     return {
         "configured": True,
-        "available": bool(block_devices()),
         "readOnly": False,
         "adminUrl": None,
         "capabilities": _native_write_capabilities(),
         "source": "native",
+        "devices": len(device_probe.value),
+        "state": "ready"
+        if observed["coverage"] == "complete"
+        else "degraded"
+        if observed["available"]
+        else "unknown",
+        **observed,
     }
 
 
@@ -1203,7 +1388,11 @@ def _is_native_share_target(entry: dict[str, Any]) -> bool:
     legacy share manager and still cover ZFS datasets mounted below ``/data``
     or ``/fs`` plus conventional removable/server mounts.
     """
-    if entry.get("readOnly"):
+    # ``readOnly=False`` is not enough to authorize a write: when findmnt
+    # failed the probe layer marks the mount options as unknown.  Treat that
+    # explicit uncertainty as non-writable until the kernel reports either
+    # ``rw`` or a subsequent inventory refresh succeeds.
+    if entry.get("readOnly") or entry.get("mountOptionsKnown") is False:
         return False
     return _native_data_mountpoint(entry.get("mountpoint"))
 
@@ -2846,6 +3035,25 @@ def _smb_info_read_only(info: dict[str, Any]) -> bool:
     )
 
 
+def _smb_info_targets_path(info: dict[str, Any], expected: Path) -> bool:
+    """Reject a same-name usershare that points at a different directory.
+
+    Samba's ``net usershare info`` includes an absolute ``path`` field.  A
+    missing field is tolerated for older test doubles/servers, but whenever it
+    is present it must match the signed native-folder path byte-for-byte after
+    normalizing separators; otherwise a disable/update could destroy an
+    unrelated share that happens to reuse the folder name.
+    """
+    raw_path = info.get("path")
+    if raw_path is None:
+        return True
+    if not isinstance(raw_path, str) or not raw_path or any(char < " " for char in raw_path):
+        return False
+    if not os.path.isabs(raw_path):
+        return False
+    return os.path.normpath(raw_path) == os.path.normpath(str(expected))
+
+
 def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
     desired = validate_smb_desired(dict(desired))
     if desired["browseable"] is not True:
@@ -2860,6 +3068,8 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
     folder_status = _native_registered_folder_status(entry)
     name = entry["name"]
     existing = _smb_usershare_info(name)
+    if existing is not None and not _smb_info_targets_path(existing, path):
+        raise ValueError("Samba usershare name is already bound to another path")
 
     current = (
         None
@@ -2955,9 +3165,12 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
         raise ValueError("SMB plan is stale; preview the change again")
     name = plan["shareName"]
     entry = _resolve_shared_folder(desired["sharedFolderRef"])
+    expected_path = _native_registered_path(entry)
     operation = plan["operation"]
     if operation == "none":
         observed = _smb_usershare_info(name)
+        if observed is not None and not _smb_info_targets_path(observed, expected_path):
+            raise OSError("Samba usershare path changed during apply")
         if desired["enabled"]:
             if observed is None:
                 raise OSError("planned SMB share is missing on the host")
@@ -2965,6 +3178,9 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
             raise OSError("planned SMB share appeared during apply")
         return {**plan, "applied": False, "verified": True, "share": {"name": name}}
     if operation == "remove":
+        observed = _smb_usershare_info(name)
+        if observed is not None and not _smb_info_targets_path(observed, expected_path):
+            raise OSError("Samba usershare path changed during apply")
         _run_write("net", "usershare", "delete", name)
         if _smb_usershare_info(name) is not None:
             raise OSError("Samba usershare remained after delete")
@@ -2990,6 +3206,8 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     observed = _smb_usershare_info(name)
     if observed is None:
         raise OSError("Samba usershare was not registered after net usershare add")
+    if not _smb_info_targets_path(observed, expected_path):
+        raise OSError("Samba usershare points at a different path after update")
     expected_comment = desired["comment"] or name
     if (
         observed.get("comment") != expected_comment
@@ -3181,6 +3399,8 @@ def _native_quota_context(
         raise ValueError("filesystemUuid does not match any mounted filesystem")
     if filesystem.get("readOnly"):
         raise ValueError("quota filesystem is read-only")
+    if filesystem.get("mountOptionsKnown") is False:
+        raise ValueError("quota filesystem mount options are unavailable")
     if not _native_data_mountpoint(filesystem.get("mountpoint")):
         raise ValueError("quota filesystem is outside the managed NAS data roots")
     filesystem_type = str(filesystem.get("type") or "").casefold()
