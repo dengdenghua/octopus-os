@@ -17,12 +17,14 @@ from pathlib import Path
 from typing import Any
 
 from appliance.native_ups import ups_status
+from appliance.ups_shutdown_policy import (
+    POLICY_PATH,
+    read_policy,
+)
 
-POLICY_PATH = Path("/etc/echo-os/ups-shutdown.json")
 STATE_PATH = Path("/run/echo-os/ups-shutdown-state.json")
 SYSTEMCTL = Path("/usr/bin/systemctl")
 SCHEMA_VERSION = 1
-DEFAULT_REQUIRED_SAMPLES = 3
 MAX_FILE_BYTES = 4096
 
 
@@ -50,20 +52,6 @@ def _read_json(path: Path, *, required: bool, trusted_uid: int = 0) -> dict[str,
     if not isinstance(value, dict):
         raise GuardError(f"invalid JSON object: {path.name}")
     return value
-
-
-def _policy(value: Mapping[str, Any] | None) -> tuple[bool, int]:
-    if value is None:
-        return False, DEFAULT_REQUIRED_SAMPLES
-    if set(value) != {"schemaVersion", "enabled", "requiredConsecutiveSamples"}:
-        raise GuardError("UPS shutdown policy has an unexpected schema")
-    enabled = value["enabled"]
-    samples = value["requiredConsecutiveSamples"]
-    if value["schemaVersion"] != SCHEMA_VERSION or not isinstance(enabled, bool):
-        raise GuardError("UPS shutdown policy has invalid values")
-    if isinstance(samples, bool) or not isinstance(samples, int) or not 2 <= samples <= 12:
-        raise GuardError("UPS shutdown sample count must be between 2 and 12")
-    return enabled, samples
 
 
 def _state(value: Mapping[str, Any] | None) -> tuple[str | None, int]:
@@ -121,9 +109,12 @@ def evaluate(
     trusted_uid: int = 0,
 ) -> dict[str, Any]:
     """Evaluate one sample and power off only after the strict local threshold."""
-    enabled, required_samples = _policy(
-        _read_json(policy_path, required=False, trusted_uid=trusted_uid)
-    )
+    try:
+        _, policy = read_policy(policy_path, trusted_uid=trusted_uid)
+    except OSError as exc:
+        raise GuardError(str(exc)) from exc
+    enabled = policy["enabled"]
+    required_samples = policy["requiredConsecutiveSamples"]
     if not enabled:
         _write_state(state_path, device=None, count=0)
         return {"outcome": "disabled", "shutdownRequested": False}

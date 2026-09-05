@@ -665,6 +665,29 @@ class ZfsScrubApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class UpsShutdownPolicyDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.ups-shutdown-policy-desired.v1"] = Field(
+        default="echo.ups-shutdown-policy-desired.v1",
+        alias="schema",
+    )
+    enabled: bool
+    required_consecutive_samples: int = Field(
+        default=3,
+        ge=2,
+        le=12,
+        alias="requiredConsecutiveSamples",
+    )
+
+
+class UpsShutdownPolicyApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: UpsShutdownPolicyDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 __all__ = [
     "GroupApplyRequest",
     "GroupDesiredState",
@@ -688,6 +711,8 @@ __all__ = [
     "UserDesiredState",
     "UserPasswordApplyRequest",
     "UserPasswordDesiredState",
+    "UpsShutdownPolicyApplyRequest",
+    "UpsShutdownPolicyDesiredState",
     "ZfsMirrorApplyRequest",
     "ZfsMirrorDesiredState",
     "ZfsMirrorReplaceApplyRequest",

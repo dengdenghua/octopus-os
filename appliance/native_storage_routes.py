@@ -36,6 +36,8 @@ from appliance.omv_models import (
     SharePrivilegeDesiredState,
     SmbApplyRequest,
     SmbDesiredState,
+    UpsShutdownPolicyApplyRequest,
+    UpsShutdownPolicyDesiredState,
     UserApplyRequest,
     UserDesiredState,
     UserPasswordApplyRequest,
@@ -52,6 +54,7 @@ from appliance.omv_models import (
     ZfsScrubDesiredState,
 )
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
+from appliance.ups_shutdown_policy import apply_policy, plan_policy, policy_status
 
 
 def register_native_storage_routes(router: APIRouter) -> None:
@@ -71,6 +74,13 @@ def register_native_storage_routes(router: APIRouter) -> None:
     @router.get("/power/ups")
     async def power_ups() -> dict[str, Any]:
         return await run_in_threadpool(ups_status)
+
+    @router.get("/power/ups/shutdown-policy")
+    async def power_ups_shutdown_policy() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(policy_status)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="UPS 自动关机策略读取失败") from exc
 
     @router.get("/filesystems")
     async def filesystems() -> dict[str, Any]:
@@ -891,6 +901,42 @@ def create_omv_alias_router(
                 "name": body.desired.name,
                 "poolGuid": body.desired.pool_guid,
                 "operation": "start",
+            },
+        )
+
+    # --- Local UPS low-battery shutdown policy -------------------------
+    @router.post("/power/ups/shutdown-policy/plan")
+    async def plan_ups_shutdown_policy(
+        body: UpsShutdownPolicyDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                plan_policy,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="UPS 自动关机策略暂不可用") from exc
+
+    @router.post("/power/ups/shutdown-policy/apply")
+    async def apply_ups_shutdown_policy(
+        body: UpsShutdownPolicyApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="power.ups-shutdown-policy.set",
+            plan_fn=plan_policy,
+            apply_fn=apply_policy,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "enabled": body.desired.enabled,
+                "requiredConsecutiveSamples": body.desired.required_consecutive_samples,
+                "trigger": "FSD or persistent OB+LB",
             },
         )
 

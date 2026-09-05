@@ -914,6 +914,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.pool.zfs.export.safe.v1",
     "storage.pool.zfs.import.echo-root.v1",
     "storage.pool.zfs.scrub.start.v1",
+    "power.ups-shutdown-policy.v1",
 )
 
 
@@ -949,6 +950,8 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("storage.pool.zfs.export.safe.v1")
         unavailable.add("storage.pool.zfs.import.echo-root.v1")
         unavailable.add("storage.pool.zfs.scrub.start.v1")
+    if not _native_command_tools_available("upsc", "systemctl"):
+        unavailable.add("power.ups-shutdown-policy.v1")
     return [
         capability for capability in _NATIVE_WRITE_CAPABILITIES if capability not in unavailable
     ]
