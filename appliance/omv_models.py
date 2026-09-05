@@ -28,6 +28,7 @@ from appliance.omv_protocol import (
     ZFS_MIRROR_REPLACE_DESIRED_SCHEMA,
     ZFS_POOL_EXPORT_DESIRED_SCHEMA,
     ZFS_POOL_IMPORT_DESIRED_SCHEMA,
+    ZFS_SCRUB_DESIRED_SCHEMA,
     validate_group_desired,
     validate_nfs_remove_desired,
     validate_omv_uuid,
@@ -42,6 +43,7 @@ from appliance.omv_protocol import (
     validate_zfs_mirror_replace_desired,
     validate_zfs_pool_export_desired,
     validate_zfs_pool_import_desired,
+    validate_zfs_scrub_desired,
 )
 
 
@@ -629,6 +631,40 @@ class ZfsPoolImportApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class ZfsScrubDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.zfs-scrub-desired.v1"] = Field(
+        default=ZFS_SCRUB_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    name: str = Field(min_length=1, max_length=32)
+    pool_guid: str = Field(min_length=1, max_length=20, alias="poolGuid")
+    operation: Literal["start"] = "start"
+
+    @field_validator("name", "pool_guid")
+    @classmethod
+    def validate_identity_field(cls, value: str, info: Any) -> str:
+        payload = {
+            "schema": ZFS_SCRUB_DESIRED_SCHEMA,
+            "name": value if info.field_name == "name" else "tank",
+            "poolGuid": value if info.field_name == "pool_guid" else "1",
+            "operation": "start",
+        }
+        try:
+            normalized = validate_zfs_scrub_desired(payload)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return normalized["name" if info.field_name == "name" else "poolGuid"]
+
+
+class ZfsScrubApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: ZfsScrubDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 __all__ = [
     "GroupApplyRequest",
     "GroupDesiredState",
@@ -660,4 +696,6 @@ __all__ = [
     "ZfsPoolExportDesiredState",
     "ZfsPoolImportApplyRequest",
     "ZfsPoolImportDesiredState",
+    "ZfsScrubApplyRequest",
+    "ZfsScrubDesiredState",
 ]

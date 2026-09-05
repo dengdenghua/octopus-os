@@ -7,15 +7,19 @@ import {
   applyOmvZfsMirrorReplace,
   applyOmvZfsPoolExport,
   applyOmvZfsPoolImport,
+  applyOmvZfsScrub,
   fetchOmvZfsImportCandidates,
   fetchOmvZfsMirrorReplacementCandidates,
+  fetchOmvZfsMaintenance,
   fetchOmvZfsPools,
   planOmvZfsPoolExport,
   planOmvZfsPoolImport,
   planOmvZfsMirrorReplace,
+  planOmvZfsScrub,
   type OmvZfsMirrorReplacePlan,
   type OmvZfsPoolExportPlan,
   type OmvZfsPoolImportPlan,
+  type OmvZfsScrubPlan,
 } from "./omv";
 import { ZfsLifecyclePanel } from "./zfs-lifecycle-panel";
 
@@ -24,12 +28,15 @@ vi.mock("./omv", () => ({
   applyOmvZfsMirrorReplace: vi.fn(),
   applyOmvZfsPoolExport: vi.fn(),
   applyOmvZfsPoolImport: vi.fn(),
+  applyOmvZfsScrub: vi.fn(),
   fetchOmvZfsImportCandidates: vi.fn(),
   fetchOmvZfsMirrorReplacementCandidates: vi.fn(),
+  fetchOmvZfsMaintenance: vi.fn(),
   fetchOmvZfsPools: vi.fn(),
   planOmvZfsPoolExport: vi.fn(),
   planOmvZfsPoolImport: vi.fn(),
   planOmvZfsMirrorReplace: vi.fn(),
+  planOmvZfsScrub: vi.fn(),
 }));
 
 const pool = {
@@ -161,6 +168,51 @@ const replacePlan: OmvZfsMirrorReplacePlan = {
   },
 };
 
+const maintenance = {
+  pool: {
+    name: "family",
+    poolGuid: "15451357997522795478",
+    health: "ONLINE",
+    sizeBytes: 16 * 1024 ** 3,
+  },
+  rootMountpoint: "/data/family",
+  scan: {
+    kind: "none" as const,
+    state: "idle" as const,
+    progressPercent: null,
+    errors: null,
+    summaryHash: "7".repeat(64),
+  },
+  canStartScrub: true,
+};
+
+const scrubPlan: OmvZfsScrubPlan = {
+  schema: "echo.omv.zfs-scrub-plan.v1",
+  planId: "8".repeat(64),
+  baseRevision: "9".repeat(64),
+  operation: "start",
+  requiresApproval: true,
+  desired: {
+    schema: "echo.omv.zfs-scrub-desired.v1",
+    name: "family",
+    poolGuid: "15451357997522795478",
+    operation: "start",
+  },
+  pool: maintenance.pool,
+  before: maintenance.scan,
+  safety: {
+    data: "checksummedAndRepairableReplicasMayBeRepaired",
+    poolState: "onlineOnly",
+    mounts: "echoDataRootOnly",
+    activeMaintenance: "mustBeAbsent",
+    ioLoad: "high",
+    wait: false,
+    pause: false,
+    stop: false,
+    rollback: "noneAfterScrubAccepted",
+  },
+};
+
 const status = {
   configured: true,
   available: true,
@@ -178,9 +230,11 @@ beforeEach(() => {
   vi.mocked(fetchOmvZfsPools).mockResolvedValue([pool]);
   vi.mocked(fetchOmvZfsImportCandidates).mockResolvedValue([candidate]);
   vi.mocked(fetchOmvZfsMirrorReplacementCandidates).mockResolvedValue([]);
+  vi.mocked(fetchOmvZfsMaintenance).mockResolvedValue([]);
   vi.mocked(planOmvZfsPoolExport).mockResolvedValue(exportPlan);
   vi.mocked(planOmvZfsPoolImport).mockResolvedValue(importPlan);
   vi.mocked(planOmvZfsMirrorReplace).mockResolvedValue(replacePlan);
+  vi.mocked(planOmvZfsScrub).mockResolvedValue(scrubPlan);
   vi.mocked(requestHighRiskApproval).mockResolvedValue({
     approvalToken: "one-shot",
     expiresIn: 90,
@@ -206,9 +260,65 @@ beforeEach(() => {
     dataPreserved: true,
     maintenanceState: "resilvering",
   });
+  vi.mocked(applyOmvZfsScrub).mockResolvedValue({
+    ...scrubPlan,
+    applied: true,
+    verified: true,
+    maintenanceState: "scrubbing",
+    scan: {
+      ...maintenance.scan,
+      kind: "scrub",
+      state: "inProgress",
+      progressPercent: 1.5,
+    },
+  });
 });
 
 describe("ZFS data-preserving lifecycle panel", () => {
+  it("shows resilver state and starts scrub only after preview and approval", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchOmvZfsMaintenance).mockResolvedValue([maintenance]);
+    vi.mocked(requestHighRiskApproval).mockResolvedValue({
+      approvalToken: "scrub-token",
+      expiresIn: 90,
+      action: "omv.zfs.scrub.start",
+      target: scrubPlan.planId,
+    });
+    render(
+      <ZfsLifecyclePanel
+        status={{
+          ...status,
+          capabilities: ["storage.pool.zfs.scrub.start.v1"],
+        }}
+      />,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: "预览校验 family" }),
+    );
+    expect(planOmvZfsScrub).toHaveBeenCalledWith(scrubPlan.desired);
+    expect(screen.getByText(/命令立即返回/)).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText("设备管理员密码（校验）"),
+      "correct-password",
+    );
+    await user.click(screen.getByRole("button", { name: "确认启动后台校验" }));
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "omv.zfs.scrub.start",
+        scrubPlan.planId,
+        "correct-password",
+      ),
+    );
+    expect(applyOmvZfsScrub).toHaveBeenCalledWith(
+      scrubPlan.desired,
+      scrubPlan.planId,
+      "scrub-token",
+    );
+  });
+
   it("replaces the exact failed vdev with a server-approved blank disk", async () => {
     const user = userEvent.setup();
     vi.mocked(fetchOmvZfsMirrorReplacementCandidates).mockResolvedValue([

@@ -813,6 +813,59 @@ export type OmvZfsPoolImportPlan = {
   };
 };
 
+export type OmvZfsScan = {
+  kind: "none" | "scrub" | "resilver" | "unknown";
+  state: "idle" | "inProgress" | "completed" | "unknown";
+  progressPercent: number | null;
+  errors: number | null;
+  summaryHash: string;
+};
+
+export type OmvZfsMaintenancePool = {
+  pool: {
+    name: string;
+    poolGuid: string;
+    health: "ONLINE" | string;
+    sizeBytes: number;
+  };
+  rootMountpoint: string;
+  scan: OmvZfsScan;
+  canStartScrub: boolean;
+};
+
+export type OmvZfsScrubDesiredState = {
+  schema: "echo.omv.zfs-scrub-desired.v1";
+  name: string;
+  poolGuid: string;
+  operation: "start";
+};
+
+export type OmvZfsScrubPlan = {
+  schema: "echo.omv.zfs-scrub-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "start";
+  requiresApproval: true;
+  desired: OmvZfsScrubDesiredState;
+  pool: OmvZfsMaintenancePool["pool"];
+  before: OmvZfsScan;
+  safety: {
+    data: "checksummedAndRepairableReplicasMayBeRepaired";
+    poolState: "onlineOnly";
+    mounts: "echoDataRootOnly";
+    activeMaintenance: "mustBeAbsent";
+    ioLoad: "high";
+    wait: false;
+    pause: false;
+    stop: false;
+    rollback: "noneAfterScrubAccepted";
+  };
+  applied?: boolean;
+  verified?: boolean;
+  maintenanceState?: "scrubbing" | "completed";
+  scan?: OmvZfsScan;
+};
+
 async function readJson<T>(url: string, fallback: string): Promise<T> {
   const response = await fetch(url, { headers: authHeader() });
   if (!response.ok) {
@@ -1370,6 +1423,39 @@ export function applyOmvZfsPoolImport(
     "/api/appliance/omv/pools/zfs/import/apply",
     { desired, planId },
     "无法安全导入 ZFS 存储池",
+    approvalHeader(approvalToken),
+  );
+}
+
+export async function fetchOmvZfsMaintenance(): Promise<
+  OmvZfsMaintenancePool[]
+> {
+  const result = await readJson<{ pools: OmvZfsMaintenancePool[] }>(
+    "/api/appliance/omv/pools/zfs/maintenance",
+    "无法读取 ZFS 校验与重建状态",
+  );
+  return result.pools;
+}
+
+export function planOmvZfsScrub(
+  desired: OmvZfsScrubDesiredState,
+): Promise<OmvZfsScrubPlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs/scrub/plan",
+    desired,
+    "无法生成 ZFS 校验预览",
+  );
+}
+
+export function applyOmvZfsScrub(
+  desired: OmvZfsScrubDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvZfsScrubPlan> {
+  return postJson(
+    "/api/appliance/omv/pools/zfs/scrub/apply",
+    { desired, planId },
+    "无法启动 ZFS 校验",
     approvalHeader(approvalToken),
   );
 }

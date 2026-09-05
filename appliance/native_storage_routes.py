@@ -47,6 +47,8 @@ from appliance.omv_models import (
     ZfsPoolExportDesiredState,
     ZfsPoolImportApplyRequest,
     ZfsPoolImportDesiredState,
+    ZfsScrubApplyRequest,
+    ZfsScrubDesiredState,
 )
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
 
@@ -106,6 +108,14 @@ def register_native_storage_routes(router: APIRouter) -> None:
             pools = await run_in_threadpool(native_storage.exportable_zfs_pools)
         except OSError as exc:
             raise HTTPException(status_code=503, detail="原生 ZFS 存储池探测不可用") from exc
+        return {"pools": pools, "readOnly": True, "source": "native"}
+
+    @router.get("/pools/zfs/maintenance")
+    async def zfs_pool_maintenance() -> dict[str, Any]:
+        try:
+            pools = await run_in_threadpool(native_storage.zfs_pool_maintenance)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 ZFS 维护状态探测不可用") from exc
         return {"pools": pools, "readOnly": True, "source": "native"}
 
     @router.get("/smart/devices")
@@ -842,6 +852,40 @@ def create_omv_alias_router(
                 "name": body.desired.name,
                 "poolGuid": body.desired.pool_guid,
                 "mountPolicy": body.desired.mount_policy,
+            },
+        )
+
+    # --- ZFS scrub maintenance -----------------------------------------
+    @router.post("/pools/zfs/scrub/plan")
+    async def plan_zfs_scrub(body: ZfsScrubDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_zfs_scrub,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 ZFS 校验暂不可用") from exc
+
+    @router.post("/pools/zfs/scrub/apply")
+    async def apply_zfs_scrub_route(
+        body: ZfsScrubApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.zfs.scrub.start",
+            plan_fn=native_storage.plan_zfs_scrub,
+            apply_fn=native_storage.apply_zfs_scrub,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "name": body.desired.name,
+                "poolGuid": body.desired.pool_guid,
+                "operation": "start",
             },
         )
 

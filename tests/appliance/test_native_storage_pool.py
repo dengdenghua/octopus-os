@@ -604,6 +604,190 @@ def test_zfs_pool_import_rejects_unsafe_mountpoint_and_restores_exported_state(
     assert state["imported"] is False
 
 
+def _maintenance_status(scan: str, progress: str = "") -> str:
+    return f"""
+  pool: family
+ state: ONLINE
+  scan: {scan}
+        {progress}
+config:
+
+        NAME        STATE     READ WRITE CKSUM
+        family      ONLINE       0     0     0
+
+errors: No known data errors
+"""
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (
+            _maintenance_status("none requested"),
+            {"kind": "none", "state": "idle", "progressPercent": None, "errors": None},
+        ),
+        (
+            _maintenance_status(
+                "scrub in progress since Sun Sep  5 01:00:00 2026",
+                "0B repaired, 16.91% done, 00:01:00 to go",
+            ),
+            {
+                "kind": "scrub",
+                "state": "inProgress",
+                "progressPercent": 16.91,
+                "errors": None,
+            },
+        ),
+        (
+            _maintenance_status("scrub repaired 0B in 00:03:00 with 0 errors on Sun Sep 5"),
+            {"kind": "scrub", "state": "completed", "progressPercent": None, "errors": 0},
+        ),
+        (
+            _maintenance_status(
+                "resilver in progress since Sun Sep  5 01:00:00 2026",
+                "8G scanned, 104.2% done",
+            ),
+            {
+                "kind": "resilver",
+                "state": "inProgress",
+                "progressPercent": 100.0,
+                "errors": None,
+            },
+        ),
+    ],
+)
+def test_zfs_scan_snapshot_parses_bounded_maintenance_state(
+    status: str,
+    expected: dict[str, Any],
+) -> None:
+    parsed = native_storage_pool._zfs_scan_snapshot(status)
+
+    assert {key: parsed[key] for key in expected} == expected
+    assert len(parsed["summaryHash"]) == 64
+
+
+@pytest.fixture
+def scrub_host(
+    monkeypatch: pytest.MonkeyPatch,
+    zfs_lifecycle_host: Path,
+) -> dict[str, str]:
+    state = {"scan": "none requested", "progress": ""}
+    monkeypatch.setattr(native_storage_pool, "_imported_pool_snapshots", lambda: [_pool_snapshot()])
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_dataset_snapshots",
+        lambda _name: [
+            {
+                "name": "family",
+                "mountpoint": str(zfs_lifecycle_host / "family"),
+                "canmount": "on",
+                "mounted": "yes",
+                "encryption": "off",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_checked",
+        lambda *args, **_kwargs: _maintenance_status(state["scan"], state["progress"])
+        if args[:3] == ("zpool", "status", "-P")
+        else (_ for _ in ()).throw(AssertionError(f"unexpected command {args}")),
+    )
+    return state
+
+
+def _scrub_desired() -> dict[str, Any]:
+    return {
+        "schema": "echo.omv.zfs-scrub-desired.v1",
+        "name": "family",
+        "poolGuid": "15451357997522795478",
+        "operation": "start",
+    }
+
+
+def test_zfs_maintenance_inventory_reports_resilver_and_disables_scrub(
+    scrub_host: dict[str, str],
+) -> None:
+    scrub_host.update(
+        scan="resilver in progress since Sun Sep 5 01:00:00 2026",
+        progress="0B repaired, 42.5% done, 00:10:00 to go",
+    )
+
+    result = native_storage_pool.zfs_pool_maintenance()
+
+    assert result[0]["pool"] == _pool_snapshot()
+    assert result[0]["scan"]["kind"] == "resilver"
+    assert result[0]["scan"]["progressPercent"] == 42.5
+    assert result[0]["canStartScrub"] is False
+
+
+def test_zfs_scrub_plan_rejects_active_resilver(scrub_host: dict[str, str]) -> None:
+    scrub_host["scan"] = "resilver in progress since Sun Sep 5 01:00:00 2026"
+
+    with pytest.raises(ValueError, match="active or unknown"):
+        native_storage_pool.plan_zfs_scrub(_scrub_desired())
+
+
+def test_zfs_scrub_plan_binds_pool_status_without_exposing_raw_output(
+    scrub_host: dict[str, str],
+) -> None:
+    plan = native_storage_pool.plan_zfs_scrub(_scrub_desired())
+
+    assert plan["schema"] == "echo.omv.zfs-scrub-plan.v1"
+    assert plan["operation"] == "start"
+    assert plan["pool"] == _pool_snapshot()
+    assert plan["before"]["state"] == "idle"
+    assert plan["safety"]["ioLoad"] == "high"
+    assert plan["safety"]["wait"] is False
+    assert "_statusHash" not in plan
+    assert "zpool status" not in str(plan)
+
+
+def test_zfs_scrub_apply_starts_without_wait_pause_or_stop(
+    monkeypatch: pytest.MonkeyPatch,
+    scrub_host: dict[str, str],
+) -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def mutate(*args: str, **_kwargs: Any) -> None:
+        commands.append(args)
+        scrub_host.update(
+            scan="scrub in progress since Sun Sep 5 02:00:00 2026",
+            progress="0B repaired, 1.5% done, 00:20:00 to go",
+        )
+
+    monkeypatch.setattr(native_storage_pool, "_run_mutating", mutate)
+    desired = _scrub_desired()
+    plan = native_storage_pool.plan_zfs_scrub(desired)
+    applied = native_storage_pool.apply_zfs_scrub(desired, plan["planId"])
+
+    assert commands == [("zpool", "scrub", "family")]
+    assert {"-w", "-s", "-p"}.isdisjoint(commands[0])
+    assert applied["verified"] is True
+    assert applied["maintenanceState"] == "scrubbing"
+    assert applied["scan"]["progressPercent"] == 1.5
+
+
+def test_zfs_scrub_apply_recognizes_instant_completion_after_late_cli_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    scrub_host: dict[str, str],
+) -> None:
+    desired = _scrub_desired()
+    plan = native_storage_pool.plan_zfs_scrub(desired)
+
+    def completed_then_error(*_args: str, **_kwargs: Any) -> None:
+        scrub_host["scan"] = "scrub repaired 0B in 00:00:01 with 0 errors on Sun Sep 5"
+        raise OSError("simulated late CLI failure")
+
+    monkeypatch.setattr(native_storage_pool, "_run_mutating", completed_then_error)
+
+    applied = native_storage_pool.apply_zfs_scrub(desired, plan["planId"])
+
+    assert applied["verified"] is True
+    assert applied["maintenanceState"] == "completed"
+    assert applied["scan"]["errors"] == 0
+
+
 def _replacement_status(*, guid: bool, replaced: bool = False) -> str:
     if guid:
         first = "1111111111111111111"

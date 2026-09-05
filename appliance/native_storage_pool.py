@@ -29,10 +29,12 @@ from appliance.omv_protocol import (
     ZFS_MIRROR_REPLACE_PLAN_SCHEMA,
     ZFS_POOL_EXPORT_PLAN_SCHEMA,
     ZFS_POOL_IMPORT_PLAN_SCHEMA,
+    ZFS_SCRUB_PLAN_SCHEMA,
     validate_zfs_mirror_desired,
     validate_zfs_mirror_replace_desired,
     validate_zfs_pool_export_desired,
     validate_zfs_pool_import_desired,
+    validate_zfs_scrub_desired,
 )
 
 _MIN_DISK_BYTES = 1024**3
@@ -569,6 +571,55 @@ def _status_config_rows(output: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _zfs_scan_snapshot(output: str) -> dict[str, Any]:
+    """Parse only the bounded maintenance facts exposed by ``zpool status``."""
+    match = re.search(r"(?m)^\s*scan:\s*(?P<summary>[^\r\n]+)\s*$", output)
+    if match is None:
+        raise OSError("zpool status omitted the maintenance scan state")
+    summary = match.group("summary").strip()
+    folded = summary.casefold()
+    kind = (
+        "scrub"
+        if "scrub" in folded
+        else "resilver"
+        if "resilver" in folded
+        else "none"
+        if folded == "none requested"
+        else "unknown"
+    )
+    state = (
+        "idle"
+        if kind == "none"
+        else "inProgress"
+        if "in progress" in folded
+        else "completed"
+        if kind in {"scrub", "resilver"}
+        and any(marker in folded for marker in ("repaired", "resilvered"))
+        else "unknown"
+    )
+    progress: float | None = None
+    if state == "inProgress":
+        scan_end = re.search(r"(?m)^(?:config:|errors:)\s*", output[match.end() :])
+        block_end = match.end() + scan_end.start() if scan_end else len(output)
+        progress_match = re.search(
+            r"(?P<percent>\d+(?:\.\d+)?)%\s+done\b",
+            output[match.end() : block_end],
+            re.IGNORECASE,
+        )
+        if progress_match is not None:
+            parsed = float(progress_match.group("percent"))
+            # OpenZFS documents that live-pool churn may push progress above 100%.
+            progress = min(parsed, 100.0)
+    errors_match = re.search(r"\bwith\s+(?P<errors>\d+)\s+errors?\b", summary, re.IGNORECASE)
+    return {
+        "kind": kind,
+        "state": state,
+        "progressPercent": progress,
+        "errors": int(errors_match.group("errors")) if errors_match else None,
+        "summaryHash": _canonical_hash(summary),
+    }
+
+
 def _device_size_bytes(devicefile: str) -> int:
     if (
         not devicefile.startswith("/dev/")
@@ -894,6 +945,142 @@ def _dataset_mount_policy(
     }
 
 
+def zfs_pool_maintenance() -> list[dict[str, Any]]:
+    """Return scrub/resilver state for imported pools using the Echo mount policy."""
+    _require_lifecycle_tools()
+    maintenance: list[dict[str, Any]] = []
+    for pool in _imported_pool_snapshots():
+        try:
+            policy = _dataset_mount_policy(
+                pool["name"],
+                _dataset_snapshots(pool["name"]),
+                check_targets=False,
+            )
+        except ValueError:
+            continue
+        status = _run_checked("zpool", "status", "-P", pool["name"])
+        scan = _zfs_scan_snapshot(status)
+        maintenance.append(
+            {
+                "pool": pool,
+                "rootMountpoint": policy["rootMountpoint"],
+                "scan": scan,
+                "canStartScrub": pool["health"] == "ONLINE"
+                and scan["state"] in {"idle", "completed"},
+            }
+        )
+    return maintenance
+
+
+def _build_zfs_scrub_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    _require_lifecycle_tools()
+    pool = _pool_snapshot(desired["name"], desired["poolGuid"])
+    if pool["health"] != "ONLINE":
+        raise ValueError("only an ONLINE ZFS pool can start a scrub")
+    policy = _dataset_mount_policy(
+        pool["name"],
+        _dataset_snapshots(pool["name"]),
+        check_targets=False,
+    )
+    status = _run_checked("zpool", "status", "-P", pool["name"])
+    scan = _zfs_scan_snapshot(status)
+    if scan["state"] not in {"idle", "completed"}:
+        raise ValueError("wait for the active or unknown ZFS maintenance operation")
+    status_hash = _canonical_hash(status)
+    base_revision = _canonical_hash(
+        {
+            "pool": pool,
+            "datasetPolicyHash": policy["policyHash"],
+            "statusHash": status_hash,
+        }
+    )
+    plan_material = {
+        "schema": ZFS_SCRUB_PLAN_SCHEMA,
+        "baseRevision": base_revision,
+        "operation": "start",
+        "desired": desired,
+        "pool": pool,
+        "before": scan,
+    }
+    return {
+        **plan_material,
+        "planId": _canonical_hash(plan_material),
+        "requiresApproval": True,
+        "changes": [{"field": "maintenance", "before": scan["state"], "after": "scrub"}],
+        "safety": {
+            "data": "checksummedAndRepairableReplicasMayBeRepaired",
+            "poolState": "onlineOnly",
+            "mounts": "echoDataRootOnly",
+            "activeMaintenance": "mustBeAbsent",
+            "ioLoad": "high",
+            "wait": False,
+            "pause": False,
+            "stop": False,
+            "rollback": "noneAfterScrubAccepted",
+        },
+        "source": "native",
+        "_statusHash": status_hash,
+    }
+
+
+def plan_zfs_scrub(desired_state: dict[str, Any]) -> dict[str, Any]:
+    desired = validate_zfs_scrub_desired(dict(desired_state))
+    with _pool_transaction():
+        plan = _build_zfs_scrub_plan(desired)
+        plan.pop("_statusHash", None)
+        return plan
+
+
+def _verified_scrub_transition(
+    status: str, *, previous_status_hash: str
+) -> tuple[dict[str, Any], str] | None:
+    if _canonical_hash(status) == previous_status_hash:
+        return None
+    scan = _zfs_scan_snapshot(status)
+    if scan["kind"] != "scrub" or scan["state"] not in {"inProgress", "completed"}:
+        return None
+    return scan, "scrubbing" if scan["state"] == "inProgress" else "completed"
+
+
+def apply_zfs_scrub(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
+    desired = validate_zfs_scrub_desired(dict(desired_state))
+    with _pool_transaction():
+        plan = _build_zfs_scrub_plan(desired)
+        if plan["planId"] != plan_id:
+            raise ValueError("ZFS scrub plan is stale; preview the change again")
+        previous_status_hash = plan.pop("_statusHash")
+        command_error: Exception | None = None
+        try:
+            _run_mutating("zpool", "scrub", desired["name"])
+        except Exception as exc:
+            command_error = exc
+        try:
+            status = _run_checked("zpool", "status", "-P", desired["name"])
+            transition = _verified_scrub_transition(
+                status,
+                previous_status_hash=previous_status_hash,
+            )
+        except Exception as state_exc:
+            if command_error is not None:
+                raise OSError(
+                    "ZFS scrub command failed and the resulting pool state is unknown"
+                ) from state_exc
+            raise
+        if transition is None:
+            if command_error is not None:
+                raise command_error
+            raise OSError("ZFS did not report the planned scrub after accepting the command")
+        scan, maintenance_state = transition
+        return {
+            **plan,
+            "applied": True,
+            "verified": True,
+            "maintenanceState": maintenance_state,
+            "scan": scan,
+            "pool": _pool_snapshot(desired["name"], desired["poolGuid"]),
+        }
+
+
 def _build_zfs_pool_export_plan(
     desired: dict[str, Any], managed_dependencies: list[dict[str, str]]
 ) -> dict[str, Any]:
@@ -1170,6 +1357,7 @@ def apply_zfs_pool_import(desired_state: dict[str, Any], plan_id: str) -> dict[s
 
 
 __all__ = [
+    "apply_zfs_scrub",
     "apply_zfs_mirror_replace",
     "apply_zfs_mirror",
     "apply_zfs_pool_export",
@@ -1180,6 +1368,8 @@ __all__ = [
     "plan_zfs_mirror_replace",
     "plan_zfs_pool_export",
     "plan_zfs_pool_import",
+    "plan_zfs_scrub",
     "zfs_mirror_candidates",
     "zfs_mirror_replacement_candidates",
+    "zfs_pool_maintenance",
 ]

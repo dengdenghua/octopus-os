@@ -23,7 +23,8 @@ privileges only touch the selected directory's non-recursive POSIX ACL; NFS
 only owns one generated file below ``/etc/exports.d``. Pool writes are limited
 to a separately reviewed two-blank-disk ZFS mirror creator, Echo-layout
 export/import, and one-failed-member blank-disk mirror replacement. Pool
-deletion, expansion, general replacement, recursive permission changes,
+scrub start is exposed with read-back maintenance state. Pool deletion,
+expansion, general replacement, recursive permission changes,
 signature wiping, and arbitrary protocol options remain outside this module.
 """
 
@@ -55,12 +56,15 @@ from appliance.native_storage_pool import (
     apply_zfs_mirror,
     apply_zfs_mirror_replace,
     apply_zfs_pool_import,
+    apply_zfs_scrub,
     importable_zfs_pools,
     plan_zfs_mirror,
     plan_zfs_mirror_replace,
     plan_zfs_pool_import,
+    plan_zfs_scrub,
     zfs_mirror_candidates,
     zfs_mirror_replacement_candidates,
+    zfs_pool_maintenance,
 )
 from appliance.native_storage_pool import (
     apply_zfs_pool_export as _apply_zfs_pool_export,
@@ -910,6 +914,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
     "storage.pool.zfs.import.echo-root.v1",
+    "storage.pool.zfs.scrub.start.v1",
 )
 
 
@@ -944,6 +949,7 @@ def _native_write_capabilities() -> list[str]:
     if not _native_command_tools_available("zpool", "zfs"):
         unavailable.add("storage.pool.zfs.export.safe.v1")
         unavailable.add("storage.pool.zfs.import.echo-root.v1")
+        unavailable.add("storage.pool.zfs.scrub.start.v1")
     return [
         capability for capability in _NATIVE_WRITE_CAPABILITIES if capability not in unavailable
     ]
@@ -4009,6 +4015,7 @@ __all__ = [
     "apply_zfs_mirror_replace",
     "apply_zfs_pool_export",
     "apply_zfs_pool_import",
+    "apply_zfs_scrub",
     "block_devices",
     "filesystems",
     "exportable_zfs_pools",
@@ -4028,6 +4035,7 @@ __all__ = [
     "plan_zfs_mirror_replace",
     "plan_zfs_pool_export",
     "plan_zfs_pool_import",
+    "plan_zfs_scrub",
     "sharing_overview",
     "share_privileges",
     "smart_devices",
@@ -4040,5 +4048,6 @@ __all__ = [
     "importable_zfs_pools",
     "zfs_mirror_candidates",
     "zfs_mirror_replacement_candidates",
+    "zfs_pool_maintenance",
     "zfs_pools",
 ]

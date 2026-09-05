@@ -56,6 +56,9 @@ ZFS_POOL_IMPORT_CONTROL_CAPABILITY = "storage.pool.zfs.import.echo-root.v1"
 ZFS_MIRROR_REPLACE_DESIRED_SCHEMA = "echo.omv.zfs-mirror-replace-desired.v1"
 ZFS_MIRROR_REPLACE_PLAN_SCHEMA = "echo.omv.zfs-mirror-replace-plan.v1"
 ZFS_MIRROR_REPLACE_CONTROL_CAPABILITY = "storage.pool.zfs-mirror.replace.blank.v1"
+ZFS_SCRUB_DESIRED_SCHEMA = "echo.omv.zfs-scrub-desired.v1"
+ZFS_SCRUB_PLAN_SCHEMA = "echo.omv.zfs-scrub-plan.v1"
+ZFS_SCRUB_CONTROL_CAPABILITY = "storage.pool.zfs.scrub.start.v1"
 HMAC_SAFETY_CONTRACT = "hmacBoundNeverReturnedOrAudited"
 MAX_QUOTA_BYTES = 2**63 - 1
 _DEVICEFILE_PATTERN = re.compile(r"/dev/[A-Za-z0-9._/+:-]+")
@@ -243,6 +246,21 @@ def validate_zfs_mirror_replace_desired(value: Any) -> dict[str, Any]:
         "oldVdevGuid": old_vdev_guid,
         "replacementDevice": replacement,
         "dataPreserved": True,
+    }
+
+
+def validate_zfs_scrub_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "name", "poolGuid", "operation"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("ZFS scrub desired state has unexpected fields")
+    name, pool_guid = _validate_zfs_pool_identity(value, ZFS_SCRUB_DESIRED_SCHEMA)
+    if value.get("operation") != "start":
+        raise ValueError("ZFS scrub operation must be start")
+    return {
+        "schema": ZFS_SCRUB_DESIRED_SCHEMA,
+        "name": name,
+        "poolGuid": pool_guid,
+        "operation": "start",
     }
 
 

@@ -59,6 +59,7 @@ export function ZfsMirrorPanel() {
         "storage.pool.zfs-mirror.replace.blank.v1",
         "storage.pool.zfs.export.safe.v1",
         "storage.pool.zfs.import.echo-root.v1",
+        "storage.pool.zfs.scrub.start.v1",
       ].includes(capability),
     ),
   );

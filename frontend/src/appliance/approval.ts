@@ -42,6 +42,7 @@ export type HighRiskAction =
   | "omv.zfs-mirror.replace"
   | "omv.zfs-pool.export"
   | "omv.zfs-pool.import"
+  | "omv.zfs.scrub.start"
   | "account.member.link"
   | "account.member.status.set"
   | "account.member.password.reset"

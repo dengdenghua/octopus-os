@@ -203,7 +203,12 @@ def test_zfs_mirror_creation_uses_a_plan_bound_approval(tmp_path):
 
 @pytest.mark.parametrize(
     "action",
-    ["omv.zfs-pool.export", "omv.zfs-pool.import", "omv.zfs-mirror.replace"],
+    [
+        "omv.zfs-pool.export",
+        "omv.zfs-pool.import",
+        "omv.zfs-mirror.replace",
+        "omv.zfs.scrub.start",
+    ],
 )
 def test_zfs_pool_lifecycle_uses_plan_bound_approvals(tmp_path, action):
     service, _audit = _service(tmp_path)

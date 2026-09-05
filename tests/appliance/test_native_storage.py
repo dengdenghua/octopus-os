@@ -82,6 +82,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "storage.pool.zfs-mirror.replace.blank.v1",
         "storage.pool.zfs.export.safe.v1",
         "storage.pool.zfs.import.echo-root.v1",
+        "storage.pool.zfs.scrub.start.v1",
     ]
 
 
@@ -1561,6 +1562,82 @@ def test_native_alias_exposes_only_safe_zfs_export_candidates(
 
     assert response.status_code == 200
     assert response.json() == {"pools": expected, "readOnly": True, "source": "native"}
+
+
+def test_native_alias_exposes_zfs_maintenance_without_raw_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    expected = [
+        {
+            "pool": {
+                "name": "family",
+                "poolGuid": "15451357997522795478",
+                "health": "ONLINE",
+                "sizeBytes": 16 * 1024**3,
+            },
+            "rootMountpoint": "/data/family",
+            "scan": {
+                "kind": "resilver",
+                "state": "inProgress",
+                "progressPercent": 42.5,
+                "errors": None,
+                "summaryHash": "a" * 64,
+            },
+            "canStartScrub": False,
+        }
+    ]
+    monkeypatch.setattr(native_storage, "zfs_pool_maintenance", lambda: expected)
+    app = FastAPI()
+    app.include_router(create_omv_alias_router())
+
+    response = TestClient(app).get("/api/appliance/omv/pools/zfs/maintenance")
+
+    assert response.status_code == 200
+    assert response.json() == {"pools": expected, "readOnly": True, "source": "native"}
+
+
+def test_native_alias_binds_zfs_scrub_to_exact_approval_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    plan_id = "f" * 64
+    desired = {
+        "schema": "echo.omv.zfs-scrub-desired.v1",
+        "name": "family",
+        "poolGuid": "15451357997522795478",
+        "operation": "start",
+    }
+    current_plan = {"planId": plan_id, "operation": "start", "requiresApproval": True}
+    approval_calls: list[dict[str, Any]] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            approval_calls.append(kwargs)
+
+    class Audit:
+        def record(self, **kwargs: Any) -> None:
+            audit_calls.append(kwargs)
+
+    monkeypatch.setattr(native_storage, "plan_zfs_scrub", lambda _desired: current_plan)
+    monkeypatch.setattr(
+        native_storage,
+        "apply_zfs_scrub",
+        lambda _desired, _plan_id: {**current_plan, "applied": True, "verified": True},
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+
+    response = TestClient(app).post(
+        "/api/appliance/omv/pools/zfs/scrub/apply",
+        json={"desired": desired, "planId": plan_id},
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+
+    assert response.status_code == 200
+    assert approval_calls[0]["action"] == "omv.zfs.scrub.start"
+    assert {entry["action"] for entry in audit_calls} == {"omv.zfs.scrub.start"}
 
 
 @pytest.mark.parametrize(

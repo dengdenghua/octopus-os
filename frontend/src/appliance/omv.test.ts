@@ -16,6 +16,7 @@ import {
   applyOmvZfsMirrorReplace,
   applyOmvZfsPoolExport,
   applyOmvZfsPoolImport,
+  applyOmvZfsScrub,
   fetchOmvFilesystems,
   fetchOmvHealth,
   fetchOmvSharePrivileges,
@@ -28,6 +29,7 @@ import {
   fetchOmvZfsMirrorReplacementCandidates,
   fetchOmvZfsImportCandidates,
   fetchOmvZfsPools,
+  fetchOmvZfsMaintenance,
   planOmvNfsShare,
   planOmvNfsShareRemove,
   planOmvGroup,
@@ -43,6 +45,7 @@ import {
   planOmvZfsMirrorReplace,
   planOmvZfsPoolExport,
   planOmvZfsPoolImport,
+  planOmvZfsScrub,
 } from "./omv";
 
 beforeEach(() => {
@@ -1138,6 +1141,73 @@ describe("OMV read-only API client", () => {
     );
     expect((fetchMock.mock.calls[5]?.[1] as RequestInit).headers).toMatchObject(
       { "X-Echo-Approval": "import-token" },
+    );
+  });
+
+  it("reads ZFS maintenance and keeps scrub preview separate from approved start", async () => {
+    const desired = {
+      schema: "echo.omv.zfs-scrub-desired.v1" as const,
+      name: "family",
+      poolGuid: "15451357997522795478",
+      operation: "start" as const,
+    };
+    const scan = {
+      kind: "none" as const,
+      state: "idle" as const,
+      progressPercent: null,
+      errors: null,
+      summaryHash: "a".repeat(64),
+    };
+    const maintenance = {
+      pool: {
+        name: "family",
+        poolGuid: desired.poolGuid,
+        health: "ONLINE",
+        sizeBytes: 16 * 1024 ** 3,
+      },
+      rootMountpoint: "/data/family",
+      scan,
+      canStartScrub: true,
+    };
+    const plan = {
+      schema: "echo.omv.zfs-scrub-plan.v1",
+      planId: "8".repeat(64),
+      operation: "start",
+      desired,
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ pools: [maintenance] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...plan,
+            applied: true,
+            verified: true,
+            maintenanceState: "scrubbing",
+          }),
+          { status: 200 },
+        ),
+      );
+
+    expect(await fetchOmvZfsMaintenance()).toEqual([maintenance]);
+    expect((await planOmvZfsScrub(desired)).planId).toBe(plan.planId);
+    expect(
+      (await applyOmvZfsScrub(desired, plan.planId, "scrub-token"))
+        .maintenanceState,
+    ).toBe("scrubbing");
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/pools/zfs/maintenance",
+      "/api/appliance/omv/pools/zfs/scrub/plan",
+      "/api/appliance/omv/pools/zfs/scrub/apply",
+    ]);
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).headers).toMatchObject(
+      { "X-Echo-Approval": "scrub-token" },
     );
   });
 

@@ -116,6 +116,7 @@ def _valid_target(action: str, target: str) -> bool:
         "omv.zfs-mirror.replace",
         "omv.zfs-pool.export",
         "omv.zfs-pool.import",
+        "omv.zfs.scrub.start",
         "account.member.link",
         "account.member.status.set",
         "account.member.password.reset",
