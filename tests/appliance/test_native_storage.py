@@ -1118,6 +1118,42 @@ def test_smb_share_remove_can_clean_rule_when_volume_is_unmounted(
     assert folder.is_dir()
 
 
+def test_smb_disabled_noop_fails_if_share_appears_during_apply(
+    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    info_calls = {"n": 0}
+
+    def fake_info(_name: str) -> dict[str, Any] | None:
+        info_calls["n"] += 1
+        # The plan and apply re-plan both see no share; the final read-back
+        # simulates another actor creating it before the no-op is verified.
+        return (
+            {"comment": "race", "usershare_acl": "users:f"}
+            if info_calls["n"] >= 3
+            else None
+        )
+
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", fake_info)
+    desired = {
+        "schema": "echo.omv.smb-share-desired.v1",
+        "sharedFolderRef": folder_uuid,
+        "enabled": False,
+        "readOnly": False,
+        "browseable": True,
+        "recycleBin": False,
+        "comment": "race",
+    }
+
+    plan = native_storage.plan_smb(desired)
+    assert plan["operation"] == "none"
+    with pytest.raises(OSError, match="appeared during apply"):
+        native_storage.apply_smb(desired, plan["planId"])
+    assert info_calls["n"] == 3
+
+
 def test_native_smb_rejects_unmanaged_usershare_options() -> None:
     base = {
         "schema": "echo.omv.smb-share-desired.v1",

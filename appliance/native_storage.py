@@ -2957,8 +2957,12 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     entry = _resolve_shared_folder(desired["sharedFolderRef"])
     operation = plan["operation"]
     if operation == "none":
-        if _smb_usershare_info(name) is None and desired["enabled"]:
-            raise OSError("planned SMB share is missing on the host")
+        observed = _smb_usershare_info(name)
+        if desired["enabled"]:
+            if observed is None:
+                raise OSError("planned SMB share is missing on the host")
+        elif observed is not None:
+            raise OSError("planned SMB share appeared during apply")
         return {**plan, "applied": False, "verified": True, "share": {"name": name}}
     if operation == "remove":
         _run_write("net", "usershare", "delete", name)
