@@ -72,6 +72,27 @@ def test_native_status_advertises_only_the_available_write_slice() -> None:
     ]
 
 
+def test_filesystems_reports_kernel_read_only_mount(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(*args: str, **_kwargs: Any) -> str:
+        if args[:1] == ("df",):
+            return (
+                "Filesystem Type 1024-blocks Used Available Capacity Mounted on\n"
+                "/dev/test0 ext4 100000 10000 90000 10% /data\n"
+            )
+        if args[:1] == ("findmnt",):
+            return "ro,relatime\n"
+        return ""
+
+    monkeypatch.setattr(native_storage, "_run", fake_run)
+    monkeypatch.setattr(native_storage.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+
+    entries = native_storage.filesystems()
+
+    assert entries[0]["mountpoint"] == "/data"
+    assert entries[0]["readOnly"] is True
+    assert entries[0]["supportsQuota"] is False
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="path assertions are POSIX-specific")
 def test_sharing_targets_match_the_frontend_contract_without_host_paths(
     monkeypatch: pytest.MonkeyPatch,

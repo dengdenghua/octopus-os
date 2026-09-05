@@ -158,6 +158,15 @@ def _run(*args: str, timeout: float = 20.0) -> str:
     return completed.stdout or ""
 
 
+def _mount_read_only(mountpoint: str) -> bool:
+    """Read the kernel's current mount flag without trusting a config file."""
+    if shutil.which("findmnt") is None:
+        return False
+    options = _run("findmnt", "-n", "-o", "OPTIONS", "-T", mountpoint, timeout=10.0)
+    tokens = {item.strip().casefold() for item in options.split(",") if item.strip()}
+    return "ro" in tokens and "rw" not in tokens
+
+
 def _run_json(*args: str, timeout: float = 25.0) -> dict[str, Any]:
     """Run ``smartctl -j`` and keep the JSON even on a non-zero exit.
 
@@ -423,6 +432,7 @@ def filesystems() -> list[dict[str, Any]]:
         available_i = _int(available)
         if size_i is None or available_i is None:
             continue
+        read_only = _mount_read_only(mountpoint)
         entries.append(
             {
                 "devicefile": devicefile,
@@ -438,7 +448,7 @@ def filesystems() -> list[dict[str, Any]]:
                 "sizeBytes": size_i,
                 "availableBytes": available_i,
                 "usedPercent": _percent(_int(used), size_i),
-                "readOnly": False,
+                "readOnly": read_only,
                 "supportsAcl": False,
                 # The native write slice uses ZFS' userquota/groupquota
                 # properties. Other filesystems remain visible for capacity
