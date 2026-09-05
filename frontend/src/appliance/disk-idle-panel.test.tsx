@@ -31,7 +31,7 @@ const status = {
   eligibleDevices: [device],
   eligibleDeviceCount: 1,
   allowedIdleMinutes: [0, 30, 60, 120, 240] as const,
-  scope: "stableInternalRotationalAtaSataWholeDisksOnly" as const,
+  scope: "stableInternalRotationalAtaSataNonSystemWholeDisksOnly" as const,
   hardwareVerification: "commandAcceptanceOnly" as const,
   source: "localPolicy" as const,
 };
@@ -52,6 +52,7 @@ const plan = {
     nvme: "skipped" as const,
     usbAndRemovable: "skipped" as const,
     unknownIdentity: "skipped" as const,
+    systemBackingDisk: "skipped" as const,
     firmwareMayIgnoreTimer: true as const,
     activeIoPreventsStandby: true as const,
   },

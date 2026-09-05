@@ -25,9 +25,13 @@ HDPARM = Path("/usr/sbin/hdparm")
 MAX_FILE_BYTES = 4096
 MAX_OUTPUT_BYTES = 1024 * 1024
 MAX_DISKS = 32
+MAX_BLOCK_DEVICES = 256
 IDLE_CODES = {0: 0, 30: 241, 60: 242, 120: 244, 240: 248}
 _DEVICE = re.compile(r"^/dev/[A-Za-z0-9_.!+-]+$")
 _TRANSPORTS = frozenset({"ata", "sata"})
+_SYSTEM_MOUNT_ROOTS = frozenset(
+    {"/boot", "/efi", "/etc", "/home", "/opt", "/run", "/usr", "/var"}
+)
 _THREAD_LOCK = threading.RLock()
 
 
@@ -109,6 +113,47 @@ def _lsblk_flag(value: Any) -> bool:
     return value is True or (type(value) is int and value == 1) or value == "1"
 
 
+def _is_system_mount(value: str) -> bool:
+    mountpoint = value.strip()
+    if mountpoint in {"/", "[SWAP]"}:
+        return True
+    return any(
+        mountpoint == root or mountpoint.startswith(f"{root}/")
+        for root in _SYSTEM_MOUNT_ROOTS
+    )
+
+
+def _backs_system_mount(root: Mapping[str, Any]) -> bool:
+    """Fail closed when a disk's lsblk tree is incomplete or system-backed."""
+    stack: list[Any] = [root]
+    visited = 0
+    while stack:
+        item = stack.pop()
+        visited += 1
+        if visited > MAX_BLOCK_DEVICES or not isinstance(item, Mapping):
+            return True
+        if "mountpoints" not in item:
+            return True
+        mountpoints = item.get("mountpoints")
+        if mountpoints is None:
+            values: list[Any] = []
+        elif isinstance(mountpoints, str):
+            values = [mountpoints]
+        elif isinstance(mountpoints, list):
+            values = mountpoints
+        else:
+            return True
+        if any(isinstance(value, str) and _is_system_mount(value) for value in values):
+            return True
+        if any(value is not None and not isinstance(value, str) for value in values):
+            return True
+        children = item.get("children", [])
+        if not isinstance(children, list):
+            return True
+        stack.extend(children)
+    return False
+
+
 def _run_inventory(
     *,
     lsblk: Path,
@@ -122,9 +167,8 @@ def _run_inventory(
                 str(lsblk),
                 "-J",
                 "-b",
-                "-d",
                 "-o",
-                "PATH,TYPE,SIZE,ROTA,RM,TRAN,MODEL,SERIAL,WWN",
+                "PATH,TYPE,SIZE,ROTA,RM,TRAN,MODEL,SERIAL,WWN,MOUNTPOINTS",
             ],
             capture_output=True,
             text=True,
@@ -171,6 +215,7 @@ def _run_inventory(
             or removable
             or transport not in _TRANSPORTS
             or not (serial or wwn)
+            or _backs_system_mount(item)
         ):
             continue
         identity = {
@@ -223,7 +268,7 @@ def policy_status(
         "eligibleDevices": devices,
         "eligibleDeviceCount": len(devices),
         "allowedIdleMinutes": list(IDLE_CODES),
-        "scope": "stableInternalRotationalAtaSataWholeDisksOnly",
+        "scope": "stableInternalRotationalAtaSataNonSystemWholeDisksOnly",
         "hardwareVerification": "commandAcceptanceOnly",
         "source": "localPolicy",
     }
@@ -274,7 +319,7 @@ def plan_policy(
         "configured": configured,
         "serviceInstalled": installed,
         "devices": devices,
-        "scope": "stableInternalRotationalAtaSataWholeDisksOnly",
+        "scope": "stableInternalRotationalAtaSataNonSystemWholeDisksOnly",
         "hardwareVerification": "commandAcceptanceOnly",
     }
     return {
@@ -286,6 +331,7 @@ def plan_policy(
             "nvme": "skipped",
             "usbAndRemovable": "skipped",
             "unknownIdentity": "skipped",
+            "systemBackingDisk": "skipped",
             "firmwareMayIgnoreTimer": True,
             "activeIoPreventsStandby": True,
         },

@@ -1459,7 +1459,7 @@ def create_omv_alias_router(
             plan_id=body.plan_id,
             metadata={
                 "idleMinutes": body.desired.idle_minutes,
-                "scope": "stableInternalRotationalAtaSataWholeDisksOnly",
+                "scope": "stableInternalRotationalAtaSataNonSystemWholeDisksOnly",
                 "hardwareVerification": "commandAcceptanceOnly",
             },
         )

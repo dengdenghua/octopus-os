@@ -23,7 +23,7 @@ export type DiskIdleStatus = {
   eligibleDevices: DiskIdleDevice[];
   eligibleDeviceCount: number;
   allowedIdleMinutes: DiskIdleDesired["idleMinutes"][];
-  scope: "stableInternalRotationalAtaSataWholeDisksOnly";
+  scope: "stableInternalRotationalAtaSataNonSystemWholeDisksOnly";
   hardwareVerification: "commandAcceptanceOnly";
   source: "localPolicy";
 };
@@ -38,13 +38,14 @@ export type DiskIdlePlan = {
   configured: boolean;
   serviceInstalled: boolean;
   devices: DiskIdleDevice[];
-  scope: "stableInternalRotationalAtaSataWholeDisksOnly";
+  scope: "stableInternalRotationalAtaSataNonSystemWholeDisksOnly";
   hardwareVerification: "commandAcceptanceOnly";
   safety: {
     minimumIdleMinutes: 30;
     nvme: "skipped";
     usbAndRemovable: "skipped";
     unknownIdentity: "skipped";
+    systemBackingDisk: "skipped";
     firmwareMayIgnoreTimer: true;
     activeIoPreventsStandby: true;
   };

@@ -129,8 +129,8 @@ export function DiskIdlePanel() {
             </h2>
             <p className="mt-1 text-[11px] leading-5 text-slate-500">
               仅作用于具备稳定身份的内置 ATA/SATA
-              机械整盘；NVMe、USB、可移动盘和身份不明磁盘不会被修改。持续 I/O
-              会阻止休眠，部分硬盘固件也可能忽略计时器。
+              机械整盘；系统盘、NVMe、USB、可移动盘和身份不明磁盘不会被修改。持续
+              I/O 会阻止休眠，部分硬盘固件也可能忽略计时器。
             </p>
             <p className="mt-2 text-[11px] font-medium text-slate-700">
               当前：{status ? label(status.idleMinutes) : "读取中"} · 可用磁盘{" "}

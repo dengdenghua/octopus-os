@@ -23,7 +23,7 @@ describe("disk idle API", () => {
       eligibleDevices: [],
       eligibleDeviceCount: 0,
       allowedIdleMinutes: [0, 30, 60, 120, 240],
-      scope: "stableInternalRotationalAtaSataWholeDisksOnly",
+      scope: "stableInternalRotationalAtaSataNonSystemWholeDisksOnly",
       hardwareVerification: "commandAcceptanceOnly",
       source: "localPolicy",
     };

@@ -31,8 +31,10 @@ def _disk(
     rotational: int = 1,
     removable: int = 0,
     serial: str = "SERIAL-1",
+    mountpoints: list[str | None] | None = None,
+    children: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    result = {
         "path": path,
         "type": "disk",
         "size": 4_000_000_000_000,
@@ -42,7 +44,11 @@ def _disk(
         "model": "NAS HDD",
         "serial": serial,
         "wwn": "",
+        "mountpoints": mountpoints if mountpoints is not None else [None],
     }
+    if children is not None:
+        result["children"] = children
+    return result
 
 
 def _runner(records: list[dict[str, Any]], calls: list[list[str]]):
@@ -80,6 +86,55 @@ def test_inventory_keeps_only_stable_internal_rotational_ata_disks(tmp_path: Pat
     assert [item["devicefile"] for item in devices] == ["/dev/sda"]
     assert devices[0]["identityHash"]
     assert "serial" not in devices[0]
+
+
+def test_inventory_excludes_disks_backing_system_mounts_at_any_depth(tmp_path: Path) -> None:
+    lsblk, _hdparm, _service = _tools(tmp_path)
+    records = [
+        _disk(
+            "/dev/sda",
+            serial="SYSTEM",
+            children=[
+                {
+                    "path": "/dev/sda2",
+                    "type": "part",
+                    "mountpoints": [None],
+                    "children": [
+                        {
+                            "path": "/dev/mapper/root",
+                            "type": "crypt",
+                            "mountpoints": ["/"],
+                        }
+                    ],
+                }
+            ],
+        ),
+        _disk(
+            "/dev/sdb",
+            serial="DATA",
+            children=[
+                {
+                    "path": "/dev/sdb1",
+                    "type": "part",
+                    "mountpoints": ["/data/archive"],
+                }
+            ],
+        ),
+        _disk("/dev/sdc", serial="STATE", mountpoints=["/var/lib/echo-os"]),
+        _disk("/dev/sdd", serial="SWAP", mountpoints=["[SWAP]"]),
+    ]
+
+    devices = policy.eligible_devices(lsblk=lsblk, runner=_runner(records, []))
+
+    assert [item["devicefile"] for item in devices] == ["/dev/sdb"]
+
+
+def test_inventory_fails_closed_when_mount_topology_is_missing(tmp_path: Path) -> None:
+    lsblk, _hdparm, _service = _tools(tmp_path)
+    disk = _disk("/dev/sda")
+    disk.pop("mountpoints")
+
+    assert policy.eligible_devices(lsblk=lsblk, runner=_runner([disk], [])) == []
 
 
 def test_status_defaults_disabled_and_reports_bounded_choices(tmp_path: Path) -> None:
@@ -158,6 +213,7 @@ def test_apply_binds_devices_sets_hardware_and_persists_policy(tmp_path: Path) -
 
     assert result["verified"] is True
     assert result["hardwareUpdated"] == 1
+    assert plan["safety"]["systemBackingDisk"] == "skipped"
     assert json.loads(path.read_text(encoding="utf-8"))["idleMinutes"] == 60
     assert [str(hdparm), "-S", "242", "/dev/sda"] in calls
     if os.name == "posix":
@@ -321,7 +377,7 @@ def test_route_uses_exact_plan_bound_approval_without_hardware_identity_leak(
     assert {item["action"] for item in audit_calls} == {"storage.disk.idle.configure"}
     metadata = audit_calls[0]["metadata"]
     assert metadata["idleMinutes"] == 60
-    assert metadata["scope"] == "stableInternalRotationalAtaSataWholeDisksOnly"
+    assert metadata["scope"] == "stableInternalRotationalAtaSataNonSystemWholeDisksOnly"
     assert metadata["hardwareVerification"] == "commandAcceptanceOnly"
     assert metadata["operation"] == "set"
     assert metadata["source"] == "native"
