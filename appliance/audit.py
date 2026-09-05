@@ -303,7 +303,10 @@ class ApplianceAudit:
                         report.error or "appliance audit integrity check failed"
                     )
             entry = self._chain.append(kind="appliance_action", payload=payload)
-            with self.path.open("rb") as audit_file:
+            # Windows rejects fsync() on a read-only descriptor (POSIX accepts
+            # it), so open the already-appended log with write access solely
+            # to flush the durable bytes on every platform.
+            with self.path.open("ab") as audit_file:
                 os.fsync(audit_file.fileno())
             self.path.chmod(0o600)
             self._write_checkpoint(seq=entry.seq, mac=entry.mac)
