@@ -56,7 +56,12 @@ def native_volume(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path
     return volume, registry, mount_point_ref
 
 
-def test_native_status_advertises_only_the_available_write_slice() -> None:
+def test_native_status_advertises_only_the_available_write_slice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(native_storage.shutil, "which", lambda _binary: "/usr/bin/tool")
+    monkeypatch.setattr(native_storage, "_native_quota_tools_available", lambda: True)
+
     payload = native_storage.status()
 
     assert payload["readOnly"] is False
@@ -69,6 +74,41 @@ def test_native_status_advertises_only_the_available_write_slice() -> None:
         "smb.share.desired.v1",
         "nfs.share.private-network.v1",
         "filesystem.quota.user-group.v1",
+    ]
+
+
+def test_native_status_hides_write_slices_without_host_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    available = {"groupadd", "useradd", "chpasswd", "smbpasswd"}
+    monkeypatch.setattr(
+        native_storage.shutil,
+        "which",
+        lambda binary: f"/usr/bin/{binary}" if binary in available else None,
+    )
+
+    payload = native_storage.status()
+
+    assert payload["capabilities"] == [
+        "shared-folder.create.simple.v1",
+        "account.group.create.v1",
+        "account.user.create.v1",
+        "account.user.password.reset.v1",
+    ]
+
+
+def test_native_status_keeps_group_creation_when_only_groupadd_is_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        native_storage.shutil,
+        "which",
+        lambda binary: "/usr/bin/groupadd" if binary == "groupadd" else None,
+    )
+
+    assert native_storage.status()["capabilities"] == [
+        "shared-folder.create.simple.v1",
+        "account.group.create.v1",
     ]
 
 

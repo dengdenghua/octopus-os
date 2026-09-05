@@ -178,6 +178,11 @@ def _native_quota_tools_available() -> bool:
     return all(shutil.which(binary) is not None for binary in ("repquota", "setquota"))
 
 
+def _native_command_tools_available(*binaries: str) -> bool:
+    """Return whether every host command needed by one native write slice exists."""
+    return all(shutil.which(binary) is not None for binary in binaries)
+
+
 def _native_data_mountpoint(value: Any) -> bool:
     """Return whether a mountpoint belongs to an explicitly managed NAS root."""
     if not isinstance(value, str) or not value:
@@ -689,6 +694,35 @@ _NATIVE_WRITE_CAPABILITIES = (
 )
 
 
+def _native_write_capabilities() -> list[str]:
+    """Publish only write slices whose host-side prerequisites are present.
+
+    Capability discovery is part of the UI contract: a missing optional host
+    package should disable its control instead of advertising a button that
+    can only fail later during ``plan``.  The shared-folder slice itself uses
+    Python/POSIX primitives and remains available; it still requires a
+    mounted writable NAS target at plan time.
+    """
+    unavailable: set[str] = set()
+    if not _native_command_tools_available("groupadd"):
+        unavailable.add("account.group.create.v1")
+    if not _native_command_tools_available("useradd", "chpasswd", "smbpasswd"):
+        unavailable.add("account.user.create.v1")
+    if not _native_command_tools_available("chpasswd", "smbpasswd"):
+        unavailable.add("account.user.password.reset.v1")
+    if not _native_command_tools_available("getfacl", "setfacl"):
+        unavailable.add("shared-folder.privilege.simple.v1")
+    if not _native_command_tools_available("net", "smbd"):
+        unavailable.add("smb.share.desired.v1")
+    if not _native_command_tools_available("exportfs"):
+        unavailable.add("nfs.share.private-network.v1")
+    if not (
+        _native_command_tools_available("zfs") or _native_quota_tools_available()
+    ):
+        unavailable.add("filesystem.quota.user-group.v1")
+    return [capability for capability in _NATIVE_WRITE_CAPABILITIES if capability not in unavailable]
+
+
 def status() -> dict[str, Any]:
     """The native plane is always 'configured' — it needs no external panel."""
     return {
@@ -696,7 +730,7 @@ def status() -> dict[str, Any]:
         "available": bool(block_devices()),
         "readOnly": False,
         "adminUrl": None,
-        "capabilities": list(_NATIVE_WRITE_CAPABILITIES),
+        "capabilities": _native_write_capabilities(),
         "source": "native",
     }
 
