@@ -1507,6 +1507,11 @@ def test_nfs_remove_deletes_only_managed_rule_and_preserves_folder_data(
     assert not live["present"]
     assert folder.is_dir()
     assert exportfs_calls == [("exportfs", "-ra"), ("exportfs", "-ra")]
+    repeated_plan = native_storage.plan_nfs_remove(remove_desired)
+    assert repeated_plan["operation"] == "none"
+    repeated = native_storage.apply_nfs_remove(remove_desired, repeated_plan["planId"])
+    assert repeated["applied"] is False
+    assert repeated["verified"] is True
 
 
 def test_nfs_rejects_public_client_network_before_touching_host(

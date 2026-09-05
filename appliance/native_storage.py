@@ -2574,8 +2574,10 @@ def _build_nfs_remove_plan(desired: dict[str, Any]) -> dict[str, Any]:
         ),
         None,
     )
-    if existing is None:
-        raise ValueError("NFS rule does not exist for this shared folder and client")
+    operation = "remove" if existing is not None else "none"
+    share_uuid = existing["uuid"] if existing else _nfs_uuid(
+        desired["sharedFolderRef"], desired["clientCidr"]
+    )
     base_revision = _canonical_hash(
         {
             "folder": {"uuid": folder["uuid"], "name": folder["name"], "path": str(path)},
@@ -2593,18 +2595,22 @@ def _build_nfs_remove_plan(desired: dict[str, Any]) -> dict[str, Any]:
         "schema": NFS_REMOVE_PLAN_SCHEMA,
         "planId": plan_id,
         "baseRevision": base_revision,
-        "operation": "remove",
-        "requiresApproval": True,
-        "shareUuid": existing["uuid"],
+        "operation": operation,
+        "requiresApproval": operation == "remove",
+        "shareUuid": share_uuid,
         "sharedFolder": {"uuid": folder["uuid"], "name": folder["name"], "status": "MOUNTED"},
         "desired": desired,
-        "changes": [
-            {
-                "field": "registration",
-                "before": "managed",
-                "after": "removed",
-            }
-        ],
+        "changes": (
+            [
+                {
+                    "field": "registration",
+                    "before": "managed",
+                    "after": "removed",
+                }
+            ]
+            if existing
+            else []
+        ),
         "safety": {
             "export": "managedRuleOnly",
             "data": "preserved",
@@ -2631,6 +2637,9 @@ def apply_nfs_remove(desired_state: dict[str, Any], plan_id: str) -> dict[str, A
         if plan["planId"] != plan_id:
             raise ValueError("NFS remove plan is stale; preview the change again")
         _folder, path = _nfs_rule_path(desired["sharedFolderRef"])
+        if plan["operation"] == "none":
+            _verify_live_nfs_absent(path, desired["clientCidr"])
+            return {**plan, "applied": False, "verified": True, "dataPreserved": True}
         old_exports = _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True)
         exports = _nfs_exports_load(strict=True)
         existing = next(

@@ -1759,7 +1759,9 @@ export function OmvSharingPanel() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <strong className="block text-xs text-slate-800">
-                        将移除 NFS 私网规则
+                        {nfsRemovePlan.operation === "remove"
+                          ? "将移除 NFS 私网规则"
+                          : "NFS 私网规则已经不存在"}
                       </strong>
                       <span className="mt-1 block text-[10px] text-slate-500">
                         只移除 Echo 管理的 exports

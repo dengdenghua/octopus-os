@@ -327,8 +327,8 @@ export type OmvSharedFolderDetachPlan = {
   schema: "echo.omv.shared-folder-detach-plan.v1";
   planId: string;
   baseRevision: string;
-  operation: "remove";
-  requiresApproval: true;
+  operation: "remove" | "none";
+  requiresApproval: boolean;
   shareUuid: string;
   sharedFolder: OmvSharedFolder;
   desired: OmvSharedFolderDetachDesiredState;
