@@ -345,7 +345,7 @@ ARM64 Debian 13 + OMV 8.5.6 隔离 VM 已留下实际 SMB 创建/部署/幂等�
 - 在真实 md RAID/LVM/Btrfs 多设备机器核对卷到物理盘映射、降级/重建/校验状态和告警恢复；Btrfs 换盘仍需在授权隔离 VM/实体盘验证；
 - mdadm 已具备严格空白双盘 RAID1 创建、唯一故障成员换盘、健康阵列一致性检查及默认关闭的月度检查策略。所有写操作均走 plan → 独立密码审批 → apply → 实际状态回读；不开放 `--force`、显式 repair、停止或暂停。月度检查只处理 Echo 管理的健康 RAID1，固定每月首个周日 00:45 后随机延迟最多 24 小时。三盘换盘实验台已覆盖 HTTP、重建和重启后数据校验协议，但换盘、检查和调度仍待隔离 VM/真机证据。
 - EXT4 创建只接受 Echo 登记、健康、未挂载且无签名的 RAID1，按文件系统 UUID 持久挂载；失败会卸载、恢复受管 `fstab` 并清除本次文件系统签名。它与下层 md RAID1 创建、换盘仍待隔离 VM/实体盘验收。
-- Btrfs RAID1 创建只接受两块带稳定身份的空白整盘，强制 data/metadata RAID1 并按 UUID 持久挂载；失败会卸载、恢复 `fstab` 并清除本次新签名。读面回报缺失成员、profile 与累计设备错误；手动 scrub 和唯一缺失成员换盘均要求 Echo 登记、双 RAID1 profile、可写且无冲突维护，并分别经独立审批，且不使用 force/cancel、不伪造完成或回滚状态。
+- Btrfs RAID1 创建只接受两块带稳定身份的空白整盘，强制 data/metadata RAID1 并按 UUID 持久挂载；失败会卸载、恢复 `fstab` 并清除本次新签名。读面回报缺失成员、profile、累计设备错误和内核 `exclusive_operation`；手动 scrub 和唯一缺失成员换盘均要求 Echo 登记、双 RAID1 profile、可写且无冲突维护，并分别经独立审批。scrub 的计划与 apply 会绑定并复核内核独占操作，balance、设备增删/换盘、resize 等期间 fail-closed；所有操作不使用 force/cancel、不伪造完成或回滚状态。
 - Btrfs 双盘创建实验台和三盘换盘实验台已纳入受候选哈希绑定的 operations bundle。月度 scrub 策略默认关闭，经独立审批启用；固定每月首个周日 01:45 后随机延迟最多 24 小时，只处理 Echo 登记、完整可写、双 RAID1 profile、无历史设备错误且无活动维护的卷。新装与 `nas-maintenance-v2` 升级迁移都会安装受限 systemd timer。上述能力已有代码、协议、安装、本机 UI 与模拟测试闭环，仍待 Linux VM/真机计时器、真实 scrub、换盘和跨重启数据证据。
 - ZFS 当前只有严格空白双盘 mirror 创建、唯一故障成员换盘、scrub 状态/启动和 Echo 布局池的非强制导出/导入，同样仍缺隔离双盘 VM 与实体盘证据。
 - 存储池删除、外部/加密/降级池导入与恢复参数工作流、Btrfs 扩容/balance/自动降级挂载/多故障恢复、共享文件夹跨卷/任意路径修改、非空目录删除、复杂路径布局、路径/project 级容量配额、btrfs/未启用 quota 的文件系统配额和卷级只读保护；

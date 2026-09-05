@@ -112,6 +112,14 @@ def _health_inventory() -> list[dict[str, Any]]:
     return probe.value
 
 
+def _exclusive_operation(filesystem_uuid: str) -> str:
+    # Replacement reuses this module's scrub parser, so keep the shared sysfs
+    # probe lazy to avoid a module-import cycle.
+    from appliance.native_btrfs_replace import _sysfs_snapshot
+
+    return str(_sysfs_snapshot(filesystem_uuid)["exclusiveOperation"])
+
+
 def _maintenance_inventory(*, fstab_path: Path) -> list[dict[str, Any]]:
     _require_tools()
     managed = managed_btrfs_filesystems(fstab_path=fstab_path)
@@ -124,6 +132,7 @@ def _maintenance_inventory(*, fstab_path: Path) -> list[dict[str, Any]]:
         if filesystem is None or filesystem["mountpoint"] != registered["mountpoint"]:
             raise OSError("an Echo-managed Btrfs filesystem is not mounted at its registered path")
         scan, status_hash = _scrub_status(filesystem["mountpoint"], filesystem["uuid"])
+        exclusive_operation = _exclusive_operation(filesystem["uuid"])
         topology_safe = (
             filesystem["missingDevices"] == 0
             and filesystem["readOnly"] is False
@@ -134,7 +143,9 @@ def _maintenance_inventory(*, fstab_path: Path) -> list[dict[str, Any]]:
             {
                 "filesystem": filesystem,
                 "scan": scan,
+                "exclusiveOperation": exclusive_operation,
                 "canStartScrub": topology_safe
+                and exclusive_operation == "none"
                 and scan["state"] in {"idle", "completed", "failed"},
                 "_statusHash": status_hash,
             }
@@ -163,7 +174,9 @@ def _build_plan(desired: dict[str, str], *, fstab_path: Path) -> dict[str, Any]:
         raise ValueError("Echo-managed Btrfs filesystem UUID is unavailable or ambiguous")
     record = matches[0]
     if not record["canStartScrub"]:
-        raise ValueError("Btrfs scrub requires a complete writable RAID1 with no active scrub")
+        raise ValueError(
+            "Btrfs scrub requires a complete writable RAID1 with no active exclusive operation"
+        )
     filesystem = record["filesystem"]
     material = {
         "schema": BTRFS_SCRUB_PLAN_SCHEMA,
@@ -171,10 +184,12 @@ def _build_plan(desired: dict[str, str], *, fstab_path: Path) -> dict[str, Any]:
         "desired": desired,
         "filesystem": filesystem,
         "before": record["scan"],
+        "exclusiveOperation": record["exclusiveOperation"],
         "baseRevision": _canonical_hash(
             {
                 "filesystem": filesystem,
                 "scan": record["scan"],
+                "exclusiveOperation": record["exclusiveOperation"],
                 "statusHash": record["_statusHash"],
             }
         ),

@@ -63,6 +63,23 @@ function scanLabel(item: OmvBtrfsMaintenance) {
   return "尚未运行 scrub";
 }
 
+function exclusiveOperationLabel(item: OmvBtrfsMaintenance) {
+  const operation = (
+    item as OmvBtrfsMaintenance & { exclusiveOperation?: string }
+  ).exclusiveOperation;
+  if (!operation || operation === "none") return null;
+  const labels: Record<string, string> = {
+    balance: "balance 进行中",
+    "balance paused": "balance 已暂停",
+    "device add": "正在添加设备",
+    "device delete": "正在移除设备",
+    "device replace": "正在换盘",
+    resize: "正在调整容量",
+    "swapfile activate": "正在启用交换文件",
+  };
+  return labels[operation] ?? `Btrfs 维护：${operation}`;
+}
+
 export function BtrfsRaid1Panel() {
   const [status, setStatus] = useState<OmvStatus | null>(null);
   const [candidates, setCandidates] = useState<OmvBtrfsRaid1Candidate[]>([]);
@@ -780,6 +797,9 @@ export function BtrfsRaid1Panel() {
                           {scanLabel(item)} · {item.filesystem.activeDevices}/
                           {item.filesystem.totalDevices} 成员 · 错误计数{" "}
                           {item.filesystem.deviceErrorCount}
+                          {exclusiveOperationLabel(item)
+                            ? ` · ${exclusiveOperationLabel(item)}`
+                            : ""}
                         </span>
                       </div>
                       <button

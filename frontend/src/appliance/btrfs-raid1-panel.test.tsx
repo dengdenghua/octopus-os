@@ -529,4 +529,17 @@ describe("Btrfs RAID1 panel", () => {
     expect(screen.getByText(/scrub 进行中 · 42%/)).toBeInTheDocument();
     expect(screen.getByText(/不满足安全启动条件/)).toBeInTheDocument();
   });
+
+  it("shows the exclusive Btrfs operation that blocks scrub", async () => {
+    const activeBalance = {
+      ...maintenance,
+      exclusiveOperation: "balance",
+      canStartScrub: false,
+    };
+    vi.mocked(fetchOmvBtrfsMaintenance).mockResolvedValue([activeBalance]);
+    render(<BtrfsRaid1Panel />);
+
+    expect(await screen.findByText(/balance 进行中/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "预览 scrub" })).toBeDisabled();
+  });
 });

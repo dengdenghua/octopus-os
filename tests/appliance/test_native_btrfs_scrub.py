@@ -65,6 +65,7 @@ def scrub_host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, d
     monkeypatch.setattr(native_btrfs, "_LOCK_PATH", tmp_path / "btrfs.lock")
     monkeypatch.setattr(native_btrfs_scrub, "_require_tools", lambda: None)
     monkeypatch.setattr(native_btrfs_scrub, "_health_inventory", lambda: [_filesystem()])
+    monkeypatch.setattr(native_btrfs_scrub, "_exclusive_operation", lambda _uuid: "none")
     monkeypatch.setattr(
         native_btrfs_scrub,
         "_scrub_status",
@@ -114,6 +115,7 @@ def test_btrfs_scrub_plan_binds_managed_healthy_raid1(
     assert plan["operation"] == "start"
     assert plan["filesystem"] == _filesystem()
     assert plan["before"]["state"] == "idle"
+    assert plan["exclusiveOperation"] == "none"
     assert plan["requiresApproval"] is True
     assert plan["safety"]["readOnly"] is False
     assert plan["safety"]["force"] is False
@@ -129,6 +131,7 @@ def test_btrfs_maintenance_exposes_startability_without_internal_hash(
 
     assert records[0]["canStartScrub"] is True
     assert records[0]["scan"]["state"] == "idle"
+    assert records[0]["exclusiveOperation"] == "none"
     assert not any(key.startswith("_") for key in records[0])
 
 
@@ -157,6 +160,21 @@ def test_btrfs_scrub_plan_rejects_unsafe_topology_or_active_scrub(
     }
 
     with pytest.raises(ValueError, match="complete writable RAID1"):
+        native_btrfs_scrub.plan_btrfs_scrub(_desired(), fstab_path=fstab)
+
+
+def test_btrfs_scrub_rejects_an_active_balance(
+    monkeypatch: pytest.MonkeyPatch,
+    scrub_host: tuple[Path, dict[str, Any]],
+) -> None:
+    fstab, _state = scrub_host
+    monkeypatch.setattr(native_btrfs_scrub, "_exclusive_operation", lambda _uuid: "balance")
+
+    records = native_btrfs_scrub.btrfs_scrub_maintenance(fstab_path=fstab)
+
+    assert records[0]["exclusiveOperation"] == "balance"
+    assert records[0]["canStartScrub"] is False
+    with pytest.raises(ValueError, match="exclusive operation"):
         native_btrfs_scrub.plan_btrfs_scrub(_desired(), fstab_path=fstab)
 
 
@@ -231,6 +249,26 @@ def test_btrfs_scrub_apply_rejects_stale_status(
     state["hash"] = "changed-before-apply"
 
     with pytest.raises(ValueError, match="stale"):
+        native_btrfs_scrub.apply_btrfs_scrub(
+            _desired(), plan["planId"], fstab_path=fstab
+        )
+
+
+def test_btrfs_scrub_apply_rechecks_exclusive_operation(
+    monkeypatch: pytest.MonkeyPatch,
+    scrub_host: tuple[Path, dict[str, Any]],
+) -> None:
+    fstab, _state = scrub_host
+    operation = {"value": "none"}
+    monkeypatch.setattr(
+        native_btrfs_scrub,
+        "_exclusive_operation",
+        lambda _uuid: operation["value"],
+    )
+    plan = native_btrfs_scrub.plan_btrfs_scrub(_desired(), fstab_path=fstab)
+    operation["value"] = "resize"
+
+    with pytest.raises(ValueError, match="exclusive operation"):
         native_btrfs_scrub.apply_btrfs_scrub(
             _desired(), plan["planId"], fstab_path=fstab
         )
