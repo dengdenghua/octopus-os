@@ -84,6 +84,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "storage.pool.zfs.import.echo-root.v1",
         "storage.pool.zfs.scrub.start.v1",
         "power.ups-shutdown-policy.v1",
+        "storage.smart.self-test.start.v1",
     ]
 
 

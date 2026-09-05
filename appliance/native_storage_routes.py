@@ -14,6 +14,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
 
 from appliance import native_storage
+from appliance.native_smart import (
+    apply_smart_self_test,
+    plan_smart_self_test,
+    smart_self_test_status,
+)
 from appliance.native_ups import ups_status
 from appliance.omv_models import (
     GroupApplyRequest,
@@ -34,6 +39,8 @@ from appliance.omv_models import (
     SharedFolderRenameDesiredState,
     SharePrivilegeApplyRequest,
     SharePrivilegeDesiredState,
+    SmartSelfTestApplyRequest,
+    SmartSelfTestDesiredState,
     SmbApplyRequest,
     SmbDesiredState,
     UpsShutdownPolicyApplyRequest,
@@ -163,6 +170,17 @@ def register_native_storage_routes(router: APIRouter) -> None:
             "smart": await run_in_threadpool(native_storage.smart_report, validated),
             "readOnly": True,
         }
+
+    @router.get("/smart/self-test")
+    async def smart_self_test(
+        devicefile: str = Query(min_length=5, max_length=256),
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(smart_self_test_status, devicefile)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="SMART 自检状态读取失败") from exc
 
 
 def create_native_storage_router(
@@ -937,6 +955,43 @@ def create_omv_alias_router(
                 "enabled": body.desired.enabled,
                 "requiredConsecutiveSamples": body.desired.required_consecutive_samples,
                 "trigger": "FSD or persistent OB+LB",
+            },
+        )
+
+    # --- SMART whole-disk self-test -----------------------------------
+    @router.post("/smart/self-test/plan")
+    async def plan_smart_self_test_route(
+        body: SmartSelfTestDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                plan_smart_self_test,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="SMART 自检暂不可用") from exc
+
+    @router.post("/smart/self-test/apply")
+    async def apply_smart_self_test_route(
+        body: SmartSelfTestApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="storage.smart.self-test.start",
+            plan_fn=plan_smart_self_test,
+            apply_fn=apply_smart_self_test,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "devicefile": body.desired.devicefile,
+                "test": body.desired.test,
+                "captive": False,
+                "abort": False,
             },
         )
 

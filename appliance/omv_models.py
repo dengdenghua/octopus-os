@@ -21,6 +21,7 @@ from appliance.omv_protocol import (
     SHARED_FOLDER_DESIRED_SCHEMA,
     SHARED_FOLDER_DETACH_DESIRED_SCHEMA,
     SHARED_FOLDER_RENAME_DESIRED_SCHEMA,
+    SMART_SELF_TEST_DESIRED_SCHEMA,
     SMB_DESIRED_SCHEMA,
     USER_DESIRED_SCHEMA,
     USER_PASSWORD_DESIRED_SCHEMA,
@@ -37,6 +38,7 @@ from appliance.omv_protocol import (
     validate_shared_folder_desired,
     validate_shared_folder_detach_desired,
     validate_shared_folder_rename_desired,
+    validate_smart_self_test_desired,
     validate_user_desired,
     validate_user_password_desired,
     validate_zfs_mirror_desired,
@@ -688,6 +690,38 @@ class UpsShutdownPolicyApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class SmartSelfTestDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.smart-self-test-desired.v1"] = Field(
+        default=SMART_SELF_TEST_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    devicefile: str = Field(min_length=5, max_length=256)
+    test: Literal["short", "long"]
+
+    @field_validator("devicefile")
+    @classmethod
+    def validate_device(cls, value: str) -> str:
+        try:
+            return validate_smart_self_test_desired(
+                {
+                    "schema": SMART_SELF_TEST_DESIRED_SCHEMA,
+                    "devicefile": value,
+                    "test": "short",
+                }
+            )["devicefile"]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class SmartSelfTestApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: SmartSelfTestDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 __all__ = [
     "GroupApplyRequest",
     "GroupDesiredState",
@@ -705,6 +739,8 @@ __all__ = [
     "SharedFolderDetachApplyRequest",
     "SharedFolderDetachDesiredState",
     "SharedFolderDesiredState",
+    "SmartSelfTestApplyRequest",
+    "SmartSelfTestDesiredState",
     "SmbApplyRequest",
     "SmbDesiredState",
     "UserApplyRequest",

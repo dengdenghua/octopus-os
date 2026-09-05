@@ -59,6 +59,9 @@ ZFS_MIRROR_REPLACE_CONTROL_CAPABILITY = "storage.pool.zfs-mirror.replace.blank.v
 ZFS_SCRUB_DESIRED_SCHEMA = "echo.omv.zfs-scrub-desired.v1"
 ZFS_SCRUB_PLAN_SCHEMA = "echo.omv.zfs-scrub-plan.v1"
 ZFS_SCRUB_CONTROL_CAPABILITY = "storage.pool.zfs.scrub.start.v1"
+SMART_SELF_TEST_DESIRED_SCHEMA = "echo.omv.smart-self-test-desired.v1"
+SMART_SELF_TEST_PLAN_SCHEMA = "echo.omv.smart-self-test-plan.v1"
+SMART_SELF_TEST_CONTROL_CAPABILITY = "storage.smart.self-test.start.v1"
 HMAC_SAFETY_CONTRACT = "hmacBoundNeverReturnedOrAudited"
 MAX_QUOTA_BYTES = 2**63 - 1
 _DEVICEFILE_PATTERN = re.compile(r"/dev/[A-Za-z0-9._/+:-]+")
@@ -138,6 +141,22 @@ def validate_devicefile(devicefile: str) -> str:
     ):
         raise ValueError("invalid OMV device path")
     return devicefile
+
+
+def validate_smart_self_test_desired(value: Any) -> dict[str, str]:
+    expected = {"schema", "devicefile", "test"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("SMART self-test desired state has unexpected fields")
+    if value.get("schema") != SMART_SELF_TEST_DESIRED_SCHEMA:
+        raise ValueError("SMART self-test desired-state schema is unsupported")
+    test = value.get("test")
+    if test not in {"short", "long"}:
+        raise ValueError("SMART self-test must be short or long")
+    return {
+        "schema": SMART_SELF_TEST_DESIRED_SCHEMA,
+        "devicefile": validate_devicefile(value.get("devicefile")),
+        "test": test,
+    }
 
 
 def validate_zfs_mirror_desired(value: Any) -> dict[str, Any]:
