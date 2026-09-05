@@ -1514,6 +1514,62 @@ def test_nfs_remove_deletes_only_managed_rule_and_preserves_folder_data(
     assert repeated["verified"] is True
 
 
+def test_nfs_remove_can_clean_rule_when_volume_is_unmounted(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    folder = _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    exports = tmp_path / "exports.d" / "echo-os.exports"
+    live = {"present": False}
+    exportfs_calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", exports)
+
+    def fake_write(*args: str, **_kwargs: Any) -> None:
+        if args == ("exportfs", "-ra"):
+            exportfs_calls.append(args)
+            live["present"] = len(exportfs_calls) == 1
+
+    monkeypatch.setattr(native_storage, "_run_write", fake_write)
+    monkeypatch.setattr(
+        native_storage,
+        "_run_read_checked",
+        lambda *_args, **_kwargs: (
+            f"{folder} 192.168.50.0/24(rw,sync,no_subtree_check,root_squash,secure)\n"
+            if live["present"]
+            else ""
+        ),
+    )
+    nfs_desired = _nfs_desired(folder_uuid)
+    nfs_plan = native_storage.plan_nfs(nfs_desired)
+    native_storage.apply_nfs(nfs_desired, nfs_plan["planId"])
+
+    # The registry and export file remain available while the data mount is
+    # gone. Removal must not require a writable target or touch the directory.
+    monkeypatch.setattr(native_storage, "filesystems", lambda: [])
+    assert native_storage._native_nfs_shares()[0]["sharedFolderRef"] == folder_uuid
+    remove_desired = {
+        "schema": "echo.omv.nfs-share-remove-desired.v1",
+        "sharedFolderRef": folder_uuid,
+        "clientCidr": "192.168.50.0/24",
+    }
+    remove_plan = native_storage.plan_nfs_remove(remove_desired)
+
+    assert remove_plan["operation"] == "remove"
+    assert remove_plan["sharedFolder"]["status"] == "UNAVAILABLE"
+    removed = native_storage.apply_nfs_remove(remove_desired, remove_plan["planId"])
+
+    assert removed["applied"] is True
+    assert removed["verified"] is True
+    assert removed["dataPreserved"] is True
+    assert not exports.exists()
+    assert not live["present"]
+    assert folder.is_dir()
+    assert exportfs_calls == [("exportfs", "-ra"), ("exportfs", "-ra")]
+
+
 def test_nfs_rejects_public_client_network_before_touching_host(
     native_volume: tuple[Path, Path, str],
 ) -> None:
