@@ -2462,7 +2462,12 @@ def _nfs_exports_load(
         prefix = "# echo-os-rule "
         raw_entries = [json.loads(line[len(prefix) :]) for line in text.splitlines() if line.startswith(prefix)]
         entries = _validated_nfs_export_entries(raw_entries)
-        if text != _render_nfs_exports(entries, allow_unmounted=allow_unmounted):
+        rendered = (
+            _render_nfs_exports(entries, allow_unmounted=True)
+            if allow_unmounted
+            else _render_nfs_exports(entries)
+        )
+        if text != rendered:
             raise OSError("Echo-managed NFS exports contain unrecognized or modified rules")
         return entries
     except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
