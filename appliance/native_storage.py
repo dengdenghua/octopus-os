@@ -118,6 +118,8 @@ from appliance.native_storage_probe import (
     run_readonly,
 )
 from appliance.omv_protocol import (
+    BTRFS_SNAPSHOT_CONTROL_CAPABILITY,
+    BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY,
     GROUP_PLAN_SCHEMA,
     NFS_PLAN_SCHEMA,
     NFS_REMOVE_PLAN_SCHEMA,
@@ -1045,6 +1047,8 @@ _NATIVE_WRITE_CAPABILITIES = (
     SHARED_FOLDER_RENAME_CONTROL_CAPABILITY,
     "shared-folder.detach.safe.v1",
     SHARED_FOLDER_DELETE_CONTROL_CAPABILITY,
+    BTRFS_SNAPSHOT_CONTROL_CAPABILITY,
+    BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY,
     "account.group.create.v1",
     "account.user.create.v1",
     "account.user.password.reset.v1",
@@ -1094,6 +1098,9 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("account.user.password.reset.v1")
     if not _native_command_tools_available("getfacl", "setfacl"):
         unavailable.add("shared-folder.privilege.simple.v1")
+    if not _native_command_tools_available("btrfs"):
+        unavailable.add(BTRFS_SNAPSHOT_CONTROL_CAPABILITY)
+        unavailable.add(BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY)
     if not _native_command_tools_available("net", "smbd"):
         unavailable.add("smb.share.desired.v1")
     if not _native_command_tools_available("exportfs"):

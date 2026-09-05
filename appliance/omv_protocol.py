@@ -20,6 +20,12 @@ SHARED_FOLDER_DELETE_CONTROL_CAPABILITY = "shared-folder.delete.empty.v1"
 SHARED_FOLDER_RENAME_DESIRED_SCHEMA = "echo.omv.shared-folder-rename-desired.v1"
 SHARED_FOLDER_RENAME_PLAN_SCHEMA = "echo.omv.shared-folder-rename-plan.v1"
 SHARED_FOLDER_RENAME_CONTROL_CAPABILITY = "shared-folder.rename.safe.v1"
+BTRFS_SNAPSHOT_DESIRED_SCHEMA = "echo.omv.btrfs-snapshot-desired.v1"
+BTRFS_SNAPSHOT_PLAN_SCHEMA = "echo.omv.btrfs-snapshot-plan.v1"
+BTRFS_SNAPSHOT_CONTROL_CAPABILITY = "shared-folder.snapshot.create.read-only.v1"
+BTRFS_SNAPSHOT_DELETE_DESIRED_SCHEMA = "echo.omv.btrfs-snapshot-delete-desired.v1"
+BTRFS_SNAPSHOT_DELETE_PLAN_SCHEMA = "echo.omv.btrfs-snapshot-delete-plan.v1"
+BTRFS_SNAPSHOT_DELETE_CONTROL_CAPABILITY = "shared-folder.snapshot.delete.v1"
 SHARE_PRIVILEGE_DESIRED_SCHEMA = "echo.omv.share-privilege-desired.v1"
 SHARE_PRIVILEGE_PLAN_SCHEMA = "echo.omv.share-privilege-plan.v1"
 SHARE_PRIVILEGE_CONTROL_CAPABILITY = "shared-folder.privilege.simple.v1"
@@ -719,6 +725,57 @@ def validate_shared_folder_rename_desired(value: Any) -> dict[str, Any]:
         "schema": SHARED_FOLDER_RENAME_DESIRED_SCHEMA,
         "sharedFolderRef": validate_omv_uuid(shared_folder_ref).lower(),
         "name": name,
+    }
+
+
+def validate_btrfs_snapshot_desired(value: Any) -> dict[str, Any]:
+    """Validate a portable name for one read-only share snapshot."""
+    expected = {"schema", "sharedFolderRef", "name"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("Btrfs snapshot desired state has unexpected fields")
+    if value.get("schema") != BTRFS_SNAPSHOT_DESIRED_SCHEMA:
+        raise ValueError("Btrfs snapshot desired-state schema is unsupported")
+    shared_folder_ref = value.get("sharedFolderRef")
+    if not isinstance(shared_folder_ref, str):
+        raise ValueError("sharedFolderRef must be an OMV UUID")
+    name = value.get("name")
+    if not isinstance(name, str) or re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", name) is None:
+        raise ValueError(
+            "snapshot name must start with a lowercase letter and contain only "
+            "lowercase letters, digits, underscores, or hyphens"
+        )
+    return {
+        "schema": BTRFS_SNAPSHOT_DESIRED_SCHEMA,
+        "sharedFolderRef": validate_omv_uuid(shared_folder_ref).lower(),
+        "name": name,
+    }
+
+
+def validate_btrfs_snapshot_delete_desired(value: Any) -> dict[str, Any]:
+    """Validate selection of one managed snapshot by opaque public UUID."""
+    expected = {"schema", "sharedFolderRef", "snapshotId"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("Btrfs snapshot delete desired state has unexpected fields")
+    if value.get("schema") != BTRFS_SNAPSHOT_DELETE_DESIRED_SCHEMA:
+        raise ValueError("Btrfs snapshot delete desired-state schema is unsupported")
+    shared_folder_ref = value.get("sharedFolderRef")
+    snapshot_id = value.get("snapshotId")
+    if not isinstance(shared_folder_ref, str):
+        raise ValueError("sharedFolderRef must be an OMV UUID")
+    if not isinstance(snapshot_id, str):
+        raise ValueError("snapshotId must be an OMV UUID")
+    try:
+        normalized_shared_folder_ref = validate_omv_uuid(shared_folder_ref).lower()
+    except ValueError as exc:
+        raise ValueError("sharedFolderRef must be an OMV UUID") from exc
+    try:
+        normalized_snapshot_id = validate_omv_uuid(snapshot_id).lower()
+    except ValueError as exc:
+        raise ValueError("snapshotId must be an OMV UUID") from exc
+    return {
+        "schema": BTRFS_SNAPSHOT_DELETE_DESIRED_SCHEMA,
+        "sharedFolderRef": normalized_shared_folder_ref,
+        "snapshotId": normalized_snapshot_id,
     }
 
 

@@ -1,0 +1,66 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  applyBtrfsSnapshot,
+  fetchBtrfsSnapshots,
+  planBtrfsSnapshot,
+} from "./btrfs-snapshots";
+
+const desired = {
+  schema: "echo.omv.btrfs-snapshot-desired.v1" as const,
+  sharedFolderRef: "11111111-2222-4333-8444-555555555555",
+  name: "before_upgrade",
+};
+
+describe("Btrfs snapshot API", () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it("uses the opaque share id and never sends a host path", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          sharedFolderRef: desired.sharedFolderRef,
+          snapshots: [],
+          limit: 256,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    await fetchBtrfsSnapshots(desired.sharedFolderRef);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/appliance/omv/sharing/${desired.sharedFolderRef}/snapshots`,
+      expect.any(Object),
+    );
+  });
+
+  it("keeps preview and apply separate and binds approval to apply", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ planId: "a".repeat(64) }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    await planBtrfsSnapshot(desired);
+    await applyBtrfsSnapshot(desired, "a".repeat(64), "approval-token");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/appliance/omv/sharing/snapshots/plan",
+    );
+    const applyOptions = fetchMock.mock.calls[1]?.[1] as RequestInit;
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/appliance/omv/sharing/snapshots/apply",
+    );
+    expect(applyOptions.headers).toMatchObject({
+      "X-Echo-Approval": "approval-token",
+    });
+    expect(JSON.parse(String(applyOptions.body))).toEqual({
+      desired,
+      planId: "a".repeat(64),
+    });
+  });
+});

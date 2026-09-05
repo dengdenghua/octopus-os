@@ -17,6 +17,7 @@ from appliance import (
     btrfs_scrub_schedule_policy,
     disk_idle_policy,
     mdraid_check_schedule_policy,
+    native_btrfs_snapshot,
     native_storage,
     nut_device_config,
     smart_schedule_policy,
@@ -36,6 +37,10 @@ from appliance.omv_models import (
     BtrfsScrubDesiredState,
     BtrfsScrubSchedulePolicyApplyRequest,
     BtrfsScrubSchedulePolicyDesiredState,
+    BtrfsSnapshotApplyRequest,
+    BtrfsSnapshotDeleteApplyRequest,
+    BtrfsSnapshotDeleteDesiredState,
+    BtrfsSnapshotDesiredState,
     DiskIdlePolicyApplyRequest,
     DiskIdlePolicyDesiredState,
     Ext4CheckApplyRequest,
@@ -582,6 +587,82 @@ def create_omv_alias_router(
             metadata={
                 "sharedFolderRef": body.desired.shared_folder_ref,
                 "emptyOnly": body.desired.empty_only,
+            },
+        )
+
+    @router.get("/sharing/{shared_folder_ref}/snapshots")
+    async def list_btrfs_snapshots(shared_folder_ref: str) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(native_btrfs_snapshot.list_snapshots, shared_folder_ref)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 Btrfs 快照暂不可用") from exc
+
+    @router.post("/sharing/snapshots/plan")
+    async def plan_btrfs_snapshot(body: BtrfsSnapshotDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_btrfs_snapshot.plan_snapshot,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 Btrfs 快照暂不可用") from exc
+
+    @router.post("/sharing/snapshots/apply")
+    async def apply_btrfs_snapshot_route(
+        body: BtrfsSnapshotApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.btrfs-snapshot.create",
+            plan_fn=native_btrfs_snapshot.plan_snapshot,
+            apply_fn=native_btrfs_snapshot.apply_snapshot,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "snapshotName": body.desired.name,
+                "readOnly": True,
+            },
+        )
+
+    @router.post("/sharing/snapshots/delete/plan")
+    async def plan_btrfs_snapshot_delete(
+        body: BtrfsSnapshotDeleteDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_btrfs_snapshot.plan_snapshot_delete,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 Btrfs 快照暂不可用") from exc
+
+    @router.post("/sharing/snapshots/delete/apply")
+    async def apply_btrfs_snapshot_delete_route(
+        body: BtrfsSnapshotDeleteApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.btrfs-snapshot.delete",
+            plan_fn=native_btrfs_snapshot.plan_snapshot_delete,
+            apply_fn=native_btrfs_snapshot.apply_snapshot_delete,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "snapshotId": body.desired.snapshot_id,
             },
         )
 

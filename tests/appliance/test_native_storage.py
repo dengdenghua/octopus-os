@@ -74,6 +74,8 @@ def test_native_status_advertises_only_the_available_write_slice(
         "shared-folder.rename.safe.v1",
         "shared-folder.detach.safe.v1",
         "shared-folder.delete.empty.v1",
+        "shared-folder.snapshot.create.read-only.v1",
+        "shared-folder.snapshot.delete.v1",
         "account.group.create.v1",
         "account.user.create.v1",
         "account.user.password.reset.v1",

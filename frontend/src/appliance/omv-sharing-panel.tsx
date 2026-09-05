@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { requestHighRiskApproval } from "@/appliance/approval";
+import { BtrfsSnapshotPanel } from "@/appliance/btrfs-snapshot-panel";
 import {
   applyEchoAccountLink,
   applyEchoAccountPassword,
@@ -2466,6 +2467,27 @@ export function OmvSharingPanel() {
                   status.capabilities?.includes(
                     "shared-folder.delete.empty.v1",
                   );
+                const snapshotCapable = Boolean(
+                  (
+                    folder as OmvSharedFolder & {
+                      snapshotCapable?: boolean;
+                    }
+                  ).snapshotCapable,
+                );
+                const canCreateSnapshot =
+                  snapshotCapable &&
+                  Boolean(
+                    status?.capabilities?.includes(
+                      "shared-folder.snapshot.create.read-only.v1",
+                    ),
+                  );
+                const canDeleteSnapshot =
+                  snapshotCapable &&
+                  Boolean(
+                    status?.capabilities?.includes(
+                      "shared-folder.snapshot.delete.v1",
+                    ),
+                  );
                 return (
                   <article
                     key={folder.uuid}
@@ -2669,6 +2691,15 @@ export function OmvSharingPanel() {
                         </div>
                       </div>
                     )}
+                    {snapshotCapable &&
+                      (canCreateSnapshot || canDeleteSnapshot) && (
+                        <BtrfsSnapshotPanel
+                          sharedFolderRef={folder.uuid}
+                          sharedFolderName={folder.name}
+                          canCreate={canCreateSnapshot}
+                          canDelete={canDeleteSnapshot}
+                        />
+                      )}
                     {entries ? (
                       <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-200 pt-2">
                         {entries.map((entry) => (

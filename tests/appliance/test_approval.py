@@ -185,6 +185,22 @@ def test_empty_shared_folder_delete_uses_a_plan_bound_approval(tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    "action",
+    ["omv.btrfs-snapshot.create", "omv.btrfs-snapshot.delete"],
+)
+def test_btrfs_snapshot_mutations_use_plan_bound_approval(tmp_path, action):
+    service, _audit = _service(tmp_path)
+    token = _issue(service, action=action, target="e" * 64)
+
+    service.consume(
+        token=token,
+        actor="local:admin",
+        action=action,
+        target="e" * 64,
+    )
+
+
 def test_zfs_mirror_creation_uses_a_plan_bound_approval(tmp_path):
     service, _audit = _service(tmp_path)
     token = _issue(
