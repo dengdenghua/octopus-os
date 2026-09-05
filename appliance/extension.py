@@ -463,10 +463,6 @@ def register_app(app: Any, context: Any) -> None:
         app.add_middleware(ApplianceWebSecurityMiddleware)
         app.state.echo_appliance_web_security = True
 
-
-    # P3 NAS 管控面:存储池 / 磁盘健康 / SMB-NFS 共享。
-    # 与文件管理器共用 ECHO_NAS_ROOT;工具缺失(zfs/smartctl)时内部降级,
-    # 因此这里不做 try/except —— 挂载本身不会失败。
-    from appliance.nas import create_nas_router
-
-    app.include_router(create_nas_router(jwt_secret=auth_cfg.jwt_secret))
+    # 旧的 /api/appliance/nas ShareManager 路由仍保留给历史单元测试和
+    # 独立调用，但不再挂进生产应用：它的直写接口没有原生写面所要求的
+    # plan/approval/audit 信封。生产流量统一走上面的同构原生存储别名。
