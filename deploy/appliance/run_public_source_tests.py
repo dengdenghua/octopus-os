@@ -32,6 +32,7 @@ TESTS = (
     "tests/appliance/test_install_orchestration.py",
     "tests/appliance/test_maintenance_lock_contract.py",
     "tests/appliance/test_nas_data_backup.py",
+    "tests/appliance/test_nas.py",
     "tests/appliance/test_native_agent_recovery_contract.py",
     "tests/appliance/test_native_storage.py",
     "tests/appliance/test_omv_bridge.py",
