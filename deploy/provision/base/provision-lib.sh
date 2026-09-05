@@ -50,6 +50,7 @@ step_storage() {
     zfsutils-linux zfs-dkms \
     samba samba-common-bin smbclient \
     nfs-kernel-server acl \
+    nut-client nut-server \
     smartmontools mdadm lvm2 btrfs-progs \
     parted util-linux
 
@@ -360,6 +361,10 @@ YAML
 
   install -m644 "$OS_DIR/deploy/provision/base/echo-appliance.service" \
     /etc/systemd/system/echo-appliance.service
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-ups-shutdown-guard.service" \
+    /etc/systemd/system/echo-ups-shutdown-guard.service
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-ups-shutdown-guard.timer" \
+    /etc/systemd/system/echo-ups-shutdown-guard.timer
 
   # ── 首启引导服务自举 ─────────────────────────────────────────
   # echo-firstboot.service 负责"开机自动续跑 firstboot"(幂等,marks 齐 +
@@ -390,6 +395,7 @@ YAML
   fi
 
   systemctl daemon-reload
+  systemctl enable --now echo-ups-shutdown-guard.timer
   systemctl enable --now echo-appliance.service
   # nginx 可能已在跑(apt 安装时自启),`enable --now` 不会重载已运行进程
   # 的配置 → 80 端口仍服务旧 default 站点(VM 实测)。必须 restart。

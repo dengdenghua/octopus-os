@@ -1,0 +1,12 @@
+[Unit]
+Description=Sample local UPS state for low-battery shutdown
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15s
+AccuracySec=1s
+RandomizedDelaySec=2s
+Unit=echo-ups-shutdown-guard.service
+
+[Install]
+WantedBy=timers.target
