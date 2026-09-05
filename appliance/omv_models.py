@@ -12,6 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from appliance.omv_protocol import (
+    BTRFS_RAID1_DESIRED_SCHEMA,
     EXT4_VOLUME_DESIRED_SCHEMA,
     GROUP_DESIRED_SCHEMA,
     MDRAID1_DESIRED_SCHEMA,
@@ -34,6 +35,7 @@ from appliance.omv_protocol import (
     ZFS_POOL_EXPORT_DESIRED_SCHEMA,
     ZFS_POOL_IMPORT_DESIRED_SCHEMA,
     ZFS_SCRUB_DESIRED_SCHEMA,
+    validate_btrfs_raid1_desired,
     validate_ext4_volume_desired,
     validate_group_desired,
     validate_mdraid1_desired,
@@ -514,6 +516,39 @@ class ZfsMirrorApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class BtrfsRaid1DesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.btrfs-raid1-desired.v1"] = Field(
+        default=BTRFS_RAID1_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    name: str = Field(min_length=1, max_length=16)
+    devices: list[str] = Field(min_length=2, max_length=2)
+    data_loss_confirmed: Literal[True] = Field(alias="dataLossConfirmed")
+
+    @field_validator("name", "devices")
+    @classmethod
+    def validate_btrfs_field(cls, value: Any, info: Any) -> Any:
+        payload = {
+            "schema": BTRFS_RAID1_DESIRED_SCHEMA,
+            "name": value if info.field_name == "name" else "family",
+            "devices": value if info.field_name == "devices" else ["/dev/sdb", "/dev/sdc"],
+            "dataLossConfirmed": True,
+        }
+        try:
+            return validate_btrfs_raid1_desired(payload)[info.field_name]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class BtrfsRaid1ApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: BtrfsRaid1DesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 class MdRaid1DesiredState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -939,6 +974,8 @@ class SmartSchedulePolicyApplyRequest(BaseModel):
 
 
 __all__ = [
+    "BtrfsRaid1ApplyRequest",
+    "BtrfsRaid1DesiredState",
     "Ext4VolumeApplyRequest",
     "Ext4VolumeDesiredState",
     "GroupApplyRequest",

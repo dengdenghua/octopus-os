@@ -59,6 +59,9 @@ MDRAID_CHECK_CONTROL_CAPABILITY = "storage.array.mdraid.check.start.v1"
 EXT4_VOLUME_DESIRED_SCHEMA = "echo.omv.ext4-volume-desired.v1"
 EXT4_VOLUME_PLAN_SCHEMA = "echo.omv.ext4-volume-plan.v1"
 EXT4_VOLUME_CONTROL_CAPABILITY = "storage.volume.ext4.create-mount.v1"
+BTRFS_RAID1_DESIRED_SCHEMA = "echo.omv.btrfs-raid1-desired.v1"
+BTRFS_RAID1_PLAN_SCHEMA = "echo.omv.btrfs-raid1-plan.v1"
+BTRFS_RAID1_CONTROL_CAPABILITY = "storage.volume.btrfs-raid1.create-mount.v1"
 ZFS_POOL_EXPORT_DESIRED_SCHEMA = "echo.omv.zfs-pool-export-desired.v1"
 ZFS_POOL_EXPORT_PLAN_SCHEMA = "echo.omv.zfs-pool-export-plan.v1"
 ZFS_POOL_EXPORT_CONTROL_CAPABILITY = "storage.pool.zfs.export.safe.v1"
@@ -302,6 +305,37 @@ def validate_ext4_volume_desired(value: Any) -> dict[str, Any]:
         "schema": EXT4_VOLUME_DESIRED_SCHEMA,
         "arrayUuid": array_uuid,
         "name": name,
+        "dataLossConfirmed": True,
+    }
+
+
+def validate_btrfs_raid1_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "name", "devices", "dataLossConfirmed"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("Btrfs RAID1 desired state has unexpected fields")
+    if value.get("schema") != BTRFS_RAID1_DESIRED_SCHEMA:
+        raise ValueError("Btrfs RAID1 desired-state schema is unsupported")
+    name = value.get("name")
+    if not isinstance(name, str) or _EXT4_VOLUME_NAME_PATTERN.fullmatch(name) is None:
+        raise ValueError(
+            "Btrfs RAID1 volume name must be a lowercase portable name of at most 16 characters"
+        )
+    devices = value.get("devices")
+    if not isinstance(devices, list) or len(devices) != 2:
+        raise ValueError("Btrfs RAID1 creation requires exactly two whole disks")
+    if not all(isinstance(device, str) for device in devices):
+        raise ValueError("Btrfs RAID1 devices must be device paths")
+    normalized = sorted(devices)
+    if len(set(normalized)) != 2 or any(
+        _ZFS_WHOLE_DISK_PATTERN.fullmatch(device) is None for device in normalized
+    ):
+        raise ValueError("Btrfs RAID1 devices must be two distinct supported whole disks")
+    if value.get("dataLossConfirmed") is not True:
+        raise ValueError("Btrfs RAID1 creation requires dataLossConfirmed=true")
+    return {
+        "schema": BTRFS_RAID1_DESIRED_SCHEMA,
+        "name": name,
+        "devices": normalized,
         "dataLossConfirmed": True,
     }
 

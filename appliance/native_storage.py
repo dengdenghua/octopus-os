@@ -55,6 +55,7 @@ from typing import Any
 from appliance.mdraid_check_schedule_policy import (
     scheduler_installed as _mdraid_scheduler_installed,
 )
+from appliance.native_btrfs import apply_btrfs_raid1, btrfs_raid1_candidates, plan_btrfs_raid1
 from appliance.native_ext4 import apply_ext4_volume, ext4_volume_candidates, plan_ext4_volume
 from appliance.native_mdraid import apply_mdraid1, mdraid1_candidates, plan_mdraid1
 from appliance.native_mdraid_check import (
@@ -949,6 +950,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "storage.array.mdraid.check.start.v1",
     "storage.array.mdraid.check.schedule.v1",
     "storage.volume.ext4.create-mount.v1",
+    "storage.volume.btrfs-raid1.create-mount.v1",
     "storage.pool.zfs-mirror.replace.blank.v1",
     "storage.pool.zfs.export.safe.v1",
     "storage.pool.zfs.import.echo-root.v1",
@@ -1010,6 +1012,18 @@ def _native_write_capabilities() -> list[str]:
         "wipefs",
     ):
         unavailable.add("storage.volume.ext4.create-mount.v1")
+    if not _native_command_tools_available(
+        "blkid",
+        "btrfs",
+        "findmnt",
+        "lsblk",
+        "mkfs.btrfs",
+        "mount",
+        "systemctl",
+        "umount",
+        "wipefs",
+    ):
+        unavailable.add("storage.volume.btrfs-raid1.create-mount.v1")
     if not _native_command_tools_available("zpool", "zfs"):
         unavailable.add("storage.pool.zfs.export.safe.v1")
         unavailable.add("storage.pool.zfs.import.echo-root.v1")
@@ -4074,6 +4088,7 @@ def validated_devicefile(devicefile: str) -> str:
 
 __all__ = [
     "NativeStorageAuthority",
+    "apply_btrfs_raid1",
     "apply_group",
     "apply_mdraid1",
     "apply_mdraid1_replace",
@@ -4095,6 +4110,7 @@ __all__ = [
     "apply_zfs_pool_import",
     "apply_zfs_scrub",
     "block_devices",
+    "btrfs_raid1_candidates",
     "filesystems",
     "ext4_volume_candidates",
     "exportable_zfs_pools",
@@ -4103,6 +4119,7 @@ __all__ = [
     "mdraid1_replacement_candidates",
     "mdraid_maintenance",
     "plan_group",
+    "plan_btrfs_raid1",
     "plan_ext4_volume",
     "plan_mdraid1",
     "plan_mdraid1_replace",
