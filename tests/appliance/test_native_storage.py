@@ -97,6 +97,31 @@ def test_filesystems_reports_kernel_read_only_mount(monkeypatch: pytest.MonkeyPa
     assert entries[0]["supportsQuota"] is False
 
 
+def test_filesystems_does_not_advertise_system_root_as_quota_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(*args: str, **_kwargs: Any) -> str:
+        if args[:1] == ("df",):
+            return (
+                "Filesystem Type 1024-blocks Used Available Capacity Mounted on\n"
+                "/dev/root ext4 100000 10000 90000 10% /\n"
+                "/dev/data ext4 200000 20000 180000 10% /data\n"
+            )
+        if args[:1] == ("findmnt",):
+            return "rw,relatime\n"
+        return ""
+
+    monkeypatch.setattr(native_storage, "_run", fake_run)
+    monkeypatch.setattr(native_storage, "_NATIVE_DATA_MOUNT_ROOTS", ("/data",))
+    monkeypatch.setattr(native_storage.shutil, "which", lambda _binary: "/usr/bin/tool")
+
+    entries = native_storage.filesystems()
+
+    assert [entry["mountpoint"] for entry in entries] == ["/", "/data"]
+    assert entries[0]["supportsQuota"] is False
+    assert entries[1]["supportsQuota"] is True
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="path assertions are POSIX-specific")
 def test_sharing_targets_match_the_frontend_contract_without_host_paths(
     monkeypatch: pytest.MonkeyPatch,
@@ -724,7 +749,14 @@ def test_quota_requires_a_supported_native_adapter(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         native_storage,
         "filesystems",
-        lambda: [{"uuid": fs_uuid, "type": "ext4", "devicefile": "/dev/sda1"}],
+        lambda: [
+            {
+                "uuid": fs_uuid,
+                "type": "ext4",
+                "devicefile": "/dev/sda1",
+                "mountpoint": "/data/family",
+            }
+        ],
     )
     desired = {
         "schema": "echo.omv.filesystem-quota-desired.v1",
@@ -748,6 +780,7 @@ def test_quota_plan_on_zfs(monkeypatch: pytest.MonkeyPatch) -> None:
                 "uuid": fs_uuid,
                 "type": "zfs",
                 "devicefile": "tank/share",
+                "mountpoint": "/srv/family",
                 "label": "share",
                 "readOnly": False,
                 "supportsQuota": True,

@@ -178,6 +178,33 @@ def _native_quota_tools_available() -> bool:
     return all(shutil.which(binary) is not None for binary in ("repquota", "setquota"))
 
 
+def _native_data_mountpoint(value: Any) -> bool:
+    """Return whether a mountpoint belongs to an explicitly managed NAS root."""
+    if not isinstance(value, str) or not value:
+        return False
+    # ``df``/``findmnt`` always report POSIX paths, even when their output is
+    # exercised by the Windows test suite. Keep that comparison independent of
+    # the host running the Python process, while retaining host-path support
+    # for isolated native-volume tests.
+    if posixpath.isabs(value):
+        normalized = posixpath.normpath(value)
+        roots = tuple(posixpath.normpath(root) for root in _NATIVE_DATA_MOUNT_ROOTS)
+        commonpath = posixpath.commonpath
+    elif os.path.isabs(value):
+        normalized = os.path.normpath(value)
+        roots = tuple(os.path.normpath(root) for root in _NATIVE_DATA_MOUNT_ROOTS)
+        commonpath = os.path.commonpath
+    else:
+        return False
+    for normalized_root in roots:
+        try:
+            if commonpath((normalized, normalized_root)) == normalized_root:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def _kernel_quota_enabled(mountpoint: str, subject_type: str) -> bool:
     """Return whether the mounted filesystem advertises the requested quota mode.
 
@@ -477,8 +504,10 @@ def filesystems() -> list[dict[str, Any]]:
         if size_i is None or available_i is None:
             continue
         read_only = _mount_read_only(mountpoint)
-        supports_quota = fstype == "zfs" or (
-            fstype in _NATIVE_KERNEL_QUOTA_FILESYSTEMS and quota_tools_available
+        supports_quota = _native_data_mountpoint(mountpoint) and (
+            fstype == "zfs"
+            or fstype in _NATIVE_KERNEL_QUOTA_FILESYSTEMS
+            and quota_tools_available
         )
         entries.append(
             {
@@ -1133,18 +1162,7 @@ def _is_native_share_target(entry: dict[str, Any]) -> bool:
     """
     if entry.get("readOnly"):
         return False
-    mountpoint = str(entry.get("mountpoint") or "")
-    if not mountpoint or not os.path.isabs(mountpoint):
-        return False
-    normalized = os.path.normpath(mountpoint)
-    for root in _NATIVE_DATA_MOUNT_ROOTS:
-        normalized_root = os.path.normpath(root)
-        try:
-            if os.path.commonpath((normalized, normalized_root)) == normalized_root:
-                return True
-        except ValueError:
-            continue
-    return False
+    return _native_data_mountpoint(entry.get("mountpoint"))
 
 
 def _canonical_hash(payload: Any) -> str:
@@ -2472,7 +2490,7 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     return {**plan, "applied": True, "verified": True, "share": {"name": name}}
 
 
-# --- ZFS quota ------------------------------------------------------------
+# --- Native filesystem quota ---------------------------------------------
 
 
 def _validated_zfs_dataset(value: Any) -> str:
@@ -2654,6 +2672,8 @@ def _native_quota_context(
         raise ValueError("filesystemUuid does not match any mounted filesystem")
     if filesystem.get("readOnly"):
         raise ValueError("quota filesystem is read-only")
+    if not _native_data_mountpoint(filesystem.get("mountpoint")):
+        raise ValueError("quota filesystem is outside the managed NAS data roots")
     filesystem_type = str(filesystem.get("type") or "").casefold()
     if filesystem_type == "zfs":
         if filesystem.get("supportsQuota") is False:
