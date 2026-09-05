@@ -703,6 +703,45 @@ export type OmvMdRaid1Plan = {
   };
 };
 
+export type OmvManagedMdRaid1 = NonNullable<OmvMdRaid1Plan["array"]>;
+
+export type OmvExt4VolumeDesiredState = {
+  schema: "echo.omv.ext4-volume-desired.v1";
+  arrayUuid: string;
+  name: string;
+  dataLossConfirmed: true;
+};
+
+export type OmvExt4VolumePlan = {
+  schema: "echo.omv.ext4-volume-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "createAndMount";
+  requiresApproval: true;
+  desired: OmvExt4VolumeDesiredState;
+  array: OmvManagedMdRaid1;
+  mountpoint: string;
+  safety: {
+    destructive: true;
+    dataLossConfirmed: true;
+    source: "healthyBlankEchoManagedMdRaid1Only";
+    filesystem: "ext4Only";
+    mountRoot: string;
+    persistentIdentity: "filesystemUuid";
+    force: false;
+  };
+  applied?: boolean;
+  verified?: boolean;
+  filesystem?: {
+    uuid: string;
+    label: string;
+    type: "ext4";
+    devicefile: string;
+    mountpoint: string;
+    readOnly: false;
+  };
+};
+
 export type OmvZfsPool = {
   name: string;
   poolGuid: string;
@@ -1511,6 +1550,38 @@ export function applyOmvMdRaid1(
     "/api/appliance/omv/arrays/mdraid1/apply",
     { desired, planId },
     "无法创建 Linux RAID1 阵列",
+    approvalHeader(approvalToken),
+  );
+}
+
+export async function fetchOmvExt4VolumeCandidates(): Promise<
+  OmvManagedMdRaid1[]
+> {
+  const result = await readJson<{
+    arrays: OmvManagedMdRaid1[];
+  }>("/api/appliance/omv/volumes/ext4/candidates", "无法读取 EXT4 候选阵列");
+  return result.arrays;
+}
+
+export function planOmvExt4Volume(
+  desired: OmvExt4VolumeDesiredState,
+): Promise<OmvExt4VolumePlan> {
+  return postJson(
+    "/api/appliance/omv/volumes/ext4/plan",
+    desired,
+    "无法生成 EXT4 卷创建预览",
+  );
+}
+
+export function applyOmvExt4Volume(
+  desired: OmvExt4VolumeDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvExt4VolumePlan> {
+  return postJson(
+    "/api/appliance/omv/volumes/ext4/apply",
+    { desired, planId },
+    "无法创建并挂载 EXT4 卷",
     approvalHeader(approvalToken),
   );
 }

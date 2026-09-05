@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyOmvExt4Volume,
   applyOmvGroup,
   applyOmvMdRaid1,
   applyOmvNfsShare,
@@ -19,6 +20,7 @@ import {
   applyOmvZfsPoolImport,
   applyOmvZfsScrub,
   fetchOmvFilesystems,
+  fetchOmvExt4VolumeCandidates,
   fetchOmvHealth,
   fetchOmvMdRaid1Candidates,
   fetchOmvSharePrivileges,
@@ -34,6 +36,7 @@ import {
   fetchOmvZfsPools,
   fetchOmvZfsMaintenance,
   planOmvNfsShare,
+  planOmvExt4Volume,
   planOmvMdRaid1,
   planOmvNfsShareRemove,
   planOmvGroup,
@@ -1158,6 +1161,77 @@ describe("OMV read-only API client", () => {
     });
     expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
       "mdraid-approval-token",
+    );
+  });
+
+  it("keeps EXT4 candidate read, destructive preview and approved apply separate", async () => {
+    const array = {
+      name: "array1",
+      devicefile: "/dev/md/echo-array1",
+      uuid: "11111111:22222222:33333333:44444444",
+      level: "raid1" as const,
+      devices: ["/dev/sdb", "/dev/sdc"],
+      filesystem: null,
+    };
+    const desired = {
+      schema: "echo.omv.ext4-volume-desired.v1" as const,
+      arrayUuid: array.uuid,
+      name: "family",
+      dataLossConfirmed: true as const,
+    };
+    const plan = {
+      schema: "echo.omv.ext4-volume-plan.v1" as const,
+      planId: "a".repeat(64),
+      baseRevision: "b".repeat(64),
+      operation: "createAndMount" as const,
+      requiresApproval: true as const,
+      desired,
+      array,
+      mountpoint: "/data/family",
+      safety: {
+        destructive: true as const,
+        dataLossConfirmed: true as const,
+        source: "healthyBlankEchoManagedMdRaid1Only" as const,
+        filesystem: "ext4Only" as const,
+        mountRoot: "/data",
+        persistentIdentity: "filesystemUuid" as const,
+        force: false as const,
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ arrays: [array] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ...plan, applied: true, verified: true }),
+          {
+            status: 200,
+          },
+        ),
+      );
+
+    expect(await fetchOmvExt4VolumeCandidates()).toEqual([array]);
+    expect((await planOmvExt4Volume(desired)).planId).toBe(plan.planId);
+    expect(
+      (await applyOmvExt4Volume(desired, plan.planId, "ext4-token")).verified,
+    ).toBe(true);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/volumes/ext4/candidates",
+      "/api/appliance/omv/volumes/ext4/plan",
+      "/api/appliance/omv/volumes/ext4/apply",
+    ]);
+    const apply = fetchMock.mock.calls[2]?.[1] as RequestInit;
+    expect(JSON.parse(String(apply.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
+      "ext4-token",
     );
   });
 

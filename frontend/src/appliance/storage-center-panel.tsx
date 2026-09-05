@@ -24,6 +24,7 @@ import {
   formatSize,
   type StorageUsage,
 } from "@/appliance/files";
+import { Ext4VolumePanel } from "@/appliance/ext4-volume-panel";
 import { OmvSharingPanel } from "@/appliance/omv-sharing-panel";
 import { MdRaid1Panel } from "@/appliance/mdraid1-panel";
 import { OmvStorageHealth } from "@/appliance/omv-storage-health";
@@ -461,6 +462,7 @@ export function StorageCenterPanel({
           ) : section === "pools" ? (
             <>
               <MdRaid1Panel />
+              <Ext4VolumePanel />
               <ZfsMirrorPanel />
             </>
           ) : (
