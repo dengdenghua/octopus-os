@@ -23,6 +23,7 @@ from appliance.omv_protocol import (
     SMB_DESIRED_SCHEMA,
     USER_DESIRED_SCHEMA,
     USER_PASSWORD_DESIRED_SCHEMA,
+    ZFS_MIRROR_DESIRED_SCHEMA,
     validate_group_desired,
     validate_nfs_remove_desired,
     validate_omv_uuid,
@@ -32,6 +33,7 @@ from appliance.omv_protocol import (
     validate_shared_folder_detach_desired,
     validate_user_desired,
     validate_user_password_desired,
+    validate_zfs_mirror_desired,
 )
 
 
@@ -407,6 +409,55 @@ class QuotaApplyRequest(BaseModel):
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
+class ZfsMirrorDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.omv.zfs-mirror-desired.v1"] = Field(
+        default=ZFS_MIRROR_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    name: str = Field(min_length=1, max_length=32)
+    devices: list[str] = Field(min_length=2, max_length=2)
+    data_loss_confirmed: Literal[True] = Field(alias="dataLossConfirmed")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        try:
+            return validate_zfs_mirror_desired(
+                {
+                    "schema": ZFS_MIRROR_DESIRED_SCHEMA,
+                    "name": value,
+                    "devices": ["/dev/sdb", "/dev/sdc"],
+                    "dataLossConfirmed": True,
+                }
+            )["name"]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("devices")
+    @classmethod
+    def validate_devices(cls, value: list[str]) -> list[str]:
+        try:
+            return validate_zfs_mirror_desired(
+                {
+                    "schema": ZFS_MIRROR_DESIRED_SCHEMA,
+                    "name": "tank",
+                    "devices": value,
+                    "dataLossConfirmed": True,
+                }
+            )["devices"]
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+class ZfsMirrorApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: ZfsMirrorDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
 __all__ = [
     "GroupApplyRequest",
     "GroupDesiredState",
@@ -430,4 +481,6 @@ __all__ = [
     "UserDesiredState",
     "UserPasswordApplyRequest",
     "UserPasswordDesiredState",
+    "ZfsMirrorApplyRequest",
+    "ZfsMirrorDesiredState",
 ]

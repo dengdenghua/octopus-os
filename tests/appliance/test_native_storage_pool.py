@@ -1,0 +1,242 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from appliance import native_storage_pool
+
+
+def _desired(**overrides: Any) -> dict[str, Any]:
+    return {
+        "schema": "echo.omv.zfs-mirror-desired.v1",
+        "name": "family",
+        "devices": ["/dev/sdb", "/dev/sdc"],
+        "dataLossConfirmed": True,
+        **overrides,
+    }
+
+
+def _identities(serial_suffix: str = "") -> list[dict[str, Any]]:
+    return [
+        {
+            "devicefile": "/dev/sdb",
+            "sizeBytes": 8 * 1024**3,
+            "serial": f"disk-b{serial_suffix}",
+            "wwn": None,
+            "model": "QEMU HARDDISK",
+        },
+        {
+            "devicefile": "/dev/sdc",
+            "sizeBytes": 8 * 1024**3,
+            "serial": f"disk-c{serial_suffix}",
+            "wwn": None,
+            "model": "QEMU HARDDISK",
+        },
+    ]
+
+
+@pytest.fixture
+def safe_pool_host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    mount_root = tmp_path / "data"
+    mount_root.mkdir()
+    monkeypatch.setattr(native_storage_pool, "_ZFS_MOUNT_ROOT", mount_root)
+    monkeypatch.setattr(native_storage_pool, "_ZFS_LOCK_PATH", tmp_path / "zfs.lock")
+    monkeypatch.setattr(native_storage_pool, "_require_tools", lambda: None)
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_inspect_zfs_mirror_devices",
+        lambda _devices: _identities(),
+    )
+    monkeypatch.setattr(native_storage_pool, "_existing_zfs_pool_names", lambda: [])
+    return mount_root
+
+
+def test_zfs_mirror_plan_binds_blank_disk_identities(safe_pool_host: Path) -> None:
+    plan = native_storage_pool.plan_zfs_mirror(_desired(devices=["/dev/sdc", "/dev/sdb"]))
+
+    assert plan["schema"] == "echo.omv.zfs-mirror-plan.v1"
+    assert plan["operation"] == "create"
+    assert plan["requiresApproval"] is True
+    assert plan["desired"]["devices"] == ["/dev/sdb", "/dev/sdc"]
+    assert plan["devices"] == _identities()
+    assert plan["mountpoint"] == str(safe_pool_host / "family")
+    assert plan["safety"]["destructive"] is True
+    assert plan["safety"]["force"] is False
+
+
+def test_zfs_mirror_apply_uses_exact_non_force_command_and_verifies(
+    monkeypatch: pytest.MonkeyPatch, safe_pool_host: Path
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_mutating",
+        lambda *args, **_kwargs: commands.append(args),
+    )
+    verified_pool = {
+        "name": "family",
+        "health": "ONLINE",
+        "layout": "mirror",
+        "mountpoint": str(safe_pool_host / "family"),
+    }
+    monkeypatch.setattr(native_storage_pool, "_verify_created_pool", lambda _plan: verified_pool)
+
+    desired = _desired()
+    plan = native_storage_pool.plan_zfs_mirror(desired)
+    applied = native_storage_pool.apply_zfs_mirror(desired, plan["planId"])
+
+    assert applied["verified"] is True
+    assert applied["pool"] == verified_pool
+    assert commands == [
+        (
+            "zpool",
+            "create",
+            "-o",
+            "ashift=12",
+            "-O",
+            "compression=lz4",
+            "-O",
+            "atime=off",
+            "-O",
+            "xattr=sa",
+            "-O",
+            "acltype=posixacl",
+            "-O",
+            f"mountpoint={safe_pool_host / 'family'}",
+            "family",
+            "mirror",
+            "/dev/sdb",
+            "/dev/sdc",
+        )
+    ]
+    assert "-f" not in commands[0]
+
+
+def test_zfs_mirror_apply_rejects_rebound_disk_before_writing(
+    monkeypatch: pytest.MonkeyPatch, safe_pool_host: Path
+) -> None:
+    identity_reads = iter((_identities(), _identities("-replacement")))
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_inspect_zfs_mirror_devices",
+        lambda _devices: next(identity_reads),
+    )
+    writes: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_mutating",
+        lambda *args, **_kwargs: writes.append(args),
+    )
+
+    desired = _desired()
+    plan = native_storage_pool.plan_zfs_mirror(desired)
+    with pytest.raises(ValueError, match="stale"):
+        native_storage_pool.apply_zfs_mirror(desired, plan["planId"])
+
+    assert writes == []
+
+
+def test_zfs_mirror_verification_failure_destroys_new_pool(
+    monkeypatch: pytest.MonkeyPatch, safe_pool_host: Path
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_mutating",
+        lambda *args, **_kwargs: commands.append(args),
+    )
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_verify_created_pool",
+        lambda _plan: (_ for _ in ()).throw(OSError("read-back failed")),
+    )
+    monkeypatch.setattr(native_storage_pool, "_pool_exists", lambda _name: False)
+
+    desired = _desired()
+    plan = native_storage_pool.plan_zfs_mirror(desired)
+    with pytest.raises(OSError, match="read-back failed"):
+        native_storage_pool.apply_zfs_mirror(desired, plan["planId"])
+
+    assert commands[-1] == ("zpool", "destroy", "family")
+
+
+def test_disk_inspection_rejects_existing_partition_without_calling_wipefs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = {
+        "blockdevices": [
+            {
+                "path": "/dev/sdb",
+                "type": "disk",
+                "size": 8 * 1024**3,
+                "serial": "disk-b",
+                "ro": False,
+                "rm": False,
+                "children": [{"path": "/dev/sdb1", "type": "part"}],
+            },
+            {
+                "path": "/dev/sdc",
+                "type": "disk",
+                "size": 8 * 1024**3,
+                "serial": "disk-c",
+                "ro": False,
+                "rm": False,
+            },
+        ]
+    }
+    calls: list[list[str]] = []
+
+    def run(args: list[str], **_kwargs: Any) -> SimpleNamespace:
+        calls.append(args)
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr(native_storage_pool.subprocess, "run", run)
+
+    with pytest.raises(ValueError, match="not blank"):
+        native_storage_pool._inspect_zfs_mirror_devices(["/dev/sdb", "/dev/sdc"])
+
+    assert [call[0] for call in calls] == ["lsblk"]
+
+
+def test_zfs_mirror_requires_explicit_data_loss_confirmation() -> None:
+    with pytest.raises(ValueError, match="dataLossConfirmed"):
+        native_storage_pool.plan_zfs_mirror(_desired(dataLossConfirmed=False))
+
+
+def test_zfs_reserved_pool_name_is_rejected_before_host_access() -> None:
+    with pytest.raises(ValueError, match="reserved"):
+        native_storage_pool.plan_zfs_mirror(_desired(name="mirrorhome"))
+
+
+def test_candidate_inventory_returns_only_disks_that_pass_plan_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(native_storage_pool, "_require_tools", lambda: None)
+    monkeypatch.setattr(
+        native_storage_pool,
+        "_run_checked",
+        lambda *_args, **_kwargs: json.dumps(
+            {
+                "blockdevices": [
+                    {"path": "/dev/sda", "type": "disk"},
+                    {"path": "/dev/sdb", "type": "disk"},
+                    {"path": "/dev/sdc", "type": "disk"},
+                    {"path": "/dev/sr0", "type": "rom"},
+                ]
+            }
+        ),
+    )
+
+    def inspect(devices: list[str]) -> list[dict[str, Any]]:
+        if devices == ["/dev/sda"]:
+            raise ValueError("system disk has partitions")
+        identity = next(item for item in _identities() if item["devicefile"] == devices[0])
+        return [identity]
+
+    monkeypatch.setattr(native_storage_pool, "_inspect_zfs_mirror_devices", inspect)
+
+    assert native_storage_pool.zfs_mirror_candidates() == _identities()

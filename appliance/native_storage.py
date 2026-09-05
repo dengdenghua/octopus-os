@@ -20,9 +20,10 @@ not load the optional bridge client or its HTTP transport:
 Write support is deliberately split into narrow desired/plan/apply slices.
 Shared folders are limited to registered directories on mounted NAS volumes;
 privileges only touch the selected directory's non-recursive POSIX ACL; NFS
-only owns one generated file below ``/etc/exports.d``. Formatting, pool
-deletion, recursive permission changes, and arbitrary protocol options remain
-outside this module.
+only owns one generated file below ``/etc/exports.d``. Pool writes are limited
+to a separately reviewed two-blank-disk ZFS mirror creator. Pool deletion,
+expansion, replacement, recursive permission changes, signature wiping, and
+arbitrary protocol options remain outside this module.
 """
 
 from __future__ import annotations
@@ -49,6 +50,11 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from appliance.native_storage_pool import (
+    apply_zfs_mirror,
+    plan_zfs_mirror,
+    zfs_mirror_candidates,
+)
 from appliance.native_storage_probe import (
     Probe,
     evidence,
@@ -878,6 +884,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "nfs.share.private-network.v1",
     "nfs.share.remove.safe.v1",
     "filesystem.quota.user-group.v1",
+    "storage.pool.zfs-mirror.create.v1",
 )
 
 
@@ -906,6 +913,8 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("nfs.share.remove.safe.v1")
     if not (_native_command_tools_available("zfs") or _native_quota_tools_available()):
         unavailable.add("filesystem.quota.user-group.v1")
+    if not _native_command_tools_available("zpool", "zfs", "lsblk", "wipefs"):
+        unavailable.add("storage.pool.zfs-mirror.create.v1")
     return [
         capability for capability in _NATIVE_WRITE_CAPABILITIES if capability not in unavailable
     ]
@@ -3774,6 +3783,7 @@ __all__ = [
     "apply_smb",
     "apply_user",
     "apply_user_password",
+    "apply_zfs_mirror",
     "block_devices",
     "filesystems",
     "md_arrays",
@@ -3787,6 +3797,7 @@ __all__ = [
     "plan_smb",
     "plan_user",
     "plan_user_password",
+    "plan_zfs_mirror",
     "sharing_overview",
     "share_privileges",
     "smart_devices",
@@ -3796,5 +3807,6 @@ __all__ = [
     "storage_topology",
     "validated_devicefile",
     "volume_uuid",
+    "zfs_mirror_candidates",
     "zfs_pools",
 ]

@@ -37,6 +37,8 @@ from appliance.omv_models import (
     UserDesiredState,
     UserPasswordApplyRequest,
     UserPasswordDesiredState,
+    ZfsMirrorApplyRequest,
+    ZfsMirrorDesiredState,
 )
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
 
@@ -65,6 +67,14 @@ def register_native_storage_routes(router: APIRouter) -> None:
     @router.get("/topology")
     async def topology() -> dict[str, Any]:
         return await run_in_threadpool(native_storage.storage_topology)
+
+    @router.get("/pools/zfs-mirror/candidates")
+    async def zfs_mirror_candidates() -> dict[str, Any]:
+        try:
+            devices = await run_in_threadpool(native_storage.zfs_mirror_candidates)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 ZFS 候选磁盘探测不可用") from exc
+        return {"devices": devices, "readOnly": True, "source": "native"}
 
     @router.get("/smart/devices")
     async def smart_devices() -> dict[str, Any]:
@@ -645,6 +655,35 @@ def create_omv_alias_router(
             apply_fn=native_storage.apply_quota,
             desired=body.desired.model_dump(by_alias=True),
             plan_id=body.plan_id,
+        )
+
+    # --- Destructive ZFS mirror creation --------------------------------
+    @router.post("/pools/zfs-mirror/plan")
+    async def plan_zfs_mirror(body: ZfsMirrorDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_storage.plan_zfs_mirror, body.model_dump(by_alias=True)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="原生 ZFS 存储池暂不可用") from exc
+
+    @router.post("/pools/zfs-mirror/apply")
+    async def apply_zfs_mirror_route(
+        body: ZfsMirrorApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="omv.zfs-mirror.create",
+            plan_fn=native_storage.plan_zfs_mirror,
+            apply_fn=native_storage.apply_zfs_mirror,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={"name": body.desired.name, "devices": body.desired.devices},
         )
 
     return router

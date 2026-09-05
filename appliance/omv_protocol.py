@@ -41,6 +41,9 @@ USER_CONTROL_CAPABILITY = "account.user.create.v1"
 USER_PASSWORD_DESIRED_SCHEMA = "echo.omv.user-password-desired.v1"  # nosec B105
 USER_PASSWORD_PLAN_SCHEMA = "echo.omv.user-password-plan.v1"  # nosec B105
 USER_PASSWORD_CONTROL_CAPABILITY = "account.user.password.reset.v1"  # nosec B105
+ZFS_MIRROR_DESIRED_SCHEMA = "echo.omv.zfs-mirror-desired.v1"
+ZFS_MIRROR_PLAN_SCHEMA = "echo.omv.zfs-mirror-plan.v1"
+ZFS_MIRROR_CONTROL_CAPABILITY = "storage.pool.zfs-mirror.create.v1"
 HMAC_SAFETY_CONTRACT = "hmacBoundNeverReturnedOrAudited"
 MAX_QUOTA_BYTES = 2**63 - 1
 _DEVICEFILE_PATTERN = re.compile(r"/dev/[A-Za-z0-9._/+:-]+")
@@ -75,6 +78,10 @@ _WINDOWS_RESERVED_NAMES = {
     *(f"com{index}" for index in range(1, 10)),
     *(f"lpt{index}" for index in range(1, 10)),
 }
+_ZFS_POOL_NAME_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,31}")
+_ZFS_WHOLE_DISK_PATTERN = re.compile(
+    r"/dev/(?:sd[a-z]+|vd[a-z]+|xvd[a-z]+|nvme\d+n\d+|mmcblk\d+)"
+)
 
 
 class OmvUnavailable(RuntimeError):
@@ -118,6 +125,39 @@ def validate_devicefile(devicefile: str) -> str:
     ):
         raise ValueError("invalid OMV device path")
     return devicefile
+
+
+def validate_zfs_mirror_desired(value: Any) -> dict[str, Any]:
+    expected = {"schema", "name", "devices", "dataLossConfirmed"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("ZFS mirror desired state has unexpected fields")
+    if value.get("schema") != ZFS_MIRROR_DESIRED_SCHEMA:
+        raise ValueError("ZFS mirror desired-state schema is unsupported")
+    name = value.get("name")
+    if not isinstance(name, str) or _ZFS_POOL_NAME_PATTERN.fullmatch(name) is None:
+        raise ValueError("ZFS pool name must be a lowercase portable name of at most 32 characters")
+    if name.startswith(("mirror", "raidz", "draid", "spare", "log")) or re.match(
+        r"c\d", name
+    ):
+        raise ValueError("ZFS pool name uses a reserved OpenZFS prefix")
+    devices = value.get("devices")
+    if not isinstance(devices, list) or len(devices) != 2:
+        raise ValueError("ZFS mirror creation requires exactly two whole disks")
+    if not all(isinstance(device, str) for device in devices):
+        raise ValueError("ZFS mirror devices must be device paths")
+    normalized = sorted(devices)
+    if len(set(normalized)) != 2 or any(
+        _ZFS_WHOLE_DISK_PATTERN.fullmatch(device) is None for device in normalized
+    ):
+        raise ValueError("ZFS mirror devices must be two distinct supported whole disks")
+    if value.get("dataLossConfirmed") is not True:
+        raise ValueError("ZFS mirror creation requires dataLossConfirmed=true")
+    return {
+        "schema": ZFS_MIRROR_DESIRED_SCHEMA,
+        "name": name,
+        "devices": normalized,
+        "dataLossConfirmed": True,
+    }
 
 
 def validate_omv_uuid(value: str) -> str:

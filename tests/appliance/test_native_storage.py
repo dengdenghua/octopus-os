@@ -77,6 +77,7 @@ def test_native_status_advertises_only_the_available_write_slice(
         "nfs.share.private-network.v1",
         "nfs.share.remove.safe.v1",
         "filesystem.quota.user-group.v1",
+        "storage.pool.zfs-mirror.create.v1",
     ]
 
 
@@ -1106,6 +1107,78 @@ def test_native_alias_groups_apply_rejects_a_stale_plan(
     )
 
     assert response.status_code == 409
+
+
+def test_native_alias_binds_zfs_mirror_creation_to_destructive_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    plan_id = "f" * 64
+    current_plan = {"planId": plan_id, "operation": "create", "requiresApproval": True}
+    applied = {**current_plan, "applied": True, "verified": True}
+    approval_calls: list[dict[str, Any]] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            approval_calls.append(kwargs)
+
+    class Audit:
+        def record(self, **kwargs: Any) -> None:
+            audit_calls.append(kwargs)
+
+    monkeypatch.setattr(native_storage, "plan_zfs_mirror", lambda _desired: current_plan)
+    monkeypatch.setattr(
+        native_storage,
+        "apply_zfs_mirror",
+        lambda _desired, _plan_id: applied,
+    )
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/appliance/omv/pools/zfs-mirror/apply",
+        json={
+            "desired": {
+                "schema": "echo.omv.zfs-mirror-desired.v1",
+                "name": "family",
+                "devices": ["/dev/sdb", "/dev/sdc"],
+                "dataLossConfirmed": True,
+            },
+            "planId": plan_id,
+        },
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+
+    assert response.status_code == 200
+    assert approval_calls[0]["action"] == "omv.zfs-mirror.create"
+    assert {entry["action"] for entry in audit_calls} == {"omv.zfs-mirror.create"}
+
+
+def test_native_alias_exposes_only_server_validated_zfs_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    expected = [
+        {
+            "devicefile": "/dev/sdb",
+            "sizeBytes": 8 * 1024**3,
+            "serial": "disk-b",
+            "wwn": None,
+            "model": "QEMU HARDDISK",
+        }
+    ]
+    monkeypatch.setattr(native_storage, "zfs_mirror_candidates", lambda: expected)
+    app = FastAPI()
+    app.include_router(create_omv_alias_router())
+
+    response = TestClient(app).get(
+        "/api/appliance/omv/pools/zfs-mirror/candidates"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"devices": expected, "readOnly": True, "source": "native"}
 
 
 # --- Write-plane slices: accounts, SMB, quota (subprocess mocked) --------
