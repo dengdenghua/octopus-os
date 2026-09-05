@@ -349,6 +349,40 @@ export type OmvSharedFolderDetachPlan = {
   dataPreserved?: true;
 };
 
+export type OmvSharedFolderDeleteDesiredState = {
+  schema: "echo.omv.shared-folder-delete-desired.v1";
+  sharedFolderRef: string;
+  emptyOnly: true;
+};
+
+export type OmvSharedFolderDeletePlan = {
+  schema: "echo.omv.shared-folder-delete-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "remove";
+  requiresApproval: true;
+  shareUuid: string;
+  sharedFolder: OmvSharedFolder;
+  desired: OmvSharedFolderDeleteDesiredState;
+  changes: Array<{
+    field: "directory" | "registration";
+    before: "empty" | "managed";
+    after: "deleted" | "removed";
+  }>;
+  safety: {
+    data: "emptyDirectoryOnly";
+    directory: "deleted";
+    dependentShares: "mustBeAbsent";
+    recursive: "never";
+    mount: "mountedWritableOnly";
+    rollback: "registryAndEmptyDirectory";
+  };
+  applied?: boolean;
+  verified?: boolean;
+  directoryDeleted?: boolean;
+  dataDeleted?: boolean;
+};
+
 export type OmvSharePrivilege = {
   type: "user" | "group";
   id: number;
@@ -801,6 +835,29 @@ export function applyOmvSharedFolderDetach(
     "/api/appliance/omv/sharing/folders/detach/apply",
     { desired, planId },
     "无法解除共享文件夹登记",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function planOmvSharedFolderDelete(
+  desired: OmvSharedFolderDeleteDesiredState,
+): Promise<OmvSharedFolderDeletePlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/folders/delete/plan",
+    desired,
+    "无法生成空目录删除预览",
+  );
+}
+
+export function applyOmvSharedFolderDelete(
+  desired: OmvSharedFolderDeleteDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvSharedFolderDeletePlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/folders/delete/apply",
+    { desired, planId },
+    "无法删除空共享文件夹",
     approvalHeader(approvalToken),
   );
 }

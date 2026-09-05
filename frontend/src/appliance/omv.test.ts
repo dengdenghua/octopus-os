@@ -5,6 +5,7 @@ import {
   applyOmvNfsShare,
   applyOmvNfsShareRemove,
   applyOmvSharedFolder,
+  applyOmvSharedFolderDelete,
   applyOmvSharedFolderDetach,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
@@ -22,6 +23,7 @@ import {
   planOmvNfsShareRemove,
   planOmvGroup,
   planOmvSharedFolder,
+  planOmvSharedFolderDelete,
   planOmvSharedFolderDetach,
   planOmvSharePrivilege,
   planOmvSmbShare,
@@ -462,6 +464,98 @@ describe("OMV read-only API client", () => {
         "X-Echo-Approval"
       ],
     ).toBe("one-shot-detach-token");
+  });
+
+  it("keeps empty-folder deletion behind preview and one-shot approval", async () => {
+    const desired = {
+      schema: "echo.omv.shared-folder-delete-desired.v1" as const,
+      sharedFolderRef: "11111111-2222-4333-8444-555555555555",
+      emptyOnly: true as const,
+    };
+    const plan = {
+      schema: "echo.omv.shared-folder-delete-plan.v1" as const,
+      planId: "6".repeat(64),
+      baseRevision: "7".repeat(64),
+      operation: "remove" as const,
+      requiresApproval: true as const,
+      shareUuid: desired.sharedFolderRef,
+      sharedFolder: {
+        uuid: desired.sharedFolderRef,
+        name: "Empty_Drop",
+        comment: "Temporary share",
+        relativePath: "Empty_Drop",
+        device: "/dev/sdb1",
+        status: "MOUNTED",
+        inUse: true,
+        supportsAcl: true,
+      },
+      desired,
+      changes: [
+        {
+          field: "directory" as const,
+          before: "empty" as const,
+          after: "deleted" as const,
+        },
+        {
+          field: "registration" as const,
+          before: "managed" as const,
+          after: "removed" as const,
+        },
+      ],
+      safety: {
+        data: "emptyDirectoryOnly" as const,
+        directory: "deleted" as const,
+        dependentShares: "mustBeAbsent" as const,
+        recursive: "never" as const,
+        mount: "mountedWritableOnly" as const,
+        rollback: "registryAndEmptyDirectory" as const,
+      },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...plan,
+            applied: true,
+            verified: true,
+            directoryDeleted: true,
+            dataDeleted: false,
+          }),
+          { status: 200 },
+        ),
+      );
+
+    expect((await planOmvSharedFolderDelete(desired)).planId).toBe(plan.planId);
+    expect(
+      (
+        await applyOmvSharedFolderDelete(
+          desired,
+          plan.planId,
+          "one-shot-delete-token",
+        )
+      ).directoryDeleted,
+    ).toBe(true);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/sharing/folders/delete/plan",
+      "/api/appliance/omv/sharing/folders/delete/apply",
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual(
+      desired,
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect(
+      (fetchMock.mock.calls[1]?.[1]?.headers as Record<string, string>)[
+        "X-Echo-Approval"
+      ],
+    ).toBe("one-shot-delete-token");
   });
 
   it("keeps share privilege preview and approved apply as separate requests", async () => {

@@ -11,6 +11,7 @@ import {
   ServerIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
+  Trash2Icon,
   UserPlusIcon,
   UserRoundIcon,
   UsersRoundIcon,
@@ -44,6 +45,7 @@ import {
   applyOmvNfsShare,
   applyOmvNfsShareRemove,
   applyOmvSharedFolder,
+  applyOmvSharedFolderDelete,
   applyOmvSharedFolderDetach,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
@@ -56,6 +58,7 @@ import {
   planOmvNfsShare,
   planOmvNfsShareRemove,
   planOmvSharedFolder,
+  planOmvSharedFolderDelete,
   planOmvSharedFolderDetach,
   planOmvSharePrivilege,
   planOmvSmbShare,
@@ -71,6 +74,8 @@ import {
   type OmvQuotaDesiredState,
   type OmvQuotaPlan,
   type OmvSharedFolder,
+  type OmvSharedFolderDeleteDesiredState,
+  type OmvSharedFolderDeletePlan,
   type OmvSharedFolderDesiredState,
   type OmvSharedFolderDetachDesiredState,
   type OmvSharedFolderDetachPlan,
@@ -205,6 +210,13 @@ export function OmvSharingPanel() {
   const [folderDetachPlanning, setFolderDetachPlanning] = useState(false);
   const [folderDetachApprovalOpen, setFolderDetachApprovalOpen] =
     useState(false);
+  const [folderDeleteDesired, setFolderDeleteDesired] =
+    useState<OmvSharedFolderDeleteDesiredState | null>(null);
+  const [folderDeletePlan, setFolderDeletePlan] =
+    useState<OmvSharedFolderDeletePlan | null>(null);
+  const [folderDeletePlanning, setFolderDeletePlanning] = useState(false);
+  const [folderDeleteApprovalOpen, setFolderDeleteApprovalOpen] =
+    useState(false);
   const [editingNfsFolder, setEditingNfsFolder] =
     useState<OmvSharedFolder | null>(null);
   const [nfsDesired, setNfsDesired] = useState<OmvNfsDesiredState | null>(null);
@@ -302,6 +314,9 @@ export function OmvSharingPanel() {
     setNfsPlan(null);
     setFolderPlan(null);
     setFolderDesired(null);
+    setFolderDeletePlan(null);
+    setFolderDeleteDesired(null);
+    setFolderDeleteApprovalOpen(false);
     setGroupPlan(null);
     setGroupDesired(null);
     setUserPlan(null);
@@ -549,6 +564,8 @@ export function OmvSharingPanel() {
     setFolderDetachPlanning(true);
     setFolderDetachDesired(nextDesired);
     setFolderDetachPlan(null);
+    setFolderDeleteDesired(null);
+    setFolderDeletePlan(null);
     setError(null);
     try {
       setFolderDetachPlan(await planOmvSharedFolderDetach(nextDesired));
@@ -579,6 +596,55 @@ export function OmvSharingPanel() {
     setFolderDetachApprovalOpen(false);
     setFolderDetachDesired(null);
     setFolderDetachPlan(null);
+    setReloadKey((value) => value + 1);
+  };
+
+  const previewSharedFolderDelete = async (folder: OmvSharedFolder) => {
+    if (
+      status?.source !== "native" ||
+      !status.capabilities?.includes("shared-folder.delete.empty.v1") ||
+      folder.relativePath.startsWith("/")
+    ) {
+      return;
+    }
+    const nextDesired: OmvSharedFolderDeleteDesiredState = {
+      schema: "echo.omv.shared-folder-delete-desired.v1",
+      sharedFolderRef: folder.uuid,
+      emptyOnly: true,
+    };
+    setFolderDeletePlanning(true);
+    setFolderDeleteDesired(nextDesired);
+    setFolderDeletePlan(null);
+    setFolderDetachDesired(null);
+    setFolderDetachPlan(null);
+    setError(null);
+    try {
+      setFolderDeletePlan(await planOmvSharedFolderDelete(nextDesired));
+    } catch (reason) {
+      setFolderDeletePlan(null);
+      setError(
+        reason instanceof Error ? reason.message : "无法生成空目录删除预览",
+      );
+    } finally {
+      setFolderDeletePlanning(false);
+    }
+  };
+
+  const confirmSharedFolderDelete = async (password: string) => {
+    if (!folderDeleteDesired || !folderDeletePlan) return;
+    const approval = await requestHighRiskApproval(
+      "omv.shared-folder.delete",
+      folderDeletePlan.planId,
+      password,
+    );
+    await applyOmvSharedFolderDelete(
+      folderDeleteDesired,
+      folderDeletePlan.planId,
+      approval.approvalToken,
+    );
+    setFolderDeleteApprovalOpen(false);
+    setFolderDeleteDesired(null);
+    setFolderDeletePlan(null);
     setReloadKey((value) => value + 1);
   };
 
@@ -2298,6 +2364,12 @@ export function OmvSharingPanel() {
                   status?.source === "native" &&
                   folderControlsAllowed &&
                   status.capabilities?.includes("shared-folder.detach.safe.v1");
+                const canDeleteEmptyFolder =
+                  status?.source === "native" &&
+                  folderControlsAllowed &&
+                  status.capabilities?.includes(
+                    "shared-folder.delete.empty.v1",
+                  );
                 return (
                   <article
                     key={folder.uuid}
@@ -2366,6 +2438,26 @@ export function OmvSharingPanel() {
                           解除登记
                         </button>
                       )}
+                      {canDeleteEmptyFolder && (
+                        <button
+                          type="button"
+                          onClick={() => void previewSharedFolderDelete(folder)}
+                          disabled={
+                            folderDeletePlanning &&
+                            folderDeleteDesired?.sharedFolderRef === folder.uuid
+                          }
+                          className="inline-flex h-7 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 text-[10px] font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {folderDeletePlanning &&
+                          folderDeleteDesired?.sharedFolderRef ===
+                            folder.uuid ? (
+                            <Loader2Icon className="size-3 animate-spin" />
+                          ) : (
+                            <Trash2Icon className="size-3" />
+                          )}
+                          删除空目录
+                        </button>
+                      )}
                     </div>
                     {folderDetachPlan?.sharedFolder.uuid === folder.uuid && (
                       <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] text-rose-800">
@@ -2380,6 +2472,23 @@ export function OmvSharingPanel() {
                             className="h-7 shrink-0 rounded-lg bg-rose-600 px-2.5 text-[10px] font-medium text-white hover:bg-rose-700"
                           >
                             管理员确认
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {folderDeletePlan?.sharedFolder.uuid === folder.uuid && (
+                      <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] text-red-800">
+                        <div className="flex items-center justify-between gap-3">
+                          <span>
+                            已确认目录为空且没有 SMB/NFS 依赖；将删除目录和 Echo
+                            登记，不递归删除任何文件。
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setFolderDeleteApprovalOpen(true)}
+                            className="h-7 shrink-0 rounded-lg bg-red-600 px-2.5 text-[10px] font-medium text-white hover:bg-red-700"
+                          >
+                            管理员确认删除
                           </button>
                         </div>
                       </div>
@@ -3339,6 +3448,19 @@ export function OmvSharingPanel() {
         confirmLabel="确认解除登记"
         onCancel={() => setFolderDetachApprovalOpen(false)}
         onConfirm={confirmSharedFolderDetach}
+      />
+      <HighRiskApprovalDialog
+        open={folderDeleteApprovalOpen && Boolean(folderDeletePlan)}
+        title="删除空共享文件夹"
+        description="Echo 只会删除已登记、当前已挂载可写、确认为空且没有 SMB/NFS 依赖的目录，并移除对应登记；不会递归删除文件。若目录状态在审批前变化，apply 会拒绝并要求重新预览。"
+        targetLabel={
+          folderDeletePlan
+            ? `${folderDeletePlan.sharedFolder.name}/ · 仅空目录 · ${folderDeletePlan.planId.slice(0, 12)}`
+            : undefined
+        }
+        confirmLabel="确认删除空目录"
+        onCancel={() => setFolderDeleteApprovalOpen(false)}
+        onConfirm={confirmSharedFolderDelete}
       />
       <HighRiskApprovalDialog
         open={approvalOpen && Boolean(plan)}

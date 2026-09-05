@@ -8,6 +8,7 @@ import {
   applyOmvNfsShare,
   applyOmvNfsShareRemove,
   applyOmvSharedFolder,
+  applyOmvSharedFolderDelete,
   applyOmvSharedFolderDetach,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
@@ -22,6 +23,7 @@ import {
   planOmvNfsShare,
   planOmvNfsShareRemove,
   planOmvSharedFolder,
+  planOmvSharedFolderDelete,
   planOmvSharedFolderDetach,
   planOmvSharePrivilege,
   planOmvSmbShare,
@@ -48,6 +50,7 @@ vi.mock("./omv", () => ({
   applyOmvNfsShare: vi.fn(),
   applyOmvNfsShareRemove: vi.fn(),
   applyOmvSharedFolder: vi.fn(),
+  applyOmvSharedFolderDelete: vi.fn(),
   applyOmvSharedFolderDetach: vi.fn(),
   applyOmvSharePrivilege: vi.fn(),
   applyOmvSmbShare: vi.fn(),
@@ -62,6 +65,7 @@ vi.mock("./omv", () => ({
   planOmvNfsShare: vi.fn(),
   planOmvNfsShareRemove: vi.fn(),
   planOmvSharedFolder: vi.fn(),
+  planOmvSharedFolderDelete: vi.fn(),
   planOmvSharedFolderDetach: vi.fn(),
   planOmvSharePrivilege: vi.fn(),
   planOmvSmbShare: vi.fn(),
@@ -1149,6 +1153,100 @@ describe("OMV sharing and users settings", () => {
       ),
     );
     expect(applyOmvSharedFolderDetach).toHaveBeenCalledWith(
+      desired,
+      plan.planId,
+      "approval-token",
+    );
+  });
+
+  it("deletes only a previewed empty native shared folder", async () => {
+    const user = userEvent.setup();
+    const desired = {
+      schema: "echo.omv.shared-folder-delete-desired.v1" as const,
+      sharedFolderRef: shareUuid,
+      emptyOnly: true as const,
+    };
+    const plan = {
+      schema: "echo.omv.shared-folder-delete-plan.v1" as const,
+      planId: "6".repeat(64),
+      baseRevision: "7".repeat(64),
+      operation: "remove" as const,
+      requiresApproval: true as const,
+      shareUuid,
+      sharedFolder: {
+        uuid: shareUuid,
+        name: "Family",
+        comment: "Family files",
+        relativePath: "Family/",
+        device: "/dev/md0",
+        status: "MOUNTED",
+        inUse: true,
+        supportsAcl: true,
+      },
+      desired,
+      changes: [
+        {
+          field: "directory" as const,
+          before: "empty" as const,
+          after: "deleted" as const,
+        },
+        {
+          field: "registration" as const,
+          before: "managed" as const,
+          after: "removed" as const,
+        },
+      ],
+      safety: {
+        data: "emptyDirectoryOnly" as const,
+        directory: "deleted" as const,
+        dependentShares: "mustBeAbsent" as const,
+        recursive: "never" as const,
+        mount: "mountedWritableOnly" as const,
+        rollback: "registryAndEmptyDirectory" as const,
+      },
+    };
+    vi.mocked(fetchOmvStatus).mockResolvedValueOnce({
+      configured: true,
+      available: true,
+      readOnly: false,
+      adminUrl: null,
+      capabilities: ["shared-folder.delete.empty.v1"],
+      source: "native",
+    });
+    vi.mocked(fetchOmvSharingOverview).mockResolvedValueOnce({
+      ...(await fetchOmvSharingOverview()),
+      smb: { enabled: false, shares: [] },
+      nfs: { enabled: false, shares: [] },
+    });
+    vi.mocked(planOmvSharedFolderDelete).mockResolvedValue(plan);
+    vi.mocked(applyOmvSharedFolderDelete).mockResolvedValue({
+      ...plan,
+      applied: true,
+      verified: true,
+      directoryDeleted: true,
+      dataDeleted: false,
+    });
+    render(<OmvSharingPanel />);
+
+    await user.click(await screen.findByRole("button", { name: "删除空目录" }));
+    await waitFor(() =>
+      expect(planOmvSharedFolderDelete).toHaveBeenCalledWith(desired),
+    );
+    expect(
+      screen.getByText(/已确认目录为空且没有 SMB\/NFS 依赖/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "管理员确认删除" }));
+    await user.type(screen.getByLabelText("设备管理员密码"), "device-password");
+    await user.click(screen.getByRole("button", { name: "确认删除空目录" }));
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "omv.shared-folder.delete",
+        plan.planId,
+        "device-password",
+      ),
+    );
+    expect(applyOmvSharedFolderDelete).toHaveBeenCalledWith(
       desired,
       plan.planId,
       "approval-token",
