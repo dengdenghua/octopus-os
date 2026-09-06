@@ -15,13 +15,17 @@
 > OMV 的历史交付证据只描述上一阶段，不再代表 P3 的目标运行时架构。
 >
 > **P3 装机基线更新：** Debian 13 hybrid ISO 已默认使用无 HDMI shell 的 NAS
-> profile，并在 UEFI VM 完成从空盘安装、首次开机幂等续跑、`multi-user.target`、
-> 六项核心服务与 HTTP 入口验证。ISO 内嵌当前提交的无父 Git 快照，目标机从本地
-> bundle 恢复精确源码树，不再依赖移动的远端分支；提交 `4d2b36c` 的制品
-> `echo-os-4d2b36c.iso` 为 1,031,798,784 字节，SHA-256
-> `828ddecaaedaa7d97697a599faff5c2e6bb32efa0803ccddf47d21907d74b3cd`。
-> 但依赖安装仍会在线访问 Debian、Docker、NodeSource 与 npm/pnpm；对照飞牛随
-> `trimfs.tgz` 交付完整根系统，这仍是当前装机链最重要的产品化缺口，不能称为全离线安装。
+> profile，并在全新 UEFI VM 完成空盘安装、首次开机、断电式二次启动、
+> `multi-user.target`、六项核心服务与 HTTP 入口验证。ISO 内嵌当前提交的无父 Git
+> 快照和绑定同一 Git tree 的预构建 Web 载荷；目标机从本地 bundle 恢复精确源码树，
+> 校验 Web SHA/tree 后原子安装并消费载荷，不再依赖移动的远端分支，也不再安装
+> Node.js、npm、pnpm 或目标机 `node_modules`。提交 `eb50e47` 的制品
+> `echo-os-eb50e47.iso` 为 1,056,964,608 字节，SHA-256
+> `471929f5c8e798fa346ba9448938ef3ae4bb7c2c07515a7b45de46bc9ffd4db7`；VM 中镜像提交
+> `eb50e470a3b32bcf3b2dad9459b957abdca1fb13`、源码与 Web tree
+> `bb92553b693fd2c187b537bf483e8abfa2ca0072` 均已回读一致，firstboot 不足八分钟完成。
+> 但基础包、固件、Docker 与 Python 依赖仍会在线访问 Debian、Docker 和 PyPI；对照飞牛
+> 随 `trimfs.tgz` 交付完整根系统，这仍是当前装机链最重要的产品化缺口，不能称为全离线安装。
 
 ## 结论
 
