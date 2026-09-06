@@ -70,6 +70,43 @@ Suites: trixie-security
 Components: main contrib non-free non-free-firmware
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
+  # Debian 13 安装器可能同时留下传统 sources.list 和 deb822 文件。只注释
+  # 与本机 Debian 镜像/官方安全源重复的行，第三方仓库原样保留；原文件留
+  # 一份备份，便于运维审计或手工恢复。
+  if [ -f /etc/apt/sources.list ]; then
+    [ -f /etc/apt/sources.list.echo-installer ] \
+      || cp -a /etc/apt/sources.list /etc/apt/sources.list.echo-installer
+    local mirror_host sources_tmp
+    mirror_host="${DEBIAN_MIRROR#*://}"
+    mirror_host="${mirror_host%%/*}"
+    sources_tmp="$(mktemp /etc/apt/.sources.list.XXXXXX)"
+    awk -v mirror_host="$mirror_host" '
+      function url_host(url, value) {
+        value = tolower(url)
+        sub(/^[a-z]+:\/\//, "", value)
+        sub(/\/.*/, "", value)
+        return value
+      }
+      {
+        if ($1 == "deb" || $1 == "deb-src") {
+          url = ""
+          for (field = 2; field <= NF; field++) {
+            if ($field ~ /^[a-z]+:\/\//) { url = $field; break }
+          }
+          host = url_host(url)
+          if (host == tolower(mirror_host) || host == "deb.debian.org" ||
+              host == "security.debian.org") {
+            print "# Echo OS: duplicate disabled; canonical entry is debian.sources"
+            print "# " $0
+            next
+          }
+        }
+        print
+      }
+    ' /etc/apt/sources.list >"$sources_tmp"
+    chmod 0644 "$sources_tmp"
+    mv "$sources_tmp" /etc/apt/sources.list
+  fi
   apt_retry apt-get update
   apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg lsb-release
@@ -163,6 +200,38 @@ step_echo_src() {
     || git config --system --add safe.directory "$OS_DIR" 2>/dev/null \
     || git config --global --add safe.directory "$OS_DIR" 2>/dev/null || true
   mkdir -p "$OS_DIR"
+  local SOURCE_BUNDLE="${ECHO_SOURCE_BUNDLE:-/opt/echo-os-source.bundle}"
+  local SOURCE_REF="${ECHO_SOURCE_BUNDLE_REF:-}"
+  local SOURCE_TREE="${ECHO_SOURCE_TREE:-}"
+  local IMAGE_COMMIT="${ECHO_IMAGE_COMMIT:-unknown}"
+  local OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
+
+  # 正式 ISO 携带一个无父提交的 Git bundle，tree 精确等于构建 HEAD。
+  # 先从本地 bundle 恢复可更新的 .git 工作树，完全绕开首启 DNS/远端分支；
+  # 旧介质没有 bundle 时才进入后面的 clone + overlay 兼容路径。
+  if [ -f "$SOURCE_BUNDLE" ]; then
+    [ -n "$SOURCE_REF" ] || { log "✗ 源码 bundle 缺少 ref 身份"; return 1; }
+    [ -n "$SOURCE_TREE" ] || { log "✗ 源码 bundle 缺少 tree 身份"; return 1; }
+    if [ -n "$(ls -A "$OS_DIR" 2>/dev/null)" ]; then
+      mv "$OS_DIR" "$OS_DIR.pre-bundle.$$"
+      mkdir -p "$OS_DIR"
+    fi
+    git init -q "$OS_DIR"
+    git -C "$OS_DIR" fetch -q "$SOURCE_BUNDLE" "$SOURCE_REF"
+    git -C "$OS_DIR" checkout -q -B echo-image FETCH_HEAD
+    [ "$(git -C "$OS_DIR" rev-parse 'HEAD^{tree}')" = "$SOURCE_TREE" ] \
+      || { log "✗ 源码 bundle tree 校验失败"; return 1; }
+    [ -z "$(git -C "$OS_DIR" status --porcelain)" ] \
+      || { log "✗ 源码 bundle checkout 非干净状态"; return 1; }
+    git -C "$OS_DIR" remote add origin "$OS_REPO"
+    printf '%s\n' "$IMAGE_COMMIT" >/etc/echo-os/image-commit
+    rm -f "$SOURCE_BUNDLE" "$OVERLAY"
+    log "  已从 ISO 恢复精确源码快照 $IMAGE_COMMIT (无需网络)"
+    done_mark echo-src
+    chmod +x "$OS_DIR/deploy/provision/base/setup-base.sh" 2>/dev/null || true
+    return 0
+  fi
+
   # 开机自跑(firstboot.service)时 DHCP/DNS 可能晚于 network-online.target
   # 就绪,git 网络操作报 "Could not resolve host"(VM 开机实测)。对 git 网络
   # 操作做退避重试(6 次 x10s);目标分支 fetch 不重试 —— 分支缺失是确定性
@@ -213,7 +282,6 @@ step_echo_src() {
   # 生成、preseed late_command 落到 $ECHO_OVERLAY),解压覆盖到克隆树之上,
   # 等价于直接 clone p3-provision —— 无需把分支 push 到远程即可拿到完整 NAS 产品。
   # 典型内容:appliance/nas/ 路由、deploy/provision/ 装机路线、品牌重命名等。
-  local OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
   if [ -f "$OVERLAY" ]; then
     log "  应用 A 路线 overlay: $OVERLAY"
     tar xzf "$OVERLAY" -C "$OS_DIR"

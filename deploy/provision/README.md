@@ -32,7 +32,7 @@ U 盘启动
   ├─ d-i 无人值守跑完:分区 → 装 Debian → 装 grub
   │     (静态策略来自 preseed.cfg)
   │
-  ├─ late_command → 投放 setup-base.sh + 启用 echo-firstboot.service
+  ├─ late_command → 投放 setup-base.sh + 精确源码 bundle + 启用 firstboot
   │
   └─ reboot
         └─ 首次开机:setup-base.sh 七步
@@ -81,6 +81,11 @@ unit 或 systemd 操作失败时会恢复原 unit；已成功安装的 Debian �
 ZFS 编译、Docker 安装、前端构建都要联网且耗时。放进 d-i,失败会让整台机器
 装不起来;放到首次开机,可重试、可查日志(`journalctl -u echo-firstboot`),
 装机本身则又快又稳。
+
+源码本身不依赖首启网络：构建器把当前 HEAD 的完整 Git tree 做成单提交
+`echo-source.bundle` 放入 ISO。首次开机从本地 bundle 恢复带 `.git` 的精确
+工作树，再联网安装系统和应用依赖；不会把移动中的远端 `os-main` 与旧
+overlay 混成一个不可复现版本。
 
 每步有哨兵文件(`/var/lib/echo-os/firstboot/<step>`),重跑自动跳过已完成
 的部分。

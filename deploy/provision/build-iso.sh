@@ -24,6 +24,7 @@ MIRROR=""
 OUT_ISO="$REPO_ROOT/dist/echo-os.iso"
 INSTALL_PROFILE="${ECHO_INSTALL_PROFILE:-nas}"
 WORK=""
+SNAPSHOT_REF=""
 
 log()  { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m  ! %s\033[0m\n' "$*" >&2; }
@@ -56,7 +57,13 @@ command -v cpio >/dev/null 2>&1 || die "缺少 cpio: sudo apt install cpio"
 command -v gzip >/dev/null 2>&1 || die "缺少 gzip: sudo apt install gzip"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/echo-iso.XXXXXX")"
-trap 'rm -rf "$WORK"' EXIT
+cleanup() {
+  if [ -n "$SNAPSHOT_REF" ]; then
+    git update-ref -d "$SNAPSHOT_REF" 2>/dev/null || true
+  fi
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
 mkdir -p "$WORK/src" "$WORK/iso"
 
 # ── 1. 取得 Debian netinst ────────────────────────────────
@@ -112,19 +119,47 @@ if [ -n "$MIRROR" ]; then
   echo "$MIRROR" > "$PAYLOAD/mirror.txt"
 fi
 
-# 允许注入自定义仓库/分支
+# ── 3a. 生成精确、无需网络的源码快照 bundle ────────────
+# 不能把“相对某个 os-main 的文件覆盖包”应用到移动的远端分支上：删除记录
+# 会丢失，上游后来新增/修改的文件也会混进成品。这里创建一个无父提交，tree
+# 与当前 HEAD 完全相同；bundle 因而只携带这一版所需对象，目标机还能保留
+# 正常的 .git 仓库，后续可重新绑定发布远端。
+SOURCE_COMMIT="$(git rev-parse HEAD)"
+SOURCE_TREE="$(git rev-parse 'HEAD^{tree}')"
+SNAPSHOT_REF="refs/echo-image/snapshot-$$"
+SOURCE_BUNDLE_REF="$SNAPSHOT_REF"
+SNAPSHOT_COMMIT="$({
+  printf 'Echo OS installer snapshot\n\nsource-commit: %s\n' "$SOURCE_COMMIT"
+} | git -c user.name='Echo OS Installer' \
+        -c user.email='installer@echo-os.local' \
+        -c commit.gpgSign=false commit-tree "$SOURCE_TREE")"
+git update-ref "$SNAPSHOT_REF" "$SNAPSHOT_COMMIT"
+git bundle create "$PAYLOAD/echo-source.bundle" "$SNAPSHOT_REF"
+git bundle verify "$PAYLOAD/echo-source.bundle" >/dev/null
+[ "$(git show -s --format=%T "$SNAPSHOT_COMMIT")" = "$SOURCE_TREE" ] \
+  || die "源码快照 tree 校验失败"
+git update-ref -d "$SNAPSHOT_REF"
+SNAPSHOT_REF=""
+log "已嵌入精确源码快照 $SOURCE_COMMIT"
+
+# 允许注入自定义仓库/分支；bundle 是正式 ISO 的首选来源，仓库参数保留给
+# 后续更新和不含 bundle 的旧版/VM 测试介质。
 cat >"$PAYLOAD/echo-env.sh" <<EOF
 # 由 build-iso.sh 生成;首次开机脚本会 source 它
 ECHO_OS_REPO="${ECHO_OS_REPO:-https://github.com/dengdenghua/octopus-os.git}"
 ECHO_OS_BRANCH="${ECHO_OS_BRANCH:-p3-provision}"
 ECHO_OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
+ECHO_SOURCE_BUNDLE="/opt/echo-os-source.bundle"
+ECHO_SOURCE_BUNDLE_REF="$SOURCE_BUNDLE_REF"
+ECHO_SOURCE_TREE="$SOURCE_TREE"
+ECHO_IMAGE_COMMIT="$SOURCE_COMMIT"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 ECHO_INSTALL_PROFILE="$INSTALL_PROFILE"
 ECHO_HDMI_SHELL="$HDMI_SHELL"
 ECHO_DESKTOP="$DESKTOP_MODE"
 EOF
 
-# ── 3a. 注入最小 initrd 段 ───────────────────────────────
+# ── 3b. 注入最小 initrd 段 ───────────────────────────────
 # Linux initramfs 支持连续的压缩 cpio 段；直接追加独立段可保留 Debian 原始
 # initrd，不需要解包或 patch 上游启动脚本。late_command 执行时 CD 已挂载，
 # 因此完整载荷仍由 /cdrom/echo-os 提供。
@@ -148,29 +183,6 @@ while IFS= read -r -d '' initrd; do
 done < <(find "$WORK/iso/install.amd" -type f -name initrd.gz -print0)
 [ "$INITRD_COUNT" -gt 0 ] || die "ISO 内未找到 Debian Installer initrd"
 log "已向 $INITRD_COUNT 个 installer initrd 追加 preseed/TUI"
-
-# ── 3b. A 路线 overlay(自包含首启,无需 push p3-provision)──────────
-# 把"当前分支相对上游 os-main 的改动"打成 tar.gz 嵌进 ISO。首次开机
-# step_echo_src 在 clone 基线后解压覆盖,等价于直接 clone p3-provision。
-# 这样全新机器首启拿到完整 NAS 产品,且不依赖分支是否发布到远程。
-OVERLAY_BASE="$(git merge-base HEAD upstream/os-main 2>/dev/null \
-              || git merge-base HEAD os-main 2>/dev/null \
-              || true)"
-if [ -n "$OVERLAY_BASE" ]; then
-  mapfile -d '' -t OVERLAY_FILES < <(
-    git diff --no-renames --diff-filter=ACMRTUXB --name-only -z \
-      "$OVERLAY_BASE" HEAD 2>/dev/null
-  )
-  if [ "${#OVERLAY_FILES[@]}" -gt 0 ]; then
-    log "生成 A 路线 overlay (相对 $OVERLAY_BASE, ${#OVERLAY_FILES[@]} 文件)"
-    git archive -o "$PAYLOAD/echo-overlay.tar.gz" HEAD -- "${OVERLAY_FILES[@]}" \
-      || warn "overlay 生成失败,跳过(首次开机将仅克隆基线)"
-  else
-    warn "相对 $OVERLAY_BASE 无改动,跳过 overlay"
-  fi
-else
-  warn "找不到上游 os-main 基线,跳过 overlay(请先 git fetch upstream)"
-fi
 
 # ── 4. 改引导配置:指向我们的 preseed ─────────────────────
 log "改写引导参数"

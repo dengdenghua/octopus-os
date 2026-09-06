@@ -121,26 +121,56 @@ def test_vmtest_installer_attaches_and_validates_netinst_iso() -> None:
     assert '"-cdrom `"$IsoPath`" "' in launcher
 
 
-def test_iso_builder_writes_overlay_before_the_pathspec_separator() -> None:
+def test_iso_builder_embeds_an_exact_single_commit_source_bundle() -> None:
     builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
         encoding="utf-8"
     )
 
-    assert (
-        'git archive -o "$PAYLOAD/echo-overlay.tar.gz" HEAD -- "${OVERLAY_FILES[@]}"'
-        in builder
-    )
-    assert 'install -m0644 "$PAYLOAD/echo-overlay.tar.gz"' not in builder
+    assert "commit-tree \"$SOURCE_TREE\"" in builder
+    assert 'git bundle create "$PAYLOAD/echo-source.bundle" "$SNAPSHOT_REF"' in builder
+    assert 'git bundle verify "$PAYLOAD/echo-source.bundle"' in builder
+    assert 'git show -s --format=%T "$SNAPSHOT_COMMIT"' in builder
+    assert 'ECHO_SOURCE_TREE="$SOURCE_TREE"' in builder
 
 
-def test_iso_overlay_excludes_deleted_paths_and_preserves_spaces() -> None:
+def test_firstboot_prefers_local_source_bundle_over_remote_clone() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    source = provision.split("step_echo_src() {", 1)[1].split("\n}\n", 1)[0]
+
+    assert 'if [ -f "$SOURCE_BUNDLE" ]' in source
+    assert 'git -C "$OS_DIR" fetch -q "$SOURCE_BUNDLE" "$SOURCE_REF"' in source
+    assert "rev-parse 'HEAD^{tree}'" in source
+    assert 'git -C "$OS_DIR" remote add origin "$OS_REPO"' in source
+    assert source.index('if [ -f "$SOURCE_BUNDLE" ]') < source.index("git_retry()")
+
+
+def test_firstboot_deduplicates_only_debian_sources_and_keeps_backup() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    apt = provision.split("step_apt() {", 1)[1].split("\n}\n", 1)[0]
+
+    assert "/etc/apt/sources.list.echo-installer" in apt
+    assert 'awk -v mirror_host="$mirror_host"' in apt
+    assert 'host == "deb.debian.org"' in apt
+    assert 'host == "security.debian.org"' in apt
+    assert 'mv "$sources_tmp" /etc/apt/sources.list' in apt
+
+
+def test_formal_installer_persists_source_bundle_and_identity() -> None:
     builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
         encoding="utf-8"
     )
+    preseed = (REPOSITORY / "deploy/provision/installer/preseed.cfg").read_text(
+        encoding="utf-8"
+    )
 
-    assert "mapfile -d '' -t OVERLAY_FILES" in builder
-    assert "--diff-filter=ACMRTUXB --name-only -z" in builder
-    assert '"${OVERLAY_FILES[@]}"' in builder
+    assert 'ECHO_SOURCE_BUNDLE="/opt/echo-os-source.bundle"' in builder
+    assert 'ECHO_SOURCE_BUNDLE_REF="$SOURCE_BUNDLE_REF"' in builder
+    assert 'ECHO_IMAGE_COMMIT="$SOURCE_COMMIT"' in builder
+    assert 'cp "$payload/echo-source.bundle" /target/opt/echo-os-source.bundle' in preseed
 
 
 def test_iso_checksum_refresh_does_not_follow_the_debian_directory_loop() -> None:
