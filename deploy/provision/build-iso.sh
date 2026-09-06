@@ -9,7 +9,7 @@
 # 产物:可刻录 U 盘(dd)/ 可挂 VM 的 hybrid ISO。
 #
 # 用法:
-#   ./build-iso.sh [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
+#   ./build-iso.sh [--profile nas|desktop] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
 #   ./build-iso.sh --iso ~/debian-13.1.0-amd64-netinst.iso --mirror https://mirrors.ustc.edu.cn/debian
 #
 # 依赖:xorriso、cpio、gzip(apt install xorriso cpio gzip)。仅支持 Linux。
@@ -22,6 +22,7 @@ DEBIAN_ISO_URL="${DEBIAN_ISO_URL:-https://cdimage.debian.org/debian-cd/current/a
 INPUT_ISO=""
 MIRROR=""
 OUT_ISO="$REPO_ROOT/dist/echo-os.iso"
+INSTALL_PROFILE="${ECHO_INSTALL_PROFILE:-nas}"
 WORK=""
 
 log()  { printf '\033[1;34m==> %s\033[0m\n' "$*"; }
@@ -33,11 +34,21 @@ while [ $# -gt 0 ]; do
     --iso)    INPUT_ISO="$2"; shift 2 ;;
     --mirror) MIRROR="$2";    shift 2 ;;
     --out)    OUT_ISO="$2";   shift 2 ;;
+    --profile) INSTALL_PROFILE="$2"; shift 2 ;;
     --url)    DEBIAN_ISO_URL="$2"; shift 2 ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) die "未知参数: $1" ;;
   esac
 done
+
+case "$INSTALL_PROFILE" in
+  nas)     HDMI_SHELL="${ECHO_HDMI_SHELL:-off}" ;;
+  desktop) HDMI_SHELL="${ECHO_HDMI_SHELL:-on}" ;;
+  *) die "未知安装配置: $INSTALL_PROFILE (只接受 nas 或 desktop)" ;;
+esac
+DESKTOP_MODE="${ECHO_DESKTOP:-cage}"
+case "$HDMI_SHELL" in off|on|auto) ;; *) die "ECHO_HDMI_SHELL 只接受 off/on/auto" ;; esac
+case "$DESKTOP_MODE" in cage|kwin) ;; *) die "ECHO_DESKTOP 只接受 cage/kwin" ;; esac
 
 [ "$(uname -s)" = "Linux" ] || die "必须在 Linux 上构建(需要 xorriso)"
 command -v xorriso >/dev/null 2>&1 || die "缺少 xorriso: sudo apt install xorriso"
@@ -108,6 +119,9 @@ ECHO_OS_REPO="${ECHO_OS_REPO:-https://github.com/dengdenghua/octopus-os.git}"
 ECHO_OS_BRANCH="${ECHO_OS_BRANCH:-p3-provision}"
 ECHO_OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
+ECHO_INSTALL_PROFILE="$INSTALL_PROFILE"
+ECHO_HDMI_SHELL="$HDMI_SHELL"
+ECHO_DESKTOP="$DESKTOP_MODE"
 EOF
 
 # ── 3a. 注入最小 initrd 段 ───────────────────────────────

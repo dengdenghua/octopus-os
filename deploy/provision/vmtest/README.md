@@ -48,6 +48,7 @@ powershell -File vmtest\tools\launch-vm.ps1 -WorkDir C:\vmtest -Mode boot
 | --- | --- | --- |
 | `/preseed.cfg` | `preseed-vmtest.cfg` | 正式 preseed 的 VM 变体,5 处差异见文件头注释 |
 | `/echo-vmtest/setup-base.sh` | `../base/setup-base.sh` | 与正式版同文件 |
+| `/echo-vmtest/echo-env.sh` | `../vmtest/echo-env.sh` | 固定使用无头 NAS 首启配置 |
 | `/echo-vmtest/echo-firstboot.service` | `../echo-firstboot.service` | 同上 |
 | `/echo-vmtest/99-echo-os` | `../99-echo-os` | 同上 |
 

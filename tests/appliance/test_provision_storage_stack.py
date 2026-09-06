@@ -266,3 +266,47 @@ def test_normal_nas_boot_does_not_enable_the_offline_recovery_unit() -> None:
     assert "systemctl enable echo-recovery.service" not in recovery
     assert "systemctl enable echo-user-backup.service" in recovery
     assert "systemctl enable echo-restore-transaction-health.service" in recovery
+
+
+def test_iso_profiles_default_to_headless_nas_and_persist_firstboot_config() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+    preseed = (REPOSITORY / "deploy/provision/installer/preseed.cfg").read_text(
+        encoding="utf-8"
+    )
+    vm_preseed = (
+        REPOSITORY / "deploy/provision/vmtest/preseed-vmtest.cfg"
+    ).read_text(encoding="utf-8")
+    vm_env = (REPOSITORY / "deploy/provision/vmtest/echo-env.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'INSTALL_PROFILE="${ECHO_INSTALL_PROFILE:-nas}"' in builder
+    assert '--profile) INSTALL_PROFILE="$2"' in builder
+    assert 'nas)     HDMI_SHELL="${ECHO_HDMI_SHELL:-off}"' in builder
+    assert 'desktop) HDMI_SHELL="${ECHO_HDMI_SHELL:-on}"' in builder
+    assert 'ECHO_INSTALL_PROFILE="$INSTALL_PROFILE"' in builder
+    assert 'ECHO_HDMI_SHELL="$HDMI_SHELL"' in builder
+    assert 'cp "$payload/echo-env.sh" /target/etc/echo-os/firstboot.env' in preseed
+    assert "in-target chmod 0644 /etc/echo-os/firstboot.env" in preseed
+    assert "cp /echo-vmtest/echo-env.sh /target/etc/echo-os/firstboot.env" in vm_preseed
+    assert 'ECHO_INSTALL_PROFILE="nas"' in vm_env
+    assert 'ECHO_HDMI_SHELL="off"' in vm_env
+
+
+def test_headless_profile_skips_electron_runtime_and_graphical_shell() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    web = provision.split("step_echo_web() {", 1)[1].split("\n}\n", 1)[0]
+    shell = provision.split("step_shell() {", 1)[1].split("\n}\n", 1)[0]
+
+    assert 'HDMI_MODE="${ECHO_HDMI_SHELL:-off}"' in web
+    assert 'if [ "$HDMI_MODE" = "off" ]' in web
+    assert '[ "$HDMI_MODE" = "auto" ] && ! ls /dev/dri/card*' in web
+    assert "export ELECTRON_SKIP_BINARY_DOWNLOAD=1" in web
+    assert 'HDMI_MODE="${ECHO_HDMI_SHELL:-off}"' in shell
+    assert 'if [ "$HDMI_MODE" = "off" ]' in shell
+    assert 'elif [ "$HDMI_MODE" = "auto" ] && ! ls /dev/dri/card*' in shell
+    assert '[ "$DESKTOP_MODE" = "cage" ]' not in shell

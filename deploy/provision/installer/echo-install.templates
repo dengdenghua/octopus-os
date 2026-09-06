@@ -5,8 +5,9 @@ Description: Echo OS
 Template: echo-os/welcome
 Type: note
 Description: Welcome to Echo OS
- Echo OS starts in the Agent desktop and uses proven storage components such
- as ZFS and Samba. Answer a few questions to begin the installation.
+ Echo OS starts as a headless NAS with a browser interface and proven storage
+ components such as ZFS and Samba. A local HDMI desktop is an optional image
+ build profile. Answer a few questions to begin the installation.
 
 Template: echo-os/disk
 Type: select

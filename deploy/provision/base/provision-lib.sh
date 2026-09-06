@@ -275,6 +275,14 @@ step_echo_web() {
   # 直接 abort(ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY),整段 firstboot
   # 在 5c/7 卡死(VM 实测)。CI=true 让 pnpm 走非交互,跳过确认直接清理继续。
   export CI=true
+  # 纯 Web 模式仍需解析 electron 这个前端开发依赖，但无需下载桌面运行时。
+  # 以最终 HDMI 开关为准，允许 nas + 显式 on、desktop + 显式 off 等覆盖。
+  HDMI_MODE="${ECHO_HDMI_SHELL:-off}"
+  if [ "$HDMI_MODE" = "off" ] || {
+    [ "$HDMI_MODE" = "auto" ] && ! ls /dev/dri/card* >/dev/null 2>&1
+  }; then
+    export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+  fi
   # 低内存设备加固(VM 2GB RAM 实测): 主应用 vite build(1798+ 模块,
   # shiki/mermaid/three/codemirror)真实需求 >1.5GB V8 堆,而 node 默认旧生代
   # 上限按物理内存自动算,2GB 机器仅 ~1GB → OOM abort(exit 134)。两步保底:
@@ -291,9 +299,9 @@ step_echo_web() {
 
 # ── 6/7 桌面 shell(上游收敛)───────────────────────────
 # 收敛策略:桌面壳优先用上游 KWin 通用会话(deploy/desktop-session/),
-# 无 GPU / 轻量 NAS / 显式 ECHO_DESKTOP=cage 时回退 cage 极简 kiosk。
+# NAS 默认关闭本地桌面；desktop 配置显式开启后，KWin 不可用时回退 cage。
 #   ECHO_DESKTOP=kwin  上游 KWin 会话(需 Xorg seat + echo.os.ci-session 凭据)
-#   ECHO_DESKTOP=cage  默认,NAS 友好,不引整套 KDE/打印/扫描栈
+#   ECHO_DESKTOP=cage  默认的轻量 HDMI shell
   # ── 桌面壳跑在哪个系统账号下:探测,不写死 ──────────────
   # 历史教训: rebrand 曾把 unit 的 User=octopus 一并改成 echo,但两代装机
   # 介质建的用户不一致(vmtest preseed 建 echo; 更早的裸机/老 ISO 建 octopus),
@@ -310,15 +318,26 @@ step_echo_web() {
   }
   step_shell() {
   DESKTOP_MODE="${ECHO_DESKTOP:-cage}"
+  HDMI_MODE="${ECHO_HDMI_SHELL:-off}"
   RUN_USER="$(probe_run_user)"
-  if [ "$DESKTOP_MODE" = "kwin" ] && [ -x "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh" ]; then
+  case "$DESKTOP_MODE" in
+    cage|kwin) ;;
+    *) log "✗ ECHO_DESKTOP 只接受 cage/kwin: $DESKTOP_MODE"; return 1 ;;
+  esac
+  case "$HDMI_MODE" in
+    off|on|auto) ;;
+    *) log "✗ ECHO_HDMI_SHELL 只接受 off/on/auto: $HDMI_MODE"; return 1 ;;
+  esac
+  if [ "$HDMI_MODE" = "off" ]; then
+    log "== 6/7 跳过原生 shell (NAS 默认或 ECHO_HDMI_SHELL=off) =="
+  elif [ "$HDMI_MODE" = "auto" ] && ! ls /dev/dri/card* >/dev/null 2>&1; then
+    log "== 6/7 未检测到 GPU,跳过原生 shell(纯无头模式)=="
+  elif [ "$DESKTOP_MODE" = "kwin" ] && [ -x "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh" ]; then
     log "== 6/7 安装 KWin 通用桌面会话(上游) =="
     # 复用既有系统账号($RUN_USER),避免上游脚本默认新建 echo 用户;
     # 上游脚本读 ECHO_USER / ECHO_OS_DIR 两个 env。
     ECHO_USER="$RUN_USER" ECHO_OS_DIR="$OS_DIR" "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh"
-  elif [ "${ECHO_HDMI_SHELL:-auto}" = "off" ]; then
-    log "== 6/7 跳过原生 shell (ECHO_HDMI_SHELL=off) =="
-  elif ls /dev/dri/card* >/dev/null 2>&1 || [ "${ECHO_HDMI_SHELL:-auto}" = "on" ] || [ "$DESKTOP_MODE" = "cage" ]; then
+  else
     log "== 6/7 安装 cage 原生 shell(回退) =="
     apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
       cage plymouth plymouth-themes seatd rsync
@@ -338,8 +357,6 @@ step_echo_web() {
     systemctl set-default graphical.target
     systemctl enable echo-shell.service
     plymouth-set-default-theme -R spinner 2>/dev/null || true
-  else
-    log "== 6/7 未检测到 GPU,跳过原生 shell(纯无头模式)=="
   fi
   done_mark shell
 }

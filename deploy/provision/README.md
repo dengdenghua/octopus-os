@@ -39,15 +39,18 @@ U 盘启动
              1. 软件源      2. 存储栈(ZFS/Samba/NFS/SMART)
              3. Docker      4. Node
              5. echo-os(源码 + Python 依赖 + 前端构建)
-             6. 原生 shell(检测到 GPU 才装)
+             6. 原生 shell(nas 配置默认跳过；desktop 配置才安装)
              7. 服务(appliance + nginx + 每设备自签证书)
 ```
 
 ## 用法
 
 ```bash
-# 自动下载最新 Debian netinst 并组装
-./build-iso.sh --mirror https://mirrors.ustc.edu.cn/debian
+# 默认生成无头 NAS：不下载 Electron 桌面运行时，不安装图形栈
+./build-iso.sh --profile nas --mirror https://mirrors.ustc.edu.cn/debian
+
+# 需要本机 HDMI 界面时显式生成 desktop 配置（默认 cage）
+./build-iso.sh --profile desktop --iso ~/debian-13.1.0-amd64-netinst.iso
 
 # 或指定本地 ISO
 ./build-iso.sh --iso ~/debian-13.1.0-amd64-netinst.iso --out ~/echo-os.iso
@@ -88,6 +91,6 @@ ZFS 编译、Docker 安装、前端构建都要联网且耗时。放进 d-i,失�
 |---|---|---|
 | 装机 TUI 注入方式 | `preseed/early_command` | 官方钩子跨版本稳定;参考 NAS的 initrd 注入依赖 d-i 内部结构,上游一改就碎 |
 | 系统与数据 | 分离(系统盘 ext4 / 数据盘 ZFS 后组) | 与参考 NAS同思路,重刷系统不动数据 |
-| 软硬件 | 无 GPU 自动跳过原生 shell | 纯无头 NAS 不该背几百 MB 图形栈 |
+| 软硬件 | `nas` 默认无头，`desktop` 显式启用 HDMI shell | 虚拟 GPU/核显不等于用户需要桌面，纯 NAS 不应背图形栈 |
 | TLS 证书 | 每设备首启生成 | 参考 NAS随包带固定私钥是隐患 |
 | 提权 | 命令白名单,不给 `NOPASSWD:ALL` | 最小权限 |
