@@ -9,7 +9,7 @@
 # 产物:可刻录 U 盘(dd)/ 可挂 VM 的 hybrid ISO。
 #
 # 用法:
-#   ./build-iso.sh [--profile nas|desktop] [--web-dist <frontend-dist>] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
+#   ./build-iso.sh [--profile nas|desktop] [--web-dist <frontend-dist>] [--python-wheelhouse <dir>] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
 #   ./build-iso.sh --iso ~/debian-13.1.0-amd64-netinst.iso --mirror https://mirrors.ustc.edu.cn/debian
 #
 # 依赖:xorriso、cpio、gzip(apt install xorriso cpio gzip)。仅支持 Linux。
@@ -24,6 +24,7 @@ MIRROR=""
 OUT_ISO="$REPO_ROOT/dist/echo-os.iso"
 INSTALL_PROFILE="${ECHO_INSTALL_PROFILE:-nas}"
 WEB_DIST=""
+PYTHON_WHEELHOUSE=""
 WORK=""
 SNAPSHOT_REF=""
 
@@ -38,6 +39,7 @@ while [ $# -gt 0 ]; do
     --out)    OUT_ISO="$2";   shift 2 ;;
     --profile) INSTALL_PROFILE="$2"; shift 2 ;;
     --web-dist) WEB_DIST="$2"; shift 2 ;;
+    --python-wheelhouse) PYTHON_WHEELHOUSE="$2"; shift 2 ;;
     --url)    DEBIAN_ISO_URL="$2"; shift 2 ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) die "未知参数: $1" ;;
@@ -181,6 +183,47 @@ if [ -n "$WEB_DIST" ]; then
   log "已嵌入预构建 Web 载荷 $WEB_BUNDLE_SHA256"
 fi
 
+# ── 3a-3. 可选的预构建 Python wheelhouse ───────────────
+# 与 Web 载荷相同，Python 运行时依赖必须绑定当前源码 tree 并以单一摘要
+# 进入镜像。目标机只从 wheelhouse 安装，禁止 firstboot 静默回退 PyPI。
+PYTHON_BUNDLE_TARGET=""
+PYTHON_BUNDLE_SHA256=""
+if [ -n "$PYTHON_WHEELHOUSE" ]; then
+  [ -d "$PYTHON_WHEELHOUSE" ] || die "Python wheelhouse 不存在: $PYTHON_WHEELHOUSE"
+  PYTHON_WHEELHOUSE="$(cd "$PYTHON_WHEELHOUSE" && pwd -P)"
+  EXPECTED_PYTHON_WHEELHOUSE="$(cd "$REPO_ROOT/dist/python-wheelhouse" 2>/dev/null && pwd -P)" \
+    || die "请先运行 deploy/provision/build-python-wheelhouse.sh"
+  [ "$PYTHON_WHEELHOUSE" = "$EXPECTED_PYTHON_WHEELHOUSE" ] \
+    || die "Python wheelhouse 必须来自当前源码树的 dist/python-wheelhouse"
+  [ -f "$PYTHON_WHEELHOUSE/.echo-source-tree" ] \
+    && [ ! -L "$PYTHON_WHEELHOUSE/.echo-source-tree" ] \
+    || die "Python wheelhouse 缺少源码树身份"
+  [ "$(tr -d '[:space:]' <"$PYTHON_WHEELHOUSE/.echo-source-tree")" = "$SOURCE_TREE" ] \
+    || die "Python wheelhouse 与当前源码树不一致;请重新构建"
+  [ -s "$PYTHON_WHEELHOUSE/.echo-python-runtime" ] \
+    && [ ! -L "$PYTHON_WHEELHOUSE/.echo-python-runtime" ] \
+    || die "Python wheelhouse 缺少运行时身份"
+  [ -s "$PYTHON_WHEELHOUSE/SHA256SUMS" ] \
+    && [ ! -L "$PYTHON_WHEELHOUSE/SHA256SUMS" ] \
+    || die "Python wheelhouse 缺少 SHA256SUMS"
+  if find "$PYTHON_WHEELHOUSE" -mindepth 1 -maxdepth 1 ! -type f \
+      -print -quit | grep -q .; then
+    die "Python wheelhouse 只能包含顶层常规文件"
+  fi
+  [ "$(find "$PYTHON_WHEELHOUSE" -maxdepth 1 -type f -name 'echo_os-*.whl' | wc -l)" -eq 1 ] \
+    || die "Python wheelhouse 必须且只能包含一个 echo_os wheel"
+  (cd "$PYTHON_WHEELHOUSE" && sha256sum -c SHA256SUMS >/dev/null) \
+    || die "Python wheelhouse 文件摘要校验失败"
+  PYTHON_BUNDLE="$PAYLOAD/echo-python-wheelhouse.tar.gz"
+  tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+    --mode='u+rwX,go+rX,go-w' \
+    -C "$PYTHON_WHEELHOUSE" -cf - . | gzip -n -9 >"$PYTHON_BUNDLE"
+  PYTHON_BUNDLE_SHA256="$(sha256sum "$PYTHON_BUNDLE" | awk '{print $1}')"
+  [ "${#PYTHON_BUNDLE_SHA256}" -eq 64 ] || die "Python 载荷摘要生成失败"
+  PYTHON_BUNDLE_TARGET="/opt/echo-python-wheelhouse.tar.gz"
+  log "已嵌入预构建 Python wheelhouse $PYTHON_BUNDLE_SHA256"
+fi
+
 # 允许注入自定义仓库/分支；bundle 是正式 ISO 的首选来源，仓库参数保留给
 # 后续更新和不含 bundle 的旧版/VM 测试介质。
 cat >"$PAYLOAD/echo-env.sh" <<EOF
@@ -194,6 +237,8 @@ ECHO_SOURCE_TREE="$SOURCE_TREE"
 ECHO_IMAGE_COMMIT="$SOURCE_COMMIT"
 ECHO_WEB_BUNDLE="$WEB_BUNDLE_TARGET"
 ECHO_WEB_BUNDLE_SHA256="$WEB_BUNDLE_SHA256"
+ECHO_PYTHON_BUNDLE="$PYTHON_BUNDLE_TARGET"
+ECHO_PYTHON_BUNDLE_SHA256="$PYTHON_BUNDLE_SHA256"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 ECHO_INSTALL_PROFILE="$INSTALL_PROFILE"
 ECHO_HDMI_SHELL="$HDMI_SHELL"

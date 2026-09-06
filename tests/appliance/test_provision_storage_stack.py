@@ -228,6 +228,55 @@ def test_iso_can_embed_a_verified_prebuilt_web_payload_for_headless_nas() -> Non
     assert "无需 Node/npm/pnpm 网络" in provision
 
 
+def test_iso_can_embed_a_verified_python_wheelhouse_for_offline_firstboot() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+    wheel_builder = (
+        REPOSITORY / "deploy/provision/build-python-wheelhouse.sh"
+    ).read_text(encoding="utf-8")
+    preseed = (REPOSITORY / "deploy/provision/installer/preseed.cfg").read_text(
+        encoding="utf-8"
+    )
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+
+    assert '--python-wheelhouse) PYTHON_WHEELHOUSE="$2"' in builder
+    assert "status --porcelain --untracked-files=all" in wheel_builder
+    assert "--only-binary=:all:" in wheel_builder
+    assert '--only-binary=:all: "uv==0.11.25"' in wheel_builder
+    assert "--frozen --no-dev --no-emit-project" in wheel_builder
+    assert "--extra serve --extra web --extra appliance --extra minimal" in wheel_builder
+    assert "--require-hashes" in wheel_builder
+    assert '--requirement "$LOCKED_REQUIREMENTS"' in wheel_builder
+    assert '"packaging==$PACKAGING_VERSION"' in wheel_builder
+    assert '--no-deps --wheel-dir "$STAGED" "$REPO_ROOT"' in wheel_builder
+    assert "cpython-3??\\ linux\\ x86_64" in wheel_builder
+    assert 'rev-parse \'HEAD^{tree}\'' in wheel_builder
+    assert '"$STAGED/.echo-source-tree"' in wheel_builder
+    assert '"$STAGED/.echo-python-runtime"' in wheel_builder
+    assert "sha256sum -c SHA256SUMS" in wheel_builder
+    assert 'PYTHON_WHEELHOUSE" = "$EXPECTED_PYTHON_WHEELHOUSE' in builder
+    assert '"$PYTHON_WHEELHOUSE/.echo-source-tree"' in builder
+    assert "sha256sum -c SHA256SUMS" in builder
+    assert "tar --sort=name --mtime='@0' --owner=0 --group=0" in builder
+    assert 'ECHO_PYTHON_BUNDLE="$PYTHON_BUNDLE_TARGET"' in builder
+    assert 'ECHO_PYTHON_BUNDLE_SHA256="$PYTHON_BUNDLE_SHA256"' in builder
+    assert (
+        'cp "$payload/echo-python-wheelhouse.tar.gz" '
+        "/target/opt/echo-python-wheelhouse.tar.gz"
+    ) in preseed
+    assert "use_prebuilt_python() {" in provision
+    assert 'actual="$(sha256sum "$bundle"' in provision
+    assert '"$staged/.echo-source-tree"' in provision
+    assert '"$staged/.echo-python-runtime"' in provision
+    assert "for required_file in .echo-source-tree .echo-python-runtime SHA256SUMS" in provision
+    assert "--no-index --no-cache-dir --only-binary=:all:" in provision
+    assert '"${echo_wheels[0]}[$extras]" packaging' in provision
+    assert "无需 PyPI 网络" in provision
+
+
 def test_iso_checksum_refresh_does_not_follow_the_debian_directory_loop() -> None:
     builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
         encoding="utf-8"

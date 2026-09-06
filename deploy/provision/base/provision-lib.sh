@@ -336,9 +336,105 @@ step_echo_src() {
   chmod +x "$OS_DIR/deploy/provision/base/setup-base.sh" 2>/dev/null || true
 }
 
+# 正式 ISO 可携带与源码 tree、CPython ABI 和机器架构绑定的完整 wheelhouse。
+# 一旦 env 声明了载荷，缺件或身份错误必须失败关闭，不能悄悄回退 PyPI。
+use_prebuilt_python() {
+  local configured="${ECHO_PYTHON_BUNDLE:-}"
+  local bundle="${configured:-/opt/echo-python-wheelhouse.tar.gz}"
+  local expected="${ECHO_PYTHON_BUNDLE_SHA256:-}"
+  if [ ! -f "$bundle" ]; then
+    if [ -n "$configured" ] || [ -n "$expected" ]; then
+      log "✗ 已配置的 Python wheelhouse 不存在: $bundle"
+      return 2
+    fi
+    return 1
+  fi
+  case "$expected" in
+    ""|*[!0-9a-fA-F]*) log "✗ Python wheelhouse 缺少有效 SHA-256 身份"; return 2 ;;
+  esac
+  [ "${#expected}" -eq 64 ] \
+    || { log "✗ Python wheelhouse SHA-256 身份长度错误"; return 2; }
+}
+
 # ── 5b/7 Python 依赖 ───────────────────────────────────
 step_echo_py() {
   log "== 5b/7 安装 Python 依赖 =="
+  local python_mode_status=0
+  use_prebuilt_python || python_mode_status=$?
+  if [ "$python_mode_status" -eq 0 ]; then
+    local bundle="${ECHO_PYTHON_BUNDLE:-/opt/echo-python-wheelhouse.tar.gz}"
+    local expected="${ECHO_PYTHON_BUNDLE_SHA256:-}"
+    local actual staged runtime expected_runtime backup extras
+    local -a echo_wheels
+    actual="$(sha256sum "$bundle" | awk '{print $1}')"
+    expected="${expected,,}"
+    [ "$actual" = "$expected" ] \
+      || { log "✗ Python wheelhouse 摘要不匹配"; return 1; }
+    tar -tzf "$bundle" >/dev/null \
+      || { log "✗ Python wheelhouse 无法读取"; return 1; }
+    while IFS= read -r entry; do
+      case "$entry" in
+        /|/*|..|../*|*/../*|*/..) log "✗ Python wheelhouse 包含越界路径"; return 1 ;;
+      esac
+    done < <(tar -tzf "$bundle")
+    staged="$(mktemp -d /var/lib/echo-os/python-wheelhouse.XXXXXX)"
+    if ! tar --no-same-owner --no-same-permissions -xzf "$bundle" -C "$staged"; then
+      rm -rf "$staged"
+      return 1
+    fi
+    if find "$staged" -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+      log "✗ Python wheelhouse 只能包含顶层常规文件"
+      rm -rf "$staged"
+      return 1
+    fi
+    for required_file in .echo-source-tree .echo-python-runtime SHA256SUMS; do
+      if [ ! -f "$staged/$required_file" ]; then
+        log "✗ Python wheelhouse 缺少 $required_file"
+        rm -rf "$staged"
+        return 1
+      fi
+    done
+    [ "$(tr -d '[:space:]' <"$staged/.echo-source-tree" 2>/dev/null)" = "${ECHO_SOURCE_TREE:-}" ] \
+      || { log "✗ Python wheelhouse 与源码树身份不一致"; rm -rf "$staged"; return 1; }
+    runtime="$(tr -d '\r\n' <"$staged/.echo-python-runtime" 2>/dev/null)"
+    expected_runtime="$(python3 -c \
+      'import platform,sys; print(f"{sys.implementation.cache_tag} {platform.system().lower()} {platform.machine().lower()}")')"
+    [ "$runtime" = "$expected_runtime" ] \
+      || { log "✗ Python wheelhouse 运行时不匹配: $runtime != $expected_runtime"; rm -rf "$staged"; return 1; }
+    (cd "$staged" && sha256sum -c SHA256SUMS >/dev/null) \
+      || { log "✗ Python wheelhouse 文件摘要校验失败"; rm -rf "$staged"; return 1; }
+    mapfile -t echo_wheels < <(find "$staged" -maxdepth 1 -type f -name 'echo_os-*.whl' | sort)
+    [ "${#echo_wheels[@]}" -eq 1 ] \
+      || { log "✗ Python wheelhouse 必须且只能包含一个 echo_os wheel"; rm -rf "$staged"; return 1; }
+
+    extras="serve,web,appliance"
+    if [ "${ECHO_SKIP_AGENT:-0}" = "1" ]; then
+      extras="minimal"
+    fi
+    backup=""
+    if [ -e "$OS_DIR/.venv" ]; then
+      backup="$OS_DIR/.venv.before-image.$$"
+      rm -rf "$backup"
+      mv "$OS_DIR/.venv" "$backup"
+    fi
+    if ! python3 -m venv "$OS_DIR/.venv" \
+       || ! "$OS_DIR/.venv/bin/python" -m pip install \
+         --no-index --no-cache-dir --only-binary=:all: \
+         --find-links "$staged" "${echo_wheels[0]}[$extras]" packaging; then
+      rm -rf "$OS_DIR/.venv"
+      [ -z "$backup" ] || mv "$backup" "$OS_DIR/.venv"
+      rm -rf "$staged"
+      return 1
+    fi
+    [ -z "$backup" ] || rm -rf "$backup"
+    rm -rf "$staged"
+    rm -f "$bundle"
+    log "  已从 ISO wheelhouse 安装 Python 运行时 $actual (无需 PyPI 网络)"
+    done_mark echo-py
+    return 0
+  elif [ "$python_mode_status" -eq 2 ]; then
+    return 1
+  fi
   # 母体 echo-agent 是私有仓库,Docker/设备构建走本地 wheel;
   # 见 deploy/appliance/prepare-agent-wheel.sh。
   # 无凭据环境(如验证 VM)可用 ECHO_SKIP_AGENT=1 跳过私有 agent,
