@@ -33,6 +33,13 @@ apt_retry() {
   done
 }
 
+apt_update() {
+  # apt-get update 默认会把“所有索引下载失败”降级成 exit 0 + warning，导致
+  # apt_retry 误判成功。Error-Mode=any 把任一索引失败变成非零退出，才能
+  # 在首启 DNS/DHCP 抖动时真正进入有界退避。
+  apt_retry apt-get -o APT::Update::Error-Mode=any update
+}
+
 # 大型 apt 事务与前端构建在 2GB 设备上都可能短时超过物理内存。必须在
 # 第一个高峰步骤（存储栈）之前补足 swap，不能等到前端构建才处理。
 ensure_swap() {
@@ -107,7 +114,7 @@ EOF
     chmod 0644 "$sources_tmp"
     mv "$sources_tmp" /etc/apt/sources.list
   fi
-  apt_retry apt-get update
+  apt_update
   apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates curl gnupg lsb-release
   done_mark apt
@@ -172,7 +179,7 @@ Suites: trixie
 Components: stable
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
-  apt_retry apt-get update
+  apt_update
   apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   systemctl enable --now docker

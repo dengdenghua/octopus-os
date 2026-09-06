@@ -95,6 +95,17 @@ def test_every_apt_operation_has_bounded_firstboot_retries() -> None:
     assert all(line.startswith("apt_retry ") for line in apt_lines)
 
 
+def test_apt_index_failures_enter_the_existing_retry_loop() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "apt_update() {" in provision
+    assert "apt_retry apt-get -o APT::Update::Error-Mode=any update" in provision
+    assert provision.count("apt_update") == 3
+    assert "apt_retry apt-get update" not in provision
+
+
 def test_both_image_paths_keep_the_nas_hardware_support_baseline() -> None:
     provision = (
         REPOSITORY / "deploy/provision/base/provision-lib.sh"
