@@ -9,7 +9,7 @@
 # 产物:可刻录 U 盘(dd)/ 可挂 VM 的 hybrid ISO。
 #
 # 用法:
-#   ./build-iso.sh [--profile nas|desktop] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
+#   ./build-iso.sh [--profile nas|desktop] [--web-dist <frontend-dist>] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
 #   ./build-iso.sh --iso ~/debian-13.1.0-amd64-netinst.iso --mirror https://mirrors.ustc.edu.cn/debian
 #
 # 依赖:xorriso、cpio、gzip(apt install xorriso cpio gzip)。仅支持 Linux。
@@ -23,6 +23,7 @@ INPUT_ISO=""
 MIRROR=""
 OUT_ISO="$REPO_ROOT/dist/echo-os.iso"
 INSTALL_PROFILE="${ECHO_INSTALL_PROFILE:-nas}"
+WEB_DIST=""
 WORK=""
 SNAPSHOT_REF=""
 
@@ -36,6 +37,7 @@ while [ $# -gt 0 ]; do
     --mirror) MIRROR="$2";    shift 2 ;;
     --out)    OUT_ISO="$2";   shift 2 ;;
     --profile) INSTALL_PROFILE="$2"; shift 2 ;;
+    --web-dist) WEB_DIST="$2"; shift 2 ;;
     --url)    DEBIAN_ISO_URL="$2"; shift 2 ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) die "未知参数: $1" ;;
@@ -55,6 +57,10 @@ case "$DESKTOP_MODE" in cage|kwin) ;; *) die "ECHO_DESKTOP 只接受 cage/kwin" 
 command -v xorriso >/dev/null 2>&1 || die "缺少 xorriso: sudo apt install xorriso"
 command -v cpio >/dev/null 2>&1 || die "缺少 cpio: sudo apt install cpio"
 command -v gzip >/dev/null 2>&1 || die "缺少 gzip: sudo apt install gzip"
+command -v tar >/dev/null 2>&1 || die "缺少 tar"
+command -v sha256sum >/dev/null 2>&1 || die "缺少 sha256sum"
+[ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)" ] \
+  || die "正式 ISO 只能从干净 Git 工作树构建"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/echo-iso.XXXXXX")"
 cleanup() {
@@ -142,6 +148,39 @@ git update-ref -d "$SNAPSHOT_REF"
 SNAPSHOT_REF=""
 log "已嵌入精确源码快照 $SOURCE_COMMIT"
 
+# ── 3a-2. 可选的预构建 Web 载荷 ─────────────────────────
+# NAS 首启不应在目标机下载 NodeSource/npm 依赖再跑一次大体量 Vite 构建。
+# 发布构建可把与当前源码提交对应的 frontend/dist 显式传入；这里拒绝链接和
+# 特殊文件，生成固定时间/所有者/顺序的 tar.gz，并把摘要写进 firstboot env。
+WEB_BUNDLE_TARGET=""
+WEB_BUNDLE_SHA256=""
+if [ -n "$WEB_DIST" ]; then
+  [ -d "$WEB_DIST" ] || die "Web 载荷目录不存在: $WEB_DIST"
+  WEB_DIST="$(cd "$WEB_DIST" && pwd -P)"
+  EXPECTED_WEB_DIST="$(cd "$REPO_ROOT/frontend/dist" 2>/dev/null && pwd -P)" \
+    || die "请先运行 deploy/provision/build-web-dist.sh"
+  [ "$WEB_DIST" = "$EXPECTED_WEB_DIST" ] \
+    || die "Web 载荷必须来自当前源码树的 frontend/dist"
+  [ -f "$WEB_DIST/index.html" ] && [ ! -L "$WEB_DIST/index.html" ] \
+    || die "Web 载荷缺少常规 index.html: $WEB_DIST"
+  [ -f "$WEB_DIST/.echo-source-tree" ] && [ ! -L "$WEB_DIST/.echo-source-tree" ] \
+    || die "Web 载荷缺少源码树身份;请重新运行 build-web-dist.sh"
+  [ "$(tr -d '[:space:]' <"$WEB_DIST/.echo-source-tree")" = "$SOURCE_TREE" ] \
+    || die "Web 载荷与当前源码树不一致;请重新构建"
+  if find "$WEB_DIST" \( -type l -o \( ! -type f -a ! -type d \) \) \
+      -print -quit | grep -q .; then
+    die "Web 载荷只能包含常规文件和目录"
+  fi
+  WEB_BUNDLE="$PAYLOAD/echo-web-dist.tar.gz"
+  tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+    --mode='u+rwX,go+rX,go-w' \
+    -C "$WEB_DIST" -cf - . | gzip -n -9 >"$WEB_BUNDLE"
+  WEB_BUNDLE_SHA256="$(sha256sum "$WEB_BUNDLE" | awk '{print $1}')"
+  [ "${#WEB_BUNDLE_SHA256}" -eq 64 ] || die "Web 载荷摘要生成失败"
+  WEB_BUNDLE_TARGET="/opt/echo-web-dist.tar.gz"
+  log "已嵌入预构建 Web 载荷 $WEB_BUNDLE_SHA256"
+fi
+
 # 允许注入自定义仓库/分支；bundle 是正式 ISO 的首选来源，仓库参数保留给
 # 后续更新和不含 bundle 的旧版/VM 测试介质。
 cat >"$PAYLOAD/echo-env.sh" <<EOF
@@ -153,6 +192,8 @@ ECHO_SOURCE_BUNDLE="/opt/echo-os-source.bundle"
 ECHO_SOURCE_BUNDLE_REF="$SOURCE_BUNDLE_REF"
 ECHO_SOURCE_TREE="$SOURCE_TREE"
 ECHO_IMAGE_COMMIT="$SOURCE_COMMIT"
+ECHO_WEB_BUNDLE="$WEB_BUNDLE_TARGET"
+ECHO_WEB_BUNDLE_SHA256="$WEB_BUNDLE_SHA256"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 ECHO_INSTALL_PROFILE="$INSTALL_PROFILE"
 ECHO_HDMI_SHELL="$HDMI_SHELL"

@@ -184,6 +184,50 @@ def test_formal_installer_persists_source_bundle_and_identity() -> None:
     assert 'cp "$payload/echo-source.bundle" /target/opt/echo-os-source.bundle' in preseed
 
 
+def test_iso_can_embed_a_verified_prebuilt_web_payload_for_headless_nas() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+    preseed = (REPOSITORY / "deploy/provision/installer/preseed.cfg").read_text(
+        encoding="utf-8"
+    )
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+
+    assert '--web-dist) WEB_DIST="$2"' in builder
+    web_builder = (
+        REPOSITORY / "deploy/provision/build-web-dist.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "pnpm install --frozen-lockfile" in web_builder
+    assert "pnpm build" in web_builder
+    assert "ELECTRON_SKIP_BINARY_DOWNLOAD=1" in web_builder
+    assert web_builder.count("status --porcelain --untracked-files=all") == 2
+    assert 'rev-parse \'HEAD^{tree}\'' in web_builder
+    assert 'dist/.echo-source-tree"' in web_builder
+    assert 'WEB_DIST" = "$EXPECTED_WEB_DIST' in builder
+    assert "status --porcelain --untracked-files=all" in builder
+    assert '"$WEB_DIST/.echo-source-tree"' in builder
+    assert '!= "$SOURCE_TREE"' not in builder
+    assert "tar --sort=name --mtime='@0' --owner=0 --group=0" in builder
+    assert "--mode='u+rwX,go+rX,go-w'" in builder
+    assert 'WEB_BUNDLE_SHA256="$(sha256sum "$WEB_BUNDLE"' in builder
+    assert 'ECHO_WEB_BUNDLE="$WEB_BUNDLE_TARGET"' in builder
+    assert 'ECHO_WEB_BUNDLE_SHA256="$WEB_BUNDLE_SHA256"' in builder
+    assert (
+        'cp "$payload/echo-web-dist.tar.gz" /target/opt/echo-web-dist.tar.gz'
+        in preseed
+    )
+    assert "use_prebuilt_web() {" in provision
+    assert 'actual="$(sha256sum "$bundle"' in provision
+    assert 'tar --no-same-owner --no-same-permissions -xzf "$bundle"' in provision
+    assert '"$staged/.echo-source-tree"' in provision
+    assert '!= "$ECHO_SOURCE_TREE"' not in provision
+    assert "跳过 NodeSource/npm" in provision
+    assert "无需 Node/npm/pnpm 网络" in provision
+
+
 def test_iso_checksum_refresh_does_not_follow_the_debian_directory_loop() -> None:
     builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
         encoding="utf-8"

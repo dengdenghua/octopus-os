@@ -186,9 +186,42 @@ EOF
   done_mark docker
 }
 
+# 预构建 Web 载荷只替代无头 NAS 的浏览器静态资源。桌面 profile 仍需安装
+# Node/Electron 运行时，auto profile 检测到 GPU 时也继续走完整构建。
+use_prebuilt_web() {
+  local configured="${ECHO_WEB_BUNDLE:-}"
+  local bundle="${configured:-/opt/echo-web-dist.tar.gz}"
+  local expected="${ECHO_WEB_BUNDLE_SHA256:-}"
+  local hdmi_mode="${ECHO_HDMI_SHELL:-off}"
+  if [ ! -f "$bundle" ]; then
+    if [ -n "$configured" ] || [ -n "$expected" ]; then
+      log "✗ 已配置的预构建 Web 载荷不存在: $bundle"
+      return 2
+    fi
+    return 1
+  fi
+  case "$expected" in
+    ""|*[!0-9a-fA-F]*) log "✗ 预构建 Web 载荷缺少有效 SHA-256 身份"; return 2 ;;
+  esac
+  [ "${#expected}" -eq 64 ] \
+    || { log "✗ 预构建 Web 载荷 SHA-256 身份长度错误"; return 2; }
+  [ "$hdmi_mode" = "off" ] || {
+    [ "$hdmi_mode" = "auto" ] && ! ls /dev/dri/card* >/dev/null 2>&1
+  }
+}
+
 # ── 4/7 Node(前端构建 + Electron)──────────────────────
 step_node() {
   log "== 4/7 安装 Node 20 =="
+  local web_mode_status=0
+  use_prebuilt_web || web_mode_status=$?
+  if [ "$web_mode_status" -eq 0 ]; then
+    log "  无头 NAS 使用 ISO 预构建 Web 载荷,跳过 NodeSource/npm"
+    done_mark node
+    return 0
+  elif [ "$web_mode_status" -eq 2 ]; then
+    return 1
+  fi
   if ! command -v node >/dev/null 2>&1; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
@@ -339,6 +372,48 @@ step_echo_py() {
 # ── 5c/7 前端构建 ──────────────────────────────────────
 step_echo_web() {
   log "== 5c/7 构建前端 =="
+  local web_mode_status=0
+  use_prebuilt_web || web_mode_status=$?
+  if [ "$web_mode_status" -eq 0 ]; then
+    local bundle="${ECHO_WEB_BUNDLE:-/opt/echo-web-dist.tar.gz}"
+    local expected="${ECHO_WEB_BUNDLE_SHA256:-}"
+    local actual staged backup entry
+    actual="$(sha256sum "$bundle" | awk '{print $1}')"
+    expected="${expected,,}"
+    [ "$actual" = "$expected" ] \
+      || { log "✗ 预构建 Web 载荷摘要不匹配"; return 1; }
+    tar -tzf "$bundle" >/dev/null \
+      || { log "✗ 预构建 Web 载荷无法读取"; return 1; }
+    while IFS= read -r entry; do
+      case "$entry" in
+        /|/*|..|../*|*/../*|*/..) log "✗ 预构建 Web 载荷包含越界路径"; return 1 ;;
+      esac
+    done < <(tar -tzf "$bundle")
+    staged="$OS_DIR/frontend/.echo-dist-staged.$$"
+    backup="$OS_DIR/frontend/.echo-dist-before-image.$$"
+    rm -rf "$staged" "$backup"
+    mkdir -p "$staged"
+    tar --no-same-owner --no-same-permissions -xzf "$bundle" -C "$staged"
+    [ -f "$staged/index.html" ] \
+      || { log "✗ 预构建 Web 载荷缺少 index.html"; rm -rf "$staged"; return 1; }
+    [ -n "${ECHO_SOURCE_TREE:-}" ] \
+      && [ "$(tr -d '[:space:]' <"$staged/.echo-source-tree" 2>/dev/null)" = "$ECHO_SOURCE_TREE" ] \
+      || { log "✗ 预构建 Web 载荷与源码树身份不一致"; rm -rf "$staged"; return 1; }
+    if [ -e "$OS_DIR/frontend/dist" ]; then
+      mv "$OS_DIR/frontend/dist" "$backup"
+    fi
+    if ! mv "$staged" "$OS_DIR/frontend/dist"; then
+      [ ! -e "$backup" ] || mv "$backup" "$OS_DIR/frontend/dist"
+      return 1
+    fi
+    rm -rf "$backup"
+    rm -f "$bundle"
+    log "  已安装 ISO 预构建 Web 载荷 $actual (无需 Node/npm/pnpm 网络)"
+    done_mark echo-web
+    return 0
+  elif [ "$web_mode_status" -eq 2 ]; then
+    return 1
+  fi
   # 锁文件是 pnpm-lock.yaml,必须用 pnpm 装(VM 实测:fallback 的 npm ci
   # 因无 package-lock.json 报 EUSAGE)。4/7 只装了 Node,这里补装 pnpm。
   if ! command -v pnpm >/dev/null 2>&1; then
