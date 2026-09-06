@@ -309,4 +309,6 @@ def test_headless_profile_skips_electron_runtime_and_graphical_shell() -> None:
     assert 'HDMI_MODE="${ECHO_HDMI_SHELL:-off}"' in shell
     assert 'if [ "$HDMI_MODE" = "off" ]' in shell
     assert 'elif [ "$HDMI_MODE" = "auto" ] && ! ls /dev/dri/card*' in shell
+    assert "echo-shell.service echo-desktop.service" in shell
+    assert shell.count("systemctl set-default multi-user.target") == 2
     assert '[ "$DESKTOP_MODE" = "cage" ]' not in shell

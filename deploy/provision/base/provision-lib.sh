@@ -330,8 +330,16 @@ step_echo_web() {
   esac
   if [ "$HDMI_MODE" = "off" ]; then
     log "== 6/7 跳过原生 shell (NAS 默认或 ECHO_HDMI_SHELL=off) =="
+    for unit in echo-shell.service echo-desktop.service; do
+      systemctl disable --now "$unit" 2>/dev/null || true
+    done
+    systemctl set-default multi-user.target
   elif [ "$HDMI_MODE" = "auto" ] && ! ls /dev/dri/card* >/dev/null 2>&1; then
     log "== 6/7 未检测到 GPU,跳过原生 shell(纯无头模式)=="
+    for unit in echo-shell.service echo-desktop.service; do
+      systemctl disable --now "$unit" 2>/dev/null || true
+    done
+    systemctl set-default multi-user.target
   elif [ "$DESKTOP_MODE" = "kwin" ] && [ -x "$OS_DIR/deploy/desktop-session/setup-desktop-session.sh" ]; then
     log "== 6/7 安装 KWin 通用桌面会话(上游) =="
     # 复用既有系统账号($RUN_USER),避免上游脚本默认新建 echo 用户;
