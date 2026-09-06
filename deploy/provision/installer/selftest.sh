@@ -61,12 +61,15 @@ export PATH="$BIN:$PATH"
 # 跑一次装机脚本。env 变量通过参数传入。
 run_installer() {
   local capture="$WORK/captured.$$.$RANDOM"
+  local done="$WORK/done.$$.$RANDOM"
   rm -f "$capture"
+  rm -f "$done"
   # 注意用 ${VAR-default} 而非 ${VAR:-default}:空串是无盘场景的合法注入,
   # :- 会把空串也回落成默认盘列表,导致无盘用例失效。
   # (注释必须放在赋值块外 —— 续行中间插注释会截断 env 前缀链。)
   CAPTURE_FILE="$capture" \
   CNT_FILE="$WORK/cnt.$RANDOM" \
+  ECHO_INSTALL_DONE="$done" \
   ECHO_TEST_DISKS="${TEST_DISKS-sda sdb nvme0n1}" \
   FAKE_DISK="${FAKE_DISK:-sdb}" \
   FAKE_HOST="${FAKE_HOST:-testnas}" \

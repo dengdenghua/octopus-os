@@ -194,7 +194,6 @@ def test_installer_tui_uses_posix_arguments_and_normalizes_device_paths() -> Non
     installer = (REPOSITORY / "deploy/provision/installer/echo-install").read_text(
         encoding="utf-8"
     )
-
     assert installer.startswith("#!/bin/sh\n")
     assert "menu_items=(" not in installer
     assert "menu_items[@]" not in installer
@@ -211,6 +210,9 @@ def test_installer_uses_the_native_debconf_frontend_without_whiptail() -> None:
     installer = (REPOSITORY / "deploy/provision/installer/echo-install").read_text(
         encoding="utf-8"
     )
+    preseed = (REPOSITORY / "deploy/provision/installer/preseed.cfg").read_text(
+        encoding="utf-8"
+    )
     templates = (
         REPOSITORY / "deploy/provision/installer/echo-install.templates"
     ).read_text(encoding="utf-8")
@@ -218,6 +220,36 @@ def test_installer_uses_the_native_debconf_frontend_without_whiptail() -> None:
     assert 'debconf-loadtemplate echo-os /echo-install.templates' in installer
     assert 'db_input critical echo-os/disk' in installer
     assert 'db_input critical echo-os/password' in installer
+    assert 'if [ "$USE_WHIPTAIL" -eq 1 ] && command -v debconf-set-selections' in installer
+    assert "db_register debian-installer/dummy" in installer
+    assert 'set_answer partman-auto/disk "/dev/$SYSDEV"' in installer
+    assert 'set_answer netcfg/get_hostname "$HOSTNAME"' in installer
+    assert 'set_answer passwd/user-password "$PW1"' in installer
+    assert "d-i passwd/user-password-crypted" not in preseed
+    assert '[ "$USE_WHIPTAIL" -eq 1 ] || db_stop' in installer
+    assert "DONE=${ECHO_INSTALL_DONE:-/tmp/echo-install.completed}" in installer
+    assert 'if [ -f "$DONE" ]; then' in installer
+    assert ': >"$DONE"' in installer
+    assert 'log "already-complete"' in installer
+    assert 'log "answers-applied"' in installer
     assert '"$INITRD_ROOT/echo-install.templates"' in builder
     assert "Template: echo-os/disk" in templates
     assert "Type: password" in templates
+
+
+def test_installer_late_command_finds_iso_payload_and_fails_atomically() -> None:
+    preseed = (REPOSITORY / "deploy/provision/installer/preseed.cfg").read_text(
+        encoding="utf-8"
+    )
+    late_command = preseed.split("d-i preseed/late_command string", 1)[1]
+
+    assert "set -e" in late_command
+    assert "/media/cdrom/echo" in late_command
+    assert "/cdrom/echo" in late_command
+    assert 'if [ -z "$payload" ]' in late_command
+    assert 'cp "$payload/setup-base.sh"' in late_command
+    assert 'cp "$payload/echo-firstboot.service"' in late_command
+    assert "in-target systemctl enable echo-firstboot.service" in late_command
+    assert "echo stageA-ok > /target/var/log/echo-stageA.txt" in late_command
+    assert "/cdrom/echo-os/setup-base.sh" not in late_command
+    assert "echo-os-overlay.tar.gz 2>/dev/null || true" not in late_command

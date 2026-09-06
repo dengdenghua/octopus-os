@@ -14,14 +14,23 @@
 set -e
 
 ANSWERS=/tmp/echo-answers.conf
-: >"$ANSWERS"
 LOG=/tmp/echo-install.log
-: >"$LOG"
+DONE=${ECHO_INSTALL_DONE:-/tmp/echo-install.completed}
 
 log() {
   printf '%s\n' "$*" >>"$LOG"
   [ ! -w /dev/tty4 ] || printf 'echo-install: %s\n' "$*" >/dev/tty4
 }
+
+# d-i 会在 reopen-console 与 file-preseed 两个阶段读取内置 preseed，因而
+# preseed/early_command 可能执行两次。答案已经写入 debconf 数据库时必须直接
+# 返回，否则用户会看到第二轮装机问题。
+if [ -f "$DONE" ]; then
+  log "already-complete"
+  exit 0
+fi
+: >"$ANSWERS"
+: >"$LOG"
 
 # ── 小工具 ────────────────────────────────────────────────
 # selftest 用 whiptail 桩保持轻量；真实 d-i 没有 whiptail，使用其原生 debconf
@@ -311,14 +320,47 @@ d-i passwd/user-password password $PW1
 d-i passwd/user-password-again password $PW1
 EOF
 
-if command -v debconf-set-selections >/dev/null 2>&1; then
+log "answers-ready disk=/dev/$SYSDEV hostname=$HOSTNAME"
+if [ "$USE_WHIPTAIL" -eq 1 ] && command -v debconf-set-selections >/dev/null 2>&1; then
   debconf-set-selections "$ANSWERS"
+elif [ "$USE_WHIPTAIL" -eq 0 ]; then
+  # partman 等模板在 early_command 阶段还未注册，直接 db_set 会返回 10。
+  # cdebconf 的 debconf-set-selections 遇到这种情况会先注册 dummy 模板；
+  # 在当前 frontend 内复刻同一逻辑，可避免另起 frontend 触发 reopen-console，
+  # 后者会意外拉起第二个 Debian Installer。
+  set_answer() {
+    answer_name=$1
+    answer_value=$2
+    if ! db_set "$answer_name" "$answer_value"; then
+      db_register debian-installer/dummy "$answer_name"
+      db_set "$answer_name" "$answer_value"
+      db_subst "$answer_name" ID "$answer_name"
+    fi
+    db_fset "$answer_name" seen true
+  }
+  set_answer partman-auto/disk "/dev/$SYSDEV"
+  set_answer partman-auto/method regular
+  set_answer partman-lvm/device_remove_lvm true
+  set_answer partman-md/device_remove_md true
+  set_answer partman-partitioning/confirm_write_new_label true
+  set_answer partman/choose_partition finish
+  set_answer partman/confirm true
+  set_answer partman/confirm_nooverwrite true
+  set_answer netcfg/get_hostname "$HOSTNAME"
+  set_answer netcfg/get_domain local
+  set_answer passwd/user-fullname "Echo Admin"
+  set_answer passwd/username echo
+  set_answer passwd/user-password "$PW1"
+  set_answer passwd/user-password-again "$PW1"
 fi
+log "answers-applied"
 
 # 清理明文密码(不留到 /target)
 : >"$ANSWERS"
 rm -f "$ANSWERS" 2>/dev/null || true
 
+: >"$DONE"
 [ "$USE_WHIPTAIL" -eq 1 ] || db_stop
+log "complete"
 
 exit 0
