@@ -64,6 +64,16 @@ command -v sha256sum >/dev/null 2>&1 || die "缺少 sha256sum"
 [ -z "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=all)" ] \
   || die "正式 ISO 只能从干净 Git 工作树构建"
 
+# 非 editable wheel 安装后 runtime 位于 site-packages，不能再从模块路径反推
+# frontend/package.json。把与源码快照绑定的 Codex 版本写进镜像环境，供 systemd
+# 启动服务时显式传给 runtime；版本仍只由 package.json 这一处维护。
+CODEX_PACKAGE_VERSION="$(sed -nE \
+  's/^[[:space:]]*"@openai\/codex":[[:space:]]*"([^"]+)",?[[:space:]]*$/\1/p' \
+  "$REPO_ROOT/frontend/package.json" | head -1)"
+case "$CODEX_PACKAGE_VERSION" in
+  ""|*[!0-9A-Za-z.+-]*) die "无法从 frontend/package.json 解析 @openai/codex 版本" ;;
+esac
+
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/echo-iso.XXXXXX")"
 cleanup() {
   if [ -n "$SNAPSHOT_REF" ]; then
@@ -239,6 +249,7 @@ ECHO_WEB_BUNDLE="$WEB_BUNDLE_TARGET"
 ECHO_WEB_BUNDLE_SHA256="$WEB_BUNDLE_SHA256"
 ECHO_PYTHON_BUNDLE="$PYTHON_BUNDLE_TARGET"
 ECHO_PYTHON_BUNDLE_SHA256="$PYTHON_BUNDLE_SHA256"
+ECHO_PACKAGED_CODEX_VERSION="$CODEX_PACKAGE_VERSION"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 ECHO_INSTALL_PROFILE="$INSTALL_PROFILE"
 ECHO_HDMI_SHELL="$HDMI_SHELL"

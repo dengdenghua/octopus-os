@@ -11,6 +11,9 @@ Type=simple
 User=root
 WorkingDirectory=/opt/echo-os
 
+# build-iso.sh 从同一源码快照的 frontend/package.json 写入 Codex 版本。
+# wheel 安装的 runtime 无法依靠 __file__ 回溯到仓库，必须显式继承该身份。
+EnvironmentFile=-/etc/echo-os/firstboot.env
 Environment=ECHO_APPLIANCE=1
 Environment=ECHO_APP_EXTENSIONS=appliance.extension
 Environment=ECHO_SKILL_EXTENSIONS=appliance.pm_skills:register_pm_skills

@@ -263,6 +263,9 @@ def test_iso_can_embed_a_verified_python_wheelhouse_for_offline_firstboot() -> N
     assert "tar --sort=name --mtime='@0' --owner=0 --group=0" in builder
     assert 'ECHO_PYTHON_BUNDLE="$PYTHON_BUNDLE_TARGET"' in builder
     assert 'ECHO_PYTHON_BUNDLE_SHA256="$PYTHON_BUNDLE_SHA256"' in builder
+    assert '"$REPO_ROOT/frontend/package.json"' in builder
+    assert "| head -1" in builder
+    assert 'ECHO_PACKAGED_CODEX_VERSION="$CODEX_PACKAGE_VERSION"' in builder
     assert (
         'cp "$payload/echo-python-wheelhouse.tar.gz" '
         "/target/opt/echo-python-wheelhouse.tar.gz"
@@ -275,6 +278,15 @@ def test_iso_can_embed_a_verified_python_wheelhouse_for_offline_firstboot() -> N
     assert "--no-index --no-cache-dir --only-binary=:all:" in provision
     assert '"${echo_wheels[0]}[$extras]" packaging' in provision
     assert "无需 PyPI 网络" in provision
+
+
+def test_native_appliance_service_inherits_the_image_codex_version() -> None:
+    service = (
+        REPOSITORY / "deploy/provision/base/echo-appliance.service"
+    ).read_text(encoding="utf-8")
+
+    assert "EnvironmentFile=-/etc/echo-os/firstboot.env" in service
+    assert "ExecStart=/opt/echo-os/.venv/bin/echo-agent serve" in service
 
 
 def test_iso_checksum_refresh_does_not_follow_the_debian_directory_loop() -> None:
