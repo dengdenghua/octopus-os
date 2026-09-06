@@ -345,8 +345,9 @@ step_echo_web() {
 }
 
 # ── 6b/7 备份/恢复(上游收敛,provision 原缺)────────────────
-# 复用上游 deploy/backup + deploy/recovery,不自研。两类服务都带条件:
-# 缺挂载点/凭据时自动跳过,systemctl enable 不会失败。
+# 复用上游 deploy/backup + deploy/recovery,不自研。备份服务在正常 NAS
+# 系统待命；echo-recovery.service 只属于自包含 Recovery UKI，主系统没有
+# 它要求的不可变 source-identity 链，不能在这里启用。
 step_backup_recovery() {
   log "== 6b/7 安装备份/恢复模块(上游) =="
   install -m755 "$OS_DIR/deploy/backup/echo-user-backup" /usr/bin/echo-os-backup
@@ -361,8 +362,10 @@ step_backup_recovery() {
   install -m644 "$OS_DIR/deploy/recovery/repart.d/"*.conf \
     /usr/lib/echo-os/recovery-repart.d/
   systemctl daemon-reload
-  # recovery 默认只读诊断,挂 multi-user.target,安全启用
-  systemctl enable echo-recovery.service
+  # 清理由早期 provision 版本留下的错误启用状态。保留 CLI/unit 供人工
+  # 检查，但自动启动只由 Recovery 镜像的 systemd preset 负责。
+  systemctl disable --now echo-recovery.service 2>/dev/null || true
+  systemctl reset-failed echo-recovery.service 2>/dev/null || true
   # backup 需 /mnt/echo-backup 挂载点 + 加密凭据,缺则 Condition 跳过,仍 enable 待命
   systemctl enable echo-user-backup.service 2>/dev/null || true
   systemctl enable echo-restore-transaction-health.service 2>/dev/null || true

@@ -253,3 +253,16 @@ def test_installer_late_command_finds_iso_payload_and_fails_atomically() -> None
     assert "echo stageA-ok > /target/var/log/echo-stageA.txt" in late_command
     assert "/cdrom/echo-os/setup-base.sh" not in late_command
     assert "echo-os-overlay.tar.gz 2>/dev/null || true" not in late_command
+
+
+def test_normal_nas_boot_does_not_enable_the_offline_recovery_unit() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    recovery = provision.split("step_backup_recovery() {", 1)[1].split("\n}\n", 1)[0]
+
+    assert "systemctl disable --now echo-recovery.service" in recovery
+    assert "systemctl reset-failed echo-recovery.service" in recovery
+    assert "systemctl enable echo-recovery.service" not in recovery
+    assert "systemctl enable echo-user-backup.service" in recovery
+    assert "systemctl enable echo-restore-transaction-health.service" in recovery
