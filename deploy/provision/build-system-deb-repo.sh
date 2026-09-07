@@ -79,7 +79,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$WORK/lists/partial" "$STAGED/partial"
+mkdir -p "$WORK/lists/partial" "$WORK/cache" "$STAGED/partial"
 touch "$WORK/status"
 curl -fsSL --retry 3 --connect-timeout 30 --max-time 120 \
   "$DOCKER_KEY_URL" -o "$WORK/docker.asc"
@@ -104,6 +104,7 @@ APT_OPTIONS=(
   -o Dir::Etc::sourceparts=-
   -o Dir::State::lists="$WORK/lists"
   -o Dir::State::status="$WORK/status"
+  -o Dir::Cache="$WORK/cache"
   -o Dir::Cache::archives="$STAGED"
   -o Acquire::Retries=3
   -o Acquire::http::Timeout=30

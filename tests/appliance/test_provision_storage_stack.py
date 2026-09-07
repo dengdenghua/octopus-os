@@ -331,6 +331,8 @@ def test_system_deb_builder_resolves_a_kernel_bound_empty_state_closure() -> Non
     ).read_text(encoding="utf-8")
 
     assert "Dir::State::status=\"$WORK/status\"" in builder
+    assert "Dir::Cache=\"$WORK/cache\"" in builder
+    assert "Dir::Cache::archives=\"$STAGED\"" in builder
     assert "--download-only -y --no-install-recommends" in builder
     assert "linux-image-*-amd64_*.deb" in builder
     assert "[^']+)'\\$#\\1#p" in builder
