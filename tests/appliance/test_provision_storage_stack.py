@@ -333,6 +333,7 @@ def test_system_deb_builder_resolves_a_kernel_bound_empty_state_closure() -> Non
     assert "Dir::State::status=\"$WORK/status\"" in builder
     assert "--download-only -y --no-install-recommends" in builder
     assert "linux-image-*-amd64_*.deb" in builder
+    assert "[^']+)'\\$#\\1#p" in builder
     assert 'PACKAGES+=("linux-headers-$KERNEL_RELEASE")' in builder
     assert "Docker 仓库签名密钥指纹不匹配" in builder
     assert "dpkg-scanpackages --multiversion" in builder

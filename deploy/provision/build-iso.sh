@@ -262,7 +262,7 @@ if [ -n "$SYSTEM_DEB_REPO" ]; then
     xorriso -indev "$INPUT_ISO" \
       -find /pool/main/l/linux-signed-amd64 -type f \
       -name 'linux-image-*-amd64_*.deb' -exec lsdl 2>/dev/null \
-      | sed -nE "s#^.*'(/pool/[^']+)'$#\1#p"
+      | sed -nE "s#^.*'(/pool/[^']+)'\$#\1#p"
   )
   [ "${#ISO_KERNEL_DEBS[@]}" -eq 1 ] \
     || die "无法从 netinst ISO 唯一确定目标内核"

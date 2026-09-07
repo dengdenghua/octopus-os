@@ -46,7 +46,7 @@ mapfile -t KERNEL_DEBS < <(
   xorriso -indev "$INPUT_ISO" \
     -find /pool/main/l/linux-signed-amd64 -type f \
     -name 'linux-image-*-amd64_*.deb' -exec lsdl 2>/dev/null \
-    | sed -nE "s#^.*'(/pool/[^']+)'$#\1#p"
+    | sed -nE "s#^.*'(/pool/[^']+)'\$#\1#p"
 )
 [ "${#KERNEL_DEBS[@]}" -eq 1 ] \
   || die "netinst ISO 必须且只能包含一个 amd64 内核包"
