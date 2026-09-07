@@ -322,6 +322,58 @@ def test_iso_can_embed_a_verified_python_wheelhouse_for_offline_firstboot() -> N
     assert "无需 PyPI 网络" in provision
 
 
+def test_iso_can_embed_a_verified_native_codex_for_offline_firstboot() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+    codex_builder = (
+        REPOSITORY / "deploy/provision/build-codex-bundle.sh"
+    ).read_text(encoding="utf-8")
+    preseed = (REPOSITORY / "deploy/provision/installer/preseed.cfg").read_text(
+        encoding="utf-8"
+    )
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    setup = (REPOSITORY / "deploy/provision/base/setup-base.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "status --porcelain --untracked-files=all" in codex_builder
+    assert "pnpm install --frozen-lockfile" in codex_builder
+    assert "prepare-codex-linux.cjs" in codex_builder
+    assert 'rev-parse \'HEAD^{tree}\'' in codex_builder
+    assert '"$STAGED/.echo-source-tree"' in codex_builder
+    assert '"$STAGED/.echo-codex-runtime"' in codex_builder
+    assert "sha256sum -c SHA256SUMS" in codex_builder
+    for executable in (
+        "bin/codex",
+        "bin/codex-code-mode-host",
+        "codex-path/rg",
+        "codex-resources/zsh/bin/zsh",
+        "codex-resources/bwrap",
+    ):
+        assert executable in codex_builder
+
+    assert '--codex-bundle) CODEX_BUNDLE_DIR="$2"' in builder
+    assert 'CODEX_BUNDLE_DIR" = "$EXPECTED_CODEX_BUNDLE' in builder
+    assert '"$CODEX_BUNDLE_DIR/.echo-source-tree"' in builder
+    assert '"$CODEX_BUNDLE_DIR/.echo-codex-runtime"' in builder
+    assert 'ECHO_CODEX_BUNDLE="$CODEX_BUNDLE_TARGET"' in builder
+    assert 'ECHO_CODEX_BUNDLE_SHA256="$CODEX_BUNDLE_SHA256"' in builder
+    assert (
+        'cp "$payload/echo-codex.tar.gz" /target/opt/echo-codex.tar.gz'
+        in preseed
+    )
+    assert "validate_codex_bundle()" in provision
+    assert "install_codex_bundle()" in provision
+    assert 'ln -sfn "$target/bin/codex" /usr/local/bin/codex' in provision
+    assert 'npm install -g "@openai/codex@$expected_version"' in provision
+    assert "无 Codex 载荷且无 npm" in provision
+    assert "step_codex()" in provision
+    assert "then step_codex" in setup
+
+
 def test_system_deb_builder_resolves_a_kernel_bound_empty_state_closure() -> None:
     builder = (
         REPOSITORY / "deploy/provision/build-system-deb-repo.sh"

@@ -54,6 +54,7 @@ if ! is_done node;            then step_node;            else skip node; fi
 if ! is_done echo-src;        then step_echo_src;        else skip echo-src; fi
 if ! is_done echo-py;         then step_echo_py;         else skip echo-py; fi
 if ! is_done echo-web;        then step_echo_web;        else skip echo-web; fi
+if ! is_done codex;           then step_codex;           else skip codex; fi
 if ! is_done shell;           then step_shell;           else skip shell; fi
 if ! is_done backup-recovery; then step_backup_recovery; else skip backup-recovery; fi
 if ! is_done services;        then step_services;        else skip services; fi

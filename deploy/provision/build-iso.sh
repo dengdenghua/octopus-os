@@ -9,7 +9,7 @@
 # 产物:可刻录 U 盘(dd)/ 可挂 VM 的 hybrid ISO。
 #
 # 用法:
-#   ./build-iso.sh [--profile nas|desktop] [--web-dist <frontend-dist>] [--python-wheelhouse <dir>] [--system-deb-repo <dir>] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
+#   ./build-iso.sh [--profile nas|desktop] [--web-dist <frontend-dist>] [--python-wheelhouse <dir>] [--codex-bundle <dir>] [--system-deb-repo <dir>] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
 #   ./build-iso.sh --iso ~/debian-13.1.0-amd64-netinst.iso --mirror https://mirrors.ustc.edu.cn/debian
 #
 # 依赖:xorriso、cpio、gzip(apt install xorriso cpio gzip)。仅支持 Linux。
@@ -25,6 +25,7 @@ OUT_ISO="$REPO_ROOT/dist/echo-os.iso"
 INSTALL_PROFILE="${ECHO_INSTALL_PROFILE:-nas}"
 WEB_DIST=""
 PYTHON_WHEELHOUSE=""
+CODEX_BUNDLE_DIR=""
 SYSTEM_DEB_REPO=""
 WORK=""
 SNAPSHOT_REF=""
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
     --profile) INSTALL_PROFILE="$2"; shift 2 ;;
     --web-dist) WEB_DIST="$2"; shift 2 ;;
     --python-wheelhouse) PYTHON_WHEELHOUSE="$2"; shift 2 ;;
+    --codex-bundle) CODEX_BUNDLE_DIR="$2"; shift 2 ;;
     --system-deb-repo) SYSTEM_DEB_REPO="$2"; shift 2 ;;
     --url)    DEBIAN_ISO_URL="$2"; shift 2 ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
@@ -236,7 +238,54 @@ if [ -n "$PYTHON_WHEELHOUSE" ]; then
   log "已嵌入预构建 Python wheelhouse $PYTHON_BUNDLE_SHA256"
 fi
 
-# ── 3a-4. 可选的首启离线系统包仓 ───────────────────────
+# ── 3a-4. 可选的预构建 Codex CLI 载荷 ──────────────────
+# 无头 NAS 使用预构建 Web 时刻意不安装 Node。Codex 必须作为独立原生
+# ELF 载荷进入镜像，不得借用构建机 PATH 或在首启时联网安装。
+CODEX_BUNDLE_TARGET=""
+CODEX_BUNDLE_SHA256=""
+if [ -n "$CODEX_BUNDLE_DIR" ]; then
+  [ -d "$CODEX_BUNDLE_DIR" ] || die "Codex 载荷不存在: $CODEX_BUNDLE_DIR"
+  CODEX_BUNDLE_DIR="$(cd "$CODEX_BUNDLE_DIR" && pwd -P)"
+  EXPECTED_CODEX_BUNDLE="$(cd "$REPO_ROOT/dist/codex-bundle" 2>/dev/null && pwd -P)" \
+    || die "请先运行 deploy/provision/build-codex-bundle.sh"
+  [ "$CODEX_BUNDLE_DIR" = "$EXPECTED_CODEX_BUNDLE" ] \
+    || die "Codex 载荷必须来自当前源码树的 dist/codex-bundle"
+  for required in .echo-source-tree .echo-codex-runtime \
+      echo-codex-bundle.json SHA256SUMS; do
+    [ -s "$CODEX_BUNDLE_DIR/$required" ] && [ ! -L "$CODEX_BUNDLE_DIR/$required" ] \
+      || die "Codex 载荷缺少常规文件: $required"
+  done
+  [ "$(tr -d '[:space:]' <"$CODEX_BUNDLE_DIR/.echo-source-tree")" = "$SOURCE_TREE" ] \
+    || die "Codex 载荷与当前源码树不一致;请重新构建"
+  [ "$(tr -d '\r\n' <"$CODEX_BUNDLE_DIR/.echo-codex-runtime")" \
+      = "codex-$CODEX_PACKAGE_VERSION linux x86_64" ] \
+    || die "Codex 载荷运行时身份不匹配"
+  if find "$CODEX_BUNDLE_DIR" \( -type l -o \( ! -type f -a ! -type d \) \) \
+      -print -quit | grep -q .; then
+    die "Codex 载荷只能包含常规文件和目录"
+  fi
+  for executable in \
+      bin/codex bin/codex-code-mode-host codex-path/rg \
+      codex-resources/zsh/bin/zsh codex-resources/bwrap; do
+    [ -x "$CODEX_BUNDLE_DIR/$executable" ] \
+      || die "Codex 载荷缺少可执行文件: $executable"
+  done
+  [ "$($CODEX_BUNDLE_DIR/bin/codex --version)" \
+      = "codex-cli $CODEX_PACKAGE_VERSION" ] \
+    || die "Codex 载荷二进制版本不匹配"
+  (cd "$CODEX_BUNDLE_DIR" && sha256sum -c SHA256SUMS >/dev/null) \
+    || die "Codex 载荷文件摘要校验失败"
+  CODEX_BUNDLE="$PAYLOAD/echo-codex.tar.gz"
+  tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+    --mode='u+rwX,go+rX,go-w' \
+    -C "$CODEX_BUNDLE_DIR" -cf - . | gzip -n -9 >"$CODEX_BUNDLE"
+  CODEX_BUNDLE_SHA256="$(sha256sum "$CODEX_BUNDLE" | awk '{print $1}')"
+  [ "${#CODEX_BUNDLE_SHA256}" -eq 64 ] || die "Codex 载荷摘要生成失败"
+  CODEX_BUNDLE_TARGET="/opt/echo-codex.tar.gz"
+  log "已嵌入预构建 Codex CLI $CODEX_BUNDLE_SHA256"
+fi
+
+# ── 3a-5. 可选的首启离线系统包仓 ───────────────────────
 # 该仓覆盖 NAS profile 的全部 firstboot apt 事务（含 Docker 与精确内核
 # headers）。它仍不替代 Debian installer 自身的 netinst 阶段；两层离线能力
 # 分开声明，防止把“首启离线”误报成“整机完全离线”。
@@ -311,6 +360,8 @@ ECHO_PYTHON_BUNDLE_SHA256="$PYTHON_BUNDLE_SHA256"
 ECHO_SYSTEM_DEB_BUNDLE="$SYSTEM_DEB_BUNDLE_TARGET"
 ECHO_SYSTEM_DEB_BUNDLE_SHA256="$SYSTEM_DEB_BUNDLE_SHA256"
 ECHO_SYSTEM_DEB_REPO_SHA256="$SYSTEM_DEB_REPO_SHA256"
+ECHO_CODEX_BUNDLE="$CODEX_BUNDLE_TARGET"
+ECHO_CODEX_BUNDLE_SHA256="$CODEX_BUNDLE_SHA256"
 ECHO_PACKAGED_CODEX_VERSION="$CODEX_PACKAGE_VERSION"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 ECHO_INSTALL_PROFILE="$INSTALL_PROFILE"

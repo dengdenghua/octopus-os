@@ -96,6 +96,93 @@ prepare_system_deb_repo() {
   log "  已验证并启用首启离线系统包仓 $expected"
 }
 
+validate_codex_bundle() {
+  local root="$1" required runtime expected_runtime executable
+  [ -d "$root" ] && [ ! -L "$root" ] || return 1
+  for required in .echo-source-tree .echo-codex-runtime \
+      echo-codex-bundle.json SHA256SUMS; do
+    [ -s "$root/$required" ] && [ ! -L "$root/$required" ] || return 1
+  done
+  if find "$root" \( -type l -o \( ! -type f -a ! -type d \) \) \
+      -print -quit | grep -q .; then
+    return 1
+  fi
+  [ "$(tr -d '[:space:]' <"$root/.echo-source-tree")" = "${ECHO_SOURCE_TREE:-}" ] \
+    || return 1
+  runtime="$(tr -d '\r\n' <"$root/.echo-codex-runtime")"
+  expected_runtime="codex-${ECHO_PACKAGED_CODEX_VERSION:-} linux x86_64"
+  [ "$runtime" = "$expected_runtime" ] || return 1
+  (cd "$root" && sha256sum -c SHA256SUMS >/dev/null) || return 1
+  for executable in \
+      bin/codex bin/codex-code-mode-host codex-path/rg \
+      codex-resources/zsh/bin/zsh codex-resources/bwrap; do
+    [ -x "$root/$executable" ] || return 1
+  done
+  [ "$($root/bin/codex --version)" \
+      = "codex-cli ${ECHO_PACKAGED_CODEX_VERSION:-}" ] || return 1
+}
+
+install_codex_bundle() {
+  local configured="${ECHO_CODEX_BUNDLE:-}"
+  local bundle="${configured:-/opt/echo-codex.tar.gz}"
+  local expected="${ECHO_CODEX_BUNDLE_SHA256:-}"
+  local target=/opt/echo-codex staged actual backup executable
+
+  if [ -z "$configured" ] && [ -z "$expected" ]; then
+    return 1
+  fi
+  if validate_codex_bundle "$target"; then
+    ln -sfn "$target/bin/codex" /usr/local/bin/codex
+    rm -f "$bundle"
+    log "  复用已验证的离线 Codex CLI"
+    return 0
+  fi
+  [ -f "$bundle" ] && [ ! -L "$bundle" ] \
+    || { log "✗ 已声明的离线 Codex 载荷不存在"; return 2; }
+  [ "${#expected}" -eq 64 ] \
+    || { log "✗ 离线 Codex 载荷缺少 SHA-256 身份"; return 2; }
+  actual="$(sha256sum "$bundle" | awk '{print $1}')"
+  [ "$actual" = "$expected" ] \
+    || { log "✗ 离线 Codex 载荷摘要不匹配"; return 2; }
+  if tar -tzf "$bundle" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+    log "✗ 离线 Codex 载荷包含越界路径"
+    return 2
+  fi
+  staged="$(mktemp -d /opt/.echo-codex.XXXXXX)"
+  if ! tar --no-same-owner --no-same-permissions -xzf "$bundle" -C "$staged"; then
+    rm -rf "$staged"
+    log "✗ 离线 Codex 载荷解包失败"
+    return 2
+  fi
+  find "$staged" -type d -exec chmod 0755 {} +
+  find "$staged" -type f -exec chmod 0644 {} +
+  for executable in \
+      bin/codex bin/codex-code-mode-host codex-path/rg \
+      codex-resources/zsh/bin/zsh codex-resources/bwrap; do
+    [ -f "$staged/$executable" ] && [ ! -L "$staged/$executable" ] \
+      || { rm -rf "$staged"; log "✗ 离线 Codex 载荷缺少 $executable"; return 2; }
+    chmod 0755 "$staged/$executable"
+  done
+  if ! validate_codex_bundle "$staged"; then
+    rm -rf "$staged"
+    log "✗ 离线 Codex 载荷内容验证失败"
+    return 2
+  fi
+  backup=""
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    backup="$target.backup.$$"
+    mv "$target" "$backup"
+  fi
+  if ! mv "$staged" "$target"; then
+    [ -n "$backup" ] && mv "$backup" "$target"
+    return 2
+  fi
+  [ -z "$backup" ] || rm -rf "$backup"
+  ln -sfn "$target/bin/codex" /usr/local/bin/codex
+  rm -f "$bundle"
+  log "  已验证并安装离线 Codex CLI $expected"
+}
+
 # network-online.target 只保证网络管理器已就绪，不保证 DNS/镜像在长时间
 # 首启期间始终可达。给每笔 apt 操作一个有上限的外层重试；最终仍失败时
 # 保留原始退出码，让 systemd 正确标记 firstboot 失败。
@@ -649,6 +736,32 @@ step_echo_web() {
   (cd "$OS_DIR/frontend" && pnpm install --frozen-lockfile && pnpm build)
   [ -f "$OS_DIR/frontend/dist/index.html" ] || { log "✗ 前端构建失败"; exit 1; }
   done_mark echo-web
+}
+
+# ── 5d/7 Codex CLI ────────────────────────────────────
+step_codex() {
+  log "== 5d/7 安装 Codex CLI =="
+  local bundle_status=0
+  local expected_version="${ECHO_PACKAGED_CODEX_VERSION:-}"
+
+  install_codex_bundle || bundle_status=$?
+  if [ "$bundle_status" -eq 0 ]; then
+    done_mark codex
+    return 0
+  elif [ "$bundle_status" -eq 2 ]; then
+    return 1
+  fi
+
+  [ -n "$expected_version" ] \
+    || { log "✗ 无 Codex 载荷且缺少固定版本身份"; return 1; }
+  if ! command -v codex >/dev/null 2>&1; then
+    command -v npm >/dev/null 2>&1 \
+      || { log "✗ 无 Codex 载荷且无 npm，无法提供 Agent 执行面"; return 1; }
+    npm install -g "@openai/codex@$expected_version"
+  fi
+  [ "$(codex --version)" = "codex-cli $expected_version" ] \
+    || { log "✗ Codex CLI 版本与镜像身份不一致"; return 1; }
+  done_mark codex
 }
 
 # ── 6/7 桌面 shell(上游收敛)───────────────────────────
