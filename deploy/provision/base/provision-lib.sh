@@ -18,6 +18,84 @@ skip() { log "skip: $1 (已完成)"; }
 done_mark() { mkdir -p "$STATE_DIR"; touch "$STATE_DIR/$1"; }
 is_done()   { [ -f "$STATE_DIR/$1" ]; }
 
+SYSTEM_DEB_REPO=""
+
+# A declared system-deb bundle is a release artifact, not a best-effort cache:
+# missing files, a wrong hash/tree/kernel, links, or a broken package index must
+# fail closed.  A previously extracted repository remains valid on a resumed
+# firstboot after the compressed bundle has been consumed.
+validate_system_deb_repo() {
+  local repo="$1" required runtime expected_runtime expected_repo actual_repo
+  [ -d "$repo" ] || return 1
+  for required in .echo-source-tree .echo-system-runtime Packages Packages.gz packages.lock SHA256SUMS; do
+    [ -s "$repo/$required" ] && [ ! -L "$repo/$required" ] || return 1
+  done
+  [ "$(tr -d '[:space:]' <"$repo/.echo-source-tree")" = "${ECHO_SOURCE_TREE:-}" ] \
+    || return 1
+  runtime="$(tr -d '\r\n' <"$repo/.echo-system-runtime")"
+  expected_runtime="debian-trixie $(dpkg --print-architecture) kernel-$(uname -r)"
+  [ "$runtime" = "$expected_runtime" ] || return 1
+  [ "$(find "$repo" -maxdepth 1 -type f -name '*.deb' | wc -l)" -gt 40 ] \
+    || return 1
+  if find "$repo" -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+    return 1
+  fi
+  expected_repo="${ECHO_SYSTEM_DEB_REPO_SHA256:-}"
+  [ "${#expected_repo}" -eq 64 ] || return 1
+  actual_repo="$(sha256sum "$repo/SHA256SUMS" | awk '{print $1}')"
+  [ "$actual_repo" = "$expected_repo" ] || return 1
+  (cd "$repo" && sha256sum -c SHA256SUMS >/dev/null) || return 1
+}
+
+prepare_system_deb_repo() {
+  local configured="${ECHO_SYSTEM_DEB_BUNDLE:-}"
+  local bundle="${configured:-/opt/echo-system-debs.tar.gz}"
+  local expected="${ECHO_SYSTEM_DEB_BUNDLE_SHA256:-}"
+  local target=/opt/echo-system-debs staged actual backup
+
+  if [ -z "$configured" ] && [ -z "$expected" ]; then
+    return 1
+  fi
+  if validate_system_deb_repo "$target"; then
+    SYSTEM_DEB_REPO="$target"
+    rm -f "$bundle"
+    log "  复用已验证的首启离线系统包仓"
+    return 0
+  fi
+  [ -f "$bundle" ] && [ ! -L "$bundle" ] \
+    || { log "✗ 已声明的首启离线系统包仓不存在"; return 2; }
+  [ "${#expected}" -eq 64 ] \
+    || { log "✗ 首启离线系统包仓缺少 SHA-256 身份"; return 2; }
+  actual="$(sha256sum "$bundle" | awk '{print $1}')"
+  [ "$actual" = "$expected" ] \
+    || { log "✗ 首启离线系统包仓摘要不匹配"; return 2; }
+  if tar -tzf "$bundle" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+    log "✗ 首启离线系统包仓包含越界路径"
+    return 2
+  fi
+  staged="$(mktemp -d /opt/.echo-system-debs.XXXXXX)"
+  if ! tar -xzf "$bundle" -C "$staged" || ! validate_system_deb_repo "$staged"; then
+    rm -rf "$staged"
+    log "✗ 首启离线系统包仓内容验证失败"
+    return 2
+  fi
+  chmod 0755 "$staged"
+  find "$staged" -maxdepth 1 -type f -exec chmod 0644 {} +
+  backup=""
+  if [ -e "$target" ]; then
+    backup="$target.backup.$$"
+    mv "$target" "$backup"
+  fi
+  if ! mv "$staged" "$target"; then
+    [ -n "$backup" ] && mv "$backup" "$target"
+    return 2
+  fi
+  rm -rf "$backup"
+  rm -f "$bundle"
+  SYSTEM_DEB_REPO="$target"
+  log "  已验证并启用首启离线系统包仓 $expected"
+}
+
 # network-online.target 只保证网络管理器已就绪，不保证 DNS/镜像在长时间
 # 首启期间始终可达。给每笔 apt 操作一个有上限的外层重试；最终仍失败时
 # 保留原始退出码，让 systemd 正确标记 firstboot 失败。
@@ -72,7 +150,24 @@ Acquire::Retries "3";
 Acquire::http::Timeout "30";
 Acquire::https::Timeout "30";
 EOF
-  cat >/etc/apt/sources.list.d/debian.sources <<EOF
+  if [ -n "$SYSTEM_DEB_REPO" ]; then
+    cat >/etc/apt/sources.list.d/echo-system-debs.sources <<EOF
+Types: deb
+URIs: file:$SYSTEM_DEB_REPO
+Suites: ./
+Trusted: yes
+EOF
+    # Force every firstboot apt invocation through the verified local flat
+    # repository. Existing installer/administrator sources remain on disk but
+    # cannot trigger a hidden network fallback while this release is active.
+    cat >/etc/apt/apt.conf.d/79echo-offline-firstboot <<'EOF'
+Dir::Etc::sourcelist "/etc/apt/sources.list.d/echo-system-debs.sources";
+Dir::Etc::sourceparts "/dev/null";
+EOF
+  else
+    rm -f /etc/apt/apt.conf.d/79echo-offline-firstboot \
+      /etc/apt/sources.list.d/echo-system-debs.sources
+    cat >/etc/apt/sources.list.d/debian.sources <<EOF
 Types: deb
 URIs: ${DEBIAN_MIRROR}
 Suites: trixie trixie-updates
@@ -85,6 +180,7 @@ Suites: trixie-security
 Components: main contrib non-free non-free-firmware
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
+  fi
   # Debian 13 安装器可能同时留下传统 sources.list 和 deb822 文件。只注释
   # 与本机 Debian 镜像/官方安全源重复的行，第三方仓库原样保留；原文件留
   # 一份备份，便于运维审计或手工恢复。
@@ -176,18 +272,22 @@ step_storage() {
 # ── 3/7 Docker ──────────────────────────────────────────
 step_docker() {
   log "== 3/7 安装 Docker =="
-  install -m0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/debian/gpg \
-    -o /etc/apt/keyrings/docker.asc
-  chmod a+r /etc/apt/keyrings/docker.asc
-  cat >/etc/apt/sources.list.d/docker.sources <<EOF
+  if [ -n "$SYSTEM_DEB_REPO" ]; then
+    log "  Docker 使用已验证的首启离线系统包仓"
+  else
+    install -m0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/debian/gpg \
+      -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    cat >/etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/debian
 Suites: trixie
 Components: stable
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
-  apt_update
+    apt_update
+  fi
   apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   systemctl enable --now docker

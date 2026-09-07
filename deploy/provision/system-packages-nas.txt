@@ -1,0 +1,48 @@
+# Echo OS headless NAS firstboot packages.
+#
+# Keep package names only (one per line). The builder appends the exact
+# linux-headers package read from the Debian netinst ISO. Dependencies are
+# resolved from an empty dpkg status so the result is a self-contained superset
+# rather than a cache that accidentally relies on the build host.
+ca-certificates
+curl
+gnupg
+lsb-release
+zfsutils-linux
+zfs-dkms
+samba
+samba-common-bin
+smbclient
+nfs-kernel-server
+acl
+nut-client
+nut-server
+smartmontools
+hdparm
+mdadm
+lvm2
+btrfs-progs
+parted
+util-linux
+firmware-linux-free
+firmware-linux-nonfree
+firmware-misc-nonfree
+firmware-amd-graphics
+firmware-intel-graphics
+firmware-realtek
+firmware-iwlwifi
+firmware-atheros
+firmware-brcm80211
+firmware-mediatek
+intel-microcode
+amd64-microcode
+nvme-cli
+pciutils
+usbutils
+ethtool
+lm-sensors
+docker-ce
+docker-ce-cli
+containerd.io
+docker-buildx-plugin
+docker-compose-plugin

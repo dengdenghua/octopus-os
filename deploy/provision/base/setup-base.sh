@@ -42,6 +42,10 @@ source "$SCRIPT_DIR/provision-lib.sh"
 
 mkdir -p "$STATE_DIR"
 
+system_deb_status=0
+prepare_system_deb_repo || system_deb_status=$?
+[ "$system_deb_status" -ne 2 ] || exit 1
+
 # ── 编排:每阶段带哨兵,幂等可重入 ─────────────────────
 if ! is_done apt;             then step_apt;             else skip apt; fi
 if ! is_done storage;         then step_storage;         else skip storage; fi

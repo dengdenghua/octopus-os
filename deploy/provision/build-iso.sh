@@ -9,7 +9,7 @@
 # 产物:可刻录 U 盘(dd)/ 可挂 VM 的 hybrid ISO。
 #
 # 用法:
-#   ./build-iso.sh [--profile nas|desktop] [--web-dist <frontend-dist>] [--python-wheelhouse <dir>] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
+#   ./build-iso.sh [--profile nas|desktop] [--web-dist <frontend-dist>] [--python-wheelhouse <dir>] [--system-deb-repo <dir>] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
 #   ./build-iso.sh --iso ~/debian-13.1.0-amd64-netinst.iso --mirror https://mirrors.ustc.edu.cn/debian
 #
 # 依赖:xorriso、cpio、gzip(apt install xorriso cpio gzip)。仅支持 Linux。
@@ -25,6 +25,7 @@ OUT_ISO="$REPO_ROOT/dist/echo-os.iso"
 INSTALL_PROFILE="${ECHO_INSTALL_PROFILE:-nas}"
 WEB_DIST=""
 PYTHON_WHEELHOUSE=""
+SYSTEM_DEB_REPO=""
 WORK=""
 SNAPSHOT_REF=""
 
@@ -40,6 +41,7 @@ while [ $# -gt 0 ]; do
     --profile) INSTALL_PROFILE="$2"; shift 2 ;;
     --web-dist) WEB_DIST="$2"; shift 2 ;;
     --python-wheelhouse) PYTHON_WHEELHOUSE="$2"; shift 2 ;;
+    --system-deb-repo) SYSTEM_DEB_REPO="$2"; shift 2 ;;
     --url)    DEBIAN_ISO_URL="$2"; shift 2 ;;
     -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) die "未知参数: $1" ;;
@@ -234,6 +236,63 @@ if [ -n "$PYTHON_WHEELHOUSE" ]; then
   log "已嵌入预构建 Python wheelhouse $PYTHON_BUNDLE_SHA256"
 fi
 
+# ── 3a-4. 可选的首启离线系统包仓 ───────────────────────
+# 该仓覆盖 NAS profile 的全部 firstboot apt 事务（含 Docker 与精确内核
+# headers）。它仍不替代 Debian installer 自身的 netinst 阶段；两层离线能力
+# 分开声明，防止把“首启离线”误报成“整机完全离线”。
+SYSTEM_DEB_BUNDLE_TARGET=""
+SYSTEM_DEB_BUNDLE_SHA256=""
+SYSTEM_DEB_REPO_SHA256=""
+if [ -n "$SYSTEM_DEB_REPO" ]; then
+  [ "$INSTALL_PROFILE" = nas ] \
+    || die "系统包仓当前只支持 nas profile"
+  [ -d "$SYSTEM_DEB_REPO" ] || die "系统包仓不存在: $SYSTEM_DEB_REPO"
+  SYSTEM_DEB_REPO="$(cd "$SYSTEM_DEB_REPO" && pwd -P)"
+  EXPECTED_SYSTEM_DEB_REPO="$(cd "$REPO_ROOT/dist/system-debs" 2>/dev/null && pwd -P)" \
+    || die "请先运行 build-system-deb-repo.sh"
+  [ "$SYSTEM_DEB_REPO" = "$EXPECTED_SYSTEM_DEB_REPO" ] \
+    || die "系统包仓必须来自当前源码树的 dist/system-debs"
+  for required in .echo-source-tree .echo-system-runtime Packages Packages.gz packages.lock SHA256SUMS; do
+    [ -s "$SYSTEM_DEB_REPO/$required" ] && [ ! -L "$SYSTEM_DEB_REPO/$required" ] \
+      || die "系统包仓缺少常规文件: $required"
+  done
+  [ "$(tr -d '[:space:]' <"$SYSTEM_DEB_REPO/.echo-source-tree")" = "$SOURCE_TREE" ] \
+    || die "系统包仓与当前源码树不一致;请重新构建"
+  mapfile -t ISO_KERNEL_DEBS < <(
+    xorriso -indev "$INPUT_ISO" \
+      -find /pool/main/l/linux-signed-amd64 -type f \
+      -name 'linux-image-*-amd64_*.deb' -exec lsdl 2>/dev/null \
+      | sed -nE "s#^.*'(/pool/[^']+)'$#\1#p"
+  )
+  [ "${#ISO_KERNEL_DEBS[@]}" -eq 1 ] \
+    || die "无法从 netinst ISO 唯一确定目标内核"
+  ISO_KERNEL_RELEASE="$(basename "${ISO_KERNEL_DEBS[0]}" \
+    | sed -nE 's/^linux-image-([^_]+)_[^_]+_amd64\.deb$/\1/p')"
+  [ "$(tr -d '\r\n' <"$SYSTEM_DEB_REPO/.echo-system-runtime")" \
+      = "debian-trixie amd64 kernel-$ISO_KERNEL_RELEASE" ] \
+    || die "系统包仓与 netinst ISO 内核不匹配"
+  if find "$SYSTEM_DEB_REPO" -mindepth 1 -maxdepth 1 ! -type f \
+      -print -quit | grep -q .; then
+    die "系统包仓只能包含顶层常规文件"
+  fi
+  [ "$(find "$SYSTEM_DEB_REPO" -maxdepth 1 -type f -name '*.deb' | wc -l)" -gt 40 ] \
+    || die "系统包仓 deb 数量异常"
+  (cd "$SYSTEM_DEB_REPO" && sha256sum -c SHA256SUMS >/dev/null) \
+    || die "系统包仓文件摘要校验失败"
+  SYSTEM_DEB_REPO_SHA256="$(sha256sum "$SYSTEM_DEB_REPO/SHA256SUMS" | awk '{print $1}')"
+  [ "${#SYSTEM_DEB_REPO_SHA256}" -eq 64 ] \
+    || die "系统包仓身份摘要生成失败"
+  SYSTEM_DEB_BUNDLE="$PAYLOAD/echo-system-debs.tar.gz"
+  tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+    --mode='u+rwX,go+rX,go-w' \
+    -C "$SYSTEM_DEB_REPO" -cf - . | gzip -n -9 >"$SYSTEM_DEB_BUNDLE"
+  SYSTEM_DEB_BUNDLE_SHA256="$(sha256sum "$SYSTEM_DEB_BUNDLE" | awk '{print $1}')"
+  [ "${#SYSTEM_DEB_BUNDLE_SHA256}" -eq 64 ] \
+    || die "系统包仓摘要生成失败"
+  SYSTEM_DEB_BUNDLE_TARGET="/opt/echo-system-debs.tar.gz"
+  log "已嵌入首启离线系统包仓 $SYSTEM_DEB_BUNDLE_SHA256"
+fi
+
 # 允许注入自定义仓库/分支；bundle 是正式 ISO 的首选来源，仓库参数保留给
 # 后续更新和不含 bundle 的旧版/VM 测试介质。
 cat >"$PAYLOAD/echo-env.sh" <<EOF
@@ -249,6 +308,9 @@ ECHO_WEB_BUNDLE="$WEB_BUNDLE_TARGET"
 ECHO_WEB_BUNDLE_SHA256="$WEB_BUNDLE_SHA256"
 ECHO_PYTHON_BUNDLE="$PYTHON_BUNDLE_TARGET"
 ECHO_PYTHON_BUNDLE_SHA256="$PYTHON_BUNDLE_SHA256"
+ECHO_SYSTEM_DEB_BUNDLE="$SYSTEM_DEB_BUNDLE_TARGET"
+ECHO_SYSTEM_DEB_BUNDLE_SHA256="$SYSTEM_DEB_BUNDLE_SHA256"
+ECHO_SYSTEM_DEB_REPO_SHA256="$SYSTEM_DEB_REPO_SHA256"
 ECHO_PACKAGED_CODEX_VERSION="$CODEX_PACKAGE_VERSION"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 ECHO_INSTALL_PROFILE="$INSTALL_PROFILE"

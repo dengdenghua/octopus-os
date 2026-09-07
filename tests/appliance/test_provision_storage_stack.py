@@ -24,6 +24,35 @@ HARDWARE_SUPPORT_PACKAGES = {
     "lm-sensors",
 }
 
+FIRSTBOOT_SYSTEM_PACKAGES = {
+    "ca-certificates",
+    "curl",
+    "gnupg",
+    "lsb-release",
+    "zfsutils-linux",
+    "zfs-dkms",
+    "samba",
+    "samba-common-bin",
+    "smbclient",
+    "nfs-kernel-server",
+    "acl",
+    "nut-client",
+    "nut-server",
+    "smartmontools",
+    "hdparm",
+    "mdadm",
+    "lvm2",
+    "btrfs-progs",
+    "parted",
+    "util-linux",
+    *HARDWARE_SUPPORT_PACKAGES,
+    "docker-ce",
+    "docker-ce-cli",
+    "containerd.io",
+    "docker-buildx-plugin",
+    "docker-compose-plugin",
+}
+
 
 def test_storage_step_builds_zfs_for_the_running_kernel_before_marking_done() -> None:
     provision = (
@@ -291,6 +320,77 @@ def test_iso_can_embed_a_verified_python_wheelhouse_for_offline_firstboot() -> N
     assert "--no-index --no-cache-dir --only-binary=:all:" in provision
     assert '"${echo_wheels[0]}[$extras]" packaging' in provision
     assert "无需 PyPI 网络" in provision
+
+
+def test_system_deb_builder_resolves_a_kernel_bound_empty_state_closure() -> None:
+    builder = (
+        REPOSITORY / "deploy/provision/build-system-deb-repo.sh"
+    ).read_text(encoding="utf-8")
+    packages = (
+        REPOSITORY / "deploy/provision/system-packages-nas.txt"
+    ).read_text(encoding="utf-8")
+
+    assert "Dir::State::status=\"$WORK/status\"" in builder
+    assert "--download-only -y --no-install-recommends" in builder
+    assert "linux-image-*-amd64_*.deb" in builder
+    assert 'PACKAGES+=("linux-headers-$KERNEL_RELEASE")' in builder
+    assert "Docker 仓库签名密钥指纹不匹配" in builder
+    assert "dpkg-scanpackages --multiversion" in builder
+    assert ".echo-system-runtime" in builder
+    assert "packages.lock" in builder
+    assert "SHA256SUMS" in builder
+    for package in (
+        "zfs-dkms",
+        "samba",
+        "nfs-kernel-server",
+        "firmware-realtek",
+        "docker-ce",
+        "docker-compose-plugin",
+    ):
+        assert f"{package}\n" in packages
+
+
+def test_system_deb_manifest_exactly_covers_headless_firstboot_transactions() -> None:
+    package_file = REPOSITORY / "deploy/provision/system-packages-nas.txt"
+    manifest = {
+        line.split("#", 1)[0].strip()
+        for line in package_file.read_text(encoding="utf-8").splitlines()
+        if line.split("#", 1)[0].strip()
+    }
+
+    assert manifest == FIRSTBOOT_SYSTEM_PACKAGES
+
+
+def test_iso_can_embed_a_verified_firstboot_system_deb_repository() -> None:
+    builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(
+        encoding="utf-8"
+    )
+    preseed = (REPOSITORY / "deploy/provision/installer/preseed.cfg").read_text(
+        encoding="utf-8"
+    )
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    setup = (REPOSITORY / "deploy/provision/base/setup-base.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "--system-deb-repo" in builder
+    assert "系统包仓与 netinst ISO 内核不匹配" in builder
+    assert 'ECHO_SYSTEM_DEB_BUNDLE="$SYSTEM_DEB_BUNDLE_TARGET"' in builder
+    assert (
+        'ECHO_SYSTEM_DEB_BUNDLE_SHA256="$SYSTEM_DEB_BUNDLE_SHA256"' in builder
+    )
+    assert 'ECHO_SYSTEM_DEB_REPO_SHA256="$SYSTEM_DEB_REPO_SHA256"' in builder
+    assert "echo-system-debs.tar.gz" in preseed
+    assert "prepare_system_deb_repo" in setup
+    assert "validate_system_deb_repo" in provision
+    assert 'URIs: file:$SYSTEM_DEB_REPO' in provision
+    assert 'Dir::Etc::sourceparts "/dev/null";' in provision
+    assert "Docker 使用已验证的首启离线系统包仓" in provision
+    assert "已声明的首启离线系统包仓不存在" in provision
+    assert "首启离线系统包仓摘要不匹配" in provision
+    assert "ECHO_SYSTEM_DEB_REPO_SHA256" in provision
 
 
 def test_native_appliance_service_inherits_the_image_codex_version() -> None:
