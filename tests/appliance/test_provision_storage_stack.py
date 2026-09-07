@@ -106,6 +106,19 @@ def test_apt_index_failures_enter_the_existing_retry_loop() -> None:
     assert "apt_retry apt-get update" not in provision
 
 
+def test_apt_transfers_have_a_bounded_timeout_before_outer_retries() -> None:
+    provision = (
+        REPOSITORY / "deploy/provision/base/provision-lib.sh"
+    ).read_text(encoding="utf-8")
+    apt_step = provision.split("step_apt() {", 1)[1].split("\n}\n", 1)[0]
+
+    assert "cat >/etc/apt/apt.conf.d/80echo-network <<'EOF'" in apt_step
+    assert 'Acquire::Retries "3";' in apt_step
+    assert 'Acquire::http::Timeout "30";' in apt_step
+    assert 'Acquire::https::Timeout "30";' in apt_step
+    assert apt_step.index("80echo-network") < apt_step.index("apt_update")
+
+
 def test_both_image_paths_keep_the_nas_hardware_support_baseline() -> None:
     provision = (
         REPOSITORY / "deploy/provision/base/provision-lib.sh"

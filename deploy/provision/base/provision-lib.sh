@@ -64,6 +64,14 @@ ensure_swap() {
 # ── 1/7 软件源 ──────────────────────────────────────────
 step_apt() {
   log "== 1/7 配置软件源 =="
+  # apt 的默认读取超时可能让故障 CDN 单包挂住近一小时，外层 apt_retry
+  # 也就迟迟得不到退出码。先给每次传输设置明确上限；apt 自身做短重试，
+  # 若整笔事务仍失败，再由 apt_retry 进行有界退避。
+  cat >/etc/apt/apt.conf.d/80echo-network <<'EOF'
+Acquire::Retries "3";
+Acquire::http::Timeout "30";
+Acquire::https::Timeout "30";
+EOF
   cat >/etc/apt/sources.list.d/debian.sources <<EOF
 Types: deb
 URIs: ${DEBIAN_MIRROR}
