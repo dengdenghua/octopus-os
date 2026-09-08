@@ -115,6 +115,7 @@ def _serialize_rollback_entry(entry: Any) -> dict[str, Any]:
             "",
         ),
         "source_event_id": getattr(entry, "source_event_id", ""),
+        "unavailable_reason": getattr(entry, "unavailable_reason", ""),
         "content_bytes": (len(content.encode("utf-8")) if isinstance(content, str) else None),
     }
 
@@ -129,7 +130,7 @@ def _serialize_rollback_result(
     path: str | None,
     project_root: str | None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "dry_run": dry_run,
         "matched_events": matched_events,
         "event_id": event_id,
@@ -144,6 +145,33 @@ def _serialize_rollback_result(
         ],
         "errors": list(getattr(result, "errors", ()) or ()),
     }
+    outcomes = [
+        item.to_dict() if hasattr(item, "to_dict") else item
+        for item in (getattr(result, "outcomes", ()) or ())
+    ]
+    uncertain = any(item.get("status") == "uncertain" for item in outcomes)
+    committed = any(item.get("committed") is True for item in outcomes)
+    incomplete = bool(payload["skipped"] or payload["failed"] or payload["errors"] or uncertain)
+    count = payload["applied"]
+    payload["state"] = (
+        "uncertain"
+        if uncertain and not dry_run
+        else "preview_partial"
+        if dry_run and incomplete
+        else "preview_ready"
+        if dry_run and count
+        else "partial"
+        if incomplete and (count or committed)
+        else "blocked"
+        if incomplete
+        else "completed"
+        if count
+        else "empty"
+    )
+    payload["execution_complete"] = bool(not dry_run and count and not incomplete)
+    if hasattr(result, "outcomes"):
+        payload["outcomes"] = outcomes
+    return payload
 
 
 def _serialize_file_rollback_event(event: Any) -> dict[str, Any]:
@@ -164,6 +192,7 @@ def _serialize_file_rollback_event(event: Any) -> dict[str, Any]:
         ),
         "paths": list(getattr(event, "paths", []) or []),
         "errors": list(getattr(event, "errors", []) or []),
+        "outcomes": list(getattr(event, "outcomes", []) or []),
     }
 
 

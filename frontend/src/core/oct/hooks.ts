@@ -1,5 +1,6 @@
 /** React Query hooks for the oct account gateway. */
 import { swallow } from "@/core/utils/log";
+import { currentActorId } from "@/core/auth/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
@@ -15,11 +16,19 @@ import {
 } from "./api";
 
 const octKey = ["account", "oct"] as const;
-const dailyClaimKey = ["account", "oct", "daily-claim"] as const;
 const goodsKey = ["account", "oct", "goods"] as const;
 
+function dailyClaimKey(userId: string | null) {
+  return [...octKey, "daily-claim", userId ?? "anonymous"] as const;
+}
+
 function octLinkKey(userId: string | null) {
-  return [...octKey, userId ?? "anonymous"] as const;
+  return [...octKey, "link", userId ?? "anonymous"] as const;
+}
+
+/** Canonical account-link key shared by settings prefetch and account widgets. */
+export function octLinkQueryKey(userId: string | null = currentActorId()) {
+  return octLinkKey(userId);
 }
 
 /**
@@ -53,11 +62,11 @@ export function useOctLink() {
   const userId = user?.user_id ?? user?.actor_id ?? null;
 
   useEffect(() => {
-    void qc.invalidateQueries({ queryKey: octKey });
+    void qc.invalidateQueries({ queryKey: octLinkQueryKey(userId) });
   }, [userId, qc]);
 
   return useQuery<OctLink | null>({
-    queryKey: octLinkKey(userId),
+    queryKey: octLinkQueryKey(userId),
     queryFn: async () => {
       try {
         const link = await octApi.get();
@@ -92,10 +101,12 @@ export function useOctLink() {
 /** 手动强刷(拉网关 balance + membership)。 */
 export function useRefreshOctCredits() {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const userId = user?.user_id ?? user?.actor_id ?? null;
   return useMutation({
     mutationFn: () => octApi.refresh(),
     onSuccess: (data) => {
-      qc.setQueriesData({ queryKey: octKey }, normalize(data));
+      qc.setQueryData(octLinkQueryKey(userId), normalize(data));
     },
   });
 }
@@ -105,8 +116,10 @@ export function useRefreshOctCredits() {
  * (dailyFreeRemaining / dailyFreeCredits)。仅 link 存在时启用。
  */
 export function useDailyClaimInfo(enabled = true) {
+  const { user } = useAuth();
+  const userId = user?.user_id ?? user?.actor_id ?? null;
   return useQuery({
-    queryKey: dailyClaimKey,
+    queryKey: dailyClaimKey(userId),
     enabled,
     queryFn: async () => {
       try {
@@ -144,11 +157,13 @@ export function useDailyClaimInfo(enabled = true) {
 /** 每日签到领免费积分。成功后失效积分 + 签到缓存。 */
 export function useClaimDailyCredits() {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const userId = user?.user_id ?? user?.actor_id ?? null;
   return useMutation<Record<string, unknown>, Error, boolean>({
     mutationFn: () => octApi.dailyClaim(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: dailyClaimKey });
-      qc.invalidateQueries({ queryKey: octKey });
+      qc.invalidateQueries({ queryKey: dailyClaimKey(userId) });
+      qc.invalidateQueries({ queryKey: octLinkQueryKey(userId) });
     },
   });
 }
@@ -192,13 +207,15 @@ export function useCreateOrder() {
 /** 查单(status=PAID 时后端顺手刷余额);支付完成失效积分。 */
 export function useFindOrder(orderNo: string | null) {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const userId = user?.user_id ?? user?.actor_id ?? null;
   return useQuery<OctOrder>({
     queryKey: [...goodsKey, "order", orderNo],
     enabled: Boolean(orderNo),
     queryFn: async () => {
       const o = await octApi.orders.findByOrderNo(orderNo as string);
       if (o?.status === "PAID") {
-        qc.invalidateQueries({ queryKey: octKey });
+        qc.invalidateQueries({ queryKey: octLinkQueryKey(userId) });
       }
       return o;
     },

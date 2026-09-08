@@ -16,6 +16,7 @@ import {
   applyOmvSharedFolderRename,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
+  applyOmvTimeMachine,
   applyOmvUser,
   applyOmvUserPassword,
   applyOmvZfsMirror,
@@ -37,6 +38,7 @@ import {
   fetchOmvSmartDevices,
   fetchOmvStorageTopology,
   fetchOmvStatus,
+  fetchOmvTimeMachineStatus,
   fetchOmvUpsStatus,
   fetchOmvZfsMirrorCandidates,
   fetchOmvZfsMirrorReplacementCandidates,
@@ -58,6 +60,7 @@ import {
   planOmvSharedFolderRename,
   planOmvSharePrivilege,
   planOmvSmbShare,
+  planOmvTimeMachine,
   planOmvUser,
   planOmvUserPassword,
   planOmvZfsMirror,
@@ -874,6 +877,79 @@ describe("OMV read-only API client", () => {
     });
     expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
       "one-shot-token",
+    );
+  });
+
+  it("keeps Time Machine status, preview, and approved apply on bounded routes", async () => {
+    const desired = {
+      schema: "echo.storage.time-machine-desired.v1" as const,
+      sharedFolderRef: "11111111-2222-4333-8444-555555555555",
+      enabled: true,
+      owner: "alice",
+      maximumBytes: 256 * 1024 ** 3,
+    };
+    const status = {
+      schema: "echo.storage.time-machine-status.v1" as const,
+      enabled: false,
+      available: true,
+      shares: [],
+      source: "native" as const,
+      readOnly: true as const,
+    };
+    const plan = {
+      schema: "echo.storage.time-machine-plan.v1" as const,
+      planId: "c".repeat(64),
+      baseRevision: "d".repeat(64),
+      operation: "create" as const,
+      requiresApproval: true,
+      sharedFolder: {
+        uuid: desired.sharedFolderRef,
+        name: "TimeMachine",
+        status: "MOUNTED",
+      },
+      desired,
+      changes: [],
+      safety: { protocol: "smb3-vfs-fruit" },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(status), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ...plan, applied: true, verified: true }),
+          { status: 200 },
+        ),
+      );
+
+    expect((await fetchOmvTimeMachineStatus()).available).toBe(true);
+    expect((await planOmvTimeMachine(desired)).planId).toBe(plan.planId);
+    expect(
+      (
+        await applyOmvTimeMachine(
+          desired,
+          plan.planId,
+          "one-shot-time-machine-token",
+        )
+      ).verified,
+    ).toBe(true);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/sharing/time-machine",
+      "/api/appliance/omv/sharing/time-machine/plan",
+      "/api/appliance/omv/sharing/time-machine/apply",
+    ]);
+    const apply = fetchMock.mock.calls[2]?.[1] as RequestInit;
+    expect(JSON.parse(String(apply.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
+      "one-shot-time-machine-token",
     );
   });
 

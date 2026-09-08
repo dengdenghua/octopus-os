@@ -2,7 +2,7 @@ import { DownloadIcon, EyeIcon, LoaderIcon, PackageIcon } from "lucide-react";
 import { Suspense, useCallback, lazy, useMemo, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
-import { artifactDisplayPath, urlOfArtifact } from "@/core/artifacts/utils";
+import { artifactDisplayPath } from "@/core/artifacts/utils";
 import { useArtifactContent } from "@/core/artifacts/hooks";
 import { useI18n } from "@/core/i18n/hooks";
 import { useStreamdownPlugins } from "@/core/streamdown";
@@ -18,6 +18,8 @@ import { ArtifactLink } from "../citations/artifact-link";
 import { useThread } from "../messages/context";
 import { OfficePreview } from "./artifact-file-detail";
 import { useArtifacts } from "./context";
+import { ArtifactReadError } from "./artifact-load-error";
+import { ArtifactDownloadLink } from "./artifact-download-link";
 import { officeArtifactKind } from "./office-edit";
 import { useInstallSkill } from "./use-install-skill";
 
@@ -104,18 +106,9 @@ export function ArtifactFileList({
                 asChild
                 aria-label={t.common.download}
               >
-                <a
-                  href={urlOfArtifact({
-                    filepath: file,
-                    threadId: threadId,
-                    download: true,
-                  })}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <ArtifactDownloadLink filepath={file} threadId={threadId}>
                   <DownloadIcon className="size-3.5" />
-                </a>
+                </ArtifactDownloadLink>
               </Button>
             </div>
           </button>
@@ -193,7 +186,7 @@ function ArtifactInlinePreviewCard({
   const { language } = checkCodeFile(displayPath);
   const officeKind = officeArtifactKind(displayPath);
   const isWriteFile = filepath.startsWith("write-file:");
-  const { content, url, isLoading } = useArtifactContent({
+  const { content, url, isLoading, error, refetch } = useArtifactContent({
     filepath,
     threadId,
     // OfficePreview performs its own authenticated, format-aware fetch.
@@ -222,13 +215,9 @@ function ArtifactInlinePreviewCard({
           asChild
           aria-label={t.common.download}
         >
-          <a
-            href={urlOfArtifact({ filepath, threadId, download: true })}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <ArtifactDownloadLink filepath={filepath} threadId={threadId}>
             <DownloadIcon className="size-3" />
-          </a>
+          </ArtifactDownloadLink>
         </Button>
       </div>
 
@@ -238,7 +227,9 @@ function ArtifactInlinePreviewCard({
             {t.common.loading}…
           </div>
         )}
-        {officeKind ? (
+        {error && !officeKind ? (
+          <ArtifactReadError error={error} onRetry={() => void refetch()} />
+        ) : officeKind ? (
           <OfficePreview
             displayPath={displayPath}
             filepath={filepath}

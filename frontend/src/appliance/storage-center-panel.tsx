@@ -30,6 +30,7 @@ import { Ext4VolumePanel } from "@/appliance/ext4-volume-panel";
 import { OmvSharingPanel } from "@/appliance/omv-sharing-panel";
 import { MdRaid1Panel } from "@/appliance/mdraid1-panel";
 import { MdRaid1RepairPanel } from "@/appliance/mdraid1-repair-panel";
+import { NasBackupPanel } from "@/appliance/nas-backup-panel";
 import { OmvStorageHealth } from "@/appliance/omv-storage-health";
 import { NutDeviceConfigPanel } from "@/appliance/nut-device-config-panel";
 import { SmartSchedulePanel } from "@/appliance/smart-schedule-panel";
@@ -38,6 +39,8 @@ import { ZfsMirrorPanel } from "@/appliance/zfs-mirror-panel";
 import { cn } from "@/lib/utils";
 
 type StorageCenterSection = "overview" | "health" | "pools" | "sharing";
+type StorageHealthSection = "status" | "backup" | "maintenance";
+type StoragePoolTechnology = "btrfs" | "mdraid-ext4" | "zfs";
 
 const CATEGORY_META = {
   photos: { label: "照片", icon: ImageIcon, color: "bg-rose-500" },
@@ -54,6 +57,176 @@ function percent(value: number, total: number) {
 
 function count(value: number) {
   return new Intl.NumberFormat("zh-CN").format(value);
+}
+
+const STORAGE_POOL_TECHNOLOGIES: Array<{
+  id: StoragePoolTechnology;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "btrfs",
+    label: "Btrfs RAID1",
+    description: "双盘一体化卷，支持校验和、换盘与 scrub",
+  },
+  {
+    id: "mdraid-ext4",
+    label: "RAID1 + EXT4",
+    description: "兼容 Linux 工具链，先创建阵列再挂载数据卷",
+  },
+  {
+    id: "zfs",
+    label: "ZFS 镜像",
+    description: "镜像存储池与数据集",
+  },
+];
+
+const STORAGE_HEALTH_SECTIONS: Array<{
+  id: StorageHealthSection;
+  label: string;
+  description: string;
+}> = [
+  {
+    id: "status",
+    label: "磁盘状态",
+    description: "设备、卷、阵列与 SMART 健康",
+  },
+  {
+    id: "backup",
+    label: "数据备份",
+    description: "异机 NAS 备份与恢复就绪度",
+  },
+  {
+    id: "maintenance",
+    label: "维护与电源",
+    description: "休眠、自检计划和 UPS 保护",
+  },
+];
+
+function StorageHealthWorkspace() {
+  const [healthSection, setHealthSection] =
+    useState<StorageHealthSection>("status");
+  const selected = STORAGE_HEALTH_SECTIONS.find(
+    (item) => item.id === healthSection,
+  )!;
+
+  return (
+    <div>
+      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-slate-50/90 px-7 py-4 backdrop-blur-xl">
+        <div
+          role="tablist"
+          aria-label="存储健康与保护"
+          className="grid grid-cols-3 gap-2"
+        >
+          {STORAGE_HEALTH_SECTIONS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={healthSection === item.id}
+              aria-controls="storage-health-section-panel"
+              onClick={() => setHealthSection(item.id)}
+              className={cn(
+                "rounded-xl px-3 py-2.5 text-left transition",
+                healthSection === item.id
+                  ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-200"
+                  : "text-slate-500 hover:bg-white/70 hover:text-slate-800",
+              )}
+            >
+              <strong className="block text-xs font-semibold">
+                {item.label}
+              </strong>
+              <span className="mt-0.5 block text-[10px] leading-4 opacity-75">
+                {item.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div
+        id="storage-health-section-panel"
+        role="tabpanel"
+        aria-label={selected.label}
+        className="mx-auto w-full max-w-[980px] px-7 py-7"
+      >
+        {healthSection === "status" ? (
+          <OmvStorageHealth />
+        ) : healthSection === "backup" ? (
+          <NasBackupPanel />
+        ) : (
+          <>
+            <DiskIdlePanel />
+            <SmartSchedulePanel />
+            <NutDeviceConfigPanel />
+            <UpsPanel />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StoragePoolsWorkspace() {
+  const [technology, setTechnology] = useState<StoragePoolTechnology>("btrfs");
+  const selected = STORAGE_POOL_TECHNOLOGIES.find(
+    (item) => item.id === technology,
+  )!;
+
+  return (
+    <div>
+      <div className="sticky top-0 z-10 border-b border-slate-200/70 bg-slate-50/90 px-7 py-4 backdrop-blur-xl">
+        <div
+          role="tablist"
+          aria-label="存储池技术"
+          className="grid grid-cols-3 gap-2"
+        >
+          {STORAGE_POOL_TECHNOLOGIES.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={technology === item.id}
+              aria-controls="storage-pool-technology-panel"
+              onClick={() => setTechnology(item.id)}
+              className={cn(
+                "rounded-xl px-3 py-2.5 text-left transition",
+                technology === item.id
+                  ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-200"
+                  : "text-slate-500 hover:bg-white/70 hover:text-slate-800",
+              )}
+            >
+              <strong className="block text-xs font-semibold">
+                {item.label}
+              </strong>
+              <span className="mt-0.5 block text-[10px] leading-4 opacity-75">
+                {item.description}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[10px] text-slate-400">
+          当前查看：{selected.label}。不同方案不会同时执行或混用磁盘。
+        </p>
+      </div>
+      <div
+        id="storage-pool-technology-panel"
+        role="tabpanel"
+        aria-label={selected.label}
+      >
+        {technology === "btrfs" ? (
+          <BtrfsRaid1Panel />
+        ) : technology === "mdraid-ext4" ? (
+          <>
+            <MdRaid1Panel />
+            <MdRaid1RepairPanel />
+            <Ext4VolumePanel />
+          </>
+        ) : (
+          <ZfsMirrorPanel />
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function StorageOverview({ onOpenFiles }: { onOpenFiles?: () => void }) {
@@ -79,7 +252,14 @@ export function StorageOverview({ onOpenFiles }: { onOpenFiles?: () => void }) {
     () => (usage?.categories ?? []).filter((category) => category.bytes > 0),
     [usage],
   );
-  const capacityState = !usage
+  const capacityKnown =
+    usage != null &&
+    Number.isFinite(usage.disk.totalBytes) &&
+    usage.disk.totalBytes > 0 &&
+    Number.isFinite(usage.disk.usedPercent) &&
+    usage.disk.usedPercent >= 0 &&
+    usage.disk.usedPercent <= 100;
+  const capacityState = !capacityKnown
     ? "unknown"
     : usage.disk.usedPercent >= 95
       ? "critical"
@@ -133,14 +313,18 @@ export function StorageOverview({ onOpenFiles }: { onOpenFiles?: () => void }) {
             <div className="flex flex-wrap items-start justify-between gap-5">
               <div>
                 <span className="text-[11px] font-medium text-white/55">
-                  设备总容量
+                  当前 NAS 数据卷
                 </span>
                 <div className="mt-1 text-[30px] font-semibold tracking-tight">
-                  {formatSize(usage.disk.totalBytes)}
+                  {capacityKnown
+                    ? formatSize(usage.disk.totalBytes)
+                    : "总容量尚未确认"}
                 </div>
                 <p className="mt-1 text-[11px] text-white/55">
-                  可用 {formatSize(usage.disk.freeBytes)} · 文件库占用{" "}
-                  {formatSize(usage.library.logicalBytes)}
+                  {capacityKnown
+                    ? `可用 ${formatSize(usage.disk.freeBytes)}`
+                    : "请检查卷挂载状态后重新分析"}{" "}
+                  · 文件库占用 {formatSize(usage.library.logicalBytes)}
                 </p>
               </div>
               <div
@@ -150,7 +334,9 @@ export function StorageOverview({ onOpenFiles }: { onOpenFiles?: () => void }) {
                     ? "bg-red-400/18 text-red-100"
                     : capacityState === "warning"
                       ? "bg-amber-300/18 text-amber-100"
-                      : "bg-emerald-300/16 text-emerald-100",
+                      : capacityState === "healthy"
+                        ? "bg-emerald-300/16 text-emerald-100"
+                        : "bg-white/10 text-white/70",
                 )}
               >
                 {capacityState === "healthy" ? (
@@ -158,7 +344,9 @@ export function StorageOverview({ onOpenFiles }: { onOpenFiles?: () => void }) {
                 ) : (
                   <TriangleAlertIcon className="size-4" />
                 )}
-                已使用 {usage.disk.usedPercent}%
+                {capacityKnown
+                  ? `已使用 ${usage.disk.usedPercent}%`
+                  : "容量状态未知"}
               </div>
             </div>
             <div className="mt-5 flex h-3 overflow-hidden rounded-full bg-white/10">
@@ -386,7 +574,7 @@ export function StorageCenterPanel({
 
   const sections = [
     { id: "overview" as const, label: "容量概览", icon: HardDriveIcon },
-    { id: "health" as const, label: "磁盘健康", icon: ShieldCheckIcon },
+    { id: "health" as const, label: "健康与保护", icon: ShieldCheckIcon },
     { id: "pools" as const, label: "存储池", icon: DatabaseIcon },
     { id: "sharing" as const, label: "共享与用户", icon: FoldersIcon },
   ];
@@ -456,21 +644,9 @@ export function StorageCenterPanel({
           {section === "overview" ? (
             <StorageOverview onOpenFiles={onOpenFiles} />
           ) : section === "health" ? (
-            <div className="mx-auto w-full max-w-[980px] px-7 py-7">
-              <OmvStorageHealth />
-              <DiskIdlePanel />
-              <SmartSchedulePanel />
-              <NutDeviceConfigPanel />
-              <UpsPanel />
-            </div>
+            <StorageHealthWorkspace />
           ) : section === "pools" ? (
-            <>
-              <BtrfsRaid1Panel />
-              <MdRaid1Panel />
-              <MdRaid1RepairPanel />
-              <Ext4VolumePanel />
-              <ZfsMirrorPanel />
-            </>
+            <StoragePoolsWorkspace />
           ) : (
             <div className="mx-auto w-full max-w-[980px] px-7 py-7">
               <OmvSharingPanel />

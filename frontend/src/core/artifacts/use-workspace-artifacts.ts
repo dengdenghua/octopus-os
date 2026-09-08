@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { currentActorId } from "@/core/auth/api";
 import { listWorkspaceArtifactRefs } from "./workspace-outputs";
+
+export function workspaceArtifactsQueryKey(
+  threadId: string | null | undefined,
+  actor = currentActorId(),
+) {
+  return ["workspace-artifacts", actor, threadId] as const;
+}
 
 /**
  * Shared React Query hook for workspace artifacts. Consolidates the query
@@ -16,9 +24,10 @@ export function useWorkspaceArtifacts(
 ) {
   const enabled =
     options?.enabled !== false && Boolean(threadId && threadId !== "new");
+  const actor = currentActorId();
 
   return useQuery({
-    queryKey: ["workspace-artifacts", threadId],
+    queryKey: workspaceArtifactsQueryKey(threadId, actor),
     queryFn: ({ signal }) => listWorkspaceArtifactRefs(threadId!, signal),
     enabled,
     refetchInterval: options?.refetchInterval,

@@ -181,9 +181,7 @@ describe("AutomationSettingsPage", () => {
     const failure = await screen.findByText("加载规则失败");
     expect(failure).toBeInTheDocument();
     expect(screen.getByLabelText("工具名（支持通配符）")).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "保存审批规则" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存审批规则" })).toBeDisabled();
     expect(screen.queryByText("raw policy path")).not.toBeInTheDocument();
   });
 });

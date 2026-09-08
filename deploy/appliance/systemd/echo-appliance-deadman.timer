@@ -1,0 +1,13 @@
+[Unit]
+Description=Retry the Echo NAS control-plane deadman check
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=5min
+Persistent=true
+AccuracySec=30s
+RandomizedDelaySec=30s
+Unit=echo-appliance-deadman.service
+
+[Install]
+WantedBy=timers.target

@@ -12,6 +12,8 @@
  *  - FORK_EARN_REWARD  内容被复刻一次，分成给作者
  *  - LIKE_EARN_REWARD  内容被点赞一次，奖励给作者
  */
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 export type CreditTxnType =
   | "sign-in"
   | "publish"
@@ -45,6 +47,10 @@ export const LIKE_EARN_REWARD = 1;
 
 const LEDGER_KEY = "echo.credits.ledger.v1";
 
+function ledgerStorageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(LEDGER_KEY, actor);
+}
+
 function today(): string {
   const d = new Date();
   const m = `${d.getMonth() + 1}`.padStart(2, "0");
@@ -58,7 +64,7 @@ function defaultState(): CreditLedger {
 
 function readLedger(): CreditLedger {
   try {
-    const raw = window.localStorage.getItem(LEDGER_KEY);
+    const raw = window.localStorage.getItem(ledgerStorageKey());
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw) as Partial<CreditLedger>;
     const base = defaultState();
@@ -76,7 +82,7 @@ function readLedger(): CreditLedger {
 
 function writeLedger(state: CreditLedger) {
   try {
-    window.localStorage.setItem(LEDGER_KEY, JSON.stringify(state));
+    window.localStorage.setItem(ledgerStorageKey(), JSON.stringify(state));
   } catch {
     /* ignore */
   }

@@ -7,6 +7,7 @@ from typing import Any
 
 from runtime.adapters.instrumentation import record_gen_ai_cost, trace_stage
 from runtime.platform.models.llm import ModelRequest, ModelResponse, ModelRouter, ModelStreamEvent
+from runtime.safety.privacy import is_loopback_endpoint, require_local_router
 
 from .chatgpt_subscription_router import (
     _build_responses_payload,
@@ -79,6 +80,7 @@ class OpenAIResponsesModelRouter(Provider, ModelRouter):
         return final
 
     def call_stream(self, request: ModelRequest) -> Iterator[ModelStreamEvent]:
+        require_local_router(self)
         model = _upstream_model(request.model or self.default_model)
         payload = _build_responses_payload(request, model=model)
         with trace_stage(
@@ -131,6 +133,7 @@ class OpenAIResponsesModelRouter(Provider, ModelRouter):
                     owned_client.close()
 
     def _open_stream(self, payload: Mapping[str, Any]) -> tuple[Any, Any | None]:
+        require_local_router(self)
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Accept": "text/event-stream",
@@ -142,6 +145,8 @@ class OpenAIResponsesModelRouter(Provider, ModelRouter):
         owned_client = None
         if client is None:
             owned_client = httpx.Client(
+                trust_env=not is_loopback_endpoint(self._responses_url),
+                follow_redirects=False,
                 timeout=httpx.Timeout(
                     connect=30.0,
                     read=self._timeout_seconds,

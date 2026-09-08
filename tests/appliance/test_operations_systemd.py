@@ -10,6 +10,11 @@ from pathlib import Path
 
 import pytest
 
+if os.name == "nt":
+    pytest.skip(
+        "operations systemd lab requires Linux uid and systemd semantics", allow_module_level=True
+    )
+
 from deploy.appliance import operations_systemd as systemd
 from deploy.appliance import operations_systemd_lab as lab
 from deploy.appliance import physical_acceptance_capture as capture

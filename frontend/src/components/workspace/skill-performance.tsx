@@ -87,9 +87,7 @@ export function SkillPerformance({ className }: { className?: string }) {
                 key={s.skill_name}
                 className="flex items-center justify-between text-xs"
               >
-                <span className="font-mono text-warning">
-                  {s.skill_name}
-                </span>
+                <span className="font-mono text-warning">{s.skill_name}</span>
                 <span className="text-warning">
                   {(s.success_rate * 100).toFixed(0)}% success
                 </span>

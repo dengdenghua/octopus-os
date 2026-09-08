@@ -243,6 +243,7 @@ test("Linux controller installs and removes one compositor scene", async () => {
       DISPLAY: ":0",
     },
     xpropPath: "/usr/bin/true",
+    xpropAvailable: true,
     execFile: (...args) => calls.push(args),
     createLinuxScene: async () => ({
       visible: true,
@@ -298,6 +299,7 @@ test("Wayland controller syncs and clears the native KWin effect", async () => {
       WAYLAND_DISPLAY: "wayland-0",
     },
     gdbusPath: "/usr/bin/true",
+    gdbusAvailable: true,
     execFile: (...args) => {
       calls.push(args);
       return args[1].at(-2)?.endsWith(".SyncSurfaces") ? "(true,)\n" : "";

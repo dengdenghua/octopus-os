@@ -53,9 +53,7 @@ function BucketBar({
         <span
           className={cn(
             "text-xs font-mono tabular-nums",
-            overflow
-              ? "text-warning"
-              : "text-muted-foreground/50",
+            overflow ? "text-warning" : "text-muted-foreground/50",
           )}
         >
           {formatTokens(bucket.used)}/{formatTokens(bucket.allocated)}
@@ -139,7 +137,11 @@ export function ContextWindowIndicator({
         <div
           className={cn(
             "h-full rounded-full transition-all duration-slow",
-            isHigh ? "bg-destructive" : isMedium ? "bg-warning" : "bg-primary/60",
+            isHigh
+              ? "bg-destructive"
+              : isMedium
+                ? "bg-warning"
+                : "bg-primary/60",
           )}
           style={{ width: `${Math.min(100, utilization * 100)}%` }}
         />

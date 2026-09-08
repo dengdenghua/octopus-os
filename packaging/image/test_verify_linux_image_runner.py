@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -223,7 +224,8 @@ class LinuxImageRunnerTests(unittest.TestCase):
                 [str(MODULE.EXPECTED_WORKSPACE), str(MODULE.EXPECTED_SCRATCH)],
             )
             MODULE.write_evidence(output, payload)
-            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            if os.name == "posix":
+                self.assertEqual(output.stat().st_mode & 0o777, 0o600)
             self.assertEqual(json.loads(output.read_text(encoding="utf-8")), payload)
             with self.assertRaises(MODULE.RunnerPreflightError):
                 MODULE.write_evidence(output, payload)

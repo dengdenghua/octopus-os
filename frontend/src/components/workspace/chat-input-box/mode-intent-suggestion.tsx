@@ -13,11 +13,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 import { useI18n } from "@/core/i18n/hooks";
 import type { AgentModeName } from "../mode-selector";
 import { cn } from "@/lib/utils";
 
 const IGNORE_STORAGE_KEY = "echo:modeIntentDismissed";
+
+export function modeIntentStorageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(IGNORE_STORAGE_KEY, actor);
+}
 
 interface ModeIntentSuggestionProps {
   /** The mode the classifier wants to switch to. */
@@ -36,10 +42,10 @@ interface ModeIntentSuggestionProps {
  * setter to mark it dismissed. sessionStorage is intentionally used so a
  * refresh resets the ignore state.
  */
-export function readDismissedModes(): string[] {
+export function readDismissedModes(actor = currentActorId()): string[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.sessionStorage.getItem(IGNORE_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(modeIntentStorageKey(actor));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed)
@@ -50,10 +56,13 @@ export function readDismissedModes(): string[] {
   }
 }
 
-function writeDismissedModes(modes: string[]): void {
+function writeDismissedModes(modes: string[], actor = currentActorId()): void {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(IGNORE_STORAGE_KEY, JSON.stringify(modes));
+    window.sessionStorage.setItem(
+      modeIntentStorageKey(actor),
+      JSON.stringify(modes),
+    );
   } catch {
     // Quota/private-mode failures shouldn't crash the composer.
   }
@@ -67,15 +76,18 @@ export function ModeIntentSuggestion({
   className,
 }: ModeIntentSuggestionProps) {
   const { t } = useI18n();
+  const actor = currentActorId();
+  const [stateActor, setStateActor] = useState(actor);
   const [dismissed, setDismissed] = useState(() =>
-    readDismissedModes().includes(mode),
+    readDismissedModes(actor).includes(mode),
   );
 
   // If the parent switches which mode it's suggesting (e.g. a new verdict
   // arrives), reset the local dismissed flag so the new suggestion shows.
   useEffect(() => {
-    setDismissed(readDismissedModes().includes(mode));
-  }, [mode]);
+    if (stateActor !== actor) setStateActor(actor);
+    setDismissed(readDismissedModes(actor).includes(mode));
+  }, [actor, mode, stateActor]);
 
   const handleAccept = useCallback(() => {
     setDismissed(true);
@@ -84,13 +96,13 @@ export function ModeIntentSuggestion({
 
   const handleDismiss = useCallback(() => {
     setDismissed(true);
-    const next = readDismissedModes();
+    const next = readDismissedModes(actor);
     if (!next.includes(mode)) {
       next.push(mode);
-      writeDismissedModes(next);
+      writeDismissedModes(next, actor);
     }
     onDismiss?.(mode);
-  }, [mode, onDismiss]);
+  }, [actor, mode, onDismiss]);
 
   if (dismissed) return null;
 

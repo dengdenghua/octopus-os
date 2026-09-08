@@ -1550,6 +1550,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agents/parallel/batch/{batch_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Batch
+         * @description Explicitly rerun named safe lanes from a recovery snapshot.
+         *
+         *     Reading a snapshot never starts work.  This endpoint is the separate
+         *     user-confirmed action and returns a new batch so the old evidence is
+         *     preserved for audit and comparison.
+         */
+        post: operations["resume_batch_api_agents_parallel_batch__batch_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents/parallel/cancel-all": {
         parameters: {
             query?: never;
@@ -1595,6 +1619,30 @@ export interface paths {
         put?: never;
         /** Dispatch */
         post: operations["dispatch_api_agents_parallel_dispatch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/parallel/recovery-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Recovery Snapshots
+         * @description Discover durable, redacted batches owned by the caller.
+         *
+         *     This route is deliberately separate from the actor-agnostic live
+         *     status route: a restarted orchestrator has no in-memory batch map,
+         *     while the recovery list can safely use durable owner/tenant fields.
+         */
+        get: operations["list_recovery_snapshots_api_agents_parallel_recovery_snapshots_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4202,6 +4250,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/config/local-models/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate */
+        post: operations["activate_api_config_local_models_activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config/local-models/import": {
         parameters: {
             query?: never;
@@ -4740,6 +4805,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/cookbook/deployment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Deployment Status */
+        get: operations["deployment_status_api_cookbook_deployment_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cookbook/deployment/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deployment Plan */
+        post: operations["deployment_plan_api_cookbook_deployment_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cookbook/deployment/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deployment Start */
+        post: operations["deployment_start_api_cookbook_deployment_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cookbook/pull": {
         parameters: {
             query?: never;
@@ -4774,6 +4890,23 @@ export interface paths {
         get: operations["snapshot_api_cookbook_snapshot_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cookbook/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify */
+        post: operations["verify_api_cookbook_verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7721,6 +7854,24 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fs/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Fs Content */
+        get: operations["api_fs_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /** Api Fs Content */
+        head: operations["api_fs_content_head"];
         patch?: never;
         trace?: never;
     };
@@ -11987,6 +12138,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/research/deep/jobs/{job_id}/recovery-snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Deep Research Recovery Snapshot
+         * @description Return the batch's redacted recovery view after a restart.
+         *
+         *     A ResearchJob is the user-facing durable record, while the parallel
+         *     orchestrator owns execution state.  Keep the lookup scoped by the
+         *     job's immutable owner/tenant coordinates and require the returned
+         *     snapshot to match the persisted host coordinate before exposing it.
+         */
+        get: operations["get_deep_research_recovery_snapshot_api_research_deep_jobs__job_id__recovery_snapshot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/research/deep/plan": {
         parameters: {
             query?: never;
@@ -14485,6 +14661,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace-resources/{resource_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Api Workspace Resource
+         * @description Resolve a portable file identity through the same auth boundary.
+         */
+        get: operations["api_workspace_resource_api_workspace_resources__resource_id__get"];
+        /** Api Write Workspace Resource */
+        put: operations["api_write_workspace_resource_api_workspace_resources__resource_id__put"];
+        /** Api Restore Workspace Resource */
+        post: operations["api_restore_workspace_resource_api_workspace_resources__resource_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspaces": {
         parameters: {
             query?: never;
@@ -15628,6 +15826,13 @@ export interface components {
             /** Effective Model */
             effective_model?: string | null;
             /**
+             * Execution Available
+             * @default false
+             */
+            execution_available: boolean;
+            /** Execution Unavailable Reason */
+            execution_unavailable_reason?: string | null;
+            /**
              * Mode
              * @enum {string}
              */
@@ -16302,6 +16507,11 @@ export interface components {
             topic: string;
             /** Urls */
             urls?: string[];
+        };
+        /** DeployRequest */
+        DeployRequest: {
+            /** Plan Id */
+            plan_id: string;
         };
         /** DetachFromGroupBody */
         DetachFromGroupBody: {
@@ -17579,6 +17789,22 @@ export interface components {
             /** Task Ids */
             task_ids?: string[];
         };
+        /**
+         * RecoveryResumeRequest
+         * @description POST /api/agents/parallel/batch/{batch_id}/resume body.
+         *
+         *     Recovery is deliberately an explicit decision.  The caller names the
+         *     lanes to rerun instead of allowing the server to replay an entire lost
+         *     batch (which could repeat an unknown side effect).
+         */
+        RecoveryResumeRequest: {
+            /** Model Name */
+            model_name?: string | null;
+            /** Task Ids */
+            task_ids: string[];
+            /** Thread Id */
+            thread_id?: string | null;
+        };
         /** RejectTeamJoinRequest */
         RejectTeamJoinRequest: {
             /**
@@ -17620,6 +17846,8 @@ export interface components {
             notes?: string | null;
             /** Path */
             path?: string | null;
+            /** Resource Id */
+            resource_id?: string | null;
             /** Text */
             text?: string | null;
             /**
@@ -18585,6 +18813,8 @@ export interface components {
             path: string;
             /** Relative Path */
             relative_path: string;
+            /** Resource Id */
+            resource_id: string;
             /** Size */
             size: number;
         };
@@ -21833,6 +22063,43 @@ export interface operations {
             };
         };
     };
+    resume_batch_api_agents_parallel_batch__batch_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecoveryResumeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     cancel_all_api_agents_parallel_cancel_all_post: {
         parameters: {
             query?: never;
@@ -21900,6 +22167,39 @@ export interface operations {
                 "application/json": components["schemas"]["DispatchRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recovery_snapshots_api_agents_parallel_recovery_snapshots_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -26903,6 +27203,43 @@ export interface operations {
             };
         };
     };
+    activate_api_config_local_models_activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     api_import_local_model_api_config_local_models_import_post: {
         parameters: {
             query?: never;
@@ -27959,6 +28296,98 @@ export interface operations {
             };
         };
     };
+    deployment_status_api_cookbook_deployment_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    deployment_plan_api_cookbook_deployment_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PullRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deployment_start_api_cookbook_deployment_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeployRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     pull_api_cookbook_pull_post: {
         parameters: {
             query?: never;
@@ -27996,7 +28425,9 @@ export interface operations {
     };
     snapshot_api_cookbook_snapshot_get: {
         parameters: {
-            query?: never;
+            query?: {
+                context_tokens?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -28012,6 +28443,50 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_api_cookbook_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PullRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -33526,6 +34001,80 @@ export interface operations {
         parameters: {
             query?: {
                 cross_tenant?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_fs_content_get: {
+        parameters: {
+            query: {
+                path: string;
+                thread_id?: string | null;
+                workspace_path?: string | null;
+                workspace_id?: string | null;
+                download?: boolean;
+                office_preview?: boolean;
+                office_fidelity_preview?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_fs_content_head: {
+        parameters: {
+            query: {
+                path: string;
+                thread_id?: string | null;
+                workspace_path?: string | null;
+                workspace_id?: string | null;
+                download?: boolean;
+                office_preview?: boolean;
+                office_fidelity_preview?: boolean;
             };
             header?: never;
             path?: never;
@@ -41733,6 +42282,39 @@ export interface operations {
             };
         };
     };
+    get_deep_research_recovery_snapshot_api_research_deep_jobs__job_id__recovery_snapshot_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     plan_deep_research_api_research_deep_plan_post: {
         parameters: {
             query?: never;
@@ -45977,6 +46559,7 @@ export interface operations {
                 download?: boolean;
                 office_preview?: boolean;
                 office_fidelity_preview?: boolean;
+                locate?: boolean;
             };
             header?: never;
             path: {
@@ -46827,6 +47410,112 @@ export interface operations {
             };
         };
     };
+    api_workspace_resource_api_workspace_resources__resource_id__get: {
+        parameters: {
+            query?: {
+                download?: boolean;
+                office_preview?: boolean;
+                office_fidelity_preview?: boolean;
+                locate?: boolean;
+            };
+            header?: never;
+            path: {
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_write_workspace_resource_api_workspace_resources__resource_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceOutputWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceOutputWriteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_restore_workspace_resource_api_workspace_resources__resource_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceOutputRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceOutputWriteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_workspaces_api_workspaces_get: {
         parameters: {
             query?: {
@@ -46967,6 +47656,7 @@ export interface operations {
                 download?: boolean;
                 office_preview?: boolean;
                 office_fidelity_preview?: boolean;
+                locate?: boolean;
             };
             header?: never;
             path: {

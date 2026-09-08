@@ -1,5 +1,7 @@
 import { taskWorkspaceRoute } from "@/core/router/task-workspace-route";
 import { primaryPersonaAgentIdOrDefault } from "@/core/agents/persona-policy";
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 
 export type TaskCollaboratorMode = "chat" | "cluster" | "swarm";
 
@@ -11,10 +13,14 @@ export interface TaskCollaboratorPreset {
   openPicker?: boolean;
 }
 
-export const TASK_COLLABORATOR_PRESET_EVENT =
-  "echo:task-collaborator-preset";
+export const TASK_COLLABORATOR_PRESET_EVENT = "echo:task-collaborator-preset";
 
 const STORAGE_KEY = "echo:task-collaborator-preset";
+
+export type TaskCollaboratorPresetEventDetail = {
+  actor: string;
+  preset: TaskCollaboratorPreset;
+};
 
 function normalizeIds(ids: string[] | undefined): string[] {
   const seen = new Set<string>();
@@ -50,21 +56,29 @@ export function writeTaskCollaboratorPreset(
 ): void {
   if (typeof window === "undefined") return;
   const normalized = normalizeTaskCollaboratorPreset(preset);
+  const actor = currentActorId();
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    window.sessionStorage.setItem(
+      actorScopedStorageKey(STORAGE_KEY, actor),
+      JSON.stringify(normalized),
+    );
   } catch {
     // Best-effort handoff; the live event below still covers same-page use.
   }
   window.dispatchEvent(
-    new CustomEvent(TASK_COLLABORATOR_PRESET_EVENT, { detail: normalized }),
+    new CustomEvent<TaskCollaboratorPresetEventDetail>(
+      TASK_COLLABORATOR_PRESET_EVENT,
+      { detail: { actor, preset: normalized } },
+    ),
   );
 }
 
 export function consumeTaskCollaboratorPreset(): TaskCollaboratorPreset | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
-    window.sessionStorage.removeItem(STORAGE_KEY);
+    const key = actorScopedStorageKey(STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(key);
+    window.sessionStorage.removeItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as TaskCollaboratorPreset;
     return normalizeTaskCollaboratorPreset(parsed);

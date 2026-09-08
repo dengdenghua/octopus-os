@@ -25,6 +25,7 @@ from ._observability_helpers import (
     _serialize_file_rollback_event,
     _serialize_rollback_result,
 )
+from ._observability_rollback_scope import checked_project_root, rollback_scope
 from ._observability_state import ObservabilityContext
 
 
@@ -42,7 +43,7 @@ def register_rollback_panels_endpoints(router: Any, ctx: ObservabilityContext) -
         event_id: str | None = None,
         task_id: str | None = None,
         path: str | None = None,
-        limit: int = 500,
+        limit: int | None = 500,
     ) -> list[Any]:
         events: list[Any] = []
         for event in source_journal.read_by_type("file_op"):
@@ -53,9 +54,10 @@ def register_rollback_panels_endpoints(router: Any, ctx: ObservabilityContext) -
             if path and str(getattr(event, "path", "") or "") != path:
                 continue
             events.append(event)
-        return events[-limit:]
+        return events[-limit:] if limit is not None else events
 
     def _rollback_result(
+        request: Request,
         source_journal: Any,
         scope: Any,
         *,
@@ -66,10 +68,6 @@ def register_rollback_panels_endpoints(router: Any, ctx: ObservabilityContext) -
         limit: int,
         dry_run: bool,
     ) -> dict[str, Any]:
-        from runtime.memory.runtime_state.file_transactions import (
-            apply_file_rollback_ledger,
-        )
-
         events = _rollback_file_events(
             source_journal,
             event_id=event_id,
@@ -77,39 +75,49 @@ def register_rollback_panels_endpoints(router: Any, ctx: ObservabilityContext) -
             path=path,
             limit=limit,
         )
+        if not events:
+            from runtime.memory.runtime_state.file_transactions import FileRollbackResult
+
+            return _serialize_rollback_result(
+                FileRollbackResult(),
+                dry_run=dry_run,
+                matched_events=0,
+                event_id=event_id,
+                task_id=task_id,
+                path=path,
+                project_root=None,
+            )
+        with rollback_scope(
+            ctx, request, scope, events=events, task_id=task_id, project_root=project_root
+        ) as root:
+            return _execute_rollback_result(
+                events,
+                scope,
+                event_id=event_id,
+                task_id=task_id,
+                path=path,
+                project_root=root,
+                dry_run=dry_run,
+            )
+
+    def _execute_rollback_result(
+        events: list[Any],
+        scope: Any,
+        *,
+        event_id: str | None,
+        task_id: str | None,
+        path: str | None,
+        project_root: str,
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        from runtime.memory.runtime_state.file_transactions import apply_file_rollback_ledger
+
         result = apply_file_rollback_ledger(
             events,
             project_root=project_root,
             dry_run=dry_run,
         )
-        if not dry_run:
-            from runtime.memory.journal import FileRollbackEvent
-
-            with _journal_scope_context(scope):
-                journal.write(
-                    FileRollbackEvent(
-                        dry_run=False,
-                        project_root=project_root or "",
-                        event_id_filter=event_id,
-                        task_id_filter=task_id,
-                        path_filter=path,
-                        applied=int(getattr(result, "applied", 0) or 0),
-                        skipped=int(getattr(result, "skipped", 0) or 0),
-                        failed=int(getattr(result, "failed", 0) or 0),
-                        source_event_ids=[
-                            str(getattr(entry, "source_event_id", "") or "")
-                            for entry in getattr(result, "entries", ()) or ()
-                            if getattr(entry, "source_event_id", "") or ""
-                        ],
-                        paths=[
-                            str(getattr(entry, "path", "") or "")
-                            for entry in getattr(result, "entries", ()) or ()
-                            if getattr(entry, "path", "") or ""
-                        ],
-                        errors=list(getattr(result, "errors", ()) or ()),
-                    )
-                )
-        return _serialize_rollback_result(
+        payload = _serialize_rollback_result(
             result,
             dry_run=dry_run,
             matched_events=len(events),
@@ -118,6 +126,52 @@ def register_rollback_panels_endpoints(router: Any, ctx: ObservabilityContext) -
             path=path,
             project_root=project_root,
         )
+        if not dry_run:
+            _record_audit(payload, result, scope, project_root, event_id, task_id, path)
+        return payload
+
+    def _record_audit(
+        payload: dict[str, Any],
+        result: Any,
+        scope: Any,
+        project_root: str,
+        event_id: str | None,
+        task_id: str | None,
+        path: str | None,
+    ) -> None:
+        from runtime.memory.journal import FileRollbackEvent
+
+        try:
+            with _journal_scope_context(scope):
+                journal.write(
+                    FileRollbackEvent(
+                        dry_run=False,
+                        project_root=project_root,
+                        event_id_filter=event_id,
+                        task_id_filter=task_id,
+                        path_filter=path,
+                        applied=result.applied,
+                        skipped=result.skipped,
+                        failed=result.failed,
+                        source_event_ids=[entry.source_event_id for entry in result.entries],
+                        paths=[entry.path for entry in result.entries],
+                        errors=list(result.errors),
+                        outcomes=[
+                            outcome.to_dict() if hasattr(outcome, "to_dict") else outcome
+                            for outcome in getattr(result, "outcomes", ())
+                        ],
+                    )
+                )
+        except Exception:
+            # File results are already known. Do not turn an audit failure into
+            # an opaque 500 that invites blindly retrying a committed restore.
+            payload["audit_recorded"] = False
+            payload["errors"].append("rollback_audit_unavailable")
+            payload["execution_complete"] = False
+            if payload["state"] not in {"uncertain", "partial"}:
+                payload["state"] = "partial" if payload["applied"] else "blocked"
+        else:
+            payload["audit_recorded"] = True
 
     # ═══════════════════════════════════════════════════════
     # Observability panels · feed the /workspace/observability UI.
@@ -140,6 +194,7 @@ def register_rollback_panels_endpoints(router: Any, ctx: ObservabilityContext) -
         """Dry-run reversible file operations from the journal."""
         scope = _observability_scope(request, ctx, cross_tenant=cross_tenant)
         return _rollback_result(
+            request,
             _scoped_observability_journal(journal, scope),
             scope,
             event_id=event_id,
@@ -158,9 +213,7 @@ def register_rollback_panels_endpoints(router: Any, ctx: ObservabilityContext) -
     ) -> dict[str, Any]:
         """Apply a task/path-scoped rollback ledger under a project root."""
         scope = _observability_scope(request, ctx, cross_tenant=cross_tenant)
-        project_root = body.get("project_root")
-        if not isinstance(project_root, str) or not project_root.strip():
-            raise HTTPException(400, "project_root required for rollback apply")
+        project_root = checked_project_root(body.get("project_root"))
         event_id = body.get("event_id")
         task_id = body.get("task_id")
         path = body.get("path")
@@ -172,21 +225,20 @@ def register_rollback_panels_endpoints(router: Any, ctx: ObservabilityContext) -
                 400,
                 "event_id, task_id or path required for rollback apply",
             )
-        limit_value = body.get("limit", 500)
-        try:
-            limit = int(limit_value)
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(400, "limit must be an integer") from exc
+        limit = body.get("limit", 500)
+        if type(limit) is not int:
+            raise HTTPException(400, "limit must be an integer")
         if limit < 1 or limit > 2000:
             raise HTTPException(400, "limit must be between 1 and 2000")
 
         return _rollback_result(
+            request,
             _scoped_observability_journal(journal, scope),
             scope,
             event_id=event_filter,
             task_id=task_filter,
             path=path_filter,
-            project_root=project_root.strip(),
+            project_root=project_root,
             limit=limit,
             dry_run=False,
         )
@@ -247,64 +299,62 @@ def register_rollback_panels_endpoints(router: Any, ctx: ObservabilityContext) -
 
         ``dry_run=true`` previews the rollback without touching disk.
         """
-        from runtime.core.cerebrum.rewind import rewind_to_checkpoint
-
-        iteration_raw = body.get("iteration")
-        try:
-            iteration = int(iteration_raw) if iteration_raw is not None else 0
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(400, "iteration (int) required") from exc
-
-        project_root = body.get("project_root")
-        if isinstance(project_root, str):
-            project_root = project_root.strip() or None
-
-        dry_run = bool(body.get("dry_run", False))
+        iteration = body.get("iteration")
+        if type(iteration) is not int or iteration < 0:
+            raise HTTPException(400, "iteration must be a non-negative integer")
+        project_root = checked_project_root(body.get("project_root"))
+        dry_run = body.get("dry_run", False)
+        if type(dry_run) is not bool:
+            raise HTTPException(400, "dry_run must be a boolean")
 
         scope = _observability_scope(request, ctx, cross_tenant=cross_tenant)
         scoped_journal = _scoped_observability_journal(journal, scope)
+        events = _rollback_file_events(scoped_journal, task_id=task_id, limit=None)
+        with rollback_scope(
+            ctx, request, scope, events=events, task_id=task_id, project_root=project_root
+        ) as root:
+            return _execute_rewind(scoped_journal, scope, task_id, iteration, root, dry_run)
+
+    def _execute_rewind(
+        scoped_journal: Any,
+        scope: Any,
+        task_id: str,
+        iteration: int,
+        project_root: str,
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        from runtime.core.cerebrum.rewind import rewind_to_checkpoint
+
         try:
             result = rewind_to_checkpoint(
-                scoped_journal,
-                task_id,
-                iteration,
-                project_root=project_root,
-                dry_run=dry_run,
+                scoped_journal, task_id, iteration, project_root=project_root, dry_run=dry_run
             )
         except ValueError as exc:
-            raise HTTPException(404, str(exc)) from exc
+            raise HTTPException(404, "rewind checkpoint not found") from exc
 
+        payload = result.to_dict()
+        summary = _serialize_rollback_result(
+            result.file_rollback,
+            dry_run=dry_run,
+            matched_events=len(getattr(result.file_rollback, "entries", ()) or ()),
+            event_id=None,
+            task_id=task_id,
+            path=None,
+            project_root=project_root,
+        )
         if not dry_run:
-            # Mirror the existing rollback endpoint's audit trail so
-            # /api/files/rollback/history still surfaces rewinds.
-            from runtime.memory.journal import FileRollbackEvent
-
-            with _journal_scope_context(scope):
-                journal.write(
-                    FileRollbackEvent(
-                        dry_run=False,
-                        project_root=project_root or "",
-                        event_id_filter=None,
-                        task_id_filter=task_id,
-                        path_filter=None,
-                        applied=int(getattr(result.file_rollback, "applied", 0) or 0),
-                        skipped=int(getattr(result.file_rollback, "skipped", 0) or 0),
-                        failed=int(getattr(result.file_rollback, "failed", 0) or 0),
-                        source_event_ids=[
-                            str(getattr(entry, "source_event_id", "") or "")
-                            for entry in getattr(result.file_rollback, "entries", ()) or ()
-                            if getattr(entry, "source_event_id", "") or ""
-                        ],
-                        paths=[
-                            str(getattr(entry, "path", "") or "")
-                            for entry in getattr(result.file_rollback, "entries", ()) or ()
-                            if getattr(entry, "path", "") or ""
-                        ],
-                        errors=list(getattr(result.file_rollback, "errors", ()) or ()),
-                    )
-                )
-
-        return result.to_dict()
+            _record_audit(summary, result.file_rollback, scope, project_root, None, task_id, None)
+        payload["file_rollback"].update(
+            state=summary["state"],
+            execution_complete=summary["execution_complete"],
+            errors=summary["errors"],
+        )
+        if "audit_recorded" in summary:
+            payload["file_rollback"]["audit_recorded"] = summary["audit_recorded"]
+        payload["execution_complete"] = bool(
+            summary["execution_complete"] and not result.non_reversible_warnings
+        )
+        return payload
 
     @router.get("/api/blackboard")
     def api_blackboard(

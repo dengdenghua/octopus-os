@@ -1,8 +1,30 @@
 import { describe, expect, test } from "vitest";
 
 import { __testing } from "./workspace-sidebar";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 describe("workspace sidebar route activation", () => {
+  test("preserves the workbench presentation across workspace links", () => {
+    expect(
+      preserveWorkbenchPresentation(
+        "/workspace/storage?surface=company",
+        "?presentation=workbench",
+      ),
+    ).toBe("/workspace/storage?surface=company&presentation=workbench");
+    expect(
+      preserveWorkbenchPresentation(
+        "/workspace/projects?presentation=standalone",
+        "?presentation=workbench",
+      ),
+    ).toBe("/workspace/projects?presentation=standalone");
+    expect(
+      preserveWorkbenchPresentation(
+        "https://example.com/help",
+        "?presentation=workbench",
+      ),
+    ).toBe("https://example.com/help");
+  });
+
   test("projects thread searches down to sidebar-only state", () => {
     expect(__testing.SIDEBAR_THREAD_QUERY_PARAMS).toEqual({
       limit: 30,

@@ -5,9 +5,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
 from runtime.memory import user_store
 from runtime.platform.process.paths import app_paths
 from runtime.platform.ui.app import create_app
+from runtime.safety.auth import Identity, IdentityStore
+from runtime.safety.auth.scope import TenantScope
 
 
 @pytest.fixture
@@ -75,3 +78,72 @@ def test_memory_config_uses_same_app_paths(client: TestClient, tmp_path: Path) -
     assert config["max_facts"] == 12
     assert config["storage_path"] == str(tmp_path / "data" / "user_memory.json")
     assert (tmp_path / "data" / "user_memory_config.json").exists()
+
+
+def test_authenticated_memory_search_and_assets_include_only_visible_shared_facts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    user_store.add_fact(
+        "Team release calendar",
+        category="ops",
+        tenant_scope=TenantScope("tenant-a", "alice"),
+        visibility="team",
+        team_id="release-room",
+    )
+    private = user_store.add_fact(
+        "Alice private launch secret",
+        category="profile",
+        tenant_scope=TenantScope("tenant-a", "alice"),
+    )
+    user_store.add_fact(
+        "Foreign tenant release calendar",
+        category="ops",
+        tenant_scope=TenantScope("tenant-b", "carol"),
+        visibility="team",
+        team_id="release-room",
+    )
+    assert private is not None
+
+    identities = IdentityStore()
+    identities.add(
+        Identity(
+            actor_id="bob",
+            roles=("member",),
+            metadata={"tenant_id": "tenant-a", "team_ids": ["release-room"]},
+        ),
+        api_key_plaintext="sk-bob",
+    )
+    app = create_app(
+        cocoloop_identity_store=identities,
+        cocoloop_require_auth=True,
+    )
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer sk-bob"}
+
+    results = client.get(
+        "/api/memory/search",
+        params={"q": "release calendar"},
+        headers=headers,
+    )
+    assert results.status_code == 200, results.text
+    contents = [item["content"] for item in results.json()]
+    assert "Team release calendar" in contents
+    assert "Foreign tenant release calendar" not in contents
+    assert "Alice private launch secret" not in contents
+
+    assets = client.get("/api/memory/assets", headers=headers)
+    assert assets.status_code == 200, assets.text
+    asset_contents = [item["content"] for item in assets.json()["items"]]
+    assert "Team release calendar" in asset_contents
+    assert "Foreign tenant release calendar" not in asset_contents
+    assert "Alice private launch secret" not in asset_contents
+
+    asset_id = next(
+        item["id"]
+        for item in assets.json()["items"]
+        if item["content"] == "Team release calendar"
+    )
+    trace = client.get(f"/api/memory/assets/{asset_id}/trace", headers=headers)
+    assert trace.status_code == 200, trace.text

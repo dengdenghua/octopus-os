@@ -16,7 +16,9 @@ export function AgentVisualGallery({
   agentName,
   className = "",
 }: AgentVisualGalleryProps) {
-  const [activeView, setActiveView] = useState<"front" | "side" | "back">("front");
+  const [activeView, setActiveView] = useState<"front" | "side" | "back">(
+    "front",
+  );
 
   if (!visualUrls || Object.keys(visualUrls).length === 0) {
     return null;

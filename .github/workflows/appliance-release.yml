@@ -6,7 +6,7 @@ on:
       - "echo-appliance-v*"
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   id-token: write
   attestations: write
@@ -49,6 +49,29 @@ jobs:
 
       - name: Verify Hub OCI storage attestations
         run: python deploy/appliance/hub_oci_storage.py
+
+      # Publish corresponding source before the first binary image becomes
+      # available. A later image-build failure can leave a harmless source-only
+      # release; it cannot leave a public HEIF binary without its source offer.
+      - name: Build and independently verify Python runtime corresponding source
+        run: |
+          mkdir -p dist
+          python deploy/appliance/runtime_source_bundle.py build --output-directory dist
+          python dist/runtime_source_bundle.py verify --output-directory dist
+
+      - name: Publish durable corresponding-source release assets
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/PYTHON_RUNTIME_NOTICES.md
+            dist/echo-appliance-python-runtime-sources.tar.gz
+            dist/echo-appliance-python-runtime-sources.json
+            dist/echo-appliance-python-runtime-sources.sha256
+            dist/runtime_source_bundle.py
 
       - name: Setup uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -143,6 +166,7 @@ jobs:
           cp deploy/appliance/build-requirements.lock dist/build-requirements.lock
           cp deploy/appliance/runtime-requirements.lock dist/runtime-requirements.lock
           cp deploy/appliance/python-dependency-lock.json dist/python-dependency-lock.json
+          cp deploy/appliance/PYTHON_RUNTIME_NOTICES.md dist/PYTHON_RUNTIME_NOTICES.md
           cp deploy/appliance/operations_bundle.py dist/operations_bundle.py
           chmod 0755 dist/operations_bundle.py
           python deploy/appliance/operations_bundle.py build \
@@ -193,6 +217,11 @@ jobs:
             dist/build-requirements.lock
             dist/runtime-requirements.lock
             dist/python-dependency-lock.json
+            dist/PYTHON_RUNTIME_NOTICES.md
+            dist/echo-appliance-python-runtime-sources.tar.gz
+            dist/echo-appliance-python-runtime-sources.json
+            dist/echo-appliance-python-runtime-sources.sha256
+            dist/runtime_source_bundle.py
             dist/echo-appliance-operations.tar.gz
             dist/echo-appliance-operations.tar.gz.sha256
             dist/echo-appliance-operations.spdx.json

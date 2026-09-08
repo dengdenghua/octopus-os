@@ -26,7 +26,13 @@ if TYPE_CHECKING:
 
 from runtime.memory.hemolymph import image_semantic_index as _idx
 
-from .image_semantic_skills import _idx_db  # reuse the directory-scoped DB helper
+from .image_semantic_skills import (
+    _asset_reference,
+    _decorate_results,
+    _idx_db,
+    _library_source,
+    _source_path,
+)  # reuse the directory-scoped DB helper
 
 
 def _image_analyze(
@@ -39,14 +45,20 @@ def _image_analyze(
     if not image_path:
         return {"error": "missing image_path"}
     results = _idx.classify_image(
-        image_path,
+        _source_path(directory, image_path),
         labels=labels,
         top_k=top_k,
         db_path=_idx_db(directory),
     )
     if results is None:
         return _not_ready("image classification")
-    return {"image": image_path, "labels": labels, "results": results}
+    return {
+        "image": image_path,
+        "labels": labels,
+        "results": results,
+        "assetReference": _asset_reference(directory, image_path),
+        "source": _library_source(directory),
+    }
 
 
 def _image_ocr(
@@ -56,7 +68,7 @@ def _image_ocr(
 ) -> dict[str, Any]:
     if not image_path:
         return {"error": "missing image_path"}
-    result = _idx.ocr_image(image_path, db_path=_idx_db(directory))
+    result = _idx.ocr_image(_source_path(directory, image_path), db_path=_idx_db(directory))
     if result is None:
         return _not_ready("OCR")
     return {
@@ -64,6 +76,8 @@ def _image_ocr(
         "text": result.get("text", ""),
         "confidence": result.get("confidence"),
         "boxes": result.get("boxes", []),
+        "assetReference": _asset_reference(directory, image_path),
+        "source": _library_source(directory),
     }
 
 
@@ -75,7 +89,7 @@ def _image_find_duplicates(
     groups = _idx.find_duplicates(db_path=_idx_db(directory), hash_threshold=hash_threshold)
     if groups is None:
         return _not_ready("duplicate detection")
-    return {"groups": groups, "count": len(groups)}
+    return {"groups": groups, "count": len(groups), "source": _library_source(directory)}
 
 
 def _image_find_blurry(
@@ -86,7 +100,7 @@ def _image_find_blurry(
     blurry = _idx.find_blurry(db_path=_idx_db(directory), threshold=threshold)
     if blurry is None:
         return _not_ready("blur detection")
-    return {"blurry": blurry, "count": len(blurry)}
+    return {"blurry": blurry, "count": len(blurry), "source": _library_source(directory)}
 
 
 def _image_sensitive_scan(
@@ -97,7 +111,7 @@ def _image_sensitive_scan(
     flagged = _idx.sensitive_scan(db_path=_idx_db(directory), top_k=top_k)
     if flagged is None:
         return _not_ready("sensitive-content scan")
-    return {"flagged": flagged, "count": len(flagged)}
+    return {"flagged": flagged, "count": len(flagged), "source": _library_source(directory)}
 
 
 def _image_filter_meta(
@@ -109,6 +123,7 @@ def _image_filter_meta(
     min_width: int | None = None,
     min_height: int | None = None,
     person: str | None = None,
+    person_threshold: float = 0.45,
     scene: str | None = None,
     **_kw: Any,
 ) -> dict[str, Any]:
@@ -121,11 +136,16 @@ def _image_filter_meta(
         min_width=min_width,
         min_height=min_height,
         person=person,
+        person_threshold=person_threshold,
         scene=scene,
     )
     if matches is None:
         return _not_ready("metadata filtering")
-    return {"matches": matches, "count": len(matches)}
+    return {
+        "matches": _decorate_results(matches, directory),
+        "count": len(matches),
+        "source": _library_source(directory),
+    }
 
 
 def _image_train_category(
@@ -138,13 +158,18 @@ def _image_train_category(
         return {"error": "missing category name"}
     if not image_paths:
         return {"error": "missing image_paths"}
-    result = _idx.train_category(name, image_paths, db_path=_idx_db(directory))
+    result = _idx.train_category(
+        name,
+        [_source_path(directory, image_path) for image_path in image_paths],
+        db_path=_idx_db(directory),
+    )
     if result is None:
         return _not_ready("category training")
     return {
         "name": result.get("name"),
         "examples": result.get("examples"),
         "vector_dim": result.get("vector_dim"),
+        "source": _library_source(directory),
     }
 
 
@@ -161,8 +186,9 @@ def register_image_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="image_analyze",
             description=(
-                "对本地图片做零样本分类（CLIP 文→图），返回 Top-k 标签及置信度，"
-                "支持自定义类别标签。Args: {image_path: string, directory?: string, "
+                "对工作区图片做分类，返回 Top-k 标签及相似度分数；训练类别使用示例图片原型，"
+                "设备 NAS 相册使用 photos_* 工具。"
+                "其余标签使用 CLIP 文本向量。Args: {image_path: string, directory?: string, "
                 "labels?: string[], top_k?: int}。需先执行 image_index_build 建立索引。"
             ),
             affinity=["image", "vision", "album", "classify"],
@@ -175,7 +201,8 @@ def register_image_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="image_ocr",
             description=(
-                "对本地图片做 OCR 文字识别（rapidocr），返回识别文本、置信度与文本框坐标。"
+                "对工作区图片做 OCR 文字识别（rapidocr），返回识别文本、置信度与文本框坐标；"
+                "设备 NAS 相册使用 photos_* 工具。"
                 "Args: {image_path: string, directory?: string}。"
                 "需先执行 image_index_build 建立索引。"
             ),
@@ -189,7 +216,8 @@ def register_image_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="image_find_duplicates",
             description=(
-                "在本地图片库中按感知哈希找出近似重复的图片，返回分组、成员与代表图。"
+                "在工作区图片库中按感知哈希找出近似重复的图片，返回分组、成员与代表图；"
+                "设备 NAS 相册使用 photos_* 工具。"
                 "Args: {directory?: string, hash_threshold?: int}。"
                 "需先执行 image_index_build 建立索引。"
             ),
@@ -203,7 +231,8 @@ def register_image_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="image_find_blurry",
             description=(
-                "在本地图片库中找出低于锐度阈值（默认 50.0）的模糊图片。"
+                "在工作区图片库中找出低于锐度阈值（默认 50.0）的模糊图片；设备 NAS 相册"
+                "使用 photos_* 工具。"
                 "Args: {directory?: string, threshold?: number}。"
                 "需先执行 image_index_build 建立索引。"
             ),
@@ -217,7 +246,8 @@ def register_image_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="image_sensitive_scan",
             description=(
-                "扫描本地图片库，返回可能包含敏感内容（按标签与分数）的图片。"
+                "扫描工作区图片库，返回可能包含敏感内容（按标签与分数）的图片；设备 NAS"
+                "相册使用 photos_* 工具。"
                 "Args: {directory?: string, top_k?: int}。"
                 "需先执行 image_index_build 建立索引。"
             ),
@@ -231,10 +261,13 @@ def register_image_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="image_filter_meta",
             description=(
-                "按元数据过滤本地图片库：年/月/文件类型/地点/最小宽高/人物/场景。"
+                "按元数据过滤工作区图片库：年/月/文件类型/地点/最小宽高/人物/场景；设备 NAS"
+                "相册使用 photos_* 工具。"
                 "Args: {directory?: string, year?: int, month?: int, file_type?: string, "
                 "location?: string, min_width?: int, min_height?: int, person?: string, "
-                "scene?: string}。需先执行 image_index_build 建立索引。"
+                "person_threshold?: number, scene?: string}。person 使用 face_name_group 保存的姓名，"
+                "或当前分组编号（person_threshold 须与 face_group_albums 的 threshold 相同）；"
+                "'*' 表示任意人脸。需先执行 image_index_build 建立索引。"
             ),
             affinity=["image", "vision", "album", "filter"],
             cost_profile="mid",
@@ -246,8 +279,9 @@ def register_image_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="image_train_category",
             description=(
-                "用一组示例图片训练一个自定义相册类别（生成类别向量），之后可被"
-                "image_analyze 的零样本分类识别。Args: {name: string, image_paths: string[], "
+                "用一组工作区示例图片训练一个自定义相册类别（生成类别向量），之后可被"
+                "image_analyze 按示例原型识别；设备 NAS 相册使用 photos_* 工具。"
+                "Args: {name: string, image_paths: string[], "
                 "directory?: string}。需先执行 image_index_build 建立索引。"
             ),
             affinity=["image", "vision", "album", "train"],

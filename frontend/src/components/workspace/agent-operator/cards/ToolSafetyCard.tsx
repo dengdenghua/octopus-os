@@ -36,9 +36,7 @@ export function ToolSafetyCard({
             <ShieldAlertIcon
               className={cn(
                 "size-4",
-                summary.total > 0
-                  ? "text-warning"
-                  : "text-muted-foreground",
+                summary.total > 0 ? "text-warning" : "text-muted-foreground",
               )}
             />
             {to("Tool safety")}

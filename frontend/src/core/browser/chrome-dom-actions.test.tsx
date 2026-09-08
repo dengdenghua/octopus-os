@@ -5,7 +5,10 @@ import { beforeAll, describe, expect, test, vi } from "vitest";
 import "../../../../extensions/echo-browser-relay/dom-actions.js";
 
 interface DomActionApi {
-  run(action: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  run(
+    action: string,
+    params?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>>;
 }
 
 function domActions(): DomActionApi {
@@ -19,7 +22,9 @@ function domActions(): DomActionApi {
 beforeAll(() => {
   Object.defineProperty(globalThis, "CSS", {
     configurable: true,
-    value: { escape: (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "\\$&") },
+    value: {
+      escape: (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "\\$&"),
+    },
   });
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
     () =>

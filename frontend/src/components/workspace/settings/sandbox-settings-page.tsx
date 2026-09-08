@@ -3,7 +3,10 @@ import { toast } from "sonner";
 
 import { useI18n } from "@/core/i18n/hooks";
 import { useLocalSettings } from "@/core/settings";
-import { normalizeNetworkAccess, normalizePermissionMode } from "@/core/permissions";
+import {
+  normalizeNetworkAccess,
+  normalizePermissionMode,
+} from "@/core/permissions";
 import { cn } from "@/lib/utils";
 
 import { SettingsSection } from "./settings-section";
@@ -63,6 +66,7 @@ export default function SandboxSettingsPage() {
   const context = settings.context as typeof settings.context & {
     sandbox_mode?: string;
     approval_policy?: string;
+    approvals_reviewer?: string;
     network_access?: unknown;
     guardian_review_enabled?: boolean;
     guardian_review_model?: string;
@@ -70,7 +74,8 @@ export default function SandboxSettingsPage() {
   const environment: ExecutionEnvironment =
     context.execution_environment === "local" ? "local" : "sandbox";
   const permission = normalizePermissionMode(context.permission_mode);
-  const networkTier: NetworkTier = normalizeNetworkAccess(context.network_access) ?? "deny";
+  const networkTier: NetworkTier =
+    normalizeNetworkAccess(context.network_access) ?? "deny";
   const guardianEnabled = context.guardian_review_enabled === true;
   // Empty = follow the conversation's own model (the user's chosen model
   // is always available); only a non-empty override switches reviewer.
@@ -103,7 +108,19 @@ export default function SandboxSettingsPage() {
         setSettings("context", {
           ...context,
           permission_mode: next,
-          approval_policy: next === "bypassPermissions" ? "never" : "on-request",
+          approval_policy:
+            next === "bypassPermissions" ? "never" : "on-request",
+          approvals_reviewer: next === "acceptEdits" ? "auto_review" : "user",
+          ...(next === "bypassPermissions"
+            ? {
+                execution_environment: "local" as const,
+                sandbox_mode: "full" as const,
+                network_access: "full" as const,
+              }
+            : {
+                execution_environment: "sandbox" as const,
+                sandbox_mode: "sandbox" as const,
+              }),
         } as Partial<typeof settings.context>);
         toast.success(copy.toastPermissionSwitched(label));
       } catch {
@@ -183,43 +200,43 @@ export default function SandboxSettingsPage() {
             {copy.permissionDesc}
           </p>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {(
-              ["default", "acceptEdits", "bypassPermissions"] as const
-            ).map((id) => {
-              const active = permission === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => applyPermission(id)}
-                  disabled={active}
-                  aria-pressed={active}
-                  className={cn(
-                    "flex flex-col gap-2 rounded-lg border p-4 text-left transition",
-                    active
-                      ? "border-primary bg-primary/5 ring-1 ring-primary/40"
-                      : "border-border-default hover:border-primary/40",
-                    id === "bypassPermissions" &&
-                      !active &&
-                      "text-warning/90 hover:text-warning",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">
-                      {copy.permission[id].label}
-                    </span>
-                    {active && (
-                      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
-                        {copy.activeTag}
-                      </span>
+            {(["default", "acceptEdits", "bypassPermissions"] as const).map(
+              (id) => {
+                const active = permission === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => applyPermission(id)}
+                    disabled={active}
+                    aria-pressed={active}
+                    className={cn(
+                      "flex flex-col gap-2 rounded-lg border p-4 text-left transition",
+                      active
+                        ? "border-primary bg-primary/5 ring-1 ring-primary/40"
+                        : "border-border-default hover:border-primary/40",
+                      id === "bypassPermissions" &&
+                        !active &&
+                        "text-warning/90 hover:text-warning",
                     )}
-                  </div>
-                  <p className="text-xs leading-snug text-muted-foreground">
-                    {copy.permission[id].description}
-                  </p>
-                </button>
-              );
-            })}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">
+                        {copy.permission[id].label}
+                      </span>
+                      {active && (
+                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                          {copy.activeTag}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      {copy.permission[id].description}
+                    </p>
+                  </button>
+                );
+              },
+            )}
           </div>
         </div>
 
@@ -348,7 +365,9 @@ export default function SandboxSettingsPage() {
           )}
         </div>
 
-        <p className="mt-4 text-xs text-muted-foreground/80">{copy.scopeNote}</p>
+        <p className="mt-4 text-xs text-muted-foreground/80">
+          {copy.scopeNote}
+        </p>
         <p className="mt-1.5 text-xs text-warning">{copy.restartHint}</p>
       </SettingsSection>
     </div>

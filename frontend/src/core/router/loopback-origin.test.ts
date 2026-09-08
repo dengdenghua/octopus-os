@@ -10,7 +10,7 @@ describe("loopback origin normalization", () => {
   test("keeps canonical localhost untouched", () => {
     expect(
       loopbackOriginRedirectURL(
-      "http://localhost:3000/#/workspace/agents?surface=chat",
+        "http://localhost:3000/#/workspace/agents?surface=chat",
       ),
     ).toBeNull();
   });
@@ -18,11 +18,9 @@ describe("loopback origin normalization", () => {
   test("redirects 127 loopback to canonical localhost and preserves route", () => {
     expect(
       loopbackOriginRedirectURL(
-      "http://127.0.0.1:3000/#/workspace/agents?surface=chat",
+        "http://127.0.0.1:3000/#/workspace/agents?surface=chat",
       ),
-    ).toBe(
-      "http://localhost:3000/#/workspace/agents?surface=chat",
-    );
+    ).toBe("http://localhost:3000/#/workspace/agents?surface=chat");
   });
 
   test("allows deployments to choose a different canonical loopback host", () => {

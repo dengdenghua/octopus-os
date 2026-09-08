@@ -15,6 +15,7 @@ from runtime.platform.io.atomic import (
     debounced_json_writer,
     read_json_with_backup,
 )
+from runtime.platform.io.sqlite import ClosingConnection, connect_closing
 from runtime.platform.io.transactional import (
     JsonMutation,
     TransactionalFileError,
@@ -37,4 +38,6 @@ __all__ = [
     "mutate_json_file",
     "path_transaction",
     "read_json_file",
+    "ClosingConnection",
+    "connect_closing",
 ]

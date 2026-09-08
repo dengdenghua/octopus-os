@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { MessageCirclePlusIcon, PlusIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   WorkspaceContainer,
 } from "@/components/workspace/workspace-container";
 import { PanelHost } from "@/core/panels/panel-host";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 export default function IntelligencePage() {
   const [activeTab, setActiveTab] = useState("templates");
@@ -23,6 +24,7 @@ export default function IntelligencePage() {
   const [presetTemplate, setPresetTemplate] =
     useState<AutomationTemplate | null>(null);
   const navigate = useNavigate();
+  const { search } = useLocation();
 
   const openCreate = (template: AutomationTemplate | null = null) => {
     setPresetTemplate(template);
@@ -56,8 +58,11 @@ export default function IntelligencePage() {
                 className="h-8 px-2 text-xs sm:h-7 sm:px-2.5"
                 onClick={() =>
                   navigate(
-                    "/workspace/realtime/new?prompt=" +
-                      encodeURIComponent("帮我创建一个自动化订阅任务"),
+                    preserveWorkbenchPresentation(
+                      "/workspace/realtime/new?prompt=" +
+                        encodeURIComponent("帮我创建一个自动化订阅任务"),
+                      search,
+                    ),
                   )
                 }
               >

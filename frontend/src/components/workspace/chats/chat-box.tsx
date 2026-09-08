@@ -3,7 +3,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { env } from "@/env";
 import { getWorkspaceArtifactRefetchInterval } from "@/core/artifacts/polling";
-import { useWorkspaceArtifacts } from "@/core/artifacts/use-workspace-artifacts";
+import {
+  useWorkspaceArtifacts,
+  workspaceArtifactsQueryKey,
+} from "@/core/artifacts/use-workspace-artifacts";
 import { normalizeWorkspaceArtifactRef } from "@/core/artifacts/utils";
 import { isInternalArtifactRef } from "@/core/artifacts/workspace-outputs";
 import { cn } from "@/lib/utils";
@@ -54,7 +57,7 @@ const ChatBox: React.FC<{
     if (!runJustFinished || !threadId || threadId === "new") return;
     void queryClient.invalidateQueries({
       exact: true,
-      queryKey: ["workspace-artifacts", threadId],
+      queryKey: workspaceArtifactsQueryKey(threadId),
     });
   }, [queryClient, thread.isLoading, threadId]);
 

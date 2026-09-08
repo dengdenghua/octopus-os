@@ -70,7 +70,11 @@ describe("buildReplayHtml", () => {
         receipt: {
           summary: "2 changes completed · ready to verify",
           items: [
-            { title: "Update layout", status: "done", detail: "Grid is now responsive" },
+            {
+              title: "Update layout",
+              status: "done",
+              detail: "Grid is now responsive",
+            },
           ],
           verification: ["Open the preview and confirm the responsive grid"],
         },
@@ -80,7 +84,7 @@ describe("buildReplayHtml", () => {
     expect(html).toContain("What was delivered");
     expect(html).toContain("Update layout");
     expect(html).toContain("VERIFY IN YOUR BROWSER");
-    expect(html).toContain("id=\"dock-play\"");
+    expect(html).toContain('id="dock-play"');
   });
 
   it("renders an empty-state (and no script) when there are no steps", () => {

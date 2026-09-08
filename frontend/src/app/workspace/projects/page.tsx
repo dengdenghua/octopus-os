@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   ActivityIcon,
   AlertTriangleIcon,
@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { authHeaders, jsonAuthHeaders } from "@/core/auth/api";
+import { authHeaders, currentActorId, jsonAuthHeaders } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,7 +49,13 @@ import {
 } from "@/components/workspace/workspace-container";
 import { useI18n } from "@/core/i18n/hooks";
 import { CreateProjectDialog } from "@/components/workspace/create-project-dialog";
-import { type Project, useEnsureProjectHome } from "@/core/projects/hooks";
+import {
+  projectQueryKey,
+  projectsQueryKey,
+  type Project,
+  useEnsureProjectHome,
+} from "@/core/projects/hooks";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 // ─── types（与 runtime/projectos/pm.py 的返回结构对应）───────────────
 
@@ -385,13 +391,15 @@ function MetricCard({
 
 export default function ProjectsPage() {
   const { t } = useI18n();
+  const { search } = useLocation();
   const navigate = useNavigate();
   const ensureProjectHome = useEnsureProjectHome();
+  const actor = currentActorId();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const projectsQuery = useQuery<ProjectSummary[]>({
-    queryKey: ["projects"],
+    queryKey: projectsQueryKey(actor),
     queryFn: async () => {
       const res = await fetch(BASE(), { headers: authHeaders() });
       if (!res.ok) throw new ProjectRequestError(traceIdFromResponse(res));
@@ -420,7 +428,7 @@ export default function ProjectsPage() {
   }, [projects, selectedId]);
 
   const detailQuery = useQuery<ProjectFull>({
-    queryKey: ["project", selectedId],
+    queryKey: projectQueryKey(selectedId, actor),
     queryFn: async () => {
       const res = await fetch(`${BASE()}/${selectedId}`, {
         headers: authHeaders(),
@@ -471,9 +479,13 @@ export default function ProjectsPage() {
   const openProjectGroup = (project: Project) => {
     ensureProjectHome.mutate(project, {
       onSuccess: ({ threadId }) =>
-        navigate(`/workspace/realtime/${encodeURIComponent(threadId)}`, {
-          state: { openProjectWorkbench: true },
-        }),
+        navigate(
+          preserveWorkbenchPresentation(
+            `/workspace/realtime/${encodeURIComponent(threadId)}`,
+            search,
+          ),
+          { state: { openProjectWorkbench: true } },
+        ),
       onError: () => toast.error("项目工作群打开失败，请重试"),
     });
   };
@@ -530,7 +542,10 @@ export default function ProjectsPage() {
                 开启一个里程碑式项目，或先建一个项目。
               </div>
               <Link
-                to="/workspace/realtime/new"
+                to={preserveWorkbenchPresentation(
+                  "/workspace/realtime/new",
+                  search,
+                )}
                 className="text-xs text-primary underline-offset-4 hover:underline"
               >
                 去新建会话

@@ -1,3 +1,5 @@
+import { currentActorId } from "@/core/auth/api";
+
 export interface QueuedComposerImageEntry {
   id: string;
   threadId?: string | null;
@@ -9,10 +11,38 @@ export interface QueuedComposerImageEntry {
 const COMPOSER_IMAGE_QUEUE_KEY = "echo:composer-image-queue";
 const LAST_COMPOSER_TARGET_KEY = "echo:last-composer-target";
 
+function scopedKey(base: string): string {
+  const actor = encodeURIComponent(currentActorId().trim() || "anonymous");
+  return `${base}:${actor}`;
+}
+
+/** Remove queued images and target hints at an authentication boundary. */
+export function clearComposerImageEntries(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const prefixes = [COMPOSER_IMAGE_QUEUE_KEY, LAST_COMPOSER_TARGET_KEY];
+    for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.sessionStorage.key(index);
+      if (
+        key &&
+        prefixes.some(
+          (prefix) => key === prefix || key.startsWith(`${prefix}:`),
+        )
+      ) {
+        window.sessionStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
 function readQueue(): QueuedComposerImageEntry[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.sessionStorage.getItem(COMPOSER_IMAGE_QUEUE_KEY);
+    const raw = window.sessionStorage.getItem(
+      scopedKey(COMPOSER_IMAGE_QUEUE_KEY),
+    );
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -33,11 +63,11 @@ function writeQueue(entries: QueuedComposerImageEntry[]): void {
   if (typeof window === "undefined") return;
   try {
     if (entries.length === 0) {
-      window.sessionStorage.removeItem(COMPOSER_IMAGE_QUEUE_KEY);
+      window.sessionStorage.removeItem(scopedKey(COMPOSER_IMAGE_QUEUE_KEY));
       return;
     }
     window.sessionStorage.setItem(
-      COMPOSER_IMAGE_QUEUE_KEY,
+      scopedKey(COMPOSER_IMAGE_QUEUE_KEY),
       JSON.stringify(entries),
     );
   } catch {
@@ -82,7 +112,7 @@ export function rememberLastComposerTarget(path: string): void {
   if (typeof window === "undefined") return;
   try {
     if (!path.trim()) return;
-    window.sessionStorage.setItem(LAST_COMPOSER_TARGET_KEY, path);
+    window.sessionStorage.setItem(scopedKey(LAST_COMPOSER_TARGET_KEY), path);
   } catch {
     // Best-effort only.
   }
@@ -91,7 +121,9 @@ export function rememberLastComposerTarget(path: string): void {
 export function readLastComposerTarget(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const value = window.sessionStorage.getItem(LAST_COMPOSER_TARGET_KEY);
+    const value = window.sessionStorage.getItem(
+      scopedKey(LAST_COMPOSER_TARGET_KEY),
+    );
     return typeof value === "string" && value.trim() ? value : null;
   } catch {
     return null;

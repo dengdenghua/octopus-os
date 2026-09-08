@@ -185,9 +185,7 @@ function FileRow({ path }: { path: string }) {
       <FolderOpenIcon className="size-2.5 text-muted-foreground/50 shrink-0" />
       <span className="text-xs font-medium truncate">{name}</span>
       {dir && (
-        <span className="text-xs text-muted-foreground/50 truncate">
-          {dir}
-        </span>
+        <span className="text-xs text-muted-foreground/50 truncate">{dir}</span>
       )}
     </div>
   );

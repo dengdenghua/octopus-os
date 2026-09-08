@@ -225,6 +225,9 @@ export interface CloudInstalledStatus {
   skills: string[];
   plugins: string[];
   plugin_states?: Record<string, RuntimePluginStatus>;
+  /** False means local inventory is valid but catalog-derived states are unavailable. */
+  catalog_available?: boolean;
+  catalog_error?: string | null;
 }
 
 export async function fetchCloudInstalled(): Promise<CloudInstalledStatus> {

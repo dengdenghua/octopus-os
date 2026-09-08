@@ -35,14 +35,25 @@ export interface ProtocolVersion {
   patch: number; // Bug 修复
 }
 
-export const PROTOCOL_VERSION_V1: ProtocolVersion = { major: 1, minor: 0, patch: 0 };
-export const PROTOCOL_VERSION_V2: ProtocolVersion = { major: 2, minor: 0, patch: 0 };
+export const PROTOCOL_VERSION_V1: ProtocolVersion = {
+  major: 1,
+  minor: 0,
+  patch: 0,
+};
+export const PROTOCOL_VERSION_V2: ProtocolVersion = {
+  major: 2,
+  minor: 0,
+  patch: 0,
+};
 export const CURRENT_PROTOCOL_VERSION = PROTOCOL_VERSION_V2;
 
 /**
  * 比较协议版本
  */
-export function compareVersions(a: ProtocolVersion, b: ProtocolVersion): number {
+export function compareVersions(
+  a: ProtocolVersion,
+  b: ProtocolVersion,
+): number {
   if (a.major !== b.major) return a.major - b.major;
   if (a.minor !== b.minor) return a.minor - b.minor;
   return a.patch - b.patch;
@@ -200,7 +211,11 @@ export class EventAdapterV1 implements EventAdapter {
 
   private _numberValue(value: unknown): number | undefined {
     if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value))) {
+    if (
+      typeof value === "string" &&
+      value.trim() &&
+      !Number.isNaN(Number(value))
+    ) {
       return Number(value);
     }
     return undefined;
@@ -216,7 +231,16 @@ export class EventAdapterV1 implements EventAdapter {
   private _terminalStatus(value: unknown): LiveToolEvent["status"] {
     if (value === true) return "error";
     const normalized = typeof value === "string" ? value.toLowerCase() : "";
-    if (["error", "failed", "failure", "rejected", "cancelled", "timeout"].includes(normalized)) {
+    if (
+      [
+        "error",
+        "failed",
+        "failure",
+        "rejected",
+        "cancelled",
+        "timeout",
+      ].includes(normalized)
+    ) {
       return "error";
     }
     return "done";

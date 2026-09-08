@@ -135,6 +135,36 @@ class DataAccessScope:
         if not self.can_write(path):
             raise DataAccessDenied("data path is not writable")
 
+    def _can_access_tree(self, path: str, permission: str) -> bool:
+        """Authorize every rule boundary a recursive operation could affect.
+
+        Permission on a parent does not grant access to a more restrictive
+        nested share. Checking all nested rules also covers children created
+        after a directory listing, without treating a scan as an ACL snapshot.
+        """
+        if self.operator:
+            return True
+        try:
+            parts = self._parts(path)
+        except DataAccessDenied:
+            return False
+        minimum = _PERMISSION_RANK[permission]
+        if _PERMISSION_RANK[self._permission(parts)] < minimum:
+            return False
+        return all(
+            _PERMISSION_RANK[self._permission(rule.root)] >= minimum
+            for rule in self.rules
+            if rule.root[: len(parts)] == parts
+        )
+
+    def require_read_tree(self, path: str) -> None:
+        if not self._can_access_tree(path, "read"):
+            raise DataAccessDenied("directory contains data that is not authorized")
+
+    def require_write_tree(self, path: str) -> None:
+        if not self._can_access_tree(path, "readWrite"):
+            raise DataAccessDenied("directory contains data that is not writable")
+
     def require_list(self, path: str) -> None:
         if not self.can_list(path):
             raise DataAccessDenied("data path is not authorized")
@@ -342,10 +372,13 @@ class OmvDataAccessPolicy:
     def scope_for_actor(self, actor: str) -> DataAccessScope:
         if actor == "local:admin":
             return DataAccessScope.unrestricted(actor)
+        # Zero disables caching even when consecutive calls share a clock tick.
+        if self._cache_seconds <= 0:
+            return self._build_scope(actor)
         now = time.monotonic()
         with self._lock:
             cached = self._cache.get(actor)
-            if cached is not None and cached[0] >= now:
+            if cached is not None and cached[0] > now:
                 return cached[1]
         scope = self._build_scope(actor)
         with self._lock:

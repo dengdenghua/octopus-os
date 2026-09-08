@@ -16,6 +16,9 @@ set -e
 ANSWERS=/tmp/echo-answers.conf
 LOG=/tmp/echo-install.log
 DONE=${ECHO_INSTALL_DONE:-/tmp/echo-install.completed}
+# preseed.cfg needs 512 + 2048 + 30000 decimal MB, plus partition alignment.
+# 32 GiB is a conservative lower bound; keep the recipe contract test in sync.
+MIN_SYSTEM_DISK_KB=33554432
 
 log() {
   printf '%s\n' "$*" >>"$LOG"
@@ -149,12 +152,14 @@ set --
 first=1
 first_choice=""
 DISK_CHOICES=""
+ELIGIBLE_DISKS=""
 for dev in $DISKS; do
   dev=${dev#/dev/}
   kb=$(disk_size_kb "$dev")
-  # 跳过拿不到容量或零容量的设备(如空的读卡器)
+  # 排除容量未知或放不下预置分区布局的磁盘，不能等到分区阶段才失败。
   case "$kb" in ''|*[!0-9]*) continue ;; esac
-  [ "$kb" -gt 0 ] || continue
+  [ "$kb" -ge "$MIN_SYSTEM_DISK_KB" ] || continue
+  ELIGIBLE_DISKS="$ELIGIBLE_DISKS $dev"
 
   state=OFF
   [ $first -eq 1 ] && { state=ON; first=0; }
@@ -168,7 +173,7 @@ for dev in $DISKS; do
   fi
 done
 
-[ "$#" -gt 0 ] || die "No usable installation disk was found."
+[ "$#" -gt 0 ] || die "No usable installation disk of at least 32 GiB was found."
 
 set +e
 if [ "$USE_WHIPTAIL" -eq 1 ]; then
@@ -195,6 +200,21 @@ fi
 set -e
 [ $rc -eq 0 ] || exit 1
 [ -n "$SYSDEV" ] || die "Select a system disk to continue."
+
+validate_selected_disk() {
+  case " $ELIGIBLE_DISKS " in
+    *" $SYSDEV "*) ;;
+    *) die "The selected disk is not an eligible installation target." ;;
+  esac
+  # A device may disappear while the user is answering the installer questions.
+  selected_kb=$(disk_size_kb "$SYSDEV")
+  case "$selected_kb" in
+    ''|*[!0-9]*) die "Cannot verify the selected disk capacity." ;;
+  esac
+  [ "$selected_kb" -ge "$MIN_SYSTEM_DISK_KB" ] \
+    || die "The system disk must have at least 32 GiB capacity."
+}
+validate_selected_disk
 
 # 确认(整盘写入,不可撤销)
 if [ "$USE_WHIPTAIL" -eq 1 ]; then
@@ -303,6 +323,7 @@ done
 
 # ── 5. 写入 debconf 预置 ──────────────────────────────────
 # 这些是 d-i 的官方开关,我们只是替用户填好答案 —— 不改 d-i 行为本身。
+validate_selected_disk
 cat >>"$ANSWERS" <<EOF
 d-i partman-auto/disk string /dev/$SYSDEV
 d-i partman-auto/method string regular

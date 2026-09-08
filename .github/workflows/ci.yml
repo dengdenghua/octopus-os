@@ -129,6 +129,9 @@ jobs:
       - name: Test the OS-owned release and delivery contracts
         run: uv run python deploy/appliance/run_public_source_tests.py
 
+      - name: Test optional engine host transport with locked MCP dependencies
+        run: uv run --locked --extra dev --extra serve --extra mcp pytest -q tests/test_host_mcp.py tests/test_host_tool_broker.py tests/test_opencode_backend.py
+
   frontend:
     name: Frontend quality and production build
     runs-on: ubuntu-24.04

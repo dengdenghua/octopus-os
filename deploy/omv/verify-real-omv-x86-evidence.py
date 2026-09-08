@@ -198,9 +198,10 @@ class EvidenceError(RuntimeError):
 def _safe_read(path: Path, *, maximum: int, label: str) -> bytes:
     if not path.is_absolute() or path.is_symlink():
         raise EvidenceError(f"{label} must be one absolute non-symlink file")
-    flags = os.O_RDONLY | os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    flags = os.O_RDONLY
+    for flag_name in ("O_CLOEXEC", "O_NOFOLLOW", "O_BINARY"):
+        flag = getattr(os, flag_name, 0)
+        flags |= flag
     try:
         descriptor = os.open(path, flags)
     except OSError as exc:

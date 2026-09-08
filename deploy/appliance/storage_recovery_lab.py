@@ -892,8 +892,16 @@ def _reports_enospc(completed: subprocess.CompletedProcess[str]) -> bool:
 
 def _verify_recycle_result(value: Any) -> dict[str, Any]:
     transfer = value.get("nas_transfer") if isinstance(value, dict) else None
+    zfs_runtime = value.get("zfs_runtime") if isinstance(value, dict) else None
     if (
-        not isinstance(transfer, dict)
+        not isinstance(zfs_runtime, dict)
+        or zfs_runtime.get("moduleInstalled") is not True
+        or zfs_runtime.get("moduleLoaded") is not True
+        or zfs_runtime.get("loadServiceActive") is not True
+        or zfs_runtime.get("kernelInterfaceReady") is not True
+        or not isinstance(zfs_runtime.get("kernelRelease"), str)
+        or not zfs_runtime["kernelRelease"]
+        or not isinstance(transfer, dict)
         or transfer.get("writeExecuted") is not True
         or transfer.get("size") != NAS_TRANSFER_BYTES
         or transfer.get("recycleRestoreVerified") is not True
@@ -1140,6 +1148,7 @@ def run_phase(
             "--base-url",
             origin,
             "--require-clean-bundle",
+            "--require-zfs-runtime",
             "--require-omv",
             "--nas-transfer-test-bytes",
             str(transfer["bytes"]),

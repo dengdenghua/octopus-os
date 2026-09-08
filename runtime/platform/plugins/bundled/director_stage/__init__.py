@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -242,8 +241,7 @@ class DirectorStagePlugin(ModulePlugin):
             ),
         ]
         for skill in skills:
-            with contextlib.suppress(Exception):
-                self.ctx.register_skill(skill)
+            self.ctx.register_skill(skill)
 
     def _scene_get_skill(
         self, scene_id: str = "", view: str = "summary", **_kwargs: Any

@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import {
-  E2E_SURPASS_TARGET_SCORE,
-  queueAgentScorecardGaps,
-} from "./api";
+import { E2E_SURPASS_TARGET_SCORE, queueAgentScorecardGaps } from "./api";
 
 describe("agent trace evolution API helpers", () => {
   afterEach(() => {

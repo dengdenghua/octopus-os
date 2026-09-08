@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+const identity = vi.hoisted(() => ({ actor: "account-a" }));
+vi.mock("@/core/auth/api", () => ({ currentActorId: () => identity.actor }));
+
 import {
   consumeTaskCollaboratorPreset,
   taskCollaboratorRouteForLeader,
@@ -10,6 +13,7 @@ import {
 describe("task collaborator presets", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    identity.actor = "account-a";
     vi.restoreAllMocks();
   });
 
@@ -60,5 +64,20 @@ describe("task collaborator presets", () => {
       label: undefined,
       openPicker: false,
     });
+  });
+
+  test("does not consume a preset written by another actor", () => {
+    writeTaskCollaboratorPreset({
+      leaderId: "coder",
+      collaboratorIds: ["research-advisor"],
+    });
+
+    identity.actor = "account-b";
+    expect(consumeTaskCollaboratorPreset()).toBeNull();
+
+    identity.actor = "account-a";
+    expect(consumeTaskCollaboratorPreset()?.collaboratorIds).toEqual([
+      "research-advisor",
+    ]);
   });
 });

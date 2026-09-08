@@ -76,7 +76,7 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            ca-certificates git python3 systemd
+            bash ca-certificates coreutils gh git grep mawk python3 sed systemd
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -87,7 +87,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 deploy/appliance/delivery_source_preflight.py --compact
+          python3 deploy/appliance/delivery_source_preflight.py --compact \
+            --expected-branch "$GITHUB_REF_NAME"
 
       - name: Verify private-source and image contracts
         run: |

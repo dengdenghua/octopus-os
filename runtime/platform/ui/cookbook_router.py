@@ -8,15 +8,21 @@ the SearXNG control router.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
+from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 
 class PullRequest(BaseModel):
     tag: str
+
+
+class DeployRequest(BaseModel):
+    plan_id: str
 
 
 def create_cookbook_router(
@@ -55,15 +61,68 @@ def create_cookbook_router(
             jwt_audience=jwt_audience,
         )
 
-    router = APIRouter(tags=["cookbook"])
+    @asynccontextmanager
+    async def lifespan(_app):
+        from runtime.sensing.model_router import local_ai_deployment
+
+        await asyncio.to_thread(local_ai_deployment.resume_runtime)
+        try:
+            yield
+        finally:
+            await asyncio.to_thread(local_ai_deployment.shutdown)
+
+    def _admin_dep(request: Request) -> None:
+        from runtime.safety.auth.principal import require_roles
+
+        require_roles(
+            request,
+            identity_store,
+            require_auth,
+            ("admin",),
+            jwt_secret=jwt_secret,
+            jwt_issuer=jwt_issuer,
+            jwt_audience=jwt_audience,
+        )
+
+    router = APIRouter(tags=["cookbook"], lifespan=lifespan)
+
+    @router.post(
+        "/api/cookbook/deployment/plan", dependencies=[Depends(_auth_dep), Depends(_admin_dep)]
+    )
+    def deployment_plan(body: PullRequest) -> dict:
+        from runtime.sensing.model_router.local_ai_deployment import plan
+
+        try:
+            return plan(body.tag)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @router.post(
+        "/api/cookbook/deployment/start", dependencies=[Depends(_auth_dep), Depends(_admin_dep)]
+    )
+    def deployment_start(body: DeployRequest) -> dict:
+        from runtime.sensing.model_router.local_ai_deployment import start
+
+        try:
+            return start(body.plan_id)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @router.get("/api/cookbook/deployment", dependencies=[Depends(_auth_dep), Depends(_admin_dep)])
+    def deployment_status() -> dict:
+        from runtime.sensing.model_router.local_ai_deployment import status
+
+        return status()
 
     @router.get("/api/cookbook/snapshot")
-    def snapshot() -> dict[str, Any]:
+    def snapshot(context_tokens: int = Query(4096, ge=4096, le=32768)) -> dict[str, Any]:
         """Detected hardware + ranked recommendations + ollama availability."""
         from runtime.sensing.model_router.hwfit import cookbook_snapshot
 
         with contextlib.suppress(Exception):
-            return cookbook_snapshot()
+            return (
+                cookbook_snapshot() if context_tokens == 4096 else cookbook_snapshot(context_tokens)
+            )
         return {"hardware": None, "ollama_available": False, "recommendations": [], "pulls": {}}
 
     @router.post(
@@ -74,6 +133,21 @@ def create_cookbook_router(
         """One-click pull a recommended model via ollama (runs in the background)."""
         from runtime.sensing.model_router.hwfit import start_pull
 
-        return start_pull(body.tag)
+        result = start_pull(body.tag)
+        if result.get("status") == "error":
+            raise HTTPException(400, result.get("error"))
+        return result
+
+    @router.post(
+        "/api/cookbook/verify",
+        dependencies=[Depends(_auth_dep), Depends(_operator_dep)],
+    )
+    def verify(body: PullRequest) -> dict[str, Any]:
+        from runtime.sensing.model_router.hwfit import start_verify
+
+        result = start_verify(body.tag)
+        if result.get("status") == "error":
+            raise HTTPException(400, result.get("error"))
+        return result
 
     return router

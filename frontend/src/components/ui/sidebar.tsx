@@ -225,14 +225,14 @@ function Sidebar({
       ? "0"
       : state === "collapsed" && collapsible === "icon"
         ? variant === "floating" || variant === "inset"
-          ? `calc(${SIDEBAR_WIDTH_ICON} + 1rem)`
-          : SIDEBAR_WIDTH_ICON
+          ? "calc(var(--sidebar-width-icon) + 1rem)"
+          : "var(--sidebar-width-icon)"
         : SIDEBAR_WIDTH;
   const containerWidth =
     state === "collapsed" && collapsible === "icon"
       ? variant === "floating" || variant === "inset"
-        ? `calc(${SIDEBAR_WIDTH_ICON} + 1rem + 2px)`
-        : SIDEBAR_WIDTH_ICON
+        ? "calc(var(--sidebar-width-icon) + 1rem + 2px)"
+        : "var(--sidebar-width-icon)"
       : SIDEBAR_WIDTH;
   const containerLeft =
     side === "left" && collapsible === "offcanvas" && state === "collapsed"

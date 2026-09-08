@@ -38,7 +38,7 @@ from ._chunk_rows import (
     is_chunk_row,
     pack_chunk_row,
 )
-from ._journal_base import Journal
+from ._journal_base import Journal, JournalRecoveryReadError
 from ._journal_models import (
     CURRENT_SCHEMA_VERSION,
     AssistantChunkEvent,
@@ -1608,6 +1608,7 @@ class JSONLJournal(Journal):
                 # appear later and we want to parse it from scratch).
                 self._cache = []
                 self._cache_byte_pos = 0
+                self._skipped_total = 0
                 return []
 
             file_size = self._path.stat().st_size
@@ -1675,6 +1676,22 @@ class JSONLJournal(Journal):
             _refresh_session_index(self._session_index, events, self._session_index_upto)
             self._session_index_upto = len(events)
             return list(self._session_index.get(session_id, ()))
+
+    def read_by_type_for_recovery(
+        self,
+        event_type: JournalEventType,
+        *,
+        scope: TenantScope | None = None,
+    ) -> list[JournalEvent]:
+        """Return typed rows only when the complete JSONL prefix is parseable."""
+
+        events = self.read_all(scope=scope)
+        if self._skipped_total:
+            raise JournalRecoveryReadError(
+                f"journal contains {self._skipped_total} unreadable row(s); "
+                "recovery cannot safely select an older checkpoint"
+            )
+        return [event for event in events if event.event_type == event_type]
 
     def __len__(self) -> int:
         # Event count, not line count: a packed chunk row is one line but

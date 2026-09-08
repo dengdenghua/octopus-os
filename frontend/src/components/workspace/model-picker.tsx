@@ -436,6 +436,7 @@ function PickerRow({
 }
 
 export interface ModelPickerProps {
+  disabled?: boolean;
   models: PickerModel[];
   value?: string | null;
   onChange: (name: string) => void;
@@ -449,6 +450,7 @@ export interface ModelPickerProps {
 }
 
 export function ModelPicker({
+  disabled = false,
   models,
   value,
   onChange,
@@ -543,6 +545,7 @@ export function ModelPicker({
   const flatEntries = useMemo(() => deduplicatePickerModels(models), [models]);
 
   const handleSelect = (name: string) => {
+    if (disabled) return;
     onChange(name);
     setOpen(false);
   };
@@ -569,6 +572,7 @@ export function ModelPicker({
     <button
       type="button"
       data-testid="model-picker-trigger"
+      disabled={disabled}
       className={cn(
         "inline-flex h-8 min-w-0 items-center gap-1 rounded-lg border border-transparent",
         "bg-transparent px-2 py-1 text-xs text-muted-foreground transition outline-none",
@@ -603,7 +607,10 @@ export function ModelPicker({
   );
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu
+      open={!disabled && open}
+      onOpenChange={(next) => setOpen(!disabled && next)}
+    >
       {renderTrigger ? (
         <DropdownMenuTrigger asChild>
           {renderTrigger(selected)}

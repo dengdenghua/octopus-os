@@ -3,9 +3,12 @@ import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+import { manualChunks } from "./chunk-policy.mjs";
+
 const frontendDir = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repositoryDir = path.resolve(frontendDir, "..");
 const sourceDir = path.join(frontendDir, "src");
+
 const applications = [
   "paper-trading",
   "design",
@@ -51,7 +54,10 @@ for (const application of applications) {
       emptyOutDir: true,
       sourcemap: process.env.ECHO_SOURCEMAP === "1" ? "hidden" : false,
       reportCompressedSize: true,
-      chunkSizeWarningLimit: 1_400,
+      chunkSizeWarningLimit: 900,
+      rollupOptions: {
+        output: { manualChunks },
+      },
     },
   });
 }

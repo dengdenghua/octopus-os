@@ -10,8 +10,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { swallow } from "@/core/utils/log";
-
 export type DesktopAppCategory = "ai" | "video" | "dev" | "knowledge";
 
 export interface BrowserDesktopApp {
@@ -207,47 +205,3 @@ export const AI_DESKTOP_APPS: BrowserDesktopApp[] = [
     category: "knowledge",
   },
 ];
-
-export const DESKTOP_APP_ORDER_KEY = "echo:browser-desktop-app-order";
-
-export function loadDesktopAppOrder(): string[] {
-  if (typeof window === "undefined")
-    return AI_DESKTOP_APPS.map((app) => app.url);
-  try {
-    const parsed = JSON.parse(
-      localStorage.getItem(DESKTOP_APP_ORDER_KEY) || "[]",
-    );
-    if (!Array.isArray(parsed)) return AI_DESKTOP_APPS.map((app) => app.url);
-    const known = new Set(AI_DESKTOP_APPS.map((app) => app.url));
-    const saved = parsed.filter(
-      (item): item is string => typeof item === "string" && known.has(item),
-    );
-    const missing = AI_DESKTOP_APPS.map((app) => app.url).filter(
-      (url) => !saved.includes(url),
-    );
-    return [...saved, ...missing];
-  } catch (e) {
-    swallow(e);
-    return AI_DESKTOP_APPS.map((app) => app.url);
-  }
-}
-
-export function orderDesktopApps(order: string[]): BrowserDesktopApp[] {
-  const byUrl = new Map(AI_DESKTOP_APPS.map((app) => [app.url, app]));
-  return order
-    .map((url) => byUrl.get(url))
-    .filter((app): app is BrowserDesktopApp => Boolean(app));
-}
-
-export function moveDesktopApp(
-  order: string[],
-  fromUrl: string,
-  toUrl: string,
-): string[] {
-  if (fromUrl === toUrl) return order;
-  const next = order.filter((url) => url !== fromUrl);
-  const targetIndex = next.indexOf(toUrl);
-  if (targetIndex < 0) return order;
-  next.splice(targetIndex, 0, fromUrl);
-  return next;
-}

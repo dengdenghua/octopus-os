@@ -3,6 +3,7 @@
 ## 问题分析
 
 ### 当前问题
+
 - **机械计算**：每10个学习事件 = 1级，过于简单
 - **缺乏意义**：Lv.23 代表什么？优秀还是普通？
 - **无对比参考**：用户不知道自己的等级在什么水平
@@ -12,9 +13,11 @@
 ### 方案 A：综合评分制（推荐）
 
 #### 核心思路
+
 等级不仅看数量，更看质量。综合多个维度计算等级。
 
 #### 评分公式
+
 ```typescript
 等级 = f(学习事件数, 成功率, 技能数, 记忆量)
 
@@ -34,17 +37,18 @@
 
 #### 等级分段
 
-| 等级范围 | 称号 | 描述 | 预期表现 |
-|---------|------|------|---------|
-| Lv.1-5 | 🌱 新手 | 刚开始学习 | 成功率40-60%，0-5个技能 |
-| Lv.6-10 | 📖 学徒 | 基础扎实 | 成功率60-70%，5-10个技能 |
+| 等级范围 | 称号    | 描述       | 预期表现                  |
+| -------- | ------- | ---------- | ------------------------- |
+| Lv.1-5   | 🌱 新手 | 刚开始学习 | 成功率40-60%，0-5个技能   |
+| Lv.6-10  | 📖 学徒 | 基础扎实   | 成功率60-70%，5-10个技能  |
 | Lv.11-20 | ⚙️ 熟手 | 能独立工作 | 成功率70-80%，10-15个技能 |
-| Lv.21-35 | 🎯 专家 | 高效可靠 | 成功率80-90%，15-20个技能 |
-| Lv.36-50 | 🏆 大师 | 领域精通 | 成功率90%+，20+个技能 |
-| Lv.51-75 | 💎 宗师 | 近乎完美 | 成功率95%+，全面发展 |
-| Lv.76-99 | ⭐ 传奇 | 理论极限 | 完美表现，引领方向 |
+| Lv.21-35 | 🎯 专家 | 高效可靠   | 成功率80-90%，15-20个技能 |
+| Lv.36-50 | 🏆 大师 | 领域精通   | 成功率90%+，20+个技能     |
+| Lv.51-75 | 💎 宗师 | 近乎完美   | 成功率95%+，全面发展      |
+| Lv.76-99 | ⭐ 传奇 | 理论极限   | 完美表现，引领方向        |
 
 #### 星级映射
+
 ```typescript
 星级 = Math.ceil(等级 / 20)
 1星 = Lv.1-20   (新手到熟手)
@@ -55,6 +59,7 @@
 ```
 
 #### 实现代码
+
 ```typescript
 export function calculateComprehensiveLevel(data: EvolutionOverview): {
   level: number;
@@ -64,31 +69,32 @@ export function calculateComprehensiveLevel(data: EvolutionOverview): {
 } {
   // 1. 基础经验
   const baseXP = data.learning_events / 10;
-  
+
   // 2. 质量系数
   const successRate = data.skills.avg_success_rate;
   const qualityMultiplier = Math.max(0, (successRate - 50) / 100);
-  
+
   // 3. 技能系数
   const skillMultiplier = Math.min(data.skills.total / 20, 0.5);
-  
+
   // 4. 记忆系数
   const memoryMultiplier = Math.min(
     Math.log10(Math.max(data.memory.total_facts, 1)) / 10,
-    0.3
+    0.3,
   );
-  
+
   // 5. 计算最终等级
-  const totalMultiplier = 1 + qualityMultiplier + skillMultiplier + memoryMultiplier;
+  const totalMultiplier =
+    1 + qualityMultiplier + skillMultiplier + memoryMultiplier;
   const rawLevel = baseXP * totalMultiplier;
   const level = Math.min(Math.floor(rawLevel), 99); // 最高99级
-  
+
   // 6. 确定称号和评级
   const { title, grade } = getLevelTitle(level);
-  
+
   // 7. 计算百分位（模拟数据，实际应从后端获取）
   const percentile = calculatePercentile(level);
-  
+
   return { level, title, grade, percentile };
 }
 
@@ -108,7 +114,7 @@ function calculatePercentile(level: number): number {
   const mean = 15;
   const stdDev = 10;
   const z = (level - mean) / stdDev;
-  
+
   // 简化的正态分布累积函数
   const percentile = 50 + 50 * Math.tanh(z / 2);
   return Math.round(percentile);
@@ -118,9 +124,11 @@ function calculatePercentile(level: number): number {
 ### 方案 B：段位制（竞技游戏风格）
 
 #### 核心思路
+
 像王者荣耀、英雄联盟一样的段位系统
 
 #### 段位结构
+
 ```
 青铜 I-III   (Bronze)    Lv.1-9
 白银 I-III   (Silver)    Lv.10-19
@@ -132,6 +140,7 @@ function calculatePercentile(level: number): number {
 ```
 
 #### 显示方式
+
 ```
 🥉 青铜 II
 ⚪ 白银 I
@@ -145,9 +154,11 @@ function calculatePercentile(level: number): number {
 ### 方案 C：混合制（推荐实施）
 
 #### 核心思路
+
 综合评分 + 称号 + 百分位
 
 #### UI 展示
+
 ```
 ┌─────────────────────────────────────┐
 │  🤖 代码助手                         │
@@ -162,6 +173,7 @@ function calculatePercentile(level: number): number {
 ```
 
 说明：
+
 - **Lv.23**：具体等级数字
 - **🎯 专家**：等级称号
 - **超过 78% 的用户**：百分位排名
@@ -172,21 +184,17 @@ function calculatePercentile(level: number): number {
 ### 1. 等级显示优化
 
 #### Before
+
 ```tsx
-<div className="text-sm font-medium text-primary">
-  Lv.{stats.level}
-</div>
+<div className="text-sm font-medium text-primary">Lv.{stats.level}</div>
 ```
 
 #### After
+
 ```tsx
 <div className="flex items-center gap-2">
-  <span className="text-sm font-medium text-primary">
-    Lv.{stats.level}
-  </span>
-  <span className="text-xs text-muted-foreground">
-    {stats.title}
-  </span>
+  <span className="text-sm font-medium text-primary">Lv.{stats.level}</span>
+  <span className="text-xs text-muted-foreground">{stats.title}</span>
   {stats.percentile && (
     <span className="text-xs text-muted-foreground">
       · 超过 {stats.percentile}% 的用户
@@ -214,17 +222,19 @@ function LevelEvaluationCard({ stats }: { stats: CharacterStats }) {
           </div>
         </div>
       </div>
-      
+
       {/* 等级描述 */}
       <div className="mt-3 text-sm text-muted-foreground">
         {getLevelDescription(stats.level)}
       </div>
-      
+
       {/* 距离下一称号 */}
       {getNextTitle(stats.level) && (
         <div className="mt-3 rounded-md bg-muted/50 p-2 text-xs">
           <div className="flex items-center justify-between">
-            <span>距离 <strong>{getNextTitle(stats.level)}</strong></span>
+            <span>
+              距离 <strong>{getNextTitle(stats.level)}</strong>
+            </span>
             <span>{getNextLevelThreshold(stats.level) - stats.level} 级</span>
           </div>
         </div>
@@ -267,27 +277,36 @@ function getNextLevelThreshold(level: number): number {
 ### 3. 等级对比功能
 
 ```tsx
-function LevelComparison({ myLevel, avgLevel }: { myLevel: number; avgLevel: number }) {
+function LevelComparison({
+  myLevel,
+  avgLevel,
+}: {
+  myLevel: number;
+  avgLevel: number;
+}) {
   const diff = myLevel - avgLevel;
   const isAbove = diff > 0;
-  
+
   return (
     <div className="rounded-lg border border-border bg-card p-3">
       <div className="text-xs text-muted-foreground">与平均水平对比</div>
       <div className="mt-2 flex items-center gap-2">
         <div className="text-lg font-bold">
-          {isAbove ? "+" : ""}{diff} 级
+          {isAbove ? "+" : ""}
+          {diff} 级
         </div>
-        <div className={cn(
-          "text-xs",
-          isAbove ? "text-success" : "text-muted-foreground"
-        )}>
+        <div
+          className={cn(
+            "text-xs",
+            isAbove ? "text-success" : "text-muted-foreground",
+          )}
+        >
           {isAbove ? "超过平均" : "低于平均"}
         </div>
       </div>
       <div className="mt-2 flex gap-1">
         <div className="h-1 flex-1 rounded-full bg-muted" />
-        <div 
+        <div
           className="h-1 rounded-full bg-primary"
           style={{ width: `${(myLevel / 99) * 100}%` }}
         />
@@ -300,6 +319,7 @@ function LevelComparison({ myLevel, avgLevel }: { myLevel: number; avgLevel: num
 ## 数据支持
 
 ### 需要后端提供
+
 1. **全局统计**：
    - 平均等级
    - 等级分布（直方图）
@@ -310,6 +330,7 @@ function LevelComparison({ myLevel, avgLevel }: { myLevel: number; avgLevel: num
    - 绝对排名（可选）
 
 ### API 设计
+
 ```typescript
 GET /api/v1/evolution/leaderboard
 Response: {
@@ -330,6 +351,7 @@ Response: {
 ## 激励设计
 
 ### 1. 升级奖励
+
 ```
 Lv.10 → 解锁"学徒"称号 + 100 XP奖励
 Lv.20 → 解锁"熟手"称号 + 技能槽+1
@@ -337,12 +359,14 @@ Lv.30 → 解锁"专家"称号 + 专属头像框
 ```
 
 ### 2. 里程碑成就
+
 ```
 首次达到专家级别 → "专家之路"成就
 超过90%的用户 → "精英阶层"成就
 ```
 
 ### 3. 等级特权（可选）
+
 ```
 Lv.20+ → 解锁高级功能
 Lv.30+ → 优先处理队列
@@ -352,12 +376,14 @@ Lv.50+ → 专属支持渠道
 ## 总结
 
 ### 推荐方案：混合制
+
 - **综合评分**：不只看数量，更看质量
 - **称号系统**：给用户明确的定位
 - **百分位排名**：提供社会对比
 - **星级评价**：快速可视化
 
 ### 实施步骤
+
 1. **Phase 1**：实现综合评分算法
 2. **Phase 2**：添加称号和等级描述
 3. **Phase 3**：接入后端排名数据

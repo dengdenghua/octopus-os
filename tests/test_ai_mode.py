@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from runtime.core.cerebrum import ai_mode
 
 
@@ -29,12 +30,12 @@ def test_env_override_wins(monkeypatch: pytest.MonkeyPatch, tmp_state: Path) -> 
     assert ai_mode.current_ai_mode() == "privacy"
 
 
-def test_unknown_env_falls_back(
+def test_unknown_env_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_state: Path,
 ) -> None:
     monkeypatch.setenv("ECHO_AI_MODE", "turbo")
-    assert ai_mode.current_ai_mode() == "efficiency"
+    assert ai_mode.current_ai_mode() == "privacy"
 
 
 def test_persisted_file_honored(tmp_state: Path) -> None:
@@ -42,9 +43,9 @@ def test_persisted_file_honored(tmp_state: Path) -> None:
     assert ai_mode.current_ai_mode() == "privacy"
 
 
-def test_corrupt_file_returns_default(tmp_state: Path) -> None:
+def test_corrupt_file_fails_closed(tmp_state: Path) -> None:
     tmp_state.write_text("not json {{{", encoding="utf-8")
-    assert ai_mode.current_ai_mode() == "efficiency"
+    assert ai_mode.current_ai_mode() == "privacy"
 
 
 # ── set_ai_mode ───────────────────────────────────────────────

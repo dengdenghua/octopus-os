@@ -8,7 +8,7 @@ import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
 /** Pseudo agent IDs used in URLs that are not real agent names. */
-const PSEUDO_AGENT_IDS = new Set(["", "new", "general", "echo-assistant"]);
+const PSEUDO_AGENT_IDS = new Set(["", "new", "echo-assistant"]);
 
 function agentDisplayName(a: Agent | null | undefined): string | null {
   if (!a) return null;
@@ -25,22 +25,15 @@ function pickGreetingName(
   allAgents: Agent[],
   footerAgentId: string | null,
 ): string {
-  if (agentNameProp === "echo") return getAssistantDisplayName();
-
-  const propDisplay = agentDisplayName(agentProp);
+  const resolvedId = agentNameProp?.trim() || agentProp?.name || footerAgentId;
+  if (resolvedId === "echo") return getAssistantDisplayName();
+  const propDisplay =
+    agentProp?.name === resolvedId ? agentDisplayName(agentProp) : null;
   if (propDisplay) return propDisplay;
-
-  const nameFromProp = agentNameProp?.trim() ?? "";
-  if (nameFromProp && !PSEUDO_AGENT_IDS.has(nameFromProp)) {
-    const found = allAgents.find((a) => a.name === nameFromProp);
+  if (resolvedId && !PSEUDO_AGENT_IDS.has(resolvedId)) {
+    const found = allAgents.find((agent) => agent.name === resolvedId);
     const foundDisplay = agentDisplayName(found);
-    if (foundDisplay) return foundDisplay;
-  }
-
-  if (footerAgentId && !PSEUDO_AGENT_IDS.has(footerAgentId)) {
-    const footerAgent = allAgents.find((a) => a.name === footerAgentId);
-    const footerDisplay = agentDisplayName(footerAgent);
-    if (footerDisplay) return footerDisplay;
+    return foundDisplay || resolvedId;
   }
 
   return "EchoAI";

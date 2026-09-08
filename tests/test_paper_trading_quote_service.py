@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
@@ -102,9 +103,10 @@ def test_settings_reject_relative_or_permissive_secret_file(tmp_path: Path) -> N
 
     secret = tmp_path / "quote-hub.json"
     secret.write_text('{"phone":"1","password":"2"}', encoding="utf-8")
-    secret.chmod(0o640)
-    with pytest.raises(ValueError, match="group or others"):
-        QuoteServiceSettings.from_env({"QUOTE_HUB_SECRET_FILE": str(secret)})
+    if os.name != "nt":
+        secret.chmod(0o640)
+        with pytest.raises(ValueError, match="group or others"):
+            QuoteServiceSettings.from_env({"QUOTE_HUB_SECRET_FILE": str(secret)})
 
 
 def test_standalone_service_builds_lazy_ws_and_rest_sources_without_starting_network() -> None:
@@ -325,4 +327,3 @@ def test_stream_requires_configuration_codes_and_enforces_capacity() -> None:
         endpoint(RequestStub(), codes="600000,000001")
     assert over_limit.value.status_code == 400
     service.close()
-

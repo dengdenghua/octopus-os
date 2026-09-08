@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 
 import pytest
@@ -18,7 +19,7 @@ from appliance.state_schema import (
 )
 
 
-def test_legacy_directory_runs_explicit_v0_to_v1_to_v2_without_touching_data(tmp_path) -> None:
+def test_legacy_directory_runs_all_explicit_migrations_without_touching_data(tmp_path) -> None:
     existing = tmp_path / "agent-memory.json"
     existing.write_text('{"memory":"preserved"}')
 
@@ -34,11 +35,17 @@ def test_legacy_directory_runs_explicit_v0_to_v1_to_v2_without_touching_data(tmp
     assert repeated["migratedFrom"] is None
     assert payload["kind"] == STATE_SCHEMA_KIND
     assert payload["version"] == CURRENT_SCHEMA_VERSION
-    assert stat.S_IMODE(marker.stat().st_mode) == 0o600
+    if os.name == "nt":
+        from tests.appliance.windows_acl_assertions import assert_private_windows_acl
+
+        assert_private_windows_acl(tmp_path)
+        assert_private_windows_acl(marker)
+    else:
+        assert stat.S_IMODE(marker.stat().st_mode) == 0o600
     assert existing.read_text() == '{"memory":"preserved"}'
 
 
-def test_v1_directory_advances_exactly_once_to_audit_keyring_schema(tmp_path) -> None:
+def test_v1_directory_advances_through_audit_and_totp_schema(tmp_path) -> None:
     marker = tmp_path / STATE_SCHEMA_FILENAME
     marker.write_text(
         json.dumps(
@@ -53,10 +60,11 @@ def test_v1_directory_advances_exactly_once_to_audit_keyring_schema(tmp_path) ->
     migrated = ensure_state_schema(tmp_path)
     repeated = ensure_state_schema(tmp_path)
 
-    assert migrated["version"] == 2
+    assert migrated["version"] == CURRENT_SCHEMA_VERSION
     assert migrated["migratedFrom"] == 1
     assert repeated["migratedFrom"] is None
     assert not (tmp_path / "appliance-audit-keyring.json").exists()
+    assert not (tmp_path / "appliance-totp.json").exists()
 
 
 def test_newer_state_refuses_unsafe_downgrade_without_mutation(tmp_path) -> None:

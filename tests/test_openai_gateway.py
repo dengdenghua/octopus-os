@@ -9,8 +9,11 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config  # noqa: E402
 from runtime.platform.models import ParsedIntent  # noqa: E402
+from runtime.safety.auth import Identity, IdentityStore  # noqa: E402
+from runtime.safety.auth.scope import TenantScope  # noqa: E402
 from runtime.sensing.gateway import create_openai_router  # noqa: E402
 from runtime.sensing.gateway.openai_gateway import _stream_direct_llm_fallback  # noqa: E402
 from runtime.sensing.gateway.openai_gateway.request_parser import (  # noqa: E402
@@ -196,6 +199,92 @@ class TestChatCompletionsNonStream:
         assert "USER PROFILE MEMORY" in planner_user_prompt
         assert "I prefer concise Chinese answers" in planner_user_prompt
         assert "USER GOAL: Use my preference now." in planner_user_prompt
+
+    def test_authenticated_turn_reads_shared_memory_from_tenant_partitions(
+        self, stack, tmp_path, monkeypatch
+    ):
+        """A verified recipient can use a restricted fact stored in another
+        actor's partition, while the router keeps writes actor-scoped."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        monkeypatch.setenv("ECHO_DATA_DIR", str(data_dir))
+
+        from runtime.memory.users.user_store import add_fact
+
+        add_fact(
+            "Bob 可读的部署偏好",
+            category="profile",
+            tenant_scope=TenantScope("tenant-a", "alice"),
+            visibility="restricted",
+            allowed_users=["bob"],
+        )
+        add_fact(
+            "Alice 的私有部署密钥提示",
+            category="profile",
+            tenant_scope=TenantScope("tenant-a", "alice"),
+        )
+        add_fact(
+            "团队共享的部署偏好",
+            category="profile",
+            tenant_scope=TenantScope("tenant-a", "alice"),
+            visibility="team",
+            team_id="team-a",
+        )
+
+        identities = IdentityStore()
+        identities.add(
+            Identity(
+                actor_id="alice",
+                roles=("operator",),
+                metadata={"tenant_id": "tenant-a"},
+            ),
+            api_key_plaintext="sk-alice",
+        )
+        identities.add(
+            Identity(
+                actor_id="bob",
+                roles=("operator",),
+                metadata={"tenant_id": "tenant-a", "team_ids": ["team-a"]},
+            ),
+            api_key_plaintext="sk-bob",
+        )
+        identities.add(
+            Identity(
+                actor_id="carol",
+                roles=("operator",),
+                metadata={"tenant_id": "tenant-b"},
+            ),
+            api_key_plaintext="sk-carol",
+        )
+
+        app = FastAPI()
+        app.include_router(
+            create_openai_router(
+                stack,
+                identity_store=identities,
+                require_auth=True,
+            )
+        )
+        response = TestClient(app).post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer sk-bob"},
+            json={"messages": [{"role": "user", "content": "部署偏好"}]},
+        )
+
+        assert response.status_code == 200, response.text
+        planner_prompt = stack.planner.router.call_log[-1].messages[-1].content
+        assert "Bob 可读的部署偏好" in planner_prompt
+        assert "团队共享的部署偏好" in planner_prompt
+        assert "Alice 的私有部署密钥提示" not in planner_prompt
+
+        foreign_response = TestClient(app).post(
+            "/v1/chat/completions",
+            headers={"Authorization": "Bearer sk-carol"},
+            json={"messages": [{"role": "user", "content": "部署偏好"}]},
+        )
+        assert foreign_response.status_code == 200, foreign_response.text
+        foreign_prompt = stack.planner.router.call_log[-1].messages[-1].content
+        assert "Bob 可读的部署偏好" not in foreign_prompt
 
 
 class TestChatCompletionsErrors:

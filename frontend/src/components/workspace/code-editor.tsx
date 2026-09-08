@@ -400,8 +400,7 @@ export function CodeEditor({
       view.focus();
     };
     window.addEventListener("echo:editor-go-to-line", handler);
-    return () =>
-      window.removeEventListener("echo:editor-go-to-line", handler);
+    return () => window.removeEventListener("echo:editor-go-to-line", handler);
   }, [filePath]);
 
   const handleKeyDown = useCallback(

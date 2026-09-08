@@ -514,7 +514,12 @@ def select_model_for_complexity(
     Escalation: if a tier has no configured model, fall up
     (local → value → performance) so we never silently demote.
     """
-    # Explicit user choice always wins.
+    from runtime.safety.privacy import privacy_enabled
+
+    if privacy_enabled():
+        return _select_private_model(user_model), "privacy:local_only"
+
+    # Explicit user choice wins within the active privacy policy.
     if user_model and user_model.strip() and user_model not in {"echo-agent", "auto"}:
         return None, "user_pinned"
 
@@ -545,6 +550,37 @@ def _escalation_chain(verdict: ComplexityVerdict) -> list[str]:
     if verdict == "value":
         return ["value", "performance"]
     return ["performance"]
+
+
+def _select_private_model(user_model: str | None) -> str:
+    from runtime.platform.models.custom_model_selection import selections_for_entry
+    from runtime.safety.privacy import PrivacyViolation, is_loopback_endpoint
+    from runtime.sensing.model_router.custom_model_flags import (
+        custom_model_entry_for,
+        read_custom_models,
+    )
+
+    def local(model: str) -> bool:
+        entry = custom_model_entry_for(model)
+        if entry is not None:
+            return is_loopback_endpoint(entry.get("base_url"))
+        return model.startswith("ollama/") and is_loopback_endpoint(
+            os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        )
+
+    if user_model and user_model not in {"auto", "echo-agent"}:
+        if local(user_model):
+            return user_model
+        raise PrivacyViolation("隐私模式下不能使用所选云端或未验证模型，请选择本机模型。")
+    configured = _resolve_tier_model("local")
+    if configured and local(configured):
+        return configured
+    for entry_id, entry in (read_custom_models() or {}).items():
+        if isinstance(entry, dict) and is_loopback_endpoint(entry.get("base_url")):
+            selection = next(selections_for_entry(entry_id, entry), None)
+            if selection is not None:
+                return selection.selection_id
+    raise PrivacyViolation("隐私模式未找到本机模型，请先配置本机推理服务；不会自动转到云端。")
 
 
 __all__ = [

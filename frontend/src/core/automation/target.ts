@@ -1,9 +1,14 @@
 import type { AutomationTarget } from "@/core/computer/api";
+import { currentActorId } from "@/core/auth/api";
 
 const TARGET_STORAGE_PREFIX = "echo:automation-target:";
 
-function targetStorageKey(threadId?: string | null): string {
-  return `${TARGET_STORAGE_PREFIX}${threadId?.trim() || "new"}`;
+function targetStorageKey(
+  threadId?: string | null,
+  actor = currentActorId(),
+): string {
+  const actorKey = encodeURIComponent(actor.trim() || "anonymous");
+  return `${TARGET_STORAGE_PREFIX}${actorKey}:${threadId?.trim() || "new"}`;
 }
 
 export function loadAutomationTarget(

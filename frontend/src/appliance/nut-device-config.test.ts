@@ -15,14 +15,12 @@ describe("local USB UPS API", () => {
       enabled: true,
       driver: "usbhid-ups" as const,
     };
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(
-        async () =>
-          new Response(JSON.stringify({ planId: "c".repeat(64) }), {
-            status: 200,
-          }),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async () =>
+        new Response(JSON.stringify({ planId: "c".repeat(64) }), {
+          status: 200,
+        }),
+    );
 
     await fetchNutDeviceConfig();
     await planNutDeviceConfig(desired);

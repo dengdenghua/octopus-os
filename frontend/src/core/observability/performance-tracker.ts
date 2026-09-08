@@ -23,7 +23,6 @@
  * - 生产环境性能基线
  */
 
-
 declare global {
   interface Window {
     __reportMetric?: (name: string, payload: Record<string, unknown>) => void;
@@ -260,8 +259,8 @@ export class PerformanceTracker {
  */
 export const globalPerformanceTracker = new PerformanceTracker(
   import.meta.env.DEV ||
-  (typeof window !== "undefined" &&
-   window.localStorage.getItem("echo:perf:tracking") === "1"),
+    (typeof window !== "undefined" &&
+      window.localStorage.getItem("echo:perf:tracking") === "1"),
 );
 
 /**

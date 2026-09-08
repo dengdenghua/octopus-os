@@ -212,6 +212,77 @@ def _can_escalate_sandbox(tool_name: str) -> bool:
     return tool_name in _ESCALABLE_TOOLS
 
 
+_WORKSPACE_LOCAL_VCS_TOOLS = frozenset(
+    {
+        "git",
+        "git_commit",
+        "git_checkout",
+        "git_merge",
+        "git_status",
+        "git_diff",
+        "git_log",
+    }
+)
+_WORKSPACE_BOUNDARY_RISK_CATEGORIES = frozenset(
+    {"filesystem_write", "shell_execution", "vcs_mutation"}
+)
+
+
+def _hard_workspace_sandbox_available() -> bool:
+    """Return whether native process execution has a kernel sandbox."""
+
+    try:
+        from runtime.safety.sandboxing.sandbox import (
+            effective_process_sandbox_mode,
+            resolved_process_backend,
+        )
+
+        return bool(resolved_process_backend(effective_process_sandbox_mode()).hard)
+    except Exception:  # noqa: BLE001 - fail closed when isolation is uncertain
+        return False
+
+
+def _workspace_sandbox_handles_ordinary_action(
+    tool_name: str,
+    risk: Any,
+    context: dict[str, Any],
+) -> bool:
+    """Let a hard workspace sandbox own routine local action approval.
+
+    The old capability gate asked before every shell command or file edit,
+    even when a kernel sandbox already enforced the workspace boundary. This
+    narrow fast path removes duplicate prompts only for bounded local actions;
+    network, egress, credential, interactive and critical actions remain
+    approval-controlled.
+    """
+
+    from runtime.safety.approval.permission_modes import canonical_permission_mode
+
+    if canonical_permission_mode(context.get("permission_mode")) not in {
+        "default",
+        "acceptEdits",
+    }:
+        return False
+    if context.get("execution_environment") != "sandbox":
+        return False
+    if context.get("sandbox_mode") != "sandbox":
+        return False
+    if not _hard_workspace_sandbox_available():
+        return False
+
+    categories = frozenset(getattr(risk, "categories", ()) or ())
+    if not categories or not categories <= _WORKSPACE_BOUNDARY_RISK_CATEGORIES:
+        return False
+    if getattr(risk, "level", "critical") == "critical":
+        return False
+
+    return (
+        tool_name in _ESCALABLE_TOOLS
+        or tool_name in _WORKSPACE_LOCAL_VCS_TOOLS
+        or tool_name.startswith(("write_", "append_", "edit_", "delete_"))
+    )
+
+
 def _latest_human_intent(messages: Any) -> str:
     """Most recent human message text — the only trusted authorization
     evidence for the guardian review (codex policy_template Evidence
@@ -289,6 +360,10 @@ def _phase_6d_dispatch_and_observe(
     router = state.router
     thread_id = state.thread_id
     approval_provider = state.approval_provider
+    from runtime.safety.approval.guardian_review import approval_router_for_stack
+
+    reviewer_router = approval_router_for_stack(stack, legacy_router=router)
+    reviewer_model = state.effective_model if reviewer_router is router else None
     # Guardian independent review (opt-in): high/critical risk actions get
     # a second opinion from an independent model before escalating to the
     # user. Off by default; budget is per-thread (exhaustion = long-task
@@ -302,12 +377,11 @@ def _phase_6d_dispatch_and_observe(
             GuardianReviewerConfig,
         )
 
-        # Default the review model to the CONVERSATION's own model — the
-        # user's chosen model is always available to them; only an explicit
-        # override (guardian_review_model) switches to a dedicated reviewer.
+        # Reuse the active model only for an inherited native router. An
+        # independent reviewer owns its own default/model namespace.
         _guardian_model = intent.user_context.get("guardian_review_model")
         _guardian_reviewer = GuardianReviewer(
-            router,
+            reviewer_router,
             GuardianReviewerConfig(
                 enabled=True,
                 per_turn_limit=int(intent.user_context.get("guardian_review_per_turn_limit", 3)),
@@ -317,10 +391,22 @@ def _phase_6d_dispatch_and_observe(
                     if isinstance(_guardian_model, str) and _guardian_model.strip()
                     else None
                 ),
-                # The conversation's own model — reference state directly, the
-                # local ``effective_model`` scalar pull happens further down.
-                default_model=state.effective_model,
+                # Only reuse the conversation model when sharing its router.
+                default_model=reviewer_model,
             ),
+        )
+    from runtime.safety.approval.permission_modes import is_auto_review_mode
+
+    _auto_review_provider = None
+    if is_auto_review_mode(
+        intent.user_context.get("permission_mode") or state.metadata.get("permission_mode")
+    ):
+        from runtime.safety.approval.guardian_review import AutoReviewApprovalProvider
+
+        _auto_review_provider = AutoReviewApprovalProvider(
+            reviewer_router,
+            user_intent=_latest_human_intent(messages),
+            default_model=reviewer_model,
         )
     output_chunk_sink = state.output_chunk_sink
     _metadata = state.metadata
@@ -563,15 +649,6 @@ def _phase_6d_dispatch_and_observe(
                         resolved_name,
                         _input_preview,
                     )
-                    _permission_mode_value = str(
-                        intent.user_context.get("permission_mode")
-                        or _metadata.get("permission_mode")
-                        or ""
-                    ).lower()
-                    _accept_edits_auto_approve = (
-                        _permission_mode_value in {"acceptedits", "accept-edits"}
-                        and resolved_name in _WRITE_TOOLS
-                    )
                     # Injection taint gate (hard): if untrusted content
                     # carrying injection markers entered this turn, a
                     # risky tool can no longer auto-run — force it through
@@ -591,10 +668,22 @@ def _phase_6d_dispatch_and_observe(
                     }:
                         _auto_approve = False
                         _scoped_artifact_write = False
-                        _accept_edits_auto_approve = False
                         if _approval_action not in {"ask", "confirm", "deny"}:
                             _approval_action = "ask"
                         _approval_risk = _approval_risk.with_injection_taint()
+                    _permission_context = {
+                        **state.metadata,
+                        **intent.user_context,
+                    }
+                    if _approval_action in {
+                        "ask",
+                        "confirm",
+                    } and _workspace_sandbox_handles_ordinary_action(
+                        resolved_name,
+                        _approval_risk,
+                        _permission_context,
+                    ):
+                        _approval_action = "allow"
                     # Guardian independent review (opt-in, after the taint
                     # gate so tainted actions still route to the human): a
                     # guardian deny tightens ask/confirm/allow to deny; an
@@ -651,23 +740,25 @@ def _phase_6d_dispatch_and_observe(
                         _approval_action in {"ask", "confirm"}
                         and not _auto_approve
                         and not _scoped_artifact_write
-                        and not _accept_edits_auto_approve
                     ):
-                        _provider = approval_provider or AutoDenyProvider()
+                        _provider = _auto_review_provider or approval_provider or AutoDenyProvider()
                         _approval_detail = (
                             f"{resolved_name} wants to execute "
                             f"(risk={_approval_risk.level}: {_approval_risk.reason})"
                         )
-                        yield {
-                            "type": "tool_approval_request",
-                            "tool_name": resolved_name,
-                            "tool_call_id": call_id,
-                            "args_preview": str(_input_preview)[:500] if _input_preview else "",
-                            "detail": _approval_detail,
-                            "risk": _approval_risk.to_dict(),
-                            "approval_action": _approval_action,
-                            "approval_policy": _approval_policy.to_dict(),
-                        }
+                        if _auto_review_provider is None:
+                            yield {
+                                "type": "tool_approval_request",
+                                "tool_name": resolved_name,
+                                "tool_call_id": call_id,
+                                "args_preview": (
+                                    str(_input_preview)[:500] if _input_preview else ""
+                                ),
+                                "detail": _approval_detail,
+                                "risk": _approval_risk.to_dict(),
+                                "approval_action": _approval_action,
+                                "approval_policy": _approval_policy.to_dict(),
+                            }
                         _decision = _provider.request(
                             ApprovalRequest(
                                 thread_id=thread_id,
@@ -711,7 +802,7 @@ def _phase_6d_dispatch_and_observe(
                                 "duration_ms": int((time.monotonic() - _tool_started_at) * 1000),
                             }
                             observation = (
-                                "(工具被用户拒绝) 用户拒绝了此操作，请换一种方式或询问用户。"
+                                "(工具审批未通过) 此操作未获批准，请换一种更安全的方式或询问用户。"
                             )
                             _record_rejected_step(steps, messages, step, observation)
                             _flush_guard_notices(state, messages)
@@ -797,28 +888,36 @@ def _phase_6d_dispatch_and_observe(
                         and _can_escalate_sandbox(resolved_name)
                         and not _auto_approve
                     ):
-                        _escalation_provider = approval_provider or AutoDenyProvider()
+                        _escalation_provider = (
+                            _auto_review_provider or approval_provider or AutoDenyProvider()
+                        )
                         _escalation_detail = (
                             f"{resolved_name} 被沙箱拦截（最可能是网络被禁用或写入超出工作区）。"
                             "是否允许以放宽沙箱（允许网络访问）重跑该命令？"
                         )
-                        yield {
-                            "type": "tool_approval_request",
-                            "tool_name": resolved_name,
-                            "tool_call_id": call_id,
-                            "iteration": i + 1,
-                            "args_preview": str(_input_preview)[:500] if _input_preview else "",
-                            "detail": _escalation_detail,
-                            "risk": {
-                                "level": "high",
-                                "categories": ["sandbox_escalation"],
-                                "reason": "sandbox blocked the command; user may approve relaxed constraints",
-                                "requires_approval": True,
-                            },
-                            "approval_action": "confirm",
-                            "approval_policy": _approval_policy.to_dict(),
-                            "sandbox_escalation": True,
-                        }
+                        if _auto_review_provider is None:
+                            yield {
+                                "type": "tool_approval_request",
+                                "tool_name": resolved_name,
+                                "tool_call_id": call_id,
+                                "iteration": i + 1,
+                                "args_preview": (
+                                    str(_input_preview)[:500] if _input_preview else ""
+                                ),
+                                "detail": _escalation_detail,
+                                "risk": {
+                                    "level": "high",
+                                    "categories": ["sandbox_escalation"],
+                                    "reason": (
+                                        "sandbox blocked the command; user may approve relaxed "
+                                        "constraints"
+                                    ),
+                                    "requires_approval": True,
+                                },
+                                "approval_action": "confirm",
+                                "approval_policy": _approval_policy.to_dict(),
+                                "sandbox_escalation": True,
+                            }
                         _escalation_decision = _escalation_provider.request(
                             ApprovalRequest(
                                 thread_id=thread_id,

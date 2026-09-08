@@ -381,7 +381,15 @@ def _write_metadata(
 
 def _read_metadata(path: Path) -> dict[str, Any]:
     try:
-        raw = path.read_bytes()
+        if os.name == "nt":
+            # Windows byte-range locks also deny reads through other handles.
+            # Byte zero is the lock sentinel, never part of the JSON payload.
+            # Unbuffered I/O ensures the reader cannot prefetch that locked byte.
+            with path.open("rb", buffering=0) as stream:
+                stream.seek(len(_METADATA_SENTINEL))
+                raw = stream.read()
+        else:
+            raw = path.read_bytes()
     except OSError:
         return {}
     if raw.startswith(_METADATA_SENTINEL):

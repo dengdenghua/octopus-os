@@ -77,3 +77,38 @@ def test_start_pull_rejects_bad_tags() -> None:
     assert hwfit.start_pull("bad tag; rm -rf /")["status"] == "error"
     assert hwfit.start_pull("")["status"] == "error"
 
+
+def test_budget_tracks_available_ram_and_reserves_for_nas(monkeypatch):
+    from runtime.platform import system_memory
+
+    monkeypatch.setattr(hwfit, "_ram_gb", lambda: 32.0)
+    monkeypatch.setattr(hwfit, "_detect_nvidia", lambda: (0.0, None))
+    monkeypatch.setattr(hwfit, "_detect_apple", lambda: (None, None))
+    monkeypatch.setattr(system_memory, "available_memory_gb", lambda: 8.0)
+    hardware = hwfit.detect_hardware()
+    assert hardware.vram_gb == 4.8
+    assert hardware.reserve_gb == 3.2
+    assert all(rec.est_mem_gb <= 4.8 for rec in hwfit.recommend(hardware))
+    monkeypatch.setattr(system_memory, "available_memory_gb", lambda: None)
+    assert hwfit.recommend(hwfit.detect_hardware()) == []
+
+
+def test_longer_context_reduces_recommendations():
+    hardware = _hw(vram=8)
+    short = {rec.tag for rec in hwfit.recommend(hardware, top_k=100)}
+    hardware.context_tokens = 32768
+    long = {rec.tag for rec in hwfit.recommend(hardware, top_k=100)}
+    assert long < short
+
+
+def test_gpu_free_memory_is_not_aggregated(monkeypatch):
+    monkeypatch.setattr(hwfit.shutil, "which", lambda name: "nvidia-smi")
+    commands = []
+
+    def run(command):
+        commands.append(command)
+        return "4096, GPU A\n8192, GPU B\n1024, GPU C"
+
+    monkeypatch.setattr(hwfit, "_run", run)
+    assert hwfit._detect_nvidia() == (8.0, "GPU B")
+    assert "--query-gpu=memory.free,name" in commands[0]

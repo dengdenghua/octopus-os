@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import os
+
 import pytest
+
+if os.name == "nt":
+    pytest.skip("LAN discovery bridge requires POSIX socket primitives", allow_module_level=True)
 
 from appliance import lan_discovery_proxy as proxy
 

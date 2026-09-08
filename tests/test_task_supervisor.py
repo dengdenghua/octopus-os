@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from types import SimpleNamespace
 
@@ -20,6 +21,88 @@ from runtime.sensing.gateway.realtime_turn_outcome import (
     _record_react_trace_event,
     _record_task_run_finished,
 )
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "wrong-schema",
+        "wrong-version",
+        "tasks-not-list",
+        "bad-row",
+        "duplicate-task",
+        "zero-counter",
+        "bool-counter",
+        "unknown-status",
+        "invalid-incarnation",
+        "nan-expiry",
+    ],
+)
+def test_invalid_authority_snapshot_is_never_normalized_into_an_empty_or_partial_store(
+    tmp_path, damage
+):
+    supervisor = TaskSupervisor.from_path(tmp_path / "task_runs.json", holder_id="worker")
+    supervisor.start_task(task_id="task")
+    supervisor.transition("task", TaskRunStatus.WAITING_APPROVAL)
+    path = supervisor.store.path
+    backup = path.with_suffix(".json.bak")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if damage == "wrong-schema":
+        payload["schema"] = "unrelated.v1"
+    elif damage == "wrong-version":
+        payload["version"] = 99
+    elif damage == "tasks-not-list":
+        payload["tasks"] = {}
+    elif damage == "bad-row":
+        payload["tasks"].append({"task_id": None})
+    elif damage == "duplicate-task":
+        payload["tasks"].append(dict(payload["tasks"][0]))
+    elif damage == "zero-counter":
+        payload["leaseCounter"] = 0
+    elif damage == "bool-counter":
+        payload["leaseCounter"] = True
+    elif damage == "unknown-status":
+        payload["tasks"][0]["status"] = "not-a-state"
+    elif damage == "invalid-incarnation":
+        payload["tasks"][0]["lease"]["incarnation"] = "not-an-incarnation"
+    else:
+        payload["tasks"][0]["lease"]["expires_at"] = float("nan")
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    before = path.read_bytes(), backup.read_bytes()
+    actions = (
+        lambda: supervisor.store.get("task"),
+        supervisor.store.list,
+        lambda: supervisor.start_task(task_id="task"),
+        lambda: supervisor.heartbeat("task"),
+        lambda: supervisor.transition("task", TaskRunStatus.COMPLETED),
+        lambda: supervisor.record_approval_decision("task", approved=True),
+        lambda: supervisor.takeover_task("task"),
+        supervisor.store.next_lease_token,
+    )
+    for action in actions:
+        with pytest.raises(OSError, match="explicit recovery required"):
+            action()
+        assert (path.read_bytes(), backup.read_bytes()) == before
+
+
+@pytest.mark.parametrize("primary", [b"", b"{invalid-json", b"\xff", b"null", b"{}"])
+def test_unreadable_or_empty_primary_does_not_use_valid_backup_for_approval_or_writes(
+    tmp_path, primary
+):
+    supervisor = TaskSupervisor.from_path(tmp_path / "task_runs.json", holder_id="worker")
+    supervisor.start_task(task_id="task")
+    supervisor.transition("task", TaskRunStatus.WAITING_APPROVAL)
+    supervisor.heartbeat("task")
+    path = supervisor.store.path
+    backup = path.with_suffix(".json.bak")
+    backup_before = backup.read_bytes()
+    path.write_bytes(primary)
+    with pytest.raises(OSError, match="explicit recovery required"):
+        supervisor.record_approval_decision("task", approved=True)
+    with pytest.raises(OSError, match="explicit recovery required"):
+        supervisor.store.upsert(TaskRunRecord(task_id="must-not-be-created"))
+    assert path.read_bytes() == primary
+    assert backup.read_bytes() == backup_before
 
 
 def test_realtime_react_lifecycle_projects_to_task_supervisor(tmp_path):
@@ -974,4 +1057,3 @@ def test_task_capability_manifest_fails_closed_for_disabled_group():
     assert manifest.allows_group("shell") is False
     assert manifest.allows_group("unknown") is False
     assert manifest.allows_group(None) is True
-

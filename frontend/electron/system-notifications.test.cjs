@@ -4,6 +4,7 @@
 const assert = require("assert");
 const fs = require("fs");
 const net = require("net");
+const os = require("os");
 const path = require("path");
 const {
   clearNotifications,
@@ -13,9 +14,18 @@ const {
   resolveNotificationSocket,
 } = require("./system-notifications.cjs");
 
-// Darwin's sockaddr_un path is much shorter than Linux's. Keep this portable
-// fixture under /tmp so it exercises the real Unix-socket code on both hosts.
-const root = fs.mkdtempSync(path.join("/tmp", "echo-note-test-"));
+// The production bridge intentionally exposes a Linux Unix-socket contract;
+// Windows and macOS reject the native session before touching a socket.
+if (process.platform !== "linux") {
+  console.log(
+    "Echo system notification bridge tests skipped (Linux socket only)",
+  );
+  process.exit(0);
+}
+
+// Keep the fixture in the host's temporary directory so Linux path lengths are
+// bounded without assuming a particular /tmp mount.
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "echo-note-test-"));
 const runtime = path.join(root, "runtime");
 const privateDir = path.join(runtime, "echo-os");
 const socketPath = path.join(privateDir, "notifications.sock");

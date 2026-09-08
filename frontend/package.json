@@ -22,8 +22,9 @@
     "check": "tsc --noEmit",
     "dev": "pnpm build:workbenches && vite",
     "dev:backend": "node scripts/dev-appliance-backend.mjs",
-    "dev:with-agent": "concurrently -k -n BACKEND,OS -c green,blue \"pnpm dev:backend\" \"pnpm build:workbenches && vite --host 127.0.0.1 --port 3000\"",
-    "dev:full": "concurrently -k -n BACKEND,FRONTEND -c green,blue \"pnpm dev:backend\" \"pnpm dev\"",
+    "dev:with-agent": "pnpm build:workbenches && node scripts/dev-with-agent.mjs",
+    "dev:status": "node scripts/dev-with-agent.mjs --status",
+    "dev:full": "pnpm dev:with-agent",
     "dev:full:example": "cross-env ECHO_AGENT_CONFIG=../config.example.yaml pnpm dev:full",
     "electron": "electron electron/main.cjs",
     "electron:dev": "concurrently -k -s first -n VITE,APP -c blue,magenta \"pnpm build:workbenches && vite\" \"wait-on tcp:127.0.0.1:3000 && electron electron/main.cjs\"",
@@ -174,11 +175,6 @@
   },
   "ct3aMetadata": {
     "initVersion": "7.40.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron"
-    ]
   },
   "build": {
     "appId": "com.echo.os.desktop",

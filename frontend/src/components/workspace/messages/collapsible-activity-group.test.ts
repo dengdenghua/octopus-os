@@ -63,8 +63,8 @@ describe("parseUnifiedDiff", () => {
 
   it("handles empty and header-only diffs", () => {
     expect(parseUnifiedDiff("")).toEqual([]);
-    expect(parseUnifiedDiff("--- a/x\n+++ b/x\n@@ -0,0 +1 @@\n\\ No newline")).toEqual(
-      [],
-    );
+    expect(
+      parseUnifiedDiff("--- a/x\n+++ b/x\n@@ -0,0 +1 @@\n\\ No newline"),
+    ).toEqual([]);
   });
 });

@@ -59,9 +59,7 @@ function getStatusIcon(status: SubtaskStatus) {
   if (status === "pending")
     return <PauseCircleIcon className="size-3 text-warning" />;
   if (isSubtaskActive(status))
-    return (
-      <Loader2Icon className="size-3 animate-spin text-success" />
-    );
+    return <Loader2Icon className="size-3 animate-spin text-success" />;
   return <ClipboardListIcon className="size-3" />;
 }
 

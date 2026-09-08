@@ -229,6 +229,20 @@ class _RealtimeGatewaySessionMixin:
             identity = self._identity_store.get(actor_id)
             metadata = getattr(identity, "metadata", None) or {}
             conn.tenant_id = str(metadata.get("tenant_id") or f"legacy:{actor_id}")
+            conn.roles = frozenset(
+                str(role).strip().lower()
+                for role in (getattr(identity, "roles", ()) or ())
+                if str(role).strip()
+            )
+            raw_team_ids = metadata.get("team_ids")
+            if isinstance(raw_team_ids, str):
+                raw_team_ids = raw_team_ids.split(",")
+            if isinstance(raw_team_ids, (list, tuple, set, frozenset)):
+                conn.team_ids = frozenset(
+                    str(team_id).strip()
+                    for team_id in raw_team_ids
+                    if str(team_id).strip()
+                )
         self._connections.add(conn)
         # Each inbound client Request becomes a background task so the
         # receive loop stays free to deliver the corresponding Responses
@@ -502,6 +516,20 @@ class _RealtimeGatewaySessionMixin:
                 context["actor_id"] = conn.actor_id
                 context["owner_actor_id"] = owner_actor_id
                 context["tenant_id"] = tenant_id
+                from runtime.memory.users.user_store import (
+                    MEMORY_VIEWER_CONTEXT_KEY,
+                )
+
+                conn_roles = frozenset(getattr(conn, "roles", ()) or ())
+                conn_team_ids = frozenset(getattr(conn, "team_ids", ()) or ())
+
+                context[MEMORY_VIEWER_CONTEXT_KEY] = {
+                    "actor_id": conn.actor_id,
+                    "tenant_id": tenant_id,
+                    "team_ids": sorted(conn_team_ids),
+                    "roles": sorted(conn_roles),
+                    "is_admin": bool(conn_roles.intersection({"admin", "root"})),
+                }
                 metadata_dict["context"] = context
                 metadata_dict["actor_id"] = conn.actor_id
                 metadata_dict["owner_actor_id"] = owner_actor_id

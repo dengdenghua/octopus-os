@@ -267,6 +267,19 @@ def _envelope_header(*, salt: bytes, nonce: bytes, payload_bytes: int) -> bytes:
     ).encode("ascii")
 
 
+@contextlib.contextmanager
+def _private_backup_target(path: Path):
+    """Protect backup output directories with a native Windows ACL."""
+
+    if os.name == "nt":
+        from appliance.windows_state import private_state_directory
+
+        with private_state_directory(path.parent, create=True, protect=True) as parent:
+            yield parent / path.name
+        return
+    yield path
+
+
 def _write_encrypted(archive_path: Path, destination: Path, passphrase: bytes) -> None:
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
@@ -284,35 +297,43 @@ def _write_encrypted(archive_path: Path, destination: Path, passphrase: bytes) -
     encryptor = Cipher(algorithms.AES(key), modes.GCM(nonce)).encryptor()
     encryptor.authenticate_additional_data(prefix)
 
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists() or destination.is_symlink():
-        raise BackupError(f"backup destination already exists: {destination}")
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{destination.name}.",
-        suffix=".tmp",
-        dir=destination.parent,
-    )
-    temporary = Path(temporary_name)
-    try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "wb") as output, archive_path.open("rb") as source:
-            output.write(prefix)
-            while block := source.read(CHUNK_BYTES):
-                output.write(encryptor.update(block))
-            output.write(encryptor.finalize())
-            output.write(encryptor.tag)
-            output.flush()
-            os.fsync(output.fileno())
-        os.replace(temporary, destination)
-        with contextlib.suppress(OSError):
-            directory = os.open(destination.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            temporary.unlink()
+    with _private_backup_target(destination) as destination:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists() or destination.is_symlink():
+            raise BackupError(f"backup destination already exists: {destination}")
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            dir=destination.parent,
+        )
+        temporary = Path(temporary_name)
+        try:
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb") as output, archive_path.open("rb") as source:
+                output.write(prefix)
+                while block := source.read(CHUNK_BYTES):
+                    output.write(encryptor.update(block))
+                output.write(encryptor.finalize())
+                output.write(encryptor.tag)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, destination)
+            if os.name == "nt":
+                from appliance.windows_state import open_private_file
+
+                # Verify the published file inherited the current-user-only
+                # ACL before reporting a successful backup.
+                os.close(open_private_file(destination))
+            with contextlib.suppress(OSError):
+                directory = os.open(destination.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+        finally:
+            with contextlib.suppress(FileNotFoundError, PermissionError):
+                temporary.unlink()
 
 
 def _read_exact(source: BinaryIO, count: int) -> bytes:

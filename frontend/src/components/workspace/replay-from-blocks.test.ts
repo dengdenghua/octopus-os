@@ -72,7 +72,10 @@ describe("buildReplayFromBlocks", () => {
             name: "todo_write",
             input: {
               items: [
-                { content: "Inspect the affected component", status: "completed" },
+                {
+                  content: "Inspect the affected component",
+                  status: "completed",
+                },
                 { content: "Verify the preview", status: "in_progress" },
               ],
             },
@@ -256,9 +259,7 @@ describe("buildReplayFromBlocks", () => {
     expect(data.steps[0].body).toContain("只读比较字段");
     expect(data.steps[0].body).toContain("已确认字段一致");
     expect(data.steps[0].body).not.toContain("private tool args");
-    expect(JSON.stringify(data)).not.toMatch(
-      /read_only|TextBlock|Phase 1/i,
-    );
+    expect(JSON.stringify(data)).not.toMatch(/read_only|TextBlock|Phase 1/i);
   });
 
   it("does not package raw tool names or terminal commands into share replay data", () => {

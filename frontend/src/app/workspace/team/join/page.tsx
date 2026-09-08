@@ -5,7 +5,7 @@ import {
   UsersIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import {
   WorkspaceContainer,
 } from "@/components/workspace/workspace-container";
 import { useI18n } from "@/core/i18n/hooks";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import {
   dispatchTeamUpdated,
   getOwnTeamJoinRequest,
@@ -39,6 +40,7 @@ function teamRealtimeTarget(threadId?: string | null): string {
 export default function TeamJoinPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const [params] = useSearchParams();
   const token = useMemo(() => params.get("token")?.trim() ?? "", [params]);
   const [preview, setPreview] = useState<TeamInvitePreview | null>(null);
@@ -95,9 +97,15 @@ export default function TeamJoinPage() {
         toast.error(t.teamJoin.missingDestination);
         return;
       }
-      navigate(teamRealtimeTarget(canonicalThreadId), { replace: true });
+      navigate(
+        preserveWorkbenchPresentation(
+          teamRealtimeTarget(canonicalThreadId),
+          search,
+        ),
+        { replace: true },
+      );
     },
-    [navigate, t.teamJoin],
+    [navigate, search, t.teamJoin],
   );
 
   const checkJoinRequest = useCallback(

@@ -81,7 +81,7 @@ def synthesize_reply(
 
     from runtime.memory.users.profile import render_profile_memories
 
-    profile_section = render_profile_memories(profile_memories or [])
+    profile_section = render_profile_memories(profile_memories or [], annotate=True)
     profile_block = f"{profile_section}\n\n" if profile_section else ""
     history = _render_conversation_history(conversation_messages or [])
     history_block = f"Conversation history:\n{history}\n\n" if history else ""

@@ -6,8 +6,8 @@ import {
   SearchIcon,
   XIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { MarketGrid } from "@/components/workspace/market/market-feed";
 import { MarketDetail } from "@/components/workspace/market/market-detail";
 import { communityAssetURL } from "@/components/workspace/community/community-assets";
@@ -18,7 +18,13 @@ import {
   type MarketItem,
 } from "@/components/workspace/market/market-data";
 import { getCommunityCredits } from "@/core/credits/ledger";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 /** 可选封面（复用社区已生成封面图）。 */
 const COVER_OPTIONS = [
@@ -40,9 +46,9 @@ const COVER_OPTIONS = [
 /** 资产引导横幅的 localStorage key(关闭后不再显示)。 */
 const ASSETS_BANNER_KEY = "echo.market.assets-banner-dismissed.v1";
 
-function readBannerDismissed(): boolean {
+function readBannerDismissed(actor = currentActorId()): boolean {
   try {
-    return window.localStorage.getItem(ASSETS_BANNER_KEY) === "1";
+    return readActorScopedStorageValue(ASSETS_BANNER_KEY, actor) === "1";
   } catch {
     return false;
   }
@@ -50,12 +56,23 @@ function readBannerDismissed(): boolean {
 
 export function MarketBoard() {
   const navigate = useNavigate();
+  const { search } = useLocation();
+  const actor = currentActorId();
+  const actorRef = useRef(actor);
   const [activeTab, setActiveTab] = useState("all");
-  const [bannerDismissed, setBannerDismissed] = useState(readBannerDismissed);
+  const [bannerDismissed, setBannerDismissed] = useState(() =>
+    readBannerDismissed(actor),
+  );
   const [query, setQuery] = useState("");
   const [version, setVersion] = useState(0);
   const [detail, setDetail] = useState<MarketItem | null>(null);
   const [listOpen, setListOpen] = useState(false);
+
+  useEffect(() => {
+    if (actorRef.current === actor) return;
+    actorRef.current = actor;
+    setBannerDismissed(readBannerDismissed(actor));
+  }, [actor]);
 
   // `version` is intentionally read so mutations can refresh the local store
   // snapshot without pretending the store getter is a memo dependency.
@@ -95,7 +112,14 @@ export function MarketBoard() {
           <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
-              onClick={() => navigate("/workspace/agents?tab=assets")}
+              onClick={() =>
+                navigate(
+                  preserveWorkbenchPresentation(
+                    "/workspace/agents?tab=assets",
+                    search,
+                  ),
+                )
+              }
               className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             >
               前往统一资产
@@ -105,7 +129,10 @@ export function MarketBoard() {
               type="button"
               onClick={() => {
                 try {
-                  window.localStorage.setItem(ASSETS_BANNER_KEY, "1");
+                  window.localStorage.setItem(
+                    actorScopedStorageKey(ASSETS_BANNER_KEY, actorRef.current),
+                    "1",
+                  );
                 } catch {
                   /* ignore */
                 }

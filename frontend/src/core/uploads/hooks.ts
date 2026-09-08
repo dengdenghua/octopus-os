@@ -5,6 +5,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
+import { currentActorId } from "@/core/auth/api";
+
 import {
   deleteUploadedFile,
   listUploadedFiles,
@@ -12,6 +14,11 @@ import {
   type UploadedFileInfo,
   type UploadResponse,
 } from "./api";
+
+/** Uploaded files belong to a thread and its authenticated owner. */
+export function uploadsQueryKey(threadId: string, actor = currentActorId()) {
+  return ["uploads", "list", actor, threadId] as const;
+}
 
 /**
  * Hook to upload files
@@ -24,7 +31,7 @@ export function useUploadFiles(threadId: string) {
     onSuccess: () => {
       // Invalidate the uploaded files list
       void queryClient.invalidateQueries({
-        queryKey: ["uploads", "list", threadId],
+        queryKey: uploadsQueryKey(threadId),
       });
     },
   });
@@ -35,7 +42,7 @@ export function useUploadFiles(threadId: string) {
  */
 export function useUploadedFiles(threadId: string) {
   return useQuery({
-    queryKey: ["uploads", "list", threadId],
+    queryKey: uploadsQueryKey(threadId),
     queryFn: () => listUploadedFiles(threadId),
     enabled: !!threadId,
   });
@@ -52,7 +59,7 @@ export function useDeleteUploadedFile(threadId: string) {
     onSuccess: () => {
       // Invalidate the uploaded files list
       void queryClient.invalidateQueries({
-        queryKey: ["uploads", "list", threadId],
+        queryKey: uploadsQueryKey(threadId),
       });
     },
   });

@@ -51,6 +51,10 @@ from .journal_context import (
 )
 
 
+class JournalRecoveryReadError(RuntimeError):
+    """The append-only journal cannot prove that a recovery read is complete."""
+
+
 class Journal:
     def _apply_context(self, event: JournalEvent) -> JournalEvent:
         updates: dict[str, Any] = {}
@@ -165,6 +169,19 @@ class Journal:
         self, event_type: JournalEventType, *, scope: TenantScope | None = None
     ) -> list[JournalEvent]:
         return [e for e in self.read_all(scope=scope) if e.event_type == event_type]
+
+    def read_by_type_for_recovery(
+        self, event_type: JournalEventType, *, scope: TenantScope | None = None
+    ) -> list[JournalEvent]:
+        """Read a recovery stream, failing when the backend cannot prove completeness.
+
+        In-memory and third-party journals have no skipped-row state, so their
+        normal typed read is already the strongest evidence they expose.
+        File-backed implementations override this to reject malformed rows
+        instead of silently falling back to an older checkpoint.
+        """
+
+        return self.read_by_type(event_type, scope=scope)
 
     def read_since(self, ts: datetime) -> list[JournalEvent]:
         return [e for e in self.read_all() if e.ts >= ts]

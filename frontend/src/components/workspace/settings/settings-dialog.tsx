@@ -26,7 +26,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -139,8 +139,10 @@ import { swallow } from "@/core/utils/log";
 import { useI18n } from "@/core/i18n/hooks";
 import { useAuth } from "@/providers/AuthProvider";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { useQueryClient } from "@tanstack/react-query";
 import { octApi } from "@/core/oct/api";
+import { octLinkQueryKey } from "@/core/oct/hooks";
 
 type SettingsDialogProps = React.ComponentProps<typeof Dialog> & {
   defaultSection?: SettingsSection;
@@ -195,6 +197,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
   const { t, locale } = useI18n();
   const settingsUxCopy = getSettingsUxCopy(locale);
   const navigate = useNavigate();
+  const { search } = useLocation();
   const { user, logout, authStatus, isLoading } = useAuth();
   const accountName = getAccountDisplayName(user);
   const queryClient = useQueryClient();
@@ -324,7 +327,7 @@ export function SettingsDialog(props: SettingsDialogProps) {
       // Prefetch the oct account bridge; individual account tabs can fetch
       // their own optional data when opened.
       queryClient.prefetchQuery({
-        queryKey: ["account", "oct"],
+        queryKey: octLinkQueryKey(),
         queryFn: () => octApi.get().catch(() => null),
         staleTime: 30_000,
       });
@@ -1022,7 +1025,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     className="w-full sm:w-auto"
                     onClick={() => {
                       dialogProps.onOpenChange?.(false);
-                      navigate("/workspace/observability");
+                      navigate(
+                        preserveWorkbenchPresentation(
+                          "/workspace/observability",
+                          search,
+                        ),
+                      );
                     }}
                   >
                     {settingsUxCopy.observability.openDashboard}

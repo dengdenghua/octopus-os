@@ -29,6 +29,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { getBackendBaseURL } from "@/core/config";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
+import {
+  intelligenceReportsQueryKey,
+  intelligenceSubscriptionsQueryKey,
+} from "@/core/intelligence/query-keys";
 import { useI18n } from "@/core/i18n/hooks";
 import type { Translations } from "@/core/i18n/locales/types";
 
@@ -47,8 +56,6 @@ type IntelligenceSubscription = {
   sources?: string[];
 };
 
-const subscriptionsKey = ["intelligence", "subscriptions"] as const;
-const reportsKey = ["intelligence", "reports"] as const;
 const EMPTY_SUBSCRIPTIONS: IntelligenceSubscription[] = [];
 const TIP_DISMISSED_KEY = "echo:automation-tip-dismissed";
 const KEEP_AWAKE_KEY = "echo:keep-awake";
@@ -113,6 +120,10 @@ function scheduleText(
 export function AutomationConfiguredTab() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
+  const actor = currentActorId();
+  const actorRef = useRef(actor);
+  const subscriptionsKey = intelligenceSubscriptionsQueryKey();
+  const reportsKey = intelligenceReportsQueryKey();
   const [tipVisible, setTipVisible] = useState(true);
   const [keepAwake, setKeepAwake] = useState(true);
   const [subscriptionToDelete, setSubscriptionToDelete] = useState<{
@@ -123,10 +134,17 @@ export function AutomationConfiguredTab() {
 
   useEffect(() => {
     try {
-      setTipVisible(localStorage.getItem(TIP_DISMISSED_KEY) !== "true");
-      setKeepAwake(localStorage.getItem(KEEP_AWAKE_KEY) !== "false");
-    } catch {}
-  }, []);
+      setTipVisible(
+        readActorScopedStorageValue(TIP_DISMISSED_KEY, actor) !== "true",
+      );
+      setKeepAwake(
+        readActorScopedStorageValue(KEEP_AWAKE_KEY, actor) !== "false",
+      );
+      actorRef.current = actor;
+    } catch {
+      // Storage is optional; defaults keep automation usable.
+    }
+  }, [actor]);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,14 +203,20 @@ export function AutomationConfiguredTab() {
   const dismissTip = () => {
     setTipVisible(false);
     try {
-      localStorage.setItem(TIP_DISMISSED_KEY, "true");
+      localStorage.setItem(
+        actorScopedStorageKey(TIP_DISMISSED_KEY, actorRef.current),
+        "true",
+      );
     } catch {}
   };
 
   const toggleKeepAwake = (checked: boolean) => {
     setKeepAwake(checked);
     try {
-      localStorage.setItem(KEEP_AWAKE_KEY, checked ? "true" : "false");
+      localStorage.setItem(
+        actorScopedStorageKey(KEEP_AWAKE_KEY, actorRef.current),
+        checked ? "true" : "false",
+      );
     } catch {}
   };
 

@@ -70,4 +70,18 @@ describe("ArtifactLink", () => {
     expect(opened).toEqual({ path: "workspace-output:final:out/deck.pptx" });
     window.removeEventListener(OPEN_ARTIFACT_EVENT, openArtifact);
   });
+
+  it("hands a Windows original link to the workbench with its full path", () => {
+    const original = "C:/授权目录/invoice #1.pdf";
+    let opened: OpenArtifactDetail | null = null;
+    const handler = (event: Event) => {
+      opened = (event as CustomEvent<OpenArtifactDetail>).detail;
+      event.preventDefault();
+    };
+    window.addEventListener(OPEN_ARTIFACT_EVENT, handler);
+    render(<ArtifactLink href={original}>原件</ArtifactLink>);
+    fireEvent.click(screen.getByRole("link", { name: "原件" }));
+    expect(opened).toEqual({ path: original });
+    window.removeEventListener(OPEN_ARTIFACT_EVENT, handler);
+  });
 });

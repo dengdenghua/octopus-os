@@ -10,6 +10,9 @@ from pathlib import Path
 import pytest
 import yaml
 
+if os.name == "nt":
+    pytest.skip("real OMV CI probes require a POSIX host", allow_module_level=True)
+
 _REPOSITORY = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPOSITORY / "deploy" / "omv" / "verify-real-omv-x86-ci.sh"
 _NFS_PROBE = _REPOSITORY / "deploy" / "omv" / "real_omv_nfs_probe.py"

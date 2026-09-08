@@ -3,7 +3,10 @@ import { describe, expect, test } from "vitest";
 import { buildCoworkSelectionSyncPlan } from "./sync";
 import type { CoworkState } from "./types";
 
-function state(ids: string[], mode: CoworkState["mode"] = "cluster"): CoworkState {
+function state(
+  ids: string[],
+  mode: CoworkState["mode"] = "cluster",
+): CoworkState {
   return {
     mode,
     event_count: ids.length,

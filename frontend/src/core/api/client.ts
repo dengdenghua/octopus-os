@@ -198,7 +198,10 @@ export class EchoClient {
       threadId: string,
       body?: { provider?: string; force?: boolean },
     ): Promise<SessionTitleSnapshot> =>
-      this.post<SessionTitleSnapshot>(`/threads/${threadId}/title/refresh`, body ?? {}),
+      this.post<SessionTitleSnapshot>(
+        `/threads/${threadId}/title/refresh`,
+        body ?? {},
+      ),
 
     forkThread: (
       threadId: string,

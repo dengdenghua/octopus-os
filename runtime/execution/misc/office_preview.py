@@ -6,11 +6,35 @@ import re
 from html import escape
 from pathlib import Path
 
-from runtime.execution.misc.document_text_extractor import extract_document_path
+from runtime.execution.misc.document_extraction import (
+    DocumentExtractionBudget,
+    DocumentWorkerCleanupError,
+    extract_document_isolated,
+)
 
 _SUPPORTED = {".csv", ".docx", ".tsv", ".xlsx", ".pptx"}
 _MAX_PREVIEW_CHARS = 60_000
 _MAX_PREVIEW_FILE_BYTES = 64 * 1024 * 1024
+
+
+def _extract_preview_text(path: Path) -> str | None:
+    """Read an authorized snapshot and parse it outside the service process."""
+
+    try:
+        if path.stat().st_size > _MAX_PREVIEW_FILE_BYTES:
+            return None
+        data = path.read_bytes()
+        result = extract_document_isolated(
+            data,
+            path.suffix,
+            budget=DocumentExtractionBudget(max_chars=_MAX_PREVIEW_CHARS),
+        )
+    except (DocumentWorkerCleanupError, OSError, RuntimeError, ValueError):
+        return None
+    if result.get("outcome") != "ok":
+        return None
+    text = result.get("text")
+    return text if isinstance(text, str) else None
 
 
 def supports_office_preview(path: Path) -> bool:
@@ -23,12 +47,7 @@ def render_office_preview(path: Path, *, script_nonce: str | None = None) -> str
     suffix = path.suffix.lower()
     if suffix not in _SUPPORTED:
         return None
-    try:
-        too_large = path.stat().st_size > _MAX_PREVIEW_FILE_BYTES
-    except OSError:
-        too_large = True
-    extracted = None if too_large else extract_document_path(path, max_chars=_MAX_PREVIEW_CHARS)
-    text = extracted.text if extracted is not None else ""
+    text = _extract_preview_text(path) or ""
     if suffix in {".csv", ".tsv"}:
         body = _render_xlsx(f"--- sheet 1: {path.name} ---\n{text}")
         label = "Spreadsheet"

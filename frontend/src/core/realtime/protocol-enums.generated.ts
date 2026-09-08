@@ -2,14 +2,46 @@
 // DO NOT EDIT — source of truth is runtime/protocol/items.py.
 // Regenerate with: python scripts/gen_realtime_protocol_enums.py
 
-export const ITEM_STATUSES = ["inProgress", "completed", "failed", "interrupted", "declined"] as const;
+export const ITEM_STATUSES = [
+  "inProgress",
+  "completed",
+  "failed",
+  "interrupted",
+  "declined",
+] as const;
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
-export const TURN_STATUSES = ["inProgress", "completed", "paused", "cancelled", "interrupted", "failed"] as const;
+export const TURN_STATUSES = [
+  "inProgress",
+  "completed",
+  "paused",
+  "cancelled",
+  "interrupted",
+  "failed",
+] as const;
 export type TurnStatus = (typeof TURN_STATUSES)[number];
 
-export const ITEM_TYPES = ["userMessage", "steeringUserMessage", "agentMessage", "reasoning", "plan", "todo-list", "commandExecution", "fileChange", "mcpToolCall", "subagent", "approval", "verification", "artifact", "error", "visibility"] as const;
+export const ITEM_TYPES = [
+  "userMessage",
+  "steeringUserMessage",
+  "agentMessage",
+  "reasoning",
+  "plan",
+  "todo-list",
+  "commandExecution",
+  "fileChange",
+  "mcpToolCall",
+  "subagent",
+  "approval",
+  "verification",
+  "artifact",
+  "error",
+  "visibility",
+] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
-export const ITEM_MARKERS = ["__subagent_spawned__", "__subagent_finished__"] as const;
+export const ITEM_MARKERS = [
+  "__subagent_spawned__",
+  "__subagent_finished__",
+] as const;
 export type ItemMarker = (typeof ITEM_MARKERS)[number];

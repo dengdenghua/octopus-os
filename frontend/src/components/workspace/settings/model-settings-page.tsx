@@ -14,8 +14,9 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -1061,6 +1062,7 @@ function ModelSettingsOverview({
 export default function ModelSettingsPage() {
   const { t, locale } = useI18n();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const pageCopy = modelSettingsPageCopy(locale);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [compatDiagnostics, setCompatDiagnostics] =
@@ -1630,7 +1632,12 @@ export default function ModelSettingsPage() {
         onAddModel={handleOverviewAddModel}
         onScanLocal={handleOverviewScanLocal}
         onOpenZen={() =>
-          navigate("/workspace/agents?tab=plugins&connect=opencode")
+          navigate(
+            preserveWorkbenchPresentation(
+              "/workspace/agents?tab=plugins&connect=opencode",
+              search,
+            ),
+          )
         }
       />
 

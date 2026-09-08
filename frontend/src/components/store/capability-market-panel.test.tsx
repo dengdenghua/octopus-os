@@ -408,9 +408,7 @@ describe("CapabilityMarketPanel", () => {
 
     renderWithProviders(<CapabilityMarketPanel />, { locale: "zh-CN" });
     fireEvent.click(await screen.findByRole("button", { name: "安装" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "确认并配置" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "确认并配置" }));
 
     expect(
       await screen.findByRole("heading", {
@@ -450,9 +448,7 @@ describe("CapabilityMarketPanel", () => {
     mocks.connectCapability.mockResolvedValue({ connected: true });
 
     renderWithProviders(<CapabilityMarketPanel />, { locale: "zh-CN" });
-    fireEvent.click(
-      await screen.findByRole("button", { name: "配置并启用" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "配置并启用" }));
 
     expect(
       await screen.findByRole("heading", {

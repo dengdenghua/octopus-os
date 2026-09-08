@@ -8,7 +8,10 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import type { ParallelTaskStatus, TaskResult } from "@/core/parallel-agents/api";
+import type {
+  ParallelTaskStatus,
+  TaskResult,
+} from "@/core/parallel-agents/api";
 import { cn } from "@/lib/utils";
 
 interface ParallelTasksPanelProps {

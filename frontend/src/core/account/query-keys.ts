@@ -3,33 +3,38 @@
  * Centralized query key definitions for cache invalidation.
  */
 
+import { currentActorId } from "@/core/auth/api";
+
+const actorSegment = () => currentActorId();
+
 export const queryKeys = {
   // Profile
-  profile: () => ["account", "profile"] as const,
+  profile: () => ["account", actorSegment(), "profile"] as const,
 
   // Linked accounts
-  linkedAccounts: () => ["account", "linked-accounts"] as const,
+  linkedAccounts: () => ["account", actorSegment(), "linked-accounts"] as const,
 
   // Privacy
-  privacy: () => ["account", "privacy"] as const,
+  privacy: () => ["account", actorSegment(), "privacy"] as const,
 
   // Subscription
-  subscription: () => ["account", "subscription"] as const,
+  subscription: () => ["account", actorSegment(), "subscription"] as const,
   plans: (includeInactive = false) =>
     ["account", "plans", { includeInactive }] as const,
 
   // Usage
-  usage: () => ["account", "usage"] as const,
+  usage: () => ["account", actorSegment(), "usage"] as const,
   usageEvents: (params?: { limit?: number; event_type?: string }) =>
-    ["account", "usage", "events", params] as const,
+    ["account", actorSegment(), "usage", "events", params] as const,
   usageSummary: (period?: string) =>
-    ["account", "usage", "summary", period] as const,
+    ["account", actorSegment(), "usage", "summary", period] as const,
 
   // Billing
-  billingSummary: () => ["account", "billing", "summary"] as const,
+  billingSummary: () =>
+    ["account", actorSegment(), "billing", "summary"] as const,
   billingHistory: (limit?: number) =>
-    ["account", "billing", "history", { limit }] as const,
+    ["account", actorSegment(), "billing", "history", { limit }] as const,
 
   // Overview
-  overview: () => ["account", "overview"] as const,
+  overview: () => ["account", actorSegment(), "overview"] as const,
 };

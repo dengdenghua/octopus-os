@@ -213,6 +213,34 @@ def _inject_cowork_turn_plan(
         {"agent_id": agent_id, "display_name": agent_id} for agent_id in active_agents
     ]
 
+    # Select a deterministic server-owned collaboration pattern. This keeps
+    # ordinary chat focused while routing explicit review/work requests to a
+    # pattern that can produce bounded, auditable member contributions.
+    try:
+        from runtime.execution.agents.team_patterns import select_team_pattern
+
+        addressed = plan.get("addressed")
+        pattern = select_team_pattern(
+            text,
+            mode=str(plan.get("mode") or "chat"),
+            member_count=len(active_agents),
+            addressed_count=len(addressed) if isinstance(addressed, list) else 0,
+        )
+        context["team_pattern"] = pattern.to_dict()
+        if pattern.spec.execution == "orchestrated":
+            existing_contract = str(context.get("mode_contract") or "").strip()
+            coordinator_contract = (
+                "<cowork-coordinator-contract>你是本轮队长/TL。先把目标改写成互不重叠、可验收的子任务，"
+                "再按成员能力分派；成员结果必须检查证据，最后去重、处理冲突并给出统一交付。"
+                "使用 call_agent_parallel 时，每个任务必须填写 objective、owner、deliverable、"
+                "dependencies 和 acceptance_criteria。</cowork-coordinator-contract>"
+            )
+            context["mode_contract"] = "\n\n".join(
+                part for part in (existing_contract, coordinator_contract) if part
+            )
+    except Exception as exc:  # noqa: BLE001 — pattern planning must not block chat
+        _logger.debug("team pattern selection skipped: %s", exc, exc_info=True)
+
     # Enforce the responder's context grant on the single-responder react path.
     # A member pulled in with from_join/range/summary must not see history beyond
     # their grant. The async runner already slices via context_view; this closes

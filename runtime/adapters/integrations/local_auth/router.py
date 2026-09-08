@@ -134,6 +134,7 @@ if FASTAPI_AVAILABLE:
         username: str = Field(..., min_length=1, max_length=64)
         password: str | None = Field(default=None, max_length=256)
         display_name: str | None = Field(default=None, max_length=128)
+        second_factor: str | None = Field(default=None, alias="secondFactor", max_length=64)
 
     class LoginResponse(BaseModel):
         success: bool
@@ -154,6 +155,7 @@ def create_local_auth_router(
     config: LocalAuthConfig,
     identity_store: Any = None,
     clock: Callable[[], float] | None = None,
+    second_factor_verifier: Callable[[str, str | None, Request], None] | None = None,
 ) -> Any:
     require_fastapi(__name__)
 
@@ -167,6 +169,20 @@ def create_local_auth_router(
         clock=limiter_clock,
     )
     ip_failure_limiter = _LoginFailureLimiter(
+        max_failures=getattr(config, "login_ip_max_failures", 20),
+        window_seconds=getattr(config, "login_failure_window_seconds", 300.0),
+        lockout_seconds=getattr(config, "login_lockout_seconds", 60.0),
+        max_entries=getattr(config, "login_rate_limit_max_entries", 10_000),
+        clock=limiter_clock,
+    )
+    second_factor_failure_limiter = _LoginFailureLimiter(
+        max_failures=getattr(config, "login_max_failures", 5),
+        window_seconds=getattr(config, "login_failure_window_seconds", 300.0),
+        lockout_seconds=getattr(config, "login_lockout_seconds", 60.0),
+        max_entries=getattr(config, "login_rate_limit_max_entries", 10_000),
+        clock=limiter_clock,
+    )
+    second_factor_ip_failure_limiter = _LoginFailureLimiter(
         max_failures=getattr(config, "login_ip_max_failures", 20),
         window_seconds=getattr(config, "login_failure_window_seconds", 300.0),
         lockout_seconds=getattr(config, "login_lockout_seconds", 60.0),
@@ -271,6 +287,33 @@ def create_local_auth_router(
                 raise HTTPException(status_code=403, detail="用户名不在白名单")
             return
 
+    def _check_second_factor(
+        username: str,
+        factor: str | None,
+        request: Request,
+    ) -> None:
+        if second_factor_verifier is None:
+            return
+        key = _failure_key(request, username)
+        ip_key = _ip_failure_key(key)
+        retry_after = max(
+            second_factor_failure_limiter.retry_after(key),
+            second_factor_ip_failure_limiter.retry_after(ip_key),
+        )
+        if retry_after:
+            _raise_rate_limited(retry_after)
+        try:
+            second_factor_verifier(username, factor, request)
+        except HTTPException as exc:
+            retry_after = max(
+                second_factor_failure_limiter.record_failure(key),
+                second_factor_ip_failure_limiter.record_failure(ip_key),
+            )
+            if retry_after:
+                _raise_rate_limited(retry_after)
+            raise exc
+        second_factor_failure_limiter.clear(key)
+
     @router.post("/login", response_model=LoginResponse)
     def login(
         body: LoginRequest,
@@ -279,6 +322,7 @@ def create_local_auth_router(
     ) -> LoginResponse:
         _require_enabled()
         _check_credentials(body.username, body.password, request)
+        _check_second_factor(body.username, body.second_factor, request)
 
         actor_id = f"{config.actor_prefix}{body.username}"
         created = False
@@ -393,4 +437,8 @@ def create_local_auth_router(
 
     router.login_failure_limiter = failure_limiter  # type: ignore[attr-defined]
     router.login_ip_failure_limiter = ip_failure_limiter  # type: ignore[attr-defined]
+    router.second_factor_failure_limiter = second_factor_failure_limiter  # type: ignore[attr-defined]
+    router.second_factor_ip_failure_limiter = (  # type: ignore[attr-defined]
+        second_factor_ip_failure_limiter
+    )
     return router

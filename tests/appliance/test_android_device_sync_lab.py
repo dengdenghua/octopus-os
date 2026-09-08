@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -52,7 +53,8 @@ def test_lab_credential_file_is_private_and_never_overwritten(tmp_path: Path) ->
     _write_pairing_file(pairing_file, payload)
 
     assert json.loads(pairing_file.read_text(encoding="utf-8")) == payload
-    assert stat.S_IMODE(pairing_file.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(pairing_file.stat().st_mode) == 0o600
     with pytest.raises(FileExistsError):
         _write_pairing_file(pairing_file, payload)
 

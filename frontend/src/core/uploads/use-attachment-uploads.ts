@@ -187,15 +187,6 @@ export function useAttachmentUploads(
       reset,
       completed,
     }),
-    [
-      uploads,
-      isUploading,
-      hasFailed,
-      start,
-      retry,
-      remove,
-      reset,
-      completed,
-    ],
+    [uploads, isUploading, hasFailed, start, retry, remove, reset, completed],
   );
 }

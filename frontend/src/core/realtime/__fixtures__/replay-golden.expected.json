@@ -35,9 +35,7 @@
           "id": "f3",
           "type": "fileChange",
           "text": "",
-          "hunks": [
-            "+++ b/src/new.ts\n+line"
-          ]
+          "hunks": ["+++ b/src/new.ts\n+line"]
         },
         {
           "id": "m3",

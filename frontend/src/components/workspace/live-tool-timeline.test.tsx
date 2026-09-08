@@ -137,6 +137,27 @@ describe("LiveToolTimeline · nested sub-tool rendering", () => {
     expect(screen.getAllByText(/architect/).length).toBeGreaterThan(0);
   });
 
+  test("shows display-safe sub-agent governance usage", () => {
+    wrap([
+      parentEvent({
+        status: "done",
+        governance: {
+          rootId: "turn-1",
+          tokensUsed: 1234,
+          costUsd: 0.1234,
+          breaker: "open",
+        },
+      }),
+    ]);
+
+    const usage = screen.getByText("Governance: 1,234 tokens · $0.1234");
+    expect(usage).toBeInTheDocument();
+    expect(usage).toHaveAttribute(
+      "aria-label",
+      "Governance: 1,234 tokens · $0.1234",
+    );
+  });
+
   test("events with parentToolUseId never appear as top-level rows", () => {
     // Render ONLY a child event · with no parent in the list.
     // getVisibleEvents filters out anything with parentToolUseId, so

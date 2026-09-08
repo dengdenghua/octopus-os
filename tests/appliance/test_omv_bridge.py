@@ -25,6 +25,10 @@ from appliance.omv_bridge import (
 )
 from appliance.omv_client import OmvClient, OmvUnavailable
 
+UNIX_SOCKET_TEST = pytest.mark.skipif(
+    not hasattr(socket, "AF_UNIX"), reason="Unix domain sockets are unavailable"
+)
+
 SHARE_UUID = "11111111-2222-4333-8444-555555555555"
 FILESYSTEM_UUID = "22222222-3333-4444-8555-666666666666"
 SMB_UUID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -895,12 +899,15 @@ def test_user_password_reset_rejects_unconstrained_or_missing_accounts() -> None
         service.plan_user_password(desired)
 
 
-def test_engine_secret_runner_uses_nul_delimited_socket_and_discards_password() -> None:
-    # macOS limits AF_UNIX paths to roughly 104 bytes; pytest's tmp_path is
-    # deliberately descriptive and can exceed that.
-    with tempfile.TemporaryDirectory(prefix="echo-engined-", dir="/tmp") as directory:
-        socket_path = Path(directory) / "e.sock"
-        _exercise_engine_secret_runner(socket_path)
+@UNIX_SOCKET_TEST
+def test_engine_secret_runner_uses_nul_delimited_socket_and_discards_password(
+    tmp_path: Path,
+) -> None:
+    # Keep the socket path short enough for macOS and use the host's native
+    # temporary root so the test also runs on Windows.
+    directory = tmp_path / "engined"
+    directory.mkdir()
+    _exercise_engine_secret_runner(directory / "e.sock")
 
 
 def _exercise_engine_secret_runner(socket_path: Path) -> None:
@@ -947,6 +954,7 @@ def _exercise_engine_secret_runner(socket_path: Path) -> None:
     ]
 
 
+@UNIX_SOCKET_TEST
 def test_unix_socket_account_control_round_trip_never_returns_password() -> None:
     with tempfile.TemporaryDirectory(prefix="echo-omv-account-", dir="/tmp") as directory:
         socket_path = Path(directory) / "omv.sock"
@@ -1867,6 +1875,7 @@ def test_lsblk_runner_uses_fixed_read_only_columns(
     assert all(sensitive not in captured["command"][-1] for sensitive in ("UUID", "SERIAL", "WWN"))
 
 
+@UNIX_SOCKET_TEST
 def test_unix_socket_bridge_and_echo_client_round_trip() -> None:
     # macOS has a short AF_UNIX path limit, so keep this integration socket out
     # of pytest's deliberately descriptive (and much longer) tmp_path.
@@ -1911,6 +1920,7 @@ def test_unix_socket_bridge_and_echo_client_round_trip() -> None:
             socket_path.unlink(missing_ok=True)
 
 
+@UNIX_SOCKET_TEST
 def test_unix_socket_shared_folder_control_round_trip_is_fixed_and_bounded() -> None:
     with tempfile.TemporaryDirectory(prefix="echo-omv-folder-", dir="/tmp") as directory:
         socket_path = Path(directory) / "omv.sock"
@@ -1954,6 +1964,7 @@ def test_unix_socket_shared_folder_control_round_trip_is_fixed_and_bounded() -> 
             thread.join(timeout=2)
 
 
+@UNIX_SOCKET_TEST
 def test_unix_socket_share_privilege_control_round_trip_is_fixed_and_bounded() -> None:
     with tempfile.TemporaryDirectory(prefix="echo-omv-privilege-", dir="/tmp") as directory:
         socket_path = Path(directory) / "omv.sock"
@@ -1993,6 +2004,7 @@ def test_unix_socket_share_privilege_control_round_trip_is_fixed_and_bounded() -
             thread.join(timeout=2)
 
 
+@UNIX_SOCKET_TEST
 def test_unix_socket_smb_control_round_trip_is_fixed_and_bounded() -> None:
     with tempfile.TemporaryDirectory(prefix="echo-omv-control-", dir="/tmp") as directory:
         socket_path = Path(directory) / "omv.sock"
@@ -2040,6 +2052,7 @@ def test_unix_socket_smb_control_round_trip_is_fixed_and_bounded() -> None:
             socket_path.unlink(missing_ok=True)
 
 
+@UNIX_SOCKET_TEST
 def test_unix_socket_nfs_control_round_trip_is_fixed_and_bounded() -> None:
     with tempfile.TemporaryDirectory(prefix="echo-omv-nfs-", dir="/tmp") as directory:
         socket_path = Path(directory) / "omv.sock"
@@ -2075,6 +2088,7 @@ def test_unix_socket_nfs_control_round_trip_is_fixed_and_bounded() -> None:
             socket_path.unlink(missing_ok=True)
 
 
+@UNIX_SOCKET_TEST
 def test_unix_socket_quota_control_round_trip_is_fixed_and_bounded() -> None:
     with tempfile.TemporaryDirectory(prefix="echo-omv-quota-", dir="/tmp") as directory:
         socket_path = Path(directory) / "omv.sock"

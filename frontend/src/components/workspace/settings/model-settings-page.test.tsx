@@ -857,7 +857,9 @@ describe("ModelSettingsPage · custom-model list rendering", () => {
     );
 
     renderWithProviders(<ModelSettingsPage />, { locale: "zh-CN" });
-    expect((await screen.findAllByText("Disposable")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Disposable")).length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByText("系统默认")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "删除: Disposable" }));

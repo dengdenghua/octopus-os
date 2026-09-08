@@ -164,8 +164,12 @@ def inspect_delivery_source(
         else "Required release-source files are missing or unsafe",
     )
 
-    top_ok, top = _git(root, "rev-parse", "--show-toplevel", timeout=timeout)
-    git_repository_ok = top_ok and Path(top).resolve() == root
+    # Avoid round-tripping Git's absolute path through pathlib here.  On some
+    # Windows Python runtimes a non-ASCII working directory can be decoded
+    # differently by Python and Git even though both refer to the same path.
+    # --show-prefix is empty only when cwd is the exact repository root.
+    prefix_ok, prefix = _git(root, "rev-parse", "--show-prefix", timeout=timeout)
+    git_repository_ok = prefix_ok and prefix == ""
     record(
         "git_repository",
         git_repository_ok,
@@ -305,6 +309,20 @@ def inspect_delivery_source(
             if os_repository is not None
             else "OS origin is missing, credential-bearing, or outside github.com",
         )
+    else:
+        for code, detail in (
+            ("delivery_branch", "Delivery branch is unavailable outside the repository root"),
+            ("source_revision", "OS source revision is unavailable outside the repository root"),
+            ("worktree_clean", "Working tree status is unavailable outside the repository root"),
+            (
+                "required_workflows_tracked",
+                "Delivery workflow tracking is unavailable outside the repository root",
+            ),
+            ("tracking_ref", "Tracking ref is unavailable outside the repository root"),
+            ("cached_os_remote", "Cached OS remote is unavailable outside the repository root"),
+            ("os_origin_identity", "OS origin identity is unavailable outside the repository root"),
+        ):
+            record(code, False, detail)
 
     agent_source = (
         {"repository": os_repository, "commit": head}

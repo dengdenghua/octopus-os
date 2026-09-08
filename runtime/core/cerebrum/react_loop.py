@@ -135,6 +135,7 @@ def stream_react_loop(
     temperature: float = 0.3,
     enable_tools: bool = True,
     resume_task_id: TaskId | None = None,
+    execution_task_id: TaskId | None = None,
     thread_id: str = "",
     max_tokens_budget: int = BUDGET_DEFAULT_MAX_TOKENS,
     max_usd_budget: float = BUDGET_DEFAULT_MAX_USD,
@@ -164,6 +165,7 @@ def stream_react_loop(
                 temperature=temperature,
                 enable_tools=enable_tools,
                 resume_task_id=resume_task_id,
+                execution_task_id=execution_task_id,
                 thread_id=thread_id,
                 max_tokens_budget=max_tokens_budget,
                 max_usd_budget=max_usd_budget,
@@ -190,6 +192,7 @@ def _stream_react_loop_impl(
     temperature: float = 0.3,
     enable_tools: bool = True,
     resume_task_id: TaskId | None = None,
+    execution_task_id: TaskId | None = None,
     thread_id: str = "",
     max_tokens_budget: int = BUDGET_DEFAULT_MAX_TOKENS,
     max_usd_budget: float = BUDGET_DEFAULT_MAX_USD,
@@ -206,6 +209,23 @@ def _stream_react_loop_impl(
     # react_phase_6c; dispatch/housekeeping → react_execution; guards →
     # react_final_answer_guards; checkpoint → react_checkpointing; terminal →
     # react_terminal. Phases exchange state through _LoopState/_LoopControl.
+
+    # Reject requested recovery before router/bootstrap, prompt preparation,
+    # react_started, or auto-delegation can begin any new work.
+    selected_resume = (getattr(intent, "user_context", None) or {}).get("resume_intent")
+    if (
+        resume_task_id is None
+        and isinstance(selected_resume, dict)
+        and selected_resume.get("confirmed") is True
+    ):
+        from runtime.core.cerebrum.react_resume import ResumeCheckpointError
+
+        raise ResumeCheckpointError(selected_resume.get("task_id"), "resume_task_invalid")
+    resume_snapshot = None
+    if resume_task_id is not None:
+        from runtime.core.cerebrum.react_resume import _require_resume_checkpoint
+
+        resume_snapshot = _require_resume_checkpoint(stack, intent, resume_task_id)
 
     # Config-driven ReAct tunables (budget.model_iteration_timeout_s /
     # budget.convergence_max_tokens). Read off the stack when present; the
@@ -233,6 +253,7 @@ def _stream_react_loop_impl(
         reasoning_effort=reasoning_effort,
         approval_provider=approval_provider,
         resume_task_id=resume_task_id,
+        execution_task_id=execution_task_id,
     )
     if _boot is None:
         return None
@@ -399,6 +420,7 @@ def _stream_react_loop_impl(
         active_max_usd_budget=_active_max_usd_budget,
         max_wall_time_seconds=_wall_time_cap,
         messages=messages,
+        resume_snapshot=resume_snapshot,
     )
     _pause = _rboot.pause_controller
     _agent_id_for_pause = _rboot.agent_id_for_pause

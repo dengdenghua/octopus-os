@@ -42,10 +42,10 @@ function isSafeOAuthAuthorizeURL(rawURL) {
   const url = parseURL(rawURL);
   return Boolean(
     url &&
-      url.protocol === "https:" &&
-      !url.username &&
-      !url.password &&
-      url.hostname,
+    url.protocol === "https:" &&
+    !url.username &&
+    !url.password &&
+    url.hostname,
   );
 }
 
@@ -84,11 +84,7 @@ function normalizeLoopbackBackendBaseURL(rawURL) {
   return url.origin;
 }
 
-function buildMcpOAuthCallbackURL({
-  sourceURL,
-  deepLinkURL,
-  backendBaseURL,
-}) {
+function buildMcpOAuthCallbackURL({ sourceURL, deepLinkURL, backendBaseURL }) {
   const deepLink = parseURL(deepLinkURL);
   const backend = normalizeLoopbackBackendBaseURL(backendBaseURL);
   if (!deepLink || !backend) return null;

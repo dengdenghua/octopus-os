@@ -1,12 +1,20 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { AgentCompetitorScorecard, AgentTracePromotionAuditSummary, AgentTraceReviewQueueItem } from "@/core/agent-trace/api";
+import type {
+  AgentCompetitorScorecard,
+  AgentTracePromotionAuditSummary,
+  AgentTraceReviewQueueItem,
+} from "@/core/agent-trace/api";
 import { cn } from "@/lib/utils";
 import { GateStat } from "../../replay-panel";
 import { BarChart3Icon, ListChecksIcon } from "lucide-react";
 import { ScorecardGapDrilldown } from "./ScorecardGapDrilldown";
-import { competitorLabel, formatOperatorCopy, scorecardGapQueueItemForDimension } from "../operator-utils";
+import {
+  competitorLabel,
+  formatOperatorCopy,
+  scorecardGapQueueItemForDimension,
+} from "../operator-utils";
 import { useOperatorCopy } from "../use-operator-copy";
 
 export function CompetitorScorecardCard({
@@ -40,9 +48,7 @@ export function CompetitorScorecardCard({
   const belowTarget = report.echo_below_target ?? [];
   const focusGaps = report.echo_focus_gaps ?? belowTarget;
   const externalGaps =
-    report.echo_external_gap_dimensions ??
-    report.echo_external_leaders ??
-    [];
+    report.echo_external_gap_dimensions ?? report.echo_external_leaders ?? [];
   const strengths = report.echo_strengths ?? [];
   const certification = report.parity_certification;
   const evidenceLayers = report.evidence_layers;
@@ -86,9 +92,7 @@ export function CompetitorScorecardCard({
             <BarChart3Icon
               className={cn(
                 "size-4",
-                !error && healthy
-                  ? "text-success"
-                  : "text-warning",
+                !error && healthy ? "text-success" : "text-warning",
               )}
             />
             {to("Competitor scorecard")}
@@ -107,10 +111,14 @@ export function CompetitorScorecardCard({
                 : behavioralEvidence && !behavioralEvidence.ready
                   ? to("Behavioral head-to-head is not certified")
                   : certification?.ready
-                    ? formatOperatorCopy(to, "Certification passed {passed}/{total}", {
-                        passed: certification.passed,
-                        total: certification.total,
-                      })
+                    ? formatOperatorCopy(
+                        to,
+                        "Certification passed {passed}/{total}",
+                        {
+                          passed: certification.passed,
+                          total: certification.total,
+                        },
+                      )
                     : to("Echo has no tracked effective scorecard gaps")}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
@@ -252,11 +260,7 @@ export function CompetitorScorecardCard({
           </Badge>
         ))}
         {report.next_focus.slice(0, 2).map((item) => (
-          <Badge
-            key={item}
-            variant="outline"
-            className="max-w-full text-xs"
-          >
+          <Badge key={item} variant="outline" className="max-w-full text-xs">
             <span className="truncate">{item}</span>
           </Badge>
         ))}

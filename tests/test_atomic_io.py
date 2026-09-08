@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
+
+import runtime.platform.io.atomic as atomic_module
 from runtime.platform.io.atomic import (
     AtomicWriteError,
     atomic_write_bytes,
@@ -24,6 +27,16 @@ def test_write_bytes_creates_file(tmp_path: Path) -> None:
     target = tmp_path / "out.bin"
     atomic_write_bytes(target, b"hello")
     assert target.read_bytes() == b"hello"
+
+
+def test_write_mode_without_fchmod(tmp_path: Path, monkeypatch: Any) -> None:
+    """The secure temporary-file path remains portable to Windows."""
+    target = tmp_path / "secret.json"
+    monkeypatch.delattr(atomic_module.os, "fchmod", raising=False)
+
+    atomic_write_bytes(target, b"secret", mode=0o600)
+
+    assert target.read_bytes() == b"secret"
 
 
 def test_write_text_appends_trailing_newline(tmp_path: Path) -> None:

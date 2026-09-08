@@ -30,7 +30,7 @@ from runtime.workspace.channel_bridge import (
     send_channel_message,
     sync_channel_members_to_group,
 )
-from runtime.workspace.crypto import decrypt_options, encrypt_options
+from runtime.workspace.crypto import WorkspaceCryptoError, decrypt_options, encrypt_options
 from runtime.workspace.model import (
     VALID_MEMBER_ROLES,
     VALID_MOUNT_TYPES,
@@ -75,6 +75,7 @@ __all__ = [
     "OrgStore",
     "Organization",
     "Workspace",
+    "WorkspaceCryptoError",
     "WorkspaceMember",
     "WorkspaceStore",
     "append_org_audit_event",

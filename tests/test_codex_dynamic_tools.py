@@ -64,6 +64,92 @@ def _request(tool: str, arguments: dict[str, Any], *, call_id: str = "call-1") -
 
 
 @pytest.mark.asyncio
+async def test_callback_worker_retains_host_request_and_permission_ceiling(tmp_path, monkeypatch):
+    import asyncio
+
+    from runtime.execution.host_boundary import create_host_execution_boundary
+    from runtime.execution.request import current_execution_request
+    from runtime.platform.process.scope import resolve_execution_scope
+    from runtime.platform.process.session import current_session, session_scope
+
+    boundary = create_host_execution_boundary(
+        task_id="host-task",
+        thread_id="outer-thread",
+        actor_id="actor-a",
+        tenant_id="tenant-a",
+        goal="inspect",
+        timeout_s=30,
+        metadata={"mode": "chat", "permission_mode": "default"},
+    )
+    registry = SkillRegistry()
+    registry.register(
+        Skill(
+            name="inspect_payload",
+            description="Inspect payload",
+            handler=lambda payload: payload,
+            trusted_source="skill://public/inspect_payload",
+        ),
+        verify_tests=False,
+    )
+    with session_scope(boundary.session):
+        broker = _broker(
+            tmp_path,
+            registry,
+            names=("inspect_payload",),
+            context={
+                "permission_mode": "bypassPermissions",
+                "execution_environment": "local",
+            },
+        )
+
+    observed = []
+
+    def execute(_stack, _call):
+        request = current_execution_request()
+        observed.append(request)
+        assert request.task.task_id == "host-task"
+        assert request.task.permissions is boundary.request.task.permissions
+        assert request.task.resources is boundary.request.task.resources
+        assert request.task.execution_engine == "codex"
+        assert not resolve_execution_scope(current_session()).allows_write(tmp_path / "outside.txt")
+        return "ok", False
+
+    monkeypatch.setattr(
+        "runtime.execution.tool_engine.host_tool_broker.execute_native_tool_call", execute
+    )
+    # A callback may arrive on a worker after the original scope has exited.
+    entry = next(iter(broker._entries.values()))
+    output, failed, _taint = await asyncio.to_thread(
+        broker._execute_sync,
+        entry,
+        {"payload": {}},
+        "call-host",
+        True,
+    )
+    assert output == "ok" and not failed
+    assert len(observed) == 1
+    assert current_execution_request() is None
+    assert boundary.request.task.execution_engine is None
+
+
+@pytest.mark.parametrize("coordinate", ["thread_id", "actor_id", "tenant_id"])
+def test_broker_rejects_another_host_scope(tmp_path, coordinate):
+    from runtime.execution.host_boundary import create_host_execution_boundary
+    from runtime.platform.process.session import session_scope
+
+    identity = {"thread_id": "outer-thread", "actor_id": "actor-a", "tenant_id": "tenant-a"}
+    identity[coordinate] = "another-scope"
+    boundary = create_host_execution_boundary(
+        task_id="host-task",
+        goal="inspect",
+        timeout_s=30,
+        **identity,
+    )
+    with session_scope(boundary.session), pytest.raises(ValueError, match="host execution request"):
+        _broker(tmp_path, SkillRegistry(), names=())
+
+
+@pytest.mark.asyncio
 async def test_unknown_disabled_and_replaced_tools_fail_closed(tmp_path: Path) -> None:
     calls: list[str] = []
 
@@ -398,5 +484,3 @@ async def test_selected_codex_plugin_is_loaded_on_demand_without_ambient_surface
     # turn selection withdraws the action from the next App Server catalog.
     revoked = _broker(tmp_path, registry, names=("base_read",), context={})
     assert "demo-plugin__hello" not in revoked.catalog.names
-
-

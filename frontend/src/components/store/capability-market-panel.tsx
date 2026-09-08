@@ -68,6 +68,11 @@ import {
   type CapabilitySource,
 } from "@/core/agents/agent-world-api";
 import { getBackendBaseURL } from "@/core/config";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import { CAPABILITY_SURFACE_QUERY_KEY } from "@/core/plugins/use-capability-surface";
 import { cn } from "@/lib/utils";
 
@@ -1412,6 +1417,16 @@ export interface CapabilityMarketPanelProps {
 const CAPABILITY_PAGE_SIZE = 60;
 const CAPABILITY_CATEGORY_STATE_KEY = "echoai.plugin-category-collapse.v1";
 
+function readCategoryState(actor: string) {
+  try {
+    return JSON.parse(
+      readActorScopedStorageValue(CAPABILITY_CATEGORY_STATE_KEY, actor) || "{}",
+    ) as Partial<Record<CapabilityCategoryId, boolean>>;
+  } catch {
+    return {};
+  }
+}
+
 function capabilityMatchesQuery(capability: CapabilityInfo, query: string) {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return true;
@@ -1438,6 +1453,8 @@ export function CapabilityMarketPanel({
   compact = false,
 }: CapabilityMarketPanelProps = {}) {
   const queryClient = useQueryClient();
+  const actor = currentActorId();
+  const actorRef = useRef(actor);
   const [items, setItems] = useState<CapabilityInfo[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -1455,16 +1472,7 @@ export function CapabilityMarketPanel({
   const [showManual, setShowManual] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<
     Partial<Record<CapabilityCategoryId, boolean>>
-  >(() => {
-    if (typeof window === "undefined") return {};
-    try {
-      return JSON.parse(
-        window.localStorage.getItem(CAPABILITY_CATEGORY_STATE_KEY) || "{}",
-      ) as Partial<Record<CapabilityCategoryId, boolean>>;
-    } catch {
-      return {};
-    }
-  });
+  >(() => readCategoryState(actor));
   const [connectTarget, setConnectTarget] = useState<CapabilityInfo | null>(
     null,
   );
@@ -1603,6 +1611,11 @@ export function CapabilityMarketPanel({
   }, [compact, maxItems, view, visibleItems]);
   const showCategorizedSections = categorizedSections.length > 0;
   const searchActive = Boolean(searchQuery.trim() || query.trim());
+  useEffect(() => {
+    if (actorRef.current === actor) return;
+    actorRef.current = actor;
+    setCollapsedCategories(readCategoryState(actor));
+  }, [actor]);
   const marketRows = useMemo(() => {
     if (!showCategorizedSections) {
       return visibleItems.map((capability) => ({
@@ -1636,7 +1649,10 @@ export function CapabilityMarketPanel({
       const next = { ...current, [category]: !current[category] };
       try {
         window.localStorage.setItem(
-          CAPABILITY_CATEGORY_STATE_KEY,
+          actorScopedStorageKey(
+            CAPABILITY_CATEGORY_STATE_KEY,
+            actorRef.current,
+          ),
           JSON.stringify(next),
         );
       } catch {
@@ -2353,9 +2369,9 @@ export function CapabilityMarketPanel({
                             : cap.model_provider &&
                                 cap.permission_review_required
                               ? "配置模型服务并确认权限"
-                            : cap.permission_review_required
-                              ? "查看并确认签名权限"
-                              : "启用"
+                              : cap.permission_review_required
+                                ? "查看并确认签名权限"
+                                : "启用"
                         }
                       >
                         {busy ? (
@@ -2370,12 +2386,11 @@ export function CapabilityMarketPanel({
                         )}
                         {cap.enabled
                           ? "启用中"
-                          : cap.model_provider &&
-                              cap.permission_review_required
+                          : cap.model_provider && cap.permission_review_required
                             ? "配置并启用"
-                          : cap.permission_review_required
-                            ? "确认权限"
-                            : "已禁用"}
+                            : cap.permission_review_required
+                              ? "确认权限"
+                              : "已禁用"}
                       </Button>
                       {!(
                         cap.model_provider && cap.permission_review_required

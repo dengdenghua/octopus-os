@@ -417,7 +417,7 @@ function TraceSectionCard({ section }: { section: TraceSection }) {
       ? "waiting"
       : section.events.some((event) => event.status === "running")
         ? "running"
-      : "done";
+        : "done";
   const displayItems = useMemo(
     () => compactTraceEvents(section.events),
     [section.events],
@@ -502,7 +502,11 @@ function compactTraceEvents(events: LiveToolEvent[]): TraceDisplayItem[] {
       continue;
     }
 
-    const summary = { kind: "delegation-summary" as const, events: [event], target };
+    const summary = {
+      kind: "delegation-summary" as const,
+      events: [event],
+      target,
+    };
     delegationBuckets.set(target, summary);
     items.push(summary);
   }

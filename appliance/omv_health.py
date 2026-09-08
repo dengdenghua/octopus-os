@@ -8,6 +8,7 @@ transition history in the appliance state directory.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import json
@@ -51,6 +52,21 @@ _KNOWN_STATES = {"notConfigured", "pending", "healthy", "warning", "critical", "
 _HEALTHY_SMART_VALUES = {"passed", "ok", "good", "healthy", "true"}
 
 _log = logging.getLogger("echo.appliance.omv_health")
+
+
+@contextlib.contextmanager
+def _private_state_path(path: Path, *, create: bool = False):
+    """Pin and protect OMV state on Windows; retain POSIX mode checks elsewhere."""
+
+    if os.name == "nt":
+        from appliance.windows_state import private_state_directory
+
+        with private_state_directory(path.parent, create=create, protect=True) as parent:
+            yield parent / path.name
+        return
+    if create:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    yield path
 
 
 class OmvHealthStateError(RuntimeError):
@@ -335,12 +351,21 @@ class OmvHealthMonitor:
         if not self.configured or self._state_path is None or not self._state_path.exists():
             return
         try:
-            info = self._state_path.lstat()
-            if not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600:
-                raise OmvHealthStateError("OMV health state is not a private regular file")
-            if info.st_size > MAX_STATE_BYTES:
-                raise OmvHealthStateError("OMV health state exceeds its size limit")
-            raw = json.loads(self._state_path.read_text(encoding="utf-8"))
+            with _private_state_path(self._state_path) as path:
+                info = path.lstat()
+                if not stat.S_ISREG(info.st_mode) or (
+                    os.name != "nt" and stat.S_IMODE(info.st_mode) != 0o600
+                ):
+                    raise OmvHealthStateError("OMV health state is not a private regular file")
+                if info.st_size > MAX_STATE_BYTES:
+                    raise OmvHealthStateError("OMV health state exceeds its size limit")
+                if os.name == "nt":
+                    from appliance.windows_state import open_private_file
+
+                    with os.fdopen(open_private_file(path), "r", encoding="utf-8") as handle:
+                        raw = json.load(handle)
+                else:
+                    raw = json.loads(path.read_text(encoding="utf-8"))
             snapshot = _validate_snapshot(raw, interval_seconds=self.interval_seconds)
         except (OSError, ValueError, OmvHealthStateError) as exc:
             self._snapshot["persistenceHealthy"] = False
@@ -351,47 +376,58 @@ class OmvHealthMonitor:
     def _persist(self, snapshot: dict[str, Any]) -> None:
         if self._state_path is None:
             return
-        path = self._state_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        parent_info = path.parent.stat()
-        if not stat.S_ISDIR(parent_info.st_mode) or path.parent.is_symlink():
-            raise OmvHealthStateError("OMV health state parent is unsafe")
-        if path.is_symlink():
-            raise OmvHealthStateError("OMV health state must not be a symlink")
-        encoded = json.dumps(
-            snapshot,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        if len(encoded) > MAX_STATE_BYTES:
-            raise OmvHealthStateError("OMV health state exceeds its size limit")
-        fd, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.name}.",
-            dir=path.parent,
-        )
-        temporary = Path(temporary_name)
-        try:
-            os.fchmod(fd, 0o600)
-            descriptor = fd
-            fd = -1
-            with os.fdopen(descriptor, "wb") as output:
-                output.write(encoded)
-                output.write(b"\n")
-                output.flush()
-                os.fsync(output.fileno())
-            os.replace(temporary, path)
-            path.chmod(0o600)
-            directory = os.open(path.parent, os.O_RDONLY)
+        with _private_state_path(self._state_path, create=True) as path:
+            parent_info = path.parent.stat()
+            if not stat.S_ISDIR(parent_info.st_mode) or path.parent.is_symlink():
+                raise OmvHealthStateError("OMV health state parent is unsafe")
+            if path.is_symlink():
+                raise OmvHealthStateError("OMV health state must not be a symlink")
+            encoded = json.dumps(
+                snapshot,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            if len(encoded) > MAX_STATE_BYTES:
+                raise OmvHealthStateError("OMV health state exceeds its size limit")
+            fd, temporary_name = tempfile.mkstemp(
+                prefix=f".{path.name}.",
+                dir=path.parent,
+            )
+            temporary = Path(temporary_name)
             try:
-                os.fsync(directory)
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
+                descriptor = fd
+                fd = -1
+                with os.fdopen(descriptor, "wb") as output:
+                    output.write(encoded)
+                    output.write(b"\n")
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, path)
+                if os.name != "nt":
+                    path.chmod(0o600)
+                else:
+                    from appliance.windows_state import open_private_file
+
+                    # Verify the newly published object inherited the private
+                    # ACL; otherwise fail the persistence operation closed.
+                    os.close(open_private_file(path))
+                try:
+                    directory = os.open(path.parent, os.O_RDONLY)
+                    try:
+                        os.fsync(directory)
+                    finally:
+                        os.close(directory)
+                except OSError:
+                    # Windows does not expose a durable directory fsync.
+                    pass
             finally:
-                os.close(directory)
-        finally:
-            if fd >= 0:
-                os.close(fd)
-            if temporary.exists():
-                temporary.unlink()
+                if fd >= 0:
+                    os.close(fd)
+                if temporary.exists():
+                    temporary.unlink()
 
     @staticmethod
     def _candidate(

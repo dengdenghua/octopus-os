@@ -72,6 +72,8 @@ export const jaJP: Translations = {
       `${method} ${path} がスタブデータを返しました。実際のバックエンドエンドポイントが有効になるまで、このワークスペース状態を開発フォールバックとして扱ってください。`,
     openSidebarMenu: "サイドバーメニューを開く",
     loadingWorkspace: "ワークスペースを読み込み中...",
+    startingSystem:
+      "システムサービスを起動しています。しばらくお待ちください...",
   },
 
   // Home
@@ -85,8 +87,7 @@ export const jaJP: Translations = {
   // Echo OS landing page
   landing: {
     tagline: "自律作業を安全に監督する Agent OS",
-    subtitle:
-      "計画・実行・観察・記憶・改善を、ひとつのローカル環境で",
+    subtitle: "計画・実行・観察・記憶・改善を、ひとつのローカル環境で",
     getStarted: "始める",
     clickToEnter: "クリックしてワークスペースへ",
     capabilitiesPanel: "Agent と運用者のための中核実行環境",
@@ -462,12 +463,12 @@ export const jaJP: Translations = {
     maxSubagents: "最大サブエージェント数",
     maxSearches: "最大検索数",
     permissionModeLabel: "権限",
-    permissionModeDefault: "デフォルト",
+    permissionModeDefault: "承認を求める",
     permissionModeDefaultDesc:
-      "すべての書き込みとコマンドは事前に確認を求めます。最も安全です。",
-    permissionModeAcceptEdits: "編集を受け入れる",
+      "ワークスペース内の編集と通常コマンドを許可し、ネットワーク利用や境界外の操作は確認します。",
+    permissionModeAcceptEdits: "自動承認",
     permissionModeAcceptEditsDesc:
-      "ファイルの変更は自動的に実行されますが、コマンド実行前には確認します。",
+      "同じワークスペース境界を維持し、越境操作を独立したレビュアーが判断します。",
     permissionModeBypass: "フルアクセス",
     permissionModeBypassDesc:
       "すべての操作を確認なしで自動実行します。最大権限です。",
@@ -491,8 +492,8 @@ export const jaJP: Translations = {
     projectWriteAccess: "プロジェクト書き込み",
     projectReadOnly: "読み取り専用",
     permissionFullAccess: "フルアクセス",
-    permissionAcceptEdits: "編集を受け入れる",
-    permissionConfirm: "デフォルト",
+    permissionAcceptEdits: "自動承認",
+    permissionConfirm: "承認を求める",
     addImage: "画像を追加（貼り付け / ドラッグ / 選択）",
     addAppshot: "現在のウインドウのスナップショットを添付",
     capturingAppshot: "現在のウインドウを添付中…",
@@ -1845,6 +1846,13 @@ export const jaJP: Translations = {
       "例：3 ページ目をリスクマトリクスにし、現在のテーマを維持する",
     officeEditHint:
       "編集は現在のタスクに送信され、完了後にプレビューが更新されます",
+    fileAccessDenied:
+      "ファイルを読み取れません。ログイン状態と、このタスクのディレクトリへのアクセス権を確認してください。",
+    fileMissing:
+      "ファイルが見つかりません。移動または削除されていないか確認して再試行してください。",
+    fileUnavailable: "現在ファイルを読み取れません。もう一度お試しください。",
+    fileTooLarge:
+      "ファイルが大きすぎるため、ここではプレビューやダウンロードができません。ファイルマネージャーで元のファイルを開いてください。",
     previewError:
       "プレビューを読み込めません。ログイン状態を確認して再試行してください。",
     previewRetry: "プレビューを再読み込み",
@@ -3319,6 +3327,8 @@ export const jaJP: Translations = {
       "この返信は中断されました。チャットを続けるか再試行してください。",
     networkLost:
       "ネットワークが切断されました。タスクは自動一時停止 —メッセージを送信してチェックポイントから再開。",
+    eventStreamOverloaded:
+      "イベントストリームが一時的に混雑しています。完了した手順は保持されています。再試行して続行してください。",
     turnFailed:
       "このターンは完了前に停止しました。チャットを続けるか再試行してください。",
     guardBlocked:
@@ -5664,11 +5674,18 @@ export const jaJP: Translations = {
     cancelledTasks: (count: number) => `${count} キャンセル`,
     coordinationWarnings: (count: number) => `${count} 調整アラート`,
     rerunnableTasks: (count: number) => `${count} 再実行可能タスク`,
+    recoveryResume: "スナップショットから安全なタスクを再実行",
+    recoveryResuming: "再実行中…",
+    recoveryResumeFailed:
+      "復旧を開始できません。スナップショットを更新して再試行してください",
     failedTasks: (count: number) => `${count} 件失敗`,
     dependencyBlocked: (count: number) => `${count} 依存ブロック`,
     checkpointSequence: (sequence: number) => `チェックポイント #${sequence}`,
     recoverySafe: "redacted",
     recoveryUnsafe: "生データ含む",
+    durableRecovery: "永続リカバリービュー",
+    durableRecoveryHint:
+      "再起動後はワーカー出力を表示しません。再開前にリカバリーキューを確認してください。",
     statusLabels: {
       pending: "Pending",
       running: "Running",
@@ -6641,6 +6658,8 @@ export const jaJP: Translations = {
     readingGitDiff: (running) =>
       running ? "Git 差分を読み取り中" : "Git 差分を読み取り済み",
     committingGit: (running) => (running ? "Committing Git" : "Committed Git"),
+    subagentUsage: (tokens, costUsd) =>
+      `ガバナンス使用量：${tokens.toLocaleString()} tokens · $${costUsd.toFixed(4)}`,
   },
 
   // Store utilities
@@ -8045,10 +8064,10 @@ export const jaJP: Translations = {
     aiModeRecommended: (label: string) => `このデバイスに推奨: ${label}`,
     efficiencyMode: "効率モード",
     efficiencyModeDesc:
-      "クラウドの高性能モデルを優先し、より高速で強力な応答を提供します。",
+      "クラウドモデルを許可します。タスク内容、ファイルの抜粋、会話履歴が選択したサービスに送信される場合があります。",
     privacyMode: "プライバシーモード",
     privacyModeDesc:
-      "ローカルモデルを優先し、データはこのデバイスに留まります。",
+      "このデバイス上のモデルのみを使用し、利用できない場合は停止します。ネットワークツールと未検証の実行方法はブロックされます。",
     detectButton: "検出",
     recommendedTag: "推奨",
     enabledTag: "有効",
@@ -8088,7 +8107,7 @@ export const jaJP: Translations = {
   sandboxSettings: {
     title: "サンドボックスと実行権限",
     description:
-      "実行環境と権限レベルは独立した2つの軸で、自由に組み合わせられます。例：「サンドボックス + フルアクセス」は隔離内で全自動、「ローカル + 編集を受け入れる」は本機で実行しつつコマンドは確認を求めます。",
+      "権限レベルが実行境界とレビュアーを決めます。「承認を求める」と「自動承認」はワークスペース内のサンドボックスで動作し、「フルアクセス」はローカルで実行します。ネットワークは別途設定します。",
     activeTag: "現在",
     scopeNote:
       "変更はローカル設定に保存され、以降のすべての新しいタスクに適用されます。実行中のタスクには影響しません。",
@@ -8128,14 +8147,14 @@ export const jaJP: Translations = {
     },
     permission: {
       default: {
-        label: "デフォルト",
+        label: "承認を求める",
         description:
-          "すべての書き込みとコマンドは事前に確認を求めます。最も安全です。",
+          "ワークスペース内の編集と通常コマンドを許可し、ネットワーク利用や境界外の操作は確認します。",
       },
       acceptEdits: {
-        label: "編集を受け入れる",
+        label: "自動承認",
         description:
-          "ファイルの変更は自動的に実行されますが、コマンド実行前には確認します。",
+          "同じワークスペース境界を維持し、越境操作を独立したレビュアーが判断します。",
       },
       bypassPermissions: {
         label: "フルアクセス",
@@ -9443,6 +9462,10 @@ export const jaJP: Translations = {
     batchEventTitle: (status) => `バッチ ${status}`,
     subagentEventTitle: (name, status) => `${name} ${status}`,
     subagentFallback: "サブエージェント",
+    durableRecovery: "永続リカバリービュー",
+    durableRecoveryHint:
+      "ワーカー出力は非表示です。再開する前にリカバリーキューを確認してください。",
+    recoveryRequired: "リカバリー確認が必要",
     statusComplete: "完了",
     statusUpdated: "更新済み",
     routeBlocked: "ルートブロック",
@@ -9555,11 +9578,15 @@ export const jaJP: Translations = {
         "ローカル知識ベースは起動していますが、接続資格情報が失効しました。再接続しています…",
       notFound:
         "echo-storage が見つかりません。ローカル知識ベースサービスをインストールするか、ECHO_STORAGE_CMD を設定してから再試行してください。",
+      browseOnly:
+        "索引サービスはオフラインですが、ローカルファイルは参照できます。",
       startFailed:
         "ローカル知識ベースサービスの起動に失敗しました。バックエンドログを確認して再試行してください。",
       notConnected: "ローカル知識ベースサービスにまだ接続できません：{url}",
       networkError:
         "ローカル知識ベースサービスに接続できません。サービスが起動していることを確認して再試行してください。",
+      folderPickerUnavailable:
+        "システムのフォルダー選択を開けません。デスクトップブリッジまたはローカルバックエンドを確認して再試行してください。",
     },
     toolbar: {
       authorize: "許可",

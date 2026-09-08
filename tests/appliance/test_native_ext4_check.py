@@ -64,7 +64,9 @@ def _runner(
                 "",
             )
         if argv[0] == "findmnt":
-            return subprocess.CompletedProcess(argv, 0 if mounted else 1, "mounted\n" if mounted else "", "")
+            return subprocess.CompletedProcess(
+                argv, 0 if mounted else 1, "mounted\n" if mounted else "", ""
+            )
         if argv[0] == "systemd-escape":
             return subprocess.CompletedProcess(argv, 0, "data-family.mount\n", "")
         if argv[:2] == ["systemctl", "mask"]:

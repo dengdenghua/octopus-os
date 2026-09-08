@@ -386,7 +386,9 @@ ${jsContent || "// No JavaScript"}
                 : "text-muted-foreground hover:text-foreground hover:bg-muted",
             )}
             title={showCode ? t.livePreview.hideCode : t.livePreview.showCode}
-            aria-label={showCode ? t.livePreview.hideCode : t.livePreview.showCode}
+            aria-label={
+              showCode ? t.livePreview.hideCode : t.livePreview.showCode
+            }
           >
             {showCode ? (
               <EyeIcon className="size-3.5" />

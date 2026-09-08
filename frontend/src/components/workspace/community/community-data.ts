@@ -17,6 +17,22 @@
  */
 
 import { communityAssetURL } from "./community-assets";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
+
+export function communityStorageKey(
+  key: string,
+  actor = currentActorId(),
+): string {
+  return actorScopedStorageKey(key, actor);
+}
+
+export function readCommunityValue(key: string): string | null {
+  return readActorScopedStorageValue(key);
+}
 
 export type CommunityPostKind = "post" | "mini-app" | "";
 
@@ -230,7 +246,7 @@ const USER_COMMENTS_KEY = "echo.community.user-comments.v1";
 
 export function readUserComments(): Record<string, CommunityComment[]> {
   try {
-    const raw = window.localStorage.getItem(USER_COMMENTS_KEY);
+    const raw = readCommunityValue(USER_COMMENTS_KEY);
     return raw ? (JSON.parse(raw) as Record<string, CommunityComment[]>) : {};
   } catch {
     return {};
@@ -239,7 +255,10 @@ export function readUserComments(): Record<string, CommunityComment[]> {
 
 function writeUserComments(map: Record<string, CommunityComment[]>) {
   try {
-    window.localStorage.setItem(USER_COMMENTS_KEY, JSON.stringify(map));
+    window.localStorage.setItem(
+      communityStorageKey(USER_COMMENTS_KEY),
+      JSON.stringify(map),
+    );
   } catch {
     /* ignore */
   }
@@ -280,7 +299,7 @@ const FORKED_KEY = "echo.community.forked.v1";
 
 export function readForked(): string[] {
   try {
-    const raw = window.localStorage.getItem(FORKED_KEY);
+    const raw = readCommunityValue(FORKED_KEY);
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
@@ -289,7 +308,10 @@ export function readForked(): string[] {
 
 function writeForked(ids: string[]) {
   try {
-    window.localStorage.setItem(FORKED_KEY, JSON.stringify(ids));
+    window.localStorage.setItem(
+      communityStorageKey(FORKED_KEY),
+      JSON.stringify(ids),
+    );
   } catch {
     /* ignore */
   }
@@ -310,7 +332,7 @@ const FOLLOWING_KEY = "echo.community.following.v1";
 
 export function readFollowing(): string[] {
   try {
-    const raw = window.localStorage.getItem(FOLLOWING_KEY);
+    const raw = readCommunityValue(FOLLOWING_KEY);
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
@@ -319,7 +341,10 @@ export function readFollowing(): string[] {
 
 function writeFollowing(ids: string[]) {
   try {
-    window.localStorage.setItem(FOLLOWING_KEY, JSON.stringify(ids));
+    window.localStorage.setItem(
+      communityStorageKey(FOLLOWING_KEY),
+      JSON.stringify(ids),
+    );
   } catch {
     /* ignore */
   }
@@ -342,7 +367,7 @@ const FAVORITES_KEY = "echo.community.favorites.v1";
 
 export function readFavorites(): string[] {
   try {
-    const raw = window.localStorage.getItem(FAVORITES_KEY);
+    const raw = readCommunityValue(FAVORITES_KEY);
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
@@ -351,7 +376,10 @@ export function readFavorites(): string[] {
 
 export function writeFavorites(ids: string[]) {
   try {
-    window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+    window.localStorage.setItem(
+      communityStorageKey(FAVORITES_KEY),
+      JSON.stringify(ids),
+    );
   } catch {
     /* ignore */
   }
@@ -367,6 +395,32 @@ export function toggleFavorite(id: string): string[] {
 }
 
 /* ------------------------------------------------------------------ */
+/* 点赞（帖子）持久化                                                  */
+/* ------------------------------------------------------------------ */
+
+const LIKES_KEY = "echo.community.likes.v1";
+
+export function readLikes(): string[] {
+  try {
+    const raw = readCommunityValue(LIKES_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeLikes(ids: string[]) {
+  try {
+    window.localStorage.setItem(
+      communityStorageKey(LIKES_KEY),
+      JSON.stringify(ids),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* 用户发布（localStorage 持久化，发布后进入全量 feed）                 */
 /* ------------------------------------------------------------------ */
 
@@ -374,7 +428,7 @@ const PUBLISHED_KEY = "echo.community.published.v1";
 
 export function readPublished(): CommunityPost[] {
   try {
-    const raw = window.localStorage.getItem(PUBLISHED_KEY);
+    const raw = readCommunityValue(PUBLISHED_KEY);
     return raw ? (JSON.parse(raw) as CommunityPost[]) : [];
   } catch {
     return [];
@@ -383,7 +437,10 @@ export function readPublished(): CommunityPost[] {
 
 function writePublished(posts: CommunityPost[]) {
   try {
-    window.localStorage.setItem(PUBLISHED_KEY, JSON.stringify(posts));
+    window.localStorage.setItem(
+      communityStorageKey(PUBLISHED_KEY),
+      JSON.stringify(posts),
+    );
   } catch {
     /* ignore */
   }

@@ -18,6 +18,8 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
+from runtime.workspace.crypto import WorkspaceCryptoError
+
 from ._fs_router_models import TREE_IGNORED_DIRS
 from ._fs_router_paths import (
     _allowed_fs_roots,
@@ -323,6 +325,10 @@ def _parse_workspace_path(
 def _resolve_remote_workspace(
     ctx: _FsContext,
     workspace_id: str | None,
+    *,
+    request: Request | None = None,
+    write: bool = False,
+    body: dict[str, Any] | None = None,
 ) -> Any:
     """Look up the Workspace row. Returns ``None`` if the workspace is
     unknown or remote-workspace support is not wired.
@@ -331,6 +337,13 @@ def _resolve_remote_workspace(
         return None
     try:
         return ctx.workspace_store.get_workspace(workspace_id)
+    except WorkspaceCryptoError as exc:
+        # A known remote workspace with unusable credentials must not be
+        # reinterpreted as a local path or passed to a cached mount backend.
+        # Check metadata-only ACLs before revealing this failure to the caller.
+        if request is not None:
+            _check_acl(ctx, request, workspace_id, write=write, body=body)
+        raise HTTPException(503, detail=exc.to_detail()) from None
     except Exception:  # noqa: BLE001 — store errors fall through to local path
         return None
 

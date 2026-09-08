@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { useWorkbenchSurface } from "@/core/workbench/workbench-surface";
+import { useEchoDesktopWindowChrome } from "./embedded-window-bridge";
 
 /* Implementation note. */
 const ELECTRON_TITLE_BAR_HEIGHT = 36;
@@ -12,24 +13,25 @@ export function WorkspaceContainer({
   ...props
 }: React.ComponentProps<"div">) {
   const surface = useWorkbenchSurface();
-  const embeddedInBrowser = surface === "browser";
-  // Implementation note.
-  // Implementation note.
+  const embeddedInWindow = useEchoDesktopWindowChrome();
+  const embedded = surface === "browser" || embeddedInWindow;
+  // Nested workspaces inherit their host's height, including title-bar space.
+  // Viewport units here would push page controls below a resized desktop window.
   return (
     <div
       className={cn(
-        "flex w-full flex-col px-3 pb-3 md:px-4",
-        embeddedInBrowser ? "h-full" : "h-screen",
+        "flex min-h-0 w-full flex-col px-3 pb-3 md:px-4",
+        embedded ? "h-full" : "h-screen",
         className,
       )}
       style={
-        inElectron() && !embeddedInBrowser
+        inElectron() && !embedded
           ? { paddingTop: ELECTRON_TITLE_BAR_HEIGHT }
           : undefined
       }
       {...props}
     >
-      {inElectron() && !embeddedInBrowser && (
+      {inElectron() && !embedded && (
         <div
           aria-hidden
           className="pointer-events-none fixed left-0 right-0 top-0 z-50 h-9"

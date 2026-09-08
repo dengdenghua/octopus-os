@@ -271,7 +271,7 @@ def register_endpoints(router: Any, ctx: _FsContext) -> None:
         # Remote-workspace routing: if ``path`` carries a ``workspace_id:``
         # prefix and the workspace exists, list_dir via the MountBackend.
         workspace_id, rel_path = _parse_workspace_path(path)
-        ws = _resolve_remote_workspace(ctx, workspace_id)
+        ws = _resolve_remote_workspace(ctx, workspace_id, request=request)
         if ws is not None:
             _check_acl(ctx, request, ws.id, write=False)
             backend = _remote_backend_for(ctx, ws)
@@ -331,7 +331,7 @@ def register_endpoints(router: Any, ctx: _FsContext) -> None:
         # Remote-workspace routing: if ``path`` carries a ``workspace_id:``
         # prefix and the workspace exists, read_file via the MountBackend.
         workspace_id, rel_path = _parse_workspace_path(path)
-        ws = _resolve_remote_workspace(ctx, workspace_id)
+        ws = _resolve_remote_workspace(ctx, workspace_id, request=request)
         if ws is not None:
             _check_acl(ctx, request, ws.id, write=False)
             backend = _remote_backend_for(ctx, ws)
@@ -410,7 +410,7 @@ def register_endpoints(router: Any, ctx: _FsContext) -> None:
         # Remote-workspace routing: if ``path`` carries a ``workspace_id:``
         # prefix and the workspace exists, write_file via the MountBackend.
         workspace_id, rel_path = _parse_workspace_path(path_value)
-        ws = _resolve_remote_workspace(ctx, workspace_id)
+        ws = _resolve_remote_workspace(ctx, workspace_id, request=request, write=True, body=body)
         if ws is not None:
             _check_acl(
                 ctx,

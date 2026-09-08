@@ -130,15 +130,15 @@ class WorkspaceStore:
         return self._scope if scope is None else scope
 
     @staticmethod
-    def _workspace_allowed(ws: Workspace, scope: TenantScope | None) -> bool:
+    def _workspace_allowed(tenant_id: str, scope: TenantScope | None) -> bool:
         if scope is None or scope.allow_cross_tenant:
             return True
-        if scope.is_legacy and ws.tenant_id.startswith("legacy:"):
+        if scope.is_legacy and tenant_id.startswith("legacy:"):
             # Legacy identities have no authoritative tenant assignment yet;
             # ACL membership remains the compatibility boundary until the
             # migration assigns an explicit tenant.
             return True
-        return bool(ws.tenant_id and ws.tenant_id == scope.tenant_id)
+        return bool(tenant_id and tenant_id == scope.tenant_id)
 
     def _workspace_row_for_scope(
         self,
@@ -153,8 +153,9 @@ class WorkspaceStore:
         ).fetchone()
         if not row:
             return None
-        ws = _workspace_from_row(row)
-        return row if self._workspace_allowed(ws, self._effective_scope(scope)) else None
+        # Authorize row metadata without decrypting another tenant's secrets.
+        # Membership and deletion also do not require usable mount credentials.
+        return row if self._workspace_allowed(str(row[7]), self._effective_scope(scope)) else None
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db), timeout=10.0)
@@ -231,9 +232,13 @@ class WorkspaceStore:
                     ws.tenant_id,
                 ),
             )
-        # Auto-add the owner as a member so list_workspaces_for_user works
-        # for the owner without an explicit add_member call.
-        self.add_member(ws.id, ws.owner_id, role="owner", added_at=ws.created_at, scope=effective)
+            # Publish the encrypted configuration and owner membership together.
+            # A failure must never leave an orphaned workspace behind.
+            conn.execute(
+                "INSERT INTO workspace_members(workspace_id, member_id, role, added_at) "
+                "VALUES (?, ?, ?, ?)",
+                (ws.id, ws.owner_id, "owner", ws.created_at),
+            )
         return ws
 
     def get_workspace(
@@ -255,9 +260,9 @@ class WorkspaceStore:
             ).fetchall()
         effective = self._effective_scope(scope)
         return [
-            ws
-            for ws in (_workspace_from_row(r) for r in rows)
-            if self._workspace_allowed(ws, effective)
+            _workspace_from_row(row)
+            for row in rows
+            if self._workspace_allowed(str(row[7]), effective)
         ]
 
     def list_workspaces_for_user(

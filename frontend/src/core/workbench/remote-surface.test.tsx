@@ -26,6 +26,7 @@ vi.mock("@/core/config", () => ({
 
 vi.mock("@/core/auth/api", () => ({
   authHeaders: () => ({ Authorization: "Bearer test-token" }),
+  currentActorId: () => "test-actor",
 }));
 
 const APP = WORKBENCH_BUILTIN_APPS.find(

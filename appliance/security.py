@@ -11,7 +11,9 @@ actor，不能误报成真实管理员身份。
 
 from __future__ import annotations
 
+import math
 import os
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request
 
@@ -40,6 +42,10 @@ class ApplianceAuthenticator:
 
     def actor(self, request: Request) -> str | None:
         return _authenticated_actor(request, self.__secret or None)
+
+    def verified_claims(self, token: str) -> dict[str, Any] | None:
+        """Verify a token without exposing signing material to an OS bridge."""
+        return _verified_appliance_claims(token, self.__secret)
 
     def is_authenticated(self, request: Request) -> bool:
         return self.actor(request) is not None
@@ -101,17 +107,8 @@ def request_token(request: Request) -> str | None:
     return value or None
 
 
-def _authenticated_actor(request: Request, jwt_secret: str | None) -> str | None:
-    """Return the verified JWT subject, or ``None`` when authentication fails."""
-
-    if not jwt_secret:
-        # Missing auth is permitted only for explicit local/native development.
-        # Appliance production must never turn configuration loss into admin.
-        if os.environ.get("ECHO_APPLIANCE") == "1":
-            return None
-        return DEVELOPMENT_ACTOR
-    token = request_token(request)
-    if not token:
+def _verified_appliance_claims(token: str, jwt_secret: str) -> dict[str, Any] | None:
+    if not token or not jwt_secret:
         return None
     try:
         claims = verify_jwt_hs256(token, secret=jwt_secret)
@@ -122,6 +119,29 @@ def _authenticated_actor(request: Request, jwt_secret: str | None) -> str | None
             return None
     except JWTError:
         return None
+    actor = claims.get("sub")
+    if not isinstance(actor, str) or not actor.strip() or len(actor) > 256:
+        return None
+    expiry = claims.get("exp")
+    if isinstance(expiry, bool) or not isinstance(expiry, (int, float)):
+        return None
+    if not math.isfinite(expiry):
+        return None
+    return {**claims, "sub": actor.strip()}
+
+
+def _authenticated_actor(request: Request, jwt_secret: str | None) -> str | None:
+    """Return the verified JWT subject, or ``None`` when authentication fails."""
+
+    if not jwt_secret:
+        # Missing auth is permitted only for explicit local/native development.
+        # Appliance production must never turn configuration loss into admin.
+        if os.environ.get("ECHO_APPLIANCE") == "1":
+            return None
+        return DEVELOPMENT_ACTOR
+    claims = _verified_appliance_claims(request_token(request) or "", jwt_secret)
+    if claims is None:
+        return None
     account_security = getattr(
         getattr(request.app, "state", None),
         "echo_appliance_account_security",
@@ -129,13 +149,7 @@ def _authenticated_actor(request: Request, jwt_secret: str | None) -> str | None
     )
     if account_security is not None and not account_security.claims_are_current(claims):
         return None
-    actor = claims.get("sub")
-    if not isinstance(actor, str):
-        return None
-    actor = actor.strip()
-    if not actor or len(actor) > 256:
-        return None
-    return actor
+    return str(claims["sub"])
 
 
 def is_authenticated(request: Request, jwt_secret: str | None) -> bool:

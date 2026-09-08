@@ -14,6 +14,9 @@ from typing import Any
 
 import pytest
 
+if not sys.platform.startswith("linux"):
+    pytest.skip("the trusted Linux verifier requires Linux", allow_module_level=True)
+
 from benchmarks import trusted_verifier_controller as trusted_controller
 from benchmarks.fixed_suite_fixtures import prepare_coding_fixture_suite
 from benchmarks.linux_hardened_verifier import (
@@ -907,4 +910,3 @@ def test_coding_fixture_declares_exit_78_as_infrastructure(tmp_path: Path) -> No
         assert case.grader.hidden_verifier_infrastructure_exit_codes == frozenset(
             {INFRASTRUCTURE_EXIT}
         )
-

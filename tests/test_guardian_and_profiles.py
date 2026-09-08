@@ -8,6 +8,7 @@ permission profile catalog. All defaults keep existing behavior identical.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -15,15 +16,21 @@ import pytest
 
 from runtime.safety.approval.approval_gate import (
     ApprovalPolicy,
+    ApprovalRequest,
     ApprovalRule,
     DenialCircuitBreaker,
     assess_approval_risk,
 )
 from runtime.safety.approval.approval_policy_store import load_policy, save_policy
 from runtime.safety.approval.guardian_review import (
+    AutoReviewApprovalProvider,
     GuardianReviewer,
     GuardianReviewerConfig,
     decide_with_guardian,
+)
+from runtime.safety.approval.permission_modes import (
+    approval_reviewer_for_mode,
+    canonical_permission_mode,
 )
 
 # ── ② egress / credential rules (approval_gate) ─────────────
@@ -227,6 +234,67 @@ def test_guardian_router_failure_degrades() -> None:
     )
 
 
+def test_permission_mode_aliases_are_canonical_and_reviewer_owned_by_server() -> None:
+    assert canonical_permission_mode("approve-for-me") == "acceptEdits"
+    assert canonical_permission_mode("full-access") == "bypassPermissions"
+    assert canonical_permission_mode("unknown-mode") == "default"
+    assert approval_reviewer_for_mode("acceptEdits") == "auto_review"
+    assert approval_reviewer_for_mode("bypassPermissions") == "user"
+
+
+def test_auto_review_provider_allows_low_risk_only_after_verdict() -> None:
+    provider = AutoReviewApprovalProvider(
+        _verdict_router("allow", "within scope"),
+        user_intent="read the project",
+        default_model="conversation-model",
+    )
+    decision = provider.request(
+        ApprovalRequest(
+            thread_id="th-auto",
+            tool_name="read_file",
+            tool_call_id="call-1",
+            args_preview='{"path":"README.md"}',
+        )
+    )
+    assert decision.approved is True
+    assert "auto-review" in (decision.reason or "")
+
+
+def test_auto_review_provider_fails_closed_on_unavailable_or_timeout() -> None:
+    class _Broken:
+        def call(self, request: Any) -> Any:
+            raise RuntimeError("reviewer unavailable")
+
+    request = ApprovalRequest("th-auto", "exec_shell", "call-1", "echo hi")
+    unavailable = AutoReviewApprovalProvider(_Broken(), user_intent="run a check")
+    assert unavailable.request(request).approved is False
+
+    class _Slow:
+        def call(self, request: Any) -> Any:
+            time.sleep(0.05)
+            return type("_R", (), {"text": '{"outcome":"allow","risk":"high"}'})()
+
+    timed_out = AutoReviewApprovalProvider(
+        _Slow(),
+        user_intent="run a check",
+        timeout_s=0.005,
+    )
+    decision = timed_out.request(request)
+    assert decision.approved is False
+    assert "unavailable" in (decision.reason or "")
+
+
+def test_auto_review_provider_denial_breaker_stops_repeated_denials() -> None:
+    provider = AutoReviewApprovalProvider(
+        _verdict_router("deny", "outside the request"),
+        user_intent="inspect only",
+    )
+    request = ApprovalRequest("th-auto", "exec_shell", "call-1", "rm -rf /tmp/x")
+    for _ in range(3):
+        assert provider.request(request).approved is False
+    assert "repeated denials" in (provider.request(request).reason or "")
+
+
 # ── ④ permission profile catalog ────────────────────────────
 
 
@@ -426,4 +494,3 @@ def test_guardian_enabled_loop_turn_constructs_reviewer_without_used_before_def(
     assert result is not None and result.success
     assert result.final_answer == "done"
     assert any(event.get("type") == "tool_end" for event in events)
-

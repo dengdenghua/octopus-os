@@ -71,7 +71,11 @@ def _sha256(data: bytes) -> str:
 
 
 def _safe_read(path: Path, *, maximum: int = MAX_SOURCE_BYTES) -> bytes:
+    if path.is_symlink():
+        raise PluginPackageError(f"cannot safely read plugin input: {path}")
     flags = os.O_RDONLY
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:

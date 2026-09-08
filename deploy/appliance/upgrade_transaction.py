@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -47,6 +48,18 @@ def _safe_parent(path: Path, label: str) -> Path:
     if not path.is_absolute() or path.name in {"", ".", ".."}:
         raise UpgradeTransactionError(f"{label} must be one absolute file path")
     parent = path.parent
+    if os.name == "nt":
+        # Windows has no meaningful uid/mode ownership fields.  Validate the
+        # complete path through the native handle boundary instead; this also
+        # rejects reparse points and protects the parent DACL for the caller.
+        try:
+            from appliance.windows_state import _absolute, private_state_directory
+
+            target = _absolute(path)
+            with private_state_directory(target.parent, protect=True) as guarded:
+                return guarded / target.name
+        except (OSError, ValueError) as exc:
+            raise UpgradeTransactionError(f"{label} parent is unsafe") from exc
     cursor = Path(path.anchor)
     for part in parent.parts[1:]:
         cursor /= part
@@ -65,6 +78,18 @@ def _safe_parent(path: Path, label: str) -> Path:
 
 
 def _read_regular(path: Path, label: str, *, exact_mode: int) -> bytes:
+    if os.name == "nt":
+        try:
+            from appliance.windows_state import open_private_file, private_state_directory
+
+            with private_state_directory(path.parent, protect=True):
+                descriptor = open_private_file(path)
+                try:
+                    return _read_descriptor(descriptor, label, exact_mode=exact_mode)
+                finally:
+                    os.close(descriptor)
+        except (OSError, ValueError) as exc:
+            raise UpgradeTransactionError(f"{label} is unavailable") from exc
     flags = os.O_RDONLY | os.O_CLOEXEC
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
@@ -73,44 +98,78 @@ def _read_regular(path: Path, label: str, *, exact_mode: int) -> bytes:
     except OSError as exc:
         raise UpgradeTransactionError(f"{label} is unavailable") from exc
     try:
-        before = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(before.st_mode)
-            or before.st_uid != os.geteuid()
-            or stat.S_IMODE(before.st_mode) != exact_mode
-            or not 1 <= before.st_size <= MAX_JOURNAL_BYTES
-        ):
-            raise UpgradeTransactionError(f"{label} has unsafe ownership, mode, or size")
-        payload = bytearray()
-        while len(payload) <= MAX_JOURNAL_BYTES:
-            chunk = os.read(descriptor, min(4096, MAX_JOURNAL_BYTES - len(payload) + 1))
-            if not chunk:
-                break
-            payload.extend(chunk)
-        after = os.fstat(descriptor)
-        if len(payload) > MAX_JOURNAL_BYTES or (
-            before.st_dev,
-            before.st_ino,
-            before.st_size,
-            before.st_mtime_ns,
-            before.st_ctime_ns,
-        ) != (
-            after.st_dev,
-            after.st_ino,
-            after.st_size,
-            after.st_mtime_ns,
-            after.st_ctime_ns,
-        ):
-            raise UpgradeTransactionError(f"{label} changed while it was read")
-        return bytes(payload)
+        return _read_descriptor(descriptor, label, exact_mode=exact_mode)
     finally:
         os.close(descriptor)
+
+
+def _read_descriptor(descriptor: int, label: str, *, exact_mode: int) -> bytes:
+    before = os.fstat(descriptor)
+    unsafe = not stat.S_ISREG(before.st_mode) or not 1 <= before.st_size <= MAX_JOURNAL_BYTES
+    if os.name != "nt":
+        unsafe = unsafe or before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) != exact_mode
+    if unsafe:
+        raise UpgradeTransactionError(f"{label} has unsafe ownership, mode, or size")
+    payload = bytearray()
+    while len(payload) <= MAX_JOURNAL_BYTES:
+        chunk = os.read(descriptor, min(4096, MAX_JOURNAL_BYTES - len(payload) + 1))
+        if not chunk:
+            break
+        payload.extend(chunk)
+    after = os.fstat(descriptor)
+    if len(payload) > MAX_JOURNAL_BYTES or (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+    ) != (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+    ):
+        raise UpgradeTransactionError(f"{label} changed while it was read")
+    return bytes(payload)
 
 
 def _atomic_write(path: Path, payload: bytes, *, mode: int) -> None:
     target = _safe_parent(path, "transaction output")
     if target.is_symlink():
         raise UpgradeTransactionError("transaction output must not be a symbolic link")
+    if os.name == "nt":
+        try:
+            from appliance.windows_state import open_private_file, private_state_directory
+
+            with private_state_directory(target.parent, protect=True):
+                if target.exists():
+                    descriptor = open_private_file(target, lock_file=True)
+                    os.close(descriptor)
+                descriptor, temporary_name = tempfile.mkstemp(
+                    prefix=f".{target.name}.", dir=target.parent
+                )
+                temporary = Path(temporary_name)
+                os.close(descriptor)
+                descriptor = -1
+                try:
+                    descriptor = open_private_file(temporary, lock_file=True)
+                    with os.fdopen(descriptor, "wb", closefd=True) as stream:
+                        descriptor = -1
+                        stream.write(payload)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.replace(temporary, target)
+                    verified = open_private_file(target)
+                    os.close(verified)
+                finally:
+                    if descriptor >= 0:
+                        os.close(descriptor)
+                    with contextlib.suppress(FileNotFoundError, PermissionError):
+                        temporary.unlink()
+        except (OSError, ValueError) as exc:
+            raise UpgradeTransactionError("transaction output could not be written") from exc
+        return
     if target.exists():
         info = target.stat()
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
@@ -141,6 +200,17 @@ def _remove(path: Path) -> None:
     target = _safe_parent(path, "upgrade transaction")
     if target.is_symlink():
         raise UpgradeTransactionError("upgrade transaction must not be a symbolic link")
+    if os.name == "nt":
+        try:
+            from appliance.windows_state import open_private_file, private_state_directory
+
+            with private_state_directory(target.parent, protect=True):
+                descriptor = open_private_file(target, lock_file=True)
+                os.close(descriptor)
+                target.unlink()
+        except (OSError, ValueError) as exc:
+            raise UpgradeTransactionError("upgrade transaction could not be removed") from exc
+        return
     target.unlink()
     directory = os.open(target.parent, os.O_RDONLY | os.O_CLOEXEC)
     try:

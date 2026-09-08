@@ -188,20 +188,20 @@ describe("Echo desktop shell", () => {
   });
 
   it.each([
-    ["checking", "正在连接 Echo Agent，打开工作台", "正在连接 Echo"],
+    ["checking", "正在连接 Echo Agent，打开 Agent", "正在连接 Echo"],
     [
       "ready",
-      "Echo Agent 在线，Runtime 版本未知 · 来源未验证，打开工作台",
+      "Echo Agent 在线，Runtime 版本未知 · 来源未验证，开始新的 Agent 会话",
       "Echo Agent 在线",
     ],
     [
       "restart-required",
-      "Echo Agent 等待重启，打开工作台",
+      "Echo Agent 等待重启，打开 Agent",
       "Echo Agent 等待重启",
     ],
     [
       "unavailable",
-      "Echo Agent 未连接，打开工作台检查连接",
+      "Echo Agent 未连接，打开 Agent 检查连接",
       "Echo Agent 未连接",
     ],
   ] as const)(
@@ -244,7 +244,7 @@ describe("Echo desktop shell", () => {
     expect(screen.getByText("v0.2.0 · aaaaaaaa")).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: "Echo Agent 已验证，v0.2.0 · aaaaaaaa，打开工作台",
+        name: "Echo Agent 已验证，v0.2.0 · aaaaaaaa，开始新的 Agent 会话",
       }),
     ).toHaveAttribute("data-agent-status", "ready");
   });
@@ -380,6 +380,9 @@ describe("Echo desktop shell", () => {
 
     render(<MacLaunchpad open apps={apps} onClose={vi.fn()} />);
 
+    expect(
+      screen.getByRole("textbox", { name: "搜索应用" }),
+    ).toBeInTheDocument();
     await user.type(screen.getByPlaceholderText("搜索"), "文件");
 
     expect(screen.getByRole("button", { name: "文件" })).toBeInTheDocument();
@@ -533,6 +536,43 @@ describe("Echo desktop shell", () => {
     await user.click(screen.getByRole("button", { name: "关于本机" }));
 
     expect(onOpenAbout).toHaveBeenCalledOnce();
+  });
+
+  it("opens Control Center from the Wi-Fi and battery status items", async () => {
+    const user = userEvent.setup();
+    const onToggleControlCenter = vi.fn();
+
+    render(
+      <MacMenuBar
+        controlCenterOpen={false}
+        notificationsOpen={false}
+        liquidGlassOpen={false}
+        onOpenSpotlight={vi.fn()}
+        onToggleControlCenter={onToggleControlCenter}
+        onToggleNotifications={vi.fn()}
+        onToggleLiquidGlass={vi.fn()}
+        onOpenAbout={vi.fn()}
+        onOpenFiles={vi.fn()}
+        onOpenSettings={vi.fn()}
+        appStoreAvailable={false}
+        onOpenAppStore={vi.fn()}
+        onOpenLaunchpad={vi.fn()}
+        systemCapabilities={{
+          lock: false,
+          logout: false,
+          suspend: false,
+          restart: false,
+          shutdown: false,
+        }}
+        onLockScreen={vi.fn()}
+        onSystemAction={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Wi-Fi" }));
+    await user.click(screen.getByRole("button", { name: "电池" }));
+
+    expect(onToggleControlCenter).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the active application name distinct from the File menu", () => {

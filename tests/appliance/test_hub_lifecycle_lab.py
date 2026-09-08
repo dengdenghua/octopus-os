@@ -3,11 +3,17 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import stat
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+if os.name == "nt":
+    pytest.skip(
+        "hub lifecycle lab requires Linux ownership and service semantics", allow_module_level=True
+    )
 
 from appliance.hub import HubCatalog, HubService
 from deploy.appliance import hub_lifecycle_lab as lab

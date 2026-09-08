@@ -7,6 +7,7 @@ from typing import Any
 
 from runtime.adapters.instrumentation import record_gen_ai_cost, trace_stage
 from runtime.platform.models import CostEntry
+from runtime.safety.privacy import deny_private_operation
 
 from .models import (
     DEFAULT_USER_AGENT,
@@ -76,6 +77,7 @@ class GeminiModelRouter(Provider, ModelRouter):
         self._client = client
 
     def call(self, request: ModelRequest) -> ModelResponse:
+        deny_private_operation("gemini_inference")
         model = request.model or self.default_model
 
         with trace_stage(

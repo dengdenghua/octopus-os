@@ -23,7 +23,10 @@
  */
 
 import { useRef, useMemo } from "react";
-import type { AgentWorkbenchSnapshotOptions, AgentWorkbenchSnapshot } from "./agent-workbench-snapshot";
+import type {
+  AgentWorkbenchSnapshotOptions,
+  AgentWorkbenchSnapshot,
+} from "./agent-workbench-snapshot";
 import type { LiveToolEvent } from "./live-tool-timeline";
 import type { WorkBlock } from "./work-blocks";
 import type { AgentTile } from "./agent-workbench-utils";
@@ -84,9 +87,10 @@ export class IncrementalSnapshotCalculator {
     return {
       computeCount: this._computeCount,
       incrementalHitCount: this._incrementalHitCount,
-      hitRate: this._computeCount > 0
-        ? (this._incrementalHitCount / this._computeCount) * 100
-        : 0,
+      hitRate:
+        this._computeCount > 0
+          ? (this._incrementalHitCount / this._computeCount) * 100
+          : 0,
     };
   }
 
@@ -254,7 +258,10 @@ export class IncrementalSnapshotCalculator {
   /**
    * 合并 agent tiles（按 ID 去重，保留最新）
    */
-  private _mergeTiles(existing: AgentTile[], incoming: AgentTile[]): AgentTile[] {
+  private _mergeTiles(
+    existing: AgentTile[],
+    incoming: AgentTile[],
+  ): AgentTile[] {
     const map = new Map<string, AgentTile>();
 
     for (const tile of existing) {
@@ -277,7 +284,10 @@ export class IncrementalSnapshotCalculator {
   /**
    * 合并 phases
    */
-  private _mergePhases(existing: AgentPhase[], incoming: AgentPhase[]): AgentPhase[] {
+  private _mergePhases(
+    existing: AgentPhase[],
+    incoming: AgentPhase[],
+  ): AgentPhase[] {
     // 简化：直接追加
     // 实际应该按 phase ID 合并
     return [...existing, ...incoming];

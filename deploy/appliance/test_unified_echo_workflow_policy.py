@@ -66,6 +66,33 @@ class UnifiedEchoWorkflowPolicyTests(unittest.TestCase):
             self.assertIn("delivery_source_preflight.py", workflow)
             self.assertNotIn("secrets.ECHO_AGENT_READ_TOKEN", workflow)
 
+    def test_containerized_online_source_gates_install_static_contract_tools(self) -> None:
+        required_packages = {
+            "bash",
+            "ca-certificates",
+            "coreutils",
+            "gh",
+            "git",
+            "grep",
+            "mawk",
+            "python3",
+            "sed",
+        }
+        for relative_path in (
+            ".github/workflows/os-image.yml",
+            ".github/workflows/ab-update-smoke.yml",
+        ):
+            workflow = self._workflow(relative_path)
+            dependency_step = workflow.split(
+                "- name: Install source-contract dependencies", 1
+            )[1].split("- uses:", 1)[0]
+            installed_packages = set(re.findall(r"[a-z0-9][a-z0-9+.-]*", dependency_step))
+            self.assertTrue(
+                required_packages <= installed_packages,
+                f"{relative_path} is missing source-contract packages: "
+                f"{sorted(required_packages - installed_packages)}",
+            )
+
     def test_privileged_image_jobs_have_no_hosted_runner_fallback(self) -> None:
         self.assert_dedicated_image_runner(".github/workflows/os-image.yml", "build-and-boot")
         self.assert_dedicated_image_runner(

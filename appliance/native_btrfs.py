@@ -34,9 +34,7 @@ _BEGIN = "# BEGIN ECHO OS MANAGED BTRFS"
 _END = "# END ECHO OS MANAGED BTRFS"
 _MAX_CONFIG_BYTES = 256 * 1024
 _MAX_OUTPUT_BYTES = 256 * 1024
-_FS_UUID_PATTERN = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-)
+_FS_UUID_PATTERN = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _EXPORT_KEY_PATTERN = re.compile(r"[A-Z0-9_]+")
 
 
@@ -163,7 +161,9 @@ def _fstab_conflicts(text: str, *, sources: set[str], mountpoint: str) -> bool:
         fields = line.split()
         if len(fields) < 2:
             raise OSError("fstab contains an invalid entry")
-        same_device_alias = fields[0].startswith("/dev/") and os.path.realpath(fields[0]) in real_sources
+        same_device_alias = (
+            fields[0].startswith("/dev/") and os.path.realpath(fields[0]) in real_sources
+        )
         if fields[0] in sources or same_device_alias or fields[1] == mountpoint:
             return True
     return False
@@ -175,10 +175,7 @@ def _render_fstab(original: bytes | None, *, filesystem_uuid: str, mountpoint: s
     source = f"UUID={filesystem_uuid}"
     if _fstab_conflicts(text, sources={source}, mountpoint=mountpoint):
         raise OSError("filesystem UUID or mountpoint is already registered")
-    entry = (
-        f"{source} {mountpoint} btrfs "
-        "defaults,nofail,x-systemd.device-timeout=30s 0 0"
-    )
+    entry = f"{source} {mountpoint} btrfs defaults,nofail,x-systemd.device-timeout=30s 0 0"
     block = [_BEGIN, *sorted([*entries, entry]), _END]
     lines = text.splitlines()
     if begin is None or end is None:
@@ -272,9 +269,7 @@ def btrfs_raid1_candidates() -> list[dict[str, Any]]:
     return sorted(candidates, key=lambda item: item["devicefile"])
 
 
-def managed_btrfs_filesystems(
-    *, fstab_path: Path = _FSTAB_PATH
-) -> list[dict[str, str]]:
+def managed_btrfs_filesystems(*, fstab_path: Path = _FSTAB_PATH) -> list[dict[str, str]]:
     """Return only filesystems registered in Echo's owned Btrfs fstab block."""
     payload = _read_fstab(fstab_path)
     if payload is None:
@@ -378,7 +373,12 @@ def _parse_blkid_export(output: str, *, expected_label: str) -> dict[str, str]:
         if "=" not in raw_line:
             raise OSError("blkid returned invalid export data")
         key, value = raw_line.split("=", 1)
-        if _EXPORT_KEY_PATTERN.fullmatch(key) is None or not value or len(value) > 256 or key in fields:
+        if (
+            _EXPORT_KEY_PATTERN.fullmatch(key) is None
+            or not value
+            or len(value) > 256
+            or key in fields
+        ):
             raise OSError("blkid returned invalid export data")
         fields[key] = value
     filesystem_uuid = fields.get("UUID", "").lower()
@@ -420,7 +420,12 @@ def _verify_mount(*, devices: list[str], mountpoint: str, filesystem_uuid: str) 
     source_matches = source == f"UUID={filesystem_uuid}" or any(
         os.path.realpath(source) == os.path.realpath(device) for device in devices
     )
-    if not source_matches or fstype != "btrfs" or "rw" not in option_tokens or "ro" in option_tokens:
+    if (
+        not source_matches
+        or fstype != "btrfs"
+        or "rw" not in option_tokens
+        or "ro" in option_tokens
+    ):
         raise OSError("mounted Btrfs filesystem did not retain the planned writable topology")
     _verify_profiles(mountpoint=mountpoint)
 

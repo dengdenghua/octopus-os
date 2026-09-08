@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from appliance import agent_ui, native_entrypoint, native_extension
+from runtime.safety.auth.identity import encode_jwt_hs256
 
 
 def test_native_entrypoint_executes_official_cli_on_loopback(tmp_path, monkeypatch) -> None:
@@ -131,6 +132,45 @@ def test_native_extension_projects_the_live_agent_task_supervisor(monkeypatch) -
         },
         "tasks": [],
     }
+
+
+def test_native_extension_mounts_desktop_file_fallback_with_host_auth(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("ECHO_NATIVE_OS", "1")
+    monkeypatch.setenv("ECHO_DESKTOP", "1")
+    monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(agent_ui, "mount_agent_ui", lambda _app: True)
+    app = FastAPI()
+    app.state.task_supervisor = None
+    (tmp_path / "desktop-files" / "notes").mkdir(parents=True)
+    (tmp_path / "desktop-files" / "notes" / "readme.txt").write_text("hello")
+
+    class Context:
+        jwt_secret = "desktop-secret"
+
+    native_extension.register_app(app, Context())
+
+    response = TestClient(app).get("/api/appliance/files/list?path=")
+    assert response.status_code == 401
+    assert response.json() == {"detail": "authentication required"}
+    token = encode_jwt_hs256(
+        {"sub": "local:desktop", "iat": 0, "exp": 9_999_999_999},
+        secret="desktop-secret",
+    )
+    listed = TestClient(app).get(
+        "/api/appliance/files/list?path=notes",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert listed.status_code == 200
+    assert [entry["name"] for entry in listed.json()["entries"]] == ["readme.txt"]
+
+    manifest = TestClient(app).get("/api/storage/v1/manifest")
+    assert manifest.status_code == 200
+    assert manifest.json()["role"] == "embedded"
+    files = TestClient(app).get("/api/storage/v1/files?kind=document")
+    assert files.status_code == 200
+    assert files.json()[0]["resource_id"].startswith("storage-file:v1:")
 
 
 def test_native_extension_is_inert_outside_native_os(monkeypatch) -> None:

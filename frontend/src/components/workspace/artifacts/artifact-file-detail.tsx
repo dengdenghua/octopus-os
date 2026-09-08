@@ -4,6 +4,7 @@ import {
   CrosshairIcon,
   Diff as DiffIcon,
   DownloadIcon,
+  FolderOpenIcon,
   EyeIcon,
   LoaderIcon,
   PackageIcon,
@@ -24,6 +25,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import type { StreamdownProps } from "streamdown";
 
@@ -63,6 +65,10 @@ const DiffViewer = lazy(() =>
 );
 import { useArtifactContent, useArtifactDiff } from "@/core/artifacts/hooks";
 import {
+  ArtifactLoadError,
+  downloadArtifactFile,
+} from "@/core/artifacts/loader";
+import {
   ArtifactSaveError,
   canSaveWorkspaceOutput,
   restoreWorkspaceOutputRevision,
@@ -70,6 +76,10 @@ import {
 } from "@/core/artifacts/save";
 import { artifactDisplayPath, urlOfArtifact } from "@/core/artifacts/utils";
 import { authHeaders } from "@/core/auth/api";
+import {
+  canLocateArtifact,
+  locateArtifactRoute,
+} from "@/core/artifacts/locate";
 import { copyTextToClipboard } from "@/core/clipboard";
 import { useI18n } from "@/core/i18n/hooks";
 import { dispatchQuickReply } from "@/core/messages/quick-reply";
@@ -77,12 +87,18 @@ import { useStreamdownPlugins } from "@/core/streamdown";
 import { checkCodeFile, getFileName } from "@/core/utils/files";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 import { ArtifactLink } from "../citations/artifact-link";
 import { useThread } from "../messages/context";
 import { Tooltip } from "../tooltip";
 
 import { useArtifacts } from "./context";
+import {
+  ArtifactReadError,
+  artifactReadErrorMessage,
+} from "./artifact-load-error";
+import { BinaryArtifactPreview } from "./binary-artifact-preview";
 import {
   buildArtifactEditPrompt,
   buildInspectableHtml,
@@ -110,6 +126,15 @@ export function ArtifactFileDetail({
   threadId: string;
 }) {
   const { t } = useI18n();
+  const location = useLocation();
+  const locateRequest = useRef(0);
+  const [isLocating, setIsLocating] = useState(false);
+  useEffect(() => {
+    setIsLocating(false);
+    return () => {
+      locateRequest.current += 1;
+    };
+  }, [filepathFromProps, threadId]);
   const streamdownPlugins = useStreamdownPlugins();
   const { artifacts, select, clearSelection } = useArtifacts();
   const isWriteFile = useMemo(() => {
@@ -140,7 +165,13 @@ export function ArtifactFileDetail({
   const isSupportPreview = useMemo(() => {
     return language === "html" || language === "markdown" || !!officeKind;
   }, [language, officeKind]);
-  const { content, url, refetch } = useArtifactContent({
+  const {
+    content,
+    url,
+    error: contentError,
+    isLoading: contentLoading,
+    refetch,
+  } = useArtifactContent({
     threadId,
     filepath: filepathFromProps,
     enabled: isCodeFile && !isWriteFile,
@@ -286,6 +317,41 @@ export function ArtifactFileDetail({
         </div>
         <div className="flex items-center gap-2">
           <ArtifactActions>
+            {!isWriteFile && canLocateArtifact(filepathFromProps, threadId) && (
+              <ArtifactAction
+                icon={FolderOpenIcon}
+                label="在本地数据库中定位"
+                tooltip="在本地数据库中定位"
+                disabled={isLocating}
+                onClick={() => {
+                  const request = ++locateRequest.current;
+                  setIsLocating(true);
+                  void locateArtifactRoute(filepathFromProps, threadId)
+                    .then((route) => {
+                      if (request === locateRequest.current) {
+                        window.location.hash = `#${preserveWorkbenchPresentation(
+                          route,
+                          location.search,
+                        )}`;
+                      }
+                    })
+                    .catch((error: unknown) => {
+                      if (request === locateRequest.current)
+                        toast.error(
+                          error instanceof ArtifactLoadError
+                            ? artifactReadErrorMessage(error, t.livePreview)
+                            : error instanceof Error
+                              ? error.message
+                              : "无法定位文件",
+                        );
+                    })
+                    .finally(() => {
+                      if (request === locateRequest.current)
+                        setIsLocating(false);
+                    });
+                }}
+              />
+            )}
             {!isWriteFile && filepath.endsWith(".skill") && (
               <Tooltip content={t.toolCalls.skillInstallTooltip}>
                 <ArtifactAction
@@ -334,16 +400,12 @@ export function ArtifactFileDetail({
                 label={t.common.download}
                 tooltip={t.common.download}
                 onClick={() => {
-                  const w = window.open(
-                    urlOfArtifact({
-                      filepath: filepathFromProps,
-                      threadId,
-                      download: true,
-                    }),
-                    "_blank",
-                    "noopener,noreferrer",
+                  void downloadArtifactFile({
+                    filepath: filepathFromProps,
+                    threadId,
+                  }).catch((error: unknown) =>
+                    toast.error(artifactReadErrorMessage(error, t.livePreview)),
                   );
-                  if (w) w.opener = null;
                 }}
               />
             )}
@@ -357,73 +419,85 @@ export function ArtifactFileDetail({
         </div>
       </ArtifactHeader>
       <ArtifactContent className="p-0">
-        {isSupportPreview &&
-          viewMode === "preview" &&
-          (language === "markdown" || language === "html") && (
-            <ArtifactFilePreview
-              artifactRef={filepathFromProps}
-              content={effectiveContent}
-              filepath={filepath}
-              language={language ?? "text"}
-              streamdownPlugins={streamdownPlugins}
-              url={url}
-              threadId={threadId}
-              onSaved={() => void refetch()}
-              onReload={() => void refetch()}
-              onEditProtectionChange={setHtmlEditProtected}
-            />
-          )}
-        {isCodeFile && viewMode === "diff" && isDiffAvailable && (
-          <Suspense
-            fallback={
-              <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
-                Loading diff...
-              </div>
-            }
+        {contentLoading && isCodeFile && !isWriteFile ? (
+          <div
+            role="status"
+            className="flex size-full items-center justify-center text-sm text-muted-foreground"
           >
-            <DiffViewer
-              className="size-full resize-none rounded-none border-none"
-              oldValue={originalContent}
-              newValue={newContent}
-            />
-          </Suspense>
-        )}
-        {isCodeFile && viewMode === "code" && (
-          <Suspense
-            fallback={
-              <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
-                Loading editor...
-              </div>
-            }
-          >
-            <CodeEditor
-              className="size-full resize-none rounded-none border-none"
-              value={effectiveContent ?? ""}
-              readonly={isWriteFile}
-              filePath={isWriteFile ? undefined : filepath}
-              threadId={threadId}
-            />
-          </Suspense>
-        )}
-        {officeKind && viewMode === "preview" && (
-          <OfficePreview
-            displayPath={filepath}
-            filepath={filepathFromProps}
-            isMock={Boolean(isMock)}
-            kind={officeKind}
-            threadId={threadId}
+            {t.common.loading}…
+          </div>
+        ) : contentError && isCodeFile && !isWriteFile ? (
+          <ArtifactReadError
+            error={contentError}
+            onRetry={() => void refetch()}
           />
-        )}
-        {!isCodeFile && !officeKind && (
-          <iframe
-            className="size-full"
-            title={t.common.preview}
-            src={urlOfArtifact({
-              filepath: filepathFromProps,
-              threadId,
-              isMock,
-            })}
-          />
+        ) : (
+          <>
+            {isSupportPreview &&
+              viewMode === "preview" &&
+              (language === "markdown" || language === "html") && (
+                <ArtifactFilePreview
+                  artifactRef={filepathFromProps}
+                  content={effectiveContent}
+                  filepath={filepath}
+                  language={language ?? "text"}
+                  streamdownPlugins={streamdownPlugins}
+                  url={url}
+                  threadId={threadId}
+                  onSaved={() => void refetch()}
+                  onReload={() => void refetch()}
+                  onEditProtectionChange={setHtmlEditProtected}
+                />
+              )}
+            {isCodeFile && viewMode === "diff" && isDiffAvailable && (
+              <Suspense
+                fallback={
+                  <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
+                    Loading diff...
+                  </div>
+                }
+              >
+                <DiffViewer
+                  className="size-full resize-none rounded-none border-none"
+                  oldValue={originalContent}
+                  newValue={newContent}
+                />
+              </Suspense>
+            )}
+            {isCodeFile && viewMode === "code" && (
+              <Suspense
+                fallback={
+                  <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
+                    Loading editor...
+                  </div>
+                }
+              >
+                <CodeEditor
+                  className="size-full resize-none rounded-none border-none"
+                  value={effectiveContent ?? ""}
+                  readonly={isWriteFile}
+                  filePath={isWriteFile ? undefined : filepath}
+                  threadId={threadId}
+                />
+              </Suspense>
+            )}
+            {officeKind && viewMode === "preview" && (
+              <OfficePreview
+                displayPath={filepath}
+                filepath={filepathFromProps}
+                isMock={Boolean(isMock)}
+                kind={officeKind}
+                threadId={threadId}
+              />
+            )}
+            {!isCodeFile && !officeKind && (
+              <BinaryArtifactPreview
+                filepath={filepathFromProps}
+                threadId={threadId}
+                isMock={isMock}
+              />
+            )}
+          </>
         )}
       </ArtifactContent>
       {confirmDialog}
@@ -461,7 +535,7 @@ export function OfficePreview({
     src?: string;
     srcDoc?: string;
   } | null>(null);
-  const [previewError, setPreviewError] = useState(false);
+  const [previewError, setPreviewError] = useState<unknown>(null);
   const [structuredMode, setStructuredMode] = useState(false);
   const [selectionRequested, setSelectionRequested] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -570,19 +644,22 @@ export function OfficePreview({
     const controller = new AbortController();
     let objectUrl: string | null = null;
     setPreviewDocument(null);
-    setPreviewError(false);
+    setPreviewError(null);
     void fetch(previewUrl, {
       cache: "no-store",
       headers: authHeaders(),
       signal: controller.signal,
     })
       .then(async (response) => {
-        if (!response.ok) throw new Error(`Office preview: ${response.status}`);
+        if (!response.ok)
+          throw new ArtifactLoadError(response.status, "Office preview failed");
         const previewMode = response.headers.get("X-Echo-Office-Preview");
         if (previewMode === "fidelity") {
+          const srcDoc = await response.text();
+          if (controller.signal.aborted) return;
           setPreviewDocument({
             format: "fidelity",
-            srcDoc: await response.text(),
+            srcDoc,
           });
           return;
         }
@@ -590,7 +667,9 @@ export function OfficePreview({
           response.headers.get("Content-Type") ?? ""
         ).toLowerCase();
         if (contentType.includes("application/pdf")) {
-          objectUrl = URL.createObjectURL(await response.blob());
+          const blob = await response.blob();
+          if (controller.signal.aborted) return;
+          objectUrl = URL.createObjectURL(blob);
           setPreviewDocument({ format: "pdf", src: objectUrl });
           return;
         }
@@ -602,12 +681,14 @@ export function OfficePreview({
             `Office preview returned unsupported content type: ${contentType || "unknown"}`,
           );
         }
-        setPreviewDocument({ format: "html", srcDoc: await response.text() });
+        const srcDoc = await response.text();
+        if (controller.signal.aborted) return;
+        setPreviewDocument({ format: "html", srcDoc });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         console.warn("Unable to load authenticated Office preview", error);
-        setPreviewError(true);
+        setPreviewError(error);
       });
     return () => {
       controller.abort();
@@ -665,21 +746,17 @@ export function OfficePreview({
           srcDoc={previewDocument.srcDoc}
           title={`${displayPath} ${t.common.preview}`}
         />
+      ) : previewError ? (
+        <ArtifactReadError
+          error={previewError}
+          onRetry={() => setRevision((value) => value + 1)}
+        />
       ) : (
-        <div className="flex size-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-          <span>
-            {previewError ? t.livePreview.previewError : `${t.common.loading}…`}
-          </span>
-          {previewError && (
-            <Button
-              onClick={() => setRevision((value) => value + 1)}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {t.livePreview.previewRetry}
-            </Button>
-          )}
+        <div
+          role="status"
+          className="flex size-full items-center justify-center text-sm text-muted-foreground"
+        >
+          {t.common.loading}…
         </div>
       )}
       <div className="pointer-events-none absolute top-2 right-2 z-10 flex items-center gap-1.5">

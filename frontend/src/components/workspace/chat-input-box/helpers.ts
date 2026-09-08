@@ -18,6 +18,7 @@ export interface WorkspaceFileInjectionDetail {
   path?: string | null;
   workDir?: string | null;
   sourceLabel?: string | null;
+  resourceId?: string | null;
 }
 
 export interface PendingContextFile {
@@ -26,6 +27,7 @@ export interface PendingContextFile {
   path: string;
   workDir?: string | null;
   sourceLabel?: string | null;
+  resourceId?: string | null;
   file?: File;
 }
 
@@ -52,7 +54,8 @@ export function referencedFilesBlock(files: PendingContextFile[]): string {
     const prefix = file.file ? "upload" : "path";
     const location = file.file ? file.name : file.path;
     const workspace = file.workDir ? ` workspace=${file.workDir}` : "";
-    return `- ${prefix}=${location}${workspace}`;
+    const resource = file.resourceId ? ` resource_id=${file.resourceId}` : "";
+    return `- ${prefix}=${location}${workspace}${resource}`;
   });
   return `<referenced_files>\n${lines.join("\n")}\n</referenced_files>`;
 }

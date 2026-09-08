@@ -570,6 +570,7 @@ def _write_phase(
 def _verify_running_result(value: Any, *, expected_arch: str) -> dict[str, Any]:
     transfer = value.get("nas_transfer") if isinstance(value, dict) else None
     family = value.get("family_isolation") if isinstance(value, dict) else None
+    zfs_runtime = value.get("zfs_runtime") if isinstance(value, dict) else None
     if (
         not isinstance(value, dict)
         or value.get("bundle_verified") is not True
@@ -586,6 +587,13 @@ def _verify_running_result(value: Any, *, expected_arch: str) -> dict[str, Any]:
         or value.get("approval_replay") != 403
         or value.get("protected_stop") != 403
         or value.get("audit_verify") != 200
+        or not isinstance(zfs_runtime, dict)
+        or zfs_runtime.get("moduleInstalled") is not True
+        or zfs_runtime.get("moduleLoaded") is not True
+        or zfs_runtime.get("loadServiceActive") is not True
+        or zfs_runtime.get("kernelInterfaceReady") is not True
+        or not isinstance(zfs_runtime.get("kernelRelease"), str)
+        or not zfs_runtime["kernelRelease"]
         or not isinstance(transfer, dict)
         or transfer.get("writeExecuted") is not True
         or transfer.get("size") != NAS_TRANSFER_BYTES
@@ -647,6 +655,7 @@ def _running_probe(
         "--expected-arch",
         appliance["expectedArchitecture"],
         "--require-clean-bundle",
+        "--require-zfs-runtime",
         "--require-omv",
         "--nas-transfer-test-bytes",
         str(appliance["nasTransferBytes"]),

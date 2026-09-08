@@ -113,6 +113,8 @@ export interface ParallelBatchCoordinationSummary {
 
 export interface BatchResult {
   batch_id: string;
+  /** Durable TaskSupervisor row for standalone batches, when host-managed. */
+  host_task_id?: string | null;
   status: ParallelTaskStatus | string;
   total_tasks: number;
   completed_tasks: number;
@@ -152,6 +154,7 @@ export interface BatchRecoveryTask {
 export interface BatchRecoverySnapshot {
   schema: "echo.parallel_batch_recovery_snapshot.v1" | string;
   batch_id: string;
+  host_task_id?: string | null;
   status: ParallelTaskStatus | string;
   terminal: boolean;
   resume_available: boolean;
@@ -197,10 +200,24 @@ export interface BatchRecoverySnapshot {
     raw_subagent_outputs_included?: boolean;
     event_payloads_included?: boolean;
     owner_id_included?: boolean;
+    durable_only?: boolean;
     result_preview_max_chars?: number;
     description_preview_max_chars?: number;
     [key: string]: unknown;
   };
+}
+
+export interface BatchRecoverySnapshotsResponse {
+  schema: "echo.parallel_batch_recovery_snapshots.v1" | string;
+  snapshots: BatchRecoverySnapshot[];
+  count: number;
+  limit: number;
+}
+
+export interface BatchRecoveryResumeResponse {
+  schema: "echo.parallel_batch_recovery_resume.v1" | string;
+  source_batch_id: string;
+  batch: BatchResult;
 }
 
 export interface OrchestratorStatus {
@@ -286,6 +303,47 @@ export async function fetchBatchRecoverySnapshot(
     );
     if (!res.ok) return null;
     return (await res.json()) as BatchRecoverySnapshot;
+  } catch (e) {
+    swallow(e);
+    return null;
+  }
+}
+
+export async function fetchParallelRecoverySnapshots(
+  limit = 100,
+): Promise<BatchRecoverySnapshotsResponse | null> {
+  try {
+    const res = await authedFetch(
+      `/api/agents/parallel/recovery-snapshots?limit=${Math.max(1, Math.min(limit, 500))}`,
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as BatchRecoverySnapshotsResponse;
+  } catch (e) {
+    swallow(e);
+    return null;
+  }
+}
+
+export async function resumeParallelBatch(
+  batchId: string,
+  taskIds: string[],
+  options?: { threadId?: string; modelName?: string },
+): Promise<BatchRecoveryResumeResponse | null> {
+  try {
+    const res = await authedFetch(
+      `/api/agents/parallel/batch/${encodeURIComponent(batchId)}/resume`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          task_ids: taskIds,
+          ...(options?.threadId ? { thread_id: options.threadId } : {}),
+          ...(options?.modelName ? { model_name: options.modelName } : {}),
+        }),
+      },
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as BatchRecoveryResumeResponse;
   } catch (e) {
     swallow(e);
     return null;
@@ -435,10 +493,7 @@ export function streamBatch(
         swallow(e);
         return;
       }
-      if (
-        typeof data.sequence === "number" &&
-        data.sequence <= lastSequence
-      ) {
+      if (typeof data.sequence === "number" && data.sequence <= lastSequence) {
         return;
       }
       if (typeof data.sequence === "number") {

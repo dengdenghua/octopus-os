@@ -13,6 +13,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
+from runtime.platform.io.sqlite import connect_closing
+
 
 class ReachCache:
     """Bounded memory cache with an optional process-safe SQLite backing store."""
@@ -35,7 +37,7 @@ class ReachCache:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with suppress(OSError):
             self.path.parent.chmod(0o700)
-        with sqlite3.connect(self.path, timeout=3) as db:
+        with connect_closing(self.path, timeout=3) as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS reach_cache "
                 "(cache_key TEXT PRIMARY KEY, expires_at REAL NOT NULL, payload TEXT NOT NULL)"
@@ -60,7 +62,7 @@ class ReachCache:
         if self.path is None:
             return None
         try:
-            with sqlite3.connect(self.path, timeout=3) as db:
+            with connect_closing(self.path, timeout=3) as db:
                 row = db.execute(
                     "SELECT expires_at, payload FROM reach_cache WHERE cache_key = ?",
                     (cache_key,),
@@ -89,7 +91,7 @@ class ReachCache:
         if self.path is None:
             return
         try:
-            with sqlite3.connect(self.path, timeout=3) as db:
+            with connect_closing(self.path, timeout=3) as db:
                 db.execute(
                     "INSERT OR REPLACE INTO reach_cache(cache_key, expires_at, payload) VALUES(?,?,?)",
                     (cache_key, expires_at, json.dumps(clean, ensure_ascii=False, default=str)),
@@ -117,7 +119,7 @@ class ReachCache:
             self._entries.clear()
         if self.path is not None:
             try:
-                with sqlite3.connect(self.path, timeout=3) as db:
+                with connect_closing(self.path, timeout=3) as db:
                     db.execute("DELETE FROM reach_cache")
             except (OSError, sqlite3.Error):
                 pass

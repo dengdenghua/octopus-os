@@ -21,6 +21,7 @@ import pytest
 
 from runtime.workspace import (
     Workspace,
+    WorkspaceCryptoError,
     WorkspaceMember,
     WorkspaceStore,
     decrypt_options,
@@ -467,11 +468,8 @@ def test_encrypt_options_is_case_insensitive(crypto_enabled: str) -> None:
     assert decrypt_options(encrypted) == options
 
 
-def test_encrypt_options_does_not_double_encrypt(crypto_enabled: str) -> None:
-    """Re-encrypting an already-encrypted value should be a no-op for that
-    value (idempotent), so a store round-trip followed by another
-    ``encrypt_options`` call doesn't corrupt the value.
-    """
+def test_encrypt_options_treats_ciphertext_shaped_input_as_plaintext(crypto_enabled: str) -> None:
+    """Only database reads interpret ENC envelopes, never caller input."""
     options = {"password": "secret"}
     once = encrypt_options(options)
     # `once` is a JSON string; parse it and re-encrypt to simulate double-encrypt.
@@ -479,19 +477,22 @@ def test_encrypt_options_does_not_double_encrypt(crypto_enabled: str) -> None:
 
     parsed = _json.loads(once)
     twice = encrypt_options(parsed)
-    assert decrypt_options(twice) == options
+    assert decrypt_options(twice) == parsed
+    assert _json.loads(twice) != parsed
 
 
 def test_decrypt_options_returns_empty_dict_for_empty_input() -> None:
     assert decrypt_options("") == {}
 
 
-def test_decrypt_options_returns_empty_dict_for_invalid_json() -> None:
-    assert decrypt_options("not json") == {}
+def test_decrypt_options_rejects_invalid_json() -> None:
+    with pytest.raises(WorkspaceCryptoError, match="valid JSON object"):
+        decrypt_options("not json")
 
 
-def test_decrypt_options_returns_empty_dict_for_non_dict_json() -> None:
-    assert decrypt_options("[1, 2, 3]") == {}
+def test_decrypt_options_rejects_non_dict_json() -> None:
+    with pytest.raises(WorkspaceCryptoError, match="valid JSON object"):
+        decrypt_options("[1, 2, 3]")
 
 
 def test_encrypt_options_handles_empty_dict(crypto_enabled: str) -> None:
@@ -620,4 +621,3 @@ def test_workspace_member_model_defaults_unknown_role_to_viewer() -> None:
     )
     assert m.role == "viewer"
     assert m.added_at == 0.0
-

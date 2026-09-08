@@ -4,6 +4,7 @@ import {
   CheckCircle2Icon,
   DnaIcon,
   FileIcon,
+  FolderOpenIcon,
   GitForkIcon,
   Loader2Icon,
   PencilIcon,
@@ -12,7 +13,7 @@ import {
   ThumbsUpIcon,
   XCircleIcon,
 } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   memo,
   useCallback,
@@ -70,6 +71,11 @@ import {
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import { useHumanMessagePlugins } from "@/core/streamdown";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
+import {
+  databaseFileRoute,
+  databaseResourceRoute,
+} from "@/core/storage/file-location";
 import { useOptionalAuth } from "@/providers/AuthProvider";
 
 import { CopyButton } from "../copy-button";
@@ -578,6 +584,7 @@ export const MessageListItem = memo(function MessageListItem({
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const forkThread = useForkThread();
   const isHuman = message.type === "human";
   const deliveryState = outboundDeliveryState(message);
@@ -734,7 +741,12 @@ export const MessageListItem = memo(function MessageListItem({
                   {
                     onSuccess: (result) => {
                       toast.success(t.conversation.forkedThread);
-                      navigate(`/workspace/realtime/${result.thread_id}`);
+                      navigate(
+                        preserveWorkbenchPresentation(
+                          `/workspace/realtime/${result.thread_id}`,
+                          search,
+                        ),
+                      );
                     },
                     onError: () => {
                       toast.error(t.conversation.forkFailed);
@@ -946,6 +958,34 @@ function MessageContent_({
     return files as FileInMessage[];
   }, [message.additional_kwargs?.files, rawContent]);
 
+  const contextFiles = useMemo(() => {
+    const raw = message.additional_kwargs?.context_files;
+    if (!Array.isArray(raw)) return [];
+    return raw.flatMap((value) => {
+      if (!isRecord(value)) return [];
+      const path = typeof value.path === "string" ? value.path.trim() : "";
+      const resourceId =
+        typeof value.resourceId === "string"
+          ? value.resourceId.trim()
+          : typeof value.resource_id === "string"
+            ? value.resource_id.trim()
+            : "";
+      if (!path && !resourceId) return [];
+      return [
+        {
+          path: path || null,
+          resourceId: resourceId || null,
+          sourceLabel:
+            typeof value.sourceLabel === "string"
+              ? value.sourceLabel.trim()
+              : typeof value.source_label === "string"
+                ? value.source_label.trim()
+                : null,
+        },
+      ];
+    });
+  }, [message.additional_kwargs?.context_files]);
+
   // User messages can carry attachments in additional_kwargs.attachments
   // (research files used to go through .files, but images now ride this
   // separate channel so we can fold them into multimodal content arrays).
@@ -1025,7 +1065,8 @@ function MessageContent_({
     visibleContentToDisplay.trim() ||
     structuredClarification ||
     publicThinkingSummary ||
-    (files?.length ?? 0) > 0,
+    (files?.length ?? 0) > 0 ||
+    contextFiles.length > 0,
   );
   const responseState = (
     message.additional_kwargs as { response_state?: unknown } | undefined
@@ -1044,6 +1085,10 @@ function MessageContent_({
   const filesList =
     files && files.length > 0 && thread_id ? (
       <RichFilesList files={files} threadId={thread_id} />
+    ) : null;
+  const contextFilesList =
+    isHuman && contextFiles.length > 0 && thread_id ? (
+      <ContextFilesList files={contextFiles} threadId={thread_id} />
     ) : null;
 
   const attachmentsList = useMemo(() => {
@@ -1179,6 +1224,7 @@ function MessageContent_({
       // behaviour (`w-fit max-w-[85%]` via the .is-user group selector)
       // without compounding with an outer `w-fit` on the wrapper.
       <div className={cn("ml-auto flex flex-col items-end gap-2", className)}>
+        {contextFilesList}
         {filesList}
         {attachmentsList}
         {messageResponse && (
@@ -1295,6 +1341,70 @@ function formatBytes(
   const kb = bytes / 1024;
   if (kb < 1024) return `${kb.toFixed(1)} ${units.kb}`;
   return `${(kb / 1024).toFixed(1)} ${units.mb}`;
+}
+
+type ContextFileCard = {
+  path: string | null;
+  resourceId: string | null;
+  sourceLabel: string | null;
+};
+
+/** A durable database/workspace reference that can be opened again after reload. */
+function ContextFilesList({
+  files,
+  threadId,
+}: {
+  files: ContextFileCard[];
+  threadId: string;
+}) {
+  const location = useLocation();
+  if (files.length === 0) return null;
+  return (
+    <div className="mb-2 flex flex-wrap justify-end gap-2">
+      {files.map((file, index) => {
+        const route =
+          file.resourceId && /^appliance-file:v1:/.test(file.resourceId)
+            ? databaseResourceRoute(file.resourceId, threadId)
+            : file.path
+              ? databaseFileRoute(file.path, threadId)
+              : null;
+        const label = file.path
+          ? file.path.split(/[\\/]/).pop() || file.path
+          : file.resourceId || "文件资源";
+        const open = () => {
+          if (!route) return;
+          window.location.hash = `#${preserveWorkbenchPresentation(
+            route,
+            location.search,
+          )}`;
+        };
+        return (
+          <button
+            key={`${file.resourceId || file.path}-${index}`}
+            type="button"
+            disabled={!route}
+            onClick={open}
+            title={
+              route
+                ? "在本地数据库中定位"
+                : file.path || file.resourceId || "文件资源"
+            }
+            className="bg-background border-border-subtle flex max-w-60 min-w-36 items-center gap-2 rounded-lg border px-3 py-2 text-left shadow-[var(--shadow-xs)] transition-colors hover:bg-muted disabled:cursor-default disabled:opacity-70"
+          >
+            <FolderOpenIcon className="size-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium">
+                {label}
+              </span>
+              <span className="block truncate text-[11px] text-muted-foreground">
+                {file.sourceLabel || "文件引用"}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /**

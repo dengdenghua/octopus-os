@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { currentActorId } from "@/core/auth/api";
 import { swallow } from "@/core/utils/log";
 import { useI18n } from "@/core/i18n/hooks";
 
@@ -31,6 +32,10 @@ import {
 const QUERY_KEY = ["app-authorizations"];
 const PROVIDERS_KEY = ["app-providers"];
 
+export function authorizationsQueryKey(actor = currentActorId()) {
+  return [...QUERY_KEY, actor] as const;
+}
+
 // Query hooks
 export function useProviders(providerType?: string) {
   return useQuery<ProviderInfo[]>({
@@ -48,7 +53,7 @@ export function useProviderTypes() {
 
 export function useAuthorizations() {
   return useQuery<Authorization[]>({
-    queryKey: QUERY_KEY,
+    queryKey: authorizationsQueryKey(),
     queryFn: listAuthorizations,
   });
 }
@@ -71,7 +76,7 @@ export function useCreateApiKeyAuth() {
       scopes?: string[];
     }) => createApiKeyAuth(provider, apiKey, displayName, scopes),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: authorizationsQueryKey() });
       toast.success(t.appAuth.toastAuthCreated);
     },
     onError: (error: Error) => {
@@ -97,7 +102,7 @@ export function useCreateTokenAuth() {
       scopes?: string[];
     }) => createTokenAuth(provider, token, displayName, scopes),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: authorizationsQueryKey() });
       toast.success(t.appAuth.toastAuthCreated);
     },
     onError: (error: Error) => {
@@ -121,7 +126,7 @@ export function useCreateCookieAuth() {
       displayName?: string;
     }) => createCookieAuth(provider, cookieValue, displayName),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: authorizationsQueryKey() });
       toast.success(t.appAuth.toastAuthCreated);
     },
     onError: (error: Error) => {
@@ -137,7 +142,7 @@ export function useDeleteAuthorization() {
   return useMutation({
     mutationFn: deleteAuthorization,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: authorizationsQueryKey() });
       toast.success(t.appAuth.toastAuthDeleted);
     },
     onError: (error: Error) => {
@@ -169,7 +174,7 @@ export function useRefreshAuthorization() {
   return useMutation({
     mutationFn: refreshAuthorization,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: authorizationsQueryKey() });
       toast.success(t.appAuth.toastAuthRefreshed);
     },
     onError: (error: Error) => {
@@ -225,7 +230,9 @@ export function useBrowserCapture() {
             stopPolling();
             if (next.status === "success") {
               toast.success(t.appAuth.toastBrowserAuthSuccess);
-              queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+              queryClient.invalidateQueries({
+                queryKey: authorizationsQueryKey(),
+              });
             } else if (next.status === "failed") {
               toast.error(next.message || t.appAuth.toastBrowserAuthFailed);
             } else if (next.status === "cancelled") {

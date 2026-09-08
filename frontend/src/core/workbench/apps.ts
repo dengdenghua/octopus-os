@@ -1,8 +1,11 @@
 import { useSyncExternalStore } from "react";
 
 import type { AppPresentation } from "@/core/apps/app-presentation";
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 
 export type WorkbenchBuiltinIcon =
+  | "database"
   | "projects"
   | "trading"
   | "design"
@@ -28,12 +31,48 @@ export interface WorkbenchBuiltinApp {
   runtimePlugin?: string;
   /** How the installed app is presented to the user. */
   presentation: AppPresentation;
+  supportedPresentations?: readonly AppPresentation[];
+  /** Show a launcher in the native desktop Dock in addition to the workbench. */
+  dock?: boolean;
+}
+
+/** Stable identity for the embedded local file database surface. */
+export const LOCAL_DATABASE_APP_ID = "local-database" as const;
+
+/** Resolve presentation support from the shared app contract.
+ *
+ * Older catalog entries only declared their primary presentation. Treat that
+ * value as the compatibility fallback so every launcher makes the same
+ * decision until an entry opts into an explicit list.
+ */
+export function supportsPresentation(
+  app: Pick<WorkbenchBuiltinApp, "presentation" | "supportedPresentations">,
+  presentation: AppPresentation,
+): boolean {
+  return (
+    app.supportedPresentations?.includes(presentation) ??
+    app.presentation === presentation
+  );
 }
 
 /** Native EchoAI pages that can also live in the browser desktop and Dock. */
 export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
   {
+    id: LOCAL_DATABASE_APP_ID,
+    moduleId: LOCAL_DATABASE_APP_ID,
+    name: "本地数据库",
+    description: "文档、图片、视频与本机索引",
+    workspaceRoute: "/workspace/storage?surface=company",
+    launchUrl: "echo://workspace/storage",
+    icon: "database",
+    supportedPresentations: ["standalone", "workbench"],
+    dock: true,
+    delivery: "core",
+    presentation: "workbench",
+  },
+  {
     id: "projects",
+    supportedPresentations: ["standalone", "workbench"],
     moduleId: "projects",
     name: "项目管理",
     description: "里程碑、风险与项目协作",
@@ -45,6 +84,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
   },
   {
     id: "paper-trading",
+    supportedPresentations: ["standalone", "workbench"],
     moduleId: "paper.trading",
     name: "模拟炒股",
     description: "策略验证与模拟交易",
@@ -59,6 +99,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
   },
   {
     id: "design",
+    supportedPresentations: ["standalone", "workbench"],
     moduleId: "design",
     name: "设计画布",
     description: "视觉创作、素材编排与设计工作流",
@@ -72,6 +113,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
   },
   {
     id: "narrative",
+    supportedPresentations: ["standalone", "workbench"],
     moduleId: "narrative",
     name: "叙事工坊",
     description: "角色、世界观、剧情分支与正典协作",
@@ -86,6 +128,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
   },
   {
     id: "evolution",
+    supportedPresentations: ["standalone", "workbench"],
     moduleId: "evolution",
     name: "自进化",
     description: "双螺旋、候选基因、治理与审计",
@@ -99,6 +142,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
   },
   {
     id: "intelligence",
+    supportedPresentations: ["standalone", "workbench"],
     moduleId: "intelligence",
     name: "订阅",
     description: "持续跟踪主题与情报",
@@ -112,6 +156,7 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
   },
   {
     id: "community",
+    supportedPresentations: ["standalone", "workbench"],
     moduleId: "community",
     name: "发现社区",
     description: "发现并复用社区工作流",
@@ -124,6 +169,30 @@ export const WORKBENCH_BUILTIN_APPS: readonly WorkbenchBuiltinApp[] = [
     presentation: "workbench",
   },
 ];
+
+/** Normalize an internal workspace route before matching app identity. */
+export function workbenchRoutePath(route: string): string {
+  return route.split(/[?#]/, 1)[0] || route;
+}
+
+/** Resolve one registered app across presentation-specific query parameters. */
+export function findWorkbenchApp(
+  route: string,
+): WorkbenchBuiltinApp | undefined {
+  const exact = WORKBENCH_BUILTIN_APPS.find(
+    (app) => app.workspaceRoute === route,
+  );
+  if (exact) return exact;
+  const path = workbenchRoutePath(route);
+  return WORKBENCH_BUILTIN_APPS.find(
+    (app) => workbenchRoutePath(app.workspaceRoute) === path,
+  );
+}
+
+/** Keep desktop/workbench routing decisions keyed by app identity. */
+export function isLocalDatabaseRoute(route: string): boolean {
+  return findWorkbenchApp(route)?.id === LOCAL_DATABASE_APP_ID;
+}
 
 export interface WorkspaceWebShortcut {
   id: string;
@@ -145,6 +214,13 @@ const STORAGE_KEY = "echo:workbench:workspace-web-shortcuts.v1";
 const CHANGE_EVENT = "echo:workbench-web-shortcuts-changed";
 const EMPTY_SHORTCUTS: readonly WorkspaceWebShortcut[] = [];
 let cache: readonly WorkspaceWebShortcut[] | null = null;
+let cacheActor: string | null = null;
+
+export function workspaceWebShortcutsStorageKey(
+  actor = currentActorId(),
+): string {
+  return actorScopedStorageKey(STORAGE_KEY, actor);
+}
 
 function isWebUrl(value: string): boolean {
   try {
@@ -178,30 +254,50 @@ function sanitizeShortcut(value: unknown): WorkspaceWebShortcut | null {
 }
 
 function readShortcuts(): readonly WorkspaceWebShortcut[] {
-  if (cache) return cache;
+  const actor = currentActorId();
+  if (cache && cacheActor === actor) return cache;
   if (typeof window === "undefined") return EMPTY_SHORTCUTS;
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]");
+    const scopedKey = workspaceWebShortcutsStorageKey(actor);
+    let raw = window.localStorage.getItem(scopedKey);
+    if (raw === null) {
+      raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw !== null && actor !== "anonymous") {
+        try {
+          window.localStorage.setItem(scopedKey, raw);
+          window.localStorage.removeItem(STORAGE_KEY);
+        } catch {
+          // Keep the legacy value usable for this render.
+        }
+      }
+    }
+    const parsed = JSON.parse(raw || "[]");
     const items = Array.isArray(parsed)
       ? parsed
           .map(sanitizeShortcut)
           .filter((item): item is WorkspaceWebShortcut => Boolean(item))
       : [];
     cache = Array.from(new Map(items.map((item) => [item.url, item])).values());
+    cacheActor = actor;
   } catch {
     cache = [];
+    cacheActor = actor;
   }
   return cache;
 }
 
 function emitChange(): void {
   cache = null;
+  cacheActor = null;
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
 function writeShortcuts(items: readonly WorkspaceWebShortcut[]): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    window.localStorage.setItem(
+      workspaceWebShortcutsStorageKey(),
+      JSON.stringify(items),
+    );
     emitChange();
   } catch {
     // Private browsing or a full storage quota should not break navigation.
@@ -228,7 +324,11 @@ function subscribe(listener: () => void): () => void {
     listener();
   };
   const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) onChange();
+    if (
+      event.key === STORAGE_KEY ||
+      event.key === workspaceWebShortcutsStorageKey()
+    )
+      onChange();
   };
   window.addEventListener(CHANGE_EVENT, onChange);
   window.addEventListener("storage", onStorage);
@@ -244,4 +344,5 @@ export function useWorkspaceWebShortcuts(): readonly WorkspaceWebShortcut[] {
 
 export function resetWorkspaceWebShortcutCache(): void {
   cache = null;
+  cacheActor = null;
 }

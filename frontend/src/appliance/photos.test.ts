@@ -2,10 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyPhotoIndex,
+  cancelPhotoIndexJob,
   createPhotoIndexPlan,
+  PhotoIndexConflictError,
   fetchPhotoLibrary,
+  pausePhotoIndexJob,
   photoOriginalUrl,
   photoThumbnailUrl,
+  resumePhotoIndexJob,
   searchPhotos,
 } from "@/appliance/photos";
 
@@ -14,6 +18,129 @@ afterEach(() => {
 });
 
 describe("photos appliance client", () => {
+  it("distinguishes a stale cleanup plan from a retryable device failure", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ detail: "照片索引计划已变化，请重新确认" }),
+          { status: 409 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response("offline", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      applyPhotoIndex("a".repeat(64), false, "once"),
+    ).rejects.toBeInstanceOf(PhotoIndexConflictError);
+    await expect(
+      applyPhotoIndex("a".repeat(64), false, "twice"),
+    ).rejects.not.toBeInstanceOf(PhotoIndexConflictError);
+  });
+  it("cancels only the encoded job id and accepts a completion race", async () => {
+    const job = {
+      state: "succeeded",
+      jobId: "job / one",
+      result: { indexed: 12 },
+    };
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ schema: "echo.photos.index-job.v1", job }),
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await cancelPhotoIndexJob(job.jobId)).job).toEqual(job);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/appliance/photos/index-jobs/job%20%2F%20one/cancel",
+      { method: "POST", headers: expect.any(Object) },
+    );
+  });
+
+  it("pauses and resumes only the encoded job id", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            schema: "echo.photos.index-job.v1",
+            job: { state: "paused", jobId: "job / one" },
+          }),
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await pausePhotoIndexJob("job / one");
+    await resumePhotoIndexJob("job / one");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/appliance/photos/index-jobs/job%20%2F%20one/pause",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/appliance/photos/index-jobs/job%20%2F%20one/resume",
+    );
+  });
+
+  it.each([
+    ["photo_index_job_changed", "索引任务已变化，请查看最新状态后重试。"],
+    ["photo_index_not_owner", "当前连接无法停止该任务，请刷新状态后重试。"],
+    [
+      "photo_index_cancel_unavailable",
+      "当前版本暂不支持停止索引，请等待本次任务完成。",
+    ],
+    [
+      "photo_index_job_state_unavailable",
+      "停止请求未能保存，请检查设备存储空间与写入权限后重试。",
+    ],
+  ])(
+    "explains cancellation conflict %s without exposing internal details",
+    async (code, message) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                detail: {
+                  error: code,
+                  message: "private worker implementation detail",
+                },
+              }),
+              { status: 409 },
+            ),
+        ),
+      );
+      await expect(cancelPhotoIndexJob("job")).rejects.toThrow(message);
+    },
+  );
+
+  it("preserves useful server feedback for an unknown cancellation conflict", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              detail: {
+                error: "additional_condition",
+                message: "请先恢复设备连接。",
+              },
+            }),
+            { status: 409 },
+          ),
+      ),
+    );
+    await expect(cancelPhotoIndexJob("job")).rejects.toThrow(
+      "请先恢复设备连接。",
+    );
+  });
+
+  it("does not report a cancellation when the service returns an unreadable error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("offline", { status: 503 })),
+    );
+    await expect(cancelPhotoIndexJob("job")).rejects.toThrow(
+      "未能停止索引，请刷新任务状态后重试",
+    );
+  });
+
   it("encodes thumbnail paths without exposing a filesystem location", () => {
     const url = photoThumbnailUrl("家庭 相册/八月.jpg", 512);
     const parsed = new URL(url, "http://echo.local");

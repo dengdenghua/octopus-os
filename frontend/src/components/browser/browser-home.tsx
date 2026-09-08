@@ -29,9 +29,6 @@ import {
   LayoutGridIcon,
   SparklesIcon,
   BookOpenIcon,
-  MessageCircleIcon,
-  BrainCircuitIcon,
-  GraduationCapIcon,
   Edit3,
   EllipsisIcon,
   Folder,
@@ -50,6 +47,11 @@ import {
 } from "lucide-react";
 
 import { swallow } from "@/core/utils/log";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -64,6 +66,7 @@ import {
   useWorkspaceWebShortcuts,
   type WorkbenchBuiltinIcon,
 } from "@/core/workbench/apps";
+import { AI_DESKTOP_APPS as EXTERNAL_DESKTOP_APPS } from "./desktop-apps";
 import { useActiveAgentId } from "@/core/agents/active";
 import { useEnabledModuleIds } from "@/core/modules/enabled-modules";
 import { useWorkbenchAvailabilitySync } from "@/core/workbench/availability";
@@ -153,6 +156,7 @@ interface EditWidgetState {
 }
 
 const BUILTIN_ICON_MAP: Record<WorkbenchBuiltinIcon, LucideIcon> = {
+  database: SquareKanbanIcon,
   projects: SquareKanbanIcon,
   trading: CandlestickChartIcon,
   design: PaletteIcon,
@@ -165,6 +169,7 @@ const BUILTIN_ICON_MAP: Record<WorkbenchBuiltinIcon, LucideIcon> = {
 /** Keep native app tiles distinct without letting the theme's saturated
  * primary color overpower translucent desktop and Dock surfaces. */
 const BUILTIN_ICON_TONE: Record<WorkbenchBuiltinIcon, string> = {
+  database: "from-sky-600/75 to-blue-500/65",
   projects: "from-slate-600/75 to-sky-500/65",
   trading: "from-teal-600/75 to-emerald-500/65",
   design: "from-violet-600/70 to-indigo-400/60",
@@ -189,219 +194,18 @@ const WORKSPACE_DESKTOP_APPS: BrowserDesktopApp[] = WORKBENCH_BUILTIN_APPS.map(
 
 const AI_DESKTOP_APPS: BrowserDesktopApp[] = [
   ...WORKSPACE_DESKTOP_APPS,
-  {
-    name: "Gemini",
-    url: "https://gemini.google.com/app",
-    icon: SparklesIcon,
-    logoUrl: "https://cdn.simpleicons.org/googlegemini",
-    color: "from-blue-500 to-cyan-400",
-    description: "Comprehensive search, multi-turn analysis",
-    category: "ai",
-  },
-  {
-    name: "NotebookLM",
-    url: "https://notebooklm.google.com/",
-    icon: BookOpenIcon,
-    logoUrl: "https://cdn.simpleicons.org/notebooklm",
-    color: "from-warning to-orange-400",
-    description: "Library, citations, document research",
-    category: "ai",
-  },
-  {
-    name: "Doubao",
-    url: "https://www.doubao.com/chat/",
-    icon: MessageCircleIcon,
-    logoUrl: "https://www.google.com/s2/favicons?domain=www.doubao.com&sz=128",
-    color: "from-success to-teal-400",
-    description: "Chinese research, Chinese rewriting",
-    category: "ai",
-  },
-  {
-    name: "DeepSeek",
-    url: "https://chat.deepseek.com/",
-    icon: BrainCircuitIcon,
-    logoUrl: "https://cdn.simpleicons.org/deepseek",
-    color: "from-blue-700 to-indigo-500",
-    description: "Reasoning, coding, Chinese Q&A",
-    category: "ai",
-  },
-  {
-    name: "Tongyi Qianwen",
-    url: "https://chat.qwen.ai/",
-    icon: SparklesIcon,
-    logoUrl: "https://cdn.simpleicons.org/qwen",
-    color: "from-blue-600 to-cyan-500",
-    description: "Tongyi models, multimodal chat",
-    category: "ai",
-  },
-  {
-    name: "Wenxin Yiyan",
-    url: "https://yiyan.baidu.com/",
-    icon: MessageCircleIcon,
-    logoUrl: "https://cdn.simpleicons.org/baidu",
-    color: "from-indigo-600 to-blue-500",
-    description: "Baidu agents, Chinese creation",
-    category: "ai",
-  },
-  {
-    name: "Tencent Yuanbao",
-    url: "https://yuanbao.tencent.com/",
-    icon: BotIcon,
-    logoUrl:
-      "https://www.google.com/s2/favicons?domain=yuanbao.tencent.com&sz=128",
-    color: "from-cyan-600 to-blue-500",
-    description: "Chinese search, material summary",
-    category: "ai",
-  },
-  {
-    name: "Perplexity",
-    url: "https://www.perplexity.ai/",
-    icon: SearchIcon,
-    logoUrl: "https://cdn.simpleicons.org/perplexity",
-    color: "from-sky-500 to-indigo-500",
-    description: "Web search, source leads",
-    category: "ai",
-  },
-  {
-    name: "ChatGPT",
-    url: "https://chatgpt.com/",
-    icon: BotIcon,
-    logoUrl: "https://chatgpt.com/favicon.ico",
-    color: "from-zinc-700 to-zinc-500",
-    description: "General chat, coding assistance",
-    category: "ai",
-  },
-  {
-    name: "Claude",
-    url: "https://claude.ai/",
-    icon: BrainCircuitIcon,
-    logoUrl: "https://cdn.simpleicons.org/claude",
-    color: "from-stone-600 to-destructive",
-    description: "Long-text analysis, writing organization",
-    category: "ai",
-  },
-  {
-    name: "Kimi",
-    url: "https://www.kimi.com/",
-    icon: GraduationCapIcon,
-    logoUrl: "https://www.google.com/s2/favicons?domain=www.kimi.com&sz=128",
-    color: "from-violet-500 to-fuchsia-500",
-    description: "Long context, Chinese materials",
-    category: "ai",
-  },
-  {
-    name: "Agnes AI",
-    url: "https://app.agnes-ai.com/",
-    icon: ImageIcon,
-    logoUrl:
-      "https://www.google.com/s2/favicons?domain=app.agnes-ai.com&sz=128",
-    color: "from-pink-500 to-destructive",
-    description: "AI gateway, image/video generation",
-    category: "ai",
-  },
-  {
-    name: "YouTube",
-    url: "https://www.youtube.com/",
-    icon: ImageIcon,
-    logoUrl: "https://cdn.simpleicons.org/youtube",
-    color: "from-destructive to-destructive",
-    description: "Videos, channels, live streams",
-    category: "video",
-  },
-  {
-    name: "Bilibili",
-    url: "https://www.bilibili.com/",
-    icon: ImageIcon,
-    logoUrl: "https://cdn.simpleicons.org/bilibili",
-    color: "from-sky-500 to-cyan-400",
-    description: "Videos, anime, knowledge zone",
-    category: "video",
-  },
-  {
-    name: "GitHub",
-    url: "https://github.com/",
-    icon: BotIcon,
-    logoUrl: "https://github.githubassets.com/favicons/favicon.svg",
-    color: "from-zinc-900 to-zinc-700",
-    description: "Code repos, project collaboration",
-    category: "dev",
-  },
-  {
-    name: "Stack Overflow",
-    url: "https://stackoverflow.com/",
-    icon: BrainCircuitIcon,
-    logoUrl: "https://cdn.simpleicons.org/stackoverflow",
-    color: "from-orange-500 to-warning",
-    description: "Programming Q&A, troubleshooting",
-    category: "dev",
-  },
-  {
-    name: "MDN",
-    url: "https://developer.mozilla.org/",
-    icon: BookOpenIcon,
-    logoUrl: "https://cdn.simpleicons.org/mdnwebdocs",
-    color: "from-foreground to-blue-600",
-    description: "Web docs, API reference",
-    category: "dev",
-  },
-  {
-    name: "Zhihu",
-    url: "https://www.zhihu.com/",
-    icon: SearchIcon,
-    logoUrl: "https://cdn.simpleicons.org/zhihu",
-    color: "from-blue-600 to-sky-500",
-    description: "Q&A, columns, Chinese materials",
-    category: "knowledge",
-  },
-  {
-    name: "Wikipedia",
-    url: "https://www.wikipedia.org/",
-    icon: GraduationCapIcon,
-    logoUrl: "https://cdn.simpleicons.org/wikipedia",
-    color: "from-muted-foreground to-muted-foreground/70",
-    description: "Encyclopedia, background materials",
-    category: "knowledge",
-  },
+  ...EXTERNAL_DESKTOP_APPS,
 ];
 
 const DESKTOP_APP_GROUPS: Array<{
   id: DesktopAppCategory;
   appUrls: string[];
-}> = [
-  {
-    id: "workspace",
-    appUrls: WORKBENCH_BUILTIN_APPS.map((app) => app.launchUrl),
-  },
-  {
-    id: "ai",
-    appUrls: [
-      "https://gemini.google.com/app",
-      "https://notebooklm.google.com/",
-      "https://chatgpt.com/",
-      "https://www.doubao.com/chat/",
-      "https://chat.deepseek.com/",
-      "https://chat.qwen.ai/",
-      "https://yiyan.baidu.com/",
-      "https://yuanbao.tencent.com/",
-    ],
-  },
-  {
-    id: "video",
-    appUrls: ["https://www.youtube.com/", "https://www.bilibili.com/"],
-  },
-  {
-    id: "dev",
-    appUrls: [
-      "https://github.com/",
-      "https://stackoverflow.com/",
-      "https://developer.mozilla.org/",
-    ],
-  },
-  {
-    id: "knowledge",
-    appUrls: ["https://www.zhihu.com/", "https://www.wikipedia.org/"],
-  },
-];
+}> = (["workspace", "ai", "video", "dev", "knowledge"] as const).map((id) => ({
+  id,
+  appUrls: AI_DESKTOP_APPS.filter((app) => app.category === id).map(
+    (app) => app.url,
+  ),
+}));
 
 const DESKTOP_SIDE_NAV: Array<{
   id: DesktopPanelId;
@@ -524,11 +328,20 @@ const QUICK_LINKS_KEY = "echo:browser:quick-links";
 const FOLDERS_KEY = "echo:browser:folders";
 const WIDGETS_KEY = "echo:browser:widgets";
 const DESKTOP_BACKDROP_KEY = "echo:browser:desktop-backdrop";
+const INTERNAL_DOCK_APP_URLS = WORKBENCH_BUILTIN_APPS.map(
+  (app) => app.launchUrl,
+);
+const DEFAULT_INTERNAL_DOCK_APP_IDS = new Set([
+  "projects",
+  "paper-trading",
+  "intelligence",
+  "community",
+]);
+const DEFAULT_INTERNAL_DOCK_APP_URLS = WORKBENCH_BUILTIN_APPS.filter((app) =>
+  DEFAULT_INTERNAL_DOCK_APP_IDS.has(app.id),
+).map((app) => app.launchUrl);
 const DEFAULT_DOCK_APP_URLS = [
-  "echo://workspace/projects",
-  "echo://workspace/paper-trading",
-  "echo://workspace/intelligence",
-  "echo://workspace/community",
+  ...DEFAULT_INTERNAL_DOCK_APP_URLS,
   "https://gemini.google.com/app",
   "https://chat.deepseek.com/",
   "https://chat.qwen.ai/",
@@ -536,9 +349,6 @@ const DEFAULT_DOCK_APP_URLS = [
   "https://chatgpt.com/",
   "https://github.com/",
 ];
-const INTERNAL_DOCK_APP_URLS = WORKBENCH_BUILTIN_APPS.map(
-  (app) => app.launchUrl,
-);
 const LEGACY_DOCK_REPLACEMENTS = new Set([
   "https://notebooklm.google.com/",
   "https://www.youtube.com/",
@@ -641,6 +451,25 @@ const WIDGET_PANEL_TYPES: Widget["type"][] = [
   "weather",
   "system",
 ];
+
+function browserHomeProfileKey(key: string, actor = currentActorId()): string {
+  return actorScopedStorageKey(key, actor);
+}
+
+function readBrowserHomeProfileValue(key: string): string | null {
+  return readActorScopedStorageValue(key);
+}
+
+function readBrowserHomeJson<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const parsed = JSON.parse(readBrowserHomeProfileValue(key) || "null");
+    return parsed === null ? fallback : (parsed as T);
+  } catch (error) {
+    swallow(error, "browser-home-profile");
+    return fallback;
+  }
+}
 const GAME_PANEL_URLS = [
   "https://www.bilibili.com/",
   "https://poki.com/",
@@ -653,7 +482,7 @@ function loadDesktopAppOrder(): string[] {
     return AI_DESKTOP_APPS.map((app) => app.url);
   try {
     const parsed = JSON.parse(
-      localStorage.getItem(DESKTOP_APP_ORDER_KEY) || "[]",
+      readBrowserHomeProfileValue(DESKTOP_APP_ORDER_KEY) || "[]",
     );
     if (!Array.isArray(parsed)) return AI_DESKTOP_APPS.map((app) => app.url);
     const known = new Set(AI_DESKTOP_APPS.map((app) => app.url));
@@ -674,7 +503,9 @@ function loadDockAppUrls(): string[] {
   if (typeof window === "undefined") return DEFAULT_DOCK_APP_URLS;
   try {
     const known = new Set(AI_DESKTOP_APPS.map((app) => app.url));
-    const parsed = JSON.parse(localStorage.getItem(DOCK_APP_URLS_KEY) || "[]");
+    const parsed = JSON.parse(
+      readBrowserHomeProfileValue(DOCK_APP_URLS_KEY) || "[]",
+    );
     if (!Array.isArray(parsed) || parsed.length === 0)
       return DEFAULT_DOCK_APP_URLS;
     const saved = parsed.filter(
@@ -693,7 +524,7 @@ function loadDockAppUrls(): string[] {
 
 function loadDesktopBackdrop(): DesktopBackdropId {
   if (typeof window === "undefined") return DEFAULT_DESKTOP_BACKDROP;
-  const saved = localStorage.getItem(DESKTOP_BACKDROP_KEY);
+  const saved = readBrowserHomeProfileValue(DESKTOP_BACKDROP_KEY);
   return saved && saved in DESKTOP_BACKDROPS
     ? (saved as DesktopBackdropId)
     : DEFAULT_DESKTOP_BACKDROP;
@@ -944,6 +775,8 @@ export function BrowserHome({
   device: BrowserTab["device"];
   onOpen: (url: string) => void;
 }) {
+  const actor = currentActorId();
+  const profileActorRef = useRef(actor);
   useWorkbenchAvailabilitySync();
   const activeAgentId = useActiveAgentId() ?? "general";
   const enabledModuleIds = useEnabledModuleIds(activeAgentId);
@@ -1049,31 +882,13 @@ export function BrowserHome({
   );
   const [draggingUrl, setDraggingUrl] = useState<string | null>(null);
   const [quickLinks, setQuickLinks] = useState<QuickLink[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      return JSON.parse(localStorage.getItem(QUICK_LINKS_KEY) || "[]");
-    } catch (e) {
-      swallow(e);
-      return [];
-    }
+    return readBrowserHomeJson<QuickLink[]>(QUICK_LINKS_KEY, []);
   });
   const [folders, setFolders] = useState<UserFolder[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      return JSON.parse(localStorage.getItem(FOLDERS_KEY) || "[]");
-    } catch (e) {
-      swallow(e);
-      return [];
-    }
+    return readBrowserHomeJson<UserFolder[]>(FOLDERS_KEY, []);
   });
   const [widgets, setWidgets] = useState<Widget[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      return JSON.parse(localStorage.getItem(WIDGETS_KEY) || "[]");
-    } catch (e) {
-      swallow(e);
-      return [];
-    }
+    return readBrowserHomeJson<Widget[]>(WIDGETS_KEY, []);
   });
   const [folderOpenStates, setFolderOpenStates] = useState<
     Record<string, boolean>
@@ -1267,33 +1082,80 @@ export function BrowserHome({
   const selectedSearchEngine = engines[selectedEngine] ?? engines[0]!;
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(DESKTOP_APP_ORDER_KEY, JSON.stringify(appOrder));
-  }, [appOrder]);
+    if (profileActorRef.current !== actor) return;
+    localStorage.setItem(
+      browserHomeProfileKey(DESKTOP_APP_ORDER_KEY, profileActorRef.current),
+      JSON.stringify(appOrder),
+    );
+  }, [actor, appOrder]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(DOCK_APP_URLS_KEY, JSON.stringify(dockAppUrls));
-  }, [dockAppUrls]);
+    if (profileActorRef.current !== actor) return;
+    localStorage.setItem(
+      browserHomeProfileKey(DOCK_APP_URLS_KEY, profileActorRef.current),
+      JSON.stringify(dockAppUrls),
+    );
+  }, [actor, dockAppUrls]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(DESKTOP_BACKDROP_KEY, desktopBackdrop);
-  }, [desktopBackdrop]);
+    if (profileActorRef.current !== actor) return;
+    localStorage.setItem(
+      browserHomeProfileKey(DESKTOP_BACKDROP_KEY, profileActorRef.current),
+      desktopBackdrop,
+    );
+  }, [actor, desktopBackdrop]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(QUICK_LINKS_KEY, JSON.stringify(quickLinks));
-  }, [quickLinks]);
+    if (profileActorRef.current !== actor) return;
+    localStorage.setItem(
+      browserHomeProfileKey(QUICK_LINKS_KEY, profileActorRef.current),
+      JSON.stringify(quickLinks),
+    );
+  }, [actor, quickLinks]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
-  }, [folders]);
+    if (profileActorRef.current !== actor) return;
+    localStorage.setItem(
+      browserHomeProfileKey(FOLDERS_KEY, profileActorRef.current),
+      JSON.stringify(folders),
+    );
+  }, [actor, folders]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    localStorage.setItem(WIDGETS_KEY, JSON.stringify(widgets));
-  }, [widgets]);
+    if (profileActorRef.current !== actor) return;
+    localStorage.setItem(
+      browserHomeProfileKey(WIDGETS_KEY, profileActorRef.current),
+      JSON.stringify(widgets),
+    );
+  }, [actor, widgets]);
+
+  // BrowserHome can stay mounted while authentication changes. Reload every
+  // persisted desktop profile before allowing any state effect to write under
+  // the new actor, so one account never inherits another account's layout.
+  useEffect(() => {
+    if (profileActorRef.current === actor) return;
+    profileActorRef.current = actor;
+    setAppOrder(loadDesktopAppOrder());
+    setDockAppUrls(loadDockAppUrls());
+    setDesktopBackdrop(loadDesktopBackdrop());
+    setQuickLinks(readBrowserHomeJson<QuickLink[]>(QUICK_LINKS_KEY, []));
+    setFolders(readBrowserHomeJson<UserFolder[]>(FOLDERS_KEY, []));
+    setWidgets(readBrowserHomeJson<Widget[]>(WIDGETS_KEY, []));
+    setFolderOpenStates({});
+    setContextMenu((current) => ({ ...current, visible: false }));
+    setEditWidgetState({
+      visible: false,
+      widgetId: null,
+      title: "",
+      type: "notes",
+      size: "medium",
+    });
+  }, [actor]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

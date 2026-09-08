@@ -29,7 +29,9 @@ describe("classifyModeIntent", () => {
   });
 
   it("resolves a UI request to uxui", () => {
-    const r = classifyModeIntent(["帮我把这个界面改好看一点，调整一下配色和圆角"]);
+    const r = classifyModeIntent([
+      "帮我把这个界面改好看一点，调整一下配色和圆角",
+    ]);
     expect(r.mode).toBe("uxui");
     expect(r.handle).toBe("auto");
   });

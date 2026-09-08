@@ -59,3 +59,33 @@ def test_pull_requires_tag_field() -> None:
     # Missing body field → 422 from pydantic validation.
     assert _client().post("/api/cookbook/pull", json={}).status_code == 422
 
+
+def test_verify_starts_existing_model_job(monkeypatch):
+    monkeypatch.setattr(hwfit, "start_verify", lambda tag: {"status": "started", "tag": tag})
+    response = _client().post("/api/cookbook/verify", json={"tag": "fixture:1b"})
+    assert response.status_code == 200
+    assert response.json()["tag"] == "fixture:1b"
+
+
+def test_errors_are_not_success_responses(monkeypatch):
+    monkeypatch.setattr(hwfit, "start_verify", lambda tag: {"status": "error", "error": "busy"})
+    assert _client().post("/api/cookbook/verify", json={"tag": "fixture:1b"}).status_code == 400
+
+
+def test_verify_and_download_require_authentication():
+    app = FastAPI()
+    app.include_router(create_cookbook_router(require_auth=True))
+    with TestClient(app) as client:
+        for path in ("verify", "pull"):
+            assert client.post(f"/api/cookbook/{path}", json={"tag": "fixture:1b"}).status_code in (
+                401,
+                403,
+            )
+
+
+def test_context_estimate_is_bounded_and_forwarded(monkeypatch):
+    monkeypatch.setattr(hwfit, "cookbook_snapshot", lambda tokens: {"context_tokens": tokens})
+    assert (
+        _client().get("/api/cookbook/snapshot?context_tokens=8192").json()["context_tokens"] == 8192
+    )
+    assert _client().get("/api/cookbook/snapshot?context_tokens=9999999").status_code == 422

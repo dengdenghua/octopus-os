@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import { reflexFetch } from "../api";
 import { ReflexCardEditor } from "./card-editor";
@@ -49,6 +49,7 @@ import {
 } from "@/components/workspace/workspace-container";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 const LazyCodeMirror = lazy(
   () => import("@/components/workspace/codemirror-host"),
@@ -102,6 +103,7 @@ function localizeReflexError(error: string, fallback: string) {
 
 export default function ReflexEditorPage() {
   const { t } = useI18n();
+  const { search } = useLocation();
   const { resolvedTheme } = useTheme();
   const [content, setContent] = useState<string>("");
   const [path, setPath] = useState<string>("");
@@ -240,7 +242,12 @@ export default function ReflexEditorPage() {
           <section className="workspace-panel px-6 py-4">
             <div className="flex items-center gap-3">
               <Button asChild variant="ghost" size="sm">
-                <Link to="/workspace/reflex">
+                <Link
+                  to={preserveWorkbenchPresentation(
+                    "/workspace/reflex",
+                    search,
+                  )}
+                >
                   <ArrowLeftIcon className="mr-2 size-4" />
                   {t.reflexEditor.backButton}
                 </Link>

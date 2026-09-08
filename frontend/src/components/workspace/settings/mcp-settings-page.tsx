@@ -547,9 +547,7 @@ export function McpSettingsPage() {
           className="w-[min(380px,calc(100vw-2rem))] gap-3 rounded-lg p-4 sm:max-w-[380px]"
         >
           <DialogHeader className="gap-1 text-left">
-            <DialogTitle className="text-base">
-              {copy.removeTitle}
-            </DialogTitle>
+            <DialogTitle className="text-base">{copy.removeTitle}</DialogTitle>
             <DialogDescription className="text-caption leading-5">
               {serverToRemove ? copy.removeDescription(serverToRemove) : ""}
             </DialogDescription>

@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { currentActorId } from "@/core/auth/api";
+
 import {
   getEvolutionOverview,
   getEvolutionStory,
@@ -15,9 +17,13 @@ import {
 } from "./api";
 import { queryKeys } from "@/core/api/query-keys";
 
+function evolutionQueryKey(key: readonly unknown[], actor = currentActorId()) {
+  return [...key, actor] as const;
+}
+
 export function useEvolutionOverview(options: { enabled?: boolean } = {}) {
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: queryKeys.evolution.overview,
+    queryKey: evolutionQueryKey(queryKeys.evolution.overview),
     queryFn: getEvolutionOverview,
     enabled: options.enabled ?? true,
     refetchInterval: 60_000,
@@ -29,7 +35,7 @@ export function useEvolutionOverview(options: { enabled?: boolean } = {}) {
 
 export function useEvolutionStory() {
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: [...queryKeys.evolution.overview, "story"],
+    queryKey: [...evolutionQueryKey(queryKeys.evolution.overview), "story"],
     queryFn: getEvolutionStory,
     refetchInterval: 60_000,
     staleTime: 30_000,
@@ -40,7 +46,7 @@ export function useEvolutionStory() {
 
 export function useLearningCurve(weeks?: number) {
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: [...queryKeys.evolution.learningCurve, weeks],
+    queryKey: [...evolutionQueryKey(queryKeys.evolution.learningCurve), weeks],
     queryFn: () => getLearningCurve(weeks),
     retry: false,
   });
@@ -49,7 +55,7 @@ export function useLearningCurve(weeks?: number) {
 
 export function useSkillPerformance() {
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: queryKeys.evolution.skills,
+    queryKey: evolutionQueryKey(queryKeys.evolution.skills),
     queryFn: getSkillPerformance,
     retry: false,
   });
@@ -58,7 +64,7 @@ export function useSkillPerformance() {
 
 export function useMemoryGrowth(days?: number) {
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: [...queryKeys.evolution.memory, days],
+    queryKey: [...evolutionQueryKey(queryKeys.evolution.memory), days],
     queryFn: () => getMemoryGrowth(days),
     retry: false,
   });
@@ -67,7 +73,7 @@ export function useMemoryGrowth(days?: number) {
 
 export function useRecommendations() {
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: queryKeys.evolution.recommendations,
+    queryKey: evolutionQueryKey(queryKeys.evolution.recommendations),
     queryFn: getRecommendations,
     retry: false,
   });
@@ -76,7 +82,12 @@ export function useRecommendations() {
 
 export function useFitness(agentId: string | undefined, window?: number) {
   const { data, isLoading, error } = useQuery({
-    queryKey: [...queryKeys.evolution.overview, "fitness", agentId, window],
+    queryKey: [
+      ...evolutionQueryKey(queryKeys.evolution.overview),
+      "fitness",
+      agentId,
+      window,
+    ],
     queryFn: () => getFitness(agentId!, window),
     enabled: !!agentId,
   });
@@ -85,7 +96,11 @@ export function useFitness(agentId: string | undefined, window?: number) {
 
 export function useDrift(agentId: string | undefined) {
   const { data, isLoading, error } = useQuery({
-    queryKey: [...queryKeys.evolution.overview, "drift", agentId],
+    queryKey: [
+      ...evolutionQueryKey(queryKeys.evolution.overview),
+      "drift",
+      agentId,
+    ],
     queryFn: () => getDrift(agentId!),
     enabled: !!agentId,
   });
@@ -94,7 +109,11 @@ export function useDrift(agentId: string | undefined) {
 
 export function useLedger(opts?: { limit?: number; offset?: number }) {
   const { data, isLoading, isFetching, error, refetch } = useQuery({
-    queryKey: [...queryKeys.evolution.overview, "ledger", opts],
+    queryKey: [
+      ...evolutionQueryKey(queryKeys.evolution.overview),
+      "ledger",
+      opts,
+    ],
     queryFn: () => getLedger(opts),
   });
   return { data: data ?? null, isLoading, isFetching, error, refetch };
@@ -102,7 +121,7 @@ export function useLedger(opts?: { limit?: number; offset?: number }) {
 
 export function useCanary() {
   const { data, isLoading, error } = useQuery({
-    queryKey: [...queryKeys.evolution.overview, "canary"],
+    queryKey: [...evolutionQueryKey(queryKeys.evolution.overview), "canary"],
     queryFn: getCanary,
   });
   return { data: data ?? null, isLoading, error };
@@ -114,10 +133,16 @@ export function useRollbackCanary() {
     mutationFn: (skillName: string) => rollbackCanary(skillName),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: [...queryKeys.evolution.overview, "canary"],
+        queryKey: [
+          ...evolutionQueryKey(queryKeys.evolution.overview),
+          "canary",
+        ],
       });
       void queryClient.invalidateQueries({
-        queryKey: [...queryKeys.evolution.overview, "ledger"],
+        queryKey: [
+          ...evolutionQueryKey(queryKeys.evolution.overview),
+          "ledger",
+        ],
       });
     },
   });

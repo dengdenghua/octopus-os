@@ -25,6 +25,9 @@ import {
 } from "@/appliance/liquid-glass-motion";
 
 export type DesktopWindow = {
+  threadId?: string;
+  workspaceRoute?: string;
+  artifactRequest?: { path: string; revision: number };
   id: string;
   title: string;
   url: string;

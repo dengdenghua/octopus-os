@@ -72,6 +72,7 @@ export const zhCN: Translations = {
       `${method} ${path} 返回了桩数据。在真实后端接口启用前，请把当前工作区状态视为开发 fallback。`,
     openSidebarMenu: "打开侧栏菜单",
     loadingWorkspace: "正在加载工作区...",
+    startingSystem: "系统服务正在启动，请稍候...",
   },
 
   // Home
@@ -447,10 +448,12 @@ export const zhCN: Translations = {
     maxSubagents: "最大子代理数",
     maxSearches: "最大搜索数",
     permissionModeLabel: "权限",
-    permissionModeDefault: "默认",
-    permissionModeDefaultDesc: "任何写入和命令都会先征求你的同意，最安全。",
-    permissionModeAcceptEdits: "接受编辑",
-    permissionModeAcceptEditsDesc: "修改文件自动执行，执行命令前仍会问你。",
+    permissionModeDefault: "询问审批",
+    permissionModeDefaultDesc:
+      "可读写当前工作区并运行常规命令；访问网络或超出工作区时询问你。",
+    permissionModeAcceptEdits: "代我审批",
+    permissionModeAcceptEditsDesc:
+      "保持相同工作区边界，越界操作交给独立审核代理决定。",
     permissionModeBypass: "完全访问",
     permissionModeBypassDesc: "所有操作自动执行、不再询问，最高权限。",
     permissionModeBypassConfirmTitle: "切换到完全访问？",
@@ -472,8 +475,8 @@ export const zhCN: Translations = {
     projectWriteAccess: "项目写入",
     projectReadOnly: "只读项目",
     permissionFullAccess: "完全访问",
-    permissionAcceptEdits: "接受编辑",
-    permissionConfirm: "默认",
+    permissionAcceptEdits: "代我审批",
+    permissionConfirm: "询问审批",
     addImage: "添加图片（粘贴 / 拖拽 / 选择）",
     addAppshot: "附加当前窗口快照",
     capturingAppshot: "正在附加当前窗口…",
@@ -1775,6 +1778,12 @@ export const zhCN: Translations = {
     officeEditPlaceholder: "例如：把第三页改成风险矩阵，并保持现有配色",
     officeEditHint: "修改会发送到当前任务，完成后自动刷新预览",
     previewError: "预览加载失败，请检查登录状态后重试",
+    fileAccessDenied:
+      "无法读取此文件。请确认已登录，且当前任务有权访问所在目录。",
+    fileMissing: "文件不存在，可能已被移动或删除。请检查原件位置后重试。",
+    fileUnavailable: "文件暂时无法读取，请稍后重试。",
+    fileTooLarge:
+      "文件超过此处的读取上限，无法在此预览或下载。请通过文件管理器访问原件。",
     previewRetry: "重新加载预览",
     officeFidelity: "原貌预览",
     humanEdit: "直接编辑",
@@ -3085,6 +3094,7 @@ export const zhCN: Translations = {
     thoughtProcess: "实时工作日志",
     connectionLost: "本次回复已中断，可继续发送消息或重试。",
     networkLost: "网络连接中断，任务已自动暂停。发送消息即可从断点恢复。",
+    eventStreamOverloaded: "事件流暂时拥堵，已保留已完成步骤，请重试继续。",
     turnFailed: "本轮任务未完成。可继续发送消息或重试。",
     guardBlocked: "结果已保留，但完成条件未通过。请按下方原因继续收敛。",
     lifecycleFailed: "任务运行状态未能可靠落盘，请重试或重启后端。",
@@ -5342,11 +5352,17 @@ export const zhCN: Translations = {
     cancelledTasks: (count: number) => `${count} 个取消`,
     coordinationWarnings: (count: number) => `${count} 个协调告警`,
     rerunnableTasks: (count: number) => `${count} 个可续跑任务`,
+    recoveryResume: "按快照重跑可安全任务",
+    recoveryResuming: "正在重新执行…",
+    recoveryResumeFailed: "恢复启动失败，请刷新快照后重试",
     failedTasks: (count: number) => `${count} 个失败`,
     dependencyBlocked: (count: number) => `${count} 个依赖阻塞`,
     checkpointSequence: (sequence: number) => `检查点 #${sequence}`,
     recoverySafe: "已脱敏",
     recoveryUnsafe: "包含原始数据",
+    durableRecovery: "持久恢复视图",
+    durableRecoveryHint:
+      "进程重启后已隐藏 worker 输出；继续前请先检查恢复队列。",
     statusLabels: {
       pending: "等待中",
       running: "运行中",
@@ -6285,6 +6301,8 @@ export const zhCN: Translations = {
     readingGitDiff: (running) =>
       running ? "正在读取 Git 差异" : "已读取 Git 差异",
     committingGit: (running) => (running ? "正在提交 Git" : "已提交 Git"),
+    subagentUsage: (tokens, costUsd) =>
+      `治理用量：${tokens.toLocaleString()} tokens · $${costUsd.toFixed(4)}`,
   },
 
   // Store utilities
@@ -7632,9 +7650,11 @@ export const zhCN: Translations = {
     aiModeRecommended: (label: string) =>
       `根据本机设备配置，推荐使用：${label}`,
     efficiencyMode: "效率模式",
-    efficiencyModeDesc: "优先使用云端高性能模型，响应更快、能力更强。",
+    efficiencyModeDesc:
+      "允许使用云端模型；任务内容、文件片段及历史上下文可能发送到所选服务。",
     privacyMode: "隐私模式",
-    privacyModeDesc: "优先使用本地模型，数据不离开本机。",
+    privacyModeDesc:
+      "仅使用本机模型，不可用时停止。联网工具和未验证的执行方式将被阻止。",
     detectButton: "重新检测设备能力",
     recommendedTag: "推荐",
     enabledTag: "已启用",
@@ -7671,7 +7691,7 @@ export const zhCN: Translations = {
   sandboxSettings: {
     title: "沙箱与执行权限",
     description:
-      "执行环境与权限粒度是两个独立维度，可自由组合：例如「沙箱 + 完全访问」在隔离环境内全自动，或「本地 + 接受编辑」在本机执行但命令仍需确认。",
+      "权限档位会决定执行边界和审核人：「询问审批」与「代我审批」留在工作区沙箱内，「完全访问」使用本机执行。网络访问单独配置。",
     activeTag: "当前",
     scopeNote:
       "改动保存到本地设置，对之后发起的所有新任务生效；当前正在运行的任务不受影响。",
@@ -7706,12 +7726,13 @@ export const zhCN: Translations = {
     },
     permission: {
       default: {
-        label: "默认",
-        description: "任何写入和命令都会先征求你的同意，最安全。",
+        label: "询问审批",
+        description:
+          "可读写当前工作区并运行常规命令；访问网络或超出工作区时询问你。",
       },
       acceptEdits: {
-        label: "接受编辑",
-        description: "修改文件自动执行，执行命令前仍会问你。",
+        label: "代我审批",
+        description: "保持相同工作区边界，越界操作交给独立审核代理决定。",
       },
       bypassPermissions: {
         label: "完全访问",
@@ -8999,6 +9020,10 @@ export const zhCN: Translations = {
     batchEventTitle: (status) => `批次 ${status}`,
     subagentEventTitle: (name, status) => `${name} ${status}`,
     subagentFallback: "子代理",
+    durableRecovery: "持久恢复视图",
+    durableRecoveryHint:
+      "已隐藏 worker 输出；请先检查恢复队列，再决定是否继续。",
+    recoveryRequired: "需要恢复核查",
     statusComplete: "完成",
     statusUpdated: "已更新",
     routeBlocked: "路由已阻断",
@@ -9109,9 +9134,12 @@ export const zhCN: Translations = {
       credentialsExpired: "本地知识库已启动，但连接凭据已失效。正在重新连接…",
       notFound:
         "未找到 echo-storage，请安装本地知识库服务，或设置 ECHO_STORAGE_CMD 后重试。",
+      browseOnly: "知识索引服务未连接，本机目录仍可浏览和引用。",
       startFailed: "本地知识库服务启动失败，请检查后端日志后重试。",
       notConnected: "本地知识库服务仍未连接：{url}",
       networkError: "无法连接到本地知识库服务，请确认服务已启动后重试。",
+      folderPickerUnavailable:
+        "无法打开系统文件夹选择器，请确认桌面桥接或本地后端可用后重试。",
     },
     toolbar: {
       authorize: "授权",

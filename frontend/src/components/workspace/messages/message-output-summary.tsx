@@ -24,6 +24,7 @@ import {
   getFileName,
 } from "@/core/utils/files";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import {
   AlertTriangleIcon,
   CheckCircle2Icon,
@@ -38,6 +39,7 @@ import {
   XCircleIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
 
 import { useArtifacts } from "../artifacts";
@@ -102,6 +104,7 @@ export type FailurePresentation = {
   kind:
     | "error"
     | "network"
+    | "backpressure"
     | "verification"
     | "guard"
     | "lifecycle"
@@ -182,9 +185,21 @@ function changeDisplayPath(path: string): string {
 function artifactFromToolCall(toolCall: ToolCall): OutputArtifact | null {
   if (toolCall.name !== "artifact") return null;
   const path = toolCall.args.path;
-  if (typeof path !== "string" || !path.trim()) return null;
+  const resourceId =
+    typeof toolCall.args.resource_id === "string"
+      ? toolCall.args.resource_id.trim()
+      : typeof toolCall.args.resourceId === "string"
+        ? toolCall.args.resourceId.trim()
+        : "";
+  // Prefer a server-issued workspace identity when the artifact protocol
+  // carries one.  Keeping the path fallback preserves older providers and
+  // lets normalizeWorkspaceArtifactRef enforce the current thread boundary.
+  const resolvedPath = resourceId.startsWith("workspace-file:v1:")
+    ? resourceId
+    : path;
+  if (typeof resolvedPath !== "string" || !resolvedPath.trim()) return null;
   return {
-    path,
+    path: resolvedPath,
     title: typeof toolCall.args.title === "string" ? toolCall.args.title : null,
     kind: typeof toolCall.args.kind === "string" ? toolCall.args.kind : null,
   };
@@ -503,6 +518,7 @@ export function MessageOutputSummary({
   presentation?: "final" | "process";
 }) {
   const { t } = useI18n();
+  const { search } = useLocation();
   const { select, setOpen } = useArtifacts();
   const scanMessages = turnMessages ?? messages;
   const summary = useMemo(() => summarizeOutputs(scanMessages), [scanMessages]);
@@ -553,8 +569,9 @@ export function MessageOutputSummary({
       onRetryTask(originalPrompt);
       return;
     }
-    window.location.hash = `/workspace/realtime/new?prompt=${encodeURIComponent(
-      originalPrompt,
+    window.location.hash = `#${preserveWorkbenchPresentation(
+      `/workspace/realtime/new?prompt=${encodeURIComponent(originalPrompt)}`,
+      search,
     )}`;
   };
 

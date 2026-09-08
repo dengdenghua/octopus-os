@@ -8,6 +8,7 @@ PUT  /api/appliance/files/upload/sessions/:id/chunk  顺序追加分块
 POST /api/appliance/files/upload/sessions/:id/complete 校验并原子提交
 DELETE /api/appliance/files/upload/sessions/:id 取消并清理临时数据
 GET  /api/appliance/files/download?path=<rel> 下载文件(支持 Range)
+GET  /api/appliance/files/resource/:id/location 解析资源定位(同一读取边界)
 POST /api/appliance/files/mkdir               新建目录
 POST /api/appliance/files/move                移动/重命名
 POST /api/appliance/files/copy                复制文件/目录(默认不覆盖)
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import hmac
 import os
 import re
 from typing import Annotated
@@ -56,6 +58,10 @@ from appliance.files.manager import (
     UploadTooLarge,
 )
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
+from echo_runtime.resource_identity import (
+    parse_appliance_file_resource_id,
+    photo_library_id,
+)
 
 
 class _MkdirBody(BaseModel):
@@ -111,9 +117,9 @@ def create_files_router(
         dependencies=[Depends(require_auth)],
     )
 
-    def _guard(fn, *args):
+    def _guard(fn, *args, **kwargs):
         try:
-            return fn(*args)
+            return fn(*args, **kwargs)
         except PathEscape as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except FileNotFoundError as exc:
@@ -171,12 +177,24 @@ def create_files_router(
                 scope.require_read(path)
             elif mode == "write":
                 scope.require_write(path)
+            elif mode == "read-tree":
+                scope.require_read_tree(path)
+            elif mode == "write-tree":
+                scope.require_write_tree(path)
             elif mode == "operator":
                 scope.require_operator()
             else:  # pragma: no cover - internal programming guard
                 raise RuntimeError("unknown data authorization mode")
         except DataAccessDenied as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    def _authorize_mutation(scope: DataAccessScope):
+        # FileManager determines the final target (including directory moves
+        # and collision-renamed restores) before invoking this scope check.
+        def check(mode: str, path: str, recursive: bool) -> None:
+            _authorize(scope, f"{mode}-tree" if recursive else mode, path)
+
+        return check
 
     def _record(
         request: Request,
@@ -512,6 +530,59 @@ def create_files_router(
         target = await run_in_threadpool(_guard, manager.file_for_download, path)
         return FileResponse(target, filename=target.name)
 
+    @router.get("/resource/{resource_id}", response_class=FileResponse)
+    async def download_resource(
+        resource_id: str,
+        scope: DataAccessScope = scope_dependency,
+    ) -> FileResponse:
+        """Resolve a path-free file identity through the same read boundary."""
+
+        parsed = parse_appliance_file_resource_id(resource_id)
+        if parsed is None:
+            raise HTTPException(status_code=404, detail="resource not found")
+        source_id, path = parsed
+        if not hmac.compare_digest(source_id, photo_library_id(manager.root)):
+            raise HTTPException(status_code=404, detail="resource not found")
+        _authorize(scope, "read", path)
+        target = await run_in_threadpool(_guard, manager.file_for_download, path)
+        return FileResponse(target, filename=target.name)
+
+    @router.get("/resource/{resource_id}/location")
+    async def locate_resource(
+        resource_id: str,
+        scope: DataAccessScope = scope_dependency,
+    ) -> dict[str, object]:
+        """Resolve a path-free identity for navigation without granting access.
+
+        The returned path is root-relative and is only exposed after the same
+        identity and read-scope checks as a normal directory listing. The
+        endpoint never returns a host absolute path or a file's contents.
+        """
+
+        parsed = parse_appliance_file_resource_id(resource_id)
+        if parsed is None:
+            raise HTTPException(status_code=404, detail="resource not found")
+        source_id, path = parsed
+        if not hmac.compare_digest(source_id, photo_library_id(manager.root)):
+            raise HTTPException(status_code=404, detail="resource not found")
+        _authorize(scope, "read", path)
+        try:
+            target = await run_in_threadpool(_guard, manager._resolve, path)
+            if not target.exists() or target.is_symlink():
+                raise FileNotFoundError(path)
+            is_directory = target.is_dir()
+            if not is_directory and not target.is_file():
+                raise FileNotFoundError(path)
+        except (FileNotFoundError, PathEscape, OSError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="resource not found") from exc
+        directory = os.path.dirname(path) or "/"
+        return {
+            "resource_id": resource_id,
+            "path": path,
+            "directory": directory,
+            "is_directory": is_directory,
+        }
+
     @router.post("/mkdir")
     async def mkdir(
         body: _MkdirBody,
@@ -541,7 +612,9 @@ def create_files_router(
         target = f"{body.src} -> {body.dst}"
         _record(request, action=action, target=target, outcome="attempted")
         try:
-            entry = await run_in_threadpool(_guard, manager.move, body.src, body.dst)
+            entry = await run_in_threadpool(
+                _guard, manager.move, body.src, body.dst, authorize=_authorize_mutation(scope)
+            )
         except Exception as exc:
             _failure(request, action=action, target=target, exc=exc)
             raise
@@ -560,7 +633,9 @@ def create_files_router(
         target = f"{body.src} -> {body.dst}"
         _record(request, action=action, target=target, outcome="attempted")
         try:
-            entry = await run_in_threadpool(_guard, manager.copy, body.src, body.dst)
+            entry = await run_in_threadpool(
+                _guard, manager.copy, body.src, body.dst, authorize=_authorize_mutation(scope)
+            )
         except Exception as exc:
             _failure(request, action=action, target=target, exc=exc)
             raise
@@ -577,7 +652,9 @@ def create_files_router(
         action = "files.trash"
         _record(request, action=action, target=body.path, outcome="attempted")
         try:
-            record = await run_in_threadpool(_guard, manager.trash, body.path)
+            record = await run_in_threadpool(
+                _guard, manager.trash, body.path, authorize=_authorize_mutation(scope)
+            )
         except Exception as exc:
             _failure(request, action=action, target=body.path, exc=exc)
             raise
@@ -604,7 +681,9 @@ def create_files_router(
             record = next((entry for entry in entries if entry["id"] == body.id), None)
             if record is None or not scope.can_write(str(record["original"])):
                 raise HTTPException(status_code=404, detail="trash entry not found")
-            entry = await run_in_threadpool(_guard, manager.restore, body.id)
+            entry = await run_in_threadpool(
+                _guard, manager.restore, body.id, authorize=_authorize_mutation(scope)
+            )
         except Exception as exc:
             _failure(request, action=action, target=body.id, exc=exc)
             raise

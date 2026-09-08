@@ -1,5 +1,6 @@
 import { Fragment, lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ListChecksIcon } from "lucide-react";
 
 import { Banner } from "@/components/ui/banner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -14,18 +15,21 @@ import {
   type StubResponseDetail,
 } from "@/core/api/client";
 import { useEvent } from "@/core/events";
-import { useModuleRouteGuard } from "@/core/modules/use-module-route-guard";
-import { PRIMARY_WORKSPACE_ROUTE } from "@/core/workspace/sidebar-routing";
 import { swallow } from "@/core/utils/log";
 import { uuid } from "@/core/utils/uuid";
 import { useWorkspaceShortcuts } from "@/core/shortcuts/use-global-shortcuts";
 import { useI18n } from "@/core/i18n/hooks";
 import { taskWorkspaceRoute } from "@/core/router/task-workspace-route";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { useActiveAgentId } from "@/core/agents/active";
 import { workspacePresetForAgent } from "@/core/workspace/workspace-presets";
 import { useWorkbenchAvailabilitySync } from "@/core/workbench/availability";
 import { cn } from "@/lib/utils";
 import { NasAlertNotifications } from "@/appliance/nas-alert-notifications";
+import { SystemModelStatus } from "@/appliance/system-model-status";
+import { TaskSpacePanel } from "@/appliance/task-space-panel";
+import { useEchoTaskProjection } from "@/appliance/task-space";
+import { ShellModeSwitch } from "@/components/retained-shell-routes";
 
 const CommandPalette = lazy(() =>
   import("@/components/workspace/command-palette").then((m) => ({
@@ -90,19 +94,34 @@ export default function WorkspaceLayout({
   const embeddedDesignChat = searchParams.get("embedded") === "design";
   const embeddedApp = searchParams.get("embedded") === "app";
   const embeddedWorkspace = embeddedDesignChat || embeddedApp;
+  const workbenchPresentation =
+    !embeddedInWindow &&
+    !embeddedWorkspace &&
+    searchParams.get("presentation") === "workbench";
+  const currentSearch = searchParams.toString();
+  const [taskSpaceOpen, setTaskSpaceOpen] = useState(false);
+  const {
+    projection: taskProjection,
+    loading: taskProjectionLoading,
+    error: taskProjectionError,
+    refresh: refreshTaskProjection,
+    takeover: takeoverTaskProjection,
+    resumeExecution: resumeTaskProjection,
+    decideApproval: decideTaskApproval,
+  } = useEchoTaskProjection(workbenchPresentation);
   useWorkspaceShortcuts();
   useWorkbenchAvailabilitySync();
-  // A hidden module's route must also be unreachable by URL, not just absent
-  // from the sidebar.
-  useModuleRouteGuard(PRIMARY_WORKSPACE_ROUTE);
   useEvent(
     "task:new",
     (taskIdentity) => {
       navigate(
-        taskWorkspaceRoute({
-          agentId: taskIdentity?.agentId,
-          workspacePath: taskIdentity?.workspacePath,
-        }),
+        preserveWorkbenchPresentation(
+          taskWorkspaceRoute({
+            agentId: taskIdentity?.agentId,
+            workspacePath: taskIdentity?.workspacePath,
+          }),
+          currentSearch,
+        ),
         {
           state: {
             taskNonce: uuid(),
@@ -111,7 +130,7 @@ export default function WorkspaceLayout({
         },
       );
     },
-    [navigate],
+    [currentSearch, navigate],
   );
   return (
     <Fragment>
@@ -121,7 +140,7 @@ export default function WorkspaceLayout({
           data-persona-theme={personaThemeId}
           className={cn(
             "persona-shell workspace-shell overflow-hidden bg-background",
-            embeddedInWindow ? "h-full" : "h-screen",
+            embeddedInWindow ? "h-full min-h-0" : "h-screen",
           )}
           defaultOpen={false}
           style={
@@ -132,7 +151,7 @@ export default function WorkspaceLayout({
               : undefined
           }
         >
-          <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <WorkspaceRouteOutlet />
           </div>
         </SidebarProvider>
@@ -142,25 +161,85 @@ export default function WorkspaceLayout({
             data-persona-theme={personaThemeId}
             className={cn(
               "persona-shell workspace-shell overflow-hidden",
-              embeddedInWindow ? "h-full" : "h-screen",
+              embeddedInWindow ? "h-full min-h-0" : "h-screen",
             )}
             defaultOpen
             style={
-              electron && !embeddedInWindow
-                ? ({
-                    paddingTop: ELECTRON_TITLE_BAR_HEIGHT,
-                  } as React.CSSProperties)
-                : undefined
+              embeddedInWindow
+                ? ({ "--sidebar-width-icon": "64px" } as React.CSSProperties)
+                : electron
+                  ? ({
+                      paddingTop: ELECTRON_TITLE_BAR_HEIGHT,
+                    } as React.CSSProperties)
+                  : undefined
             }
           >
             <WorkspaceSidebar />
-            <SidebarInset className="relative z-[1] flex min-w-0 flex-col overflow-hidden">
+            <SidebarInset className="relative z-[1] flex min-h-0 min-w-0 flex-col overflow-hidden">
+              {workbenchPresentation && (
+                <header
+                  aria-label="工作台系统状态"
+                  className="flex shrink-0 items-center justify-between border-b px-3 py-1.5"
+                >
+                  <ShellModeSwitch />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      aria-label="任务空间"
+                      title="任务空间"
+                      onClick={() => setTaskSpaceOpen(true)}
+                      className="relative inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    >
+                      <ListChecksIcon className="size-3.5" />
+                      <span className="hidden sm:inline">任务空间</span>
+                      {(taskProjection?.counts.waitingApproval ?? 0) > 0 && (
+                        <span className="grid min-w-4 place-items-center rounded-full bg-amber-500 px-1 text-[9px] font-semibold leading-4 text-white">
+                          {Math.min(taskProjection!.counts.waitingApproval, 99)}
+                        </span>
+                      )}
+                    </button>
+                    <SystemModelStatus
+                      onOpenSettings={() =>
+                        window.dispatchEvent(
+                          new CustomEvent("echo:open-settings", {
+                            detail: { tab: "models" },
+                          }),
+                        )
+                      }
+                    />
+                  </div>
+                </header>
+              )}
               <StubResponseBannerHost />
               <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
                 <WorkspaceRouteOutlet />
               </div>
             </SidebarInset>
           </SidebarProvider>
+          <TaskSpacePanel
+            open={taskSpaceOpen && workbenchPresentation}
+            projection={taskProjection}
+            loading={taskProjectionLoading}
+            error={taskProjectionError}
+            onClose={() => setTaskSpaceOpen(false)}
+            onRefresh={refreshTaskProjection}
+            onTakeover={takeoverTaskProjection}
+            onResumeExecution={resumeTaskProjection}
+            onApprovalDecision={decideTaskApproval}
+            onOpenWorkspace={(task, artifact) => {
+              setTaskSpaceOpen(false);
+              navigate(
+                preserveWorkbenchPresentation(
+                  taskWorkspaceRoute({
+                    threadId: task?.threadId ?? undefined,
+                    agentId: task?.agentId ?? activeAgentId,
+                    artifact,
+                  }),
+                  currentSearch,
+                ),
+              );
+            }}
+          />
           <Suspense fallback={null}>
             <CommandPalette />
           </Suspense>

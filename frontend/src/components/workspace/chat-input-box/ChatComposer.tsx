@@ -1,4 +1,8 @@
 import {
+  COMPOSER_FILES_READY,
+  consumeComposerFiles,
+} from "@/core/composer-file-inbox";
+import {
   BookOpenIcon,
   ExternalLinkIcon,
   FileIcon,
@@ -22,6 +26,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
 
 import { useMentionAutocomplete } from "../mention-autocomplete";
@@ -60,6 +65,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { normalizePermissionMode } from "@/core/permissions";
 import { captureComputerAppshot } from "@/core/computer/api";
 import { uploadFiles, useAttachmentUploads } from "@/core/uploads";
@@ -130,6 +136,7 @@ export function ChatComposer({
   permissionMode,
   reasoningEffort,
   modelProfileControl = false,
+  taskModelOverride = false,
   executionEngine = "echo",
   onPermissionModeChange,
   onReasoningEffortChange,
@@ -143,6 +150,7 @@ export function ChatComposer({
   className,
 }: ChatInputBoxProps) {
   const { t } = useI18n();
+  const { search } = useLocation();
   const { models } = useModels();
   const [draft, setDraft] = useState(
     () =>
@@ -393,7 +401,7 @@ export function ChatComposer({
       }>,
     ) => {
       const detail = event.detail;
-      if (detail?.threadId && threadId && detail.threadId !== threadId) {
+      if (detail?.threadId && detail.threadId !== threadId) {
         return;
       }
       const nextDraft = (detail?.topic ?? detail?.text ?? "").trim();
@@ -427,7 +435,7 @@ export function ChatComposer({
       event: CustomEvent<{ threadId?: string | null; text?: string | null }>,
     ) => {
       const detail = event.detail;
-      if (detail?.threadId && threadId && detail.threadId !== threadId) {
+      if (detail?.threadId && detail.threadId !== threadId) {
         return;
       }
       const lostText = detail?.text ?? "";
@@ -437,10 +445,7 @@ export function ChatComposer({
     };
     window.addEventListener("echo:send-failed", handler as EventListener);
     return () => {
-      window.removeEventListener(
-        "echo:send-failed",
-        handler as EventListener,
-      );
+      window.removeEventListener("echo:send-failed", handler as EventListener);
     };
   }, [threadId]);
 
@@ -456,6 +461,7 @@ export function ChatComposer({
         path: rawPath,
         workDir: normalizedWorkDir,
         sourceLabel: detail.sourceLabel?.trim() || null,
+        resourceId: detail.resourceId?.trim() || null,
       };
       setPendingFiles((current) => {
         if (current.some((file) => file.id === nextFile.id)) return current;
@@ -469,7 +475,7 @@ export function ChatComposer({
   useEffect(() => {
     const handler = (event: CustomEvent<WorkspaceFileInjectionDetail>) => {
       const detail = event.detail;
-      if (detail?.threadId && threadId && detail.threadId !== threadId) {
+      if (detail?.threadId && detail.threadId !== threadId) {
         return;
       }
       addPendingWorkspaceFile(detail ?? {});
@@ -479,6 +485,14 @@ export function ChatComposer({
       window.removeEventListener("echo:open-file", handler as EventListener);
     };
   }, [addPendingWorkspaceFile, threadId]);
+
+  useEffect(() => {
+    const receive = () =>
+      consumeComposerFiles(threadId).forEach(addPendingWorkspaceFile);
+    window.addEventListener(COMPOSER_FILES_READY, receive);
+    receive();
+    return () => window.removeEventListener(COMPOSER_FILES_READY, receive);
+  }, [threadId, addPendingWorkspaceFile]);
 
   const handleSubmit = useCallback(async () => {
     const text = draft.trim();
@@ -528,6 +542,7 @@ export function ChatComposer({
           title: file.name,
           path: file.path,
           notes: file.workDir ? `workspace: ${file.workDir}` : undefined,
+          ...(file.resourceId ? { resource_id: file.resourceId } : {}),
         }));
       const pendingBrowserFiles = pendingFiles
         .map((file) => file.file)
@@ -601,6 +616,19 @@ export function ChatComposer({
         text: appendReferencedFiles(text, pendingFiles),
         images: pendingImages.length > 0 ? pendingImages : undefined,
         files: browserUploadFiles.length > 0 ? browserUploadFiles : undefined,
+        contextFiles: (() => {
+          const resourceFiles = pendingFiles.filter((file) => file.resourceId);
+          return resourceFiles.length > 0
+            ? resourceFiles.map(
+                ({ path, workDir, sourceLabel, resourceId }) => ({
+                  path,
+                  workDir,
+                  sourceLabel,
+                  resourceId,
+                }),
+              )
+            : undefined;
+        })(),
         // Already on the server — the send path matches these by filename and
         // skips re-uploading the same bytes.
         uploaded: completedUploads.length > 0 ? completedUploads : undefined,
@@ -770,10 +798,13 @@ export function ChatComposer({
     (tab: "plugins" | "skills", view?: "installed" | "all") => {
       const params = new URLSearchParams({ surface: "chat", tab });
       if (view) params.set("view", view);
-      window.location.hash = `#/workspace/agents?${params.toString()}`;
+      window.location.hash = `#${preserveWorkbenchPresentation(
+        `/workspace/agents?${params.toString()}`,
+        search,
+      )}`;
       setToolsMenuOpen(false);
     },
-    [],
+    [search],
   );
 
   const toggleResearchSource = useCallback((kind: ResearchSourceKind) => {
@@ -995,7 +1026,7 @@ export function ChatComposer({
   useEffect(() => {
     const handler = (event: CustomEvent<ComposerImageInjectionDetail>) => {
       const detail = event.detail;
-      if (detail?.threadId && threadId && detail.threadId !== threadId) {
+      if (detail?.threadId && detail.threadId !== threadId) {
         return;
       }
       const images = Array.isArray(detail?.images)
@@ -1024,10 +1055,7 @@ export function ChatComposer({
       handler as EventListener,
     );
     return () => {
-      window.removeEventListener(
-        "echo:send-failed",
-        handler as EventListener,
-      );
+      window.removeEventListener("echo:send-failed", handler as EventListener);
       window.removeEventListener(
         "echo:inject-composer-images",
         handler as EventListener,
@@ -1816,6 +1844,7 @@ export function ChatComposer({
                 systemModels={pickerModels}
                 disabled={disabled || status === "streaming"}
                 executionEngine={executionEngine}
+                taskOverride={taskModelOverride}
                 value={modelName}
                 onChange={onModelChange}
                 onEffectiveModelChange={onModelSwitchNotice}
@@ -1826,6 +1855,7 @@ export function ChatComposer({
           ) : (
             <div className="composer-footer__model contents">
               <ModelPicker
+                disabled={disabled || status === "streaming"}
                 models={pickerModels}
                 // Pass the raw modelName so the picker sees the "auto"
                 // sentinel — selectedModel falls back to pickerModels[0]

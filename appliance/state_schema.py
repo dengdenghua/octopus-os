@@ -2,8 +2,10 @@
 
 Version 0 means a legacy directory created before the marker existed. The first
 explicit migration (0 -> 1) is metadata-only. Version 2 introduces the durable
-audit signing-key ring and externally verifiable anchors. Future state changes must add a
-numbered, forward-only migration here before increasing CURRENT_SCHEMA_VERSION.
+audit signing-key ring and externally verifiable anchors. Version 3 reserves the
+root-private administrator TOTP state so older runtimes cannot silently ignore
+an enabled second factor. Future state changes must add a numbered, forward-only
+migration here before increasing CURRENT_SCHEMA_VERSION.
 An older runtime refuses a newer marker instead of guessing or mutating it.
 """
 
@@ -25,7 +27,7 @@ STATE_SCHEMA_FILENAME = "echo-state-schema.json"
 STATE_SCHEMA_KIND = "echo-appliance-state"
 AUTH_SCHEMA_VERSION_KEY = "state_schema_version"
 LEGACY_SCHEMA_VERSION = 0
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 MINIMUM_READABLE_SCHEMA_VERSION = 0
 MAX_SCHEMA_MARKER_BYTES = 64 * 1024
 
@@ -36,6 +38,21 @@ class StateSchemaError(RuntimeError):
 
 def _marker_path(state_dir: Path | str) -> Path:
     return Path(state_dir) / STATE_SCHEMA_FILENAME
+
+
+@contextlib.contextmanager
+def _private_schema_directory(state_dir: Path | str):
+    """Protect schema metadata with the host's native private-state boundary."""
+
+    root = Path(state_dir)
+    if os.name == "nt":
+        from appliance.windows_state import private_state_directory
+
+        with private_state_directory(root, create=True, protect=True) as guarded:
+            yield guarded
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    yield root
 
 
 def inspect_state_schema(
@@ -134,42 +151,47 @@ def inspect_state_schema(
 
 
 def _write_schema_marker(state_dir: Path, version: int) -> None:
-    marker = _marker_path(state_dir)
-    if marker.is_symlink():
-        raise StateSchemaError("state schema marker must not be a symlink")
-    payload = {
-        "kind": STATE_SCHEMA_KIND,
-        "version": version,
-        "minimumCompatibleVersion": MINIMUM_READABLE_SCHEMA_VERSION,
-        "updatedAt": dt.datetime.now(dt.UTC).isoformat(),
-    }
-    temporary = marker.with_name(f".{marker.name}.{secrets.token_hex(8)}.tmp")
-    try:
-        descriptor = os.open(
-            temporary,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            0o600,
-        )
-    except OSError as exc:
-        raise StateSchemaError("state schema marker could not be written") from exc
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, sort_keys=True, separators=(",", ":"))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, marker)
-        marker.chmod(0o600)
-        with contextlib.suppress(OSError):
-            directory = os.open(state_dir, os.O_RDONLY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
-    except OSError as exc:
-        raise StateSchemaError("state schema marker could not be written") from exc
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            temporary.unlink()
+    with _private_schema_directory(state_dir) as root:
+        marker = root / STATE_SCHEMA_FILENAME
+        if marker.is_symlink():
+            raise StateSchemaError("state schema marker must not be a symlink")
+        payload = {
+            "kind": STATE_SCHEMA_KIND,
+            "version": version,
+            "minimumCompatibleVersion": MINIMUM_READABLE_SCHEMA_VERSION,
+            "updatedAt": dt.datetime.now(dt.UTC).isoformat(),
+        }
+        temporary = marker.with_name(f".{marker.name}.{secrets.token_hex(8)}.tmp")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
+        try:
+            descriptor = os.open(temporary, flags, 0o600)
+        except OSError as exc:
+            raise StateSchemaError("state schema marker could not be written") from exc
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+                json.dump(payload, handle, sort_keys=True, separators=(",", ":"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, marker)
+            if os.name != "nt":
+                marker.chmod(0o600)
+            else:
+                from appliance.windows_state import open_private_file
+
+                os.close(open_private_file(marker))
+            with contextlib.suppress(OSError):
+                directory = os.open(root, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+        except OSError as exc:
+            raise StateSchemaError("state schema marker could not be written") from exc
+        finally:
+            with contextlib.suppress(FileNotFoundError, PermissionError):
+                temporary.unlink()
 
 
 def _set_schema_version(state_dir: Path, version: int) -> None:
@@ -195,9 +217,18 @@ def _migrate_v1_to_v2(state_dir: Path) -> None:
     _set_schema_version(state_dir, 2)
 
 
+def _migrate_v2_to_v3(state_dir: Path) -> None:
+    # TOTP remains opt-in and therefore needs no file for existing devices.
+    # Advancing the compatibility anchor is still mandatory: once a current
+    # runtime enables TOTP, a v2 runtime must refuse the directory rather than
+    # ignore the unknown gate and accept password-only login.
+    _set_schema_version(state_dir, 3)
+
+
 MIGRATIONS: dict[int, Callable[[Path], None]] = {
     LEGACY_SCHEMA_VERSION: _migrate_v0_to_v1,
     1: _migrate_v1_to_v2,
+    2: _migrate_v2_to_v3,
 }
 
 

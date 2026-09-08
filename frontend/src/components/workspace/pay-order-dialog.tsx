@@ -5,7 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useI18n } from "@/core/i18n/hooks";
 import { octApi } from "@/core/oct/api";
 
@@ -125,6 +130,9 @@ export function PayOrderDialog({
 
         {/* Hidden for a11y — DialogContent requires one accessible name */}
         <DialogTitle className="sr-only">{t.payOrder.title}</DialogTitle>
+        <DialogDescription className="sr-only">
+          {t.payOrder.subtitle}
+        </DialogDescription>
 
         <div className="grid gap-5 px-6 pb-6 md:grid-cols-2">
           {/* Left column — QR + description */}

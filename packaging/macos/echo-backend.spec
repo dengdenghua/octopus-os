@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # macOS mirror of packaging/windows/echo-backend.spec.
 # Differences from the Windows spec:
-#   - entry script is shared (platform-neutral `from runtime.cli import main`)
+#   - shared entry dispatches the fixed document worker before the normal CLI
 #   - UPX is disabled: it is unreliable on Mach-O and would break codesigning
 #   - built for the interpreter's native target (Apple Silicon arm64 or Rosetta x86_64)
 
@@ -22,6 +22,13 @@ hiddenimports = [
     for module in collect_submodules("runtime")
     if not module.startswith(remote_plugin_prefixes)
 ] + [
+    "runtime.execution.misc.document_extraction",
+    "runtime.execution.misc.document_worker",
+    "runtime.execution.misc.document_process_limits",
+    "runtime.execution.misc.document_text_extractor",
+    "runtime.execution.misc.notebook_extractor",
+    "pypdf",
+    "defusedxml",
     "uvicorn.logging",
     "uvicorn.loops",
     "uvicorn.loops.auto",

@@ -12,6 +12,8 @@
 
 import {
   type CommunityPost,
+  communityStorageKey,
+  readCommunityValue,
   readFollowing,
   toggleFollowing,
 } from "./community-data";
@@ -24,7 +26,7 @@ const SUBSCRIBED_TOPICS_KEY = "echo.community.subscribe-topics.v1";
 
 export function readSubscribedTopics(): string[] {
   try {
-    const raw = window.localStorage.getItem(SUBSCRIBED_TOPICS_KEY);
+    const raw = readCommunityValue(SUBSCRIBED_TOPICS_KEY);
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
@@ -33,7 +35,10 @@ export function readSubscribedTopics(): string[] {
 
 function writeSubscribedTopics(keys: string[]) {
   try {
-    window.localStorage.setItem(SUBSCRIBED_TOPICS_KEY, JSON.stringify(keys));
+    window.localStorage.setItem(
+      communityStorageKey(SUBSCRIBED_TOPICS_KEY),
+      JSON.stringify(keys),
+    );
   } catch {
     /* ignore */
   }
@@ -56,7 +61,7 @@ const SUBSCRIBED_AUTHORS_KEY = "echo.community.subscribe-authors.v1";
 
 export function readSubscribedAuthors(): string[] {
   try {
-    const raw = window.localStorage.getItem(SUBSCRIBED_AUTHORS_KEY);
+    const raw = readCommunityValue(SUBSCRIBED_AUTHORS_KEY);
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
     return [];
@@ -65,7 +70,10 @@ export function readSubscribedAuthors(): string[] {
 
 function writeSubscribedAuthors(names: string[]) {
   try {
-    window.localStorage.setItem(SUBSCRIBED_AUTHORS_KEY, JSON.stringify(names));
+    window.localStorage.setItem(
+      communityStorageKey(SUBSCRIBED_AUTHORS_KEY),
+      JSON.stringify(names),
+    );
   } catch {
     /* ignore */
   }

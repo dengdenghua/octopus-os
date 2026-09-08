@@ -1,9 +1,8 @@
 /**
  * `useActiveAgentId` — subscribes to the footer-picked agent.
  *
- * Single source of truth: ``localStorage["echo.active-agent"]`` +
- * a ``window.echo:active-agent`` CustomEvent that the footer
- * dropdown dispatches on change.
+ * Resolve the stored/route preference against the server's selectable roster.
+ * Selection changes arrive through agent:changed and cross-tab storage events.
  *
  * Reused by:
  *   • `WorkspaceSidebar` — scope thread list to the active agent
@@ -16,16 +15,33 @@
  * sidebar kept showing one agent's threads while chat page sent
  * another's).
  */
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 import { swallow } from "@/core/utils/log";
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useEvent } from "../events";
+import { useAgents } from "./index";
 import {
   DEFAULT_PRIMARY_AGENT_ID,
   isPrimaryPersonaAgentId,
+  WHITE_GHOST_AGENT_ORDER,
 } from "./persona-policy";
 
 export const ACTIVE_AGENT_KEY = "echo.active-agent";
+const ACTIVE_AGENT_SCOPED_PREFIX = "echo.active-agent.v2:";
+
+export function activeAgentStorageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(ACTIVE_AGENT_SCOPED_PREFIX, actor);
+}
+
+export function setActiveAgentId(agentId: string): void {
+  try {
+    window.localStorage.setItem(activeAgentStorageKey(), agentId);
+  } catch (e) {
+    swallow(e, "storage");
+  }
+}
 // Kept for backward compatibility with external listeners
 export const ACTIVE_AGENT_EVENT = "echo:active-agent";
 
@@ -40,9 +56,10 @@ export function activeAgentIdForLocation(
   pathname: string,
   search: string,
   storedAgentId: string | null,
+  availableAgentIds?: readonly string[],
 ): string | null {
   const locked = routeLock(pathname);
-  if (locked) return locked;
+  let preferred = locked ?? storedAgentId;
 
   // A fresh-task URL is an explicit persona choice. Resolve it synchronously
   // so the workspace shell does not paint the previously stored persona for a
@@ -51,10 +68,18 @@ export function activeAgentIdForLocation(
     const requested = normalizeAgentId(
       new URLSearchParams(search).get("agent"),
     );
-    if (requested && isPrimaryPersonaAgentId(requested)) return requested;
+    if (!locked && requested && isPrimaryPersonaAgentId(requested)) {
+      preferred = requested;
+    }
   }
 
-  return storedAgentId;
+  if (availableAgentIds === undefined) return preferred;
+  const available = new Set(availableAgentIds.filter(isPrimaryPersonaAgentId));
+  if (preferred && available.has(preferred)) return preferred;
+  // Internal roles can still own historical threads without appearing in the
+  // selectable roster. A stale preference must not silently launch new tasks
+  // as one of those roles while the footer displays a different persona.
+  return WHITE_GHOST_AGENT_ORDER.find((name) => available.has(name)) ?? null;
 }
 
 function routeLock(pathname: string): string | null {
@@ -88,20 +113,38 @@ function normalizeAgentId(value: string | null | undefined): string | null {
 
 function readActive(): string | null {
   try {
-    const raw = window.localStorage.getItem(ACTIVE_AGENT_KEY);
+    const scopedKey = activeAgentStorageKey();
+    let raw = window.localStorage.getItem(scopedKey);
+    if (raw === null) {
+      // Preserve the pre-account-scoping preference for the first actor that
+      // opens the upgraded shell. Anonymous sessions keep the legacy value
+      // readable until authentication provides an unambiguous owner.
+      const legacy = window.localStorage.getItem(ACTIVE_AGENT_KEY);
+      if (legacy !== null) {
+        raw = legacy;
+        const actor = currentActorId();
+        if (actor.trim() && actor !== "anonymous") {
+          window.localStorage.setItem(scopedKey, legacy);
+          window.localStorage.removeItem(ACTIVE_AGENT_KEY);
+        }
+      }
+    }
     const normalized = normalizeAgentId(raw);
     if (normalized && isPrimaryPersonaAgentId(normalized)) return normalized;
     if (normalized) {
       // Experts used to be persisted as standalone identities. They now join
       // a White Ghost-led conversation on demand, so migrate that old picker
       // state without affecting the owner stored on historical threads.
-      window.localStorage.setItem(ACTIVE_AGENT_KEY, DEFAULT_PRIMARY_AGENT_ID);
+      window.localStorage.setItem(
+        activeAgentStorageKey(),
+        DEFAULT_PRIMARY_AGENT_ID,
+      );
       return DEFAULT_PRIMARY_AGENT_ID;
     }
     if (raw?.trim()) {
       // Stale legacy id (e.g. DID-xxx) — clean it so the UI doesn't
       // keep trying to route to a backend-unknown agent.
-      window.localStorage.removeItem(ACTIVE_AGENT_KEY);
+      window.localStorage.removeItem(activeAgentStorageKey());
     }
   } catch (e) {
     swallow(e, "storage");
@@ -109,16 +152,25 @@ function readActive(): string | null {
   return null;
 }
 
-/** React hook · returns the currently-active agent id (or null).
- *
- *  Routes listed in ``ROUTE_LOCK`` override the stored preference —
- *  the Code workspace ALWAYS reports ``coder``, never whatever the
- *  footer was last set to — so thread lists / stream requests / other
- *  consumers can't drift off the owning persona.
- */
+/** Read the persisted persona without applying route or roster resolution. */
+export function readStoredActiveAgentId(): string | null {
+  return readActive();
+}
+
+/** The selectable persona for new tasks. Historical thread ownership is
+ * resolved separately from that thread's metadata, never from this fallback. */
 export function useActiveAgentId(): string | null {
   const { pathname, search } = useLocation();
-  const [id, setId] = useState<string | null>(() => readActive());
+  const actor = currentActorId();
+  const [id, setId] = useState<string | null>(() => readStoredActiveAgentId());
+  const [sessionActor, setSessionActor] = useState(actor);
+  const { agents, isLoading, error } = useAgents();
+
+  useEffect(() => {
+    if (sessionActor === actor) return;
+    setSessionActor(actor);
+    setId(readStoredActiveAgentId());
+  }, [actor, sessionActor]);
 
   // Subscribe to EventBus agent changes
   useEvent("agent:changed", (payload) => {
@@ -134,7 +186,7 @@ export function useActiveAgentId(): string | null {
   // switches agent in another → sidebar auto-updates.
   useEffect(() => {
     function onStorage(e: StorageEvent) {
-      if (e.key === ACTIVE_AGENT_KEY) setId(readActive());
+      if (e.key === activeAgentStorageKey()) setId(readStoredActiveAgentId());
     }
     window.addEventListener("storage", onStorage);
     return () => {
@@ -142,5 +194,13 @@ export function useActiveAgentId(): string | null {
     };
   }, []);
 
-  return activeAgentIdForLocation(pathname, search, id);
+  if (sessionActor !== actor || isLoading || (error && agents.length === 0)) {
+    return null;
+  }
+  return activeAgentIdForLocation(
+    pathname,
+    search,
+    id,
+    agents.map((agent) => agent.name),
+  );
 }

@@ -4,6 +4,8 @@ import json
 import os
 from typing import Any
 
+from runtime.safety.privacy import PrivacyViolation, is_loopback_endpoint, require_local_router
+
 from .models import (
     LLMResponseFormatError,
     ModelRequest,
@@ -77,6 +79,10 @@ class OllamaModelRouter(Provider, ModelRouter):
             self.default_model = "llama3.2:3b"
 
     def is_available(self) -> bool:
+        try:
+            require_local_router(self)
+        except PrivacyViolation:
+            return False
         if self._available is not None:
             return self._available
         try:
@@ -90,6 +96,10 @@ class OllamaModelRouter(Provider, ModelRouter):
         return self._available
 
     def list_models(self) -> list[OllamaModelInfo]:
+        try:
+            require_local_router(self)
+        except PrivacyViolation:
+            return []
         if self._models and self._available:
             return self._models
         try:
@@ -103,6 +113,7 @@ class OllamaModelRouter(Provider, ModelRouter):
         return self._models
 
     def call(self, request: ModelRequest) -> ModelResponse:
+        require_local_router(self)
         model = request.model or self.default_model
 
         with self._get_client() as client:
@@ -204,7 +215,11 @@ class OllamaModelRouter(Provider, ModelRouter):
     def _get_client(self) -> Any:
         if self._client is not None:
             return self._client
-        return httpx.Client(timeout=self._timeout)
+        return httpx.Client(
+            timeout=self._timeout,
+            trust_env=not is_loopback_endpoint(self._base_url),
+            follow_redirects=False,
+        )
 
     def _auto_select_model(self) -> str:
         if not self.is_available():

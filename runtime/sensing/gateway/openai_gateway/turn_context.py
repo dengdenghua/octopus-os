@@ -101,6 +101,10 @@ def prepare_chat_turn(
         "enforce_executor_approval": True,
         "tenant_id": tenant_id,
         "owner_actor_id": resolved_owner,
+        # Keep the managed workspace root on the authoritative Session so
+        # Agent file observations can emit the same portable resource identity
+        # consumed by the workspace and database surfaces.
+        "workspace_path": str(workspace_layout.root),
         "_artifact_output_root": str(workspace_layout.final),
         "_execution_stack": stack,
     }

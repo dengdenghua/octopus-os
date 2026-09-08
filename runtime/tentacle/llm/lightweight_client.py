@@ -192,6 +192,9 @@ class LightweightLlmClient:
         url = f"{self.config.base_url.rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {self.config.api_key}"}
 
+        from runtime.safety.privacy import deny_private_operation
+
+        deny_private_operation("unverified_mobile_model_transport")
         start = time.time()
         try:
             payload = self.transport.post(url, headers, body)

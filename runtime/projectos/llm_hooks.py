@@ -240,13 +240,19 @@ def subagent_execute_task(
     # account selection never falls back to an ordinary context dictionary.
     # No approval provider is attached: the Coder backend therefore retains
     # its explicit AutoDeny default for risky actions.
-    from runtime.platform.process.session import Session
+    from runtime.platform.process.session import Session, current_session
+
+    parent_session = context.get("caller_session")
+    if not isinstance(parent_session, Session):
+        parent_session = current_session()
 
     project_session = Session(
         actor=actor or None,
         thread_id=thread_id or None,
         conversation_id=thread_id or None,
         metadata=dict(runtime_session_metadata),
+        execution_lease=getattr(parent_session, "execution_lease", None),
+        execution_request=getattr(parent_session, "execution_request", None),
     )
 
     call_kwargs: dict[str, Any] = {

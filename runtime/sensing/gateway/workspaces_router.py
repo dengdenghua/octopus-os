@@ -19,7 +19,7 @@ from typing import Any
 
 try:
     from fastapi import APIRouter, HTTPException, Query, Request
-    from fastapi.responses import FileResponse, HTMLResponse
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
     from pydantic import BaseModel
 
     FASTAPI_AVAILABLE = True
@@ -31,10 +31,15 @@ except ImportError:  # pragma: no cover
     Request = None  # type: ignore[assignment, misc]
     FileResponse = None  # type: ignore[assignment, misc]
     HTMLResponse = None  # type: ignore[assignment, misc]
+    JSONResponse = None  # type: ignore[assignment, misc]
     BaseModel = object  # type: ignore[assignment, misc]
 
 from runtime.execution.misc.office_fidelity_preview import render_office_fidelity_preview
 from runtime.execution.misc.office_preview import render_office_preview
+from runtime.platform.resource_identity import (
+    parse_workspace_file_resource_id,
+    workspace_file_resource_id,
+)
 from runtime.platform.runtime_policy.workspaces import WorkspaceManager
 from runtime.sensing._fastapi_guard import require_fastapi
 
@@ -60,6 +65,7 @@ if FASTAPI_AVAILABLE:
         size: int
         modified: int
         download_url: str
+        resource_id: str
 
     class WorkspaceOutputsResponse(BaseModel):
         thread_id: str
@@ -250,6 +256,7 @@ def create_workspaces_router(
                         "size": path.stat().st_size,
                         "modified": int(path.stat().st_mtime),
                         "download_url": (f"/api/workspaces/{thread_id}/outputs/{rel}{suffix}"),
+                        "resource_id": workspace_file_resource_id(thread_id, area_key, rel),
                     }
                 )
         return {
@@ -310,12 +317,25 @@ def create_workspaces_router(
         download: bool = False,
         office_preview: bool = False,
         office_fidelity_preview: bool = False,
+        locate: bool = False,
     ) -> Any:
         _require_thread_access(request, thread_id)
         _, root = _area_root(thread_id, area)
         target = _safe_child(root, artifact_path)
         if not target.is_file():
             raise HTTPException(404, f"output not found: {artifact_path}")
+        if locate:
+            return JSONResponse({
+                "thread_id": thread_id,
+                "area": area,
+                "path": str(target),
+                "relative_path": target.relative_to(root.resolve()).as_posix(),
+                "resource_id": workspace_file_resource_id(
+                    thread_id,
+                    area,
+                    target.relative_to(root.resolve()).as_posix(),
+                ),
+            }, headers={"Cache-Control": "no-store"})
         if office_fidelity_preview:
             fidelity_html = render_office_fidelity_preview(target)
             if fidelity_html is not None:
@@ -360,6 +380,7 @@ def create_workspaces_router(
         download: bool = False,
         office_preview: bool = False,
         office_fidelity_preview: bool = False,
+        locate: bool = False,
     ) -> Any:
         return api_workspace_output_file(
             request,
@@ -369,6 +390,33 @@ def create_workspaces_router(
             download=download,
             office_preview=office_preview,
             office_fidelity_preview=office_fidelity_preview,
+            locate=locate,
+        )
+
+    @router.get("/api/workspace-resources/{resource_id:path}")
+    def api_workspace_resource(
+        request: Request,
+        resource_id: str,
+        download: bool = False,
+        office_preview: bool = False,
+        office_fidelity_preview: bool = False,
+        locate: bool = False,
+    ) -> Any:
+        """Resolve a portable file identity through the same auth boundary."""
+
+        parsed = parse_workspace_file_resource_id(resource_id)
+        if parsed is None:
+            raise HTTPException(400, "invalid workspace resource id")
+        thread_id, area, relative_path = parsed
+        return api_workspace_output_file(
+            request,
+            thread_id,
+            relative_path,
+            area=area,
+            download=download,
+            office_preview=office_preview,
+            office_fidelity_preview=office_fidelity_preview,
+            locate=locate,
         )
 
     def _write_output_file(
@@ -455,6 +503,42 @@ def create_workspaces_router(
             "sha256": hashlib.sha256(restored).hexdigest(),
             "revision_id": redo_revision_id,
         }
+
+    @router.put(
+        "/api/workspace-resources/{resource_id:path}",
+        response_model=WorkspaceOutputWriteResponse,
+    )
+    def api_write_workspace_resource(
+        request: Request,
+        resource_id: str,
+        body: WorkspaceOutputWriteRequest,
+    ) -> dict[str, Any]:
+        parsed = parse_workspace_file_resource_id(resource_id)
+        if parsed is None:
+            raise HTTPException(400, "invalid workspace resource id")
+        thread_id, area, relative_path = parsed
+        return _write_output_file(request, thread_id, relative_path, body, area=area)
+
+    @router.post(
+        "/api/workspace-resources/{resource_id:path}",
+        response_model=WorkspaceOutputWriteResponse,
+    )
+    def api_restore_workspace_resource(
+        request: Request,
+        resource_id: str,
+        body: WorkspaceOutputRestoreRequest,
+    ) -> dict[str, Any]:
+        parsed = parse_workspace_file_resource_id(resource_id)
+        if parsed is None:
+            raise HTTPException(400, "invalid workspace resource id")
+        thread_id, area, relative_path = parsed
+        return _restore_output_file(
+            request,
+            thread_id,
+            relative_path,
+            body,
+            area=area,
+        )
 
     @router.put(
         "/api/workspaces/{thread_id}/outputs/{artifact_path:path}",

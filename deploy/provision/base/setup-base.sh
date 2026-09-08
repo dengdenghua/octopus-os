@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 把一台刚装好的 Debian 13 (trixie) 变成 Echo OS。
 #
-# 由 echo-firstboot.service 在**首次开机、网络就绪后**执行 —— 刻意不在
-# debian-installer 里跑:ZFS 编译 / Docker 安装 / 前端构建都要联网且耗时,
-# 放在装机阶段失败会让整台机器装不起来;放首次开机则可重试、可查日志。
+# 由 echo-firstboot.service 在首次开机执行。严格 release 镜像的系统包、
+# Python、Web 与 Codex 全部来自 ISO 内已校验载荷；开发镜像仍可显式走网络
+# 回退。重活不放 d-i，失败后可重试、可查日志。
 #
 # 幂等:每个阶段有哨兵文件,重跑会跳过已完成的部分。
 # 日志:journalctl -u echo-firstboot
@@ -42,9 +42,50 @@ source "$SCRIPT_DIR/provision-lib.sh"
 
 mkdir -p "$STATE_DIR"
 
+require_offline_release_contract() {
+  [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ] || return 0
+  local name value
+  for name in \
+    ECHO_SOURCE_BUNDLE ECHO_SOURCE_BUNDLE_REF ECHO_SOURCE_BUNDLE_SHA256 \
+    ECHO_SOURCE_TREE ECHO_IMAGE_COMMIT \
+    ECHO_WEB_BUNDLE ECHO_WEB_BUNDLE_SHA256 \
+    ECHO_PYTHON_BUNDLE ECHO_PYTHON_BUNDLE_SHA256 \
+    ECHO_CODEX_BUNDLE ECHO_CODEX_BUNDLE_SHA256 \
+    ECHO_SYSTEM_DEB_BUNDLE ECHO_SYSTEM_DEB_BUNDLE_SHA256 \
+    ECHO_SYSTEM_DEB_REPO_SHA256; do
+    value="${!name:-}"
+    [ -n "$value" ] || {
+      log "✗ 严格 release 缺少离线合同字段: $name"
+      return 1
+    }
+  done
+  for name in ECHO_SOURCE_TREE ECHO_IMAGE_COMMIT; do
+    value="${!name}"
+    case "$value" in *[!0-9a-fA-F]*|'') return 1 ;; esac
+    case "${#value}" in 40|64) ;; *) return 1 ;; esac
+  done
+  for name in \
+    ECHO_SOURCE_BUNDLE_SHA256 ECHO_WEB_BUNDLE_SHA256 ECHO_PYTHON_BUNDLE_SHA256 \
+    ECHO_CODEX_BUNDLE_SHA256 ECHO_SYSTEM_DEB_BUNDLE_SHA256 \
+    ECHO_SYSTEM_DEB_REPO_SHA256; do
+    value="${!name}"
+    case "$value" in *[!0-9a-fA-F]*|'') return 1 ;; esac
+    [ "${#value}" -eq 64 ] || return 1
+  done
+}
+
+require_offline_release_contract || exit 1
+
 system_deb_status=0
 prepare_system_deb_repo || system_deb_status=$?
-[ "$system_deb_status" -ne 2 ] || exit 1
+if [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ]; then
+  [ "$system_deb_status" -eq 0 ] || {
+    log "✗ 严格 release 无法启用离线系统包仓"
+    exit 1
+  }
+else
+  [ "$system_deb_status" -ne 2 ] || exit 1
+fi
 
 # ── 编排:每阶段带哨兵,幂等可重入 ─────────────────────
 if ! is_done apt;             then step_apt;             else skip apt; fi

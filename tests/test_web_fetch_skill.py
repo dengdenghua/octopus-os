@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+
 from runtime.execution.suckers.web_skills import (
     HTTPX_AVAILABLE,
     _web_fetch,
@@ -119,6 +120,68 @@ class TestWebFetchValidation:
 
 @pytest.mark.skipif(not HTTPX_AVAILABLE, reason="httpx not installed")
 class TestWebFetchHappyPath:
+    def test_codex_receives_bounded_page_without_an_auxiliary_model(self) -> None:
+        from dataclasses import replace
+
+        from runtime.execution.host_boundary import create_host_execution_boundary
+        from runtime.execution.request import ExecutionRequest, execution_request_scope
+
+        boundary = create_host_execution_boundary(
+            task_id="fetch-task",
+            thread_id="fetch-thread",
+            goal="read",
+            timeout_s=30,
+        )
+        request = ExecutionRequest(
+            task=replace(boundary.request.task, execution_engine="codex"),
+            instruction="read",
+        )
+        stub = _StubLLMCaller(raise_exc=AssertionError("must not call a second model"))
+        client = _MockClient(get_response=_MockResponse(text=_SAMPLE_HTML))
+        with execution_request_scope(request):
+            result = _web_fetch(
+                url="https://example.com/",
+                prompt="rate limit?",
+                client=client,
+                _llm_caller=stub,
+                max_chars=80,
+            )
+        assert result["answer_pending"] is True
+        assert "answer" not in result
+        assert 0 < len(result["content"]) <= 80
+        assert stub.last_user is None
+
+    @pytest.mark.parametrize("engine", [None, "native"])
+    def test_client_engine_metadata_cannot_skip_the_native_model(self, engine) -> None:
+        from dataclasses import replace
+
+        from runtime.execution.host_boundary import create_host_execution_boundary
+        from runtime.platform.process.session import Session, session_scope
+
+        stub = _StubLLMCaller(answer="native answer")
+        session = Session(metadata={"execution_engine": "codex"})
+        if engine is not None:
+            boundary = create_host_execution_boundary(
+                task_id="native-task",
+                thread_id="native-thread",
+                goal="read",
+                timeout_s=30,
+            )
+            session.execution_request = replace(
+                boundary.request,
+                task=replace(boundary.request.task, execution_engine=engine),
+            )
+        with session_scope(session):
+            result = _web_fetch(
+                url="https://example.com/",
+                prompt="rate limit?",
+                client=_MockClient(get_response=_MockResponse(text=_SAMPLE_HTML)),
+                _llm_caller=stub,
+                execution_engine="codex",
+            )
+        assert result["answer"] == "native answer"
+        assert stub.last_user is not None
+
     def test_returns_just_the_answer(self) -> None:
         client = _MockClient(
             get_response=_MockResponse(

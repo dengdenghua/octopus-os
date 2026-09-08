@@ -9,6 +9,13 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
+from runtime.execution.request import current_execution_request  # noqa: E402
+from runtime.platform.process.session import current_session  # noqa: E402
+from runtime.platform.process.task_supervisor import (  # noqa: E402
+    TaskRunStatus,
+    TaskSupervisor,
+)
 from runtime.safety.organization.team_runner import (  # noqa: E402
     RoleOutput,
     TeamRunResult,
@@ -114,10 +121,31 @@ class _FailureRunner:
         )
 
 
+class _HostAwareRunner(_SuccessRunner):
+    observed: list[dict[str, Any]] = []
+
+    def run(self, topology, task: str, *, context: dict[str, Any] | None = None):
+        session = current_session()
+        request = current_execution_request()
+        assert session is not None
+        assert session.execution_lease is not None
+        assert request is not None
+        self.__class__.observed.append(
+            {
+                "task_id": request.task.task_id,
+                "thread_id": request.task.thread_id,
+                "kind": session.metadata.get("source"),
+                "lease_task_id": session.execution_lease.assert_allowed().task_id,
+            }
+        )
+        return super().run(topology, task, context=context)
+
+
 def _client(
     tmp_path: Path,
     runner_factory,
     events: list[tuple[str, dict[str, Any]]],
+    task_supervisor: TaskSupervisor | None = None,
 ) -> TestClient:
     app = FastAPI()
 
@@ -129,6 +157,7 @@ def _client(
             state_path=tmp_path / "team_tasks.json",
             team_event_broadcaster=_broadcast,
             runner_factory=runner_factory,
+            task_supervisor=task_supervisor,
         ),
     )
     return TestClient(app)
@@ -418,6 +447,39 @@ def test_run_task_executes_runner_and_writes_done_state(tmp_path: Path) -> None:
     assert "role_completed" in event_names
     assert "run_done" in event_names
     assert {room_id for room_id, _ in events} == {"team-alpha"}
+
+
+def test_run_task_worker_recreates_host_execution_boundary(tmp_path: Path) -> None:
+    events: list[tuple[str, dict[str, Any]]] = []
+    _HostAwareRunner.observed.clear()
+    supervisor = TaskSupervisor.from_path(
+        tmp_path / "task-runs.json",
+        holder_id="team-worker",
+    )
+    client = _client(tmp_path, _HostAwareRunner, events, supervisor)
+    task = _create_task(client, title="host boundary team task")
+
+    started = client.post(f"/api/team-tasks/{task['id']}/run")
+
+    assert started.status_code == 200
+    done = _wait_for_status(client, task["id"], "done")
+    assert done["status"] == "done"
+    assert done["metadata"]["host_task_id"] == f"team:{task['id']}"
+    assert done["metadata"]["host_execution_schema"] == "octopus.execution.v1"
+    assert _HostAwareRunner.observed == [
+        {
+            "task_id": f"team:{task['id']}",
+            "thread_id": "team-alpha",
+            "kind": "team_tasks",
+            "lease_task_id": f"team:{task['id']}",
+        }
+    ]
+    record = supervisor.store.get(f"team:{task['id']}")
+    assert record is not None
+    assert record.status == TaskRunStatus.COMPLETED
+    assert record.lease is None
+    assert record.kind == "team_task"
+    assert record.metadata["host_execution"] == "octopus.execution.v1"
 
 
 def test_run_task_records_failed_state_on_runner_failure(tmp_path: Path) -> None:

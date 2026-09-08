@@ -90,7 +90,7 @@ describe("ModeSelector.onManualOverrideChange", () => {
 
   it("restores a persisted mode and audit intensity on mount", () => {
     window.localStorage.setItem(
-      "echo:modeOverride",
+      "echo:modeOverride:anonymous",
       JSON.stringify({
         "/workspace/a": { mode: "audit", auditIntensity: "max" },
       }),

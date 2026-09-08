@@ -93,7 +93,10 @@ export function BtrfsSnapshotPanel({
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [retentionMode, setRetentionMode] =
     useState<BtrfsSnapshotRetention["mode"]>("latest");
-  const [retentionValue, setRetentionValue] = useState(8);
+  // Keep an empty number input representable while the operator edits it;
+  // converting an empty input to NaN makes React emit an invalid value and
+  // hides the actual validation message behind a browser warning.
+  const [retentionValue, setRetentionValue] = useState<number | "">(8);
   const [schedulePlan, setSchedulePlan] =
     useState<BtrfsSnapshotSchedulePlan | null>(null);
   const [schedulePlanning, setSchedulePlanning] = useState(false);
@@ -242,6 +245,7 @@ export function BtrfsSnapshotPanel({
   const previewSchedule = async () => {
     const maximum = RETENTION_MAX[retentionMode];
     if (
+      typeof retentionValue !== "number" ||
       !Number.isInteger(retentionValue) ||
       retentionValue < 1 ||
       retentionValue > maximum
@@ -387,7 +391,9 @@ export function BtrfsSnapshotPanel({
                     .value as BtrfsSnapshotRetention["mode"];
                   setRetentionMode(mode);
                   setRetentionValue((current) =>
-                    Math.min(current, RETENTION_MAX[mode]),
+                    typeof current === "number"
+                      ? Math.min(current, RETENTION_MAX[mode])
+                      : current,
                   );
                   setSchedulePlan(null);
                 }}
@@ -405,7 +411,10 @@ export function BtrfsSnapshotPanel({
                 value={retentionValue}
                 disabled={!scheduleEnabled}
                 onChange={(event) => {
-                  setRetentionValue(event.currentTarget.valueAsNumber);
+                  const raw = event.currentTarget.value;
+                  setRetentionValue(
+                    raw === "" ? "" : event.currentTarget.valueAsNumber,
+                  );
                   setSchedulePlan(null);
                 }}
                 className="h-7 w-14 rounded border border-violet-200 bg-white px-1.5 text-center outline-none focus:border-violet-500 disabled:opacity-50"

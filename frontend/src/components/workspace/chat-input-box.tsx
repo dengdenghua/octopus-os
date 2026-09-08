@@ -15,7 +15,7 @@ import type {
   ResearchSourceKind,
 } from "@/core/research/api";
 import type { ReasoningEffort } from "@/core/threads";
-import type { UploadedFileInfo } from "@/core/uploads";
+import type { PromptInputContextFile, UploadedFileInfo } from "@/core/uploads";
 import type { ReasoningMode } from "./reasoning-mode";
 import {
   ModeSelector,
@@ -106,10 +106,12 @@ export interface ChatInputBoxProps {
    * independent of the selected role: roles change persona/capabilities, not
    * the user's Echo vs ChatGPT/Codex model source. */
   modelProfileControl?: boolean;
-  /** Execution kernel for this role. Model source remains independently
-   * selectable: Echo uses per-thread model_name, Codex uses its scoped
-   * server profile. */
-  executionEngine?: "echo" | "codex";
+  /** When true, the shared profile control edits only this task's model
+   * selection; the account-wide Codex profile remains unchanged. */
+  taskModelOverride?: boolean;
+  /** Execution kernel for this role. Echo serializes the thread model;
+   * Codex uses its server profile unless taskModelOverride is enabled. */
+  executionEngine?: "echo" | "codex" | "opencode";
   onPermissionModeChange?: (mode: PermissionMode) => void;
   onProjectAgentModeChange?: (mode: AgentModeName) => void;
   onAuditIntensityChange?: (intensity: AuditIntensity) => void;
@@ -138,6 +140,7 @@ export interface ChatInputBoxProps {
     text: string;
     images?: File[];
     files?: File[];
+    contextFiles?: PromptInputContextFile[];
     /** Server-side info for attachments already uploaded on attach. */
     uploaded?: UploadedFileInfo[];
   }) => void;

@@ -13,12 +13,14 @@ import {
   applyOmvSharedFolderRename,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
+  applyOmvTimeMachine,
   applyOmvUser,
   applyOmvUserPassword,
   fetchOmvFilesystems,
   fetchOmvSharePrivileges,
   fetchOmvSharingOverview,
   fetchOmvStatus,
+  fetchOmvTimeMachineStatus,
   planOmvFilesystemQuota,
   planOmvGroup,
   planOmvNfsShare,
@@ -29,6 +31,7 @@ import {
   planOmvSharedFolderRename,
   planOmvSharePrivilege,
   planOmvSmbShare,
+  planOmvTimeMachine,
   planOmvUser,
   planOmvUserPassword,
 } from "./omv";
@@ -57,12 +60,14 @@ vi.mock("./omv", () => ({
   applyOmvSharedFolderRename: vi.fn(),
   applyOmvSharePrivilege: vi.fn(),
   applyOmvSmbShare: vi.fn(),
+  applyOmvTimeMachine: vi.fn(),
   applyOmvUser: vi.fn(),
   applyOmvUserPassword: vi.fn(),
   fetchOmvFilesystems: vi.fn(),
   fetchOmvSharePrivileges: vi.fn(),
   fetchOmvSharingOverview: vi.fn(),
   fetchOmvStatus: vi.fn(),
+  fetchOmvTimeMachineStatus: vi.fn(),
   planOmvFilesystemQuota: vi.fn(),
   planOmvGroup: vi.fn(),
   planOmvNfsShare: vi.fn(),
@@ -73,6 +78,7 @@ vi.mock("./omv", () => ({
   planOmvSharedFolderRename: vi.fn(),
   planOmvSharePrivilege: vi.fn(),
   planOmvSmbShare: vi.fn(),
+  planOmvTimeMachine: vi.fn(),
   planOmvUser: vi.fn(),
   planOmvUserPassword: vi.fn(),
 }));
@@ -181,6 +187,14 @@ beforeEach(() => {
       permission: "readWrite",
     },
   ]);
+  vi.mocked(fetchOmvTimeMachineStatus).mockResolvedValue({
+    schema: "echo.storage.time-machine-status.v1",
+    enabled: false,
+    available: true,
+    shares: [],
+    source: "native",
+    readOnly: true,
+  });
   vi.mocked(fetchEchoAccounts).mockResolvedValue({
     schema: "echo.account-directory.v1",
     accounts: [
@@ -203,6 +217,33 @@ beforeEach(() => {
 });
 
 describe("OMV sharing and users settings", () => {
+  it("explains how to recover when physical disks cannot be enumerated", async () => {
+    vi.mocked(fetchOmvStatus).mockResolvedValue({
+      configured: true,
+      available: false,
+      readOnly: false,
+      adminUrl: null,
+      capabilities: [],
+      source: "native",
+      coverage: "none",
+      probeEvidence: [
+        {
+          source: "block-devices",
+          state: "unavailable",
+          code: "tool_missing",
+          required: true,
+          checkedAt: "2026-09-08T00:00:00Z",
+        },
+      ],
+    });
+
+    render(<OmvSharingPanel />);
+
+    expect(await screen.findByText("共享管理暂不可用")).toBeInTheDocument();
+    expect(screen.getByText(/检查设备读取权限和磁盘映射/)).toBeInTheDocument();
+    expect(fetchOmvSharingOverview).not.toHaveBeenCalled();
+  });
+
   it("shows protocol state and loads a sanitized permission matrix", async () => {
     const user = userEvent.setup();
     render(<OmvSharingPanel />);
@@ -981,6 +1022,99 @@ describe("OMV sharing and users settings", () => {
     );
   });
 
+  it("creates a dedicated Time Machine destination through preview and approval", async () => {
+    const user = userEvent.setup();
+    const overview = await fetchOmvSharingOverview();
+    vi.mocked(fetchOmvSharingOverview).mockResolvedValueOnce({
+      ...overview,
+      smb: { enabled: true, shares: [] },
+      nfs: { enabled: true, shares: [] },
+    });
+    vi.mocked(fetchOmvStatus).mockResolvedValueOnce({
+      configured: true,
+      available: true,
+      readOnly: false,
+      adminUrl: null,
+      source: "native",
+      capabilities: ["smb.time-machine.desired.v1"],
+    });
+    const desired = {
+      schema: "echo.storage.time-machine-desired.v1" as const,
+      sharedFolderRef: shareUuid,
+      enabled: true,
+      owner: "alice",
+      maximumBytes: 256 * 1024 ** 3,
+    };
+    const plan = {
+      schema: "echo.storage.time-machine-plan.v1" as const,
+      planId: "c".repeat(64),
+      baseRevision: "d".repeat(64),
+      operation: "create" as const,
+      requiresApproval: true,
+      sharedFolder: { uuid: shareUuid, name: "Family", status: "MOUNTED" },
+      desired,
+      changes: [
+        { field: "enabled" as const, before: false, after: true },
+        { field: "owner" as const, before: null, after: "alice" },
+        {
+          field: "maximumBytes" as const,
+          before: null,
+          after: 256 * 1024 ** 3,
+        },
+      ],
+      safety: { protocol: "smb3-vfs-fruit" },
+    };
+    vi.mocked(planOmvTimeMachine).mockResolvedValue(plan);
+    vi.mocked(applyOmvTimeMachine).mockResolvedValue({
+      ...plan,
+      applied: true,
+      verified: true,
+      dataPreserved: true,
+    });
+    vi.mocked(requestHighRiskApproval).mockResolvedValueOnce({
+      approvalToken: "time-machine-token",
+      expiresIn: 90,
+      action: "storage.time-machine.apply",
+      target: plan.planId,
+    });
+
+    render(<OmvSharingPanel />);
+    await user.click(
+      await screen.findByRole("button", { name: "启用 Time Machine" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: /Time Machine 备份目的地/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "备份所有者" })).toHaveValue(
+      "alice",
+    );
+    await user.click(
+      screen.getByRole("button", { name: "预览 Time Machine 变更" }),
+    );
+    await waitFor(() =>
+      expect(planOmvTimeMachine).toHaveBeenCalledWith(desired),
+    );
+    expect(screen.getByText("将创建 Time Machine 目的地")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "管理员确认并应用" }));
+    await user.type(screen.getByLabelText("设备管理员密码"), "device-password");
+    await user.click(
+      screen.getByRole("button", { name: "确认应用 Time Machine" }),
+    );
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "storage.time-machine.apply",
+        plan.planId,
+        "device-password",
+      ),
+    );
+    expect(applyOmvTimeMachine).toHaveBeenCalledWith(
+      desired,
+      plan.planId,
+      "time-machine-token",
+    );
+  });
+
   it("creates a simple shared folder only after preview and password approval", async () => {
     const user = userEvent.setup();
     const desired = {
@@ -1328,7 +1462,7 @@ describe("OMV sharing and users settings", () => {
       expect(planOmvSharedFolderDelete).toHaveBeenCalledWith(desired),
     );
     expect(
-      screen.getByText(/已确认目录为空且没有 SMB\/NFS 依赖/),
+      screen.getByText(/已确认目录为空且没有 SMB\/NFS\/Time Machine 依赖/),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "管理员确认删除" }));
     await user.type(screen.getByLabelText("设备管理员密码"), "device-password");

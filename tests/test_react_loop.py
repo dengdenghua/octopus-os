@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -1288,13 +1289,19 @@ def test_resume_context_prompt_skips_unconfirmed_intent() -> None:
     assert _build_resume_context_prompt({"confirmed": False, "checkpoint_id": 1}) == ""
 
 
-def test_react_loop_injects_confirmed_resume_context_as_volatile_message() -> None:
+def test_react_loop_injects_confirmed_resume_context_as_volatile_message(tmp_path) -> None:
+    from uuid import uuid4
+
+    from runtime.memory.journal import JSONLJournal
+    from runtime.memory.journal._journal_models import ReactCheckpointEvent
+
+    task_id = str(uuid4())
     router = _CapturingRouter(["Final Answer: resumed"])
     intent = _intent("continue the task")
     intent.user_context["resume_intent"] = {
         "confirmed": True,
-        "checkpoint_id": 12,
-        "task_id": "task-12",
+        "checkpoint_id": 0,
+        "task_id": task_id,
         "checkpoint_type": "react",
         "iteration": 2,
         "continue_from_iteration": 3,
@@ -1310,7 +1317,14 @@ def test_react_loop_injects_confirmed_resume_context_as_volatile_message() -> No
         ],
     }
 
-    result = run_react_loop(_FakeStack(router), intent, agent=None)
+    stack = _FakeStack(router)
+    stack.journal = JSONLJournal(tmp_path / "checkpoint.jsonl")
+    stack.journal.write(
+        ReactCheckpointEvent(
+            task_id=task_id, iteration_completed=2, progress_summary="Ready to verify"
+        )
+    )
+    result = run_react_loop(stack, intent, agent=None, resume_task_id=task_id)
 
     assert result is not None
     messages = router.requests[0].messages
@@ -6469,9 +6483,11 @@ def test_unavailable_approval_pauses_instead_of_failing_turn(
     assert not (project / "src" / "new.py").exists()
 
 
-def test_accept_edits_permission_auto_approves_code_file_writes(
+@pytest.mark.parametrize("review_available", [True, False])
+def test_accept_edits_permission_requires_independent_review(
     tmp_path: Any,
     monkeypatch: Any,
+    review_available: bool,
 ) -> None:
     monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path))
     project = tmp_path / "project"
@@ -6488,6 +6504,15 @@ def test_accept_edits_permission_auto_approves_code_file_writes(
             ]
         )
     )
+    review_requests = []
+
+    def review(request):
+        review_requests.append(request)
+        return SimpleNamespace(
+            text=json.dumps({"outcome": "allow", "risk": "low", "reason": "authorized test"})
+        )
+
+    stack.approval_router = SimpleNamespace(call=review) if review_available else None
     provider = _ApprovingApprovalProvider()
     session = Session(
         agent=_ScopeAgent(),
@@ -6519,13 +6544,20 @@ def test_accept_edits_permission_auto_approves_code_file_writes(
             )
         )
 
-    assert result is not None and result.success
-    assert [req.tool_name for req in provider.requests] == ["exec_shell"]
+    assert result is not None
+    assert provider.requests == []
     approval_tool_names = [
         event["tool_name"] for event in events if event["type"] == "tool_approval_request"
     ]
-    assert approval_tool_names == ["exec_shell"]
-    assert (project / "src" / "new.py").read_text(encoding="utf-8") == "x"
+    assert approval_tool_names == []
+    if review_available:
+        assert result.success
+        assert len(review_requests) == 2
+        assert all(request.model == "auto" for request in review_requests)
+        assert (project / "src" / "new.py").read_text(encoding="utf-8") == "x"
+    else:
+        assert review_requests == []
+        assert not (project / "src" / "new.py").exists()
 
 
 def test_code_mode_risk_policy_can_deny_without_provider_roundtrip(
@@ -8283,8 +8315,8 @@ def test_parallel_react_reads_keep_selected_workspace_scope(tmp_path) -> None:
     observation, results = dispatched
     assert len(results) == 2
     assert all(result["ok"] is True for result in results)
-    assert str((tmp_path / "a.txt").resolve()) in observation
-    assert str((tmp_path / "b.txt").resolve()) in observation
+    assert json.dumps(str((tmp_path / "a.txt").resolve()), ensure_ascii=False) in observation
+    assert json.dumps(str((tmp_path / "b.txt").resolve()), ensure_ascii=False) in observation
     assert "not found" not in observation
     # ``react`` describes the model protocol, not the filesystem permission
     # tier. Tool dispatch must neither mutate nor demote the bound code scope.
@@ -8310,31 +8342,48 @@ def test_parallel_react_reads_keep_selected_workspace_scope(tmp_path) -> None:
     serial_observation, serial_results = serial_dispatched
     assert len(serial_results) == 1
     assert serial_results[0]["ok"] is True
-    assert str((tmp_path / "a.txt").resolve()) in serial_observation
+    assert json.dumps(str((tmp_path / "a.txt").resolve()), ensure_ascii=False) in serial_observation
     assert session.metadata["mode"] == "code"
 
 
-def test_write_tool_in_parallel_block_forces_serial_dispatch(tmp_path) -> None:
+def test_write_tool_in_parallel_block_forces_serial_dispatch(tmp_path, monkeypatch) -> None:
     """If the model mixes a write tool into a multi-action block we
     must still execute serially — concurrent writes can clobber
     each other and the auto-diagnostics path expects a single
     resolved tool. The events should still arrive (one pair each)
     but order is preserved."""
+    import threading
+
     # Absolute path under tmp_path so the real write tool never leaks
     # a CWD-relative tmp_out.txt into the checkout (repo-root variant is
     # gitignored, but the tests/ CWD variant was not).
     write_path = str(tmp_path / "tmp_out.txt")
+    write_args = json.dumps({"path": write_path, "content": "x"})
     stack = _build_stack_with_executor(
         _ScriptedRouter(
             [
                 "Thought: read+write\nAction:\n"
                 '    read_file({"path": "a"})\n'
-                f'    write_text_file({{"path": "{write_path}", "content": "x"}})\n\n'
+                f"    write_text_file({write_args})\n\n"
                 "Observation:",
                 "Final Answer: done",
             ]
         )
     )
+    execution_order = []
+    execution_threads = []
+    real_execute = stack.executor.execute_step
+
+    def observed_execute(*args, **kwargs):
+        name = str(kwargs["sucker_id"])
+        execution_threads.append(threading.get_ident())
+        execution_order.append(("enter", name))
+        try:
+            return real_execute(*args, **kwargs)
+        finally:
+            execution_order.append(("return", name))
+
+    monkeypatch.setattr(stack.executor, "execute_step", observed_execute)
     events, result = _drain(
         stream_react_loop(
             stack,
@@ -8348,6 +8397,16 @@ def test_write_tool_in_parallel_block_forces_serial_dispatch(tmp_path) -> None:
     # Both calls dispatched, both events emitted.
     names_in_order = [e["tool_name"] for e in starts]
     assert names_in_order == ["read_file", "write_text_file"]
+    # Batch start events are announced up front. Observe the actual executor
+    # entry/return order and caller thread to distinguish serial dispatch.
+    assert execution_order == [
+        ("enter", "read_file"),
+        ("return", "read_file"),
+        ("enter", "write_text_file"),
+        ("return", "write_text_file"),
+    ]
+    assert execution_threads == [threading.get_ident(), threading.get_ident()]
+    assert (tmp_path / "tmp_out.txt").read_text(encoding="utf-8") == "x"
 
 
 def test_unregistered_tool_in_parallel_block_surfaces_error() -> None:
@@ -9679,4 +9738,3 @@ def test_repeat_guard_disabled_through_user_context() -> None:
     for request in router.requests:
         joined = "\n".join(str(message.content) for message in request.messages)
         assert "REPEAT-CALL REMINDER" not in joined
-

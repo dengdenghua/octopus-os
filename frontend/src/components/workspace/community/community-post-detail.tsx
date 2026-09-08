@@ -12,31 +12,15 @@ import {
   formatCount,
   formatRelativeTime,
   mergeComments,
+  readLikes,
+  writeLikes,
   type CommunityComment,
   type CommunityPost,
 } from "./community-data";
 import { CommunityForkButton } from "./community-fork-button";
 import { creditLikeEarn } from "@/core/credits/ledger";
+import { currentActorId } from "@/core/auth/api";
 import { cn } from "@/lib/utils";
-
-const LIKES_KEY = "echo.community.likes.v1";
-
-function readLiked(): string[] {
-  try {
-    const raw = window.localStorage.getItem(LIKES_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeLiked(ids: string[]) {
-  try {
-    window.localStorage.setItem(LIKES_KEY, JSON.stringify(ids));
-  } catch {
-    /* ignore */
-  }
-}
 
 /**
  * 帖子详情视图 —— 小红书式点击卡片进入的单帖详情。
@@ -57,7 +41,9 @@ export function CommunityPostDetail({
   onToggleFavorite?: (id: string) => void;
   onCommentAdded?: (postId: string, count: number) => void;
 }) {
-  const [liked, setLiked] = useState(() => readLiked().includes(post.id));
+  const actor = currentActorId();
+  const [liked, setLiked] = useState(() => readLikes().includes(post.id));
+  const [stateActor, setStateActor] = useState(actor);
   const [comments, setComments] = useState<CommunityComment[]>(() =>
     mergeComments(post),
   );
@@ -65,6 +51,14 @@ export function CommunityPostDetail({
   const [imageBroken, setImageBroken] = useState(false);
   const [imageIndex, setImageIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (stateActor === actor) return;
+    setStateActor(actor);
+    setLiked(readLikes().includes(post.id));
+    setComments(mergeComments(post));
+    setDraft("");
+  }, [actor, post, stateActor]);
 
   const images = (post.images?.length ? post.images : [post.coverUrl]).filter(
     Boolean,
@@ -94,9 +88,9 @@ export function CommunityPostDetail({
   const toggleLike = () => {
     setLiked((prev) => {
       const next = prev
-        ? readLiked().filter((x) => x !== post.id)
-        : [...readLiked(), post.id];
-      writeLiked(next);
+        ? readLikes().filter((x) => x !== post.id)
+        : [...readLikes(), post.id];
+      writeLikes(next);
       // 点赞自己发布的内容 → 作者获得互动奖励（共创赚钱闭环）。
       if (!prev && post.author === "我") creditLikeEarn(post.title);
       return !prev;

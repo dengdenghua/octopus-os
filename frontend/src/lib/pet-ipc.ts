@@ -24,7 +24,12 @@ import dgram from "dgram";
 const PET_IPC_HOST = "127.0.0.1";
 const PET_IPC_PORT = 8765;
 
-export type PetEmotion = "happy" | "sad" | "curious" | "surprised" | "concerned";
+export type PetEmotion =
+  | "happy"
+  | "sad"
+  | "curious"
+  | "surprised"
+  | "concerned";
 
 export interface PetEvent {
   type: string;
@@ -66,11 +71,18 @@ class PetIPCClient {
     this.queue.length = 0;
     try {
       const payload = Buffer.from(JSON.stringify(latest) + "\n", "utf8");
-      this.socket.send(payload, 0, payload.length, PET_IPC_PORT, PET_IPC_HOST, (err) => {
-        if (err) {
-          // Pet sidecar not running - silently ignore
-        }
-      });
+      this.socket.send(
+        payload,
+        0,
+        payload.length,
+        PET_IPC_PORT,
+        PET_IPC_HOST,
+        (err) => {
+          if (err) {
+            // Pet sidecar not running - silently ignore
+          }
+        },
+      );
     } catch {
       // Socket errors are non-fatal
     }

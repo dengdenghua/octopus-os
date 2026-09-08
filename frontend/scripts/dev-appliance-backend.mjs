@@ -5,6 +5,7 @@ import { delimiter, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { seedDevCustomModels } from "./dev-appliance-model-seed.mjs";
+import { resolveDevConfiguration } from "./dev-appliance-config.mjs";
 
 const legacyEnvironmentPrefix = "OCTO" + "PUS_";
 for (const [name, value] of Object.entries(process.env)) {
@@ -15,9 +16,6 @@ for (const [name, value] of Object.entries(process.env)) {
 
 const scriptDirectory = fileURLToPath(new URL(".", import.meta.url));
 const osRoot = resolve(scriptDirectory, "../..");
-const configPath = resolve(
-  process.env.ECHO_AGENT_CONFIG || resolve(osRoot, "config.local.yaml"),
-);
 const dataRoot = resolve(
   process.env.ECHO_DEV_DATA_DIR || resolve(osRoot, "data/echo-appliance-dev"),
 );
@@ -32,23 +30,13 @@ function persistedApplianceJwtSecret() {
   if (!existsSync(applianceAuthStorePath)) return "";
   try {
     const payload = JSON.parse(readFileSync(applianceAuthStorePath, "utf8"));
-    return typeof payload.jwt_secret === "string" ? payload.jwt_secret.trim() : "";
+    return typeof payload.jwt_secret === "string"
+      ? payload.jwt_secret.trim()
+      : "";
   } catch {
     return "";
   }
 }
-
-const localJwtSecret =
-  process.env.ECHO_LOCAL_JWT_SECRET ||
-  persistedApplianceJwtSecret() ||
-  randomBytes(48).toString("base64url");
-const codexBundleManifest = resolve(
-  osRoot,
-  "deploy/appliance/agent-codex/echo-codex-bundle.json",
-);
-const packagedCodexVersion =
-  process.env.ECHO_PACKAGED_CODEX_VERSION ||
-  JSON.parse(readFileSync(codexBundleManifest, "utf8")).version;
 
 // Agent and OS now share one frontend. The CSRF boundary only needs the
 // current Vite origin; the historical 3001 sibling UI is deliberately absent.
@@ -75,21 +63,29 @@ if (
     `FRONTEND_PORT must be a valid TCP port, received ${frontendPort}`,
   );
 }
-if (!existsSync(configPath)) {
-  throw new Error(`Embedded Agent development config not found: ${configPath}`);
+const { configPath, python, packagedCodexVersion, codexExecutable } =
+  resolveDevConfiguration(osRoot);
+
+if (process.argv.includes("--check")) {
+  console.info(
+    JSON.stringify({
+      check: "development-configuration-only",
+      configPath,
+      python,
+      packagedCodexVersion: packagedCodexVersion || null,
+      codexExecutable: codexExecutable || null,
+      host: "127.0.0.1",
+      port: Number(port),
+      frontendPort: Number(frontendPort),
+    }),
+  );
+  process.exit(0);
 }
 
-const pythonCandidates = [
-  process.env.ECHO_AGENT_PYTHON,
-  resolve(osRoot, ".venv/bin/python"),
-  resolve(osRoot, ".venv/Scripts/python.exe"),
-].filter(Boolean);
-const python = pythonCandidates.find((candidate) => existsSync(candidate));
-if (!python) {
-  throw new Error(
-    `Embedded Agent Python not found under ${osRoot}; set ECHO_AGENT_PYTHON`,
-  );
-}
+const localJwtSecret =
+  process.env.ECHO_LOCAL_JWT_SECRET ||
+  persistedApplianceJwtSecret() ||
+  randomBytes(48).toString("base64url");
 
 mkdirSync(dataRoot, { recursive: true, mode: 0o700 });
 mkdirSync(nasRoot, { recursive: true, mode: 0o700 });
@@ -125,7 +121,13 @@ const child = spawn(
     env: {
       ...process.env,
       PYTHONPATH: pythonPath,
+      // Repository/configuration text is UTF-8 even on a Windows GBK locale.
+      PYTHONUTF8: "1",
+      ...(codexExecutable ? { ECHO_CODEX_EXECUTABLE: codexExecutable } : {}),
       ECHO_APPLIANCE: "1",
+      // Do not serve a partial Agent when the device extension cannot acquire
+      // its state directory (for example, while another dev instance owns it).
+      ECHO_REQUIRED_APP_EXTENSIONS: "1",
       // The local Vite workflow deliberately keeps the admin login passwordless.
       // Production entrypoints never set this development-only override.
       ECHO_APPLIANCE_DEV_PASSWORDLESS:
@@ -135,7 +137,11 @@ const child = spawn(
       // Local development gets per-process secrets when the operator has not
       // supplied persistent ones. They are never printed or written to disk.
       ECHO_LOCAL_JWT_SECRET: localJwtSecret,
-      ECHO_PACKAGED_CODEX_VERSION: packagedCodexVersion,
+      // A fresh source checkout has no release bundle. Let the runtime resolve
+      // its development package pin without claiming a verified bundled binary.
+      ...(packagedCodexVersion
+        ? { ECHO_PACKAGED_CODEX_VERSION: packagedCodexVersion }
+        : {}),
       ECHO_DATA_DIR: dataRoot,
       ECHO_NAS_ROOT: nasRoot,
     },

@@ -23,12 +23,22 @@ import {
 } from "react";
 
 import { swallow } from "@/core/utils/log";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
+import {
+  readBrowserResearchLog,
+  writeBrowserResearchLog,
+  type BrowserResearchLogEntry,
+} from "@/core/browser/research-log";
 import { useThreadStream } from "@/core/threads/hooks";
 import { isAIMessage, isHumanMessage } from "@/core/api/types";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   ACTIVE_AGENT_EVENT,
-  ACTIVE_AGENT_KEY,
+  setActiveAgentId,
   useActiveAgentId,
 } from "@/core/agents/active";
 import { useAgents } from "@/core/agents/hooks";
@@ -65,14 +75,7 @@ interface ResearchPlatform {
   hint: string;
 }
 
-interface ResearchLogEntry {
-  id: string;
-  createdAt: number;
-  platform: string;
-  title: string;
-  note: string;
-  url?: string;
-}
+type ResearchLogEntry = BrowserResearchLogEntry;
 
 const RESEARCH_PLATFORMS: ResearchPlatform[] = [
   {
@@ -110,6 +113,7 @@ const RECORDER_PROTOCOL = `\
 `;
 
 export function CopilotPanel({ webviewHandle }: Props) {
+  const actor = currentActorId();
   const { t } = useI18n();
   const { activeTab, state, setCopilotOpen, setCopilotWidth } =
     useBrowserStore();
@@ -121,21 +125,26 @@ export function CopilotPanel({ webviewHandle }: Props) {
   >([]);
   const [recorderMode, setRecorderMode] = useState(() => {
     if (typeof window === "undefined") return false;
-    return localStorage.getItem("echo:browser-recorder-mode") === "1";
+    return readActorScopedStorageValue("echo:browser-recorder-mode") === "1";
   });
+  const [sessionActor, setSessionActor] = useState(actor);
   const [researchGoal, setResearchGoal] = useState("");
   const [researchLog, setResearchLog] = useState<ResearchLogEntry[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = sessionStorage.getItem("echo:browser-research-log");
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      swallow(e);
-      return [];
-    }
+    return readBrowserResearchLog(actor);
   });
   const [briefCopied, setBriefCopied] = useState(false);
+  useEffect(() => {
+    if (sessionActor === actor) return;
+    setSessionActor(actor);
+    setRecorderMode(
+      typeof window !== "undefined" &&
+        readActorScopedStorageValue("echo:browser-recorder-mode", actor) ===
+          "1",
+    );
+    setResearchLog(readBrowserResearchLog(actor));
+    setResearchGoal("");
+    setBriefCopied(false);
+  }, [actor, sessionActor]);
   const listRef = useRef<HTMLDivElement>(null);
 
   // Implementation note.
@@ -183,24 +192,17 @@ export function CopilotPanel({ webviewHandle }: Props) {
   const MAX_AGENT_LOOP = 8;
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || sessionActor !== actor) return;
     localStorage.setItem(
-      "echo:browser-recorder-mode",
+      actorScopedStorageKey("echo:browser-recorder-mode", actor),
       recorderMode ? "1" : "0",
     );
-  }, [recorderMode]);
+  }, [actor, recorderMode, sessionActor]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      sessionStorage.setItem(
-        "echo:browser-research-log",
-        JSON.stringify(researchLog.slice(0, 80)),
-      );
-    } catch (e) {
-      swallow(e);
-    }
-  }, [researchLog]);
+    if (typeof window === "undefined" || sessionActor !== actor) return;
+    writeBrowserResearchLog(researchLog, actor);
+  }, [actor, researchLog, sessionActor]);
 
   useEffect(() => {
     if (recorderMode) {
@@ -1335,7 +1337,7 @@ function AgentPicker({
 
   const select = (name: string) => {
     try {
-      window.localStorage.setItem(ACTIVE_AGENT_KEY, name);
+      setActiveAgentId(name);
     } catch (e) {
       swallow(e);
     }

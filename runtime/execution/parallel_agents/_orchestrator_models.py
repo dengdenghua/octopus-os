@@ -23,6 +23,13 @@ from runtime.core.cerebrum.run_state import converge_run_state
 from runtime.execution.misc.file_write_leases import (
     file_write_lease_snapshot,
 )
+from runtime.platform.process._task_supervisor_models import (
+    TERMINAL_TASK_STATUSES as _SUPERVISOR_TERMINAL_STATUSES,
+)
+from runtime.platform.process._task_supervisor_models import (
+    TaskRunRecord,
+    TaskRunStatus,
+)
 
 from .helpers import (
     preview as _preview,
@@ -217,12 +224,22 @@ class _BatchEntry:
     event_sequence: int = 0
     event_log_dropped_count: int = 0
     artifact_paths_by_task: dict[str, list[str]] = field(default_factory=dict)
-    # Owner enforcement: set by dispatch() from the calling actor's id.
+    # Owner enforcement: set by dispatch() from the authenticated principal.
     # ``None`` means "no owner recorded" — for batches created before
     # ownership tracking was added, or in single-user dev mode where
     # require_auth is off. Endpoints treat ``None`` as "visible to
-    # everyone" so legacy state isn't suddenly hidden.
+    # everyone" only in dev mode; authenticated legacy records fail closed.
     owner_id: str | None = None
+    tenant_id: str | None = None
+    # Runtime-only handle. The durable TaskSupervisor row is exposed through
+    # ``host_task_id``; the live guard and heartbeat never enter wire JSON.
+    host_task_id: str | None = None
+    host_execution: Any = field(default=None, repr=False, compare=False)
+    # Recovery provenance is kept in-process as well as on the durable host
+    # record. It lets a retrying caller see that the same explicit selection
+    # already produced a child batch, without changing the wire result.
+    recovery_source_batch_id: str | None = None
+    recovery_source_task_map: dict[str, str] = field(default_factory=dict)
 
     # ── counters ──
     def derived_status(self) -> str:
@@ -259,6 +276,7 @@ class _BatchEntry:
         coordination_summary = _build_coordination_summary(self)
         return BatchResult(
             batch_id=self.batch_id,
+            host_task_id=self.host_task_id,
             status=self.derived_status(),
             total_tasks=total,
             completed_tasks=completed,
@@ -513,6 +531,7 @@ def _build_recovery_snapshot(
 
     return BatchRecoverySnapshot(
         batch_id=batch.batch_id,
+        host_task_id=getattr(batch, "host_task_id", None),
         status=run_state.state,
         terminal=run_state.terminal,
         resume_available=bool(rerunnable_task_ids),
@@ -595,5 +614,277 @@ def _build_recovery_snapshot(
             "worker_replacement_limit": int(
                 batch.timeout_policy.get("worker_replacement_limit") or 0
             ),
+        },
+    )
+
+
+def _durable_task_status(record: TaskRunRecord) -> str:
+    """Map a durable host/worker status to the parallel recovery contract."""
+
+    status = record.status
+    if status is TaskRunStatus.COMPLETED:
+        return "completed"
+    if status is TaskRunStatus.CANCELLED:
+        return "cancelled"
+    if status is TaskRunStatus.PENDING:
+        return "pending"
+    if status in {
+        TaskRunStatus.FAILED,
+        TaskRunStatus.DISCONNECTED,
+    }:
+        return "failed"
+    # Waiting for approval, paused, verifying and repairing are still live
+    # execution from the batch's point of view.  They must remain recoverable
+    # rather than being mistaken for a new terminal state.
+    return "running"
+
+
+def _metadata_list(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return []
+    result: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _metadata_int(value: Any, *, default: int = 0) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _durable_task_specs(record: TaskRunRecord) -> list[dict[str, Any]]:
+    raw = record.metadata.get("parallel_task_specs")
+    if not isinstance(raw, list) or not raw:
+        return [
+            {
+                "task_id": task_id,
+                "description": "",
+                "subagent_name": "general-purpose",
+                "depends_on": [],
+                "priority": 0,
+                "write_paths": [],
+            }
+            for task_id in _metadata_list(record.metadata.get("parallel_task_ids"))
+        ]
+    specs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw_spec in raw:
+        if not isinstance(raw_spec, dict):
+            continue
+        task_id = str(raw_spec.get("task_id") or "").strip()
+        if not task_id or task_id in seen:
+            continue
+        seen.add(task_id)
+        try:
+            priority = int(raw_spec.get("priority") or 0)
+        except (TypeError, ValueError):
+            priority = 0
+        specs.append(
+            {
+                "task_id": task_id,
+                "description": str(raw_spec.get("description") or ""),
+                "subagent_name": str(raw_spec.get("subagent_name") or "general-purpose"),
+                "depends_on": _metadata_list(raw_spec.get("depends_on")),
+                "priority": priority,
+                "write_paths": _metadata_list(raw_spec.get("write_paths")),
+            }
+        )
+    return specs
+
+
+def _build_recovery_snapshot_from_host_record(
+    record: TaskRunRecord,
+    worker_records: list[TaskRunRecord],
+) -> BatchRecoverySnapshot:
+    """Build a redacted recovery view when the in-memory batch is gone.
+
+    The host record is authoritative for the aggregate lifecycle. Worker rows
+    add only status/timing/error evidence; no model output is reconstructed or
+    treated as an accepted result. This lets a restarted process explain what
+    can be resumed without pretending that the scheduler was automatically
+    rebuilt.
+    """
+
+    metadata = record.metadata if isinstance(record.metadata, dict) else {}
+    batch_id = str(metadata.get("batch_id") or "").strip()
+    if not batch_id and record.task_id.startswith("parallel-batch:"):
+        batch_id = record.task_id.removeprefix("parallel-batch:")
+    batch_id = batch_id or record.task_id
+    specs = _durable_task_specs(record)
+    known_ids = {spec["task_id"] for spec in specs}
+    # Durable worker rows use an internal host task id such as
+    # ``parallel:<batch>:<task>``.  The aggregate metadata stores the stable
+    # logical task id separately; join on that field first so a restart does
+    # not expose a duplicate phantom lane in the recovery snapshot.
+    workers_by_id: dict[str, TaskRunRecord] = {}
+    worker_prefix = f"parallel:{batch_id}:"
+    for worker in worker_records:
+        metadata = worker.metadata if isinstance(worker.metadata, dict) else {}
+        logical_id = str(metadata.get("parallel_task_id") or "").strip()
+        if not logical_id and worker.task_id.startswith(worker_prefix):
+            logical_id = worker.task_id.removeprefix(worker_prefix).strip()
+        if logical_id:
+            workers_by_id[logical_id] = worker
+        workers_by_id.setdefault(worker.task_id, worker)
+    # A worker can be admitted just before the aggregate metadata is flushed;
+    # retain it in the recovery view rather than dropping evidence.
+    for worker in worker_records:
+        metadata = worker.metadata if isinstance(worker.metadata, dict) else {}
+        logical_id = str(metadata.get("parallel_task_id") or "").strip()
+        if not logical_id and worker.task_id.startswith(worker_prefix):
+            logical_id = worker.task_id.removeprefix(worker_prefix).strip()
+        if worker.task_id in known_ids or logical_id in known_ids:
+            continue
+        specs.append(
+            {
+                "task_id": worker.task_id,
+                "description": worker.goal,
+                "subagent_name": str(worker.metadata.get("subagent_name") or "general-purpose"),
+                "depends_on": _metadata_list(worker.metadata.get("depends_on")),
+                "priority": _metadata_int(worker.metadata.get("priority")),
+                "write_paths": _metadata_list(worker.metadata.get("write_paths")),
+            }
+        )
+
+    tasks: list[BatchRecoveryTask] = []
+    dag: dict[str, list[str]] = {}
+    for spec in specs:
+        task_id = str(spec["task_id"])
+        worker = workers_by_id.get(task_id)
+        status = _durable_task_status(worker) if worker is not None else "running"
+        if worker is None and record.status in _SUPERVISOR_TERMINAL_STATUSES:
+            # A task with no worker row never started. A terminal aggregate
+            # therefore leaves it pending for an explicit recovery decision.
+            status = "pending"
+        depends_on = list(spec.get("depends_on") or [])
+        dag[task_id] = depends_on
+        tasks.append(
+            BatchRecoveryTask(
+                task_id=task_id,
+                status=status,
+                subagent_name=str(spec.get("subagent_name") or "general-purpose"),
+                depends_on=depends_on,
+                priority=_metadata_int(spec.get("priority")),
+                write_paths=list(spec.get("write_paths") or []),
+                description_preview=_preview(spec.get("description"), max_chars=180),
+                result_preview=None,
+                error=(worker.terminal_reason if worker is not None else None) or None,
+                submitted_at=worker.created_at if worker is not None else None,
+                started_at=worker.started_at if worker is not None else None,
+                completed_at=worker.completed_at if worker is not None else None,
+                duration_seconds=None,
+                route_decision={},
+                worker_state=(
+                    "released"
+                    if worker is not None and worker.status in _SUPERVISOR_TERMINAL_STATUSES
+                    else "recovery_pending"
+                ),
+                worker_isolation="thread",
+                worker_isolation_reason="durable_recovery_snapshot",
+            )
+        )
+
+    host_status = _durable_task_status(record)
+    host_terminal = record.status in _SUPERVISOR_TERMINAL_STATUSES
+    task_statuses = [task.status for task in tasks]
+    completed = sum(status == "completed" for status in task_statuses)
+    failed = sum(status == "failed" for status in task_statuses)
+    cancelled = sum(status == "cancelled" for status in task_statuses)
+    running = sum(status == "running" for status in task_statuses)
+    pending = sum(status == "pending" for status in task_statuses)
+    # A running worker has an unknown side-effect boundary after a restart.
+    # It is evidence to inspect, never a safe automatic/implicit rerun.
+    rerunnable = [
+        task.task_id for task in tasks if task.status in {"failed", "cancelled", "pending"}
+    ]
+    try:
+        plan = BatchPlan.model_validate(metadata.get("parallel_plan"))
+    except (TypeError, ValueError):
+        plan = None
+    receipt = build_completion_receipt(
+        task_statuses,
+        output_present=False,
+    ).to_dict()
+    lease_health = {
+        "state": (
+            "terminal"
+            if host_terminal
+            else "expired"
+            if record.lease is not None and record.lease.expired
+            else "missing_lease"
+            if record.lease is None
+            else "ok"
+        ),
+        "task_id": record.task_id,
+        "status": record.status.value,
+    }
+    return BatchRecoverySnapshot(
+        batch_id=batch_id,
+        host_task_id=record.task_id,
+        status=host_status,
+        terminal=host_terminal,
+        resume_available=bool(rerunnable) and (host_terminal or lease_health["state"] != "ok"),
+        created_at=record.created_at,
+        completed_at=record.completed_at,
+        task_count=len(tasks),
+        completed_tasks=completed,
+        failed_tasks=failed,
+        cancelled_tasks=cancelled,
+        running_tasks=running,
+        pending_tasks=pending,
+        tasks=tasks,
+        dag=dag,
+        plan=plan,
+        event_sequence={
+            "event_count": 0,
+            "event_log_limit_reached": False,
+            "dropped_event_count": 0,
+            "durable_source": "task_supervisor",
+        },
+        artifact_paths=[],
+        conflicts=[],
+        completion_receipt=receipt,
+        file_write_observability={},
+        coordination_summary={
+            "schema": "echo.parallel_batch_coordination.v1",
+            "batch_id": batch_id,
+            "status": host_status,
+            "ready": False,
+            "recommended_next_action": (
+                "resume_failed_tasks" if rerunnable else "inspect_task_run"
+            ),
+            "completed_task_ids": [task.task_id for task in tasks if task.status == "completed"],
+            "failed_task_ids": [task.task_id for task in tasks if task.status == "failed"],
+            "cancelled_task_ids": [task.task_id for task in tasks if task.status == "cancelled"],
+            "output_present": False,
+            "durable_only": True,
+        },
+        worker_observability={
+            "schema": "echo.parallel_worker_observability.v1",
+            "durable_only": True,
+            "worker_count": len(worker_records),
+        },
+        recovery_hints={
+            "rerunnable_task_ids": rerunnable,
+            "failed_task_ids": [task.task_id for task in tasks if task.status == "failed"],
+            "cancelled_task_ids": [task.task_id for task in tasks if task.status == "cancelled"],
+            "pending_task_ids": [task.task_id for task in tasks if task.status == "pending"],
+            "running_task_ids": [task.task_id for task in tasks if task.status == "running"],
+            "host_task_id": record.task_id,
+            "durable_source": "task_supervisor",
+            "automatic_batch_reconstruction": False,
+        },
+        safety={
+            "raw_subagent_outputs_included": False,
+            "event_payloads_included": False,
+            "owner_id_included": False,
+            "durable_only": True,
+            "result_preview_max_chars": 0,
+            "description_preview_max_chars": 180,
         },
     )

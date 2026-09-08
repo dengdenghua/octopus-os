@@ -271,6 +271,7 @@ def mount_agents(
         task_delete_projection=_delete_task_from_collaboration,
         room_membership_resolver=_resolve_room_members,
         room_participant_resolver=_resolve_room_participant,
+        task_supervisor=getattr(state, "task_supervisor", None),
     )
     app.state.team_tasks_router = team_tasks_router
     app.include_router(team_tasks_router)

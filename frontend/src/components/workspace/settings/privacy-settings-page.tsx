@@ -1,5 +1,5 @@
 /** Privacy and security controls backed by live runtime policy endpoints. */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangleIcon,
@@ -24,10 +24,12 @@ import { Switch } from "@/components/ui/switch";
 import { RoutedWebLink } from "@/components/ui/routed-web-link";
 import { getBackendBaseURL } from "@/core/config";
 import { jsonAuthHeaders } from "@/core/auth/api";
+import { AI_MODE_CHANGED, setSystemAiMode } from "@/core/privacy/api";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { ReachControl } from "@/components/workspace/reach-control";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { formatAiModeDevice, type AiModeDevice } from "./settings-resilience";
@@ -94,6 +96,7 @@ export default function PrivacySettingsPage() {
   const { t, locale } = useI18n();
   const copy = getSettingsUxCopy(locale).privacy;
   const navigate = useNavigate();
+  const { search } = useLocation();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<LockStatus | null>(null);
   const [statusLoadState, setStatusLoadState] = useState<LoadState>("loading");
@@ -115,6 +118,7 @@ export default function PrivacySettingsPage() {
   const [aiMode, setAiMode] = useState<AiModeStatus | null>(null);
   const [aiModeBusy, setAiModeBusy] = useState(false);
   const [aiModeLoadState, setAiModeLoadState] = useState<LoadState>("loading");
+  const aiModeRequest = useRef(0);
 
   // ── Path denylist ──
   const [denylist, setDenylist] = useState<PathDenylistStatus | null>(null);
@@ -185,6 +189,7 @@ export default function PrivacySettingsPage() {
   }, []);
 
   const fetchAiMode = useCallback(async () => {
+    const requestId = ++aiModeRequest.current;
     setAiModeLoadState("loading");
     try {
       const res = await fetch(`${getBackendBaseURL()}/api/ai-mode`);
@@ -200,9 +205,11 @@ export default function PrivacySettingsPage() {
       ) {
         throw new Error("invalid data");
       }
+      if (requestId !== aiModeRequest.current) return;
       setAiMode(data);
       setAiModeLoadState("ready");
     } catch {
+      if (requestId !== aiModeRequest.current) return;
       setAiMode(null);
       setAiModeLoadState("error");
     }
@@ -234,18 +241,10 @@ export default function PrivacySettingsPage() {
   async function selectAiMode(mode: AiModeId) {
     if (aiModeBusy || !aiMode) return;
     if (aiMode.mode === mode) return;
-    // Optimistic update — rollback on failure.
     const prev = aiMode;
-    setAiMode({ ...aiMode, mode });
     setAiModeBusy(true);
     try {
-      const res = await fetch(`${getBackendBaseURL()}/api/ai-mode`, {
-        method: "POST",
-        headers: jsonAuthHeaders(),
-        body: JSON.stringify({ mode }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const payload = (await res.json()) as Partial<AiModeStatus>;
+      const payload = (await setSystemAiMode(mode)) as Partial<AiModeStatus>;
       const resolvedMode =
         payload.mode === "efficiency" || payload.mode === "privacy"
           ? payload.mode
@@ -260,17 +259,29 @@ export default function PrivacySettingsPage() {
       };
       setAiMode(next);
       const label =
-        mode === "efficiency"
+        next.mode === "efficiency"
           ? t.privacySettings.efficiencyMode
           : t.privacySettings.privacyMode;
       toast.success(t.privacySettings.toastAiModeSwitched(label));
-    } catch {
+    } catch (error) {
       setAiMode(prev);
-      toast.error(copy.restoreFailed);
+      toast.error(error instanceof Error ? error.message : copy.restoreFailed);
     } finally {
       setAiModeBusy(false);
     }
   }
+
+  useEffect(() => {
+    const refresh = () => {
+      void fetchAiMode();
+    };
+    window.addEventListener(AI_MODE_CHANGED, refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener(AI_MODE_CHANGED, refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [fetchAiMode]);
 
   async function addDenylistPath() {
     const path = newPath.trim();
@@ -444,7 +455,10 @@ export default function PrivacySettingsPage() {
       toast.success(t.accountSettings.factoryResetSuccess);
       setShowFactoryResetDialog(false);
       setFactoryResetConfirmText("");
-      navigate("/workspace/realtime/new", { replace: true });
+      navigate(
+        preserveWorkbenchPresentation("/workspace/realtime/new", search),
+        { replace: true },
+      );
     } catch {
       toast.error(t.accountSettings.factoryResetFailed);
     } finally {
@@ -620,7 +634,7 @@ export default function PrivacySettingsPage() {
                           )}
                         </div>
                       </div>
-                      <p className="line-clamp-2 text-xs leading-snug text-muted-foreground sm:line-clamp-none">
+                      <p className="text-xs leading-snug text-muted-foreground">
                         {description}
                       </p>
                     </button>
@@ -1049,8 +1063,7 @@ export default function PrivacySettingsPage() {
               variant="destructive"
               onClick={handleFactoryReset}
               disabled={
-                factoryResetConfirmText !== "RESET ECHO" ||
-                factoryResetPending
+                factoryResetConfirmText !== "RESET ECHO" || factoryResetPending
               }
             >
               {factoryResetPending

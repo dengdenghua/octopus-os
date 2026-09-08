@@ -155,6 +155,9 @@ class ExecutionConfig(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     deployment_mode: Literal["local", "shared", "commercial", "production", "server"] = "local"
+    # None preserves the member policy; False disables optional unattended
+    # model work. It never disables approval checks or privacy enforcement.
+    background_model_calls: bool | None = Field(default=None, strict=True)
     process_sandbox: Literal[
         "auto",
         "soft",
@@ -473,7 +476,10 @@ class AgentConfig(BaseModel):
     intel_sources: list[IntelSourceConfig] = Field(default_factory=list)
     mcp_servers: list[MCPServerConfigEntry] = Field(default_factory=list)
 
-    journal_file: str | None = None  # Implementation note.
+    # "auto" stores events.jsonl in app_paths().data_dir (ECHO_DATA_DIR,
+    # ECHO_HOME/data, or the discovered project data directory). Null retains
+    # the in-memory library/test default; other strings are explicit paths.
+    journal_file: str | None = None
     # Journal rotation cap in bytes. When the journal exceeds this size, the
     # oldest events are dropped to keep the file bounded. None (default) disables
     # rotation. Recommended: 10-50 MB (10485760-52428800 bytes) for demo/dev.

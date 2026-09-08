@@ -37,6 +37,8 @@ SHARE_PRIVILEGE_PLAN_SCHEMA = "echo.omv.share-privilege-plan.v1"
 SHARE_PRIVILEGE_CONTROL_CAPABILITY = "shared-folder.privilege.simple.v1"
 SMB_DESIRED_SCHEMA = "echo.omv.smb-share-desired.v1"
 SMB_PLAN_SCHEMA = "echo.omv.smb-share-plan.v1"
+TIME_MACHINE_DESIRED_SCHEMA = "echo.storage.time-machine-desired.v1"
+TIME_MACHINE_PLAN_SCHEMA = "echo.storage.time-machine-plan.v1"
 SMB_CONTROL_CAPABILITY = "smb.share.desired.v1"
 NFS_DESIRED_SCHEMA = "echo.omv.nfs-share-desired.v1"
 NFS_PLAN_SCHEMA = "echo.omv.nfs-share-plan.v1"
@@ -100,6 +102,8 @@ SMART_SELF_TEST_PLAN_SCHEMA = "echo.omv.smart-self-test-plan.v1"
 SMART_SELF_TEST_CONTROL_CAPABILITY = "storage.smart.self-test.start.v1"
 HMAC_SAFETY_CONTRACT = "hmacBoundNeverReturnedOrAudited"
 MAX_QUOTA_BYTES = 2**63 - 1
+MIN_TIME_MACHINE_BYTES = 64 * 1024**3
+MAX_TIME_MACHINE_BYTES = 1024**5
 _DEVICEFILE_PATTERN = re.compile(r"/dev/[A-Za-z0-9._/+:-]+")
 _OMV_UUID_PATTERN = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
@@ -919,6 +923,35 @@ def validate_smb_desired(value: Any) -> dict[str, Any]:
         "browseable": value["browseable"],
         "recycleBin": value["recycleBin"],
         "comment": comment,
+    }
+
+
+def validate_time_machine_desired(value: Any) -> dict[str, Any]:
+    """Validate one dedicated, authenticated Time Machine destination."""
+    expected = {"schema", "sharedFolderRef", "enabled", "owner", "maximumBytes"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("Time Machine desired state has unexpected fields")
+    if value.get("schema") != TIME_MACHINE_DESIRED_SCHEMA:
+        raise ValueError("Time Machine desired-state schema is unsupported")
+    folder_ref = value.get("sharedFolderRef")
+    if not isinstance(folder_ref, str):
+        raise ValueError("Time Machine shared folder UUID is invalid")
+    if not isinstance(value.get("enabled"), bool):
+        raise ValueError("Time Machine desired field enabled must be boolean")
+    maximum_bytes = value.get("maximumBytes")
+    if (
+        isinstance(maximum_bytes, bool)
+        or not isinstance(maximum_bytes, int)
+        or not MIN_TIME_MACHINE_BYTES <= maximum_bytes <= MAX_TIME_MACHINE_BYTES
+        or maximum_bytes % 1024**3 != 0
+    ):
+        raise ValueError("Time Machine maximumBytes must be a whole GiB between 64 GiB and 1 PiB")
+    return {
+        "schema": TIME_MACHINE_DESIRED_SCHEMA,
+        "sharedFolderRef": validate_omv_uuid(folder_ref).lower(),
+        "enabled": value["enabled"],
+        "owner": validate_account_name(value.get("owner"), "Time Machine owner"),
+        "maximumBytes": maximum_bytes,
     }
 
 

@@ -13,7 +13,8 @@ export interface RoutedWebLinkProps extends ComponentProps<"a"> {
 }
 
 /** `example.com/page` → `https://example.com/page`; anything else untouched. */
-const BARE_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(?=$|[/?#:])/i;
+const BARE_HOST =
+  /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(?=$|[/?#:])/i;
 
 function promoteBareHost(href: string): string {
   // Leave in-app paths, fragments, queries and anything already carrying a
@@ -48,7 +49,8 @@ export function RoutedWebLink({
   // host-looking href to https so it behaves like the external link it is.
   // (`javascript:`/`data:` need no handling here: React blocks the former
   // outright and `isWebTarget` keeps both off the routing path.)
-  const resolvedHref = href && !isWebTarget(href) ? promoteBareHost(href) : href;
+  const resolvedHref =
+    href && !isWebTarget(href) ? promoteBareHost(href) : href;
   const webTarget = !!resolvedHref && isWebTarget(resolvedHref);
   const resolvedTarget = target ?? (webTarget ? "_blank" : undefined);
   const resolvedRel =

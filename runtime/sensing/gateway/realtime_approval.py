@@ -20,6 +20,7 @@ from runtime.safety.approval.approval_gate import (
     ApprovalProvider,
     ApprovalRequest,
 )
+from runtime.safety.approval.cancellation import current_cancellation_token
 from runtime.sensing.gateway.realtime_gateway import EventEmitter, _ApprovalError
 
 _logger = logging.getLogger(__name__)
@@ -67,6 +68,9 @@ class GatewayApprovalProvider(ApprovalProvider):
             timeout=timeout,
         )
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        # Lease loss or another internal cancellation must release both the
+        # blocking worker and the real pending RPC, even with its dialog open.
+        unsubscribe = current_cancellation_token().on_cancelled(lambda _reason: future.cancel())
         # Every failure denies, but the *reason* is part of the contract:
         # "timeout" / "connection_lost" are machine-readable so the UI
         # and journal can distinguish "user said no" from "nobody was
@@ -80,13 +84,17 @@ class GatewayApprovalProvider(ApprovalProvider):
             return self._deny(req, reason=label if timed_out else f"error: {exc}", label=label)
         except CancelledError:
             # ApprovalManager.cancel_all() on connection close cancels the
-            # pending future. CancelledError is a BaseException — without
-            # this clause it would crash the react worker thread.
+            # pending future. This is concurrent.futures.CancelledError,
+            # distinct from asyncio.CancelledError in the async waiter.
             return self._deny(req, reason="connection_lost", label="connection_lost")
         except TimeoutError:
             return self._deny(req, reason="timeout", label="timeout")
         except (ConnectionError, OSError, RuntimeError) as exc:
             return self._deny(req, reason=f"error: {exc}", label="error")
+        finally:
+            unsubscribe()
+            if not future.done():
+                future.cancel()
         action = (decision or {}).get("action", "decline")
         result = ApprovalDecision(
             approved=(action == "accept"),

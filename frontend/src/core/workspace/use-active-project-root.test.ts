@@ -8,7 +8,7 @@ import {
 
 describe("active project root", () => {
   afterEach(() => {
-    window.localStorage.removeItem("echo:recentWorkdirs");
+    window.localStorage.removeItem("echo:recentWorkdirs:anonymous");
     window.history.replaceState(null, "", "/");
     window.location.hash = "";
   });
@@ -29,7 +29,7 @@ describe("active project root", () => {
 
     expect(result.current).toBe("/projects/beta");
     expect(
-      JSON.parse(localStorage.getItem("echo:recentWorkdirs") ?? "[]"),
+      JSON.parse(localStorage.getItem("echo:recentWorkdirs:anonymous") ?? "[]"),
     ).toEqual(["/projects/beta"]);
   });
 });

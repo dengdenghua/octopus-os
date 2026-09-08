@@ -14,6 +14,9 @@ from typing import Any, cast
 
 import pytest
 
+if not sys.platform.startswith("linux"):
+    pytest.skip("the hardened verifier requires Linux", allow_module_level=True)
+
 from benchmarks import linux_hardened_verifier as hardened
 
 
@@ -950,4 +953,3 @@ def run_trusted_supervisor(*args, **kwargs):
         match="isolated candidate-API",
     ):
         runner.provenance()
-

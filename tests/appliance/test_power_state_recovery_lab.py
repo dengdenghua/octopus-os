@@ -9,6 +9,12 @@ from typing import Any
 
 import pytest
 
+if os.name == "nt":
+    pytest.skip(
+        "power state recovery lab requires Linux device and service semantics",
+        allow_module_level=True,
+    )
+
 from deploy.appliance import operations_bundle, operations_systemd_lab
 from deploy.appliance import operations_systemd as systemd
 from deploy.appliance import power_state_recovery_lab as lab

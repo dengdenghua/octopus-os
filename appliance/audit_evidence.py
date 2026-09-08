@@ -308,7 +308,13 @@ def _write_encrypted(archive_path: Path, target: Path, passphrase: bytes) -> Non
     )
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, 0o600)
+        try:
+            os.fchmod(descriptor, 0o600)
+        except AttributeError:
+            # Windows exposes private ACLs rather than POSIX descriptor modes;
+            # keep the temporary file creation path portable and let the
+            # parent state policy enforce the ACL boundary there.
+            os.chmod(temporary, 0o600)
         with os.fdopen(descriptor, "wb") as output, archive_path.open("rb") as source:
             output.write(prefix)
             while block := source.read(CHUNK_BYTES):

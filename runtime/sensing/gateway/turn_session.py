@@ -138,6 +138,8 @@ def build_turn_metadata(
         metadata["sandbox_mode"] = sb_mode
 
     for key in (
+        "execution_engine",
+        "model_scope",
         "capability_mode",
         "code_mode",
         "agent_mode",
@@ -231,6 +233,39 @@ def build_turn_metadata(
         if clean_surfaces:
             metadata["runtime_surfaces"] = clean_surfaces
 
+    # File references are a presentation/context contract, never an access
+    # grant. Keep only the bounded fields the execution layer can display or
+    # resolve through an already-authorized resource service; do not inherit
+    # stale references from persisted thread metadata.
+    raw_context_files = ctx.get("context_files")
+    if isinstance(raw_context_files, list):
+        clean_context_files: list[dict[str, str]] = []
+        for item in raw_context_files[:32]:
+            if not isinstance(item, dict):
+                continue
+            path = item.get("path")
+            resource_id = item.get("resourceId")
+            if not isinstance(resource_id, str) or not resource_id.strip():
+                resource_id = item.get("resource_id")
+            if (not isinstance(path, str) or not path.strip()) and not (
+                isinstance(resource_id, str) and resource_id.strip()
+            ):
+                continue
+            reference: dict[str, str] = {}
+            if isinstance(path, str) and path.strip():
+                reference["path"] = path.strip()[:2048]
+            for source_key, target_key, limit in (
+                ("workDir", "work_dir", 2048),
+                ("sourceLabel", "source_label", 128),
+                ("resourceId", "resource_id", 512),
+            ):
+                value = item.get(source_key)
+                if isinstance(value, str) and value.strip():
+                    reference[target_key] = value.strip()[:limit]
+            clean_context_files.append(reference)
+        if clean_context_files:
+            metadata["context_files"] = clean_context_files
+
     if authoritative_workspace is None:
         allowed_write_paths = ctx.get("allowed_write_paths")
         if allowed_write_paths is None and not explicit_conversation_mode:
@@ -265,6 +300,20 @@ def build_turn_metadata(
     roster = ctx.get("agent_roster") or stored_meta.get("agent_roster")
     if isinstance(roster, list) and roster:
         metadata["agent_roster"] = roster
+
+    # The realtime gateway injects this private viewer payload after
+    # authenticating the WebSocket. Preserve it through the normalized turn
+    # metadata so ReAct/agentic prompt assembly can enforce the same memory
+    # ACL as the HTTP gateway. The consumer still requires the matching
+    # authoritative tenant-scope marker before trusting it.
+    try:
+        from runtime.memory.users.user_store import MEMORY_VIEWER_CONTEXT_KEY
+
+        viewer_context = ctx.get(MEMORY_VIEWER_CONTEXT_KEY)
+        if isinstance(viewer_context, dict):
+            metadata[MEMORY_VIEWER_CONTEXT_KEY] = dict(viewer_context)
+    except (ImportError, AttributeError):
+        pass
 
     return metadata
 

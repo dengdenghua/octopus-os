@@ -31,6 +31,9 @@ mkdir -p "$BIN"
 cat >"$BIN/whiptail" <<'STUB'
 #!/bin/sh
 case "$*" in
+  *--yesno*)
+    : >"$CONFIRM_FILE"
+    ;;
   *--radiolist*)
     [ -n "${FAKE_CANCEL_RADIOLIST:-}" ] && exit 1
     echo "${FAKE_DISK:-sdb}" >&2
@@ -62,6 +65,7 @@ export PATH="$BIN:$PATH"
 run_installer() {
   local capture="$WORK/captured.$$.$RANDOM"
   local done="$WORK/done.$$.$RANDOM"
+  CONFIRMED="$WORK/confirmed.$$.$RANDOM"
   rm -f "$capture"
   rm -f "$done"
   # 注意用 ${VAR-default} 而非 ${VAR:-default}:空串是无盘场景的合法注入,
@@ -71,6 +75,8 @@ run_installer() {
   CNT_FILE="$WORK/cnt.$RANDOM" \
   ECHO_INSTALL_DONE="$done" \
   ECHO_TEST_DISKS="${TEST_DISKS-sda sdb nvme0n1}" \
+  ECHO_TEST_DISK_KB="${TEST_DISK_KB-500000000}" \
+  CONFIRM_FILE="$CONFIRMED" \
   FAKE_DISK="${FAKE_DISK:-sdb}" \
   FAKE_HOST="${FAKE_HOST:-testnas}" \
   FAKE_PW1="${FAKE_PW1:-supersecret123}" \
@@ -144,6 +150,25 @@ else
     ok "所有行均为 d-i 预置格式"
   fi
 fi
+
+head2 "6. 容量不足和未知容量在清空确认前拒绝"
+for size in 1 33554431 unknown; do
+  TEST_DISK_KB="$size" run_installer
+  assert_rc 1 "拒绝容量 $size"
+  [ ! -e "$CONFIRMED" ] && ok "未进入清空确认" || bad "不合格磁盘进入了清空确认"
+  [ ! -s "$CAPTURED" ] && ok "未提交分区预置" || bad "不合格磁盘提交了预置"
+done
+
+head2 "7. 恰好 32 GiB 的容量下限"
+TEST_DISK_KB=33554432 run_installer
+assert_rc 0 "容量下限可通过"
+assert_has "d-i partman-auto/disk string /dev/sdb" "合格磁盘可提交预置"
+
+head2 "8. 拒绝非候选磁盘"
+FAKE_DISK=not-listed run_installer
+assert_rc 1 "非候选磁盘被拒绝"
+[ ! -e "$CONFIRMED" ] && ok "未进入清空确认" || bad "非候选磁盘进入了清空确认"
+[ ! -s "$CAPTURED" ] && ok "未提交分区预置" || bad "非候选磁盘提交了预置"
 
 echo
 echo "────────────────────────"

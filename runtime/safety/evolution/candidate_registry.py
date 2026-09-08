@@ -434,7 +434,10 @@ class CandidateRegistry:
                 # Candidate files are low-volume control-plane state, so a
                 # read-side durability fence is preferable to returning a
                 # possibly page-cache-only lifecycle state.
-                with target.open("rb") as handle:
+                # Windows FlushFileBuffers requires a writable handle. This
+                # fence repairs durability; opening read-only makes every
+                # existing candidate fail to load there with EBADF.
+                with target.open("r+b" if os.name == "nt" else "rb") as handle:
                     os.fsync(handle.fileno())
                 _fsync_directory(target.parent)
                 return out

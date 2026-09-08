@@ -192,6 +192,33 @@ def test_embedded_runtime_is_required_by_the_source_contract(tmp_path: Path) -> 
     assert _check(report, "repository_layout")["status"] == "failed"
 
 
+def test_non_ascii_repository_root_is_checked_without_absolute_path_round_trip(
+    tmp_path: Path,
+) -> None:
+    non_ascii_parent = tmp_path / "飞牛os"
+    non_ascii_parent.mkdir()
+    root, _head = _repository(non_ascii_parent)
+
+    report = preflight.inspect_delivery_source(root, offline=True)
+
+    assert _check(report, "git_repository")["status"] == "passed"
+    assert report["blockers"] == ["online_verification_required"]
+
+
+def test_nested_or_non_repository_path_returns_complete_fail_closed_report(
+    tmp_path: Path,
+) -> None:
+    root, _head = _repository(tmp_path)
+    nested = root / "runtime"
+
+    report = preflight.inspect_delivery_source(nested, offline=True)
+
+    assert tuple(check["code"] for check in report["checks"]) == (preflight.PREFLIGHT_CHECK_CODES)
+    assert _check(report, "git_repository")["status"] == "failed"
+    assert _check(report, "delivery_branch")["status"] == "failed"
+    assert report["ready"] is False
+
+
 def test_cli_emits_machine_readable_fail_closed_report(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -888,9 +888,7 @@ export interface BrowserDesktopRepairRecipeVerificationsReport {
 
 export interface BrowserDesktopRepairRecipeEvidenceAttachment {
   ok?: boolean;
-  schema:
-    | "echo.browser_desktop_repair_recipe_evidence_attachment.v1"
-    | string;
+  schema: "echo.browser_desktop_repair_recipe_evidence_attachment.v1" | string;
   item: AgentTraceReviewQueueItem;
   evidence: {
     schema: "echo.browser_desktop_repair_recipe_evidence.v1" | string;

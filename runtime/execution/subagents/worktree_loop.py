@@ -15,10 +15,10 @@ because reconciling parallel edits to the same file is a human/lead decision,
 not something to do blindly.
 
 The ``worker`` is an injected callable ``worker(worktree_path, task) -> None``
-that writes files inside the worktree. Wiring a sub-agent as the worker (so it
-runs with ``cwd`` = the worktree) needs per-worker ``workspace_path`` support
-in ``call_subagent`` and is a separate integration step; the loop machinery
-here is agnostic to what the worker is.
+that writes files inside the worktree. ``subagent_worktree_worker`` wires the
+same contract to ``call_subagent(workspace_path=...)`` and captures the parent
+host Session before crossing the executor-thread boundary, so worktree writes
+and governance remain part of the originating turn.
 """
 
 from __future__ import annotations
@@ -164,11 +164,32 @@ def _restore_worktree_gitfile(worktree: str, expected_gitdir: str) -> None:
         return
     if line == f"gitdir: {expected_gitdir}":
         return
+    payload = f"gitdir: {expected_gitdir}\n".encode()
     try:
-        with open(gitfile, "w", encoding="utf-8") as fh:
-            fh.write(f"gitdir: {expected_gitdir}\n")
+        # Linked-worktree .git pointers are hidden on Windows. Re-opening the
+        # existing file for update works there, while ``open(..., "w")`` uses
+        # CREATE_ALWAYS and can fail with ERROR_ACCESS_DENIED despite the
+        # current user owning the file.
+        with open(gitfile, "r+b", buffering=0) as fh:
+            fh.seek(0)
+            fh.truncate()
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
     except OSError:  # noqa: BLE001 — best-effort cleanup must never raise
-        pass
+        # A worker may have removed/replaced the pointer. Keep cleanup
+        # best-effort and avoid following an attacker-controlled path; an
+        # atomic replacement is safe only after the temporary file is created
+        # inside the same worktree directory.
+        try:
+            tmp_path = f"{gitfile}.restore"
+            with open(tmp_path, "wb", buffering=0) as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp_path, gitfile)
+        except OSError:
+            pass
 
 
 @contextmanager
@@ -257,9 +278,9 @@ def shell_worktree_worker(
     ``$ECHO_WORKTREE_TASK``. The task string is never interpolated into the
     command and no shell is spawned by us, so an untrusted task can't inject
     argv. A non-zero exit raises (the loop marks that task failed). This is the
-    works-today consumer — running a sub-agent as the worker (so the agent's
-    own file tools target the worktree) needs per-worker write-scope wiring in
-    the executor and is deferred until it can be verified against a live run."""
+    works-today consumer — shell commands are still caller-supplied fixed argv
+    and therefore must be available on the host; no command shell is spawned by
+    this wrapper."""
     argv = [str(part) for part in command]
 
     def _worker(path: str, task: Any) -> None:
@@ -287,6 +308,7 @@ def subagent_worktree_worker(
     agent_id: str = "worktree_writer",
     *,
     timeout_s: int = 600,
+    session: Any = None,
 ) -> Callable[[str, Any], None]:
     """A worker that runs an LLM sub-agent inside each worktree, with the
     sub-agent's OWN file tools confined to that worktree.
@@ -296,17 +318,36 @@ def subagent_worktree_worker(
     injects it as ``sandbox_dir`` for every write skill, so the sub-agent can
     write ONLY inside its worktree (verified live with an escape test). The
     default role ``worktree_writer`` has no shell — a shell would bypass the
-    sandbox_dir confinement. A failed run raises so the loop marks it failed."""
+    sandbox_dir confinement. A failed run raises so the loop marks it failed.
+
+    The parent Session is captured when this worker is created and passed
+    explicitly into every executor thread. ContextVars do not propagate into
+    ``ThreadPoolExecutor`` workers, so this keeps turn identity, governance
+    leases, and usage accounting attached to the originating turn."""
+
+    # ``run_worktree_loop`` invokes workers from a pool, where the ambient
+    # Session ContextVar is empty. Resolve it once on the caller's thread.
+    parent_session = session
+    if parent_session is None:
+        try:
+            from runtime.platform.process.session import current_session
+
+            parent_session = current_session()
+        except (ImportError, AttributeError):
+            parent_session = None
 
     def _worker(path: str, task: Any) -> None:
         from runtime.execution.subagents import call_subagent
 
-        result = call_subagent(
-            agent_id=agent_id,
-            prompt=str(task),
-            workspace_path=path,
-            timeout_s=timeout_s,
-        )
+        kwargs: dict[str, Any] = {
+            "agent_id": agent_id,
+            "prompt": str(task),
+            "workspace_path": path,
+            "timeout_s": timeout_s,
+        }
+        if parent_session is not None:
+            kwargs["session"] = parent_session
+        result = call_subagent(**kwargs)
         if not result.get("success"):
             raise RuntimeError(result.get("error") or "subagent failed")
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+from PIL import Image
+
 from runtime.memory.hemolymph import video_semantic_index as vsi
 
 
@@ -79,6 +81,57 @@ def test_build_video_index_error_paths(monkeypatch, tmp_path: Path) -> None:
     assert "clip_vision_unavailable" in out2["error"]
 
 
+def test_video_resource_limit_rolls_back_the_previous_snapshot(monkeypatch, tmp_path: Path) -> None:
+    import sys
+
+    monkeypatch.setenv("ECHO_VIDEO_SEMANTIC", "auto")
+    monkeypatch.setitem(sys.modules, "av", SimpleNamespace())
+    video = tmp_path / "new.mp4"
+    video.write_bytes(b"synthetic")
+    db = tmp_path / "video.db"
+    conn = vsi._open(db)
+    conn.execute(
+        "INSERT INTO video_keyframes (video_path, time_sec, clip_embedding) VALUES (?, ?, ?)",
+        ("old.mp4", 1.0, vsi._vec_to_blob([1.0, 0.0])),
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(vsi, "_image_model", lambda: _FakeEmbed())
+    monkeypatch.setattr(vsi, "_iter_videos", lambda *_args, **_kwargs: [video])
+    monkeypatch.setattr(
+        vsi,
+        "_video_meta",
+        lambda *_args, **_kwargs: {
+            "duration": 1.0,
+            "width": 8,
+            "height": 8,
+            "fps": 1.0,
+            "format": "mp4",
+        },
+    )
+    monkeypatch.setattr(
+        vsi,
+        "_extract_keyframes",
+        lambda *_args, **_kwargs: [(0.0, Image.new("RGB", (8, 8), "red"))],
+    )
+    monkeypatch.setattr(
+        vsi,
+        "_embed",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(vsi._img.ImageInferenceResourceBusy()),
+    )
+
+    result = vsi.build_video_index(tmp_path, db_path=db, include_faces=False)
+
+    assert result == {
+        "ok": False,
+        "error": "image_inference_busy",
+        "resource_limited": True,
+        "retained_previous": True,
+    }
+    with vsi._open(db) as conn:
+        assert conn.execute("SELECT video_path FROM video_keyframes").fetchall() == [("old.mp4",)]
+
+
 def test_search_video_by_text_with_index(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("ECHO_VIDEO_SEMANTIC", "auto")
     monkeypatch.setattr(vsi, "_text_model", lambda: _FakeEmbed())
@@ -130,4 +183,3 @@ def test_search_video_by_image_with_index(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(vsi, "_image_model", lambda: None)
     assert vsi.search_video_by_image(str(img), db_path=db) is None
     assert vsi.search_video_by_image(str(tmp_path / "missing.png"), db_path=db) is None
-

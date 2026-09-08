@@ -25,14 +25,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -52,9 +44,10 @@ import type { AgentThread } from "@/core/threads/types";
 import { formatCompactRelativeTimestamp } from "@/core/utils/datetime";
 import { uuid } from "@/core/utils/uuid";
 import { activeWorkspaceThreadIdFromPathname } from "@/core/threads/sidebar";
-import { isIMEComposing } from "@/lib/ime";
 import { isAbsolutePath } from "@/lib/path-utils";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
+import { ThreadRenameDialog } from "./thread-rename-dialog";
 
 const DRAWER_WIDTH = "min(320px, 86vw)";
 
@@ -148,37 +141,52 @@ export function ChatsDrawer({ open, onOpenChange }: ChatsDrawerProps) {
   const workspaceDestinations = [
     {
       label: t.sidebar.navHR,
-      to: "/workspace/agents?surface=chat",
+      to: preserveWorkbenchPresentation(
+        "/workspace/agents?surface=chat",
+        search,
+      ),
       icon: BotIcon,
       active: pathname.startsWith("/workspace/agents"),
     },
     {
       label: t.sidebar.navIntelligence,
-      to: "/workspace/intelligence?surface=chat",
+      to: preserveWorkbenchPresentation(
+        "/workspace/intelligence?surface=chat",
+        search,
+      ),
       icon: BrainIcon,
       active: pathname.startsWith("/workspace/intelligence"),
     },
     {
       label: t.sidebar.navAssistant,
-      to: "/workspace/realtime/echo-assistant?agent=echo",
+      to: preserveWorkbenchPresentation(
+        "/workspace/realtime/echo-assistant?agent=echo",
+        search,
+      ),
       icon: UserRoundPenIcon,
       active: pathname.includes("echo-assistant"),
     },
     {
       label: t.sidebar.navEvolution,
-      to: "/workspace/evolution?surface=chat",
+      to: preserveWorkbenchPresentation(
+        "/workspace/evolution?surface=chat",
+        search,
+      ),
       icon: DnaIcon,
       active: pathname.startsWith("/workspace/evolution"),
     },
     {
       label: t.sidebar.navCommunity,
-      to: "/workspace/community",
+      to: preserveWorkbenchPresentation("/workspace/community", search),
       icon: CompassIcon,
       active: pathname.startsWith("/workspace/community"),
     },
     {
       label: t.sidebar.navDatabase,
-      to: "/workspace/storage?surface=company&library=docs",
+      to: preserveWorkbenchPresentation(
+        "/workspace/storage?surface=company&library=docs",
+        search,
+      ),
       icon: DatabaseIcon,
       active: pathname.startsWith("/workspace/storage"),
     },
@@ -255,10 +263,16 @@ export function ChatsDrawer({ open, onOpenChange }: ChatsDrawerProps) {
       if (!ok) return;
       deleteThread.mutate({ threadId: thread.thread_id });
       if (pathname === threadHref(thread)) {
-        navigate(`/workspace/realtime/${uuid()}`, { replace: true });
+        navigate(
+          preserveWorkbenchPresentation(
+            `/workspace/realtime/${uuid()}`,
+            search,
+          ),
+          { replace: true },
+        );
       }
     },
-    [confirm, deleteThread, navigate, pathname, t],
+    [confirm, deleteThread, navigate, pathname, search, t],
   );
 
   return (
@@ -369,7 +383,7 @@ export function ChatsDrawer({ open, onOpenChange }: ChatsDrawerProps) {
                       className="group/thread relative"
                     >
                       <Link
-                        to={href}
+                        to={preserveWorkbenchPresentation(href, search)}
                         state={{
                           threadOwnerAgentId:
                             threadOwnerAgent(thread) || undefined,
@@ -462,57 +476,16 @@ export function ChatsDrawer({ open, onOpenChange }: ChatsDrawerProps) {
           </div>
         </SheetContent>
       </Sheet>
-      <Dialog
+      <ThreadRenameDialog
         open={threadToRename !== null}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            setThreadToRename(null);
-            setRenameValue("");
-          }
+        value={renameValue}
+        onChange={setRenameValue}
+        onClose={() => {
+          setThreadToRename(null);
+          setRenameValue("");
         }}
-      >
-        <DialogContent
-          showCloseButton={false}
-          className="w-[min(360px,calc(100vw-2rem))] gap-3 rounded-lg p-4 sm:max-w-[360px]"
-        >
-          <DialogHeader className="gap-1 text-left">
-            <DialogTitle className="text-base">{t.common.rename}</DialogTitle>
-          </DialogHeader>
-          <Input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !isIMEComposing(e)) {
-                e.preventDefault();
-                handleRenameSubmit();
-              }
-            }}
-            autoFocus
-            className="h-8 text-sm"
-          />
-          <DialogFooter className="mt-1 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setThreadToRename(null);
-                setRenameValue("");
-              }}
-            >
-              {t.common.cancel}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!renameValue.trim()}
-              onClick={handleRenameSubmit}
-            >
-              {t.common.save}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onSubmit={handleRenameSubmit}
+      />
       {confirmDialog}
     </>
   );

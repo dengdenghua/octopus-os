@@ -16,6 +16,9 @@ vi.mock("./omv-storage-health", () => ({
 vi.mock("./omv-sharing-panel", () => ({
   OmvSharingPanel: () => <div>真实共享管理页</div>,
 }));
+vi.mock("./nas-backup-panel", () => ({
+  NasBackupPanel: () => <div>异机 NAS 数据备份页</div>,
+}));
 vi.mock("./btrfs-raid1-panel", () => ({
   BtrfsRaid1Panel: () => <div>Btrfs RAID1 管理页</div>,
 }));
@@ -90,7 +93,7 @@ describe("storage center", () => {
       <StorageCenterPanel open onClose={vi.fn()} onOpenFiles={onOpenFiles} />,
     );
 
-    expect(await screen.findByText("设备总容量")).toBeInTheDocument();
+    expect(await screen.findByText("当前 NAS 数据卷")).toBeInTheDocument();
     expect(screen.getByText("照片 · 2 个文件")).toBeInTheDocument();
     expect(screen.getByText("视频 · 1 个文件")).toBeInTheDocument();
     expect(screen.getByText("家庭相册")).toBeInTheDocument();
@@ -109,15 +112,49 @@ describe("storage center", () => {
     const user = userEvent.setup();
     render(<StorageCenterPanel open onClose={vi.fn()} />);
 
-    await user.click(screen.getByRole("button", { name: "磁盘健康" }));
+    await user.click(screen.getByRole("button", { name: "健康与保护" }));
     expect(screen.getByText("真实磁盘健康页")).toBeInTheDocument();
+    expect(screen.queryByText("异机 NAS 数据备份页")).not.toBeInTheDocument();
+    expect(screen.queryByText("UPS 电源保护页")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /数据备份/ }));
+    expect(screen.getByText("异机 NAS 数据备份页")).toBeInTheDocument();
+    expect(screen.queryByText("真实磁盘健康页")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /维护与电源/ }));
     expect(screen.getByText("UPS 电源保护页")).toBeInTheDocument();
+    expect(screen.queryByText("异机 NAS 数据备份页")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "存储池" }));
     expect(screen.getByText("Btrfs RAID1 管理页")).toBeInTheDocument();
+    expect(screen.queryByText("真实 RAID1 管理页")).not.toBeInTheDocument();
+    expect(screen.queryByText("真实存储池管理页")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /RAID1 \+ EXT4/ }));
     expect(screen.getByText("真实 RAID1 管理页")).toBeInTheDocument();
+    expect(screen.getByText("RAID1 换盘修复页")).toBeInTheDocument();
     expect(screen.getByText("真实 EXT4 卷管理页")).toBeInTheDocument();
+    expect(screen.queryByText("Btrfs RAID1 管理页")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /ZFS 镜像/ }));
     expect(screen.getByText("真实存储池管理页")).toBeInTheDocument();
+    expect(screen.queryByText("真实 RAID1 管理页")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "共享与用户" }));
     expect(screen.getByText("真实共享管理页")).toBeInTheDocument();
+  });
+
+  it("does not display zero-sized or invalid capacity as healthy", async () => {
+    const usage = await vi.mocked(fetchStorageUsage)();
+    vi.mocked(fetchStorageUsage).mockResolvedValue({
+      ...usage,
+      disk: { ...usage.disk, totalBytes: 0, usedPercent: 0 },
+    });
+    render(<StorageCenterPanel open onClose={vi.fn()} />);
+
+    expect(await screen.findByText("容量状态未知")).not.toHaveClass(
+      "text-emerald-100",
+    );
+    expect(screen.getByText("总容量尚未确认")).toBeInTheDocument();
+    expect(screen.getByText("照片 · 2 个文件")).toBeInTheDocument();
+    expect(screen.queryByText("已使用 0%")).not.toBeInTheDocument();
   });
 });

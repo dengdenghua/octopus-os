@@ -7,7 +7,7 @@ import logging
 from collections.abc import Iterator
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
@@ -114,6 +114,7 @@ def create_photos_router(
         outcome: str,
         metadata: dict[str, Any],
         intent_id: str | None = None,
+        action: str = "photos.index.build",
     ) -> None:
         if audit is None:
             if auth.required:
@@ -125,7 +126,7 @@ def create_photos_router(
         try:
             audit.record(
                 actor=actor,
-                action="photos.index.build",
+                action=action,
                 target=target,
                 outcome=outcome,
                 metadata=values,
@@ -307,7 +308,8 @@ def create_photos_router(
             target=body.plan_id,
             outcome="attempted",
             metadata={
-                "includeFaces": body.include_faces,
+                "includeFaces": current["includeFaces"],
+                "cleanupOnly": current["cleanupOnly"],
                 "imageCount": current["imageCount"],
                 "maxFiles": current["maxFiles"],
             },
@@ -322,7 +324,8 @@ def create_photos_router(
                     outcome="succeeded" if job["state"] == "succeeded" else "failed",
                     metadata={
                         "jobId": job.get("jobId"),
-                        "includeFaces": body.include_faces,
+                        "includeFaces": current["includeFaces"],
+                        "cleanupOnly": current["cleanupOnly"],
                         "indexed": (job.get("result") or {}).get("indexed"),
                         "reason": job.get("error"),
                     },
@@ -334,7 +337,7 @@ def create_photos_router(
         try:
             job = service.start_index(
                 plan_id=body.plan_id,
-                include_faces=body.include_faces,
+                include_faces=current["includeFaces"],
                 on_complete=completed,
             )
         except PhotoIndexConflict as exc:
@@ -346,6 +349,147 @@ def create_photos_router(
                 intent_id=intent_id,
             )
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"schema": "echo.photos.index-job.v1", "job": job}
+
+    @router.post("/index-jobs/{job_id}/cancel")
+    async def cancel_index(
+        request: Request,
+        job_id: str = Path(pattern=r"^[0-9a-f]{24}$"),
+        actor: str = Depends(require_auth),
+        scope: DataAccessScope = scope_dependency,
+    ) -> dict[str, Any]:
+        authorize(scope, "operator")
+        intent_id = request_intent_id(request)
+        record(
+            actor=actor,
+            action="photos.index.cancel",
+            target=job_id,
+            outcome="attempted",
+            metadata={"jobId": job_id},
+            intent_id=intent_id,
+        )
+        try:
+            job = await run_in_threadpool(service.cancel_index, job_id)
+        except PhotoIndexConflict as exc:
+            record(
+                actor=actor,
+                action="photos.index.cancel",
+                target=job_id,
+                outcome="failed",
+                metadata={"jobId": job_id, "reason": exc.code},
+                intent_id=intent_id,
+            )
+            raise HTTPException(
+                status_code=409, detail={"error": exc.code, "message": str(exc)}
+            ) from exc
+        record(
+            actor=actor,
+            action="photos.index.cancel",
+            target=job_id,
+            outcome="succeeded",
+            metadata={"jobId": job_id, "state": job["state"]},
+            intent_id=intent_id,
+        )
+        return {"schema": "echo.photos.index-job.v1", "job": job}
+
+    @router.post("/index-jobs/{job_id}/pause")
+    async def pause_index(
+        request: Request,
+        job_id: str = Path(pattern=r"^[0-9a-f]{24}$"),
+        actor: str = Depends(require_auth),
+        scope: DataAccessScope = scope_dependency,
+    ) -> dict[str, Any]:
+        authorize(scope, "operator")
+        intent_id = request_intent_id(request)
+        record(
+            actor=actor,
+            action="photos.index.pause",
+            target=job_id,
+            outcome="attempted",
+            metadata={"jobId": job_id},
+            intent_id=intent_id,
+        )
+        try:
+            job = await run_in_threadpool(service.pause_index, job_id)
+        except PhotoIndexConflict as exc:
+            record(
+                actor=actor,
+                action="photos.index.pause",
+                target=job_id,
+                outcome="failed",
+                metadata={"jobId": job_id, "reason": exc.code},
+                intent_id=intent_id,
+            )
+            raise HTTPException(
+                status_code=409, detail={"error": exc.code, "message": str(exc)}
+            ) from exc
+        record(
+            actor=actor,
+            action="photos.index.pause",
+            target=job_id,
+            outcome="succeeded",
+            metadata={"jobId": job_id, "state": job["state"]},
+            intent_id=intent_id,
+        )
+        return {"schema": "echo.photos.index-job.v1", "job": job}
+
+    @router.post("/index-jobs/{job_id}/resume")
+    async def resume_index(
+        request: Request,
+        job_id: str = Path(pattern=r"^[0-9a-f]{24}$"),
+        actor: str = Depends(require_auth),
+        scope: DataAccessScope = scope_dependency,
+    ) -> dict[str, Any]:
+        authorize(scope, "operator")
+        intent_id = request_intent_id(request)
+        record(
+            actor=actor,
+            action="photos.index.resume",
+            target=job_id,
+            outcome="attempted",
+            metadata={"jobId": job_id},
+            intent_id=intent_id,
+        )
+
+        def completed(job: dict[str, Any]) -> None:
+            try:
+                record(
+                    actor=actor,
+                    action="photos.index.resume",
+                    target=job_id,
+                    outcome="succeeded" if job["state"] == "succeeded" else "failed",
+                    metadata={
+                        "jobId": job.get("jobId"),
+                        "indexed": (job.get("result") or {}).get("indexed"),
+                        "reason": job.get("error"),
+                    },
+                    intent_id=intent_id,
+                )
+            except HTTPException as exc:
+                _log.error("photo index resume audit failed: %s", exc.detail)
+
+        try:
+            job = await run_in_threadpool(service.resume_index, job_id, on_complete=completed)
+        except PhotoIndexConflict as exc:
+            record(
+                actor=actor,
+                action="photos.index.resume",
+                target=job_id,
+                outcome="failed",
+                metadata={"jobId": job_id, "reason": exc.code},
+                intent_id=intent_id,
+            )
+            raise HTTPException(
+                status_code=409, detail={"error": exc.code, "message": str(exc)}
+            ) from exc
+        record(
+            actor=actor,
+            action="photos.index.resume",
+            target=job_id,
+            outcome="succeeded",
+            metadata={"jobId": job_id, "state": job["state"]},
+            intent_id=intent_id,
+        )
         return {"schema": "echo.photos.index-job.v1", "job": job}
 
     return router

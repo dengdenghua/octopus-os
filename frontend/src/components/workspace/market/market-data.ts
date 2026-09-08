@@ -9,6 +9,10 @@
  */
 
 import { spendMarketCredits } from "@/core/credits/ledger";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import { communityAssetURL } from "@/components/workspace/community/community-assets";
 
 export interface MarketItem {
@@ -219,7 +223,7 @@ const MINE_KEY = "echo.market.mine.v1";
 
 function readJson<T>(key: string, fallback: T): T {
   try {
-    const raw = window.localStorage.getItem(key);
+    const raw = readActorScopedStorageValue(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
@@ -228,7 +232,10 @@ function readJson<T>(key: string, fallback: T): T {
 
 function writeJson(key: string, value: unknown) {
   try {
-    window.localStorage.setItem(key, JSON.stringify(value));
+    window.localStorage.setItem(
+      actorScopedStorageKey(key),
+      JSON.stringify(value),
+    );
   } catch {
     /* ignore */
   }

@@ -57,7 +57,9 @@ export type ToolNarrativeInput = {
   endedAt?: number;
 };
 
-export function projectToolNarrative(input: ToolNarrativeInput): NarrativeBlock {
+export function projectToolNarrative(
+  input: ToolNarrativeInput,
+): NarrativeBlock {
   const display = getActionDisplay(input.toolName, input.args);
   const durationMs =
     input.startedAt !== undefined && input.endedAt !== undefined
@@ -72,9 +74,10 @@ export function projectToolNarrative(input: ToolNarrativeInput): NarrativeBlock 
     state: input.state ?? (input.result === undefined ? "running" : "done"),
     title: display.verb,
     object: display.object || undefined,
-    fact: input.result === undefined
-      ? null
-      : extractFactSummary(input.toolName, input.result),
+    fact:
+      input.result === undefined
+        ? null
+        : extractFactSummary(input.toolName, input.result),
     startedAt: input.startedAt,
     endedAt: input.endedAt,
     durationMs,
@@ -83,7 +86,10 @@ export function projectToolNarrative(input: ToolNarrativeInput): NarrativeBlock 
   };
 }
 
-export function narrativeDurationMs(block: NarrativeBlock, now = Date.now()): number | null {
+export function narrativeDurationMs(
+  block: NarrativeBlock,
+  now = Date.now(),
+): number | null {
   if (block.durationMs !== undefined) return block.durationMs;
   if (block.startedAt === undefined) return null;
   return Math.max(0, (block.endedAt ?? now) - block.startedAt);

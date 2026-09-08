@@ -103,7 +103,7 @@ describe("<WorkDirSelector />", () => {
   it("binds a recent workspace from the menu in web mode (no native picker)", async () => {
     const onWorkDirChange = vi.fn();
     localStorage.setItem(
-      "echo:recentWorkdirs",
+      "echo:recentWorkdirs:anonymous",
       JSON.stringify(["/Users/example/Public"]),
     );
 
@@ -126,7 +126,7 @@ describe("<WorkDirSelector />", () => {
     const onWorkDirChange = vi.fn();
     const onOpenWorkDirInNewTask = vi.fn();
     localStorage.setItem(
-      "echo:recentWorkdirs",
+      "echo:recentWorkdirs:anonymous",
       JSON.stringify([
         "/Users/example/OtherProject",
         "/Users/example/Public/echo-agent",
@@ -160,7 +160,7 @@ describe("<WorkDirSelector />", () => {
     const onWorkDirChange = vi.fn();
     const onOpenWorkDirInNewTask = vi.fn();
     localStorage.setItem(
-      "echo:recentWorkdirs",
+      "echo:recentWorkdirs:anonymous",
       JSON.stringify(["/Users/example/NewProject"]),
     );
 

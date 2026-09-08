@@ -73,6 +73,21 @@ class DispatchRequest(BaseModel):
     model_name: str | None = None  # Implementation note.
 
 
+class RecoveryResumeRequest(BaseModel):
+    """POST /api/agents/parallel/batch/{batch_id}/resume body.
+
+    Recovery is deliberately an explicit decision.  The caller names the
+    lanes to rerun instead of allowing the server to replay an entire lost
+    batch (which could repeat an unknown side effect).
+    """
+
+    model_config = ConfigDict(extra="ignore", protected_namespaces=())
+
+    task_ids: list[str] = Field(min_length=1, max_length=100)
+    thread_id: str | None = None
+    model_name: str | None = None
+
+
 class SplitRequest(BaseModel):
     """POST /api/agents/parallel/split body."""
 
@@ -131,6 +146,7 @@ class BatchStreamEvent(BaseModel):
 
 class BatchResult(BaseModel):
     batch_id: str
+    host_task_id: str | None = None
     status: str
     total_tasks: int
     completed_tasks: int
@@ -192,6 +208,7 @@ class BatchRecoverySnapshot(BaseModel):
         alias="schema",
     )
     batch_id: str
+    host_task_id: str | None = None
     status: str
     terminal: bool
     resume_available: bool

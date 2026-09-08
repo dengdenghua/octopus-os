@@ -128,15 +128,10 @@ def test_native_storage_surface_does_not_import_optional_bridge_client() -> None
     ):
         tree = _tree(relative)
         imported_modules = {
-            node.module
-            for node in tree.body
-            if isinstance(node, ast.ImportFrom) and node.module
+            node.module for node in tree.body if isinstance(node, ast.ImportFrom) and node.module
         }
         imported_modules.update(
-            alias.name
-            for node in tree.body
-            if isinstance(node, ast.Import)
-            for alias in node.names
+            alias.name for node in tree.body if isinstance(node, ast.Import) for alias in node.names
         )
         assert "appliance.omv_client" not in imported_modules, relative
 

@@ -1,11 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const dispatchQuickReply = vi.fn(() => true);
 
 vi.mock("@/core/config", () => ({
   getBackendBaseURL: () => "http://localhost:8001",
+}));
+vi.mock("@/core/auth/api", () => ({
+  authHeaders: () => ({ Authorization: "Bearer original-token" }),
 }));
 vi.mock("@/core/messages/quick-reply", () => ({
   dispatchQuickReply: (...args: unknown[]) => dispatchQuickReply(...args),
@@ -26,6 +29,9 @@ vi.mock("@/core/i18n/hooks", () => ({
         aiEditQueued: "已发送",
         aiEditUnavailable: "暂时无法发送",
         previewError: "预览加载失败",
+        fileAccessDenied: "当前任务无权读取此文件",
+        fileMissing: "原件已移动或删除",
+        fileUnavailable: "文件暂时无法读取",
         previewRetry: "重新加载预览",
         officeFidelity: "原貌预览",
       },
@@ -42,6 +48,7 @@ vi.mock("../messages/context", () => ({
 import { OfficePreview } from "./artifact-file-detail";
 
 describe("OfficePreview", () => {
+  afterEach(() => vi.unstubAllGlobals());
   beforeEach(() => {
     dispatchQuickReply.mockClear();
     vi.stubGlobal(
@@ -55,6 +62,49 @@ describe("OfficePreview", () => {
           ),
         ),
     );
+  });
+
+  it("opens the exact original PDF using authenticated source bytes", async () => {
+    const create = vi.fn((_blob: Blob) => "blob:original-pdf");
+    const revoke = vi.fn();
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = create;
+        static revokeObjectURL = revoke;
+      },
+    );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("%PDF synthetic original", {
+        headers: { "Content-Type": "application/pdf" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const view = render(
+      <OfficePreview
+        displayPath="invoice.pdf"
+        filepath={"C:\\Invoices\\invoice.pdf"}
+        isMock={false}
+        kind="pdf"
+        threadId="t1"
+      />,
+    );
+    expect(await screen.findByTitle("invoice.pdf 预览")).toHaveAttribute(
+      "src",
+      "blob:original-pdf",
+    );
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/api/fs/content");
+    expect(url.searchParams.get("path")).toBe("C:\\Invoices\\invoice.pdf");
+    expect(url.searchParams.get("thread_id")).toBe("t1");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { Authorization: "Bearer original-token" },
+    });
+    expect(await create.mock.calls[0]![0].text()).toBe(
+      "%PDF synthetic original",
+    );
+    view.unmount();
+    expect(revoke).toHaveBeenCalledWith("blob:original-pdf");
   });
 
   it("renders a safe office preview and sends a task-scoped edit", async () => {
@@ -160,7 +210,9 @@ describe("OfficePreview", () => {
       />,
     );
 
-    expect(await screen.findByText("预览加载失败")).toBeInTheDocument();
+    expect(
+      await screen.findByText("当前任务无权读取此文件"),
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "重新加载预览" }));
 
     expect(await screen.findByTitle("deck.pptx 预览")).toHaveAttribute(
@@ -190,7 +242,7 @@ describe("OfficePreview", () => {
       />,
     );
 
-    expect(await screen.findByText("预览加载失败")).toBeInTheDocument();
+    expect(await screen.findByText("文件暂时无法读取")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "AI 修改" })).toBeEnabled();
     expect(screen.queryByTitle("legacy.doc 预览")).not.toBeInTheDocument();
   });

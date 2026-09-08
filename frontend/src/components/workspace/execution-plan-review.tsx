@@ -50,6 +50,18 @@ import { normalizeExecutionPlan } from "./execution-plan-utils";
 
 export type PlanAction = "approve" | "modify" | "reject";
 
+async function requestPlanAction(
+  planId: string,
+  action: PlanAction,
+  body: Record<string, unknown>,
+) {
+  const response = await fetch(
+    `${getBackendBaseURL()}/api/plan/${encodeURIComponent(planId)}/${action}`,
+    { method: "POST", headers: jsonAuthHeaders(), body: JSON.stringify(body) },
+  );
+  if (!response.ok) throw new Error(`Plan action failed (${response.status})`);
+}
+
 interface ExecutionPlanReviewProps {
   plan: ExecutionPlan;
   threadId: string;
@@ -66,19 +78,18 @@ interface ExecutionPlanReviewProps {
 
 const RISK_CONFIG = {
   low: {
-    color:
-      "bg-success/10 text-success border-success/20",
+    color: "bg-success/10 text-success border-success/20",
     icon: ShieldCheckIcon,
     label: "Low Risk",
   },
   medium: {
-    color:
-      "bg-warning/10 text-warning border-warning/20",
+    color: "bg-warning/10 text-warning border-warning/20",
     icon: AlertTriangleIcon,
     label: "Medium Risk",
   },
   high: {
-    color: "bg-destructive/10 text-destructive dark:text-destructive border-destructive/20",
+    color:
+      "bg-destructive/10 text-destructive dark:text-destructive border-destructive/20",
     icon: AlertTriangleIcon,
     label: "High Risk",
   },
@@ -341,6 +352,7 @@ export function ExecutionPlanReview({
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [actionInFlight, setActionInFlight] = useState<PlanAction | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const isReviewable = plan.status === "pending_review";
   const isExecuting = plan.status === "executing";
@@ -413,12 +425,9 @@ export function ExecutionPlanReview({
   // ---------------------------------------------------------------------------
   // Dispatch a plan action as a chat message.
   //
-  // The ExecutionPlanMiddleware.abefore_agent inspects incoming
-  // HumanMessages for ``additional_kwargs.plan_action``.  By emitting a
-  // custom DOM event the parent chat page picks it up and feeds it to
-  // ``sendMessage`` — exactly like the existing ``echo:regenerate``
-  // pattern.  The REST API call updates the plan store optimistically so
-  // the middleware sees the correct status immediately.
+  // Continue the legacy plan conversation only after its endpoint acknowledges
+  // the request. A DOM event does not itself authorize any file operation;
+  // deployments without this endpoint must display failure and stay reviewable.
   // ---------------------------------------------------------------------------
 
   const _dispatchPlanMessage = useCallback(
@@ -447,19 +456,16 @@ export function ExecutionPlanReview({
   // Action handlers
   const handleApprove = useCallback(async () => {
     setActionInFlight("approve");
+    setActionError(null);
     try {
-      // Optimistic API update
-      await fetch(`${getBackendBaseURL()}/api/plan/${plan.plan_id}/approve`, {
-        method: "POST",
-        headers: jsonAuthHeaders(),
-        body: JSON.stringify({ thread_id: threadId }),
-      });
+      await requestPlanAction(plan.plan_id, "approve", { thread_id: threadId });
 
       // Send message to trigger middleware continuation
       _dispatchPlanMessage("execution_plan_approve");
       onAction?.("approve", { plan_id: plan.plan_id });
       toast.success(t.executionPlan.toastApproved);
     } catch (_err) {
+      setActionError(t.executionPlan.toastApproveFailed);
       toast.error(t.executionPlan.toastApproveFailed);
     } finally {
       setActionInFlight(null);
@@ -481,6 +487,7 @@ export function ExecutionPlanReview({
     }
 
     setActionInFlight("modify");
+    setActionError(null);
     try {
       const modifiedSteps = validSteps.map((s, i) => ({
         step_id: s.step_id || `step-${i + 1}`,
@@ -490,13 +497,9 @@ export function ExecutionPlanReview({
         risk: s.risk,
       }));
 
-      await fetch(`${getBackendBaseURL()}/api/plan/${plan.plan_id}/modify`, {
-        method: "POST",
-        headers: jsonAuthHeaders(),
-        body: JSON.stringify({
-          thread_id: threadId,
-          modified_steps: modifiedSteps,
-        }),
+      await requestPlanAction(plan.plan_id, "modify", {
+        thread_id: threadId,
+        modified_steps: modifiedSteps,
       });
 
       setIsEditing(false);
@@ -509,6 +512,7 @@ export function ExecutionPlanReview({
       });
       toast.success(t.executionPlan.toastUpdated);
     } catch (_err) {
+      setActionError(t.executionPlan.toastModifyFailed);
       toast.error(t.executionPlan.toastModifyFailed);
     } finally {
       setActionInFlight(null);
@@ -526,14 +530,11 @@ export function ExecutionPlanReview({
 
   const handleReject = useCallback(async () => {
     setActionInFlight("reject");
+    setActionError(null);
     try {
-      await fetch(`${getBackendBaseURL()}/api/plan/${plan.plan_id}/reject`, {
-        method: "POST",
-        headers: jsonAuthHeaders(),
-        body: JSON.stringify({
-          thread_id: threadId,
-          reason: rejectReason,
-        }),
+      await requestPlanAction(plan.plan_id, "reject", {
+        thread_id: threadId,
+        reason: rejectReason,
       });
 
       setShowRejectInput(false);
@@ -541,6 +542,7 @@ export function ExecutionPlanReview({
       onAction?.("reject", { plan_id: plan.plan_id, reason: rejectReason });
       toast.info(t.executionPlan.toastRejected);
     } catch (_err) {
+      setActionError(t.executionPlan.toastRejectFailed);
       toast.error(t.executionPlan.toastRejectFailed);
     } finally {
       setActionInFlight(null);
@@ -589,7 +591,8 @@ export function ExecutionPlanReview({
     <div
       className={cn(
         "w-full rounded-lg border transition-colors transition-shadow duration-slow",
-        isReviewable && "border-warning/30 bg-warning/50/[0.02] shadow-[var(--shadow-xs)]",
+        isReviewable &&
+          "border-warning/30 bg-warning/50/[0.02] shadow-[var(--shadow-xs)]",
         (isExecuting || isApproved) && "border-primary/20 bg-primary/[0.02]",
         isCompleted && "border-success/20 bg-success/50/[0.02]",
         isRejected && "border-destructive/20 bg-destructive/[0.02] opacity-75",
@@ -709,6 +712,11 @@ export function ExecutionPlanReview({
           </div>
 
           {/* Reject reason input */}
+          {actionError && (
+            <p role="alert" className="text-xs text-destructive">
+              {actionError}
+            </p>
+          )}
           {showRejectInput && (
             <div className="space-y-2">
               <textarea

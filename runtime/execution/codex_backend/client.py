@@ -14,10 +14,11 @@ import inspect
 import logging
 import os
 import signal
+from collections import deque
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, cast
+from typing import Any, TypeAlias, cast
 
 from ._transport import (
     APPROVAL_METHODS,
@@ -83,7 +84,113 @@ class _StreamTerminal:
     error: BaseException | None
 
 
-_StreamItem = Notification | _StreamTerminal
+_StreamItem: TypeAlias = Notification | _StreamTerminal
+
+_COALESCIBLE_DELTA_METHODS = frozenset(
+    {
+        "item/agentMessage/delta",
+        "item/reasoning/textDelta",
+        "item/reasoning/summaryTextDelta",
+        "item/plan/delta",
+        "item/commandExecution/outputDelta",
+        "item/fileChange/outputDelta",
+        "item/process/outputDelta",
+    }
+)
+_REPLACEABLE_SNAPSHOT_METHODS = frozenset({"thread/tokenUsage/updated"})
+_MAX_COALESCED_DELTA_CHARS = 64 * 1024
+
+
+def _notification_stream_key(notification: Notification) -> tuple[object, ...]:
+    params = notification.params
+    return (
+        notification.method,
+        params.get("threadId"),
+        params.get("turnId"),
+        params.get("itemId"),
+        params.get("processId"),
+    )
+
+
+def _coalesce_notifications(
+    previous: _StreamItem,
+    current: _StreamItem,
+) -> Notification | None:
+    """Combine adjacent high-frequency frames without changing event order."""
+
+    if not isinstance(previous, Notification) or not isinstance(current, Notification):
+        return None
+    if _notification_stream_key(previous) != _notification_stream_key(current):
+        return None
+    if current.method in _REPLACEABLE_SNAPSHOT_METHODS:
+        return current
+    if current.method not in _COALESCIBLE_DELTA_METHODS:
+        return None
+    previous_delta = previous.params.get("delta")
+    current_delta = current.params.get("delta")
+    if not isinstance(previous_delta, str) or not isinstance(current_delta, str):
+        return None
+    if len(previous_delta) + len(current_delta) > _MAX_COALESCED_DELTA_CHARS:
+        return None
+    return Notification(
+        current.method,
+        {**previous.params, **current.params, "delta": previous_delta + current_delta},
+    )
+
+
+class _CoalescingNotificationQueue:
+    """Bounded single-consumer queue that compacts adjacent stream deltas.
+
+    App Server can emit hundreds of token or process-output frames between two
+    consumer scheduling opportunities. Counting every frame as a separate
+    queue slot made a healthy turn fail under a harmless burst. Adjacent
+    frames from the same logical stream are losslessly merged while lifecycle
+    and terminal events retain their original ordering and hard bound.
+    """
+
+    def __init__(self, *, maxsize: int) -> None:
+        self._maxsize = maxsize
+        self._items: deque[_StreamItem] = deque()
+        self._ready = asyncio.Event()
+
+    def put_nowait(self, item: _StreamItem) -> None:
+        if isinstance(item, Notification) and item.method in _REPLACEABLE_SNAPSHOT_METHODS:
+            item_key = _notification_stream_key(item)
+            for index in range(len(self._items) - 1, -1, -1):
+                existing = self._items[index]
+                if (
+                    isinstance(existing, Notification)
+                    and _notification_stream_key(existing) == item_key
+                ):
+                    self._items[index] = item
+                    return
+        if self._items:
+            merged = _coalesce_notifications(self._items[-1], item)
+            if merged is not None:
+                self._items[-1] = merged
+                return
+        if len(self._items) >= self._maxsize:
+            raise asyncio.QueueFull
+        self._items.append(item)
+        self._ready.set()
+
+    def get_nowait(self) -> _StreamItem:
+        if not self._items:
+            raise asyncio.QueueEmpty
+        item = self._items.popleft()
+        if not self._items:
+            self._ready.clear()
+        return item
+
+    async def get(self) -> _StreamItem:
+        while True:
+            try:
+                return self.get_nowait()
+            except asyncio.QueueEmpty:
+                await self._ready.wait()
+
+    def qsize(self) -> int:
+        return len(self._items)
 
 
 class CodexAppServerClient:
@@ -114,7 +221,7 @@ class CodexAppServerClient:
         self._write_lock = asyncio.Lock()
         self._next_request_id = 1
         self._pending: dict[RequestId, asyncio.Future[JsonValue]] = {}
-        self._notifications: asyncio.Queue[_StreamItem] = asyncio.Queue(
+        self._notifications = _CoalescingNotificationQueue(
             maxsize=self.config.notification_queue_size
         )
         self._approval_requests: asyncio.Queue[ApprovalRequest] = asyncio.Queue(
@@ -493,6 +600,7 @@ class CodexAppServerClient:
         cwd: str,
         model: str | None = None,
         approval_policy: str = "on-request",
+        approvals_reviewer: str = "user",
         sandbox: str | None = "workspace-write",
         permissions: str | None = None,
         ephemeral: bool = False,
@@ -506,6 +614,8 @@ class CodexAppServerClient:
         ``permissions`` profile; App Server rejects requests containing both.
         """
         validate_absolute_path(cwd, "cwd")
+        if approvals_reviewer not in {"user", "auto_review"}:
+            raise ConfigurationError("unsupported approvals reviewer")
         self._validate_thread_execution_policy(approval_policy, sandbox, permissions)
         payload = merge_extra_params(
             extra_params,
@@ -523,7 +633,7 @@ class CodexAppServerClient:
             {
                 "cwd": cwd,
                 "approvalPolicy": approval_policy,
-                "approvalsReviewer": "user",
+                "approvalsReviewer": approvals_reviewer,
                 "ephemeral": ephemeral,
             }
         )
@@ -543,6 +653,7 @@ class CodexAppServerClient:
         cwd: str | None = None,
         model: str | None = None,
         approval_policy: str = "on-request",
+        approvals_reviewer: str = "user",
         sandbox: str | None = "workspace-write",
         permissions: str | None = None,
         exclude_turns: bool = False,
@@ -553,6 +664,8 @@ class CodexAppServerClient:
         validate_identifier(thread_id, "thread_id")
         if cwd is not None:
             validate_absolute_path(cwd, "cwd")
+        if approvals_reviewer not in {"user", "auto_review"}:
+            raise ConfigurationError("unsupported approvals reviewer")
         self._validate_thread_execution_policy(approval_policy, sandbox, permissions)
         payload = merge_extra_params(
             extra_params,
@@ -571,7 +684,7 @@ class CodexAppServerClient:
             {
                 "threadId": thread_id,
                 "approvalPolicy": approval_policy,
-                "approvalsReviewer": "user",
+                "approvalsReviewer": approvals_reviewer,
                 "excludeTurns": exclude_turns,
             }
         )

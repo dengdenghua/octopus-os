@@ -12,6 +12,8 @@ const emailLoginMock = vi.fn();
 const getAuthProvidersMock = vi.fn();
 const allowRegistrationMock = vi.fn();
 const authUnavailableMock = vi.fn();
+const authLoadingMock = vi.fn();
+const authStartingMock = vi.fn();
 const retryAuthMock = vi.fn();
 
 vi.mock("react-router-dom", async () => {
@@ -40,7 +42,8 @@ vi.mock("@/providers/AuthProvider", () => ({
     authError: authUnavailableMock()
       ? new Error("authentication service unavailable")
       : null,
-    isLoading: false,
+    isBackendStarting: authStartingMock(),
+    isLoading: authLoadingMock(),
     isAuthenticated: false,
     login: vi.fn(),
     register: vi.fn(),
@@ -108,10 +111,14 @@ describe("LoginPage", () => {
     getAuthProvidersMock.mockReset();
     allowRegistrationMock.mockReset();
     authUnavailableMock.mockReset();
+    authLoadingMock.mockReset();
+    authStartingMock.mockReset();
     retryAuthMock.mockReset();
     getAuthProvidersMock.mockResolvedValue([{ id: "oct" }]);
     allowRegistrationMock.mockReturnValue(false);
     authUnavailableMock.mockReturnValue(false);
+    authLoadingMock.mockReturnValue(false);
+    authStartingMock.mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -173,6 +180,24 @@ describe("LoginPage", () => {
     expect(screen.getByRole("alert")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "重试连接" }));
     expect(retryAuthMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for cold-start authentication recovery before probing providers", async () => {
+    authLoadingMock.mockReturnValue(true);
+    authStartingMock.mockReturnValue(true);
+
+    const view = renderPage();
+
+    expect(screen.getByText("系统服务正在启动，请稍候...")).toBeInTheDocument();
+    await waitFor(() => expect(getAuthProvidersMock).not.toHaveBeenCalled());
+
+    authLoadingMock.mockReturnValue(false);
+    view.rerender(<LoginPage />);
+
+    expect(
+      await screen.findByText("用一封验证码，唤醒你的 ECHO 身份"),
+    ).toBeInTheDocument();
+    expect(getAuthProvidersMock).toHaveBeenCalledOnce();
   });
 
   it("shows email + local tabs when both providers are available", async () => {

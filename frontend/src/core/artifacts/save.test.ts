@@ -49,7 +49,7 @@ describe("workspace output saving", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8001/api/threads/t1/outputs/site.html?area=final",
+      "http://localhost:8001/api/workspace-resources/workspace-file%3Av1%3AdDE%3AZmluYWw%3Ac2l0ZS5odG1s",
       expect.objectContaining({
         method: "PUT",
         headers: expect.objectContaining({ Authorization: "Bearer test" }),
@@ -110,7 +110,7 @@ describe("workspace output saving", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8001/api/threads/t1/output-revisions/site.html?area=final",
+      "http://localhost:8001/api/workspace-resources/workspace-file%3Av1%3AdDE%3AZmluYWw%3Ac2l0ZS5odG1s",
       expect.objectContaining({ method: "POST" }),
     );
     expect(

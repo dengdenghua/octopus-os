@@ -574,10 +574,7 @@ export function DualHelixEvolutionPanel({
                 "受控同题配对",
                 paired.data ? (controlled?.paired_count ?? 0) : "—",
               ],
-              [
-                "Echo 胜出",
-                paired.data ? (controlled?.echo_wins ?? 0) : "—",
-              ],
+              ["Echo 胜出", paired.data ? (controlled?.echo_wins ?? 0) : "—"],
               ["Codex 胜出", paired.data ? (controlled?.codex_wins ?? 0) : "—"],
               ["影子复核", shadow.data ? runs.length : "—"],
             ].map(([label, value]) => (

@@ -183,6 +183,10 @@ _FACTORY_WORKBENCH_PLUGINS = frozenset(
 )
 
 
+class CloudCatalogUnavailable(RuntimeError):
+    """Raised when no trusted local or remote marketplace catalog is usable."""
+
+
 def _load_remote(name: str) -> dict[str, Any] | None:
     try:
         body = fetch_public_https_bytes(
@@ -322,8 +326,24 @@ class CloudCatalog:
                 self._cache_verified_remote(store, envelope)
         if store is None:
             store = self._load_mirror(require_trusted=not source_checkout)
+        if store is None and source_checkout:
+            # A source checkout may intentionally omit the optional
+            # workbuddy-experts submodule.  Keep the built-in first-party
+            # descriptors usable for local UI development, while packaged
+            # deployments still require a signed release or trusted cache.
+            self._catalog_trust = {
+                "status": "local_dev",
+                "source": "builtin_fallback",
+                "reason": "optional marketplace mirror is unavailable",
+            }
+            store = {
+                "meta": {"source": "builtin_fallback"},
+                self._list_key: [],
+            }
         if store is None:
-            raise RuntimeError(f"cloud {self._kind} catalog unavailable or untrusted")
+            raise CloudCatalogUnavailable(
+                f"cloud {self._kind} catalog unavailable or untrusted"
+            )
         self._store = store
         self._force_remote_once = False
         return store
@@ -470,7 +490,7 @@ class CloudCatalog:
         if not safe or safe != package_id:
             raise ValueError(f"unsafe marketplace package id: {package_id!r}")
         version = str(item.get("version") or "").strip()
-        fingerprint = hashlib.sha256(f"{url}\0{version}".encode("utf-8")).hexdigest()[:16]
+        fingerprint = hashlib.sha256(f"{url}\0{version}".encode()).hexdigest()[:16]
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         dest = CACHE_DIR / f"connector-{safe}-{fingerprint}.tar.gz"
         if dest.is_file() and 0 < dest.stat().st_size <= _MAX_ARCHIVE_BYTES:

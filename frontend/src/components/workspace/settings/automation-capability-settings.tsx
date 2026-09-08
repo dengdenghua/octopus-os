@@ -317,21 +317,23 @@ export function BrowserAutomationSettingsPage() {
                 : "Refreshes every 2 seconds and turns offline within 10 seconds of disconnecting."}
             </p>
           </div>
-          {relayState !== "online" ? <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={relay.isFetching}
-            onClick={() => void relay.refetch()}
-          >
-            <RefreshCwIcon
-              className={cn(
-                "mr-1.5 size-3.5",
-                relay.isFetching && "animate-spin",
-              )}
-            />
-            {zh ? "重新连接浏览器扩展" : "Reconnect browser extension"}
-          </Button> : null}
+          {relayState !== "online" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={relay.isFetching}
+              onClick={() => void relay.refetch()}
+            >
+              <RefreshCwIcon
+                className={cn(
+                  "mr-1.5 size-3.5",
+                  relay.isFetching && "animate-spin",
+                )}
+              />
+              {zh ? "重新连接浏览器扩展" : "Reconnect browser extension"}
+            </Button>
+          ) : null}
         </div>
         <StatusRow
           label={zh ? "Relay" : "Relay"}

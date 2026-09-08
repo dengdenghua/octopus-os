@@ -231,20 +231,26 @@ export default function ComputerAutomationPage() {
   const previewExpired = previewExpiresAt !== null && previewSecondsLeft === 0;
   const runtimeState = getRuntimeState(status, tc);
   const deviceState = getDeviceState(status, tc);
-  const activeAction = getActiveAction({
-    busy,
-    preview,
-    previewSecondsLeft,
-    plan,
-    screenshot,
-  }, tc);
+  const activeAction = getActiveAction(
+    {
+      busy,
+      preview,
+      previewSecondsLeft,
+      plan,
+      screenshot,
+    },
+    tc,
+  );
   const cursorPoint = getCursorPoint(status);
-  const visualTarget = getVisualTarget({
-    highlightedAction,
-    plan,
-    preview,
-    selectedPoint,
-  }, tc);
+  const visualTarget = getVisualTarget(
+    {
+      highlightedAction,
+      plan,
+      preview,
+      selectedPoint,
+    },
+    tc,
+  );
   const leaseState = getLeaseState(status?.lease, leaseOwner, tc);
   const leaseBlocked = leaseState.tone === "blocked";
   const computerUnavailable = runtimeState.blocksActions;
@@ -360,7 +366,11 @@ export default function ComputerAutomationPage() {
       });
     } catch (error) {
       swallow(error);
-      setStatusError(error instanceof Error ? error.message : tc("Unable to check this computer."));
+      setStatusError(
+        error instanceof Error
+          ? error.message
+          : tc("Unable to check this computer."),
+      );
       addLog({
         title: tc("Failed to read status"),
         detail: String(error),
@@ -421,7 +431,9 @@ export default function ComputerAutomationPage() {
       setPcScreenStats(data.last_stats);
       addLog({
         title: tc("Live screen stopped"),
-        detail: tc("The current workspace layout is preserved. Restart the live screen when needed."),
+        detail: tc(
+          "The current workspace layout is preserved. Restart the live screen when needed.",
+        ),
         tone: "ok",
       });
     } catch (error) {
@@ -568,7 +580,9 @@ export default function ComputerAutomationPage() {
         },
       });
       addLog({
-        title: data.ok ? tc("Current screen captured") : tc("Screenshot failed"),
+        title: data.ok
+          ? tc("Current screen captured")
+          : tc("Screenshot failed"),
         detail: data.ok ? `${data.size_bytes || 0} bytes` : data.error || "",
         tone: data.ok ? "ok" : "error",
       });
@@ -762,13 +776,17 @@ export default function ComputerAutomationPage() {
         acceptSuggestion(first);
         addLog({
           title: tc("Agent preview complete"),
-          detail: tc("The first step is awaiting your confirmation before it runs."),
+          detail: tc(
+            "The first step is awaiting your confirmation before it runs.",
+          ),
           tone: "ok",
         });
       } else {
         addLog({
           title: tc("Agent has no executable next step"),
-          detail: tc("No candidate action was generated. Describe the goal more specifically."),
+          detail: tc(
+            "No candidate action was generated. Describe the goal more specifically.",
+          ),
           tone: "warn",
         });
       }
@@ -1009,9 +1027,17 @@ export default function ComputerAutomationPage() {
         <div className="mx-auto flex size-full max-w-7xl flex-col gap-4 py-2">
           <section className="workspace-panel flex flex-col gap-4 p-5">
             {statusError && (
-              <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/8 px-3 py-2 text-sm">
+              <div
+                role="alert"
+                className="flex items-center justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/8 px-3 py-2 text-sm"
+              >
                 <span className="min-w-0 text-destructive">{statusError}</span>
-                <Button size="sm" variant="outline" onClick={() => void refreshStatus()} disabled={busy !== null}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void refreshStatus()}
+                  disabled={busy !== null}
+                >
                   {tc("Retry")}
                 </Button>
               </div>
@@ -1073,7 +1099,7 @@ export default function ComputerAutomationPage() {
               />
               <StatusTile
                 label={tc("Confirmation mode")}
-                  value={
+                value={
                   statusError
                     ? tc("Unavailable")
                     : status?.mode
@@ -1100,18 +1126,21 @@ export default function ComputerAutomationPage() {
               <StatusTile
                 label={tc("Computer control")}
                 value={
-                  status?.pyautogui_available
-                    ? tc("Ready")
-                    : tc("Not ready")
+                  status?.pyautogui_available ? tc("Ready") : tc("Not ready")
                 }
               />
               <StatusTile
                 label={tc("Semantic targeting")}
                 value={
-                  status?.uia_available ? tc("Ready") : tc("Available with limits")
+                  status?.uia_available
+                    ? tc("Ready")
+                    : tc("Available with limits")
                 }
               />
-              <StatusTile label={tc("Control lease")} value={leaseState.label} />
+              <StatusTile
+                label={tc("Control lease")}
+                value={leaseState.label}
+              />
             </div>
 
             {status && <RuntimeReadinessPanel status={status} />}
@@ -1304,14 +1333,18 @@ export default function ComputerAutomationPage() {
                         <RadioIcon className="size-7" />
                         {liveScreenRunning
                           ? tc("Waiting for the live screen")
-                          : tc("Select “Start live” to open the computer view.")}
+                          : tc(
+                              "Select “Start live” to open the computer view.",
+                            )}
                       </div>
                     ) : null}
                   </>
                 ) : screenshot?.data_url ? (
                   <>
                     <p id="screenshot-help" className="sr-only">
-                      {tc("Click the screenshot to select a point. Press Enter to select the center.")}
+                      {tc(
+                        "Click the screenshot to select a point. Press Enter to select the center.",
+                      )}
                     </p>
                     <img
                       ref={screenshotImageRef}
@@ -1357,7 +1390,9 @@ export default function ComputerAutomationPage() {
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
                     <EyeIcon className="size-7" />
-                    {tc("Select “Capture screen” to take a desktop screenshot.")}
+                    {tc(
+                      "Select “Capture screen” to take a desktop screenshot.",
+                    )}
                   </div>
                 )}
               </div>
@@ -1461,7 +1496,9 @@ export default function ComputerAutomationPage() {
               <section className="workspace-panel p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <ScanSearchIcon className="size-4 text-primary" />
-                  <h2 className="text-sm font-semibold">{tc("Vision output")}</h2>
+                  <h2 className="text-sm font-semibold">
+                    {tc("Vision output")}
+                  </h2>
                 </div>
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-col gap-2 sm:grid sm:grid-cols-[1fr_auto]">
@@ -1471,7 +1508,9 @@ export default function ComputerAutomationPage() {
                         onValueChange={setVisionModelId}
                       >
                         <SelectTrigger className="w-full">
-                          <SelectValue placeholder={tc("Select a vision model")} />
+                          <SelectValue
+                            placeholder={tc("Select a vision model")}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {visionModels.map((model) => (
@@ -1485,7 +1524,9 @@ export default function ComputerAutomationPage() {
                       <Input
                         value={visionModelId}
                         onChange={(e) => setVisionModelId(e.target.value)}
-                        placeholder={tc("Vision model ID, for example glm-vision")}
+                        placeholder={tc(
+                          "Vision model ID, for example glm-vision",
+                        )}
                       />
                     )}
                     <Button
@@ -1516,7 +1557,9 @@ export default function ComputerAutomationPage() {
                     <div className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs leading-5 text-warning dark:border-warning/60">
                       <span>
                         {modelsError
-                          ? tc("Could not load the model list. You can enter a model ID manually.")
+                          ? tc(
+                              "Could not load the model list. You can enter a model ID manually.",
+                            )
                           : tc(
                               "No model is marked supports_vision. Enable vision for a custom model in Settings.",
                             )}
@@ -1555,7 +1598,9 @@ export default function ComputerAutomationPage() {
               <section className="workspace-panel p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <KeyboardIcon className="size-4 text-primary" />
-                  <h2 className="text-sm font-semibold">{tc("Action preview")}</h2>
+                  <h2 className="text-sm font-semibold">
+                    {tc("Action preview")}
+                  </h2>
                 </div>
                 <div className="flex flex-col gap-3">
                   <Select
@@ -1571,7 +1616,9 @@ export default function ComputerAutomationPage() {
                       <SelectItem value="click">{tc("Click point")}</SelectItem>
                       <SelectItem value="move">{tc("Move cursor")}</SelectItem>
                       <SelectItem value="type">{tc("Type text")}</SelectItem>
-                      <SelectItem value="key">{tc("Keyboard shortcut")}</SelectItem>
+                      <SelectItem value="key">
+                        {tc("Keyboard shortcut")}
+                      </SelectItem>
                       <SelectItem value="wait">{tc("Wait")}</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1625,7 +1672,9 @@ export default function ComputerAutomationPage() {
 
               <section className="workspace-panel p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-semibold">{tc("Confirmation queue")}</h2>
+                  <h2 className="text-sm font-semibold">
+                    {tc("Confirmation queue")}
+                  </h2>
                   {preview && previewSecondsLeft !== null ? (
                     <CountdownChip secondsLeft={previewSecondsLeft} />
                   ) : null}
@@ -1862,7 +1911,9 @@ function getLeaseState(
   if (!lease?.held) {
     return {
       label: tc("Idle"),
-      detail: tc("No project currently controls the physical mouse or keyboard."),
+      detail: tc(
+        "No project currently controls the physical mouse or keyboard.",
+      ),
       tone: "idle",
       canRelease: false,
     };
@@ -1905,7 +1956,9 @@ function getDeviceState(
   if (!status) {
     return {
       label: tc("Checking"),
-      detail: tc("Checking whether the Agent can observe and operate this computer."),
+      detail: tc(
+        "Checking whether the Agent can observe and operate this computer.",
+      ),
       tone: "loading",
     };
   }
@@ -1913,14 +1966,19 @@ function getDeviceState(
     return {
       label: tc("Unavailable"),
       detail:
-        status.screen.error || tc("This environment cannot read the screen or perform computer actions."),
+        status.screen.error ||
+        tc(
+          "This environment cannot read the screen or perform computer actions.",
+        ),
       tone: "error",
     };
   }
   if (!status.pyautogui_available) {
     return {
       label: tc("Capabilities required"),
-      detail: tc("The backend responded, but computer control capabilities are not ready."),
+      detail: tc(
+        "The backend responded, but computer control capabilities are not ready.",
+      ),
       tone: "warn",
     };
   }
@@ -1943,7 +2001,9 @@ function getRuntimeState(
       health: "loading",
       label: tc("Checking"),
       logTitle: tc("Checking computer assistant"),
-      detail: tc("Checking whether the Agent can observe and operate this computer."),
+      detail: tc(
+        "Checking whether the Agent can observe and operate this computer.",
+      ),
       tone: "loading",
       blocksActions: true,
       actions: [],
@@ -1986,7 +2046,9 @@ function getRuntimeState(
       logTitle: tc("Computer assistant available with limits"),
       detail: names
         ? `${names}${tc(" unavailable; observation, preview, and confirmed execution still work.")}`
-        : tc("Some optional capabilities are unavailable. Observation, preview, and confirmed execution still work."),
+        : tc(
+            "Some optional capabilities are unavailable. Observation, preview, and confirmed execution still work.",
+          ),
       tone: "warn",
       blocksActions: false,
       actions,
@@ -2043,19 +2105,22 @@ function getRecommendedActions(status: ComputerStatus) {
   );
 }
 
-function getActiveAction({
-  busy,
-  preview,
-  previewSecondsLeft,
-  plan,
-  screenshot,
-}: {
-  busy: string | null;
-  preview: ComputerPreview | null;
-  previewSecondsLeft: number | null;
-  plan: ComputerActionPlan | null;
-  screenshot: ComputerScreenshot | null;
-}, tc: (source: string) => string): ActiveAction {
+function getActiveAction(
+  {
+    busy,
+    preview,
+    previewSecondsLeft,
+    plan,
+    screenshot,
+  }: {
+    busy: string | null;
+    preview: ComputerPreview | null;
+    previewSecondsLeft: number | null;
+    plan: ComputerActionPlan | null;
+    screenshot: ComputerScreenshot | null;
+  },
+  tc: (source: string) => string,
+): ActiveAction {
   if (preview) {
     return {
       label: tc("Waiting for confirmation"),
@@ -2081,7 +2146,9 @@ function getActiveAction({
     };
     return {
       label: labelMap[busy] || tc("Working"),
-      detail: tc("New computer actions wait until the current action finishes."),
+      detail: tc(
+        "New computer actions wait until the current action finishes.",
+      ),
       tone: "active",
     };
   }
@@ -2097,7 +2164,9 @@ function getActiveAction({
   if (screenshot?.data_url) {
     return {
       label: tc("Screen observed"),
-      detail: tc("Select a point on the screenshot or ask the vision model for the next step."),
+      detail: tc(
+        "Select a point on the screenshot or ask the vision model for the next step.",
+      ),
       tone: "idle",
     };
   }
@@ -2227,17 +2296,20 @@ function getCursorPoint(status: ComputerStatus | null): ScreenPoint | null {
   return { x: status.screen.cursor_x, y: status.screen.cursor_y };
 }
 
-function getVisualTarget({
-  highlightedAction,
-  plan,
-  preview,
-  selectedPoint,
-}: {
-  highlightedAction: Record<string, unknown> | null;
-  plan: ComputerActionPlan | null;
-  preview: ComputerPreview | null;
-  selectedPoint: ScreenPoint | null;
-}, tc: (source: string) => string): VisualTarget | null {
+function getVisualTarget(
+  {
+    highlightedAction,
+    plan,
+    preview,
+    selectedPoint,
+  }: {
+    highlightedAction: Record<string, unknown> | null;
+    plan: ComputerActionPlan | null;
+    preview: ComputerPreview | null;
+    selectedPoint: ScreenPoint | null;
+  },
+  tc: (source: string) => string,
+): VisualTarget | null {
   if (preview) {
     return getActionVisualTarget(
       preview.action,
@@ -2517,8 +2589,7 @@ function CurrentActionPanel({ action }: { action: ActiveAction }) {
   const tc = (source: string) => t.workspaceComputer[source] ?? source;
   const toneClass = {
     idle: "border-border bg-background/70",
-    active:
-      "border-info/30 bg-info/10 text-info",
+    active: "border-info/30 bg-info/10 text-info",
     warn: "border-warning/30 bg-warning/5 text-warning dark:border-warning/60",
     ok: "border-success/30 bg-success/5 text-success dark:border-success/60",
   }[action.tone];
@@ -2550,8 +2621,7 @@ function ControlSessionPanel({
   const tc = (source: string) => t.workspaceComputer[source] ?? source;
   const toneClass = {
     idle: "border-border bg-background/70",
-    action:
-      "border-info/30 bg-info/10 text-info",
+    action: "border-info/30 bg-info/10 text-info",
     paused:
       "border-warning/30 bg-warning/5 text-warning dark:border-warning/60",
   }[indicator.mode];
@@ -2621,7 +2691,9 @@ function ControlSessionPanel({
         </div>
       ) : (
         <p className="mt-3 text-xs leading-5 opacity-80">
-          {tc("Previews, executions, and screenshots are retained as control evidence.")}
+          {tc(
+            "Previews, executions, and screenshots are retained as control evidence.",
+          )}
         </p>
       )}
     </div>

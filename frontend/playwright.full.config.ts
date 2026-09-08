@@ -18,7 +18,11 @@ const e2eStateRoot = isAbsolute(rawE2eStateRoot)
   ? resolve(rawE2eStateRoot)
   : resolve(repoRoot, rawE2eStateRoot);
 const e2eDataDir = join(e2eStateRoot, "data");
-const pythonBin = process.env.PYTHON || "./.venv/bin/python";
+const pythonBin =
+  process.env.PYTHON ||
+  (process.platform === "win32"
+    ? ".\\.venv\\Scripts\\python.exe"
+    : "./.venv/bin/python");
 const reuseServers = process.env.ECHO_E2E_REUSE_SERVER === "1";
 const jsonReportPath = process.env.ECHO_E2E_JSON_REPORT;
 const reporter: ReporterDescription | ReporterDescription[] = jsonReportPath
@@ -37,14 +41,23 @@ const testMatch =
   process.env.ECHO_E2E_TEST_MATCH?.split(",")
     .map((entry) => entry.trim())
     .filter(Boolean) || defaultTestMatch;
-const backendEnv =
-  "ECHO_FF_REGENERATION_ENABLED=0 " +
-  "ECHO_FF_CAMOUFLAGE_ENABLED=0 " +
-  "ECHO_FF_UI_AMBIENT_SUGGESTIONS=0 " +
-  `GATEWAY_PORT=${backendPort} ` +
-  `ECHO_INTERNAL_GATEWAY_BASE_URL=${backendBase} ` +
-  `ECHO_HOME=${e2eStateRoot} ` +
-  `ECHO_DATA_DIR=${e2eDataDir}`;
+// Keep environment injection out of the shell command. The previous
+// `KEY=value command` form worked on POSIX only, so Windows could not start
+// the full-stack lane at all. Playwright passes this map to both child
+// processes without invoking a shell-specific assignment syntax.
+const backendProcessEnv: NodeJS.ProcessEnv = {
+  ...process.env,
+  ECHO_FF_REGENERATION_ENABLED: "0",
+  ECHO_FF_CAMOUFLAGE_ENABLED: "0",
+  ECHO_FF_UI_AMBIENT_SUGGESTIONS: "0",
+  GATEWAY_PORT: backendPort,
+  ECHO_INTERNAL_GATEWAY_BASE_URL: backendBase,
+  ECHO_HOME: e2eStateRoot,
+  ECHO_DATA_DIR: e2eDataDir,
+  // Keep the Codex control lease outside the developer account so an
+  // unrelated desktop worker cannot make the offline lane nondeterministic.
+  ECHO_CODEX_STATE_DIR: join(e2eStateRoot, "codex"),
+};
 
 const resolvedTestResultsRoot = resolve(repoRoot, "test-results");
 const e2eStateRootRelative = relative(resolvedTestResultsRoot, e2eStateRoot);
@@ -70,7 +83,7 @@ if (!reuseServers && !e2eStateRootIsDisposable) {
 // directory after the backend has already opened.
 const prepareStateCommand = reuseServers
   ? ""
-  : `${backendEnv} node frontend/e2e/prepare-full-stack-state.mjs && `;
+  : "node frontend/e2e/prepare-full-stack-state.mjs && ";
 
 /**
  * Full-stack Playwright configuration.
@@ -110,16 +123,22 @@ export default defineConfig({
 
   webServer: [
     {
-      command: `${prepareStateCommand}${backendEnv} ${pythonBin} -m runtime serve --config config.e2e.yaml --host ${backendHost} --port ${backendPort}`,
+      command: `${prepareStateCommand}${pythonBin} -m runtime serve --config config.e2e.yaml --host ${backendHost} --port ${backendPort}`,
       url: `${backendBase}/api/status`,
       cwd: repoRoot,
+      env: backendProcessEnv,
       reuseExistingServer: reuseServers,
       timeout: 120_000,
     },
     {
-      command: `cross-env GATEWAY_PORT=${backendPort} ECHO_INTERNAL_GATEWAY_BASE_URL=${backendBase} pnpm exec vite --host 0.0.0.0 --port ${frontendPort} --strictPort`,
+      command: `pnpm exec vite --host 0.0.0.0 --port ${frontendPort} --strictPort`,
       url: `http://127.0.0.1:${frontendPort}`,
       reuseExistingServer: reuseServers,
+      env: {
+        ...process.env,
+        GATEWAY_PORT: backendPort,
+        ECHO_INTERNAL_GATEWAY_BASE_URL: backendBase,
+      },
       timeout: 90_000,
     },
   ],

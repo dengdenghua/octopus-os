@@ -14,6 +14,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from .provider_errors import ModelProviderHTTPError
+
 
 def model_provider_credential_ref(connector_id: str, key: str = "api_key") -> str:
     """Return a non-secret reference stored in ``custom_models.json``."""
@@ -173,11 +175,14 @@ class ModelProviderPluginManager:
             )
             response.raise_for_status()
             payload = response.json()
-        except Exception as exc:  # noqa: BLE001 - mapped to a bounded user-facing error
-            status = getattr(getattr(exc, "response", None), "status_code", None)
-            if status in {401, 403}:
-                raise ValueError(f"{provider_name} API Key 无效或没有访问权限") from exc
-            raise ValueError(f"暂时无法连接 {provider_name}，请检查服务地址和网络后重试") from exc
+        except httpx.HTTPStatusError as exc:
+            # Preserve the provider status for recovery guidance, but never
+            # expose its response body (it may contain a URL, path or token).
+            raise ModelProviderHTTPError.from_exception(exc) from exc
+        except httpx.RequestError as exc:
+            raise ModelProviderHTTPError.from_exception(exc) from exc
+        except Exception as exc:  # noqa: BLE001 - malformed responses stay bounded
+            raise ModelProviderHTTPError.from_exception(exc) from exc
 
         rows = payload.get("data") if isinstance(payload, dict) else None
         available = {

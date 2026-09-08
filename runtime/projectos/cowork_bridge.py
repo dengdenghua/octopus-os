@@ -170,13 +170,19 @@ def team_execute_for_group(
         # Project OS principal as an explicit Session so a production Coder can
         # pass the role runner's trusted-principal gate without treating ordinary
         # context identity fields as authorization.
-        from runtime.platform.process.session import Session
+        from runtime.platform.process.session import Session, current_session
+
+        parent_session = project_context.get("caller_session")
+        if not isinstance(parent_session, Session):
+            parent_session = current_session()
 
         project_session = Session(
             actor=actor or None,
             thread_id=thread_id or None,
             conversation_id=thread_id or None,
             metadata=dict(runtime_session_metadata),
+            execution_lease=getattr(parent_session, "execution_lease", None),
+            execution_request=getattr(parent_session, "execution_request", None),
         )
         call_kwargs: dict[str, Any] = {
             "context": dispatch_context,

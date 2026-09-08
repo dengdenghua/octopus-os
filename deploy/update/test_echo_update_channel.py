@@ -12,6 +12,9 @@ from pathlib import Path
 from unittest import mock
 from urllib.parse import unquote
 
+if os.name != "posix":
+    raise unittest.SkipTest("update channel tests require POSIX file-descriptor semantics")
+
 MODULE_PATH = Path(__file__).with_name("echo_update_channel.py")
 VERIFIER_PATH = Path(__file__).with_name("verify-update-bundle.py").resolve()
 SPEC = importlib.util.spec_from_file_location("echo_update_channel", MODULE_PATH)

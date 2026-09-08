@@ -16,7 +16,10 @@ _MAX_SOURCE_BYTES = 128 * 1024 * 1024
 _CONVERSION_TIMEOUT_SECONDS = 45
 _CACHE_ROOT = Path(tempfile.gettempdir()) / "echo-office-preview-cache"
 _CONVERSION_LOCK = threading.Lock()
-_CACHE_VERSION = "2"
+_CACHE_VERSION = "3"
+_CONVERTER_ENV_KEYS = frozenset(
+    {"SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"}
+)
 
 
 def render_office_pdf(path: Path) -> Path | None:
@@ -30,8 +33,11 @@ def render_office_pdf(path: Path) -> Path | None:
         return None
     if not path.is_file() or stat.st_size > _MAX_SOURCE_BYTES:
         return None
+    content_digest = _file_content_digest(path, stat)
+    if content_digest is None:
+        return None
     digest = hashlib.sha256(
-        f"{_CACHE_VERSION}\0{path.resolve()}\0{stat.st_mtime_ns}\0{stat.st_size}".encode()
+        f"{_CACHE_VERSION}\0{path.resolve()}\0{stat.st_mtime_ns}\0{stat.st_size}\0{content_digest}".encode()
     ).hexdigest()
     cached = _CACHE_ROOT / f"{digest}.pdf"
     if cached.is_file() and cached.stat().st_size > 0:
@@ -45,10 +51,13 @@ def render_office_pdf(path: Path) -> Path | None:
             return cached
         _CACHE_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="convert-", dir=_CACHE_ROOT) as output_dir:
+            profile_dir = Path(output_dir) / "profile"
+            profile_dir.mkdir()
             try:
                 subprocess.run(
                     [
                         soffice,
+                        f"-env:UserInstallation={profile_dir.as_uri()}",
                         "--headless",
                         "--convert-to",
                         "pdf",
@@ -58,7 +67,7 @@ def render_office_pdf(path: Path) -> Path | None:
                     ],
                     check=True,
                     capture_output=True,
-                    env=_conversion_environment(),
+                    env=_conversion_environment(profile_dir=profile_dir),
                     timeout=_CONVERSION_TIMEOUT_SECONDS,
                 )
             except (OSError, subprocess.SubprocessError):
@@ -92,8 +101,38 @@ def _find_soffice() -> str | None:
     return None
 
 
-def _conversion_environment() -> dict[str, str]:
-    env = os.environ.copy()
+def _file_content_digest(path: Path, stat: os.stat_result) -> str | None:
+    """Hash the exact source bytes used for a cached conversion."""
+
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as source:
+            while chunk := source.read(1024 * 1024):
+                digest.update(chunk)
+            observed = os.fstat(source.fileno())
+        current = path.stat()
+    except OSError:
+        return None
+    if (
+        observed.st_size != stat.st_size
+        or observed.st_mtime_ns != stat.st_mtime_ns
+        or current.st_size != stat.st_size
+        or current.st_mtime_ns != stat.st_mtime_ns
+    ):
+        return None
+    return digest.hexdigest()
+
+
+def _conversion_environment(*, profile_dir: Path | None = None) -> dict[str, str]:
+    """Return a minimal environment for an untrusted-document converter."""
+
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper() in _CONVERTER_ENV_KEYS
+    }
+    if profile_dir is not None:
+        env["HOME"] = str(profile_dir)
     font_dirs = [
         Path("/System/Library/Fonts"),
         Path("/Library/Fonts"),

@@ -69,7 +69,9 @@ export function ThreadExportButton({
         <Tooltip>
           <TooltipTrigger asChild>{buttonContent}</TooltipTrigger>
           <TooltipContent side="bottom" className="max-w-xs">
-            <p className="text-xs text-red-500">Export failed: {error.message}</p>
+            <p className="text-xs text-red-500">
+              Export failed: {error.message}
+            </p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

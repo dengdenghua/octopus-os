@@ -28,6 +28,7 @@ except ImportError:
     HTTPException = None  # type: ignore[assignment, misc]
     Request = None  # type: ignore[assignment, misc]
 
+from runtime.execution.host_boundary import host_execution_scope
 from runtime.sensing._fastapi_guard import require_fastapi
 
 _logger = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ class ParallelTaskRunner:
         stack: Any = None,
         *,
         max_retained_terminal: int = 200,
+        task_supervisor: Any = None,
     ):
         self._tasks: dict[str, ParallelTask] = {}
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="parallel-task")
@@ -100,6 +102,7 @@ class ParallelTaskRunner:
         # ``get_app_state()`` helper that never existed, so every task failed
         # on ImportError. Hold the stack here instead.
         self._stack = stack
+        self._task_supervisor = task_supervisor
 
     def submit(self, task: ParallelTask) -> ParallelTask:
         # Carry the spawning parent's prompt-injection taint into the
@@ -319,12 +322,39 @@ class ParallelTaskRunner:
             if authenticated:
                 from runtime.platform.process.session import Session, session_scope
 
-                session_context = session_scope(
-                    Session(
-                        actor=task.owner_actor_id,
-                        thread_id=task.thread_id,
+                if self._task_supervisor is not None:
+                    session_context = host_execution_scope(
+                        supervisor=self._task_supervisor,
+                        task_id=f"parallel:{task.id}",
+                        thread_id=task.thread_id or task.id,
+                        actor_id=task.owner_actor_id,
+                        tenant_id=task.tenant_id,
+                        goal=task.prompt,
+                        timeout_s=900,
                         metadata=dict(intent.user_context["metadata"]),
+                        kind="parallel_task",
+                        mode="parallel",
+                        workspace_path=task.workspace_path,
                     )
+                else:
+                    session_context = session_scope(
+                        Session(
+                            actor=task.owner_actor_id,
+                            thread_id=task.thread_id,
+                            metadata=dict(intent.user_context["metadata"]),
+                        )
+                    )
+            elif self._task_supervisor is not None:
+                session_context = host_execution_scope(
+                    supervisor=self._task_supervisor,
+                    task_id=f"parallel:{task.id}",
+                    thread_id=task.thread_id or task.id,
+                    goal=task.prompt,
+                    timeout_s=900,
+                    metadata=dict(task.context),
+                    kind="parallel_task",
+                    mode="parallel",
+                    workspace_path=task.workspace_path or None,
                 )
             with scoped_cancellation(source.token), session_context:
                 result = run_react_loop(
@@ -380,12 +410,17 @@ def create_parallel_task_router(
     jwt_secret: str | None = None,
     jwt_issuer: str | None = None,
     jwt_audience: str | None = None,
+    task_supervisor: Any = None,
 ) -> Any:
     require_fastapi(__name__)
 
     # One runner per app prevents a later app factory from replacing the
     # execution stack or task namespace of an already-running app.
-    runner = ParallelTaskRunner(max_workers=3, stack=stack)
+    runner = ParallelTaskRunner(
+        max_workers=3,
+        stack=stack,
+        task_supervisor=task_supervisor,
+    )
 
     router = APIRouter(tags=["parallel-tasks"])
 

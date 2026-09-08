@@ -88,6 +88,7 @@ class RewindResult:
     # total. Examples: shell commands, network POSTs, MCP calls.
     non_reversible_warnings: tuple[str, ...] = field(default_factory=tuple)
     dry_run: bool = False
+    history_complete: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -95,6 +96,7 @@ class RewindResult:
             "file_rollback": self.file_rollback.to_dict(),
             "non_reversible_warnings": list(self.non_reversible_warnings),
             "dry_run": self.dry_run,
+            "history_complete": self.history_complete,
         }
 
 
@@ -164,21 +166,29 @@ def rewind_to_checkpoint(
             f"no react_checkpoint found for task {task_id!r} at iteration {target_iteration}"
         )
 
-    # Slice file_op events that landed AFTER the target checkpoint.
-    file_ops_after = _file_ops_after(journal, task_id, target.ts)
+    # Journal append order disambiguates equal timestamps and clock changes.
+    # The caller may pass a request-scoped journal; never unwrap that scope.
+    ordered_events = _ordered_events_after(journal, task_id, target)
+    file_ops_after = _file_ops_after(journal, task_id, target.ts, ordered_events)
     file_result = apply_file_rollback_ledger(
         file_ops_after,
         project_root=project_root,
         dry_run=dry_run,
     )
 
-    warnings = _collect_non_reversible_warnings(journal, task_id, target.ts)
+    warnings = _collect_non_reversible_warnings(journal, task_id, target.ts, ordered_events)
+    if ordered_events is None:
+        warnings += (
+            "event_order_unavailable: this journal only supports timestamp selection; "
+            "events sharing a checkpoint timestamp cannot be safely ordered and a complete rewind is unverified",
+        )
 
     return RewindResult(
         target=target,
         file_rollback=file_result,
         non_reversible_warnings=warnings,
         dry_run=dry_run,
+        history_complete=ordered_events is not None,
     )
 
 
@@ -214,17 +224,38 @@ def _event_to_rewind_point(event: Any) -> RewindPoint:
     )
 
 
+def _ordered_events_after(journal: Any, task_id: str, target: RewindPoint) -> list[Any] | None:
+    read_all = getattr(journal, "read_all", None)
+    if not callable(read_all):
+        return None
+    events = list(read_all())
+    anchors = [
+        index
+        for index, event in enumerate(events)
+        if str(getattr(event, "event_id", "")) == target.event_id
+        and str(getattr(event, "task_id", "")) == task_id
+        and getattr(event, "event_type", "") == "react_checkpoint"
+    ]
+    if not target.event_id or len(anchors) != 1:
+        raise ValueError("rewind checkpoint is not uniquely present in the authorized journal")
+    return events[anchors[0] + 1 :]
+
+
 def _file_ops_after(
     journal: Any,
     task_id: str,
     target_ts: str,
+    ordered_events: list[Any] | None = None,
 ) -> list[Any]:
     """Return ``file_op`` events for ``task_id`` with ``ts > target_ts``."""
     out: list[Any] = []
-    for event in journal.read_by_type("file_op"):
+    events = journal.read_by_type("file_op") if ordered_events is None else ordered_events
+    for event in events:
+        if getattr(event, "event_type", "") != "file_op":
+            continue
         if str(getattr(event, "task_id", "") or "") != task_id:
             continue
-        if str(getattr(event, "ts", "") or "") <= target_ts:
+        if ordered_events is None and str(getattr(event, "ts", "") or "") <= target_ts:
             continue
         out.append(event)
     return out
@@ -234,6 +265,7 @@ def _collect_non_reversible_warnings(
     journal: Any,
     task_id: str,
     target_ts: str,
+    ordered_events: list[Any] | None = None,
 ) -> tuple[str, ...]:
     """Surface non-file side effects that the rewind can't undo.
 
@@ -263,10 +295,13 @@ def _collect_non_reversible_warnings(
     )
     destructive_keywords = ("rm -rf", "git push", "deploy ", "curl -x", "curl -d")
 
-    for event in journal.read_by_type("step"):
+    events = journal.read_by_type("step") if ordered_events is None else ordered_events
+    for event in events:
+        if getattr(event, "event_type", "") != "step":
+            continue
         if str(getattr(event, "task_id", "") or "") != task_id:
             continue
-        if str(getattr(event, "ts", "") or "") <= target_ts:
+        if ordered_events is None and str(getattr(event, "ts", "") or "") <= target_ts:
             continue
 
         # Resolve sucker_id from either shape.

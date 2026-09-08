@@ -32,6 +32,12 @@ class AppExtensionContext:
     identity_store: Any = None
     stack: Any = None
     agent_registry: Any = None
+    # The host's already-resolved auth contract. Extensions may reuse it for
+    # narrow routes instead of loading a second credential/config boundary.
+    jwt_secret: str | None = None
+    jwt_issuer: str | None = None
+    jwt_audience: str | None = None
+    require_auth: bool = False
 
 
 def _iter_specs(env_value: str, default_func: str) -> Iterator[tuple[str, str]]:
@@ -43,8 +49,26 @@ def _iter_specs(env_value: str, default_func: str) -> Iterator[tuple[str, str]]:
         yield module_name.strip(), (func_name.strip() or default_func)
 
 
-def load_app_extensions(app: Any, context: AppExtensionContext) -> int:
-    """发现并运行 ECHO_APP_EXTENSIONS 声明的应用扩展。返回成功数。"""
+def load_app_extensions(
+    app: Any,
+    context: AppExtensionContext,
+    *,
+    required: bool | None = None,
+) -> int:
+    """发现并运行应用扩展，返回成功数。
+
+    Extensions are optional for the generic Agent runtime.  Appliance
+    launchers can opt into a fail-closed startup contract with
+    ``ECHO_REQUIRED_APP_EXTENSIONS=1`` (or ``required=True``): serving a
+    partial Agent without its device routes would otherwise look healthy to a
+    desktop client while every ``/api/appliance/*`` request returns 404.
+    """
+    if required is None:
+        required = os.environ.get("ECHO_REQUIRED_APP_EXTENSIONS", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
     count = 0
     for module_name, func_name in _iter_specs(
         os.environ.get("ECHO_APP_EXTENSIONS", ""), "register_app"
@@ -56,6 +80,10 @@ def load_app_extensions(app: Any, context: AppExtensionContext) -> int:
             _logger.info("app extension loaded: %s:%s", module_name, func_name)
         except Exception as exc:  # noqa: BLE001 — 扩展失败不应拖垮启动
             _logger.warning("app extension %s:%s failed: %s", module_name, func_name, exc)
+            if required:
+                raise RuntimeError(
+                    f"required app extension {module_name}:{func_name} failed"
+                ) from exc
     return count
 
 

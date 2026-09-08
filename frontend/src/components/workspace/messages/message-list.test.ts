@@ -237,7 +237,11 @@ describe("message-list: Subtask creation from tool_call", () => {
 describe("message-list: failureKind classification", () => {
   test("blocked_on_user disposition is always blocked, never a network loss", () => {
     expect(
-      failureKind("network is unreachable", "network_unavailable", "blocked_on_user"),
+      failureKind(
+        "network is unreachable",
+        "network_unavailable",
+        "blocked_on_user",
+      ),
     ).toBe("blocked");
     expect(
       failureKind(
@@ -251,7 +255,12 @@ describe("message-list: failureKind classification", () => {
 
   test("structured environment kind maps to environment even for network-like text", () => {
     expect(
-      failureKind("network is unreachable", "network_unavailable", "failed", "environment"),
+      failureKind(
+        "network is unreachable",
+        "network_unavailable",
+        "failed",
+        "environment",
+      ),
     ).toBe("environment");
   });
 
@@ -259,21 +268,13 @@ describe("message-list: failureKind classification", () => {
     expect(
       failureKind("Aborted removal of modules directory due to no TTY"),
     ).toBe("environment");
-    expect(
-      failureKind("zsh: command not found: pnpm"),
-    ).toBe("environment");
-    expect(
-      failureKind("Permission denied: /tmp/x"),
-    ).toBe("environment");
+    expect(failureKind("zsh: command not found: pnpm")).toBe("environment");
+    expect(failureKind("Permission denied: /tmp/x")).toBe("environment");
   });
 
   test("genuine network failures stay network", () => {
-    expect(
-      failureKind("fetch failed: network error"),
-    ).toBe("network");
-    expect(
-      failureKind("econnrefused", "ECONNREFUSED"),
-    ).toBe("network");
+    expect(failureKind("fetch failed: network error")).toBe("network");
+    expect(failureKind("econnrefused", "ECONNREFUSED")).toBe("network");
   });
 
   test("ordinary guard / verification codes keep their kinds", () => {
@@ -283,9 +284,7 @@ describe("message-list: failureKind classification", () => {
     expect(
       failureKind("no verification step was recorded", "verification_required"),
     ).toBe("verification");
-    expect(
-      failureKind("boom", "agent_response_failed"),
-    ).toBe("error");
+    expect(failureKind("boom", "agent_response_failed")).toBe("error");
   });
 });
 

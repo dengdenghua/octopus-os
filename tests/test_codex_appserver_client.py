@@ -26,6 +26,10 @@ from runtime.execution.codex_backend import (
 from runtime.execution.codex_backend._transport import decode_message
 
 _CODEX_0_149_FIXTURES = Path(__file__).with_name("fixtures") / "codex_app_server_0_149"
+# Keep transport tests platform-neutral.  The client deliberately rejects a
+# POSIX-only path such as ``/workspace`` when these tests run on Windows.
+_WORKSPACE = str(Path.cwd())
+_MARKETPLACE_PATH = str(Path.cwd() / "marketplace.json")
 
 
 def _codex_0_149_fixture(name: str) -> dict[str, Any]:
@@ -204,14 +208,14 @@ async def test_handshake_safe_thread_turn_resume_interrupt_and_stream() -> None:
         assert launch.stream_limit == config.max_message_bytes + 1
 
         thread_operation = client.start_thread(
-            cwd="/workspace", extra_params={"serviceName": "echo"}
+            cwd=_WORKSPACE, extra_params={"serviceName": "echo"}
         )
         thread_task = asyncio.ensure_future(thread_operation)
         thread_request = await fake.receive()
         assert thread_request["method"] == "thread/start"
         assert thread_request["params"] == {
             "serviceName": "echo",
-            "cwd": "/workspace",
+            "cwd": _WORKSPACE,
             "approvalPolicy": "on-request",
             "approvalsReviewer": "user",
             "sandbox": "workspace-write",
@@ -233,7 +237,7 @@ async def test_handshake_safe_thread_turn_resume_interrupt_and_stream() -> None:
 
         resume_request, resume_response = await _answer_request(
             fake,
-            client.resume_thread("thr-1", cwd="/workspace", exclude_turns=True),
+            client.resume_thread("thr-1", cwd=_WORKSPACE, exclude_turns=True),
             {"thread": {"id": "thr-1", "turns": []}},
         )
         assert resume_request["method"] == "thread/resume"
@@ -288,7 +292,7 @@ async def test_plugin_marketplace_list_install_and_uninstall_wire_contract() -> 
         list_request, listed = await _answer_request(
             fake,
             client.list_plugins(
-                cwds=["/workspace"],
+                cwds=[_WORKSPACE],
                 force_refetch=True,
                 marketplace_kinds=["local", "workspace-directory"],
             ),
@@ -298,7 +302,7 @@ async def test_plugin_marketplace_list_install_and_uninstall_wire_contract() -> 
             "id": list_request["id"],
             "method": "plugin/list",
             "params": {
-                "cwds": ["/workspace"],
+                "cwds": [_WORKSPACE],
                 "forceRefetch": True,
                 "marketplaceKinds": ["local", "workspace-directory"],
             },
@@ -309,7 +313,7 @@ async def test_plugin_marketplace_list_install_and_uninstall_wire_contract() -> 
             fake,
             client.install_plugin(
                 "linear",
-                marketplace_path="/safe/marketplace.json",
+                marketplace_path=_MARKETPLACE_PATH,
                 install_attempt_id="attempt-1",
             ),
             {"authPolicy": "ON_USE", "appsNeedingAuth": []},
@@ -317,7 +321,7 @@ async def test_plugin_marketplace_list_install_and_uninstall_wire_contract() -> 
         assert install_request["method"] == "plugin/install"
         assert install_request["params"] == {
             "pluginName": "linear",
-            "marketplacePath": "/safe/marketplace.json",
+            "marketplacePath": _MARKETPLACE_PATH,
             "installAttemptId": "attempt-1",
         }
         assert installed["authPolicy"] == "ON_USE"
@@ -339,7 +343,7 @@ async def test_custom_permissions_profile_omits_legacy_sandbox_fields() -> None:
     client, fake, _ = await _start_client(config=config)
     try:
         start_operation = client.start_thread(
-            cwd="/workspace",
+            cwd=_WORKSPACE,
             sandbox=None,
             permissions="echo-sidecar",
         )
@@ -354,7 +358,7 @@ async def test_custom_permissions_profile_omits_legacy_sandbox_fields() -> None:
 
         resume_operation = client.resume_thread(
             "thr-permissions",
-            cwd="/workspace",
+            cwd=_WORKSPACE,
             sandbox=None,
             permissions="echo-sidecar",
         )
@@ -369,11 +373,11 @@ async def test_custom_permissions_profile_omits_legacy_sandbox_fields() -> None:
 
         with pytest.raises(ConfigurationError, match="exactly one"):
             await client.start_thread(
-                cwd="/workspace",
+                cwd=_WORKSPACE,
                 permissions="echo-sidecar",
             )
         with pytest.raises(ConfigurationError, match="exactly one"):
-            await client.start_thread(cwd="/workspace", sandbox=None)
+            await client.start_thread(cwd=_WORKSPACE, sandbox=None)
     finally:
         await client.close()
 
@@ -381,7 +385,7 @@ async def test_custom_permissions_profile_omits_legacy_sandbox_fields() -> None:
     try:
         with pytest.raises(ConfigurationError, match="experimental_api"):
             await client.start_thread(
-                cwd="/workspace",
+                cwd=_WORKSPACE,
                 sandbox=None,
                 permissions="echo-sidecar",
             )
@@ -423,7 +427,7 @@ async def test_server_approval_callback_and_default_fail_closed_responses() -> N
                     "itemId": "cmd-1",
                     "startedAtMs": 1,
                     "command": "pytest -q",
-                    "cwd": "/workspace",
+                    "cwd": _WORKSPACE,
                 },
             }
         )
@@ -456,7 +460,7 @@ async def test_server_approval_callback_and_default_fail_closed_responses() -> N
                     "turnId": "turn-1",
                     "itemId": "perm-1",
                     "startedAtMs": 1,
-                    "cwd": "/workspace",
+                    "cwd": _WORKSPACE,
                     "permissions": {"network": {"enabled": True}},
                 },
             }
@@ -691,6 +695,122 @@ async def test_pending_request_and_notification_queues_are_bounded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_adjacent_stream_deltas_are_losslessly_coalesced_before_backpressure() -> None:
+    config = CodexAppServerConfig(notification_queue_size=1)
+    client, fake, _ = await _start_client(config=config)
+    try:
+        for delta in ("深", "度", "分", "析"):
+            fake.stdout.feed_message(
+                {
+                    "method": "item/agentMessage/delta",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "itemId": "message-1",
+                        "delta": delta,
+                    },
+                }
+            )
+
+        healthy = asyncio.create_task(client.request("test/healthy", {}))
+        request = await fake.receive()
+        fake.stdout.feed_message({"id": request["id"], "result": {"ok": True}})
+        assert await healthy == {"ok": True}
+
+        notification = await client.next_notification(timeout_s=1)
+        assert notification.method == "item/agentMessage/delta"
+        assert notification.params["delta"] == "深度分析"
+        assert client.ready is True
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_adjacent_usage_snapshots_keep_only_the_latest_value() -> None:
+    config = CodexAppServerConfig(notification_queue_size=1)
+    client, fake, _ = await _start_client(config=config)
+    try:
+        for used in (10, 20, 30):
+            fake.stdout.feed_message(
+                {
+                    "method": "thread/tokenUsage/updated",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "tokenUsage": {"totalTokens": used},
+                    },
+                }
+            )
+
+        healthy = asyncio.create_task(client.request("test/healthy", {}))
+        request = await fake.receive()
+        fake.stdout.feed_message({"id": request["id"], "result": {"ok": True}})
+        assert await healthy == {"ok": True}
+
+        notification = await client.next_notification(timeout_s=1)
+        assert notification.params["tokenUsage"] == {"totalTokens": 30}
+        assert client.ready is True
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_large_interleaved_output_burst_does_not_disconnect_the_client() -> None:
+    config = CodexAppServerConfig(notification_queue_size=4)
+    client, fake, _ = await _start_client(config=config)
+    try:
+        chunks = [f"line-{index}\n" for index in range(2_000)]
+        for index, delta in enumerate(chunks):
+            fake.stdout.feed_message(
+                {
+                    "method": "item/commandExecution/outputDelta",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "itemId": "command-1",
+                        "delta": delta,
+                    },
+                }
+            )
+            fake.stdout.feed_message(
+                {
+                    "method": "thread/tokenUsage/updated",
+                    "params": {
+                        "threadId": "thread-1",
+                        "turnId": "turn-1",
+                        "tokenUsage": {"totalTokens": index},
+                    },
+                }
+            )
+
+        healthy = asyncio.create_task(client.request("test/healthy", {}))
+        request = await fake.receive()
+        fake.stdout.feed_message({"id": request["id"], "result": {"ok": True}})
+        assert await healthy == {"ok": True}
+
+        buffered = [
+            await client.next_notification(timeout_s=1)
+            for _ in range(client._notifications.qsize())
+        ]
+        output = "".join(
+            str(notification.params.get("delta") or "")
+            for notification in buffered
+            if notification.method == "item/commandExecution/outputDelta"
+        )
+        usage = [
+            notification
+            for notification in buffered
+            if notification.method == "thread/tokenUsage/updated"
+        ]
+        assert output == "".join(chunks)
+        assert len(usage) == 1
+        assert usage[0].params["tokenUsage"] == {"totalTokens": 1_999}
+        assert client.ready is True
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_strict_json_duplicate_keys_and_size_limit_fail_connection() -> None:
     client, fake, _ = await _start_client()
     try:
@@ -827,4 +947,3 @@ def test_environment_overrides_require_explicit_allowlist() -> None:
         source_environment={"PATH": "/bin", "UNRELATED_SECRET": "never"},
     )
     assert config.env_overrides["OPENAI_API_KEY"] == "explicit-secret"
-

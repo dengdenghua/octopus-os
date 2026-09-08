@@ -100,6 +100,8 @@ def _valid_target(action: str, target: str) -> bool:
         "hub.app.stop",
         "hub.app.restart",
         "photos.index.build",
+        "files.organize.apply",
+        "files.organize.undo",
         "omv.shared-folder.create",
         "omv.shared-folder.update",
         "omv.shared-folder.detach",
@@ -109,6 +111,10 @@ def _valid_target(action: str, target: str) -> bool:
         "omv.btrfs-snapshot.lock",
         "omv.btrfs-snapshot.restore-copy",
         "storage.btrfs.snapshot.schedule",
+        "storage.nas-backup.schedule",
+        "storage.nas-backup.credential.provision",
+        "storage.nas-backup.credential.rotate",
+        "storage.nas-backup.restore",
         "omv.share-privilege.apply",
         "omv.smb.apply",
         "omv.nfs.apply",
@@ -137,13 +143,25 @@ def _valid_target(action: str, target: str) -> bool:
         "power.ups.local-usb.configure",
         "storage.smart.self-test.start",
         "storage.smart.self-test.schedule",
+        "notifications.webhook.configure",
+        "notifications.webhook.test",
+        "notifications.email.configure",
+        "notifications.email.test",
         "account.member.link",
         "account.member.status.set",
         "account.member.password.reset",
         "account.member.unlink",
     }:
         return _PLAN_ID.fullmatch(target) is not None
-    return action == "credentials.rotate" and target == "admin"
+    return (
+        action
+        in {
+            "credentials.rotate",
+            "credentials.totp.enroll",
+            "credentials.totp.disable",
+        }
+        and target == "admin"
+    )
 
 
 class HighRiskApprovalService:

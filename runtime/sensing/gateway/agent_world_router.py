@@ -685,12 +685,29 @@ def create_agent_world_router(
     # ── 云商城已安装状态(本地已落地哪些技能/插件) ─────────────
     @router.get("/api/agent-market/cloud/installed")
     def api_agent_market_cloud_installed() -> dict[str, Any]:
+        from runtime.platform.plugins.cloud_catalog import CloudCatalogUnavailable
+
         cat = _cloud_catalog("skills")
         plugins = _cloud_catalog("plugins")
+        # The installed projection is local state and remains useful while a
+        # signed catalog is offline, expired, or missing.  Do not turn an
+        # optional marketplace outage into a desktop-wide 500: callers can
+        # use ``plugins`` as the durable fallback and inspect the explicit
+        # availability bit before rendering catalog-derived lifecycle rows.
+        plugin_states: dict[str, Any] = {}
+        catalog_available = True
+        catalog_error: str | None = None
+        try:
+            plugin_states = plugins.plugin_statuses()
+        except CloudCatalogUnavailable:
+            catalog_available = False
+            catalog_error = "unavailable_or_untrusted"
         return {
             "skills": cat.installed_skills(),
             "plugins": plugins.installed_plugins(),
-            "plugin_states": plugins.plugin_statuses(),
+            "plugin_states": plugin_states,
+            "catalog_available": catalog_available,
+            "catalog_error": catalog_error,
         }
 
     # ── 云商城安装(下载内容包 → 解包落地) ─────────────────────

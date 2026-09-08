@@ -61,6 +61,11 @@ from .primitives import (
     new_id,
     now_utc,
 )
+from .provider_errors import (
+    MODEL_UNAVAILABLE_MESSAGE,
+    PROVIDER_HTTP_MESSAGES,
+    ModelProviderHTTPError,
+)
 from .selector import (
     ModelSelection,
     ModelSelector,
@@ -128,4 +133,8 @@ __all__ = [
     # selector
     "ModelSelection",
     "ModelSelector",
+    # provider errors
+    "MODEL_UNAVAILABLE_MESSAGE",
+    "PROVIDER_HTTP_MESSAGES",
+    "ModelProviderHTTPError",
 ]

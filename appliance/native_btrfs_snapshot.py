@@ -125,9 +125,7 @@ def _subvolume_identity(path: Path) -> dict[str, Any]:
 def _btrfs_filesystem_uuid(path: Path) -> str:
     uuid_candidates = {
         line.strip().lower()
-        for line in _run_read(
-            "findmnt", "-n", "-o", "UUID", "-T", str(path)
-        ).splitlines()
+        for line in _run_read("findmnt", "-n", "-o", "UUID", "-T", str(path)).splitlines()
         if line.strip()
     }
     if len(uuid_candidates) == 1:
@@ -144,20 +142,13 @@ def _btrfs_filesystem_uuid(path: Path) -> str:
     # findmnt and blkid remain usable in the hardened service namespace.
     source_candidates = {
         line.strip().partition("[")[0]
-        for line in _run_read(
-            "findmnt", "-n", "-o", "SOURCE", "-T", str(path)
-        ).splitlines()
+        for line in _run_read("findmnt", "-n", "-o", "SOURCE", "-T", str(path)).splitlines()
         if line.strip()
     }
     if len(source_candidates) != 1:
         raise OSError("Btrfs path has no stable filesystem UUID")
     source = next(iter(source_candidates))
-    if (
-        not source.startswith("/dev/")
-        or source == "/dev/"
-        or "\x00" in source
-        or "\n" in source
-    ):
+    if not source.startswith("/dev/") or source == "/dev/" or "\x00" in source or "\n" in source:
         raise OSError("Btrfs path has no stable filesystem UUID")
     raw_uuid = _run_read("blkid", "-s", "UUID", "-o", "value", "--", source).strip()
     if _BTRFS_UUID_PATTERN.fullmatch(raw_uuid) is None:

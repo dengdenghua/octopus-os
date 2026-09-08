@@ -3000,6 +3000,7 @@
 /* Thick material: menus and floating panes. */
 .macos-desktop-root .mac-menu-dropdown,
 .macos-desktop-root .mac-desktop-context-menu,
+.macos-desktop-root .mac-model-status-popover,
 .macos-desktop-root .mac-spotlight,
 .macos-desktop-root .mac-control-center,
 .macos-desktop-root .mac-notification-center,
@@ -3180,6 +3181,43 @@
     border-color var(--liquid-transition),
     backdrop-filter var(--liquid-transition),
     box-shadow 120ms ease;
+}
+
+/* The model badge is a Radix menu, but on the desktop it is still part of
+ * the OS shell. Keep it on the same material stack as Control Center instead
+ * of falling back to the opaque workspace popover surface. */
+.macos-desktop-root .mac-model-status-popover {
+  color: var(--foreground);
+  border-color: var(--liquid-edge);
+  box-shadow:
+    0 24px 68px var(--liquid-shadow),
+    inset 0 1px 0 var(--liquid-edge),
+    inset 1px 0 0 var(--liquid-edge-soft),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.11);
+}
+
+.macos-desktop-root .mac-model-status-popover .mac-model-status-select,
+.macos-desktop-root .mac-model-status-popover .mac-model-status-action {
+  color: var(--foreground);
+  background-color: color-mix(
+    in srgb,
+    var(--liquid-inner-surface) 70%,
+    transparent
+  );
+  border-color: var(--liquid-edge);
+  box-shadow: inset 0 1px 0 var(--liquid-edge-soft);
+}
+
+.macos-desktop-root
+  .mac-model-status-popover
+  .mac-model-status-select:focus-visible,
+.macos-desktop-root .mac-model-status-popover .mac-model-status-action:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--liquid-inner-surface) 90%,
+    transparent
+  );
+  border-color: var(--ring);
 }
 
 .macos-desktop-root .mac-window-titlebar,
@@ -3893,6 +3931,7 @@
 
 .macos-desktop-root .mac-menu-dropdown[data-liquid-surface],
 .macos-desktop-root .mac-desktop-context-menu[data-liquid-surface],
+.macos-desktop-root .mac-model-status-popover[data-liquid-surface],
 .macos-desktop-root .mac-spotlight[data-liquid-surface],
 .macos-desktop-root .mac-control-center[data-liquid-surface],
 .macos-desktop-root .mac-notification-center[data-liquid-surface],

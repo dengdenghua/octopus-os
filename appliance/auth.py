@@ -149,6 +149,19 @@ def payload_with_normalized_accounts(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_auth_store_path(target: Path, *, create_parent: bool = False) -> None:
+    if os.name == "nt":
+        from appliance.windows_state import open_private_file, private_state_directory
+
+        _reject_auth_store_symlinks(target)
+        with private_state_directory(
+            target.parent, create=create_parent, protect=target.parent != Path(".")
+        ):
+            try:
+                descriptor = open_private_file(target)
+            except FileNotFoundError:
+                return
+            os.close(descriptor)
+        return
     parent = target.parent
     if parent.is_symlink():
         raise ValueError("appliance auth directory must not be a symlink")
@@ -179,10 +192,20 @@ def auth_store_path() -> Path:
 
 def read_auth_store(path: Path | None = None) -> dict[str, Any]:
     target = path or auth_store_path()
-    _validate_auth_store_path(target)
-    if not target.is_file():
-        raise ValueError("appliance auth store must be a regular file")
-    payload = json.loads(target.read_text(encoding="utf-8"))
+    if os.name == "nt":
+        from appliance.windows_state import open_private_file, private_state_directory
+
+        _reject_auth_store_symlinks(target)
+        with (
+            private_state_directory(target.parent, protect=target.parent != Path(".")),
+            os.fdopen(open_private_file(target), "r", encoding="utf-8") as handle,
+        ):
+            payload = json.load(handle)
+    else:
+        _validate_auth_store_path(target)
+        if not target.is_file():
+            raise ValueError("appliance auth store must be a regular file")
+        payload = json.loads(target.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise ValueError("appliance auth store must be a JSON object")
     return payload
@@ -192,6 +215,9 @@ def write_auth_store(payload: dict[str, Any], path: Path | None = None) -> None:
     """Atomically replace the private credential store and durably flush it."""
 
     target = path or auth_store_path()
+    if os.name == "nt":
+        _write_windows_auth_store(payload, target)
+        return
     _validate_auth_store_path(target, create_parent=True)
     temporary = target.with_name(f".{target.name}.{secrets.token_hex(8)}.tmp")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -212,6 +238,47 @@ def write_auth_store(payload: dict[str, Any], path: Path | None = None) -> None:
     finally:
         with contextlib.suppress(FileNotFoundError):
             temporary.unlink()
+
+
+def _write_windows_auth_store(payload: dict[str, Any], target: Path) -> None:
+    from appliance.windows_state import open_private_file, private_state_directory
+
+    _reject_auth_store_symlinks(target)
+    with private_state_directory(
+        target.parent, create=True, protect=target.parent != Path(".")
+    ) as parent:
+        target = parent / target.name
+        try:
+            descriptor = open_private_file(target)
+        except FileNotFoundError:
+            pass
+        else:
+            os.close(descriptor)
+        temporary = target.with_name(f".{target.name}.{secrets.token_hex(8)}.tmp")
+        try:
+            descriptor = open_private_file(temporary, create_new=True)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, sort_keys=True, separators=(",", ":"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, target)
+            # ACLs belong to the newly published object. Verify them after
+            # replace as well; a filesystem unable to preserve them fails closed.
+            descriptor = open_private_file(target)
+            os.close(descriptor)
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                temporary.unlink()
+
+
+def _reject_auth_store_symlinks(target: Path) -> None:
+    # Preserve the public validation errors. The native open still checks every
+    # component's reparse attribute through pinned handles, closing races and
+    # rejecting junction ancestors which Path.is_symlink() does not detect.
+    if target.parent.is_symlink():
+        raise ValueError("appliance auth directory must not be a symlink")
+    if target.is_symlink():
+        raise ValueError("appliance auth store must not be a symlink")
 
 
 def _auth_config(config_type: Any, data: dict[str, Any]) -> Any:

@@ -193,6 +193,10 @@ def test_empty_shared_folder_delete_uses_a_plan_bound_approval(tmp_path):
         "omv.btrfs-snapshot.lock",
         "omv.btrfs-snapshot.restore-copy",
         "storage.btrfs.snapshot.schedule",
+        "storage.nas-backup.schedule",
+        "storage.nas-backup.credential.provision",
+        "storage.nas-backup.credential.rotate",
+        "storage.nas-backup.restore",
     ],
 )
 def test_btrfs_snapshot_mutations_use_plan_bound_approval(tmp_path, action):

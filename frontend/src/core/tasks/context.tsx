@@ -11,10 +11,7 @@ import type { Subtask } from "./types";
 // Compare the scalar fields that updateSubtask can write. `messages` is
 // handled separately by the caller (identity changes there are explicit), so
 // here we only bail out when every other field is unchanged.
-function subtaskShallowEqual(
-  a: Subtask | undefined,
-  b: Subtask,
-): boolean {
+function subtaskShallowEqual(a: Subtask | undefined, b: Subtask): boolean {
   if (!a) return false;
   const keys = Object.keys(b) as (keyof Subtask)[];
   for (const key of keys) {

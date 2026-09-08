@@ -61,12 +61,17 @@ describe("translation bundles", () => {
       const lines = [...remainingByLocale.entries()].map(
         ([locale, paths]) => `${locale}: ${paths.length} — ${paths.join(", ")}`,
       );
-      expect.soft(lines, "untranslated en-US placeholders by locale").toEqual([]);
+      expect
+        .soft(lines, "untranslated en-US placeholders by locale")
+        .toEqual([]);
     }
   });
 });
 
-const STRING_LEAF_SKIP_PATHS = new Set(["$.workspaceComputer", "$.agentOperator"]);
+const STRING_LEAF_SKIP_PATHS = new Set([
+  "$.workspaceComputer",
+  "$.agentOperator",
+]);
 
 function collectStringLeaves(
   value: unknown,
@@ -80,7 +85,9 @@ function collectStringLeaves(
   if (typeof value === "function" || Array.isArray(value)) return out;
   if (value !== null && typeof value === "object") {
     if (STRING_LEAF_SKIP_PATHS.has(path)) return out;
-    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    for (const [key, child] of Object.entries(
+      value as Record<string, unknown>,
+    )) {
       collectStringLeaves(child, `${path}.${key}`, out);
     }
   }

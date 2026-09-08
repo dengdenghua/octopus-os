@@ -9,14 +9,5 @@ tags:
   - director
 provides:
   - director_stage.api
-  - director_stage.scene.get
-  - director_stage.scene.edit
-  - director_stage.scene.history
-  - director_stage.scene.snapshot
-  - director_stage.scene.diagnostics
-  - director_stage.model.generate
-  - director_stage.model.capture
-  - director_stage.model.compare
-  - director_stage.motion.read
-  - director_stage.campath.read
+  - director_stage.skills
 config: {}

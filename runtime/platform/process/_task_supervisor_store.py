@@ -1,18 +1,19 @@
 from __future__ import annotations
 
+import json
 import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
-from runtime.platform.io import atomic_write_json, read_json_with_backup
+from runtime.platform.io import atomic_write_json
 from runtime.platform.io.atomic import _cross_process_lock
 from runtime.platform.process._task_supervisor_analysis import (
     build_task_recovery_queue,
     build_task_runs_overview,
 )
 from runtime.platform.process._task_supervisor_models import TaskRunRecord, _now_iso
-from runtime.platform.process._task_supervisor_payload import _normalize_payload
+from runtime.platform.process._task_supervisor_payload import _empty_payload, _normalize_payload
 
 # ``list`` is shadowed inside TaskSupervisorStore by its public ``list()``
 # method, so bare ``list[...]`` annotations in that class read as the method
@@ -240,7 +241,28 @@ class TaskSupervisorStore:
             return token
 
     def _read_payload(self) -> dict[str, Any]:
-        return _normalize_payload(read_json_with_backup(self.path, default=None))
+        # Backup snapshots can contain a superseded lease. They are recovery
+        # artifacts, never automatic execution authority. A malformed primary
+        # is kept byte-for-byte and blocks both reads and subsequent mutations.
+        try:
+            with self.path.open("r", encoding="utf-8") as stream:
+                raw = json.load(stream)
+        except FileNotFoundError as exc:
+            try:
+                self.path.with_suffix(self.path.suffix + ".bak").lstat()
+            except FileNotFoundError:
+                return _empty_payload()
+            except OSError as backup_exc:
+                raise OSError("task authority storage is unavailable") from backup_exc
+            raise OSError("task authority primary is missing; explicit recovery required") from exc
+        except (OSError, ValueError) as exc:
+            raise OSError(
+                "task authority primary is unreadable; explicit recovery required"
+            ) from exc
+        try:
+            return _normalize_payload(raw)
+        except (TypeError, ValueError) as exc:
+            raise OSError("task authority primary is invalid; explicit recovery required") from exc
 
     def _write_payload(self, payload: dict[str, Any]) -> None:
         atomic_write_json(self.path, _normalize_payload(payload))
@@ -254,15 +276,8 @@ class TaskSupervisorStore:
 
     @staticmethod
     def _read_tasks_from_payload(payload: dict[str, Any]) -> _TaskRecordList:
-        tasks: _TaskRecordList = []
-        for item in payload.get("tasks") or []:
-            if not isinstance(item, dict):
-                continue
-            try:
-                tasks.append(TaskRunRecord.model_validate(item))
-            except Exception:
-                continue
-        return tasks
+        # _read_payload already validates every row as one complete snapshot.
+        return [TaskRunRecord.model_validate(item) for item in payload["tasks"]]
 
     @staticmethod
     def _dump_tasks(tasks: _TaskRecordList) -> _TaskDictList:

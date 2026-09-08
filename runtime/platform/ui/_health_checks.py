@@ -210,8 +210,10 @@ def _model_compat_info() -> dict[str, Any]:
 def _orchestration_surface_info(request: Request | None) -> dict[str, Any]:
     required_routes = {
         "/api/agents/parallel/status": ["GET"],
+        "/api/agents/parallel/recovery-snapshots": ["GET"],
         "/api/agents/parallel/batch/{batch_id}": ["GET"],
         "/api/agents/parallel/batch/{batch_id}/recovery-snapshot": ["GET"],
+        "/api/agents/parallel/batch/{batch_id}/resume": ["POST"],
         "/api/agents/parallel/dispatch": ["POST"],
         "/api/agents/parallel/split": ["POST"],
         "/api/agents/parallel/cancel/{task_id}": ["POST"],
@@ -265,6 +267,9 @@ def _orchestration_surface_info(request: Request | None) -> dict[str, Any]:
             "split_planning": route_surface["has_required_route"]["/api/agents/parallel/split"],
             "recovery_snapshot": route_surface["has_required_route"][
                 "/api/agents/parallel/batch/{batch_id}/recovery-snapshot"
+            ],
+            "recovery_discovery": route_surface["has_required_route"][
+                "/api/agents/parallel/recovery-snapshots"
             ],
             "sse_event_replay": bool(replay_contract.get("present")),
             "completion_receipt": _contract_has_field(

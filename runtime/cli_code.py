@@ -60,8 +60,6 @@ class CliApprovalProvider(ApprovalProvider):
     ) -> ApprovalDecision:
         if self.mode == "bypassPermissions":
             return self._auto_approve.request(req)
-        if self.mode == "acceptEdits" and _is_edit_tool(req.tool_name):
-            return self._auto_approve.request(req)
         if self.mode == "plan":
             return self._auto_deny.request(req)
         if not self.interactive:
@@ -123,6 +121,7 @@ def run_code_command(args: Any, *, color: bool = True) -> int:  # noqa: ARG001
         "workspace_path": str(workspace),
         "model_name": model,
         "permission_mode": permission_mode,
+        "approvals_reviewer": ("auto_review" if permission_mode == "acceptEdits" else "user"),
         "sandbox_mode": "sandbox" if getattr(args, "worktree", False) else "full",
         "extra_workspaces": [str(p) for p in _extra_workspaces(args)],
     }
@@ -142,6 +141,18 @@ def run_code_command(args: Any, *, color: bool = True) -> int:  # noqa: ARG001
         permission_mode,
         interactive=sys.stdin.isatty() and not getattr(args, "print", False),
     )
+    if permission_mode == "acceptEdits":
+        from runtime.safety.approval.guardian_review import (
+            AutoReviewApprovalProvider,
+            approval_router_for_stack,
+        )
+
+        reviewer_router = approval_router_for_stack(stack)
+        provider = AutoReviewApprovalProvider(
+            reviewer_router,
+            user_intent=prompt,
+            default_model=model if reviewer_router is planner.router else None,
+        )
     if permission_mode == "bypassPermissions":
         provider = AutoApproveProvider()
 
@@ -366,13 +377,6 @@ def _render_text_event(event: dict[str, Any], text_buffer: list[str]) -> None:
     elif typ == "tool_end":
         status = event.get("status") or "done"
         print(f"[tool:{status}] {event.get('tool_name') or 'tool'}", file=sys.stderr)
-
-
-def _is_edit_tool(tool_name: str) -> bool:
-    return tool_name.startswith(("write_", "append_", "edit_")) or tool_name in {
-        "propose_patch",
-        "multi_edit_file",
-    }
 
 
 def _now() -> str:

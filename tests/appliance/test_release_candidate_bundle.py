@@ -7,6 +7,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+if os.name == "nt":
+    pytest.skip(
+        "release candidate bundle verifier is a POSIX shell script", allow_module_level=True
+    )
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "deploy" / "appliance" / "verify-release-candidate-bundle.sh"
 REQUIRED_FILES = (

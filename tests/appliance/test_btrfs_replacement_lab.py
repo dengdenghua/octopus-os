@@ -136,9 +136,7 @@ class FakeApi:
             return 200, {"devices": [_disk(REPLACEMENT, "disk-d")]}
         if path.endswith("/replacement-candidates"):
             return 200, {
-                "replacements": [
-                    _replacement_candidate(survivor_serial=self.survivor_serial)
-                ]
+                "replacements": [_replacement_candidate(survivor_serial=self.survivor_serial)]
             }
         if path.endswith("/replace/plan"):
             return 200, {

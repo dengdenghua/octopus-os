@@ -28,12 +28,7 @@ import type {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -60,12 +55,7 @@ interface WorkspaceMembersPanelProps {
   className?: string;
 }
 
-const ROLE_OPTIONS: MemberRole[] = [
-  "owner",
-  "editor",
-  "reviewer",
-  "viewer",
-];
+const ROLE_OPTIONS: MemberRole[] = ["owner", "editor", "reviewer", "viewer"];
 
 function roleLabelKey(role: MemberRole) {
   switch (role) {
@@ -244,13 +234,9 @@ export function WorkspaceMembersPanel({
           </div>
         )}
         {loading && members.length === 0 ? (
-          <div className="text-xs text-muted-foreground">
-            {tr.loading}
-          </div>
+          <div className="text-xs text-muted-foreground">{tr.loading}</div>
         ) : members.length === 0 ? (
-          <div className="text-xs text-muted-foreground">
-            {tr.empty}
-          </div>
+          <div className="text-xs text-muted-foreground">{tr.empty}</div>
         ) : (
           <ul className="space-y-1">
             {members.map((member) => {
@@ -339,9 +325,7 @@ export function WorkspaceMembersPanel({
           className="w-[min(380px,calc(100vw-2rem))] gap-3 rounded-lg p-4 sm:max-w-[380px]"
         >
           <DialogHeader className="gap-1 text-left">
-            <DialogTitle className="text-sm">
-              {tr.addMember}
-            </DialogTitle>
+            <DialogTitle className="text-sm">{tr.addMember}</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
               {tr.addMemberPlaceholder}
             </DialogDescription>
@@ -372,9 +356,7 @@ export function WorkspaceMembersPanel({
               </Label>
               <Select
                 value={newMemberRole}
-                onValueChange={(value) =>
-                  setNewMemberRole(value as MemberRole)
-                }
+                onValueChange={(value) => setNewMemberRole(value as MemberRole)}
               >
                 <SelectTrigger
                   id="new-member-role"
@@ -385,11 +367,7 @@ export function WorkspaceMembersPanel({
                 </SelectTrigger>
                 <SelectContent>
                   {ROLE_OPTIONS.map((role) => (
-                    <SelectItem
-                      key={role}
-                      value={role}
-                      className="text-xs"
-                    >
+                    <SelectItem key={role} value={role} className="text-xs">
                       {tr[roleLabelKey(role)]}
                     </SelectItem>
                   ))}

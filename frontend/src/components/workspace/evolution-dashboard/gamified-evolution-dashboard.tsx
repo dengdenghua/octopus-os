@@ -80,8 +80,8 @@ export default function GameifiedEvolutionDashboard() {
       agent.name,
       agent.icon,
       overview,
-      skillPerformances
-    )
+      skillPerformances,
+    ),
   );
 
   const selectedAgent = selectedAgentId
@@ -102,7 +102,9 @@ export default function GameifiedEvolutionDashboard() {
           onClick={() => setCollectivePanelExpanded(!collectivePanelExpanded)}
           className="flex w-full items-center justify-between px-6 py-4 text-left transition-colors hover:bg-muted/50"
           aria-expanded={collectivePanelExpanded}
-          aria-label={collectivePanelExpanded ? "折叠群体智能面板" : "展开群体智能面板"}
+          aria-label={
+            collectivePanelExpanded ? "折叠群体智能面板" : "展开群体智能面板"
+          }
         >
           <div className="flex items-center gap-3">
             <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-xl">

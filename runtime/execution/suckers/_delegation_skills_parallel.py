@@ -343,16 +343,7 @@ def _call_agent_parallel(
         result["files_touched"] = files
         return result
 
-    def _run_one(spec: dict[str, Any]) -> dict[str, Any]:
-        # Bind parent session in this worker thread · ContextVars
-        # don't propagate across threads automatically.
-        if session is not None:
-            try:
-                from runtime.platform.process.session import _current_session
-
-                _current_session.set(session)
-            except Exception:  # noqa: BLE001
-                pass
+    def _run_one_bound(spec: dict[str, Any]) -> dict[str, Any]:
         original_id = spec.get("agent_id_original") or spec["agent_id"]
         role_label = spec.get("role_label")
         task_label = spec.get("bb_key") or role_label or original_id
@@ -542,6 +533,22 @@ def _call_agent_parallel(
             result["resolved_to"] = spec["agent_id"]
             result["custom_role"] = role_label
         return result
+
+    def _run_one(spec: dict[str, Any]) -> dict[str, Any]:
+        """Run one lane with a scoped parent Session.
+
+        ``ThreadPoolExecutor`` workers are reused. A bare ContextVar ``set``
+        would leave the previous caller's actor/session on a worker when a
+        later batch has no session, creating a cross-request identity leak.
+        ``session_scope`` restores every identity ContextVar on exit.
+        """
+
+        if session is None:
+            return _run_one_bound(spec)
+        from runtime.platform.process.session import session_scope
+
+        with session_scope(session):
+            return _run_one_bound(spec)
 
     results: list[dict[str, Any]] = []
     # Bound concurrency · 8 workers covers most real fan-outs; more

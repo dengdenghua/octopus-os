@@ -168,12 +168,20 @@ import { getAPIClient } from "@/core/api";
 import { authHeaders } from "@/core/auth/api";
 import { getControlPlaneBaseURL } from "@/core/config";
 import { toHashRouterShellUrl } from "@/core/router/hash-shell-url";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { taskWorkspaceRoute } from "@/core/router/task-workspace-route";
 import { useDeferredRouteCommit } from "@/core/router/use-deferred-route-commit";
-import { useThreadSettings } from "@/core/settings";
-import { applyCoderModelProfileBoundary } from "@/core/coder/api";
+import { useLocalSettings, useThreadSettings } from "@/core/settings";
+import { TaskModelScope } from "@/components/workspace/task-model-scope";
+import { canLocateArtifact } from "@/core/artifacts/locate";
+import {
+  applyCoderModelProfileBoundary,
+  coderQueryKeys,
+  updateCoderModelProfile,
+} from "@/core/coder/api";
 import {
   useThreadStream,
+  threadSearchQueryKey,
   type ThreadStreamOptions,
 } from "@/core/threads/hooks";
 import { buildProgressOutline } from "@/core/threads/progress-outline";
@@ -191,6 +199,7 @@ import {
 } from "@/core/permissions";
 import { startDeepResearch, type ResearchJob } from "@/core/research/api";
 import { ACTIVE_AGENT_EVENT, useActiveAgentId } from "@/core/agents/active";
+import { conversationAgentId } from "@/core/agents/conversation-identity";
 import {
   isPrimaryPersonaAgentId,
   primaryPersonaAgentIdOrDefault,
@@ -206,6 +215,7 @@ import { emitAgentChanged, eventBus, useEvent } from "@/core/events";
 import {
   consumeTaskCollaboratorPreset,
   TASK_COLLABORATOR_PRESET_EVENT,
+  type TaskCollaboratorPresetEventDetail,
   type TaskCollaboratorPreset,
   writeTaskCollaboratorPreset,
 } from "@/core/collaboration/task-collaborator-preset";
@@ -233,6 +243,15 @@ import {
   type CoworkRoomMessage,
 } from "@/core/cowork";
 import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
+import {
+  readRecentWorkdirs,
+  rememberedWorkdirStorageKey,
+  writeRecentWorkdirs,
+} from "@/core/workspace/recent-workdirs";
 import { canAccessGlobalControlPlane } from "@/core/auth/control-plane-access";
 import { useAuth } from "@/providers/AuthProvider";
 import { usePauseTask, useTasks } from "@/core/tasks/hooks";
@@ -301,8 +320,6 @@ function modeLabelFor(
 }
 
 const CHAT_WORKDIR_KEY = "chat:workdir:lastUsed";
-const CODE_WORKDIR_KEY = "code:workdir:lastUsed";
-const RECENT_WORKDIRS_KEY = "echo:recentWorkdirs";
 const AGENT_WORKBENCH_OPEN_KEY = "echo:agent-workbench-open";
 const MAX_RECENT_WORKDIRS = 6;
 
@@ -343,24 +360,20 @@ function rememberChatWorkDir(dir: string) {
   if (typeof window === "undefined") return;
   try {
     if (!dir || !isAbsolutePath(dir)) {
-      window.localStorage.removeItem(CHAT_WORKDIR_KEY);
+      window.localStorage.removeItem(rememberedWorkdirStorageKey("chat"));
       return;
     }
-    window.localStorage.setItem(CHAT_WORKDIR_KEY, dir);
-    window.localStorage.setItem(CODE_WORKDIR_KEY, dir);
+    window.localStorage.setItem(rememberedWorkdirStorageKey("chat"), dir);
+    window.localStorage.setItem(rememberedWorkdirStorageKey("code"), dir);
 
-    const raw = window.localStorage.getItem(RECENT_WORKDIRS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    const current = Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
+    const current = readRecentWorkdirs();
     const next = [
       dir,
       ...current.filter(
         (item) => normalizeWorkDirKey(item) !== normalizeWorkDirKey(dir),
       ),
     ].slice(0, MAX_RECENT_WORKDIRS);
-    window.localStorage.setItem(RECENT_WORKDIRS_KEY, JSON.stringify(next));
+    writeRecentWorkdirs(next);
   } catch (e) {
     swallow(e, "storage");
   }
@@ -369,8 +382,21 @@ function rememberChatWorkDir(dir: string) {
 function readRememberedChatWorkDir(): string {
   if (typeof window === "undefined") return "";
   try {
-    const remembered =
-      window.localStorage.getItem(CHAT_WORKDIR_KEY)?.trim() ?? "";
+    const scopedKey = rememberedWorkdirStorageKey("chat");
+    let remembered = window.localStorage.getItem(scopedKey)?.trim() ?? "";
+    if (!remembered) {
+      const legacy =
+        window.localStorage.getItem(CHAT_WORKDIR_KEY)?.trim() ?? "";
+      if (legacy) {
+        remembered = legacy;
+        try {
+          window.localStorage.setItem(scopedKey, legacy);
+          window.localStorage.removeItem(CHAT_WORKDIR_KEY);
+        } catch {
+          // Keep the legacy value usable for this render.
+        }
+      }
+    }
     return isAbsolutePath(remembered) ? remembered : "";
   } catch (e) {
     swallow(e, "storage");
@@ -378,10 +404,10 @@ function readRememberedChatWorkDir(): string {
   }
 }
 
-function readAgentWorkbenchOpenPreference(): boolean {
+function readAgentWorkbenchOpenPreference(actor = currentActorId()): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return window.localStorage.getItem(AGENT_WORKBENCH_OPEN_KEY) === "1";
+    return readActorScopedStorageValue(AGENT_WORKBENCH_OPEN_KEY, actor) === "1";
   } catch (e) {
     swallow(e, "storage");
     return false;
@@ -515,6 +541,7 @@ function RealtimePageContent({
 }: {
   chatState: ReturnType<typeof useThreadChat>;
 }) {
+  const actor = currentActorId();
   const { t } = useI18n();
   const { authStatus, user } = useAuth();
   const { threadId, isNewThread, setIsNewThread } = chatState;
@@ -527,6 +554,14 @@ function RealtimePageContent({
     setArtifacts,
   } = useArtifacts();
   const [settings, setSettings] = useThreadSettings(threadId);
+  // Native Echo threads may keep a per-thread model override. Codex-backed
+  // workspaces use the principal-scoped system profile. Keep a second handle
+  // to the global setting so both model controls converge on one committed
+  // preference even when the active thread is still using the Echo kernel.
+  const [globalSettings, setGlobalSettings] = useLocalSettings();
+  const nativeModelProfileSequence = useRef(0);
+  const nativeModelProfileQueue = useRef(Promise.resolve());
+  const pendingNativeModelRef = useRef<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [, setShowPreview] = useState(false);
   const [researchJob, setResearchJob] = useState<ResearchJob | null>(null);
@@ -541,7 +576,10 @@ function RealtimePageContent({
     useState(false);
   const [agentWorkbenchDismissed, setAgentWorkbenchDismissed] = useState(false);
   const [agentWorkbenchManuallyOpened, setAgentWorkbenchManuallyOpened] =
-    useState(() => (isNewThread ? false : readAgentWorkbenchOpenPreference()));
+    useState(() =>
+      isNewThread ? false : readAgentWorkbenchOpenPreference(actor),
+    );
+  const [workbenchStateActor, setWorkbenchStateActor] = useState(actor);
   const [focusedWorkbenchAgentId, setFocusedWorkbenchAgentId] = useState<
     string | null
   >(null);
@@ -677,7 +715,7 @@ function RealtimePageContent({
     setAutomationTarget(loadAutomationTarget(threadId));
   }, [threadId]);
   const threadWorkspaceQuery = useQuery({
-    queryKey: ["thread", "workspace-path", threadId],
+    queryKey: ["thread", "workspace-path", actor, threadId],
     enabled:
       !isNewThread &&
       Boolean(threadId) &&
@@ -704,7 +742,7 @@ function RealtimePageContent({
     refetchOnWindowFocus: false,
   });
   const threadIdentityQuery = useQuery({
-    queryKey: ["thread", "identity", threadId],
+    queryKey: ["thread", "identity", actor, threadId],
     enabled:
       !isNewThread &&
       Boolean(threadId) &&
@@ -830,15 +868,22 @@ function RealtimePageContent({
   }, []);
 
   useEffect(() => {
+    if (workbenchStateActor !== actor) {
+      setWorkbenchStateActor(actor);
+      setAgentWorkbenchManuallyOpened(
+        isNewThread ? false : readAgentWorkbenchOpenPreference(actor),
+      );
+      return;
+    }
     try {
       window.localStorage.setItem(
-        AGENT_WORKBENCH_OPEN_KEY,
+        actorScopedStorageKey(AGENT_WORKBENCH_OPEN_KEY, actor),
         agentWorkbenchManuallyOpened ? "1" : "0",
       );
     } catch (e) {
       swallow(e, "storage");
     }
-  }, [agentWorkbenchManuallyOpened]);
+  }, [actor, agentWorkbenchManuallyOpened, isNewThread, workbenchStateActor]);
 
   useEffect(() => {
     collaboratorSelectionTouchedRef.current = false;
@@ -953,11 +998,8 @@ function RealtimePageContent({
   const requestedTaskAgentId =
     routeAgentName || (queryAgentName === "echo" ? "" : queryAgentName);
   const activeAgentId = isNewThread
-    ? isPrimaryPersonaAgentId(requestedTaskAgentId)
-      ? requestedTaskAgentId
-      : primaryPersonaAgentIdOrDefault(storedActiveAgentId)
+    ? primaryPersonaAgentIdOrDefault(storedActiveAgentId)
     : requestedTaskAgentId || storedActiveAgentId || "general";
-  const { agent: activeAgent } = useAgent(activeAgentId);
   const hintedThreadOwnerAgentId = routeState?.threadOwnerAgentId?.trim() || "";
   const hintedWorkspacePath =
     typeof routeState?.workspacePath === "string" &&
@@ -989,10 +1031,12 @@ function RealtimePageContent({
   // 创建时选中的 agent 而写入 general 等身份，这里在渲染层强制归位
   // 为 echo，避免助手页面被解析成别的 agent；发送层 agent_name
   // 同源修正存量数据。
-  const effectiveAgentId = isNewThread
-    ? activeAgentId
-    : (threadId === "echo-assistant" ? "echo" : resolvedThreadOwnerAgentId) ||
-      activeAgentId;
+  const effectiveAgentId = conversationAgentId({
+    isNewThread,
+    threadId,
+    activeAgentId,
+    threadOwnerAgentId: resolvedThreadOwnerAgentId,
+  });
 
   // A bound project owns the right-hand surface. Otherwise the persona's
   // preset is the default, with the user's last manual tab remembered per
@@ -1013,9 +1057,7 @@ function RealtimePageContent({
   // 助理（echo）是私人助手本体：不走编码/工作空间工作台，固定进入
   // 纯对话长对话，隐藏工作空间选择器。
   const isEchoAssistant = effectiveAgentId === "echo";
-  const { agent: effectiveAgent } = useAgent(
-    isEchoAssistant ? effectiveAgentId : null,
-  );
+  const { agent: displayAgent } = useAgent(effectiveAgentId);
 
   const channelsStatusQuery = useQuery({
     queryKey: ["channels-status"],
@@ -1041,20 +1083,22 @@ function RealtimePageContent({
     slack: "Slack",
     discord: "Discord",
   };
-  const { agent: threadOwnerAgent } = useAgent(
-    resolvedThreadOwnerAgentId && resolvedThreadOwnerAgentId !== activeAgentId
-      ? resolvedThreadOwnerAgentId
-      : null,
-  );
-  const displayAgent = isEchoAssistant
-    ? effectiveAgent
-    : resolvedThreadOwnerAgentId && resolvedThreadOwnerAgentId !== activeAgentId
-      ? threadOwnerAgent
-      : activeAgent;
-  const selectedExecutionEngine =
-    displayAgent?.capabilities?.execution_backend === "codex_app_server"
-      ? ("codex" as const)
-      : ("echo" as const);
+  const selectedExecutionEngine = (() => {
+    if (displayAgent?.capabilities?.execution_backend === "codex_app_server") {
+      return "codex" as const;
+    }
+    // OpenCode Zen rows are explicit model ownership. Selecting one in the
+    // ordinary model picker must stamp the request so the host can bind the
+    // real OpenCode adapter instead of silently running Echo Mix.
+    const modelName = String(settings.context.model_name || "").toLowerCase();
+    if (
+      modelName.startsWith("opencode") ||
+      modelName.startsWith("zen-")
+    ) {
+      return "opencode" as const;
+    }
+    return "echo" as const;
+  })();
   const currentTaskAgentName = displayAgent?.name ?? effectiveAgentId;
   const composerDisplayAgent = useMemo(
     () =>
@@ -1159,9 +1203,10 @@ function RealtimePageContent({
       applyTaskCollaboratorPreset(storedPreset);
     }
     const handler = (event: Event) => {
-      const preset = (event as CustomEvent<TaskCollaboratorPreset>).detail;
-      if (preset) {
-        applyTaskCollaboratorPreset(preset);
+      const detail = (event as CustomEvent<TaskCollaboratorPresetEventDetail>)
+        .detail;
+      if (detail?.actor === currentActorId() && detail.preset) {
+        applyTaskCollaboratorPreset(detail.preset);
       }
     };
     window.addEventListener(TASK_COLLABORATOR_PRESET_EVENT, handler);
@@ -1754,20 +1799,26 @@ function RealtimePageContent({
   const threadRouteFor = useCallback(
     (id: string) => {
       const path = `/workspace/realtime/${encodeURIComponent(id)}`;
-      if (!embeddedDesignChat) return path;
+      if (!embeddedDesignChat) {
+        return preserveWorkbenchPresentation(path, location.search);
+      }
       const query = new URLSearchParams({ embedded: "design" });
       if (embeddedDesignProject) query.set("project", embeddedDesignProject);
       if (embeddedCreationSpace)
         query.set("creation_space", embeddedCreationSpace);
       if (embeddedCreativeProject)
         query.set("creative_project", embeddedCreativeProject);
-      return `${path}?${query.toString()}`;
+      return preserveWorkbenchPresentation(
+        `${path}?${query.toString()}`,
+        location.search,
+      );
     },
     [
       embeddedCreativeProject,
       embeddedCreationSpace,
       embeddedDesignChat,
       embeddedDesignProject,
+      location.search,
     ],
   );
   const markSidebarThreadRunning = useCallback(
@@ -1798,9 +1849,12 @@ function RealtimePageContent({
     (mode: string, prompt?: string) => {
       const agentId =
         mode === "react" || mode === "deep" ? activeAgentId : "general";
-      return taskWorkspaceRoute({ agentId, prompt });
+      return preserveWorkbenchPresentation(
+        taskWorkspaceRoute({ agentId, prompt }),
+        location.search,
+      );
     },
-    [activeAgentId],
+    [activeAgentId, location.search],
   );
   const openWorkDirInNewTask = useCallback(
     (dir: string) => {
@@ -2182,16 +2236,15 @@ function RealtimePageContent({
     // Only a fresh-task route may select a persona. Historical thread URLs
     // intentionally carry no agent query: their persisted owner is the source
     // of truth and must not be overwritten by a localStorage/default fallback.
-    if (!isNewThread) return;
+    if (!isNewThread || !storedActiveAgentId) return;
     const selectedAgent = routeAgentName || queryAgentName;
-    if (!selectedAgent) return;
     // Echo is the global assistant entry point — it sits ABOVE the
     // persona picker, not as a selectable role. Navigating to the assistant
     // thread MUST NOT mutate the footer's active persona, otherwise the
     // footer drifts to a random task collaborator
     // because "echo" is filtered out of switcherAgents.
     if (selectedAgent === "echo") return;
-    if (!isPrimaryPersonaAgentId(selectedAgent)) {
+    if (selectedAgent && !isPrimaryPersonaAgentId(selectedAgent)) {
       const leaderId = primaryPersonaAgentIdOrDefault(activeAgentId);
       const preset: TaskCollaboratorPreset = {
         leaderId,
@@ -2205,18 +2258,34 @@ function RealtimePageContent({
       writeTaskCollaboratorPreset(preset);
       applyTaskCollaboratorPreset(preset);
       consumeTaskCollaboratorPreset();
-      navigate(taskWorkspaceRoute({ agentId: leaderId }), { replace: true });
+      navigate(
+        preserveWorkbenchPresentation(
+          taskWorkspaceRoute({ agentId: leaderId }),
+          location.search,
+        ),
+        { replace: true },
+      );
       return;
     }
-    // 统一走 emitAgentChanged：同时写 localStorage + 派发 eventBus 事件，
-    // 保证左下角 AgentFooter（只订阅 eventBus agent:changed）能立即同步，
-    // 不再出现仅写 localStorage/发 window CustomEvent 导致两边角色不一致。
-    // source: "system" 表示这是路由/URL 驱动的同步，不触发 navigate 循环。
-    emitAgentChanged(selectedAgent, "system");
+    // Resolve retired/removed personas through the same live roster as the
+    // footer. Keep the draft prompt, workspace and navigation state intact.
+    if (selectedAgent && selectedAgent !== activeAgentId) {
+      const nextSearch = new URLSearchParams(location.search);
+      nextSearch.set("agent", activeAgentId);
+      navigate(
+        {
+          pathname: "/workspace/realtime/new",
+          search: `?${nextSearch}`,
+          hash: location.hash,
+        },
+        { replace: true, state: location.state },
+      );
+    }
+    emitAgentChanged(activeAgentId, "system");
     try {
       window.dispatchEvent(
         new CustomEvent(ACTIVE_AGENT_EVENT, {
-          detail: { name: selectedAgent },
+          detail: { name: activeAgentId },
         }),
       );
     } catch (e) {
@@ -2226,9 +2295,13 @@ function RealtimePageContent({
     activeAgentId,
     applyTaskCollaboratorPreset,
     isNewThread,
+    location.hash,
+    location.search,
+    location.state,
     navigate,
     queryAgentName,
     routeAgentName,
+    storedActiveAgentId,
   ]);
   useEffect(() => {
     // 使用 effectiveAgentId 而非 resolvedThreadOwnerAgentId：echo-assistant
@@ -2261,7 +2334,6 @@ function RealtimePageContent({
       return;
     }
     setSettings("context", {
-      ...settings.context,
       page_agent_memory_mode: memoryMode,
     } as Partial<typeof settings.context>);
   }, [memoryMode, setSettings, settings, settings.context]);
@@ -2270,11 +2342,11 @@ function RealtimePageContent({
     prevAgentRef.current = activeAgentId;
     if (prev === null || prev === activeAgentId) return;
     // Agent actually changed mid-session → flush both views.
-    qc.invalidateQueries({ queryKey: ["threads", "search"] });
+    qc.invalidateQueries({ queryKey: threadSearchQueryKey(actor) });
     // The visible route stays on the unified realtime surface; the selected
     // agent is carried by ?agent= for fresh tasks and by thread metadata for
     // history.
-  }, [activeAgentId, qc]);
+  }, [activeAgentId, actor, qc]);
 
   useEvent(
     "agent:changed",
@@ -2283,10 +2355,16 @@ function RealtimePageContent({
       // system: 由 URL/路由驱动的同步（页面首次加载、query 变化），不导航
       if (source === "thread" || source === "system") return;
       if (!name || name === activeAgentId) return;
-      qc.invalidateQueries({ queryKey: ["threads", "search"] });
-      navigate(taskWorkspaceRoute({ agentId: name }), { replace: false });
+      qc.invalidateQueries({ queryKey: threadSearchQueryKey(actor) });
+      navigate(
+        preserveWorkbenchPresentation(
+          taskWorkspaceRoute({ agentId: name }),
+          location.search,
+        ),
+        { replace: false },
+      );
     },
-    [activeAgentId, navigate, qc],
+    [activeAgentId, actor, location.search, navigate, qc],
   );
 
   const streamOptions = useMemo<ThreadStreamOptions>(
@@ -2392,6 +2470,7 @@ function RealtimePageContent({
           ...(isGroupConversation ? activeGroupTaskContext : {}),
         },
         selectedExecutionEngine,
+        settings.context.model_scope === "task",
       ),
       onStart: (startedThreadId) => {
         if (startedThreadId !== threadId) {
@@ -2408,7 +2487,7 @@ function RealtimePageContent({
           href: targetPath,
           threadId: startedThreadId,
         });
-        void qc.invalidateQueries({ queryKey: ["threads", "search"] });
+        void qc.invalidateQueries({ queryKey: threadSearchQueryKey(actor) });
         // Keep the /new route mounted for the lifetime of the first turn.
         // Changing the hash here still notifies the desktop HashRouter and
         // tears down its WebSocket, even when history.replaceState is used.
@@ -2423,13 +2502,14 @@ function RealtimePageContent({
         // permanently disable threadIdentityQuery, pinning the header/browser
         // title to "未命名" on every thread the user has messaged this session.
         localStartedThreadIdRef.current = null;
-        void qc.invalidateQueries({ queryKey: ["threads", "search"] });
+        void qc.invalidateQueries({ queryKey: threadSearchQueryKey(actor) });
         commitThreadRoute();
       },
     }),
     [
       auditIntensity,
       activeGroupTaskContext,
+      actor,
       automationTarget,
       clearSidebarThreadStatus,
       collaborationContext,
@@ -2467,6 +2547,46 @@ function RealtimePageContent({
     lastTurnToolEvents,
     realtimeApprovals,
   ] = useThreadStream(streamOptions);
+  useEffect(() => {
+    // Keep the displayed selection stable for the running turn.
+    if (thread.isLoading) return;
+    if (
+      selectedExecutionEngine === "echo" &&
+      settings.context.model_scope === "task"
+    )
+      return;
+    if (
+      selectedExecutionEngine !== "codex" &&
+      selectedExecutionEngine !== "echo" &&
+      selectedExecutionEngine !== "opencode"
+    )
+      return;
+    const globalModel = globalSettings.context.model_name || "auto";
+    const threadModel = settings.context.model_name || "auto";
+    if (threadModel === globalModel) return;
+    // Echo Mix is an orchestrator model with its own namespace; it cannot be
+    // represented by the Codex profile and intentionally stays per-thread.
+    if (
+      selectedExecutionEngine === "echo" &&
+      (threadModel === "mix" || threadModel === "echo-mix")
+    ) {
+      return;
+    }
+    // Do not race a native Echo selection that is waiting for its shared
+    // profile commit. Once the commit succeeds the values already match.
+    if (pendingNativeModelRef.current === threadModel) return;
+    // A stale per-thread override must not shadow the principal-scoped model
+    // after a desktop or another workspace changes the selection.
+    setSettings("context", { model_name: globalModel });
+  }, [
+    thread.isLoading,
+    globalSettings.context.model_name,
+    pendingNativeModelRef,
+    selectedExecutionEngine,
+    setSettings,
+    settings.context.model_name,
+    settings.context.model_scope,
+  ]);
   const [isCompressingContext, setIsCompressingContext] = useState(false);
   const selectedModel = useMemo(() => {
     const modelName = settings.context.model_name;
@@ -2602,11 +2722,10 @@ function RealtimePageContent({
     (tier: "common" | "full") => {
       setPendingNetworkRegen(tier);
       setSettings("context", {
-        ...settings.context,
         network_access: tier,
       });
     },
-    [setSettings, settings.context],
+    [setSettings],
   );
   useEffect(() => {
     if (!pendingNetworkRegen) return;
@@ -3254,6 +3373,12 @@ function RealtimePageContent({
       images?: File[];
       files?: File[];
       uploaded?: UploadedFileInfo[];
+      contextFiles?: Array<{
+        path: string;
+        workDir?: string | null;
+        sourceLabel?: string | null;
+        resourceId?: string | null;
+      }>;
     }) => {
       const images = message.images ?? [];
       const attachedFiles = message.files ?? [];
@@ -3270,11 +3395,19 @@ function RealtimePageContent({
         if (browserFiles.length === 0 && message.text.trim()) {
           writePendingNewSession(message.text);
           toast.info(t.realtime.composer.legacyOnDemandContinued);
-          navigate(taskWorkspaceRoute({ agentId: leaderId }));
+          navigate(
+            preserveWorkbenchPresentation(
+              taskWorkspaceRoute({ agentId: leaderId }),
+              location.search,
+            ),
+          );
         } else {
           toast.info(t.realtime.composer.legacyOnDemandAttachments);
           navigate(
-            taskWorkspaceRoute({ agentId: leaderId, prompt: message.text }),
+            preserveWorkbenchPresentation(
+              taskWorkspaceRoute({ agentId: leaderId, prompt: message.text }),
+              location.search,
+            ),
           );
         }
         return;
@@ -3322,7 +3455,13 @@ function RealtimePageContent({
           `已为你开启新会话（距上次对话已超过 ${autoNewSessionHours} 小时）`,
         );
         navigate(
-          taskWorkspaceRoute({ agentId: activeAgentId, prompt: message.text }),
+          preserveWorkbenchPresentation(
+            taskWorkspaceRoute({
+              agentId: activeAgentId,
+              prompt: message.text,
+            }),
+            location.search,
+          ),
           { replace: false },
         );
         return;
@@ -3330,7 +3469,11 @@ function RealtimePageContent({
 
       markSidebarThreadRunning(threadId);
       if (browserFiles.length === 0) {
-        void sendMessage(threadId, { text: message.text, files: [] });
+        void sendMessage(threadId, {
+          text: message.text,
+          files: [],
+          contextFiles: message.contextFiles,
+        });
         if (isGroupConversation) {
           // Task strategy is a one-turn intent. Returning to auto avoids a
           // later conversational follow-up silently running a heavy workflow.
@@ -3384,7 +3527,11 @@ function RealtimePageContent({
         ),
       )
         .then((files) => {
-          void sendMessage(threadId, { text: message.text, files });
+          void sendMessage(threadId, {
+            text: message.text,
+            files,
+            contextFiles: message.contextFiles,
+          });
           if (isGroupConversation) {
             setGroupTaskStrategy(groupTaskStrategyAfterSubmit());
           }
@@ -3408,6 +3555,7 @@ function RealtimePageContent({
       threadId,
       activeAgentId,
       navigate,
+      location.search,
       settings,
       threadIdentityQuery,
     ],
@@ -3484,7 +3632,6 @@ function RealtimePageContent({
         return;
       }
       setSettings("context", {
-        ...settings.context,
         mode,
       });
       if (
@@ -3502,7 +3649,6 @@ function RealtimePageContent({
       navigate,
       newThreadRouteForMode,
       setSettings,
-      settings.context,
     ],
   );
 
@@ -3687,6 +3833,31 @@ function RealtimePageContent({
       window.removeEventListener(OPEN_ARTIFACT_EVENT, handleOpenArtifact);
   }, [openWorkbenchArtifact]);
 
+  const lastRequestedArtifact = useRef<string | null>(null);
+  const requestedArtifact = searchParams.get("artifact");
+  const artifactRequestRevision = searchParams.get("artifactRequest");
+  useEffect(() => {
+    const key = requestedArtifact
+      ? JSON.stringify([threadId, requestedArtifact, artifactRequestRevision])
+      : null;
+    if (!key) {
+      lastRequestedArtifact.current = null;
+      return;
+    }
+    if (
+      lastRequestedArtifact.current === key ||
+      !canLocateArtifact(requestedArtifact!, threadId)
+    )
+      return;
+    lastRequestedArtifact.current = key;
+    openWorkbenchArtifact(requestedArtifact!);
+  }, [
+    threadId,
+    requestedArtifact,
+    artifactRequestRevision,
+    openWorkbenchArtifact,
+  ]);
+
   const openFinalArtifactPanel = useCallback(() => {
     const firstEntry = finalArtifactEntries[0];
     if (firstEntry?.path) openWorkbenchArtifact(firstEntry.path);
@@ -3817,12 +3988,92 @@ function RealtimePageContent({
 
   const handleModelChange = useCallback(
     (modelName: string) => {
+      if (
+        selectedExecutionEngine === "echo" &&
+        (settings.context.model_scope === "task" ||
+          modelName === "mix" ||
+          modelName === "echo-mix")
+      ) {
+        setSettings("context", { model_name: modelName, model_scope: "task" });
+        return;
+      }
+      const previousModelName = settings.context.model_name;
+      if (selectedExecutionEngine === "echo") {
+        pendingNativeModelRef.current = modelName;
+      }
       setSettings("context", {
-        ...settings.context,
         model_name: modelName,
       });
+      if (selectedExecutionEngine === "codex") {
+        // Keep the desktop selector and every Codex composer on the same
+        // principal-scoped setting. The Coder control has already committed
+        // its server profile before this callback runs.
+        setGlobalSettings("context", { model_name: modelName });
+        return;
+      }
+
+      // Echo's model control is intentionally local and therefore does not
+      // write the Codex profile itself. The desktop selector is still the
+      // product-wide model indicator, so mirror a real model selection into
+      // the same principal-scoped profile here. Queue writes to preserve the
+      // order in which a user clicks through models, and only publish the
+      // latest committed result to the shared setting.
+      const normalized = modelName.trim();
+      if (!normalized || normalized === "mix" || normalized === "echo-mix") {
+        return;
+      }
+      const requestId = ++nativeModelProfileSequence.current;
+      const accountMatch = normalized.match(/^chatgpt[/:](.+)$/i);
+      nativeModelProfileQueue.current = nativeModelProfileQueue.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            const profile = await updateCoderModelProfile(
+              accountMatch?.[1]
+                ? {
+                    source: "codex_account",
+                    model: accountMatch[1],
+                  }
+                : {
+                    source: "follow_system",
+                    ...(normalized !== "auto" && normalized !== "default"
+                      ? { model: normalized }
+                      : {}),
+                  },
+            );
+            if (requestId !== nativeModelProfileSequence.current) return;
+            const committed = accountMatch?.[1]
+              ? `chatgpt/${profile.effective_model || accountMatch[1]}`
+              : profile.selected_model || "auto";
+            pendingNativeModelRef.current = null;
+            qc.setQueryData(
+              coderQueryKeys(user?.actor_id || user?.user_id || "local")
+                .profile,
+              profile,
+            );
+            setGlobalSettings("context", { model_name: committed });
+          } catch (error) {
+            if (requestId !== nativeModelProfileSequence.current) return;
+            // Keep the thread and desktop selectors together when the shared
+            // profile rejects an Echo-side model selection.
+            pendingNativeModelRef.current = null;
+            setSettings("context", {
+              model_name: previousModelName,
+            });
+            toast.error(
+              error instanceof Error ? error.message : "模型同步失败，请重试。",
+            );
+          }
+        });
     },
-    [setSettings, settings.context],
+    [
+      selectedExecutionEngine,
+      qc,
+      setGlobalSettings,
+      setSettings,
+      settings.context,
+      user,
+    ],
   );
 
   const handleModelSwitchNotice = useCallback(
@@ -3855,11 +4106,10 @@ function RealtimePageContent({
   const handleReasoningEffortChange = useCallback(
     (reasoningEffort: ReasoningEffort) => {
       setSettings("context", {
-        ...settings.context,
         reasoning_effort: normalizeReasoningEffortForUi(reasoningEffort),
       });
     },
-    [setSettings, settings.context],
+    [setSettings],
   );
 
   const handlePermissionModeChange = useCallback(
@@ -3868,13 +4118,12 @@ function RealtimePageContent({
       // environment stays independent (controlled in Settings → Sandbox). A
       // bypass mode implies auto-approval, anything else asks on request.
       setSettings("context", {
-        ...settings.context,
         permission_mode: permissionMode,
         approval_policy:
           permissionMode === "bypassPermissions" ? "never" : "on-request",
       });
     },
-    [setSettings, settings.context],
+    [setSettings],
   );
 
   const headerAgentIdentity = (
@@ -4205,9 +4454,7 @@ function RealtimePageContent({
               inputArea={
                 <div
                   className={cn(
-                    "relative w-full transition-[max-width,transform] duration-slow",
-                    isNewThread &&
-                      "-translate-y-[clamp(3rem,12dvh,7rem)] md:-translate-y-[calc(50vh-168px)]",
+                    "relative w-full transition-[max-width] duration-slow",
                     isNewThread ? "max-w-3xl" : "max-w-(--container-width-md)",
                   )}
                 >
@@ -4215,6 +4462,7 @@ function RealtimePageContent({
                     <div className="flex flex-col gap-2">
                       {isNewThread ? (
                         <Welcome
+                          className="py-4 [&_h2]:text-2xl"
                           agent={displayAgent}
                           agentName={effectiveAgentId}
                         />
@@ -4242,6 +4490,33 @@ function RealtimePageContent({
                             target={automationTarget}
                           />
                         ) : null}
+                        {!embeddedDesignChat && (
+                          <TaskModelScope
+                            scope={settings.context.model_scope || "system"}
+                            supportsOverride={
+                            selectedExecutionEngine === "echo" ||
+                              selectedExecutionEngine === "codex" ||
+                              selectedExecutionEngine === "opencode"
+                            }
+                            disabled={
+                              thread.isLoading ||
+                              pendingNativeModelRef.current !== null
+                            }
+                            onChange={(scope) =>
+                              setSettings("context", {
+                                model_scope: scope,
+                                ...(scope === "system"
+                                  ? {
+                                      model_name:
+                                        globalSettings.context.model_name,
+                                      reasoning_effort:
+                                        globalSettings.context.reasoning_effort,
+                                    }
+                                  : {}),
+                              })
+                            }
+                          />
+                        )}
                         <ChatInputBox
                           key={composerSeed || "empty-composer"}
                           status={
@@ -4253,9 +4528,20 @@ function RealtimePageContent({
                           }
                           modelName={settings.context.model_name}
                           // Keep one selector, but project model ownership by
-                          // engine: Codex roles use the server-owned profile;
-                          // native roles serialize the thread's model source.
-                          modelProfileControl={!embeddedDesignChat}
+                          // scope: task Codex overrides stay local while the
+                          // system profile remains server-owned.
+                          modelProfileControl={
+                            !embeddedDesignChat &&
+                            selectedExecutionEngine !== "opencode" &&
+                            !(
+                              selectedExecutionEngine === "echo" &&
+                              settings.context.model_scope === "task"
+                            )
+                          }
+                          taskModelOverride={
+                            selectedExecutionEngine === "codex" &&
+                            settings.context.model_scope === "task"
+                          }
                           executionEngine={selectedExecutionEngine}
                           mode={effectiveMode}
                           reasoningEffort={effectiveReasoningEffort}
@@ -4319,7 +4605,10 @@ function RealtimePageContent({
                               ? undefined
                               : handleAutomationTargetChange
                           }
-                          disabled={researchLoading}
+                          disabled={
+                            researchLoading ||
+                            (isNewThread && !storedActiveAgentId)
+                          }
                           workDir={effectiveWorkDir}
                           displayAgent={composerDisplayAgent}
                           showWorkDirSelector={!embeddedDesignChat}

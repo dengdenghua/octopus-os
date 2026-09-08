@@ -7,6 +7,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
+if os.name == "nt":
+    pytest.skip("backup orchestration invokes a POSIX shell", allow_module_level=True)
+
 
 def _fake_host_tools(tmp_path: Path) -> tuple[Path, Path]:
     tools = tmp_path / "tools"

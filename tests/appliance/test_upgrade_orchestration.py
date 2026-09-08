@@ -7,6 +7,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
+if os.name == "nt":
+    pytest.skip("upgrade orchestration invokes a POSIX shell", allow_module_level=True)
+
 TARGET_IMAGE = f"registry.example/echo-os@sha256:{'a' * 64}"
 PREVIOUS_IMAGE = f"registry.example/echo-os@sha256:{'b' * 64}"
 

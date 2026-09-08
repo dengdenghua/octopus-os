@@ -81,6 +81,7 @@ def test_builtin_registry_is_stable_unique_and_can_hide_unmounted_files() -> Non
         "photos.index.plan",
         "photos.library.list",
         "photos.search",
+        "photos.status",
         "storage.health.read",
     ]
     assert len(without_files) == 17
@@ -109,7 +110,7 @@ def test_discovery_requires_login_and_exposes_provider_operations(tmp_path) -> N
     detail = client.get("/api/appliance/capabilities/files.trash.empty")
 
     assert response.status_code == 200
-    assert response.json()["count"] == 26
+    assert response.json()["count"] == 27
     assert filtered.json()["count"] == 1
     assert filtered.json()["capabilities"][0]["metadata"]["id"] == "storage.health.read"
     assert detail.json()["provider"]["operation"] == {

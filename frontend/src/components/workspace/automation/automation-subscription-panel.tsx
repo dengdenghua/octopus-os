@@ -2,12 +2,7 @@ import { useState } from "react";
 import { XIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AutomationConfiguredTab } from "./automation-configured-tab";
 import { AutomationHistoryTab } from "./automation-history-tab";
 import { AutomationTemplatesTab } from "./automation-templates-tab";
@@ -27,7 +22,8 @@ export function AutomationSubscriptionPanel({
 }) {
   const [activeTab, setActiveTab] = useState("configured");
   const [createOpen, setCreateOpen] = useState(false);
-  const [presetTemplate, setPresetTemplate] = useState<AutomationTemplate | null>(null);
+  const [presetTemplate, setPresetTemplate] =
+    useState<AutomationTemplate | null>(null);
 
   const openCreate = (template: AutomationTemplate | null = null) => {
     setPresetTemplate(template);

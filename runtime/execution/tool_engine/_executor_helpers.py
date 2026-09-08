@@ -4,6 +4,8 @@ import contextlib
 import hashlib
 import ipaddress
 import shlex
+import threading
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -162,11 +164,19 @@ def _call_handler_with_transient_retry(
     and the caller proceeds instead of pinning its thread forever.
     """
 
+    retry_closed = threading.Event()
+    deadline = time.monotonic() + timeout_s if timeout_s and timeout_s > 0 else None
+
     def _run() -> tuple[Any, list[str]]:
         try:
             return handler(**args), []
         except Exception as exc:  # noqa: BLE001 - retry classifier needs arbitrary skill exceptions
-            if not allow_retry or not _is_transient_tool_exception(exc):
+            if (
+                not allow_retry
+                or retry_closed.is_set()
+                or (deadline is not None and time.monotonic() >= deadline)
+                or not _is_transient_tool_exception(exc)
+            ):
                 raise
             retry_tag = f"transient_retry:{type(exc).__name__}"
             return handler(**args), [retry_tag]
@@ -186,11 +196,17 @@ def _call_handler_with_transient_retry(
     try:
         return fut.result(timeout=float(timeout_s))
     except _cf.TimeoutError:
-        pool.shutdown(wait=False, cancel_futures=True)
         raise TimeoutError(f"tool handler exceeded its timeout ({timeout_s:g}s)") from None
-    except BaseException:
+    finally:
+        # Expiry cannot kill a running Python handler. It can and must revoke
+        # this invocation's right to start an automatic retry later on.
+        retry_closed.set()
         pool.shutdown(wait=False, cancel_futures=True)
-        raise
+
+
+def _uses_workspace_paths(skill: Skill) -> bool:
+    """Only immutable server registration selects the path namespace."""
+    return getattr(skill, "path_resolution", "workspace") != "service"
 
 
 def _prepare_scoped_args(
@@ -203,8 +219,8 @@ def _prepare_scoped_args(
     * A handler that declares ``session`` gets the current Session
       injected (old handlers without the param keep working).
     * Directory-base params (``root``/``cwd``/…) and path params
-      (``path``/``file_path``/…) default to — or are resolved against —
-      the scope's primary root, so "analyze this folder" scans the
+      (``path``/``file_path``/``image_path``/…) default to — or are resolved
+      against — the scope's primary root, so "analyze this folder" scans the
       workspace the user picked instead of the process CWD.
     * ``sandbox_dir`` participates in the permission domain: omitted →
       filled with the scope primary; supplied → PermissionError when it
@@ -238,7 +254,15 @@ def _prepare_scoped_args(
         "base_dir",
         "repo_dir",
     )
-    _path_params = ("path", "filepath", "file_path", "filename")
+    _path_params = (
+        "path",
+        "filepath",
+        "file_path",
+        "filename",
+        "image_path",
+        "video_path",
+    )
+    _path_list_params = ("image_paths",)
     has_sandbox = "sandbox_dir" in handler_params
     has_root_param = any(p in handler_params for p in _root_params)
     has_path_param = any(p in handler_params for p in _path_params)
@@ -257,11 +281,50 @@ def _prepare_scoped_args(
     read_primary = scope.primary_read
     _mutates_files = bool(set(skill.affinity or []) & {"write", "edit", "exec", "dangerous"})
     arg_primary = scope.primary_write if _mutates_files else read_primary
+    workspace_paths = _uses_workspace_paths(skill)
+    if not workspace_paths and _mutates_files and scope.primary_write is None:
+        raise PermissionError(f"service write skill {sucker_id!r} blocked: no write scope")
+
+    if workspace_paths:
+        # Absolute model-supplied roots are still model input.  Resolve them
+        # against the server-owned read/write scope before the handler sees
+        # them; otherwise a generic workspace skill could point its directory
+        # or image argument at the appliance NAS (or another tenant's files)
+        # while bypassing the service-owned photo tools and their ACL checks.
+        allows = scope.allows_write if _mutates_files else scope.allows_read
+        for _pp in (*_path_params, *_root_params):
+            _supplied = args.get(_pp)
+            if not isinstance(_supplied, (str, Path)) or not str(_supplied).strip():
+                continue
+            try:
+                _candidate = Path(_supplied).expanduser()
+            except (TypeError, ValueError):
+                continue
+            if _candidate.is_absolute() and not allows(_candidate):
+                raise PermissionError(
+                    f"workspace path argument {_pp!r} escapes the active "
+                    f"{'write' if _mutates_files else 'read'} scope"
+                )
+        for _lp in _path_list_params:
+            _supplied = args.get(_lp)
+            if _supplied is None:
+                continue
+            if not isinstance(_supplied, (list, tuple)):
+                raise PermissionError(f"workspace path list argument {_lp!r} is invalid")
+            for _item in _supplied:
+                if not isinstance(_item, (str, Path)) or not str(_item).strip():
+                    raise PermissionError(f"workspace path list argument {_lp!r} is invalid")
+                _candidate = Path(_item).expanduser()
+                if _candidate.is_absolute() and not allows(_candidate):
+                    raise PermissionError(
+                        f"workspace path argument {_lp!r} escapes the active "
+                        f"{'write' if _mutates_files else 'read'} scope"
+                    )
 
     # Read-side root injection — if the LLM didn't supply the root (or
     # supplied the meaningless "."), inject the scope primary so the
     # read scans the user's selected folder.
-    if has_root_param and arg_primary is not None:
+    if workspace_paths and has_root_param and arg_primary is not None:
         for _rp in _root_params:
             if _rp not in handler_params:
                 continue
@@ -272,7 +335,7 @@ def _prepare_scoped_args(
 
     # Path-param injection — relative paths resolve against the scope
     # primary instead of the process CWD.
-    if has_path_param and arg_primary is not None:
+    if workspace_paths and has_path_param and arg_primary is not None:
         from runtime.safety.auth.path_guard import normalize_scoped_relative_path
 
         for _pp in _path_params:
@@ -293,8 +356,26 @@ def _prepare_scoped_args(
                 args = {**args, _pp: str(arg_primary / normalized)}
                 break
 
+    if workspace_paths and arg_primary is not None:
+        from runtime.safety.auth.path_guard import normalize_scoped_relative_path
+
+        for _lp in _path_list_params:
+            _supplied = args.get(_lp)
+            if not isinstance(_supplied, (list, tuple)):
+                continue
+            _normalized: list[str] = []
+            for _item in _supplied:
+                _item_str = str(_item)
+                if Path(_item_str).is_absolute():
+                    _normalized.append(_item_str)
+                else:
+                    _normalized.append(
+                        str(arg_primary / normalize_scoped_relative_path(_item_str, arg_primary))
+                    )
+            args = {**args, _lp: _normalized}
+
     if has_sandbox:
-        if scope.primary_write is None:
+        if _mutates_files and scope.primary_write is None:
             raise PermissionError(
                 f"write skill {sucker_id!r} blocked: "
                 f"thread is in '{scope.mode}' mode "
@@ -303,7 +384,13 @@ def _prepare_scoped_args(
                 "plan summary to transition to chat / "
                 "team / code mode."
             )
+        if workspace_paths and not _mutates_files and read_primary is None:
+            raise PermissionError(f"read skill {sucker_id!r} blocked: no readable workspace")
         supplied = args.get("sandbox_dir")
+        if not workspace_paths and not supplied:
+            # Preserve the handler's service default; never create/inject a
+            # local sandbox merely because a service uses this parameter name.
+            return args
         default_sandbox = scope.primary_write if _mutates_files else read_primary
         # A tool may target any granted root, not only the primary project
         # directory. Pick the most specific containing root for an absolute
@@ -401,6 +488,11 @@ def _declared_write_scope_violation(
     affinity = set(skill.affinity or [])
     if "file" not in affinity or not affinity & {"write", "edit", "delete", "dangerous"}:
         return None
+    if not _uses_workspace_paths(skill):
+        return (
+            f"[write-scope-denied] {sucker_id}: a workspace write allowlist cannot "
+            "authorize a service-managed target"
+        )
     workspace_value = metadata.get("workspace_path")
     if not isinstance(workspace_value, str) or not workspace_value.strip():
         return (
@@ -594,6 +686,8 @@ def _read_before_write_violation(
 
 
 def _file_write_lease_target(skill: Skill, args: dict[str, Any]) -> Path | None:
+    if not _uses_workspace_paths(skill):
+        return None
     affinity = set(skill.affinity or [])
     if "file" not in affinity:
         return None
@@ -799,6 +893,28 @@ def _mark_task_waiting_approval(
         )
 
         session = current_session()
+        patch = {
+            "approval_required": True,
+            "approval_tool_name": tool_name,
+            "approval_reason": reason,
+        }
+        if isinstance(metadata_patch, dict):
+            patch.update(metadata_patch)
+        patch["approval_tool_name"] = tool_name
+        patch["approval_reason"] = reason
+        execution_lease = getattr(session, "execution_lease", None)
+        if execution_lease is not None:
+            # A current execution already owns an exact immutable epoch. Never
+            # reconstruct authority from mutable metadata or fall back after a
+            # rejection. Closed stream scopes may finalize, but not block the
+            # replacement verify/repair scope with a late approval update.
+            execution_lease.transition(
+                TaskRunStatus.WAITING_APPROVAL,
+                require_open=True,
+                reason=reason,
+                metadata_patch=patch,
+            )
+            return
         metadata = session.metadata if session is not None else {}
         task_id = str(metadata.get("task_id") or "").strip()
         store_path = str(metadata.get("task_supervisor_store_path") or "").strip()
@@ -809,15 +925,6 @@ def _mark_task_waiting_approval(
             holder_id=str(metadata.get("task_supervisor_holder_id") or "") or None,
             lease_ttl_seconds=float(metadata.get("task_supervisor_lease_ttl_seconds") or 300.0),
         )
-        patch = {
-            "approval_required": True,
-            "approval_tool_name": tool_name,
-            "approval_reason": reason,
-        }
-        if isinstance(metadata_patch, dict):
-            patch.update(metadata_patch)
-        patch["approval_tool_name"] = tool_name
-        patch["approval_reason"] = reason
         supervisor.transition(
             task_id,
             TaskRunStatus.WAITING_APPROVAL,

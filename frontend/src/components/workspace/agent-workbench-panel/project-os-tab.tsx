@@ -44,7 +44,7 @@ import {
   UsersIcon,
   XCircleIcon,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -52,9 +52,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { RoutedWebLink } from "@/components/ui/routed-web-link";
-import { authHeaders, jsonAuthHeaders } from "@/core/auth/api";
+import { authHeaders, currentActorId, jsonAuthHeaders } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
+import { projectByThreadQueryKey } from "@/core/projects/hooks";
 
 import type { WorkbenchRosterSeat } from "./helpers";
 
@@ -633,8 +635,9 @@ export function boundProjectRefetchInterval(
 }
 
 export function useBoundProjectState(threadId: string | undefined | null) {
+  const actor = currentActorId();
   return useQuery<ProjectFullState | null>({
-    queryKey: ["project", "by-thread", threadId ?? ""],
+    queryKey: projectByThreadQueryKey(threadId, actor),
     queryFn: async () => {
       const res = await fetch(
         `${getBackendBaseURL()}/api/projects/by-thread/${threadId}`,
@@ -724,6 +727,7 @@ export function ProjectOsTab({
   /** Conversation title fallback for non-group project threads. */
   currentThreadTitle?: string | null;
 }) {
+  const { search } = useLocation();
   const { project, pm } = state;
   const [activeTab, setActiveTab] = useState<ProjectWorkbenchTabId>("overview");
   const [taskFilter, setTaskFilter] = useState<
@@ -1066,7 +1070,7 @@ export function ProjectOsTab({
           />
           <span>{totalTasks} 个事项</span>
           <Link
-            to="/workspace/projects"
+            to={preserveWorkbenchPresentation("/workspace/projects", search)}
             className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title="打开完整项目管理页"
           >
@@ -1190,6 +1194,7 @@ function OverviewTab({
   onAction: (spec: ProjectActionSpec, key: string) => void;
   onNavigate: (tab: ProjectWorkbenchTabId) => void;
 }) {
+  const { search } = useLocation();
   const { project, pm, retro, action_specs: actionSpecs = [] } = state;
   const nextActions = pm?.next_actions ?? [];
   const risks = uniqueProjectRisks(pm);
@@ -1241,7 +1246,12 @@ function OverviewTab({
               })
             ) : (
               <Button asChild size="sm" className="h-8 rounded-lg text-[11px]">
-                <Link to="/workspace/projects">
+                <Link
+                  to={preserveWorkbenchPresentation(
+                    "/workspace/projects",
+                    search,
+                  )}
+                >
                   打开项目管理
                   <ArrowRightIcon className="size-3" />
                 </Link>

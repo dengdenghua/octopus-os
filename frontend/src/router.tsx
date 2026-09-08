@@ -1,5 +1,8 @@
+import { RetainedShellRoutes } from "@/components/retained-shell-routes";
+import { DesktopWorkspaceEntry } from "@/components/desktop-workspace-entry";
+import { useAuth } from "@/providers/AuthProvider";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, useLocation } from "react-router-dom";
 
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
@@ -9,6 +12,7 @@ import {
 } from "@/components/electron-title-bar";
 import { useI18n } from "@/core/i18n/hooks";
 import { createWorkspaceRoute } from "@/app/workspace/workspace-routes";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 const AboutPage = lazy(() => import("./app/about/page"));
 const TermsPage = lazy(() => import("./app/terms/page"));
@@ -21,7 +25,24 @@ const SLOW_PAGE_LOADING_MS = 8_000;
 
 function LegacyAccountRouteRedirect() {
   const location = useLocation();
-  return <Navigate to={`/desktop${location.search}`} replace />;
+  return (
+    <Navigate
+      to={`/desktop${location.search}`}
+      state={location.state}
+      replace
+    />
+  );
+}
+
+function LegacyWorkspaceRouteRedirect({ to }: { to: string }) {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={preserveWorkbenchPresentation(to, location.search)}
+      state={location.state}
+      replace
+    />
+  );
 }
 
 export function PageLoading() {
@@ -83,12 +104,14 @@ export function PageLoading() {
 }
 
 export function AppRouter() {
+  const { user } = useAuth();
+  const sessionIdentity = user?.actor_id || user?.user_id || "signed-out";
   return (
     <ErrorBoundary>
       <ElectronTitleBarProvider>
         <ElectronTitleBar />
         <Suspense fallback={<PageLoading />}>
-          <Routes>
+          <RetainedShellRoutes key={sessionIdentity}>
             <Route path="/" element={<Navigate to="/desktop" replace />} />
             <Route path="/login" element={<LegacyAccountRouteRedirect />} />
             <Route path="/register" element={<LegacyAccountRouteRedirect />} />
@@ -106,7 +129,9 @@ export function AppRouter() {
             <Route element={<ProtectedRoute />}>
               <Route
                 path="/settings"
-                element={<Navigate to="/workspace/settings" replace />}
+                element={
+                  <LegacyWorkspaceRouteRedirect to="/workspace/settings" />
+                }
               />
               <Route path="/browser" element={<TopBrowserPage />} />
               <Route
@@ -120,18 +145,17 @@ export function AppRouter() {
               <Route
                 path="/plugins"
                 element={
-                  <Navigate
-                    to="/workspace/agents?surface=chat&tab=plugins"
-                    replace
-                  />
+                  <LegacyWorkspaceRouteRedirect to="/workspace/agents?surface=chat&tab=plugins" />
                 }
               />
 
-              {createWorkspaceRoute()}
+              <Route element={<DesktopWorkspaceEntry />}>
+                {createWorkspaceRoute()}
+              </Route>
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          </RetainedShellRoutes>
         </Suspense>
       </ElectronTitleBarProvider>
     </ErrorBoundary>

@@ -121,6 +121,38 @@ def _history_provider(thread_store: Any):
 
 def _execute_subagent_task(task: AsyncTask, context: dict[str, Any]) -> str:
     from runtime.execution.subagents import call_subagent
+    from runtime.platform.process.session import Session, current_session
+
+    # The async runner normally executes in its daemon thread, where the
+    # request ContextVar is intentionally empty. Give each durable cowork task
+    # its own host turn so recursive children cannot bypass the shared
+    # governance ledger, and so journal/trace entries remain attributable to
+    # the persisted task after a process restart. A caller that drains a task
+    # synchronously still contributes its trusted metadata (for example a
+    # tenant id), but never reuses the caller's execution lease for this
+    # independent background job.
+    parent = current_session()
+    inherited_metadata: dict[str, Any] = {}
+    # Only carry the stable tenant coordinate from an ambient foreground
+    # session. Ephemeral fields such as ``_locked_write_root``, approval
+    # handles, and parent tool ids belong to that foreground turn and must not
+    # leak into a durable background job.
+    parent_metadata = getattr(parent, "metadata", None) if parent else None
+    if isinstance(parent_metadata, dict) and parent_metadata.get("tenant_id"):
+        inherited_metadata["tenant_id"] = parent_metadata["tenant_id"]
+    inherited_metadata.update(
+        {
+            "source": "cowork_async_task",
+            "cowork_task_id": task.task_id,
+        }
+    )
+    task_session = Session(
+        actor=str(task.created_by or getattr(parent, "actor", None) or "").strip() or None,
+        thread_id=task.thread_id,
+        conversation_id=task.thread_id,
+        turn_id=f"cowork:{task.task_id}",
+        metadata=inherited_metadata,
+    )
 
     result = call_subagent(
         task.assignee,
@@ -133,6 +165,7 @@ def _execute_subagent_task(task: AsyncTask, context: dict[str, Any]) -> str:
         },
         timeout_s=900,
         timeout_seconds=900.0,
+        session=task_session,
     )
     if not result.get("success"):
         raise RuntimeError(str(result.get("error") or "subagent failed"))

@@ -89,6 +89,43 @@ afterEach(() => {
 });
 
 describe("CoderEngineControl", () => {
+  it("surfaces a server-owned execution prerequisite reason", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      if (url.includes("/model-profile")) {
+        return jsonResponse({
+          ...systemProfile,
+          execution_available: false,
+          execution_unavailable_reason: "executable_unavailable",
+        });
+      }
+      if (url.includes("/account")) {
+        return jsonResponse({
+          account: null,
+          requires_openai_auth: false,
+          login_pending: false,
+          login_id: null,
+          login_error: null,
+        });
+      }
+      return jsonResponse(models);
+    });
+
+    renderWithProviders(<CoderEngineControl />, { locale: "zh-CN" });
+    const trigger = screen.getByTestId("coder-engine-trigger");
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute(
+        "aria-label",
+        "系统 · gpt-5.6 · 当前暂不可执行",
+      ),
+    );
+    await user.click(trigger);
+
+    expect(await screen.findByText("当前暂不可执行")).toBeVisible();
+    expect(screen.getByText("未找到可用的 Codex App Server")).toBeVisible();
+  });
+
   it("lets the Echo kernel switch between system and ChatGPT subscription models without mutating the Codex profile", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
@@ -170,6 +207,45 @@ describe("CoderEngineControl", () => {
     expect(onEffectiveModelChange).toHaveBeenLastCalledWith("DeepSeek");
     await user.click(screen.getByRole("button", { name: "高" }));
     expect(onReasoningEffortChange).toHaveBeenCalledWith("high");
+  });
+
+  it("keeps a Codex task override local and leaves the account profile untouched", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const onEffectiveModelChange = vi.fn();
+
+    renderWithProviders(
+      <CoderEngineControl
+        executionEngine="codex"
+        taskOverride
+        value="auto"
+        onChange={onChange}
+        onEffectiveModelChange={onEffectiveModelChange}
+        reasoningEffort="medium"
+        systemModels={[
+          {
+            name: "task-system",
+            display_name: "任务模型",
+            model: "task-system-v1",
+            reasoning_efforts: ["medium", "high"],
+          },
+        ]}
+      />,
+      { locale: "zh-CN" },
+    );
+
+    await user.click(await screen.findByTestId("coder-engine-trigger"));
+    await user.click(await screen.findByRole("button", { name: /任务模型/ }));
+
+    expect(onChange).toHaveBeenCalledWith("task-system");
+    expect(onEffectiveModelChange).toHaveBeenCalledWith("任务模型");
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          urlOf(input as RequestInfo | URL).includes("/model-profile") &&
+          (init as RequestInit | undefined)?.method === "PUT",
+      ),
+    ).toBe(false);
   });
 
   it("offers both Echo and Codex model domains with system reasoning controls", async () => {
@@ -340,6 +416,7 @@ describe("CoderEngineControl", () => {
 
   it("updates the selected model immediately while the save finishes", async () => {
     const user = userEvent.setup();
+    const onChange = vi.fn();
     const onEffectiveModelChange = vi.fn();
     let finishSave:
       | ((response: ReturnType<typeof jsonResponse>) => void)
@@ -368,7 +445,10 @@ describe("CoderEngineControl", () => {
       },
     );
     const view = renderWithProviders(
-      <CoderEngineControl onEffectiveModelChange={onEffectiveModelChange} />,
+      <CoderEngineControl
+        onChange={onChange}
+        onEffectiveModelChange={onEffectiveModelChange}
+      />,
       { locale: "zh-CN" },
     );
 
@@ -398,6 +478,7 @@ describe("CoderEngineControl", () => {
         "gpt-5.6-codex",
       ),
     );
+    expect(onChange).toHaveBeenCalledWith("chatgpt/gpt-5.6-codex");
     expect(onEffectiveModelChange).toHaveBeenCalledWith("gpt-5.6-codex");
   });
 

@@ -1,6 +1,8 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderWithProviders } from "@/test/harness";
 
 import { HubPanel } from "./hub-panel";
 import type {
@@ -12,8 +14,25 @@ import type {
   HubUpdatePlan,
 } from "./hub";
 
+function render(ui: ReactElement) {
+  return renderWithProviders(ui, { locale: "zh-CN" });
+}
+
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), message: vi.fn() },
+}));
+
+// Hub renders CoreAppCard, whose active-persona hook otherwise issues an
+// unrelated `/api/agents` request and consumes the one-shot fetch fixture used
+// by each catalog test.
+vi.mock("@/core/agents", () => ({
+  useAgents: () => ({
+    agents: [],
+    isLoading: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
 }));
 
 const pendingApp: HubApp = {
@@ -982,16 +1001,16 @@ describe("Echo Hub panel", () => {
 
     render(<HubPanel open onClose={vi.fn()} />);
 
-    await user.click(await screen.findByRole("button", { name: "已安装 2" }));
+    await user.click(await screen.findByRole("button", { name: "已安装 4" }));
     expect(screen.getByText("演示应用")).toBeInTheDocument();
     expect(screen.getByText("待更新应用")).toBeInTheDocument();
     expect(screen.queryByText("智能相册")).not.toBeInTheDocument();
-    expect(screen.getByText(/2\/3 个应用/)).toBeInTheDocument();
+    expect(screen.getByText(/4\/5 个应用/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "可更新 1" }));
     expect(screen.getByText("待更新应用")).toBeInTheDocument();
     expect(screen.queryByText("演示应用")).not.toBeInTheDocument();
-    expect(screen.getByText(/1\/3 个应用/)).toBeInTheDocument();
+    expect(screen.getByText(/1\/5 个应用/)).toBeInTheDocument();
   });
 
   it("reviews a deterministic plan, requires password approval, then applies it", async () => {
@@ -1970,4 +1989,83 @@ describe("Echo Hub panel", () => {
       tokens: { access_token: secret },
     });
   });
+});
+
+it("launches an installed registered app in either host instead of opening plugin management", async () => {
+  const onOpenWorkbench = vi.fn();
+  const onOpenSystemApp = vi.fn();
+  const onOpenAgentAssets = vi.fn();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/appliance/agent-assets/catalog"))
+        return new Response(
+          JSON.stringify({
+            schema: "echo.agent-assets.v6",
+            available: true,
+            plugins: [
+              {
+                id: "workbench_design",
+                plugin: "design",
+                kind: "workbench",
+                name_zh: "设计画布",
+                permissions: [],
+                authModes: [],
+                dependencies: [],
+                runtimeDependencies: [],
+                connectors: [],
+              },
+            ],
+            skills: [],
+            installed: { plugins: ["design"], skills: [] },
+            unavailableSources: [],
+            pluginStates: [
+              {
+                id: "design",
+                catalogId: "workbench_design",
+                source: "cloud",
+                rollbackAvailable: false,
+                recoveryCount: 0,
+                trustLevel: "catalog",
+                integrityVerified: false,
+                publisherVerified: false,
+                kind: "workbench",
+                installed: true,
+                enabled: true,
+                state: "enabled",
+                compatibility: "compatible",
+                permissionReviewRequired: false,
+                permissionActive: true,
+                permissions: [],
+                authModes: [],
+                dependencies: [],
+                runtimeDependencies: [],
+                connectors: [],
+                permissionsGranted: [],
+              },
+            ],
+          }),
+        );
+      if (url.endsWith("/api/appliance/hub/catalog"))
+        return new Response(JSON.stringify(catalog([])));
+      return new Response("{}", { status: 404 });
+    }),
+  );
+  render(
+    <HubPanel
+      open
+      onClose={vi.fn()}
+      onOpenWorkbench={onOpenWorkbench}
+      onOpenSystemApp={onOpenSystemApp}
+      onOpenAgentAssets={onOpenAgentAssets}
+    />,
+  );
+  const open = await screen.findByRole("button", { name: "打开“设计画布”" });
+  await userEvent.click(open);
+  expect(onOpenWorkbench).toHaveBeenCalledWith("/workspace/design");
+  expect(onOpenAgentAssets).not.toHaveBeenCalled();
+  const buttons = screen.getAllByRole("button", { name: "独立窗口打开" });
+  await userEvent.click(buttons[buttons.length - 1]!);
+  expect(onOpenSystemApp).toHaveBeenCalledWith("/workspace/design");
 });

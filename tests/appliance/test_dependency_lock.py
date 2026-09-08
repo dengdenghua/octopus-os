@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 
@@ -117,7 +118,11 @@ def test_refresh_and_verify_are_deterministic_and_platform_bound(
     assert metadata["buildLock"]["packageCount"] == 3
     assert metadata["runtimeLock"]["packageCount"] == 7
     for path in (build_lock, runtime_lock, metadata_path):
-        assert stat.S_IMODE(path.stat().st_mode) == 0o644
+        if os.name == "nt":
+            assert stat.S_ISREG(path.stat().st_mode)
+            assert path.stat().st_mode & stat.S_IWRITE
+        else:
+            assert stat.S_IMODE(path.stat().st_mode) == 0o644
 
 
 def test_refresh_rejects_architecture_specific_runtime_resolution(
@@ -200,3 +205,127 @@ def test_refresh_refuses_symlink_output_and_preserves_target(
         dependency_lock.refresh_locks(**options)
 
     assert outside.read_text() == "keep\n"
+
+
+def test_atomic_publish_contains_complete_fsynced_bytes_before_replacing_original(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "公开 dependency.lock"
+    target.write_bytes(b"old complete lock\n")
+    data = b"new complete lock\n" * 10_000
+    fsync = os.fsync
+    publish = dependency_lock._publish_lock
+    flushed = []
+
+    def flush(descriptor):
+        info = os.fstat(descriptor)
+        if stat.S_ISREG(info.st_mode):
+            flushed.append(info.st_size)
+        return fsync(descriptor)
+
+    def observe_publish(temporary, destination):
+        assert temporary.parent == target.parent
+        assert temporary.read_bytes() == data
+        assert target.read_bytes() == b"old complete lock\n"
+        assert flushed == [len(data)]
+        return publish(temporary, destination)
+
+    monkeypatch.setattr(os, "fsync", flush)
+    monkeypatch.setattr(dependency_lock, "_publish_lock", observe_publish)
+    dependency_lock._atomic_write(target, data)
+    assert target.read_bytes() == data
+    assert list(tmp_path.glob(f".{target.name}.*")) == []
+
+
+@pytest.mark.parametrize("failure", ["fsync", "publish"])
+def test_atomic_write_failure_preserves_original_and_removes_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    target = tmp_path / "dependency.lock"
+    target.write_bytes(b"keep original\n")
+
+    def fail(*args):
+        raise OSError("synthetic dependency lock IO failure")
+
+    if failure == "fsync":
+        monkeypatch.setattr(os, "fsync", fail)
+    else:
+        monkeypatch.setattr(dependency_lock, "_publish_lock", fail)
+    with pytest.raises(OSError, match="synthetic dependency lock IO failure"):
+        dependency_lock._atomic_write(target, b"new lock\n")
+    assert target.read_bytes() == b"keep original\n"
+    assert list(tmp_path.glob(f".{target.name}.*")) == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="actual Windows publication and ACL inheritance")
+def test_windows_write_uses_real_file_fsync_and_inherits_public_directory_acl(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from tests.appliance.windows_acl_assertions import read_windows_acl
+
+    def unsupported_fchmod(*args):
+        pytest.fail("Windows must not pretend to set POSIX permissions")
+
+    fsync = os.fsync
+
+    def flush_regular_file(descriptor):
+        assert stat.S_ISREG(os.fstat(descriptor).st_mode)
+        return fsync(descriptor)
+
+    monkeypatch.setattr(os, "fchmod", unsupported_fchmod, raising=False)
+    monkeypatch.setattr(os, "fsync", flush_regular_file)
+    target = tmp_path / "dependency.lock"
+    dependency_lock._atomic_write(target, b"first\n")
+    dependency_lock._atomic_write(target, b"replacement\n")
+    control = tmp_path / "ordinary-public-output.lock"
+    control.write_bytes(b"control\n")
+    assert target.read_bytes() == b"replacement\n"
+    assert read_windows_acl(target) == read_windows_acl(control)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="real Windows sharing violation")
+def test_windows_busy_destination_failure_keeps_original(tmp_path: Path) -> None:
+    target = tmp_path / "dependency.lock"
+    target.write_bytes(b"old complete lock\n")
+    # The actual CRT read handle omits delete-sharing, so MoveFileExW must fail.
+    with target.open("rb") as held:
+        with pytest.raises(PermissionError):
+            dependency_lock._atomic_write(target, b"new lock\n")
+        assert held.read() == b"old complete lock\n"
+    assert target.read_bytes() == b"old complete lock\n"
+    assert list(tmp_path.glob(f".{target.name}.*")) == []
+    dependency_lock._atomic_write(target, b"new lock\n")
+    assert target.read_bytes() == b"new lock\n"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows does not implement private POSIX modes")
+def test_windows_private_mode_is_rejected_before_creating_output(tmp_path: Path) -> None:
+    target = tmp_path / "missing-parent" / "dependency.lock"
+    with pytest.raises(dependency_lock.DependencyLockError, match="public artifact mode"):
+        dependency_lock._atomic_write(target, b"not a secret store\n", mode=0o600)
+    assert not target.parent.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="actual POSIX descriptor modes and directory fsync")
+def test_posix_mode_is_committed_with_contents_and_parent_is_fsynced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "dependency.lock"
+    observed = []
+    fsync = os.fsync
+
+    def flush(descriptor):
+        info = os.fstat(descriptor)
+        observed.append((stat.S_ISDIR(info.st_mode), stat.S_IMODE(info.st_mode)))
+        return fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", flush)
+    dependency_lock._atomic_write(target, b"posix artifact\n", mode=0o640)
+    assert target.stat().st_mode & 0o777 == 0o640
+    assert observed[0] == (False, 0o640)
+    assert observed[1][0] is True

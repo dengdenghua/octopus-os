@@ -116,6 +116,28 @@ def read_learning_events(
     return [event for event in events if is_legacy_unscoped_event(event)]
 
 
+def read_recovery_events(
+    journal: Any,
+    event_type: Any,
+    *,
+    scope: TenantScope | None = None,
+) -> list[Any]:
+    """Read recovery records without accepting a silently truncated journal."""
+
+    reader = getattr(journal, "read_by_type_for_recovery", None)
+    if callable(reader):
+        events = list(reader(event_type, scope=scope) if scope is not None else reader(event_type))
+    else:
+        events = list(
+            journal.read_by_type(event_type, scope=scope)
+            if scope is not None
+            else journal.read_by_type(event_type)
+        )
+    if scope is not None:
+        return events
+    return [event for event in events if is_legacy_unscoped_event(event)]
+
+
 def read_learning_journal(
     journal: Any,
     *,
@@ -134,6 +156,7 @@ __all__ = [
     "authoritative_scope_context",
     "is_legacy_unscoped_event",
     "read_learning_events",
+    "read_recovery_events",
     "read_learning_journal",
     "trusted_scope_from_session",
     "trusted_scope_from_user_context",

@@ -2759,8 +2759,7 @@ function extractLegacyReasoningSummary(message: Message): string | null {
 
   const echo = additional?.echo;
   if (typeof echo === "object" && echo !== null) {
-    const nested = (echo as Record<string, unknown>)
-      .public_reasoning_summary;
+    const nested = (echo as Record<string, unknown>).public_reasoning_summary;
     if (typeof nested === "string" && nested.trim()) return nested.trim();
   }
 

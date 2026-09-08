@@ -3,6 +3,7 @@ import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { renderWithProviders } from "@/test/harness";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 
 import { ChatPageLayout } from "./chat-page-layout";
 
@@ -514,9 +515,14 @@ describe("ChatPageLayout", () => {
     layoutWidth = 1050;
     fireEvent(window, new Event("resize"));
     expect(workbench).toHaveStyle({ width: "430px" });
-    expect(window.localStorage.getItem("echo:chatSecondaryPanelWidth")).toBe(
-      "500",
-    );
+    expect(
+      window.localStorage.getItem(
+        actorScopedStorageKey("echo:chatSecondaryPanelWidth"),
+      ),
+    ).toBe("500");
+    expect(
+      window.localStorage.getItem("echo:chatSecondaryPanelWidth"),
+    ).toBeNull();
 
     layoutWidth = 1200;
     fireEvent(window, new Event("resize"));

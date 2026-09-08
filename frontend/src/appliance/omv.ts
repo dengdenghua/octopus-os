@@ -8,6 +8,31 @@ export type OmvStatus = {
   adminUrl: string | null;
   capabilities: string[];
   source?: "native";
+  coverage?: "complete" | "partial" | "none";
+  probeEvidence?: StorageProbeEvidence[];
+};
+
+export type StorageProbeEvidence = {
+  source:
+    | "block-devices"
+    | "filesystems"
+    | "mdraid"
+    | "btrfs"
+    | "zfs"
+    | "smart";
+  target?: string;
+  state:
+    | "ok"
+    | "empty"
+    | "partial"
+    | "unavailable"
+    | "error"
+    | "not-applicable";
+  code?: string;
+  required: boolean;
+  checkedAt: string;
+  count?: number;
+  exitCode?: number;
 };
 
 export type OmvFilesystem = {
@@ -32,6 +57,9 @@ export type OmvSmart = {
   temperatureC: number | null;
   powerOnHours: number | null;
   powerCycles: number | null;
+  available?: boolean;
+  coverage?: "complete" | "partial" | "none";
+  probeEvidence?: StorageProbeEvidence[];
 };
 
 export type OmvSmartDevice = {
@@ -40,6 +68,9 @@ export type OmvSmartDevice = {
   sizeBytes: number | null;
   health: string;
   temperatureC: number | null;
+  available?: boolean;
+  coverage?: "complete" | "partial" | "none";
+  probeEvidence?: StorageProbeEvidence[];
 };
 
 export type OmvTopologyDevice = {
@@ -71,6 +102,9 @@ export type OmvRaidArray = {
 export type OmvStorageTopology = {
   devices: OmvTopologyDevice[];
   arrays: OmvRaidArray[];
+  available?: boolean;
+  coverage?: "complete" | "partial" | "none";
+  probeEvidence?: StorageProbeEvidence[];
 };
 
 export type OmvHealthAlert = {
@@ -103,17 +137,23 @@ export type OmvHealthSnapshot = {
     | "healthy"
     | "warning"
     | "critical"
-    | "unavailable";
+    | "unavailable"
+    | "unknown"
+    | "degraded";
   stale: boolean;
   checkedAt: string | null;
   lastSuccessfulAt: string | null;
   intervalSeconds: number;
-  persistenceHealthy: boolean;
+  persistenceHealthy: boolean | null;
   monitoring: boolean;
   activeAlerts: OmvHealthAlert[];
   events: OmvHealthEvent[];
   summary: { critical: number; warning: number; total: number };
   readOnly: true;
+  available?: boolean;
+  coverage?: "complete" | "partial" | "none";
+  probeEvidence?: StorageProbeEvidence[];
+  persistence?: "not-applicable";
 };
 
 export type OmvSharedFolder = {
@@ -170,6 +210,23 @@ export type OmvNfsShare = {
   client: string;
   options: string;
   comment: string;
+};
+
+export type OmvTimeMachineShare = {
+  sharedFolderRef: string;
+  name: string;
+  owner: string;
+  maximumBytes: number;
+  status: string;
+};
+
+export type OmvTimeMachineStatus = {
+  schema: "echo.storage.time-machine-status.v1";
+  enabled: boolean;
+  available: boolean;
+  shares: OmvTimeMachineShare[];
+  source: "native";
+  readOnly: true;
 };
 
 export type OmvSharingOverview = {
@@ -504,6 +561,33 @@ export type OmvSmbPlan = {
   safety: Record<string, string>;
   applied?: boolean;
   verified?: boolean;
+};
+
+export type OmvTimeMachineDesiredState = {
+  schema: "echo.storage.time-machine-desired.v1";
+  sharedFolderRef: string;
+  enabled: boolean;
+  owner: string;
+  maximumBytes: number;
+};
+
+export type OmvTimeMachinePlan = {
+  schema: "echo.storage.time-machine-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "create" | "update" | "remove" | "none";
+  requiresApproval: boolean;
+  sharedFolder: { uuid: string; name: string; status: string };
+  desired: OmvTimeMachineDesiredState;
+  changes: Array<{
+    field: "enabled" | "owner" | "maximumBytes";
+    before: boolean | string | number | null;
+    after: boolean | string | number | null;
+  }>;
+  safety: Record<string, string>;
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: boolean;
 };
 
 export type OmvNfsDesiredState = {
@@ -1675,6 +1759,36 @@ export function applyOmvSmbShare(
     "/api/appliance/omv/sharing/smb/apply",
     { desired, planId },
     "无法应用 SMB 配置",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function fetchOmvTimeMachineStatus(): Promise<OmvTimeMachineStatus> {
+  return readJson<OmvTimeMachineStatus>(
+    "/api/appliance/omv/sharing/time-machine",
+    "无法读取 Time Machine 状态",
+  );
+}
+
+export function planOmvTimeMachine(
+  desired: OmvTimeMachineDesiredState,
+): Promise<OmvTimeMachinePlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/time-machine/plan",
+    desired,
+    "无法生成 Time Machine 变更预览",
+  );
+}
+
+export function applyOmvTimeMachine(
+  desired: OmvTimeMachineDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvTimeMachinePlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/time-machine/apply",
+    { desired, planId },
+    "无法应用 Time Machine 配置",
     approvalHeader(approvalToken),
   );
 }

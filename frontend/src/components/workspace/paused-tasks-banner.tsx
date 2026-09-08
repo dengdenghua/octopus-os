@@ -1,6 +1,6 @@
 import { LoaderIcon, PauseIcon, PlayIcon, XIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -19,10 +19,12 @@ import {
   usePauseTask,
   useResumeTask,
   useTasks,
+  tasksQueryRootKey,
 } from "@/core/tasks/hooks";
 import type { PauseReason } from "@/core/tasks/api";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 interface Props {
   className?: string;
@@ -46,6 +48,7 @@ export function PausedTasksBanner({ className }: Props) {
   const remove = useDeleteTask();
   const pause = usePauseTask();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const qc = useQueryClient();
   const [budgetDialogTaskId, setBudgetDialogTaskId] = useState<string | null>(
     null,
@@ -63,7 +66,7 @@ export function PausedTasksBanner({ className }: Props) {
   // Implementation note.
   useEffect(() => {
     const handler = () => {
-      void qc.invalidateQueries({ queryKey: ["tasks"] });
+      void qc.invalidateQueries({ queryKey: tasksQueryRootKey() });
     };
     window.addEventListener("echo:task_changed", handler);
     return () => window.removeEventListener("echo:task_changed", handler);
@@ -124,7 +127,12 @@ export function PausedTasksBanner({ className }: Props) {
     try {
       await resume.mutateAsync({ taskId, extra_iterations: 15 });
       if (threadId) {
-        navigate(`/workspace/realtime/${threadId}`);
+        navigate(
+          preserveWorkbenchPresentation(
+            `/workspace/realtime/${threadId}`,
+            search,
+          ),
+        );
         toast.success(`${b.resumedTitlePrefix} ${taskId.slice(0, 8)}…`, {
           description: b.resumedDescWithThread,
         });
@@ -150,7 +158,14 @@ export function PausedTasksBanner({ className }: Props) {
         extra_usd: usd,
       });
       setBudgetDialogTaskId(null);
-      if (threadId) navigate(`/workspace/realtime/${threadId}`);
+      if (threadId) {
+        navigate(
+          preserveWorkbenchPresentation(
+            `/workspace/realtime/${threadId}`,
+            search,
+          ),
+        );
+      }
       toast.success(`${b.resumedTitlePrefix} ${taskId.slice(0, 8)}…`, {
         description: b.budgetResumedDesc,
       });

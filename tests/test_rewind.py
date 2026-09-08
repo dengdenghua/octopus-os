@@ -45,6 +45,63 @@ class _FakeJournal:
         return [e for e in self._events if e.event_type == event_type]
 
 
+class _OrderedJournal(_FakeJournal):
+    def read_all(self) -> list[_FakeEvent]:
+        return list(self._events)
+
+
+@pytest.mark.parametrize("after_ts", ["same", "earlier-clock"])
+def test_rewind_uses_journal_order_for_equal_or_reversed_clock(tmp_path, after_ts):
+    before = tmp_path / "before.txt"
+    after = tmp_path / "after.txt"
+    before.write_text("unchanged")
+    after.write_text("v2")
+    journal = _OrderedJournal(
+        [
+            _make_file_op(
+                "task-a", "same", "before.txt", content_before="v0", content_after="unchanged"
+            ),
+            _make_checkpoint("task-a", "same", 1),
+            _make_file_op("task-a", after_ts, "after.txt", content_before="v1", content_after="v2"),
+            _FakeEvent(
+                event_id="shell",
+                event_type="step",
+                task_id="task-a",
+                ts="same",
+                sucker_id="exec_shell",
+            ),
+        ]
+    )
+    preview = rewind_to_checkpoint(journal, "task-a", 1, project_root=str(tmp_path), dry_run=True)
+    assert preview.file_rollback.applied == 1
+    assert after.read_text() == "v2"
+    assert preview.history_complete is True
+    assert any("exec_shell" in warning for warning in preview.non_reversible_warnings)
+    result = rewind_to_checkpoint(journal, "task-a", 1, project_root=str(tmp_path))
+    assert result.file_rollback.applied == 1
+    assert after.read_text() == "v1"
+    assert before.read_text() == "unchanged"
+
+
+def test_rewind_refuses_missing_or_duplicate_authorized_anchor(tmp_path):
+    target = tmp_path / "state.txt"
+    target.write_text("v2")
+    checkpoint = _make_checkpoint("task-a", "same", 1)
+    journal = _OrderedJournal(
+        [
+            checkpoint,
+            _make_file_op("task-a", "later", "state.txt", content_before="v1", content_after="v2"),
+        ]
+    )
+    journal.read_all = lambda: []
+    with pytest.raises(ValueError, match="authorized journal"):
+        rewind_to_checkpoint(journal, "task-a", 1, project_root=str(tmp_path))
+    journal.read_all = lambda: [checkpoint, checkpoint]
+    with pytest.raises(ValueError, match="uniquely"):
+        rewind_to_checkpoint(journal, "task-a", 1, project_root=str(tmp_path))
+    assert target.read_text() == "v2"
+
+
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -283,6 +340,8 @@ def test_rewind_only_applies_events_after_target_checkpoint(tmp_path: Path) -> N
     assert result.file_rollback.applied == 1
     assert a_path.read_text() == "a-after"
     assert b_path.read_text() == "b-before"
+    assert result.history_complete is False
+    assert any("event_order_unavailable" in warning for warning in result.non_reversible_warnings)
 
 
 def test_rewind_collects_non_reversible_warnings(tmp_path: Path) -> None:
@@ -341,4 +400,3 @@ def test_rewind_result_to_dict_round_trip(tmp_path: Path) -> None:
     assert d["dry_run"] is True
     assert "file_rollback" in d
     assert "non_reversible_warnings" in d
-

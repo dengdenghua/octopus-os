@@ -34,7 +34,11 @@ describe("ClarificationChoiceCard · clarification affordances", () => {
 
   test("renders an Other free-text input for a structured single question", () => {
     renderWithProviders(
-      <ClarificationChoiceCard content={ASK_USER_RESULT} active messageId="m1" />,
+      <ClarificationChoiceCard
+        content={ASK_USER_RESULT}
+        active
+        messageId="m1"
+      />,
       { locale: "en-US" },
     );
     expect(screen.getByPlaceholderText(/Other/i)).toBeInTheDocument();
@@ -44,7 +48,11 @@ describe("ClarificationChoiceCard · clarification affordances", () => {
     const { quickReply, cleanup } = listenForQuickReply();
     try {
       renderWithProviders(
-        <ClarificationChoiceCard content={ASK_USER_RESULT} active messageId="m1" />,
+        <ClarificationChoiceCard
+          content={ASK_USER_RESULT}
+          active
+          messageId="m1"
+        />,
         { locale: "en-US" },
       );
       const input = screen.getByPlaceholderText(/Other/i);
@@ -63,7 +71,11 @@ describe("ClarificationChoiceCard · clarification affordances", () => {
     const { quickReply, cleanup } = listenForQuickReply();
     try {
       renderWithProviders(
-        <ClarificationChoiceCard content={ASK_USER_RESULT} active messageId="m1" />,
+        <ClarificationChoiceCard
+          content={ASK_USER_RESULT}
+          active
+          messageId="m1"
+        />,
         { locale: "en-US" },
       );
       act(() => {

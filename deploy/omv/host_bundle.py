@@ -67,7 +67,13 @@ def _canonical_json(value: Any) -> bytes:
 
 
 def _safe_read(path: Path, *, maximum: int) -> bytes:
+    if path.is_symlink():
+        raise BundleError(f"cannot safely read bundle input: {path}")
     flags = os.O_RDONLY
+    # Preserve archive and checksum bytes on Windows; text-mode descriptors
+    # translate CRLF and treat control-Z as EOF.
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -312,11 +318,16 @@ def _write_archive(path: Path, root_name: str, files: dict[str, tuple[bytes, int
             os.fsync(raw.fileno())
         os.replace(temporary, path)
         path.chmod(0o644)
-        directory = os.open(path.parent, os.O_RDONLY)
         try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        except OSError:
+            # Directory fsync is unavailable on Windows; the archive bytes
+            # were flushed before the atomic replace.
+            pass
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -330,7 +341,10 @@ def _atomic_write(path: Path, data: bytes, *, mode: int) -> None:
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, mode)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, mode)
+        else:
+            temporary.chmod(mode)
         owned = descriptor
         descriptor = -1
         with os.fdopen(owned, "wb") as output:
@@ -339,11 +353,14 @@ def _atomic_write(path: Path, data: bytes, *, mode: int) -> None:
             os.fsync(output.fileno())
         os.replace(temporary, path)
         path.chmod(mode)
-        directory = os.open(path.parent, os.O_RDONLY)
         try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        except OSError:
+            pass
     finally:
         if descriptor >= 0:
             os.close(descriptor)

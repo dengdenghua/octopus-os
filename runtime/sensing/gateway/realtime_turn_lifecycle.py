@@ -8,6 +8,9 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, cast
 
+from runtime.core.cerebrum.react_resume import ResumeCheckpointError
+from runtime.execution.codex_backend import BackpressureError
+from runtime.execution.engines import EngineSelectionError, ExecutionPhase
 from runtime.execution.tool_engine.session_reference_uri import (
     SUPPORTED_SESSION_REFERENCE_SCHEMES,
 )
@@ -22,6 +25,7 @@ from runtime.protocol import (
     VerificationItem,
 )
 from runtime.safety.approval.approval_gate import ApprovalProvider
+from runtime.safety.privacy import PrivacyViolation
 from runtime.sensing.gateway._realtime_cerebrum_project_os import _is_project_os_command
 from runtime.sensing.gateway._realtime_turn_lifecycle_helpers import (
     _background_task_is_verification,
@@ -35,6 +39,7 @@ from runtime.sensing.gateway._realtime_turn_lifecycle_resume import (
     _consume_paused_task_resume_intent,
     _record_pending_resume_intent,
     _resume_checkpoint_metadata,
+    _validate_realtime_resume,
 )
 
 # Re-exported helper names reachable from the old module-level surface.
@@ -44,6 +49,11 @@ __all__ = [
     "_record_pending_resume_intent",
 ]
 from runtime.sensing.gateway.realtime_approval import GatewayApprovalProvider
+from runtime.sensing.gateway.realtime_execution import (
+    TurnExecutionRequest,
+    bind_turn_execution,
+    select_turn_execution,
+)
 from runtime.sensing.gateway.realtime_gateway import EventEmitter
 from runtime.sensing.gateway.realtime_thread_history import (
     _conversation_messages_for_react,
@@ -52,12 +62,14 @@ from runtime.sensing.gateway.realtime_turn_input import (
     _build_intent,
     _extract_codex_composer_mode,
     _input_attachments,
+    _input_context_files,
     _input_metadata,
     _join_text,
     _resume_confirmation_text,
     _should_default_planning_mode,
     _should_default_topology,
     _turn_mode,
+    external_model_owner,
 )
 from runtime.sensing.gateway.realtime_turn_outcome import (
     _code_change_paths,
@@ -87,6 +99,34 @@ _BACKGROUND_VERIFY_WAIT_S = 180.0
 # in the background instead of turning a cold/contended store into 12–42 s of
 # model-start latency.
 _PENDING_REPORT_STARTUP_BUDGET_S = 1.0
+
+
+async def _reject_checkpoint_resume(
+    runtime: Any,
+    turn: Any,
+    log: Any,
+    emitter: Any,
+    intent: Any,
+    failure: ResumeCheckpointError,
+) -> None:
+    """Close only this rejected request; retain the original recovery state."""
+    error = {
+        "code": failure.code,
+        "message": str(failure),
+        "resume_task_id": failure.task_id,
+        "disposition": "blocked_on_user",
+        "restarted": False,
+    }
+    item = ErrorItem(message=str(failure), error_info=error)
+    turn.items.append(item)
+    await runtime._emit_item_started(turn, log, emitter, item)
+    await runtime._emit_item_completed(turn, log, emitter, item)
+    turn.status = TurnStatus.FAILED
+    turn.error = error
+    turn.outcome_reason = failure.code
+    _close_turn(log, turn.thread_id, turn, error=error, runtime=runtime)
+    runtime._snapshot_to_thread_store(turn.thread_id, log, intent)
+
 
 # A Stop can arrive immediately after the client sees ``turn/started``.  The
 # pending-report scan is intentionally allowed a one-second warm-start window,
@@ -129,6 +169,7 @@ def _close_turn(
     turn: Any,
     *,
     error: dict[str, Any] | None = None,
+    runtime: Any = None,
 ) -> None:
     """Terminate any still-running item, then log the turn as completed.
 
@@ -142,6 +183,13 @@ def _close_turn(
     chronology -- a completion appended after the turn closed would replay out
     of order.
     """
+    # Persist the owned task result before publishing terminal success or
+    # feeding success into learning. A failure here changes the actual turn
+    # outcome before its first terminal event is appended.
+    if runtime is not None and turn.id in getattr(runtime, "_task_execution_guards", {}):
+        runtime._record_task_run_finished(turn)
+        error = turn.error or error
+
     # Settle governed canary evidence before writing the terminal journal
     # record. Completed and failed turns are gradable; user-driven pause,
     # cancellation, and interruption are explicitly discarded.
@@ -244,7 +292,7 @@ def _finish_startup_interrupt(
         task_id=turn.task_id,
         outcome_reason=turn.outcome_reason,
     )
-    _close_turn(log, turn.thread_id, turn)
+    _close_turn(log, turn.thread_id, turn, runtime=runtime)
     runtime._snapshot_to_thread_store(turn.thread_id, log, intent)
     return True
 
@@ -510,7 +558,11 @@ async def _start_turn(
             _auto_topology,
         )
 
-    # Smart model routing — auto-route trivial / simple turns to
+        # Preserve the caller's model before smart routing. External engines
+        # own their model coordinate and must not inherit a local reroute.
+        requested_model_before_routing = validated.model
+
+        # Smart model routing — auto-route trivial / simple turns to
     # the cheap tier. Complex / research / topology / code-mode
     # turns stay on the user's primary. Explicit ``model`` pins
     # bypass this entirely.
@@ -540,11 +592,7 @@ async def _start_turn(
             if isinstance(_user_ctx_for_complexity, dict)
             else None
         ) or ""
-        _external_model_owner = (
-            str(_user_ctx_for_complexity.get("execution_engine") or "").strip().lower()
-            if isinstance(_user_ctx_for_complexity, dict)
-            else ""
-        ) == "codex"
+        _external_model_owner = external_model_owner(validated)
         _is_code_mode_for_routing = bool(_mode_str == "code" or _capability_mode_str)
         _verdict = estimate_turn_complexity(
             text,
@@ -563,9 +611,8 @@ async def _start_turn(
             ),
         )
         # AI mode override (Marvis-style efficiency / privacy).
-        # Privacy mode pins every turn to ``local`` regardless of
-        # complexity so no data leaves the box. Efficiency is a
-        # pass-through.
+        # Privacy selects a verified local route regardless of complexity;
+        # the selected transport enforces the policy again before sending.
         try:
             from runtime.core.cerebrum.ai_mode import apply_ai_mode_override
 
@@ -573,11 +620,11 @@ async def _start_turn(
         except ImportError:  # noqa: BLE001 — ai mode is optional
             pass
         if _external_model_owner:
-            # Codex owns its effective model through the principal-scoped
-            # model profile. Realtime still estimates complexity for its own
-            # lifecycle policy, but must not overwrite or report a model that
-            # will never execute.
-            _routed_model, _route_reason = None, "external_engine:codex"
+            # External engines own their effective model through the
+            # principal-scoped profile. Realtime still estimates complexity
+            # for lifecycle policy, but must not overwrite or report a model
+            # that will never execute.
+            _routed_model, _route_reason = None, f"external_engine:{_external_model_owner}"
         else:
             _routed_model, _route_reason = select_model_for_complexity(
                 _verdict,
@@ -592,7 +639,9 @@ async def _start_turn(
                 _routed_model,
                 _route_reason,
             )
-    except Exception as exc:  # noqa: BLE001 — smart routing is best-effort; never block a turn
+    except PrivacyViolation:
+        raise
+    except Exception as exc:  # noqa: BLE001 — ordinary smart routing remains best-effort
         _logger.debug("smart routing skipped: %s", exc, exc_info=True)
 
     # ── PHASE 2 · thread setup + turn registration ─────────────────
@@ -683,7 +732,7 @@ async def _start_turn(
             err.status = ItemStatus.FAILED
             await runtime._emit_item_completed(turn, log, emitter, err)
             turn.status = TurnStatus.FAILED
-            _close_turn(log, thread_id, turn)
+            _close_turn(log, thread_id, turn, runtime=runtime)
             # ``intent`` isn't built yet on the prompt-rejected path;
             # the snapshot helper accepts None so the legacy thread
             # store still records the failed turn for the sidebar.
@@ -702,7 +751,7 @@ async def _start_turn(
             await runtime._emit_item_started(turn, log, emitter, err)
             await runtime._emit_item_completed(turn, log, emitter, err)
             turn.status = TurnStatus.FAILED
-            _close_turn(log, thread_id, turn)
+            _close_turn(log, thread_id, turn, runtime=runtime)
             runtime._record_failed_turn_proposal(
                 turn,
                 intent=None,
@@ -732,13 +781,19 @@ async def _start_turn(
             from runtime.protocol import UserMessageItem
 
             attachments = _input_attachments(validated.input)
+            context_files = _input_context_files(validated.input)
             if validated.user_item_id is None:
-                user_item = UserMessageItem(text=text, attachments=attachments)
+                user_item = UserMessageItem(
+                    text=text,
+                    attachments=attachments,
+                    contextFiles=context_files,
+                )
             else:
                 user_item = UserMessageItem(
                     id=validated.user_item_id,
                     text=text,
                     attachments=attachments,
+                    contextFiles=context_files,
                 )
             turn.items.append(user_item)
             await runtime._emit_item_started(turn, log, emitter, user_item)
@@ -894,15 +949,39 @@ async def _start_turn(
                 task_id=turn.task_id,
                 outcome_reason=turn.outcome_reason,
             )
-            _close_turn(log, thread_id, turn)
+            _close_turn(log, thread_id, turn, runtime=runtime)
             runtime._snapshot_to_thread_store(thread_id, log, intent)
             return turn
-        confirmed_resume_intent = await runtime._consume_confirmed_resume_intent(thread_id, text)
-        if confirmed_resume_intent is None:
-            confirmed_resume_intent = await runtime._consume_paused_task_resume_intent(
-                thread_id,
-                text,
+        from runtime.platform.process.session import current_session
+        from runtime.safety.recovery.tenant_scope import (
+            trusted_scope_from_session,
+            trusted_scope_from_user_context,
+        )
+
+        # The private intent marker is preferred, but an authenticated
+        # transport may carry the authoritative scope only on Session. Never
+        # let a missing marker widen checkpoint selection to the whole store.
+        resume_scope = trusted_scope_from_user_context(intent.user_context) or trusted_scope_from_session(
+            current_session()
+        )
+        try:
+            confirmed_resume_intent = await runtime._consume_confirmed_resume_intent(
+                thread_id, text, scope=resume_scope
             )
+            if confirmed_resume_intent is None:
+                confirmed_resume_intent = await runtime._consume_paused_task_resume_intent(
+                    thread_id,
+                    text,
+                    scope=resume_scope,
+                )
+            selected_resume = confirmed_resume_intent or intent.user_context.get("resume_intent")
+            if isinstance(selected_resume, dict) and selected_resume.get("confirmed") is True:
+                _validate_realtime_resume(
+                    runtime, selected_resume, thread_id=thread_id, scope=resume_scope
+                )
+        except ResumeCheckpointError as exc:
+            await _reject_checkpoint_resume(runtime, turn, log, emitter, intent, exc)
+            return turn
         if confirmed_resume_intent is not None:
             intent.user_context["resume_intent"] = confirmed_resume_intent
         else:
@@ -923,7 +1002,9 @@ async def _start_turn(
             )[:5]
             paused_contexts: list[dict[str, Any]] = []
             for paused_request in paused_requests:
-                checkpoint = _resume_checkpoint_metadata(runtime, paused_request.task_id) or {}
+                checkpoint = _resume_checkpoint_metadata(runtime, paused_request.task_id)
+                resumable = checkpoint is not None
+                checkpoint = checkpoint or {}
                 paused_contexts.append(
                     {
                         "task_id": paused_request.task_id,
@@ -934,7 +1015,7 @@ async def _start_turn(
                         "phase": checkpoint.get("phase", ""),
                         "working_set": checkpoint.get("working_set", []),
                         "checkpoint_id": checkpoint.get("checkpoint_id", 0),
-                        "resumable": True,
+                        "resumable": resumable,
                     }
                 )
             if paused_contexts:
@@ -951,7 +1032,7 @@ async def _start_turn(
                 _resume_confirmation_text(resume_intent),
             )
             turn.status = TurnStatus.COMPLETED
-            _close_turn(log, thread_id, turn)
+            _close_turn(log, thread_id, turn, runtime=runtime)
             await runtime._maybe_compact(thread_id, log, emitter)
             runtime._snapshot_to_thread_store(thread_id, log, intent)
             return turn
@@ -984,6 +1065,7 @@ async def _start_turn(
         ):
             return turn
         turn_driver = "react"
+        execution = None
 
         try:
             topology_id = getattr(validated, "topology_id", None)
@@ -1037,115 +1119,141 @@ async def _start_turn(
                     },
                 )
 
-            if explicit_project_command:
-                # Project is a capability attached to the thread, not a fourth
-                # response strategy. Only an explicit command enters Project
-                # OS; ordinary group messages follow chat/cluster/swarm above.
-                turn_driver = "project_os"
-                await runtime._drive_project_os(
-                    turn,
-                    log,
-                    emitter,
-                    intent,
+            # Resolve every turn through the engine-neutral supervisor. The
+            # route is chosen once from server-owned intent and group signals;
+            # continuations reuse the same adapter and execution identity.
+            _cowork_context = intent.user_context or {}
+            _team_pattern = _cowork_context.get("team_pattern")
+            _team_pattern_execution = (
+                str(_team_pattern.get("execution") or "").strip()
+                if isinstance(_team_pattern, dict)
+                else ""
+            )
+            if _team_pattern_execution == "focused":
+                topology_id = None
+            group_fanout = _team_pattern_execution in {"fanout", "presence"} or str(
+                _cowork_context.get("serve_mesh") or ""
+            ).strip() == "1" or (
+                bool(_cowork_context.get("cowork_is_multi"))
+                and len(_cowork_context.get("cowork_responders") or []) > 1
+            )
+            coordinated = _team_pattern_execution == "orchestrated"
+            orchestrated = (
+                explicit_project_command or group_fanout or bool(topology_id) or coordinated
+            )
+            capabilities = getattr(agent, "capabilities", None)
+            codex_partner = (
+                not orchestrated
+                and isinstance(capabilities, dict)
+                and str(capabilities.get("execution_backend") or "").strip().casefold()
+                == "codex_app_server"
+            )
+            reflection = (
+                not orchestrated
+                and (not codex_partner or validated.execution_engine == "octopus")
+                and runtime._should_use_reflection_fast_path(
+                    text,
+                    validated,
+                    conversation_messages=cast(
+                        "list[dict[str, object]] | None", conversation_messages
+                    ),
                     thread_id=thread_id,
-                    text=text,
                 )
-            elif str((intent.user_context or {}).get("serve_mesh") or "").strip() == "1" or (
-                bool((intent.user_context or {}).get("cowork_is_multi"))
-                and len((intent.user_context or {}).get("cowork_responders") or []) > 1
-            ):
-                # 蜂群 / 冒泡: the user picked the leaderless group mode. Fan the
-                # message out to every member agent in parallel — each chimes in
-                # with its own persona bubble ("boss speaks, everyone replies").
-                # No topology_id needed; degrades to single-agent if <2 members.
-                turn_driver = "group_fanout"
-                await runtime._drive_group_fanout(
-                    turn,
-                    log,
-                    emitter,
-                    intent,
-                    text=text,
+            )
+            route = await select_turn_execution(
+                runtime,
+                turn,
+                agent,
+                intent,
+                project_command=explicit_project_command,
+                group_fanout=group_fanout,
+                topology_id=topology_id,
+                codex_partner=codex_partner,
+                reflection_fast_path=reflection,
+                coordinated=coordinated,
+            )
+            if route.engine in {"opencode", "codex"}:
+                validated = validated.model_copy(update={"model": requested_model_before_routing})
+                turn.params = validated
+                intent = intent.model_copy(
+                    update={
+                        "user_context": {
+                            **(intent.user_context or {}),
+                            "model_name": requested_model_before_routing,
+                        }
+                    }
                 )
-            elif topology_id:
-                # Explicit topology / 集群: orchestrated team — _drive_swarm_mesh
-                # auto-picks the boids/SignalBus parallel mesh vs the sequential
-                # TeamRunner by the planned graph's shape.
-                # An explicit per-turn model must govern the whole team, not
-                # only the parent turn.  TeamRunner passes ``model_name`` to
-                # every ephemeral role; leaving it absent silently falls back
-                # to role defaults/cheap models that may use a different,
-                # unavailable provider.  Auto/default selections retain the
-                # topology's normal heterogeneous routing.
-                _team_model = str(getattr(validated, "model", None) or "").strip()
-                if _team_model and _team_model.lower() not in {"auto", "default"}:
+            if route.driver == "swarm_mesh":
+                team_model = str(getattr(validated, "model", None) or "").strip()
+                if team_model and team_model.lower() not in {"auto", "default"}:
                     intent = intent.model_copy(
                         update={
                             "user_context": {
                                 **(intent.user_context or {}),
-                                "model_name": _team_model,
+                                "model_name": team_model,
                             }
                         }
                     )
-                turn_driver = "swarm_mesh"
-                await runtime._drive_swarm_mesh(
-                    turn,
-                    log,
-                    emitter,
-                    intent,
-                    text=text,
-                    topology_id=topology_id,
-                )
-            elif runtime._is_codex_app_server_partner(agent):
-                # Group/topology routing wins first: selecting Coder as one
-                # roster member must not turn the whole room into a single
-                # Coder turn. Concrete member dispatch still reaches this same
-                # backend through the persistent standard-role runner.
-                turn_driver = "codex_app_server"
-                await runtime._drive_codex_app_server(
-                    turn,
-                    log,
-                    emitter,
-                    intent,
-                    agent,
-                    provider,
-                    text=text,
-                )
-            elif runtime._should_use_reflection_fast_path(
-                text,
-                validated,
-                conversation_messages=cast("list[dict[str, object]] | None", conversation_messages),
-                thread_id=thread_id,
-            ):
-                turn_driver = "reflection_fast_path"
-                await runtime._drive_reflection_fast_path(
-                    turn,
-                    log,
-                    emitter,
-                    intent,
-                    agent,
-                    model=validated.model,
-                )
-            else:
-                turn_driver = "react"
-                await runtime._drive_react(
-                    turn,
-                    log,
-                    emitter,
-                    intent,
-                    provider,
-                    agent,
-                    model=validated.model,
-                )
+            turn_driver = route.driver
+            execution = bind_turn_execution(
+                runtime,
+                turn,
+                log,
+                emitter,
+                provider,
+                agent,
+                route,
+                topology_id=topology_id,
+            )
+            await execution.execute(TurnExecutionRequest(intent, text, validated.model))
+
+        except ResumeCheckpointError as exc:
+            await _reject_checkpoint_resume(runtime, turn, log, emitter, intent, exc)
+            return turn
         except Exception as exc:
             _logger.exception("CerebrumRuntime: turn driver crashed: %s", turn_driver)
-            turn.execution_engine = "codex" if turn_driver == "codex_app_server" else "echo"
+            selection_error = isinstance(exc, EngineSelectionError)
+            if selection_error:
+                assert isinstance(exc, EngineSelectionError)
+                turn.error = {
+                    "code": "execution_unavailable",
+                    "engine": exc.engine.value,
+                    "reason": exc.reason,
+                    "message": str(exc),
+                    "disposition": "blocked_on_user",
+                }
+                turn_driver = "engine_selection"
+            else:
+                turn.execution_engine = (
+                    turn.execution.engine
+                    if turn.execution is not None
+                    else {
+                        "codex_app_server": "codex",
+                        "opencode_server": "opencode",
+                    }.get(turn_driver, "octopus")
+                )
             context = intent.user_context if isinstance(intent.user_context, dict) else {}
+            event_backpressure = isinstance(exc, BackpressureError)
+            public_error_message = (
+                "Codex event delivery was temporarily overloaded. Completed steps were "
+                "preserved; retry to continue."
+                if event_backpressure
+                else str(exc) or exc.__class__.__name__
+            )
             err = ErrorItem(
-                message=str(exc) or exc.__class__.__name__,
+                message=public_error_message,
                 error_info={
-                    "code": "turn_driver_exception",
+                    "code": (
+                        "execution_unavailable"
+                        if selection_error
+                        else
+                        "codex_event_backpressure"
+                        if event_backpressure
+                        else "turn_driver_exception"
+                    ),
                     "driver": turn_driver,
                     "exception_type": exc.__class__.__name__,
+                    "failure_kind": "backpressure" if event_backpressure else "",
                     "cowork_mode": context.get("cowork_mode"),
                     "topology_id": topology_id or "",
                 },
@@ -1154,16 +1262,23 @@ async def _start_turn(
             await runtime._emit_item_started(turn, log, emitter, err)
             await runtime._emit_item_completed(turn, log, emitter, err)
             turn.status = TurnStatus.FAILED
-            _close_turn(log, thread_id, turn)
-            runtime._record_failed_turn_proposal(
-                turn,
-                intent=intent,
-                failure_source=f"{turn_driver}_exception",
-            )
+            _close_turn(log, thread_id, turn, runtime=runtime)
+            if not selection_error:
+                runtime._record_failed_turn_proposal(
+                    turn,
+                    intent=intent,
+                    failure_source=f"{turn_driver}_exception",
+                )
             runtime._snapshot_to_thread_store(thread_id, log, intent)
             return turn
 
-        turn.execution_engine = "codex" if turn_driver == "codex_app_server" else "echo"
+        turn.execution_engine = (
+            "opencode"
+            if turn_driver == "opencode_server"
+            else "codex"
+            if turn_driver == "codex_app_server"
+            else "echo"
+        )
 
         # Native tool turns consume steering between model rounds. Other
         # drivers (reflection, topology, Project OS) may finish one atomic
@@ -1194,7 +1309,13 @@ async def _start_turn(
                     "user_context": steering_context,
                 }
             )
-            if turn_driver == "codex_app_server":
+            if execution is not None:
+                turn_driver = execution.route.driver_for(ExecutionPhase.STEERING)
+                await execution.execute(
+                    TurnExecutionRequest(steering_intent, correction, validated.model),
+                    phase=ExecutionPhase.STEERING,
+                )
+            elif turn_driver == "codex_app_server":
                 # The App Server driver consumes most steering live.  A
                 # message that races its terminal event is still continued on
                 # the same durable inner Codex thread, never switched to a
@@ -1230,11 +1351,11 @@ async def _start_turn(
             # Preserve the concrete terminal/waiting outcome.  In particular,
             # a resumable checkpoint must never be flattened back to completed
             # or to a generic transport interruption.
-            _close_turn(log, thread_id, turn)
+            _close_turn(log, thread_id, turn, runtime=runtime)
             runtime._snapshot_to_thread_store(thread_id, log, intent)
             return turn
         if turn.status == TurnStatus.FAILED:
-            _close_turn(log, thread_id, turn)
+            _close_turn(log, thread_id, turn, runtime=runtime)
             # A "blocked_on_user" disposition is a genuine hand-off, not a
             # failure — do not feed it to the failure-sampling evolution
             # ledger as a turn_failure sample.
@@ -1291,7 +1412,7 @@ async def _start_turn(
                 await runtime._emit_item_started(turn, log, emitter, degrade_item)
                 await runtime._emit_item_completed(turn, log, emitter, degrade_item)
                 turn.status = TurnStatus.COMPLETED
-                _close_turn(log, thread_id, turn)
+                _close_turn(log, thread_id, turn, runtime=runtime)
                 runtime._snapshot_to_thread_store(thread_id, log, intent)
                 return turn
             if repair_limit:
@@ -1340,11 +1461,11 @@ async def _start_turn(
                     model=validated.model,
                 )
                 if turn.status == TurnStatus.INTERRUPTED:
-                    _close_turn(log, thread_id, turn)
+                    _close_turn(log, thread_id, turn, runtime=runtime)
                     runtime._snapshot_to_thread_store(thread_id, log, intent)
                     return turn
                 if turn.status == TurnStatus.FAILED:
-                    _close_turn(log, thread_id, turn)
+                    _close_turn(log, thread_id, turn, runtime=runtime)
                     runtime._record_failed_turn_proposal(
                         turn,
                         intent=intent,
@@ -1354,7 +1475,7 @@ async def _start_turn(
                     return turn
             else:
                 turn.status = TurnStatus.FAILED
-                _close_turn(log, thread_id, turn)
+                _close_turn(log, thread_id, turn, runtime=runtime)
                 runtime._record_failed_turn_proposal(
                     turn,
                     intent=intent,
@@ -1391,7 +1512,7 @@ async def _start_turn(
                 if any(not task.done() for task in pending_bg_tasks):
                     turn.status = TurnStatus.COMPLETED
                     turn.outcome_reason = "completed_with_background"
-                    _close_turn(log, thread_id, turn)
+                    _close_turn(log, thread_id, turn, runtime=runtime)
                     runtime._snapshot_to_thread_store(thread_id, log, intent)
                     return turn
 
@@ -1442,7 +1563,7 @@ async def _start_turn(
                     if not auto_items:
                         break
                     turn.status = TurnStatus.COMPLETED
-                    _close_turn(log, thread_id, turn)
+                    _close_turn(log, thread_id, turn, runtime=runtime)
                     runtime._record_successful_turn_example(turn, intent=intent)
                     await runtime._maybe_compact(thread_id, log, emitter)
                     runtime._snapshot_to_thread_store(thread_id, log, intent)
@@ -1487,7 +1608,7 @@ async def _start_turn(
                     model=validated.model,
                 )
                 if turn.status == TurnStatus.INTERRUPTED:
-                    _close_turn(log, thread_id, turn)
+                    _close_turn(log, thread_id, turn, runtime=runtime)
                     runtime._snapshot_to_thread_store(thread_id, log, intent)
                     return turn
                 verification_plan = _verification_plan_for_code_paths(
@@ -1540,12 +1661,12 @@ async def _start_turn(
                         TurnStatus.PAUSED,
                         TurnStatus.FAILED,
                     }:
-                        _close_turn(log, thread_id, turn)
+                        _close_turn(log, thread_id, turn, runtime=runtime)
                         runtime._snapshot_to_thread_store(thread_id, log, intent)
                         return turn
                 if not _turn_has_unverified_code_changes(turn):
                     turn.status = TurnStatus.COMPLETED
-                    _close_turn(log, thread_id, turn)
+                    _close_turn(log, thread_id, turn, runtime=runtime)
                     runtime._record_successful_turn_example(turn, intent=intent)
                     await runtime._maybe_compact(thread_id, log, emitter)
                     runtime._snapshot_to_thread_store(thread_id, log, intent)
@@ -1578,12 +1699,12 @@ async def _start_turn(
                     await runtime._emit_item_started(turn, log, emitter, degrade_item)
                     await runtime._emit_item_completed(turn, log, emitter, degrade_item)
                     turn.status = TurnStatus.COMPLETED
-                    _close_turn(log, thread_id, turn)
+                    _close_turn(log, thread_id, turn, runtime=runtime)
                     runtime._snapshot_to_thread_store(thread_id, log, intent)
                     return turn
 
                 turn.status = TurnStatus.FAILED
-                _close_turn(log, thread_id, turn)
+                _close_turn(log, thread_id, turn, runtime=runtime)
                 runtime._record_failed_turn_proposal(
                     turn,
                     intent=intent,
@@ -1617,11 +1738,11 @@ async def _start_turn(
             # of failing the turn on an environment problem.
             if _turn_verification_environment_blocked(turn):
                 turn.status = TurnStatus.COMPLETED
-                _close_turn(log, thread_id, turn)
+                _close_turn(log, thread_id, turn, runtime=runtime)
                 runtime._snapshot_to_thread_store(thread_id, log, intent)
                 return turn
             turn.status = TurnStatus.FAILED
-            _close_turn(log, thread_id, turn)
+            _close_turn(log, thread_id, turn, runtime=runtime)
             runtime._record_failed_turn_proposal(
                 turn,
                 intent=intent,
@@ -1644,7 +1765,7 @@ async def _start_turn(
             await runtime._emit_item_started(turn, log, emitter, err)
             await runtime._emit_item_completed(turn, log, emitter, err)
             turn.status = TurnStatus.FAILED
-            _close_turn(log, thread_id, turn)
+            _close_turn(log, thread_id, turn, runtime=runtime)
             runtime._record_failed_turn_proposal(
                 turn,
                 intent=intent,
@@ -1664,8 +1785,9 @@ async def _start_turn(
                 outcome_reason=turn.outcome_reason,
             )
         turn.status = TurnStatus.COMPLETED
-        _close_turn(log, thread_id, turn)
-        runtime._record_successful_turn_example(turn, intent=intent)
+        _close_turn(log, thread_id, turn, runtime=runtime)
+        if turn.status == TurnStatus.COMPLETED:
+            runtime._record_successful_turn_example(turn, intent=intent)
         await runtime._maybe_compact(thread_id, log, emitter)
         runtime._snapshot_to_thread_store(thread_id, log, intent)
         return turn
@@ -1681,7 +1803,7 @@ async def _start_turn(
         if turn.status == TurnStatus.IN_PROGRESS:
             turn.status = TurnStatus.INTERRUPTED
             with contextlib.suppress(Exception):
-                _close_turn(log, thread_id, turn)
+                _close_turn(log, thread_id, turn, runtime=runtime)
         if turn.completed_at is None:
             turn.completed_at = now_utc()
         # Record the concrete interrupt reason so the frontend can
@@ -1734,6 +1856,7 @@ async def _start_turn(
                     thread_id,
                     turn,
                     error={"message": str(exc) or exc.__class__.__name__},
+                    runtime=runtime,
                 )
             # Mirror the driver-crash handler's bypass records: the
             # evolution store learns the failure and the failed turn
@@ -1764,7 +1887,15 @@ async def _start_turn(
         # completedAt=null until the next resume.
         if turn.status != TurnStatus.IN_PROGRESS and turn.completed_at is None:
             turn.completed_at = now_utc()
-        runtime._record_task_run_finished(turn)
+        status_before_settlement = turn.status
+        if turn.id not in runtime._task_execution_settled:
+            runtime._record_task_run_finished(turn)
+        if turn.status != status_before_settlement:
+            # An expired/replaced lease or failed durable result write must
+            # not leave the event log and sidebar reporting a false success.
+            _close_turn(log, thread_id, turn, error=turn.error, runtime=runtime)
+            runtime._snapshot_to_thread_store(thread_id, log, intent)
         runtime._active_turn_ids.discard(turn.id)
+        runtime._task_execution_settled.discard(turn.id)
         runtime._unregister_active_turn(turn.id)
         emitter.unregister_turn(turn.id)

@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
+
+if os.name == "nt":
+    pytest.skip(
+        "bare-metal recovery lab requires Linux ownership and device semantics",
+        allow_module_level=True,
+    )
 
 from deploy.appliance import bare_metal_recovery_lab as lab
 

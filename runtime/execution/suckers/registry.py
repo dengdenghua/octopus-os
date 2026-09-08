@@ -55,6 +55,19 @@ class Skill(BaseModel):
     # status="timeout" by the tool engine instead of holding its worker
     # thread forever. ``None`` (default) keeps the direct call.
     timeout_s: float | None = None
+    # Server registration policy, never a model argument. Protected/live reads
+    # must run their handler again so authorization and current state are not
+    # bypassed by a committed receipt. Side-effecting skills always retain the
+    # durable receipt path, even if this read-only policy was misconfigured.
+    replay_policy: Literal["durable", "refresh_read"] = "durable"
+    # Server-owned path namespace. Service handlers authorize logical paths
+    # against their own resource root; they must never receive workspace/CWD
+    # rewrites or produce inferred host-file rollback records. This does not
+    # exempt a skill from tenant, capability, governance or approval checks.
+    path_resolution: Literal["workspace", "service"] = "workspace"
+    # Explicit server registration, never accepted from model arguments.
+    # Only reviewed built-in handlers may run in strict privacy mode.
+    privacy_local: bool = False
 
     @property
     def has_tests(self) -> bool:

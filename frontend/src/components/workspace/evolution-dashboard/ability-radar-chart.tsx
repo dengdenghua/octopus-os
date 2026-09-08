@@ -1,8 +1,5 @@
 import { cn } from "@/lib/utils";
-import type {
-  EvolutionOverview,
-  SkillPerformance,
-} from "@/core/evolution/api";
+import type { EvolutionOverview, SkillPerformance } from "@/core/evolution/api";
 
 export interface RadarDataPoint {
   dimension: string;
@@ -52,23 +49,27 @@ export function AbilityRadarChart({
 
   // 生成多边形路径
   const generatePolygonPath = (valueMultiplier = 1) => {
-    return data
-      .map((item, index) => {
-        const point = calculatePoint(index, item.value * valueMultiplier);
-        return `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`;
-      })
-      .join(" ") + " Z";
+    return (
+      data
+        .map((item, index) => {
+          const point = calculatePoint(index, item.value * valueMultiplier);
+          return `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`;
+        })
+        .join(" ") + " Z"
+    );
   };
 
   // 生成背景网格多边形
   const generateGridPolygon = (level: number) => {
     const levelValue = (level / levels) * 100;
-    return data
-      .map((_, index) => {
-        const point = calculatePoint(index, levelValue);
-        return `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`;
-      })
-      .join(" ") + " Z";
+    return (
+      data
+        .map((_, index) => {
+          const point = calculatePoint(index, levelValue);
+          return `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`;
+        })
+        .join(" ") + " Z"
+    );
   };
 
   // 生成轴线
@@ -214,7 +215,7 @@ export const ABILITY_DIMENSIONS = {
 export function calculateAbilityScores(
   data: EvolutionOverview,
   skillPerformances: SkillPerformance[],
-  dimensionType: keyof typeof ABILITY_DIMENSIONS = "general"
+  dimensionType: keyof typeof ABILITY_DIMENSIONS = "general",
 ): RadarDataPoint[] {
   const dimensions = ABILITY_DIMENSIONS[dimensionType];
 
@@ -245,28 +246,45 @@ export function calculateAbilityScores(
         break;
       case "problemSolving":
         // 综合成功率和技能多样性
-        value = (data.skills.avg_success_rate * 0.7 +
-                 Math.min((data.skills.total / 20) * 100, 100) * 0.3);
+        value =
+          data.skills.avg_success_rate * 0.7 +
+          Math.min((data.skills.total / 20) * 100, 100) * 0.3;
         break;
 
       // 代码相关维度
       case "codeQuality":
-        value = getSkillScore(skillPerformances, ["refactor", "代码质量", "重构"]);
+        value = getSkillScore(skillPerformances, [
+          "refactor",
+          "代码质量",
+          "重构",
+        ]);
         break;
       case "bugFixing":
         value = getSkillScore(skillPerformances, ["bug", "修复", "fix"]);
         break;
       case "performance":
-        value = getSkillScore(skillPerformances, ["performance", "性能", "optimize"]);
+        value = getSkillScore(skillPerformances, [
+          "performance",
+          "性能",
+          "optimize",
+        ]);
         break;
       case "architecture":
-        value = getSkillScore(skillPerformances, ["architecture", "架构", "design"]);
+        value = getSkillScore(skillPerformances, [
+          "architecture",
+          "架构",
+          "design",
+        ]);
         break;
       case "testing":
         value = getSkillScore(skillPerformances, ["test", "测试", "单元"]);
         break;
       case "documentation":
-        value = getSkillScore(skillPerformances, ["doc", "文档", "documentation"]);
+        value = getSkillScore(skillPerformances, [
+          "doc",
+          "文档",
+          "documentation",
+        ]);
         break;
 
       // 设计相关维度
@@ -277,7 +295,11 @@ export function calculateAbilityScores(
         value = getSkillScore(skillPerformances, ["ux", "体验", "user"]);
         break;
       case "prototyping":
-        value = getSkillScore(skillPerformances, ["prototype", "原型", "wireframe"]);
+        value = getSkillScore(skillPerformances, [
+          "prototype",
+          "原型",
+          "wireframe",
+        ]);
         break;
 
       default:
@@ -297,12 +319,12 @@ export function calculateAbilityScores(
  */
 function getSkillScore(
   skillPerformances: SkillPerformance[],
-  keywords: string[]
+  keywords: string[],
 ): number {
   const matchedSkills = skillPerformances.filter((skill) =>
     keywords.some((keyword) =>
-      skill.name.toLowerCase().includes(keyword.toLowerCase())
-    )
+      skill.name.toLowerCase().includes(keyword.toLowerCase()),
+    ),
   );
 
   if (matchedSkills.length === 0) {
@@ -310,10 +332,9 @@ function getSkillScore(
   }
 
   // 取匹配技能的平均成功率
-  const avgSuccessRate = matchedSkills.reduce(
-    (sum, skill) => sum + skill.success_rate,
-    0
-  ) / matchedSkills.length;
+  const avgSuccessRate =
+    matchedSkills.reduce((sum, skill) => sum + skill.success_rate, 0) /
+    matchedSkills.length;
 
   return avgSuccessRate;
 }

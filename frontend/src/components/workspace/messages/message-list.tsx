@@ -830,6 +830,12 @@ export function failureKind(
   if (failureKindHint === "environment") {
     return "environment";
   }
+  if (
+    failureKindHint === "backpressure" ||
+    /codex_event_backpressure|notification queue is full/i.test(signal)
+  ) {
+    return "backpressure";
+  }
   const isClientClose =
     /client closed/.test(normalized) ||
     /websocket closed \(1000/.test(normalized);
@@ -1058,7 +1064,7 @@ export function MessageList({
     display_name?: string | null;
     avatar_url?: string | null;
     icon?: string | null;
-    execution_engine?: "echo" | "codex";
+    execution_engine?: "echo" | "codex" | "opencode";
   } | null;
   agentRoster?: MessageListAgentRosterEntry[];
   /** Project path for ambient suggestions */
@@ -1128,7 +1134,9 @@ export function MessageList({
       const primaryEngine =
         metadataEngine === "codex" || metadataEngine === "echo"
           ? metadataEngine
-          : currentAgent?.execution_engine || "echo";
+          : currentAgent?.execution_engine === "codex"
+            ? "codex"
+            : "echo";
       return {
         goal,
         primaryEngine,
@@ -1362,8 +1370,10 @@ export function MessageList({
               : t.streaming.environmentBlocked
             : kind === "network"
               ? t.streaming.networkLost
-              : kind === "verification"
-                ? t.streaming.verificationRequired
+              : kind === "backpressure"
+                ? t.streaming.eventStreamOverloaded
+                : kind === "verification"
+                  ? t.streaming.verificationRequired
                 : kind === "guard"
                   ? hasStructuredReadableDetail
                     ? failure.detail
@@ -1381,6 +1391,7 @@ export function MessageList({
       t.streaming.blockedOnUser,
       t.streaming.environmentBlocked,
       t.streaming.networkLost,
+      t.streaming.eventStreamOverloaded,
       t.streaming.guardBlocked,
       t.streaming.lifecycleFailed,
       t.streaming.turnFailed,
@@ -1415,10 +1426,12 @@ export function MessageList({
     threadErrorMessage,
   ]);
   const isNetworkError = failureReceipt?.kind === "network";
+  const isBackpressureError = failureReceipt?.kind === "backpressure";
   // Environment blocks and "needs your input" hand-offs are not agent
   // failures — render them amber, not destructive red.
   const isWarningFailure =
     isNetworkError ||
+    isBackpressureError ||
     failureReceipt?.kind === "environment" ||
     failureReceipt?.kind === "blocked";
   const failureHeaderText =
@@ -1426,9 +1439,11 @@ export function MessageList({
       ? t.streaming.blockedOnUser
       : failureReceipt?.kind === "environment"
         ? t.streaming.environmentBlocked
-        : isNetworkError
-          ? t.streaming.networkLost
-          : t.message.taskFailed;
+        : isBackpressureError
+          ? t.streaming.eventStreamOverloaded
+          : isNetworkError
+            ? t.streaming.networkLost
+            : t.message.taskFailed;
   const isVerificationRequiredError = failureReceipt?.kind === "verification";
   const errorBannerText = failureReceipt?.message ?? null;
   const verificationAuditNotice =

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 
 import { useThread } from "@/components/workspace/messages/context";
+import { currentActorId } from "@/core/auth/api";
 
 import {
   ArtifactLoadError,
@@ -10,6 +11,7 @@ import {
   loadOriginalFileContent,
   loadToolCallInfo,
 } from "./loader";
+import { isSourceFileArtifact } from "./utils";
 
 export function useArtifactContent({
   filepath,
@@ -24,6 +26,9 @@ export function useArtifactContent({
     return filepath.startsWith("write-file:");
   }, [filepath]);
   const { thread, isMock } = useThread();
+  const actor = currentActorId();
+  const isSourceFile =
+    !isMock && !isWriteFile && isSourceFileArtifact(filepath, threadId);
   const content = useMemo(() => {
     if (isWriteFile) {
       return loadArtifactContentFromToolCall({ url: filepath, thread });
@@ -31,15 +36,15 @@ export function useArtifactContent({
     return null;
   }, [filepath, isWriteFile, thread]);
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["artifact", filepath, threadId, isMock],
-    queryFn: () => {
-      return loadArtifactContent({ filepath, threadId, isMock });
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
+    queryKey: ["artifact", actor, filepath, threadId, isMock],
+    queryFn: ({ signal }) => {
+      return loadArtifactContent({ filepath, threadId, isMock, signal });
     },
     enabled,
     refetchInterval:
       !isWriteFile && thread.isLoading && enabled !== false ? 1200 : false,
-    staleTime: 5 * 60 * 1000,
+    staleTime: isSourceFile ? 0 : 5 * 60 * 1000,
     retry: (failureCount, failure) =>
       failure instanceof ArtifactLoadError && failure.status === 404
         ? failureCount < 4
@@ -55,9 +60,13 @@ export function useArtifactContent({
     }
   }, [enabled, isWriteFile, refetch, thread.isLoading]);
   return {
-    content: isWriteFile ? content : data?.content,
+    content: isWriteFile
+      ? content
+      : isSourceFile && (isFetching || error)
+        ? undefined
+        : data?.content,
     url: isWriteFile ? undefined : data?.url,
-    isLoading,
+    isLoading: isLoading || (isSourceFile && isFetching),
     error,
     refetch,
   };
@@ -76,6 +85,7 @@ export function useArtifactDiff({
     return filepath.startsWith("write-file:");
   }, [filepath]);
   const { thread } = useThread();
+  const actor = currentActorId();
 
   const toolCallInfo = useMemo(() => {
     if (!isWriteFile) return null;
@@ -85,7 +95,7 @@ export function useArtifactDiff({
   const filePath = toolCallInfo?.path;
 
   const { data: originalContent, isLoading: isLoadingOriginal } = useQuery({
-    queryKey: ["artifact-original", filePath, threadId],
+    queryKey: ["artifact-original", actor, filePath, threadId],
     queryFn: () => loadOriginalFileContent(filePath!, threadId),
     enabled: enabled && isWriteFile && !!filePath,
     staleTime: 5 * 60 * 1000,

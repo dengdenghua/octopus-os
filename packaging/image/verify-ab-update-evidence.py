@@ -52,7 +52,13 @@ class AbEvidenceError(RuntimeError):
 
 
 def read_regular(path: Path, maximum: int, label: str) -> bytes:
-    flags = os.O_RDONLY | os.O_CLOEXEC
+    if path.is_symlink():
+        raise AbEvidenceError(f"{label} is a symbolic link")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -89,7 +95,13 @@ def read_regular(path: Path, maximum: int, label: str) -> bytes:
 
 
 def hash_large_regular(path: Path, maximum: int, label: str) -> dict[str, object]:
-    flags = os.O_RDONLY | os.O_CLOEXEC
+    if path.is_symlink():
+        raise AbEvidenceError(f"{label} is a symbolic link")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -427,7 +439,15 @@ def write_manifest(path: Path, payload: Mapping[str, object]) -> None:
     if len(encoded) > 1024 * 1024:
         raise AbEvidenceError("A/B evidence manifest exceeds 1 MiB")
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_CLOEXEC, 0o600)
+    descriptor = os.open(
+        temporary,
+        os.O_CREAT
+        | os.O_EXCL
+        | os.O_WRONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0),
+        0o600,
+    )
     try:
         offset = 0
         while offset < len(encoded):
@@ -436,13 +456,21 @@ def write_manifest(path: Path, payload: Mapping[str, object]) -> None:
                 raise AbEvidenceError("cannot write A/B evidence manifest")
             offset += written
         os.fsync(descriptor)
-        os.fchmod(descriptor, 0o444)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o444)
+    except BaseException:
+        os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+        raise
+    else:
+        os.close(descriptor)
+    try:
+        if not hasattr(os, "fchmod"):
+            temporary.chmod(0o444)
+        os.replace(temporary, path)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
-    finally:
-        os.close(descriptor)
-    os.replace(temporary, path)
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:

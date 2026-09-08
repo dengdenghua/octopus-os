@@ -7,6 +7,7 @@ checkout is left untouched.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from contextlib import suppress
@@ -21,6 +22,7 @@ from runtime.execution.subagents.worktree_loop import (
     subagent_worktree_worker,
     worktree_scope,
 )
+from runtime.platform.process.session import Session, session_scope
 
 pytestmark = pytest.mark.skipif(
     shutil.which("git") is None,
@@ -113,6 +115,7 @@ def test_worker_failure_is_isolated_and_cleaned_up(tmp_path: Path):
     assert _worktree_count(repo) == 1
 
 
+@pytest.mark.skipif(shutil.which("sh") is None, reason="POSIX sh is not available on this host")
 def test_shell_worktree_worker_writes_in_isolation(tmp_path: Path):
     repo = _init_repo(tmp_path)
     worker = shell_worktree_worker(
@@ -130,6 +133,7 @@ def test_shell_worktree_worker_writes_in_isolation(tmp_path: Path):
     assert _worktree_count(repo) == 1
 
 
+@pytest.mark.skipif(shutil.which("sh") is None, reason="POSIX sh is not available on this host")
 def test_shell_worktree_worker_nonzero_exit_marks_failure(tmp_path: Path):
     repo = _init_repo(tmp_path)
     worker = shell_worktree_worker(["sh", "-c", "exit 3"])
@@ -160,6 +164,57 @@ def test_subagent_worktree_worker_passes_workspace_path(monkeypatch):
     }
 
 
+def test_subagent_worktree_worker_captures_ambient_session(monkeypatch):
+    captured: dict[str, object] = {}
+    parent = Session(actor="tester", thread_id="thread-1", turn_id="turn-1")
+
+    def fake(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "output": "ok"}
+
+    monkeypatch.setattr("runtime.execution.subagents.call_subagent", fake)
+    with session_scope(parent):
+        worker = subagent_worktree_worker(agent_id="worktree_writer")
+    # Invoke after the scope exits to prove the worker retained the caller's
+    # Session rather than relying on a ContextVar in the executor thread.
+    worker("/some/worktree", "do the thing")
+    assert captured["session"] is parent
+
+
+def test_subagent_worktree_worker_explicit_session_wins(monkeypatch):
+    captured: dict[str, object] = {}
+    ambient = Session(actor="ambient")
+    explicit = Session(actor="explicit")
+
+    def fake(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "output": "ok"}
+
+    monkeypatch.setattr("runtime.execution.subagents.call_subagent", fake)
+    with session_scope(ambient):
+        worker = subagent_worktree_worker(session=explicit)
+        worker("/some/worktree", "task")
+    assert captured["session"] is explicit
+
+
+def test_subagent_worktree_worker_session_survives_loop_pool(monkeypatch, tmp_path):
+    repo = _init_repo(tmp_path)
+    parent = Session(actor="tester", thread_id="thread-1", turn_id="turn-1")
+    captured: list[object] = []
+
+    def fake(**kwargs):
+        captured.append(kwargs.get("session"))
+        return {"success": True, "output": "ok"}
+
+    monkeypatch.setattr("runtime.execution.subagents.call_subagent", fake)
+    with session_scope(parent):
+        worker = subagent_worktree_worker()
+        result = run_worktree_loop(str(repo), ["task"], worker, max_workers=1)
+
+    assert result["succeeded"] == 1
+    assert captured == [parent]
+
+
 def test_subagent_worktree_worker_raises_on_failure(monkeypatch):
     def fake(**_kw):
         return {"success": False, "error": "boom"}
@@ -181,7 +236,16 @@ def test_worktree_scope_cleans_up_on_error(tmp_path: Path):
 
 def _write_fake_gitdir(gitfile: Path, fake_gitdir: Path) -> None:
     """Point a worktree's .git file at an attacker-controlled gitdir."""
-    gitfile.write_text(f"gitdir: {fake_gitdir}\n", encoding="utf-8")
+    # Git marks linked-worktree .git pointer files hidden on Windows. Opening
+    # the existing file without CREATE_ALWAYS keeps this security fixture
+    # portable; Path.write_text would fail with ERROR_ACCESS_DENIED there.
+    payload = f"gitdir: {fake_gitdir}\n".encode()
+    with gitfile.open("r+b") as handle:
+        handle.seek(0)
+        handle.truncate()
+        handle.write(payload)
+        handle.flush()
+        os.fsync(handle.fileno())
     (fake_gitdir / "config").write_text(
         "[core]\n\thooksPath = .\n\tfsmonitor = true\n", encoding="utf-8"
     )
@@ -277,4 +341,3 @@ def test_symlink_in_diff_is_flagged(tmp_path: Path):
     diff = r["results"][0]["diff"]
     if (Path(tmp_path) / "wt").exists():  # symlink creation supported
         assert "is a symlink" in diff
-

@@ -4,7 +4,13 @@ import type { AgentTraceTaskRecoveryQueue } from "@/core/agent-trace/api";
 import { cn } from "@/lib/utils";
 import { GateStat } from "../../replay-panel";
 import { GitBranchIcon } from "lucide-react";
-import { countRecovery, shortId, taskRecoveryActionLabel, taskRecoveryHint, taskRecoverySteps } from "../operator-utils";
+import {
+  countRecovery,
+  shortId,
+  taskRecoveryActionLabel,
+  taskRecoveryHint,
+  taskRecoverySteps,
+} from "../operator-utils";
 import { useOperatorCopy } from "../use-operator-copy";
 
 export function TaskRecoveryQueueCard({
@@ -37,9 +43,7 @@ export function TaskRecoveryQueueCard({
             <GitBranchIcon
               className={cn(
                 "size-4",
-                healthy
-                  ? "text-success"
-                  : "text-warning",
+                healthy ? "text-success" : "text-warning",
               )}
             />
             {to("Task recovery queue")}

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { taskWorkspaceRoute } from "./task-workspace-route";
+import {
+  taskWorkspaceRoute,
+  threadIdForWorkspaceRoute,
+} from "./task-workspace-route";
 
 describe("task workspace route", () => {
   test("uses realtime new for the default agent", () => {
@@ -31,4 +34,37 @@ describe("task workspace route", () => {
       "/workspace/realtime/new?workspace_path=%2FUsers%2Fexample%2FPublic%2Fecho-agent",
     );
   });
+});
+
+test("restores an existing thread and agent without resubmitting a prompt", () => {
+  expect(
+    taskWorkspaceRoute({
+      threadId: "task 1",
+      agentId: "coder",
+      prompt: "do not replay",
+      workspacePath: "C:/work",
+    }),
+  ).toBe("/workspace/realtime/task%201?agent=coder&workspace_path=C%3A%2Fwork");
+});
+
+test("opens a projected result without changing the task identity", () => {
+  expect(
+    taskWorkspaceRoute({
+      threadId: "task 1",
+      artifact: "workspace-output:final:report #1.md",
+    }),
+  ).toBe(
+    "/workspace/realtime/task%201?artifact=workspace-output%3Afinal%3Areport+%231.md",
+  );
+});
+
+test("recognizes a created thread without treating app pages or new tasks as existing", () => {
+  expect(
+    threadIdForWorkspaceRoute("/workspace/realtime/task%201?agent=coder"),
+  ).toBe("task 1");
+  expect(
+    threadIdForWorkspaceRoute("/workspace/realtime/new?agent=coder"),
+  ).toBeUndefined();
+  expect(threadIdForWorkspaceRoute("/workspace/design")).toBeUndefined();
+  expect(threadIdForWorkspaceRoute("/workspace/realtime/%bad")).toBeUndefined();
 });

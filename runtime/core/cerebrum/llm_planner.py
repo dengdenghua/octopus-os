@@ -464,6 +464,7 @@ class LLMPlanner:
 
         profile_section = render_profile_memories(
             intent.user_context.get("profile_memories", []),
+            annotate=True,
         )
         if profile_section:
             user_parts.insert(0, profile_section)

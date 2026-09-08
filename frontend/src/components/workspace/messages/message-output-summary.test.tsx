@@ -187,6 +187,35 @@ describe("MessageOutputSummary", () => {
     );
   });
 
+  it("prefers a workspace resource identity carried by the artifact protocol", () => {
+    const message: AIMessage = {
+      id: "ai-resource-artifact",
+      type: "ai",
+      content: "Done",
+      tool_calls: [
+        {
+          id: "artifact-resource-1",
+          name: "artifact",
+          args: {
+            path: "/legacy/absolute/path/report.md",
+            resource_id: "workspace-file:v1:dGhyZWFkLTE:ZmluYWw:cmVwb3J0Lm1k",
+            title: "report.md",
+          },
+        },
+      ],
+    };
+
+    renderWithProviders(
+      <MessageOutputSummary messages={[message]} threadId="thread-1" />,
+      { locale: "zh-CN" },
+    );
+    fireEvent.click(screen.getByText("report.md"));
+
+    expect(selectArtifact).toHaveBeenCalledWith(
+      "workspace-output:final:report.md",
+    );
+  });
+
   it("delegates artifact navigation to the host workbench when provided", () => {
     const onOpenArtifact = vi.fn();
     const message: AIMessage = {

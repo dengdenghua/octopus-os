@@ -114,6 +114,11 @@ HEIC)+ libraw + libexiv2。
 分层理由很实在:不装相册的用户不承担它的资源占用;相册能独立于系统版本迭代;
 系统升级不用捆绑一堆应用。**建议连这个分层一起照搬。**
 
+当前 Echo 照片面已补齐 HEIC/HEIF 入库、原图 MIME 与有界 WebP 预览，并把
+`pillow-heif` 及其 libheif/libde265/x265 版本、许可证和源码修订纳入镜像通知与
+双架构依赖锁。它仍是应用进程内的窄解码路径，不等同于参考系统的共享 `imagesrv`：
+RAW、完整 EXIF/色彩管理、独立资源隔离与大图库性能门仍属于 M6。
+
 ---
 
 ## 4. 四条明确不抄的
@@ -155,9 +160,12 @@ A/B 原子更新(见 §6 M4)。
 | `appliance/nas/shares.py` | 历史 SMB/NFS 共享配置面 | ✅ 41 测试(兼容保留) |
 | `appliance/nas/router.py` | 历史 NAS HTTP API,生产扩展未挂载 | ✅ 兼容测试 |
 | `appliance/native_storage.py` | 当前主机原生存储探测与受控窄写面 | ✅ 当前 P3 入口 |
+| `appliance/native_time_machine.py` | 专用 Time Machine over SMB 计划/应用、回读与回滚 | ✅ Linux/Samba VM 实证；真实 macOS 待验 |
 | `appliance/native_storage_routes.py` | `/storage` 与 `/omv` 兼容路由、审批/审计封装 | ✅ 当前 P3 入口 |
 | `appliance/extension.py` | 挂载原生存储路由(OMV 可选桥不再是默认权威) | ✅ |
 | `tests/appliance/test_native_storage.py` | 原生账户、共享、ACL、SMB/NFS、配额回归 | ✅ |
+| `tests/appliance/test_native_time_machine.py` | Time Machine 合同、冲突、回滚与路由回归 | ✅ |
+| `deploy/provision/base/echo-os-time-machine.conf` | 首启安装的确定性空白受管 Samba 配置 | ✅ |
 | `deploy/provision/**` | 装机 ISO 组装 + 首次开机脚本 | ⚠️ 待 Linux 验证 |
 
 ### NAS 管控面设计要点
@@ -172,8 +180,11 @@ A/B 原子更新(见 §6 M4)。
   `[] ; #` 与换行 —— 不留任何"依赖解析器行为"的余地。
 - **写操作边界**:旧 `appliance/nas` 路由仍仅作兼容测试，不进入生产扩展；当前原生窄写面统一使用
   `desired → plan → 管理员单次审批 → apply → 回读验证/安全回滚 → 审计`。已开放基础共享文件夹、
-  空目录安全删除、根目录 POSIX ACL、私有 SMB/NFS 规则、受限账户/组和用户/组硬配额；复杂磁盘与池生命周期继续关闭，
+  空目录安全删除、根目录 POSIX ACL、私有 SMB/NFS 规则、专用单用户 Time Machine over SMB、受限账户/组和用户/组硬配额；复杂磁盘与池生命周期继续关闭，
   不以兼容路由代替审批。
+- **Time Machine 边界**：使用 Samba `fruit` 的独立受管配置，要求空专用目录并禁止与普通
+  SMB/NFS 共用；Debian 13 x86_64 VM 已验证匿名拒绝、认证写入、停用保数据和 `smbd`
+  活体状态。真实 macOS 首次备份、增量备份与恢复仍是发布前物理客户端门。
 
 ### 硬件兼容基线（2026-09-06）
 

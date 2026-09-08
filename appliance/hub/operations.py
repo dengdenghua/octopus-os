@@ -107,6 +107,14 @@ class HubOperationStore:
             raise ValueError("Hub operation encryption secret is required")
         root = Path(data_dir)
         root.mkdir(parents=True, exist_ok=True)
+        if os.name == "nt":
+            # SQLite creates a journal beside the database. Protect the
+            # directory before opening it so the database and its transient
+            # files inherit a current-user-only ACL.
+            from appliance.windows_state import private_state_directory
+
+            with private_state_directory(root, create=True, protect=True):
+                pass
         self.path = root / HUB_OPERATIONS_FILENAME
         self._assert_safe_path()
         self._key = hashlib.sha256(
@@ -125,7 +133,29 @@ class HubOperationStore:
 
     def _connect(self) -> sqlite3.Connection:
         self._assert_safe_path()
-        connection = sqlite3.connect(str(self.path), timeout=5.0)
+        if os.name == "nt":
+            from appliance.windows_state import open_private_file, private_state_directory
+
+            # Keep the verified parent pinned while SQLite opens the database;
+            # this also repairs/validates an existing file's ACL and rejects
+            # reparse points or multiply-linked files before any query runs.
+            with private_state_directory(self.path.parent, create=True, protect=True) as parent:
+                target = parent / self.path.name
+                try:
+                    descriptor = open_private_file(target)
+                except FileNotFoundError:
+                    pass
+                else:
+                    os.close(descriptor)
+                connection = sqlite3.connect(str(target), timeout=5.0)
+                try:
+                    descriptor = open_private_file(target)
+                except BaseException:
+                    connection.close()
+                    raise
+                os.close(descriptor)
+        else:
+            connection = sqlite3.connect(str(self.path), timeout=5.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA journal_mode = DELETE")

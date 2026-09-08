@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BROWSER_OPEN_URL_ACK_EVENT,
   BROWSER_OPEN_URL_REQUEST_EVENT,
-  BROWSER_OPEN_URL_REQUEST_KEY,
+  browserOpenUrlRequestStorageKey,
   type BrowserOpenUrlAck,
   type BrowserOpenUrlRequest,
 } from "@/components/browser/browser-store";
@@ -42,7 +42,7 @@ describe("openTarget", () => {
     expect(window.location.hash).toBe("#/browser");
     expect(
       JSON.parse(
-        window.localStorage.getItem(BROWSER_OPEN_URL_REQUEST_KEY) ?? "{}",
+        window.localStorage.getItem(browserOpenUrlRequestStorageKey()) ?? "{}",
       ),
     ).toMatchObject({ url: "https://example.com/docs", source: "message" });
   });
@@ -134,7 +134,7 @@ describe("openTarget", () => {
 
     expect(window.location.hash).toBe("#/workspace");
     expect(
-      window.localStorage.getItem(BROWSER_OPEN_URL_REQUEST_KEY),
+      window.localStorage.getItem(browserOpenUrlRequestStorageKey()),
     ).toBeNull();
     expect(windowOpen).toHaveBeenCalledWith(
       "https://example.com/no-browser-shell",

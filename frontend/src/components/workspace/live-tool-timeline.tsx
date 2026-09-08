@@ -127,6 +127,19 @@ const SENSITIVE_DETAIL_KEY_RE =
 const SENSITIVE_DETAIL_TEXT_RE =
   /(?:bearer\s+|\bsk-[a-z0-9_-]+\b|\b(?:ghp|github_pat|xox[baprs])-)[^\s,;)}\]]+/gi;
 
+export interface SubagentGovernanceSnapshot {
+  rootId?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  tokensUsed?: number;
+  costUsd?: number;
+  breaker?: string;
+  tripReason?: string;
+  activeLeases?: number;
+  tokenLimit?: number;
+  costLimitUsd?: number;
+}
+
 function sanitizePublicDetailText(value: string): string {
   return value
     .replace(SENSITIVE_DETAIL_TEXT_RE, "[redacted]")
@@ -211,6 +224,9 @@ export interface LiveToolEvent {
    * this carries {group, config_flag} so the UI can render a one-click
    * "enable" prompt instead of a bare error. */
   capabilityDisabled?: { group: string; config_flag: string };
+  /** Display-safe recursive sub-agent quota usage attached to lifecycle
+   * events. Sensitive lease owner identifiers never cross the bus. */
+  governance?: SubagentGovernanceSnapshot;
 }
 
 function workflowEvents(events: LiveToolEvent[]): LiveToolEvent[] {
@@ -1290,6 +1306,20 @@ function ToolEventRow({
       : [];
   const swarmLog = researchLog ? null : swarmLogText(event, t);
   const codeLog = researchLog || swarmLog ? null : codeLogText(event, t);
+  const governance = event.governance;
+  const governanceTokens = governance?.tokensUsed ?? 0;
+  const governanceCost = governance?.costUsd ?? 0;
+  const governanceLabel = governance
+    ? t.liveToolTimeline.subagentUsage(governanceTokens, governanceCost)
+    : undefined;
+  const governanceTitle = governance
+    ? [
+        governanceLabel,
+        governance.breaker === "tripped" ? governance.tripReason : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined;
   const [open, setOpen] = useState(
     event.status === "running" || event.status === "error",
   );
@@ -1350,9 +1380,9 @@ function ToolEventRow({
 
         {researchLog?.sources && researchLog.sources.length > 0 && (
           <span className="flex min-w-0 items-center gap-1">
-            {researchLog.sources.slice(0, 3).map((source) => (
+            {researchLog.sources.slice(0, 3).map((source, index) => (
               <span
-                key={source}
+                key={`${source}-${index}`}
                 className="max-w-20 truncate rounded-full border border-border-default bg-background/80 px-1.5 py-0.5 text-xs text-muted-foreground"
                 title={source}
               >
@@ -1363,6 +1393,21 @@ function ToolEventRow({
         )}
 
         <span className="ml-auto flex items-center gap-1">
+          {governanceLabel && (
+            <span
+              className={cn(
+                "hidden max-w-52 truncate rounded-full border px-1.5 py-0.5 text-xs sm:inline-flex",
+                governance?.breaker === "tripped"
+                  ? "border-destructive/40 text-destructive"
+                  : "border-border-default text-muted-foreground",
+              )}
+              title={governanceTitle}
+              aria-label={governanceTitle}
+            >
+              {governanceLabel}
+            </span>
+          )}
+
           <span
             className={cn(
               "rounded-full px-1.5 py-0.5 text-xs font-medium",

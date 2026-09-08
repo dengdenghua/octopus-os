@@ -390,7 +390,7 @@ def _bundle_identity(
         ),
         "nas_data_backup.py": (
             "nasDataBackup",
-            "./nas_data_backup.py init|backup|check|restore",
+            "./nas_data_backup.py init|backup|check|list|list-sets|plan-set|backup-set|plan-restore-set|restore-set|restore",
         ),
         "restore-state.sh": (
             "restore",
@@ -896,6 +896,7 @@ def _running_verification(
             "--expected-arch",
             installed["verifierArchitecture"],
             "--require-clean-bundle",
+            "--require-zfs-runtime",
             "--require-omv",
         ],
         timeout=1800,
@@ -922,6 +923,13 @@ def _running_verification(
         or value.get("approval") != 200
         or value.get("approval_replay") != 403
         or value.get("protected_stop") != 403
+        or not isinstance(value.get("zfs_runtime"), dict)
+        or value["zfs_runtime"].get("moduleInstalled") is not True
+        or value["zfs_runtime"].get("moduleLoaded") is not True
+        or value["zfs_runtime"].get("loadServiceActive") is not True
+        or value["zfs_runtime"].get("kernelInterfaceReady") is not True
+        or not isinstance(value["zfs_runtime"].get("kernelRelease"), str)
+        or not value["zfs_runtime"]["kernelRelease"]
     ):
         raise BareMetalRecoveryLabError("installed appliance did not satisfy the recovery probe")
     for container in (appliance["mainContainer"], appliance["proxyContainer"]):

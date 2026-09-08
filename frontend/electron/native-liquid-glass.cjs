@@ -371,6 +371,8 @@ class NativeLiquidGlassController {
     execFile = execFileSync,
     xpropPath = DEFAULT_XPROP_PATH,
     gdbusPath = DEFAULT_GDBUS_PATH,
+    xpropAvailable = null,
+    gdbusAvailable = null,
   }) {
     this.window = window;
     this.packaged = packaged;
@@ -385,6 +387,8 @@ class NativeLiquidGlassController {
     this.execFile = execFile;
     this.xpropPath = xpropPath;
     this.gdbusPath = gdbusPath;
+    this.xpropAvailable = xpropAvailable;
+    this.gdbusAvailable = gdbusAvailable;
     const loaded = platform === "darwin" ? loadAddon(resourcesPath) : {};
     this.addon = loaded.addon;
     this.loadError = loaded.error;
@@ -395,8 +399,8 @@ class NativeLiquidGlassController {
       const capabilities = getLinuxGlassCapabilities({
         platform: this.platform,
         environment: this.environment,
-        xpropAvailable: fs.existsSync(this.xpropPath),
-        gdbusAvailable: fs.existsSync(this.gdbusPath),
+        xpropAvailable: this.xpropAvailable ?? fs.existsSync(this.xpropPath),
+        gdbusAvailable: this.gdbusAvailable ?? fs.existsSync(this.gdbusPath),
       });
       if (capabilities.supported && !this.createLinuxScene) {
         return {

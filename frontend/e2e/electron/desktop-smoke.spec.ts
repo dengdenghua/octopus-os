@@ -71,17 +71,17 @@ test("desktop shell boots: window, preload bridge, workbench root", async () => 
     expect(rootHasContent).toBe(true);
 
     // Absolute public URLs must stay inside the packaged renderer origin.
-    const communityAsset = await win.evaluate(async () => {
-      const res = await fetch("/community/memory-video(1).jpg");
+    const publicAsset = await win.evaluate(async () => {
+      const res = await fetch("/favicon.svg");
       return {
         ok: res.ok,
         size: (await res.arrayBuffer()).byteLength,
         allowOrigin: res.headers.get("access-control-allow-origin"),
       };
     });
-    expect(communityAsset.ok).toBe(true);
-    expect(communityAsset.size).toBeGreaterThan(0);
-    expect(communityAsset.allowOrigin).not.toBe("*");
+    expect(publicAsset.ok).toBe(true);
+    expect(publicAsset.size).toBeGreaterThan(0);
+    expect(publicAsset.allowOrigin).not.toBe("*");
 
     const webPreferences = await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences(),
@@ -89,9 +89,7 @@ test("desktop shell boots: window, preload bridge, workbench root", async () => 
     expect(webPreferences.webSecurity).not.toBe(false);
 
     // The desktop organizer IPC round-trips (listItems → {ok, items}).
-    const listing = await win.evaluate(() =>
-      window.echo?.desktop?.listItems(),
-    );
+    const listing = await win.evaluate(() => window.echo?.desktop?.listItems());
     expect(listing.ok).toBe(true);
     expect(Array.isArray(listing.items)).toBe(true);
 
@@ -175,6 +173,7 @@ test("desktop backend spawns and the renderer reaches it", async () => {
       // first-launch bootstrap download.
       ECHO_DESKTOP_BACKEND_ROOT: REPO_ROOT,
       ECHO_BACKEND_URL: backendUrl,
+      ECHO_REQUIRED_APP_EXTENSIONS: "1",
     },
   });
 
@@ -209,16 +208,41 @@ test("desktop backend spawns and the renderer reaches it", async () => {
     const rendererContract = await win.evaluate(async () => {
       const health = await fetch("/api/health");
       const auth = await fetch("/api/auth/status");
-      const plugin = await fetch("/api/plugins/paper-trading/page");
+      const login = await fetch("/api/auth/local/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: `electron-plugin-e2e-${Date.now()}` }),
+      });
+      const loginBody = (await login.json()) as { access_token?: string };
+      const plugins = await fetch("/api/plugins", {
+        headers: loginBody.access_token
+          ? { Authorization: `Bearer ${loginBody.access_token}` }
+          : undefined,
+      });
+      const tasks = await fetch("/api/appliance/tasks?limit=100", {
+        headers: loginBody.access_token
+          ? { Authorization: `Bearer ${loginBody.access_token}` }
+          : undefined,
+      });
+      const files = await fetch("/api/appliance/files/list?path=", {
+        headers: loginBody.access_token
+          ? { Authorization: `Bearer ${loginBody.access_token}` }
+          : undefined,
+      });
       return {
         origin: window.location.origin,
         healthStatus: health.status,
         healthAllowOrigin: health.headers.get("access-control-allow-origin"),
         authStatus: auth.status,
         authBody: await auth.json(),
-        pluginStatus: plugin.status,
-        pluginContentType: plugin.headers.get("content-type"),
-        pluginBody: (await plugin.text()).slice(0, 500),
+        loginStatus: login.status,
+        pluginsStatus: plugins.status,
+        pluginsContentType: plugins.headers.get("content-type"),
+        pluginsBody: await plugins.json(),
+        tasksStatus: tasks.status,
+        tasksBody: await tasks.json(),
+        filesStatus: files.status,
+        filesBody: await files.json(),
       };
     });
     expect(rendererContract.origin).toBe("echo-app://app");
@@ -226,9 +250,18 @@ test("desktop backend spawns and the renderer reaches it", async () => {
     expect(rendererContract.healthAllowOrigin).not.toBe("*");
     expect(rendererContract.authStatus).toBe(200);
     expect(rendererContract.authBody).toMatchObject({ enabled: true });
-    expect(rendererContract.pluginStatus).toBe(200);
-    expect(rendererContract.pluginContentType).toContain("text/html");
-    expect(rendererContract.pluginBody).toContain("<");
+    expect(rendererContract.loginStatus).toBe(200);
+    expect(rendererContract.pluginsStatus).toBe(200);
+    expect(rendererContract.pluginsContentType).toContain("application/json");
+    expect(Array.isArray(rendererContract.pluginsBody)).toBe(true);
+    expect(rendererContract.tasksStatus).toBe(200);
+    expect(rendererContract.tasksBody).toMatchObject({
+      schema: "echo.task_projection.v1",
+    });
+    expect(Array.isArray(rendererContract.tasksBody.tasks)).toBe(true);
+    expect(rendererContract.tasksBody.counts).toBeTruthy();
+    expect(rendererContract.filesStatus).toBe(200);
+    expect(Array.isArray(rendererContract.filesBody.entries)).toBe(true);
 
     // Authenticate through the custom origin, then establish the raw
     // loopback WebSocket transport used by realtime/terminal/tentacle hooks.
@@ -337,16 +370,13 @@ test("browser profile downloads can pause, resume, and cancel", async () => {
             () => reject(new Error("download event timeout")),
             10_000,
           );
-          const off = window.echo!.on(
-            "browser:download-event",
-            (...args) => {
-              const payload = args[0] as { id?: string; state?: string };
-              if (!payload?.id || payload.state !== "progressing") return;
-              window.clearTimeout(timeout);
-              off();
-              resolve(payload.id);
-            },
-          );
+          const off = window.echo!.on("browser:download-event", (...args) => {
+            const payload = args[0] as { id?: string; state?: string };
+            if (!payload?.id || payload.state !== "progressing") return;
+            window.clearTimeout(timeout);
+            off();
+            resolve(payload.id);
+          });
           const webview = document.createElement("webview");
           webview.setAttribute("partition", "persist:echo-browser");
           webview.setAttribute("src", pageUrl);

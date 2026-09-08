@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const identity = vi.hoisted(() => ({ actor: "account-a" }));
+
+vi.mock("@/core/auth/api", () => ({
+  currentActorId: () => identity.actor,
+}));
 
 import {
   preferredWorkbenchTab,
@@ -8,6 +14,7 @@ import {
 
 describe("persona workbench preferences", () => {
   beforeEach(() => {
+    identity.actor = "account-a";
     window.localStorage.clear();
   });
 
@@ -36,5 +43,14 @@ describe("persona workbench preferences", () => {
     rememberWorkbenchTab("general", "project");
     rememberWorkbenchTab("general", "artifacts");
     expect(rememberedWorkbenchTab("general")).toBeNull();
+  });
+
+  it("keeps tab choices isolated between accounts", () => {
+    rememberWorkbenchTab("general", "browser");
+    identity.actor = "account-b";
+    expect(rememberedWorkbenchTab("general")).toBeNull();
+    rememberWorkbenchTab("general", "terminal");
+    identity.actor = "account-a";
+    expect(rememberedWorkbenchTab("general")).toBe("browser");
   });
 });

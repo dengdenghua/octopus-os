@@ -241,9 +241,10 @@ Linux 镜像 workflow 已定义一次完整的临时 NBD 写盘：先验证签�
 Recovery、凭据驱动的真实 OEM 首启、生产 SDDM/X11、SDDM/Wayland 候选和直接桌面
 五个 Secure-Boot QEMU 门都以这块安装后 raw 为输入，而不是继续启动构建源 raw。
 OEM 门只在一次性副本注入 SDDM autologin；账户、密码哈希、地区状态和完成标记均由
-生产 OEM 程序在启动中生成，随机明文密码仅通过 VM systemd credential 传递。当前
-工作区尚未在 Linux runner 执行该未提交 workflow，因此这是可执行验收定义，不是
-已经成功安装或完成首启的运行证据。
+生产 OEM 程序在启动中生成，随机明文密码仅通过 VM systemd credential 传递。远端
+`os-image` 唯一一次运行在在线源预检即失败，未进入 dedicated Linux runner；根因是
+Debian source-contract 容器没有安装其调用的 `gh`。当前工作区已补依赖和回归合同，
+但尚未推送重跑，因此这些仍是可执行验收定义，不是已经成功安装或完成首启的运行证据。
 
 workflow 的最后一步还会运行 `verify-os-image-evidence.py`。只有安装、Recovery、
 换 TPM、factory reset、OEM/SDDM、X11/Wayland、独立备份盘、promoted restore 试运行和

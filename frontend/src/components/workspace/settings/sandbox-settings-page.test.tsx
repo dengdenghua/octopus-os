@@ -11,30 +11,32 @@ describe("SandboxSettingsPage", () => {
     window.localStorage.clear();
   });
 
-  it("renders three independent axes with defaults highlighted", () => {
+  it("renders execution, permission, and network controls with safe defaults", () => {
     renderWithProviders(<SandboxSettingsPage />);
 
     // Execution environment axis.
-    expect(
-      screen.getByRole("button", { name: /^Sandbox/ }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Sandbox/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(screen.getByRole("button", { name: /^Local/ })).toBeInTheDocument();
 
     // Permission level axis.
     expect(
-      screen.getByRole("button", { name: /^Default/ }),
+      screen.getByRole("button", { name: /^Ask for approval/ }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
-      screen.getByRole("button", { name: /^Accept edits/ }),
+      screen.getByRole("button", { name: /^Approve for me/ }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /^Full access/ }),
     ).toBeInTheDocument();
 
     // Network access axis — three tiers, deny highlighted by default.
-    expect(
-      screen.getByRole("button", { name: /^Blocked/ }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Blocked/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(
       screen.getByRole("button", { name: /^Common domains/ }),
     ).toBeInTheDocument();
@@ -63,7 +65,7 @@ describe("SandboxSettingsPage", () => {
     );
   });
 
-  it("switches the permission level without touching the other axes", () => {
+  it("switches the permission level to the inclusive full-access profile", () => {
     renderWithProviders(<SandboxSettingsPage />);
 
     fireEvent.click(screen.getByRole("button", { name: /^Full access/ }));
@@ -71,14 +73,27 @@ describe("SandboxSettingsPage", () => {
     const persisted = getLocalSettings();
     expect(persisted.context.permission_mode).toBe("bypassPermissions");
     expect(persisted.context.approval_policy).toBe("never");
-    // The environment axis is untouched (still sandbox by default).
-    expect(persisted.context.execution_environment).toBe("sandbox");
-    // The network axis is untouched.
-    expect(persisted.context.network_access).toBe("deny");
+    expect(persisted.context.approvals_reviewer).toBe("user");
+    // Full access is an inclusive local profile with full network access.
+    expect(persisted.context.execution_environment).toBe("local");
+    expect(persisted.context.network_access).toBe("full");
 
     expect(
       screen.getByRole("button", { name: /^Full access/ }),
     ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("routes Approve for me through automatic review in the workspace sandbox", () => {
+    renderWithProviders(<SandboxSettingsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Approve for me/ }));
+
+    const persisted = getLocalSettings();
+    expect(persisted.context.permission_mode).toBe("acceptEdits");
+    expect(persisted.context.approval_policy).toBe("on-request");
+    expect(persisted.context.approvals_reviewer).toBe("auto_review");
+    expect(persisted.context.execution_environment).toBe("sandbox");
+    expect(persisted.context.sandbox_mode).toBe("sandbox");
   });
 
   it("switches network access to the common-domains tier without touching the other axes", () => {
@@ -110,7 +125,7 @@ describe("SandboxSettingsPage", () => {
     );
   });
 
-  it("keeps all three axes independent when re-rendering an existing combination", () => {
+  it("restores the official sandbox boundary when selecting an approval mode", () => {
     window.localStorage.setItem(
       "echo.local-settings",
       JSON.stringify({
@@ -131,59 +146,57 @@ describe("SandboxSettingsPage", () => {
       "true",
     );
     expect(
-      screen.getByRole("button", { name: /^Accept edits/ }),
+      screen.getByRole("button", { name: /^Approve for me/ }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: /^Allowed/ })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
 
-    // Change only the permission axis; environment and network stay.
-    fireEvent.click(screen.getByRole("button", { name: /^Default/ }));
+    // Selecting an approval mode restores its official workspace sandbox.
+    fireEvent.click(screen.getByRole("button", { name: /^Ask for approval/ }));
 
     const persisted = getLocalSettings();
     expect(persisted.context.permission_mode).toBe("default");
-    expect(persisted.context.execution_environment).toBe("local");
-    // Unchanged axes keep their raw stored value (legacy true).
+    expect(persisted.context.approvals_reviewer).toBe("user");
+    expect(persisted.context.execution_environment).toBe("sandbox");
+    expect(persisted.context.sandbox_mode).toBe("sandbox");
+    // The network axis keeps its raw stored value (legacy true).
     expect(persisted.context.network_access).toBe(true);
   });
 });
 
-  it("toggles the guardian independent review switch and persists it", () => {
-    renderWithProviders(<SandboxSettingsPage />);
+it("toggles the guardian independent review switch and persists it", () => {
+  renderWithProviders(<SandboxSettingsPage />);
 
-    // Off by default.
-    expect(
-      screen.queryByLabelText(/Review model/),
-    ).not.toBeInTheDocument();
+  // Off by default.
+  expect(screen.queryByLabelText(/Review model/)).not.toBeInTheDocument();
 
-    const toggle = screen.getByRole("switch", {
-      name: /Enable independent review/i,
-    });
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("data-state", "checked");
-
-    // Enabling reveals the review-model input, empty by default
-    // (empty = follow the conversation's own model).
-    const modelInput = screen.getByLabelText(/Review model/);
-    expect(modelInput).toHaveValue("");
-
-    // Persisted to local settings.
-    const saved = getLocalSettings();
-    expect(saved.context.guardian_review_enabled).toBe(true);
-
-    fireEvent.change(modelInput, { target: { value: "agnes-2.5-flash" } });
-    expect(getLocalSettings().context.guardian_review_model).toBe(
-      "agnes-2.5-flash",
-    );
-    // Clearing the input resets to "follow conversation model".
-    fireEvent.change(modelInput, { target: { value: "" } });
-    expect(getLocalSettings().context.guardian_review_model).toBeUndefined();
-
-    // Toggling off hides the model input and clears the flag.
-    fireEvent.click(toggle);
-    expect(
-      screen.queryByLabelText(/Review model/),
-    ).not.toBeInTheDocument();
-    expect(getLocalSettings().context.guardian_review_enabled).toBe(false);
+  const toggle = screen.getByRole("switch", {
+    name: /Enable independent review/i,
   });
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute("data-state", "checked");
+
+  // Enabling reveals the review-model input, empty by default
+  // (empty = follow the conversation's own model).
+  const modelInput = screen.getByLabelText(/Review model/);
+  expect(modelInput).toHaveValue("");
+
+  // Persisted to local settings.
+  const saved = getLocalSettings();
+  expect(saved.context.guardian_review_enabled).toBe(true);
+
+  fireEvent.change(modelInput, { target: { value: "agnes-2.5-flash" } });
+  expect(getLocalSettings().context.guardian_review_model).toBe(
+    "agnes-2.5-flash",
+  );
+  // Clearing the input resets to "follow conversation model".
+  fireEvent.change(modelInput, { target: { value: "" } });
+  expect(getLocalSettings().context.guardian_review_model).toBeUndefined();
+
+  // Toggling off hides the model input and clears the flag.
+  fireEvent.click(toggle);
+  expect(screen.queryByLabelText(/Review model/)).not.toBeInTheDocument();
+  expect(getLocalSettings().context.guardian_review_enabled).toBe(false);
+});

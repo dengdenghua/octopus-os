@@ -137,6 +137,7 @@ def _flatten_turns_to_messages(
             # doing or how far it got.
             failed_user = ""
             user_id: Any = None
+            failed_context_files: list[dict[str, Any]] = []
             last_answer: str | None = None
             error_item: Any = None
             for item in turn.items:
@@ -144,6 +145,9 @@ def _flatten_turns_to_messages(
                 if t == "userMessage":
                     failed_user = getattr(item, "text", "") or ""
                     user_id = getattr(item, "id", None)
+                    raw_context_files = getattr(item, "context_files", None)
+                    if isinstance(raw_context_files, list):
+                        failed_context_files = raw_context_files
                 elif t == "agentMessage" and (getattr(item, "message_kind", "answer") == "answer"):
                     text = (getattr(item, "text", "") or "").strip()
                     if text:
@@ -156,6 +160,11 @@ def _flatten_turns_to_messages(
                         "type": "human",
                         "id": user_id,
                         "content": failed_user,
+                        **(
+                            {"additional_kwargs": {"context_files": failed_context_files}}
+                            if failed_context_files
+                            else {}
+                        ),
                     }
                 )
             if last_answer:
@@ -282,11 +291,18 @@ def _flatten_turns_to_messages(
             t = getattr(item, "type", None)
             if t == "userMessage":
                 flush_trailing_ai(turn.status)
+                context_files = getattr(item, "context_files", None)
+                additional_kwargs = (
+                    {"context_files": context_files}
+                    if isinstance(context_files, list) and context_files
+                    else {}
+                )
                 messages.append(
                     {
                         "type": "human",
                         "id": getattr(item, "id", None),
                         "content": getattr(item, "text", "") or "",
+                        **({"additional_kwargs": additional_kwargs} if additional_kwargs else {}),
                     }
                 )
             elif t == "reasoning":

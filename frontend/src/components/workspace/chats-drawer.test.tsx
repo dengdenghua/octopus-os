@@ -17,10 +17,23 @@ vi.mock("@/core/threads/hooks", () => ({
   useRenameThread: () => ({ isPending: false, mutate: vi.fn() }),
 }));
 
+vi.mock("@/core/agents", () => ({
+  useAgents: () => ({
+    agents: [{ name: "general" }],
+    isLoading: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 describe("ChatsDrawer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.localStorage.setItem("echo.active-agent", "installed_researcher");
+    window.localStorage.setItem(
+      "echo.active-agent.v2:anonymous",
+      "installed_researcher",
+    );
   });
 
   it("migrates an on-demand identity selection to the default fixed persona", () => {

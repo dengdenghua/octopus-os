@@ -7,11 +7,18 @@
  * mock fetch sequence — these tests focus on the two new sections.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 import { renderWithProviders } from "@/test/harness";
 
 import PrivacySettingsPage from "./privacy-settings-page";
+import { AI_MODE_CHANGED } from "@/core/privacy/api";
 
 const fetchMock = vi.fn();
 
@@ -109,6 +116,39 @@ afterEach(() => {
 });
 
 describe("PrivacySettingsPage · AI mode section", () => {
+  it("keeps the latest policy when an older status request finishes late", async () => {
+    let finishOlderRequest!: (response: Response) => void;
+    let modeReads = 0;
+    const olderRequest = new Promise<Response>((resolve) => {
+      finishOlderRequest = resolve;
+    });
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith("/api/ai-mode")) {
+        modeReads += 1;
+        return modeReads === 1
+          ? olderRequest
+          : Promise.resolve(
+              jsonResponse({ ...AI_MODE_RESPONSE, mode: "privacy" }),
+            );
+      }
+      return Promise.resolve(jsonResponse({}, 404));
+    });
+    renderWithProviders(<PrivacySettingsPage />, { locale: "zh-CN" });
+    await waitFor(() => expect(modeReads).toBe(1));
+    act(() => {
+      window.dispatchEvent(new Event(AI_MODE_CHANGED));
+    });
+    expect(
+      await screen.findByRole("button", { name: /隐私模式/, pressed: true }),
+    ).toBeInTheDocument();
+    await act(async () => {
+      finishOlderRequest(jsonResponse(AI_MODE_RESPONSE));
+    });
+    expect(
+      screen.getByRole("button", { name: /隐私模式/, pressed: true }),
+    ).toBeInTheDocument();
+  });
+
   it("renders both efficiency and privacy mode cards", async () => {
     installFetchRouter({
       "/api/config/identity-lock": () => IDENTITY_LOCK_RESPONSE,
@@ -292,9 +332,7 @@ describe("PrivacySettingsPage · path denylist section", () => {
     );
 
     // Click "新增" to open the dialog.
-    fireEvent.click(
-      screen.getByRole("button", { name: "添加不可读取文件夹" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "添加不可读取文件夹" }));
 
     const dialog = await screen.findByRole("dialog");
     const input = within(dialog).getByLabelText(/路径/);
@@ -334,9 +372,7 @@ describe("PrivacySettingsPage · path denylist section", () => {
 
     renderWithProviders(<PrivacySettingsPage />, { locale: "zh-CN" });
     await screen.findByText("C:/Users/me/secrets");
-    fireEvent.click(
-      screen.getByRole("button", { name: "添加不可读取文件夹" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "添加不可读取文件夹" }));
 
     const dialog = await screen.findByRole("dialog");
     const input = within(dialog).getByLabelText(/路径/);
@@ -381,9 +417,7 @@ describe("PrivacySettingsPage · factory reset", () => {
       );
     });
     expect(screen.getByRole("dialog", { name: "恢复出厂设置" })).toBeVisible();
-    expect(window.localStorage.getItem("echo:test-state")).toBe(
-      "preserve-me",
-    );
+    expect(window.localStorage.getItem("echo:test-state")).toBe("preserve-me");
     window.localStorage.removeItem("echo:test-state");
   });
 });

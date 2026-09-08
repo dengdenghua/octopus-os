@@ -22,8 +22,9 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 # 设备名白名单:只允许 sd*/nvme* 的 basename,挡掉 ../ 与任意路径。
 _DEV_RE = re.compile(r"^(sd[a-z]+|nvme\d+n\d+|md\d+|vd[a-z]+)$")
@@ -115,8 +116,7 @@ class StorageInspector:
     # ── 能力探测 ────────────────────────────────────────────
     def capabilities(self) -> dict[str, bool]:
         return {
-            "zfs": shutil.which("zpool") is not None
-            and shutil.which("zfs") is not None,
+            "zfs": shutil.which("zpool") is not None and shutil.which("zfs") is not None,
             "mdadm": shutil.which("mdadm") is not None,
             "smart": shutil.which("smartctl") is not None,
             "lvm": shutil.which("lvs") is not None,
@@ -154,11 +154,7 @@ class StorageInspector:
                     serial=(node.get("serial") or "").strip() or "unknown",
                     removable=str(node.get("rm")) in {"1", "True", "true"},
                 )
-                disk.partitions = [
-                    p
-                    for c in node.get("children", [])
-                    if (p := parse_partition(c))
-                ]
+                disk.partitions = [p for c in node.get("children", []) if (p := parse_partition(c))]
                 return disk
             return None
 

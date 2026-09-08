@@ -59,10 +59,7 @@ function EchoGlyph({ className }: { className?: string }) {
   );
 }
 
-export function EchoBrandMark({
-  className,
-  size = "md",
-}: EchoBrandMarkProps) {
+export function EchoBrandMark({ className, size = "md" }: EchoBrandMarkProps) {
   const cfg = sizeConfig[size];
 
   return (

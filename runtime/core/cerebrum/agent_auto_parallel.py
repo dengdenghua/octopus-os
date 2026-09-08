@@ -308,11 +308,13 @@ def _subagent_task_runner(
     del cancel_event  # orchestrator cancellation flows through call_subagent
     from runtime.execution.subagents.bridge import call_subagent
 
+    parent_session = context.get("caller_session") if isinstance(context, dict) else None
     result = call_subagent(
         agent_id=subagent_name,
         prompt=description,
         context=context if isinstance(context, dict) else None,
         timeout_s=_SUBAGENT_TIMEOUT_S,
+        session=parent_session,
     )
     return str(result.get("output") or "")
 
@@ -355,6 +357,26 @@ def run_auto_parallel(
             "completed": 0,
             "total": 0,
         }
+
+    # The orchestrator schedules its workers on a separate pool. Preserve the
+    # already-authenticated host Session across that boundary so each child
+    # subagent inherits the same immutable request, lease, and permission
+    # ceiling instead of becoming an unscoped background turn.
+    try:
+        from runtime.platform.process.session import current_session
+
+        parent_session = current_session()
+    except (ImportError, AttributeError):
+        parent_session = None
+    if parent_session is not None:
+        has_host_contract = bool(
+            getattr(parent_session, "execution_request", None)
+            or getattr(parent_session, "execution_lease", None)
+        )
+        if has_host_contract:
+            context = {**(context or {}), "caller_session": parent_session}
+            if owner_id is None:
+                owner_id = str(getattr(parent_session, "actor", "") or "").strip() or None
 
     orchestrator = get_auto_parallel_orchestrator()
     tasks = [

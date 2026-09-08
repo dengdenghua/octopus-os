@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import os
 import stat
 import threading
@@ -44,6 +45,7 @@ from .types import (
 )
 
 _LOG = logging.getLogger(__name__)
+_MODEL_CATALOG_TTL_S = 60.0
 _LEGACY_MARKETPLACE_MAX_BYTES = 16 * 1024 * 1024
 _LEGACY_PLUGIN_MANIFEST_MAX_BYTES = 2 * 1024 * 1024
 
@@ -233,7 +235,7 @@ class CodexAccountService:
         if runtime is None:
             return None
         cached = runtime.model_catalog_cache.get(include_hidden)
-        if cached is None:
+        if cached is None or time.monotonic() - cached[0] >= _MODEL_CATALOG_TTL_S:
             return None
         return [dict(model) for model in cached[1]]
 
@@ -398,7 +400,7 @@ class CodexAccountService:
         async with runtime.lock:
             await self._drain_notifications(runtime)
             cached = runtime.model_catalog_cache.get(include_hidden)
-            if cached is not None:
+            if cached is not None and time.monotonic() - cached[0] < _MODEL_CATALOG_TTL_S:
                 runtime.last_used = time.monotonic()
                 return [dict(model) for model in cached[1]]
             cursor: str | None = None
@@ -735,6 +737,11 @@ class CodexAccountService:
                 "TEMP": str(temporary),
                 "PATH": os.environ.get("PATH") or os.defpath,
             }
+            if os.name == "nt":
+                for name in ("SYSTEMROOT", "COMSPEC", "PATHEXT", "WINDIR"):
+                    value = os.environ.get(name)
+                    if value:
+                        environment[name] = value
             config = CodexAppServerConfig(
                 command=command,
                 cwd=str(home.parent),
@@ -900,6 +907,8 @@ def _normalize_rate_window(raw: Any) -> dict[str, object] | None:
         raise ProtocolError("account/rateLimits/read windowDurationMins must be non-negative")
     if isinstance(reset, bool) or not isinstance(reset, int) or reset < 0:
         raise ProtocolError("account/rateLimits/read resetsAt must be non-negative")
+    if not math.isfinite(used):
+        raise ProtocolError("account/rateLimits/read usedPercent must be finite")
     used_percent = min(100.0, max(0.0, float(used)))
     return {
         "used_percent": used_percent,

@@ -71,6 +71,7 @@ class ServerMethod(StrEnum):
     # streaming spinner and mark the turn as cancelled.
     TURN_INTERRUPTED = "turn/interrupted"
     TURN_DIFF_UPDATED = "turn/diff/updated"
+    TURN_EXECUTION_UPDATED = "turn/execution/updated"
     # Emitted by ``_ReactBridgeState._emit_turn_update`` on every tool
     # lifecycle tick, carrying ``phases`` + ``workbenchSnapshot``. The
     # phases themselves are still *derived* — ``_phases_from_todo_preview``

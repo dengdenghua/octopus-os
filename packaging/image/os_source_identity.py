@@ -101,7 +101,13 @@ def _validate_payload(payload: Any) -> dict[str, Any]:
 
 
 def _read_regular(path: Path) -> bytes:
-    flags = os.O_RDONLY | os.O_CLOEXEC
+    if path.is_symlink():
+        raise SourceIdentityError("OS source identity must be a regular non-symlink file")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -226,7 +232,13 @@ def write_identity(path: Path, payload: dict[str, Any], repo: Path) -> None:
     if len(encoded) > MAX_MANIFEST_BYTES:
         raise SourceIdentityError("OS source identity output exceeds 16 KiB")
     temporary = output.with_name(f".{output.name}.{os.getpid()}.tmp")
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_CLOEXEC
+    flags = (
+        os.O_CREAT
+        | os.O_EXCL
+        | os.O_WRONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     descriptor = os.open(temporary, flags, 0o600)
@@ -238,13 +250,17 @@ def write_identity(path: Path, payload: dict[str, Any], repo: Path) -> None:
                 raise SourceIdentityError("cannot write the OS source identity")
             offset += written
         os.fsync(descriptor)
-        os.fchmod(descriptor, 0o444)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o444)
     except BaseException:
+        os.close(descriptor)
         temporary.unlink(missing_ok=True)
         raise
-    finally:
+    else:
         os.close(descriptor)
     try:
+        if not hasattr(os, "fchmod"):
+            temporary.chmod(0o444)
         os.replace(temporary, output)
     except BaseException:
         temporary.unlink(missing_ok=True)

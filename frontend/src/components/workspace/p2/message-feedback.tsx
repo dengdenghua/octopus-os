@@ -169,7 +169,9 @@ export function MessageFeedback({
             title="Add comment"
             aria-label="Add feedback comment"
           >
-            <MessageCircleIcon className={cn("size-4", compact && "size-3.5")} />
+            <MessageCircleIcon
+              className={cn("size-4", compact && "size-3.5")}
+            />
           </button>
         </DialogTrigger>
 
@@ -238,16 +240,18 @@ export function MessageFeedback({
       </Dialog>
 
       {/* Existing feedback indicator */}
-      {existingFeedback && (existingFeedback.tags.length > 0 || existingFeedback.comment) && (
-        <span className="text-muted-foreground text-xs">
-          {existingFeedback.tags.length > 0 && (
-            <span className="inline-flex items-center gap-1">
-              {existingFeedback.tags.slice(0, 2).join(", ")}
-              {existingFeedback.tags.length > 2 && ` +${existingFeedback.tags.length - 2}`}
-            </span>
-          )}
-        </span>
-      )}
+      {existingFeedback &&
+        (existingFeedback.tags.length > 0 || existingFeedback.comment) && (
+          <span className="text-muted-foreground text-xs">
+            {existingFeedback.tags.length > 0 && (
+              <span className="inline-flex items-center gap-1">
+                {existingFeedback.tags.slice(0, 2).join(", ")}
+                {existingFeedback.tags.length > 2 &&
+                  ` +${existingFeedback.tags.length - 2}`}
+              </span>
+            )}
+          </span>
+        )}
     </div>
   );
 }

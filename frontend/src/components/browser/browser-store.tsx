@@ -1,6 +1,12 @@
 /* Implementation note. */
 
 import { swallow } from "@/core/utils/log";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
+import { useOptionalAuth } from "@/providers/AuthProvider";
 import {
   createContext,
   useCallback,
@@ -8,6 +14,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -19,13 +26,28 @@ const HISTORY_KEY = "echo:browser-history";
 const BOOKMARKS_KEY = "echo:browser-bookmarks";
 const SETTINGS_KEY = "echo:browser-settings";
 export const BROWSER_OPEN_URL_REQUEST_KEY = "echo:browser-open-url-request";
-export const BROWSER_OPEN_URL_REQUEST_EVENT =
-  "echo:browser-open-url-request";
+export const browserOpenUrlRequestStorageKey = (actor = currentActorId()) =>
+  actorScopedStorageKey(BROWSER_OPEN_URL_REQUEST_KEY, actor);
+export const BROWSER_OPEN_URL_REQUEST_EVENT = "echo:browser-open-url-request";
 export const BROWSER_OPEN_URL_ACK_EVENT = "echo:browser-open-url-ack";
 export const BROWSER_EDIT_HOME_EVENT = "echo:browser-edit-home";
 export const BROWSER_HOME_URL = "echo://home";
 const LEGACY_DEFAULT_HOMEPAGE = "https://www.google.com";
 const DEFAULT_HOMEPAGE = BROWSER_HOME_URL;
+
+function browserProfileStorageKey(
+  key: string,
+  actor = currentActorId(),
+): string {
+  return actorScopedStorageKey(key, actor);
+}
+
+function readBrowserProfileValue(
+  key: string,
+  actor = currentActorId(),
+): string | null {
+  return readActorScopedStorageValue(key, actor);
+}
 
 export interface BrowserSettings {
   homepage: string;
@@ -47,10 +69,10 @@ export const SEARCH_ENGINE_URLS: Record<
   duckduckgo: "https://duckduckgo.com/?q=",
 };
 
-function loadSettings(): BrowserSettings {
+function loadSettings(actor = currentActorId()): BrowserSettings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    const raw = readBrowserProfileValue(SETTINGS_KEY, actor);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw);
     const next = { ...DEFAULT_SETTINGS, ...parsed };
@@ -64,10 +86,13 @@ function loadSettings(): BrowserSettings {
   }
 }
 
-function saveSettings(s: BrowserSettings): void {
+function saveSettings(s: BrowserSettings, actor = currentActorId()): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+    localStorage.setItem(
+      browserProfileStorageKey(SETTINGS_KEY, actor),
+      JSON.stringify(s),
+    );
   } catch (e) {
     swallow(e, "storage");
   }
@@ -90,10 +115,10 @@ export interface Bookmark {
   addedAt: number;
 }
 
-function loadHistory(): HistoryEntry[] {
+function loadHistory(actor = currentActorId()): HistoryEntry[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = readBrowserProfileValue(HISTORY_KEY, actor);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -103,11 +128,11 @@ function loadHistory(): HistoryEntry[] {
   }
 }
 
-function saveHistory(items: HistoryEntry[]): void {
+function saveHistory(items: HistoryEntry[], actor = currentActorId()): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(
-      HISTORY_KEY,
+      browserProfileStorageKey(HISTORY_KEY, actor),
       JSON.stringify(items.slice(0, MAX_HISTORY)),
     );
   } catch (e) {
@@ -115,10 +140,10 @@ function saveHistory(items: HistoryEntry[]): void {
   }
 }
 
-function loadBookmarks(): Bookmark[] {
+function loadBookmarks(actor = currentActorId()): Bookmark[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(BOOKMARKS_KEY);
+    const raw = readBrowserProfileValue(BOOKMARKS_KEY, actor);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -128,11 +153,11 @@ function loadBookmarks(): Bookmark[] {
   }
 }
 
-function saveBookmarks(items: Bookmark[]): void {
+function saveBookmarks(items: Bookmark[], actor = currentActorId()): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(
-      BOOKMARKS_KEY,
+      browserProfileStorageKey(BOOKMARKS_KEY, actor),
       JSON.stringify(items.slice(0, MAX_BOOKMARKS)),
     );
   } catch (e) {
@@ -191,7 +216,8 @@ type Action =
   | { type: "PATCH_TAB"; id: string; patch: Partial<BrowserTab> }
   | { type: "SET_COPILOT_OPEN"; open: boolean }
   | { type: "SET_COPILOT_WIDTH"; width: number }
-  | { type: "RESTORE_CLOSED_TAB"; id?: string };
+  | { type: "RESTORE_CLOSED_TAB"; id?: string }
+  | { type: "RESET_FROM_STORAGE"; state: BrowserState };
 
 function genId(): string {
   return `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -289,12 +315,14 @@ function reducer(state: BrowserState, action: Action): BrowserState {
         activeId: restored.id,
       };
     }
+    case "RESET_FROM_STORAGE":
+      return action.state;
     default:
       return state;
   }
 }
 
-function loadInitial(): BrowserState {
+function loadInitial(actor = currentActorId()): BrowserState {
   if (typeof window === "undefined") {
     return {
       tabs: [],
@@ -306,7 +334,7 @@ function loadInitial(): BrowserState {
     };
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = readBrowserProfileValue(STORAGE_KEY, actor);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<BrowserState>;
       const tabs = Array.isArray(parsed.tabs)
@@ -401,38 +429,55 @@ interface BrowserStoreContextType {
 const BrowserStoreContext = createContext<BrowserStoreContextType | null>(null);
 
 export function BrowserStoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, loadInitial);
-  const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => loadBookmarks());
+  const auth = useOptionalAuth();
+  const actor = auth?.user?.actor_id || auth?.user?.user_id || currentActorId();
+  const actorRef = useRef(actor);
+  const [state, dispatch] = useReducer(reducer, undefined, () =>
+    loadInitial(actor),
+  );
+  const [history, setHistory] = useState<HistoryEntry[]>(() =>
+    loadHistory(actor),
+  );
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() =>
+    loadBookmarks(actor),
+  );
   const [settings, setSettings] = useState<BrowserSettings>(() =>
-    loadSettings(),
+    loadSettings(actor),
   );
 
   const updateSettings = useCallback((patch: Partial<BrowserSettings>) => {
     setSettings((prev) => {
       const next = { ...prev, ...patch };
-      saveSettings(next);
+      saveSettings(next, actorRef.current);
       return next;
     });
-  }, []);
-  // Implementation note.
-  const [, setReady] = useState(false);
-  useEffect(() => {
-    setReady(true);
   }, []);
 
   // Implementation note.
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (actorRef.current !== actor) return;
     const t = setTimeout(() => {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        localStorage.setItem(
+          browserProfileStorageKey(STORAGE_KEY, actorRef.current),
+          JSON.stringify(state),
+        );
       } catch (e) {
         swallow(e, "storage");
       }
     }, 200);
     return () => clearTimeout(t);
-  }, [state]);
+  }, [actor, state]);
+
+  useEffect(() => {
+    if (actorRef.current === actor) return;
+    actorRef.current = actor;
+    dispatch({ type: "RESET_FROM_STORAGE", state: loadInitial(actor) });
+    setHistory(loadHistory(actor));
+    setBookmarks(loadBookmarks(actor));
+    setSettings(loadSettings(actor));
+  }, [actor]);
 
   const recordVisit = useCallback((entry: Omit<HistoryEntry, "visitedAt">) => {
     if (!entry.url || entry.url.startsWith("about:")) return;
@@ -442,7 +487,7 @@ export function BrowserStoreProvider({ children }: { children: ReactNode }) {
         { ...entry, visitedAt: Date.now() },
         ...prev.filter((h) => h.url !== entry.url),
       ].slice(0, MAX_HISTORY);
-      saveHistory(next);
+      saveHistory(next, actorRef.current);
       return next;
     });
   }, []);
@@ -455,7 +500,7 @@ export function BrowserStoreProvider({ children }: { children: ReactNode }) {
         0,
         MAX_BOOKMARKS,
       );
-      saveBookmarks(next);
+      saveBookmarks(next, actorRef.current);
       return next;
     });
   }, []);
@@ -463,7 +508,7 @@ export function BrowserStoreProvider({ children }: { children: ReactNode }) {
   const removeBookmark = useCallback((url: string) => {
     setBookmarks((prev) => {
       const next = prev.filter((x) => x.url !== url);
-      saveBookmarks(next);
+      saveBookmarks(next, actorRef.current);
       return next;
     });
   }, []);
@@ -475,7 +520,7 @@ export function BrowserStoreProvider({ children }: { children: ReactNode }) {
 
   const clearHistory = useCallback(() => {
     setHistory([]);
-    saveHistory([]);
+    saveHistory([], actorRef.current);
   }, []);
 
   const activeTab = useMemo(

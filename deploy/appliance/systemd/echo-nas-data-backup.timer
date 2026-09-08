@@ -1,0 +1,12 @@
+[Unit]
+Description=Run verified Echo NAS data backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=30min
+Unit=echo-nas-data-backup.service
+
+[Install]
+WantedBy=timers.target

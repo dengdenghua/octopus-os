@@ -646,11 +646,7 @@ function SurfaceRow({
         <div className="flex max-w-[22rem] flex-wrap gap-1">
           {enabledCapabilities.length > 0 ? (
             enabledCapabilities.map(([name]) => (
-              <Badge
-                key={name}
-                variant="outline"
-                className="font-mono text-xs"
-              >
+              <Badge key={name} variant="outline" className="font-mono text-xs">
                 {name}
               </Badge>
             ))

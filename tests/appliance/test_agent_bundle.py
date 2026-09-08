@@ -404,7 +404,11 @@ def test_dirty_snapshot_overlays_only_changed_paths(
     monkeypatch.setattr(agent_bundle.shutil, "copy2", record_copy)
     agent_bundle.snapshot_source(source, identity_path, tmp_path / "snapshot")
 
-    assert copied == ["agents/local.yaml", "prompts/system.md"]
+    expected = sorted(
+        {"agents/local.yaml", "prompts/system.md"}
+        | set(agent_bundle._tracked_paths_with_worktree_eol_variants(source))
+    )
+    assert copied == expected
 
 
 def test_dirty_snapshot_preserves_clean_mixed_eol_bytes(tmp_path: Path) -> None:

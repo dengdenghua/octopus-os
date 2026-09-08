@@ -3,6 +3,8 @@ import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { EchoMark } from "@/components/brand/echo-mark";
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   BROWSER_WORKSPACE_ROUTE,
@@ -14,6 +16,12 @@ type WorkspaceSurfaceMode = "agent" | "browser";
 
 export const LAST_AGENT_WORKSPACE_ROUTE_KEY = "echo:last-agent-workspace-route";
 
+export function lastAgentWorkspaceRouteStorageKey(
+  actor = currentActorId(),
+): string {
+  return actorScopedStorageKey(LAST_AGENT_WORKSPACE_ROUTE_KEY, actor);
+}
+
 export function WorkspaceSurfaceSwitch({
   active,
 }: {
@@ -21,12 +29,11 @@ export function WorkspaceSurfaceSwitch({
 }) {
   const { t } = useI18n();
   const location = useLocation();
+  const routeStorageKey = lastAgentWorkspaceRouteStorageKey();
   let rememberedAgentRoute: string | null = null;
   try {
     if (typeof window !== "undefined") {
-      rememberedAgentRoute = window.sessionStorage.getItem(
-        LAST_AGENT_WORKSPACE_ROUTE_KEY,
-      );
+      rememberedAgentRoute = window.sessionStorage.getItem(routeStorageKey);
     }
   } catch {
     // Storage may be disabled by the host; the primary route remains usable.
@@ -41,15 +48,12 @@ export function WorkspaceSurfaceSwitch({
     if (active !== "agent") return;
     try {
       if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(
-          LAST_AGENT_WORKSPACE_ROUTE_KEY,
-          agentReturnRoute,
-        );
+        window.sessionStorage.setItem(routeStorageKey, agentReturnRoute);
       }
     } catch {
       // A privacy-restricted host can still use the switch's default route.
     }
-  }, [active, agentReturnRoute]);
+  }, [active, agentReturnRoute, routeStorageKey]);
 
   const items = [
     {

@@ -3,7 +3,12 @@ import { Coins, Gift, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useI18n } from "@/core/i18n/hooks";
 import { useOctLink } from "@/core/oct/hooks";
 import {
@@ -97,6 +102,9 @@ export function CreditsCenterDialog({
           <DialogTitle className="text-base font-bold text-white">
             {t.creditsCenter.title}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {t.creditsCenter.title}
+          </DialogDescription>
           <button
             type="button"
             onClick={() => onOpenChange(false)}

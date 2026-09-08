@@ -85,6 +85,7 @@ COPY --from=agent-bundle-verifier /build/agent-resources/ /app/resources/
 COPY --from=agent-bundle-verifier /build/agent-codex/ /app/codex/
 COPY --from=agent-bundle-verifier /build/agent-bundle.json /app/agent-bundle.json
 COPY config.example.yaml /etc/echo/config.example.yaml
+COPY deploy/appliance/PYTHON_RUNTIME_NOTICES.md /usr/share/doc/echo-os/PYTHON_RUNTIME_NOTICES.md
 RUN chown -R echo:echo /app /etc/echo
 
 # The entrypoint starts with only uid/gid/chown capabilities, repairs the

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 from fastapi import FastAPI
@@ -46,8 +47,9 @@ def test_records_actor_action_result_and_redacts_credentials(tmp_path):
     assert entry["payload"]["action"] == "app.start"
     assert entry["payload"]["metadata"]["access_token"] == "[redacted]"
     assert "must-not-leak" not in audit.path.read_text(encoding="utf-8")
-    assert audit.path.stat().st_mode & 0o777 == 0o600
-    assert audit.checkpoint_path.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert audit.path.stat().st_mode & 0o777 == 0o600
+        assert audit.checkpoint_path.stat().st_mode & 0o777 == 0o600
     assert audit.verify().ok is True
 
 
@@ -152,7 +154,8 @@ def test_rotates_signing_key_without_losing_v1_verification(tmp_path):
     assert rotated["secretsPersisted"] is False
     assert after["key_id"] == rotated["activeKeyId"]
     assert audit.verify().ok is True
-    assert audit.keyring_path.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert audit.keyring_path.stat().st_mode & 0o777 == 0o600
     assert JWT_SECRET not in audit.keyring_path.read_text()
 
     restarted = ApplianceAudit.from_data_dir(tmp_path, jwt_secret=JWT_SECRET)

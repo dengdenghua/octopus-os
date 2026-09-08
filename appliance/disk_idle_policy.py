@@ -29,9 +29,7 @@ MAX_BLOCK_DEVICES = 256
 IDLE_CODES = {0: 0, 30: 241, 60: 242, 120: 244, 240: 248}
 _DEVICE = re.compile(r"^/dev/[A-Za-z0-9_.!+-]+$")
 _TRANSPORTS = frozenset({"ata", "sata"})
-_SYSTEM_MOUNT_ROOTS = frozenset(
-    {"/boot", "/efi", "/etc", "/home", "/opt", "/run", "/usr", "/var"}
-)
+_SYSTEM_MOUNT_ROOTS = frozenset({"/boot", "/efi", "/etc", "/home", "/opt", "/run", "/usr", "/var"})
 _THREAD_LOCK = threading.RLock()
 
 
@@ -118,8 +116,7 @@ def _is_system_mount(value: str) -> bool:
     if mountpoint in {"/", "[SWAP]"}:
         return True
     return any(
-        mountpoint == root or mountpoint.startswith(f"{root}/")
-        for root in _SYSTEM_MOUNT_ROOTS
+        mountpoint == root or mountpoint.startswith(f"{root}/") for root in _SYSTEM_MOUNT_ROOTS
     )
 
 
@@ -300,7 +297,9 @@ def plan_policy(
 ) -> dict[str, Any]:
     desired = _desired(desired_state)
     configured, current = read_policy(path, trusted_uid=trusted_uid)
-    operation = "none" if desired == current else "disable" if desired["idleMinutes"] == 0 else "set"
+    operation = (
+        "none" if desired == current else "disable" if desired["idleMinutes"] == 0 else "set"
+    )
     installed = service_installed(service_path, trusted_uid=trusted_uid)
     devices: list[dict[str, Any]] = []
     if operation != "none":

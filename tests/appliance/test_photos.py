@@ -14,6 +14,8 @@ from appliance.approval import APPROVAL_HEADER, HighRiskApprovalService, create_
 from appliance.audit import ApplianceAudit
 from appliance.data_access import DataAccessScope, DataPathRule
 from appliance.photos import PhotoLibraryService, PhotoPathError, create_photos_router
+from appliance.photos.job_store import idle_job
+from runtime.platform.resource_identity import photo_library_id
 from runtime.safety.auth.identity import encode_jwt_hs256
 
 JWT_SECRET = "photos-test-secret-that-is-long-enough-for-local-jwt"
@@ -175,6 +177,13 @@ def test_member_photo_projection_filters_every_path_and_index_side_channel(tmp_p
     ).json()
 
     assert [item["path"] for item in library["items"]] == ["Family/allowed.jpg"]
+    assert library["source"]["id"] == status["source"]["id"] == search["source"]["id"]
+    assert library["source"]["id"] == photo_library_id(root)
+    for item in (library["items"][0], search["items"][0]):
+        assert item["sourceKind"] == "photo-library"
+        assert item["sourceId"] == library["source"]["id"]
+        assert len(item["assetId"]) == 64
+        assert len(item["assetRevision"]) == 64
     assert library["total"] == 1
     assert status["library"]["imageCount"] == 1
     assert status["index"]["indexed"] == 1
@@ -256,6 +265,40 @@ def test_thumbnail_is_bounded_cacheable_and_rejects_traversal_or_symlink(tmp_pat
             raise AssertionError(f"unsafe thumbnail path accepted: {unsafe}")
 
 
+def test_iphone_heic_and_heif_enter_library_serve_inline_and_generate_webp_preview(
+    tmp_path: Path,
+) -> None:
+    from pillow_heif import from_pillow
+
+    root = tmp_path / "nas"
+    root.mkdir()
+    expected_types = {"iphone.heic": "image/heic", "export.heif": "image/heif"}
+    for index, name in enumerate(expected_types):
+        image = Image.new("RGB", (96, 54), (40 + index * 20, 120, 200))
+        from_pillow(image).save(root / name, quality=90)
+    service = PhotoLibraryService(root, tmp_path / "state", backend=_Backend())
+
+    library = service.library()
+
+    assert library["total"] == 2
+    assert {item["name"]: item["fileType"] for item in library["items"]} == {
+        "iphone.heic": "heic",
+        "export.heif": "heif",
+    }
+    for name, expected_type in expected_types.items():
+        opened = service.original(name)
+        assert opened.media_type == expected_type
+        with opened.stream as stream:
+            assert stream.read(8)[4:] == b"ftyp"
+        payload, media_type, etag = service.thumbnail(name, size=64)
+        assert payload is not None
+        assert media_type == "image/webp"
+        assert len(etag) == 64
+        with Image.open(__import__("io").BytesIO(payload)) as preview:
+            assert preview.format == "WEBP"
+            assert max(preview.size) <= 64
+
+
 def test_original_is_authenticated_cacheable_range_safe_and_keeps_inline_mime(tmp_path) -> None:
     root = tmp_path / "nas"
     source = root / "album" / "wide.jpg"
@@ -311,6 +354,7 @@ def test_plan_is_deterministic_and_blocks_missing_backend_or_unsafe_link(tmp_pat
     assert first["ready"] is False
     assert [item["code"] for item in first["blockers"]] == ["AGENT_INDEX_UNAVAILABLE"]
     assert first["approvalAction"] == "photos.index.build"
+    assert first["source"]["id"] == photo_library_id(root)
 
     outside = tmp_path / "outside.jpg"
     _image(outside)
@@ -368,7 +412,27 @@ def test_approved_index_job_uses_vetted_paths_and_publishes_status_and_search(tm
     assert ".echo-trash/secret.jpg" not in backend.builds[0][2]
     status = client.get("/api/appliance/photos/status").json()
     assert status["index"] == {
+        "canManage": True,
         "backendAvailable": True,
+        "cleanupAvailable": False,
+        "readiness": {
+            "schema": "echo.photos.readiness.v1",
+            "browseAvailable": True,
+            "previewAvailable": True,
+            "semantic": {
+                "available": True,
+                "state": "dependencies-ready",
+                "missingDependencies": [],
+                "modelsLoaded": False,
+            },
+            "faces": {
+                "available": True,
+                "state": "dependencies-ready",
+                "missingDependencies": [],
+                "modelsLoaded": False,
+            },
+            "modelDownloadMayBeRequired": False,
+        },
         "databaseExists": True,
         "maxFiles": 4000,
         "indexed": 2,
@@ -422,3 +486,37 @@ def test_plan_drift_is_rejected_before_approval_is_consumed(tmp_path) -> None:
 
     assert changed.status_code == 409
     assert backend.builds == []
+
+
+def test_member_status_hides_completed_global_job_identity_and_counts(tmp_path) -> None:
+    root = tmp_path / "nas"
+    _image(root / "Family" / "allowed.jpg")
+    _image(root / "Private" / "hidden.jpg")
+    backend = _Backend()
+    service = PhotoLibraryService(root, tmp_path / "state", backend=backend)
+    plan = service.plan_index(include_faces=True)
+    service.start_index(plan_id=plan["planId"], include_faces=True)
+    completed = service.wait_for_idle()
+    assert completed["result"]["indexed"] == 2
+    scope = DataAccessScope(
+        actor="local:alice",
+        operator=False,
+        rules=(DataPathRule(("Family",), "read"),),
+    )
+
+    class Policy:
+        def scope_for_actor(self, _actor):
+            return scope
+
+    app = FastAPI()
+    app.include_router(create_photos_router(service, data_access=Policy()))
+    member = TestClient(app).get("/api/appliance/photos/status").json()
+    operator = service.status()
+
+    assert member["job"] == idle_job()
+    assert member["index"]["canManage"] is False
+    assert member["index"]["indexed"] == 1
+    assert member["library"]["imageCount"] == 1
+    assert operator["job"] == completed
+    assert operator["index"]["canManage"] is True
+    assert operator["index"]["indexed"] == 2

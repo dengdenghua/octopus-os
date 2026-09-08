@@ -77,12 +77,38 @@ class TaskSupervisor:
         resume_checkpoint_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         status: TaskRunStatus = TaskRunStatus.RUNNING,
+        reject_active_lease: bool = False,
+        approved_resume_lease_token: int | None = None,
     ) -> TaskRunRecord:
+        if type(reject_active_lease) is not bool:
+            raise ValueError("reject_active_lease must be a boolean")
+        if approved_resume_lease_token is not None and (
+            type(approved_resume_lease_token) is not int or approved_resume_lease_token < 1
+        ):
+            raise ValueError("approved resume lease token must be a positive integer")
+
         def _mutate(
             existing: TaskRunRecord | None,
             next_lease_token: Callable[[], int],
         ) -> TaskRunRecord:
             lease = existing.lease if existing is not None else None
+            approved_resume = approved_resume_lease_token is not None
+            if approved_resume and not (
+                existing is not None
+                and existing.status == TaskRunStatus.RUNNING
+                and status == TaskRunStatus.RUNNING
+                and lease is not None
+                and not lease.expired
+                and lease.holder_id == self.holder_id
+                and existing.approval_resume_lease_token == lease.token
+                and lease.token == approved_resume_lease_token
+                and existing.owner_id == _prefer_text(owner_id)
+                and existing.thread_id == _prefer_text(thread_id)
+            ):
+                # An explicit permit never falls back to a normal restart or
+                # takeover. Validate and consume it under the same store lock
+                # that allocates the replacement epoch below.
+                raise LostTaskLease(task_id, "approval resume permission is not current")
             if (
                 existing is not None
                 and existing.status not in TERMINAL_TASK_STATUSES
@@ -90,6 +116,18 @@ class TaskSupervisor:
                 and not lease.expired
                 and lease.holder_id != self.holder_id
             ):
+                raise TaskLeaseConflict(task_id, lease.holder_id)
+            if (
+                reject_active_lease
+                and not approved_resume
+                and existing is not None
+                and existing.status not in TERMINAL_TASK_STATUSES
+                and existing.status != TaskRunStatus.PAUSED
+                and lease is not None
+                and not lease.expired
+            ):
+                # A new driver cannot borrow the same process's live task.
+                # Its own verify/repair scopes retain the epoch via guard.fork.
                 raise TaskLeaseConflict(task_id, lease.holder_id)
             if lease is None or lease.expired or lease.holder_id == self.holder_id:
                 lease = self._new_lease(next_lease_token())
@@ -195,11 +233,49 @@ class TaskSupervisor:
         reason: str = "",
         checkpoint_id: str | int | None = None,
         metadata_patch: dict[str, Any] | None = None,
+        expected_lease_token: int | None = None,
+        expected_lease_incarnation: str | None = None,
+        preserve_approval_wait: bool = False,
     ) -> TaskRunRecord:
+        if type(preserve_approval_wait) is not bool:
+            raise ValueError("preserve_approval_wait must be a boolean")
         next_status = status if isinstance(status, TaskRunStatus) else TaskRunStatus(str(status))
         now = _now_iso()
 
         def _mutate(current: TaskRunRecord) -> TaskRunRecord:
+            explicit_lease = (
+                expected_lease_token is not None or expected_lease_incarnation is not None
+            )
+            if explicit_lease:
+                # Explicit execution bindings must never inherit a newer
+                # same-holder lease or mutate an already terminal record.
+                self._assert_current_holder(
+                    current,
+                    expected_lease_token=expected_lease_token,
+                    expected_lease_incarnation=expected_lease_incarnation,
+                )
+            if preserve_approval_wait and current.status not in TERMINAL_TASK_STATUSES:
+                if not explicit_lease:
+                    self._assert_current_holder(current)
+                if current.status == TaskRunStatus.WAITING_APPROVAL or (
+                    current.status == TaskRunStatus.RUNNING
+                    and current.lease is not None
+                    and current.approval_resume_lease_token == current.lease.token
+                ):
+                    metadata = dict(current.metadata)
+                    if isinstance(metadata_patch, dict):
+                        metadata.update(metadata_patch)
+                    return current.model_copy(
+                        update={
+                            "latest_checkpoint_id": (
+                                checkpoint_id
+                                if checkpoint_id is not None
+                                else current.latest_checkpoint_id
+                            ),
+                            "metadata": metadata,
+                        },
+                        deep=True,
+                    )
             if current.status in TERMINAL_TASK_STATUSES:
                 metadata = dict(current.metadata)
                 if isinstance(metadata_patch, dict):
@@ -231,10 +307,11 @@ class TaskSupervisor:
                         "metadata": metadata,
                         "heartbeat_at": current.heartbeat_at or now,
                         "lease": None,
+                        "approval_resume_lease_token": None,
                     },
                     deep=True,
                 )
-            if current.status not in TERMINAL_TASK_STATUSES:
+            if not explicit_lease:
                 self._assert_current_holder(current)
             metadata = dict(current.metadata)
             if isinstance(metadata_patch, dict):
@@ -262,6 +339,11 @@ class TaskSupervisor:
                     "heartbeat_at": now,
                     "completed_at": completed_at,
                     "lease": lease,
+                    "approval_resume_lease_token": (
+                        current.approval_resume_lease_token
+                        if current.status == next_status == TaskRunStatus.RUNNING
+                        else None
+                    ),
                 },
                 deep=True,
             )
@@ -335,6 +417,7 @@ class TaskSupervisor:
                     "heartbeat_at": now,
                     "completed_at": (now if next_status in TERMINAL_TASK_STATUSES else None),
                     "lease": None,
+                    "approval_resume_lease_token": None,
                 },
                 deep=True,
             )
@@ -409,6 +492,11 @@ class TaskSupervisor:
                     "heartbeat_at": now,
                     "completed_at": None,
                     "lease": lease,
+                    "approval_resume_lease_token": (
+                        lease.token
+                        if approved is True and next_status == TaskRunStatus.RUNNING and lease
+                        else None
+                    ),
                 },
                 deep=True,
             )
@@ -490,6 +578,7 @@ class TaskSupervisor:
                     "metadata": metadata,
                     "heartbeat_at": now,
                     "lease": self._new_lease(next_lease_token()),
+                    "approval_resume_lease_token": None,
                     "completed_at": None,
                     "terminal_reason": "",
                 },
@@ -500,13 +589,29 @@ class TaskSupervisor:
         self._remember_lease(record)
         return record
 
-    def heartbeat(self, task_id: str) -> TaskRunRecord:
+    def heartbeat(
+        self,
+        task_id: str,
+        *,
+        expected_lease_token: int | None = None,
+        expected_lease_incarnation: str | None = None,
+    ) -> TaskRunRecord:
         now = _now_iso()
 
         def _mutate(current: TaskRunRecord) -> TaskRunRecord:
+            explicit_lease = (
+                expected_lease_token is not None or expected_lease_incarnation is not None
+            )
+            if explicit_lease:
+                self._assert_current_holder(
+                    current,
+                    expected_lease_token=expected_lease_token,
+                    expected_lease_incarnation=expected_lease_incarnation,
+                )
             if current.status in TERMINAL_TASK_STATUSES:
                 return current
-            self._assert_current_holder(current)
+            if not explicit_lease:
+                self._assert_current_holder(current)
             lease = current.lease
             assert lease is not None
             lease = lease.model_copy(
@@ -527,23 +632,43 @@ class TaskSupervisor:
         self._remember_lease(record)
         return record
 
-    def is_current_holder(self, task_id: str) -> bool:
+    def is_current_holder(
+        self,
+        task_id: str,
+        *,
+        expected_lease_token: int | None = None,
+        expected_lease_incarnation: str | None = None,
+    ) -> bool:
         record = self.store.get(task_id)
         if record is None or record.status in TERMINAL_TASK_STATUSES:
             return False
         try:
-            self._assert_current_holder(record)
+            self._assert_current_holder(
+                record,
+                expected_lease_token=expected_lease_token,
+                expected_lease_incarnation=expected_lease_incarnation,
+            )
         except LostTaskLease:
             return False
         return True
 
-    def assert_current_holder(self, task_id: str) -> TaskRunRecord:
+    def assert_current_holder(
+        self,
+        task_id: str,
+        *,
+        expected_lease_token: int | None = None,
+        expected_lease_incarnation: str | None = None,
+    ) -> TaskRunRecord:
         record = self.store.get(task_id)
         if record is None:
             raise KeyError(task_id)
         if record.status in TERMINAL_TASK_STATUSES:
             raise LostTaskLease(task_id, "task is already terminal")
-        self._assert_current_holder(record)
+        self._assert_current_holder(
+            record,
+            expected_lease_token=expected_lease_token,
+            expected_lease_incarnation=expected_lease_incarnation,
+        )
         return record
 
     def task_capabilities(self, task_id: str) -> TaskCapabilityManifest | None:
@@ -554,10 +679,27 @@ class TaskSupervisor:
         return TaskLease(
             holder_id=self.holder_id,
             token=token,
+            incarnation=uuid4().hex,
             expires_at=time.time() + self.lease_ttl_seconds,
         )
 
-    def _assert_current_holder(self, record: TaskRunRecord) -> None:
+    def _assert_current_holder(
+        self,
+        record: TaskRunRecord,
+        *,
+        expected_lease_token: int | None = None,
+        expected_lease_incarnation: str | None = None,
+    ) -> None:
+        if expected_lease_token is not None and (
+            type(expected_lease_token) is not int or expected_lease_token < 1
+        ):
+            raise LostTaskLease(record.task_id, "invalid expected lease token")
+        if expected_lease_incarnation is not None and (
+            not isinstance(expected_lease_incarnation, str)
+            or len(expected_lease_incarnation) != 32
+            or any(char not in "0123456789abcdef" for char in expected_lease_incarnation)
+        ):
+            raise LostTaskLease(record.task_id, "invalid expected lease incarnation")
         lease = record.lease
         if lease is None:
             raise LostTaskLease(record.task_id, "missing lease")
@@ -565,10 +707,18 @@ class TaskSupervisor:
             raise LostTaskLease(record.task_id, "lease expired")
         if lease.holder_id != self.holder_id:
             raise LostTaskLease(record.task_id, f"held by {lease.holder_id!r}")
-        with self._lease_lock:
-            expected_token = self._lease_tokens.get(record.task_id)
+        if expected_lease_token is not None:
+            expected_token = expected_lease_token
+        else:
+            with self._lease_lock:
+                expected_token = self._lease_tokens.get(record.task_id)
         if expected_token is not None and lease.token != expected_token:
             raise LostTaskLease(record.task_id, "lease token changed")
+        if (
+            expected_lease_incarnation is not None
+            and lease.incarnation != expected_lease_incarnation
+        ):
+            raise LostTaskLease(record.task_id, "lease incarnation changed")
 
     def _remember_lease(self, record: TaskRunRecord) -> None:
         with self._lease_lock:

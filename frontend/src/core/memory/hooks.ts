@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { currentActorId } from "../auth/api";
+
 import {
   clearMemory,
   createMemoryFact,
@@ -23,16 +25,46 @@ import type {
   UserMemory,
 } from "./types";
 
+export function memoryAssetsQueryKey(
+  query: MemoryAssetQuery,
+  actor = currentActorId(),
+) {
+  return ["memory-assets", actor, query] as const;
+}
+
+export function memoryAssetTraceQueryKey(
+  assetId: string | null,
+  actor = currentActorId(),
+) {
+  return ["memory-asset-trace", actor, assetId] as const;
+}
+
+export function memorySearchQueryKey(
+  query: string,
+  limit: number,
+  actor = currentActorId(),
+) {
+  return ["memory-search", actor, query, limit] as const;
+}
+
+export function memoryQueryKey(actor = currentActorId()) {
+  return ["memory", actor] as const;
+}
+
+export function memoryConfigQueryKey(actor = currentActorId()) {
+  return ["memory-config", actor] as const;
+}
+
 export function useMemoryAssets(query: MemoryAssetQuery) {
   return useQuery({
-    queryKey: ["memory-assets", query],
+    queryKey: memoryAssetsQueryKey(query),
     queryFn: () => listMemoryAssets(query),
   });
 }
 
 export function useMemoryAssetTrace(assetId: string | null) {
   return useQuery({
-    queryKey: ["memory-asset-trace", assetId],
+    queryKey: memoryAssetTraceQueryKey(assetId),
     queryFn: () => getMemoryAssetTrace(assetId as string),
     enabled: Boolean(assetId),
   });
@@ -40,7 +72,7 @@ export function useMemoryAssetTrace(assetId: string | null) {
 
 export function useSearchMemory(query: string, limit = 50) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ["memory-search", query, limit],
+    queryKey: memorySearchQueryKey(query, limit),
     queryFn: () => searchMemory(query, limit),
     enabled: query.trim().length > 0,
   });
@@ -53,7 +85,7 @@ export function useSearchMemory(query: string, limit = 50) {
 
 export function useMemory() {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["memory"],
+    queryKey: memoryQueryKey(),
     queryFn: () => loadMemory(),
   });
   return {
@@ -67,7 +99,7 @@ export function useMemory() {
 
 export function useMemoryConfig() {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["memory-config"],
+    queryKey: memoryConfigQueryKey(),
     queryFn: () => getMemoryConfig(),
   });
   return {
@@ -85,7 +117,7 @@ export function useUpdateMemoryConfig() {
   return useMutation({
     mutationFn: (patch: MemoryConfigPatch) => updateMemoryConfig(patch),
     onSuccess: (config) => {
-      queryClient.setQueryData<MemoryConfig>(["memory-config"], config);
+      queryClient.setQueryData<MemoryConfig>(memoryConfigQueryKey(), config);
     },
   });
 }
@@ -96,8 +128,10 @@ export function useClearMemory() {
   return useMutation({
     mutationFn: () => clearMemory(),
     onSuccess: (memory) => {
-      queryClient.setQueryData<UserMemory>(["memory"], memory);
-      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
+      queryClient.setQueryData<UserMemory>(memoryQueryKey(), memory);
+      void queryClient.invalidateQueries({
+        queryKey: ["memory-assets", currentActorId()],
+      });
     },
   });
 }
@@ -108,8 +142,10 @@ export function useDeleteMemoryFact() {
   return useMutation({
     mutationFn: (factId: string) => deleteMemoryFact(factId),
     onSuccess: (memory) => {
-      queryClient.setQueryData<UserMemory>(["memory"], memory);
-      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
+      queryClient.setQueryData<UserMemory>(memoryQueryKey(), memory);
+      void queryClient.invalidateQueries({
+        queryKey: ["memory-assets", currentActorId()],
+      });
     },
   });
 }
@@ -120,8 +156,10 @@ export function useImportMemory() {
   return useMutation({
     mutationFn: (memory: UserMemory) => importMemory(memory),
     onSuccess: (memory) => {
-      queryClient.setQueryData<UserMemory>(["memory"], memory);
-      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
+      queryClient.setQueryData<UserMemory>(memoryQueryKey(), memory);
+      void queryClient.invalidateQueries({
+        queryKey: ["memory-assets", currentActorId()],
+      });
     },
   });
 }
@@ -132,8 +170,10 @@ export function useCreateMemoryFact() {
   return useMutation({
     mutationFn: (input: MemoryFactInput) => createMemoryFact(input),
     onSuccess: (memory) => {
-      queryClient.setQueryData<UserMemory>(["memory"], memory);
-      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
+      queryClient.setQueryData<UserMemory>(memoryQueryKey(), memory);
+      void queryClient.invalidateQueries({
+        queryKey: ["memory-assets", currentActorId()],
+      });
     },
   });
 }
@@ -150,8 +190,10 @@ export function useUpdateMemoryFact() {
       input: MemoryFactPatchInput;
     }) => updateMemoryFact(factId, input),
     onSuccess: (memory) => {
-      queryClient.setQueryData<UserMemory>(["memory"], memory);
-      void queryClient.invalidateQueries({ queryKey: ["memory-assets"] });
+      queryClient.setQueryData<UserMemory>(memoryQueryKey(), memory);
+      void queryClient.invalidateQueries({
+        queryKey: ["memory-assets", currentActorId()],
+      });
     },
   });
 }

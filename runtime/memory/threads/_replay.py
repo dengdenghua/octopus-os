@@ -20,6 +20,7 @@ from runtime.protocol.items import (
     ArtifactItem,
     CommandExecutionItem,
     ErrorItem,
+    ExecutionSnapshot,
     FileChange,
     FileChangeItem,
     FileHunk,
@@ -89,6 +90,14 @@ def _apply_event(
     if evt.event == "turn_started":
         params_raw = evt.payload.get("params")
         params = TurnParams.model_validate(params_raw) if params_raw else None
+        principal = evt.payload.get("principal")
+        if params is not None and isinstance(principal, dict):
+            params = params.model_copy(
+                update={
+                    "owner_actor_id": principal.get("actorId"),
+                    "tenant_id": principal.get("tenantId"),
+                }
+            )
         turn = Turn(
             id=evt.turn_id or "",
             threadId=evt.thread_id,
@@ -250,6 +259,32 @@ def _order_replayed_timeline(turn: Turn) -> None:
 
 
 def _apply_turn_update(turn: Turn, payload: dict[str, Any]) -> None:
+    execution_raw = payload.get("execution")
+    if isinstance(execution_raw, dict):
+        with contextlib.suppress(TypeError, ValueError):
+            execution = ExecutionSnapshot.model_validate(execution_raw)
+            if turn.execution is None or (
+                execution.engine == turn.execution.engine
+                and execution.invocation > turn.execution.invocation
+            ):
+                turn.execution = execution
+                turn.execution_engine = (
+                    execution.engine
+                    if execution.engine in {"codex", "opencode", "octopus"}
+                    else "echo"
+                )
+    model_selection = payload.get("executionModel")
+    if (
+        isinstance(model_selection, dict)
+        and turn.execution is not None
+        and turn.params is not None
+        and model_selection.get("engine") == turn.execution.engine
+        and type(model_selection.get("invocation")) is int
+        and model_selection["invocation"] == turn.execution.invocation
+        and isinstance(model_selection.get("model"), str)
+        and 0 < len(model_selection["model"].strip()) <= 256
+    ):
+        turn.params = turn.params.model_copy(update={"model": model_selection["model"]})
     if isinstance(payload.get("objectiveId"), str):
         turn.objective_id = payload["objectiveId"]
     if isinstance(payload.get("taskId"), str):

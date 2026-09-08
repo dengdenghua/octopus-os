@@ -37,6 +37,7 @@ export interface UserMessageItem extends ItemBase {
   type: "userMessage";
   text: string;
   attachments?: Record<string, unknown>[];
+  contextFiles?: Record<string, unknown>[];
 }
 
 export interface SteeringUserMessageItem extends ItemBase {

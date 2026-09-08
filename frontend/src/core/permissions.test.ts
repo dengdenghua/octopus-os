@@ -12,6 +12,7 @@ describe("permissionRuntimeConfig", () => {
     expect(permissionRuntimeConfig(undefined)).toEqual({
       mode: "default",
       approvalPolicy: "on-request",
+      approvalReviewer: "user",
       sandboxPolicy: {
         type: "workspaceWrite",
         networkAccess: false,
@@ -26,6 +27,7 @@ describe("permissionRuntimeConfig", () => {
     expect(permissionRuntimeConfig("bypassPermissions")).toEqual({
       mode: "bypassPermissions",
       approvalPolicy: "never",
+      approvalReviewer: "user",
       sandboxPolicy: {
         type: "dangerFullAccess",
         // Full access is the one mode that defaults to network allowed.
@@ -41,6 +43,7 @@ describe("permissionRuntimeConfig", () => {
     expect(permissionRuntimeConfig("plan")).toEqual({
       mode: "plan",
       approvalPolicy: "on-request",
+      approvalReviewer: "user",
       sandboxPolicy: {
         type: "workspaceWrite",
         networkAccess: false,
@@ -51,16 +54,17 @@ describe("permissionRuntimeConfig", () => {
     });
   });
 
-  it("maps acceptEdits to local execution with confirm-on-request", () => {
+  it("maps acceptEdits to workspace execution with automatic review", () => {
     expect(permissionRuntimeConfig("acceptEdits")).toEqual({
       mode: "acceptEdits",
       approvalPolicy: "on-request",
+      approvalReviewer: "auto_review",
       sandboxPolicy: {
         type: "workspaceWrite",
         networkAccess: false,
       },
-      execution_environment: "local",
-      sandbox_mode: "full",
+      execution_environment: "sandbox",
+      sandbox_mode: "sandbox",
       planningMode: false,
     });
   });
@@ -103,9 +107,7 @@ describe("permissionRuntimeConfig", () => {
       networkAccess: false,
     });
     // Legacy boolean storage: true -> full, false -> deny.
-    expect(
-      permissionRuntimeConfig("default", false).sandboxPolicy,
-    ).toEqual({
+    expect(permissionRuntimeConfig("default", false).sandboxPolicy).toEqual({
       type: "workspaceWrite",
       networkAccess: false,
     });
@@ -129,5 +131,13 @@ describe("permissionRuntimeConfig", () => {
   it("keeps legacy sandbox/full settings compatible", () => {
     expect(normalizePermissionMode("sandbox")).toBe("default");
     expect(normalizePermissionMode("full")).toBe("bypassPermissions");
+  });
+
+  it("normalizes automatic-review aliases to the bounded reviewer mode", () => {
+    expect(normalizePermissionMode("auto-review")).toBe("acceptEdits");
+    expect(normalizePermissionMode("approve-for-me")).toBe("acceptEdits");
+    expect(permissionRuntimeConfig("approve-for-me").approvalReviewer).toBe(
+      "auto_review",
+    );
   });
 });

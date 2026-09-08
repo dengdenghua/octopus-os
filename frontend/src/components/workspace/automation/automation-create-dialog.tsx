@@ -91,7 +91,10 @@ export function AutomationCreateDialog({
           setCadence("每天");
         } else if (presetTemplate.cadence.includes("每周")) {
           setCadence("每周");
-        } else if (presetTemplate.cadence.includes("高频") || presetTemplate.cadence.toLowerCase().includes("hour")) {
+        } else if (
+          presetTemplate.cadence.includes("高频") ||
+          presetTemplate.cadence.toLowerCase().includes("hour")
+        ) {
           setCadence("每小时");
         } else {
           setCadence("每天");
@@ -170,7 +173,9 @@ export function AutomationCreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-4 rounded-lg p-6 sm:max-w-[480px]">
         <DialogHeader className="gap-1 text-left">
-          <DialogTitle className="text-base">{t.intelligence.createTaskTitle}</DialogTitle>
+          <DialogTitle className="text-base">
+            {t.intelligence.createTaskTitle}
+          </DialogTitle>
           <DialogDescription className="text-xs leading-5">
             {t.intelligence.createTaskDescription}
           </DialogDescription>
@@ -211,9 +216,15 @@ export function AutomationCreateDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="每天">{t.intelligencePanel.cadenceDaily}</SelectItem>
-                <SelectItem value="每周">{t.intelligencePanel.cadenceWeekly}</SelectItem>
-                <SelectItem value="每小时">{t.intelligence.cadenceHourly}</SelectItem>
+                <SelectItem value="每天">
+                  {t.intelligencePanel.cadenceDaily}
+                </SelectItem>
+                <SelectItem value="每周">
+                  {t.intelligencePanel.cadenceWeekly}
+                </SelectItem>
+                <SelectItem value="每小时">
+                  {t.intelligence.cadenceHourly}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

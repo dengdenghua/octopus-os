@@ -3,7 +3,7 @@ import {
   TrendingUpIcon,
   DatabaseIcon,
   SparklesIcon,
-  ChevronRightIcon
+  ChevronRightIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -71,7 +71,9 @@ function HealthGauge({ score }: { score: number }) {
         </svg>
         {/* Center text */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className={cn("text-2xl font-bold tabular-nums", getColor(score))}>
+          <div
+            className={cn("text-2xl font-bold tabular-nums", getColor(score))}
+          >
             {score}
           </div>
           <div className="text-[10px] text-muted-foreground">
@@ -93,7 +95,7 @@ function StatCard({
   icon: Icon,
   label,
   value,
-  subtitle
+  subtitle,
 }: {
   icon: typeof DatabaseIcon;
   label: string;
@@ -109,7 +111,9 @@ function StatCard({
         <div className="text-xs text-muted-foreground">{label}</div>
         <div className="mt-0.5 text-lg font-bold tabular-nums">{value}</div>
         {subtitle && (
-          <div className="mt-0.5 text-[10px] text-muted-foreground">{subtitle}</div>
+          <div className="mt-0.5 text-[10px] text-muted-foreground">
+            {subtitle}
+          </div>
         )}
       </div>
     </div>
@@ -117,25 +121,33 @@ function StatCard({
 }
 
 function OptimizationItem({
-  optimization
+  optimization,
 }: {
-  optimization: CollectiveStats["recentOptimizations"][0]
+  optimization: CollectiveStats["recentOptimizations"][0];
 }) {
   const getIcon = () => {
     switch (optimization.type) {
-      case "rule": return "💡";
-      case "skill": return "✨";
-      case "optimization": return "⚡";
-      default: return "📌";
+      case "rule":
+        return "💡";
+      case "skill":
+        return "✨";
+      case "optimization":
+        return "⚡";
+      default:
+        return "📌";
     }
   };
 
   const getTypeLabel = () => {
     switch (optimization.type) {
-      case "rule": return "新规则";
-      case "skill": return "新技能";
-      case "optimization": return "优化";
-      default: return "更新";
+      case "rule":
+        return "新规则";
+      case "skill":
+        return "新技能";
+      case "optimization":
+        return "优化";
+      default:
+        return "更新";
     }
   };
 
@@ -153,15 +165,23 @@ function OptimizationItem({
 
   return (
     <div className="flex items-start gap-2 rounded-md bg-muted/30 p-2">
-      <span className="text-base" aria-hidden="true">{getIcon()}</span>
+      <span className="text-base" aria-hidden="true">
+        {getIcon()}
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-primary">{getTypeLabel()}</span>
-          <span className="text-xs text-muted-foreground">{formatTime(optimization.timestamp)}</span>
+          <span className="text-xs font-medium text-primary">
+            {getTypeLabel()}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {formatTime(optimization.timestamp)}
+          </span>
         </div>
         <div className="mt-0.5 text-sm font-medium">{optimization.title}</div>
         {optimization.impact && (
-          <div className="mt-0.5 text-xs text-muted-foreground">{optimization.impact}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {optimization.impact}
+          </div>
         )}
       </div>
     </div>
@@ -171,7 +191,7 @@ function OptimizationItem({
 export function CollectiveIntelligencePanel({
   stats,
   onViewDetails,
-  className
+  className,
 }: CollectiveIntelligencePanelProps) {
   return (
     <div className={cn("space-y-4", className)}>

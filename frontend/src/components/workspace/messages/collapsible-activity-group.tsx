@@ -175,11 +175,7 @@ export function buildHeaderSummary(
     if (added === 0 && removed === 0) {
       return t.message.fileOperationsCount(items.length);
     }
-    return t.message.fileOperationsCountWithDiff(
-      items.length,
-      added,
-      removed,
-    );
+    return t.message.fileOperationsCountWithDiff(items.length, added, removed);
   }
   // tool_calls
   return t.message.toolCallsCount(items.length);
@@ -197,9 +193,7 @@ function StatusIcon({ status }: { status?: ActivityItem["status"] }) {
   if (status === "error")
     return <XCircleIcon className="size-3.5 text-destructive" />;
   if (status === "done")
-    return (
-      <CheckCircle2Icon className="size-3.5 text-success" />
-    );
+    return <CheckCircle2Icon className="size-3.5 text-success" />;
   return <span className="size-3.5" />;
 }
 

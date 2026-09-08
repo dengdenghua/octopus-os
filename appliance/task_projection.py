@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import UTC, datetime
+from math import isfinite
 from typing import Any
 from uuid import UUID
 
@@ -23,9 +24,11 @@ from appliance.agent_api.tasks import (
 )
 from appliance.audit import ApplianceAudit, AuditIntegrityError
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
+from echo_runtime.resource_identity import workspace_file_resource_id
 
 TASK_PROJECTION_SCHEMA = "echo.task_projection.v1"
 _ACTIVE = {"pending", "running", "verifying", "repairing"}
+_FAILED = {"failed", "disconnected", "cancelled"}
 _TERMINAL = {"cancelled", "disconnected", "failed", "completed"}
 
 
@@ -74,19 +77,19 @@ def _number(value: Any) -> float | None:
         return None
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
-    return max(0.0, min(100.0, number))
+    return number if isfinite(number) else None
 
 
 def _task_progress(metadata: dict[str, Any]) -> float | None:
     for key in ("progressPercent", "progress_percent", "progress"):
         progress = _number(metadata.get(key))
         if progress is not None:
-            return progress
+            return max(0.0, min(100.0, progress))
     completed = _number(metadata.get("completed_steps"))
     total = _number(metadata.get("total_steps"))
-    if completed is None or total is None or total <= 0:
+    if completed is None or total is None or completed < 0 or total <= 0:
         return None
     return round(max(0.0, min(100.0, completed / total * 100)), 1)
 
@@ -96,6 +99,83 @@ def _runtime_groups(task: Any) -> list[str]:
     if not isinstance(groups, dict):
         return []
     return sorted(str(key) for key, enabled in groups.items() if enabled)
+
+
+def _result_artifacts(task: Any, realtime_gateway: Any) -> list[dict[str, Any]]:
+    """Expose bounded, host-discovered outputs for task result handoff."""
+
+    # The projection is polled continuously for desktop badges. Scanning a
+    # workspace for every live task on every poll is unnecessary; outputs are
+    # actionable after a terminal state or a lease interruption.
+    status = _text(getattr(task, "status", ""), limit=32)
+    lease_state = (
+        _text(task_lease_health(task).get("state"), limit=32)
+        if status not in _TERMINAL
+        else "terminal"
+    )
+    if status not in _TERMINAL and lease_state not in {"expired", "missing_lease"}:
+        return []
+    thread_id = _optional_text(getattr(task, "thread_id", None), limit=128)
+    manager = getattr(realtime_gateway, "_workspaces", None)
+    if not thread_id or manager is None or not hasattr(manager, "layout"):
+        return []
+    try:
+        layout = manager.layout(thread_id)
+    except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+        return []
+
+    artifacts: list[dict[str, Any]] = []
+
+    def iter_files(root: Any):
+        """Yield bounded, deterministic workspace files without eager rglob."""
+
+        def walk(directory: Any):
+            try:
+                children = sorted(directory.iterdir(), key=lambda path: str(path).lower())
+            except (OSError, RuntimeError, TypeError):
+                return
+            for child in children:
+                try:
+                    # Workspace resource IDs must never point through a symlink
+                    # that escapes the managed workspace root.
+                    if child.is_symlink():
+                        continue
+                    if child.is_file():
+                        yield child
+                    elif child.is_dir():
+                        yield from walk(child)
+                except (OSError, RuntimeError, TypeError):
+                    continue
+
+        yield from walk(root)
+
+    for area in ("final", "deploy"):
+        root = getattr(layout, area, None)
+        if root is None:
+            continue
+        for path in iter_files(root):
+            if len(artifacts) >= 20:
+                break
+            try:
+                relative_path = path.relative_to(root).as_posix()
+                stat = path.stat()
+            except (OSError, RuntimeError, ValueError):
+                continue
+            if not relative_path or any(
+                part in {"", ".", ".."} for part in relative_path.split("/")
+            ):
+                continue
+            artifacts.append(
+                {
+                    "resourceId": workspace_file_resource_id(thread_id, area, relative_path),
+                    "area": area,
+                    "relativePath": relative_path,
+                    "name": path.name,
+                    "size": stat.st_size,
+                    "modified": int(stat.st_mtime),
+                }
+            )
+    return artifacts
 
 
 def _audit_activity(audit: ApplianceAudit | None) -> tuple[dict[str, list[dict]], dict]:
@@ -241,6 +321,19 @@ def _project_task(
             ),
         }
     capability_decisions = [item for item in activity if item["kind"] == "capability-decision"]
+    # The task view must expose the concrete execution identity that was
+    # persisted by the runtime. Keep legacy records readable while accepting
+    # both canonical metadata keys and older task adapters' attributes.
+    execution_engine = _optional_text(
+        getattr(task, "execution_engine", None)
+        or metadata.get("execution_engine")
+        or metadata.get("engine"),
+        limit=32,
+    )
+    model_name = _optional_text(
+        getattr(task, "model_name", None) or metadata.get("model_name") or metadata.get("model"),
+        limit=160,
+    )
     return {
         "id": _text(getattr(task, "task_id", ""), limit=128),
         "source": "echo-agent",
@@ -262,6 +355,8 @@ def _project_task(
         "progressPercent": _task_progress(metadata),
         "mode": _optional_text(getattr(task, "mode", None), limit=64),
         "agentId": _optional_text(metadata.get("agent_id"), limit=128),
+        "executionEngine": execution_engine,
+        "modelName": model_name,
         "runtimeCapabilityGroups": _runtime_groups(task),
         "capabilityDecisions": capability_decisions[-20:],
         "approval": approval,
@@ -272,6 +367,7 @@ def _project_task(
         "terminalReason": _optional_text(getattr(task, "terminal_reason", None), limit=500),
         "latestCheckpointId": getattr(task, "latest_checkpoint_id", None),
         "executionRecovery": _execution_recovery(task, realtime_gateway),
+        "resultArtifacts": _result_artifacts(task, realtime_gateway),
     }
 
 
@@ -289,28 +385,52 @@ def _status_rank(task: dict[str, Any]) -> int:
 
 
 def _counts(tasks: list[dict[str, Any]]) -> dict[str, int]:
-    return {
+    counts = {
         "total": len(tasks),
-        "active": sum(
-            task["status"] in _ACTIVE and not bool(task["leaseHealth"]["recoveryNeeded"])
-            for task in tasks
-        ),
-        "waitingApproval": sum(task["status"] == "waiting_approval" for task in tasks),
-        "paused": sum(task["status"] == "paused" for task in tasks),
-        "recoveryNeeded": sum(bool(task["leaseHealth"]["recoveryNeeded"]) for task in tasks),
-        "failed": sum(task["status"] in {"failed", "disconnected"} for task in tasks),
-        "completed": sum(task["status"] == "completed" for task in tasks),
+        "active": 0,
+        "waitingApproval": 0,
+        "paused": 0,
+        "recoveryNeeded": 0,
+        "failed": 0,
+        "completed": 0,
     }
+    # Keep every projection counter on one pass; this is called on each poll.
+    for task in tasks:
+        status = task["status"]
+        recovering = bool(task["leaseHealth"]["recoveryNeeded"])
+        if recovering:
+            counts["recoveryNeeded"] += 1
+        if status in _ACTIVE and not recovering:
+            counts["active"] += 1
+        if status == "waiting_approval":
+            counts["waitingApproval"] += 1
+        if status == "paused":
+            counts["paused"] += 1
+        if str(task.get("displayStatus") or status) in _FAILED:
+            counts["failed"] += 1
+        if status == "completed":
+            counts["completed"] += 1
+    return counts
 
 
-def _require_task(supervisor: Any, task_id: str) -> Any:
+def _task_visible(task: Any, actor: str) -> bool:
+    # Preserve the established device/operator projection for other task kinds.
+    # File organization contains a member's private directory and file evidence.
+    return (
+        getattr(task, "kind", None) != "file_organization"
+        or actor == "local:admin"
+        or (bool(actor) and getattr(task, "owner_id", None) == actor)
+    )
+
+
+def _require_task(supervisor: Any, task_id: str, *, actor: str) -> Any:
     if supervisor is None or getattr(supervisor, "store", None) is None:
         raise HTTPException(status_code=503, detail="task supervisor unavailable")
     clean_task_id = _text(task_id, limit=128)
     if not clean_task_id or clean_task_id != task_id:
         raise HTTPException(status_code=404, detail="task not found")
     task = supervisor.store.get(clean_task_id)
-    if task is None:
+    if task is None or not _task_visible(task, actor):
         raise HTTPException(status_code=404, detail="task not found")
     return task
 
@@ -362,6 +482,7 @@ def create_task_projection_router(
     def list_tasks(
         status: str | None = Query(default=None, max_length=32),
         limit: int = Query(default=100, ge=1, le=200),
+        actor: str = Depends(require_auth),
     ) -> dict[str, Any]:
         activity_by_task, audit_integrity = _audit_activity(audit)
         if supervisor is None or getattr(supervisor, "store", None) is None:
@@ -382,6 +503,7 @@ def create_task_projection_router(
                 realtime_gateway,
             )
             for record in records
+            if _task_visible(record, actor)
         ]
         if status:
             projected = [task for task in projected if task["status"] == status]
@@ -390,19 +512,20 @@ def create_task_projection_router(
             reverse=True,
         )
         projected.sort(key=_status_rank)
+        counts = _counts(projected)
         projected = projected[:limit]
         return {
             "schema": TASK_PROJECTION_SCHEMA,
             "available": True,
             "generatedAt": datetime.now(UTC).isoformat(),
-            "counts": _counts(projected),
+            "counts": counts,
             "auditIntegrity": audit_integrity,
             "tasks": projected,
         }
 
     @router.get("/{task_id}")
-    def task_detail(task_id: str) -> dict[str, Any]:
-        task = _require_task(supervisor, task_id)
+    def task_detail(task_id: str, actor: str = Depends(require_auth)) -> dict[str, Any]:
+        task = _require_task(supervisor, task_id, actor=actor)
         activity_by_task, audit_integrity = _audit_activity(audit)
         return {
             "schema": "echo.task_projection.detail.v1",
@@ -420,8 +543,9 @@ def create_task_projection_router(
         task_id: str,
         request: Request,
         body: TaskTakeoverRequest | None = None,
+        actor: str = Depends(require_auth),
     ) -> dict[str, Any]:
-        task = _require_task(supervisor, task_id)
+        task = _require_task(supervisor, task_id, actor=actor)
         health = task_lease_health(task)
         if not bool(health.get("can_takeover")):
             raise HTTPException(
@@ -429,7 +553,6 @@ def create_task_projection_router(
                 detail="task lease is not available for takeover",
             )
 
-        actor = str(getattr(request.state, "appliance_actor", "local:development")).strip()
         reason = (
             body.reason if body is not None and body.reason else "Echo Task Space recovery takeover"
         )
@@ -452,6 +575,12 @@ def create_task_projection_router(
                 by=actor,
                 reason=reason,
             )
+            if getattr(updated, "kind", None) == "file_organization":
+                updated = supervisor.transition(
+                    task_id,
+                    updated.status,
+                    metadata_patch={"file_operation_takeover_token": updated.lease.token},
+                )
         except TaskLeaseConflict as exc:
             _record_task_action(
                 audit,
@@ -504,8 +633,9 @@ def create_task_projection_router(
         task_id: str,
         request: Request,
         body: TaskResumeExecutionRequest | None = None,
+        actor: str = Depends(require_auth),
     ) -> dict[str, Any]:
-        task = _require_task(supervisor, task_id)
+        task = _require_task(supervisor, task_id, actor=actor)
         recovery = _execution_recovery(task, realtime_gateway)
         if not bool(recovery.get("canStart")):
             raise HTTPException(
@@ -513,7 +643,6 @@ def create_task_projection_router(
                 detail=str(recovery.get("reason") or "task execution cannot be resumed"),
             )
 
-        actor = str(getattr(request.state, "appliance_actor", "local:development")).strip()
         body = body or TaskResumeExecutionRequest()
         reason = body.reason or "设备管理员从 Echo 任务空间恢复检查点执行"
         request_id = body.request_id
@@ -618,7 +747,7 @@ def create_task_projection_router(
                 "state": _text(agent_result.get("state"), limit=32),
             },
         )
-        updated = _require_task(supervisor, task_id)
+        updated = _require_task(supervisor, task_id, actor=actor)
         activity_by_task, audit_integrity = _audit_activity(audit)
         thread_id = _optional_text(getattr(updated, "thread_id", None), limit=128)
         return {

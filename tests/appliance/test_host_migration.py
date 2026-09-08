@@ -17,7 +17,24 @@ def _source_tree(tmp_path: Path) -> Path:
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"[Unit]\nDescription={unit}\n", encoding="utf-8")
+    config = root / host_migration.TIME_MACHINE_SOURCE
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_bytes(
+        host_migration.TIME_MACHINE_HEADER + b"vfs objects = catia fruit streams_xattr\n"
+    )
     return root
+
+
+def _host_paths(tmp_path: Path) -> dict[str, Path]:
+    samba_dir = tmp_path / "samba"
+    samba_dir.mkdir(exist_ok=True)
+    samba_config = samba_dir / "smb.conf"
+    if not samba_config.exists():
+        samba_config.write_text("[global]\n", encoding="utf-8")
+    return {
+        "samba_config_path": samba_config,
+        "time_machine_config_path": samba_dir / "echo-os-time-machine.conf",
+    }
 
 
 def test_plan_reports_only_missing_packages_changed_units_and_disabled_services(
@@ -30,6 +47,7 @@ def test_plan_reports_only_missing_packages_changed_units_and_disabled_services(
     (units / first_name).write_bytes((source / first_relative).read_bytes())
 
     plan = host_migration.plan_migration(
+        **_host_paths(tmp_path),
         source_root=source,
         unit_directory=units,
         marker_path=tmp_path / "marker.json",
@@ -78,6 +96,7 @@ def test_apply_installs_fixed_dependencies_units_and_enabled_services(tmp_path: 
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     plan = host_migration.plan_migration(
+        **_host_paths(tmp_path),
         source_root=source,
         unit_directory=units,
         marker_path=marker,
@@ -87,6 +106,7 @@ def test_apply_installs_fixed_dependencies_units_and_enabled_services(tmp_path: 
     )
     result = host_migration.apply_migration(
         plan["planId"],
+        **_host_paths(tmp_path),
         source_root=source,
         unit_directory=units,
         marker_path=marker,
@@ -98,11 +118,18 @@ def test_apply_installs_fixed_dependencies_units_and_enabled_services(tmp_path: 
         runner=run,
         apt_get=apt_get,
         systemctl=systemctl,
+        testparm=systemctl,
         clock=lambda: datetime(2026, 9, 5, 1, 2, 3, tzinfo=UTC),
     )
 
     assert result["verified"] is True
-    assert result["packagesInstalled"] == ["btrfs-progs", "hdparm", "nut-client", "nut-server"]
+    assert result["packagesInstalled"] == [
+        "btrfs-progs",
+        "hdparm",
+        "nut-client",
+        "nut-server",
+        "samba-vfs-modules",
+    ]
     assert enabled == set(host_migration.ENABLED_UNITS)
     assert calls[0] == [str(apt_get), "update"]
     assert calls[1] == [
@@ -114,14 +141,69 @@ def test_apply_installs_fixed_dependencies_units_and_enabled_services(tmp_path: 
         "hdparm",
         "nut-client",
         "nut-server",
+        "samba-vfs-modules",
     ]
     assert [str(systemctl), "restart", "echo-appliance.service"] in calls
     for name, relative in host_migration.UNIT_SOURCES.items():
         assert (units / name).read_bytes() == (source / relative).read_bytes()
+    host_paths = _host_paths(tmp_path)
+    assert (
+        host_paths["time_machine_config_path"].read_bytes()
+        == (source / host_migration.TIME_MACHINE_SOURCE).read_bytes()
+    )
+    assert (
+        host_migration._samba_include_state(
+            host_paths["samba_config_path"].read_bytes(),
+            host_paths["time_machine_config_path"],
+        )
+        == "present"
+    )
     evidence = json.loads(marker.read_text(encoding="utf-8"))
     assert evidence["planId"] == plan["planId"]
     assert evidence["appliedAt"] == "2026-09-05T01:02:03Z"
     assert evidence["enabledServices"] == list(host_migration.SERVICES)
+
+
+def test_apply_does_not_restart_units_that_were_already_enabled(tmp_path: Path) -> None:
+    source = _source_tree(tmp_path)
+    units = tmp_path / "units"
+    units.mkdir()
+    for name, relative in host_migration.UNIT_SOURCES.items():
+        (units / name).write_bytes((source / relative).read_bytes())
+    marker = tmp_path / "host-migration.json"
+    systemctl = tmp_path / "systemctl"
+    systemctl.write_text("binary", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    probes = {
+        **_host_paths(tmp_path),
+        "source_root": source,
+        "unit_directory": units,
+        "marker_path": marker,
+        "trusted_uid": tmp_path.stat().st_uid,
+        "package_probe": lambda _package: True,
+        "enabled_probe": lambda _unit: True,
+    }
+    plan = host_migration.plan_migration(**probes)
+
+    assert plan["enableTimers"] == []
+    assert plan["enableServices"] == []
+    result = host_migration.apply_migration(
+        plan["planId"],
+        **probes,
+        trusted_gid=tmp_path.stat().st_gid,
+        active_probe=lambda: True,
+        runner=run,
+        systemctl=systemctl,
+        testparm=systemctl,
+    )
+
+    assert result["verified"] is True
+    assert not any(argv[1:3] == ["enable", "--now"] for argv in calls)
 
 
 def test_versioned_evidence_distinguishes_completed_migration(tmp_path: Path) -> None:
@@ -132,6 +214,7 @@ def test_versioned_evidence_distinguishes_completed_migration(tmp_path: Path) ->
         (units / name).write_bytes((source / relative).read_bytes())
     marker = tmp_path / "marker.json"
     probes = {
+        **_host_paths(tmp_path),
         "source_root": source,
         "unit_directory": units,
         "marker_path": marker,
@@ -150,6 +233,16 @@ def test_versioned_evidence_distinguishes_completed_migration(tmp_path: Path) ->
         ),
         encoding="utf-8",
     )
+    host_paths = _host_paths(tmp_path)
+    host_paths["time_machine_config_path"].write_bytes(
+        (source / host_migration.TIME_MACHINE_SOURCE).read_bytes()
+    )
+    host_paths["samba_config_path"].write_bytes(
+        host_migration._insert_samba_include(
+            host_paths["samba_config_path"].read_bytes(),
+            host_paths["time_machine_config_path"],
+        )
+    )
     plan = host_migration.plan_migration(**probes)
 
     assert plan["operation"] == "none"
@@ -161,6 +254,7 @@ def test_stale_plan_is_rejected_before_packages_or_units_change(tmp_path: Path) 
     units = tmp_path / "units"
     units.mkdir()
     plan = host_migration.plan_migration(
+        **_host_paths(tmp_path),
         source_root=source,
         unit_directory=units,
         marker_path=tmp_path / "marker.json",
@@ -174,6 +268,7 @@ def test_stale_plan_is_rejected_before_packages_or_units_change(tmp_path: Path) 
     with pytest.raises(host_migration.HostMigrationError, match="stale"):
         host_migration.apply_migration(
             plan["planId"],
+            **_host_paths(tmp_path),
             source_root=source,
             unit_directory=units,
             marker_path=tmp_path / "marker.json",
@@ -219,6 +314,7 @@ def test_systemd_failure_restores_original_units_and_enablement_state(tmp_path: 
         return timer in enabled
 
     plan = host_migration.plan_migration(
+        **_host_paths(tmp_path),
         source_root=source,
         unit_directory=units,
         marker_path=marker,
@@ -226,9 +322,12 @@ def test_systemd_failure_restores_original_units_and_enablement_state(tmp_path: 
         package_probe=package_probe,
         enabled_probe=enabled_probe,
     )
-    with pytest.raises(host_migration.HostMigrationError, match="units were restored"):
+    with pytest.raises(
+        host_migration.HostMigrationError, match="units and Samba configuration were restored"
+    ):
         host_migration.apply_migration(
             plan["planId"],
+            **_host_paths(tmp_path),
             source_root=source,
             unit_directory=units,
             marker_path=marker,
@@ -239,10 +338,44 @@ def test_systemd_failure_restores_original_units_and_enablement_state(tmp_path: 
             active_probe=lambda: True,
             runner=run,
             systemctl=systemctl,
+            testparm=systemctl,
         )
     assert {name: (units / name).read_bytes() for name in originals} == originals
+    host_paths = _host_paths(tmp_path)
+    assert host_paths["samba_config_path"].read_text(encoding="utf-8") == "[global]\n"
+    assert not host_paths["time_machine_config_path"].exists()
     assert enabled == set()
     assert not marker.exists()
+
+
+def test_plan_rejects_foreign_time_machine_config_and_misplaced_include(
+    tmp_path: Path,
+) -> None:
+    source = _source_tree(tmp_path)
+    units = tmp_path / "units"
+    units.mkdir()
+    host_paths = _host_paths(tmp_path)
+    common = {
+        **host_paths,
+        "source_root": source,
+        "unit_directory": units,
+        "marker_path": tmp_path / "marker.json",
+        "trusted_uid": tmp_path.stat().st_uid,
+        "package_probe": lambda _package: True,
+        "enabled_probe": lambda _timer: True,
+    }
+
+    host_paths["time_machine_config_path"].write_text("# foreign\n", encoding="utf-8")
+    with pytest.raises(host_migration.HostMigrationError, match="not Echo-managed"):
+        host_migration.plan_migration(**common)
+
+    host_paths["time_machine_config_path"].unlink()
+    host_paths["samba_config_path"].write_text(
+        f"[media]\ninclude = {host_paths['time_machine_config_path']}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(host_migration.HostMigrationError, match="outside Samba global"):
+        host_migration.plan_migration(**common)
 
 
 def test_symlink_source_or_target_is_rejected(tmp_path: Path) -> None:
@@ -260,6 +393,7 @@ def test_symlink_source_or_target_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(host_migration.HostMigrationError, match="unsafe migration source"):
         host_migration.plan_migration(
+            **_host_paths(tmp_path),
             source_root=source,
             unit_directory=units,
             marker_path=tmp_path / "marker.json",
@@ -274,6 +408,7 @@ def test_symlink_source_or_target_is_rejected(tmp_path: Path) -> None:
     target.symlink_to(replacement)
     with pytest.raises(host_migration.HostMigrationError, match="unsafe installed unit"):
         host_migration.plan_migration(
+            **_host_paths(tmp_path),
             source_root=source,
             unit_directory=units,
             marker_path=tmp_path / "marker.json",

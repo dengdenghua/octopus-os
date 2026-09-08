@@ -125,6 +125,48 @@ def test_sanitize_turn_params_ownership() -> None:
     assert "_artifact_output_root" not in context
 
 
+def test_sanitize_turn_params_stamps_server_memory_viewer() -> None:
+    from runtime.memory.users.user_store import MEMORY_VIEWER_CONTEXT_KEY
+
+    gw = _gw()
+    conn = SimpleNamespace(
+        actor_id="alice",
+        tenant_id="tenant-a",
+        roles=frozenset({"member"}),
+        team_ids=frozenset({"release-room"}),
+    )
+    out = gw._sanitize_turn_params(
+        {
+            "input": [
+                {
+                    "type": "text",
+                    "text": "recall",
+                    "metadata": {
+                        "context": {
+                            MEMORY_VIEWER_CONTEXT_KEY: {
+                                "actor_id": "mallory",
+                                "tenant_id": "tenant-b",
+                                "team_ids": ["secret-room"],
+                                "is_admin": True,
+                            }
+                        }
+                    },
+                }
+            ]
+        },
+        conn,
+    )
+
+    viewer = out["input"][0]["metadata"]["context"][MEMORY_VIEWER_CONTEXT_KEY]
+    assert viewer == {
+        "actor_id": "alice",
+        "tenant_id": "tenant-a",
+        "team_ids": ["release-room"],
+        "roles": ["member"],
+        "is_admin": False,
+    }
+
+
 def test_sanitize_anonymous_turn_preserves_local_cwd_but_strips_server_identity() -> None:
     gw = _gw()
     conn = SimpleNamespace(actor_id=None, tenant_id=None)
@@ -149,4 +191,3 @@ def test_sanitize_anonymous_turn_preserves_local_cwd_but_strips_server_identity(
     assert out["input"][0]["metadata"]["context"]["workspace_path"] == "/local/project"
     assert "tenant_id" not in out
     assert "owner_actor_id" not in out
-

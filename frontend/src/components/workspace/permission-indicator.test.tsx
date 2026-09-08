@@ -37,21 +37,21 @@ describe("<PermissionIndicator />", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByTestId("permission-mode-option-default"),
-    ).toHaveTextContent("Default");
+    ).toHaveTextContent("Ask for approval");
     expect(
       screen.getByTestId("permission-mode-option-acceptEdits"),
-    ).toHaveTextContent("Accept edits");
-    expect(screen.getByText("Accept edits")).toBeInTheDocument();
+    ).toHaveTextContent("Approve for me");
+    expect(screen.getByText("Approve for me")).toBeInTheDocument();
     expect(screen.getAllByText("Full access").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Plan only")).not.toBeInTheDocument();
 
     expect(
       screen.getByText(
-        "File changes run automatically; commands still ask for approval.",
+        "Keeps the same workspace boundary and sends eligible escalations to an independent reviewer.",
       ),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Accept edits"));
+    fireEvent.click(screen.getByText("Approve for me"));
 
     await waitFor(() => {
       expect(onModeChange).toHaveBeenCalledWith("acceptEdits");
@@ -90,7 +90,7 @@ describe("<PermissionIndicator />", () => {
     );
 
     openPermissionMenu(
-      screen.getByRole("button", { name: "Permissions: Default" }),
+      screen.getByRole("button", { name: "Permissions: Ask for approval" }),
     );
 
     const confirmItem = await screen.findByTestId(
@@ -103,7 +103,7 @@ describe("<PermissionIndicator />", () => {
 
     expect(
       screen.getByText(
-        "Any write or command asks for your approval first. Safest option.",
+        "Can edit the workspace and run routine commands; asks before using the network or crossing workspace boundaries.",
       ),
     ).toBeInTheDocument();
   });

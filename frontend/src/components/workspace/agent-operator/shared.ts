@@ -1,7 +1,30 @@
-import type { AgentCompetitorScorecard, AgentTraceExperienceQualitySummary, AgentTracePolicyReviewRuleDrafts, AgentTracePromotionAuditSummary, AgentTraceReplayGate, AgentTraceReviewQueueSummary, AgentTraceTaskRecoveryQueue, AgentTraceTrustDenialSummary, AutoVerifierMetricsReport, AutomationPolicyRuleDraftsReport, AutomationRadarReport, BrowserDesktopQualityReport, BrowserDesktopRepairRecipeVerificationsReport, BrowserDesktopRepairRecipesReport, E2ESurpassCertification, OrganizationTopologyLiftReport, OrganizationTopologyProposalsReport, RepairRouteQualityReport, SubagentFitnessReport } from "@/core/agent-trace/api";
+import type {
+  AgentCompetitorScorecard,
+  AgentTraceExperienceQualitySummary,
+  AgentTracePolicyReviewRuleDrafts,
+  AgentTracePromotionAuditSummary,
+  AgentTraceReplayGate,
+  AgentTraceReviewQueueSummary,
+  AgentTraceTaskRecoveryQueue,
+  AgentTraceTrustDenialSummary,
+  AutoVerifierMetricsReport,
+  AutomationPolicyRuleDraftsReport,
+  AutomationRadarReport,
+  BrowserDesktopQualityReport,
+  BrowserDesktopRepairRecipeVerificationsReport,
+  BrowserDesktopRepairRecipesReport,
+  E2ESurpassCertification,
+  OrganizationTopologyLiftReport,
+  OrganizationTopologyProposalsReport,
+  RepairRouteQualityReport,
+  SubagentFitnessReport,
+} from "@/core/agent-trace/api";
 import { E2E_SURPASS_TARGET_SCORE } from "@/core/agent-trace/api";
-import type { PluginLifecycleHistory, PluginPublisherTrustReport, PluginSmokeSummary } from "@/core/plugins/types";
-
+import type {
+  PluginLifecycleHistory,
+  PluginPublisherTrustReport,
+  PluginSmokeSummary,
+} from "@/core/plugins/types";
 
 export const EMPTY_SUMMARY: AgentTraceReviewQueueSummary = {
   schema: "echo.review_queue.v1",
@@ -149,12 +172,13 @@ export const EMPTY_AUTOMATION_RADAR: AutomationRadarReport = {
   next_focus: [],
 };
 
-export const EMPTY_AUTOMATION_POLICY_RULE_DRAFTS: AutomationPolicyRuleDraftsReport = {
-  schema: "echo.automation_policy_rule_drafts.v1",
-  total: 0,
-  verified: 0,
-  drafts: [],
-};
+export const EMPTY_AUTOMATION_POLICY_RULE_DRAFTS: AutomationPolicyRuleDraftsReport =
+  {
+    schema: "echo.automation_policy_rule_drafts.v1",
+    total: 0,
+    verified: 0,
+    drafts: [],
+  };
 
 export const EMPTY_BROWSER_DESKTOP_REPAIR_RECIPES: BrowserDesktopRepairRecipesReport =
   {
@@ -248,12 +272,13 @@ export const EMPTY_TRUST_DENIAL_SUMMARY: AgentTraceTrustDenialSummary = {
   recent: [],
 };
 
-export const EMPTY_POLICY_REVIEW_RULE_DRAFTS: AgentTracePolicyReviewRuleDrafts = {
-  schema: "echo.policy_review_rule_drafts.v1",
-  total: 0,
-  verified: 0,
-  drafts: [],
-};
+export const EMPTY_POLICY_REVIEW_RULE_DRAFTS: AgentTracePolicyReviewRuleDrafts =
+  {
+    schema: "echo.policy_review_rule_drafts.v1",
+    total: 0,
+    verified: 0,
+    drafts: [],
+  };
 
 export const EMPTY_AGENT_SCORECARD: AgentCompetitorScorecard = {
   schema: "echo.agent_competitor_scorecard.v1",
@@ -300,4 +325,3 @@ export interface ReplayGateOverridePrompt {
   gate: AgentTraceReplayGate;
   message: string;
 }
-

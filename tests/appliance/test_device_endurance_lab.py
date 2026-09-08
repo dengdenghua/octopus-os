@@ -10,6 +10,12 @@ from typing import Any
 
 import pytest
 
+if os.name == "nt":
+    pytest.skip(
+        "device endurance lab requires Linux ownership and device semantics",
+        allow_module_level=True,
+    )
+
 from deploy.appliance import device_endurance_lab as lab
 
 REPOSITORY = Path(__file__).resolve().parents[2]
@@ -157,6 +163,13 @@ def _running_result() -> dict[str, Any]:
         "approval_replay": 403,
         "protected_stop": 403,
         "audit_verify": 200,
+        "zfs_runtime": {
+            "kernelRelease": "6.12.94+deb13-amd64",
+            "moduleInstalled": True,
+            "moduleLoaded": True,
+            "loadServiceActive": True,
+            "kernelInterfaceReady": True,
+        },
         "nas_transfer": {
             "writeExecuted": True,
             "size": lab.NAS_TRANSFER_BYTES,
@@ -320,6 +333,7 @@ def test_device_lab_runs_first_boot_soak_and_unclean_power_recovery(tmp_path: Pa
         if len(command) > 1 and command[1].endswith("verify-running-appliance.py")
     ]
     assert verifier_commands
+    assert all("--require-zfs-runtime" in command for command in verifier_commands)
     assert all("--require-family-isolation" in command for command in verifier_commands)
     assert all(
         command[command.index("--family-isolation-fixture") + 1]

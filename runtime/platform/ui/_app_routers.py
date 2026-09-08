@@ -181,6 +181,7 @@ def mount_routers_a(
             workspace_root=ctx.thread_workspace_root,
             model_router=project_model_router,
             subagent_runner=ctx.subagent_runner,
+            task_supervisor=getattr(state, "task_supervisor", None),
             identity_store=ctx.identity_store,
             require_auth=ctx.require_auth,
             jwt_secret=ctx.jwt_secret,
@@ -481,6 +482,7 @@ def mount_routers_a(
             jwt_secret=ctx.jwt_secret,
             jwt_issuer=ctx.jwt_issuer,
             jwt_audience=ctx.jwt_audience,
+            task_supervisor=getattr(state, "task_supervisor", None),
         )
     )
 
@@ -518,6 +520,10 @@ def mount_routers_a(
         create_observability_router(
             journal=state.journal,
             registry=state.registry,
+            thread_store=ctx.thread_store,
+            workspace_root=ctx.thread_workspace_root,
+            allow_local_workspace_access=ctx.allow_local_workspace_access,
+            task_supervisor=getattr(state, "task_supervisor", None),
             planner=getattr(stack, "planner", None) if stack is not None else None,
             effect_store=(
                 getattr(stack.executor, "effect_store", None)

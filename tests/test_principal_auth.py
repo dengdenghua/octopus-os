@@ -39,7 +39,11 @@ def _store() -> IdentityStore:
         Identity(
             actor_id="alice",
             roles=("operator",),
-            metadata={"tenant_id": "tenant-a", "scopes": ["mcp:write"]},
+            metadata={
+                "tenant_id": "tenant-a",
+                "scopes": ["mcp:write"],
+                "team_ids": ["team-a"],
+            },
         ),
         api_key_plaintext="sk-alice",
     )
@@ -59,6 +63,7 @@ def test_principal_uses_verified_identity_metadata() -> None:
     assert principal.tenant_id == "tenant-a"
     assert principal.roles == frozenset({"operator"})
     assert principal.scopes == frozenset({"mcp:write"})
+    assert principal.team_ids == frozenset({"team-a"})
     assert request.state.principal == principal
 
 
@@ -96,4 +101,3 @@ def test_auth_without_identity_store_fails_closed() -> None:
         resolve_principal(_request(), None, True)
     assert exc_info.value.status_code == 401
     assert exc_info.value.headers == {"X-Echo-Auth-Expired": "1"}
-

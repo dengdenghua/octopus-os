@@ -91,9 +91,7 @@ export function MixSettingsSection() {
       toast.success(t.settings.echoMix.saveSuccess);
     } catch (e) {
       toast.error(
-        e instanceof Error
-          ? e.message
-          : t.settings.echoMix.saveFailedFallback,
+        e instanceof Error ? e.message : t.settings.echoMix.saveFailedFallback,
       );
     } finally {
       setSaving(false);
@@ -148,9 +146,7 @@ export function MixSettingsSection() {
               onChange={(e) => setAggregator(e.target.value)}
               className="rounded-md border border-border bg-background px-2 py-1 text-sm"
             >
-              <option value="">
-                {t.settings.echoMix.aggregatorDefault}
-              </option>
+              <option value="">{t.settings.echoMix.aggregatorDefault}</option>
               {candidates.map((m) => (
                 <option key={m.name} value={m.name}>
                   {m.display_name || m.name}

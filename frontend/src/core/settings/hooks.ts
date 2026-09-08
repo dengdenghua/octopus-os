@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 
+import { currentActorId } from "../auth/api";
 import {
   getLocalSettings,
   getThreadLocalSettings,
@@ -17,6 +18,7 @@ type LocalSettingsSetter = (
 function useSettingsState(
   getSettings: () => LocalSettings,
   saveSettings: (settings: LocalSettings) => void,
+  scopeKey: string,
 ): [LocalSettings, LocalSettingsSetter] {
   // Lazy initializer reads localStorage on first render so children that
   // consume settings during their own initial render (e.g. MarkdownContent
@@ -31,7 +33,7 @@ function useSettingsState(
   useLayoutEffect(() => {
     setState(getSettings());
     setMounted(true);
-  }, [getSettings]);
+  }, [getSettings, scopeKey]);
 
   // Cross-component subscription: when *any* component calls
   // saveLocalSettings(), every mounted useLocalSettings / useThreadSettings
@@ -42,50 +44,56 @@ function useSettingsState(
     return subscribeLocalSettings(() => {
       setState(getSettings());
     });
-  }, [getSettings]);
-
-  const [pendingSave, setPendingSave] = useState<LocalSettings | null>(null);
-
-  useEffect(() => {
-    if (pendingSave !== null) {
-      saveSettings(pendingSave);
-      setPendingSave(null);
-    }
-  }, [pendingSave, saveSettings]);
+  }, [getSettings, scopeKey]);
 
   const setter = useCallback<LocalSettingsSetter>(
     (key, value) => {
       if (!mounted) return;
-      setState((prev) => {
-        const newState: LocalSettings = {
-          ...prev,
-          [key]: {
-            ...prev[key],
-            ...value,
-          },
-        };
-        setPendingSave(newState);
-        return newState;
-      });
+      // Merge against the latest shared store, not this window's render
+      // snapshot. Commit through this callback's thread identity before a
+      // navigation can replace it; deferred effects could save into the next
+      // thread and overwrite another window's intervening setting changes.
+      const latest = getSettings();
+      const next: LocalSettings = {
+        ...latest,
+        [key]: { ...latest[key], ...value },
+      };
+      saveSettings(next);
+      setState(getSettings());
     },
-    [mounted, setPendingSave],
+    [mounted, getSettings, saveSettings],
   );
 
   return [state, setter];
 }
 
 export function useLocalSettings(): [LocalSettings, LocalSettingsSetter] {
-  return useSettingsState(getLocalSettings, saveLocalSettings);
+  const actor = currentActorId();
+  const saveActorSettings = useCallback(
+    (settings: LocalSettings) => {
+      // A queued click from the previous session must never commit into the
+      // newly active account after an actor switch.
+      if (currentActorId() !== actor) return;
+      saveLocalSettings(settings);
+    },
+    [actor],
+  );
+  return useSettingsState(getLocalSettings, saveActorSettings, actor);
 }
 
 export function useThreadSettings(
   threadId: string,
 ): [LocalSettings, LocalSettingsSetter] {
+  const actor = currentActorId();
   return useSettingsState(
     useCallback(() => getThreadLocalSettings(threadId), [threadId]),
     useCallback(
-      (settings: LocalSettings) => saveThreadLocalSettings(threadId, settings),
-      [threadId],
+      (settings: LocalSettings) => {
+        if (currentActorId() !== actor) return;
+        saveThreadLocalSettings(threadId, settings);
+      },
+      [actor, threadId],
     ),
+    `${actor}:${threadId}`,
   );
 }

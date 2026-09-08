@@ -138,6 +138,47 @@ def test_run_subagent_react_loop_streams_text_and_concludes() -> None:
     assert concluded["payload"].get("ok") is True
 
 
+def test_run_subagent_react_loop_reports_provider_usage_to_host() -> None:
+    from runtime.sensing.model_router.models import CostEntry, ModelResponse, ModelStreamEvent
+
+    class _UsageRouter(_ScriptedRouter):
+        def call_stream(self, req):  # noqa: ARG002
+            yield ModelStreamEvent(type="text_delta", delta="Final Answer: done")
+            yield ModelStreamEvent(
+                type="done",
+                final=ModelResponse(
+                    text="Final Answer: done",
+                    model="usage-model",
+                    provider="usage-provider",
+                    input_tokens=12,
+                    output_tokens=7,
+                    cost=CostEntry(usd=0.125),
+                ),
+            )
+
+    usage: list[dict] = []
+    result = run_subagent_react_loop(
+        _FakeStack(_UsageRouter([])),
+        prompt="report usage",
+        role_id="researcher",
+        model="usage-model",
+        thread_id="usage-child",
+        metadata={"_subagent_usage_recorder": usage.append},
+    )
+
+    assert result is not None and result.success
+    assert usage == [
+        {
+            "input_tokens": 12,
+            "output_tokens": 7,
+            "cost_usd": 0.125,
+            "model": "usage-model",
+            "provider": "usage-provider",
+            "iteration": 1,
+        }
+    ]
+
+
 def test_run_subagent_react_loop_emits_failed_on_react_error(
     monkeypatch,
 ) -> None:
@@ -625,4 +666,3 @@ class TestRestrictedDispatchGate:
         )
         assert runner(call) == "react answer"
         assert len(calls) == 1
-

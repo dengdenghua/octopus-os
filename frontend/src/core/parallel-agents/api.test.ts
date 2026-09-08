@@ -9,7 +9,13 @@ vi.mock("@/core/auth/api", () => ({
   getToken: () => authState.token,
 }));
 
-import { fetchBatchRecoverySnapshot, streamBatch, toBackendURL } from "./api";
+import {
+  fetchBatchRecoverySnapshot,
+  fetchParallelRecoverySnapshots,
+  resumeParallelBatch,
+  streamBatch,
+  toBackendURL,
+} from "./api";
 
 describe("parallel agents backend URLs", () => {
   afterEach(() => {
@@ -90,6 +96,66 @@ describe("parallel agents backend URLs", () => {
     );
 
     await expect(fetchBatchRecoverySnapshot("missing")).resolves.toBeNull();
+  });
+
+  test("discovers owner-scoped durable recovery snapshots", async () => {
+    authState.token = "sk-test";
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      calls.push(url);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            schema: "echo.parallel_batch_recovery_snapshots.v1",
+            snapshots: [],
+            count: 0,
+            limit: 25,
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+
+    const response = await fetchParallelRecoverySnapshots(25);
+
+    expect(response?.schema).toBe("echo.parallel_batch_recovery_snapshots.v1");
+    expect(response?.snapshots).toEqual([]);
+    expect(calls).toEqual([
+      "http://127.0.0.1:8000/api/agents/parallel/recovery-snapshots?limit=25",
+    ]);
+  });
+
+  test("posts an explicit recovery selection with auth headers", async () => {
+    authState.token = "sk-test";
+    const calls: Array<{ init?: RequestInit; url: string }> = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            schema: "echo.parallel_batch_recovery_resume.v1",
+            source_batch_id: "batch_source",
+            batch: { batch_id: "batch_new", status: "running" },
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+
+    const response = await resumeParallelBatch("batch/source", ["lane-1"]);
+
+    expect(response?.source_batch_id).toBe("batch_source");
+    expect(calls[0]?.url).toBe(
+      "http://127.0.0.1:8000/api/agents/parallel/batch/batch%2Fsource/resume",
+    );
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(calls[0]?.init?.headers).toMatchObject({
+      Authorization: "Bearer sk-test",
+      "Content-Type": "application/json",
+    });
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      task_ids: ["lane-1"],
+    });
   });
 });
 

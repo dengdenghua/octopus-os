@@ -19,13 +19,25 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from runtime.memory.threads.event_log import EventLog
-from runtime.protocol import JsonRpcErrorCode, ServerMethod
+from runtime.protocol import JsonRpcErrorCode, ServerMethod, TurnStatus
 from runtime.sensing.gateway.realtime_gateway import EventEmitter, _RpcError
 
 if TYPE_CHECKING:
     from runtime.sensing.gateway.realtime_cerebrum import CerebrumRuntime
 
 _logger = logging.getLogger(__name__)
+
+
+def _engine_owns_summary(turns: list[Any]) -> bool:
+    """Choose from the last settled turn, not a browser preference."""
+    for turn in reversed(turns):
+        if getattr(turn, "status", None) == TurnStatus.IN_PROGRESS:
+            continue
+        execution = getattr(turn, "execution", None)
+        # Unknown legacy evidence keeps its existing policy; it must not
+        # inherit an older external engine's policy across another turn.
+        return execution is not None and execution.engine in {"codex", "opencode"}
+    return False
 
 
 async def _maybe_compact(
@@ -74,7 +86,11 @@ async def _maybe_compact_locked(
         # Bind LLM summariser at call time so a freshly-swapped
         # router is picked up without rebuilding the runtime.
         effective = policy
-        if runtime._summary_router is not None and policy.custom_summariser is None:
+        if (
+            runtime._summary_router is not None
+            and policy.custom_summariser is None
+            and not _engine_owns_summary(turns)
+        ):
             from runtime.memory.threads.compaction import _default_summariser
             from runtime.memory.threads.llm_summariser import (
                 make_llm_summariser,
@@ -164,7 +180,11 @@ async def compact_thread(
             }
 
         effective = replace(policy, trigger_at=policy.keep_recent + 1)
-        if runtime._summary_router is not None and effective.custom_summariser is None:
+        if (
+            runtime._summary_router is not None
+            and effective.custom_summariser is None
+            and not _engine_owns_summary(turns)
+        ):
             from runtime.memory.threads.compaction import _default_summariser
             from runtime.memory.threads.llm_summariser import make_llm_summariser
 

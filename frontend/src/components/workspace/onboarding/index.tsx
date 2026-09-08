@@ -24,10 +24,15 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/core/i18n/hooks";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import { cn } from "@/lib/utils";
 import { OnboardingStep } from "./onboarding-step";
 
 const STORAGE_KEY = "echo:onboarding_completed";
+const onboardingStorageKey = () => actorScopedStorageKey(STORAGE_KEY);
 const TOTAL_STEPS = 4;
 
 export function OnboardingGuide() {
@@ -36,14 +41,14 @@ export function OnboardingGuide() {
   const [step, setStep] = useState(0);
 
   useEffect(() => {
-    const completed = localStorage.getItem(STORAGE_KEY);
+    const completed = readActorScopedStorageValue(STORAGE_KEY);
     if (!completed) {
       setOpen(true);
     }
   }, []);
 
   const handleDismiss = useCallback(() => {
-    localStorage.setItem(STORAGE_KEY, "true");
+    localStorage.setItem(onboardingStorageKey(), "true");
     setOpen(false);
   }, []);
 

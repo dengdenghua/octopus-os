@@ -100,9 +100,7 @@ function StepItem({
             <div
               className={cn(
                 "mt-1 h-full min-h-[20px] w-px transition-colors duration-slow",
-                step.status === "completed"
-                  ? "bg-success/30"
-                  : "bg-border/50",
+                step.status === "completed" ? "bg-success/30" : "bg-border/50",
               )}
             />
           )}
@@ -126,10 +124,8 @@ function StepItem({
                     "truncate text-sm font-medium",
                     step.status === "running" &&
                       "text-chart-1 dark:text-chart-1",
-                    step.status === "completed" &&
-                      "text-success",
-                    step.status === "error" &&
-                      "text-destructive",
+                    step.status === "completed" && "text-success",
+                    step.status === "error" && "text-destructive",
                     step.status === "pending" && "text-muted-foreground",
                   )}
                 >

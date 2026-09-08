@@ -31,6 +31,7 @@ from appliance.agent_api.auth import (
     verify_jwt_hs256,
     verify_password,
 )
+from appliance.agent_api.authorization import authorization_token, websocket_token
 from appliance.approval import HighRiskApprovalService, consume_request_approval
 from appliance.audit import ApplianceAudit, AuditIntegrityError
 from appliance.auth import (
@@ -44,6 +45,7 @@ from appliance.auth import (
     write_auth_store,
 )
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
+from appliance.totp import AdministratorTotp
 
 AUTH_HASH_ENV = "ECHO_APPLIANCE_ADMIN_PASSWORD_HASH"
 MIN_PASSWORD_CHARACTERS = 12
@@ -64,6 +66,15 @@ class PasswordRotationBody(BaseModel):
         min_length=MIN_PASSWORD_CHARACTERS,
         max_length=256,
     )
+
+
+class TotpEnrollmentConfirmBody(BaseModel):
+    enrollment_id: str = Field(..., alias="enrollmentId", min_length=20, max_length=128)
+    code: str = Field(..., min_length=6, max_length=6)
+
+
+class TotpDisableBody(BaseModel):
+    factor: str = Field(..., min_length=6, max_length=64)
 
 
 class ApplianceAccountSecurity:
@@ -87,6 +98,11 @@ class ApplianceAccountSecurity:
         self._sleeper = sleeper
         self._path = auth_store_path()
         self._lock = threading.RLock()
+        self._totp = AdministratorTotp(
+            jwt_secret=auth_config.jwt_secret,
+            path=self._path.with_name("appliance-totp.json"),
+            clock=clock,
+        )
 
         payload = read_auth_store(self._path)
         raw_floor = payload.get(SESSION_NOT_BEFORE_KEY, 0)
@@ -179,6 +195,46 @@ class ApplianceAccountSecurity:
             if self._clock() >= deadline:
                 raise AccountSecurityError(503, "session revocation clock did not advance")
             self._sleeper(0.025)
+
+    def verify_login_second_factor(
+        self,
+        username: str,
+        factor: str | None,
+        request: Request,
+    ) -> None:
+        self._totp.verify_login_factor(username, factor, request)
+
+    def totp_status(self) -> dict[str, Any]:
+        return self._totp.status()
+
+    def begin_totp_enrollment(self, *, actor: str) -> dict[str, Any]:
+        self._record(actor=actor, action="credentials.totp.enroll", outcome="attempted")
+        enrollment = self._totp.begin_enrollment()
+        self._record(actor=actor, action="credentials.totp.enroll", outcome="succeeded")
+        return enrollment
+
+    def confirm_totp_enrollment(
+        self,
+        *,
+        actor: str,
+        enrollment_id: str,
+        code: str,
+    ) -> int:
+        with self._lock:
+            self._record(actor=actor, action="credentials.totp.enable", outcome="attempted")
+            self._totp.confirm_enrollment(enrollment_id=enrollment_id, code=code)
+            floor = self.revoke_all(actor=actor)
+            self._record(actor=actor, action="credentials.totp.enable", outcome="succeeded")
+            return floor
+
+    def disable_totp(self, *, actor: str, factor: str) -> int:
+        with self._lock:
+            self._totp.verify_management_factor(factor)
+            self._record(actor=actor, action="credentials.totp.disable", outcome="attempted")
+            floor = self.revoke_all(actor=actor)
+            self._totp.disable()
+            self._record(actor=actor, action="credentials.totp.disable", outcome="succeeded")
+            return floor
 
     def _record(self, *, actor: str, action: str, outcome: str) -> None:
         try:
@@ -319,7 +375,11 @@ class ApplianceLocalAuthMiddleware:
         self._security = account_security
         auth_app = FastAPI()
         auth_app.include_router(
-            create_local_auth_router(config=auth_config, identity_store=identity_store)
+            create_local_auth_router(
+                config=auth_config,
+                identity_store=identity_store,
+                second_factor_verifier=account_security.verify_login_second_factor,
+            )
         )
         self._auth_app = auth_app
 
@@ -359,33 +419,15 @@ def _cookie_without_stale_session(raw: str, security: ApplianceAccountSecurity) 
 
 def _scope_token(scope: dict[str, Any]) -> str:
     """Match Agent principal resolution order for an attached WebSocket JWT."""
-
-    header_map = {key.lower(): value.decode("latin-1") for key, value in scope.get("headers") or ()}
-    authorization = header_map.get(b"authorization", "")
-    if authorization.lower().startswith("bearer "):
-        return authorization[7:].strip()
-    protocol = header_map.get(b"sec-websocket-protocol", "")
-    if protocol:
-        parts = [part.strip() for part in protocol.split(",") if part.strip()]
-        if len(parts) >= 2 and parts[0].lower() == "bearer":
-            return parts[1]
-    for key, value in parse_qsl(
-        (scope.get("query_string") or b"").decode("latin-1"),
-        keep_blank_values=True,
-    ):
-        if key == "token" and value:
-            return value
-    parsed = SimpleCookie()
-    with contextlib.suppress(Exception):
-        parsed.load(header_map.get(b"cookie", ""))
-    session = parsed.get(SESSION_COOKIE_NAME) or parsed.get(LEGACY_SESSION_COOKIE_NAME)
-    return session.value if session is not None else ""
+    return authorization_token(scope)
 
 
 def _strip_stale_credentials(
     scope: dict[str, Any], security: ApplianceAccountSecurity
 ) -> dict[str, Any]:
-    changed = False
+    protocol_token = websocket_token(scope) if scope.get("type") == "websocket" else None
+    stale_protocol = bool(protocol_token and security.token_is_stale(protocol_token))
+    changed = stale_protocol
     headers: list[tuple[bytes, bytes]] = []
     for key, value in scope.get("headers") or ():
         lowered = key.lower()
@@ -406,12 +448,7 @@ def _strip_stale_credentials(
                     continue
                 replacement = fresh.encode("latin-1")
         elif lowered == b"sec-websocket-protocol":
-            parts = [part.strip() for part in value.decode("latin-1").split(",")]
-            if (
-                len(parts) >= 2
-                and parts[0].lower() == "bearer"
-                and security.token_is_stale(parts[1])
-            ):
+            if stale_protocol:
                 changed = True
                 continue
         headers.append((key, replacement))
@@ -431,6 +468,10 @@ def _strip_stale_credentials(
     updated = dict(scope)
     updated["headers"] = headers
     updated["query_string"] = urlencode(filtered_query, doseq=True).encode("latin-1")
+    if stale_protocol:
+        # Agent reads the parsed ASGI protocols before the raw header. Both
+        # representations must lose a revoked token, including bearer.b64.
+        updated["subprotocols"] = []
     return updated
 
 
@@ -555,6 +596,69 @@ def create_account_security_router(
         )
         try:
             floor = service.rotate_password(actor=actor, new_password=body.new_password)
+            service.wait_for_login_window()
+        except AccountSecurityError as exc:
+            _raise(exc)
+        clear_session_cookie(response, request)
+        return {"success": True, "sessionsRevoked": True, "sessionNotBefore": floor}
+
+    @router.get("/credentials/totp")
+    def totp_status(actor: str = Depends(require_operator)) -> dict[str, Any]:
+        del actor
+        return service.totp_status()
+
+    @router.post("/credentials/totp/enroll")
+    def begin_totp_enrollment(
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        consume_request_approval(
+            request,
+            approval,
+            actor=actor,
+            action="credentials.totp.enroll",
+            target=ADMIN_USERNAME,
+        )
+        try:
+            return service.begin_totp_enrollment(actor=actor)
+        except AccountSecurityError as exc:
+            _raise(exc)
+
+    @router.post("/credentials/totp/confirm")
+    def confirm_totp_enrollment(
+        body: TotpEnrollmentConfirmBody,
+        request: Request,
+        response: Response,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        try:
+            floor = service.confirm_totp_enrollment(
+                actor=actor,
+                enrollment_id=body.enrollment_id,
+                code=body.code,
+            )
+            service.wait_for_login_window()
+        except AccountSecurityError as exc:
+            _raise(exc)
+        clear_session_cookie(response, request)
+        return {"success": True, "sessionsRevoked": True, "sessionNotBefore": floor}
+
+    @router.post("/credentials/totp/disable")
+    def disable_totp(
+        body: TotpDisableBody,
+        request: Request,
+        response: Response,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        consume_request_approval(
+            request,
+            approval,
+            actor=actor,
+            action="credentials.totp.disable",
+            target=ADMIN_USERNAME,
+        )
+        try:
+            floor = service.disable_totp(actor=actor, factor=body.factor)
             service.wait_for_login_window()
         except AccountSecurityError as exc:
             _raise(exc)

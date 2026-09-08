@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
+import { moduleById } from "@/core/modules/catalog";
 
 const pageSource = readFileSync(
   join(process.cwd(), "src/app/workspace/design/page.tsx"),
@@ -10,10 +11,6 @@ const pageSource = readFileSync(
 // Workspace routes live here, not in src/router.tsx, since the router split.
 const routerSource = readFileSync(
   join(process.cwd(), "src/app/workspace/workspace-routes.tsx"),
-  "utf8",
-);
-const catalogSource = readFileSync(
-  join(process.cwd(), "src/core/modules/catalog.ts"),
   "utf8",
 );
 const designCatalogSource = readFileSync(
@@ -84,7 +81,8 @@ describe("Echo Design platform contract", () => {
     expect(pageSource).toContain("安装 Skill");
     expect(pageSource).toContain("ensureSkillEnabled");
     expect(pageSource).toContain("handleInstallSkill");
-    expect(pageSource).toContain('navigate("/workspace/skills")');
+    expect(pageSource).toContain("preserveWorkbenchPresentation");
+    expect(pageSource).toContain('"/workspace/skills"');
     expect(pageSource).toContain("仅显示未安装");
     expect(pageSource).toContain('value="popular"');
     expect(pageSource).toContain("featuredSkillIds.has(item.id)");
@@ -241,8 +239,10 @@ describe("Echo Design platform contract", () => {
     expect(routerSource).toContain(
       'const DESIGN_APP = remoteWorkbenchApp("design")',
     );
-    expect(catalogSource).toContain('id: "design"');
-    expect(catalogSource).toContain('to: "/workspace/design"');
+    expect(moduleById("design")).toMatchObject({
+      id: "design",
+      to: "/workspace/design",
+    });
   });
 
   it("isolates local projects and creation rooms by persona", () => {

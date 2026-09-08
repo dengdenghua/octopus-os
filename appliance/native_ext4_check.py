@@ -15,8 +15,9 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from appliance.native_ext4 import _FSTAB_PATH, _managed_entries, _read_fstab, _volume_transaction
 from appliance.native_mdraid import _MDADM_CONFIG, managed_mdraid1_arrays
@@ -314,9 +315,7 @@ def apply_ext4_check(
         operation_error: Exception | None = None
         try:
             mask_attempted = True
-            _run_checked(
-                "systemctl", "mask", "--runtime", plan["mountUnit"], runner=runner
-            )
+            _run_checked("systemctl", "mask", "--runtime", plan["mountUnit"], runner=runner)
             if _unit_state(plan["mountUnit"], runner=runner, allow_masked=True) not in {
                 "masked",
                 "masked-runtime",

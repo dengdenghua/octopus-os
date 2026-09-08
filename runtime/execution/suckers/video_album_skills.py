@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 from runtime.memory.hemolymph import video_semantic_index as _vidx
 
 from .image_album_skills import _idx_db  # reuse the directory-scoped DB helper
+from .image_semantic_skills import _asset_reference, _decorate_results, _source_path
 
 
 def _video_index_build(
@@ -73,13 +74,18 @@ def _video_search_by_image(
     if not image_path:
         return {"error": "missing image_path"}
     results = _vidx.search_video_by_image(
-        image_path,
+        _source_path(directory, image_path),
         db_path=_idx_db(directory),
         top_k=top_k,
     )
     if results is None:
         return _not_ready("video image search")
-    return {"image": image_path, "results": results, "count": len(results)}
+    return {
+        "image": image_path,
+        "results": _decorate_results(results, directory),
+        "count": len(results),
+        "assetReference": _asset_reference(directory, image_path),
+    }
 
 
 def _video_search_by_face(
@@ -91,13 +97,18 @@ def _video_search_by_face(
     if not image_path:
         return {"error": "missing image_path"}
     results = _vidx.search_face_in_videos(
-        image_path,
+        _source_path(directory, image_path),
         db_path=_idx_db(directory),
         top_k=top_k,
     )
     if results is None:
         return _not_ready("face search")
-    return {"image": image_path, "results": results, "count": len(results)}
+    return {
+        "image": image_path,
+        "results": _decorate_results(results, directory),
+        "count": len(results),
+        "assetReference": _asset_reference(directory, image_path),
+    }
 
 
 def _video_search_by_speech(
@@ -123,7 +134,7 @@ def _video_analyze(
     if not video_path:
         return {"error": "missing video_path"}
     results = _vidx.classify_video(
-        video_path,
+        _source_path(directory, video_path),
         labels=labels,
         top_k=top_k,
         db_path=_idx_db(directory),
@@ -157,7 +168,8 @@ def register_video_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="video_index_build",
             description=(
-                "为本地视频库建立索引（抽取关键帧、可选人脸向量与语音转写），"
+                "为工作区视频库建立索引（抽取关键帧、可选人脸向量与语音转写）；设备 NAS 媒体"
+                "使用 appliance 媒体/文件工具，不把目录参数当作 NAS 授权。"
                 "之后各类 video_search_* / video_analyze 技能才能使用。"
                 "Args: {directory?: string, include_faces?: bool, "
                 "include_transcript?: bool}。"
@@ -172,7 +184,7 @@ def register_video_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="video_search_by_text",
             description=(
-                "用文本描述在本地视频库中检索最相似的视频关键帧（CLIP 文→图），"
+                "用文本描述在工作区视频库中检索最相似的视频关键帧（CLIP 文→图），"
                 "返回视频路径、时间点与相似度。Args: {query: string, directory?: string, "
                 "top_k?: int}。需先执行 video_index_build 建立索引。"
             ),
@@ -186,7 +198,7 @@ def register_video_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="video_search_by_image",
             description=(
-                "用一张图片在本地视频库中检索视觉上最相似的关键帧，返回视频路径、"
+                "用一张图片在工作区视频库中检索视觉上最相似的关键帧，返回视频路径、"
                 "时间点与相似度。Args: {image_path: string, directory?: string, "
                 "top_k?: int}。需先执行 video_index_build 建立索引。"
             ),
@@ -200,7 +212,7 @@ def register_video_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="video_search_by_face",
             description=(
-                "用一张包含人脸的照片在本地视频库中检索包含同一人脸的视频关键帧，"
+                "用一张包含人脸的照片在工作区视频库中检索包含同一人脸的视频关键帧，"
                 "返回视频路径、时间点与相似度。Args: {image_path: string, "
                 "directory?: string, top_k?: int}。需先执行 video_index_build "
                 "（含 include_faces）建立索引。"
@@ -215,7 +227,7 @@ def register_video_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="video_search_by_speech",
             description=(
-                "在已转写语音的本地视频库中按文本匹配检索语音片段，返回视频路径、"
+                "在已转写语音的工作区视频库中按文本匹配检索语音片段，返回视频路径、"
                 "起止时间与匹配文本。Args: {query: string, directory?: string}。"
                 "需先执行 video_index_build（含 include_transcript）建立索引。"
             ),
@@ -229,7 +241,7 @@ def register_video_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="video_analyze",
             description=(
-                "对本地视频做零样本分类（CLIP 文→图，按关键帧平均），返回 Top-k 标签"
+                "对工作区视频做零样本分类（CLIP 文→图，按关键帧平均），返回 Top-k 标签"
                 "及置信度，支持自定义类别标签。Args: {video_path: string, "
                 "directory?: string, labels?: string[], top_k?: int}。"
                 "需先执行 video_index_build 建立索引。"
@@ -244,7 +256,7 @@ def register_video_album_skills(registry: SkillRegistry) -> int:
         Skill(
             name="video_face_albums",
             description=(
-                "在本地视频库中把人脸嵌入聚类成人物分组，返回各人物出现的视频与时间点。"
+                "在工作区视频库中把人脸嵌入聚类成人物分组，返回各人物出现的视频与时间点。"
                 "Args: {directory?: string, threshold?: number}。"
                 "需先执行 video_index_build（含 include_faces）建立索引。"
             ),

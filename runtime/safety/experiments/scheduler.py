@@ -71,6 +71,13 @@ class CamouflageScheduler:
         stack: Any,
         config: CamouflageConfig | None = None,
     ) -> None:
+        from runtime.execution.model_services import background_model_calls_enabled
+
+        if not background_model_calls_enabled(stack):
+            self._stack = stack
+            self.stop()
+            self._last_error = "disabled by background model policy"
+            return
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 _LOG.info("camouflage scheduler already running · skip start")
@@ -93,7 +100,9 @@ class CamouflageScheduler:
                     "camouflage scheduler: requires LLMPlanner · got static · skipping",
                 )
                 return
-            router = getattr(stack.planner, "router", None)
+            from runtime.execution.model_services import background_model_router
+
+            router = background_model_router(stack)
             if router is None:
                 self._last_error = "stack.planner has no router"
                 _LOG.warning(
@@ -276,6 +285,10 @@ class CamouflageScheduler:
                 return
 
     def _tick_once(self) -> None:
+        from runtime.execution.model_services import background_model_calls_enabled
+
+        if not background_model_calls_enabled(self._stack):
+            return
         with self._lock:
             self._tick_count += 1
             n = self._tick_count

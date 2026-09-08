@@ -1,3 +1,4 @@
+import { currentActorId } from "@/core/auth/api";
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -15,9 +16,21 @@ import {
   type UpdateAgentRequest,
 } from "./types";
 
+export function agentsQueryKey(actor = currentActorId()) {
+  return ["agents", actor] as const;
+}
+
+export function agentQueryKey(
+  name: string | null | undefined,
+  actor = currentActorId(),
+) {
+  return ["agents", actor, name ?? ""] as const;
+}
+
 export function useAgents() {
+  const actor = currentActorId();
   const { data, isLoading, isFetching, error, refetch } = useQuery({
-    queryKey: ["agents"],
+    queryKey: agentsQueryKey(actor),
     queryFn: ({ signal }) => listAgents({ signal }),
     refetchOnWindowFocus: false,
     staleTime: 30_000,
@@ -40,8 +53,9 @@ export function useAgents() {
 }
 
 export function useAgent(name: string | null | undefined) {
+  const actor = currentActorId();
   const { data, isLoading, error } = useQuery({
-    queryKey: ["agents", name],
+    queryKey: agentQueryKey(name, actor),
     queryFn: ({ signal }) => getAgent(name!, { signal }),
     enabled: !!name,
     retry: false,
@@ -58,7 +72,7 @@ export function useCreateAgent() {
   return useMutation({
     mutationFn: (request: CreateAgentRequest) => createAgent(request),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["agents"] });
+      void queryClient.invalidateQueries({ queryKey: agentsQueryKey() });
     },
   });
 }
@@ -74,8 +88,8 @@ export function useUpdateAgent() {
       request: UpdateAgentRequest;
     }) => updateAgent(name, request),
     onSuccess: (_data, { name }) => {
-      void queryClient.invalidateQueries({ queryKey: ["agents"] });
-      void queryClient.invalidateQueries({ queryKey: ["agents", name] });
+      void queryClient.invalidateQueries({ queryKey: agentsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: agentQueryKey(name) });
     },
   });
 }
@@ -100,8 +114,8 @@ export function useGenerateAgentVisuals() {
         reference_images: referenceImages,
       }),
     onSuccess: (_data, { name }) => {
-      void queryClient.invalidateQueries({ queryKey: ["agents"] });
-      void queryClient.invalidateQueries({ queryKey: ["agents", name] });
+      void queryClient.invalidateQueries({ queryKey: agentsQueryKey() });
+      void queryClient.invalidateQueries({ queryKey: agentQueryKey(name) });
     },
   });
 }
@@ -111,7 +125,7 @@ export function useDeleteAgent() {
   return useMutation({
     mutationFn: (name: string) => deleteAgent(name),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["agents"] });
+      void queryClient.invalidateQueries({ queryKey: agentsQueryKey() });
     },
   });
 }

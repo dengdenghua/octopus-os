@@ -5,10 +5,16 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from runtime.safety.auth import Identity, IdentityStore
 from runtime.sensing.gateway.intelligence_router import (
     _subscription_due,
     create_intelligence_router,
 )
+
+
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_intelligence_subscriptions_persist(tmp_path: Path) -> None:
@@ -48,6 +54,96 @@ def test_intelligence_subscriptions_persist(tmp_path: Path) -> None:
     assert deleted.status_code == 200
     assert deleted.json()["ok"] is True
     assert client.get("/api/intelligence/subscriptions").json()["subscriptions"] == []
+
+
+def test_authenticated_intelligence_data_is_scoped_to_actor(tmp_path: Path) -> None:
+    identities = IdentityStore()
+    identities.add(Identity(actor_id="alice", roles=("operator",)), api_key_plaintext="sk-alice")
+    identities.add(Identity(actor_id="bob", roles=("operator",)), api_key_plaintext="sk-bob")
+    app = FastAPI()
+    app.include_router(
+        create_intelligence_router(
+            tmp_path / "intelligence.json",
+            identity_store=identities,
+            require_auth=True,
+            remember_reports=False,
+        )
+    )
+    client = TestClient(app)
+
+    created = client.post(
+        "/api/intelligence/subscriptions",
+        headers=_bearer("sk-alice"),
+        json={"topic": "private topic"},
+    )
+    assert created.status_code == 200
+    subscription_id = created.json()["id"]
+
+    assert len(
+        client.get(
+            "/api/intelligence/subscriptions", headers=_bearer("sk-alice")
+        ).json()["subscriptions"]
+    ) == 1
+    assert client.get(
+        "/api/intelligence/subscriptions", headers=_bearer("sk-bob")
+    ).json()["subscriptions"] == []
+    assert client.patch(
+        f"/api/intelligence/subscriptions/{subscription_id}",
+        headers=_bearer("sk-bob"),
+        json={"enabled": False},
+    ).status_code == 404
+    assert client.delete(
+        f"/api/intelligence/subscriptions/{subscription_id}",
+        headers=_bearer("sk-bob"),
+    ).status_code == 404
+
+
+def test_single_actor_migrates_legacy_intelligence_records(tmp_path: Path) -> None:
+    path = tmp_path / "intelligence.json"
+    path.write_text(
+        '{"subscriptions":[{"id":"legacy","topic":"old"}],"reports":[]}',
+        encoding="utf-8",
+    )
+    identities = IdentityStore()
+    identities.add(Identity(actor_id="alice", roles=("operator",)), api_key_plaintext="sk-alice")
+    app = FastAPI()
+    app.include_router(
+        create_intelligence_router(
+            path,
+            identity_store=identities,
+            require_auth=True,
+        )
+    )
+    client = TestClient(app)
+
+    listed = client.get("/api/intelligence/subscriptions", headers=_bearer("sk-alice"))
+    assert listed.status_code == 200
+    assert listed.json()["subscriptions"][0]["owner_id"] == "alice"
+
+
+def test_intelligence_report_memory_uses_owner_scope(monkeypatch) -> None:
+    import runtime.memory.users.user_store as user_store
+    from runtime.sensing.gateway.intelligence_router import _remember_report
+
+    captured: dict[str, object] = {}
+
+    def fake_add_fact(_content: str, **kwargs):
+        captured.update(kwargs)
+        return {"id": "fact-1"}
+
+    monkeypatch.setattr(user_store, "add_fact", fake_add_fact)
+
+    assert _remember_report(
+        {
+            "title": "Private report",
+            "summary": "Account-specific findings",
+            "owner_id": "alice",
+            "tenant_id": "tenant-a",
+        }
+    )
+    scope = captured["tenant_scope"]
+    assert scope.tenant_id == "tenant-a"
+    assert scope.actor_id == "alice"
 
 
 def test_intelligence_subscription_draft_from_goal(tmp_path: Path) -> None:

@@ -150,7 +150,8 @@ const COPY: Record<Locale, SettingsUxCopy> = {
     },
     mcp: {
       title: "MCP 服务",
-      description: "管理 MCP 等外部工具集成，让 Echo 在获得你的信任后使用其能力。",
+      description:
+        "管理 MCP 等外部工具集成，让 Echo 在获得你的信任后使用其能力。",
       loading: "正在读取 MCP 服务…",
       loadFailed: "暂时无法读取 MCP 服务。现有配置没有被更改。",
       retry: "重新加载",
@@ -360,8 +361,7 @@ const COPY: Record<Locale, SettingsUxCopy> = {
     },
     mcp: {
       title: "MCP サービス",
-      description:
-        "信頼後に Echo が利用できる外部ツールサービスを接続します。",
+      description: "信頼後に Echo が利用できる外部ツールサービスを接続します。",
       loading: "MCP サービスを読み込み中…",
       loadFailed:
         "MCP サービスを読み込めませんでした。既存設定は変更されていません。",

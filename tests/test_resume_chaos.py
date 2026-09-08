@@ -5,13 +5,8 @@ These inject deliberately corrupt or hostile checkpoints and assert two things:
 1. **The integrity gate rejects them** — ``validate_checkpoint_state`` returns
    ``resume_safe=False`` with a precise error, so a corrupt snapshot can never
    be rehydrated into the loop.
-2. **The downgrade is observable** — when resume fails, ``_resume_or_register_turn``
-   falls back to a fresh run (``resume_from_iter=0``, ``resume_event=None``) AND
-   emits a ``WARNING``-level log so ops can see a resume was attempted+rejected,
-   rather than silently proceeding.
-
-This is the "make silent degradation observable" guarantee for the checkpoint
-recovery design (see ``docs/design/react-loop-split-plan.md``).
+2. **Recovery is fail-closed** — rejection cannot register active execution,
+   consume a grant, clear the pause, or silently rerun the original task.
 """
 
 from __future__ import annotations
@@ -78,8 +73,7 @@ def test_chaos_integrity_gate_rejects_promotion_attack():
 
 
 # ─────────────────────────────────────────────────────────────
-# 2. Fallback behavior — a corrupt checkpoint must not block a
-#    fresh run; it degrades to ``resume_from_iter=0``.
+# 2. Rejection must leave the original recovery state untouched.
 # ─────────────────────────────────────────────────────────────
 
 
@@ -133,35 +127,34 @@ def _resume_or_register(
     monkeypatch.setattr(react_resume, "set_injection_gate_handled", lambda _v: None)
     monkeypatch.setattr(react_resume, "mark_injection_taint", lambda _v: None)
 
-    out = _resume_or_register_turn(
-        stack=object(),
-        intent=_base_intent(),
-        agent=_FakeAgent(),
-        resume_task_id=resume_task_id,
-        react_task_id=react_task_id,
-        thread_id="thread-1",
-        max_iterations=30,
-        active_max_tokens_budget=1000,
-        active_max_usd_budget=1.0,
-        messages=["system"],
-    )
-    return out, pause
+    with pytest.raises(react_resume.ResumeCheckpointError) as rejected:
+        _resume_or_register_turn(
+            stack=object(),
+            intent=_base_intent(),
+            agent=_FakeAgent(),
+            resume_task_id=resume_task_id,
+            react_task_id=react_task_id,
+            thread_id="thread-1",
+            max_iterations=30,
+            active_max_tokens_budget=1000,
+            active_max_usd_budget=1.0,
+            messages=["system"],
+        )
+    return rejected.value, pause
 
 
-def test_chaos_corrupt_checkpoint_falls_back_to_fresh_run(monkeypatch, caplog):
+def test_chaos_corrupt_checkpoint_rejects_without_consuming_state(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="runtime.core.cerebrum.react_resume"):
-        out, pause = _resume_or_register(
+        rejection, pause = _resume_or_register(
             resume_task_id="task-1",
             monkeypatch=monkeypatch,
         )
 
-    # Fallback = fresh run: no resume, no rehydrated event.
-    assert out.resume_from_iter == 0
-    assert out.resume_event is None
-    assert out.terminated_reason == "max_iter"
-    assert out.final_answer is None
-    # The pause controller still registered the task (so it can be paused).
-    assert pause.registered is not None
+    assert rejection.code == "resume_checkpoint_invalid"
+    assert rejection.task_id == "task-1"
+    assert pause.registered is None
+    assert pause.granted is None
+    assert pause.cleared is None
 
     # Observable downgrade: a WARNING named the task + reason.
     assert any(
@@ -177,4 +170,3 @@ def test_chaos_corrupt_checkpoint_warns_not_silent(monkeypatch, caplog):
     warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert warnings, "expected at least one WARNING for the rejected resume"
     assert any("task-9" in r.message for r in warnings)
-

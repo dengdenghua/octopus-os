@@ -167,13 +167,15 @@ const LEXICON: Lexicon = {
 };
 
 function normalize(text: string): string {
-  return text
-    .toLowerCase()
-    // Strip markdown fences / inline code backticks placeholders.
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`/g, " ")
-    // Collapse punctuation/whitespace so "ui" and "ui." both match cleanly.
-    .replace(/[\s.,!?;:。，！？；：、…()（）"'“”‘’[\]]+/g, " ");
+  return (
+    text
+      .toLowerCase()
+      // Strip markdown fences / inline code backticks placeholders.
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/`/g, " ")
+      // Collapse punctuation/whitespace so "ui" and "ui." both match cleanly.
+      .replace(/[\s.,!?;:。，！？；：、…()（）"'“”‘’[\]]+/g, " ")
+  );
 }
 
 function matchTerm(text: string, term: string): boolean {

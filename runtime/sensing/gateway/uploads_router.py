@@ -30,7 +30,7 @@ import asyncio
 import contextlib
 import os
 import secrets
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 try:
@@ -50,6 +50,10 @@ except ImportError:  # pragma: no cover
     HTMLResponse = None  # type: ignore[assignment, misc]
     BaseModel = object  # type: ignore[assignment, misc]
 
+from runtime.execution.misc.document_extraction import (
+    DocumentWorkerCleanupError,
+    extract_document_isolated,
+)
 from runtime.execution.misc.document_text_extractor import extract_text_from_upload
 from runtime.execution.misc.office_fidelity_preview import render_office_fidelity_preview
 from runtime.execution.misc.office_preview import render_office_preview
@@ -61,6 +65,31 @@ MAX_UPLOAD_FILES = 20
 MAX_UPLOAD_FILE_BYTES = 50 * 1024 * 1024
 _UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 _MAX_UPLOAD_FILENAME_LENGTH = 255
+# These formats are parsed by third-party/document decoders.  Keep them out
+# of the FastAPI process even though the upload itself is already bounded.
+_ISOLATED_UPLOAD_EXTENSIONS = frozenset({"pdf", "docx", "pptx", "xlsx"})
+
+
+def _extract_upload_preview(data: bytes, extension: str | None) -> str | None:
+    """Return a bounded preview without parsing risky formats in-process.
+
+    The upload is committed before this helper runs, so an unavailable or
+    unreclaimed worker must degrade the optional preview rather than reject a
+    successfully stored file.  Plain text keeps its lightweight compatibility
+    path; PDF and Office containers always use the OS-limited worker.
+    """
+
+    ext = (extension or "").lower().lstrip(".")
+    if ext not in _ISOLATED_UPLOAD_EXTENSIONS:
+        return extract_text_from_upload(data, extension)
+    try:
+        result = extract_document_isolated(data, ext)
+    except (DocumentWorkerCleanupError, OSError, RuntimeError, ValueError):
+        return None
+    if result.get("outcome") != "ok":
+        return None
+    text = result.get("text")
+    return text if isinstance(text, str) else None
 
 # ═══════════════════════════════════════════════════════════
 # Response models
@@ -349,9 +378,10 @@ def create_uploads_router(
             data = await _read_upload_limited(upload)
             await asyncio.to_thread(_write_upload_bytes, target, data)
             ext = target.suffix.lstrip(".") or None
-            # OOXML/PDF parsing is CPU/file-format work. Keep it off FastAPI's
-            # event loop so one large deck does not stall realtime traffic.
-            extracted = await asyncio.to_thread(extract_text_from_upload, data, ext)
+            # Keep optional preview work off the event loop. Risky document
+            # formats are additionally parsed in the bounded document worker;
+            # a preview failure must not undo the committed upload.
+            extracted = await asyncio.to_thread(_extract_upload_preview, data, ext)
             uploaded.append(_metadata(thread_id, target, extracted_text=extracted))
         return {
             "success": True,
@@ -429,17 +459,23 @@ def create_uploads_router(
     ) -> Any:
         _require_store()
         _require_thread_access(request, thread_id)
-        normalized = Path(artifact_path)
+        normalized = Path(artifact_path.replace("\\", "/"))
         candidates: list[Path] = []
-        if normalized.is_absolute():
+        if normalized.is_absolute() or PureWindowsPath(artifact_path).drive:
             # Legacy clients may have persisted the server-side upload
             # path. Keep that compatibility only when the absolute path
             # still points inside this thread's upload roots.
             absolute = _absolute_artifact_candidate(thread_id, normalized)
             if absolute is not None:
                 candidates.append(absolute)
-        for upload_dir in _upload_dirs_for_read(thread_id):
-            candidates.append(upload_dir / _safe_upload_filename(artifact_path))
+        else:
+            # Read an exact upload reference. A missing document path must not
+            # silently select an unrelated upload with the same basename.
+            for upload_dir in _upload_dirs_for_read(thread_id):
+                candidate = upload_dir / normalized
+                with contextlib.suppress(OSError, ValueError):
+                    candidate.resolve().relative_to(upload_dir.resolve())
+                    candidates.append(candidate)
         target = next(
             (c for c in candidates if _safe_file_candidate(c) is not None),
             None,

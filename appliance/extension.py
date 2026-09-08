@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
 from typing import Any
@@ -73,6 +75,7 @@ def register_app(app: Any, context: Any) -> None:
     from appliance.auth import ADMIN_USERNAME, load_or_bootstrap_auth
     from appliance.capabilities import build_builtin_registry, create_capabilities_router
     from appliance.desktop_root import ApplianceDesktopRootMiddleware
+    from appliance.diagnostics import ApplianceDiagnosticService, create_diagnostics_router
     from appliance.hub import HubCatalog, HubService, create_hub_router
     from appliance.hub.operations import HubOperationService, HubOperationStore
     from appliance.security import ApplianceAuthenticator
@@ -271,13 +274,13 @@ def register_app(app: Any, context: Any) -> None:
     )
 
     # 原生存储面:存储权威是主机本身(内核 / zpool / smartctl / 系统账号),
-    # 不再依赖 OpenMediaVault。读取全部走标准件;plan/apply 写路径由原生写面
-    # 按能力逐步接管，未接管的复杂操作仍明确返回 501，面板给出提示而非静默失败。
+    # 不再依赖 OpenMediaVault。读取全部走标准件；窄写面只发布当前主机真正
+    # 具备依赖的能力，前端据此隐藏不适用操作，不保留会落到 501 的假入口。
     from appliance.accounts import (
         ApplianceAccountDirectory,
         create_account_directory_router,
     )
-    from appliance.native_storage import NativeStorageAuthority
+    from appliance.native_storage import NativeStorageAuthority, storage_health
     from appliance.native_storage_routes import (
         create_native_storage_router,
         create_omv_alias_router,
@@ -301,6 +304,18 @@ def register_app(app: Any, context: Any) -> None:
         )
     )
     app.include_router(create_native_storage_router(authenticator=authenticator))
+    diagnostics = ApplianceDiagnosticService(
+        audit=audit,
+        storage_reader=storage_health,
+    )
+    app.state.echo_appliance_diagnostics = diagnostics
+    app.include_router(
+        create_diagnostics_router(
+            diagnostics,
+            audit=audit,
+            authenticator=authenticator,
+        )
+    )
     # 兼容别名:存量面板仍请求 /api/appliance/omv/*,由原生面同构应答;
     # 已接管的窄写切片均保留完整审批+审计语义。
     app.include_router(
@@ -310,6 +325,72 @@ def register_app(app: Any, context: Any) -> None:
             audit=audit,
         )
     )
+    from appliance.nas_backup_routes import create_nas_backup_router
+
+    app.include_router(
+        create_nas_backup_router(
+            authenticator=authenticator,
+            approval=approval,
+            audit=audit,
+            credential_binding_key=hmac.new(
+                auth_cfg.jwt_secret.encode("utf-8"),
+                b"echo-nas-backup-credential-plan-v1",
+                hashlib.sha256,
+            ).digest(),
+        )
+    )
+
+    # Headless NAS alert delivery must not depend on a signed-in browser. The
+    # service polls the same bounded native storage/UPS readers used by the UI,
+    # persists only an encrypted destination and deduplication cursor, and
+    # exposes configuration through the normal approval + audit boundary.
+    from appliance.nas_alert_delivery import (
+        NasAlertDeliveryService,
+        NasAlertSnapshotSource,
+        create_nas_alert_delivery_router,
+    )
+
+    alert_snapshot_source = NasAlertSnapshotSource()
+    alert_delivery = NasAlertDeliveryService(
+        data_dir,
+        encryption_secret=auth_cfg.jwt_secret,
+        alert_reader=alert_snapshot_source.read,
+        interval_seconds=int(os.environ.get("ECHO_NAS_ALERT_INTERVAL_SECONDS", "300")),
+    )
+    app.state.echo_nas_alert_delivery = alert_delivery
+    app.include_router(
+        create_nas_alert_delivery_router(
+            alert_delivery,
+            authenticator=authenticator,
+            approval=approval,
+            audit=audit,
+        )
+    )
+    app.router.add_event_handler("startup", alert_delivery.start)
+    app.router.add_event_handler("shutdown", alert_delivery.stop)
+
+    from appliance.nas_email_alert_delivery import (
+        NasEmailAlertDeliveryService,
+        create_nas_email_alert_delivery_router,
+    )
+
+    email_alert_delivery = NasEmailAlertDeliveryService(
+        data_dir,
+        encryption_secret=auth_cfg.jwt_secret,
+        alert_reader=alert_snapshot_source.read,
+        interval_seconds=int(os.environ.get("ECHO_NAS_ALERT_INTERVAL_SECONDS", "300")),
+    )
+    app.state.echo_nas_email_alert_delivery = email_alert_delivery
+    app.include_router(
+        create_nas_email_alert_delivery_router(
+            email_alert_delivery,
+            authenticator=authenticator,
+            approval=approval,
+            audit=audit,
+        )
+    )
+    app.router.add_event_handler("startup", email_alert_delivery.start)
+    app.router.add_event_handler("shutdown", email_alert_delivery.stop)
 
     # Publish the verified Agent runtime/config identity. Echo OS owns the only
     # browser workbench and deliberately does not mount a second Agent WebUI.
@@ -334,7 +415,9 @@ def register_app(app: Any, context: Any) -> None:
                 "ECHO_NAS_OMV_SHARED_FOLDER_REF",
                 "",
             ),
-            cache_seconds=2.0,
+            # Mutations re-resolve current member permissions at each file;
+            # do not reuse a scope that predates a permission revocation.
+            cache_seconds=0.0,
         )
         app.state.echo_family_data_access = family_data_access
         app.include_router(
@@ -351,6 +434,41 @@ def register_app(app: Any, context: Any) -> None:
         _alog.warning("NAS file manager not mounted (%s): %s", nas_root, fs_exc)
 
     if files_mounted:
+        documents_compatible = any(
+            domain.get("id") == "documents" and domain.get("compatible") is True
+            for domain in app.state.echo_agent_api_contract.get("optional", ())
+        )
+        if documents_compatible:
+            from appliance.files.organization import FileOrganizationService
+            from appliance.files.organization_router import create_file_organization_router
+
+            organization_service = FileOrganizationService(
+                file_manager,
+                data_dir,
+                data_access=family_data_access,
+                supervisor=getattr(app.state, "task_supervisor", None),
+                audit=audit,
+                auth_required=authenticator.required,
+            )
+            app.state.echo_file_organization = organization_service
+            app.router.add_event_handler("shutdown", organization_service.shutdown)
+            app.include_router(
+                create_file_organization_router(
+                    organization_service,
+                    authenticator=authenticator,
+                    approval=approval,
+                )
+            )
+            registry = getattr(getattr(context, "stack", None), "registry", None)
+            if registry is not None:
+                from appliance.file_organization_tools import register_file_organization_tools
+
+                app.state.echo_file_organization_tools = register_file_organization_tools(
+                    registry, organization_service, security=account_security
+                )
+        else:
+            _alog.warning("NAS document organization not mounted: Agent documents API unavailable")
+
         photo_service = None
         try:
             from appliance.photos import PhotoLibraryService, create_photos_router
@@ -367,6 +485,13 @@ def register_app(app: Any, context: Any) -> None:
                 )
             )
             photos_mounted = True
+            registry = getattr(getattr(context, "stack", None), "registry", None)
+            if registry is not None:
+                from appliance.photo_tools import register_photo_tools
+
+                app.state.echo_photo_tools = register_photo_tools(
+                    registry, photo_service, family_data_access, account_security=account_security
+                )
         except OSError as photo_exc:
             _alog.warning("NAS photos not mounted (%s): %s", nas_root, photo_exc)
 
@@ -456,6 +581,18 @@ def register_app(app: Any, context: Any) -> None:
             account_security=account_security,
         )
         app.state.echo_appliance_session_revocation = True
+
+    # Bind an app-owned authorization grant through async/threaded Agent work.
+    # Every OS photo tool checks this grant again, including expiry/revocation.
+    if not getattr(app.state, "echo_appliance_agent_authorization", False):
+        from appliance.agent_authorization import ApplianceAgentAuthorizationMiddleware
+
+        app.add_middleware(
+            ApplianceAgentAuthorizationMiddleware,
+            authenticator=authenticator,
+            account_security=account_security,
+        )
+        app.state.echo_appliance_agent_authorization = True
 
     # Browser boundary is added last so it wraps desktop, auth interception,
     # session revocation and every NAS control surface.

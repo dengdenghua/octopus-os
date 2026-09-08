@@ -49,7 +49,9 @@ describe("ProcessTrace agent cluster", () => {
       { locale: "zh-CN" },
     );
 
-    expect(screen.getByText("2 个子 Agent · 1 已完成 · 1 异常")).toBeInTheDocument();
+    expect(
+      screen.getByText("2 个子 Agent · 1 已完成 · 1 异常"),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/并行任务/)).not.toBeInTheDocument();
     expect(screen.getAllByText("profile")).toHaveLength(1);
     expect(screen.getAllByText("market")).toHaveLength(1);
@@ -61,7 +63,9 @@ describe("ProcessTrace agent cluster", () => {
         .getByRole("button", { name: /profile/ })
         .querySelector('[aria-label="progress 100%"]'),
     ).not.toBeNull();
-    expect(screen.queryByText("Company profile complete")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Company profile complete"),
+    ).not.toBeInTheDocument();
 
     const focused: AgentWorkbenchFocusDetail[] = [];
     const handleFocus = (event: Event) =>

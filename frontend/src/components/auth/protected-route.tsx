@@ -12,13 +12,21 @@ import { useAuth } from "@/providers/AuthProvider";
  */
 export function ProtectedRoute() {
   const location = useLocation();
-  const { isLoading, authStatus, isAuthenticated } = useAuth();
+  const { isBackendStarting, isLoading, authStatus, isAuthenticated } =
+    useAuth();
   const { t } = useI18n();
 
   // Still loading auth status — show nothing to avoid flash
   if (isLoading) {
     return (
-      <LoadingState className="h-screen" title={t.common.loadingWorkspace} />
+      <LoadingState
+        className="h-screen"
+        title={
+          isBackendStarting
+            ? t.common.startingSystem
+            : t.common.loadingWorkspace
+        }
+      />
     );
   }
 
@@ -30,7 +38,13 @@ export function ProtectedRoute() {
   // Auth enabled requires a real authenticated account.
   if (!isAuthenticated) {
     const returnTo = `${location.pathname}${location.search}${location.hash}`;
-    return <Navigate to={desktopLoginPathWithReturnTo(returnTo)} replace />;
+    return (
+      <Navigate
+        to={desktopLoginPathWithReturnTo(returnTo)}
+        state={location.state}
+        replace
+      />
+    );
   }
 
   return <Outlet />;

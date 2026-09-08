@@ -3,16 +3,19 @@
 ## 当前问题分析
 
 ### 1. 信息架构混乱
+
 - **重复指标**：stages（4个阶段）和 metrics（3个指标）有内容重叠
 - **交互复杂**：点击阶段卡片 → 展开详情，再点击 → 显示实际变更，逻辑跳跃
 - **视觉层次不清**：同一屏幕有太多卡片（4+3+1+2=10个卡片）
 
 ### 2. 用户心智负担高
+
 - 用户需要理解"阶段"和"指标"的区别
 - 需要点击多次才能看到关键信息（实际变更）
 - "选中指标 → 显示详情 → 取消选中 → 显示实际变更"的交互路径不直观
 
 ### 3. 缺少关键信息
+
 - **时间轴视角**：什么时候学到了什么？
 - **因果关系**：哪个任务导致了哪个技能的提升？
 - **可操作性**：用户看完数据后应该做什么？
@@ -24,6 +27,7 @@
 **核心思路**：像讲故事一样呈现 AI 的成长过程
 
 #### 布局结构
+
 ```
 ┌─────────────────────────────────────────────┐
 │  🧠 成长概览卡片（紧凑）                    │
@@ -59,6 +63,7 @@
 ```
 
 #### 优势
+
 - **清晰的故事线**：概览 → 趋势 → 进展 → 建议
 - **减少认知负担**：不再区分"阶段"和"指标"
 - **可操作性强**：直接在建议卡片上操作
@@ -66,6 +71,7 @@
 ### 方案 B：保留现有结构，微调优化
 
 #### 具体改动
+
 1. **合并 stages 和 metrics**
    - 移除右侧的 3 个 metrics 卡片
    - 在 4 个 stages 上直接显示数值和趋势
@@ -81,16 +87,19 @@
 ## 推荐实施步骤
 
 ### Phase 1：信息架构优化（1-2天）
+
 1. 移除重复的 metrics 卡片
 2. 重新设计 stages 展示（添加数值和进度）
 3. 默认展开"实际变更"区域
 
 ### Phase 2：交互优化（1天）
+
 1. 简化点击交互逻辑
 2. 添加快速操作按钮
 3. 优化空状态提示
 
 ### Phase 3：视觉优化（1天）
+
 1. 调整间距和卡片阴影
 2. 优化颜色使用（减少渐变，增加对比）
 3. 统一字体大小和行高
@@ -98,6 +107,7 @@
 ## 技术实现建议
 
 ### 1. 组件拆分
+
 ```typescript
 // 当前：一个大组件 GrowthStoryHero
 // 优化后：
@@ -108,15 +118,21 @@
 ```
 
 ### 2. 状态管理简化
+
 ```typescript
 // 移除复杂的选中状态
-const [selectedInsightKey, setSelectedInsightKey] = useState<string | null>(null);
+const [selectedInsightKey, setSelectedInsightKey] = useState<string | null>(
+  null,
+);
 
 // 改为简单的展开/折叠
-const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['progress']));
+const [expandedSections, setExpandedSections] = useState<Set<string>>(
+  new Set(["progress"]),
+);
 ```
 
 ### 3. 性能优化
+
 - 使用 React.memo 缓存卡片组件
 - 图表使用 lazy loading
 - 时间线数据分页加载
@@ -124,6 +140,7 @@ const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['
 ## 设计参考
 
 可以参考这些产品的仪表板设计：
+
 - **Notion Analytics**：清晰的指标卡片
 - **GitHub Insights**：时间线 + 贡献图
 - **Linear Progress**：简洁的进度追踪
@@ -132,6 +149,7 @@ const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['
 ## 下一步行动
 
 请告诉我：
+
 1. 你更倾向方案 A（重构）还是方案 B（微调）？
 2. 当前页面最让你困扰的是什么？
 3. 用户最关心的信息是什么（成长趋势 vs 具体变更 vs 改进建议）？

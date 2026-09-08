@@ -45,9 +45,12 @@ import {
   fetchBatch as apiFetchBatch,
   fetchBatchRecoverySnapshot as apiFetchBatchRecoverySnapshot,
   fetchOrchestratorStatus as apiFetchOrchestratorStatus,
+  fetchParallelRecoverySnapshots as apiFetchParallelRecoverySnapshots,
+  resumeParallelBatch as apiResumeParallelBatch,
   STATUS_BG,
   STATUS_TEXT_COLOR as STATUS_COLORS,
   type BatchRecoverySnapshot,
+  type BatchRecoveryTask,
   type BatchResult,
   type OrchestratorStatus,
   type ParallelBatchCoordinationSummary,
@@ -109,6 +112,42 @@ function pickFocusBatchId(batches: Record<string, string>): string | null {
   return (running ?? entries[0])?.[0] ?? null;
 }
 
+function recoverySnapshotToBatch(snapshot: BatchRecoverySnapshot): BatchResult {
+  const results = snapshot.tasks.map((task: BatchRecoveryTask) => ({
+    task_id: task.task_id,
+    batch_id: snapshot.batch_id,
+    description: task.description_preview ?? "",
+    status: task.status,
+    result: null,
+    error: task.error ?? null,
+    started_at: task.started_at ?? null,
+    completed_at: task.completed_at ?? null,
+    duration_seconds: task.duration_seconds ?? null,
+    subagent_name: task.subagent_name,
+    work_contract: task.work_contract ?? null,
+  }));
+  return {
+    batch_id: snapshot.batch_id,
+    host_task_id: snapshot.host_task_id ?? null,
+    status: snapshot.status,
+    total_tasks: snapshot.task_count,
+    completed_tasks: snapshot.completed_tasks,
+    failed_tasks: snapshot.failed_tasks,
+    cancelled_tasks: snapshot.cancelled_tasks,
+    created_at: snapshot.created_at,
+    completed_at: snapshot.completed_at,
+    results,
+    aggregated_content: null,
+    aggregation_strategy: snapshot.plan?.strategy ?? null,
+    conflicts: snapshot.conflicts,
+    plan: snapshot.plan ?? null,
+    event_log: [],
+    completion_receipt: snapshot.completion_receipt,
+    file_write_observability: snapshot.file_write_observability,
+    coordination_summary: snapshot.coordination_summary,
+  };
+}
+
 function parallelStatusLabel(status: string, labels: Record<string, string>) {
   return (
     labels[status] ??
@@ -130,13 +169,13 @@ function hasCoordinationSignal(
   if (!summary) return false;
   return Boolean(
     summary.recommended_next_action ||
-      summary.primary_task_id ||
-      summary.failed_task_ids?.length ||
-      summary.cancelled_task_ids?.length ||
-      summary.dependency_blocked_task_ids?.length ||
-      summary.conflict_count ||
-      summary.contract_issue_count ||
-      summary.contract_warning_count,
+    summary.primary_task_id ||
+    summary.failed_task_ids?.length ||
+    summary.cancelled_task_ids?.length ||
+    summary.dependency_blocked_task_ids?.length ||
+    summary.conflict_count ||
+    summary.contract_issue_count ||
+    summary.contract_warning_count,
   );
 }
 
@@ -176,9 +215,7 @@ function CoordinationSummaryNotice({
         <span
           className={cn(
             "font-medium",
-            summary.ready
-              ? "text-success"
-              : "text-warning",
+            summary.ready ? "text-success" : "text-warning",
           )}
         >
           {labels.coordinationAction(
@@ -223,8 +260,14 @@ function CoordinationSummaryNotice({
 
 function RecoverySnapshotNotice({
   snapshot,
+  onResume,
+  resuming = false,
+  error,
 }: {
   snapshot: BatchRecoverySnapshot | null;
+  onResume?: (taskIds: string[]) => void;
+  resuming?: boolean;
+  error?: string | null;
 }) {
   const { t } = useI18n();
   if (!snapshot) return null;
@@ -238,11 +281,13 @@ function RecoverySnapshotNotice({
     snapshot.safety.raw_subagent_outputs_included === true ||
     snapshot.safety.event_payloads_included === true ||
     snapshot.safety.owner_id_included === true;
+  const durableOnly = snapshot.safety.durable_only === true;
 
   if (
     !snapshot.resume_available &&
     failed.length === 0 &&
-    blocked.length === 0
+    blocked.length === 0 &&
+    !durableOnly
   ) {
     return null;
   }
@@ -277,15 +322,38 @@ function RecoverySnapshotNotice({
         <span
           className={cn(
             "inline-flex items-center gap-1",
-            rawOutputsIncluded
-              ? "text-destructive"
-              : "text-success",
+            rawOutputsIncluded ? "text-destructive" : "text-success",
           )}
         >
           <ShieldCheckIcon className="size-3" />
           {rawOutputsIncluded ? labels.recoveryUnsafe : labels.recoverySafe}
         </span>
+        {durableOnly && (
+          <span className="text-muted-foreground">
+            {labels.durableRecovery}
+          </span>
+        )}
+        {snapshot.resume_available && rerunnable.length > 0 && onResume && (
+          <button
+            type="button"
+            disabled={resuming}
+            onClick={() => onResume(rerunnable)}
+            className="rounded-md border border-warning/30 px-2 py-0.5 text-warning hover:bg-warning/10 disabled:opacity-50"
+          >
+            {resuming ? labels.recoveryResuming : labels.recoveryResume}
+          </button>
+        )}
       </div>
+      {durableOnly && (
+        <p className="text-muted-foreground mt-1 text-xs">
+          {labels.durableRecoveryHint}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mt-1 text-xs text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -413,7 +481,10 @@ function AgentCard({
             </span>
           </div>
           <p className="text-muted-foreground truncate text-xs">
-            {task.result?.slice(0, 60) ?? task.error ?? "Pending..."}
+            {task.result?.slice(0, 60) ??
+              task.error ??
+              task.description?.slice(0, 60) ??
+              "Pending..."}
           </p>
         </div>
         {task.duration_seconds !== null && (
@@ -456,10 +527,7 @@ function AgentCard({
             </span>
             {getStatusIcon(task.status)}
             <span
-              className={cn(
-                "text-xs font-medium",
-                STATUS_COLORS[task.status],
-              )}
+              className={cn("text-xs font-medium", STATUS_COLORS[task.status])}
             >
               {parallelStatusLabel(
                 task.status,
@@ -478,6 +546,12 @@ function AgentCard({
           <p className="text-muted-foreground mt-0.5 font-mono text-xs">
             {task.task_id}
           </p>
+
+          {task.description && (
+            <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">
+              {task.description}
+            </p>
+          )}
 
           {/* Result or error preview */}
           {task.result && (
@@ -637,11 +711,17 @@ export function ParallelAgentsPanel({ className }: { className?: string }) {
   const [activeBatch, setActiveBatch] = useState<BatchResult | null>(null);
   const [recoverySnapshot, setRecoverySnapshot] =
     useState<BatchRecoverySnapshot | null>(null);
+  const [durableRecoverySnapshots, setDurableRecoverySnapshots] = useState<
+    BatchRecoverySnapshot[]
+  >([]);
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [collapsed, setCollapsed] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("");
   const pollRef = useRef<ReturnType<typeof setInterval>>(undefined);
+  const batchRequestGenerationRef = useRef(0);
 
   // Fetch orchestrator status periodically
   const fetchStatus = useCallback(async () => {
@@ -649,33 +729,86 @@ export function ParallelAgentsPanel({ className }: { className?: string }) {
     if (data) setStatus(data);
   }, []);
 
-  // Fetch batch details for active batches
-  const fetchBatch = useCallback(async (batchId: string) => {
-    const data = await apiFetchBatch(batchId);
-    if (!data) return;
-    setActiveBatch(data);
-    if (data.status === "running") {
-      setRecoverySnapshot(null);
-      return;
-    }
-    const snapshot = await apiFetchBatchRecoverySnapshot(batchId);
-    setRecoverySnapshot(snapshot);
+  const fetchDurableRecoverySnapshots = useCallback(async () => {
+    const data = await apiFetchParallelRecoverySnapshots();
+    if (data) setDurableRecoverySnapshots(data.snapshots);
   }, []);
 
+  const durableSnapshotById = useMemo(
+    () =>
+      new Map(
+        durableRecoverySnapshots.map((snapshot) => [
+          snapshot.batch_id,
+          snapshot,
+        ]),
+      ),
+    [durableRecoverySnapshots],
+  );
+
+  // Fetch batch details for active batches
+  const fetchBatch = useCallback(
+    async (batchId: string) => {
+      const requestGeneration = ++batchRequestGenerationRef.current;
+      const data = await apiFetchBatch(batchId);
+      if (requestGeneration !== batchRequestGenerationRef.current) return;
+      if (!data) {
+        const snapshot =
+          (await apiFetchBatchRecoverySnapshot(batchId)) ??
+          durableSnapshotById.get(batchId) ??
+          null;
+        if (requestGeneration !== batchRequestGenerationRef.current) return;
+        if (!snapshot) return;
+        setActiveBatch(recoverySnapshotToBatch(snapshot));
+        setRecoverySnapshot(snapshot);
+        setShowResults(false);
+        return;
+      }
+      setActiveBatch(data);
+      if (data.status === "running") {
+        setRecoverySnapshot(null);
+        return;
+      }
+      const snapshot = await apiFetchBatchRecoverySnapshot(batchId);
+      if (requestGeneration !== batchRequestGenerationRef.current) return;
+      setRecoverySnapshot(snapshot);
+    },
+    [durableSnapshotById],
+  );
+
   useEffect(() => {
-    fetchStatus();
-    pollRef.current = setInterval(fetchStatus, 3000);
+    void fetchStatus();
+    void fetchDurableRecoverySnapshots();
+    pollRef.current = setInterval(() => {
+      void fetchStatus();
+      void fetchDurableRecoverySnapshots();
+    }, 3000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [fetchStatus]);
+  }, [fetchDurableRecoverySnapshots, fetchStatus]);
 
   // Auto-fetch the first running batch, or keep the latest terminal batch
   // visible so failed/cancelled evidence is not hidden behind an empty state.
   useEffect(() => {
-    if (!status) return;
-    const nextBatchId = pickFocusBatchId(status.batches);
-    if (!nextBatchId) return;
+    const nextBatchId = pickFocusBatchId(status?.batches ?? {});
+    if (!nextBatchId) {
+      const snapshot = durableRecoverySnapshots[0];
+      if (
+        snapshot &&
+        (snapshot.batch_id !== activeBatch?.batch_id ||
+          snapshot.status !== activeBatch?.status ||
+          snapshot.completed_tasks !== activeBatch?.completed_tasks ||
+          snapshot.failed_tasks !== activeBatch?.failed_tasks ||
+          snapshot.cancelled_tasks !== activeBatch?.cancelled_tasks ||
+          snapshot.task_count !== activeBatch?.total_tasks)
+      ) {
+        batchRequestGenerationRef.current += 1;
+        setActiveBatch(recoverySnapshotToBatch(snapshot));
+        setRecoverySnapshot(snapshot);
+        setShowResults(false);
+      }
+      return;
+    }
     const nextBatchStatus = status.batches[nextBatchId];
     if (
       nextBatchStatus === "running" ||
@@ -684,7 +817,17 @@ export function ParallelAgentsPanel({ className }: { className?: string }) {
     ) {
       fetchBatch(nextBatchId);
     }
-  }, [activeBatch?.batch_id, activeBatch?.status, status, fetchBatch]);
+  }, [
+    activeBatch?.batch_id,
+    activeBatch?.status,
+    activeBatch?.cancelled_tasks,
+    activeBatch?.completed_tasks,
+    activeBatch?.failed_tasks,
+    activeBatch?.total_tasks,
+    durableRecoverySnapshots,
+    status,
+    fetchBatch,
+  ]);
 
   // Cancel handlers
   const cancelTask = useCallback(
@@ -700,10 +843,57 @@ export function ParallelAgentsPanel({ className }: { className?: string }) {
     fetchStatus();
   }, [fetchStatus]);
 
+  const resumeRecovery = useCallback(
+    async (taskIds: string[]) => {
+      if (!recoverySnapshot || recoveryBusy || taskIds.length === 0) return;
+      setRecoveryBusy(true);
+      setRecoveryError(null);
+      const response = await apiResumeParallelBatch(
+        recoverySnapshot.batch_id,
+        taskIds,
+      );
+      if (!response) {
+        setRecoveryError(t.parallelAgents.recoveryResumeFailed);
+        setRecoveryBusy(false);
+        return;
+      }
+      batchRequestGenerationRef.current += 1;
+      setActiveBatch(response.batch);
+      setRecoverySnapshot(null);
+      setShowResults(false);
+      setRecoveryBusy(false);
+      void fetchStatus();
+      void fetchDurableRecoverySnapshots();
+    },
+    [
+      fetchDurableRecoverySnapshots,
+      fetchStatus,
+      recoveryBusy,
+      recoverySnapshot,
+      t.parallelAgents.recoveryResumeFailed,
+    ],
+  );
+
   const totalActive =
     (status?.active_count ?? 0) + (status?.pending_count ?? 0);
-  const isActive = totalActive > 0 || (activeBatch?.results?.length ?? 0) > 0;
-  const batchCount = Object.keys(status?.batches ?? {}).length;
+  const hasActiveWork =
+    totalActive > 0 ||
+    Boolean(
+      activeBatch?.results.some(
+        (task) => task.status === "running" || task.status === "pending",
+      ),
+    );
+  const isActive = hasActiveWork || Boolean(activeBatch);
+  const visibleBatches = useMemo(() => {
+    const batches = new Map(Object.entries(status?.batches ?? {}));
+    for (const snapshot of durableRecoverySnapshots) {
+      if (!batches.has(snapshot.batch_id)) {
+        batches.set(snapshot.batch_id, snapshot.status);
+      }
+    }
+    return Array.from(batches.entries());
+  }, [durableRecoverySnapshots, status?.batches]);
+  const batchCount = visibleBatches.length;
 
   const filteredResults = useMemo(() => {
     if (!activeBatch) return [];
@@ -726,7 +916,7 @@ export function ParallelAgentsPanel({ className }: { className?: string }) {
           {t.parallelAgents.title}
         </div>
         <div className="flex items-center gap-2">
-          {isActive && (
+          {totalActive > 0 && (
             <span className="inline-flex items-center gap-1 rounded-lg bg-info/10 px-2 py-0.5 text-xs font-medium text-info">
               <span className="size-1.5 animate-pulse rounded-lg bg-info" />
               {totalActive} {t.parallelAgents.active}
@@ -753,7 +943,7 @@ export function ParallelAgentsPanel({ className }: { className?: string }) {
 
       {collapsed ? (
         <div className="text-muted-foreground px-4 py-3 text-center text-xs">
-          {isActive
+          {hasActiveWork
             ? t.parallelAgents.agentsRunning(totalActive)
             : t.parallelAgents.noActiveTasks}
         </div>
@@ -844,8 +1034,9 @@ export function ParallelAgentsPanel({ className }: { className?: string }) {
               <button
                 type="button"
                 onClick={() => {
-                  fetchStatus();
-                  if (activeBatch) fetchBatch(activeBatch.batch_id);
+                  void fetchStatus();
+                  void fetchDurableRecoverySnapshots();
+                  if (activeBatch) void fetchBatch(activeBatch.batch_id);
                 }}
                 className="text-muted-foreground hover:text-foreground rounded p-1"
               >
@@ -865,7 +1056,12 @@ export function ParallelAgentsPanel({ className }: { className?: string }) {
             </div>
           </div>
 
-          <RecoverySnapshotNotice snapshot={recoverySnapshot} />
+          <RecoverySnapshotNotice
+            snapshot={recoverySnapshot}
+            onResume={resumeRecovery}
+            resuming={recoveryBusy}
+            error={recoveryError}
+          />
           <CoordinationSummaryNotice
             summary={
               recoverySnapshot?.coordination_summary ??
@@ -929,7 +1125,7 @@ export function ParallelAgentsPanel({ className }: { className?: string }) {
               <span className="text-muted-foreground text-xs">
                 {t.parallelAgents.batches}
               </span>
-              {Object.entries(status.batches).map(([bid, bstatus]) => (
+              {visibleBatches.map(([bid, bstatus]) => (
                 <button
                   key={bid}
                   type="button"

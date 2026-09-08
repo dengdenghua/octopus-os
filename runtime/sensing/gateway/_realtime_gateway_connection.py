@@ -88,6 +88,10 @@ class RpcConnection:
         # for thread-ownership scoping.
         self.actor_id: str | None = None
         self.tenant_id: str | None = None
+        # Server-resolved authorization attributes used by memory/context
+        # readers. They are never populated from client turn parameters.
+        self.roles: frozenset[str] = frozenset()
+        self.team_ids: frozenset[str] = frozenset()
         # Last thread this connection successfully resumed. The gateway
         # uses it to fan terminal turn events out to sibling
         # connections watching the same thread.

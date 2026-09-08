@@ -4,8 +4,6 @@ import hashlib
 from typing import Any
 
 from runtime.execution.suckers import Skill
-from runtime.memory.journal import Journal
-from runtime.platform.models import ArmId, TaskId
 
 # ───────────────────────────────────────────────────────────────
 # FileOp extraction
@@ -65,8 +63,11 @@ def _try_read_pre_content(path: str) -> str | None:
         if size > _FILE_DIFF_PRE_READ_LIMIT:
             return None
         with open(path, "rb") as fh:
-            blob = fh.read(_FILE_DIFF_PRE_READ_LIMIT)
-        return blob.decode("utf-8", errors="strict").replace("\r\n", "\n")
+            blob = fh.read(_FILE_DIFF_PRE_READ_LIMIT + 1)
+        if len(blob) > _FILE_DIFF_PRE_READ_LIMIT:
+            return None
+        # Diff formatting normalizes independently; rollback preserves bytes.
+        return blob.decode("utf-8", errors="strict")
     except (OSError, ValueError):  # Implementation note.
         return None
 
@@ -116,6 +117,7 @@ def _rollback_payload(
     pre_exists: bool,
     pre_content: str | None,
     new_content: str | None,
+    observed_absent: bool | None,
 ) -> dict[str, Any] | None:
     if action == "rename":
         return {
@@ -142,6 +144,12 @@ def _rollback_payload(
             "path": path,
         }
     if action == "delete":
+        if observed_absent is not True:
+            return {
+                "reversible": False,
+                "reason": "deletion_not_observed",
+                "path": path,
+            }
         if pre_content is None:
             return {
                 "reversible": False,
@@ -153,6 +161,8 @@ def _rollback_payload(
             "action": "write",
             "path": path,
             "content": pre_content,
+            "hash_mode": "bytes-v1",
+            "expected_current_exists": False,
             "expected_current_sha256": "",
             "before_sha256": _sha256_text(pre_content),
             "after_sha256": "",
@@ -168,6 +178,8 @@ def _rollback_payload(
             "reversible": True,
             "action": "delete",
             "path": path,
+            "hash_mode": "bytes-v1",
+            "expected_current_exists": True,
             "expected_current_sha256": _sha256_text(new_content),
             "before_sha256": "",
             "after_sha256": _sha256_text(new_content),
@@ -183,27 +195,30 @@ def _rollback_payload(
         "action": "write",
         "path": path,
         "content": pre_content,
+        "hash_mode": "bytes-v1",
+        "expected_current_exists": True,
         "expected_current_sha256": _sha256_text(new_content),
         "before_sha256": _sha256_text(pre_content),
         "after_sha256": _sha256_text(new_content),
     }
 
 
-def _emit_file_op_from_step(
+def _prepare_file_op_from_step(
     *,
-    journal: Journal,
     skill: Skill,
     args: dict[str, Any],
     output: Any,
-    task_id: TaskId,
-    arm_id: ArmId,
-    actor: str | None,
     pre_content: str | None = None,
     pre_exists: bool = False,
-) -> None:
+    captured_path: str | None = None,
+    observed_content: str | None = None,
+    observed_absent: bool | None = None,
+) -> dict[str, Any] | None:
+    # Keep the event/diff display path contract. The undo target is captured
+    # separately after hooks and authorization and must never depend on CWD.
     path = _extract_path(args, output)
     if not path:
-        return  # Implementation note.
+        return None
     action = _infer_action(list(skill.affinity), skill.name)
 
     new_size: int | None = None
@@ -227,30 +242,21 @@ def _emit_file_op_from_step(
         new_size = len(new_content.encode("utf-8"))
 
     diff: str | None = None
-    readback_path = path
-    if isinstance(output, dict):
-        for key in ("path", "filepath", "file", "written"):
-            val = output.get(key)
-            if isinstance(val, str) and val:
-                readback_path = val
-                break
-    if new_content is None and action != "delete":
-        new_content = _try_read_pre_content(readback_path)
-        if new_size is None and new_content is not None:
-            new_size = len(new_content.encode("utf-8"))
+    # The executor captures actual bytes immediately after the handler returns.
+    # Do not read here: post hooks or diagnostics may already have changed them.
+    if observed_content is not None:
+        new_content = observed_content
+        new_size = len(new_content.encode("utf-8"))
     if new_content is not None and action != "delete":
         diff = _compute_unified_diff(
             pre_content or "",
             new_content,
             path,
         )
-    elif action == "delete" and pre_content is not None:
+    elif action == "delete" and pre_content is not None and observed_absent is True:
         diff = _compute_unified_diff(pre_content, "", path)
 
-    # Inline diff preview for chat tool-result bubbles. The frontend
-    # message bubble already knows how to render ``result.diff_preview``
-    # for write/edit tool calls; we just never populated it. Best-effort
-    # only · never let preview generation break the main tool result.
+    # Prepare the preview before output hooks so they can redact the diff too.
     if diff and isinstance(output, dict) and "diff_preview" not in output:
         output["diff_preview"] = diff[:4000]
 
@@ -258,24 +264,20 @@ def _emit_file_op_from_step(
     if pre_content is not None:
         old_size = len(pre_content.encode("utf-8"))
     rollback = _rollback_payload(
-        path=path,
+        path=captured_path or path,
         action=action,
         pre_exists=pre_exists,
         pre_content=pre_content,
-        new_content=new_content,
+        new_content=observed_content,
+        observed_absent=observed_absent,
     )
 
-    if not hasattr(journal, "write_file_op"):
-        return
-    journal.write_file_op(
-        path=path,
-        action=action,
-        sucker_id=str(skill.name),
-        task_id=task_id,
-        arm_id=arm_id,
-        actor=actor,
-        old_size=old_size,
-        new_size=new_size,
-        diff=diff,
-        rollback=rollback,
-    )
+    return {
+        "path": path,
+        "action": action,
+        "sucker_id": str(skill.name),
+        "old_size": old_size,
+        "new_size": new_size,
+        "diff": diff,
+        "rollback": rollback,
+    }

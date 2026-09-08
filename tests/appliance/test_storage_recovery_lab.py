@@ -180,6 +180,13 @@ class StorageHarness:
             return subprocess.CompletedProcess(command, 0, "", "")
         if name == "python3":
             result = {
+                "zfs_runtime": {
+                    "kernelRelease": "6.12.94+deb13-amd64",
+                    "moduleInstalled": True,
+                    "moduleLoaded": True,
+                    "loadServiceActive": True,
+                    "kernelInterfaceReady": True,
+                },
                 "nas_transfer": {
                     "writeExecuted": True,
                     "size": lab.NAS_TRANSFER_BYTES,
@@ -187,7 +194,7 @@ class StorageHarness:
                     "physicallyDeleted": False,
                     "sha256": "c" * 64,
                     "restoredSha256": "c" * 64,
-                }
+                },
             }
             return subprocess.CompletedProcess(command, 0, json.dumps(result), "")
         return subprocess.CompletedProcess(command, 0, "", "")

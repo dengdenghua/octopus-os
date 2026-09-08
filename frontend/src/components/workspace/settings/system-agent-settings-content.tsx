@@ -45,7 +45,11 @@ export type OsAgentSettingsSection =
 
 function SettingsContentSkeleton() {
   return (
-    <div className="animate-pulse space-y-4" role="status" aria-label="正在加载设置">
+    <div
+      className="animate-pulse space-y-4"
+      role="status"
+      aria-label="正在加载设置"
+    >
       <div className="h-7 w-44 rounded bg-slate-200" />
       <div className="h-4 w-80 max-w-full rounded bg-slate-200/80" />
       <div className="h-32 rounded-2xl bg-slate-200/70" />

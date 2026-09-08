@@ -37,6 +37,7 @@ import {
 } from "@/components/workspace/community/community-subscribe";
 import { MarketBoard } from "@/components/workspace/market/market-board";
 import { cn } from "@/lib/utils";
+import { currentActorId } from "@/core/auth/api";
 
 type ViewMode = "community" | "market";
 
@@ -48,6 +49,7 @@ const TABS = [
 ];
 
 export default function CommunityPage() {
+  const actor = currentActorId();
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState<ViewMode>(
     () => (searchParams.get("view") as ViewMode) || "community",
@@ -67,25 +69,33 @@ export default function CommunityPage() {
   // 个人主页 / 订阅：页面级状态
   const [activePost, setActivePost] = useState<CommunityPost | null>(null);
   const [favorites, setFavorites] = useState<string[]>(() => readFavorites());
-  const [following, setFollowing] = useState<string[]>(() =>
-    readFollowing(),
-  );
+  const [following, setFollowing] = useState<string[]>(() => readFollowing());
   const [subTopics, setSubTopics] = useState<string[]>(() =>
     readSubscribedTopics(),
   );
   const [subAuthors, setSubAuthors] = useState<string[]>(() =>
     readSubscribedAuthors(),
   );
+  const [stateActor, setStateActor] = useState(actor);
+
+  useEffect(() => {
+    if (stateActor === actor) return;
+    setStateActor(actor);
+    setFavorites(readFavorites());
+    setFollowing(readFollowing());
+    setSubTopics(readSubscribedTopics());
+    setSubAuthors(readSubscribedAuthors());
+    setActivePost(null);
+  }, [actor, stateActor]);
 
   const switchView = useCallback(
     (mode: ViewMode) => {
       setViewMode(mode);
       setQuery("");
       setActivePost(null);
-      setSearchParams(
-        mode === "market" ? { view: "market" } : {},
-        { replace: true },
-      );
+      setSearchParams(mode === "market" ? { view: "market" } : {}, {
+        replace: true,
+      });
     },
     [setSearchParams],
   );
@@ -149,7 +159,8 @@ export default function CommunityPage() {
         setHasMore(res.hasMore);
       })
       .catch((error) => {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : "内容加载失败");
+        if (!cancelled)
+          setLoadError(error instanceof Error ? error.message : "内容加载失败");
       })
       .finally(() => {
         window.clearTimeout(timeout);
@@ -159,7 +170,7 @@ export default function CommunityPage() {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [fetchTopic, sort, viewMode]);
+  }, [actor, fetchTopic, sort, viewMode]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || loading || !hasMore) return;
@@ -177,15 +188,18 @@ export default function CommunityPage() {
   };
 
   /** 订阅 tab：过滤为「订阅主题 or 关注/订阅作者」的内容。 */
+  const accountReady = stateActor === actor;
   const filtered = useMemo(() => {
-    let list = posts;
+    let list = accountReady ? posts : [];
     if (activeTab === "subscribe") {
-      list = posts.filter(
-        (p) =>
-          subTopics.includes(p.topic) ||
-          subAuthors.includes(p.author) ||
-          following.includes(p.author),
-      );
+      list = accountReady
+        ? posts.filter(
+            (p) =>
+              subTopics.includes(p.topic) ||
+              subAuthors.includes(p.author) ||
+              following.includes(p.author),
+          )
+        : [];
     }
     const q = query.trim().toLowerCase();
     if (!q) return list;
@@ -196,7 +210,7 @@ export default function CommunityPage() {
         p.author.toLowerCase().includes(q) ||
         p.tag.toLowerCase().includes(q),
     );
-  }, [posts, activeTab, query, subTopics, subAuthors, following]);
+  }, [accountReady, posts, activeTab, query, subTopics, subAuthors, following]);
 
   const isMarket = viewMode === "market";
   const isProfile = Boolean(profileAuthor);
@@ -219,20 +233,15 @@ export default function CommunityPage() {
     setSubAuthors(() => readSubscribedAuthors());
   }, []);
 
-  const handleCommentAdded = useCallback(
-    (postId: string, count: number) => {
-      setPosts((prev) =>
-        prev.map((p) =>
-          p.id === postId ? { ...p, commentsCount: count } : p,
-        ),
-      );
-    },
-    [],
-  );
+  const handleCommentAdded = useCallback((postId: string, count: number) => {
+    setPosts((prev) =>
+      prev.map((p) => (p.id === postId ? { ...p, commentsCount: count } : p)),
+    );
+  }, []);
 
   const isFavorite = useCallback(
-    (id: string) => favorites.includes(id),
-    [favorites],
+    (id: string) => accountReady && favorites.includes(id),
+    [accountReady, favorites],
   );
 
   return (

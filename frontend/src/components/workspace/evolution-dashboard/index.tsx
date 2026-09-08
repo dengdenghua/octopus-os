@@ -358,7 +358,10 @@ function GrowthStoryHero({
             </div>
             <div
               aria-label={`${t.evolutionDashboard.changedBehaviors}: ${durableCount}`}
-              className={cn("mt-1 text-3xl font-bold tabular-nums", hasRealChange ? "text-success" : "text-warning")}
+              className={cn(
+                "mt-1 text-3xl font-bold tabular-nums",
+                hasRealChange ? "text-success" : "text-warning",
+              )}
             >
               {durableCount}
             </div>

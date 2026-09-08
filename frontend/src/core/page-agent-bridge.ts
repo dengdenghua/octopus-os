@@ -327,9 +327,7 @@ function collectForms(elements: PageAgentElement[]) {
       .filter(Boolean);
     const fieldIds = elements
       .filter((item) => ["input", "textarea", "select"].includes(item.kind))
-      .filter((item) =>
-        form.querySelector(`[data-echo-agent-id="${item.id}"]`),
-      )
+      .filter((item) => form.querySelector(`[data-echo-agent-id="${item.id}"]`))
       .map((item) => item.id);
     const submitIds = elements
       .filter((item) => item.kind === "button")

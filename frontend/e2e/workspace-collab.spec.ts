@@ -64,114 +64,106 @@ test.describe("Workspace collaboration smoke", () => {
 // returns 404 and the panel stays in the "Failed to load workspaces"
 // state, so the Add button never appears. Enable the feature flag on
 // the backend to unskip.
-test.describe.skip(
-  "Workspace switcher opens mount-point dialog",
-  () => {
-    test("Add workspace button opens MountPointDialog", async ({ page }) => {
-      await page.goto("/");
-      await page.waitForLoadState("domcontentloaded");
+test.describe.skip("Workspace switcher opens mount-point dialog", () => {
+  test("Add workspace button opens MountPointDialog", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
 
-      const switcher = page.getByRole("button", {
-        name: "Switch workspace",
-        exact: true,
-      });
-      await switcher.click();
-
-      const addBtn = page.getByRole("button", { name: "Add workspace" });
-      await expect(addBtn).toBeVisible({ timeout: 5_000 });
-      await addBtn.click();
-
-      // MountPointDialog should appear with the protocol picker.
-      await expect(
-        page.getByRole("heading", { name: "Add workspace" }),
-      ).toBeVisible({ timeout: 5_000 });
+    const switcher = page.getByRole("button", {
+      name: "Switch workspace",
+      exact: true,
     });
-  },
-);
+    await switcher.click();
+
+    const addBtn = page.getByRole("button", { name: "Add workspace" });
+    await expect(addBtn).toBeVisible({ timeout: 5_000 });
+    await addBtn.click();
+
+    // MountPointDialog should appear with the protocol picker.
+    await expect(
+      page.getByRole("heading", { name: "Add workspace" }),
+    ).toBeVisible({ timeout: 5_000 });
+  });
+});
 
 // Skipped: requires backend with `ui.remote_workspace` feature flag
 // enabled so /api/workspaces returns 200 and the MountPointDialog can
 // POST a new workspace. The Vite dev proxy also needs the backend live
 // on GATEWAY_PORT (default 18000).
-test.describe.skip(
-  "Workspace registration via MountPointDialog",
-  () => {
-    test("register a local-mount workspace end-to-end", async ({ page }) => {
-      // Full flow:
-      //   1. Open WorkspaceSwitcher → click "Add workspace"
-      //   2. In MountPointDialog: pick protocol=local, enter name + path
-      //   3. Click "Test connection" → expect "Connection OK"
-      //   4. Click "Create" → dialog closes, new workspace appears in list
-      //   5. GET /api/workspaces returns the new workspace
-      //
-      // Requires:
-      //   - Backend /api/workspaces POST wired to WorkspaceStore
-      //   - A writable local path (e.g. /tmp/e2e-workspace-<ts>)
-      //   - feature flag ui.remote_workspace = true
-      await page.goto("/");
-      await page.waitForLoadState("domcontentloaded");
+test.describe.skip("Workspace registration via MountPointDialog", () => {
+  test("register a local-mount workspace end-to-end", async ({ page }) => {
+    // Full flow:
+    //   1. Open WorkspaceSwitcher → click "Add workspace"
+    //   2. In MountPointDialog: pick protocol=local, enter name + path
+    //   3. Click "Test connection" → expect "Connection OK"
+    //   4. Click "Create" → dialog closes, new workspace appears in list
+    //   5. GET /api/workspaces returns the new workspace
+    //
+    // Requires:
+    //   - Backend /api/workspaces POST wired to WorkspaceStore
+    //   - A writable local path (e.g. /tmp/e2e-workspace-<ts>)
+    //   - feature flag ui.remote_workspace = true
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
 
-      const switcher = page.getByRole("button", {
-        name: "Switch workspace",
-        exact: true,
-      });
-      await switcher.click();
-      await page.getByRole("button", { name: "Add workspace" }).click();
+    const switcher = page.getByRole("button", {
+      name: "Switch workspace",
+      exact: true,
+    });
+    await switcher.click();
+    await page.getByRole("button", { name: "Add workspace" }).click();
 
-      await page.getByLabel("Name").fill("E2E Local Workspace");
-      await page.getByLabel("Path").fill("/tmp/e2e-workspace");
+    await page.getByLabel("Name").fill("E2E Local Workspace");
+    await page.getByLabel("Path").fill("/tmp/e2e-workspace");
 
-      const testBtn = page.getByRole("button", { name: "Test connection" });
-      await testBtn.click();
-      await expect(page.getByText("Connection OK")).toBeVisible({
-        timeout: 10_000,
-      });
-
-      await page.getByRole("button", { name: "Create" }).click();
-
-      // Dialog closes.
-      await expect(
-        page.getByRole("heading", { name: "Add workspace" }),
-      ).not.toBeVisible({ timeout: 5_000 });
-
-      // The new workspace shows up in the switcher list.
-      await switcher.click();
-      await expect(
-        page.getByRole("button", { name: "Switch to E2E Local Workspace" }),
-      ).toBeVisible({ timeout: 5_000 });
+    const testBtn = page.getByRole("button", { name: "Test connection" });
+    await testBtn.click();
+    await expect(page.getByText("Connection OK")).toBeVisible({
+      timeout: 10_000,
     });
 
-    test("register an S3-mount workspace with credentials", async ({
-      page,
-    }) => {
-      // Verifies the protocol picker swaps fields to S3 shape
-      // (endpoint / bucket / access key / secret key) and that the
-      // credentials hint is shown. Requires the S3MountBackend adapter
-      // to be importable on the backend and (ideally) a MinIO test
-      // container as the connection target.
-      await page.goto("/");
-      await page.waitForLoadState("domcontentloaded");
-      await page
-        .getByRole("button", { name: "Switch workspace", exact: true })
-        .click();
-      await page.getByRole("button", { name: "Add workspace" }).click();
+    await page.getByRole("button", { name: "Create" }).click();
 
-      // Pick S3 protocol.
-      await page.getByRole("button", { name: "S3" }).click();
+    // Dialog closes.
+    await expect(
+      page.getByRole("heading", { name: "Add workspace" }),
+    ).not.toBeVisible({ timeout: 5_000 });
 
-      // S3-specific fields render.
-      await expect(page.getByLabel("Endpoint URL")).toBeVisible();
-      await expect(page.getByLabel("Bucket")).toBeVisible();
-      await expect(page.getByLabel("Access key")).toBeVisible();
-      await expect(page.getByLabel("Secret key")).toBeVisible();
+    // The new workspace shows up in the switcher list.
+    await switcher.click();
+    await expect(
+      page.getByRole("button", { name: "Switch to E2E Local Workspace" }),
+    ).toBeVisible({ timeout: 5_000 });
+  });
 
-      // Credentials hint is visible (reassures user secrets stay on backend).
-      await expect(
-        page.getByText(/Credentials are sent to the backend only/),
-      ).toBeVisible();
-    });
-  },
-);
+  test("register an S3-mount workspace with credentials", async ({ page }) => {
+    // Verifies the protocol picker swaps fields to S3 shape
+    // (endpoint / bucket / access key / secret key) and that the
+    // credentials hint is shown. Requires the S3MountBackend adapter
+    // to be importable on the backend and (ideally) a MinIO test
+    // container as the connection target.
+    await page.goto("/");
+    await page.waitForLoadState("domcontentloaded");
+    await page
+      .getByRole("button", { name: "Switch workspace", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Add workspace" }).click();
+
+    // Pick S3 protocol.
+    await page.getByRole("button", { name: "S3" }).click();
+
+    // S3-specific fields render.
+    await expect(page.getByLabel("Endpoint URL")).toBeVisible();
+    await expect(page.getByLabel("Bucket")).toBeVisible();
+    await expect(page.getByLabel("Access key")).toBeVisible();
+    await expect(page.getByLabel("Secret key")).toBeVisible();
+
+    // Credentials hint is visible (reassures user secrets stay on backend).
+    await expect(
+      page.getByText(/Credentials are sent to the backend only/),
+    ).toBeVisible();
+  });
+});
 
 // Skipped: requires a seeded workspace + auth context fixture. Today
 // fixtures.ts has no `userContext` helper; adding one needs
@@ -212,9 +204,7 @@ test.describe.skip("Workspace member management", () => {
 // (before the page loads), so the FileLeaseIndicator renders with
 // "Locked by bob" on page open.
 test.describe.skip("File lease indicator", () => {
-  test("locked file shows holder avatar + remaining time", async ({
-    page,
-  }) => {
+  test("locked file shows holder avatar + remaining time", async ({ page }) => {
     // Pre-conditions:
     //   - Workspace `ws-e2e` exists with a file `config.yaml`
     //   - A lease is acquired by `bob` via POST /api/workspaces/ws-e2e/lease

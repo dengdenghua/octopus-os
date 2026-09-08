@@ -127,7 +127,11 @@ export function CreateTaskDialog({
       reset();
       onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t.collab.createTask.toastFailed);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t.collab.createTask.toastFailed,
+      );
     }
   };
 

@@ -12,8 +12,13 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import datetime
 from typing import Any
+
+from runtime.execution.host_boundary import host_execution_scope
+from runtime.platform.process.session import Session, session_scope
+from runtime.platform.process.task_supervisor import TaskRunStatus
 
 from ._orchestrator_models import (
     _TERMINAL_TASK_STATUSES,
@@ -111,41 +116,99 @@ class _SchedulerMixin:
 
         output: str | None = None
         error: str | None = None
-        isolation = str(
-            run_context.get("subagent_worker_isolation") or self._default_worker_isolation
-        ).strip()
+        parent_session = run_context.get("caller_session")
+        host_parent = isinstance(parent_session, Session) and bool(
+            getattr(parent_session, "execution_request", None)
+            or getattr(parent_session, "execution_lease", None)
+        )
+        task_supervisor = getattr(self, "_task_supervisor", None)
+        host_task_id = f"parallel:{entry.batch_id}:{entry.task_id}"
+        if host_parent:
+            session_context = session_scope(parent_session)
+        elif task_supervisor is not None:
+            actor_id = str(batch.owner_id or "").strip() or None
+            tenant_id = str(run_context.get("tenant_id") or "").strip() or None
+            if bool(actor_id) != bool(tenant_id):
+                # A legacy caller may carry only an actor. Do not invent a
+                # tenant identity for a durable host record; run it as an
+                # anonymous local task instead.
+                actor_id = None
+                tenant_id = None
+            session_context = host_execution_scope(
+                supervisor=task_supervisor,
+                task_id=host_task_id,
+                thread_id=str(run_context.get("thread_id") or f"parallel:{entry.batch_id}"),
+                actor_id=actor_id,
+                tenant_id=tenant_id,
+                goal=entry.description,
+                timeout_s=max(1.0, float(batch.timeout_policy.get("task_timeout_s") or 900.0)),
+                parent_task_id=getattr(batch, "host_task_id", None),
+                metadata={
+                    "mode": "code",
+                    "permission_mode": "default",
+                    "approval_policy": "on-request",
+                    "sandbox_mode": "full",
+                    "execution_environment": "sandbox",
+                    "source": "parallel_agents",
+                    "batch_id": entry.batch_id,
+                    "parallel_task_id": entry.task_id,
+                    "subagent_name": entry.subagent_name,
+                    "depends_on": list(entry.depends_on),
+                    "priority": entry.priority,
+                    "write_paths": list(entry.write_paths),
+                },
+                kind="parallel_agent",
+                mode="parallel",
+            )
+        else:
+            session_context = nullcontext()
+
+        # A host Session/lease is process-local. Explicit process isolation
+        # would drop that authority at the fork boundary, so use the existing
+        # thread worker while this task is managed by the host contract.
+        isolation = (
+            "thread"
+            if host_parent or task_supervisor is not None
+            else str(
+                run_context.get("subagent_worker_isolation") or self._default_worker_isolation
+            ).strip()
+        )
         isolation_reason: str | None = None
-        if isolation == "auto":
+        if host_parent or task_supervisor is not None:
+            isolation_reason = "host_execution_requires_thread_scope"
+        elif isolation == "auto":
             compatible = process_runner_compatible(runner=self._runner, context=run_context)
             isolation = "process" if compatible else "thread"
             if not compatible:
                 isolation_reason = "auto_fallback_unpicklable_runner_or_context"
         entry.worker_isolation = "process" if isolation == "process" else "thread"
         entry.worker_isolation_reason = isolation_reason
-        if entry.worker_isolation == "process":
-            output, error = self._invoke_process_runner(entry, run_context)
-        else:
-            try:
-                output = self._runner(
-                    entry.description,
-                    subagent_name=entry.subagent_name,
-                    context=run_context,
-                    cancel_event=entry.cancel_event,
-                )
-            except TypeError:
-                try:
-                    output = self._runner(
-                        entry.description,
-                        subagent_name=entry.subagent_name,
-                        context=run_context,
-                    )
-                except Exception as e:  # noqa: BLE001
-                    error = f"{type(e).__name__}: {e}"
-            except Exception as e:  # noqa: BLE001
-                error = f"{type(e).__name__}: {e}"
+        try:
+            with session_context:
+                if entry.worker_isolation == "process":
+                    output, error = self._invoke_process_runner(entry, run_context)
+                else:
+                    try:
+                        output = self._runner(
+                            entry.description,
+                            subagent_name=entry.subagent_name,
+                            context=run_context,
+                            cancel_event=entry.cancel_event,
+                        )
+                    except TypeError:
+                        # Preserve compatibility with task runners that
+                        # predate the cancellation keyword while keeping the
+                        # host context active for both attempts.
+                        output = self._runner(
+                            entry.description,
+                            subagent_name=entry.subagent_name,
+                            context=run_context,
+                        )
+        except Exception as e:  # noqa: BLE001
+            error = f"{type(e).__name__}: {e}"
 
         with self._lock:
-            if entry.status in {"cancelled", "timed_out"}:
+            if entry.status in _TERMINAL_TASK_STATUSES:
                 entry.late_result_ignored_at = _now()
                 return
             entry.completed_at = _now()
@@ -164,7 +227,12 @@ class _SchedulerMixin:
                     entry.status = "completed"
                     entry.result = cleaned_output
             entry.worker_state = "released"
-            batch = self._batches[entry.batch_id]
+            batch = self._batches.get(entry.batch_id)
+            if batch is None:
+                # A completed batch may have been evicted while a timed-out
+                # worker was unwinding. Its late result cannot re-open a
+                # domain record that no longer exists in memory.
+                return
             self._publish_task_update_locked(
                 batch,
                 entry,
@@ -240,6 +308,10 @@ class _SchedulerMixin:
                 batch = self._batches.get(batch_id)
                 if batch is None or batch.completed_at is not None:
                     return
+                if getattr(batch.host_execution, "lost", False):
+                    self._fail_host_execution_locked(batch)
+                    if batch.completed_at is not None:
+                        return
                 self._expire_tasks_locked(batch, context)
                 if batch.completed_at is not None:
                     return
@@ -361,6 +433,37 @@ class _SchedulerMixin:
             changed = True
         if changed:
             self._maybe_close_batch_locked(batch)
+
+    def _fail_host_execution_locked(self, batch: Any) -> None:
+        """Stop a batch whose aggregate host lease can no longer be renewed."""
+        if batch.completed_at is not None:
+            return
+        now = _now()
+        for entry in batch.tasks.values():
+            if entry.status in _TERMINAL_TASK_STATUSES:
+                continue
+            entry.cancel_event.set()
+            entry.error = "host_execution_lease_lost"
+            entry.started_at = entry.started_at or now
+            entry.completed_at = now
+            if entry.status == "running" or entry.future is not None:
+                entry.status = "timed_out"
+                self._replace_stuck_worker_generation_locked(
+                    batch,
+                    entry,
+                    reason="host_execution_lease_lost",
+                    now=now,
+                )
+            else:
+                entry.status = "failed"
+                entry.worker_state = "released"
+            self._publish_task_update_locked(
+                batch,
+                entry,
+                phase="host_execution_lease_lost",
+                message=f"{entry.subagent_name} stopped after host lease loss",
+            )
+        self._maybe_close_batch_locked(batch)
 
     def _replace_stuck_worker_generation_locked(
         self,
@@ -533,6 +636,25 @@ class _SchedulerMixin:
             },
         )
         self._broadcast_locked(batch, ev)
+        # The aggregate host lease outlives the request that created this
+        # batch. Settle it only after every in-memory task is terminal so the
+        # durable TaskSupervisor row and the batch report agree on the final
+        # outcome. ``partial`` is still a failed host run: callers can use
+        # the recovery snapshot to rerun the failed lanes.
+        host_execution = getattr(batch, "host_execution", None)
+        if host_execution is not None:
+            host_status = (
+                TaskRunStatus.CANCELLED
+                if status == "cancelled"
+                else TaskRunStatus.COMPLETED
+                if status == "completed"
+                else TaskRunStatus.FAILED
+            )
+            host_execution.settle(
+                host_status,
+                reason=f"parallel batch {status}",
+            )
+            batch.host_execution = None
         self._prune_completed_batches_locked()
 
     def _fail_unrunnable_plan_locked(self, batch: Any) -> bool:

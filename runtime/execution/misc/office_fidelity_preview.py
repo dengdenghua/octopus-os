@@ -13,7 +13,7 @@ import threading
 from html import escape
 from pathlib import Path
 
-from runtime.execution.misc.office_pdf_preview import render_office_pdf
+from runtime.execution.misc.office_pdf_preview import _file_content_digest, render_office_pdf
 
 _SUPPORTED = {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf"}
 _CACHE_ROOT = Path(tempfile.gettempdir()) / "echo-office-fidelity-cache"
@@ -24,7 +24,10 @@ _MAX_QUICKLOOK_ATTACHMENTS = 200
 _MAX_QUICKLOOK_HTML_BYTES = 5 * 1024 * 1024
 _MAX_QUICKLOOK_CSS_BYTES = 5 * 1024 * 1024
 _RENDER_TIMEOUT_SECONDS = 60
-_CACHE_VERSION = "6"
+_CACHE_VERSION = "7"
+_PREVIEW_ENV_KEYS = frozenset(
+    {"SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE"}
+)
 
 
 def render_office_fidelity_preview(path: Path) -> str | None:
@@ -36,8 +39,11 @@ def render_office_fidelity_preview(path: Path) -> str | None:
         stat = path.stat()
     except OSError:
         return None
+    content_digest = _file_content_digest(path, stat)
+    if content_digest is None:
+        return None
     digest = hashlib.sha256(
-        f"{_CACHE_VERSION}\0{path.resolve()}\0{stat.st_mtime_ns}\0{stat.st_size}".encode()
+        f"{_CACHE_VERSION}\0{path.resolve()}\0{stat.st_mtime_ns}\0{stat.st_size}\0{content_digest}".encode()
     ).hexdigest()
     cached = _CACHE_ROOT / f"{digest}.html"
     if cached.is_file():
@@ -53,6 +59,10 @@ def render_office_fidelity_preview(path: Path) -> str | None:
                 pass
         _CACHE_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="render-", dir=_CACHE_ROOT) as output_dir:
+            output_path = Path(output_dir)
+            profile_dir = output_path / "profile"
+            profile_dir.mkdir()
+            environment = _preview_environment(profile_dir)
             pdftoppm = _find_pdftoppm()
             if not pdftoppm:
                 return None
@@ -60,12 +70,14 @@ def render_office_fidelity_preview(path: Path) -> str | None:
             if path.suffix.lower() != ".pdf":
                 qlmanage = _find_qlmanage()
                 if qlmanage:
-                    html = _render_quicklook_preview(path, pdftoppm, qlmanage, Path(output_dir))
+                    html = _render_quicklook_preview(
+                        path, pdftoppm, qlmanage, output_path, env=environment
+                    )
             if html is None:
                 pdf = path if path.suffix.lower() == ".pdf" else render_office_pdf(path)
                 if pdf is None or not pdf.is_file():
                     return None
-                html = _render_pdf_pages(path.name, pdf, pdftoppm, Path(output_dir))
+                html = _render_pdf_pages(path.name, pdf, pdftoppm, output_path, env=environment)
             if html is None:
                 return None
             temporary = _CACHE_ROOT / f".{digest}.{threading.get_ident()}.html"
@@ -74,7 +86,26 @@ def render_office_fidelity_preview(path: Path) -> str | None:
             return html
 
 
-def _render_pdf_pages(filename: str, pdf: Path, pdftoppm: str, output_dir: Path) -> str | None:
+def _preview_environment(profile_dir: Path) -> dict[str, str]:
+    """Keep converter subprocesses from inheriting model or user secrets."""
+
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper() in _PREVIEW_ENV_KEYS
+    }
+    environment["HOME"] = str(profile_dir)
+    return environment
+
+
+def _render_pdf_pages(
+    filename: str,
+    pdf: Path,
+    pdftoppm: str,
+    output_dir: Path,
+    *,
+    env: dict[str, str],
+) -> str | None:
     prefix = Path(output_dir) / "page"
     try:
         subprocess.run(
@@ -94,6 +125,7 @@ def _render_pdf_pages(filename: str, pdf: Path, pdftoppm: str, output_dir: Path)
             ],
             check=True,
             capture_output=True,
+            env=env,
             timeout=_RENDER_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError):
@@ -111,7 +143,12 @@ def _render_pdf_pages(filename: str, pdf: Path, pdftoppm: str, output_dir: Path)
 
 
 def _render_quicklook_preview(
-    path: Path, pdftoppm: str, qlmanage: str, output_dir: Path
+    path: Path,
+    pdftoppm: str,
+    qlmanage: str,
+    output_dir: Path,
+    *,
+    env: dict[str, str],
 ) -> str | None:
     preview_root = output_dir / "quicklook"
     preview_root.mkdir()
@@ -120,6 +157,7 @@ def _render_quicklook_preview(
             [qlmanage, "-p", "-o", str(preview_root), str(path)],
             check=True,
             capture_output=True,
+            env=env,
             timeout=_RENDER_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError):
@@ -162,6 +200,7 @@ def _render_quicklook_preview(
                 ],
                 check=True,
                 capture_output=True,
+                env=env,
                 timeout=_RENDER_TIMEOUT_SECONDS,
             )
             image = prefix.with_suffix(".png")

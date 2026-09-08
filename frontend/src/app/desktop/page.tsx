@@ -1,4 +1,23 @@
 import {
+  DesktopStartGuide,
+  OPEN_DESKTOP_START_GUIDE_EVENT,
+} from "@/appliance/desktop-start-guide";
+import { AppOpenChoice } from "@/appliance/app-open-choice";
+import { useDesktopWorkspaces } from "@/appliance/use-desktop-workspaces";
+import { useDesktopWorkspaceRequest } from "@/appliance/use-desktop-workspace-request";
+import { taskWorkspaceRoute } from "@/core/router/task-workspace-route";
+import {
+  findWorkbenchApp,
+  isLocalDatabaseRoute,
+  workbenchRoutePath,
+} from "@/core/workbench/apps";
+import { workbenchRoute } from "@/core/router/desktop-workspace-route";
+import { availableDesktopWorkbenchApps } from "@/core/workbench/desktop-apps";
+import { useModuleAvailabilitySnapshot } from "@/core/modules/enabled-modules";
+import { useWorkbenchAvailabilitySync } from "@/core/workbench/availability";
+import { SystemModelStatus } from "@/appliance/system-model-status";
+import { LocalDatabaseApp } from "@/appliance/local-database-app";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -6,7 +25,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   AppWindowIcon,
   ArchiveIcon,
@@ -33,9 +52,9 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
+import { OrganizerResult, useDesktopOrganizer } from "./organizer-result";
 
 import { cn } from "@/lib/utils";
-import { authReturnToFromSearch } from "@/core/auth/return-to";
 import { useAuth } from "@/providers/AuthProvider";
 import { useDebounce } from "@/hooks";
 import type {
@@ -79,26 +98,23 @@ import {
   useNativeApps,
 } from "@/appliance/apps-native";
 import {
+  ApplianceAuthStatusError,
   fetchApplianceAuthStatus,
   hasDeviceOperatorAccess,
   type ApplianceAuthStatus,
 } from "@/appliance/auth";
 import { requestHighRiskApproval } from "@/appliance/approval";
-import {
-  agentAssetManagementRoute,
-  agentAssetWindowId,
-} from "@/appliance/agent-assets";
+import { agentAssetManagementRoute } from "@/appliance/agent-assets";
 import { useAgentDesktopHealth } from "@/appliance/agent-health";
 import {
   AccountSecurityPanel,
   type AccountSecuritySection,
 } from "@/appliance/account-security-panel";
 import type { OsAgentSettingsSection } from "@/components/workspace/settings/system-agent-settings-content";
-import { ApplianceLogin } from "@/appliance/login";
+import { ApplianceLogin, ApplianceSessionGate } from "@/appliance/login";
 import { FileManager } from "@/appliance/file-manager";
 import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
 import { HubPanel } from "@/appliance/hub-panel";
-import { EmbeddedAgentWorkspace } from "@/appliance/embedded-agent-workspace";
 import type { HubApp } from "@/appliance/hub";
 import { OPEN_ECHO_HUB_EVENT } from "@/core/apps/app-presentation";
 import { PhotosPanel } from "@/appliance/photos-panel";
@@ -107,7 +123,7 @@ import { DeviceLinkPanel } from "@/appliance/device-link-panel";
 import { resolveSystemSettingsSurface } from "@/appliance/system-settings-surface";
 import { TaskSpacePanel } from "@/appliance/task-space-panel";
 import { useEchoTaskProjection } from "@/appliance/task-space";
-import { AppWindow, type DesktopWindow } from "@/appliance/app-window";
+import { AppWindow } from "@/appliance/app-window";
 import {
   loadAgentWorkspaceConfig,
   resolveAgentAppUrl,
@@ -141,6 +157,8 @@ type DesktopApp = {
   color: string;
   // Agent 工作台类应用直接渲染在系统窗口中，不再加载另一套前端。
   windowed?: boolean;
+  /** The shared app registry owns Dock placement; core desktop apps opt in here. */
+  dock?: boolean;
 };
 
 type DesktopCategory = {
@@ -163,14 +181,7 @@ const DESKTOP_APPS: DesktopApp[] = [
     route: "/browser",
     icon: GlobeIcon,
     color: "linear-gradient(145deg, #55c7ff, #087bd8)",
-  },
-  {
-    name: "文件管家",
-    subtitle: "AI 问答你的文档库",
-    route: "/workspace/storage",
-    icon: DatabaseIcon,
-    color: "linear-gradient(145deg, #54d59d, #0c8e66)",
-    windowed: true,
+    dock: true,
   },
   {
     name: "照片",
@@ -178,6 +189,7 @@ const DESKTOP_APPS: DesktopApp[] = [
     route: "/photos",
     icon: ImageIcon,
     color: "linear-gradient(145deg, #fb8aa2, #f06b38)",
+    dock: true,
   },
   {
     name: "存储中心",
@@ -224,9 +236,14 @@ const DESKTOP_APPS: DesktopApp[] = [
   },
 ];
 
+const DESKTOP_WORKBENCH_APP = DESKTOP_APPS.find(
+  (app) => app.route === "/workspace/realtime/new",
+)!;
+
 const ECHO_APP_STORE_ID = "echo-app-store";
 
-const DOCK_APPS = DESKTOP_APPS.slice(0, 4);
+// Agent 工作台在桌面上由左侧 Echo Agent 状态卡作为唯一主入口。
+// Dock placement is declared on each app entry so route aliases cannot drift.
 const OPERATOR_ONLY_APP_ROUTES = new Set([
   "/storage-center",
   "/device-link",
@@ -282,7 +299,6 @@ const ARCHIVE_FOLDER_MAP: Record<string, string> = {
   package: "安装包",
   other: "其他",
 };
-const DESKTOP_ORGANIZER_ENABLED_KEY = "echo:desktop-organizer-enabled";
 
 const NO_SYSTEM_CAPABILITIES: SystemActionCapabilities = {
   nativeShell: false,
@@ -324,20 +340,19 @@ function groupDesktopItems(items: NativeDesktopItem[]) {
 
 export default function DesktopShellPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const {
     authStatus,
+    authError,
+    user,
     isAuthenticated,
     isLoading: authLoading,
+    isBackendStarting,
     retryAuth,
   } = useAuth();
-  const authenticatedReturnTo = useMemo(() => {
-    if (!new URLSearchParams(location.search).has("returnTo")) return null;
-    return authReturnToFromSearch(location.search);
-  }, [location.search]);
   const [query, setQuery] = useState("");
   const [spotlightOpen, setSpotlightOpen] = useState(false);
   const [launchpadOpen, setLaunchpadOpen] = useState(false);
+  const [appOpenChoice, setAppOpenChoice] = useState<DesktopApp | null>(null);
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [nativeNotifications, setNativeNotifications] = useState<
@@ -423,19 +438,7 @@ export default function DesktopShellPage() {
   const [desktopCategory, setDesktopCategory] =
     useState<DesktopCategory["key"]>("all");
   const [desktopSearch, setDesktopSearch] = useState("");
-  const [organizerEnabled, setOrganizerEnabled] = useState(
-    () =>
-      IS_NATIVE_DESKTOP ||
-      (typeof window !== "undefined"
-        ? localStorage.getItem(DESKTOP_ORGANIZER_ENABLED_KEY) === "true"
-        : false),
-  );
-  const [archiving, setArchiving] = useState(false);
-  const [undoing, setUndoing] = useState(false);
-  const [archiveResult, setArchiveResult] = useState<{
-    moved: number;
-    skipped: number;
-  } | null>(null);
+  const organizerEnabled = true;
   const [showWidget, setShowWidget] = useState(false);
   const [systemInfo, setSystemInfo] = useState<{
     cpu: { model: string; cores: number; usage: number };
@@ -483,17 +486,38 @@ export default function DesktopShellPage() {
   >(null);
   const [applianceRole, setApplianceRole] =
     useState<ApplianceAuthStatus["role"]>(null);
+  const [applianceAuthError, setApplianceAuthError] = useState<Error | null>(
+    null,
+  );
+  const [applianceAuthProbe, setApplianceAuthProbe] = useState(0);
   const isDeviceOperator = hasDeviceOperatorAccess(
     applianceAuthRequired,
     applianceAuthed,
     applianceRole,
   );
+  useWorkbenchAvailabilitySync();
+  const workbenchAvailability = useModuleAvailabilitySnapshot();
   const visibleDesktopApps = useMemo(
     () =>
-      DESKTOP_APPS.filter(
-        (app) => isDeviceOperator || !OPERATOR_ONLY_APP_ROUTES.has(app.route),
+      [
+        ...DESKTOP_APPS,
+        ...availableDesktopWorkbenchApps(workbenchAvailability).map(
+          (app): DesktopApp => ({
+            name: app.name,
+            subtitle: app.description,
+            route: app.workspaceRoute,
+            icon: app.icon === "database" ? DatabaseIcon : AppWindowIcon,
+            color: "linear-gradient(145deg, #54d59d, #0c8e66)",
+            windowed: true,
+            dock: app.dock,
+          }),
+        ),
+      ].filter(
+        (app) =>
+          isDeviceOperator ||
+          !OPERATOR_ONLY_APP_ROUTES.has(workbenchRoutePath(app.route)),
       ),
-    [isDeviceOperator],
+    [isDeviceOperator, workbenchAvailability],
   );
   const agentDesktopHealth = useAgentDesktopHealth(applianceAuthed === true);
   const {
@@ -503,6 +527,7 @@ export default function DesktopShellPage() {
     refresh: refreshTaskProjection,
     takeover: takeoverTaskProjection,
     resumeExecution: resumeTaskProjection,
+    decideApproval: decideTaskApproval,
   } = useEchoTaskProjection(applianceAuthed === true);
   // NAS 文件管理器(原生路线;Electron 寄生模式仍用透明桌面整理抽屉)。
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
@@ -633,7 +658,7 @@ export default function DesktopShellPage() {
   const openSystemAgentSettings = useCallback(
     (section: OsAgentSettingsSection = "models") => {
       setAgentSettingsSection(section);
-      setAccountSecuritySection("agent");
+      setAccountSecuritySection(section === "models" ? "models" : "agent");
       setAccountSecurityOpen(true);
     },
     [],
@@ -669,31 +694,32 @@ export default function DesktopShellPage() {
   }, [openSystemAgentSettings]);
 
   // 桌面窗口:系统应用直接渲染 React 内容，第三方应用才使用 iframe。
-  const [windows, setWindows] = useState<DesktopWindow[]>([]);
-  const [minimized, setMinimized] = useState<Set<string>>(new Set());
-  const [focusedWin, setFocusedWin] = useState<string | null>(null);
-  const openWindow = (win: DesktopWindow) => {
-    setWindows((prev) =>
-      prev.some((w) => w.id === win.id) ? prev : [...prev, win],
-    );
-    setMinimized((prev) => {
-      const next = new Set(prev);
-      next.delete(win.id);
-      return next;
-    });
-    setFocusedWin(win.id);
-  };
-  const closeWindow = (id: string) => {
-    setWindows((prev) => prev.filter((w) => w.id !== id));
-    setMinimized((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-  };
-  const minimizeWindow = (id: string) =>
-    setMinimized((prev) => new Set(prev).add(id));
+  const {
+    windows,
+    minimized,
+    focusedWin,
+    openWindow,
+    closeWindow,
+    minimizeWindow,
+    focusWindow,
+    openWorkspace,
+  } = useDesktopWorkspaces();
+  useDesktopWorkspaceRequest({
+    ready:
+      applianceAuthed === true &&
+      !authLoading &&
+      (authStatus?.enabled === false || isAuthenticated),
+    onOpen: openWorkspace,
+  });
   useEffect(() => {
+    if (authLoading || authError) {
+      setApplianceAuthRequired(null);
+      setApplianceAuthed(null);
+      setApplianceRole(null);
+      setApplianceAuthError(null);
+      return;
+    }
+
     let alive = true;
     fetchApplianceAuthStatus()
       .then((s) => {
@@ -701,21 +727,34 @@ export default function DesktopShellPage() {
           setApplianceAuthRequired(s.authRequired);
           setApplianceAuthed(!s.authRequired || s.authenticated);
           setApplianceRole(s.role);
+          setApplianceAuthError(null);
         }
       })
-      .catch(() => {
-        // 状态接口不可用(母体模式 / 未开 appliance)→ 不拦截。
-        if (alive) {
+      .catch((error: unknown) => {
+        if (!alive) return;
+        // 非 appliance 的开发母体没有此接口；仅明确的 404 可以放行。
+        if (error instanceof ApplianceAuthStatusError && error.status === 404) {
           setApplianceAuthRequired(false);
           setApplianceAuthed(true);
           setApplianceRole("operator");
+          setApplianceAuthError(null);
+          return;
         }
+        setApplianceAuthRequired(null);
+        setApplianceAuthed(null);
+        setApplianceRole(null);
+        setApplianceAuthError(
+          error instanceof Error ? error : new Error("无法确认 appliance 会话"),
+        );
       });
-    // 只读取同源存储配置；Agent 工作台本身已经内建。
-    void loadAgentWorkspaceConfig();
     return () => {
       alive = false;
     };
+  }, [applianceAuthProbe, authError, authLoading]);
+
+  useEffect(() => {
+    // 只读取同源存储配置；Agent 工作台本身已经内建。
+    void loadAgentWorkspaceConfig();
   }, []);
 
   // The OS session is the single authentication boundary. If its backend
@@ -725,23 +764,6 @@ export default function DesktopShellPage() {
     if (authLoading || applianceAuthRequired !== true) return;
     setApplianceAuthed(isAuthenticated);
   }, [applianceAuthRequired, authLoading, isAuthenticated]);
-
-  // Resume the originally requested workspace only after both the appliance
-  // gate and the shared AuthProvider agree that the system session is valid.
-  useEffect(() => {
-    if (!authenticatedReturnTo || applianceAuthed !== true || authLoading) {
-      return;
-    }
-    if (authStatus?.enabled && !isAuthenticated) return;
-    navigate(authenticatedReturnTo, { replace: true });
-  }, [
-    applianceAuthed,
-    authLoading,
-    authStatus,
-    authenticatedReturnTo,
-    isAuthenticated,
-    navigate,
-  ]);
 
   const refreshSystemControls = useCallback(async () => {
     const controls = window.echo?.systemControls;
@@ -976,8 +998,19 @@ export default function DesktopShellPage() {
     return () => window.removeEventListener("keydown", onSystemShortcut);
   }, [spotlightOpen, systemCapabilities.lock]);
 
-  const openApp = (app: DesktopApp) => {
-    if (!isDeviceOperator && OPERATOR_ONLY_APP_ROUTES.has(app.route)) {
+  const openApp = (app: DesktopApp, routeOverride?: string) => {
+    const registeredApp = findWorkbenchApp(app.route);
+    if (
+      registeredApp?.delivery === "remote" &&
+      workbenchAvailability?.get(registeredApp.moduleId) !== true
+    ) {
+      toast.info("应用尚未安装、已停用或状态未确认，请在应用中心查看。");
+      return;
+    }
+    if (
+      !isDeviceOperator &&
+      OPERATOR_ONLY_APP_ROUTES.has(workbenchRoutePath(app.route))
+    ) {
       toast.info("家庭成员不能打开设备级管理工具");
       return;
     }
@@ -1017,22 +1050,43 @@ export default function DesktopShellPage() {
       setSpotlightOpen(false);
       return;
     }
-    if (app.name === "设置") {
+    if (workbenchRoutePath(app.route) === "/workspace") {
       openSystemSettings();
       return;
     }
-    // Agent 工作台类应用直接作为 React 内容开进桌面窗口。
-    if (app.windowed && (IS_NATIVE_DESKTOP || !isElectronShell)) {
+    if (isLocalDatabaseRoute(app.route)) {
+      const route = routeOverride || app.route;
       openWindow({
-        id: `agent-app:${app.route}`,
+        id: `agent-app:${route}`,
         title: app.name,
-        url: resolveAgentAppUrl(app.route),
-        content: <EmbeddedAgentWorkspace initialRoute={app.route} />,
-        integratedChrome: true,
+        url: resolveAgentAppUrl(route),
+        content: (
+          <LocalDatabaseApp
+            initialRoute={route}
+            onOpenWorkbench={openWorkspace}
+          />
+        ),
       });
+      setLaunchpadOpen(false);
+      setSpotlightOpen(false);
+      return;
+    }
+    // Agent 工作台类应用直接作为 React 内容开进桌面窗口。
+    if (app.windowed) {
+      openWorkspace(routeOverride || app.route, { title: app.name });
+      setLaunchpadOpen(false);
+      setSpotlightOpen(false);
       return;
     }
     navigate(app.route);
+  };
+
+  const chooseAppPresentation = (app: DesktopApp) => {
+    if (findWorkbenchApp(app.route)) {
+      setLaunchpadOpen(false);
+      setSpotlightOpen(false);
+      setAppOpenChoice(app);
+    } else openApp(app);
   };
 
   // Echo OS:Dock 的"本地应用"段只接真实数据(Docker 应用注册器)。
@@ -1154,6 +1208,14 @@ export default function DesktopShellPage() {
     openApplianceApp(app);
   };
 
+  const isAppWindowOpen = (route: string) =>
+    windows.some((win) => {
+      const path = (win.workspaceRoute ?? win.url).split(/[?#]/)[0];
+      return route === "/workspace/realtime/new"
+        ? path?.startsWith("/workspace/realtime/")
+        : path === route.split(/[?#]/)[0];
+    });
+
   const macShellApps: MacShellApp[] = [
     ...visibleDesktopApps.map((app) => ({
       id: `echo:${app.route}`,
@@ -1175,9 +1237,8 @@ export default function DesktopShellPage() {
               ? deviceLinkOpen
               : app.route === "/hub"
                 ? hubOpen
-                : app.windowed &&
-                  windows.some((win) => win.id === `agent-app:${app.route}`),
-      onOpen: () => openApp(app),
+                : app.windowed && isAppWindowOpen(app.route),
+      onOpen: () => chooseAppPresentation(app),
     })),
     ...libraryApplianceApps.map((app) => ({
       id: `appliance:${app.id}`,
@@ -1202,8 +1263,10 @@ export default function DesktopShellPage() {
     })),
   ];
 
+  const documentLibraryApp = macShellApps.find((app) =>
+    isLocalDatabaseRoute(app.id.slice("echo:".length)),
+  );
   const desktopShortcuts: MacShellApp[] = [
-    macShellApps[0]!,
     {
       id: "system:files",
       name: "文件",
@@ -1212,10 +1275,14 @@ export default function DesktopShellPage() {
       gradient: "linear-gradient(145deg, #6bc9ff, #1d78d4)",
       onOpen: openFinder,
     },
-    {
-      ...macShellApps[2]!,
-      name: "文档库",
-    },
+    ...(documentLibraryApp
+      ? [
+          {
+            ...documentLibraryApp,
+            name: "文档库",
+          },
+        ]
+      : []),
     ...(nativeFileManagerApp
       ? [
           {
@@ -1454,59 +1521,56 @@ export default function DesktopShellPage() {
       });
   };
 
+  const organizer = useDesktopOrganizer(refreshDesktopItems);
+  const archiving = organizer.busy === "move";
+  const undoing = organizer.busy === "undo";
+
+  const archiveDesktopFile = (srcPath: string, folderName: string) =>
+    organizer.run(
+      "move",
+      async () => {
+        const desktop = window.echo?.desktop;
+        if (!desktop?.moveItem)
+          return { ok: false, failed: 1, error: "桌面整理服务不可用" };
+        const listing = await desktop.listItems();
+        if (!listing.ok || !listing.desktopPath) {
+          return {
+            ok: false,
+            failed: 1,
+            error: "无法读取桌面位置，未执行移动",
+          };
+        }
+        const separator = listing.desktopPath.includes("\\") ? "\\" : "/";
+        const destDir =
+          listing.desktopPath.replace(/[\\/]$/, "") + separator + folderName;
+        return desktop.moveItem(srcPath, destDir);
+      },
+      true,
+    );
+
   const handleAutoArchive = async () => {
     if (!window.echo?.desktop?.moveItemsBatch) return;
-    setArchiving(true);
-    setArchiveResult(null);
-    try {
-      const fileItems = nativeDesktopItems.filter(
-        (item) =>
-          item.kind === "file" && getDesktopItemCategory(item) !== "app",
-      );
-      if (fileItems.length === 0) {
-        toast.info("桌面上没有可整理的文件");
-        setArchiveResult({ moved: 0, skipped: 0 });
-        return;
-      }
-      const batch = fileItems.map((item) => ({
-        srcPath: item.path,
-        category: getDesktopItemCategory(item),
-      }));
-      const result = await window.echo.desktop.moveItemsBatch(batch);
-      if (result.ok) {
-        setArchiveResult({ moved: result.moved, skipped: result.skipped });
-        refreshDesktopItems();
-        toast.success(`已整理 ${result.moved} 个文件到分类文件夹`);
-      } else {
-        toast.error(result.error || "整理失败");
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "整理失败");
-      setArchiveResult({ moved: 0, skipped: 0 });
-    } finally {
-      setArchiving(false);
+    const fileItems = nativeDesktopItems.filter(
+      (item) => item.kind === "file" && getDesktopItemCategory(item) !== "app",
+    );
+    if (fileItems.length === 0) {
+      toast.info("桌面上没有可整理的文件");
+      return;
     }
+    const batch = fileItems.map((item) => ({
+      srcPath: item.path,
+      category: getDesktopItemCategory(item),
+    }));
+    const desktop = window.echo.desktop;
+    await organizer.run("move", () => desktop.moveItemsBatch(batch));
   };
 
   const handleUndo = async () => {
     if (!window.echo?.desktop?.undoMoves) return;
-    setUndoing(true);
-    try {
-      const result = await window.echo.desktop.undoMoves();
-      if (result.ok && result.undone > 0) {
-        refreshDesktopItems();
-        setArchiveResult(null);
-        toast.success(`已撤销 ${result.undone} 个文件的移动`);
-      } else if (result.ok && result.undone === 0) {
-        toast.info("没有可撤销的操作");
-      } else {
-        toast.error(result.error || "撤销失败");
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "撤销失败");
-    } finally {
-      setUndoing(false);
-    }
+    const desktop = window.echo.desktop;
+    await organizer.run("undo", (operationId) =>
+      desktop.undoMoves(operationId),
+    );
   };
 
   const handleContextMenuAction = async (
@@ -1523,22 +1587,8 @@ export default function DesktopShellPage() {
         toast.info("仅支持归档文件");
         return;
       }
-      try {
-        const listResult = await window.echo.desktop.listItems();
-        const desktopPath = listResult.ok ? listResult.desktopPath || "" : "";
-        const folderName = ARCHIVE_FOLDER_MAP[category];
-        if (!folderName || !desktopPath) return;
-        const destDir = desktopPath + "\\" + folderName;
-        const result = await window.echo.desktop.moveItem(item.path, destDir);
-        if (result.ok) {
-          refreshDesktopItems();
-          toast.success(`已将 "${item.name}" 归档到 ${folderName}`);
-        } else {
-          toast.error(result.error || "归档失败");
-        }
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "归档失败");
-      }
+      const folderName = ARCHIVE_FOLDER_MAP[category];
+      if (folderName) await archiveDesktopFile(item.path, folderName);
     } else if (action === "delete") {
       toast.info("删除功能暂未实现");
     }
@@ -1555,16 +1605,11 @@ export default function DesktopShellPage() {
     });
     if (app) {
       setSpotlightOpen(false);
-      openApp(app);
+      chooseAppPresentation(app);
       return;
     }
     setSpotlightOpen(false);
     navigate(`/browser?q=${encodeURIComponent(query.trim())}`);
-  };
-
-  const enableOrganizer = () => {
-    localStorage.setItem(DESKTOP_ORGANIZER_ENABLED_KEY, "true");
-    setOrganizerEnabled(true);
   };
 
   const availableSystemActions: MacSystemCapabilities = {
@@ -1639,8 +1684,31 @@ export default function DesktopShellPage() {
     }
   };
 
-  // Appliance 认证门:需登录且未登录时显示原生登录屏。检测中(null)先不渲染
-  // 桌面,避免未登录态一闪而过。
+  const retryDesktopAuth = () => {
+    setApplianceAuthError(null);
+    setApplianceAuthed(null);
+    void retryAuth().finally(() => {
+      setApplianceAuthProbe((current) => current + 1);
+    });
+  };
+
+  // 主认证或 appliance 会话未确认时失败关闭，不渲染桌面内容。
+  if (authLoading || applianceAuthed === null) {
+    return (
+      <ApplianceSessionGate
+        state={
+          authError || applianceAuthError
+            ? "unavailable"
+            : isBackendStarting
+              ? "starting"
+              : "checking"
+        }
+        onRetry={retryDesktopAuth}
+      />
+    );
+  }
+
+  // Appliance 认证门:需登录且未登录时显示原生登录屏。
   if (applianceAuthed === false) {
     return (
       <>
@@ -1673,51 +1741,6 @@ export default function DesktopShellPage() {
           onConfirm={() => void confirmSystemAction()}
         />
       </>
-    );
-  }
-
-  // 寄生路线的 opt-in 门:原生 OS 桌面默认进入,不显示此门(IS_NATIVE_DESKTOP)。
-  if (!IS_NATIVE_DESKTOP && !organizerEnabled) {
-    return (
-      <main className="flex h-screen items-center justify-center bg-background p-6 text-foreground">
-        <section className="w-full max-w-xl rounded-3xl border border-border bg-card p-6 shadow-sm">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <FolderIcon className="size-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold">桌面助手未开启</h1>
-              <p className="text-sm text-muted-foreground">
-                Echo
-                默认进入欢迎、登录与工作区。需要处理系统桌面文件时，可以单独开启透明桌面助手。
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={enableOrganizer}
-              className="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-primary/90"
-            >
-              开启桌面助手
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/workspace/desktop-organizer")}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-4 text-sm font-medium transition hover:bg-muted"
-            >
-              打开插件设置
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/workspace/realtime/new")}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-border bg-background px-4 text-sm font-medium transition hover:bg-muted"
-            >
-              回到工作区
-            </button>
-          </div>
-        </section>
-      </main>
     );
   }
 
@@ -1928,6 +1951,11 @@ export default function DesktopShellPage() {
       </div>
       <section className="relative z-10 flex h-full min-h-0 flex-col">
         <MacMenuBar
+          modelStatus={
+            <SystemModelStatus
+              onOpenSettings={() => openSystemAgentSettings("models")}
+            />
+          }
           activeApp={menuBarActiveApp}
           controlCenterOpen={controlCenterOpen}
           notificationsOpen={notificationsOpen}
@@ -1949,11 +1977,30 @@ export default function DesktopShellPage() {
           notificationCount={nativeNotifications.length}
         />
         <div className="relative min-h-0 flex-1 pt-[25px]">
-          <MacDesktopWidgets
-            agentHealth={agentDesktopHealth}
-            onOpenWorkspace={() => openApp(DESKTOP_APPS[0]!)}
-            onOpenNotifications={toggleNotifications}
-          />
+          <DesktopStartGuide
+            identity={user?.actor_id || user?.user_id || "local"}
+            completedTasks={taskProjection?.counts.completed ?? 0}
+            onStorage={() => openSystemSettingsSection("sharing")}
+            onModel={() => openSystemAgentSettings("models")}
+            onPermissions={() => openSystemAgentSettings("automationSecurity")}
+            onStart={(prompt) =>
+              openApp(DESKTOP_WORKBENCH_APP, taskWorkspaceRoute({ prompt }))
+            }
+            onResults={() => setTaskSpaceOpen(true)}
+            onDatabase={() => {
+              const app = visibleDesktopApps.find((entry) =>
+                isLocalDatabaseRoute(entry.route),
+              );
+              if (app) openApp(app);
+            }}
+            onApps={openAppStore}
+          >
+            <MacDesktopWidgets
+              agentHealth={agentDesktopHealth}
+              onOpenWorkspace={() => openApp(DESKTOP_WORKBENCH_APP)}
+              onOpenNotifications={toggleNotifications}
+            />
+          </DesktopStartGuide>
           <div className="mac-desktop-icons">
             {desktopShortcuts.map((app) => (
               <MacDesktopIcon key={app.id} app={app} />
@@ -2000,16 +2047,11 @@ export default function DesktopShellPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {archiveResult && !itemsError && (
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                      已整理 {archiveResult.moved} 项
-                    </span>
-                  )}
                   {!itemsError && (
                     <button
                       type="button"
                       onClick={handleAutoArchive}
-                      disabled={archiving || loadingItems}
+                      disabled={Boolean(organizer.busy) || loadingItems}
                       className="inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-[11px] font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
                       title="一键整理桌面文件"
                     >
@@ -2021,7 +2063,7 @@ export default function DesktopShellPage() {
                     <button
                       type="button"
                       onClick={handleUndo}
-                      disabled={undoing || loadingItems}
+                      disabled={Boolean(organizer.busy) || loadingItems}
                       className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
                       title="撤销上一次整理"
                     >
@@ -2040,6 +2082,10 @@ export default function DesktopShellPage() {
                   </button>
                 </div>
               </div>
+
+              {organizer.receipt && (
+                <OrganizerResult receipt={organizer.receipt} />
+              )}
 
               {itemsError && (
                 <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
@@ -2106,22 +2152,9 @@ export default function DesktopShellPage() {
                               e.dataTransfer.getData("text/plain");
                             if (!srcPath || !window.echo?.desktop?.moveItem)
                               return;
-                            const desktopPath = await window.echo.desktop
-                              .listItems()
-                              .then((r) => r.desktopPath || "");
                             const folderName = ARCHIVE_FOLDER_MAP[category.key];
                             if (!folderName) return;
-                            const destDir = desktopPath + "\\" + folderName;
-                            const result = await window.echo.desktop.moveItem(
-                              srcPath,
-                              destDir,
-                            );
-                            if (result.ok) {
-                              refreshDesktopItems();
-                              toast.success("文件已移动");
-                            } else {
-                              toast.error(result.error || "移动失败");
-                            }
+                            await archiveDesktopFile(srcPath, folderName);
                           }}
                           className={cn(
                             "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition",
@@ -2413,38 +2446,39 @@ export default function DesktopShellPage() {
               appId="system:app-store"
             />
           </DockItem>
-          {DOCK_APPS.map((app) => {
-            const Icon = app.icon;
-            const running =
-              app.route === "/photos"
-                ? photosOpen
-                : app.route === "/storage-center"
-                  ? storageCenterOpen
-                  : app.windowed &&
-                    windows.some((win) => win.id === `agent-app:${app.route}`);
-            return (
-              <DockItem
-                key={app.name}
-                onClick={() => openApp(app)}
-                title={app.name}
-                running={running}
-              >
-                <MacAppIcon
-                  icon={Icon}
-                  gradient={app.color}
-                  appId={`echo:${app.route}`}
-                  state={
-                    app.route === "/workspace/realtime/new" &&
-                    (taskProjection?.counts.active ?? 0) > 0
-                      ? "thinking"
-                      : running
-                        ? "active"
-                        : "default"
-                  }
-                />
-              </DockItem>
-            );
-          })}
+          {visibleDesktopApps
+            .filter((app) => app.dock)
+            .map((app) => {
+              const Icon = app.icon;
+              const running =
+                app.route === "/photos"
+                  ? photosOpen
+                  : app.route === "/storage-center"
+                    ? storageCenterOpen
+                    : app.windowed && isAppWindowOpen(app.route);
+              return (
+                <DockItem
+                  key={app.name}
+                  onClick={() => chooseAppPresentation(app)}
+                  title={app.name}
+                  running={running}
+                >
+                  <MacAppIcon
+                    icon={Icon}
+                    gradient={app.color}
+                    appId={`echo:${app.route}`}
+                    state={
+                      app.route === "/workspace/realtime/new" &&
+                      (taskProjection?.counts.active ?? 0) > 0
+                        ? "thinking"
+                        : running
+                          ? "active"
+                          : "default"
+                    }
+                  />
+                </DockItem>
+              );
+            })}
           {dockApplianceApps.length > 0 && (
             <>
               <span className="mac-dock-separator" />
@@ -2680,18 +2714,36 @@ export default function DesktopShellPage() {
         onClose={() => setHubOpen(false)}
         onAppsChanged={refreshApplianceApps}
         onOpenDeviceApp={(app) => void openHubApplianceApp(app)}
+        onOpenWorkbench={(route) => {
+          setHubOpen(false);
+          openWorkspace(route);
+        }}
+        onOpenSystemApp={(route) => {
+          const registeredApp = findWorkbenchApp(route);
+          if (
+            registeredApp?.delivery === "remote" &&
+            workbenchAvailability?.get(registeredApp.moduleId) !== true
+          ) {
+            toast.info("应用状态尚未就绪，请刷新应用中心后重试。");
+            return;
+          }
+          setHubOpen(false);
+          const app = visibleDesktopApps.find(
+            (entry) => entry.route.split("?")[0] === route.split("?")[0],
+          );
+          if (app) openApp(app, route);
+          else
+            openWorkspace(
+              `${route}${route.includes("?") ? "&" : "?"}embedded=app`,
+              {
+                title: findWorkbenchApp(route)?.name ?? "应用",
+              },
+            );
+        }}
         onOpenAgentAssets={(asset) => {
           setHubOpen(false);
-          openWindow({
-            id: agentAssetWindowId(asset),
+          openWorkspace(agentAssetManagementRoute(asset), {
             title: asset.kind === "skill" ? "Agent 技能" : "Agent 插件",
-            url: resolveAgentAppUrl(agentAssetManagementRoute(asset)),
-            content: (
-              <EmbeddedAgentWorkspace
-                initialRoute={agentAssetManagementRoute(asset)}
-              />
-            ),
-            integratedChrome: true,
           });
         }}
       />
@@ -2724,7 +2776,7 @@ export default function DesktopShellPage() {
             win={win}
             index={i}
             focused={focusedWin === win.id}
-            onFocus={() => setFocusedWin(win.id)}
+            onFocus={() => focusWindow(win.id)}
             onClose={() => closeWindow(win.id)}
             onMinimize={() => minimizeWindow(win.id)}
           />
@@ -2739,6 +2791,30 @@ export default function DesktopShellPage() {
         onQueryChange={setQuery}
         onClose={() => setSpotlightOpen(false)}
         onSubmit={submit}
+      />
+      <AppOpenChoice
+        name={appOpenChoice?.name}
+        presentation={
+          findWorkbenchApp(appOpenChoice?.route ?? "")?.presentation
+        }
+        supportedPresentations={
+          findWorkbenchApp(appOpenChoice?.route ?? "")?.supportedPresentations
+        }
+        onClose={() => setAppOpenChoice(null)}
+        onStandalone={() => {
+          const selected = appOpenChoice;
+          setAppOpenChoice(null);
+          if (selected) openApp(selected);
+        }}
+        onWorkbench={() => {
+          const selected = appOpenChoice;
+          setAppOpenChoice(null);
+          const current = visibleDesktopApps.find(
+            (app) => app.route === selected?.route,
+          );
+          if (current) navigate(workbenchRoute(current.route));
+          else toast.info("应用当前不可用，请在应用中心查看。");
+        }}
       />
       <MacLaunchpad
         open={launchpadOpen}
@@ -2848,6 +2924,10 @@ export default function DesktopShellPage() {
             onLock: () => void lockScreen(),
             onRefreshUpdate: () => void refreshSystemUpdate(),
             onApplyUpdate: () => void applySystemUpdate(),
+            onOpenGettingStarted: () => {
+              setAccountSecurityOpen(false);
+              window.dispatchEvent(new Event(OPEN_DESKTOP_START_GUIDE_EVENT));
+            },
           }}
           onClose={() => setAccountSecurityOpen(false)}
           onSessionEnded={(message) => {
@@ -2867,25 +2947,21 @@ export default function DesktopShellPage() {
         onRefresh={refreshTaskProjection}
         onTakeover={takeoverTaskProjection}
         onResumeExecution={resumeTaskProjection}
-        onOpenWorkspace={(task) => {
+        onApprovalDecision={decideTaskApproval}
+        onOpenWorkspace={(task, artifact) => {
           setTaskSpaceOpen(false);
           if (task?.threadId) {
-            openWindow({
-              id: `agent-task:${task.id}`,
+            const route = taskWorkspaceRoute({
+              threadId: task.threadId,
+              agentId: task.agentId,
+              artifact,
+            });
+            openWorkspace(route, {
               title: `任务 · ${task.title}`,
-              url: resolveAgentAppUrl(
-                `/workspace/realtime/${encodeURIComponent(task.threadId)}`,
-              ),
-              content: (
-                <EmbeddedAgentWorkspace
-                  initialRoute={`/workspace/realtime/${encodeURIComponent(task.threadId)}`}
-                />
-              ),
-              integratedChrome: true,
             });
             return;
           }
-          openApp(DESKTOP_APPS[0]!);
+          openApp(DESKTOP_WORKBENCH_APP);
         }}
       />
       <MacSystemActionDialog

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .registry import Skill, SkillRegistry
+from .resource_refs import with_workspace_resource, workspace_resource_scope
 from .testing import SkillExpect, SkillTestCase
 
 _MAX_GLOB_RESULTS = 500  # Implementation note.
@@ -84,6 +85,7 @@ def _glob_files(
     allow_sensitive: bool = False,
     max_results: int = _MAX_GLOB_RESULTS,
     include_dirs: bool = False,
+    session: Any = None,
     **_kw: Any,
 ) -> dict[str, Any]:
     if not pattern or not str(pattern).strip():
@@ -95,6 +97,7 @@ def _glob_files(
         return {"error": f"not found: {root}"}
     if not base.is_dir():
         return {"error": f"not a directory: {root}"}
+    resource_scope = workspace_resource_scope(session)
 
     cap = max(1, min(int(max_results), _MAX_GLOB_RESULTS))
     matches: list[Path] = []
@@ -123,11 +126,16 @@ def _glob_files(
     matches = matches[:cap]
 
     files = [
-        {
-            "path": str(p.relative_to(base) if p.is_relative_to(base) else p),
-            "abs_path": str(p.resolve()),
-            "is_dir": p.is_dir(),
-        }
+        with_workspace_resource(
+            {
+                "path": str(p.relative_to(base) if p.is_relative_to(base) else p),
+                "abs_path": str(p.resolve()),
+                "is_dir": p.is_dir(),
+            },
+            p,
+            session=session,
+            execution_scope=resource_scope,
+        )
         for p in matches
     ]
     return {
@@ -152,6 +160,7 @@ def _grep_text(
     sandbox_dir: str | None = None,
     allow_sensitive: bool = False,
     context_lines: int = 0,
+    session: Any = None,
     **_kw: Any,
 ) -> dict[str, Any]:
     effective_pattern = str(pattern or query or "")
@@ -171,6 +180,7 @@ def _grep_text(
     if base is None or not base.exists():
         return {"error": f"not found: {effective_root}"}
     search_base = base if base.is_dir() else base.parent
+    resource_scope = workspace_resource_scope(session)
 
     try:
         flags = re.IGNORECASE if ignore_case else 0
@@ -231,11 +241,16 @@ def _grep_text(
             if regex.search(line):
                 snippet = line if len(line) <= 500 else line[:497] + "..."
                 rel = p.relative_to(search_base) if p.is_relative_to(search_base) else p
-                entry: dict[str, Any] = {
-                    "path": str(rel),
-                    "line": lineno,
-                    "text": snippet,
-                }
+                entry = with_workspace_resource(
+                    {
+                        "path": str(rel),
+                        "line": lineno,
+                        "text": snippet,
+                    },
+                    p,
+                    session=session,
+                    execution_scope=resource_scope,
+                )
                 if ctx > 0:
                     # 0-indexed window into ``lines``. ripgrep-style:
                     # ``before`` lists [-ctx .. -1], ``after`` lists
@@ -289,6 +304,7 @@ def _tree(
     include_hidden: bool = False,
     sandbox_dir: str | None = None,
     allow_sensitive: bool = False,
+    session: Any = None,
     **_kw: Any,
 ) -> dict[str, Any]:
     base, err = _safe_resolve(root, sandbox_dir=sandbox_dir, allow_sensitive=allow_sensitive)
@@ -296,6 +312,7 @@ def _tree(
         return {"error": err, "root": root}
     if base is None or not base.is_dir():
         return {"error": f"not a directory: {root}"}
+    resource_scope = workspace_resource_scope(session)
 
     depth_cap = max(1, min(int(max_depth), _MAX_TREE_DEPTH))
     node_cap = max(1, min(int(max_nodes), _MAX_TREE_NODES))
@@ -328,7 +345,14 @@ def _tree(
                     size = e.stat().st_size
                 except OSError:
                     size = None
-                children.append({"name": e.name, "is_dir": False, "size": size})
+                children.append(
+                    with_workspace_resource(
+                        {"name": e.name, "is_dir": False, "size": size},
+                        e,
+                        session=session,
+                        execution_scope=resource_scope,
+                    )
+                )
         node["children"] = children
         return node
 
@@ -348,6 +372,7 @@ def _read_file_range(
     limit: int = 200,
     sandbox_dir: str | None = None,
     allow_sensitive: bool = False,
+    session: Any = None,
     **_kw: Any,
 ) -> dict[str, Any]:
     base, err = _safe_resolve(path, sandbox_dir=sandbox_dir, allow_sensitive=allow_sensitive)
@@ -357,6 +382,7 @@ def _read_file_range(
         return {"error": f"not found: {path}"}
     if not base.is_file():
         return {"error": f"not a file: {path}"}
+    resource_scope = workspace_resource_scope(session)
 
     start = max(1, int(offset))
     cap = max(1, min(int(limit), _MAX_RANGE_LINES))
@@ -383,7 +409,7 @@ def _read_file_range(
 
     end = min(total, start - 1 + cap)
     sliced = lines
-    return {
+    return with_workspace_resource({
         "path": str(base.resolve()),
         "total_lines": total,
         "offset": start,
@@ -391,7 +417,7 @@ def _read_file_range(
         "end_line": end,
         "truncated": end < total,
         "content": "\n".join(sliced),
-    }
+    }, base, session=session, execution_scope=resource_scope)
 
 
 # ─── registration ────────────────────────────────────────────
@@ -404,6 +430,7 @@ def register_fs_search_skills(registry: SkillRegistry) -> int:
     registry.register(
         Skill(
             name="glob_files",
+            privacy_local=True,
             description=(
                 "用途: 按 glob (支持 ** 递归) 列文件，按 mtime 倒序返回；用于「找所有 *.py」「找最新改的 .md」之类。\n"
                 "何时不用: 要按内容 / 正则找用 grep_text；只看一个目录的直接子项用 list_cwd；要看完整树形结构用 tree；知道精确路径直接 read_file。\n"
@@ -433,6 +460,7 @@ def register_fs_search_skills(registry: SkillRegistry) -> int:
     registry.register(
         Skill(
             name="grep_text",
+            privacy_local=True,
             description=(
                 "用途: 在文本文件里跑 Python 正则搜内容 (不限于代码 — 配置 / 文档 / 日志都行)；返回 [{path, line, text}] 行级匹配。\n"
                 "何时不用: 只想按文件名 / 路径找用 glob_files；要读完整文件用 read_file；要做语义级代码检索用 code_search / lsp_skills；二进制或 >1MB 的文件会被自动跳过。\n"
@@ -462,6 +490,7 @@ def register_fs_search_skills(registry: SkillRegistry) -> int:
     registry.register(
         Skill(
             name="tree",
+            privacy_local=True,
             description=(
                 "用途: 递归打出目录结构 (默认 3 层, 上限 8 层 / 1000 节点)；用于第一次进项目时建立全局认知。\n"
                 "何时不用: 只看一层用 list_cwd 更省 token；按 pattern 找文件用 glob_files；按内容找用 grep_text；要文件元数据用 file_stats。\n"
@@ -491,6 +520,7 @@ def register_fs_search_skills(registry: SkillRegistry) -> int:
     registry.register(
         Skill(
             name="read_file_range",
+            privacy_local=True,
             description=(
                 "用途: 按 1-based 行号读文件的一段切片 (offset + limit, 上限 2000 行)；只想看「前 N 行」「某个区间」时省 token 的首选。\n"
                 "何时不用: 整文件不大用 read_file 一把读完；要找内容位置用 grep_text 后再来精读；要按 pattern 找用 glob_files；二进制 / 非 UTF-8 会拒读。\n"

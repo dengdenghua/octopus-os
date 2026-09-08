@@ -53,6 +53,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from appliance import native_time_machine
 from appliance.btrfs_scrub_schedule_policy import (
     scheduler_installed as _btrfs_scrub_scheduler_installed,
 )
@@ -1067,6 +1068,7 @@ _NATIVE_WRITE_CAPABILITIES = (
     "account.user.password.reset.v1",
     "shared-folder.privilege.simple.v1",
     "smb.share.desired.v1",
+    native_time_machine.TIME_MACHINE_CAPABILITY,
     "nfs.share.private-network.v1",
     "nfs.share.remove.safe.v1",
     "filesystem.quota.user-group.v1",
@@ -1121,8 +1123,13 @@ def _native_write_capabilities() -> list[str]:
     elif not _native_btrfs_snapshot_scheduler_available():
         unavailable.add("shared-folder.snapshot.schedule.latest.v1")
         unavailable.add("shared-folder.snapshot.schedule.retention.v2")
-    if not _native_command_tools_available("net", "smbd"):
+    if (
+        not _native_command_tools_available("net", "smbd")
+        or not _native_smb_users_group_available()
+    ):
         unavailable.add("smb.share.desired.v1")
+    if not native_time_machine.capability_available():
+        unavailable.add(native_time_machine.TIME_MACHINE_CAPABILITY)
     if not _native_command_tools_available("exportfs"):
         unavailable.add("nfs.share.private-network.v1")
         unavailable.add("nfs.share.remove.safe.v1")
@@ -2139,7 +2146,7 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
 
 def _shared_folder_detach_dependencies(
     entry: dict[str, Any],
-) -> tuple[bool, list[dict[str, Any]]]:
+) -> tuple[bool, list[dict[str, Any]], dict[str, Any] | None]:
     """Return live dependent shares that must be removed before detaching."""
     smb_present = _smb_usershare_info(str(entry["name"])) is not None
     nfs_entries = [
@@ -2147,7 +2154,8 @@ def _shared_folder_detach_dependencies(
         for item in _nfs_exports_load(strict=True, allow_unmounted=True)
         if item.get("sharedFolderRef") == entry.get("uuid")
     ]
-    return smb_present, nfs_entries
+    time_machine = native_time_machine.dependency_for(str(entry["uuid"]))
+    return smb_present, nfs_entries, time_machine
 
 
 def _build_shared_folder_rename_plan(desired: dict[str, Any]) -> dict[str, Any]:
@@ -2177,12 +2185,14 @@ def _build_shared_folder_rename_plan(desired: dict[str, Any]) -> dict[str, Any]:
         if target_state["kind"] != "absent":
             raise ValueError("shared folder rename target already exists")
 
-    smb_present, nfs_entries = _shared_folder_detach_dependencies(entry)
+    smb_present, nfs_entries, time_machine = _shared_folder_detach_dependencies(entry)
     if operation != "none":
         if smb_present:
             raise ValueError("disable the SMB share before renaming this folder")
         if nfs_entries:
             raise ValueError("remove the NFS rule before renaming this folder")
+        if time_machine is not None:
+            raise ValueError("disable Time Machine before renaming this folder")
 
     base_revision = _canonical_hash(
         {
@@ -2195,6 +2205,7 @@ def _build_shared_folder_rename_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "target": {"name": desired["name"], "state": target_state},
             "smb": smb_present,
             "nfs": nfs_entries,
+            "timeMachine": time_machine,
         }
     )
     plan_id = _canonical_hash(
@@ -2340,11 +2351,13 @@ def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
     # data volume is temporarily unavailable.
     path = _native_registered_path(entry)
     folder_status = _native_registered_folder_status(entry)
-    smb_present, nfs_entries = _shared_folder_detach_dependencies(entry)
+    smb_present, nfs_entries, time_machine = _shared_folder_detach_dependencies(entry)
     if smb_present:
         raise ValueError("disable the SMB share before detaching this folder")
     if nfs_entries:
         raise ValueError("remove the NFS rule before detaching this folder")
+    if time_machine is not None:
+        raise ValueError("disable Time Machine before detaching this folder")
     base_revision = _canonical_hash(
         {
             "registry": registry,
@@ -2356,6 +2369,7 @@ def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "status": folder_status,
             "smb": smb_present,
             "nfs": nfs_entries,
+            "timeMachine": time_machine,
         }
     )
     plan_id = _canonical_hash(
@@ -2495,11 +2509,13 @@ def _build_shared_folder_delete_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "shared folder directory is not empty; only empty directories can be deleted"
         )
 
-    smb_present, nfs_entries = _shared_folder_detach_dependencies(entry)
+    smb_present, nfs_entries, time_machine = _shared_folder_detach_dependencies(entry)
     if smb_present:
         raise ValueError("disable the SMB share before deleting this folder")
     if nfs_entries:
         raise ValueError("remove the NFS rule before deleting this folder")
+    if time_machine is not None:
+        raise ValueError("disable Time Machine before deleting this folder")
 
     target_state = _target_state(path)
     base_revision = _canonical_hash(
@@ -2515,6 +2531,7 @@ def _build_shared_folder_delete_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "empty": True,
             "smb": smb_present,
             "nfs": nfs_entries,
+            "timeMachine": time_machine,
         }
     )
     plan_id = _canonical_hash(
@@ -3397,6 +3414,8 @@ def _nfs_exports_load(
 
 
 def _build_nfs_plan(desired: dict[str, Any]) -> dict[str, Any]:
+    if native_time_machine.dependency_for(desired["sharedFolderRef"]) is not None:
+        raise ValueError("disable Time Machine before creating an NFS rule for this folder")
     folder, path = _nfs_rule_path(desired["sharedFolderRef"])
     exports = _nfs_exports_load(strict=True)
     exports_text = _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True)
@@ -3749,6 +3768,41 @@ def _smb_info_read_only(info: dict[str, Any]) -> bool:
     )
 
 
+def _smb_users_group_sid() -> str:
+    grp, _pwd = _require_posix_accounts()
+    try:
+        gid = grp.getgrnam("users").gr_gid
+    except KeyError as exc:
+        raise OSError("native SMB requires the Linux users group") from exc
+    if isinstance(gid, bool) or not isinstance(gid, int) or not 0 < gid < 2**32 - 1:
+        raise OSError("native SMB users group has an invalid gid")
+    return f"S-1-22-2-{gid}"
+
+
+def _native_smb_users_group_available() -> bool:
+    """Keep the SMB control visible only when its managed Unix group exists."""
+    try:
+        _smb_users_group_sid()
+    except OSError:
+        return False
+    return True
+
+
+def _smb_info_matches_acl(info: dict[str, Any], sid: str, read_only: bool) -> bool:
+    # net usershare info may display the Unix SID as its qualified group name.
+    # Unqualified "users" resolves to BUILTIN\\Users on Samba, not this Unix group.
+    entries = [
+        entry.strip() for entry in str(info.get("usershare_acl", "")).split(",") if entry.strip()
+    ]
+    permission = "r" if read_only else "f"
+    return (
+        len(entries) == 1
+        and entries[0].casefold()
+        in {f"{sid}:{permission}".casefold(), f"Unix Group\\users:{permission}".casefold()}
+        and str(info.get("guest_ok", "")).casefold() == "n"
+    )
+
+
 def _smb_info_targets_path(info: dict[str, Any], expected: Path) -> bool:
     """Reject a same-name usershare that points at a different directory.
 
@@ -3781,9 +3835,24 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
     path = _native_registered_path(entry)
     folder_status = _native_registered_folder_status(entry)
     name = entry["name"]
+    if desired["enabled"] and native_time_machine.dependency_for_name(str(name)) is not None:
+        raise ValueError("disable the colliding Time Machine share before enabling ordinary SMB")
+    # Samba reserves a usershare name that matches a local account. Reject it
+    # during planning, before an administrator approves an operation that
+    # ``net usershare add`` can only fail after touching no useful state.
+    try:
+        local_user_exists = _user_exists(name)
+    except OSError:
+        # The native plane is Unix-only; keep protocol-only Windows tests able
+        # to exercise mocked Samba state. Real apply still fails closed when
+        # the Unix account/group helpers are unavailable.
+        local_user_exists = False
+    if desired["enabled"] and local_user_exists:
+        raise ValueError("Samba usershare name conflicts with a local user account")
     existing = _smb_usershare_info(name)
     if existing is not None and not _smb_info_targets_path(existing, path):
         raise ValueError("Samba usershare name is already bound to another path")
+    users_sid = _smb_users_group_sid() if desired["enabled"] else None
 
     current = (
         None
@@ -3809,7 +3878,10 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
         operation = "remove"
     else:
         operation = (
-            "none" if all(current[field] == after for field, after in wanted.items()) else "update"
+            "none"
+            if all(current[field] == after for field, after in wanted.items())
+            and _smb_info_matches_acl(existing, users_sid, desired["readOnly"])
+            else "update"
         )
 
     if operation in {"create", "update"} and folder_status != "MOUNTED":
@@ -3821,6 +3893,8 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "path": str(path),
             "exists": existing is not None,
             "status": folder_status,
+            "usersGroupSid": users_sid,
+            "configuration": existing,
         }
     )
     plan_id = _canonical_hash(
@@ -3840,6 +3914,12 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
         for field, after in wanted.items()
         if current is None or current[field] != after
     ]
+    if (
+        existing is not None
+        and desired["enabled"]
+        and not _smb_info_matches_acl(existing, users_sid, desired["readOnly"])
+    ):
+        changes.append({"field": "aclPrincipal", "before": "unmanaged", "after": "users"})
     return {
         "schema": SMB_PLAN_SCHEMA,
         "planId": plan_id,
@@ -3858,6 +3938,7 @@ def _build_smb_plan(desired: dict[str, Any]) -> dict[str, Any]:
         "safety": {
             "kind": "sambaUsershare",
             "acl": "guestDeniedByDefault",
+            "aclPrincipal": users_sid,
             "recycleBin": "notManagedByUsershare",
             "browseable": "notManagedByUsershare",
         },
@@ -3888,6 +3969,10 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
         if desired["enabled"]:
             if observed is None:
                 raise OSError("planned SMB share is missing on the host")
+            if not _smb_info_matches_acl(
+                observed, plan["safety"]["aclPrincipal"], desired["readOnly"]
+            ):
+                raise OSError("SMB share ACL changed during apply")
         elif observed is not None:
             raise OSError("planned SMB share appeared during apply")
         return {**plan, "applied": False, "verified": True, "share": {"name": name}}
@@ -3902,12 +3987,11 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     path = _native_folder_path(entry)
     # create or update: (re)declare the usershare. Read/write is expressed via
     # the usershare ACL (Samba has no --rw/--ro flag). The storage ``users``
-    # group covers every NAS identity, so it is the natural grantee; fall back
-    # to Samba's read-only ``Everyone`` default when that group is absent.
-    if _group_exists("users"):
-        acl = "users:r" if desired["readOnly"] else "users:f"
-    else:
-        acl = "Everyone:r"
+    # group covers every NAS identity. Use its Unix SID: unqualified "users"
+    # resolves to BUILTIN\\Users and rejects normal Linux NAS members.
+    # Missing groups fail during planning; never widen the ACL to Everyone.
+    sid = plan["safety"]["aclPrincipal"]
+    acl = f"{sid}:{'r' if desired['readOnly'] else 'f'}"
     _run_write(
         "net",
         "usershare",
@@ -3916,6 +4000,7 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
         path,
         desired["comment"] or name,
         acl,
+        "guest_ok=n",
     )
     observed = _smb_usershare_info(name)
     if observed is None:
@@ -3926,6 +4011,7 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     if (
         observed.get("comment") != expected_comment
         or _smb_info_read_only(observed) != desired["readOnly"]
+        or not _smb_info_matches_acl(observed, sid, desired["readOnly"])
     ):
         raise OSError("Samba usershare did not persist the requested state")
     return {**plan, "applied": True, "verified": True, "share": {"name": name}}

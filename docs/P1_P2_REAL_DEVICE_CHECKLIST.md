@@ -129,7 +129,9 @@ SMB、macOS SMB/NFS、Linux SMB/NFS 客户端完成 8 MiB 写入、读回、重�
 身份完成 SMB/NFS 允许/拒绝权限、同一账户跨协议硬配额拒绝和 SMB 写入—NFS 读回/删除的 1 GiB
 非稀疏文件。收齐八份 mode-0444 日志后执行 `verify --candidate-index ... --bundle-root ...`，重新绑定
 候选索引、运维包清单和执行器字节并生成 `protocol-interoperability-lifecycle.json`。容器内回环挂载、
-伪造系统名、只做服务端配置、已有用户文件的共享或手写八项 `true` 都不能满足 G3。
+伪造系统名、只做服务端配置、已有用户文件的共享或手写八项 `true` 都不能满足 G3。Windows 阶段还
+必须由计划服务器的 LAN IPv4 地址在四秒内返回关联同一 MessageID 的 WSD `ProbeMatches`，声明
+`wsdp:Device pub:Computer` 且 `XAddrs` 与响应源地址一致；直接输入 UNC 能访问但不能自动发现不算通过。
 
 - [ ] 使用完整候选 artifact、六门目录和 public-only acceptance keyring 执行
       `product_delivery_bundle.py build`，不能只给它一份候选索引
@@ -203,7 +205,7 @@ docker compose up -d --build
 - [ ] `/api/appliance/config` 中的 `agent_ui_base` 与 `agent_workspace_url` 均为 `null`
 - [ ] `docker compose logs | grep "appliance admin password"` → 未设密码时看初始密码
 - [ ] 执行 `ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python
-      verify-running-appliance.py --require-clean-bundle`，输出确认主容器无 socket、代理无宿主
+      verify-running-appliance.py --require-clean-bundle --require-zfs-runtime`，输出确认主容器无 socket、代理无宿主
       端口、两个 PID 1 均非特权身份、`CapEff=0`、`NoNewPrivs=1`，并包含
       `origin_guard: 403`、`host_guard: 400`、`login_rate_limit: 429`
 
@@ -461,7 +463,7 @@ curl -s http://localhost:8000/api/appliance/config
 ```bash
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
   deploy/appliance/verify-running-appliance.py \
-  --require-clean-bundle --nas-transfer-test-bytes 1073741824 \
+  --require-clean-bundle --require-zfs-runtime --nas-transfer-test-bytes 1073741824 \
   --nas-transfer-test-path verification --nas-transfer-restart-main
 ```
 
@@ -471,7 +473,7 @@ ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
 ```bash
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
   deploy/appliance/verify-running-appliance.py \
-  --require-clean-bundle --nas-transfer-test-bytes 1073741824 \
+  --require-clean-bundle --require-zfs-runtime --nas-transfer-test-bytes 1073741824 \
   --nas-transfer-test-path verification --require-nas-transfer \
   --nas-transfer-restart-main \
   --nas-transfer-write-confirm \
@@ -623,7 +625,7 @@ export ECHO_OMV_ADMIN_URL=https://nas.example.com
 export OMV_BRIDGE_GID="$(getent group echo-omv | cut -d: -f3)"
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
   deploy/appliance/verify-running-appliance.py \
-  --require-clean-bundle --require-omv --expected-gid "$OMV_BRIDGE_GID"
+  --require-clean-bundle --require-zfs-runtime --require-omv --expected-gid "$OMV_BRIDGE_GID"
 ```
 
 脚本会重新确认宿主是 Debian 13 + OMV 8，并同时检查宿主插口 `0660`/数字组、未登录 `401`、
@@ -780,11 +782,11 @@ x86_64/物理设备、浏览器 Workbench 视觉、物理 SMART/阵列及 SMB/NF
 ```bash
 # x86_64 机器
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
-  deploy/appliance/verify-running-appliance.py --require-clean-bundle --expected-arch amd64
+  deploy/appliance/verify-running-appliance.py --require-clean-bundle --require-zfs-runtime --expected-arch amd64
 
 # ARM64 机器
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
-  deploy/appliance/verify-running-appliance.py --require-clean-bundle --expected-arch arm64
+  deploy/appliance/verify-running-appliance.py --require-clean-bundle --require-zfs-runtime --expected-arch arm64
 ```
 
 | 项目 | amd64 | arm64 |

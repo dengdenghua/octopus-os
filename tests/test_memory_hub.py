@@ -9,6 +9,8 @@ from runtime.memory.runtime_state.hub import (
     MemoryRecord,
     format_records_for_prompt,
 )
+from runtime.memory.users.user_store import MemoryViewer
+from runtime.safety.auth.scope import TenantScope
 
 
 def test_memory_hub_retrieves_user_store_facts_with_scope(
@@ -65,6 +67,54 @@ def test_memory_hub_respects_user_store_injection_toggle(
     records = MemoryHub(repo_root=tmp_path).retrieve(MemoryQuery(text="disabled memory", limit=5))
 
     assert all("disabled memory" not in record.content for record in records)
+
+
+def test_memory_hub_aggregates_only_viewer_visible_tenant_facts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The ReAct/MemoryHub path must share the HTTP gateway's ACL boundary."""
+
+    monkeypatch.chdir(tmp_path)
+    user_store.add_fact(
+        "Alice private launch secret",
+        category="profile",
+        tenant_scope=TenantScope("tenant-a", "alice"),
+    )
+    user_store.add_fact(
+        "Team release calendar",
+        category="ops",
+        tenant_scope=TenantScope("tenant-a", "alice"),
+        visibility="team",
+        team_id="release-room",
+    )
+    user_store.add_fact(
+        "Foreign tenant release calendar",
+        category="ops",
+        tenant_scope=TenantScope("tenant-b", "carol"),
+        visibility="team",
+        team_id="release-room",
+    )
+
+    bob = MemoryViewer(
+        actor_id="bob",
+        tenant_id="tenant-a",
+        team_ids=frozenset({"release-room"}),
+    )
+    hub = MemoryHub(repo_root=tmp_path)
+
+    shared = hub.retrieve(
+        MemoryQuery(text="release calendar", viewer=bob, limit=10)
+    )
+    shared_contents = [record.content for record in shared]
+    assert "Team release calendar" in shared_contents
+    assert "Alice private launch secret" not in shared_contents
+    assert "Foreign tenant release calendar" not in shared_contents
+
+    private = hub.retrieve(
+        MemoryQuery(text="launch secret", viewer=bob, limit=10)
+    )
+    assert private == []
 
 
 def test_memory_hub_reads_global_project_and_agent_memory_files(

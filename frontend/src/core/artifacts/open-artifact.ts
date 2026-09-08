@@ -1,4 +1,4 @@
-import { workspaceOutputRef } from "./utils";
+import { parseWorkspaceResourceId, workspaceOutputRef } from "./utils";
 
 export const OPEN_ARTIFACT_EVENT = "echo:open-artifact";
 
@@ -9,10 +9,18 @@ const ARTIFACT_EXTENSION =
 
 export function artifactRefFromMarkdownHref(href: string): string | null {
   const value = href.trim();
-  if (!value || !ARTIFACT_EXTENSION.test(value)) return null;
+  const isWorkspaceResourceUrl = /(?:^|\/api\/)(?:workspace-resources)\//.test(
+    value,
+  );
+  if (!value || (!isWorkspaceResourceUrl && !ARTIFACT_EXTENSION.test(value)))
+    return null;
   if (/^(?:mailto|tel|data|javascript):/i.test(value)) return null;
 
   if (value.startsWith("workspace-output:")) return value;
+
+  // A Windows drive is a local source path, not a browser URL scheme. Keep
+  // literal spaces, # and ? in file names intact for the scoped reader.
+  if (/^[a-z]:[/\\]/i.test(value) || value.startsWith("\\\\")) return value;
 
   if (/^https?:\/\//i.test(value)) {
     try {
@@ -33,6 +41,18 @@ export function artifactRefFromMarkdownHref(href: string): string | null {
       return null;
     }
   }
+
+  if (value.startsWith("/api/workspace-resources/")) {
+    try {
+      return artifactRefFromOutputApiUrl(
+        new URL(value, window.location.origin),
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  if (value.startsWith("/api/")) return null;
 
   const clean = safeDecodeURIComponent(value.split(/[?#]/, 1)[0] ?? value)
     .replace(/^\.\//, "")
@@ -66,6 +86,15 @@ export function artifactRefFromMarkdownHref(href: string): string | null {
 }
 
 function artifactRefFromOutputApiUrl(url: URL): string | null {
+  const resourceMatch = /^\/api\/workspace-resources\/([^/]+)$/.exec(
+    url.pathname,
+  );
+  if (resourceMatch?.[1]) {
+    const parsed = parseWorkspaceResourceId(
+      safeDecodeURIComponent(resourceMatch[1]),
+    );
+    return parsed ? workspaceOutputRef(parsed) : null;
+  }
   const match = /^\/api\/threads\/[^/]+\/outputs\/(.+)$/.exec(url.pathname);
   if (!match?.[1]) return null;
   const area = url.searchParams.get("area") ?? "output";

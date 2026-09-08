@@ -120,6 +120,10 @@ def _pick_quant(quants: dict[str, float]) -> str | None:
 
 # ── HTTP (best-effort; never raises) ──────────────────────────────────────────
 def _get_json(url: str, timeout: float):
+    from runtime.safety.privacy import privacy_enabled
+
+    if privacy_enabled():
+        return None
     try:
         import httpx
 
@@ -266,6 +270,10 @@ def _refresh_worker() -> None:
 
 def _maybe_refresh() -> None:
     global _refreshing
+    from runtime.safety.privacy import privacy_enabled
+
+    if privacy_enabled():
+        return
     with _lock:
         if _refreshing:
             return

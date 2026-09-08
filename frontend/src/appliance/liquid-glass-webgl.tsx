@@ -666,11 +666,7 @@ type BlurProgram = Readonly<{
 
 function createBlurProgram(gl: WebGL2RenderingContext): BlurProgram {
   const vertex = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
-  const fragment = compileShader(
-    gl,
-    gl.FRAGMENT_SHADER,
-    BLUR_FRAGMENT_SHADER,
-  );
+  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, BLUR_FRAGMENT_SHADER);
   const program = gl.createProgram();
   if (!program) throw new Error("Unable to create Liquid Glass blur program");
   gl.attachShader(program, vertex);
@@ -686,7 +682,8 @@ function createBlurProgram(gl: WebGL2RenderingContext): BlurProgram {
 
   const uniform = (name: string) => {
     const location = gl.getUniformLocation(program, name);
-    if (!location) throw new Error(`Missing Liquid Glass blur uniform: ${name}`);
+    if (!location)
+      throw new Error(`Missing Liquid Glass blur uniform: ${name}`);
     return location;
   };
 
@@ -701,7 +698,8 @@ function createBlurProgram(gl: WebGL2RenderingContext): BlurProgram {
 
 function createScratchTexture(gl: WebGL2RenderingContext): WebGLTexture {
   const texture = gl.createTexture();
-  if (!texture) throw new Error("Unable to create Liquid Glass scratch texture");
+  if (!texture)
+    throw new Error("Unable to create Liquid Glass scratch texture");
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -780,9 +778,7 @@ function buildGaussianMipChain(
       into,
       0,
     );
-    if (
-      gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE
-    ) {
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
       return false;
     }
     gl.bindTexture(gl.TEXTURE_2D, from);
@@ -1168,7 +1164,10 @@ export function MacLiquidGlassWebGL() {
         gl.deleteProgram(blur.program);
         if (built) frostQuality = "gaussian-mipmap";
       } catch (error) {
-        console.warn("[echo] Liquid Glass Gaussian mip chain unavailable", error);
+        console.warn(
+          "[echo] Liquid Glass Gaussian mip chain unavailable",
+          error,
+        );
       }
       canvas.dataset.liquidFrostQuality = frostQuality;
 

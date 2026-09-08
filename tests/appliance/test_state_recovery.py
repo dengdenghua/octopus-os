@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
 from appliance.audit import ApplianceAudit
+from appliance.nas_alert_delivery import NasAlertDeliveryService, WebhookDesiredState
+from appliance.nas_email_alert_delivery import EmailDesiredState, NasEmailAlertDeliveryService
 from appliance.state_lock import LOCK_FILENAME
 from appliance.state_recovery import StateRecoveryError, inspect_restored_state
 from appliance.state_schema import CURRENT_SCHEMA_VERSION, ensure_state_schema
+from appliance.totp import AdministratorTotp, totp_code
 
 JWT_SECRET = "Recovery-Secret_123456789012345678901234567890"
 
@@ -60,11 +64,87 @@ def test_current_auth_and_audit_state_is_ready_for_promotion(tmp_path) -> None:
     assert report["nasUserDataIncluded"] is False
     assert report["runtimeLockIncluded"] is False
     assert report["readOnlyInspection"] is True
+    assert report["administratorTotpEnabled"] is False
     assert {
         entry.relative_to(state): (entry.read_bytes(), entry.stat().st_mtime_ns)
         for entry in state.rglob("*")
         if entry.is_file()
     } == before
+
+
+def test_restored_totp_state_is_validated_before_promotion(tmp_path) -> None:
+    state = _restored_state(tmp_path)
+    now = 1_800_000_000.0
+    totp = AdministratorTotp(
+        jwt_secret=JWT_SECRET,
+        path=state / "appliance-totp.json",
+        clock=lambda: now,
+    )
+    enrollment = totp.begin_enrollment()
+    totp.confirm_enrollment(
+        enrollment_id=enrollment["enrollmentId"],
+        code=totp_code(enrollment["secret"], timestamp=now),
+    )
+
+    report = inspect_restored_state(state)
+    assert report["administratorTotpEnabled"] is True
+    assert report["administratorRecoveryCodesRemaining"] == 8
+
+    payload = json.loads((state / "appliance-totp.json").read_text())
+    payload["secret"] = "not-base32"
+    (state / "appliance-totp.json").write_text(json.dumps(payload))
+    with pytest.raises(StateRecoveryError, match="TOTP state is invalid"):
+        inspect_restored_state(state)
+
+
+def test_restored_alert_delivery_state_is_authenticated_before_promotion(tmp_path) -> None:
+    state = _restored_state(tmp_path)
+    delivery = NasAlertDeliveryService(state, encryption_secret=JWT_SECRET)
+    plan = delivery.plan(
+        WebhookDesiredState.model_validate(
+            {"enabled": True, "url": "https://hooks.example.com/echo?secret=restored"}
+        )
+    )
+    delivery.apply(plan["planId"])
+
+    report = inspect_restored_state(state)
+    assert report["nasAlertDeliveryConfigured"] is True
+    assert report["nasAlertDeliveryEnabled"] is True
+
+    payload = bytearray(delivery.path.read_bytes())
+    payload[-8] ^= 1
+    delivery.path.write_bytes(payload)
+    with pytest.raises(StateRecoveryError, match="alert delivery state is invalid"):
+        inspect_restored_state(state)
+
+
+def test_restored_email_alert_state_is_authenticated_before_promotion(tmp_path) -> None:
+    state = _restored_state(tmp_path)
+    delivery = NasEmailAlertDeliveryService(state, encryption_secret=JWT_SECRET)
+    plan = delivery.plan(
+        EmailDesiredState.model_validate(
+            {
+                "enabled": True,
+                "smtpHost": "smtp.example.com",
+                "smtpPort": 465,
+                "username": "echo@example.com",
+                "password": "restored-app-password",
+                "fromAddress": "echo@example.com",
+                "recipient": "owner@example.net",
+            }
+        )
+    )
+    delivery.apply(plan["planId"])
+
+    report = inspect_restored_state(state)
+    assert report["nasEmailAlertDeliveryConfigured"] is True
+    assert report["nasEmailAlertDeliveryEnabled"] is True
+
+    payload = bytearray(delivery.path.read_bytes())
+    payload[-8] ^= 1
+    delivery.path.write_bytes(payload)
+    with pytest.raises(StateRecoveryError, match="email alert state is invalid"):
+        inspect_restored_state(state)
 
 
 def test_older_compatible_state_must_be_migrated_before_promotion(tmp_path) -> None:
@@ -102,6 +182,8 @@ def test_older_compatible_state_must_be_migrated_before_promotion(tmp_path) -> N
     ],
 )
 def test_nas_lock_and_public_credentials_are_rejected(tmp_path, mutation, message) -> None:
+    if os.name == "nt" and "authentication" in message:
+        pytest.skip("POSIX mode-bit mutation is unavailable on Windows")
     state = _restored_state(tmp_path)
     mutation(state)
 

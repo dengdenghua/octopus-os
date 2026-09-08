@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as ParallelApi from "@/core/parallel-agents/api";
@@ -15,6 +16,8 @@ import { ParallelAgentsPanel } from "./parallel-agents-panel";
 const fetchStatusMock = vi.fn();
 const fetchBatchMock = vi.fn();
 const fetchRecoverySnapshotMock = vi.fn();
+const fetchRecoverySnapshotsMock = vi.fn();
+const resumeRecoveryMock = vi.fn();
 
 vi.mock("@/core/parallel-agents/api", async () => {
   const actual = await vi.importActual<typeof ParallelApi>(
@@ -26,6 +29,9 @@ vi.mock("@/core/parallel-agents/api", async () => {
     fetchBatch: (...args: unknown[]) => fetchBatchMock(...args),
     fetchBatchRecoverySnapshot: (...args: unknown[]) =>
       fetchRecoverySnapshotMock(...args),
+    fetchParallelRecoverySnapshots: (...args: unknown[]) =>
+      fetchRecoverySnapshotsMock(...args),
+    resumeParallelBatch: (...args: unknown[]) => resumeRecoveryMock(...args),
     cancelAll: vi.fn(),
     cancelTask: vi.fn(),
   };
@@ -127,7 +133,15 @@ describe("<ParallelAgentsPanel />", () => {
     fetchStatusMock.mockReset();
     fetchBatchMock.mockReset();
     fetchRecoverySnapshotMock.mockReset();
+    fetchRecoverySnapshotsMock.mockReset();
+    resumeRecoveryMock.mockReset();
     fetchRecoverySnapshotMock.mockResolvedValue(null);
+    fetchRecoverySnapshotsMock.mockResolvedValue({
+      schema: "echo.parallel_batch_recovery_snapshots.v1",
+      snapshots: [],
+      count: 0,
+      limit: 100,
+    });
   });
 
   it("loads a terminal batch instead of hiding it behind the empty state", async () => {
@@ -208,6 +222,34 @@ describe("<ParallelAgentsPanel />", () => {
     expect(notice.getByText("redacted")).toBeInTheDocument();
   });
 
+  it("sends an explicit list of safe recovery lanes", async () => {
+    fetchStatusMock.mockResolvedValue(
+      orchestratorStatus({ batches: { batch_failed: "partial" } }),
+    );
+    fetchBatchMock.mockResolvedValue(
+      batch({ batch_id: "batch_failed", status: "partial" }),
+    );
+    fetchRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({ batch_id: "batch_failed" }),
+    );
+    resumeRecoveryMock.mockResolvedValue({
+      batch: batch({ batch_id: "batch_retry", status: "running" }),
+    });
+
+    renderWithProviders(<ParallelAgentsPanel />);
+
+    const button = await screen.findByRole("button", {
+      name: "Rerun safe tasks from snapshot",
+    });
+    await userEvent.click(button);
+    await waitFor(() =>
+      expect(resumeRecoveryMock).toHaveBeenCalledWith("batch_failed", [
+        "task_failed",
+        "task_blocked",
+      ]),
+    );
+  });
+
   it("still prefers a running batch when terminal history also exists", async () => {
     fetchStatusMock.mockResolvedValue(
       orchestratorStatus({
@@ -241,5 +283,56 @@ describe("<ParallelAgentsPanel />", () => {
     );
     expect(fetchBatchMock).not.toHaveBeenCalledWith("batch_failed");
     expect(fetchRecoverySnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it("discovers a durable batch after the orchestrator has restarted", async () => {
+    fetchStatusMock.mockResolvedValue(orchestratorStatus());
+    fetchRecoverySnapshotsMock.mockResolvedValue({
+      schema: "echo.parallel_batch_recovery_snapshots.v1",
+      snapshots: [
+        recoverySnapshot({
+          batch_id: "batch_after_restart",
+          status: "running",
+          terminal: false,
+          resume_available: false,
+          task_count: 1,
+          completed_tasks: 0,
+          failed_tasks: 0,
+          running_tasks: 1,
+          tasks: [
+            {
+              task_id: "durable_task",
+              status: "running",
+              subagent_name: "researcher",
+              depends_on: [],
+              priority: 1,
+              write_paths: [],
+              description_preview: "Recover this lane",
+              artifact_paths: [],
+            },
+          ],
+          safety: {
+            raw_subagent_outputs_included: false,
+            event_payloads_included: false,
+            owner_id_included: false,
+            durable_only: true,
+          },
+        }),
+      ],
+      count: 1,
+      limit: 100,
+    });
+
+    renderWithProviders(<ParallelAgentsPanel />);
+
+    expect(await screen.findByText("Recover this lane")).toBeInTheDocument();
+    expect(screen.getByText("durable view")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Worker output is withheld after restart; inspect the recovery queue before resuming.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(fetchBatchMock).not.toHaveBeenCalled();
   });
 });

@@ -12,6 +12,8 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from runtime.memory.semantics import fact_semantics
+
 ASSET_TYPES = {
     "conversation",
     "atom",
@@ -84,6 +86,8 @@ class MemoryAsset:
     allowed_agents: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     provenance: MemoryProvenance = field(default_factory=MemoryProvenance)
+    memory_type: str = "unclassified"
+    assurance: str = "unverified"
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -97,6 +101,7 @@ def fact_to_asset(fact: dict[str, Any]) -> MemoryAsset:
     status = _text(fact.get("status"), "active").lower()
     content = _text(fact.get("content"))
     created_at = _text(fact.get("createdAt") or fact.get("created_at"))
+    semantics = fact_semantics(fact)
     try:
         confidence = max(0.0, min(1.0, float(fact.get("confidence", 0.8))))
     except (TypeError, ValueError):
@@ -129,6 +134,8 @@ def fact_to_asset(fact: dict[str, Any]) -> MemoryAsset:
         provenance=MemoryProvenance.from_raw(
             fact.get("provenance"), fallback_source=_text(fact.get("source"), "manual")
         ),
+        memory_type=semantics.memory_type,
+        assurance=semantics.assurance,
     )
 
 
@@ -167,6 +174,8 @@ def asset_trace(asset: MemoryAsset) -> dict[str, Any]:
         "layer": asset.layer,
         "source": asdict(asset.provenance),
         "parent_ids": list(asset.provenance.parent_ids),
+        "memory_type": asset.memory_type,
+        "assurance": asset.assurance,
         "trace_complete": bool(
             asset.provenance.source_id or asset.provenance.source_uri or asset.provenance.evidence
         ),

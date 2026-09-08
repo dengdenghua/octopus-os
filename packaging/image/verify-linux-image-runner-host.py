@@ -310,12 +310,15 @@ def write_evidence(path: Path, payload: dict[str, object]) -> None:
     )
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             json.dump(payload, stream, sort_keys=True, separators=(",", ":"))
             stream.write("\n")
             stream.flush()
             os.fsync(stream.fileno())
+        if not hasattr(os, "fchmod"):
+            temporary.chmod(0o600)
         os.replace(temporary, path)
     except Exception:
         with contextlib.suppress(OSError):

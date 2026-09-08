@@ -118,14 +118,14 @@ def _register_system(router: Any, ctx: _ConfigCtx) -> None:
                     "id": "efficiency",
                     "label": "效率模式",
                     "description": (
-                        "融合端侧的极致响应与云端的强大算力，效果更好，速度更快，绝大多数用户的首选"
+                        "允许使用云端模型；任务内容、文件片段及历史上下文可能发送到所选服务。"
                     ),
                     "recommended_default": True,
                 },
                 {
                     "id": "privacy",
                     "label": "隐私模式",
-                    "description": ("专为保密场景设计，使用本地模型，全部文件均在本地处理和分析"),
+                    "description": ("仅使用本机模型；不可用时停止。联网工具和未验证的执行方式将被阻止。"),
                     "recommended_default": False,
                 },
             ],
@@ -142,4 +142,8 @@ def _register_system(router: Any, ctx: _ConfigCtx) -> None:
             from fastapi import HTTPException
 
             raise HTTPException(400, str(exc)) from exc
+        except OSError as exc:
+            from fastapi import HTTPException
+
+            raise HTTPException(503, "隐私设置保存失败，原有策略仍然有效。") from exc
         return {"mode": canonical, "ok": True}

@@ -339,6 +339,7 @@ def _execute_action_via_beak(
                     turn_id=getattr(active_session, "turn_id", None) or str(react_task_id),
                     started_at=getattr(active_session, "started_at", None) or time.time(),
                     metadata=metadata,
+                    execution_lease=getattr(active_session, "execution_lease", None),
                 )
             )
 

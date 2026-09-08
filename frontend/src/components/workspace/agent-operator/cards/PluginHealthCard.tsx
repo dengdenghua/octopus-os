@@ -1,5 +1,8 @@
 import { Badge } from "@/components/ui/badge";
-import type { PluginLifecycleHistory, PluginSmokeSummary } from "@/core/plugins/types";
+import type {
+  PluginLifecycleHistory,
+  PluginSmokeSummary,
+} from "@/core/plugins/types";
 import { cn } from "@/lib/utils";
 import { GateStat } from "../../replay-panel";
 import { ListChecksIcon } from "lucide-react";

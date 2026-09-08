@@ -157,8 +157,7 @@ export function WorkspaceSwitcher({
   useEffect(() => {
     const refresh = () => void reload();
     window.addEventListener("echo:workspaces-changed", refresh);
-    return () =>
-      window.removeEventListener("echo:workspaces-changed", refresh);
+    return () => window.removeEventListener("echo:workspaces-changed", refresh);
   }, [reload]);
 
   const updateMenuPosition = useCallback(() => {

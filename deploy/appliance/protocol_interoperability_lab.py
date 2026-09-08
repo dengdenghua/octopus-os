@@ -6,18 +6,24 @@ from __future__ import annotations
 import argparse
 import errno
 import hashlib
+import io
+import ipaddress
 import json
 import os
 import platform
 import re
+import socket
 import stat
 import subprocess  # nosec B404
 import sys
+import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+from xml.etree import ElementTree
 
 try:
     from deploy.appliance import operations_systemd as systemd
@@ -43,6 +49,17 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SHA1 = re.compile(r"^[0-9a-f]{40}$")
 ARTIFACT_ID = re.compile(r"^[0-9a-f]{16}$")
 SERVER_NAME = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$")
+WSD_MULTICAST_V4 = ("239.255.255.250", 3702)
+WSD_PROBE_TIMEOUT_SECONDS = 4.0
+SOAP_NAMESPACE = "http://www.w3.org/2003/05/soap-envelope"
+WSA_NAMESPACE = "http://schemas.xmlsoap.org/ws/2004/08/addressing"
+WSD_NAMESPACE = "http://schemas.xmlsoap.org/ws/2005/04/discovery"
+WSDP_NAMESPACE = "http://schemas.xmlsoap.org/ws/2006/02/devprof"
+PUBLICATION_NAMESPACE = "http://schemas.microsoft.com/windows/pub/2005/07"
+WSD_DISCOVERY_ADDRESS = "urn:schemas-xmlsoap-org:ws:2005:04:discovery"
+WSD_ANONYMOUS_ADDRESS = f"{WSA_NAMESPACE}/role/anonymous"
+WSD_PROBE_ACTION = f"{WSD_NAMESPACE}/Probe"
+WSD_PROBE_MATCHES_ACTION = f"{WSD_NAMESPACE}/ProbeMatches"
 
 ROLE_CHECKS = {
     "windows-smb": ("Windows", "smb", "windowsSmbReadWrite", "protocol-windows-smb.log"),
@@ -72,6 +89,7 @@ class ProtocolInteroperabilityLabError(RuntimeError):
 
 
 MountProbe = Callable[[Path, str, str, str], Mapping[str, Any]]
+WindowsDiscoveryProbe = Callable[[str], Mapping[str, Any]]
 QuotaProbe = Callable[[Path, Path, int, int, str], Mapping[str, Any]]
 CrossProtocolProbe = Callable[[Path, Path, int, str], Mapping[str, Any]]
 
@@ -427,6 +445,191 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _wsd_probe_payload(message_id: str) -> bytes:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<soap:Envelope xmlns:soap="{SOAP_NAMESPACE}" xmlns:wsa="{WSA_NAMESPACE}" '
+        f'xmlns:wsd="{WSD_NAMESPACE}" xmlns:wsdp="{WSDP_NAMESPACE}" '
+        f'xmlns:pub="{PUBLICATION_NAMESPACE}">'
+        "<soap:Header>"
+        f'<wsa:Action soap:mustUnderstand="1">{WSD_PROBE_ACTION}</wsa:Action>'
+        f"<wsa:MessageID>{message_id}</wsa:MessageID>"
+        f"<wsa:ReplyTo><wsa:Address>{WSD_ANONYMOUS_ADDRESS}</wsa:Address></wsa:ReplyTo>"
+        f'<wsa:To soap:mustUnderstand="1">{WSD_DISCOVERY_ADDRESS}</wsa:To>'
+        "</soap:Header>"
+        "<soap:Body><wsd:Probe><wsd:Types>wsdp:Device pub:Computer</wsd:Types>"
+        "</wsd:Probe></soap:Body></soap:Envelope>"
+    ).encode()
+
+
+def _expanded_xml_qname(value: str, namespaces: Mapping[str, str]) -> str | None:
+    prefix, separator, local = value.partition(":")
+    if not separator:
+        namespace = namespaces.get("")
+        return f"{{{namespace}}}{prefix}" if namespace else None
+    namespace = namespaces.get(prefix)
+    return f"{{{namespace}}}{local}" if namespace and local else None
+
+
+def _parse_windows_wsd_probe_match(
+    raw: bytes,
+    *,
+    message_id: str,
+    peer_address: str,
+    expected_addresses: set[ipaddress.IPv4Address],
+) -> dict[str, Any] | None:
+    if not raw or len(raw) > 65535:
+        return None
+    try:
+        namespaces = {
+            prefix: uri
+            for _event, (prefix, uri) in ElementTree.iterparse(
+                io.BytesIO(raw), events=("start-ns",)
+            )
+        }
+        root = ElementTree.fromstring(raw)
+        peer = ipaddress.IPv4Address(peer_address)
+    except (ElementTree.ParseError, UnicodeError, ValueError):
+        return None
+    action = root.find(f".//{{{WSA_NAMESPACE}}}Action")
+    relates_to = root.find(f".//{{{WSA_NAMESPACE}}}RelatesTo")
+    if (
+        action is None
+        or (action.text or "").strip() != WSD_PROBE_MATCHES_ACTION
+        or relates_to is None
+        or (relates_to.text or "").strip() != message_id
+        or peer not in expected_addresses
+    ):
+        return None
+    valid_matches = 0
+    for match in root.findall(f".//{{{WSD_NAMESPACE}}}ProbeMatch"):
+        types = match.find(f"{{{WSD_NAMESPACE}}}Types")
+        xaddrs = match.find(f"{{{WSD_NAMESPACE}}}XAddrs")
+        type_tokens = (types.text or "").split() if types is not None else ()
+        expanded_types = {
+            expanded
+            for token in type_tokens
+            if (expanded := _expanded_xml_qname(token, namespaces)) is not None
+        }
+        if expanded_types < {
+            f"{{{WSDP_NAMESPACE}}}Device",
+            f"{{{PUBLICATION_NAMESPACE}}}Computer",
+        }:
+            continue
+        addresses: set[ipaddress.IPv4Address] = set()
+        xaddr_values = (xaddrs.text or "").split() if xaddrs is not None else ()
+        for address in xaddr_values:
+            parsed = urlsplit(address)
+            if parsed.scheme != "http" or parsed.hostname is None:
+                continue
+            with suppress(ValueError):
+                addresses.add(ipaddress.IPv4Address(parsed.hostname))
+        if peer in addresses and peer in expected_addresses:
+            valid_matches += 1
+    if valid_matches == 0:
+        return None
+    return {
+        "transport": "udp4-multicast",
+        "probeMatches": valid_matches,
+        "serverAddressMatched": True,
+        "deviceType": True,
+        "computerType": True,
+        "relatesToMatched": True,
+        "nativeEvidenceSha256": _sha256(raw),
+    }
+
+
+def _windows_wsd_discovery_probe(server: str) -> dict[str, Any]:
+    try:
+        expected_addresses = {
+            ipaddress.IPv4Address(item[4][0])
+            for item in socket.getaddrinfo(
+                server,
+                None,
+                family=socket.AF_INET,
+                type=socket.SOCK_DGRAM,
+            )
+        }
+    except (socket.gaierror, ValueError) as exc:
+        raise ProtocolInteroperabilityLabError(
+            "planned NAS name has no IPv4 address for Windows WSD discovery"
+        ) from exc
+    expected_addresses = {
+        address
+        for address in expected_addresses
+        if not (address.is_loopback or address.is_multicast or address.is_unspecified)
+    }
+    if not expected_addresses:
+        raise ProtocolInteroperabilityLabError(
+            "planned NAS name has no LAN IPv4 address for Windows WSD discovery"
+        )
+    message_id = f"urn:uuid:{uuid.uuid4()}"
+    payload = _wsd_probe_payload(message_id)
+    deadline = time.monotonic() + WSD_PROBE_TIMEOUT_SECONDS
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as client:
+            client.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+            client.bind(("", 0))
+            client.sendto(payload, WSD_MULTICAST_V4)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                client.settimeout(remaining)
+                try:
+                    raw, peer = client.recvfrom(65535)
+                except TimeoutError:
+                    break
+                observed = _parse_windows_wsd_probe_match(
+                    raw,
+                    message_id=message_id,
+                    peer_address=peer[0],
+                    expected_addresses=expected_addresses,
+                )
+                if observed is not None:
+                    return observed
+    except OSError as exc:
+        raise ProtocolInteroperabilityLabError(
+            "Windows WSD multicast discovery is unavailable"
+        ) from exc
+    raise ProtocolInteroperabilityLabError(
+        "planned NAS did not answer Windows WSD discovery within four seconds"
+    )
+
+
+def _validated_windows_discovery(value: Mapping[str, Any]) -> dict[str, Any]:
+    result = dict(value)
+    if (
+        set(result)
+        != {
+            "transport",
+            "probeMatches",
+            "serverAddressMatched",
+            "deviceType",
+            "computerType",
+            "relatesToMatched",
+            "nativeEvidenceSha256",
+        }
+        or result.get("transport") != "udp4-multicast"
+        or not isinstance(result.get("probeMatches"), int)
+        or isinstance(result.get("probeMatches"), bool)
+        or result["probeMatches"] < 1
+        or any(
+            result.get(field) is not True
+            for field in (
+                "serverAddressMatched",
+                "deviceType",
+                "computerType",
+                "relatesToMatched",
+            )
+        )
+        or not isinstance(result.get("nativeEvidenceSha256"), str)
+        or SHA256.fullmatch(result["nativeEvidenceSha256"]) is None
+    ):
+        raise ProtocolInteroperabilityLabError("Windows WSD discovery evidence is invalid")
+    return result
+
+
 def _unc_identity(value: str) -> tuple[str, str] | None:
     normalized = value.replace("/", "\\")
     if not normalized.startswith("\\\\"):
@@ -668,6 +871,7 @@ def run_probe(
     output: Path,
     system_name: str | None = None,
     mount_probe: MountProbe = _native_mount_probe,
+    windows_discovery_probe: WindowsDiscoveryProbe = _windows_wsd_discovery_probe,
 ) -> dict[str, Any]:
     if role not in ROLE_CHECKS:
         raise ProtocolInteroperabilityLabError("protocol client role is invalid")
@@ -681,6 +885,11 @@ def run_probe(
         raise ProtocolInteroperabilityLabError("protocol role output filename is invalid")
     root = mount_root.resolve(strict=True)
     _authorization(root, plan)
+    discovery = (
+        _validated_windows_discovery(windows_discovery_probe(plan["server"]))
+        if actual_system == "Windows"
+        else None
+    )
     mount = _mount(root, protocol, plan, actual_system, mount_probe)
     directory = root / f".echo-protocol-{plan['planId'][:16]}-{role}"
     source = directory / "payload.bin"
@@ -712,6 +921,8 @@ def run_probe(
         "renameVerified": True,
         "deleteVerified": True,
     }
+    if discovery is not None:
+        details["windowsDiscovery"] = discovery
     payload = _phase_payload(plan, role, details)
     _write_new(output, payload)
     return payload

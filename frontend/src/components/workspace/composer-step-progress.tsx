@@ -37,16 +37,39 @@ function PhaseStatusIcon({
     return (
       <Loader2Icon
         aria-hidden="true"
-        className={cn("size-4 shrink-0 animate-spin text-info dark:text-info", className)}
+        className={cn(
+          "size-4 shrink-0 animate-spin text-info dark:text-info",
+          className,
+        )}
       />
     );
   if (phase.status === "waiting_approval")
-    return <CircleIcon aria-hidden="true" className={cn("size-4 shrink-0 text-warning", className)} />;
+    return (
+      <CircleIcon
+        aria-hidden="true"
+        className={cn("size-4 shrink-0 text-warning", className)}
+      />
+    );
   if (phase.status === "error")
-    return <AlertCircleIcon aria-hidden="true" className={cn("size-4 shrink-0 text-destructive", className)} />;
+    return (
+      <AlertCircleIcon
+        aria-hidden="true"
+        className={cn("size-4 shrink-0 text-destructive", className)}
+      />
+    );
   if (phase.status === "done")
-    return <CheckCircle2Icon aria-hidden="true" className={cn("size-4 shrink-0 text-success", className)} />;
-  return <CircleIcon aria-hidden="true" className={cn("size-4 shrink-0 text-info dark:text-info", className)} />;
+    return (
+      <CheckCircle2Icon
+        aria-hidden="true"
+        className={cn("size-4 shrink-0 text-success", className)}
+      />
+    );
+  return (
+    <CircleIcon
+      aria-hidden="true"
+      className={cn("size-4 shrink-0 text-info dark:text-info", className)}
+    />
+  );
 }
 
 export function ComposerStepProgress({
@@ -123,9 +146,15 @@ export function ComposerStepProgress({
         <PhaseStatusIcon phase={phaseForDisplay} className="size-3.5" />
         <span className="truncate tabular-nums">{label}</span>
         {expanded ? (
-          <ChevronUpIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground/60" />
+          <ChevronUpIcon
+            aria-hidden="true"
+            className="size-3.5 shrink-0 text-muted-foreground/60"
+          />
         ) : (
-          <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground/60" />
+          <ChevronDownIcon
+            aria-hidden="true"
+            className="size-3.5 shrink-0 text-muted-foreground/60"
+          />
         )}
       </button>
 

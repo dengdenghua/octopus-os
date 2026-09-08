@@ -18,6 +18,8 @@ const frontendOrigins = [
   `http://127.0.0.1:${frontendPort}`,
   `http://localhost:${frontendPort}`,
 ];
+const canonicalFrontendOrigin = frontendOrigins[1];
+const runLiveModelSmoke = process.env.ECHO_E2E_RUN_LIVE_MODEL === "1";
 
 async function fetchFromPage(page: Page, path: string) {
   return page.evaluate(async (requestPath) => {
@@ -222,7 +224,9 @@ test.describe("Full-stack golden smoke", () => {
           .sort(),
       });
 
-      await page.goto(`${origin}/#/workspace/agents?surface=chat`);
+      await page.goto(
+        `${origin}/#/workspace/agents?surface=chat&presentation=workbench`,
+      );
       await page.waitForLoadState("domcontentloaded");
       await expect(
         page.getByPlaceholder(
@@ -230,7 +234,9 @@ test.describe("Full-stack golden smoke", () => {
         ),
       ).toBeVisible({ timeout: 20_000 });
 
-      await page.goto(`${origin}/#/workspace/intelligence?surface=chat`);
+      await page.goto(
+        `${origin}/#/workspace/intelligence?surface=chat&presentation=workbench`,
+      );
       await page.waitForLoadState("domcontentloaded");
       const intelligenceSurface = page.getByTestId("intelligence-panel").or(
         page.getByRole("heading", {
@@ -249,12 +255,12 @@ test.describe("Full-stack golden smoke", () => {
     );
 
     await page.goto(
-      `${frontendOrigins[0]}/#/workspace/agents/general/chats/new`,
+      `${canonicalFrontendOrigin}/#/workspace/realtime/new?presentation=workbench`,
     );
     await page.waitForLoadState("domcontentloaded");
     await expect(page).toHaveURL(
       new RegExp(
-        `^http://localhost:${frontendPort}/#\\/workspace\\/realtime\\/new$`,
+        `^http://localhost:${frontendPort}/#\\/workspace\\/realtime\\/new\\?presentation=workbench$`,
       ),
     );
     await expect(page.getByTestId("chat-composer-input")).toBeVisible({
@@ -283,11 +289,17 @@ test.describe("Full-stack golden smoke", () => {
   test("realtime new thread sends, persists, and resumes after refresh", async ({
     page,
   }) => {
+    test.skip(
+      !runLiveModelSmoke,
+      "set ECHO_E2E_RUN_LIVE_MODEL=1 on a host with an authenticated Codex provider",
+    );
     test.setTimeout(90_000);
-    const origin = frontendOrigins[0];
+    const origin = canonicalFrontendOrigin;
     const prompt = `Reply directly with one short sentence: full-stack realtime smoke ${Date.now()}`;
 
-    await page.goto(`${origin}/#/workspace/realtime/new`);
+    await page.goto(
+      `${origin}/#/workspace/realtime/new?presentation=workbench`,
+    );
     await page.waitForLoadState("domcontentloaded");
     const chatModeToggle = page.getByTestId("chat-mode-toggle");
     await expect(chatModeToggle).toBeVisible({ timeout: 20_000 });

@@ -263,7 +263,13 @@ def fixture_logs(
 
 
 def read_regular(path: Path, maximum: int) -> bytes:
-    flags = os.O_RDONLY | os.O_CLOEXEC
+    if path.is_symlink():
+        raise EvidenceError(f"evidence input is unsafe: {path}")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -563,9 +569,13 @@ def verify_os_source_binding(
 
 
 def hash_installed_image(path: Path) -> dict[str, object]:
-    if not path.is_absolute():
+    if not path.is_absolute() or path.is_symlink():
         raise EvidenceError("installed image path must be absolute")
-    flags = os.O_RDONLY | os.O_CLOEXEC
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -761,7 +771,12 @@ def write_manifest(path: Path, payload: dict[str, object]) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     descriptor = os.open(
         temporary,
-        os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        os.O_CREAT
+        | os.O_EXCL
+        | os.O_WRONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0),
         0o600,
     )
     try:
@@ -773,9 +788,10 @@ def write_manifest(path: Path, payload: dict[str, object]) -> None:
             offset += written
         os.fsync(descriptor)
     except BaseException:
+        os.close(descriptor)
         temporary.unlink(missing_ok=True)
         raise
-    finally:
+    else:
         os.close(descriptor)
     try:
         os.replace(temporary, path)

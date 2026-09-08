@@ -409,7 +409,15 @@ def create_thread_state_router(
             return False
         from runtime.memory.threads.event_log import EventLog, thread_log_path
 
-        summary = EventLog(thread_log_path(logs_root, thread_id)).summary()
+        try:
+            summary = EventLog(thread_log_path(logs_root, thread_id)).summary()
+        except OSError as exc:
+            _logger.warning(
+                "thread archive probe temporarily unavailable thread_id=%s: %s",
+                thread_id,
+                exc,
+            )
+            return False
         return bool(summary and summary.archived)
 
     @router.post("/api/threads")

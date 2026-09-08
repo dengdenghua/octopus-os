@@ -13,8 +13,11 @@ through nested dicts and lists):
 
 Encrypted values are written as ``"ENC:<base64_ciphertext>"`` strings so
 the rest of the ``mount_options`` dict stays human-readable for debugging,
-querying, and schema migrations. ``encrypt_options`` returns the modified
-dict serialized as JSON; ``decrypt_options`` is the inverse.
+querying, and schema migrations. Non-string sensitive values use
+``"ENC:json:<base64_ciphertext>"`` with a JSON payload to preserve their type.
+``encrypt_options`` returns the modified dict serialized as JSON;
+``decrypt_options`` is the inverse. Credential failures raise without changing
+stored data; old unmarked plaintext remains readable without automatic migration.
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ _LOG = logging.getLogger("echo.workspace.crypto")
 # so ``Password`` / ``PASSWORD`` / ``password`` all hit.
 SENSITIVE_FIELDS = frozenset({"password", "secret_key", "access_key", "token", "credential"})
 _ENC_PREFIX = "ENC:"
+_JSON_ENC_PREFIX = "ENC:json:"
 
 # Fixed salt for the PBKDF2 derivation. We're not protecting against offline
 # brute-force on a stolen DB (the host has the key anyway); the derivation
@@ -45,6 +49,43 @@ _KDF_ITERATIONS = 100_000
 _MACHINE_ID_CACHE: str | None = None
 _CIPHER_CACHE: Any = None
 _CIPHER_KEY_CACHE: bytes | None = None
+
+
+class WorkspaceCryptoError(RuntimeError):
+    """A safe, actionable failure; never contains key material or options."""
+
+    def __init__(self, code: str, hint: str) -> None:
+        self.code = code
+        self.hint = hint
+        super().__init__(hint)
+
+    def to_detail(self) -> dict[str, str]:
+        return {"error": self.code, "hint": self.hint}
+
+
+def _encryption_error() -> WorkspaceCryptoError:
+    return WorkspaceCryptoError(
+        "workspace_encryption_unavailable",
+        "Workspace credentials could not be encrypted. Install the cryptography package "
+        "and verify the workspace key configuration before retrying. No workspace was saved.",
+    )
+
+
+def _decryption_error() -> WorkspaceCryptoError:
+    return WorkspaceCryptoError(
+        "workspace_credentials_unavailable",
+        "Workspace credentials could not be decrypted. Restore the original "
+        "ECHO_WORKSPACE_KEY (or the original host identity when no explicit key was used), "
+        "ensure cryptography is installed, and restart the service. Stored data was not changed.",
+    )
+
+
+def _configuration_error() -> WorkspaceCryptoError:
+    return WorkspaceCryptoError(
+        "workspace_configuration_invalid",
+        "Workspace mount options are not a valid JSON object. Restore the original "
+        "configuration from a trusted backup. Stored data was not changed.",
+    )
 
 
 # ─── machine id ────────────────────────────────────────────────────────────
@@ -144,27 +185,18 @@ def _resolve_key() -> bytes:
 
 
 def _cipher() -> Any:
-    """Return a cached Fernet instance, or None if cryptography is missing
-    or the configured key is invalid. A None cipher means ``encrypt_options``
-    degrades to plaintext JSON — callers still work, just without at-rest
-    protection. We log once on the first failure so the operator notices.
-    """
+    """Return a cached Fernet instance. Failure must never permit plaintext writes."""
     global _CIPHER_CACHE
     if _CIPHER_CACHE is not None:
         return _CIPHER_CACHE
     try:
         from cryptography.fernet import Fernet
     except ImportError:
-        _LOG.warning(
-            "cryptography package unavailable; workspace mount_option "
-            "credentials will be stored in plaintext"
-        )
-        return None
+        raise _encryption_error() from None
     try:
         _CIPHER_CACHE = Fernet(_resolve_key())
-    except Exception as exc:  # noqa: BLE001 — bad key shape shouldn't crash callers
-        _LOG.warning("workspace crypto key invalid (%s); falling back to plaintext", exc)
-        _CIPHER_CACHE = None
+    except Exception:  # noqa: BLE001 — do not expose key derivation failures
+        raise _encryption_error() from None
     return _CIPHER_CACHE
 
 
@@ -175,40 +207,48 @@ def _is_sensitive(key: str) -> bool:
     return isinstance(key, str) and key.lower() in SENSITIVE_FIELDS
 
 
-def _walk_encrypt(value: Any, cipher: Any) -> Any:
+def _walk_encrypt(value: Any) -> Any:
     if isinstance(value, dict):
         out: dict[str, Any] = {}
         for k, v in value.items():
-            if _is_sensitive(k) and isinstance(v, str) and not v.startswith(_ENC_PREFIX):
-                token = cipher.encrypt(v.encode("utf-8")).decode("ascii")
-                out[k] = f"{_ENC_PREFIX}{token}"
+            if _is_sensitive(k):
+                # Every caller-supplied value is plaintext, even if it starts
+                # with ENC:. Only the database read path interprets envelopes.
+                # Seal non-string values as a whole to avoid leaking credentials
+                # supplied as a number, list, or an object with arbitrary keys.
+                is_text = isinstance(v, str)
+                payload = v if is_text else json.dumps(v, ensure_ascii=False)
+                token = _cipher().encrypt(payload.encode("utf-8")).decode("ascii")
+                prefix = _ENC_PREFIX if is_text else _JSON_ENC_PREFIX
+                out[k] = f"{prefix}{token}"
             else:
-                out[k] = _walk_encrypt(v, cipher)
+                out[k] = _walk_encrypt(v)
         return out
     if isinstance(value, list):
-        return [_walk_encrypt(v, cipher) for v in value]
+        return [_walk_encrypt(v) for v in value]
     return value
 
 
-def _walk_decrypt(value: Any, cipher: Any) -> Any:
+def _walk_decrypt(value: Any) -> Any:
     if isinstance(value, dict):
         out: dict[str, Any] = {}
         for k, v in value.items():
-            out[k] = _walk_decrypt(v, cipher)
+            if _is_sensitive(k) and isinstance(v, str) and v.startswith(_ENC_PREFIX):
+                is_json = v.startswith(_JSON_ENC_PREFIX)
+                prefix = _JSON_ENC_PREFIX if is_json else _ENC_PREFIX
+                token = v[len(prefix) :]
+                try:
+                    plaintext = _cipher().decrypt(token.encode("ascii")).decode("utf-8")
+                    out[k] = json.loads(plaintext) if is_json else plaintext
+                except Exception:  # noqa: BLE001 — ciphertext is never usable credentials
+                    raise _decryption_error() from None
+            else:
+                # Old unmarked plaintext remains readable without cryptography.
+                # Non-sensitive labels/paths may legitimately start with ENC:.
+                out[k] = _walk_decrypt(v)
         return out
-    if isinstance(value, str) and value.startswith(_ENC_PREFIX):
-        token = value[len(_ENC_PREFIX) :]
-        if cipher is None:
-            # Best-effort: return the ciphertext minus the marker so the
-            # value isn't silently dropped; the caller can decide what to do.
-            return token
-        try:
-            return cipher.decrypt(token.encode("ascii")).decode("utf-8")
-        except Exception as exc:  # noqa: BLE001 — corrupt ciphertext shouldn't crash reads
-            _LOG.warning("workspace crypto: failed to decrypt value: %s", exc)
-            return value
     if isinstance(value, list):
-        return [_walk_decrypt(v, cipher) for v in value]
+        return [_walk_decrypt(v) for v in value]
     return value
 
 
@@ -219,28 +259,31 @@ def encrypt_options(options: dict[str, Any]) -> str:
     """Walk ``options`` recursively, encrypt values whose key matches
     SENSITIVE_FIELDS, then return the result as a JSON string.
     Non-sensitive fields stay human-readable in the SQLite column.
-    Returns plain JSON (no encryption) when ``cryptography`` is unavailable
-    or the configured key is invalid — see ``_cipher``.
+    Sensitive values require working encryption, including user strings
+    beginning with ENC:. No cipher is needed for non-sensitive options.
     """
-    cipher = _cipher()
-    if cipher is None:
-        return json.dumps(options or {}, ensure_ascii=False)
-    redacted = _walk_encrypt(options or {}, cipher)
-    return json.dumps(redacted, ensure_ascii=False)
+    if not isinstance(options, dict):
+        raise _configuration_error()
+    try:
+        return json.dumps(_walk_encrypt(options), ensure_ascii=False)
+    except WorkspaceCryptoError:
+        raise
+    except Exception:  # noqa: BLE001 — serialization/encryption errors can contain secrets
+        raise _encryption_error() from None
 
 
 def decrypt_options(encrypted: str) -> dict[str, Any]:
     """Inverse of ``encrypt_options``: parse the JSON string, walk the
-    tree, and decrypt any ``ENC:``-prefixed values. Returns an empty
-    dict when ``encrypted`` is empty or unparseable.
+    tree, and decrypt sensitive ``ENC:``-prefixed values. Unmarked legacy
+    plaintext remains readable. Invalid data or unavailable credentials raise
+    WorkspaceCryptoError; they never become empty config or usable ciphertext.
     """
     if not encrypted:
         return {}
     try:
         raw = json.loads(encrypted)
-    except (TypeError, ValueError, json.JSONDecodeError):
-        _LOG.warning("workspace crypto: mount_options_json is not valid JSON")
-        return {}
+    except (TypeError, ValueError):
+        raise _configuration_error() from None
     if not isinstance(raw, dict):
-        return {}
-    return _walk_decrypt(raw, _cipher())
+        raise _configuration_error()
+    return _walk_decrypt(raw)

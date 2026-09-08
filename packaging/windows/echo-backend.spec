@@ -9,6 +9,13 @@ repo_root = Path(SPECPATH).parents[1]
 entry = repo_root / "packaging" / "windows" / "echo_backend_entry.py"
 
 hiddenimports = collect_submodules("runtime") + [
+    "runtime.execution.misc.document_extraction",
+    "runtime.execution.misc.document_worker",
+    "runtime.execution.misc.document_process_limits",
+    "runtime.execution.misc.document_text_extractor",
+    "runtime.execution.misc.notebook_extractor",
+    "pypdf",
+    "defusedxml",
     "uvicorn.logging",
     "uvicorn.loops",
     "uvicorn.loops.auto",

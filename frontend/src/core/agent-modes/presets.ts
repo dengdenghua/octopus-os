@@ -3,10 +3,7 @@ import type {
   AuditIntensity,
 } from "@/components/workspace/mode-selector";
 
-export type ModePresetId =
-  | "develop"
-  | "audit"
-  | "uxui";
+export type ModePresetId = "develop" | "audit" | "uxui";
 
 export type SkillPackProfile = "develop" | "audit" | "uxui";
 export type VerificationPolicy = "light" | "standard" | "strict" | "visual";

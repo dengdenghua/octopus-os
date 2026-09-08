@@ -1,18 +1,11 @@
-/**
- * 「编辑侧栏」面板 — 选择哪些模块显示在侧栏。
- *
- * 交互对标钉钉的侧栏编辑面板：按业务分组的网格，可选项右上角 `+` / `✓`
- * 切换，常驻项不提供按钮，右上角「完成」退出。
- *
- * 注意：这里**不下载任何东西**。所有模块都已在包内，页面均为 `lazy()`，
- * 未显示的入口对应 chunk 自然不会被请求。远端加载是另一条更重的路径
- * （见 docs/architecture/blocks.md §2）。
- */
+/** Sidebar placement uses the application catalog installation state. */
+import { requestOpenEchoHub } from "@/core/apps/app-presentation";
 import { CheckIcon, PlusIcon } from "lucide-react";
 
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -26,8 +19,10 @@ import {
 import {
   setModuleEnabled,
   useEnabledModuleIds,
+  useModuleAvailability,
 } from "@/core/modules/enabled-modules";
 import type { ModuleGroup } from "@/core/modules/types";
+import { WORKBENCH_BUILTIN_APPS } from "@/core/workbench/apps";
 import { cn } from "@/lib/utils";
 import { useActiveAgentId } from "@/core/agents/active";
 import { DEFAULT_PRIMARY_AGENT_ID } from "@/core/agents/persona-policy";
@@ -57,9 +52,9 @@ export function ModuleEditorDialog({
             <DialogTitle className="text-base">
               {t.sidebar.editModules}
             </DialogTitle>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <DialogDescription className="mt-0.5 text-xs">
               {t.sidebar.editModulesHint} · {preset.direction}
-            </p>
+            </DialogDescription>
           </div>
           <Button size="sm" onClick={() => onOpenChange(false)}>
             {t.sidebar.editModulesDone}
@@ -67,6 +62,19 @@ export function ModuleEditorDialog({
         </DialogHeader>
 
         <div className="max-h-[calc(80vh-4.5rem)] overflow-y-auto px-5 py-4">
+          <p className="mb-4 text-xs text-muted-foreground">
+            应用安装状态在桌面、独立窗口和工作台之间统一；侧栏固定按当前账号与角色保存。
+            <button
+              type="button"
+              className="ml-2 text-primary hover:underline"
+              onClick={() => {
+                onOpenChange(false);
+                requestOpenEchoHub();
+              }}
+            >
+              前往应用中心安装或启用
+            </button>
+          </p>
           {MODULE_GROUP_ORDER.map((group) => (
             <ModuleGroupSection
               key={group}
@@ -110,7 +118,11 @@ function ModuleGroupSection({
           return (
             <li key={m.id}>
               <ModuleCard
-                name={label(m.labelKey)}
+                moduleId={m.id}
+                name={
+                  WORKBENCH_BUILTIN_APPS.find((app) => app.moduleId === m.id)
+                    ?.name ?? label(m.labelKey)
+                }
                 enabled={isOn}
                 removable={m.removable}
                 pinnedLabel={pinnedLabel}
@@ -125,18 +137,25 @@ function ModuleGroupSection({
 }
 
 function ModuleCard({
+  moduleId,
   name,
   enabled,
   removable,
   pinnedLabel,
   onToggle,
 }: {
+  moduleId: string;
   name: string;
   enabled: boolean;
   removable: boolean;
   pinnedLabel: string;
   onToggle: () => void;
 }) {
+  const availability = useModuleAvailability(moduleId);
+  const remote = WORKBENCH_BUILTIN_APPS.some(
+    (app) => app.moduleId === moduleId && app.delivery === "remote",
+  );
+  const unavailable = remote && availability !== true;
   // Pinned modules render as a plain, non-interactive row — the DingTalk
   // equivalent of the cards with no `+` badge.
   if (!removable) {
@@ -154,12 +173,14 @@ function ModuleCard({
     <button
       type="button"
       onClick={onToggle}
-      aria-pressed={enabled}
+      disabled={unavailable}
+      title={unavailable ? "请先在应用中心安装并启用，再添加到侧栏" : undefined}
+      aria-pressed={!unavailable && enabled}
       className={cn(
         "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left",
         "transition-[background-color,border-color] duration-fast",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50",
-        enabled
+        enabled && !unavailable
           ? "border-primary/30 bg-primary/8 hover:bg-primary/12"
           : "border-border-subtle bg-card hover:border-border-default hover:bg-muted/45",
       )}
@@ -168,13 +189,16 @@ function ModuleCard({
       <span
         aria-hidden="true"
         className={cn(
-          "ml-2 flex size-5 shrink-0 items-center justify-center rounded-full border",
-          enabled
+          "ml-2 flex shrink-0 items-center justify-center",
+          unavailable ? "text-muted-foreground" : "size-5 rounded-full border",
+          enabled && !unavailable
             ? "border-primary/40 bg-primary text-primary-foreground"
             : "border-border-default text-muted-foreground",
         )}
       >
-        {enabled ? (
+        {unavailable ? (
+          <span className="whitespace-nowrap text-[10px]">需先安装或启用</span>
+        ) : enabled ? (
           <CheckIcon className="size-3" />
         ) : (
           <PlusIcon className="size-3" />

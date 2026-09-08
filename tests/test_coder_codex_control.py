@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -488,6 +489,25 @@ async def test_model_catalog_is_reused_for_profile_validation(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_expired_model_catalog_is_refetched(tmp_path: Path) -> None:
+    from runtime.execution.codex_backend.account import _MODEL_CATALOG_TTL_S
+
+    factory = _ControlFactory()
+    service = CodexAccountService(tmp_path / "state", command=_FAKE_COMMAND, client_factory=factory)
+    try:
+        await service.list_models(None)
+        runtime = next(iter(service._runtimes.values()))
+        timestamp, models = runtime.model_catalog_cache[False]
+        runtime.model_catalog_cache[False] = (timestamp - _MODEL_CATALOG_TTL_S - 1, models)
+        assert service.cached_models(None) is None
+        await service.list_models(None)
+        assert factory.clients[0].model_calls == 2
+        assert service.cached_models(None) is not None
+    finally:
+        await service.close_all()
+
+
+@pytest.mark.asyncio
 async def test_login_survives_poll_cancel_and_two_principals_are_isolated(tmp_path: Path) -> None:
     factory = _ControlFactory()
     service = CodexAccountService(
@@ -536,7 +556,8 @@ async def test_local_desktop_can_seed_host_chatgpt_login_for_authenticated_princ
 
     seeded = json.loads((service.account_home(scope) / "auth.json").read_text(encoding="utf-8"))
     assert seeded == {"marker": "host-chatgpt"}
-    assert (service.account_home(scope) / "auth.json").stat().st_mode & 0o077 == 0
+    if os.name != "nt":
+        assert (service.account_home(scope) / "auth.json").stat().st_mode & 0o077 == 0
     await service.close_all()
 
 
@@ -1043,6 +1064,4 @@ async def test_plugin_catalog_uses_local_official_cache_when_remote_is_unavailab
     assert rows[0]["category"] == "Productivity"
     assert rows[0]["_marketplace_path"] == str(marketplace)
     assert resolved_icon == icon
-
-
 

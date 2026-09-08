@@ -86,7 +86,7 @@ const LICENSE_FILES = [
       `codex-${CODEX_VERSION}`,
       "THIRD_PARTY_LICENSES.md",
     ),
-    destination: "third-party/codex-rust/README.md",
+    destination: "third-party/codex-rust/THIRD_PARTY_LICENSES.md",
     sha256: "198967762991bc9c638b7c304a11bf5b564cb1898e48acf35eca793c2b4557ae",
   },
   {
@@ -399,4 +399,3 @@ function prepare() {
 }
 
 prepare();
-

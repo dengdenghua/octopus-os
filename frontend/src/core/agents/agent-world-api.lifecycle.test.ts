@@ -76,12 +76,7 @@ it("binds install and permission activation to the reviewed plan", async () => {
 
   const plan = await getCapabilityInstallPlan("browser");
   await installCapability("browser", plan.plan_id);
-  await setCapabilityEnabled(
-    "browser",
-    true,
-    ["content.read"],
-    plan.plan_id,
-  );
+  await setCapabilityEnabled("browser", true, ["content.read"], plan.plan_id);
 
   expect(fetchSpy.mock.calls[1]).toEqual([
     "/api/capabilities/browser/install",

@@ -53,6 +53,12 @@ _SECURED_APP_ROUTE_SPECS = (
     ("GET", "/api/teams", {}),
     ("GET", "/api/team-tasks", {}),
     ("GET", "/api/agents/parallel/status", {}),
+    ("GET", "/api/agents/parallel/recovery-snapshots", {}),
+    (
+        "POST",
+        "/api/agents/parallel/batch/missing/resume",
+        {"json": {"task_ids": ["task_missing"]}},
+    ),
     ("GET", "/api/dag/active", {}),
     ("GET", "/api/research/deep/jobs", {}),
     ("GET", "/api/subagents", {}),
@@ -615,4 +621,3 @@ def test_session_unauthenticated_rejected() -> None:
     # Beta header present, no bearer token, require_auth=True → 401 (the beta
     # check passes, then actor resolution fails).
     assert client.get("/v1/sessions/sesn_whatever", headers=_BETA).status_code == 401
-

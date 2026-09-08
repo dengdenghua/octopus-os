@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
+import os
 import stat
 import subprocess
 import uuid
@@ -9,6 +11,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+if os.name == "nt":
+    pytest.skip(
+        "protocol interoperability lab requires Linux file and network semantics",
+        allow_module_level=True,
+    )
 
 from deploy.appliance import operations_bundle
 from deploy.appliance import protocol_interoperability_lab as lab
@@ -100,6 +108,18 @@ def _mount_probe(_root: Path, protocol: str, _server: str, _system: str) -> dict
     }
 
 
+def _windows_discovery_probe(_server: str) -> dict[str, Any]:
+    return {
+        "transport": "udp4-multicast",
+        "probeMatches": 1,
+        "serverAddressMatched": True,
+        "deviceType": True,
+        "computerType": True,
+        "relatesToMatched": True,
+        "nativeEvidenceSha256": "b" * 64,
+    }
+
+
 def _authorized(root: Path, plan: dict[str, Any]) -> Path:
     root.mkdir()
     marker = root / lab.AUTHORIZATION_NAME
@@ -162,6 +182,57 @@ def test_unix_mount_sources_require_the_exact_server_not_a_substring() -> None:
     )
 
 
+def test_windows_wsd_probe_match_binds_message_types_and_planned_server_address() -> None:
+    message_id = f"urn:uuid:{uuid.UUID(int=21)}"
+    raw = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<soap:Envelope xmlns:soap="{lab.SOAP_NAMESPACE}" '
+        f'xmlns:wsa="{lab.WSA_NAMESPACE}" xmlns:wsd="{lab.WSD_NAMESPACE}" '
+        f'xmlns:wsdp="{lab.WSDP_NAMESPACE}" xmlns:pub="{lab.PUBLICATION_NAMESPACE}">'
+        "<soap:Header>"
+        f"<wsa:Action>{lab.WSD_PROBE_MATCHES_ACTION}</wsa:Action>"
+        f"<wsa:RelatesTo>{message_id}</wsa:RelatesTo>"
+        "</soap:Header><soap:Body><wsd:ProbeMatches><wsd:ProbeMatch>"
+        "<wsd:Types>wsdp:Device pub:Computer</wsd:Types>"
+        "<wsd:XAddrs>http://192.0.2.10:3702/device</wsd:XAddrs>"
+        "</wsd:ProbeMatch></wsd:ProbeMatches></soap:Body></soap:Envelope>"
+    ).encode()
+    expected = {ipaddress.IPv4Address("192.0.2.10")}
+
+    result = lab._parse_windows_wsd_probe_match(
+        raw,
+        message_id=message_id,
+        peer_address="192.0.2.10",
+        expected_addresses=expected,
+    )
+
+    assert result is not None
+    assert result["probeMatches"] == 1
+    assert result["serverAddressMatched"] is True
+    assert result["deviceType"] is True
+    assert result["computerType"] is True
+    assert result["relatesToMatched"] is True
+    assert result["nativeEvidenceSha256"] == _digest(raw)
+    assert (
+        lab._parse_windows_wsd_probe_match(
+            raw,
+            message_id=f"urn:uuid:{uuid.UUID(int=22)}",
+            peer_address="192.0.2.10",
+            expected_addresses=expected,
+        )
+        is None
+    )
+    assert (
+        lab._parse_windows_wsd_probe_match(
+            raw,
+            message_id=message_id,
+            peer_address="192.0.2.11",
+            expected_addresses=expected,
+        )
+        is None
+    )
+
+
 def test_plan_is_candidate_bundle_and_share_bound(tmp_path: Path) -> None:
     plan, plan_path, evidence, root = _setup(tmp_path)
 
@@ -207,6 +278,7 @@ def test_real_client_probe_writes_reads_renames_deletes_and_records_native_mount
         output=output,
         system_name=system_name,
         mount_probe=_mount_probe,
+        windows_discovery_probe=_windows_discovery_probe,
     )
 
     assert result["check"] == lab.PHASE_CHECKS[role]
@@ -217,6 +289,10 @@ def test_real_client_probe_writes_reads_renames_deletes_and_records_native_mount
     assert result["details"]["renameVerified"] is True
     assert result["details"]["deleteVerified"] is True
     assert result["details"]["mount"]["serverMatched"] is True
+    if system_name == "Windows":
+        assert result["details"]["windowsDiscovery"] == _windows_discovery_probe("echo-nas.lan")
+    else:
+        assert "windowsDiscovery" not in result["details"]
     assert {path.name for path in share.iterdir()} == {lab.AUTHORIZATION_NAME}
     assert stat.S_IMODE(output.stat().st_mode) == 0o444
 
@@ -233,6 +309,7 @@ def test_probe_rejects_wrong_os_confirmation_marker_mount_and_replace(tmp_path: 
         "output": output,
         "system_name": "Windows",
         "mount_probe": _mount_probe,
+        "windows_discovery_probe": _windows_discovery_probe,
     }
 
     with pytest.raises(lab.ProtocolInteroperabilityLabError, match="wrong client OS"):

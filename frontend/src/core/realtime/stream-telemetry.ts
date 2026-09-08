@@ -1,11 +1,19 @@
 import type { TurnStatus } from "./items";
 import { DEFAULT_VITALS_THRESHOLDS, type VitalsMarks } from "./stream-vitals";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 
 const STORAGE_KEY = "echo:stream-telemetry:v1";
 const MAX_RECORDS = 100;
 
-export const STREAM_TELEMETRY_UPDATED_EVENT =
-  "echo:stream-telemetry-updated";
+export function streamTelemetryStorageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(STORAGE_KEY, actor);
+}
+
+export const STREAM_TELEMETRY_UPDATED_EVENT = "echo:stream-telemetry-updated";
 
 export type StreamTurnOutcome = Exclude<TurnStatus, "inProgress">;
 
@@ -39,6 +47,22 @@ function telemetryStorage(): Storage | null {
   return typeof window === "undefined" ? null : window.localStorage;
 }
 
+function readTelemetryRaw(storage: Storage): string | null {
+  const actor = currentActorId();
+  const scopedKey = streamTelemetryStorageKey(actor);
+  const scoped = storage.getItem(scopedKey);
+  if (scoped !== null) return scoped;
+
+  // Migrate the pre-actor diagnostic bucket only when a named actor is
+  // available. Anonymous sessions keep the legacy value readable without
+  // claiming it for an account.
+  if (storage === telemetryStorage()) {
+    const legacy = readActorScopedStorageValue(STORAGE_KEY, actor);
+    if (legacy !== null) return storage.getItem(scopedKey) ?? legacy;
+  }
+  return storage.getItem(scopedKey);
+}
+
 function isTelemetryRecord(value: unknown): value is StreamTurnTelemetry {
   if (!value || typeof value !== "object") return false;
   const item = value as Partial<StreamTurnTelemetry>;
@@ -65,7 +89,7 @@ export function readStreamTelemetry(
 ): StreamTurnTelemetry[] {
   if (!storage) return [];
   try {
-    const parsed: unknown = JSON.parse(storage.getItem(STORAGE_KEY) ?? "[]");
+    const parsed: unknown = JSON.parse(readTelemetryRaw(storage) ?? "[]");
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(isTelemetryRecord).sort((a, b) => {
       return b.completedAt - a.completedAt;
@@ -85,7 +109,7 @@ export function appendStreamTelemetry(
     ...readStreamTelemetry(storage).filter((item) => item.id !== record.id),
   ].slice(0, MAX_RECORDS);
   try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(records));
+    storage.setItem(streamTelemetryStorageKey(), JSON.stringify(records));
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(STREAM_TELEMETRY_UPDATED_EVENT));
     }
@@ -100,7 +124,7 @@ export function clearStreamTelemetry(
 ): void {
   if (!storage) return;
   try {
-    storage.removeItem(STORAGE_KEY);
+    storage.removeItem(streamTelemetryStorageKey());
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(STREAM_TELEMETRY_UPDATED_EVENT));
     }

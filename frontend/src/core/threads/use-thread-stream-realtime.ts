@@ -1480,6 +1480,7 @@ export function useThreadStreamRealtime(
                 explicitCodeMode ??
                 (shouldDefaultCodeCapability ? "solo" : undefined),
               permission_mode: permissionRuntime.mode,
+              approvals_reviewer: permissionRuntime.approvalReviewer,
               sandbox_mode: permissionRuntime.sandbox_mode,
               execution_environment: permissionRuntime.execution_environment,
             }),
@@ -1492,6 +1493,9 @@ export function useThreadStreamRealtime(
           const metadataContext = reasoningEffort
             ? { ...runtimeContext, reasoning_effort: reasoningEffort }
             : runtimeContext;
+          if (outbound.message.contextFiles?.length) {
+            metadataContext.context_files = outbound.message.contextFiles;
+          }
           const projectCwd = stringValue(metadataContext.workspace_path);
           setIsUploading(false);
           await startTurn({
@@ -1568,6 +1572,7 @@ export function useThreadStreamRealtime(
       model,
       context,
       permissionRuntime.mode,
+      permissionRuntime.approvalReviewer,
       permissionRuntime.planningMode,
       permissionRuntime.sandbox_mode,
       permissionRuntime.execution_environment,
@@ -1664,7 +1669,13 @@ export function useThreadStreamRealtime(
         threadId: effectiveThreadId,
         intent: runningTurnId ? "steer" : "start",
         ...(runningTurnId ? { targetTurnId: runningTurnId } : {}),
-        message: { text: rawText, files },
+        message: {
+          text: rawText,
+          files,
+          ...(message.contextFiles?.length
+            ? { contextFiles: message.contextFiles }
+            : {}),
+        },
         displayText,
         createdAt: new Date().toISOString(),
         deliveryState: transportReady ? "sending" : "queued",

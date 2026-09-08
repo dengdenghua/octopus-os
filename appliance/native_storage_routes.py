@@ -21,6 +21,7 @@ from appliance import (
     mdraid_check_schedule_policy,
     native_btrfs_snapshot,
     native_storage,
+    native_time_machine,
     nut_device_config,
     smart_schedule_policy,
 )
@@ -89,6 +90,8 @@ from appliance.omv_models import (
     SmartSelfTestDesiredState,
     SmbApplyRequest,
     SmbDesiredState,
+    TimeMachineApplyRequest,
+    TimeMachineDesiredState,
     UpsShutdownPolicyApplyRequest,
     UpsShutdownPolicyDesiredState,
     UserApplyRequest,
@@ -280,6 +283,13 @@ def register_native_storage_routes(router: APIRouter) -> None:
     @router.get("/sharing")
     async def sharing() -> dict[str, Any]:
         return {**await run_in_threadpool(native_storage.sharing_overview), "readOnly": True}
+
+    @router.get("/sharing/time-machine")
+    async def time_machine_status() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(native_time_machine.status)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="Time Machine 配置读取失败") from exc
 
     @router.get("/sharing/{share_uuid}/privileges")
     async def share_privileges(share_uuid: str) -> dict[str, Any]:
@@ -899,7 +909,7 @@ def create_omv_alias_router(
     @router.post("/accounts/users/plan")
     async def plan_user(body: UserDesiredState) -> dict[str, Any]:
         try:
-            return await run_in_threadpool(native_storage.plan_user, body.model_dump(by_alias=True))
+            return await run_in_threadpool(native_storage.plan_user, body.to_wire())
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -911,13 +921,17 @@ def create_omv_alias_router(
         request: Request,
         actor: str = Depends(require_operator),
     ) -> dict[str, Any]:
+        try:
+            desired = body.desired.to_wire()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return await _apply_write(
             request,
             actor=actor,
             action="omv.user.create",
             plan_fn=native_storage.plan_user,
             apply_fn=native_storage.apply_user,
-            desired=body.desired.model_dump(by_alias=True),
+            desired=desired,
             plan_id=body.plan_id,
         )
 
@@ -925,9 +939,7 @@ def create_omv_alias_router(
     @router.post("/accounts/users/password/plan")
     async def plan_user_password(body: UserPasswordDesiredState) -> dict[str, Any]:
         try:
-            return await run_in_threadpool(
-                native_storage.plan_user_password, body.model_dump(by_alias=True)
-            )
+            return await run_in_threadpool(native_storage.plan_user_password, body.to_wire())
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -939,13 +951,17 @@ def create_omv_alias_router(
         request: Request,
         actor: str = Depends(require_operator),
     ) -> dict[str, Any]:
+        try:
+            desired = body.desired.to_wire()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return await _apply_write(
             request,
             actor=actor,
             action="omv.user.password.reset",
             plan_fn=native_storage.plan_user_password,
             apply_fn=native_storage.apply_user_password,
-            desired=body.desired.model_dump(by_alias=True),
+            desired=desired,
             plan_id=body.plan_id,
         )
 
@@ -1007,6 +1023,41 @@ def create_omv_alias_router(
             apply_fn=native_storage.apply_smb,
             desired=body.desired.model_dump(by_alias=True),
             plan_id=body.plan_id,
+        )
+
+    # --- Dedicated macOS Time Machine share -----------------------------
+    @router.post("/sharing/time-machine/plan")
+    async def plan_time_machine(body: TimeMachineDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                native_time_machine.plan_time_machine,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="Time Machine 配置暂不可用") from exc
+
+    @router.post("/sharing/time-machine/apply")
+    async def apply_time_machine_route(
+        body: TimeMachineApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="storage.time-machine.apply",
+            plan_fn=native_time_machine.plan_time_machine,
+            apply_fn=native_time_machine.apply_time_machine,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "enabled": body.desired.enabled,
+                "owner": body.desired.owner,
+                "maximumBytes": body.desired.maximum_bytes,
+            },
         )
 
     # --- NFS private-network export ------------------------------------

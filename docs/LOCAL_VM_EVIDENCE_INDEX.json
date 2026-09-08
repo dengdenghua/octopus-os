@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "kind": "echo.local-vm-evidence-index",
+  "entries": [
+    {
+      "name": "heic-linux-runtime.json",
+      "sha256": "33d1898f922d37b568890b0be0cd538991f6f0d9253aedd2cf2e4eec36235420",
+      "discriminator": {
+        "field": "schema",
+        "value": "echo.heic-linux-runtime-evidence.v1"
+      },
+      "bindings": []
+    },
+    {
+      "name": "mdraid_ext4_result.json",
+      "sha256": "be10f81b5e2786f36671d78fdc2e8b8c6317856a0f9a68b59a20b1c3899242c0",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-mdraid-ext4-functional-result"
+      },
+      "bindings": []
+    },
+    {
+      "name": "mdraid_ext4_reboot_result.json",
+      "sha256": "2fc082f06fd503dd187da8dd0278ec2d24cbb4ed6a3498ec96e88b179bff9283",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-mdraid-ext4-reboot-functional-result"
+      },
+      "bindings": []
+    },
+    {
+      "name": "mdraid_replace_result.json",
+      "sha256": "79946f6755117026e45712ff78858f9739e7e8c0ff25542d02e7d0936ea1bcff",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-mdraid-replace-functional-result"
+      },
+      "bindings": []
+    },
+    {
+      "name": "mdraid_replace_reboot_result.json",
+      "sha256": "ec273f37073277edbad0554690ff35714e5e79ddc2c48701d30ec3aa21cfab51",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-mdraid-replace-reboot-result"
+      },
+      "bindings": []
+    },
+    {
+      "name": "btrfs_replace_hotplug_result.json",
+      "sha256": "9b2db5324ee14b82fcd07fee5b8c94e59de3526d3cb602b92b477bc433015e7b",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-btrfs-replace-hotplug-functional-result"
+      },
+      "bindings": []
+    },
+    {
+      "name": "btrfs_replace_reboot_result.json",
+      "sha256": "1fd77ad77711646c59cfab1e2762b039b9057bfcf238a1ee14fb247917e17e68",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-btrfs-replace-reboot-result"
+      },
+      "bindings": []
+    },
+    {
+      "name": "btrfs_snapshot_functional_result.json",
+      "sha256": "24ea7da56e35d191903e54f611aedf524b104802d0447753bf230eaf4f1bcde1",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-btrfs-snapshot-functional-result"
+      },
+      "bindings": []
+    },
+    {
+      "name": "btrfs_scrub_functional_result.json",
+      "sha256": "97ac993d831ff151769f4738be181b4e2ac27b591da52d2d504684ebd85fee50",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-btrfs-scrub-functional-result"
+      },
+      "bindings": []
+    },
+    {
+      "name": "zfs_mirror_rerun_result.json",
+      "sha256": "859032094af85b236457acd82cc29e0a845826ce3a909484cd396480f74a0edb",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-zfs-mirror-functional-result"
+      },
+      "bindings": []
+    },
+    {
+      "name": "zfs_mirror_rerun_reboot_result.json",
+      "sha256": "e67d661e2435943d10530b7358252386fa8647a58fdb765d143020612f77a965",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-zfs-mirror-reboot-result"
+      },
+      "bindings": [
+        {
+          "field": "provisionEvidenceSha256",
+          "target": "zfs_mirror_rerun_result.json",
+          "targetField": "$sha256"
+        },
+        {
+          "field": "pool.poolGuid",
+          "target": "zfs_mirror_rerun_result.json",
+          "targetField": "pool.poolGuid"
+        },
+        {
+          "field": "payload.sha256",
+          "target": "zfs_mirror_rerun_result.json",
+          "targetField": "payload.sha256"
+        },
+        {
+          "field": "head",
+          "target": "zfs_mirror_rerun_result.json",
+          "targetField": "head"
+        }
+      ]
+    },
+    {
+      "name": "zfs_replace_result.json",
+      "sha256": "1a637facb68fdf26141920d49d308c9f304b96137296479ec24f22aef9510cf3",
+      "discriminator": {
+        "field": "kind",
+        "value": "echo-zfs-replace-functional-result"
+      },
+      "bindings": []
+    }
+  ]
+}

@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+if os.name == "nt":
+    pytest.skip("appliance install orchestration invokes a POSIX shell", allow_module_level=True)
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "deploy/appliance/install-appliance.sh"
 IMAGE = f"ghcr.io/echo-os/echo-os@sha256:{'a' * 64}"

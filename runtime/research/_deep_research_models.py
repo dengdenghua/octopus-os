@@ -47,6 +47,7 @@ class ResearchMaterial(BaseModel):
     kind: Literal["file", "url", "text", "site"] = "text"
     title: str = ""
     path: str | None = None
+    resource_id: str | None = None
     url: str | None = None
     text: str | None = None
     notes: str | None = None
@@ -212,6 +213,11 @@ class ResearchJob(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     job_id: str
+    # Host ownership is optional for legacy/dev jobs. New authenticated jobs
+    # carry both coordinates so a persisted research record cannot be read
+    # across actors or tenants after a restart.
+    owner_id: str | None = None
+    tenant_id: str | None = None
     thread_id: str | None = None
     lead_agent_name: str | None = None
     topic: str
@@ -228,6 +234,16 @@ class ResearchJob(BaseModel):
     steps: list[ResearchStep]
     max_searches: int
     dispatch_batch_id: str | None = None
+    # Durable TaskSupervisor coordinate for an asynchronous dispatch.  This
+    # remains useful after the in-memory orchestrator has been restarted;
+    # callers can inspect the host task's recovery record without guessing
+    # from a batch id or trusting model output.
+    host_task_id: str | None = None
+    # ``status`` describes the research workflow. This additive marker
+    # describes the execution plane when only a redacted durable view remains
+    # after the in-memory scheduler disappeared.
+    recovery_required: bool = False
+    recovery_reason: str | None = None
     final_report_format: str = "markdown"
     final_report: str | None = None
     completed_at: str | None = None

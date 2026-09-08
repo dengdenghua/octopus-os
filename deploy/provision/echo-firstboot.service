@@ -11,7 +11,12 @@ Type=oneshot
 RemainAfterExit=yes
 Environment=DEBIAN_FRONTEND=noninteractive
 ExecStart=/opt/echo-os/deploy/provision/base/setup-base.sh
-TimeoutStartSec=60min
+# ZFS DKMS plus the complete offline Python runtime can legitimately take
+# longer than an hour on low-power NAS CPUs or software-emulated validation
+# machines. Individual network/package operations are bounded and every stage
+# is resumable, so a global deadline only turns slow success into a failed
+# first boot.
+TimeoutStartSec=infinity
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=echo-firstboot

@@ -32,14 +32,11 @@ export type StatusTone =
 
 const STATUS_STYLES: Record<StatusTone, string> = {
   idle: "border-border-default bg-muted/35 text-muted-foreground",
-  queued:
-    "border-warning/25 bg-warning/10 text-warning",
+  queued: "border-warning/25 bg-warning/10 text-warning",
   running:
     "border-primary/25 bg-primary/10 text-primary [&_[data-status-dot]]:animate-pulse",
-  success:
-    "border-success/25 bg-success/10 text-success",
-  warning:
-    "border-warning/25 bg-warning/10 text-warning",
+  success: "border-success/25 bg-success/10 text-success",
+  warning: "border-warning/25 bg-warning/10 text-warning",
   error: "border-destructive/25 bg-destructive/10 text-destructive",
   paused: "border-info/25 bg-info/10 text-info dark:text-info",
 };

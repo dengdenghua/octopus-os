@@ -1,4 +1,6 @@
 import { swallow } from "@/core/utils/log";
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 
 export type BrowserAgentPermission = "ask" | "allow" | "block";
 
@@ -21,6 +23,30 @@ const PERMISSIONS_KEY = "echo:browser-agent-permissions.v1";
 const AUDIT_KEY = "echo:browser-agent-audit.v1";
 export const BROWSER_AGENT_POLICY_EVENT = "echo:browser-agent-policy-change";
 const MAX_AUDIT_ENTRIES = 200;
+
+export function browserAgentPermissionsStorageKey(
+  actor = currentActorId(),
+): string {
+  return actorScopedStorageKey(PERMISSIONS_KEY, actor);
+}
+
+export function browserAgentAuditStorageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(AUDIT_KEY, actor);
+}
+
+function readPolicyArray<T>(key: string, legacyKey: string): T[] {
+  if (typeof window === "undefined") return [];
+  if (window.localStorage.getItem(key) !== null) return readArray<T>(key);
+  const legacy = readArray<T>(legacyKey);
+  if (legacy.length === 0 || currentActorId() === "anonymous") return legacy;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(legacy));
+    window.localStorage.removeItem(legacyKey);
+  } catch {
+    // Keep the legacy value usable for this render when storage is read-only.
+  }
+  return legacy;
+}
 
 export function browserHttpOrigin(
   url: string | null | undefined,
@@ -57,7 +83,10 @@ function writeArray<T>(key: string, value: T[]): void {
 }
 
 export function listBrowserAgentPermissions(): BrowserAgentSitePermission[] {
-  return readArray<BrowserAgentSitePermission>(PERMISSIONS_KEY)
+  return readPolicyArray<BrowserAgentSitePermission>(
+    browserAgentPermissionsStorageKey(),
+    PERMISSIONS_KEY,
+  )
     .filter(
       (entry) =>
         browserHttpOrigin(entry?.origin) === entry.origin &&
@@ -88,7 +117,7 @@ export function setBrowserAgentPermission(
     (entry) => entry.origin !== origin,
   );
   writeArray(
-    PERMISSIONS_KEY,
+    browserAgentPermissionsStorageKey(),
     permission === "ask"
       ? other
       : [{ origin, permission, updatedAt: Date.now() }, ...other],
@@ -96,7 +125,10 @@ export function setBrowserAgentPermission(
 }
 
 export function listBrowserAgentAudit(): BrowserAgentAuditEntry[] {
-  return readArray<BrowserAgentAuditEntry>(AUDIT_KEY)
+  return readPolicyArray<BrowserAgentAuditEntry>(
+    browserAgentAuditStorageKey(),
+    AUDIT_KEY,
+  )
     .filter(
       (entry) =>
         typeof entry?.id === "string" &&
@@ -116,11 +148,11 @@ export function recordBrowserAgentAudit(
     createdAt: Date.now(),
   };
   writeArray(
-    AUDIT_KEY,
+    browserAgentAuditStorageKey(),
     [next, ...listBrowserAgentAudit()].slice(0, MAX_AUDIT_ENTRIES),
   );
 }
 
 export function clearBrowserAgentAudit(): void {
-  writeArray(AUDIT_KEY, []);
+  writeArray(browserAgentAuditStorageKey(), []);
 }

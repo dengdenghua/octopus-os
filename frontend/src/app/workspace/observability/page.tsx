@@ -12,8 +12,9 @@ import {
   ShieldAlertIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { toast } from "sonner";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 import { swallow } from "@/core/utils/log";
 import { getBackendBaseURL } from "@/core/config";
@@ -146,6 +147,7 @@ export default function ObservabilityPage({
   initialTab?: string;
 }) {
   const { t } = useI18n();
+  const { search } = useLocation();
   const tab = normalizeObservabilityTab(initialTab);
   return (
     <WorkspaceContainer>
@@ -168,7 +170,12 @@ export default function ObservabilityPage({
               </div>
               <div className="flex shrink-0 gap-2">
                 <Button asChild className="h-9 rounded-full px-4">
-                  <Link to="/workspace/realtime/new">
+                  <Link
+                    to={preserveWorkbenchPresentation(
+                      "/workspace/realtime/new",
+                      search,
+                    )}
+                  >
                     {t.observabilityPage.shell.startTask}
                   </Link>
                 </Button>
@@ -236,7 +243,12 @@ export default function ObservabilityPage({
                       variant="outline"
                       className="h-9 rounded-full px-4"
                     >
-                      <Link to="/workspace/realtime/new">
+                      <Link
+                        to={preserveWorkbenchPresentation(
+                          "/workspace/realtime/new",
+                          search,
+                        )}
+                      >
                         {t.observabilityPage.shell.openNewTask}
                       </Link>
                     </Button>

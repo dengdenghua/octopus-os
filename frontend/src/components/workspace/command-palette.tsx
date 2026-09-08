@@ -19,7 +19,7 @@ import {
   UsersIcon,
   ZapIcon,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -41,10 +41,12 @@ import {
 import { emitOpenSettings } from "@/core/events";
 import { useI18n } from "@/core/i18n/hooks";
 import { BROWSER_WORKSPACE_ROUTE } from "@/core/workspace/sidebar-routing";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
 
 export function CommandPalette() {
   const { t } = useI18n();
+  const { search } = useLocation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -56,9 +58,9 @@ export function CommandPalette() {
   }, []);
 
   const handleNewChat = useCallback(() => {
-    navigate("/workspace/realtime/new");
+    navigate(preserveWorkbenchPresentation("/workspace/realtime/new", search));
     setOpen(false);
-  }, [navigate]);
+  }, [navigate, search]);
 
   const handleOpenSettings = useCallback(() => {
     setOpen(false);
@@ -103,10 +105,10 @@ export function CommandPalette() {
   // cmdk library filters both groups from the same input value.
   const handleNavigate = useCallback(
     (to: string) => {
-      navigate(to);
+      navigate(preserveWorkbenchPresentation(to, search));
       setOpen(false);
     },
-    [navigate],
+    [navigate, search],
   );
   const PAGE_ITEMS = useMemo(
     () => [
@@ -268,7 +270,12 @@ export function CommandPalette() {
               </CommandItem>
               <CommandItem
                 onSelect={() => {
-                  navigate("/workspace/evolution");
+                  navigate(
+                    preserveWorkbenchPresentation(
+                      "/workspace/evolution",
+                      search,
+                    ),
+                  );
                   setOpen(false);
                 }}
               >

@@ -17,6 +17,8 @@ import {
 } from "@/core/agents/agent-world-api";
 import { authHeaders } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
+import { setModuleAvailable } from "@/core/modules/enabled-modules";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 import type { WorkbenchBuiltinApp } from "./apps";
 
@@ -160,6 +162,7 @@ function SurfaceState({
   actionBusy?: boolean;
 }) {
   const navigate = useNavigate();
+  const { search } = useLocation();
   if (!issue) {
     return (
       <div
@@ -209,7 +212,12 @@ function SurfaceState({
             variant={enable || retry ? "outline" : "default"}
             size="sm"
             onClick={() =>
-              navigate("/workspace/agents?surface=chat&tab=plugins")
+              navigate(
+                preserveWorkbenchPresentation(
+                  "/workspace/agents?surface=chat&tab=plugins",
+                  search,
+                ),
+              )
             }
           >
             <CloudDownloadIcon className="mr-1.5 size-3.5" />
@@ -362,6 +370,7 @@ export function RemoteWorkbenchSurface({
       if (!status.enabled) {
         throw new Error(status.error || "应用未能进入启用状态");
       }
+      setModuleAvailable(app.moduleId, true);
       setAttempt((value) => value + 1);
     } catch (enableError) {
       setIssue({
@@ -371,7 +380,7 @@ export function RemoteWorkbenchSurface({
     } finally {
       setActionBusy(false);
     }
-  }, [app.cloudId, app.runtimePlugin]);
+  }, [app.cloudId, app.moduleId, app.runtimePlugin]);
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {

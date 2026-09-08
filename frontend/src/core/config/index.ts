@@ -58,9 +58,7 @@ function getRuntimeBackendBaseURL() {
       window.sessionStorage?.setItem(RUNTIME_BACKEND_PARAM, normalized);
       return normalized;
     }
-    const fromElectron = normalizeBackendBaseURL(
-      window.echo?.backendBaseURL,
-    );
+    const fromElectron = normalizeBackendBaseURL(window.echo?.backendBaseURL);
     if (fromElectron) {
       window.sessionStorage?.setItem(RUNTIME_BACKEND_PARAM, fromElectron);
       return fromElectron;

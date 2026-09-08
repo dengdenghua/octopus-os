@@ -74,6 +74,7 @@ import type { AgentThread, AgentThreadState } from "@/core/threads/types";
 import { titleOfThread } from "@/core/threads/utils";
 import { env } from "@/env";
 import { isIMEComposing } from "@/lib/ime";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 import { CreateProjectDialog } from "./create-project-dialog";
 
@@ -115,7 +116,7 @@ function workspacePathForThread(thread: AgentThread): string {
 export function RecentChatList() {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const params = useParams();
   const threadIdFromPath = params.threadId ?? params.thread_id;
   const currentMode = pathname.startsWith("/workspace/realtime")
@@ -154,13 +155,17 @@ export function RecentChatList() {
     (project: Project) => {
       ensureProjectHome.mutate(project, {
         onSuccess: ({ threadId }) =>
-          navigate(`/workspace/realtime/${encodeURIComponent(threadId)}`, {
-            state: { openProjectWorkbench: true },
-          }),
+          navigate(
+            preserveWorkbenchPresentation(
+              `/workspace/realtime/${encodeURIComponent(threadId)}`,
+              search,
+            ),
+            { state: { openProjectWorkbench: true } },
+          ),
         onError: () => toast.error("项目工作群打开失败，请重试"),
       });
     },
-    [ensureProjectHome, navigate],
+    [ensureProjectHome, navigate, search],
   );
 
   const handleDelete = useCallback(
@@ -176,10 +181,15 @@ export function RecentChatList() {
             nextThreadId = threads[threadIndex - 1]!.thread_id;
           }
         }
-        void navigate(`/workspace/realtime/${nextThreadId}`);
+        void navigate(
+          preserveWorkbenchPresentation(
+            `/workspace/realtime/${nextThreadId}`,
+            search,
+          ),
+        );
       }
     },
-    [deleteThread, navigate, threadIdFromPath, threads],
+    [deleteThread, navigate, search, threadIdFromPath, threads],
   );
 
   const handleRenameClick = useCallback(

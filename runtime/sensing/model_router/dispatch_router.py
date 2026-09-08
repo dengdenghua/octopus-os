@@ -4,6 +4,8 @@ import logging
 import threading
 from typing import Any
 
+from runtime.safety.privacy import privacy_enabled, require_local_router
+
 from .models import ModelRequest, ModelResponse, ModelRouter
 from .rescue_policy import (
     is_retryable_model_error as _is_provider_unavailable_error,
@@ -57,6 +59,7 @@ class ModelDispatchRouter(ModelRouter):
 
     def call_stream(self, request: ModelRequest):
         picked = self._resolve(request.model)
+        require_local_router(picked, request.model)
         # Vision pre-guard: a model the operator marked non-vision never
         # sees a raw image — images are transcribed (or stripped) before
         # the upstream call, so a picture can't crash the turn up front.
@@ -73,6 +76,8 @@ class ModelDispatchRouter(ModelRouter):
             # duplicate the reply. The pre-guard gate (``request_has_
             # images(guarded)``) also keeps recovery off when a known
             # non-vision model already got its images stripped.
+            if privacy_enabled():
+                raise
             if not yielded_any and request_has_images(guarded) and classify_image_rejection(exc):
                 try:
                     for evt in picked.call_stream(build_without_images(guarded)):
@@ -143,6 +148,7 @@ class ModelDispatchRouter(ModelRouter):
 
     def call(self, request: ModelRequest) -> ModelResponse:
         picked = self._resolve(request.model)
+        require_local_router(picked, request.model)
         # Vision pre-guard: a model the operator marked non-vision never
         # sees a raw image (transcribe/strip before the upstream call).
         guarded = apply_vision_guard(self._rewrite_unrouted(request))
@@ -159,6 +165,8 @@ class ModelDispatchRouter(ModelRouter):
             # ``request_has_images(guarded)`` gate keeps recovery off
             # when a known non-vision model already got its images
             # stripped (its 4xx is about something else).
+            if privacy_enabled():
+                raise
             if request_has_images(guarded) and classify_image_rejection(exc):
                 try:
                     return picked.call(build_without_images(guarded))

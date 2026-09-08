@@ -13,7 +13,7 @@ import logging
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol, Self, cast
+from typing import Any, Literal, Protocol, Self, cast
 
 from runtime.safety.approval.approval_gate import ApprovalProvider
 from runtime.safety.sandboxing.sandbox import (
@@ -82,6 +82,8 @@ class CodexExecutionRequest:
     model: str | None = None
     effort: str | None = None
     sandbox_mode: CodexSandboxMode = "workspace-write"
+    approval_reviewer: Literal["user", "auto_review"] = "user"
+    approval_policy: Literal["on-request", "never"] = "on-request"
     host_env: Mapping[str, str] | None = field(default=None, repr=False)
     provider_profile: CodexProviderProfile | None = None
     use_system_model_proxy: bool = False
@@ -90,6 +92,7 @@ class CodexExecutionRequest:
     dynamic_tool_handler: Any | None = None
     selected_app_ids: tuple[str, ...] = ()
     app_mentions: tuple[tuple[str, str], ...] = ()
+    fresh_thread_prompt: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -104,6 +107,10 @@ class CodexExecutionRequest:
                 raise ValueError(f"{field_name} must be a non-empty string")
         if not isinstance(self.prompt, str) or not self.prompt.strip():
             raise ValueError("prompt must be a non-empty string")
+        if self.fresh_thread_prompt is not None and (
+            not isinstance(self.fresh_thread_prompt, str) or not self.fresh_thread_prompt.strip()
+        ):
+            raise ValueError("fresh_thread_prompt must be a non-empty string when supplied")
         if not isinstance(self.command, tuple) or not self.command:
             raise ValueError("command must be an explicit non-empty tuple")
         if any(not isinstance(part, str) or not part or "\x00" in part for part in self.command):
@@ -144,8 +151,14 @@ class CodexExecutionRequest:
             raise ValueError("app_mentions must contain bounded (id, name) pairs")
         if any(app_id not in self.selected_app_ids for app_id, _name in self.app_mentions):
             raise ValueError("app_mentions must refer to selected apps")
-        if self.sandbox_mode not in {"read-only", "workspace-write"}:
-            raise ValueError("sandbox_mode must be 'read-only' or 'workspace-write'")
+        if self.sandbox_mode not in {"read-only", "workspace-write", "danger-full-access"}:
+            raise ValueError(
+                "sandbox_mode must be 'read-only', 'workspace-write', or 'danger-full-access'"
+            )
+        if self.approval_reviewer not in {"user", "auto_review"}:
+            raise ValueError("approval_reviewer must be 'user' or 'auto_review'")
+        if self.approval_policy not in {"on-request", "never"}:
+            raise ValueError("approval_policy must be 'on-request' or 'never'")
         if self.provider_profile is not None and not isinstance(
             self.provider_profile, CodexProviderProfile
         ):
@@ -232,6 +245,7 @@ class CodexExecutionSession:
         self._resumed = False
         self._outer_sandbox = "unresolved"
         self._close_lock = asyncio.Lock()
+        self._privacy_monitor: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> Self:
         return await self.start()
@@ -274,6 +288,10 @@ class CodexExecutionSession:
     async def start(self) -> Self:
         """Prepare isolation, restore/create a thread, and start one turn."""
 
+        from runtime.safety.privacy import deny_private_operation
+
+        deny_private_operation("codex_execution")
+
         if self._start_attempted:
             raise CodexBackendStateError("Codex execution session can only be started once")
         self._start_attempted = True
@@ -289,6 +307,7 @@ class CodexExecutionSession:
                 task_id=self.request.outer_turn_id,
                 workspace=self.request.workspace,
                 sandbox_mode=self.request.sandbox_mode,
+                approval_reviewer=self.request.approval_reviewer,
                 provider_profile=self.request.provider_profile,
                 selected_app_ids=self.request.selected_app_ids,
                 # This attestation is derived from the effective BackendChoice
@@ -337,6 +356,7 @@ class CodexExecutionSession:
                 client_kwargs["dynamic_tool_handler"] = self.request.dynamic_tool_handler
             self._client = self._client_factory(config, **client_kwargs)
             await self._start_client()
+            self._privacy_monitor = asyncio.create_task(self._watch_privacy_policy())
 
             config_response = await self._request_pre_turn(
                 "config/read",
@@ -354,6 +374,7 @@ class CodexExecutionSession:
             self._inner_thread_id = inner_thread_id
 
             turn_params = _turn_extra_params(context.turn_start_security_overrides())
+            turn_params["approvalPolicy"] = self.request.approval_policy
             if self.request.model is not None:
                 turn_params["model"] = self.request.model
             if self.request.effort is not None:
@@ -362,10 +383,16 @@ class CodexExecutionSession:
             # Setting this immediately before invoking turn/start is
             # deliberate: after this point a lost/malformed response cannot
             # prove that the model did not run or tools did not execute.
+            deny_private_operation("codex_turn_start")
             self._turn_started = True
-            input_items: str | list[dict[str, str]] = self.request.prompt
+            prompt = (
+                self.request.fresh_thread_prompt
+                if not self._resumed and self.request.fresh_thread_prompt is not None
+                else self.request.prompt
+            )
+            input_items: str | list[dict[str, str]] = prompt
             if self.request.app_mentions:
-                input_items = [{"type": "text", "text": self.request.prompt}]
+                input_items = [{"type": "text", "text": prompt}]
                 input_items.extend(
                     {"type": "mention", "name": name, "path": f"app://{app_id}"}
                     for app_id, name in self.request.app_mentions
@@ -422,6 +449,9 @@ class CodexExecutionSession:
 
     async def steer(self, text: str, *, timeout_s: float | None = None) -> None:
         """Add input to the active turn with an exact-turn precondition."""
+        from runtime.safety.privacy import deny_private_operation
+
+        deny_private_operation("codex_steering")
 
         if not isinstance(text, str) or not text.strip():
             raise ValueError("steering text must be non-empty")
@@ -514,7 +544,8 @@ class CodexExecutionSession:
             inner_thread_id,
             cwd=str(context.workspace),
             model=self.request.model,
-            approval_policy="on-request",
+            approval_policy=self.request.approval_policy,
+            approvals_reviewer=self.request.approval_reviewer,
             sandbox=None,
             permissions=permissions,
             exclude_turns=True,
@@ -537,7 +568,8 @@ class CodexExecutionSession:
             thread = await self._require_client().start_thread(
                 cwd=str(context.workspace),
                 model=self.request.model,
-                approval_policy="on-request",
+                approval_policy=self.request.approval_policy,
+                approvals_reviewer=self.request.approval_reviewer,
                 sandbox=None,
                 permissions=permissions,
                 ephemeral=False,
@@ -573,6 +605,8 @@ class CodexExecutionSession:
             if self._closed:
                 return
             self._closed = True
+            if self._privacy_monitor is not None and self._privacy_monitor is not asyncio.current_task():
+                self._privacy_monitor.cancel()
             first_error: BaseException | None = None
             if self._client is not None:
                 try:
@@ -587,6 +621,16 @@ class CodexExecutionSession:
                         first_error = exc
             if first_error is not None and not suppress_errors:
                 raise first_error
+
+    async def _watch_privacy_policy(self) -> None:
+        """Stop an already-running cloud sidecar when local-only is enabled."""
+        from runtime.safety.privacy import privacy_enabled
+
+        while not self._closed:
+            if privacy_enabled():
+                await self._release(suppress_errors=True)
+                return
+            await asyncio.sleep(0.1)
 
     def _transform_process_launch(
         self,

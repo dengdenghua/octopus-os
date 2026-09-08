@@ -21,10 +21,7 @@ function ThreadChatProbe() {
       >
         Go existing
       </button>
-      <button
-        type="button"
-        onClick={() => navigate("/workspace/realtime/new")}
-      >
+      <button type="button" onClick={() => navigate("/workspace/realtime/new")}>
         Back to new
       </button>
       <button

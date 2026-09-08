@@ -33,11 +33,13 @@ import asyncio
 import concurrent.futures
 import threading
 from collections.abc import Callable
+from contextlib import ExitStack, suppress
 from pathlib import Path
 from threading import Lock
 from typing import Any
 from uuid import uuid4
 
+from runtime.execution.host_boundary import host_execution_scope
 from runtime.platform.process.paths import app_paths
 from runtime.safety.approval.cancellation import CancellationSource, scoped_cancellation
 from runtime.sensing.gateway._team_tasks_access import TeamTaskAccess
@@ -103,6 +105,7 @@ def create_team_tasks_router(
     room_membership_resolver: RoomMembershipResolver | None = None,
     room_participant_resolver: RoomParticipantResolver | None = None,
     max_concurrent_runs: int = _MAX_CONCURRENT_RUNS,
+    task_supervisor: Any = None,
 ) -> Any:
     """Create ``/api/team-tasks/*`` routes.
 
@@ -377,6 +380,8 @@ def create_team_tasks_router(
         prepared: dict[str, Any],
         source: CancellationSource,
         loop: asyncio.AbstractEventLoop | None,
+        actor: str | None,
+        tenant_id: str | None,
     ) -> None:
         topology = prepared["topology"]
         completed_roles: set[str] = set()
@@ -438,7 +443,64 @@ def create_team_tasks_router(
             )
 
         result: Any = None
+        host_stack = ExitStack()
+        heartbeat_stop = threading.Event()
+        heartbeat_thread: threading.Thread | None = None
         try:
+            # Team tasks run on a detached worker thread, so ContextVar state
+            # from the HTTP request is not inherited. Recreate the host-owned
+            # execution boundary here with the authenticated coordinates that
+            # admitted the task. This gives TeamRunner and any agent/tool it
+            # invokes the same immutable request + lease as other entrypoints.
+            thread_id = str(
+                (task.metadata.get("collab_session_id") if isinstance(task.metadata, dict) else "")
+                or task.room_id
+                or task.id
+            ).strip()
+            execution_session = host_stack.enter_context(
+                host_execution_scope(
+                    supervisor=task_supervisor,
+                    task_id=f"team:{task.id}",
+                    thread_id=thread_id,
+                    actor_id=actor,
+                    tenant_id=tenant_id if actor else None,
+                    goal=task.description.strip() or task.title.strip(),
+                    timeout_s=900.0,
+                    metadata={
+                        "mode": "code",
+                        "permission_mode": "default",
+                        "approval_policy": "on-request",
+                        "sandbox_mode": "full",
+                        "execution_environment": "sandbox",
+                        "source": "team_tasks",
+                        "team_id": task.room_id,
+                        "team_task_id": task.id,
+                    },
+                    kind="team_task",
+                    mode="team",
+                )
+            )
+            execution_guard = getattr(execution_session, "execution_lease", None)
+            if execution_guard is not None and task_supervisor is not None:
+                heartbeat_interval = max(
+                    0.1,
+                    min(float(getattr(task_supervisor, "lease_ttl_seconds", 300.0)) / 3.0, 30.0),
+                )
+
+                def _heartbeat_loop() -> None:
+                    while not heartbeat_stop.wait(heartbeat_interval):
+                        try:
+                            execution_guard.heartbeat()
+                        except Exception:  # noqa: BLE001 - lease loss cancels work
+                            source.cancel(reason="team task execution lease lost")
+                            return
+
+                heartbeat_thread = threading.Thread(
+                    target=_heartbeat_loop,
+                    name=f"team-task-lease-heartbeat-{task.id[:12]}",
+                    daemon=True,
+                )
+                heartbeat_thread.start()
             # ── Mobile route ────────────────────────────────────
             # Task assigned to connected phones (ref ``mobile_*``): run the goal
             # on each device through the in-process tentacle bridge and record
@@ -588,6 +650,11 @@ def create_team_tasks_router(
                 _record_terminal_event(updated, status="failed", error=error)
                 _persist_prebuilt_task(updated)
         finally:
+            heartbeat_stop.set()
+            if heartbeat_thread is not None and heartbeat_thread is not threading.current_thread():
+                heartbeat_thread.join(timeout=1.0)
+            with suppress(Exception):
+                host_stack.close()
             projected_after_exit: TeamTaskWire | None = None
             with lock:
                 running.pop(task.id, None)
@@ -687,6 +754,15 @@ def create_team_tasks_router(
                 "task_graph": prepared.get("task_graph"),
             },
         }
+        if task_supervisor is not None:
+            # Keep the domain task and its host execution record joinable in
+            # the UI/audit API without letting a client choose the host ID.
+            metadata.update(
+                {
+                    "host_task_id": f"team:{task_id}",
+                    "host_execution_schema": "octopus.execution.v1",
+                }
+            )
         with lock:
             # Concurrency cap checked inside lock — closing TOCTOU window
             # where two requests could both pass the check before either
@@ -734,7 +810,7 @@ def create_team_tasks_router(
         loop = asyncio.get_running_loop()
         thread = threading.Thread(
             target=_run_task_worker,
-            args=(updated, prepared, source, loop),
+            args=(updated, prepared, source, loop, actor, tenant_id if actor else None),
             name=f"team-task-run-{task_id}",
             daemon=True,
         )

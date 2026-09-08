@@ -1,7 +1,7 @@
 /* Implementation note. */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   BrainIcon,
   Loader2Icon,
@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { authHeaders } from "@/core/auth/api";
 import { useI18n } from "@/core/i18n/hooks";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import {
   GlobalControlPlaneAccessError,
   globalControlPlaneUrl,
@@ -46,6 +47,7 @@ interface GraphStats {
 
 export function KnowledgeGraphPanel() {
   const { t } = useI18n();
+  const { search } = useLocation();
   const [entities, setEntities] = useState<KGEntity[]>([]);
   const [relationships, setRelationships] = useState<KGRelationship[]>([]);
   const [stats, setStats] = useState<GraphStats | null>(null);
@@ -159,7 +161,12 @@ export function KnowledgeGraphPanel() {
         </div>
         <div className="flex flex-wrap justify-center gap-2">
           <Button asChild size="sm">
-            <Link to="/workspace/realtime/new">
+            <Link
+              to={preserveWorkbenchPresentation(
+                "/workspace/realtime/new",
+                search,
+              )}
+            >
               {t.knowledgeGraph.startTask}
             </Link>
           </Button>

@@ -9,11 +9,5 @@ tags:
   - editor
 provides:
   - clip_studio.api
-  - clip_studio.project.get
-  - clip_studio.project.edit
-  - clip_studio.project.history
-  - clip_studio.project.view
-  - clip_studio.project.snapshot
-  - clip_studio.project.diagnostics
-  - clip_studio.project.export
+  - clip_studio.skills
 config: {}

@@ -13,6 +13,11 @@ from pathlib import Path
 
 import pytest
 
+if os.name == "nt":
+    pytest.skip(
+        "OMV host installer requires POSIX user and Unix-socket primitives", allow_module_level=True
+    )
+
 _REPOSITORY = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPOSITORY / "deploy" / "omv" / "echo_omv_host.py"
 sys.path.insert(0, str(_SCRIPT.parent))

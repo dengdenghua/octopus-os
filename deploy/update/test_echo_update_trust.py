@@ -9,6 +9,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+if os.name != "posix":
+    raise unittest.SkipTest("update trust tests require POSIX locking semantics")
+
 MODULE_PATH = Path(__file__).with_name("echo_update_trust.py")
 VERIFIER_PATH = (
     Path(__file__).parents[1] / "installer" / "verify_public_keyring.py"

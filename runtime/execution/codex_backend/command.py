@@ -38,6 +38,13 @@ def _resolve_codex_command(command: str) -> str | None:
     return None
 
 
+def codex_app_server_argv(executable: str) -> tuple[str, ...]:
+    """Pin the protocol arguments for resolved and embedding-owned binaries."""
+    if not executable or "\x00" in executable:
+        raise ConfigurationError("Codex executable is invalid")
+    return (executable, "app-server", "--strict-config", "--listen", "stdio://")
+
+
 def resolve_codex_app_server_command(executable: str | None = None) -> tuple[str, ...]:
     """Resolve one absolute Codex binary and pin the App Server argv.
 
@@ -70,7 +77,7 @@ def resolve_codex_app_server_command(executable: str | None = None) -> tuple[str
         resolved = _resolve_codex_command(candidate)
     if resolved is None:
         raise ConfigurationError("Codex executable is unavailable")
-    return (resolved, "app-server", "--strict-config", "--listen", "stdio://")
+    return codex_app_server_argv(resolved)
 
 
 __all__ = ["resolve_codex_app_server_command"]

@@ -111,6 +111,9 @@ export interface CoderModelProfile {
   compatibility_reason: string | null;
   provider: string | null;
   proxy_required: boolean;
+  /** Additive readiness fields; older gateways may omit them. */
+  execution_available?: boolean;
+  execution_unavailable_reason?: string | null;
 }
 
 export interface UpdateCoderModelProfile {
@@ -404,6 +407,11 @@ export async function approveCoderUpstreamUpdate(
 function normalizeModelProfile(payload: unknown): CoderModelProfile {
   const row = (payload ?? {}) as Record<string, unknown>;
   const rawModelSource = row.model_source;
+  const compatible = row.compatible === true;
+  const executionAvailable =
+    typeof row.execution_available === "boolean"
+      ? row.execution_available
+      : compatible;
   return {
     source: row.mode === "chatgpt" ? "codex_account" : "follow_system",
     selected_model:
@@ -421,13 +429,18 @@ function normalizeModelProfile(payload: unknown): CoderModelProfile {
       rawModelSource === "codex_default"
         ? rawModelSource
         : "codex_default",
-    compatible: row.compatible === true,
+    compatible,
     compatibility_reason:
       typeof row.compatibility_reason === "string"
         ? row.compatibility_reason
         : null,
     provider: typeof row.provider === "string" ? row.provider : null,
     proxy_required: row.proxy_required === true,
+    execution_available: executionAvailable,
+    execution_unavailable_reason:
+      typeof row.execution_unavailable_reason === "string"
+        ? row.execution_unavailable_reason
+        : null,
   };
 }
 
@@ -442,9 +455,15 @@ export function applyCoderModelProfileBoundary<
 >(
   agentId: string | null | undefined,
   context: T,
-  executionEngine?: "echo" | "codex",
+  executionEngine?: "echo" | "codex" | "opencode",
+  allowTaskOverride = false,
 ): T {
-  if (executionEngine !== "codex" && agentId !== "coder") return context;
+  if (
+    allowTaskOverride ||
+    (executionEngine !== "codex" && agentId !== "coder")
+  ) {
+    return context;
+  }
   const next = { ...context };
   delete next.model_name;
   delete next.reasoning_effort;

@@ -211,14 +211,13 @@ export function deriveInlineSubagents(
       (isSubagentMarker &&
         event.lifecycle === undefined &&
         (event.status === "done" || event.status === "error"));
-    const status: InlineSubagentStatus =
-      isTerminalAgentEvent
-        ? event.status === "error" || outputIndicatesError
-          ? "error"
-          : "done"
-        : event.status === "waiting_approval"
-          ? "waiting"
-          : "running";
+    const status: InlineSubagentStatus = isTerminalAgentEvent
+      ? event.status === "error" || outputIndicatesError
+        ? "error"
+        : "done"
+      : event.status === "waiting_approval"
+        ? "waiting"
+        : "running";
 
     const task = compactSubagentTask(
       firstString(event.input as Record<string, unknown> | undefined, [
@@ -233,23 +232,22 @@ export function deriveInlineSubagents(
         existing?.task ||
         "",
     );
-    const summary =
-      isTerminalAgentEvent
-        ? (outputIsString
-            ? (event.output as string)
-            : firstString(outputObj, [
-                "summary",
-                "result",
-                "output",
-                "thought",
-                "observation",
-                "answer",
-                "content",
-              ])) ||
-          event.thought ||
-          event.observation ||
-          existing?.summary
-        : existing?.summary;
+    const summary = isTerminalAgentEvent
+      ? (outputIsString
+          ? (event.output as string)
+          : firstString(outputObj, [
+              "summary",
+              "result",
+              "output",
+              "thought",
+              "observation",
+              "answer",
+              "content",
+            ])) ||
+        event.thought ||
+        event.observation ||
+        existing?.summary
+      : existing?.summary;
     const filesTouched = Array.isArray(outputObj?.files_touched)
       ? (outputObj!.files_touched as unknown[]).filter(
           (p): p is string => typeof p === "string",
@@ -319,10 +317,7 @@ export function deriveInlineSubagents(
         (typeof outputObj?.iteration_count === "number"
           ? (outputObj.iteration_count as number)
           : existing?.iterationCount),
-      error:
-        isTerminalAgentEvent && status === "done"
-          ? undefined
-          : errorMsg,
+      error: isTerminalAgentEvent && status === "done" ? undefined : errorMsg,
       progress,
     });
   }
@@ -452,7 +447,7 @@ export function deriveSubagentsFromMessages(
                 ? spec.name
                 : typeof spec.role === "string"
                   ? spec.role
-                : `spec-${i}`;
+                  : `spec-${i}`;
           const role = typeof spec.role === "string" ? spec.role : undefined;
 
           const success = successes.find(
@@ -814,9 +809,7 @@ function LedProgress({
       ? Math.max(0, Math.min(1, progress))
       : 0.1;
   // Running agents max out at 13/14; completion fills the matrix.
-  const litCols = completed
-    ? cols
-    : Math.min(cols - 1, Math.floor(p * cols));
+  const litCols = completed ? cols : Math.min(cols - 1, Math.floor(p * cols));
   const isActive = !completed && p > 0 && p < 1;
 
   return (

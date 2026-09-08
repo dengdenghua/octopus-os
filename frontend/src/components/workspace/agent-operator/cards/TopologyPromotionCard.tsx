@@ -1,5 +1,8 @@
 import { Badge } from "@/components/ui/badge";
-import type { OrganizationTopologyLiftReport, OrganizationTopologyProposalsReport } from "@/core/agent-trace/api";
+import type {
+  OrganizationTopologyLiftReport,
+  OrganizationTopologyProposalsReport,
+} from "@/core/agent-trace/api";
 import { cn } from "@/lib/utils";
 import { GateStat } from "../../replay-panel";
 import { GitBranchIcon } from "lucide-react";

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
+import runtime.execution.suckers.builtins as builtins_module
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.suckers.builtins import (
     BUILTIN_NAMES,
@@ -86,6 +90,61 @@ class TestReadFile:
     def test_missing_file(self):
         r = _read_file(path="/nope/nope/nope")
         assert "error" in r
+
+    def test_reads_structured_document_in_isolated_worker(self, tmp_path: Path):
+        path = tmp_path / "brief.docx"
+        data = BytesIO()
+        with ZipFile(data, "w") as archive:
+            archive.writestr(
+                "word/document.xml",
+                '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>'
+                "Worker isolated brief"
+                "</w:t></w:r></w:p></w:body></w:document>",
+            )
+        path.write_bytes(data.getvalue())
+
+        result = _read_file(path=str(path))
+
+        assert result["ok"] is True
+        assert result["kind"] == "document"
+        assert result["text"] == "Worker isolated brief"
+
+    def test_structured_document_worker_failure_does_not_fallback_to_parser(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ):
+        path = tmp_path / "brief.docx"
+        path.write_bytes(b"not a real docx")
+        monkeypatch.setattr(
+            builtins_module,
+            "extract_document_isolated",
+            lambda *_args, **_kwargs: {"outcome": "worker_failed", "text": None},
+        )
+
+        result = _read_file(path=str(path))
+
+        assert result["error_type"] == "worker_failed"
+        assert "document_parse_failed" in result["error"]
+
+    def test_reads_notebook_in_isolated_worker(self, tmp_path: Path):
+        path = tmp_path / "analysis.ipynb"
+        path.write_text(
+            json.dumps(
+                {
+                    "cells": [
+                        {"cell_type": "markdown", "source": "# Worker notebook"},
+                    ],
+                    "metadata": {"kernelspec": {"name": "python3"}},
+                    "nbformat": 4,
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = _read_file(path=str(path))
+        assert result["cell_count"] == 1
+        assert result["kernel"] == "python3"
+        assert result["cells"][0]["source"] == "# Worker notebook"
 
 
 class TestCountWords:

@@ -102,6 +102,40 @@ def test_agent_world_lists_remain_available_to_authenticated_users(
     assert response.status_code == 200
 
 
+def test_cloud_installed_keeps_local_projection_when_catalog_is_unavailable(
+    monkeypatch: Any,
+) -> None:
+    import runtime.platform.plugins.cloud_catalog as cloud_catalog
+
+    class _UnavailableCatalog:
+        def __init__(self, kind: str) -> None:
+            self.kind = kind
+
+        def installed_skills(self) -> list[str]:
+            return ["local-skill"]
+
+        def installed_plugins(self) -> list[str]:
+            return ["local-plugin"]
+
+        def plugin_statuses(self) -> dict[str, Any]:
+            raise cloud_catalog.CloudCatalogUnavailable("catalog unavailable")
+
+    monkeypatch.setattr(cloud_catalog, "CloudCatalog", _UnavailableCatalog)
+    app = FastAPI()
+    app.include_router(create_agent_world_router())
+
+    response = TestClient(app).get("/api/agent-market/cloud/installed")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "skills": ["local-skill"],
+        "plugins": ["local-plugin"],
+        "plugin_states": {},
+        "catalog_available": False,
+        "catalog_error": "unavailable_or_untrusted",
+    }
+
+
 def test_agent_world_shared_content_mutations_reject_non_admin(
     tmp_path: Path,
     monkeypatch: Any,
@@ -298,4 +332,3 @@ def test_reviewed_factory_workbench_delegates_to_live_plugin_hub(
             {"data_policy": "trash", "confirm_data_move": True},
         ),
     ]
-

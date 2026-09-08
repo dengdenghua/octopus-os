@@ -229,6 +229,10 @@ ensure_swap() {
 # ── 1/7 软件源 ──────────────────────────────────────────
 step_apt() {
   log "== 1/7 配置软件源 =="
+  if [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ] && [ -z "$SYSTEM_DEB_REPO" ]; then
+    log "✗ 严格 release 缺少已验证的离线系统包仓"
+    return 1
+  fi
   # apt 的默认读取超时可能让故障 CDN 单包挂住近一小时，外层 apt_retry
   # 也就迟迟得不到退出码。先给每次传输设置明确上限；apt 自身做短重试，
   # 若整笔事务仍失败，再由 apt_retry 进行有界退避。
@@ -306,9 +310,140 @@ EOF
     mv "$sources_tmp" /etc/apt/sources.list
   fi
   apt_update
+  # 严格 release 会清空 d-i 的 tasksel/pkgsel 附加包，因此首启自身后续
+  # 所需的 git/Python/nginx，以及设备的 SSH/sudo 管理入口，必须在第一步
+  # 从已验证的本地仓补齐。开发镜像重复安装已存在包也是幂等的。
   apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg lsb-release
+    ca-certificates curl zstd gnupg lsb-release openssl avahi-daemon libnss-mdns \
+    openssh-server sudo git \
+    python3 python3-venv python3-pip \
+    nginx
   done_mark apt
+}
+
+# Debian's usershare registry is root:sambashare 1770. NAS members are in
+# users, not sambashare: smbd impersonates them when reading a share definition.
+# Grant metadata read/traverse only; never grant NAS members usershare creation.
+configure_native_samba_usershares() {
+  local registry=/var/lib/samba/usershares configured component mode max_shares
+  configured="$(testparm -s --parameter-name='usershare path' 2>/dev/null)" || return 1
+  [ "$configured" = "$registry" ] \
+    || { log "✗ 自定义 Samba usershare 路径需管理员单独配置"; return 1; }
+  max_shares="$(testparm -s --parameter-name='usershare max shares' 2>/dev/null)" || return 1
+  case "$max_shares" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$max_shares" -gt 0 ] || { log "✗ Samba usershare 已禁用"; return 1; }
+  getent group users >/dev/null || { log "✗ 缺少 NAS users 组"; return 1; }
+  for component in /var /var/lib /var/lib/samba "$registry"; do
+    [ -d "$component" ] && [ ! -L "$component" ] \
+      && [ "$(stat -c %u "$component")" = 0 ] \
+      || { log "✗ Samba usershare 目录不是受信 root 目录"; return 1; }
+    mode="$(stat -c %a "$component")" || return 1
+    case "$mode" in ''|*[!0-7]*) return 1 ;; esac
+    (( (8#$mode & 0002) == 0 )) || return 1
+    if [ "$component" != "$registry" ]; then
+      # A writable ancestor could swap the validated directory underneath root.
+      (( (8#$mode & 0022) == 0 )) || return 1
+    else
+      # Samba requires a sticky registry with no permissions for others.
+      (( (8#$mode & 1007) == 1000 )) || return 1
+    fi
+  done
+  # Keep the existing ACL mask: auto-recalculation could unmask unrelated writers.
+  (( (8#$mode & 0050) == 0050 )) \
+    || { log "✗ Samba usershare ACL mask 不允许安全只读访问"; return 1; }
+  setfacl --no-mask -m g:users:r-x "$registry" || return 1
+  getfacl --absolute-names --omit-header "$registry" \
+    | grep -q '^group:users:r-x$' || return 1
+}
+
+# Install the single Echo-owned Samba include used by native Time Machine.
+# The include lives in [global] so every connection negotiates AAPL/fruit;
+# mixing fruit and non-fruit shares makes negotiation depend on connection order.
+configure_native_samba_time_machine() {
+  local managed=/etc/samba/echo-os-time-machine.conf
+  local source_config="$OS_DIR/deploy/provision/base/echo-os-time-machine.conf"
+  local smb_config=/etc/samba/smb.conf include_state backup temporary module_dir module
+
+  [ -f "$source_config" ] && [ ! -L "$source_config" ] \
+    || { log "✗ 缺少 Echo Time Machine Samba 基线配置"; return 1; }
+  if [ ! -e "$managed" ]; then
+    install -o root -g root -m0644 "$source_config" "$managed"
+  fi
+  [ -f "$managed" ] && [ ! -L "$managed" ] \
+    && [ "$(stat -c %u:%g "$managed")" = 0:0 ] \
+    || { log "✗ Time Machine Samba 配置不是受信 root 文件"; return 1; }
+  [ $((8#$(stat -c %a "$managed") & 0022)) -eq 0 ] \
+    || { log "✗ Time Machine Samba 配置可被非 root 用户修改"; return 1; }
+
+  module_dir="$(smbd -b | awk '$1 == "MODULESDIR:" { print $2; exit }')"
+  [ -n "$module_dir" ] || return 1
+  for module in catia fruit streams_xattr; do
+    [ -f "$module_dir/vfs/$module.so" ] \
+      || { log "✗ Samba 缺少 $module VFS 模块"; return 1; }
+  done
+
+  include_state="$(awk -v target="$managed" '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    /^[[:space:]]*\[[^]]+\][[:space:]]*$/ {
+      section=tolower($0)
+      gsub(/^[[:space:]]*\[|\][[:space:]]*$/, "", section)
+      next
+    }
+    {
+      line=$0
+      sub(/[;#].*$/, "", line)
+      split(line, pair, "=")
+      key=tolower(trim(pair[1]))
+      value=trim(substr(line, index(line, "=") + 1))
+      if (key == "include" && value == target) {
+        if (section == "global") good++
+        else bad++
+      }
+    }
+    END { printf "%d:%d", good, bad }
+  ' "$smb_config")" || return 1
+  case "$include_state" in
+    1:0) ;;
+    0:0)
+      backup="$(mktemp /etc/samba/.smb.conf.echo-backup.XXXXXX)"
+      temporary="$(mktemp /etc/samba/.smb.conf.echo-new.XXXXXX)"
+      cp --preserve=mode,ownership,timestamps "$smb_config" "$backup"
+      if ! awk -v include="include = $managed" '
+        BEGIN { inserted=0 }
+        /^[[:space:]]*\[global\][[:space:]]*$/ && !inserted {
+          print
+          print "   " include
+          inserted=1
+          next
+        }
+        { print }
+        END { if (!inserted) exit 42 }
+      ' "$smb_config" >"$temporary"; then
+        rm -f "$temporary" "$backup"
+        return 1
+      fi
+      chown --reference="$smb_config" "$temporary"
+      chmod --reference="$smb_config" "$temporary"
+      mv "$temporary" "$smb_config"
+      if ! testparm -s "$smb_config" >/dev/null 2>&1; then
+        mv "$backup" "$smb_config"
+        log "✗ 插入 Time Machine include 后 Samba 配置校验失败"
+        return 1
+      fi
+      rm -f "$backup"
+      ;;
+    *)
+      log "✗ Time Machine Samba include 重复或位于非 global 分区"
+      return 1
+      ;;
+  esac
+  testparm -s "$smb_config" >/dev/null 2>&1
+  systemctl enable --now smbd.service
+  systemctl reload smbd.service
 }
 
 # ── 2/7 存储栈(全部用上游官方包,不自研)─────────────────
@@ -324,12 +459,18 @@ step_storage() {
   # 显式 autoinstall + modprobe，把“包已安装但模块不可用”挡在哨兵之前。
   local kernel_release
   kernel_release="$(uname -r)"
+  # wsdd2 的 Debian postinst 可能立即启动服务。先放置 WSD-only drop-in，
+  # 让首次启动也不会临时暴露不需要的 LLMNR responder。
+  install -m755 -d /etc/systemd/system/wsdd2.service.d
+  install -m644 "$OS_DIR/deploy/provision/base/wsdd2-echo.conf" \
+    /etc/systemd/system/wsdd2.service.d/echo.conf
+  systemctl daemon-reload
   apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     "linux-headers-${kernel_release}"
   apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     zfsutils-linux zfs-dkms \
-    samba samba-common-bin smbclient \
-    nfs-kernel-server acl \
+    samba samba-common-bin smbclient wsdd2 samba-vfs-modules \
+    nfs-kernel-server acl quota e2fsprogs \
     nut-client nut-server \
     smartmontools hdparm mdadm lvm2 btrfs-progs \
     parted util-linux
@@ -353,6 +494,8 @@ step_storage() {
   # ZFS 开机自动导入池 + 挂载
   systemctl enable --now zfs-import-cache
   systemctl enable zfs-mount zfs-import.target || true
+  configure_native_samba_usershares
+  configure_native_samba_time_machine
   done_mark storage
 }
 
@@ -361,6 +504,9 @@ step_docker() {
   log "== 3/7 安装 Docker =="
   if [ -n "$SYSTEM_DEB_REPO" ]; then
     log "  Docker 使用已验证的首启离线系统包仓"
+  elif [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ]; then
+    log "✗ 严格 release 禁止 Docker 回退公网软件源"
+    return 1
   else
     install -m0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/debian/gpg \
@@ -416,6 +562,9 @@ step_node() {
     return 0
   elif [ "$web_mode_status" -eq 2 ]; then
     return 1
+  elif [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ]; then
+    log "✗ 严格 release 禁止回退 NodeSource/npm"
+    return 1
   fi
   if ! command -v node >/dev/null 2>&1; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -437,9 +586,21 @@ step_echo_src() {
   mkdir -p "$OS_DIR"
   local SOURCE_BUNDLE="${ECHO_SOURCE_BUNDLE:-/opt/echo-os-source.bundle}"
   local SOURCE_REF="${ECHO_SOURCE_BUNDLE_REF:-}"
+  local SOURCE_BUNDLE_SHA256="${ECHO_SOURCE_BUNDLE_SHA256:-}"
   local SOURCE_TREE="${ECHO_SOURCE_TREE:-}"
   local IMAGE_COMMIT="${ECHO_IMAGE_COMMIT:-unknown}"
-  local OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
+  local OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}" actual_bundle_sha256
+
+  if [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ] \
+     && { [ ! -f "$SOURCE_BUNDLE" ] || [ -L "$SOURCE_BUNDLE" ]; }; then
+    log "✗ 严格 release 源码 bundle 不存在或不是常规文件"
+    return 1
+  fi
+  if [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ]; then
+    actual_bundle_sha256="$(sha256sum "$SOURCE_BUNDLE" | awk '{print $1}')"
+    [ "$actual_bundle_sha256" = "$SOURCE_BUNDLE_SHA256" ] \
+      || { log "✗ 严格 release 源码 bundle 摘要不匹配"; return 1; }
+  fi
 
   # 正式 ISO 携带一个无父提交的 Git bundle，tree 精确等于构建 HEAD。
   # 先从本地 bundle 恢复可更新的 .git 工作树，完全绕开首启 DNS/远端分支；
@@ -629,6 +790,9 @@ step_echo_py() {
     return 0
   elif [ "$python_mode_status" -eq 2 ]; then
     return 1
+  elif [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ]; then
+    log "✗ 严格 release 禁止回退 PyPI/uv"
+    return 1
   fi
   # 母体 echo-agent 是私有仓库,Docker/设备构建走本地 wheel;
   # 见 deploy/appliance/prepare-agent-wheel.sh。
@@ -704,6 +868,9 @@ step_echo_web() {
     return 0
   elif [ "$web_mode_status" -eq 2 ]; then
     return 1
+  elif [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ]; then
+    log "✗ 严格 release 禁止回退 npm/pnpm 构建"
+    return 1
   fi
   # 锁文件是 pnpm-lock.yaml,必须用 pnpm 装(VM 实测:fallback 的 npm ci
   # 因无 package-lock.json 报 EUSAGE)。4/7 只装了 Node,这里补装 pnpm。
@@ -749,6 +916,9 @@ step_codex() {
     done_mark codex
     return 0
   elif [ "$bundle_status" -eq 2 ]; then
+    return 1
+  elif [ "${ECHO_RELEASE_OFFLINE:-0}" = 1 ]; then
+    log "✗ 严格 release 禁止从 npm 安装 Codex"
     return 1
   fi
 
@@ -842,6 +1012,8 @@ step_codex() {
 # 它要求的不可变 source-identity 链，不能在这里启用。
 step_backup_recovery() {
   log "== 6b/7 安装备份/恢复模块(上游) =="
+  apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    restic
   install -m755 "$OS_DIR/deploy/backup/echo-user-backup" /usr/bin/echo-os-backup
   install -m644 "$OS_DIR/deploy/backup/echo-user-backup.service" \
     /etc/systemd/system/echo-user-backup.service
@@ -901,6 +1073,10 @@ YAML
 
   install -m644 "$OS_DIR/deploy/provision/base/echo-appliance.service" \
     /etc/systemd/system/echo-appliance.service
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-appliance-deadman.service" \
+    /etc/systemd/system/echo-appliance-deadman.service
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-appliance-deadman.timer" \
+    /etc/systemd/system/echo-appliance-deadman.timer
   install -m644 "$OS_DIR/deploy/appliance/systemd/echo-ups-shutdown-guard.service" \
     /etc/systemd/system/echo-ups-shutdown-guard.service
   install -m644 "$OS_DIR/deploy/appliance/systemd/echo-ups-shutdown-guard.timer" \
@@ -921,8 +1097,15 @@ YAML
     /etc/systemd/system/echo-btrfs-snapshot.service
   install -m644 "$OS_DIR/deploy/appliance/systemd/echo-btrfs-snapshot.timer" \
     /etc/systemd/system/echo-btrfs-snapshot.timer
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-nas-data-backup.service" \
+    /etc/systemd/system/echo-nas-data-backup.service
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-nas-data-backup.timer" \
+    /etc/systemd/system/echo-nas-data-backup.timer
   install -m644 "$OS_DIR/deploy/appliance/systemd/echo-disk-idle.service" \
     /etc/systemd/system/echo-disk-idle.service
+  install -m755 -d /etc/systemd/system/wsdd2.service.d
+  install -m644 "$OS_DIR/deploy/provision/base/wsdd2-echo.conf" \
+    /etc/systemd/system/wsdd2.service.d/echo.conf
 
   # ── 首启引导服务自举 ─────────────────────────────────────────
   # echo-firstboot.service 负责"开机自动续跑 firstboot"(幂等,marks 齐 +
@@ -953,12 +1136,21 @@ YAML
   fi
 
   systemctl daemon-reload
+  systemctl enable --now echo-appliance-deadman.timer
   systemctl enable --now echo-ups-shutdown-guard.timer
   systemctl enable --now echo-smart-self-test.timer
   systemctl enable --now echo-mdraid-check.timer
   systemctl enable --now echo-btrfs-scrub.timer
   systemctl enable --now echo-btrfs-snapshot.timer
   systemctl enable --now echo-disk-idle.service
+  systemctl enable --now avahi-daemon.service
+  # Windows Explorer uses WSD rather than SMB1 browser discovery. Keep the
+  # package service ordered behind Samba and use the WSD-only override above;
+  # Echo does not need wsdd2's legacy LLMNR responder.
+  systemctl enable --now smbd.service
+  systemctl enable --now wsdd2.service
+  systemctl is-active --quiet smbd.service
+  systemctl is-active --quiet wsdd2.service
   systemctl enable --now echo-appliance.service
   # nginx 可能已在跑(apt 安装时自启),`enable --now` 不会重载已运行进程
   # 的配置 → 80 端口仍服务旧 default 站点(VM 实测)。必须 restart。

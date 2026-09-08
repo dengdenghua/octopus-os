@@ -530,7 +530,51 @@ def test_input_metadata_capability_mode_reaches_react_intent() -> None:
     assert intent.user_context["code_mode"] == "solo"
     assert intent.user_context["permission_mode"] == "default"
     assert intent.user_context["sandbox_mode"] == "sandbox"
-    assert intent.user_context["auto_approve"] is True
+    assert intent.user_context["approval_policy"] == "on-request"
+    assert intent.user_context["approvals_reviewer"] == "user"
+    assert intent.user_context["auto_approve"] is False
+
+
+def test_auto_review_mode_is_server_canonicalized_to_workspace_sandbox() -> None:
+    from runtime.protocol.items import TurnParams
+    from runtime.sensing.gateway.realtime_cerebrum import _build_intent
+
+    params = TurnParams.model_validate(
+        {
+            "threadId": "th-auto-review",
+            "input": [
+                {
+                    "type": "text",
+                    "text": "fix the tests",
+                    "metadata": {
+                        "context": {
+                            "mode": "code",
+                            "permission_mode": "approve-for-me",
+                            "approvals_reviewer": "user",
+                            "sandbox_mode": "full",
+                            "execution_environment": "local",
+                        },
+                    },
+                },
+            ],
+            "approvalPolicy": "never",
+            "sandboxPolicy": {"type": "dangerFullAccess", "networkAccess": False},
+        }
+    )
+
+    intent = _build_intent(
+        "fix the tests",
+        params,
+        allow_client_auto_approve=True,
+    )
+
+    assert intent.user_context["permission_mode"] == "acceptEdits"
+    assert intent.user_context["approval_policy"] == "on-request"
+    assert intent.user_context["approvals_reviewer"] == "auto_review"
+    assert intent.user_context["execution_environment"] == "sandbox"
+    assert intent.user_context["sandbox_mode"] == "sandbox"
+    assert intent.user_context["sandbox_policy"]["type"] == "workspaceWrite"
+    assert intent.user_context["auto_approve"] is False
 
 
 def test_tool_question_keeps_react_path_when_router_exists(tmp_path: Path) -> None:
@@ -597,4 +641,3 @@ def test_tool_question_keeps_react_path_when_router_exists(tmp_path: Path) -> No
     turn = out["response"].result["turn"]
     cmd_items = [it for it in turn["items"] if it["type"] == "commandExecution"]
     assert cmd_items[0]["command"] == "list_cwd"
-

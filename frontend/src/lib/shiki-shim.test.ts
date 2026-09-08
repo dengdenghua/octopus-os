@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  bundledLanguages,
-  codeToHtml,
-  createHighlighter,
-} from "./shiki-shim";
+import { bundledLanguages, codeToHtml, createHighlighter } from "./shiki-shim";
 
 describe("shiki-shim smoke", () => {
   it("highlights a whitelisted language", async () => {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -78,8 +79,8 @@ def test_create_realtime_runtime_uses_kernel_stack_and_local_defaults(
     assert isinstance(runtime, FakeRuntime)
     assert calls["stack"] is stack
     assert calls["agent_registry"] == "agents"
-    assert str(calls["logs_root"]).endswith("/threads")
-    assert str(calls["workspace_root"]).endswith("/workspaces")
+    assert Path(calls["logs_root"]).name == "threads"
+    assert Path(calls["workspace_root"]).name == "workspaces"
     assert kernel.realtime_runtime is runtime
 
 
@@ -135,4 +136,3 @@ def test_aclose_drains_before_closing_and_closes_after_drain_failure() -> None:
 
     assert calls == [("drain", 1.25), "closed"]
     assert kernel.closed is True
-

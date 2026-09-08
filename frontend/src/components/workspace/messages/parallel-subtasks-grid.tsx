@@ -15,7 +15,11 @@ import {
   agentRunPanelClass,
   agentRunStatusLightPulseClass,
 } from "../agent-run-status";
-import { subtaskProgress, subtaskProgressPercent, subtaskRunState } from "./subtask-status-ui";
+import {
+  subtaskProgress,
+  subtaskProgressPercent,
+  subtaskRunState,
+} from "./subtask-status-ui";
 import { friendlyRoleName } from "../agent-workbench-pages";
 import { SubagentDetailsPanel } from "./subagent-details-panel";
 import {
@@ -42,7 +46,9 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   if (minutes < 60) {
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+    return remainingSeconds > 0
+      ? `${minutes}m ${remainingSeconds}s`
+      : `${minutes}m`;
   }
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
@@ -61,9 +67,7 @@ function getStatusIcon(status: SubtaskStatus) {
   if (status === "pending")
     return <PauseCircleIcon className="size-3 text-warning" />;
   if (isSubtaskActive(status))
-    return (
-      <Loader2Icon className="size-3 animate-spin text-success" />
-    );
+    return <Loader2Icon className="size-3 animate-spin text-success" />;
   return null;
 }
 
@@ -157,7 +161,7 @@ const MiniSubtaskRow = memo(function MiniSubtaskRow({
           <span
             className={cn(
               "flex shrink-0 items-center justify-center rounded-lg",
-              compact ? "size-5 text-xs" : "size-6 text-xs"
+              compact ? "size-5 text-xs" : "size-6 text-xs",
             )}
             style={
               task.hue != null
@@ -186,7 +190,12 @@ const MiniSubtaskRow = memo(function MiniSubtaskRow({
             </div>
           )}
           {/* 实时进度条 */}
-          <div className={cn("flex items-center gap-1.5", compact ? "mt-1" : "mt-1.5")}>
+          <div
+            className={cn(
+              "flex items-center gap-1.5",
+              compact ? "mt-1" : "mt-1.5",
+            )}
+          >
             <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/60">
               <div
                 className={cn(
@@ -262,7 +271,10 @@ const MiniSubtaskRow = memo(function MiniSubtaskRow({
       </div>
       {showIdentity && (
         <div className="mt-1.5">
-          <AgentIdentityCard task={task} onClose={() => setShowIdentity(false)} />
+          <AgentIdentityCard
+            task={task}
+            onClose={() => setShowIdentity(false)}
+          />
         </div>
       )}
       <SubtaskHoverPreview
@@ -294,8 +306,7 @@ export const SubtaskHoverPreview = memo(function SubtaskHoverPreview({
     t.message.noTaskDescription;
   const isCompleted = task.status === "completed";
   const isFailedLike = task.status === "failed" || task.status === "timed_out";
-  const isTerminal =
-    isCompleted || isFailedLike || task.status === "cancelled";
+  const isTerminal = isCompleted || isFailedLike || task.status === "cancelled";
   const isActive = isSubtaskActive(task.status);
   const percent = subtaskProgressPercent(task);
   const barWidth = isTerminal
@@ -345,7 +356,9 @@ export const SubtaskHoverPreview = memo(function SubtaskHoverPreview({
             >
               <span>{statusLabel}</span>
               <span>·</span>
-              <span>{t.message.processRecords(task.messages?.length ?? 0)}</span>
+              <span>
+                {t.message.processRecords(task.messages?.length ?? 0)}
+              </span>
               {task.tokenUsed !== undefined && (
                 <>
                   <span>·</span>
@@ -380,7 +393,9 @@ export const SubtaskHoverPreview = memo(function SubtaskHoverPreview({
               )}
             </div>
             {/* 额外的统计信息 */}
-            {(task.iterationCount || task.filesTouched?.length || task.duration) && (
+            {(task.iterationCount ||
+              task.filesTouched?.length ||
+              task.duration) && (
               <div className="mt-3 flex items-center gap-4 text-xs">
                 {task.iterationCount && task.iterationCount > 0 && (
                   <div className="flex items-center gap-1.5">
@@ -574,10 +589,21 @@ export function ParallelSubtasksGrid({
     : taskIds.length > AUTO_COLLAPSE_THRESHOLD;
 
   // Use forceCollapsed if provided, otherwise use local expanded state
-  const effectivelyExpanded = forceCollapsed === true ? false : forceCollapsed === false ? true : expanded;
-  const visibleLimit = compact ? COMPACT_VISIBLE_TASKS : (compact === false ? MAX_VISIBLE_TASKS : AUTO_VISIBLE_TASKS);
+  const effectivelyExpanded =
+    forceCollapsed === true
+      ? false
+      : forceCollapsed === false
+        ? true
+        : expanded;
+  const visibleLimit = compact
+    ? COMPACT_VISIBLE_TASKS
+    : compact === false
+      ? MAX_VISIBLE_TASKS
+      : AUTO_VISIBLE_TASKS;
   const visibleIds =
-    shouldCollapse && !effectivelyExpanded ? taskIds.slice(0, visibleLimit) : taskIds;
+    shouldCollapse && !effectivelyExpanded
+      ? taskIds.slice(0, visibleLimit)
+      : taskIds;
   const hiddenCount = taskIds.length - visibleIds.length;
 
   // 整体进度统计
@@ -592,7 +618,11 @@ export function ParallelSubtasksGrid({
         return acc;
       }
       if (task.status === "completed") acc.done += 1;
-      else if (task.status === "failed" || task.status === "timed_out" || task.status === "cancelled")
+      else if (
+        task.status === "failed" ||
+        task.status === "timed_out" ||
+        task.status === "cancelled"
+      )
         acc.failed += 1;
       else if (isSubtaskActive(task.status)) acc.running += 1;
       else if (task.status === "pending") acc.pending += 1;
@@ -601,9 +631,7 @@ export function ParallelSubtasksGrid({
     { done: 0, running: 0, pending: 0, failed: 0, total: 0 },
   );
   const overallPercent =
-    stats.total > 0
-      ? Math.round((stats.done / stats.total) * 100)
-      : 0;
+    stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
   const showSummary =
     isGrid && (stats.running > 0 || stats.done > 0 || stats.failed > 0);
 
@@ -621,76 +649,74 @@ export function ParallelSubtasksGrid({
   return (
     <>
       <div className="space-y-2">
-      {showSummary && (
-        <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
-          <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/60">
-            <div
-              className="h-full rounded-full bg-success transition-all duration-slow dark:bg-success"
-              style={{ width: `${overallPercent}%` }}
-            />
+        {showSummary && (
+          <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+            <div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/60">
+              <div
+                className="h-full rounded-full bg-success transition-all duration-slow dark:bg-success"
+                style={{ width: `${overallPercent}%` }}
+              />
+            </div>
+            <span className="shrink-0 font-mono tabular-nums">
+              {stats.done}/{stats.total}
+            </span>
+            {stats.running > 0 && (
+              <span className="shrink-0 text-success">
+                · {t.agentWorkbenchPages.subagentsRunning(stats.running)}
+              </span>
+            )}
+            {stats.failed > 0 && (
+              <span className="shrink-0 text-destructive">
+                · {t.agentWorkbenchPages.subagentsFailed(stats.failed)}
+              </span>
+            )}
           </div>
-          <span className="shrink-0 font-mono tabular-nums">
-            {stats.done}/{stats.total}
-          </span>
-          {stats.running > 0 && (
-            <span className="shrink-0 text-success">
-              · {t.agentWorkbenchPages.subagentsRunning(stats.running)}
-            </span>
-          )}
-          {stats.failed > 0 && (
-            <span className="shrink-0 text-destructive">
-              · {t.agentWorkbenchPages.subagentsFailed(stats.failed)}
-            </span>
-          )}
-        </div>
-      )}
-      {isGrid && !compact ? (
-        <div
-          className={cn(
-            "grid gap-2",
-            visibleIds.length === 2
-              ? "grid-cols-2"
-              : visibleIds.length === 3
-                ? "grid-cols-3"
-                : "grid-cols-2",
-          )}
-        >
-          {visibleIds.map(renderTask)}
-        </div>
-      ) : (
-        <div className="space-y-1.5">
-          {visibleIds.map(renderTask)}
-        </div>
-      )}
-      {shouldCollapse && forceCollapsed === undefined && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border-default py-1.5 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/35 hover:text-foreground"
-        >
-          {effectivelyExpanded ? (
-            <>
-              <ChevronUpIcon className="size-3" />
-              <span>{t.message.collapseAgents}</span>
-            </>
-          ) : (
-            <>
-              <ChevronDownIcon className="size-3" />
-              <span>{t.message.showMoreAgents(hiddenCount)}</span>
-            </>
-          )}
-        </button>
-      )}
-    </div>
+        )}
+        {isGrid && !compact ? (
+          <div
+            className={cn(
+              "grid gap-2",
+              visibleIds.length === 2
+                ? "grid-cols-2"
+                : visibleIds.length === 3
+                  ? "grid-cols-3"
+                  : "grid-cols-2",
+            )}
+          >
+            {visibleIds.map(renderTask)}
+          </div>
+        ) : (
+          <div className="space-y-1.5">{visibleIds.map(renderTask)}</div>
+        )}
+        {shouldCollapse && forceCollapsed === undefined && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border-default py-1.5 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/35 hover:text-foreground"
+          >
+            {effectivelyExpanded ? (
+              <>
+                <ChevronUpIcon className="size-3" />
+                <span>{t.message.collapseAgents}</span>
+              </>
+            ) : (
+              <>
+                <ChevronDownIcon className="size-3" />
+                <span>{t.message.showMoreAgents(hiddenCount)}</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
 
-    {/* 详情侧边栏 */}
-    <SubagentDetailsPanel
-      task={selectedTask ?? null}
-      open={selectedTaskId !== null}
-      onOpenChange={(open) => {
-        if (!open) setSelectedTaskId(null);
-      }}
-    />
-  </>
+      {/* 详情侧边栏 */}
+      <SubagentDetailsPanel
+        task={selectedTask ?? null}
+        open={selectedTaskId !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTaskId(null);
+        }}
+      />
+    </>
   );
 }

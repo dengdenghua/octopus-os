@@ -22,14 +22,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import posixpath
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # SMB 段名:不能含 ] 换行 \ / 等会破坏 ini 结构的字符。
 _NAME_RE = re.compile(r"^[A-Za-z0-9._\-]{1,64}$")
@@ -102,8 +104,7 @@ class ShareManager:
     def _validate_name(self, name: str) -> str:
         if not _NAME_RE.match(name or ""):
             raise ShareError(
-                "share name must match [A-Za-z0-9._-]{1,64} (no spaces, slashes "
-                "or newlines)"
+                "share name must match [A-Za-z0-9._-]{1,64} (no spaces, slashes or newlines)"
             )
         return name
 
@@ -113,12 +114,8 @@ class ShareManager:
         #   2) 不碰文件系统,测试无需真实目录,行为可确定。
         # 词法归一化已能挡住 /tmp/../etc 这类穿越。
         p = posixpath.normpath(path)
-        if not any(
-            p == r or p.startswith(r.rstrip("/") + "/") for r in self.allowed_roots
-        ):
-            raise ShareError(
-                f"path {p!r} outside allowed roots {list(self.allowed_roots)}"
-            )
+        if not any(p == r or p.startswith(r.rstrip("/") + "/") for r in self.allowed_roots):
+            raise ShareError(f"path {p!r} outside allowed roots {list(self.allowed_roots)}")
         return p
 
     # ── 清单读写 ────────────────────────────────────────────
@@ -252,10 +249,8 @@ class ShareManager:
 def _atomic_write(path: Path, content: str) -> None:
     """tmp + os.replace 原子替换,并保留上一版为 .bak。"""
     if path.exists():
-        try:
+        with contextlib.suppress(OSError):  # 备份失败不阻断主流程
             shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
-        except OSError:  # pragma: no cover - 备份失败不阻断主流程
-            pass
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(content, encoding="utf-8")
     os.replace(tmp, path)

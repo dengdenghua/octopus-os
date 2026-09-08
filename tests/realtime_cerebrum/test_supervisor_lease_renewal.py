@@ -20,7 +20,7 @@ from tests.realtime_cerebrum import _helpers
 
 @pytest.fixture()
 def gateway_with_supervisor(tmp_path: Any) -> Any:
-    """Realtime gateway wired with a real TaskSupervisor (tiny TTL)."""
+    """Realtime gateway wired with a real TaskSupervisor and temporary store."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -59,14 +59,38 @@ def test_realtime_turn_renews_supervisor_lease(
     # the assertion runs sub-second instead of waiting on real TTLs.
     monkeypatch.setattr(drive_rs, "_SINGLE_AGENT_HEARTBEAT_INTERVAL_S", 0.02)
     monkeypatch.setattr(drive_rs, "_lease_renewal_interval_s", lambda ttl: 0.02)
+    admitted: list[Any] = []
+    renewed: list[tuple[str, int | None, Any, Any]] = []
+    real_heartbeat = supervisor.heartbeat
+
+    def heartbeat(
+        task_id: str,
+        *,
+        expected_lease_token: int | None = None,
+        expected_lease_incarnation: str | None = None,
+    ) -> Any:
+        before = supervisor.store.get(task_id)
+        record = real_heartbeat(
+            task_id,
+            expected_lease_token=expected_lease_token,
+            expected_lease_incarnation=expected_lease_incarnation,
+        )
+        renewed.append((task_id, expected_lease_token, expected_lease_incarnation, before, record))
+        return record
+
+    monkeypatch.setattr(supervisor, "heartbeat", heartbeat)
 
     def slow_stream(*_args: Any, **_kwargs: Any) -> Any:
-        # Emit react_started with a supervisor task id, then trickle
+        # Echo the already admitted server ID, then trickle
         # deltas slowly so the consumer loop has idle stretches in which
         # the lease renewal is due.
+        task_id = str(_kwargs["execution_task_id"])
+        record = supervisor.store.get(task_id)
+        assert record is not None and record.lease is not None
+        admitted.append(record)
         yield {
             "type": "react_started",
-            "task_id": "renew-task-1",
+            "task_id": task_id,
             "thread_id": _kwargs.get("thread_id"),
         }
         for _ in range(15):
@@ -86,20 +110,27 @@ def test_realtime_turn_renews_supervisor_lease(
             },
         )
 
-    record = supervisor.store.get("renew-task-1")
-    assert record is not None, "react_started must register the task with the supervisor"
-    # heartbeat() stamps ``heartbeat_at`` (and extends ``expires_at`` while
-    # the task is live). The terminal transition clears the lease object
-    # itself, so the renewal is observable via the heartbeat timestamp.
-    assert record.heartbeat_at, "lease must be renewed via supervisor heartbeat"
-    assert record.heartbeat_at >= record.started_at, "renewal must happen after the task started"
+    assert len(admitted) == 1
+    initial = admitted[0]
+    assert renewed, "Observe an actual live heartbeat, not the terminal transition's timestamp"
+    for task_id, expected_token, expected_incarnation, before, after in renewed:
+        assert task_id == initial.task_id
+        assert expected_token == initial.lease.token
+        assert before.status.value == after.status.value == "running"
+        assert before.lease.token == after.lease.token == expected_token
+        assert before.lease.incarnation == after.lease.incarnation == expected_incarnation
+        assert expected_incarnation == initial.lease.incarnation
+        assert after.lease.expires_at > before.lease.expires_at
+    record = supervisor.store.get(initial.task_id)
+    assert record is not None and record.status.value == "completed"
 
     # The turn still completes normally.
+    assert result["response"].result["turn"]["status"] == "completed"
     assert any(n.method == "turn/completed" for n in result["notifications"])
 
 
 def test_no_supervisor_turn_completes_normally(
-    gateway_with_supervisor: Any,
+    gateway: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Regression guard: when no supervisor is wired (tests, minimal
@@ -107,11 +138,16 @@ def test_no_supervisor_turn_completes_normally(
     import runtime.core.cerebrum.react_loop as rl
     import runtime.sensing.gateway._realtime_react_stream_drive as drive_rs
 
-    client, _, _ = gateway_with_supervisor
+    # conftest.gateway constructs CerebrumRuntime without a Supervisor.
+    client, logs_root = gateway
 
     monkeypatch.setattr(drive_rs, "_SINGLE_AGENT_HEARTBEAT_INTERVAL_S", 0.02)
 
     def quick_stream(*_args: Any, **_kwargs: Any) -> Any:
+        from runtime.platform.process.session import current_session
+
+        assert _kwargs.get("execution_task_id") is None
+        assert current_session().execution_lease is None
         yield {"type": "react_started", "task_id": "no-sup-1"}
         yield {"type": "text_delta", "delta": "done"}
         yield {"type": "react_completed"}
@@ -127,5 +163,7 @@ def test_no_supervisor_turn_completes_normally(
                 "approvalPolicy": "never",
             },
         )
-    assert any(n.method == "turn/completed" for n in result["notifications"])
-
+    assert result["response"].result["turn"]["status"] == "completed"
+    completions = [n for n in result["notifications"] if n.method == "turn/completed"]
+    assert completions and completions[-1].params["turn"]["status"] == "completed"
+    assert not (logs_root.parent / "task_runs.json").exists()

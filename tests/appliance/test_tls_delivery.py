@@ -16,6 +16,10 @@ TLS_OVERLAY = DEPLOYMENT / "docker-compose.tls.yml"
 TLS_PREFLIGHT = TLS_DIRECTORY / "verify-tls-assets.sh"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 
+POSIX_SHELL_TEST = pytest.mark.skipif(
+    os.name == "nt", reason="TLS deployment scripts require a POSIX shell"
+)
+
 
 def _generate_certificate(
     destination: Path,
@@ -63,7 +67,7 @@ def _preflight(certificate: Path, private_key: Path, host: str) -> subprocess.Co
 
 
 def test_tls_overlay_pins_a_bounded_zero_capability_gateway() -> None:
-    overlay = yaml.safe_load(TLS_OVERLAY.read_text())
+    overlay = yaml.safe_load(TLS_OVERLAY.read_text(encoding="utf-8"))
     services = overlay["services"]
     gateway = services["tls-gateway"]
     backend = services["echo-os"]
@@ -85,7 +89,7 @@ def test_tls_overlay_pins_a_bounded_zero_capability_gateway() -> None:
     assert backend["environment"]["FORWARDED_ALLOW_IPS"] == ("${ECHO_TLS_PROXY_IP:-172.30.90.2}")
     assert "*" not in str(backend["environment"])
 
-    image_lock = json.loads((TLS_DIRECTORY / "nginx-image.lock.json").read_text())
+    image_lock = json.loads((TLS_DIRECTORY / "nginx-image.lock.json").read_text(encoding="utf-8"))
     assert image_lock == {
         "schema": "echo.tls-gateway-image-lock.v1",
         "registry": "registry-1.docker.io",
@@ -106,7 +110,7 @@ def test_tls_overlay_pins_a_bounded_zero_capability_gateway() -> None:
 def test_backend_binding_is_explicit_and_can_be_forced_to_loopback(
     compose_path: Path,
 ) -> None:
-    compose = yaml.safe_load(compose_path.read_text())
+    compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
     expected_bind = (
         "${ECHO_BIND_ADDRESS:-0.0.0.0}"
         if compose_path.parent.name == "appliance"
@@ -118,7 +122,7 @@ def test_backend_binding_is_explicit_and_can_be_forced_to_loopback(
         "${ECHO_DEVICE_LINK_PORT:-8765}:${ECHO_DEVICE_LINK_PORT:-8765}",
     ]
 
-    startup = (DEPLOYMENT / "start-tls.sh").read_text()
+    startup = (DEPLOYMENT / "start-tls.sh").read_text(encoding="utf-8")
     assert "export ECHO_BIND_ADDRESS=127.0.0.1" in startup
     assert 'compose+=(--env-file "$appliance_env")' in startup
     assert 'compose+=(--env-file "$release_env")' in startup
@@ -128,7 +132,7 @@ def test_backend_binding_is_explicit_and_can_be_forced_to_loopback(
 
 
 def test_nginx_tls_edge_preserves_streams_without_logging_queries() -> None:
-    config = (TLS_DIRECTORY / "nginx.conf").read_text()
+    config = (TLS_DIRECTORY / "nginx.conf").read_text(encoding="utf-8")
 
     assert "ssl_protocols TLSv1.2 TLSv1.3;" in config
     assert "ssl_session_tickets off;" in config
@@ -147,6 +151,7 @@ def test_nginx_tls_edge_preserves_streams_without_logging_queries() -> None:
 
 
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl is required")
+@POSIX_SHELL_TEST
 def test_tls_preflight_accepts_a_matching_private_certificate(tmp_path: Path) -> None:
     certificate, private_key = _generate_certificate(tmp_path)
     result = _preflight(certificate, private_key, "echo.home.example")
@@ -156,6 +161,7 @@ def test_tls_preflight_accepts_a_matching_private_certificate(tmp_path: Path) ->
 
 
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl is required")
+@POSIX_SHELL_TEST
 def test_tls_preflight_rejects_unsafe_key_permissions(tmp_path: Path) -> None:
     certificate, private_key = _generate_certificate(tmp_path)
     private_key.chmod(0o644)
@@ -166,6 +172,7 @@ def test_tls_preflight_rejects_unsafe_key_permissions(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl is required")
+@POSIX_SHELL_TEST
 def test_tls_preflight_rejects_a_wrong_host_or_key(tmp_path: Path) -> None:
     certificate, private_key = _generate_certificate(tmp_path)
     wrong_host = _preflight(certificate, private_key, "other.home.example")
@@ -179,6 +186,7 @@ def test_tls_preflight_rejects_a_wrong_host_or_key(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl is required")
+@POSIX_SHELL_TEST
 def test_tls_preflight_rejects_a_certificate_near_expiry(tmp_path: Path) -> None:
     certificate, private_key = _generate_certificate(tmp_path, days=1)
     result = _preflight(certificate, private_key, "echo.home.example")
@@ -188,6 +196,7 @@ def test_tls_preflight_rejects_a_certificate_near_expiry(tmp_path: Path) -> None
 
 
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="openssl is required")
+@POSIX_SHELL_TEST
 def test_tls_startup_derives_trust_and_loopback_before_compose(tmp_path: Path) -> None:
     deployment = tmp_path / "appliance"
     tls_directory = deployment / "tls"
@@ -250,6 +259,7 @@ def test_tls_startup_derives_trust_and_loopback_before_compose(tmp_path: Path) -
         ),
     ],
 )
+@POSIX_SHELL_TEST
 def test_tls_startup_fails_closed_before_cert_or_compose(
     environment_change: dict[str, str], expected_error: str
 ) -> None:
@@ -270,16 +280,17 @@ def test_tls_startup_fails_closed_before_cert_or_compose(
 
 
 def test_tls_secrets_are_ignored_and_not_present_in_the_repository() -> None:
-    ignored = (TLS_DIRECTORY / ".gitignore").read_text().splitlines()
+    ignored = (TLS_DIRECTORY / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert {"echo.crt", "echo.key"}.issubset(ignored)
     assert not (TLS_DIRECTORY / "echo.crt").exists()
     assert not (TLS_DIRECTORY / "echo.key").exists()
-    assert os.access(TLS_PREFLIGHT, os.X_OK)
-    assert os.access(DEPLOYMENT / "start-tls.sh", os.X_OK)
+    if os.name != "nt":
+        assert os.access(TLS_PREFLIGHT, os.X_OK)
+        assert os.access(DEPLOYMENT / "start-tls.sh", os.X_OK)
 
 
 def test_ci_runs_the_real_tls_gateway_and_https_security_verifier() -> None:
-    workflow = yaml.safe_load(CI_WORKFLOW.read_text())
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
     docker_job = workflow["jobs"]["docker-build"]
     steps = docker_job["steps"]
     by_name = {step.get("name"): step for step in steps if step.get("name")}

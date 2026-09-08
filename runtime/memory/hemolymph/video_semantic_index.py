@@ -42,6 +42,8 @@ from . import image_semantic_index as _img
 from .image_semantic_index import (  # noqa: F401  (re-exported for convenience)
     _blob_to_vec,
     _cosine,
+    _detect_faces,
+    _embed,
     _face_app,
     _image_model,
     _load_image,
@@ -263,7 +265,9 @@ def build_video_index(
     vids = 0
     kfs = 0
     faces = 0
+    resource_limited = False
     try:
+        conn.execute("BEGIN")
         if incremental:
             # Only (re)index files that are new or whose mtime changed.
             known: dict[str, float] = {}
@@ -321,31 +325,49 @@ def build_video_index(
             vids += 1
             for time_sec, pil in keyframes:
                 try:
-                    vec = list(img_model.embed([pil]))[0]
-                except Exception:  # noqa: BLE001
-                    continue
-                cur = conn.execute(
-                    "INSERT INTO video_keyframes (video_path, time_sec, clip_embedding) "
-                    "VALUES (?, ?, ?)",
-                    (rel, time_sec, _vec_to_blob(vec)),
-                )
-                kf_id = cur.lastrowid
-                kfs += 1
-                if face_app is not None:
                     try:
-                        import numpy as np
-
-                        det = face_app.get(np.asarray(pil))
-                        for fi, face in enumerate(det):
-                            conn.execute(
-                                "INSERT INTO video_faces VALUES (?, ?, ?, ?, ?)",
-                                (kf_id, rel, time_sec, fi, _vec_to_blob(face.normed_embedding)),
-                            )
-                            faces += 1
+                        vec = _embed(img_model, [pil])[0]
+                    except _img.ImageInferenceResourceBusy:
+                        resource_limited = True
+                        break
                     except Exception:  # noqa: BLE001
                         continue
-                # keyframe image is done with — drop the reference before next frame
-                del pil
+                    cur = conn.execute(
+                        "INSERT INTO video_keyframes (video_path, time_sec, clip_embedding) "
+                        "VALUES (?, ?, ?)",
+                        (rel, time_sec, _vec_to_blob(vec)),
+                    )
+                    kf_id = cur.lastrowid
+                    kfs += 1
+                    if face_app is not None:
+                        try:
+                            import numpy as np
+
+                            det = _detect_faces(face_app, np.asarray(pil))
+                            for fi, face in enumerate(det):
+                                conn.execute(
+                                    "INSERT INTO video_faces VALUES (?, ?, ?, ?, ?)",
+                                    (kf_id, rel, time_sec, fi, _vec_to_blob(face.normed_embedding)),
+                                )
+                                faces += 1
+                        except _img.ImageInferenceResourceBusy:
+                            resource_limited = True
+                            break
+                        except Exception:  # noqa: BLE001
+                            continue
+                finally:
+                    with contextlib.suppress(Exception):
+                        pil.close()
+            if resource_limited:
+                break
+        if resource_limited:
+            conn.rollback()
+            return {
+                "ok": False,
+                "error": "image_inference_busy",
+                "resource_limited": True,
+                "retained_previous": True,
+            }
         if include_transcript and to_index:
             transcripts = _transcribe_videos(to_index, root_path, conn)
         else:
@@ -450,7 +472,7 @@ def search_video_by_text(
     if not rows:
         return None
     try:
-        q = list(text_model.embed([query]))[0]
+        q = _embed(text_model, [query])[0]
     except Exception:  # noqa: BLE001
         return None
     scored = [(_cosine(q, vec), video, ts) for _id, video, ts, vec in rows]
@@ -480,7 +502,7 @@ def search_video_by_image(
     if pil is None:
         return None
     try:
-        q = list(img_model.embed([pil]))[0]
+        q = _embed(img_model, [pil])[0]
     except Exception:  # noqa: BLE001
         return None
     path = Path(db_path) if db_path is not None else _DEFAULT_DB
@@ -514,7 +536,7 @@ def search_face_in_videos(
     try:
         import numpy as np
 
-        query_faces = app.get(np.asarray(pil))
+        query_faces = _detect_faces(app, np.asarray(pil))
     except Exception:  # noqa: BLE001
         return None
     if not query_faces:
@@ -720,7 +742,7 @@ def classify_video(
         ]
     )
     try:
-        text_vecs = list(text_model.embed(label_list))
+        text_vecs = _embed(text_model, label_list)
     except Exception:  # noqa: BLE001
         return None
     agg = [0.0] * len(label_list)

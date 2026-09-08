@@ -13,6 +13,7 @@ import {
   normalizePermissionMode,
   type PermissionMode,
 } from "@/core/permissions";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import type { ReasoningMode } from "./reasoning-mode";
 
 export interface LocalSlashContext {
@@ -129,10 +130,14 @@ export function tryLocalSlash(text: string, ctx: LocalSlashContext): boolean {
       // Open the unified Hub skill catalog. With an arg, keep the query
       // so the Hub can pre-filter the skill list.
       if (typeof window !== "undefined") {
-        const target = arg
-          ? `#/workspace/agents?surface=chat&tab=skills&q=${encodeURIComponent(arg)}`
-          : "#/workspace/agents?surface=chat&tab=skills";
-        window.location.hash = target;
+        const route = arg
+          ? `/workspace/agents?surface=chat&tab=skills&q=${encodeURIComponent(arg)}`
+          : "/workspace/agents?surface=chat&tab=skills";
+        const currentRoute = window.location.hash.replace(/^#/, "");
+        const queryStart = currentRoute.indexOf("?");
+        const currentSearch =
+          queryStart >= 0 ? currentRoute.slice(queryStart) : "";
+        window.location.hash = `#${preserveWorkbenchPresentation(route, currentSearch)}`;
       }
       return true;
     }

@@ -158,6 +158,19 @@ describe("tryLocalSlash", () => {
     }
   });
 
+  test("skill shortcuts preserve the workbench presentation", () => {
+    const original = window.location.hash;
+    try {
+      window.location.hash = "#/workspace/realtime/new?presentation=workbench";
+      expect(tryLocalSlash("/skills", {})).toBe(true);
+      expect(window.location.hash).toBe(
+        "#/workspace/agents?surface=chat&tab=skills&presentation=workbench",
+      );
+    } finally {
+      window.location.hash = original;
+    }
+  });
+
   test("/settings opens the unified settings dialog", () => {
     const openSettings = vi.fn();
     window.addEventListener("echo:open-settings", openSettings);

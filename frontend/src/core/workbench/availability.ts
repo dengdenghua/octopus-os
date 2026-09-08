@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { currentActorId } from "@/core/auth/api";
 
 import {
   type CloudInstalledStatus,
@@ -11,18 +12,24 @@ import { swallow } from "@/core/utils/log";
 
 import { WORKBENCH_BUILTIN_APPS } from "./apps";
 
+let revision = 0;
 let inFlight: Promise<Record<string, boolean>> | null = null;
 let snapshotInFlight: Promise<WorkbenchAvailabilitySnapshot> | null = null;
+let inFlightActor: string | null = null;
+let snapshotActor: string | null = null;
 
 interface WorkbenchAvailabilitySnapshot {
+  actor?: string;
   installed: CloudInstalledStatus;
   runtimeStatuses: ReadonlyMap<string, RuntimePluginStatus>;
 }
 
 /** Share the boot-time inventory between the workspace shell and app center. */
 export function loadWorkbenchAvailabilitySnapshot(): Promise<WorkbenchAvailabilitySnapshot> {
-  if (snapshotInFlight) return snapshotInFlight;
-  snapshotInFlight = Promise.all([
+  const actor = currentActorId();
+  if (snapshotInFlight && snapshotActor === actor) return snapshotInFlight;
+  snapshotActor = actor;
+  const request = Promise.all([
     fetchCloudInstalled(),
     fetchRuntimePluginStatuses().catch((error) => {
       // Older backends may not expose the PluginHub inventory endpoint.
@@ -31,11 +38,16 @@ export function loadWorkbenchAvailabilitySnapshot(): Promise<WorkbenchAvailabili
       return new Map<string, RuntimePluginStatus>();
     }),
   ])
-    .then(([installed, runtimeStatuses]) => ({ installed, runtimeStatuses }))
+    .then(([installed, runtimeStatuses]) => ({
+      installed,
+      runtimeStatuses,
+      actor,
+    }))
     .finally(() => {
-      snapshotInFlight = null;
+      if (snapshotInFlight === request) snapshotInFlight = null;
     });
-  return snapshotInFlight;
+  snapshotInFlight = request;
+  return request;
 }
 
 /**
@@ -45,8 +57,11 @@ export function loadWorkbenchAvailabilitySnapshot(): Promise<WorkbenchAvailabili
 export function syncWorkbenchAvailability(
   snapshot?: WorkbenchAvailabilitySnapshot,
 ): Promise<Record<string, boolean>> {
-  if (inFlight) return inFlight;
-  inFlight = (async () => {
+  const actor = currentActorId();
+  if (snapshot?.actor && snapshot.actor !== actor) return Promise.resolve({});
+  if (!snapshot && inFlight && inFlightActor === actor) return inFlight;
+  const requestRevision = ++revision;
+  const request = (async () => {
     const { installed, runtimeStatuses } =
       snapshot ?? (await loadWorkbenchAvailabilitySnapshot());
     const installedSet = new Set(installed.plugins);
@@ -61,6 +76,18 @@ export function syncWorkbenchAvailability(
         const durableState = app.packageId
           ? installed.plugin_states?.[app.packageId]
           : undefined;
+        // A stale runtime process must not resurrect an uninstalled or broken package.
+        if (
+          durableState &&
+          (!durableState.installed ||
+            !durableState.enabled ||
+            ["broken", "incompatible"].includes(
+              durableState.lifecycle_state ?? "",
+            ))
+        ) {
+          availability[app.moduleId] = false;
+          return;
+        }
         const installedFallback = durableState
           ? Boolean(
               durableState.installed &&
@@ -82,16 +109,37 @@ export function syncWorkbenchAvailability(
       }),
     );
 
-    setModuleAvailabilitySnapshot(availability);
+    if (requestRevision === revision && actor === currentActorId())
+      setModuleAvailabilitySnapshot(availability);
     return availability;
-  })().finally(() => {
-    inFlight = null;
-  });
-  return inFlight;
+  })()
+    .catch((error) => {
+      if (requestRevision === revision && actor === currentActorId()) {
+        // Failed verification cannot leave previously available remote apps active.
+        setModuleAvailabilitySnapshot(
+          Object.fromEntries(
+            WORKBENCH_BUILTIN_APPS.map((app) => [
+              app.moduleId,
+              app.delivery === "core",
+            ]),
+          ),
+        );
+      }
+      throw error;
+    })
+    .finally(() => {
+      if (inFlight === request) inFlight = null;
+    });
+  if (!snapshot) {
+    inFlight = request;
+    inFlightActor = actor;
+  }
+  return request;
 }
 
 export function useWorkbenchAvailabilitySync(): void {
+  const actor = currentActorId();
   useEffect(() => {
     void syncWorkbenchAvailability().catch(swallow);
-  }, []);
+  }, [actor]);
 }

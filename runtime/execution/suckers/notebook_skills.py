@@ -6,6 +6,12 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from runtime.execution.misc.document_extraction import (
+    DocumentExtractionBudget,
+    DocumentWorkerCleanupError,
+    extract_document_isolated,
+)
+
 from .registry import Skill, SkillRegistry
 from .testing import SkillExpect, SkillTestCase
 
@@ -31,34 +37,6 @@ def _safe_resolve(
     return Path(verdict.resolved) if verdict.resolved else Path(path), None
 
 
-def _cell_to_wire(cell: dict[str, Any]) -> dict[str, Any]:
-    src = cell.get("source", "")
-    if isinstance(src, list):
-        src = "".join(src)
-    out: dict[str, Any] = {
-        "cell_type": cell.get("cell_type", "unknown"),
-        "source": src,
-        "id": cell.get("id"),
-    }
-    if cell.get("cell_type") == "code":
-        outputs = cell.get("outputs") or []
-        text_outputs: list[str] = []
-        for o in outputs:
-            if not isinstance(o, dict):
-                continue
-            if "text" in o:
-                t = o["text"]
-                text_outputs.append("".join(t) if isinstance(t, list) else str(t))
-            elif "data" in o and isinstance(o["data"], dict):
-                for mime, val in o["data"].items():
-                    if mime.startswith("text/"):
-                        text_outputs.append("".join(val) if isinstance(val, list) else str(val))
-        if text_outputs:
-            out["output_text"] = "\n".join(text_outputs)[:2000]
-        out["execution_count"] = cell.get("execution_count")
-    return out
-
-
 def _notebook_read(
     path: str,
     *,
@@ -81,21 +59,54 @@ def _notebook_read(
         return {"error": f"too_large: {size} bytes (cap {_MAX_NB_READ_BYTES})"}
 
     try:
-        nb = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
-        return {"error": f"parse_failed: {exc}", "path": path}
+        # Keep the file bytes inside the same authorized path decision and do
+        # not let a growth race turn the worker input into an unbounded read.
+        with p.open("rb") as handle:
+            data = handle.read(_MAX_NB_READ_BYTES + 1)
+    except OSError as exc:
+        return {"error": f"read_failed: {exc}", "path": path}
+    if len(data) > _MAX_NB_READ_BYTES:
+        return {"error": f"too_large: {len(data)} bytes (cap {_MAX_NB_READ_BYTES})"}
 
-    if not isinstance(nb, dict) or "cells" not in nb:
-        return {"error": "invalid nbformat: missing 'cells'"}
-
-    cells = [_cell_to_wire(c) for c in nb.get("cells", []) if isinstance(c, dict)]
-    return {
-        "path": str(p.resolve()),
-        "nbformat": nb.get("nbformat"),
-        "kernel": (nb.get("metadata") or {}).get("kernelspec", {}).get("name"),
-        "cells": cells,
-        "cell_count": len(cells),
-    }
+    try:
+        result = extract_document_isolated(
+            data,
+            "ipynb",
+            budget=DocumentExtractionBudget(
+                memory_bytes=256 * 1024 * 1024,
+                cpu_seconds=10,
+                wall_seconds=15.0,
+                max_chars=1_000_000,
+                max_pages=10_000,
+                max_expanded_bytes=_MAX_NB_READ_BYTES,
+                max_input_bytes=_MAX_NB_READ_BYTES,
+            ),
+        )
+    except DocumentWorkerCleanupError:
+        return {
+            "error": "notebook_worker_cleanup_uncertain",
+            "error_type": "worker_cleanup_uncertain",
+            "path": path,
+        }
+    except (OSError, RuntimeError, ValueError):
+        return {
+            "error": "notebook_worker_unavailable",
+            "error_type": "unavailable",
+            "path": path,
+        }
+    if result.get("outcome") != "ok" or not isinstance(result.get("notebook"), dict):
+        outcome = str(result.get("outcome") or "unknown")
+        error_type = "parse_failed" if outcome == "no_text" else outcome
+        return {
+            "error": f"notebook_parse_failed: {outcome}",
+            "error_type": error_type,
+            "path": path,
+        }
+    payload = dict(result["notebook"])
+    payload["path"] = str(p.resolve())
+    if result.get("truncated"):
+        payload["truncated"] = True
+    return payload
 
 
 def _notebook_edit(
@@ -119,8 +130,19 @@ def _notebook_edit(
         return {"error": f"not a notebook: {path}"}
 
     try:
-        nb = json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+        size = p.stat().st_size
+    except OSError as exc:
+        return {"error": f"read_failed: {exc}", "path": path}
+    if size > _MAX_NB_READ_BYTES:
+        return {"error": f"too_large: {size} bytes (cap {_MAX_NB_READ_BYTES})"}
+
+    try:
+        with p.open("rb") as handle:
+            data = handle.read(_MAX_NB_READ_BYTES + 1)
+        if len(data) > _MAX_NB_READ_BYTES:
+            return {"error": f"too_large: {len(data)} bytes (cap {_MAX_NB_READ_BYTES})"}
+        nb = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, OSError) as exc:
         return {"error": f"parse_failed: {exc}", "path": path}
     cells = nb.get("cells")
     if not isinstance(cells, list):

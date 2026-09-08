@@ -34,7 +34,7 @@ import { TabBar } from "@/components/browser/tab-bar";
 import { UrlBar } from "@/components/browser/url-bar";
 import {
   BROWSER_HOME_URL,
-  BROWSER_OPEN_URL_REQUEST_KEY,
+  browserOpenUrlRequestStorageKey,
   BROWSER_OPEN_URL_ACK_EVENT,
   BrowserStoreProvider,
   SEARCH_ENGINE_URLS,
@@ -47,6 +47,7 @@ import {
 import type { WebviewTabHandle } from "@/components/browser/webview-tab";
 import { WorkspaceSurfaceHeader } from "@/components/workspace/workspace-surface-header";
 import { useActiveAgentId } from "@/core/agents/active";
+import { currentActorId } from "@/core/auth/api";
 import {
   isLocalPreviewUrl,
   localPreviewPort,
@@ -100,6 +101,7 @@ const DEVICE_STAGE = {
 } as const;
 
 function BrowserShell() {
+  const actor = currentActorId();
   const { t } = useI18n();
   const activeAgentId = useActiveAgentId() ?? "general";
   const personaThemeId = workspacePresetForAgent(activeAgentId).themeId;
@@ -166,7 +168,7 @@ function BrowserShell() {
       const request = (event as CustomEvent<BrowserOpenUrlRequest>).detail;
       if (!request?.url) return;
       try {
-        localStorage.removeItem(BROWSER_OPEN_URL_REQUEST_KEY);
+        localStorage.removeItem(browserOpenUrlRequestStorageKey(actor));
         openTab(request.url, {
           ...(request.title ? { title: request.title } : {}),
           ...(request.device ? { device: request.device } : {}),
@@ -183,7 +185,7 @@ function BrowserShell() {
         BROWSER_OPEN_URL_REQUEST_EVENT,
         openRequestedUrl,
       );
-  }, [acknowledgeOpenRequest, openTab]);
+  }, [acknowledgeOpenRequest, actor, openTab]);
 
   useEffect(() => {
     if (!activeTabId) {
@@ -241,10 +243,7 @@ function BrowserShell() {
   // Implementation note.
   useEffect(() => {
     if (!activeTabUrl || activeTabLoading) return;
-    if (
-      activeTabUrl.startsWith("about:") ||
-      activeTabUrl.startsWith("echo:")
-    ) {
+    if (activeTabUrl.startsWith("about:") || activeTabUrl.startsWith("echo:")) {
       return;
     }
     const t = setTimeout(() => {
@@ -275,9 +274,11 @@ function BrowserShell() {
 
   useEffect(() => {
     try {
-      const rawRequest = localStorage.getItem(BROWSER_OPEN_URL_REQUEST_KEY);
+      const rawRequest = localStorage.getItem(
+        browserOpenUrlRequestStorageKey(actor),
+      );
       if (!rawRequest) return;
-      localStorage.removeItem(BROWSER_OPEN_URL_REQUEST_KEY);
+      localStorage.removeItem(browserOpenUrlRequestStorageKey(actor));
       let request: BrowserOpenUrlRequest | null = null;
       try {
         const parsed = JSON.parse(rawRequest) as Partial<BrowserOpenUrlRequest>;
@@ -315,7 +316,7 @@ function BrowserShell() {
     } catch (e) {
       swallow(e);
     }
-  }, [acknowledgeOpenRequest, openTab]);
+  }, [acknowledgeOpenRequest, actor, openTab]);
 
   // Implementation note.
   // Implementation note.
@@ -380,30 +381,27 @@ function BrowserShell() {
     // Implementation note.
     // Implementation note.
     // Implementation note.
-    const offIpc = window.echo?.on(
-      "browser:keyboard-shortcut",
-      (...args) => {
-        const p = args[0] as
-          | {
-              key: string;
-              shift: boolean;
-              alt: boolean;
-              meta: boolean;
-              control: boolean;
-            }
-          | undefined;
-        if (!p) return;
-        onKey(
-          new KeyboardEvent("keydown", {
-            key: p.key,
-            shiftKey: p.shift,
-            altKey: p.alt,
-            metaKey: p.meta,
-            ctrlKey: p.control,
-          }),
-        );
-      },
-    );
+    const offIpc = window.echo?.on("browser:keyboard-shortcut", (...args) => {
+      const p = args[0] as
+        | {
+            key: string;
+            shift: boolean;
+            alt: boolean;
+            meta: boolean;
+            control: boolean;
+          }
+        | undefined;
+      if (!p) return;
+      onKey(
+        new KeyboardEvent("keydown", {
+          key: p.key,
+          shiftKey: p.shift,
+          altKey: p.alt,
+          metaKey: p.meta,
+          ctrlKey: p.control,
+        }),
+      );
+    });
 
     return () => {
       window.removeEventListener("keydown", onKey);

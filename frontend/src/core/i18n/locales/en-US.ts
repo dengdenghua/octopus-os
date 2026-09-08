@@ -72,6 +72,7 @@ export const enUS: Translations = {
       `${method} ${path} returned stub data. Treat this workspace state as a development fallback until the real backend endpoint is enabled.`,
     openSidebarMenu: "Open sidebar menu",
     loadingWorkspace: "Loading workspace...",
+    startingSystem: "System services are starting. Please wait...",
   },
 
   // Home
@@ -469,12 +470,12 @@ export const enUS: Translations = {
     maxSubagents: "Max Subagents",
     maxSearches: "Max Searches",
     permissionModeLabel: "Permissions",
-    permissionModeDefault: "Default",
+    permissionModeDefault: "Ask for approval",
     permissionModeDefaultDesc:
-      "Any write or command asks for your approval first. Safest option.",
-    permissionModeAcceptEdits: "Accept edits",
+      "Can edit the workspace and run routine commands; asks before using the network or crossing workspace boundaries.",
+    permissionModeAcceptEdits: "Approve for me",
     permissionModeAcceptEditsDesc:
-      "File changes run automatically; commands still ask for approval.",
+      "Keeps the same workspace boundary and sends eligible escalations to an independent reviewer.",
     permissionModeBypass: "Full access",
     permissionModeBypassDesc:
       "Every action runs automatically with no questions. Maximum permissions.",
@@ -498,8 +499,8 @@ export const enUS: Translations = {
     projectWriteAccess: "Project write",
     projectReadOnly: "Read only",
     permissionFullAccess: "Full access",
-    permissionAcceptEdits: "Accept edits",
-    permissionConfirm: "Default",
+    permissionAcceptEdits: "Approve for me",
+    permissionConfirm: "Ask for approval",
     addImage: "Add image (paste / drag / select)",
     addAppshot: "Attach current window snapshot",
     capturingAppshot: "Attaching the current window…",
@@ -1865,6 +1866,13 @@ export const enUS: Translations = {
       "For example: turn slide 3 into a risk matrix and keep the current theme",
     officeEditHint:
       "The edit is sent to this task and the preview refreshes when it finishes",
+    fileAccessDenied:
+      "Cannot read this file. Check that you are signed in and this task can access its directory.",
+    fileMissing:
+      "The file is missing or has been moved. Check its original location and retry.",
+    fileUnavailable: "This file cannot be read right now. Please retry.",
+    fileTooLarge:
+      "This file is too large to preview or download here. Open the original in the file manager.",
     previewError:
       "Unable to load the preview. Check your sign-in and try again.",
     previewRetry: "Reload preview",
@@ -3335,6 +3343,8 @@ export const enUS: Translations = {
     connectionLost: "This reply was interrupted. Continue the chat or retry.",
     networkLost:
       "Network disconnected. Task auto-paused — send a message to resume from checkpoint.",
+    eventStreamOverloaded:
+      "The event stream is temporarily busy. Completed steps were preserved; retry to continue.",
     turnFailed:
       "This turn stopped before finishing. Continue the chat or retry.",
     guardBlocked:
@@ -5679,11 +5689,18 @@ Strategy:
     cancelledTasks: (count: number) => `${count} cancelled`,
     coordinationWarnings: (count: number) => `${count} coordination warning(s)`,
     rerunnableTasks: (count: number) => `${count} rerunnable task(s)`,
+    recoveryResume: "Rerun safe tasks from snapshot",
+    recoveryResuming: "Rerunning…",
+    recoveryResumeFailed:
+      "Recovery could not start; refresh the snapshot and retry",
     failedTasks: (count: number) => `${count} failed`,
     dependencyBlocked: (count: number) => `${count} dependency-blocked`,
     checkpointSequence: (sequence: number) => `checkpoint #${sequence}`,
     recoverySafe: "redacted",
     recoveryUnsafe: "raw data included",
+    durableRecovery: "durable view",
+    durableRecoveryHint:
+      "Worker output is withheld after restart; inspect the recovery queue before resuming.",
     statusLabels: {
       pending: "Pending",
       running: "Running",
@@ -6668,6 +6685,8 @@ Strategy:
     readingGitDiff: (running) =>
       running ? "Reading Git diff" : "Read Git diff",
     committingGit: (running) => (running ? "Committing Git" : "Committed Git"),
+    subagentUsage: (tokens, costUsd) =>
+      `Governance: ${tokens.toLocaleString()} tokens · $${costUsd.toFixed(4)}`,
   },
 
   // Store utilities
@@ -8067,9 +8086,10 @@ Strategy:
       `Recommended for this device: ${label}`,
     efficiencyMode: "Efficiency",
     efficiencyModeDesc:
-      "Prefer cloud high-performance models for faster, stronger responses.",
+      "Allow cloud models. Task content, file excerpts and conversation history may be sent to the selected service.",
     privacyMode: "Privacy",
-    privacyModeDesc: "Prefer local models; data stays on this device.",
+    privacyModeDesc:
+      "Use on-device models only; stop if unavailable. Network tools and unverified execution methods are blocked.",
     detectButton: "Detect",
     recommendedTag: "Recommended",
     enabledTag: "Enabled",
@@ -8109,7 +8129,7 @@ Strategy:
   sandboxSettings: {
     title: "Sandbox & Execution Permissions",
     description:
-      "Execution environment and permission level are two independent dimensions you can combine freely — e.g. “Sandbox + Full access” for full automation inside isolation, or “Local + Accept edits” to run on this machine while commands still ask for confirmation.",
+      "Permission levels choose the execution boundary and reviewer: Ask for approval and Approve for me stay in the workspace sandbox, while Full access runs locally. Network access is configured separately.",
     activeTag: "Current",
     scopeNote:
       "Changes are saved to local settings and apply to all future tasks; tasks already running are unaffected.",
@@ -8150,14 +8170,14 @@ Strategy:
     },
     permission: {
       default: {
-        label: "Default",
+        label: "Ask for approval",
         description:
-          "Any write or command asks for your approval first. Safest option.",
+          "Can edit the workspace and run routine commands; asks before using the network or crossing workspace boundaries.",
       },
       acceptEdits: {
-        label: "Accept edits",
+        label: "Approve for me",
         description:
-          "File changes run automatically; commands still ask for approval.",
+          "Keeps the same workspace boundary and sends eligible escalations to an independent reviewer.",
       },
       bypassPermissions: {
         label: "Full access",
@@ -9463,6 +9483,10 @@ Strategy:
     batchEventTitle: (status) => `Batch ${status}`,
     subagentEventTitle: (name, status) => `${name} ${status}`,
     subagentFallback: "subagent",
+    durableRecovery: "Durable recovery view",
+    durableRecoveryHint:
+      "Worker output is withheld; inspect the recovery queue before resuming.",
+    recoveryRequired: "Recovery review required",
     statusComplete: "complete",
     statusUpdated: "updated",
     routeBlocked: "Route blocked",
@@ -9575,11 +9599,15 @@ Strategy:
         "The local knowledge base is running, but its credentials have expired. Reconnecting…",
       notFound:
         "echo-storage was not found. Install the local knowledge base service or set ECHO_STORAGE_CMD, then try again.",
+      browseOnly:
+        "The index service is offline. You can still browse and reference local files.",
       startFailed:
         "The local knowledge base service failed to start. Check the backend logs and try again.",
       notConnected: "Local knowledge base service is still unreachable: {url}",
       networkError:
         "Unable to connect to the local knowledge base service. Please make sure it is running and try again.",
+      folderPickerUnavailable:
+        "Unable to open the system folder picker. Check the desktop bridge or local backend and try again.",
     },
     toolbar: {
       authorize: "Authorize",

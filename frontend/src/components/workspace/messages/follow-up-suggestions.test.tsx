@@ -67,7 +67,7 @@ describe("FollowUpSuggestions", () => {
       <FollowUpSuggestions
         project="/p"
         agentId="coder"
-        conversationVersion={ "v0" }
+        conversationVersion={"v0"}
         isLoading={false}
         onSelect={vi.fn()}
       />,
@@ -94,7 +94,7 @@ describe("FollowUpSuggestions", () => {
       <FollowUpSuggestions
         project="/p"
         agentId="coder"
-        conversationVersion={ "v1" }
+        conversationVersion={"v1"}
         isLoading={false}
         onSelect={vi.fn()}
       />,
@@ -116,7 +116,7 @@ describe("FollowUpSuggestions", () => {
       <FollowUpSuggestions
         project={null}
         agentId="coder"
-        conversationVersion={ "v2" }
+        conversationVersion={"v2"}
         isLoading={false}
         onSelect={vi.fn()}
       />,
@@ -176,7 +176,7 @@ describe("FollowUpSuggestions", () => {
       <FollowUpSuggestions
         project="/p"
         agentId="coder"
-        conversationVersion={ "v3" }
+        conversationVersion={"v3"}
         isLoading={false}
         onSelect={vi.fn()}
       />,
@@ -194,7 +194,7 @@ describe("FollowUpSuggestions", () => {
       <FollowUpSuggestions
         project="/p"
         agentId="coder"
-        conversationVersion={ "v4" }
+        conversationVersion={"v4"}
         isLoading={false}
         onSelect={onSelect}
       />,

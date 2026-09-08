@@ -53,7 +53,11 @@ export function deriveAgentTilesFromEvents(
       status = event.status === "error" ? "error" : "done";
     } else if (event.status === "waiting_approval") {
       status = "waiting_approval";
-    } else if (existing || event.status === "running" || event.status === "done") {
+    } else if (
+      existing ||
+      event.status === "running" ||
+      event.status === "done"
+    ) {
       status = "running";
     } else {
       status = "pending";

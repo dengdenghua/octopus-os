@@ -28,6 +28,10 @@ _LAZY_EXPORTS = {
     "subagents": "runtime.execution.subagents",
     "slash_commands": "runtime.execution.slash_commands",
     "loops": "runtime.execution.loops",
+    "artifact_contracts": "runtime.execution.artifact_contracts",
+    "engines": "runtime.execution.engines",
+    "host_boundary": "runtime.execution.host_boundary",
+    "request": "runtime.execution.request",
     # Backward-compat shims for code that does `from runtime.execution import X`
     # where X is a submodule name now living under misc/.
     "agent_avatar": "runtime.execution.misc.agent_avatar",

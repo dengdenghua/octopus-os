@@ -18,8 +18,8 @@ from runtime.execution.misc.file_write_leases import (
 )
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.tool_engine._executor_fileops import (
-    _emit_file_op_from_step,
     _extract_path,
+    _prepare_file_op_from_step,
     _try_read_pre_content,
 )
 from runtime.execution.tool_engine._executor_helpers import (
@@ -45,14 +45,17 @@ from runtime.execution.tool_engine._executor_helpers import (
     _record_successful_read,
     _resolve_workspace_for_diagnostics,
     _restore_trusted_browser_loopback_access,
+    _uses_workspace_paths,
     _validate_output,
 )
 from runtime.execution.tool_engine.effect_receipts import (
     EffectResolution,
     ToolEffectReceiptIndex,
+    _canonical_effect_class,
     build_server_effect_receipt,
     indeterminate_step,
     is_side_effecting,
+    should_refresh_read_result,
 )
 from runtime.execution.tool_engine.effect_store import EffectStore, SQLiteEffectStore
 from runtime.execution.tool_engine.skill_gate import (
@@ -253,6 +256,20 @@ class ToolExecutor:
             self._effect_receipts = self._build_effect_receipts()
         return self._effect_receipts
 
+    def reserve_native_step_ids(self, task_id: TaskId, count: int) -> list[int]:
+        """Allocate server-owned invocation identities across native streams."""
+        receipts = self._current_effect_receipts()
+        if receipts is None:
+            raise RuntimeError("native execution requires an effect receipt journal")
+        return receipts.reserve_native_step_ids(task_id, count)
+
+    def assert_native_task_recoverable(self, task_id: TaskId) -> None:
+        """A new model round must not bypass an unresolved previous effect."""
+        receipts = self._current_effect_receipts()
+        if receipts is None:
+            raise RuntimeError("native execution requires an effect receipt journal")
+        receipts.assert_native_task_recoverable(task_id)
+
     def execute_step(
         self,
         step_id: int,
@@ -429,6 +446,15 @@ class ToolExecutor:
                         "echo.audit_read_only.blocked": True,
                         "echo.audit_read_only.tool": str(sucker_id),
                     },
+                )
+
+            from runtime.safety.privacy import tool_privacy_denial
+
+            privacy_denial = tool_privacy_denial(skill)
+            if privacy_denial:
+                return _reject_step(
+                    "failed", privacy_denial,
+                    span_attrs={"echo.privacy.blocked": True},
                 )
 
             governance = evaluate_execution_policy(
@@ -617,13 +643,11 @@ class ToolExecutor:
                     return step
 
             pre_content: str | None = None
-            pre_exists = False
-            if "file" in (skill.affinity or []):
-                _pre_path = _extract_path(args, None)
-                if _pre_path:
-                    with contextlib.suppress(OSError, ValueError):
-                        pre_exists = Path(_pre_path).is_file()
-                pre_content = _try_read_pre_content(_pre_path)
+            # Unknown before-state must never become a fabricated "new file".
+            pre_exists = True
+            captured_path: str | None = None
+            observed_content: str | None = None
+            observed_absent: bool | None = None
             t0 = time.monotonic()
 
             # 6a. PUBLIC PreToolUse hook · pre/post tool lifecycle
@@ -689,9 +713,10 @@ class ToolExecutor:
                     )
                     if _write_scope_reason is not None:
                         raise PermissionError(_write_scope_reason)
-                    _read_guard_reason = _read_before_write_violation(
-                        str(sucker_id),
-                        args,
+                    _read_guard_reason = (
+                        _read_before_write_violation(str(sucker_id), args)
+                        if _uses_workspace_paths(skill)
+                        else None
                     )
                     if _read_guard_reason is not None:
                         raise ReadBeforeWriteRequired(_read_guard_reason)
@@ -709,8 +734,22 @@ class ToolExecutor:
                                 f"write skill {sucker_id!r} blocked by "
                                 f"file-safety: {_fs_verdict.reason}"
                             )
-                    _effect_side = is_side_effecting(skill.affinity)
-                    if caller == "react_loop" and _effect_receipt_index is not None:
+                    # Registry affinity is not proof that a replaceable plugin
+                    # handler is safe to retry after a partial effect. Keep the
+                    # durable claim at least as conservative as the sealed
+                    # receipt emitted after dispatch.
+                    _effect_side = is_side_effecting(skill.affinity) or (
+                        _canonical_effect_class(skill, handler_executed=True) != "read_only"
+                    )
+                    # A cached protected read can outlive the caller's grant
+                    # or expose data excluded by today's ACL. This frozen
+                    # Skill policy comes from server registration, not args.
+                    # Preserve durable replay for every side-effecting skill.
+                    if (
+                        caller in {"react_loop", "agentic"}
+                        and _effect_receipt_index is not None
+                        and not should_refresh_read_result(skill)
+                    ):
                         _effect_resolution = _effect_receipt_index.begin(
                             task_id=task_id,
                             step_id=step_id,
@@ -780,6 +819,33 @@ class ToolExecutor:
                             _effect_resolution,
                         )
 
+                    # Capture the actual authorized target after argument hooks,
+                    # workspace resolution and write-lease checks. A relative
+                    # model path is not relative to the server's process CWD.
+                    if (
+                        _uses_workspace_paths(skill)
+                        and "file" in (skill.affinity or [])
+                        and set(skill.affinity or [])
+                        & {
+                            "write",
+                            "edit",
+                            "delete",
+                            "dangerous",
+                        }
+                    ):
+                        from runtime.execution.tool_engine.skill_gate import canonical_tool_path
+
+                        _pre_target = canonical_tool_path(args)
+                        if _pre_target is not None:
+                            captured_path = str(_pre_target)
+                            try:
+                                _pre_target.lstat()
+                            except FileNotFoundError:
+                                pre_exists = False
+                            except OSError:
+                                pass
+                            pre_content = _try_read_pre_content(str(_pre_target))
+
                     # Bind the runtime TrustEngine as the ambient engine for
                     # the handler call. A meta-skill (use_capability / forged
                     # composite) dispatches to an inner handler DIRECTLY,
@@ -788,6 +854,17 @@ class ToolExecutor:
                     # skill_gate.gate_inner_dispatch.
                     def _invoke_captured_handler(**handler_args: Any) -> Any:
                         nonlocal _handler_executed
+                        # Check after approval, immediately before every
+                        # invocation (including a retry and timed worker).
+                        # The immutable token belongs to the server Session,
+                        # not a model-supplied task ID or metadata field.
+                        execution_session = current_session()
+                        execution_lease = getattr(execution_session, "execution_lease", None)
+                        if execution_lease is not None:
+                            execution_lease.assert_allowed()
+                        from runtime.safety.approval.cancellation import current_cancellation_token
+
+                        current_cancellation_token().throw_if_cancelled()
                         _handler_executed = True
                         return skill.handler(**handler_args)
 
@@ -795,9 +872,22 @@ class ToolExecutor:
                         output, retry_tags = _call_handler_with_transient_retry(
                             _invoke_captured_handler,
                             args,
-                            allow_retry=(caller != "react_loop" or not _effect_side),
+                            allow_retry=not _effect_side,
                             timeout_s=getattr(skill, "timeout_s", None),
                         )
+                    # Observe before hooks/diagnostics, outside the handler's
+                    # timer. Slow observation must not turn an already returned
+                    # side effect into a handler timeout or trigger its retry.
+                    if captured_path is not None:
+                        try:
+                            Path(captured_path).lstat()
+                        except FileNotFoundError:
+                            observed_absent = True
+                        except OSError:
+                            observed_absent = None
+                        else:
+                            observed_absent = False
+                        observed_content = _try_read_pre_content(captured_path)
                     status: ExecutionStatus = "success"
                     error_type: str | None = None
                     stderr_tags: list[str] = retry_tags
@@ -914,7 +1004,8 @@ class ToolExecutor:
                         _write_session,
                         _lease_target,
                     )
-                _record_successful_read(str(sucker_id), args, output)
+                if _uses_workspace_paths(skill):
+                    _record_successful_read(str(sucker_id), args, output)
 
             latency_ms = (time.monotonic() - t0) * 1000
 
@@ -968,6 +1059,27 @@ class ToolExecutor:
             # effort · dispatch exceptions can't rail the commit path.
             _notify_budget_warnings(budget, task_id, arm_id)
 
+            prepared_file_op: dict[str, Any] | None = None
+            affinity = set(skill.affinity or [])
+            if (
+                _handler_executed
+                and status == "success"
+                and _uses_workspace_paths(skill)
+                and "file" in affinity
+                and affinity & {"write", "edit", "delete", "dangerous"}
+            ):
+                with contextlib.suppress(Exception):
+                    prepared_file_op = _prepare_file_op_from_step(
+                        skill=skill,
+                        args=args,
+                        output=output,
+                        pre_content=pre_content,
+                        pre_exists=pre_exists,
+                        captured_path=captured_path,
+                        observed_content=observed_content,
+                        observed_absent=observed_absent,
+                    )
+
             result = ExecutionResult(
                 call_id=call.call_id,
                 status=status,
@@ -978,64 +1090,22 @@ class ToolExecutor:
                 cost=actual_cost,
             )
 
-            # 8a. PUBLIC PostToolUse hook · community handlers can
-            # rewrite the output (e.g. scrub secrets before it reaches
-            # the planner). Cancel is not meaningful post-hoc · any
-            # side effect already happened · we honor modified_output
-            # only.
-            try:
-                from runtime.platform.process.session import current_session as _cs2
-                from runtime.safety.hooks.runner import dispatch_post_tool
-
-                post_decision = dispatch_post_tool(
-                    sucker_id=str(sucker_id),
-                    args=args,
-                    output=output,
-                    success=(status == "success"),
-                    session=_cs2(),
-                )
-                if post_decision.modified_output is not None:
-                    _receipt_rewrite_source = "public_post_tool_rewritten"
-                    # re-hash · keep ExecutionResult self-consistent
-                    result = ExecutionResult(
-                        call_id=call.call_id,
-                        status=status,
-                        output=_safe_repr(post_decision.modified_output),
-                        output_hash=_hash_output(post_decision.modified_output),
-                        error_type=error_type,
-                        stderr_tags=stderr_tags + ["post_hook_rewrote"],
-                        cost=actual_cost,
-                    )
-            except (TypeError, ValueError, RuntimeError):  # noqa: BLE001
-                pass
-
-            # 8b. PUBLIC PostToolUseFailure hook · fires when the tool did
-            # not succeed. Notification-type: the failure already happened;
-            # handlers get a chance to observe (metrics, alerts) before the
-            # error propagates to the planner.
-            if status != "success":
-                try:
-                    from runtime.platform.process.session import current_session as _cs3
-                    from runtime.safety.hooks.runner import dispatch_post_tool_failure
-
-                    dispatch_post_tool_failure(
-                        sucker_id=str(sucker_id),
-                        args=args,
-                        error=(result.error_type if isinstance(result.error_type, str) else ""),
-                        session=_cs3(),
-                    )
-                except (TypeError, ValueError, RuntimeError):  # noqa: BLE001
-                    pass
-
-            # 8c. Post-write diagnostics · auto-trigger ruff/eslint and
+            post_hook_output = output
+            # Prepare diagnostics before the public output hook · auto-trigger ruff/eslint and
             # attach a targeted regression matrix after successful writes.
             # Output is appended to ``result.output`` (frozen model ·
             # re-built via ``model_copy``) so the model sees lint feedback
             # and knows which verification commands fit the changed file.
             # Best-effort · hook helpers never raise into the executor.
-            if status == "success" and str(sucker_id) in _READ_BEFORE_WRITE_TOOLS | {
-                "append_text_file",
-            }:
+            if (
+                _uses_workspace_paths(skill)
+                and status == "success"
+                and str(sucker_id)
+                in _READ_BEFORE_WRITE_TOOLS
+                | {
+                    "append_text_file",
+                }
+            ):
                 try:
                     from runtime.safety.hooks.tool_edge_hooks import (
                         post_write_diagnostics,
@@ -1060,32 +1130,78 @@ class ToolExecutor:
                             else {"path": _extract_path(args, output)},
                             workspace_path=workspace_path,
                         )
-                        if diag:
-                            new_output_text = (
-                                (result.output or "")
-                                + ("\n\n" if result.output else "")
-                                + "[post-write diagnostics]\n"
-                                + diag
-                            )
+                        for detail, heading, tag in (
+                            (diag, "post-write diagnostics", "post_diagnostics"),
+                            (matrix, "regression matrix", "regression_matrix"),
+                        ):
+                            if not detail:
+                                continue
+                            if isinstance(result.output, dict):
+                                enriched_output: Any = {**result.output, tag: detail}
+                            else:
+                                enriched_output = (
+                                    str(result.output or "")
+                                    + ("\n\n" if result.output else "")
+                                    + f"[{heading}]\n"
+                                    + detail
+                                )
+                            post_hook_output = enriched_output
                             result = result.model_copy(
                                 update={
-                                    "output": new_output_text,
-                                    "stderr_tags": list(result.stderr_tags) + ["post_diagnostics"],
+                                    "output": _safe_repr(enriched_output),
+                                    "output_hash": _hash_output(enriched_output),
+                                    "stderr_tags": list(result.stderr_tags) + [tag],
                                 }
                             )
-                        if matrix:
-                            new_output_text = (
-                                (result.output or "")
-                                + ("\n\n" if result.output else "")
-                                + "[regression matrix]\n"
-                                + matrix
-                            )
-                            result = result.model_copy(
-                                update={
-                                    "output": new_output_text,
-                                    "stderr_tags": list(result.stderr_tags) + ["regression_matrix"],
-                                }
-                            )
+                except (TypeError, ValueError, RuntimeError):  # noqa: BLE001
+                    pass
+
+            # 8a. PUBLIC PostToolUse hook · community handlers can
+            # rewrite the output (e.g. scrub secrets before it reaches
+            # the planner). Cancel is not meaningful post-hoc · any
+            # side effect already happened · we honor modified_output
+            # only.
+            try:
+                from runtime.platform.process.session import current_session as _cs2
+                from runtime.safety.hooks.runner import dispatch_post_tool
+
+                post_decision = dispatch_post_tool(
+                    sucker_id=str(sucker_id),
+                    args=args,
+                    output=post_hook_output,
+                    success=(status == "success"),
+                    session=_cs2(),
+                )
+                if post_decision.modified_output is not None:
+                    _receipt_rewrite_source = "public_post_tool_rewritten"
+                    # re-hash · keep ExecutionResult self-consistent
+                    result = ExecutionResult(
+                        call_id=call.call_id,
+                        status=status,
+                        output=_safe_repr(post_decision.modified_output),
+                        output_hash=_hash_output(post_decision.modified_output),
+                        error_type=error_type,
+                        stderr_tags=list(result.stderr_tags) + ["post_hook_rewrote"],
+                        cost=actual_cost,
+                    )
+            except (TypeError, ValueError, RuntimeError):  # noqa: BLE001
+                pass
+
+            # 8b. PUBLIC PostToolUseFailure hook · fires when the tool did
+            # not succeed. Notification-type: the failure already happened;
+            # handlers get a chance to observe (metrics, alerts) before the
+            # error propagates to the planner.
+            if status != "success":
+                try:
+                    from runtime.platform.process.session import current_session as _cs3
+                    from runtime.safety.hooks.runner import dispatch_post_tool_failure
+
+                    dispatch_post_tool_failure(
+                        sucker_id=str(sucker_id),
+                        args=args,
+                        error=(result.error_type if isinstance(result.error_type, str) else ""),
+                        session=_cs3(),
+                    )
                 except (TypeError, ValueError, RuntimeError):  # noqa: BLE001
                     pass
 
@@ -1168,38 +1284,14 @@ class ToolExecutor:
             # can't break execution.
             _record_session_budget(self._budget_tracker, actual_cost)
 
-            affinity = set(skill.affinity or [])
-            if (
-                status == "success"
-                and "file" in affinity
-                and affinity
-                & {
-                    "write",
-                    "edit",
-                    "delete",
-                    "dangerous",
-                }
-            ):
+            if prepared_file_op is not None and hasattr(self.journal, "write_file_op"):
                 with contextlib.suppress(Exception):
-                    _emit_file_op_from_step(
-                        journal=self.journal,
-                        skill=skill,
-                        args=args,
-                        output=output,
+                    self.journal.write_file_op(
+                        **prepared_file_op,
                         task_id=task_id,
                         arm_id=arm_id,
                         actor=actor,
-                        pre_content=pre_content,
-                        pre_exists=pre_exists,
                     )
-                    if isinstance(output, dict) and output.get("diff_preview"):
-                        result = result.model_copy(
-                            update={
-                                "output": _safe_repr(output),
-                                "output_hash": _hash_output(output),
-                            }
-                        )
-                        step = step.model_copy(update={"result": result})
 
             self.journal.write_step(task_id, arm_id, step, actor=actor)
 

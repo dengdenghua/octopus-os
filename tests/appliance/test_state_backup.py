@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 
 import pytest
 
+from appliance.nas_alert_delivery import NasAlertDeliveryService, WebhookDesiredState
 from appliance.state_backup import (
     BackupError,
     export_backup,
@@ -55,6 +57,31 @@ def _state_tree(tmp_path):
         )
     )
     (state / "omv-health-state.json").chmod(0o600)
+    (state / "appliance-totp.json").write_text(
+        json.dumps(
+            {
+                "format": "echo-appliance-totp-v1",
+                "username": "admin",
+                "secret": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+                "recovery_code_hashes": ["a" * 64],
+                "last_accepted_counter": -1,
+                "enabled_at": 1,
+            }
+        )
+    )
+    (state / "appliance-totp.json").chmod(0o600)
+    delivery = NasAlertDeliveryService(state, encryption_secret="private-jwt-secret")
+    delivery.apply(
+        delivery.plan(
+            WebhookDesiredState.model_validate(
+                {
+                    "enabled": True,
+                    "url": "https://hooks.example.com/echo?secret=backup-webhook-token",
+                    "bearerToken": "backup-bearer-token",
+                }
+            )
+        )["planId"]
+    )
     (nas / "family-photo.jpg").write_bytes(b"NAS-USER-DATA-MUST-NOT-BE-INCLUDED")
     return state, nas
 
@@ -67,9 +94,18 @@ def test_encrypted_round_trip_excludes_nas_user_data(tmp_path) -> None:
 
     encrypted = backup.read_bytes()
     assert exported["encrypted"] is True
-    assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+    if os.name == "nt":
+        from tests.appliance.windows_acl_assertions import assert_private_windows_acl
+
+        assert_private_windows_acl(backup.parent)
+        assert_private_windows_acl(backup)
+    else:
+        assert stat.S_IMODE(backup.stat().st_mode) == 0o600
     assert b"private-jwt-secret" not in encrypted
     assert b"remember me" not in encrypted
+    assert b"GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" not in encrypted
+    assert b"backup-webhook-token" not in encrypted
+    assert b"backup-bearer-token" not in encrypted
     assert b"NAS-USER-DATA-MUST-NOT-BE-INCLUDED" not in encrypted
 
     verified = verify_backup(backup, passphrase=PASSPHRASE)
@@ -86,8 +122,11 @@ def test_encrypted_round_trip_excludes_nas_user_data(tmp_path) -> None:
     )
     assert (restored / "memory" / "facts.json").read_text() == '{"fact":"remember me"}'
     assert json.loads((restored / "omv-health-state.json").read_text())["state"] == ("healthy")
-    assert stat.S_IMODE((restored / "omv-health-state.json").stat().st_mode) == 0o600
-    assert stat.S_IMODE((restored / "appliance-auth.json").stat().st_mode) == 0o600
+    assert json.loads((restored / "appliance-totp.json").read_text())["username"] == "admin"
+    assert (restored / "nas-alert-delivery.json").exists()
+    if os.name != "nt":
+        assert stat.S_IMODE((restored / "omv-health-state.json").stat().st_mode) == 0o600
+        assert stat.S_IMODE((restored / "appliance-auth.json").stat().st_mode) == 0o600
     assert not (restored / "nas").exists()
     assert not (restored / LOCK_FILENAME).exists()
 

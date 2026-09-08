@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from appliance import native_storage
@@ -47,6 +47,7 @@ def native_volume(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path
         ],
     )
     monkeypatch.setattr(native_storage, "_users_group_gid", lambda: 100)
+    monkeypatch.setattr(native_storage, "_smb_users_group_sid", lambda: "S-1-22-2-100")
     monkeypatch.setattr(native_storage, "_configure_shared_folder", lambda _path, _gid: None)
     monkeypatch.setattr(
         native_storage,
@@ -66,6 +67,7 @@ def test_native_status_advertises_only_the_available_write_slice(
     monkeypatch.setattr(native_storage, "_native_btrfs_scrub_scheduler_available", lambda: True)
     monkeypatch.setattr(native_storage, "_native_btrfs_snapshot_scheduler_available", lambda: True)
     monkeypatch.setattr(native_storage, "_native_disk_idle_service_available", lambda: True)
+    monkeypatch.setattr(native_storage, "_native_smb_users_group_available", lambda: True)
 
     payload = native_storage.status()
 
@@ -133,6 +135,15 @@ def test_native_status_hides_write_slices_without_host_tools(
         "account.user.create.v1",
         "account.user.password.reset.v1",
     ]
+
+
+def test_native_status_hides_smb_without_the_managed_users_group(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(native_storage.shutil, "which", lambda _binary: "/usr/bin/tool")
+    monkeypatch.setattr(native_storage, "_native_smb_users_group_available", lambda: False)
+
+    assert "smb.share.desired.v1" not in native_storage.status()["capabilities"]
 
 
 def test_native_status_hides_mdraid_schedule_without_installed_timer(
@@ -2098,6 +2109,95 @@ def posix_accounts(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     }
 
 
+@pytest.mark.parametrize("reset", [False, True], ids=["create", "password-reset"])
+def test_native_account_http_passes_secret_to_real_control_not_response_or_audit(
+    posix_accounts: dict[str, Any], monkeypatch: pytest.MonkeyPatch, reset: bool
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    password = "Native-Account-Regression-2026!"
+    desired = {
+        "schema": "echo.omv.user-password-desired.v1" if reset else "echo.omv.user-desired.v1",
+        "name": "mother",
+        "password": password,
+    }
+    if reset:
+        posix_accounts["users"].append("mother")
+    else:
+        desired.update(displayName="Mom", groups=[])
+    approval_calls: list[dict[str, Any]] = []
+    audit_calls: list[dict[str, Any]] = []
+
+    class Approval:
+        def consume(self, **kwargs: Any) -> None:
+            if kwargs.get("token") != "test-approval":
+                raise HTTPException(status_code=403, detail="approval required")
+            approval_calls.append(kwargs)
+
+    class Audit:
+        def record(self, **kwargs: Any) -> None:
+            audit_calls.append(kwargs)
+
+    app = FastAPI()
+    app.include_router(create_omv_alias_router(approval=Approval(), audit=Audit()))
+    client = TestClient(app)
+    path = "/api/appliance/omv/accounts/users" + ("/password" if reset else "")
+    # Keep real native planning, validation and apply; only OS account subprocesses are mocked.
+    planned = client.post(path + "/plan", json=desired)
+    assert planned.status_code == 200, planned.text
+    assert password not in planned.text
+    plan_id = planned.json()["planId"]
+    payload = {"desired": desired, "planId": plan_id}
+    denied = client.post(path + "/apply", json=payload)
+    assert denied.status_code == 403
+    assert posix_accounts["secrets"] == []
+    stale = client.post(path + "/apply", json={**payload, "planId": "0" * 64})
+    assert stale.status_code == 409
+    applied = client.post(
+        path + "/apply", json=payload, headers={"X-Echo-Approval": "test-approval"}
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["verified"] is True
+    assert posix_accounts["secrets"] == [("mother", password)]
+    assert posix_accounts["samba"] == ["mother"]
+    assert approval_calls[0]["action"] == (
+        "omv.user.password.reset" if reset else "omv.user.create"
+    )
+    assert password not in applied.text
+    assert password not in str(audit_calls)
+    assert password not in str(approval_calls)
+
+
+@pytest.mark.parametrize("reset", [False, True], ids=["create", "password-reset"])
+@pytest.mark.parametrize("stage", ["plan", "apply"])
+@pytest.mark.parametrize("invalid", [{"name": "root"}, {"password": "weakpassword"}])
+def test_native_account_http_invalid_secret_contract_is_422_without_writes(
+    posix_accounts: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    reset: bool,
+    stage: str,
+    invalid: dict[str, str],
+) -> None:
+    monkeypatch.delenv("ECHO_APPLIANCE", raising=False)
+    desired = {
+        "schema": "echo.omv.user-password-desired.v1" if reset else "echo.omv.user-desired.v1",
+        "name": "mother",
+        "password": "Native-Account-Regression-2026!",
+        **invalid,
+    }
+    if not reset:
+        desired.update(displayName="Mom", groups=[])
+    app = FastAPI()
+    app.include_router(create_omv_alias_router())
+    client = TestClient(app, raise_server_exceptions=False)
+    path = "/api/appliance/omv/accounts/users" + ("/password" if reset else "")
+    payload = desired if stage == "plan" else {"desired": desired, "planId": "a" * 64}
+    response = client.post(path + "/" + stage, json=payload)
+    assert response.status_code == 422
+    assert desired["password"] not in response.text
+    assert posix_accounts["secrets"] == []
+    assert posix_accounts["users"] == []
+
+
 def test_group_create_is_idempotent(posix_accounts: dict[str, list[Any]]) -> None:
     desired = {"schema": "echo.omv.group-desired.v1", "name": "family", "comment": "Family share"}
     plan = native_storage.plan_group(desired)
@@ -2186,8 +2286,9 @@ def test_user_password_reset_rejects_unconstrained_account(
         native_storage.plan_user_password(desired)
 
 
+@pytest.mark.parametrize("read_only", [False, True])
 def test_smb_share_enable(
-    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch
+    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch, read_only: bool
 ) -> None:
     volume, registry, mount_point_ref = native_volume
     folder_uuid = "11111111-2222-4333-8444-555555555555"
@@ -2199,7 +2300,15 @@ def test_smb_share_enable(
         info_calls["n"] += 1
         # Plan, then apply's internal re-plan: share not created yet -> None.
         # The post-create verify call sees the (simulated) registered share.
-        return None if info_calls["n"] < 3 else {"comment": "Media"}
+        return (
+            None
+            if info_calls["n"] < 3
+            else {
+                "comment": "Media",
+                "usershare_acl": f"S-1-22-2-100:{'R' if read_only else 'F'},",
+                "guest_ok": "n",
+            }
+        )
 
     monkeypatch.setattr(native_storage, "_group_exists", lambda _name: True)
     monkeypatch.setattr(native_storage, "_smb_usershare_info", fake_info)
@@ -2209,7 +2318,7 @@ def test_smb_share_enable(
         "schema": "echo.omv.smb-share-desired.v1",
         "sharedFolderRef": folder_uuid,
         "enabled": True,
-        "readOnly": False,
+        "readOnly": read_only,
         "browseable": True,
         "recycleBin": False,
         "comment": "Media",
@@ -2229,6 +2338,94 @@ def test_smb_share_enable(
     assert "path" not in applied["share"]
     assert str(folder) not in json.dumps(applied, ensure_ascii=False)
     assert calls and calls[0][:3] == ("net", "usershare", "add")
+    assert calls[0][-2:] == (f"S-1-22-2-100:{'r' if read_only else 'f'}", "guest_ok=n")
+
+
+@pytest.mark.parametrize("gid", [100, 1500])
+def test_smb_grantee_uses_actual_unix_gid(monkeypatch: pytest.MonkeyPatch, gid: int) -> None:
+    grp = SimpleNamespace(getgrnam=lambda name: SimpleNamespace(gr_gid=gid))
+    monkeypatch.setattr(native_storage, "_require_posix_accounts", lambda: (grp, None))
+    assert native_storage._smb_users_group_sid() == f"S-1-22-2-{gid}"
+
+
+def test_smb_missing_users_group_never_falls_back_to_everyone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing(_name: str) -> None:
+        raise KeyError("users")
+
+    monkeypatch.setattr(
+        native_storage, "_require_posix_accounts", lambda: (SimpleNamespace(getgrnam=missing), None)
+    )
+    with pytest.raises(OSError, match="Linux users group"):
+        native_storage._smb_users_group_sid()
+
+
+def test_smb_plan_rejects_a_share_name_matching_a_local_user(
+    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    monkeypatch.setattr(native_storage, "_user_exists", lambda name: name == "Photos")
+    desired = {
+        "schema": "echo.omv.smb-share-desired.v1",
+        "sharedFolderRef": folder_uuid,
+        "enabled": True,
+        "readOnly": False,
+        "browseable": True,
+        "recycleBin": False,
+        "comment": "Media",
+    }
+    with pytest.raises(ValueError, match="conflicts with a local user"):
+        native_storage.plan_smb(desired)
+
+
+@pytest.mark.parametrize("acl", ["S-1-22-2-100:F,", "Unix Group\\users:F,"])
+def test_smb_acl_accepts_only_the_exact_unix_group(acl: str) -> None:
+    info = {"usershare_acl": acl, "guest_ok": "n"}
+    assert native_storage._smb_info_matches_acl(info, "S-1-22-2-100", False)
+    assert not native_storage._smb_info_matches_acl(info, "S-1-22-2-100", True)
+    assert not native_storage._smb_info_matches_acl(
+        {**info, "guest_ok": "y"}, "S-1-22-2-100", False
+    )
+
+
+@pytest.mark.parametrize(
+    "acl", ["BUILTIN\\Users:F,", "users:F", "Everyone:R", "S-1-22-2-100:F,Everyone:R"]
+)
+def test_smb_acl_rejects_other_or_additional_principals(acl: str) -> None:
+    assert not native_storage._smb_info_matches_acl(
+        {"usershare_acl": acl, "guest_ok": "n"}, "S-1-22-2-100", False
+    )
+
+
+def test_smb_legacy_acl_requires_approval_and_binds_external_config_changes(
+    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    info = {"comment": "Media", "usershare_acl": "BUILTIN\\Users:F,", "guest_ok": "n"}
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", lambda _name: info)
+    calls: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(native_storage, "_run_write", lambda *args, **kwargs: calls.append(args))
+    desired = {
+        "schema": "echo.omv.smb-share-desired.v1",
+        "sharedFolderRef": folder_uuid,
+        "enabled": True,
+        "readOnly": False,
+        "browseable": True,
+        "recycleBin": False,
+        "comment": "Media",
+    }
+    plan = native_storage.plan_smb(desired)
+    assert plan["operation"] == "update" and plan["requiresApproval"] is True
+    assert {"field": "aclPrincipal", "before": "unmanaged", "after": "users"} in plan["changes"]
+    info["usershare_acl"] = "Everyone:F,"
+    with pytest.raises(ValueError, match="stale"):
+        native_storage.apply_smb(desired, plan["planId"])
+    assert calls == []
 
 
 def test_smb_share_remove_requires_a_verified_absent_usershare(

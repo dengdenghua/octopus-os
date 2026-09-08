@@ -233,7 +233,11 @@ def ups_status() -> dict[str, Any]:
         "configured": True,
         "available": readable > 0,
         "state": "ready" if readable == len(devices) else "degraded" if readable else "unavailable",
-        "code": None if readable == len(devices) else "partialRead" if readable else "deviceUnavailable",
+        "code": None
+        if readable == len(devices)
+        else "partialRead"
+        if readable
+        else "deviceUnavailable",
         "devices": devices,
     }
 

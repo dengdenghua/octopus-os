@@ -87,7 +87,7 @@ class TestServeBasics:
         rc = run_serve(
             config_path=tmp_path / "nonexistent.yaml",
             host="127.0.0.1",
-            port=8000,
+            port=0,
             learn_interval_s=0,
             color=False,
         )
@@ -163,6 +163,7 @@ class TestIntelSchedulingIntegration:
         )
 
         import uvicorn
+
         from runtime.cli import run_serve
 
         # Implementation note.
@@ -189,7 +190,7 @@ class TestIntelSchedulingIntegration:
         run_serve(
             config_path=cfg,
             host="127.0.0.1",
-            port=8000,
+            port=0,
             learn_interval_s=0,
             color=False,
         )
@@ -211,6 +212,7 @@ class TestIntelSchedulingIntegration:
         cfg = _write_cfg(tmp_path, planner_type="llm")
 
         import uvicorn
+
         from runtime import scheduler
 
         captured = {}
@@ -229,7 +231,7 @@ class TestIntelSchedulingIntegration:
         run_serve(
             config_path=cfg,
             host="127.0.0.1",
-            port=8000,
+            port=0,
             learn_interval_s=60,
             color=False,
         )
@@ -249,6 +251,7 @@ class TestIntelSchedulingIntegration:
         cfg = _write_cfg(tmp_path, planner_type="static")
 
         import uvicorn
+
         from runtime import scheduler
 
         captured = {}
@@ -267,7 +270,7 @@ class TestIntelSchedulingIntegration:
         run_serve(
             config_path=cfg,
             host="127.0.0.1",
-            port=8000,
+            port=0,
             learn_interval_s=60,
             color=False,
         )
@@ -289,6 +292,7 @@ class TestSharedJournal:
         cfg = _write_cfg(tmp_path)
 
         import uvicorn
+
         from runtime import ui as ui_module
 
         captured_app = {}
@@ -307,7 +311,7 @@ class TestSharedJournal:
         run_serve(
             config_path=cfg,
             host="127.0.0.1",
-            port=8000,
+            port=0,
             learn_interval_s=0,
             color=False,
         )
@@ -325,6 +329,7 @@ class TestCreateAppInjection:
         from uuid import uuid4
 
         from fastapi.testclient import TestClient
+
         from runtime.memory.journal import InMemoryJournal
         from runtime.platform.models import (
             ArmId,
@@ -366,6 +371,7 @@ class TestCreateAppInjection:
 
     def test_inject_registry_respected(self):
         from fastapi.testclient import TestClient
+
         from runtime.execution.suckers import Skill, SkillRegistry
         from runtime.platform.ui import create_app
 

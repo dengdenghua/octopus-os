@@ -60,6 +60,7 @@ from fastapi import APIRouter, Depends, Request
 from runtime.safety.auth.principal import resolve_principal
 from runtime.sensing._fastapi_guard import require_fastapi
 
+from ._fs_router_content import register_content_endpoint
 from ._fs_router_diff import (
     _DiffApplyConflict,
     _DiffFormatError,
@@ -190,4 +191,5 @@ def create_fs_router(
         group_store=group_store,
     )
     register_endpoints(router, ctx)
+    register_content_endpoint(router, ctx)
     return router

@@ -22,7 +22,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { swallow } from "@/core/utils/log";
-import { authHeaders } from "@/core/auth/api";
+import { authHeaders, currentActorId } from "@/core/auth/api";
 import type { components } from "@/core/api/openapi-types";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
@@ -34,6 +34,10 @@ import {
 import { pickLocalDirectory } from "@/core/workspace/pick-local-directory";
 import { basename, isAbsolutePath, joinPath } from "@/lib/path-utils";
 import { cn } from "@/lib/utils";
+import {
+  readRecentWorkdirs as readScopedRecentWorkdirs,
+  writeRecentWorkdirs as writeScopedRecentWorkdirs,
+} from "@/core/workspace/recent-workdirs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/providers/AuthProvider";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
@@ -55,7 +59,6 @@ interface WorkDirSelectorProps {
 }
 
 type FsTreeEntry = components["schemas"]["FsTreeEntry"];
-const RECENT_WORKDIRS_KEY = "echo:recentWorkdirs";
 const MAX_RECENT_WORKDIRS = 6;
 const MENU_WIDTH = 360;
 const MENU_MARGIN = 12;
@@ -73,17 +76,7 @@ const MOUNT_TYPE_ICON: Record<MountType, LucideIcon> = {
 function readRecentWorkdirs(): string[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(RECENT_WORKDIRS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? dedupePaths(
-          parsed.filter(
-            (item): item is string =>
-              typeof item === "string" && item.trim().length > 0,
-          ),
-        )
-      : [];
+    return dedupePaths(readScopedRecentWorkdirs());
   } catch (e) {
     swallow(e);
     return [];
@@ -92,10 +85,7 @@ function readRecentWorkdirs(): string[] {
 
 function writeRecentWorkdirs(paths: string[]) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(
-    RECENT_WORKDIRS_KEY,
-    JSON.stringify(dedupePaths(paths).slice(0, MAX_RECENT_WORKDIRS)),
-  );
+  writeScopedRecentWorkdirs(dedupePaths(paths).slice(0, MAX_RECENT_WORKDIRS));
 }
 
 function normalizePathKey(path: string): string {
@@ -227,6 +217,7 @@ export function WorkDirSelector({
   workspaceId,
   onWorkspaceIdChange,
 }: WorkDirSelectorProps) {
+  const actor = currentActorId();
   const isMutedVariant = variant === "muted";
   const { t, locale } = useI18n();
   const { authStatus, isAuthenticated, isLoading: authLoading } = useAuth();
@@ -256,6 +247,13 @@ export function WorkDirSelector({
   const [recentWorkdirs, setRecentWorkdirs] = useState<string[]>(() =>
     readRecentWorkdirs(),
   );
+  useEffect(() => {
+    const recent = readRecentWorkdirs();
+    setRecentWorkdirs(recent);
+    if (!workDir) {
+      setBrowsePath(recent[0] ?? "");
+    }
+  }, [actor, workDir]);
   const [manualPath, setManualPath] = useState(workDir);
   const [isBrowserOpen, setBrowserOpen] = useState(
     () => !isMutedVariant && !workDir,

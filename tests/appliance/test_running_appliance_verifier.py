@@ -19,6 +19,10 @@ assert _SPEC is not None and _SPEC.loader is not None
 verifier = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(verifier)
 
+LINUX_UID_TEST = pytest.mark.skipif(
+    not hasattr(os, "geteuid"), reason="verifier fixture requires POSIX uid and mode semantics"
+)
+
 
 def _family_fixture() -> dict:
     return {
@@ -49,6 +53,7 @@ def _family_fixture() -> dict:
     }
 
 
+@LINUX_UID_TEST
 def test_family_isolation_fixture_drives_two_real_identity_projections(
     tmp_path,
     monkeypatch,
@@ -116,6 +121,7 @@ def test_family_isolation_fixture_drives_two_real_identity_projections(
     assert "Bob-physical" not in serialized
 
 
+@LINUX_UID_TEST
 def test_family_isolation_fixture_rejects_public_or_duplicate_secret_files(tmp_path) -> None:
     fixture = tmp_path / "family.json"
     fixture.write_text(json.dumps(_family_fixture()))
@@ -1857,6 +1863,7 @@ def test_nonroot_proxy_check_rejects_any_root_identity(monkeypatch) -> None:
         verifier._assert_nonroot_runtime_identity("echo-proxy")
 
 
+@LINUX_UID_TEST
 def test_omv_real_device_probe_checks_socket_mount_auth_and_redaction(
     tmp_path: Path,
     monkeypatch,
@@ -2571,6 +2578,7 @@ def test_omv_quota_write_rejects_ambiguous_target_before_http(
         )
 
 
+@LINUX_UID_TEST
 def test_omv_host_install_uses_root_managed_code_path(tmp_path: Path) -> None:
     code_root = tmp_path / "usr" / "lib" / "echo-os" / "omv-bridge"
     package = code_root / "appliance"
@@ -2605,6 +2613,7 @@ def test_omv_host_install_uses_root_managed_code_path(tmp_path: Path) -> None:
     assert result["support_matrix"] == "debian-13+omv-8"
 
 
+@LINUX_UID_TEST
 def test_omv_host_install_rejects_user_repository_unit(tmp_path: Path) -> None:
     code_root = tmp_path / "managed"
     package = code_root / "appliance"
@@ -2641,6 +2650,7 @@ def _supported_omv_host_files(tmp_path: Path) -> tuple[Path, Path]:
     return os_release, dpkg_query
 
 
+@LINUX_UID_TEST
 def test_omv_runtime_verifier_confirms_supported_host_matrix(tmp_path: Path) -> None:
     os_release, dpkg_query = _supported_omv_host_files(tmp_path)
     observed: list[list[str]] = []
@@ -2666,6 +2676,7 @@ def test_omv_runtime_verifier_confirms_supported_host_matrix(tmp_path: Path) -> 
     assert observed == [[str(dpkg_query), "-W", "-f=${Version}", "openmediavault"]]
 
 
+@LINUX_UID_TEST
 def test_omv_runtime_verifier_rejects_debian_12_before_package_query(
     tmp_path: Path,
 ) -> None:
@@ -2681,6 +2692,7 @@ def test_omv_runtime_verifier_rejects_debian_12_before_package_query(
         )
 
 
+@LINUX_UID_TEST
 def test_omv_runtime_verifier_rejects_unsupported_omv_major(tmp_path: Path) -> None:
     os_release, dpkg_query = _supported_omv_host_files(tmp_path)
 
@@ -2724,6 +2736,7 @@ def test_omv_unit_auto_detection_distinguishes_native_and_managed_install(
         verifier._resolve_omv_unit_path("auto")
 
 
+@pytest.mark.skipif(os.name == "nt", reason="OMV unit paths use POSIX absolute-path semantics")
 def test_omv_unit_explicit_path_must_be_absolute() -> None:
     with pytest.raises(verifier.VerificationError, match="absolute or auto"):
         verifier._resolve_omv_unit_path("relative/echo-omv-bridge.service")

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { authHeader } from "@/appliance/auth";
 
 import {
+  downloadResourceUrl,
   downloadFile,
   emptyTrash,
   FILE_SERVICE_UNAVAILABLE_MESSAGE,
@@ -10,8 +11,46 @@ import {
   fetchStorageUsage,
   listDir,
   RESUMABLE_UPLOAD_THRESHOLD_BYTES,
+  resolveResourceLocation,
   uploadFile,
 } from "./files";
+
+it("builds a path-free appliance resource download URL", () => {
+  const resourceId =
+    "appliance-file:v1:" + "a".repeat(64) + ":ZG9jcy9yZXBvcnQudHh0";
+  expect(downloadResourceUrl(resourceId)).toBe(
+    `/api/appliance/files/resource/${encodeURIComponent(resourceId)}`,
+  );
+  expect(() => downloadResourceUrl("/tmp/report.txt")).toThrow();
+});
+
+it("resolves a path-free appliance resource for database navigation", async () => {
+  const resourceId =
+    "appliance-file:v1:" + "a".repeat(64) + ":ZG9jcy9yZXBvcnQudHh0";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          resource_id: resourceId,
+          path: "docs/report.txt",
+          directory: "docs",
+          is_directory: false,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+
+  await expect(resolveResourceLocation(resourceId)).resolves.toMatchObject({
+    path: "docs/report.txt",
+    directory: "docs",
+  });
+  expect(fetch).toHaveBeenCalledWith(
+    `/api/appliance/files/resource/${encodeURIComponent(resourceId)}/location`,
+    { headers: { Authorization: "Bearer local-test" } },
+  );
+});
 
 vi.mock("@/appliance/auth", () => ({
   authHeader: vi.fn(),
@@ -147,6 +186,7 @@ describe("NAS file transfers", () => {
     expect(xhr.sentBody).toBeInstanceOf(FormData);
     expect((xhr.sentBody as FormData).get("path")).toBe("docs");
     expect((xhr.sentBody as FormData).get("size")).toBe("4");
+    expect((xhr.sentBody as FormData).get("overwrite")).toBe("false");
     expect(((xhr.sentBody as FormData).get("file") as File).name).toBe(
       "report.txt",
     );
@@ -188,6 +228,41 @@ describe("NAS file transfers", () => {
         }),
       }),
     );
+  });
+
+  it("passes overwrite through preflight and the upload form", async () => {
+    const file = new File(["updated"], "report.txt", { type: "text/plain" });
+    const promise = uploadFile("docs", file, undefined, { overwrite: true });
+    await vi.waitFor(() => expect(MockXhr.instances).toHaveLength(1));
+    const xhr = MockXhr.instances[0]!;
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/appliance/files/upload/preflight",
+      expect.objectContaining({
+        body: JSON.stringify({
+          path: "docs",
+          filename: "report.txt",
+          size: 7,
+          overwrite: true,
+        }),
+      }),
+    );
+    expect((xhr.sentBody as FormData).get("overwrite")).toBe("true");
+    xhr.responseText = JSON.stringify({
+      ok: true,
+      entry: {
+        name: "report.txt",
+        path: "docs/report.txt",
+        kind: "file",
+        size: 7,
+        mtime: 2,
+      },
+      sha256: "c".repeat(64),
+      hashVerified: true,
+    });
+    xhr.onload?.();
+    await expect(promise).resolves.toMatchObject({
+      entry: { path: "docs/report.txt" },
+    });
   });
 
   it("resumes a large upload from the server offset after a lost chunk response", async () => {
@@ -463,6 +538,114 @@ describe("NAS file transfers", () => {
       percent: 100,
     });
   });
+
+  it.each([true, false])(
+    "downloads a verified plan original using its record binding (bearer=%s)",
+    async (bearer) => {
+      if (!bearer) vi.mocked(authHeader).mockReturnValue({});
+      const createObjectURL = vi.fn(() => "blob:verified-original");
+      vi.stubGlobal("URL", {
+        ...URL,
+        createObjectURL,
+        revokeObjectURL: vi.fn(),
+      });
+      vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+        () => undefined,
+      );
+      const original = { planId: "a".repeat(64), entryId: "b".repeat(24) };
+      const promise = downloadFile(
+        "stale-or-changed/path.txt",
+        "invoice.txt",
+        undefined,
+        {
+          organizationOriginal: original,
+        },
+      );
+      const xhr = MockXhr.instances[0]!;
+      expect(xhr.url).toBe(
+        `/api/appliance/files/organize/plans/${original.planId}/entries/${original.entryId}/original`,
+      );
+      expect(xhr.url).not.toContain("stale-or-changed");
+      xhr.response = new Blob(["verified invoice bytes"]);
+      xhr.onload?.();
+      await promise;
+      expect(createObjectURL).toHaveBeenCalledWith(xhr.response);
+    },
+  );
+
+  it("reports a changed original for cookie auth without saving an error document", async () => {
+    vi.mocked(authHeader).mockReturnValue({});
+    const createObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL });
+    const promise = downloadFile("old.txt", "invoice.txt", undefined, {
+      organizationOriginal: { planId: "a".repeat(64), entryId: "b".repeat(24) },
+    });
+    const rejected = expect(promise).rejects.toThrow("原件已变化或无法核实");
+    const xhr = MockXhr.instances[0]!;
+    xhr.status = 409;
+    xhr.response = new Blob(['{"detail":{"message":"changed"}}']);
+    xhr.onload?.();
+    await rejected;
+    expect(createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("aborts a native destination if the original can no longer be verified", async () => {
+    const writable = {
+      write: vi.fn(),
+      seek: vi.fn(),
+      truncate: vi.fn(),
+      close: vi.fn(),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    Object.defineProperty(window, "showSaveFilePicker", {
+      configurable: true,
+      value: vi.fn().mockResolvedValue({
+        createWritable: vi.fn().mockResolvedValue(writable),
+      }),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: { message: "文件已变化" } }), {
+        status: 409,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const original = { planId: "a".repeat(64), entryId: "c".repeat(64) };
+    await expect(
+      downloadFile("old.txt", "invoice.txt", undefined, {
+        organizationOriginal: original,
+        retryDelayMs: 0,
+      }),
+    ).rejects.toThrow("文件已变化");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      `/api/appliance/files/organize/plans/${original.planId}/entries/${original.entryId}/original`,
+    );
+    expect(writable.abort).toHaveBeenCalledOnce();
+    expect(writable.close).not.toHaveBeenCalled();
+    expect(writable.write).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { planId: "../other", entryId: "b".repeat(24) },
+    { planId: "a".repeat(64), entryId: "b".repeat(25) },
+  ])(
+    "rejects invalid original bindings before opening any destination",
+    async (original) => {
+      const picker = vi.fn();
+      Object.defineProperty(window, "showSaveFilePicker", {
+        configurable: true,
+        value: picker,
+      });
+      await expect(
+        downloadFile("old.txt", "invoice.txt", undefined, {
+          organizationOriginal: original,
+        }),
+      ).rejects.toThrow("原件记录标识无效");
+      expect(picker).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(MockXhr.instances).toHaveLength(0);
+    },
+  );
 
   it("sends the one-shot approval token only on physical deletion", async () => {
     const fetchMock = vi.fn().mockResolvedValue(

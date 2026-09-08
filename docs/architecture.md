@@ -1,5 +1,8 @@
 # Echo Agent · 章鱼仿生分布式 Agent 架构
 
+> Echo OS 当前设备层架构和运行边界见 [CURRENT_ARCHITECTURE.md](CURRENT_ARCHITECTURE.md)。
+> 本文的仿生叙事及历史机制不作为当前产品交付清单。
+
 > **本文档已拆分为三层，请按需阅读：**
 >
 > | 层 | 文档 | 内容 |

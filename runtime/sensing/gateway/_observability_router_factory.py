@@ -37,6 +37,10 @@ def create_observability_router(
     jwt_secret: str | None = None,
     jwt_issuer: str | None = None,
     jwt_audience: str | None = None,
+    thread_store: Any = None,
+    workspace_root: Any = None,
+    allow_local_workspace_access: bool = False,
+    task_supervisor: Any = None,
 ) -> Any:
     """Build the router.
 
@@ -70,6 +74,10 @@ def create_observability_router(
         jwt_secret=jwt_secret,
         jwt_issuer=jwt_issuer,
         jwt_audience=jwt_audience,
+        thread_store=thread_store,
+        workspace_root=workspace_root,
+        allow_local_workspace_access=allow_local_workspace_access,
+        task_supervisor=task_supervisor,
     )
 
     router = APIRouter(tags=["observability"], dependencies=[Depends(make_auth_dep(ctx))])

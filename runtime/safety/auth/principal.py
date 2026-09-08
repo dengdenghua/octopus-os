@@ -99,6 +99,10 @@ class CurrentPrincipal:
     scopes: frozenset[str]
     authn_method: str
     request_id: str
+    # Optional server-managed collaboration memberships.  Keeping this
+    # explicit avoids passing arbitrary identity metadata into authorization
+    # consumers while allowing tenant-scoped shared-memory reads.
+    team_ids: frozenset[str] = frozenset()
 
 
 def _request_token(request: Any) -> str:
@@ -157,6 +161,7 @@ def _principal_from_identity(
         scopes=scopes,
         authn_method=authn_method,
         request_id=_request_id(request),
+        team_ids=_as_string_set(metadata.get("team_ids")),
     )
 
 

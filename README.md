@@ -44,17 +44,12 @@ Echo OS 不重复建设文档索引，而是通过窄 HTTP API 调用可选的
 
 ## 快速开始
 
-```bash
-# 安装当前仓库的统一开发环境
-make install
+首次开发请先按[开发接入](docs/ECHO_AGENT_INTEGRATION.md#本地开发)创建 Python
+虚拟环境、安装前后端依赖，再运行 `pnpm dev:with-agent`。源码开发不要求生成发布 bundle；
+缺少 `config.local.yaml` 时使用仓库的 `config.example.yaml`。
 
-# 从当前仓库生成同源 wheel/resources/Codex bundle，再启动 Docker 栈
-make agent-bundle
-make up
-
-# appliance 测试会验证 OS 与 Agent 的公开扩展/认证契约
-make test
-```
+Docker 与原生镜像属于单独的交付路径，见[NAS 部署说明](deploy/appliance/README.md)
+和[镜像构建](packaging/image/README.md)。
 
 本地 QA 快照和真机部署步骤见 [NAS 部署说明](deploy/appliance/README.md)。
 
@@ -78,7 +73,7 @@ pnpm dev:with-agent
 
 文档入口与历史资料归属：[docs/README.md](docs/README.md)。
 
-当前架构：[docs/architecture.md](docs/architecture.md)
+当前架构：[docs/CURRENT_ARCHITECTURE.md](docs/CURRENT_ARCHITECTURE.md)
 
 OS 与内建 Agent 的依赖规则：[Echo OS ↔ Echo Agent 工程边界](docs/AGENT_OS_BOUNDARY.md)。
 

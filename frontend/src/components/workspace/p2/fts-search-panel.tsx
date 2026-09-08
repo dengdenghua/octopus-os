@@ -75,7 +75,8 @@ export function FTSSearchPanel({
 
   if (!open) return null;
 
-  const showEmpty = results.length === 0 && query.trim().length >= 2 && !loading;
+  const showEmpty =
+    results.length === 0 && query.trim().length >= 2 && !loading;
   const showResults = results.length > 0;
 
   return (
@@ -172,11 +173,13 @@ export function FTSSearchPanel({
                         <CalendarIcon className="size-3" />
                         {new Date(result.created_at).toLocaleDateString()}
                       </span>
-                      {result.updated_at && result.updated_at !== result.created_at && (
-                        <span className="flex items-center gap-1">
-                          Updated {new Date(result.updated_at).toLocaleDateString()}
-                        </span>
-                      )}
+                      {result.updated_at &&
+                        result.updated_at !== result.created_at && (
+                          <span className="flex items-center gap-1">
+                            Updated{" "}
+                            {new Date(result.updated_at).toLocaleDateString()}
+                          </span>
+                        )}
                     </div>
                   </div>
                 </button>

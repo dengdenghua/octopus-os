@@ -13,9 +13,7 @@ import {
 
 // A bundle entry is either a bare plugin function or a
 // `[plugin, options]` tuple; compare by plugin reference.
-function pluginRefs(
-  plugins: unknown[] | undefined,
-): unknown[] {
+function pluginRefs(plugins: unknown[] | undefined): unknown[] {
   return (plugins ?? []).map((entry) =>
     Array.isArray(entry) ? entry[0] : entry,
   );

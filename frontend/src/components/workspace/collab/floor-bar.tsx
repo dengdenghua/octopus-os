@@ -34,9 +34,7 @@ export function FloorBar() {
       <span
         className={cn(
           "font-medium",
-          isMyTurn
-            ? "text-success"
-            : "text-muted-foreground",
+          isMyTurn ? "text-success" : "text-muted-foreground",
         )}
       >
         {isMyTurn

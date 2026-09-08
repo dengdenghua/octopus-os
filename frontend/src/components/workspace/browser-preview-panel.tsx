@@ -44,7 +44,7 @@ import {
   AUTOMATION_CAPSULE_SURFACE_CLASS_NAME,
 } from "@/components/ui/automation-capsule";
 import {
-  BROWSER_OPEN_URL_REQUEST_KEY,
+  browserOpenUrlRequestStorageKey,
   type BrowserOpenUrlRequest,
   type BrowserTab,
 } from "@/components/browser/browser-store";
@@ -1528,7 +1528,7 @@ export function BrowserPreviewPanel({
           sessionId,
         };
         localStorage.setItem(
-          BROWSER_OPEN_URL_REQUEST_KEY,
+          browserOpenUrlRequestStorageKey(),
           JSON.stringify(request),
         );
       } catch (e) {

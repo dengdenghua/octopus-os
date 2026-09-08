@@ -1,6 +1,7 @@
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useLocation } from "react-router-dom";
 
 import { renderWithProviders } from "@/test/harness";
 
@@ -24,6 +25,16 @@ vi.mock("@/core/teams", () => ({
 }));
 
 import TeamJoinPage from "./page";
+
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <output data-testid="location">
+      {location.pathname}
+      {location.search}
+    </output>
+  );
+}
 
 describe("TeamJoinPage project approval", () => {
   beforeEach(() => {
@@ -113,5 +124,52 @@ describe("TeamJoinPage project approval", () => {
     expect(
       screen.queryByPlaceholderText("你的显示名称"),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps the workbench presentation after joining a team thread", async () => {
+    const user = userEvent.setup();
+    mocks.inspect.mockResolvedValue({
+      invite: {
+        id: "invite-1",
+        role: "member",
+        status: "active",
+        remaining_uses: 3,
+      },
+      team: {
+        id: "room-1",
+        name: "发布项目",
+        member_count: 2,
+        participant_count: 1,
+      },
+      join_policy: "direct_join",
+      thread_id: "thread-preview",
+    });
+    mocks.join.mockResolvedValue({
+      ok: true,
+      created: true,
+      outcome: "joined",
+      team: { id: "room-1", name: "发布项目" },
+      thread_id: "thread-joined",
+    });
+
+    renderWithProviders(
+      <>
+        <TeamJoinPage />
+        <LocationProbe />
+      </>,
+      {
+        initialRoute:
+          "/workspace/team/join?token=secret&presentation=workbench",
+        locale: "zh-CN",
+      },
+    );
+
+    await screen.findByText("发布项目");
+    await user.type(screen.getByPlaceholderText("你的显示名称"), "Eve");
+    await user.click(screen.getByRole("button", { name: "加入任务" }));
+
+    expect(await screen.findByTestId("location")).toHaveTextContent(
+      "/workspace/realtime/thread-joined?presentation=workbench",
+    );
   });
 });

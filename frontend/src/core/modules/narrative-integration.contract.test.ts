@@ -33,7 +33,9 @@ describe("narrative workbench integration", () => {
       "utf8",
     );
     expect(routesSource).toContain('remoteWorkbenchApp("narrative")');
-    expect(routesSource).toContain("<RemoteWorkbenchSurface app={NARRATIVE_APP}");
+    expect(routesSource).toContain(
+      "<RemoteWorkbenchSurface app={NARRATIVE_APP}",
+    );
     // The point of the contract: the page is reached only through the remote
     // surface, never lazy-imported directly by a route.
     expect(routesSource).not.toContain("workspace/narrative/page");

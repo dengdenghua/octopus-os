@@ -25,6 +25,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from runtime.memory.semantics import MemoryAuthor, fact_origin
+
 from . import user_store
 
 _log = logging.getLogger(__name__)
@@ -209,12 +211,14 @@ def distill_user_memory(
         for name, info in grouped.items():
             bucket_facts = info["facts"]
             summary = _heuristic_summary(bucket_facts, limit=info["limit"])
+            bucket_used_llm = False
             if router is not None:
                 try:
                     llm_text = _llm_summary(router, name, bucket_facts, model)
                     if llm_text:
                         summary = llm_text
                         used_llm = True
+                        bucket_used_llm = True
                 except Exception:  # noqa: BLE001 — heuristic fallback per bucket
                     _log.debug("memory distill: LLM failed for %s, using heuristic", name)
             if not summary:
@@ -222,6 +226,9 @@ def distill_user_memory(
             memory[info["group"]][name] = {
                 "summary": summary,
                 "updatedAt": now_dt.isoformat(),
+                "origin": fact_origin(
+                    MemoryAuthor.MODEL if bucket_used_llm else MemoryAuthor.DERIVED,
+                ),
             }
             written.append(name)
 

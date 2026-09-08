@@ -347,12 +347,12 @@ def test_host_verifier_requires_two_btrfs_members_and_raid1_profiles() -> None:
         elif command[-3:-1] == ["df", "--raw"]:
             stdout = "Data, RAID1: total=1, used=1\nMetadata, RAID1: total=1, used=1\n"
         else:
-            stdout = f"Label: 'btrfslab'  uuid: {FILESYSTEM_UUID}\n\tTotal devices 2 FS bytes used 1\n"
+            stdout = (
+                f"Label: 'btrfslab'  uuid: {FILESYSTEM_UUID}\n\tTotal devices 2 FS bytes used 1\n"
+            )
         return subprocess.CompletedProcess(command, 0, stdout, "")
 
-    result = lab._verify_host(
-        "/data/btrfslab", FILESYSTEM_UUID, DEVICES, lab.DEFAULT_TOOLS, runner
-    )
+    result = lab._verify_host("/data/btrfslab", FILESYSTEM_UUID, DEVICES, lab.DEFAULT_TOOLS, runner)
     assert result["totalDevices"] == 2
     assert result["activeDevices"] == 2
     assert result["dataProfile"] == "raid1"

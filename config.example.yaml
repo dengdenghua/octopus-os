@@ -10,6 +10,12 @@ preset: personal
 name: my-echo
 version_compat: "0.2"
 
+# 关闭可选的后台模型学习/进化；保留正常对话、安全审批和本地维护。
+# null 保持当前默认行为。修改配置后重启服务生效。
+# 这不是离线开关；用户任务和显式定时任务仍遵循模型路由与隐私设置。
+execution:
+  background_model_calls: null
+
 # ─────────────── Planner 规划器 ─────────────────
 # 决定如何将用户目标拆解为任务图 (TaskGraph)
 #
@@ -173,10 +179,12 @@ learn:
   assess_recipe_from_journal: null
 
 # ─────────────── Journal & 全局开关 ──────────────
-# journal_file:     null = 仅内存 · "path/to/events.jsonl" = JSONL 持久化
+# journal_file:     auto = 当前运行时数据目录下 events.jsonl；null = 仅内存
+# 数据目录按 ECHO_DATA_DIR → ECHO_HOME/data → 项目根目录/data 解析。
+# 指定其他路径仍可使用自定义 JSONL；部署时建议绝对路径。
 # enable_web_skills: 自动注册 fetch_url / web_search 技能（需 httpx 可用）
 # default_arm_id:   默认腕足 ID（用于单腕任务分配）
-journal_file: null
+journal_file: auto
 enable_web_skills: true
 default_arm_id: code_arm
 

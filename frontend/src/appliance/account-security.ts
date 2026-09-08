@@ -7,6 +7,19 @@ type AccountSecurityResult = {
   sessionNotBefore: number;
 };
 
+export type AdministratorTotpStatus = {
+  enabled: boolean;
+  recoveryCodesRemaining: number;
+};
+
+export type AdministratorTotpEnrollment = {
+  enrollmentId: string;
+  secret: string;
+  otpauthUri: string;
+  recoveryCodes: string[];
+  expiresIn: number;
+};
+
 async function responseError(response: Response, fallback: string) {
   const detail = await response
     .json()
@@ -42,5 +55,56 @@ export async function rotateAdminPassword(
     body: JSON.stringify({ newPassword }),
   });
   if (!response.ok) throw await responseError(response, "无法更新管理员密码");
+  return (await response.json()) as AccountSecurityResult;
+}
+
+export async function fetchAdministratorTotpStatus(): Promise<AdministratorTotpStatus> {
+  const response = await fetch("/api/appliance/credentials/totp", {
+    headers: authHeader(),
+  });
+  if (!response.ok)
+    throw await responseError(response, "无法读取动态验证码状态");
+  return (await response.json()) as AdministratorTotpStatus;
+}
+
+export async function beginAdministratorTotpEnrollment(
+  approvalToken: string,
+): Promise<AdministratorTotpEnrollment> {
+  const response = await fetch("/api/appliance/credentials/totp/enroll", {
+    method: "POST",
+    headers: { ...authHeader(), ...approvalHeader(approvalToken) },
+  });
+  if (!response.ok)
+    throw await responseError(response, "无法开始设置动态验证码");
+  return (await response.json()) as AdministratorTotpEnrollment;
+}
+
+export async function confirmAdministratorTotpEnrollment(
+  enrollmentId: string,
+  code: string,
+): Promise<AccountSecurityResult> {
+  const response = await fetch("/api/appliance/credentials/totp/confirm", {
+    method: "POST",
+    headers: { ...authHeader(), "Content-Type": "application/json" },
+    body: JSON.stringify({ enrollmentId, code }),
+  });
+  if (!response.ok) throw await responseError(response, "无法启用动态验证码");
+  return (await response.json()) as AccountSecurityResult;
+}
+
+export async function disableAdministratorTotp(
+  factor: string,
+  approvalToken: string,
+): Promise<AccountSecurityResult> {
+  const response = await fetch("/api/appliance/credentials/totp/disable", {
+    method: "POST",
+    headers: {
+      ...authHeader(),
+      ...approvalHeader(approvalToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ factor }),
+  });
+  if (!response.ok) throw await responseError(response, "无法关闭动态验证码");
   return (await response.json()) as AccountSecurityResult;
 }

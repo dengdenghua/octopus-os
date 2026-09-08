@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from runtime.platform.process.task_supervisor import TaskRunStatus, TaskSupervisor
 from runtime.projectos.model import Milestone, Project, Task
 from runtime.projectos.store import ProjectStore
 from runtime.sensing.gateway.projects_router import create_projects_router
@@ -59,6 +60,33 @@ def test_plan_run_report_flow(tmp_path) -> None:
 
     # appears in the list
     assert pid in [p["id"] for p in c.get("/api/projects").json()["projects"]]
+
+
+def test_project_run_uses_shared_host_execution_lease_when_available(tmp_path) -> None:
+    supervisor = TaskSupervisor.from_path(tmp_path / "task-runs.json")
+    app = FastAPI()
+    app.include_router(
+        create_projects_router(
+            store=ProjectStore(base_dir=tmp_path / "projects"),
+            task_supervisor=supervisor,
+        )
+    )
+    client = TestClient(app)
+
+    planned = client.post("/api/projects", json={"name": "lease", "goal": "ship safely"})
+    assert planned.status_code == 200
+    project_id = planned.json()["project"]["id"]
+
+    response = client.post(
+        f"/api/projects/{project_id}/run",
+        json={"max_ticks": 20},
+    )
+    assert response.status_code == 200
+    record = supervisor.store.get(f"projectos:{project_id}")
+    assert record is not None
+    assert record.status == TaskRunStatus.COMPLETED
+    assert record.lease is None
+    assert record.metadata["host_execution"] == "octopus.execution.v1"
 
 
 def test_plan_without_configured_model_can_create_consecutive_projects(tmp_path) -> None:
@@ -392,4 +420,3 @@ def test_project_process_timeline_endpoint_persists_run_evidence(tmp_path) -> No
     assert {"project.planned", "project.run", "milestone_state", "task_state"} <= kinds
     assert {"project", "milestone", "task"} <= lanes
     assert c.get("/api/projects/nope/process-timeline").status_code == 404
-

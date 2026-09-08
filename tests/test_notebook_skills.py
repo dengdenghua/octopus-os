@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import runtime.execution.suckers.notebook_skills as notebook_module
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.suckers.notebook_skills import (
     _notebook_edit,
@@ -142,6 +143,42 @@ class TestNotebookRead:
         p.write_text("not json at all {{{")
         r = _notebook_read(path=str(p))
         assert "error" in r
+
+    def test_read_uses_isolated_worker_and_does_not_fallback(
+        self, tmp_path: Path, monkeypatch
+    ):
+        p = tmp_path / "broken.ipynb"
+        p.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(
+            notebook_module,
+            "extract_document_isolated",
+            lambda *_args, **_kwargs: {"outcome": "worker_failed", "notebook": None},
+        )
+        result = _notebook_read(path=str(p))
+        assert result["error_type"] == "worker_failed"
+        assert "notebook_parse_failed" in result["error"]
+
+    def test_large_binary_outputs_are_dropped_by_worker_payload(self, tmp_path: Path):
+        p = tmp_path / "x.ipynb"
+        _write_nb(
+            p,
+            [
+                {
+                    "cell_type": "code",
+                    "source": "plot()",
+                    "outputs": [
+                        {
+                            "output_type": "display_data",
+                            "data": {"image/png": "A" * 500_000},
+                        }
+                    ],
+                }
+            ],
+        )
+        result = _notebook_read(path=str(p))
+        assert result["cell_count"] == 1
+        assert "output_text" not in result["cells"][0]
+        assert "AAAA" not in json.dumps(result)
 
 
 # ─── notebook_edit ───────────────────────────────────────────

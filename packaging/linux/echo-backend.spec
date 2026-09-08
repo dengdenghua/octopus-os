@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Linux PyInstaller spec. Mirrors packaging/macos/echo-backend.spec.
 # Differences from the macOS spec:
-#   - entry script is the same platform-neutral `runtime.cli.main` entry
+#   - shared entry dispatches the fixed document worker before the normal CLI
 #   - UPX is kept disabled for consistency with the macOS backend (the Linux
 #     backend is a glibc ELF bundle consumed inside Electron; enabling UPX here
 #     is a size optimization that can be revisited without affecting packaging
@@ -24,6 +24,13 @@ hiddenimports = [
     for module in collect_submodules("runtime")
     if not module.startswith(remote_plugin_prefixes)
 ] + [
+    "runtime.execution.misc.document_extraction",
+    "runtime.execution.misc.document_worker",
+    "runtime.execution.misc.document_process_limits",
+    "runtime.execution.misc.document_text_extractor",
+    "runtime.execution.misc.notebook_extractor",
+    "pypdf",
+    "defusedxml",
     "uvicorn.logging",
     "uvicorn.loops",
     "uvicorn.loops.auto",
@@ -118,4 +125,3 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
-

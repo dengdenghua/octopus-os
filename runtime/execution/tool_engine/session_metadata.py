@@ -48,6 +48,10 @@ _NESTED_CONTEXT_KEYS = (
     "automation_target",
     "allowed_write_paths",
     "sandbox_policy",
+    # Server-stamped memory viewer used by prompt assembly. It is accepted
+    # only together with the authoritative tenant scope; clients cannot
+    # provide this marker through the authenticated transport.
+    "_echo_authoritative_memory_viewer",
     # Prompt-injection taint must survive the projection. Producers put it on the
     # plain context dict (subagents/bridge.py, parallel_agents/orchestrator.py,
     # misc/parallel_runner.py) while the codex broker reads it back off session
@@ -97,6 +101,7 @@ _FLAT_CONTEXT_KEYS = (
     "automation_target",
     "allowed_write_paths",
     "sandbox_policy",
+    "_echo_authoritative_memory_viewer",
     # See the note on the nested tuple: taint must cross the projection boundary
     # or the child execution silently runs untainted.
     "_inherited_injection_taint",

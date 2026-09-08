@@ -1,6 +1,13 @@
 import { CheckIcon, CopyIcon, TriangleAlertIcon } from "lucide-react";
 import DOMPurify from "dompurify";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import { copyTextToClipboard } from "@/core/clipboard";

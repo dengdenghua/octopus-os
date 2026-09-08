@@ -915,7 +915,11 @@ export default function MemorySettingsPage() {
                   <DownloadIcon className="mr-1.5 size-3.5" />
                   {isExporting ? t.common.loading : exportButton}
                 </Button>
-                <Button variant="outline" size="sm" onClick={openCreateFactDialog}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openCreateFactDialog}
+                >
                   <PlusIcon className="mr-1.5 size-3.5" />
                   {addFactLabel}
                 </Button>

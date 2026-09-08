@@ -3,20 +3,35 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Agent } from "@/core/agents";
-import { ACTIVE_AGENT_KEY } from "@/core/agents/active";
+import type * as AgentModule from "@/core/agents";
+import { activeAgentStorageKey } from "@/core/agents/active";
 import { consumeTaskCollaboratorPreset } from "@/core/collaboration/task-collaborator-preset";
 import { renderWithProviders } from "@/test/harness";
 
 import { AgentCard } from "./agent-card";
 
 const deleteAgentMock = vi.hoisted(() => vi.fn());
+const useAgentsMock = vi.hoisted(() =>
+  vi.fn(() => ({
+    agents: [{ name: "coder" }],
+    isLoading: false,
+    isFetching: false,
+    error: null,
+    refetch: vi.fn(),
+  })),
+);
 
-vi.mock("@/core/agents", () => ({
-  useDeleteAgent: () => ({
-    mutateAsync: deleteAgentMock,
-    isPending: false,
-  }),
-}));
+vi.mock("@/core/agents", async (importOriginal) => {
+  const actual = await importOriginal<typeof AgentModule>();
+  return {
+    ...actual,
+    useAgents: useAgentsMock,
+    useDeleteAgent: () => ({
+      mutateAsync: deleteAgentMock,
+      isPending: false,
+    }),
+  };
+});
 
 const agent: Agent = {
   name: "custom-role",
@@ -32,7 +47,7 @@ describe("AgentCard", () => {
     deleteAgentMock.mockReset();
     deleteAgentMock.mockResolvedValue(undefined);
     window.sessionStorage.clear();
-    window.localStorage.setItem(ACTIVE_AGENT_KEY, "coder");
+    window.localStorage.setItem(activeAgentStorageKey(), "coder");
   });
 
   it("presents a concise talent profile with independent primary and detail actions", async () => {
@@ -74,7 +89,7 @@ describe("AgentCard", () => {
       screen.getByRole("button", { name: "将 自定义角色 按需加入对话" }),
     );
 
-    expect(window.localStorage.getItem(ACTIVE_AGENT_KEY)).toBe("coder");
+    expect(window.localStorage.getItem(activeAgentStorageKey())).toBe("coder");
     expect(consumeTaskCollaboratorPreset()).toEqual({
       leaderId: "coder",
       collaboratorIds: ["custom-role"],

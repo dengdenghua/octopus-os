@@ -459,8 +459,7 @@ function LearningList({
                   if (
                     !(await confirm({
                       title: t.evolutionPanel.forgetConfirmTitle,
-                      description:
-                        t.evolutionPanel.forgetConfirmDescription,
+                      description: t.evolutionPanel.forgetConfirmDescription,
                       confirmLabel: t.evolutionPanel.forgetLineButton,
                     }))
                   )

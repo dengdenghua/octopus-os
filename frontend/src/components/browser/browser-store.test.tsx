@@ -2,6 +2,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { renderWithProviders } from "@/test/harness";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 
 import { BrowserStoreProvider, useBrowserStore } from "./browser-store";
 
@@ -22,7 +23,10 @@ function StoreHarness() {
 }
 
 describe("browser tab recovery", () => {
-  beforeEach(() => window.localStorage.clear());
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
 
   it("keeps recently closed tabs and restores the latest one", () => {
     renderWithProviders(
@@ -81,5 +85,37 @@ describe("browser tab recovery", () => {
       "https://example.com/saved",
     );
     expect(screen.getByTestId("active-loading")).toHaveTextContent("false");
+  });
+
+  it("loads browser sessions from the actor namespace", () => {
+    window.localStorage.setItem(
+      actorScopedStorageKey("echo:browser-state", "anonymous"),
+      JSON.stringify({
+        tabs: [
+          {
+            id: "scoped-tab",
+            url: "https://example.com/scoped",
+            title: "Scoped",
+            isLoading: false,
+            device: "desktop",
+          },
+        ],
+        closedTabs: [],
+        activeId: "scoped-tab",
+        copilotOpen: false,
+        copilotWidth: 380,
+        homeSeeded: true,
+      }),
+    );
+
+    renderWithProviders(
+      <BrowserStoreProvider>
+        <StoreHarness />
+      </BrowserStoreProvider>,
+    );
+
+    expect(screen.getByTestId("active-url")).toHaveTextContent(
+      "https://example.com/scoped",
+    );
   });
 });

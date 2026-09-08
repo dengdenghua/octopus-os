@@ -83,7 +83,9 @@ export function MarketDetail({
             </span>
             <span>{item.seller}</span>
             {item.mine && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-micro">我的</span>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-micro">
+                我的
+              </span>
             )}
           </div>
           <h2 className="mt-2 text-lg font-bold leading-snug">{item.title}</h2>

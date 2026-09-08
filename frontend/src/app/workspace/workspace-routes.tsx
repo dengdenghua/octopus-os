@@ -10,6 +10,7 @@ import {
   WORKBENCH_BUILTIN_APPS,
   type WorkbenchBuiltinApp,
 } from "@/core/workbench/apps";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { RemoteWorkbenchSurface } from "@/core/workbench/remote-surface";
 
 import WorkspaceLayout from "./layout";
@@ -30,10 +31,13 @@ const PAPER_TRADING_APP = remoteWorkbenchApp("paper-trading");
 const EVOLUTION_APP = remoteWorkbenchApp("evolution");
 
 function StorageRedirect() {
-  const search = window.location.hash.includes("?")
-    ? window.location.hash.slice(window.location.hash.indexOf("?"))
-    : "?surface=company";
-  return <Navigate to={`/workspace/storage${search}`} replace />;
+  const { search } = useLocation();
+  return (
+    <Navigate
+      to={`/workspace/storage${search || "?surface=company"}`}
+      replace
+    />
+  );
 }
 
 function HubAssetRedirect({ tab }: { tab: "plugins" | "skills" }) {
@@ -41,7 +45,15 @@ function HubAssetRedirect({ tab }: { tab: "plugins" | "skills" }) {
   const params = new URLSearchParams(location.search);
   params.set("surface", "chat");
   params.set("tab", tab);
-  return <Navigate to={`/workspace/agents?${params.toString()}`} replace />;
+  return (
+    <Navigate
+      to={preserveWorkbenchPresentation(
+        `/workspace/agents?${params.toString()}`,
+        location.search,
+      )}
+      replace
+    />
+  );
 }
 
 function RouteTransition() {
@@ -56,6 +68,11 @@ function RouteTransition() {
   );
 }
 
+function WorkspaceRedirect({ to }: { to: string }) {
+  const { search } = useLocation();
+  return <Navigate to={preserveWorkbenchPresentation(to, search)} replace />;
+}
+
 function SettingsRoute() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -67,7 +84,9 @@ function SettingsRoute() {
     const target = embedded
       ? `/workspace/realtime/new?embedded=${encodeURIComponent(embedded)}`
       : "/workspace/realtime/new";
-    navigate(target, { replace: true });
+    navigate(preserveWorkbenchPresentation(target, location.search), {
+      replace: true,
+    });
     const handle = window.setTimeout(() => {
       emitOpenSettings(section ?? undefined);
     }, 0);
@@ -113,9 +132,9 @@ export type WorkspaceRouteOptions = {
 };
 
 /**
- * One canonical workspace route tree for both the top-level Agent UI and the
- * Echo desktop window. Keeping the route elements shared prevents the desktop
- * surface from drifting into a second, reduced Agent frontend.
+ * One workspace content tree for desktop windows and explicit iframe/native
+ * app hosts. Ordinary top-level links must pass DesktopWorkspaceEntry first;
+ * they do not create an independent full-screen workspace.
  */
 export function createWorkspaceRoute({
   embeddedInWindow = false,
@@ -126,10 +145,13 @@ export function createWorkspaceRoute({
       path="/workspace"
       element={<WorkspaceLayout embeddedInWindow={embeddedInWindow} />}
     >
-      <Route index element={<Navigate to="realtime/new" replace />} />
+      <Route
+        index
+        element={<WorkspaceRedirect to="/workspace/realtime/new" />}
+      />
       <Route
         path="realtime"
-        element={<Navigate to="/workspace/realtime/new" replace />}
+        element={<WorkspaceRedirect to="/workspace/realtime/new" />}
       />
       <Route path="realtime/:threadId" element={<ChatPage />} />
       <Route path="team/join" element={<TeamJoinPage />} />
@@ -147,12 +169,12 @@ export function createWorkspaceRoute({
       <Route path="desktop-organizer" element={<DesktopOrganizerPage />} />
       <Route
         path="mobile"
-        element={<Navigate to={LEGACY_REDIRECTS.mobile} replace />}
+        element={<WorkspaceRedirect to={LEGACY_REDIRECTS.mobile} />}
       />
       <Route path="settings" element={<SettingsRoute />} />
       <Route
         path="mcp"
-        element={<Navigate to="/workspace/settings?section=tools" replace />}
+        element={<WorkspaceRedirect to="/workspace/settings?section=tools" />}
       />
       <Route path="agents" element={<AgentsPage />} />
       <Route path="agents/new" element={<AgentsNewPage />} />
@@ -164,7 +186,7 @@ export function createWorkspaceRoute({
       <Route path="plugins" element={<HubAssetRedirect tab="plugins" />} />
       <Route
         path="store"
-        element={<Navigate to={LEGACY_REDIRECTS.store} replace />}
+        element={<WorkspaceRedirect to={LEGACY_REDIRECTS.store} />}
       />
       <Route path="channels" element={<ChannelsPage />} />
       <Route path="architecture" element={<ArchitecturePage />} />
@@ -197,11 +219,11 @@ export function createWorkspaceRoute({
       <Route path="web-app" element={<WorkspaceWebAppPage />} />
       <Route
         path="replay"
-        element={<Navigate to={LEGACY_REDIRECTS.replay} replace />}
+        element={<WorkspaceRedirect to={LEGACY_REDIRECTS.replay} />}
       />
       <Route
         path="workflows"
-        element={<Navigate to={LEGACY_REDIRECTS.workflows} replace />}
+        element={<WorkspaceRedirect to={LEGACY_REDIRECTS.workflows} />}
       />
       <Route path="reflex" element={<ReflexMonitorPage />} />
       <Route path="reflex/edit" element={<ReflexEditorPage />} />

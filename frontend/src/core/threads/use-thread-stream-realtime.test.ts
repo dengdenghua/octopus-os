@@ -1622,6 +1622,42 @@ describe("useThreadStreamRealtime permissions", () => {
     );
   });
 
+  it("keeps database resource references in the turn context", async () => {
+    const startTurn = mockRealtime();
+    const { result } = renderHook(() =>
+      useThreadStreamRealtime({
+        threadId: "th-test",
+        context: { permission_mode: "default" },
+      }),
+    );
+
+    act(() => {
+      result.current[1]("th-test", {
+        text: "请阅读这个文件",
+        files: [],
+        contextFiles: [
+          {
+            path: "报告.md",
+            sourceLabel: "本地数据库",
+            resourceId: "appliance-file:v1:root:report",
+          },
+        ],
+      });
+    });
+
+    await waitFor(() => expect(startTurn).toHaveBeenCalled());
+    const payload = startTurn.mock.calls[0]?.[0];
+    const context = (payload?.metadata as { context?: Record<string, unknown> })
+      ?.context;
+    expect(context?.context_files).toEqual([
+      {
+        path: "报告.md",
+        sourceLabel: "本地数据库",
+        resourceId: "appliance-file:v1:root:report",
+      },
+    ]);
+  });
+
   it("does not add code capability defaults to explicit chat/react turns", async () => {
     const startTurn = mockRealtime();
     const { result } = renderHook(() =>

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import re
+import runpy
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_ROOT = ROOT / ".github" / "workflows"
 ACTIONLINT_CONFIG = ROOT / ".github" / "actionlint.yaml"
+PUBLIC_SOURCE_TEST_RUNNER = ROOT / "deploy" / "appliance" / "run_public_source_tests.py"
 DELIVERY_WORKFLOWS = (
     "ci.yml",
     "os-image.yml",
@@ -37,6 +40,7 @@ APPROVED_ACTIONS = {
     "docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e",
     "docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8",
     "pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3",
+    "softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65",
 }
 ATTESTATION_JOB_PERMISSIONS = {
     "contents": "read",
@@ -99,9 +103,7 @@ def test_main_ci_runs_the_complete_frontend_quality_gate_on_pull_requests() -> N
     assert job["timeout-minutes"] == 20
     assert "if" not in job
     steps = job["steps"]
-    install = next(
-        step for step in steps if step.get("name") == "Install dependencies"
-    )
+    install = next(step for step in steps if step.get("name") == "Install dependencies")
     quality = next(step for step in steps if step.get("name") == "Verify frontend source quality")
     tests = next(
         step for step in steps if step.get("name") == "Run frontend and Electron contracts"
@@ -113,6 +115,34 @@ def test_main_ci_runs_the_complete_frontend_quality_gate_on_pull_requests() -> N
     assert str(quality["run"]).split() == ["pnpm", "format", "pnpm", "lint", "pnpm", "typecheck"]
     assert tests["run"] == "pnpm test"
     assert build["run"] == "pnpm build"
+
+
+def test_public_source_test_runner_rejects_unreviewed_cli_arguments(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    namespace = runpy.run_path(str(PUBLIC_SOURCE_TEST_RUNNER))
+
+    with pytest.raises(SystemExit) as help_exit:
+        namespace["main"](["--help"])
+    assert help_exit.value.code == 0
+    assert "Run the PR-safe test slice" in capsys.readouterr().out
+
+    with pytest.raises(SystemExit) as invalid_exit:
+        namespace["main"](["--not-a-reviewed-option"])
+    assert invalid_exit.value.code == 2
+    assert "unrecognized arguments" in capsys.readouterr().err
+
+    captured: list[str] = []
+
+    def run_selected(arguments: list[str]) -> int:
+        captured.extend(arguments)
+        return 0
+
+    monkeypatch.setattr(namespace["pytest"], "main", run_selected)
+    assert namespace["main"]([]) == 0
+    assert captured[:2] == ["-q", "--confcutdir=tests/appliance"]
+    assert "tests/appliance/test_delivery_workflow_policy.py" in captured
 
 
 def test_privileged_container_jobs_use_the_validated_container_scratch_path() -> None:
@@ -149,6 +179,21 @@ def test_delivery_workflows_target_the_actual_and_compatible_delivery_branches()
             assert set(event_trigger["branches"]) == DELIVERY_BRANCHES, (
                 f"{name} {event} does not cover the actual os-main delivery branch"
             )
+
+
+def test_branch_source_preflight_binds_to_the_triggered_delivery_branch() -> None:
+    for name in ("os-image.yml", "ab-update-smoke.yml"):
+        workflow = _workflow(name)
+        source_job = workflow["jobs"]["source-contract"]
+        preflight = next(
+            step
+            for step in source_job["steps"]
+            if step.get("name") == "Preflight the unified Echo source"
+        )
+        command = str(preflight["run"])
+        assert "delivery_source_preflight.py --compact" in command
+        assert '--expected-branch "$GITHUB_REF_NAME"' in command
+        assert command.index("--compact") < command.index("--expected-branch")
 
 
 def test_every_delivery_workflow_action_is_allowlisted_and_pinned_to_a_full_sha() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import shutil
 import stat
 
@@ -59,7 +60,8 @@ def test_export_is_encrypted_and_verifies_with_pinned_device_identity(tmp_path) 
     assert verified["nasUserDataIncluded"] is False
     assert verified["authenticationStoreIncluded"] is False
     assert "appliance-auth.json" not in verified["files"]
-    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(output.stat().st_mode) == 0o600
     assert JWT_SECRET.encode() not in ciphertext
     assert b"family/private" not in ciphertext
     assert audit.verify().ok is True

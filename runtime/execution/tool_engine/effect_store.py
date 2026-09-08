@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS tool_effect_receipts (
 CREATE INDEX IF NOT EXISTS idx_tool_effect_receipts_state
     ON tool_effect_receipts(state, updated_at);
 
+CREATE INDEX IF NOT EXISTS idx_tool_effect_receipts_task_step
+    ON tool_effect_receipts(task_id, step_id);
+
+CREATE TABLE IF NOT EXISTS native_tool_step_sequences (
+    task_id       TEXT PRIMARY KEY,
+    last_step_id  INTEGER NOT NULL CHECK(last_step_id >= 0)
+);
+
 CREATE INDEX IF NOT EXISTS idx_tool_effect_receipts_priority_updated
     ON tool_effect_receipts(
         CASE state
@@ -91,6 +99,30 @@ class StoreDecision:
     lease_expires_at: float = 0.0
     step: Step | None = None
     reason: str = ""
+
+
+class NativeEffectRecoveryRequired(RuntimeError):
+    """A native task cannot start another loop across an unresolved effect."""
+
+    def __init__(
+        self,
+        task_id: str,
+        *,
+        state: str = "indeterminate",
+        reason: str = "native_effect_recovery_required",
+        effect_key: str = "",
+    ) -> None:
+        self.task_id = task_id
+        self.state = state
+        self.reason = reason
+        self.effect_key = effect_key
+        super().__init__(
+            "An earlier tool execution is still in flight; wait for it to finish."
+            if reason == "native_effect_inflight"
+            else "The task has an unresolved tool effect; inspect its receipt before continuing."
+            if reason == "native_effect_recovery_required"
+            else "The configured effect store cannot safely coordinate native tool steps."
+        )
 
 
 @dataclass(frozen=True)
@@ -319,6 +351,113 @@ class SQLiteEffectStore:
         except sqlite3.Error:
             return False
 
+    def reserve_native_step_ids(
+        self,
+        *,
+        task_id: str,
+        count: int,
+        minimum_step_id: int = 0,
+    ) -> list[int]:
+        """Reserve a never-reused range, including receipts and legacy journal seeds."""
+        if not task_id or type(count) is not int or count < 0:
+            raise ValueError("task ID and nonnegative integer count are required")
+        if type(minimum_step_id) is not int or minimum_step_id < 0:
+            raise ValueError("minimum step ID must be a nonnegative integer")
+        if count == 0:
+            return []
+        with contextlib.closing(self._connect()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                prior = conn.execute(
+                    "SELECT last_step_id FROM native_tool_step_sequences WHERE task_id = ?",
+                    (task_id,),
+                ).fetchone()
+                receipt = conn.execute(
+                    "SELECT MAX(step_id) FROM tool_effect_receipts WHERE task_id = ?",
+                    (task_id,),
+                ).fetchone()
+                maximum = max(minimum_step_id, int(prior[0]) if prior else 0, int(receipt[0] or 0))
+                end = maximum + count
+                if end > 9_223_372_036_854_775_807:
+                    raise OverflowError("native step sequence exhausted")
+                conn.execute(
+                    "INSERT INTO native_tool_step_sequences(task_id, last_step_id) VALUES (?, ?) "
+                    "ON CONFLICT(task_id) DO UPDATE SET last_step_id = excluded.last_step_id",
+                    (task_id, end),
+                )
+                conn.execute("COMMIT")
+                return list(range(maximum + 1, end + 1))
+            except Exception:
+                with contextlib.suppress(sqlite3.Error):
+                    conn.execute("ROLLBACK")
+                raise
+
+    def assert_native_task_recoverable(
+        self,
+        *,
+        task_id: str,
+        unresolved_effect_keys: tuple[str, ...] = (),
+    ) -> None:
+        """Do not infer recovery from a fresh step ID or an expired started lease."""
+        with contextlib.closing(self._connect()) as conn:
+            conn.execute("BEGIN")
+            try:
+                row = conn.execute(
+                    "SELECT effect_key, state, lease_expires_at FROM tool_effect_receipts "
+                    "WHERE task_id = ? AND side_effecting = 1 "
+                    "AND state IN ('started', 'indeterminate') LIMIT 1",
+                    (task_id,),
+                ).fetchone()
+                if row is not None:
+                    self._raise_native_blocker(task_id, row)
+                # Older executors could label a successful Step committed even
+                # when its own sealed receipt said the effect was unknown.
+                for committed in conn.execute(
+                    "SELECT effect_key, step_json FROM tool_effect_receipts "
+                    "WHERE task_id = ? AND state = 'committed'",
+                    (task_id,),
+                ):
+                    step = _decode_step(committed["step_json"])
+                    if step is None or _step_is_indeterminate(step):
+                        raise NativeEffectRecoveryRequired(
+                            task_id, effect_key=str(committed["effect_key"])
+                        )
+                for key in unresolved_effect_keys:
+                    row = conn.execute(
+                        "SELECT effect_key, state, lease_expires_at, step_json "
+                        "FROM tool_effect_receipts "
+                        "WHERE effect_key = ?",
+                        (key,),
+                    ).fetchone()
+                    # Explicit operator reconciliation remains authoritative.
+                    if row is not None and row["state"] == "retry_authorized":
+                        continue
+                    if row is not None and row["state"] == "committed":
+                        step = _decode_step(row["step_json"])
+                        if step is not None and not _step_is_indeterminate(step):
+                            continue
+                    if row is None:
+                        raise NativeEffectRecoveryRequired(task_id, effect_key=key)
+                    self._raise_native_blocker(task_id, row)
+                conn.execute("COMMIT")
+            except Exception:
+                with contextlib.suppress(sqlite3.Error):
+                    conn.execute("ROLLBACK")
+                raise
+
+    @staticmethod
+    def _raise_native_blocker(task_id: str, row: sqlite3.Row) -> None:
+        state = str(row["state"])
+        inflight = (
+            state in {"claimed", "started"} and float(row["lease_expires_at"] or 0) > time.time()
+        )
+        raise NativeEffectRecoveryRequired(
+            task_id,
+            state=state,
+            effect_key=str(row["effect_key"]),
+            reason="native_effect_inflight" if inflight else "native_effect_recovery_required",
+        )
+
     def list_receipts(
         self,
         *,
@@ -443,10 +582,10 @@ class SQLiteEffectStore:
             token = int(row["fencing_token"])
             if state == "committed":
                 step = _decode_step(row["step_json"])
-                if step is not None:
+                if step is not None and not _step_is_indeterminate(step):
                     conn.execute("COMMIT")
                     return StoreDecision("replay", token, step=step)
-                reason = "committed tool receipt is missing a valid structured result"
+                reason = "committed tool receipt is missing a confirmed structured result"
                 self._mark_indeterminate_tx(conn, effect_key, reason, now)
                 conn.execute("COMMIT")
                 return StoreDecision("indeterminate", token, reason=reason)
@@ -589,17 +728,22 @@ class SQLiteEffectStore:
         step: Step,
     ) -> bool:
         now = time.time()
+        uncertain = _step_is_indeterminate(step)
         with contextlib.closing(self._connect()) as conn:
             cursor = conn.execute(
                 """
                 UPDATE tool_effect_receipts
-                SET state = 'committed', step_json = ?, has_result = 1,
-                    lease_expires_at = 0, reason = '', updated_at = ?
+                SET state = ?, step_json = ?, has_result = 1,
+                    side_effecting = CASE WHEN ? THEN 1 ELSE side_effecting END,
+                    lease_expires_at = 0, reason = ?, updated_at = ?
                 WHERE effect_key = ? AND holder_id = ? AND fencing_token = ?
                   AND state IN ('claimed', 'started')
                 """,
                 (
+                    "indeterminate" if uncertain else "committed",
                     step.model_dump_json(),
+                    int(uncertain),
+                    "the server-sealed effect receipt is indeterminate" if uncertain else "",
                     now,
                     effect_key,
                     holder_id,
@@ -612,6 +756,7 @@ class SQLiteEffectStore:
         """Repair/seed a receipt from the durable journal's Step event."""
 
         now = time.time()
+        uncertain = _step_is_indeterminate(step)
         conn = self._connect()
         try:
             conn.execute("BEGIN IMMEDIATE")
@@ -635,13 +780,21 @@ class SQLiteEffectStore:
                     effect_key, task_id, step_id, sucker_id,
                     args_fingerprint, side_effecting, state, fencing_token,
                     step_json, has_result, created_at, updated_at
-                ) VALUES(?, '', 0, '', '', 0, 'committed', 0, ?, 1, ?, ?)
+                ) VALUES(?, '', 0, '', '', ?, ?, 0, ?, 1, ?, ?)
                 ON CONFLICT(effect_key) DO UPDATE SET
-                    state = 'committed', step_json = excluded.step_json,
+                    state = excluded.state, step_json = excluded.step_json,
+                    side_effecting = MAX(side_effecting, excluded.side_effecting),
                     has_result = 1, lease_expires_at = 0, reason = '',
                     updated_at = excluded.updated_at
                 """,
-                (effect_key, step.model_dump_json(), now, now),
+                (
+                    effect_key,
+                    int(uncertain),
+                    "indeterminate" if uncertain else "committed",
+                    step.model_dump_json(),
+                    now,
+                    now,
+                ),
             )
             conn.execute("COMMIT")
         except Exception:
@@ -666,7 +819,7 @@ class SQLiteEffectStore:
                 conn.execute(
                     """
                     UPDATE tool_effect_receipts
-                    SET state = 'indeterminate', lease_expires_at = 0,
+                    SET state = 'indeterminate', side_effecting = 1, lease_expires_at = 0,
                         reason = ?, updated_at = ?
                     WHERE effect_key = ? AND holder_id = ? AND fencing_token = ?
                     """,
@@ -708,12 +861,23 @@ class SQLiteEffectStore:
         conn.execute(
             """
             UPDATE tool_effect_receipts
-            SET state = 'indeterminate', lease_expires_at = 0,
+            SET state = 'indeterminate', side_effecting = 1, lease_expires_at = 0,
                 reason = ?, updated_at = ?
             WHERE effect_key = ?
             """,
             (reason, now, effect_key),
         )
+
+
+def _step_is_indeterminate(step: Step) -> bool:
+    receipt = step.result.effect_receipt
+    return (
+        isinstance(receipt, dict)
+        and receipt.get("schema") == "echo.tool.effect_receipt.v1"
+        and receipt.get("sealed") is True
+        and receipt.get("emitted_by") == "tool_executor"
+        and receipt.get("state") == "indeterminate"
+    )
 
 
 def _decode_step(raw: object) -> Step | None:
@@ -749,4 +913,10 @@ def _dangling_intent_reason() -> str:
     )
 
 
-__all__ = ["EffectReceipt", "EffectStore", "SQLiteEffectStore", "StoreDecision"]
+__all__ = [
+    "EffectReceipt",
+    "EffectStore",
+    "NativeEffectRecoveryRequired",
+    "SQLiteEffectStore",
+    "StoreDecision",
+]

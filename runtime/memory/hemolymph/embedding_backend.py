@@ -33,6 +33,13 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from runtime.safety.privacy import (
+    PrivacyViolation,
+    is_loopback_endpoint,
+    private_urlopen,
+    require_local_endpoint,
+)
+
 # fastembed needs the fully-qualified repo id; the bare name it can't resolve.
 _DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 _TIMEOUT_S = 30.0
@@ -54,7 +61,10 @@ def backend_info() -> dict[str, Any]:
     the user, in plain terms, what their stack is wired to."""
     url = embed_endpoint()
     if url:
-        return {"kind": "remote", "endpoint": url, "model": embed_model(), "local_only": True}
+        return {
+            "kind": "remote", "endpoint": url, "model": embed_model(),
+            "local_only": is_loopback_endpoint(url),
+        }
     return {"kind": "in_process", "endpoint": None, "model": embed_model(), "local_only": True}
 
 
@@ -62,6 +72,7 @@ def _embed_remote(texts: list[str]) -> list[list[float]] | None:
     url = embed_endpoint()
     if not url:
         return None
+    require_local_endpoint(url, operation="embedding")
     headers = {"Content-Type": "application/json"}
     key = (os.environ.get("ECHO_EMBED_API_KEY") or "").strip()
     if key:
@@ -73,8 +84,10 @@ def _embed_remote(texts: list[str]) -> list[list[float]] | None:
         headers=headers,
     )
     try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:  # noqa: S310 — local/configured endpoint  # nosec B310 — audited HTTP embedding endpoint
+        with private_urlopen(req, timeout=_TIMEOUT_S) as resp:
             body = json.loads(resp.read().decode("utf-8", "replace"))
+    except PrivacyViolation:
+        raise
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
         return None
     data = body.get("data") if isinstance(body, dict) else None
@@ -99,7 +112,9 @@ def _st_model() -> Any:
         try:
             from sentence_transformers import SentenceTransformer
 
-            _ST_MODEL = SentenceTransformer(embed_model())
+            from runtime.safety.privacy import privacy_enabled
+
+            _ST_MODEL = SentenceTransformer(embed_model(), local_files_only=privacy_enabled())
         except Exception:  # noqa: BLE001 — lib/model absent
             _ST_MODEL = None
         return _ST_MODEL
@@ -121,7 +136,9 @@ def _fastembed_model() -> Any:
         try:
             from fastembed import TextEmbedding
 
-            _FE_MODEL = TextEmbedding(model_name=embed_model())
+            from runtime.safety.privacy import privacy_enabled
+
+            _FE_MODEL = TextEmbedding(model_name=embed_model(), local_files_only=privacy_enabled())
         except Exception:  # noqa: BLE001 — lib absent / model not in fastembed's set
             _FE_MODEL = None
         return _FE_MODEL

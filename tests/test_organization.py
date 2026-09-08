@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+from runtime.platform.process.session import Session, session_scope
 from runtime.safety.organization import (
     AgentSpec,
     CoordinationProtocol,
@@ -154,6 +156,34 @@ def test_team_runner_sequential_chains_outputs() -> None:
         "evaluator",
     ]
     assert result.quality_score == 0.8
+
+
+def test_team_runner_propagates_parent_session_to_default_bridge(monkeypatch) -> None:
+    """A role executed by TeamRunner keeps the host turn across worker threads."""
+    from runtime.execution.subagents import bridge
+
+    captured: list[dict[str, Any]] = []
+
+    def fake_call_subagent(**kwargs: Any) -> dict[str, Any]:
+        captured.append(kwargs)
+        return {"output": "ok", "success": True}
+
+    monkeypatch.setattr(bridge, "call_subagent", fake_call_subagent)
+    parent = Session(actor="tester", thread_id="thread-1", turn_id="turn-1")
+    topology = TeamTopology(
+        name="session-propagation",
+        protocol=CoordinationProtocol.SEQUENTIAL,
+        agents={Role.GENERATOR: AgentSpec(agent_id="generator")},
+    )
+
+    # Constructing inside the scope exercises ambient capture; run() then
+    # invokes the role through the normal default bridge.
+    with session_scope(parent):
+        runner = TeamRunner()
+    result = runner.run(topology, "task")
+
+    assert result.success is True
+    assert captured and captured[0]["session"] is parent
 
 
 def test_team_runner_sequential_degrades_on_role_error() -> None:

@@ -37,6 +37,7 @@ import {
   useProjects,
 } from "@/core/projects/hooks";
 import { useFeatureSeen } from "@/hooks/use-feature-seen";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 import { CreateProjectDialog } from "./create-project-dialog";
 
@@ -145,9 +146,13 @@ export function WorkspaceNavChatList({
   const openProject = (project: Project) => {
     ensureProjectHome.mutate(project, {
       onSuccess: ({ threadId }) =>
-        navigate(`/workspace/realtime/${encodeURIComponent(threadId)}`, {
-          state: { openProjectWorkbench: true },
-        }),
+        navigate(
+          preserveWorkbenchPresentation(
+            `/workspace/realtime/${encodeURIComponent(threadId)}`,
+            search,
+          ),
+          { state: { openProjectWorkbench: true } },
+        ),
       onError: () => toast.error("项目工作群打开失败，请重试"),
     });
   };
@@ -188,7 +193,12 @@ export function WorkspaceNavChatList({
               asChild
               className="text-muted-foreground rounded-lg py-1 text-sm transition-colors duration-fast hover:bg-muted hover:text-foreground data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=true]:font-medium"
             >
-              <Link to="/workspace/agents?surface=chat&tab=skills">
+              <Link
+                to={preserveWorkbenchPresentation(
+                  "/workspace/agents?surface=chat&tab=skills",
+                  search,
+                )}
+              >
                 <SparklesIcon className="size-[15px]" />
                 <span className="flex items-center gap-1.5">
                   {t.sidebar.skills}

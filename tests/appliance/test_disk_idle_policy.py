@@ -307,9 +307,7 @@ def test_systemd_and_install_paths_keep_the_boot_apply_bounded() -> None:
     service = (repository / "deploy/appliance/systemd/echo-disk-idle.service").read_text(
         encoding="utf-8"
     )
-    provision = (repository / "deploy/provision/base/provision-lib.sh").read_text(
-        encoding="utf-8"
-    )
+    provision = (repository / "deploy/provision/base/provision-lib.sh").read_text(encoding="utf-8")
 
     assert "deploy.appliance.disk_idle_runner" in service
     assert "NoNewPrivileges=true" in service

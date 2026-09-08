@@ -26,6 +26,10 @@ class ObservabilityContext:
     jwt_secret: str | None = None
     jwt_issuer: str | None = None
     jwt_audience: str | None = None
+    thread_store: Any = None
+    workspace_root: Any = None
+    allow_local_workspace_access: bool = False
+    task_supervisor: Any = None
 
 
 __all__ = ["ObservabilityContext"]

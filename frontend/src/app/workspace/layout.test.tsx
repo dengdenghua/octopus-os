@@ -1,12 +1,32 @@
 import { act, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type * as ReactRouterDom from "react-router-dom";
+import type * as AgentModule from "@/core/agents";
+import type * as ActiveModule from "@/core/agents/active";
+import type * as TaskSpaceModule from "@/appliance/task-space";
 
 import { renderWithProviders } from "@/test/harness";
 import { STUB_RESPONSE_EVENT } from "@/core/api/client";
 import { eventBus } from "@/core/events";
 
 import WorkspaceLayout from "./layout";
+
+const activeAgentMock = vi.hoisted(() => vi.fn(() => null));
+
+vi.mock("@/core/agents", async (importOriginal) => ({
+  ...(await importOriginal<typeof AgentModule>()),
+  useActiveAgentId: activeAgentMock,
+  useAgents: () => ({
+    agents: [{ name: "general" }, { name: "market_researcher" }],
+    isLoading: false,
+    error: null,
+  }),
+}));
+
+vi.mock("@/core/agents/active", async (importOriginal) => ({
+  ...(await importOriginal<typeof ActiveModule>()),
+  useActiveAgentId: activeAgentMock,
+}));
 
 vi.mock("react-router-dom", async () => {
   const actual =
@@ -29,10 +49,34 @@ vi.mock("@/components/workspace/workspace-sidebar", () => ({
   WorkspaceSidebar: () => <aside>sidebar</aside>,
 }));
 
+vi.mock("@/appliance/system-model-status", () => ({
+  SystemModelStatus: ({ onOpenSettings }: { onOpenSettings: () => void }) => (
+    <button onClick={onOpenSettings}>模型与用量</button>
+  ),
+}));
+
+vi.mock("@/appliance/task-space", async (importOriginal) => {
+  const actual = await importOriginal<typeof TaskSpaceModule>();
+  return {
+    ...actual,
+    useEchoTaskProjection: () => ({
+      projection: null,
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      takeover: vi.fn(),
+      resumeExecution: vi.fn(),
+      decideApproval: vi.fn(),
+    }),
+  };
+});
+
 describe("<WorkspaceLayout /> stub response banner", () => {
   afterEach(() => {
     eventBus.clear();
     vi.unstubAllGlobals();
+    window.localStorage.clear();
+    activeAgentMock.mockReturnValue(null);
   });
 
   test("does not show stub response banners by default", () => {
@@ -53,13 +97,7 @@ describe("<WorkspaceLayout /> stub response banner", () => {
   });
 
   test("applies the active persona's illustration palette to the workspace", () => {
-    vi.stubGlobal("localStorage", {
-      getItem: vi.fn((key: string) =>
-        key === "echo.active-agent" ? "market_researcher" : null,
-      ),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    });
+    activeAgentMock.mockReturnValue("market_researcher");
 
     renderWithProviders(<WorkspaceLayout />, { locale: "zh-CN" });
 
@@ -134,4 +172,34 @@ describe("<WorkspaceLayout /> stub response banner", () => {
       "/workspace/realtime/new?agent=coder&workspace_path=%2FUsers%2Fexample%2FPublic%2Fecho-agent",
     );
   });
+});
+
+test("leaves system navigation and model controls to the desktop host", () => {
+  renderWithProviders(<WorkspaceLayout />);
+  expect(
+    screen.queryByRole("banner", { name: "系统模型状态" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "切换到桌面" }),
+  ).not.toBeInTheDocument();
+});
+
+test("does not duplicate desktop model controls inside an application window", () => {
+  renderWithProviders(<WorkspaceLayout embeddedInWindow />);
+  expect(
+    screen.queryByRole("button", { name: "模型与用量" }),
+  ).not.toBeInTheDocument();
+});
+
+test("keeps task space visible in the workbench system status bar", () => {
+  renderWithProviders(<WorkspaceLayout />, {
+    initialRoute: "/workspace/projects?presentation=workbench",
+  });
+  expect(
+    screen.getByRole("banner", { name: "工作台系统状态" }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "任务空间" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "模型与用量" }),
+  ).toBeInTheDocument();
 });

@@ -70,7 +70,8 @@ export function useAgentWorkbenchSnapshot(
   const calculatorRef = useRef<IncrementalSnapshotCalculator | null>(null);
 
   // 特性开关：启用增量计算
-  const useIncremental = typeof window !== "undefined" &&
+  const useIncremental =
+    typeof window !== "undefined" &&
     localStorage.getItem("echo:incremental-snapshot") === "1";
 
   const {

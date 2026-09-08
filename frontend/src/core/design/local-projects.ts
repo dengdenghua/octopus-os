@@ -1,3 +1,6 @@
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
+
 export type LocalCreativeProject = {
   id: string;
   name: string;
@@ -5,20 +8,31 @@ export type LocalCreativeProject = {
   updatedAt: string;
 };
 
-export const CREATIVE_PROJECTS_CHANGED_EVENT =
-  "echo:creative-projects-changed";
+export const CREATIVE_PROJECTS_CHANGED_EVENT = "echo:creative-projects-changed";
 
 const STORAGE_PREFIX = "echo.design.local-projects.v1";
+type CreativeStorage = Pick<Storage, "getItem" | "setItem"> &
+  Partial<Pick<Storage, "removeItem">>;
 
 function safePersonaId(personaId: string): string {
   return personaId.trim() || "general";
 }
 
-export function creativeProjectsStorageKey(personaId: string): string {
+function legacyCreativeProjectsStorageKey(personaId: string): string {
   return `${STORAGE_PREFIX}:${safePersonaId(personaId)}`;
 }
 
-export function creativeCanvasStorageKey(
+export function creativeProjectsStorageKey(
+  personaId: string,
+  actor = currentActorId(),
+): string {
+  return actorScopedStorageKey(
+    legacyCreativeProjectsStorageKey(personaId),
+    actor,
+  );
+}
+
+export function legacyCreativeCanvasStorageKey(
   baseKey: string,
   personaId: string,
   projectId: string | null,
@@ -27,14 +41,59 @@ export function creativeCanvasStorageKey(
   return `${baseKey}:creation:${safePersonaId(personaId)}:${room}`;
 }
 
+export function creativeCanvasStorageKey(
+  baseKey: string,
+  personaId: string,
+  projectId: string | null,
+  actor = currentActorId(),
+): string {
+  return actorScopedStorageKey(
+    legacyCreativeCanvasStorageKey(baseKey, personaId, projectId),
+    actor,
+  );
+}
+
+export function readCreativeCanvasValue(
+  storageKey: string,
+  legacyKey: string,
+  actor = currentActorId(),
+  storage: CreativeStorage = window.localStorage,
+): string | null {
+  const scoped = storage.getItem(storageKey);
+  if (scoped !== null) return scoped;
+  const legacy = storage.getItem(legacyKey);
+  if (legacy === null || !actor.trim() || actor.trim() === "anonymous") {
+    return legacy;
+  }
+  try {
+    storage.setItem(storageKey, legacy);
+    storage.removeItem?.(legacyKey);
+  } catch {
+    // Keep the legacy value usable if migration is blocked.
+  }
+  return legacy;
+}
+
 export function readLocalCreativeProjects(
   personaId: string,
-  storage: Pick<Storage, "getItem"> = window.localStorage,
+  storage: CreativeStorage = window.localStorage,
+  actor = currentActorId(),
 ): LocalCreativeProject[] {
   try {
-    const parsed = JSON.parse(
-      storage.getItem(creativeProjectsStorageKey(personaId)) || "[]",
-    ) as unknown;
+    const scopedKey = creativeProjectsStorageKey(personaId, actor);
+    let raw = storage.getItem(scopedKey);
+    if (raw === null && actor.trim() && actor.trim() !== "anonymous") {
+      raw = storage.getItem(legacyCreativeProjectsStorageKey(personaId));
+      if (raw !== null) {
+        try {
+          storage.setItem(scopedKey, raw);
+          storage.removeItem?.(legacyCreativeProjectsStorageKey(personaId));
+        } catch {
+          // Keep the legacy value usable if migration is blocked.
+        }
+      }
+    }
+    const parsed = JSON.parse(raw || "[]") as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (item): item is LocalCreativeProject =>
@@ -52,6 +111,7 @@ export function createLocalCreativeProject(
   personaId: string,
   name: string,
   storage: Pick<Storage, "getItem" | "setItem"> = window.localStorage,
+  actor = currentActorId(),
 ): LocalCreativeProject {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("项目名称不能为空");
@@ -67,11 +127,14 @@ export function createLocalCreativeProject(
   };
   const next = [
     project,
-    ...readLocalCreativeProjects(personaId, storage).filter(
+    ...readLocalCreativeProjects(personaId, storage, actor).filter(
       (item) => item.id !== project.id,
     ),
   ];
-  storage.setItem(creativeProjectsStorageKey(personaId), JSON.stringify(next));
+  storage.setItem(
+    creativeProjectsStorageKey(personaId, actor),
+    JSON.stringify(next),
+  );
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent(CREATIVE_PROJECTS_CHANGED_EVENT, {

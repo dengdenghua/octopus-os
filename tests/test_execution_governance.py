@@ -80,6 +80,28 @@ def test_context_preserves_prebuilt_risk_policy() -> None:
     assert context.approval_risk_policy is policy
 
 
+def test_context_uses_server_permission_aliases_for_bypass() -> None:
+    context = ExecutionPolicyContext.from_metadata(
+        {
+            "enforce_executor_approval": True,
+            "permission_mode": "full-access",
+        }
+    )
+
+    assert context.bypass_approval is True
+
+
+def test_context_does_not_treat_automatic_review_as_bypass() -> None:
+    context = ExecutionPolicyContext.from_metadata(
+        {
+            "enforce_executor_approval": True,
+            "permission_mode": "approve-for-me",
+        }
+    )
+
+    assert context.bypass_approval is False
+
+
 def test_sanitized_privilege_fields_produce_rewrite_evidence() -> None:
     decision = evaluate_execution_policy(
         _instruction(
@@ -128,4 +150,3 @@ def test_instruction_preview_redacts_secret_fields_and_url_query() -> None:
     assert "not-a-real-key" not in instruction.args_preview
     assert "private-value" not in instruction.args_preview
     assert instruction.target == "https://example.com/api"
-

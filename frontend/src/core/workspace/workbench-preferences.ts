@@ -2,8 +2,14 @@ import {
   type PersonaWorkbenchTab,
   workspacePresetForAgent,
 } from "./workspace-presets";
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 
 const STORAGE_KEY = "echo.workbench.persona-tabs.v1";
+
+function storageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(STORAGE_KEY, actor);
+}
 
 const VALID_TABS = new Set<PersonaWorkbenchTab>([
   "agent",
@@ -15,7 +21,9 @@ const VALID_TABS = new Set<PersonaWorkbenchTab>([
 function readOverrides(): Record<string, PersonaWorkbenchTab> {
   if (typeof window === "undefined") return {};
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}");
+    const parsed = JSON.parse(
+      window.localStorage.getItem(storageKey()) ?? "{}",
+    );
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
       return {};
     return Object.fromEntries(
@@ -50,7 +58,7 @@ export function rememberWorkbenchTab(
   const key = agentId?.trim() || "general";
   try {
     window.localStorage.setItem(
-      STORAGE_KEY,
+      storageKey(),
       JSON.stringify({ ...readOverrides(), [key]: tab }),
     );
   } catch {

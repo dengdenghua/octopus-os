@@ -124,6 +124,43 @@ def test_operations_bundle_has_fixed_inventory_modes_and_release_reference(tmp_p
     assert manifest["artifact"]["imageReference"] == IMAGE_REFERENCE
 
 
+def test_bundled_nas_restore_has_its_helper_and_verification_entrypoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if not hasattr(os, "fchmod"):
+        # This test checks archive integrity and sibling imports. Unix mode
+        # enforcement remains covered by the existing Linux bundle tests.
+        monkeypatch.setattr(bundle.os, "fchmod", lambda _fd, _mode: None, raising=False)
+        original_open = os.open
+
+        def open_binary(path, flags, *args, **kwargs):
+            return original_open(path, flags | os.O_BINARY, *args, **kwargs)
+
+        monkeypatch.setattr(bundle.os, "open", open_binary)
+    report = _built(tmp_path / "build")
+    _root, files = bundle._read_archive(Path(report["archive"]))
+    assert files["nas_data_backup_support.py"][1] == 0o644
+    assert (
+        files["nas_data_backup_support.py"][0]
+        == (REPOSITORY / "deploy/appliance/nas_data_backup_support.py").read_bytes()
+    )
+    # Run the extracted entrypoint outside the checkout so its sibling-import
+    # fallback is exercised, not an accidentally importable repository module.
+    extracted = tmp_path / "standalone"
+    extracted.mkdir()
+    for name in ("nas_data_backup.py", "nas_data_backup_support.py", "external_storage.py"):
+        (extracted / name).write_bytes(files[name][0])
+    completed = subprocess.run(
+        [sys.executable, "-E", str(extracted / "nas_data_backup.py"), "verify-restore", "--help"],
+        cwd=extracted,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "--receipt-directory" in completed.stdout and "--confirm" in completed.stdout
+
+
 def test_operations_bundle_extracts_only_verified_files_and_refuses_replace(tmp_path: Path) -> None:
     report = _built(tmp_path / "build")
     destination = tmp_path / "install"

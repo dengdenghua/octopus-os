@@ -78,6 +78,10 @@ def _sha256(data: bytes) -> str:
 
 def _safe_read(path: Path, *, maximum: int = MAX_INPUT_BYTES) -> bytes:
     flags = os.O_RDONLY
+    # Windows otherwise opens descriptors in text mode and silently converts
+    # CRLF to LF, invalidating release hashes and signatures.
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
@@ -427,7 +431,13 @@ def _atomic_write(path: Path, data: bytes, *, mode: int = 0o644) -> None:
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, mode)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, mode)
+        else:
+            # Windows exposes ACLs rather than POSIX mode bits; chmod still
+            # applies the closest supported read-only flag and, crucially,
+            # keeps the atomic writer usable on the host that builds releases.
+            temporary.chmod(mode)
         owned = descriptor
         descriptor = -1
         with os.fdopen(owned, "wb") as output:
@@ -436,11 +446,16 @@ def _atomic_write(path: Path, data: bytes, *, mode: int = 0o644) -> None:
             os.fsync(output.fileno())
         os.replace(temporary, path)
         path.chmod(mode)
-        directory = os.open(path.parent, os.O_RDONLY)
         try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        except OSError:
+            # Directory fsync is unavailable on Windows; the file itself was
+            # already flushed before the atomic replace.
+            pass
     finally:
         if descriptor >= 0:
             os.close(descriptor)

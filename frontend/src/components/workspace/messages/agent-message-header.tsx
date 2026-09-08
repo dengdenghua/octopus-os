@@ -39,9 +39,7 @@ export function AgentAvatar({
     <div
       className={cn(
         "flex shrink-0 items-center justify-center overflow-hidden border border-border-default bg-muted text-sm leading-none",
-        !showImage &&
-          !emoji &&
-          "text-xs font-semibold text-muted-foreground",
+        !showImage && !emoji && "text-xs font-semibold text-muted-foreground",
         className,
       )}
     >

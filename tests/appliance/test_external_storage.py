@@ -189,3 +189,50 @@ def test_appliance_env_nas_storage_is_resolved_and_strict(
             devices,
             appliance_env=appliance_env,
         )
+
+
+def test_native_layout_uses_explicit_state_and_nas_roots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("NAS_STORAGE", raising=False)
+    deployment = tmp_path / "opt" / "echo-os"
+    state = tmp_path / "data"
+    nas = state / "nas"
+    mountpoint = tmp_path / "external"
+    destination = mountpoint / "repository"
+    for directory in (deployment, nas, destination):
+        directory.mkdir(parents=True)
+    mountinfo = tmp_path / "mountinfo"
+    mountinfo.write_text(_mount_record(mountpoint), encoding="utf-8")
+    devices = {
+        deployment.resolve(): 10,
+        state.resolve(): 11,
+        nas.resolve(): 12,
+        mountpoint.resolve(): 20,
+        destination.resolve(): 20,
+    }
+
+    result = verify_external_storage(
+        destination=destination,
+        mountpoint=mountpoint,
+        deployment_root=deployment,
+        appliance_env=None,
+        state_root_override=state,
+        nas_root_override=nas,
+        mountinfo=mountinfo,
+        device_reader=lambda path: devices[path.resolve()],
+    )
+
+    assert result["filesystem"] == "ext4"
+    devices[state.resolve()] = 20
+    with pytest.raises(ExternalStorageError, match="device state"):
+        verify_external_storage(
+            destination=destination,
+            mountpoint=mountpoint,
+            deployment_root=deployment,
+            appliance_env=None,
+            state_root_override=state,
+            nas_root_override=nas,
+            mountinfo=mountinfo,
+            device_reader=lambda path: devices[path.resolve()],
+        )

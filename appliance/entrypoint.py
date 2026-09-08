@@ -252,6 +252,11 @@ def main(argv: list[str] | None = None) -> int:
         # from the same distribution even outside Docker Compose.
         os.environ.setdefault("ECHO_APPLIANCE", "1")
         os.environ.setdefault("ECHO_APP_EXTENSIONS", "appliance.extension")
+        # A device image must never expose a healthy-looking Agent without its
+        # appliance routes.  The generic runtime keeps third-party extensions
+        # best-effort; this entrypoint opts the core appliance extension into
+        # the fail-closed contract.
+        os.environ.setdefault("ECHO_REQUIRED_APP_EXTENSIONS", "1")
         os.environ.setdefault("ECHO_SKILL_EXTENSIONS", "appliance.pm_skills:register_pm_skills")
         # Do this outside Agent's best-effort extension loader so a broken image
         # exits instead of merely logging a warning and serving a mixed runtime.

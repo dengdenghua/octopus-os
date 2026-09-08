@@ -77,7 +77,9 @@ export function ArtifactsProvider({
   useEffect(() => {
     if (!fallbackArtifacts || fallbackArtifacts.length === 0) return;
     setArtifacts((prev) =>
-      prev.length === 0 ? fallbackArtifacts : Array.from(new Set([...prev, ...fallbackArtifacts])),
+      prev.length === 0
+        ? fallbackArtifacts
+        : Array.from(new Set([...prev, ...fallbackArtifacts])),
     );
   }, [fallbackArtifacts]);
 

@@ -138,9 +138,7 @@ test.describe("Mobile workspace smoke", () => {
     await expect(dialog).toBeHidden();
   });
 
-  test("Realtime composer fits mobile width", async ({
-    authedPage: page,
-  }) => {
+  test("Realtime composer fits mobile width", async ({ authedPage: page }) => {
     await page.goto("/#/workspace/realtime/new");
     await page.waitForLoadState("domcontentloaded");
 
@@ -172,7 +170,9 @@ test.describe("Mobile workspace smoke", () => {
     await page.goto("/#/workspace/skills");
     await page.waitForLoadState("domcontentloaded");
 
-    await expect(page).toHaveURL(/#\/workspace\/agents\?surface=chat&tab=skills/);
+    await expect(page).toHaveURL(
+      /#\/workspace\/agents\?surface=chat&tab=skills/,
+    );
     await expect(
       page.getByRole("tab", { name: /技能|Skills|Skill Market/i }),
     ).toBeVisible();

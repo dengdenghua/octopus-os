@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +21,23 @@ from .project_store import (
     save_project,
     step_history,
 )
+from .readiness import OptionalMediaUnavailable, load_media_dependency, media_readiness
 from .snapshot_renderer import render_project_frames, sample_times
-from .video_export import encode_project_video
+
+
+def encode_project_video(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    # Loading the plugin must not load the optional video/audio stack.
+    load_media_dependency("av", "video_export")
+    load_media_dependency("numpy", "video_export")
+    from .video_export import encode_project_video as encode
+
+    return encode(*args, **kwargs)
+
+
+def _raise_operation_error(result: dict[str, Any], fallback: str) -> None:
+    if result.get("code") in {"optional_dependency_unavailable", "dependency_load_failed"}:
+        raise HTTPException(503, result)
+    raise HTTPException(400, str(result.get("error") or fallback))
 
 
 class ProjectEditBody(BaseModel):
@@ -202,8 +216,7 @@ class ClipStudioPlugin(ModulePlugin):
             ),
         ]
         for skill in skills:
-            with contextlib.suppress(Exception):
-                self.ctx.register_skill(skill)
+            self.ctx.register_skill(skill)
 
     def _project_get_skill(
         self, project_id: str = "", view: str = "clips", **_kwargs: Any
@@ -268,6 +281,8 @@ class ClipStudioPlugin(ModulePlugin):
                 times=requested,
                 max_dim=max_dim,
             )
+        except OptionalMediaUnavailable as exc:
+            return {**exc.result(), "frames": []}
         except (TypeError, ValueError) as exc:
             return {"ok": False, "error": str(exc), "frames": []}
 
@@ -345,6 +360,8 @@ class ClipStudioPlugin(ModulePlugin):
                 max_dim=max_dim,
                 include_audio=include_audio,
             )
+        except OptionalMediaUnavailable as exc:
+            return exc.result()
         except (TypeError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
 
@@ -363,8 +380,11 @@ class ClipStudioPlugin(ModulePlugin):
 
         @router.get("/health")
         def health() -> dict[str, Any]:
+            readiness = media_readiness()
             return {
                 "ok": True,
+                "state": readiness["state"],
+                "readiness": readiness,
                 "plugin": self.name,
                 "local_only": True,
                 "methods": [
@@ -399,6 +419,11 @@ class ClipStudioPlugin(ModulePlugin):
                 )
                 if result["ok"] and not body.validate_only:
                     save_project(_projects_dir(), updated)
+                if result.get("code") in {
+                    "optional_dependency_unavailable",
+                    "dependency_load_failed",
+                }:
+                    _raise_operation_error(result, "edit failed")
                 return result
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from exc
@@ -462,7 +487,7 @@ class ClipStudioPlugin(ModulePlugin):
                 max_dim=body.max_dim,
             )
             if not result.get("ok"):
-                raise HTTPException(400, str(result.get("error") or "snapshot failed"))
+                _raise_operation_error(result, "snapshot failed")
             return result
 
         @router.get("/projects/{project_id}/diagnostics")
@@ -480,7 +505,7 @@ class ClipStudioPlugin(ModulePlugin):
                 include_audio=body.include_audio,
             )
             if not result.get("ok"):
-                raise HTTPException(400, str(result.get("error") or "export failed"))
+                _raise_operation_error(result, "export failed")
             return result
 
         @router.get("/projects/{project_id}/export/file")

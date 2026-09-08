@@ -21,10 +21,13 @@ endpoints; the thread router continues to own ``GET /api/workspaces/{thread_id}/
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
+from starlette.responses import Response
 
 from runtime.platform.io.lease import (
     LeaseConflictError,
@@ -40,7 +43,9 @@ from runtime.sensing.server.mount_backend import (
 from runtime.workspace import (
     VALID_MEMBER_ROLES,
     VALID_MOUNT_TYPES,
+    WorkspaceCryptoError,
     WorkspaceStore,
+    encrypt_options,
 )
 
 # ═══════════════════════════════════════════════════════════
@@ -89,6 +94,21 @@ def _require_flag() -> None:
                 "hint": "set feature flag 'ui.remote_workspace' to enable",
             },
         )
+
+
+class _WorkspaceRoute(APIRoute):
+    """Keep credential failures actionable without exposing secret values."""
+
+    def get_route_handler(self) -> Callable[[Request], Awaitable[Response]]:
+        handler = super().get_route_handler()
+
+        async def handle(request: Request) -> Response:
+            try:
+                return await handler(request)
+            except WorkspaceCryptoError as exc:
+                raise HTTPException(503, detail=exc.to_detail()) from None
+
+        return handle
 
 
 def create_workspace_api_router(
@@ -166,9 +186,16 @@ def create_workspace_api_router(
         *,
         action: str = "read",
     ) -> tuple[Any, CurrentPrincipal | None]:
-        """Load a workspace, then authorize against its persisted ACL."""
+        """Check membership before loading decrypted mount credentials."""
         principal = _principal(request)
         scoped_store = _scoped_store(request)
+        role = None
+        if principal is not None:
+            # Membership reads only tenant/ACL metadata. A non-member must not
+            # learn whether the stored credentials are decryptable.
+            role = scoped_store.get_member_role(workspace_id, principal.actor_id)
+            if role is None:
+                raise HTTPException(404, f"workspace {workspace_id!r} not found")
         ws = scoped_store.get_workspace(workspace_id)
         if ws is None:
             raise HTTPException(404, f"workspace {workspace_id!r} not found")
@@ -189,10 +216,6 @@ def create_workspace_api_router(
             # from missing resources to ordinary principals.
             raise HTTPException(404, f"workspace {workspace_id!r} not found")
 
-        role = scoped_store.get_member_role(workspace_id, principal.actor_id)
-        if role is None:
-            # Hide workspace existence from non-members.
-            raise HTTPException(404, f"workspace {workspace_id!r} not found")
         if action == "admin" and role != "owner" and not global_operator:
             raise HTTPException(403, "workspace owner or operator role required")
         if (
@@ -247,7 +270,7 @@ def create_workspace_api_router(
             return False, f"test_connection raised: {exc}"
         return ok, "" if ok else "mount unreachable"
 
-    router = APIRouter(tags=["workspace-api"])
+    router = APIRouter(tags=["workspace-api"], route_class=_WorkspaceRoute)
 
     # ─── Workspace CRUD ────────────────────────────────────────────────────
 
@@ -267,6 +290,9 @@ def create_workspace_api_router(
                 f"invalid mount_type {body.mount_type!r}; "
                 f"expected one of {sorted(VALID_MOUNT_TYPES)}",
             )
+        # Verify persistence prerequisites after authorization and before any
+        # remote connection. The store still encrypts independently at commit.
+        encrypt_options(body.mount_options)
         ok, detail = await _test_connection(body.mount_type, body.mount_target, body.mount_options)
         if not ok:
             raise HTTPException(

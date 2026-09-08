@@ -467,6 +467,16 @@ def test_audit_sandbox_is_read_only_for_direct_group_subagent_and_projectos_requ
         },
     )
     assert ordinary.sandbox_mode == "workspace-write"
+    full_access, _broker, _provider = role_runner.build_codex_role_request(
+        stack,
+        coder,
+        "headless local batch",
+        context={"workspace_path": str(workspace)},
+        server_auto_approve=True,
+    )
+    assert full_access.approval_policy == "never"
+    assert full_access.sandbox_mode == "danger-full-access"
+    assert full_access.approval_reviewer == "user"
     assert (
         role_runner.resolve_codex_sandbox_mode(
             {"sandbox_policy": {"type": "workspaceWrite"}},
@@ -643,5 +653,4 @@ def test_group_roster_coder_fans_out_and_cannot_hijack_parent_turn(
     coder_context = next(call["context"] for call in member_calls if call["agent_id"] == "coder")
     assert isinstance(coder_context.get("_codex_approval_provider"), ApprovalProvider)
     assert "_server_auto_approve" not in coder_context
-
 

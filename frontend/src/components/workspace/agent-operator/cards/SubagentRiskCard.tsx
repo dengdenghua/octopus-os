@@ -35,9 +35,7 @@ export function SubagentRiskCard({
             <ShieldAlertIcon
               className={cn(
                 "size-4",
-                hasRisks
-                  ? "text-warning"
-                  : "text-muted-foreground",
+                hasRisks ? "text-warning" : "text-muted-foreground",
               )}
             />
             {to("Subagent risk")}

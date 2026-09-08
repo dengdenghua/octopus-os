@@ -2,6 +2,7 @@ import { authHeaders } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
 
 import {
+  parseWorkspaceResourceId,
   parseWorkspaceOutputRef,
   type WorkspaceOutputArea,
   workspaceOutputRef,
@@ -15,6 +16,8 @@ export interface WorkspaceOutputEntry {
   size: number;
   modified: number;
   download_url: string;
+  /** Stable cross-surface identity; absolute host paths remain compatibility data. */
+  resource_id?: string;
 }
 
 interface WorkspaceOutputsResponse {
@@ -89,11 +92,25 @@ export async function listWorkspaceArtifactRefs(
     if (result.status !== "fulfilled") continue;
     for (const file of result.value) {
       if (isInternalWorkspaceOutput(file.relative_path)) continue;
-      const ref = workspaceOutputRef({
-        area: file.area,
-        relativePath: file.relative_path,
-      });
-      const key = `${file.path || file.area}:${file.relative_path}`;
+      // The gateway owns the canonical identity.  Keep it when it is valid
+      // for this thread; only older gateways need the compatibility ref.
+      const suppliedResource =
+        typeof file.resource_id === "string"
+          ? parseWorkspaceResourceId(file.resource_id)
+          : null;
+      const normalizedRelativePath = file.relative_path
+        .replaceAll("\\", "/")
+        .replace(/^\/+/, "");
+      const ref =
+        suppliedResource?.threadId === threadId &&
+        suppliedResource.area === file.area &&
+        suppliedResource.relativePath === normalizedRelativePath
+          ? file.resource_id!
+          : workspaceOutputRef({
+              area: file.area,
+              relativePath: file.relative_path,
+            });
+      const key = ref;
       if (seen.has(key)) continue;
       seen.add(key);
       refs.push(ref);

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import subprocess
+import tarfile
 import tomllib
 from pathlib import Path
 
 import pytest
 import yaml
+
+from deploy.appliance import runtime_source_bundle
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_FILES = (ROOT / "docker-compose.yml", ROOT / "deploy/appliance/docker-compose.yml")
@@ -31,7 +35,7 @@ def _docker_data_mounts(service: dict) -> list[str]:
 def test_only_the_internal_least_privilege_sidecar_owns_docker_socket(
     compose_path: Path,
 ) -> None:
-    compose = yaml.safe_load(compose_path.read_text())
+    compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
     services = compose["services"]
     main = services["echo-os"]
     proxy = services["docker-control"]
@@ -139,7 +143,9 @@ def test_only_the_internal_least_privilege_sidecar_owns_docker_socket(
 
 
 def test_production_compose_pins_main_and_proxy_to_one_release_image() -> None:
-    compose = yaml.safe_load((ROOT / "deploy/appliance/docker-compose.yml").read_text())
+    compose = yaml.safe_load(
+        (ROOT / "deploy/appliance/docker-compose.yml").read_text(encoding="utf-8")
+    )
     services = compose["services"]
 
     assert services["echo-os"]["image"] == "${ECHO_OS_IMAGE:-echo-os:latest}"
@@ -148,7 +154,7 @@ def test_production_compose_pins_main_and_proxy_to_one_release_image() -> None:
 
 
 def test_omv_override_mounts_only_the_read_bridge_into_the_main_service() -> None:
-    override = yaml.safe_load(OMV_OVERRIDE.read_text())
+    override = yaml.safe_load(OMV_OVERRIDE.read_text(encoding="utf-8"))
     services = override["services"]
 
     assert list(services) == ["echo-os"]
@@ -167,7 +173,7 @@ def test_omv_override_mounts_only_the_read_bridge_into_the_main_service() -> Non
 
 
 def test_omv_host_bridge_unit_has_no_network_or_elevated_capabilities() -> None:
-    unit = (ROOT / "deploy/omv/echo-omv-bridge.service.example").read_text()
+    unit = (ROOT / "deploy/omv/echo-omv-bridge.service.example").read_text(encoding="utf-8")
 
     assert "PrivateNetwork=true" in unit
     assert "RestrictAddressFamilies=AF_UNIX" in unit
@@ -191,7 +197,7 @@ def test_omv_host_bridge_unit_has_no_network_or_elevated_capabilities() -> None:
 
 
 def test_appliance_build_pins_every_multiarch_base_image_by_digest() -> None:
-    dockerfile = (ROOT / "Dockerfile").read_text()
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM ")]
 
     assert from_lines == [
@@ -219,7 +225,7 @@ def test_appliance_build_pins_every_multiarch_base_image_by_digest() -> None:
 
 
 def test_appliance_python_install_uses_only_hash_locked_binary_dependencies() -> None:
-    dockerfile = (ROOT / "Dockerfile").read_text()
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     assert "--require-hashes --only-binary=:all:" in dockerfile
     assert "-r agent-dist/build-requirements.lock" in dockerfile
@@ -232,8 +238,119 @@ def test_appliance_python_install_uses_only_hash_locked_binary_dependencies() ->
     assert "/build-tools" not in runtime_section
 
 
+def test_appliance_heif_binary_license_notice_is_shipped_and_release_visible() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/appliance-release.yml").read_text(encoding="utf-8")
+    notice = (ROOT / "deploy/appliance/PYTHON_RUNTIME_NOTICES.md").read_text(encoding="utf-8")
+    runtime_lock = (ROOT / "deploy/appliance/runtime-requirements.lock").read_text(encoding="utf-8")
+
+    assert "pillow-heif==1.7.0" in runtime_lock
+    assert "binary-wheel notice says" in notice
+    assert "GPLv2" in notice
+    assert "pillow_heif-1.7.0.dist-info/licenses/LICENSES_bundled.txt" in notice
+    for commit in (
+        "f65a9ac77809609ad8ebb001c691b5a3ee01146b",
+        "78c9746aea226b22885e8d35241353ce669c4ea5",
+        "d0bcab76380c079358a3156b3e3b37d17c00a078",
+        "e444744c03978c1fb4e037168967020cf2648427",
+    ):
+        assert commit in notice
+    assert (
+        "COPY deploy/appliance/PYTHON_RUNTIME_NOTICES.md "
+        "/usr/share/doc/echo-os/PYTHON_RUNTIME_NOTICES.md"
+    ) in dockerfile
+    assert (
+        "cp deploy/appliance/PYTHON_RUNTIME_NOTICES.md dist/PYTHON_RUNTIME_NOTICES.md" in workflow
+    )
+    assert "dist/PYTHON_RUNTIME_NOTICES.md" in workflow
+    assert "contents: write" in workflow
+    assert "runtime_source_bundle.py build --output-directory dist" in workflow
+    assert "dist/runtime_source_bundle.py verify --output-directory dist" in workflow
+    assert "softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65" in workflow
+    for name in (
+        runtime_source_bundle.ARCHIVE_NAME,
+        runtime_source_bundle.MANIFEST_NAME,
+        runtime_source_bundle.CHECKSUM_NAME,
+        runtime_source_bundle.VERIFIER_NAME,
+    ):
+        assert f"dist/{name}" in workflow
+
+
+def test_heif_corresponding_source_bundle_is_exact_reproducible_and_self_verifying(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = tmp_path / "upstream"
+    repository.mkdir()
+
+    def git(*arguments: str) -> str:
+        result = subprocess.run(
+            ["git", "-C", str(repository), *arguments],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+
+    git("init", "--quiet")
+    git("config", "user.name", "Echo source test")
+    git("config", "user.email", "source-test@example.invalid")
+    (repository / "LICENSE").write_text("test license\n", encoding="utf-8")
+    (repository / "decoder.c").write_text("int decode(void) { return 0; }\n", encoding="utf-8")
+    git("add", "LICENSE", "decoder.c")
+    git("commit", "--quiet", "-m", "fixture")
+    git("tag", "v1.0.0")
+    commit = git("rev-parse", "HEAD")
+    component = runtime_source_bundle.SourceComponent(
+        name="decoder",
+        version="1.0.0",
+        license="GPL-2.0-only",
+        repository=str(repository),
+        ref="refs/tags/v1.0.0",
+        commit=commit,
+    )
+    notice = tmp_path / "PYTHON_RUNTIME_NOTICES.md"
+    notice.write_text("fixture notice\n", encoding="utf-8")
+    monkeypatch.setattr(runtime_source_bundle, "COMPONENTS", (component,))
+    monkeypatch.setattr(runtime_source_bundle, "NOTICE_PATH", notice)
+
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    manifest = runtime_source_bundle.build_bundle(
+        first,
+        components=(component,),
+        notice_path=notice,
+        allow_local_repositories=True,
+    )
+    runtime_source_bundle.build_bundle(
+        second,
+        components=(component,),
+        notice_path=notice,
+        allow_local_repositories=True,
+    )
+
+    assert manifest["components"][0]["commit"] == commit
+    for name in (
+        runtime_source_bundle.ARCHIVE_NAME,
+        runtime_source_bundle.MANIFEST_NAME,
+        runtime_source_bundle.CHECKSUM_NAME,
+        runtime_source_bundle.VERIFIER_NAME,
+        runtime_source_bundle.NOTICE_NAME,
+    ):
+        assert (first / name).read_bytes() == (second / name).read_bytes()
+    assert runtime_source_bundle.verify_bundle(first) == manifest
+    with tarfile.open(first / runtime_source_bundle.ARCHIVE_NAME, "r:gz") as archive:
+        names = set(archive.getnames())
+    assert f"{runtime_source_bundle.ARCHIVE_ROOT}/sources/decoder-1.0.0/decoder.c" in names
+    assert f"{runtime_source_bundle.ARCHIVE_ROOT}/PYTHON_RUNTIME_NOTICES.md" in names
+
+    checksum = first / runtime_source_bundle.CHECKSUM_NAME
+    checksum.write_text(checksum.read_text(encoding="ascii") + "unexpected\n", encoding="ascii")
+    with pytest.raises(runtime_source_bundle.SourceBundleError, match="checksum"):
+        runtime_source_bundle.verify_bundle(first)
+
+
 def test_appliance_crypto_dependency_cannot_regress_below_audited_fix_line() -> None:
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     declared = list(project["project"]["dependencies"])
     for extra in project["project"]["optional-dependencies"].values():
         declared.extend(extra)
@@ -242,7 +359,7 @@ def test_appliance_crypto_dependency_cannot_regress_below_audited_fix_line() -> 
     assert len(crypto_requirements) >= 4
     assert set(crypto_requirements) == {"cryptography>=50.0.0"}
 
-    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
     crypto = next(package for package in lock["package"] if package["name"] == "cryptography")
     version = tuple(int(part) for part in crypto["version"].split(".")[:3])
     assert version >= (50, 0, 0)

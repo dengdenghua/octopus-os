@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const artifactContext = vi.hoisted(() => ({
@@ -200,14 +201,14 @@ describe("HtmlPreview human editing", () => {
       expect.stringContaining("<h1>Human edited</h1>"),
     );
     expect(fetch).toHaveBeenCalledWith(
-      "http://localhost:8001/api/threads/thread-1/outputs/site.html?area=final",
+      "http://localhost:8001/api/workspace-resources/workspace-file%3Av1%3AdGhyZWFkLTE%3AZmluYWw%3Ac2l0ZS5odG1s",
       expect.objectContaining({ method: "PUT" }),
     );
     await userEvent.click(screen.getByRole("button", { name: "撤销上次保存" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(2));
     expect(onSaved.mock.calls[1]?.[0]).toContain("<body><h1>Old</h1></body>");
     expect(fetch).toHaveBeenLastCalledWith(
-      "http://localhost:8001/api/threads/thread-1/output-revisions/site.html?area=final",
+      "http://localhost:8001/api/workspace-resources/workspace-file%3Av1%3AdGhyZWFkLTE%3AZmluYWw%3Ac2l0ZS5odG1s",
       expect.objectContaining({ method: "POST" }),
     );
   });
@@ -394,10 +395,12 @@ describe("HtmlPreview human editing", () => {
 
   it("asks before closing an artifact with unsaved HTML edits", async () => {
     render(
-      <ArtifactFileDetail
-        filepath="workspace-output:final:site.html"
-        threadId="thread-1"
-      />,
+      <MemoryRouter initialEntries={["/workspace?presentation=workbench"]}>
+        <ArtifactFileDetail
+          filepath="workspace-output:final:site.html"
+          threadId="thread-1"
+        />
+      </MemoryRouter>,
     );
     const iframe = screen.getByTitle("Artifact preview") as HTMLIFrameElement;
     const source = iframe.contentWindow!;

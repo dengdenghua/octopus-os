@@ -197,7 +197,9 @@ function receiptFromBlocks(
     .reverse()
     .find((block) => block.kind === "todo");
   const items = checklistFromTodo(latestTodo?.event.input);
-  const recoveryCount = blocks.filter((block) => block.status === "warning").length;
+  const recoveryCount = blocks.filter(
+    (block) => block.status === "warning",
+  ).length;
   const attentionCount = blocks.filter(
     (block) => block.status === "error" || block.status === "waiting_approval",
   ).length;
@@ -209,7 +211,9 @@ function receiptFromBlocks(
         (block.kind === "terminal" || block.actionKey === "submitResult"),
     )
     .slice(-3)
-    .map((block) => sanitizeReplayText(workBlockTitle(block, labels), { max: 160 }))
+    .map((block) =>
+      sanitizeReplayText(workBlockTitle(block, labels), { max: 160 }),
+    )
     .filter(Boolean);
 
   if (items.length === 0 && recoveryCount === 0 && attentionCount === 0) {
@@ -246,13 +250,20 @@ function checklistFromTodo(input: unknown): ReplayReceiptItem[] {
     const candidate = item as Record<string, unknown>;
     const title = ["content", "title", "text", "task"]
       .map((key) => candidate[key])
-      .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+      .find(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0,
+      );
     if (!title) return [];
-    const rawStatus = typeof candidate.status === "string" ? candidate.status : "pending";
+    const rawStatus =
+      typeof candidate.status === "string" ? candidate.status : "pending";
     const status = replayReceiptStatus(rawStatus);
     const detail = ["activeForm", "active_form", "detail", "description"]
       .map((key) => candidate[key])
-      .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+      .find(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0,
+      );
     return [
       {
         title: sanitizeReplayText(title, { max: 180 }),

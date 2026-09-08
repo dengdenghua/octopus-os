@@ -528,6 +528,28 @@ class _StreamingRouter:
 
 
 class TestSubTextDeltaStreaming:
+    def test_streaming_router_reports_usage_to_host_callback(self):
+        """Host governance receives the provider's per-response usage."""
+        from runtime.execution.suckers.ephemeral_runner import make_llm_ephemeral_runner
+
+        router = _StreamingRouter(chunks=["ok"])
+        usage: list[dict] = []
+        call = _make_call()
+        call.context["_subagent_usage_recorder"] = usage.append
+
+        runner = make_llm_ephemeral_runner(router, default_model="m")
+        assert runner(call) == "ok"
+        assert usage == [
+            {
+                "input_tokens": 10,
+                "output_tokens": 20,
+                "cost_usd": 0.0,
+                "model": "m",
+                "provider": "",
+                "iteration": 1,
+            }
+        ]
+
     def test_streaming_router_emits_sub_text_delta_chunks(self):
         """Live observability: when the router can stream, the runner
         forwards each text chunk as ``sub_text_delta`` so swarm

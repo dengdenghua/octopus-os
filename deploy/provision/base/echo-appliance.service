@@ -3,6 +3,9 @@ Description=Echo OS appliance backend (NAS control plane + agent runtime)
 Documentation=https://github.com/dengdenghua/octopus-os
 After=network-online.target docker.service
 Wants=network-online.target docker.service
+StartLimitIntervalSec=300s
+StartLimitBurst=5
+OnFailure=echo-appliance-deadman.service
 
 [Service]
 Type=simple

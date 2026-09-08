@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -75,20 +76,54 @@ def render_profile_memories(
     *,
     max_memories: int = 20,
     max_chars: int = 2_000,
+    annotate: bool = False,
 ) -> str:
-    """Render memories as a compact prompt section."""
+    """Render memories as a compact prompt section.
+
+    ``annotate=True`` is used at model boundaries: each value is quoted as
+    reference data and receives an origin label.  The default keeps the
+    legacy plain text shape for UI and compatibility callers.
+    """
     clean = merge_profile_memories([], [m for m in memories or [] if isinstance(m, str)])
     if not clean:
         return ""
-    lines = ["USER PROFILE MEMORY:"]
-    total = len(lines[0]) + 1
+    if annotate:
+        from runtime.memory.semantics import memory_data_notice
+
+        lines = ["USER PROFILE MEMORY:", memory_data_notice()]
+        total = len("\n".join(lines)) + 1
+    else:
+        lines = ["USER PROFILE MEMORY:"]
+        total = len(lines[0]) + 1
     for memory in clean[-max_memories:]:
-        line = f"- {memory}"
+        if annotate:
+            if memory.lstrip().startswith("[") and "] " in memory:
+                rendered = memory
+            else:
+                rendered = "[user_statement/user_asserted] " + json.dumps(
+                    memory,
+                    ensure_ascii=False,
+                )
+            line = f"- {rendered}"
+        else:
+            line = f"- {memory}"
         remaining = max_chars - total
         if remaining <= 0:
             break
         if len(line) > remaining:
-            line = line[: max(0, remaining - 3)] + "..."
+            if annotate:
+                # Keep the JSON value valid when the prompt budget cuts a
+                # long memory.  The label remains visible for auditing.
+                prefix = line.split("] ", 1)[0] + "] "
+                available = max(0, remaining - len(prefix) - 2)
+                line = prefix + json.dumps(
+                    memory[: max(0, available - 1)] + "…",
+                    ensure_ascii=False,
+                )
+                if len(line) > remaining:
+                    line = line[:remaining]
+            else:
+                line = line[: max(0, remaining - 3)] + "..."
         lines.append(line)
         total += len(line) + 1
     return "\n".join(lines)

@@ -593,8 +593,14 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = authReturnToFromSearch(location.search);
-  const { authError, authStatus, isLoading, isAuthenticated, retryAuth } =
-    useAuth();
+  const {
+    authError,
+    authStatus,
+    isBackendStarting,
+    isLoading,
+    isAuthenticated,
+    retryAuth,
+  } = useAuth();
   const { t } = useI18n();
   const [authProviders, setAuthProviders] = useState<AuthProviderInfo[] | null>(
     null,
@@ -602,6 +608,14 @@ export default function LoginPage() {
   const [providerReloadKey, setProviderReloadKey] = useState(0);
 
   useEffect(() => {
+    // AuthProvider owns the appliance cold-start recovery window. Starting a
+    // second, shorter provider probe here would exhaust its retries first and
+    // leave a healthy appliance looking as if login had been disabled.
+    if (isLoading || authError) {
+      setAuthProviders(null);
+      return;
+    }
+
     let cancelled = false;
 
     async function loadAuthProviders() {
@@ -627,7 +641,7 @@ export default function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [providerReloadKey]);
+  }, [authError, isLoading, providerReloadKey]);
 
   const providersReady = authProviders !== null;
   const hasOct = authProviders?.some((p) => p.id === "oct") ?? false;
@@ -655,7 +669,7 @@ export default function LoginPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="animate-pulse text-sm text-muted-foreground">
-          {t.common.loading}
+          {isBackendStarting ? t.common.startingSystem : t.common.loading}
         </div>
       </div>
     );

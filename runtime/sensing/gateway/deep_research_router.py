@@ -62,9 +62,6 @@ def create_deep_research_router(
             jwt_audience=jwt_audience,
         )
 
-    # ResearchJob and its persistent job store are process-global and do not
-    # yet carry actor/tenant ownership. Keep the entire surface operational
-    # until that schema can be migrated safely.
     router = APIRouter(
         tags=["deep-research"],
         dependencies=[Depends(_operator_dep)],
@@ -76,21 +73,13 @@ def create_deep_research_router(
     jobs: dict[str, ResearchJob] = _load_jobs(store_path)
     workspace_manager = WorkspaceManager(workspace_root) if workspace_root else None
 
-    def _auth(request: Any) -> str | None:
-        """Authenticate and return actor_id.
+    def _principal(request: Any) -> Any:
+        from runtime.safety.auth.principal import resolve_principal
 
-        WARNING: DeepResearchJob does NOT yet track per-job ownership.
-        Until it does, any authenticated user can read/start on any
-        other user's jobs. The actor returned here is currently unused
-        by the endpoints — marked with ``AUTH-OK: actor-agnostic``
-        because the resource model itself doesn't support scoping.
-        Plug ownership into ``DeepResearchJob`` and update endpoints
-        to enforce it as a follow-up (parallel to what we did for
-        ParallelAgentOrchestrator).
-        """
-        from .openai_gateway_router import _resolve_actor
-
-        return _resolve_actor(
+        cached = getattr(getattr(request, "state", None), "principal", None)
+        if cached is not None:
+            return cached
+        return resolve_principal(
             request,
             identity_store,
             require_auth,
@@ -98,6 +87,40 @@ def create_deep_research_router(
             jwt_issuer=jwt_issuer,
             jwt_audience=jwt_audience,
         )
+
+    def _bind_owner(job: ResearchJob, principal: Any) -> ResearchJob:
+        if principal is not None:
+            job.owner_id = str(getattr(principal, "actor_id", "") or "").strip() or None
+            job.tenant_id = str(getattr(principal, "tenant_id", "") or "").strip() or None
+        return job
+
+    def _is_admin(principal: Any) -> bool:
+        roles = getattr(principal, "roles", ()) or ()
+        return "admin" in {str(role).strip().lower() for role in roles}
+
+    def _job_visible(job: ResearchJob, principal: Any) -> bool:
+        if not require_auth:
+            return True
+        if principal is None:
+            return False
+        # Admins can inspect legacy/unowned jobs during migration. Operators
+        # must have both immutable coordinates; an owner-only match is not
+        # sufficient when one actor belongs to more than one tenant.
+        if _is_admin(principal):
+            return True
+        return bool(
+            job.owner_id
+            and job.tenant_id
+            and job.owner_id == getattr(principal, "actor_id", None)
+            and job.tenant_id == getattr(principal, "tenant_id", None)
+        )
+
+    def _require_job(request: Any, job_id: str) -> tuple[ResearchJob, Any]:
+        principal = _principal(request)
+        job = jobs.get(job_id)
+        if job is None or not _job_visible(job, principal):
+            raise HTTPException(404, f"research job not found: {job_id}")
+        return job, principal
 
     def _thread_upload_materials(thread_id: str | None) -> list[ResearchMaterial]:
         if not thread_id:
@@ -150,12 +173,60 @@ def create_deep_research_router(
     def _save_job(job: ResearchJob) -> None:
         _append_job(store_path, job)
 
+    def _recovery_snapshot_for_job(job: ResearchJob) -> Any | None:
+        """Resolve a job's redacted recovery view without broadening scope."""
+
+        if orchestrator is None:
+            return None
+        batch_id = str(job.dispatch_batch_id or "").strip()
+        if not batch_id and str(job.host_task_id or "").startswith("parallel-batch:"):
+            batch_id = str(job.host_task_id).removeprefix("parallel-batch:").strip()
+        if not batch_id:
+            return None
+        snapshot_getter = getattr(orchestrator, "recovery_snapshot", None)
+        if not callable(snapshot_getter):
+            return None
+        snapshot = snapshot_getter(batch_id)
+        if snapshot is None:
+            return None
+        expected_host_task_id = str(job.host_task_id or "").strip()
+        actual_host_task_id = str(getattr(snapshot, "host_task_id", None) or "").strip()
+        if expected_host_task_id and actual_host_task_id != expected_host_task_id:
+            return None
+        return snapshot
+
     def _refresh_job_from_batch(job: ResearchJob) -> ResearchJob:
-        if orchestrator is None or not job.dispatch_batch_id:
+        batch_id = str(job.dispatch_batch_id or "").strip()
+        if not batch_id and str(job.host_task_id or "").startswith("parallel-batch:"):
+            batch_id = str(job.host_task_id).removeprefix("parallel-batch:").strip()
+        if orchestrator is None or not batch_id:
             return job
-        batch = orchestrator.get_batch(job.dispatch_batch_id)
+        batch = orchestrator.get_batch(batch_id)
         if batch is None:
+            snapshot = _recovery_snapshot_for_job(job)
+            if snapshot is not None:
+                durable_only = (
+                    isinstance(getattr(snapshot, "safety", None), dict)
+                    and snapshot.safety.get("durable_only") is True
+                )
+                job.recovery_required = bool(
+                    durable_only and (job.status == "running" or not job.final_report)
+                )
+                job.recovery_reason = (
+                    "durable_only_recovery_view" if job.recovery_required else None
+                )
             return job
+
+        # A live batch is authoritative again. Clear a stale restart marker
+        # before applying the current batch lifecycle.
+        job.recovery_required = False
+        job.recovery_reason = None
+
+        # Keep the durable host coordinate on the research job itself.  The
+        # batch object is process-local and may disappear after a restart,
+        # while TaskSupervisor retains the aggregate recovery record.
+        if getattr(batch, "host_task_id", None) and job.host_task_id != batch.host_task_id:
+            job.host_task_id = batch.host_task_id
 
         route_decisions_changed = _sync_route_decisions(job, batch)
         results_by_task = {result.task_id: result for result in batch.results}
@@ -203,20 +274,16 @@ def create_deep_research_router(
 
     @router.post("/api/research/deep/plan")
     def plan_deep_research(request: Request, body: DeepResearchRequest) -> dict[str, Any]:
-        _auth(
-            request
-        )  # AUTH-OK: actor-agnostic — DeepResearchJob has no owner field (see _auth docstring)
-        job = _build_job(body)
+        principal = _principal(request)
+        job = _bind_owner(_build_job(body), principal)
         jobs[job.job_id] = job
         _save_job(job)
         return job.model_dump()
 
     @router.post("/api/research/deep/start")
     def start_deep_research(request: Request, body: DeepResearchRequest) -> dict[str, Any]:
-        _auth(
-            request
-        )  # AUTH-OK: actor-agnostic — DeepResearchJob has no owner field (see _auth docstring)
-        job = _build_job(body)
+        principal = _principal(request)
+        job = _bind_owner(_build_job(body), principal)
         if body.prefetch_sources:
             job = _prefetch_job_sources(job)
         tasks = planner.dispatch_tasks(job)
@@ -241,10 +308,15 @@ def create_deep_research_router(
                         "research_materials": [material.model_dump() for material in job.materials],
                         "research_roles": [role.model_dump() for role in job.roles],
                         "research_evidence": [evidence.model_dump() for evidence in job.evidence],
-                        "research_prefetch_logs": [log.model_dump() for log in job.prefetch_logs],
+                        "research_prefetch_logs": [
+                            log.model_dump() for log in job.prefetch_logs
+                        ],
                     },
+                    owner_id=getattr(principal, "actor_id", None) if principal else None,
+                    tenant_id=getattr(principal, "tenant_id", None) if principal else None,
                 )
                 job.dispatch_batch_id = batch.batch_id
+                job.host_task_id = getattr(batch, "host_task_id", None)
                 job.status = "running"
             except (ConnectionError, TimeoutError, OSError) as exc:
                 raise HTTPException(500, f"failed to dispatch research tasks: {exc}") from exc
@@ -254,24 +326,36 @@ def create_deep_research_router(
 
     @router.get("/api/research/deep/jobs/{job_id}")
     def get_deep_research_job(request: Request, job_id: str) -> dict[str, Any]:
-        _auth(
-            request
-        )  # AUTH-OK: actor-agnostic — DeepResearchJob has no owner field (see _auth docstring)
-        job = jobs.get(job_id)
-        if job is None:
-            raise HTTPException(404, f"research job not found: {job_id}")
+        job, _principal_value = _require_job(request, job_id)
         job = _refresh_job_from_batch(job)
         jobs[job.job_id] = job
         return job.model_dump()
 
+    @router.get("/api/research/deep/jobs/{job_id}/recovery-snapshot")
+    def get_deep_research_recovery_snapshot(request: Request, job_id: str) -> dict[str, Any]:
+        """Return the batch's redacted recovery view after a restart.
+
+        A ResearchJob is the user-facing durable record, while the parallel
+        orchestrator owns execution state.  Keep the lookup scoped by the
+        job's immutable owner/tenant coordinates and require the returned
+        snapshot to match the persisted host coordinate before exposing it.
+        """
+
+        job, _principal_value = _require_job(request, job_id)
+        if orchestrator is None:
+            raise HTTPException(404, f"research recovery not available: {job_id}")
+        snapshot = _recovery_snapshot_for_job(job)
+        if snapshot is None:
+            raise HTTPException(404, f"research recovery not available: {job_id}")
+        return snapshot.model_dump()
+
     @router.get("/api/research/deep/jobs")
     def list_deep_research_jobs(request: Request) -> dict[str, Any]:
-        _auth(
-            request
-        )  # AUTH-OK: actor-agnostic — DeepResearchJob has no owner field (see _auth docstring)
+        principal = _principal(request)
+        visible_jobs = [job for job in jobs.values() if _job_visible(job, principal)]
         return {
-            "jobs": [_refresh_job_from_batch(job).model_dump() for job in jobs.values()],
-            "count": len(jobs),
+            "jobs": [_refresh_job_from_batch(job).model_dump() for job in visible_jobs],
+            "count": len(visible_jobs),
         }
 
     return router

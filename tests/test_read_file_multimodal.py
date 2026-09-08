@@ -10,6 +10,7 @@ import base64
 from pathlib import Path
 
 import pytest
+
 from runtime.execution.suckers import builtins as bm
 from runtime.execution.suckers.builtins import _read_file
 

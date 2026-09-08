@@ -501,11 +501,19 @@ def create_task_runs_router(
         } and not bool(task.metadata.get("takeover")):
             raise HTTPException(409, "task is already running")
 
+        from runtime.safety.auth.scope import scope_from_principal
         from runtime.sensing.gateway._realtime_turn_lifecycle_resume import (
             _resume_checkpoint_metadata,
         )
 
-        checkpoint = _resume_checkpoint_metadata(runtime, task_id)
+        resume_scope = scope_from_principal(
+            getattr(getattr(request, "state", None), "principal", None)
+        )
+        checkpoint = (
+            _resume_checkpoint_metadata(runtime, task_id, scope=resume_scope)
+            if resume_scope is not None
+            else _resume_checkpoint_metadata(runtime, task_id)
+        )
         if checkpoint is None:
             raise HTTPException(409, "no durable ReAct checkpoint is available for this task")
 

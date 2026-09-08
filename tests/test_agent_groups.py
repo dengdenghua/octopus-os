@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.execution.agents import (
     Agent,
@@ -202,6 +203,7 @@ class TestEffectiveGroups:
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.sensing.gateway.agents_router import create_agents_router  # noqa: E402
 
 
@@ -245,13 +247,13 @@ class TestGroupHTTPCRUD:
                 "group_id": "ecom",
                 "display_name": "Ecom Team",
                 "description": "E-commerce specialists",
-                "members": ["vibe_selling", "ecommerce_mind"],
+                "members": ["coder", "desktop_operator"],
             },
         )
         assert r.status_code == 201
         data = r.json()
         assert data["group_id"] == "ecom"
-        assert data["members"] == ["vibe_selling", "ecommerce_mind"]
+        assert data["members"] == ["coder", "desktop_operator"]
 
         lst = client.get("/api/groups").json()
         assert len(lst) == 1
@@ -282,7 +284,7 @@ class TestGroupHTTPCRUD:
             AgentGroup(
                 group_id="ecom",
                 display_name="Ecom",
-                members=["vibe_selling"],
+                members=["coder"],
             )
         )
         app = _build_app(agents=agents_reg, groups=groups)
@@ -346,19 +348,19 @@ class TestMemberHTTP:
         groups.create(AgentGroup(group_id="ecom"))
         app = _build_app(agents=agents_reg, groups=groups)
         r = TestClient(app).post(
-            "/api/groups/ecom/members/vibe_selling",
+            "/api/groups/ecom/members/coder",
         )
         assert r.status_code == 200
         data = r.json()
         assert data["added"] is True
-        assert "vibe_selling" in groups.get("ecom").members
+        assert "coder" in groups.get("ecom").members
 
     def test_add_member_idempotent(self, agents_reg):
         groups = AgentGroupRegistry()
-        groups.create(AgentGroup(group_id="ecom", members=["vibe_selling"]))
+        groups.create(AgentGroup(group_id="ecom", members=["coder"]))
         app = _build_app(agents=agents_reg, groups=groups)
         r = TestClient(app).post(
-            "/api/groups/ecom/members/vibe_selling",
+            "/api/groups/ecom/members/coder",
         )
         assert r.status_code == 200
         assert r.json()["added"] is False
@@ -375,16 +377,16 @@ class TestMemberHTTP:
     def test_add_member_unknown_group_404(self, agents_reg):
         app = _build_app(agents=agents_reg, groups=AgentGroupRegistry())
         r = TestClient(app).post(
-            "/api/groups/ghost/members/vibe_selling",
+            "/api/groups/ghost/members/coder",
         )
         assert r.status_code == 404
 
     def test_remove_member_happy(self, agents_reg):
         groups = AgentGroupRegistry()
-        groups.create(AgentGroup(group_id="ecom", members=["vibe_selling"]))
+        groups.create(AgentGroup(group_id="ecom", members=["coder"]))
         app = _build_app(agents=agents_reg, groups=groups)
         r = TestClient(app).delete(
-            "/api/groups/ecom/members/vibe_selling",
+            "/api/groups/ecom/members/coder",
         )
         assert r.status_code == 200
         assert r.json()["removed"] is True
@@ -394,7 +396,7 @@ class TestMemberHTTP:
         groups.create(AgentGroup(group_id="ecom"))
         app = _build_app(agents=agents_reg, groups=groups)
         r = TestClient(app).delete(
-            "/api/groups/ecom/members/vibe_selling",
+            "/api/groups/ecom/members/coder",
         )
         assert r.status_code == 200
         assert r.json()["removed"] is False

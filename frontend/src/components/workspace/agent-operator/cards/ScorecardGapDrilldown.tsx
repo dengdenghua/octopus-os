@@ -1,6 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { AgentCompetitorScorecard, AgentTracePromotionAuditSummary, AgentTraceReviewQueueItem } from "@/core/agent-trace/api";
+import type {
+  AgentCompetitorScorecard,
+  AgentTracePromotionAuditSummary,
+  AgentTraceReviewQueueItem,
+} from "@/core/agent-trace/api";
 import { cn } from "@/lib/utils";
 import { CheckCircle2Icon, ListChecksIcon } from "lucide-react";
 import { competitorLabel } from "../operator-utils";
@@ -46,9 +50,7 @@ export function ScorecardGapDrilldown({
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="text-xs font-semibold">{gap.title}</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">
-            {gap.why}
-          </div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{gap.why}</div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-1.5">
           {queueItem ? (
@@ -143,8 +145,7 @@ export function ScorecardGapDrilldown({
         </div>
       )}
 
-      {operatorDrilldown?.schema ===
-        "echo.scorecard_operator_drilldown.v1" &&
+      {operatorDrilldown?.schema === "echo.scorecard_operator_drilldown.v1" &&
         drilldownLinks.length > 0 && (
           <div className="mt-2 rounded-md border border-border-default bg-muted/15 px-2 py-1.5">
             <div className="mb-1 flex items-center justify-between gap-2">

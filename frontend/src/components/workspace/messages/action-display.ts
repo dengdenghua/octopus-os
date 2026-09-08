@@ -214,9 +214,7 @@ function extractUrl(input: Record<string, unknown>): string | null {
   return null;
 }
 
-function extractCapabilityName(
-  input: Record<string, unknown>,
-): string | null {
+function extractCapabilityName(input: Record<string, unknown>): string | null {
   for (const key of CAPABILITY_KEYS) {
     const value = input[key];
     if (typeof value !== "string" || !value.trim()) continue;

@@ -207,18 +207,11 @@ function ensurePackagedResources() {
 // ── desktop organizer (the 桌面助手 backend) ───────────────────
 const journalFile = () =>
   path.join(app.getPath("userData"), "desktop-organizer-journal.json");
-
-function readJournal() {
-  try {
-    return JSON.parse(fs.readFileSync(journalFile(), "utf8"));
-  } catch {
-    return [];
-  }
-}
-
-function writeJournal(entries) {
-  fs.writeFileSync(journalFile(), JSON.stringify(entries, null, 2));
-}
+const { createDesktopOrganizer } = require("./desktop-organizer-moves.cjs");
+const desktopOrganizer = createDesktopOrganizer({
+  desktopDir: DESKTOP_DIR,
+  journalPath: journalFile(),
+});
 
 async function listDesktopItems() {
   // 桌面图标来自 ~/Desktop。精简镜像/新用户可能还没有这个目录,
@@ -261,17 +254,7 @@ async function listDesktopItems() {
 }
 
 async function moveDesktopItem(srcPath, destDir) {
-  const dest = path.isAbsolute(destDir)
-    ? destDir
-    : path.join(DESKTOP_DIR, destDir);
-  await fsp.mkdir(dest, { recursive: true });
-  const target = path.join(dest, path.basename(srcPath));
-  if (fs.existsSync(target)) return { ok: true, skipped: true };
-  await fsp.rename(srcPath, target);
-  const journal = readJournal();
-  journal.push({ from: srcPath, to: target, ts: Date.now() });
-  writeJournal(journal);
-  return { ok: true, destPath: target };
+  return desktopOrganizer.moveItem(srcPath, destDir);
 }
 
 function sampleSystemInfo() {
@@ -964,36 +947,12 @@ function registerIpc() {
       return { ok: false, error: err.message };
     }
   });
-  handle("desktop:moveItemsBatch", async (items) => {
-    let moved = 0;
-    let skipped = 0;
-    try {
-      for (const { srcPath, category } of items) {
-        const res = await moveDesktopItem(srcPath, category);
-        if (res.skipped) skipped += 1;
-        else moved += 1;
-      }
-      return { ok: true, moved, skipped };
-    } catch (err) {
-      return { ok: false, moved, skipped, error: err.message };
-    }
-  });
-  handle("desktop:undoMoves", async () => {
-    const journal = readJournal();
-    let undone = 0;
-    for (const entry of journal.reverse()) {
-      try {
-        if (fs.existsSync(entry.to) && !fs.existsSync(entry.from)) {
-          await fsp.rename(entry.to, entry.from);
-          undone += 1;
-        }
-      } catch {
-        /* keep undoing the rest */
-      }
-    }
-    writeJournal([]);
-    return { ok: true, undone };
-  });
+  handle("desktop:moveItemsBatch", (items) =>
+    desktopOrganizer.moveItemsBatch(items),
+  );
+  handle("desktop:undoMoves", (operationId) =>
+    desktopOrganizer.undoMoves(operationId),
+  );
   handle("desktop:getSystemInfo", () => sampleSystemInfo());
   handle("desktop:installContextMenu", () => ({
     ok: false,

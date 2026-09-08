@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getBackendBaseURL } from "@/core/config";
+import { intelligenceReportsQueryKey } from "@/core/intelligence/query-keys";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/core/i18n/hooks";
 
@@ -24,7 +25,6 @@ type IntelligenceReport = {
   markdown?: string;
 };
 
-const historyKey = ["intelligence", "history"] as const;
 const EMPTY_REPORTS: IntelligenceReport[] = [];
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -226,7 +226,9 @@ function HistoryItem({
             className="mt-1 text-xs text-primary hover:underline"
             onClick={() => setExpanded(!expanded)}
           >
-            {expanded ? t.intelligence.historyCollapse : t.intelligence.historyViewDetails}
+            {expanded
+              ? t.intelligence.historyCollapse
+              : t.intelligence.historyViewDetails}
           </button>
         </div>
       </div>
@@ -241,9 +243,10 @@ export function AutomationHistoryTab({
   compact?: boolean;
 }) {
   const { t } = useI18n();
+  const reportsKey = intelligenceReportsQueryKey();
 
   const reportsQuery = useQuery({
-    queryKey: historyKey,
+    queryKey: reportsKey,
     queryFn: async () => {
       const data = await apiFetch<{ reports?: IntelligenceReport[] }>(
         "/api/intelligence/reports",
@@ -262,7 +265,9 @@ export function AutomationHistoryTab({
           <div key={i} className="relative flex gap-4 pb-6">
             <div className="relative flex flex-col items-center">
               <Skeleton className="codex-skeleton relative z-10 size-7 rounded-full" />
-              {i < 3 && <div className="absolute left-1/2 top-7 bottom-0 w-px -translate-x-1/2 bg-border-default/40" />}
+              {i < 3 && (
+                <div className="absolute left-1/2 top-7 bottom-0 w-px -translate-x-1/2 bg-border-default/40" />
+              )}
             </div>
             <div className="min-w-0 flex-1 -mt-1 space-y-2">
               <div className="flex items-center gap-2">
@@ -282,7 +287,9 @@ export function AutomationHistoryTab({
     return (
       <div className="rounded-lg border border-dashed border-border-default bg-card/50 p-12 text-center">
         <HistoryIcon className="mx-auto size-10 text-muted-foreground/60" />
-        <p className="mt-3 text-sm font-medium">{t.intelligence.historyEmptyTitle}</p>
+        <p className="mt-3 text-sm font-medium">
+          {t.intelligence.historyEmptyTitle}
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {t.intelligence.historyEmptyDescription}
         </p>
@@ -291,7 +298,8 @@ export function AutomationHistoryTab({
   }
 
   const sortedReports = [...reports].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    (a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   );
 
   return (

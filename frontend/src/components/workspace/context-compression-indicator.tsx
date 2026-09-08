@@ -89,7 +89,8 @@ export function ContextCompressionIndicator({
           <div className="mt-4">
             <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
               <span>
-                {contextTokens?.toLocaleString()} / {maxContextTokens?.toLocaleString()} tokens
+                {contextTokens?.toLocaleString()} /{" "}
+                {maxContextTokens?.toLocaleString()} tokens
               </span>
               <span>{progress.toFixed(0)}%</span>
             </div>

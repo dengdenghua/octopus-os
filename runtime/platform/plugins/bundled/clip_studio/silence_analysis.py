@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+from .readiness import load_media_dependency
+
 
 def detect_silences(
     path: Path,
@@ -15,11 +17,8 @@ def detect_silences(
     min_silence_sec: float = 0.5,
     pad_sec: float = 0.1,
 ) -> list[tuple[float, float]]:
-    try:
-        import av
-        import numpy as np
-    except ImportError as exc:
-        raise ValueError("audio analysis dependency is unavailable") from exc
+    av = load_media_dependency("av", "audio_analysis")
+    np = load_media_dependency("numpy", "audio_analysis")
     if source_end <= source_start:
         raise ValueError("clip source window is empty")
     threshold_db = max(-90.0, min(-1.0, float(threshold_db)))

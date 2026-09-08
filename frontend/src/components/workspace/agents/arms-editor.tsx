@@ -830,9 +830,7 @@ export function ArmsEditor({ agentId, initialTab = "arms" }: Props) {
                           </Badge>
                           <Badge
                             variant={
-                              permission.agentGranted
-                                ? "outline"
-                                : "secondary"
+                              permission.agentGranted ? "outline" : "secondary"
                             }
                             className={cn(
                               "rounded-sm text-xs",

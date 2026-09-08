@@ -21,6 +21,7 @@ from runtime.core.cerebrum.react_context import (
     context_budget_tokens_for_model,
 )
 from runtime.core.cerebrum.react_types import ReActStep
+from runtime.memory.journal import JournalRecoveryReadError
 from runtime.platform.config.builder import StackProtocol
 from runtime.platform.models import ParsedIntent, TaskId
 from runtime.safety.validation.prompt_injection import (
@@ -30,6 +31,67 @@ from runtime.safety.validation.prompt_injection import (
 )
 
 _logger = logging.getLogger(__name__)
+
+
+class ResumeCheckpointError(ValueError):
+    """A requested recovery cannot safely begin; never permission to rerun."""
+
+    def __init__(self, task_id: Any, code: str = "resume_checkpoint_invalid") -> None:
+        self.task_id = str(task_id or "")
+        self.code = code
+        messages = {
+            "resume_checkpoint_missing": "未找到可读取的恢复检查点；原任务仍保留，请核对任务记录后重试。",
+            "resume_checkpoint_version_unsupported": "该检查点版本不受当前程序支持；请使用兼容版本恢复。",
+            "resume_confirmation_unavailable": "未找到匹配的待确认恢复请求；请重新选择原任务的检查点。",
+            "resume_task_invalid": "恢复任务身份无效；请重新选择原任务，未开始执行。",
+            "resume_checkpoint_unavailable": "暂时无法读取恢复检查点；原任务保持不变，请稍后重试。",
+        }
+        super().__init__(
+            messages.get(
+                code, "检查点损坏或不完整，无法安全恢复；请核对已有执行结果，未重新执行任务。"
+            )
+        )
+
+
+def _validate_resume_checkpoint_snapshot(
+    snapshot: dict[str, Any] | None,
+    task_id: Any,
+) -> dict[str, Any]:
+    from runtime.core.cerebrum.checkpoint_integrity import validate_checkpoint_state
+
+    if snapshot is None:
+        raise ResumeCheckpointError(task_id, "resume_checkpoint_missing")
+    if not isinstance(snapshot, dict):
+        raise ResumeCheckpointError(task_id)
+    integrity = validate_checkpoint_state(
+        snapshot,
+        iteration=snapshot.get("iteration_completed", 0),
+    )
+    if not integrity.resume_safe:
+        code = (
+            "resume_checkpoint_version_unsupported"
+            if "unsupported_checkpoint_version" in integrity.errors
+            else "resume_checkpoint_invalid"
+        )
+        _logger.warning("resume checkpoint rejected (task %s): %s", task_id, integrity.errors)
+        raise ResumeCheckpointError(task_id, code)
+    return snapshot
+
+
+def _require_resume_checkpoint(stack: Any, intent: Any, task_id: Any) -> dict[str, Any]:
+    try:
+        return _validate_resume_checkpoint_snapshot(
+            _load_resume_checkpoint_snapshot(stack, intent, task_id),
+            task_id,
+        )
+    except ResumeCheckpointError:
+        raise
+    except JournalRecoveryReadError as exc:
+        raise ResumeCheckpointError(task_id, "resume_checkpoint_missing") from exc
+    except (AttributeError, KeyError, TypeError, ValueError, OSError) as exc:
+        raise ResumeCheckpointError(task_id) from exc
+    except Exception as exc:  # noqa: BLE001 — provider failure never authorizes a fresh run
+        raise ResumeCheckpointError(task_id, "resume_checkpoint_unavailable") from exc
 
 
 def _build_resume_context_prompt(resume_intent: Any) -> str:
@@ -136,11 +198,18 @@ def _load_resume_checkpoint_snapshot(
     intent: ParsedIntent,
     resume_task_id: TaskId,
 ) -> dict[str, Any] | None:
+    resume_intent = (getattr(intent, "user_context", None) or {}).get("resume_intent")
+    if isinstance(resume_intent, dict) and resume_intent.get("checkpoint_id"):
+        # An explicit selection identifies one trace checkpoint. Do not replace
+        # a missing/corrupt selection with the journal's latest different state.
+        return _load_trace_resume_checkpoint_snapshot(intent, resume_task_id)
     journal = getattr(stack, "journal", None)
     if journal is not None:
+        from runtime.safety.recovery.tenant_scope import read_recovery_events
+
         ckpts = [
             e
-            for e in journal.read_by_type("react_checkpoint")
+            for e in read_recovery_events(journal, "react_checkpoint", scope=_resume_scope(intent))
             if str(getattr(e, "task_id", "")) == str(resume_task_id)
         ]
         if ckpts:
@@ -148,18 +217,31 @@ def _load_resume_checkpoint_snapshot(
     return _load_trace_resume_checkpoint_snapshot(intent, resume_task_id)
 
 
+def _resume_scope(intent: Any) -> Any:
+    from runtime.platform.process.session import current_session
+    from runtime.safety.recovery.tenant_scope import (
+        trusted_scope_from_session,
+        trusted_scope_from_user_context,
+    )
+
+    return trusted_scope_from_user_context(
+        getattr(intent, "user_context", None)
+    ) or trusted_scope_from_session(current_session())
+
+
 def _checkpoint_snapshot_from_journal_event(event: Any) -> dict[str, Any]:
     return {
         "source": "journal",
-        "iteration_completed": int(getattr(event, "iteration_completed", 0) or 0),
-        "max_iterations": int(getattr(event, "max_iterations", 0) or 0),
-        "messages_snapshot": getattr(event, "messages_snapshot", []) or [],
-        "steps_snapshot": getattr(event, "steps_snapshot", []) or [],
-        "has_final_answer": bool(getattr(event, "has_final_answer", False)),
-        "final_answer": str(getattr(event, "final_answer", "") or ""),
-        "working_set_snapshot": getattr(event, "working_set_snapshot", []) or [],
-        "progress_summary": str(getattr(event, "progress_summary", "") or ""),
-        "current_phase": str(getattr(event, "current_phase", "") or ""),
+        "schema_version": getattr(event, "schema_version", 1),
+        "iteration_completed": getattr(event, "iteration_completed", 0),
+        "max_iterations": getattr(event, "max_iterations", 0),
+        "messages_snapshot": getattr(event, "messages_snapshot", []),
+        "steps_snapshot": getattr(event, "steps_snapshot", []),
+        "has_final_answer": getattr(event, "has_final_answer", False),
+        "final_answer": getattr(event, "final_answer", ""),
+        "working_set_snapshot": getattr(event, "working_set_snapshot", []),
+        "progress_summary": getattr(event, "progress_summary", ""),
+        "current_phase": getattr(event, "current_phase", ""),
     }
 
 
@@ -171,7 +253,7 @@ def _load_trace_resume_checkpoint_snapshot(
     if not isinstance(resume_intent, dict):
         return None
     checkpoint_id = resume_intent.get("checkpoint_id")
-    if not isinstance(checkpoint_id, int) or checkpoint_id <= 0:
+    if type(checkpoint_id) is not int or checkpoint_id <= 0:
         return None
     try:
         from runtime.platform.process.session import current_session
@@ -183,37 +265,39 @@ def _load_trace_resume_checkpoint_snapshot(
     trace_store = metadata.get("_trace_store") if isinstance(metadata, dict) else None
     if trace_store is None or not hasattr(trace_store, "checkpoint_by_id"):
         return None
-    checkpoint = trace_store.checkpoint_by_id(checkpoint_id)
+    scope = _resume_scope(intent)
+    checkpoint = (
+        trace_store.checkpoint_by_id(checkpoint_id, scope=scope)
+        if scope is not None
+        else trace_store.checkpoint_by_id(checkpoint_id)
+    )
     if not isinstance(checkpoint, dict):
+        return None
+    if scope is None and (checkpoint.get("tenant_id") or checkpoint.get("owner_actor_id")):
         return None
     if str(checkpoint.get("task_id") or "") != str(resume_task_id):
         return None
     if str(checkpoint.get("checkpoint_type") or "").lower() != "react":
         return None
-    _state_raw = checkpoint.get("state")
-    state: dict[str, Any] = _state_raw if isinstance(_state_raw, dict) else {}
+    return _checkpoint_snapshot_from_trace(checkpoint, resume_task_id)
+
+
+def _checkpoint_snapshot_from_trace(checkpoint: dict[str, Any], task_id: Any) -> dict[str, Any]:
+    state = checkpoint.get("state")
+    if not isinstance(state, dict):
+        raise ResumeCheckpointError(task_id)
     return {
         "source": "trace_store",
-        "iteration_completed": int(
-            state.get("iteration_completed")
-            or checkpoint.get("iteration")
-            or resume_intent.get("iteration")
-            or 0
-        ),
-        "max_iterations": int(state.get("max_iterations") or 0),
-        "messages_snapshot": state.get("messages_snapshot")
-        if isinstance(state.get("messages_snapshot"), list)
-        else [],
-        "steps_snapshot": state.get("steps_snapshot")
-        if isinstance(state.get("steps_snapshot"), list)
-        else [],
-        "has_final_answer": bool(state.get("has_final_answer") is True),
-        "final_answer": str(state.get("final_answer") or ""),
-        "working_set_snapshot": state.get("working_set_snapshot")
-        if isinstance(state.get("working_set_snapshot"), list)
-        else [],
-        "progress_summary": str(state.get("progress_summary") or checkpoint.get("summary") or ""),
-        "current_phase": str(state.get("current_phase") or ""),
+        "schema_version": state.get("schema_version", 1),
+        "iteration_completed": state.get("iteration_completed", checkpoint.get("iteration", 0)),
+        "max_iterations": state.get("max_iterations", 0),
+        "messages_snapshot": state.get("messages_snapshot", []),
+        "steps_snapshot": state.get("steps_snapshot", []),
+        "has_final_answer": state.get("has_final_answer", False),
+        "final_answer": state.get("final_answer", ""),
+        "working_set_snapshot": state.get("working_set_snapshot", []),
+        "progress_summary": state.get("progress_summary", checkpoint.get("summary") or ""),
+        "current_phase": state.get("current_phase", ""),
     }
 
 
@@ -245,39 +329,19 @@ def _compute_resume_state(
     base_progress_summary: str,
     base_current_phase: str,
     max_iterations: int,
-) -> _ResumeState | None:
+    snapshot: dict[str, Any] | None = None,
+) -> _ResumeState:
     """Load + validate a resume checkpoint and rebuild loop state from it.
 
-    Pure except for logging: no ``yield``, no mutation of caller state. Returns
-    ``None`` when there is nothing to resume (the caller keeps its defaults).
-    Raises ``ValueError`` on an unsafe checkpoint — the caller catches it (along
-    with the AttributeError/KeyError/TypeError a malformed snapshot can raise)
-    and falls back to a fresh run.
+    No mutation of caller state. Missing or unsafe recovery raises a typed
+    rejection; it never authorizes a fresh execution of the original task.
     """
-    last = _load_resume_checkpoint_snapshot(stack, intent, resume_task_id)
-    if last is None:
-        return None
-
-    from runtime.core.cerebrum.checkpoint_integrity import validate_checkpoint_state
-
-    checkpoint_iteration = int(last["iteration_completed"] or 0)
-    integrity = validate_checkpoint_state(
-        {
-            "messages_snapshot": last["messages_snapshot"],
-            "steps_snapshot": last["steps_snapshot"],
-            "working_set_snapshot": last["working_set_snapshot"],
-            "progress_summary": last["progress_summary"],
-            "current_phase": last["current_phase"],
-        },
-        iteration=checkpoint_iteration,
+    last = (
+        _validate_resume_checkpoint_snapshot(snapshot, resume_task_id)
+        if snapshot is not None
+        else _require_resume_checkpoint(stack, intent, resume_task_id)
     )
-    if not integrity.resume_safe:
-        _logger.warning(
-            "react_loop resume checkpoint rejected (task %s): %s",
-            resume_task_id,
-            ", ".join(integrity.errors),
-        )
-        raise ValueError("unsafe checkpoint")
+    checkpoint_iteration = last["iteration_completed"]
 
     resume_from_iter = checkpoint_iteration
     messages = base_messages
@@ -418,6 +482,7 @@ def _resume_or_register_turn(
     active_max_usd_budget: Any,
     max_wall_time_seconds: float = 0.0,
     messages: list,
+    resume_snapshot: dict[str, Any] | None = None,
 ) -> _ResumedTurn:
     """Pause registration, taint reset, checkpoint resume, resume grant.
 
@@ -427,6 +492,32 @@ def _resume_or_register_turn(
     containers) with the rehydrated snapshots.
     """
     from runtime.core.cerebrum.pause_control import get_pause_controller
+
+    # Rebuild before any active registration, taint reset, grant consumption,
+    # or pause clearing. Recovery failure must leave the original task intact.
+    _rs = None
+    if resume_task_id is not None:
+        try:
+            _rs = _compute_resume_state(
+                stack,
+                intent,
+                resume_task_id,
+                base_messages=messages,
+                base_working_set={},
+                base_progress_summary="",
+                base_current_phase="understand",
+                max_iterations=max_iterations,
+                snapshot=resume_snapshot,
+            )
+            if _rs is None:
+                raise ResumeCheckpointError(resume_task_id, "resume_checkpoint_missing")
+        except ResumeCheckpointError:
+            raise
+        except (AttributeError, KeyError, TypeError, ValueError, OSError) as exc:
+            _logger.warning(
+                "resume checkpoint rejected (task %s): %s", resume_task_id, type(exc).__name__
+            )
+            raise ResumeCheckpointError(resume_task_id) from exc
 
     _pause = get_pause_controller()
     _agent_id_for_pause = str(getattr(agent, "agent_id", "") or "")
@@ -472,40 +563,17 @@ def _resume_or_register_turn(
     _current_phase = "understand"
     _resume_event: dict[str, Any] | None = None
 
-    if resume_task_id is not None:
-        try:
-            _rs = _compute_resume_state(
-                stack,
-                intent,
-                resume_task_id,
-                base_messages=messages,
-                base_working_set=_working_set,
-                base_progress_summary=_progress_summary,
-                base_current_phase=_current_phase,
-                max_iterations=max_iterations,
-            )
-            if _rs is not None:
-                resume_from_iter = _rs.resume_from_iter
-                messages = _rs.messages
-                steps = _rs.steps
-                _working_set = _rs.working_set
-                _progress_summary = _rs.progress_summary
-                _current_phase = _rs.current_phase
-                final_answer = _rs.final_answer
-                terminated_reason = _rs.terminated_reason
-                react_task_id = resume_task_id
-                _resume_event = _rs.resume_event
-        except (AttributeError, KeyError, TypeError, ValueError) as exc:
-            # Explicitly observable downgrade: a rejected/corrupt resume
-            # checkpoint must surface as a warning (with the task id + reason)
-            # instead of silently falling back to a fresh run. The caller
-            # still proceeds with a fresh run, but operators can see that a
-            # resume was attempted and rejected.
-            _logger.warning(
-                "resume checkpoint rejected (task %s) — falling back to fresh run: %s",
-                resume_task_id,
-                type(exc).__name__,
-            )
+    if _rs is not None:
+        resume_from_iter = _rs.resume_from_iter
+        messages = _rs.messages
+        steps = _rs.steps
+        _working_set = _rs.working_set
+        _progress_summary = _rs.progress_summary
+        _current_phase = _rs.current_phase
+        final_answer = _rs.final_answer
+        terminated_reason = _rs.terminated_reason
+        react_task_id = resume_task_id
+        _resume_event = _rs.resume_event
 
     if resume_task_id is not None:
         _grant = _pause.consume_grant(str(resume_task_id))
@@ -537,6 +605,9 @@ def _resume_or_register_turn(
                 getattr(_updated_limits, "max_usd", "?"),
             )
         _pause.clear(str(resume_task_id))
+        if final_answer is not None:
+            # An unused grant cannot reopen an already-final checkpoint.
+            resume_from_iter = max_iterations
     return _ResumedTurn(
         pause_controller=_pause,
         agent_id_for_pause=_agent_id_for_pause,

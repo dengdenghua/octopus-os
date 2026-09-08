@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -11,6 +12,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+if os.name == "nt":
+    pytest.skip(
+        "physical acceptance capture requires Linux device and service semantics",
+        allow_module_level=True,
+    )
 
 from deploy.appliance import physical_acceptance as physical
 from tests.appliance.hub_lifecycle_fixture import hub_lifecycle_material

@@ -248,8 +248,15 @@ def atomic_write_bytes(
             # the exact bits before writing — the temp (and the target it
             # is renamed onto) is thus never wider than requested.
             if mode is not None:
+                fchmod = getattr(os, "fchmod", None)
                 with contextlib.suppress(OSError):
-                    os.fchmod(fd, mode)
+                    if fchmod is not None:
+                        fchmod(fd, mode)
+                    else:
+                        # Windows does not expose fchmod. The mode passed to
+                        # open already applies there; chmod keeps the same
+                        # best-effort contract without raising AttributeError.
+                        os.chmod(tmp_path, mode)
             # fd ownership transfers to fdopen context; if the open
             # succeeded but a subsequent write failed, fdopen's
             # ``__exit__`` already closed fd, so a re-raise is enough

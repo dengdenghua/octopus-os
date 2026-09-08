@@ -337,6 +337,7 @@ def _orchestration_model_contracts() -> list[dict[str, Any]]:
             "BatchResult",
             BatchResult,
             [
+                "host_task_id",
                 "plan",
                 "event_log",
                 "completion_receipt",
@@ -348,6 +349,7 @@ def _orchestration_model_contracts() -> list[dict[str, Any]]:
             BatchRecoverySnapshot,
             [
                 "schema",
+                "host_task_id",
                 "dag",
                 "plan",
                 "event_sequence",
@@ -452,11 +454,14 @@ def _orchestrator_method_contracts() -> list[dict[str, Any]]:
         "status",
         "get_batch",
         "recovery_snapshot",
+        "list_recovery_snapshots",
         "subscribe",
         "cancel_task",
         "cancel_all",
         "get_batch_owner",
+        "get_batch_tenant",
         "get_task_owner",
+        "get_task_tenant",
         "cancel_all_for_owner",
     ]
     out = [

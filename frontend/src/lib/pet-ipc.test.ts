@@ -43,7 +43,11 @@ describe("pet-ipc extended events", () => {
   it("emotion() sends agent.emotion with clamped intensity", () => {
     petIPC.emotion("happy", 0.8);
     drain();
-    expect(lastPayload()).toEqual({ type: "agent.emotion", emotion: "happy", intensity: 0.8 });
+    expect(lastPayload()).toEqual({
+      type: "agent.emotion",
+      emotion: "happy",
+      intensity: 0.8,
+    });
   });
 
   it("emotion() clamps intensity into [0,1]", () => {

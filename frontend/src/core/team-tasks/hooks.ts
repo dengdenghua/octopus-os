@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { currentActorId } from "../auth/api";
+
 import {
   createTask,
   deleteTask,
@@ -17,12 +19,16 @@ import type {
 
 const TEAM_TASKS_KEY = ["team-tasks"] as const;
 
+function teamTasksRootKey(actor = currentActorId()) {
+  return [...TEAM_TASKS_KEY, actor] as const;
+}
+
 export const teamTaskQueryKeys = {
-  all: TEAM_TASKS_KEY,
-  byRoom: (roomId?: string | null) =>
-    [...TEAM_TASKS_KEY, "room", roomId ?? "all"] as const,
-  processTimeline: (taskId?: string | null) =>
-    [...TEAM_TASKS_KEY, "process-timeline", taskId ?? "none"] as const,
+  all: teamTasksRootKey,
+  byRoom: (roomId?: string | null, actor = currentActorId()) =>
+    [...teamTasksRootKey(actor), "room", roomId ?? "all"] as const,
+  processTimeline: (taskId?: string | null, actor = currentActorId()) =>
+    [...teamTasksRootKey(actor), "process-timeline", taskId ?? "none"] as const,
 };
 
 export function useTeamTasks(roomId?: string | null) {
@@ -54,7 +60,7 @@ export function useCreateTeamTask() {
   return useMutation({
     mutationFn: (input: CreateTeamTaskInput) => createTask(input),
     onSuccess: (task) => {
-      void qc.invalidateQueries({ queryKey: TEAM_TASKS_KEY });
+      void qc.invalidateQueries({ queryKey: teamTaskQueryKeys.all() });
       void qc.invalidateQueries({
         queryKey: teamTaskQueryKeys.byRoom(task.room_id),
       });
@@ -76,7 +82,7 @@ export function useUpdateTeamTask() {
       input: UpdateTeamTaskInput;
     }) => updateTask(taskId, input),
     onSuccess: (task) => {
-      void qc.invalidateQueries({ queryKey: TEAM_TASKS_KEY });
+      void qc.invalidateQueries({ queryKey: teamTaskQueryKeys.all() });
       void qc.invalidateQueries({
         queryKey: teamTaskQueryKeys.byRoom(task.room_id),
       });
@@ -92,9 +98,9 @@ export function useDeleteTeamTask() {
   return useMutation({
     mutationFn: ({ taskId }: { taskId: string }) => deleteTask(taskId),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: TEAM_TASKS_KEY });
+      void qc.invalidateQueries({ queryKey: teamTaskQueryKeys.all() });
       void qc.invalidateQueries({
-        queryKey: [...TEAM_TASKS_KEY, "process-timeline"],
+        queryKey: [...teamTaskQueryKeys.all(), "process-timeline"],
       });
     },
   });
@@ -105,7 +111,7 @@ export function useRunTeamTask() {
   return useMutation({
     mutationFn: ({ taskId }: { taskId: string }) => runTask(taskId),
     onSuccess: (task) => {
-      void qc.invalidateQueries({ queryKey: TEAM_TASKS_KEY });
+      void qc.invalidateQueries({ queryKey: teamTaskQueryKeys.all() });
       void qc.invalidateQueries({
         queryKey: teamTaskQueryKeys.byRoom(task.room_id),
       });

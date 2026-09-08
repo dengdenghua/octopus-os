@@ -58,6 +58,29 @@ describe("optimistic realtime message reconciliation", () => {
     ]);
   });
 
+  it("keeps database resource references on an optimistic message", () => {
+    const outbound = pending({
+      message: {
+        text: "请阅读这个文件",
+        files: [],
+        contextFiles: [
+          {
+            path: "报告.md",
+            sourceLabel: "本地数据库",
+            resourceId: "appliance-file:v1:root:report",
+          },
+        ],
+      },
+      displayText: "请阅读这个文件",
+    });
+
+    expect(pendingOutboundToHumanMessage(outbound).additional_kwargs).toEqual(
+      expect.objectContaining({
+        context_files: outbound.message.contextFiles,
+      }),
+    );
+  });
+
   it("replaces the optimistic new-turn row with one canonical user message", () => {
     const outbound = pending();
     const canonical = serverHuman(

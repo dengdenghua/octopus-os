@@ -320,6 +320,13 @@ class MultiModelRouter(ModelRouter):
     # ─── internals ───────────────────────────────────
 
     def _build_chain(self, prefer: str) -> list[tuple[str, ModelRouter]]:
+        from runtime.safety.privacy import privacy_enabled, require_local_router
+
+        if privacy_enabled():
+            # Privacy is not a quality preference. No alternate provider may
+            # receive the same context after a local failure.
+            require_local_router(self.primary)
+            return [("primary", self.primary)]
         chain: list[tuple[str, ModelRouter]] = []
 
         if prefer == "strong" and self.strong is not None:

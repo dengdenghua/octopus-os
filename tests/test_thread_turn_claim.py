@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import multiprocessing
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -158,6 +159,34 @@ def _hold_claim_process(
         claim.release()
 
 
+def _read_claim_in_contender_process(logs_root: str, thread_id: str, outcomes: Any) -> None:
+    path = (
+        Path(logs_root)
+        / ".thread-turn-locks"
+        / f"{hashlib.sha256(thread_id.encode()).hexdigest()}.lock"
+    )
+    try:
+        path.read_bytes()
+    except OSError:
+        first_byte_blocked = True
+    else:
+        first_byte_blocked = False
+    try:
+        claim = acquire_thread_turn_claim(logs_root, thread_id)
+    except ThreadTurnClaimConflict as conflict:
+        outcomes.put(
+            {
+                "first_byte_blocked": first_byte_blocked,
+                "active_turn_id": conflict.active_turn_id,
+                "holder_id": conflict.holder_id,
+                "claim_epoch": conflict.claim_epoch,
+            }
+        )
+    else:
+        claim.release()
+        outcomes.put({"unexpected_acquisition": True})
+
+
 def _write_stale_turn_and_hold_claim_process(
     logs_root: str,
     thread_id: str,
@@ -234,6 +263,59 @@ def test_claim_path_is_hash_only_and_conflict_turn_id_is_diagnostic(tmp_path: Pa
 
     replacement = acquire_thread_turn_claim(tmp_path, thread_id)
     replacement.release()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="requires real Windows mandatory byte-range locking")
+def test_windows_claim_metadata_remains_readable_while_first_byte_is_locked(tmp_path: Path) -> None:
+    claim = acquire_thread_turn_claim(tmp_path, "windows-locked-metadata")
+    try:
+        for turn_id in ("turn-owner-long-id", "short"):
+            assert claim.bind_turn(turn_id)
+            # This is an actual OS denial; a buffered reader beginning at zero
+            # cannot be used to observe another handle's live claim metadata.
+            with pytest.raises(OSError):
+                claim.path.read_bytes()
+            metadata = claim_module._read_metadata(claim.path)  # noqa: SLF001
+            assert metadata["turnId"] == turn_id
+            assert metadata["claimEpoch"] == claim.claim_epoch
+            assert metadata["holderId"] == claim.holder_id
+    finally:
+        claim.release()
+    assert claim.path.read_bytes().startswith(claim_module._METADATA_SENTINEL)  # noqa: SLF001
+
+
+def test_child_process_reads_live_claim_identity_without_releasing_authority(
+    tmp_path: Path,
+) -> None:
+    context = _spawn_context()
+    outcomes = context.Queue()
+    thread_id = "child-reads-live-owner"
+    claim = acquire_thread_turn_claim(tmp_path, thread_id)
+    child = context.Process(
+        target=_read_claim_in_contender_process,
+        args=(str(tmp_path), thread_id, outcomes),
+    )
+    try:
+        assert claim.bind_turn("turn-parent-owned")
+        child.start()
+        result = outcomes.get(timeout=15.0)
+        _join_or_terminate(child)
+        assert child.exitcode == 0
+        assert result == {
+            "first_byte_blocked": os.name == "nt",
+            "active_turn_id": "turn-parent-owned",
+            "holder_id": claim.holder_id,
+            "claim_epoch": claim.claim_epoch,
+        }
+        # Metadata observation must not accidentally release the owner's lock.
+        with pytest.raises(ThreadTurnClaimConflict):
+            acquire_thread_turn_claim(tmp_path, thread_id)
+    finally:
+        claim.release()
+        if child.pid is not None:
+            _join_or_terminate(child)
+        outcomes.close()
+        outcomes.join_thread()
 
 
 def test_claim_never_degrades_when_authoritative_lock_is_unavailable(
@@ -570,4 +652,3 @@ def test_auto_wake_conflicts_with_claim_held_by_another_process(
         _join_or_terminate(owner)
 
     assert owner.exitcode == 0
-

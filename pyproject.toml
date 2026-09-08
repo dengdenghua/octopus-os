@@ -24,6 +24,10 @@ dependencies = [
     "idna>=3.15",
     "python-multipart>=0.0.31",
     "pillow>=12.3.0",
+    # HEIC/HEIF is emitted by iPhone and already accepted by device sync.
+    "pillow-heif>=1.7.0,<2.0",
+    # NAS and desktop document workflows share the same local PDF extractor.
+    "pypdf>=6.15.0",
     "pydantic>=2.12.0",
     "pyyaml>=6.0",
     "starlette>=1.3.1",

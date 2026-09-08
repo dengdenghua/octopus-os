@@ -11,7 +11,8 @@ Why a mixin instead of standalone functions:
     them as arguments would be ugly (``ownership.cancel_all_for_owner(
     orch, owner_id)``) and break encapsulation.
   - The mixin file gets its own focused docstring explaining the
-    visibility rules (None-owner = visible-to-all, etc.) without
+    visibility rules (None-owner is dev-only; authenticated access fails
+    closed) without
     bloating the main orchestrator file.
   - ``mypy`` / IDEs see the methods on the class via standard MRO, no
     duck-typing tricks needed.
@@ -44,9 +45,11 @@ class OwnershipMixin:
 
     Mixed into ``ParallelAgentOrchestrator`` to provide:
       - ``get_batch_owner(batch_id)`` — owner_id or None
+      - ``get_batch_tenant(batch_id)`` — tenant_id or None
       - ``get_task_owner(task_id)`` — owner_id of containing batch
-      - ``list_batch_ids_for_owner(owner_id)`` — visibility filter
-      - ``cancel_all_for_owner(owner_id)`` — scoped cancel-all
+      - ``get_task_tenant(task_id)`` — tenant_id of containing batch
+      - ``list_batch_ids_for_owner(owner_id, tenant_id)`` — visibility filter
+      - ``cancel_all_for_owner(owner_id, tenant_id)`` — scoped cancel-all
 
     Visibility rule (router enforcement adds the authenticated boundary):
       - Batches with ``owner_id is None`` remain addressable in single-user
@@ -62,6 +65,66 @@ class OwnershipMixin:
     _batches: dict  # str -> _BatchEntry
     _task_index: dict  # task_id -> batch_id
 
+    def _durable_host_record(self, batch_id: str):
+        supervisor = getattr(self, "_task_supervisor", None)
+        store = getattr(supervisor, "store", None)
+        getter = getattr(store, "get", None)
+        if not callable(getter):
+            return None
+        try:
+            record = getter(f"parallel-batch:{batch_id}")
+        except (OSError, ValueError, TypeError):
+            return None
+        if record is None or getattr(record, "kind", None) != "parallel_batch":
+            return None
+        metadata = getattr(record, "metadata", {})
+        if isinstance(metadata, dict) and metadata.get("batch_id") not in {None, batch_id}:
+            return None
+        return record
+
+    def _durable_batch_for_task(self, task_id: str):
+        supervisor = getattr(self, "_task_supervisor", None)
+        store = getattr(supervisor, "store", None)
+        getter = getattr(store, "get", None)
+        if not callable(getter):
+            return None
+        try:
+            worker = getter(task_id)
+        except (OSError, ValueError, TypeError):
+            return None
+        if worker is not None:
+            parent_task_id = str(getattr(worker, "parent_task_id", None) or "").strip()
+            if parent_task_id.startswith("parallel-batch:"):
+                batch_id = parent_task_id.removeprefix("parallel-batch:")
+                record = self._durable_host_record(batch_id)
+                if record is not None:
+                    return record
+            metadata = getattr(worker, "metadata", {})
+            if isinstance(metadata, dict):
+                batch_id = str(metadata.get("batch_id") or "").strip()
+                if batch_id:
+                    record = self._durable_host_record(batch_id)
+                    if record is not None:
+                        return record
+
+        # A worker row can be missing after a crash before admission. Use the
+        # aggregate's server-stamped task list to resolve its owner safely.
+        list_records = getattr(store, "list", None)
+        if not callable(list_records):
+            return None
+        try:
+            hosts = list_records(kind="parallel_batch", limit=10000)
+        except (OSError, ValueError, TypeError):
+            return None
+        for record in hosts:
+            metadata = getattr(record, "metadata", {})
+            if not isinstance(metadata, dict):
+                continue
+            task_ids = metadata.get("parallel_task_ids")
+            if isinstance(task_ids, (list, tuple, set, frozenset)) and task_id in task_ids:
+                return record
+        return None
+
     def get_batch_owner(self, batch_id: str) -> str | None:
         """Return ``owner_id`` for a batch, or None if unowned/missing.
 
@@ -72,30 +135,65 @@ class OwnershipMixin:
         """
         with self._lock:  # type: ignore[attr-defined]
             batch = self._batches.get(batch_id)
-            if batch is None:
-                return None
-            return batch.owner_id
+            if batch is not None:
+                return batch.owner_id
+        record = self._durable_host_record(batch_id)
+        return getattr(record, "owner_id", None) if record is not None else None
 
     def get_task_owner(self, task_id: str) -> str | None:
         """Return ``owner_id`` for the batch containing ``task_id``."""
         with self._lock:  # type: ignore[attr-defined]
             bid = self._task_index.get(task_id)
-            if bid is None:
-                return None
-            batch = self._batches.get(bid)
-            return batch.owner_id if batch is not None else None
+            if bid is not None:
+                batch = self._batches.get(bid)
+                if batch is not None:
+                    return batch.owner_id
+        record = self._durable_batch_for_task(task_id)
+        return getattr(record, "owner_id", None) if record is not None else None
+
+    def get_batch_tenant(self, batch_id: str) -> str | None:
+        """Return ``tenant_id`` for a batch, or None if missing/unscoped."""
+        with self._lock:  # type: ignore[attr-defined]
+            batch = self._batches.get(batch_id)
+            if batch is not None:
+                return batch.tenant_id
+        record = self._durable_host_record(batch_id)
+        metadata = getattr(record, "metadata", {}) if record is not None else {}
+        return metadata.get("tenant_id") if isinstance(metadata, dict) else None
+
+    def get_task_tenant(self, task_id: str) -> str | None:
+        """Return the tenant of the batch containing ``task_id``."""
+        with self._lock:  # type: ignore[attr-defined]
+            bid = self._task_index.get(task_id)
+            if bid is not None:
+                batch = self._batches.get(bid)
+                if batch is not None:
+                    return batch.tenant_id
+        record = self._durable_batch_for_task(task_id)
+        metadata = getattr(record, "metadata", {}) if record is not None else {}
+        return metadata.get("tenant_id") if isinstance(metadata, dict) else None
 
     def list_batch_ids_for_owner(
         self,
         owner_id: str | None,
+        tenant_id: str | None = None,
     ) -> list[str]:
         """Return batch ids visible to ``owner_id`` (see visibility rule)."""
         with self._lock:  # type: ignore[attr-defined]
             if owner_id is None:
                 return list(self._batches.keys())
-            return [bid for bid, batch in self._batches.items() if batch.owner_id == owner_id]
+            return [
+                bid
+                for bid, batch in self._batches.items()
+                if batch.owner_id == owner_id
+                and (tenant_id is None or batch.tenant_id == tenant_id)
+            ]
 
-    def cancel_all_for_owner(self, owner_id: str | None) -> bool:
+    def cancel_all_for_owner(
+        self,
+        owner_id: str | None,
+        tenant_id: str | None = None,
+    ) -> bool:
         """Cancel only the batches the caller owns.
 
         ``None`` cancels everything (dev mode). Each task in eligible
@@ -106,6 +204,8 @@ class OwnershipMixin:
         with self._lock:  # type: ignore[attr-defined]
             for batch in list(self._batches.values()):
                 if owner_id is not None and batch.owner_id != owner_id:
+                    continue
+                if tenant_id is not None and batch.tenant_id != tenant_id:
                     continue
                 for entry in batch.tasks.values():
                     if entry.status in ("completed", "failed", "cancelled", "timed_out"):

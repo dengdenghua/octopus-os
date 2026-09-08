@@ -70,9 +70,11 @@ def _call(**overrides):
     return _compute_resume_state(object(), object(), "task-1", **kwargs)
 
 
-def test_returns_none_when_no_snapshot(monkeypatch):
+def test_missing_snapshot_rejects_resume(monkeypatch):
     monkeypatch.setattr(react_resume, "_load_resume_checkpoint_snapshot", lambda *a, **k: None)
-    assert _call() is None
+    with pytest.raises(react_resume.ResumeCheckpointError) as rejected:
+        _call()
+    assert rejected.value.code == "resume_checkpoint_missing"
 
 
 def test_rebuilds_state_from_snapshot(monkeypatch):
@@ -140,6 +142,5 @@ def test_unsafe_checkpoint_raises(monkeypatch):
         checkpoint_integrity, "validate_checkpoint_state", lambda *a, **k: _BadIntegrity()
     )
 
-    with pytest.raises(ValueError, match="unsafe checkpoint"):
+    with pytest.raises(react_resume.ResumeCheckpointError):
         _call()
-

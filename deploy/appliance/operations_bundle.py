@@ -78,6 +78,10 @@ SOURCE_FILES: dict[str, tuple[str, int]] = {
         "deploy/appliance/nas_data_backup.py",
         0o755,
     ),
+    "nas_data_backup_support.py": (
+        "deploy/appliance/nas_data_backup_support.py",
+        0o644,
+    ),
     "operations_bundle.py": ("deploy/appliance/operations_bundle.py", 0o755),
     "operations_systemd.py": ("deploy/appliance/operations_systemd.py", 0o755),
     "operations_systemd_lab.py": (
@@ -238,7 +242,7 @@ def _manifest(payload: dict[str, bytes], artifact_id: str, image_reference: str)
                 "bareMetalRecoveryLab": "./bare_metal_recovery_lab.py plan|run|verify",
                 "btrfsProvisioningLab": "./btrfs_provisioning_lab.py plan|run",
                 "btrfsReplacementLab": "./btrfs_replacement_lab.py plan|run",
-                "nasDataBackup": "./nas_data_backup.py init|backup|check|restore",
+                "nasDataBackup": "./nas_data_backup.py init|backup|check|list|list-sets|plan-set|backup-set|plan-restore-set|restore-set|restore",
                 "deviceEnduranceLab": "./device_endurance_lab.py plan|run",
                 "hubLifecycleLab": "./hub_lifecycle_lab.py plan|run|verify",
                 "lanDiscoveryFunctionalLab": (
@@ -531,7 +535,7 @@ def _validated_manifest(data: bytes) -> dict[str, Any]:
         "bareMetalRecoveryLab": "./bare_metal_recovery_lab.py plan|run|verify",
         "btrfsProvisioningLab": "./btrfs_provisioning_lab.py plan|run",
         "btrfsReplacementLab": "./btrfs_replacement_lab.py plan|run",
-        "nasDataBackup": "./nas_data_backup.py init|backup|check|restore",
+        "nasDataBackup": "./nas_data_backup.py init|backup|check|list|list-sets|plan-set|backup-set|plan-restore-set|restore-set|restore",
         "deviceEnduranceLab": "./device_endurance_lab.py plan|run",
         "hubLifecycleLab": "./hub_lifecycle_lab.py plan|run|verify",
         "lanDiscoveryFunctionalLab": (

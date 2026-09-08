@@ -12,6 +12,7 @@ export type FileEntry = {
   kind: "dir" | "file";
   size: number;
   mtime: number;
+  resource_id?: string | null;
 };
 
 export type TrashEntry = {
@@ -92,13 +93,29 @@ export type UploadOptions = {
   control?: ResumableUploadController;
   retries?: number;
   retryDelayMs?: number;
+  /** Replace an existing file at the destination. Defaults to false. */
+  overwrite?: boolean;
 };
 
 export type DownloadOptions = {
   signal?: AbortSignal;
   retries?: number;
   retryDelayMs?: number;
+  organizationOriginal?: { planId: string; entryId: string };
 };
+
+function downloadUrl(path: string, options: DownloadOptions): string {
+  const original = options.organizationOriginal;
+  if (!original)
+    return `/api/appliance/files/download?path=${encodeURIComponent(path)}`;
+  if (
+    !/^[0-9a-f]{64}$/.test(original.planId) ||
+    !/^(?:[0-9a-f]{24}|[0-9a-f]{64})$/.test(original.entryId)
+  ) {
+    throw new Error("原件记录标识无效，请重新读取整理结果");
+  }
+  return `/api/appliance/files/organize/plans/${original.planId}/entries/${original.entryId}/original`;
+}
 
 /** Build a download URL from a server-issued, path-free resource identity. */
 export function downloadResourceUrl(resourceId: string): string {
@@ -328,9 +345,10 @@ async function uploadStorageKey(
   path: string,
   file: File,
   fingerprint: string,
+  overwrite: boolean,
 ): Promise<string> {
   const identity = new TextEncoder().encode(
-    `${uploadTarget(path, file.name)}\n${file.size}\n${fingerprint}`,
+    `${uploadTarget(path, file.name)}\n${file.size}\n${fingerprint}\n${overwrite ? "overwrite" : "create"}`,
   );
   return `echo.upload.session.${await sha256Hex(identity.buffer)}`;
 }
@@ -369,12 +387,13 @@ async function createUploadSession(
   path: string,
   file: File,
   fingerprint: string,
+  overwrite: boolean,
 ): Promise<UploadSession> {
   return jsonPost<UploadSession>("/api/appliance/files/upload/sessions", {
     path,
     filename: file.name,
     size: file.size,
-    overwrite: false,
+    overwrite,
     fingerprint,
   });
 }
@@ -411,7 +430,12 @@ async function uploadFileResumable(
   options: UploadOptions,
 ): Promise<UploadReceipt> {
   const fingerprint = await uploadFingerprint(file);
-  const storageKey = await uploadStorageKey(path, file, fingerprint);
+  const storageKey = await uploadStorageKey(
+    path,
+    file,
+    fingerprint,
+    options.overwrite === true,
+  );
   const expectedTarget = uploadTarget(path, file.name);
   let session: UploadSession | null = null;
   const previousSessionId = storedSessionId(storageKey);
@@ -428,7 +452,12 @@ async function uploadFileResumable(
     }
   }
   if (!session) {
-    session = await createUploadSession(path, file, fingerprint);
+    session = await createUploadSession(
+      path,
+      file,
+      fingerprint,
+      options.overwrite === true,
+    );
     storeSessionId(storageKey, session.sessionId);
   }
   let activeSession: UploadSession = session;
@@ -553,16 +582,13 @@ async function streamDownloadToHandle(
         throw new DOMException("下载已取消", "AbortError");
       }
       try {
-        const response = await fetch(
-          `/api/appliance/files/download?path=${encodeURIComponent(path)}`,
-          {
-            headers: {
-              ...authHeader(),
-              ...(loaded > 0 ? { Range: `bytes=${loaded}-` } : {}),
-            },
-            signal: options.signal,
+        const response = await fetch(downloadUrl(path, options), {
+          headers: {
+            ...authHeader(),
+            ...(loaded > 0 ? { Range: `bytes=${loaded}-` } : {}),
           },
-        );
+          signal: options.signal,
+        });
         if (!response.ok) {
           const message = await responseDetail(response, "下载失败");
           if (response.status < 500)
@@ -630,7 +656,7 @@ export async function uploadFile(
     path,
     filename: file.name,
     size: file.size,
-    overwrite: false,
+    overwrite: options.overwrite === true,
   });
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -662,6 +688,7 @@ export async function uploadFile(
     const form = new FormData();
     form.append("path", path);
     form.append("size", String(file.size));
+    form.append("overwrite", String(options.overwrite === true));
     form.append("file", file, file.name);
     const signal = options.control?.signal ?? options.signal;
     if (signal) {
@@ -681,6 +708,8 @@ export async function downloadFile(
   onProgress?: (progress: TransferProgress) => void,
   options: DownloadOptions = {},
 ): Promise<void> {
+  // Validate the saved-record binding before opening a destination or sending I/O.
+  downloadUrl(path, options);
   const picker = (window as Window & { showSaveFilePicker?: SaveFilePicker })
     .showSaveFilePicker;
   if (picker) {
@@ -708,7 +737,7 @@ function downloadFileWithoutPicker(
   options: DownloadOptions,
 ): Promise<void> {
   const headers = authHeader();
-  if (!("Authorization" in headers)) {
+  if (!("Authorization" in headers) && !options.organizationOriginal) {
     return downloadFileWithBrowser(path, filename, options);
   }
   return downloadFileWithBlob(path, filename, onProgress, options, headers);
@@ -721,7 +750,7 @@ function downloadFileWithBrowser(
 ): Promise<void> {
   if (options.signal?.aborted) return Promise.reject(new Error("下载已取消"));
   const anchor = document.createElement("a");
-  anchor.href = `/api/appliance/files/download?path=${encodeURIComponent(path)}`;
+  anchor.href = downloadUrl(path, options);
   anchor.download = filename;
   anchor.hidden = true;
   document.body.appendChild(anchor);
@@ -742,10 +771,7 @@ function downloadFileWithBlob(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open(
-      "GET",
-      `/api/appliance/files/download?path=${encodeURIComponent(path)}`,
-    );
+    xhr.open("GET", downloadUrl(path, options));
     xhr.responseType = "blob";
     for (const [name, value] of Object.entries(headers)) {
       xhr.setRequestHeader(name, value);
@@ -759,6 +785,10 @@ function downloadFileWithBlob(
     xhr.onabort = () => reject(new Error("下载已取消"));
     xhr.onload = () => {
       if (xhr.status < 200 || xhr.status >= 300) {
+        if (options.organizationOriginal && xhr.status === 409) {
+          reject(new Error("原件已变化或无法核实，请刷新整理结果"));
+          return;
+        }
         reject(xhrError(xhr, "下载失败"));
         return;
       }

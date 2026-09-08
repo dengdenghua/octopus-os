@@ -28,6 +28,7 @@ import { toast } from "sonner";
 import { copyTextToClipboard } from "@/core/clipboard";
 import {
   fetchDeepResearchJob,
+  fetchDeepResearchRecoverySnapshot,
   type ResearchJob,
   type ResearchPrefetchLog,
   type ResearchStep,
@@ -36,6 +37,7 @@ import {
   cancelTask,
   fetchBatch,
   streamBatch,
+  type BatchRecoverySnapshot,
   type BatchResult,
   type BatchStreamEvent,
   type SubagentRouteDecision,
@@ -63,6 +65,8 @@ export function DeepResearchPanel({
   const { confirm, confirmDialog } = useConfirmDialog();
   const [currentJob, setCurrentJob] = useState(job);
   const [batch, setBatch] = useState<BatchResult | null>(null);
+  const [recoverySnapshot, setRecoverySnapshot] =
+    useState<BatchRecoverySnapshot | null>(null);
   const [liveEvents, setLiveEvents] = useState<BatchStreamEvent[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [canceling, setCanceling] = useState(false);
@@ -94,6 +98,27 @@ export function DeepResearchPanel({
     return map;
   }, [batch]);
 
+  const recoveryByTaskId = useMemo(() => {
+    const map = new Map<string, TaskResult>();
+    if (!recoverySnapshot) return map;
+    for (const task of recoverySnapshot.tasks) {
+      map.set(task.task_id, {
+        task_id: task.task_id,
+        batch_id: recoverySnapshot.batch_id,
+        description: task.description_preview,
+        status: task.status,
+        result: null,
+        error: task.error ?? null,
+        started_at: task.started_at ?? null,
+        completed_at: task.completed_at ?? null,
+        duration_seconds: task.duration_seconds ?? null,
+        subagent_name: task.subagent_name,
+        work_contract: task.work_contract ?? null,
+      });
+    }
+    return map;
+  }, [recoverySnapshot]);
+
   const routeDecisionByTaskId = useMemo(() => {
     const map = new Map<string, SubagentRouteDecision>();
     for (const event of [...(batch?.event_log ?? []), ...liveEvents]) {
@@ -104,10 +129,16 @@ export function DeepResearchPanel({
     return map;
   }, [batch?.event_log, liveEvents]);
 
-  const totalTasks = batch?.total_tasks ?? activeSteps.length;
-  const completedTasks = batch?.completed_tasks ?? 0;
-  const settledTasks =
-    completedTasks + (batch?.failed_tasks ?? 0) + (batch?.cancelled_tasks ?? 0);
+  const totalTasks =
+    batch?.total_tasks ?? recoverySnapshot?.task_count ?? activeSteps.length;
+  const completedTasks =
+    batch?.completed_tasks ?? recoverySnapshot?.completed_tasks ?? 0;
+  const failedTasks =
+    batch?.failed_tasks ?? recoverySnapshot?.failed_tasks ?? 0;
+  const cancelledTasks =
+    batch?.cancelled_tasks ?? recoverySnapshot?.cancelled_tasks ?? 0;
+  const settledTasks = completedTasks + failedTasks + cancelledTasks;
+  const displayedBatchStatus = batch?.status ?? recoverySnapshot?.status;
   const progressPct =
     totalTasks > 0
       ? Math.max(
@@ -119,10 +150,25 @@ export function DeepResearchPanel({
         : 42;
 
   const refreshBatch = useCallback(async () => {
-    if (!currentJob.dispatch_batch_id) return;
-    const next = await fetchBatch(currentJob.dispatch_batch_id);
-    if (next) setBatch(next);
-  }, [currentJob.dispatch_batch_id]);
+    const dispatchBatchId = currentJob.dispatch_batch_id?.trim();
+    if (!dispatchBatchId && !currentJob.host_task_id) return;
+    const next = dispatchBatchId ? await fetchBatch(dispatchBatchId) : null;
+    if (next) {
+      setBatch(next);
+      setRecoverySnapshot(null);
+      return;
+    }
+    const recovery = await fetchDeepResearchRecoverySnapshot(currentJob.job_id);
+    if (recovery) {
+      setBatch(null);
+      setRecoverySnapshot(recovery);
+      setStreamError(null);
+    }
+  }, [
+    currentJob.dispatch_batch_id,
+    currentJob.host_task_id,
+    currentJob.job_id,
+  ]);
 
   const refreshJob = useCallback(async () => {
     const next = await fetchDeepResearchJob(currentJob.job_id);
@@ -182,6 +228,7 @@ export function DeepResearchPanel({
   useEffect(() => {
     setCurrentJob(job);
     setBatch(null);
+    setRecoverySnapshot(null);
     setLiveEvents([]);
     setStreamError(null);
   }, [job]);
@@ -191,7 +238,7 @@ export function DeepResearchPanel({
   }, [refreshBatch]);
 
   useEffect(() => {
-    if (!currentJob.dispatch_batch_id) return;
+    if (!currentJob.dispatch_batch_id || recoverySnapshot) return;
     const stop = streamBatch(
       currentJob.dispatch_batch_id,
       {
@@ -209,7 +256,12 @@ export function DeepResearchPanel({
       { maxRetries: 2, baseDelay: 1200 },
     );
     return stop;
-  }, [currentJob.dispatch_batch_id, refreshBatch, refreshJob]);
+  }, [
+    currentJob.dispatch_batch_id,
+    recoverySnapshot,
+    refreshBatch,
+    refreshJob,
+  ]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -296,18 +348,15 @@ export function DeepResearchPanel({
               {t.deepResearchPanel.searchesCount(currentJob.max_searches)}
             </div>
           </div>
-          {batch && (
+          {(batch || recoverySnapshot) && (
             <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-              <span>{batch.status}</span>
+              <span>{displayedBatchStatus}</span>
               <span>
-                {t.deepResearchPanel.batchProgress(
-                  batch.completed_tasks,
-                  batch.total_tasks,
-                )}
-                {(batch.failed_tasks > 0 || batch.cancelled_tasks > 0) &&
+                {t.deepResearchPanel.batchProgress(completedTasks, totalTasks)}
+                {(failedTasks > 0 || cancelledTasks > 0) &&
                   ` · ${t.deepResearchPanel.batchFailedCancelled(
-                    batch.failed_tasks,
-                    batch.cancelled_tasks,
+                    failedTasks,
+                    cancelledTasks,
                   )}`}
               </span>
             </div>
@@ -316,17 +365,27 @@ export function DeepResearchPanel({
             <div
               className={cn(
                 "h-full rounded-full bg-foreground transition-all",
-                (loading || batch?.status === "running") && "animate-pulse",
+                (loading || displayedBatchStatus === "running") &&
+                  "animate-pulse",
               )}
               style={{ width: `${progressPct}%` }}
             />
           </div>
           <div className="mt-2 truncate text-xs text-muted-foreground">
-            {currentJob.dispatch_batch_id
-              ? t.deepResearchPanel.batchIdLabel(currentJob.dispatch_batch_id)
-              : currentJob.status}
+            {recoverySnapshot && !batch
+              ? t.deepResearchPanel.durableRecovery
+              : currentJob.dispatch_batch_id
+                ? t.deepResearchPanel.batchIdLabel(currentJob.dispatch_batch_id)
+                : currentJob.status}
           </div>
         </div>
+
+        {recoverySnapshot && !batch && (
+          <div className="mt-2 flex items-start gap-1.5 rounded-md border border-warning/25 bg-warning/5 px-2 py-1.5 text-xs text-warning">
+            <ShieldAlertIcon className="mt-0.5 size-3.5 shrink-0" />
+            <span>{t.deepResearchPanel.durableRecoveryHint}</span>
+          </div>
+        )}
 
         {liveEvents.length > 0 && (
           <div className="mt-4 space-y-2">
@@ -379,7 +438,7 @@ export function DeepResearchPanel({
               key={step.id}
               step={step}
               index={index}
-              task={batchByTaskId.get(step.id)}
+              task={batchByTaskId.get(step.id) ?? recoveryByTaskId.get(step.id)}
               routeDecision={
                 routeDecisionByTaskId.get(step.id) ??
                 step.route_decision ??

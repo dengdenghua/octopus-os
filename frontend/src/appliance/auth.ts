@@ -19,6 +19,35 @@ export type ApplianceAuthStatus = {
   role: "operator" | "member" | null;
 };
 
+export class ApplianceAuthStatusError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number | null,
+  ) {
+    super(message);
+    this.name = "ApplianceAuthStatusError";
+  }
+}
+
+export class ApplianceSecondFactorRequiredError extends Error {
+  constructor() {
+    super("请输入动态验证码或恢复码");
+    this.name = "ApplianceSecondFactorRequiredError";
+  }
+}
+
+function isApplianceAuthStatus(value: unknown): value is ApplianceAuthStatus {
+  if (!value || typeof value !== "object") return false;
+  const status = value as Record<string, unknown>;
+  return (
+    typeof status.authRequired === "boolean" &&
+    typeof status.authenticated === "boolean" &&
+    (status.role === "operator" ||
+      status.role === "member" ||
+      status.role === null)
+  );
+}
+
 /**
  * A desktop without the appliance login gate is managed by its local user.
  * When the gate is enabled, only an authenticated operator may change the
@@ -40,28 +69,53 @@ export async function fetchApplianceAuthStatus(): Promise<ApplianceAuthStatus> {
   const response = await fetch("/api/appliance/auth/status", {
     headers: authHeader(),
   });
-  if (!response.ok) throw new Error(`auth status failed: ${response.status}`);
-  return (await response.json()) as ApplianceAuthStatus;
+  if (!response.ok) {
+    throw new ApplianceAuthStatusError(
+      `auth status failed: ${response.status}`,
+      response.status,
+    );
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!isApplianceAuthStatus(payload)) {
+    throw new ApplianceAuthStatusError("auth status payload is invalid", 200);
+  }
+  return payload;
 }
 
 /** 登录后只依赖 HttpOnly Cookie，清掉可被 JS 读取的旧 JWT。 */
 export async function applianceLogin(
   username: string,
   password: string,
+  secondFactor?: string,
 ): Promise<void> {
   const normalizedUsername = username.trim();
   if (!normalizedUsername) throw new Error("请输入用户名");
   const response = await fetch("/api/auth/local/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: normalizedUsername, password }),
+    body: JSON.stringify({
+      username: normalizedUsername,
+      password,
+      ...(secondFactor ? { secondFactor } : {}),
+    }),
   });
   if (!response.ok) {
-    const detail = await response
+    const detail: unknown = await response
       .json()
       .then((b) => b?.detail)
       .catch(() => null);
-    throw new Error(detail || "登录失败");
+    if (response.status === 428 && detail === "second_factor_required") {
+      throw new ApplianceSecondFactorRequiredError();
+    }
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("Retry-After");
+      throw new Error(
+        retryAfter
+          ? `验证失败次数过多，请在 ${retryAfter} 秒后重试`
+          : "验证失败次数过多，请稍后重试",
+      );
+    }
+    throw new Error(typeof detail === "string" ? detail : "登录失败");
   }
   const data = (await response.json()) as { success?: boolean };
   if (!data.success) throw new Error("服务端未建立会话");

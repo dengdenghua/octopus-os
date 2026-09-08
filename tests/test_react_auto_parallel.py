@@ -16,6 +16,8 @@ from runtime.core.cerebrum.agent_auto_parallel import (
     plan_auto_parallel,
     run_auto_parallel,
 )
+from runtime.execution.host_boundary import create_host_execution_boundary
+from runtime.platform.process.session import session_scope
 
 # ─── plan gate · unit tests ──────────────────────────────────
 
@@ -150,6 +152,48 @@ def test_run_auto_parallel_returns_failure_on_no_output():
 
     assert result["success"] is False
     assert result["error"] == "boom"
+
+
+def test_run_auto_parallel_carries_host_session_into_scheduled_children():
+    plan = plan_auto_parallel(
+        "请分别调研以下两个方向：\n1. 云计算市场2025年规模\n2. 人工智能芯片竞争格局"
+    )
+    assert plan is not None
+    calls: dict[str, Any] = {}
+
+    class _FakeBatchResult:
+        batch_id = "batch_host"
+        status = "completed"
+        total_tasks = 2
+        completed_tasks = 2
+        error = None
+        results = []
+
+    class _FakeOrchestrator:
+        def dispatch(self, tasks, **kwargs):
+            calls["kwargs"] = kwargs
+            return _FakeBatchResult()
+
+        def get_batch(self, batch_id):
+            return _FakeBatchResult()
+
+    parent = create_host_execution_boundary(
+        task_id="parent-task",
+        thread_id="thread-host",
+        actor_id="alice",
+        tenant_id="tenant-a",
+        goal="parallel parent",
+        timeout_s=30,
+    ).session
+    with patch(
+        "runtime.core.cerebrum.agent_auto_parallel.get_auto_parallel_orchestrator",
+        return_value=_FakeOrchestrator(),
+    ), session_scope(parent):
+        result = run_auto_parallel(plan, thread_id="thread-host")
+
+    assert result["batch_id"] == "batch_host"
+    assert calls["kwargs"]["owner_id"] == "alice"
+    assert calls["kwargs"]["context"]["caller_session"] is parent
 
 
 # ─── stream_react_loop integration ──────────────────────────
@@ -451,4 +495,3 @@ def test_react_loop_auto_parallel_skips_single_cohesive_goal():
         _collect_until_event(gen, {"react_started"}, max_events=10)
 
     assert not mock_run.called
-

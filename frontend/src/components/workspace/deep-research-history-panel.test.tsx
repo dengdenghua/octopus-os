@@ -64,6 +64,8 @@ describe("<DeepResearchHistoryPanel />", () => {
       final_report_format: "markdown",
       final_report: "# Report",
       dispatch_batch_id: "batch_1",
+      recovery_required: true,
+      recovery_reason: "durable_only_recovery_view",
       memory_entry: null,
       memory_written_at: null,
       memory_path: null,
@@ -80,6 +82,7 @@ describe("<DeepResearchHistoryPanel />", () => {
     expect(screen.getByText("materials")).toBeInTheDocument();
     expect(screen.getByText("evidence")).toBeInTheDocument();
     expect(screen.getByText("roles")).toBeInTheDocument();
+    expect(screen.getByText("Recovery review required")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("NAS market research"));
     await waitFor(() => expect(onSelect).toHaveBeenCalledWith(job));

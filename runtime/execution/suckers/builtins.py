@@ -6,12 +6,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from runtime.execution.misc.document_extraction import (
+    DocumentExtractionBudget,
+    DocumentWorkerCleanupError,
+    extract_document_isolated,
+)
+
 from .browser_skills import register_browser_skills
 from .crawler_skills import register_crawler_skills
 from .fs_search_skills import register_fs_search_skills
 from .market_skills import register_prompt_market_skills
 from .notebook_skills import register_notebook_skills
 from .registry import Skill, SkillRegistry
+from .resource_refs import with_workspace_resource, workspace_resource_scope
 from .testing import SkillExpect, SkillTestCase
 from .web_skills import register_web_skills
 from .write_skills import (
@@ -36,9 +43,11 @@ _IMAGE_MEDIA_TYPES = {
     ".gif": "image/gif",
 }
 _PDF_DEFAULT_MAX_PAGES_WITHOUT_RANGE = 10
+_PDF_MAX_EXTRACT_CHARS = 200_000
 # 25 MB cap on image / PDF bytes — these bypass MAX_READ_BYTES (which is the
 # 100 KB text cap) but still need an upper bound to keep the wire reasonable.
 _BINARY_READ_CAP = 25 * 1024 * 1024
+_DOCUMENT_WORKER_INPUT_CAP = 16 * 1024 * 1024
 
 
 def _parse_pages_spec(spec: str, total_pages: int) -> tuple[list[int] | None, str | None]:
@@ -108,10 +117,12 @@ def _read_file_pdf(
     pages: str | None = None,
     max_pages_without_range: int = _PDF_DEFAULT_MAX_PAGES_WITHOUT_RANGE,
 ) -> dict[str, Any]:
-    """Extract PDF text via pdfplumber, falling back to pypdf.
+    """Extract PDF text in the bounded document worker.
 
-    Returns a refusal when ``pages`` is omitted and the PDF has more than
-    ``max_pages_without_range`` pages.
+    The worker reports the source page count, so the historical refusal for a
+    large PDF without an explicit range is preserved without opening a parser
+    in the service process.  Explicit ranges are validated in the worker after
+    the PDF has been opened under its memory/CPU limits.
     """
     size = p.stat().st_size
     if size > _BINARY_READ_CAP:
@@ -122,100 +133,137 @@ def _read_file_pdf(
             "size_bytes": size,
         }
 
-    backend: str
-    page_texts: list[tuple[int, str]] = []
-    total_pages = 0
-    try:
-        import pdfplumber  # type: ignore[import-not-found]
-
-        backend = "pdfplumber"
-    except ImportError:
-        pdfplumber = None  # type: ignore[assignment]
-    if pdfplumber is None:
-        try:
-            import pypdf  # type: ignore[import-not-found]
-
-            backend = "pypdf"
-        except ImportError:
+    selected: list[int] | None = None
+    if pages is not None:
+        if not isinstance(pages, str) or not pages.strip():
             return {
-                "error": "no PDF backend available — install pdfplumber or pypdf",
-                "error_type": "dependency_missing",
+                "error": "pages spec must be a non-empty string",
+                "error_type": "invalid_argument",
                 "path": str(p.resolve()),
-                "hint": "pip install pdfplumber  (or)  pip install pypdf",
+            }
+        selected_set: set[int] = set()
+        for raw_part in pages.split(","):
+            part = raw_part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                lo_s, _, hi_s = part.partition("-")
+                try:
+                    lo, hi = int(lo_s), int(hi_s)
+                except ValueError:
+                    return {
+                        "error": f"invalid pages range: {part!r}",
+                        "error_type": "invalid_argument",
+                        "path": str(p.resolve()),
+                    }
+                if lo < 1 or hi < lo or hi - lo + 1 > 200:
+                    return {
+                        "error": f"invalid pages range: {part!r}",
+                        "error_type": "invalid_argument",
+                        "path": str(p.resolve()),
+                    }
+                selected_set.update(range(lo, hi + 1))
+            else:
+                try:
+                    number = int(part)
+                except ValueError:
+                    return {
+                        "error": f"invalid pages token: {part!r}",
+                        "error_type": "invalid_argument",
+                        "path": str(p.resolve()),
+                    }
+                if number < 1:
+                    return {
+                        "error": f"invalid pages token: {part!r}",
+                        "error_type": "invalid_argument",
+                        "path": str(p.resolve()),
+                    }
+                selected_set.add(number)
+            if len(selected_set) > 200:
+                return {
+                    "error": "pages spec may select at most 200 pages",
+                    "error_type": "invalid_argument",
+                    "path": str(p.resolve()),
+                }
+        selected = sorted(selected_set)
+        if not selected:
+            return {
+                "error": "pages spec resolved to no pages",
+                "error_type": "invalid_argument",
+                "path": str(p.resolve()),
             }
 
+    budget = DocumentExtractionBudget(
+        max_chars=_PDF_MAX_EXTRACT_CHARS,
+        # One extra page lets the worker prove the historical >10-page refusal.
+        max_pages=max_pages_without_range + 1 if selected is None else 200,
+    )
     try:
-        if backend == "pdfplumber":
-            with pdfplumber.open(str(p)) as pdf:
-                total_pages = len(pdf.pages)
-                if pages is None:
-                    if total_pages > max_pages_without_range:
-                        return {
-                            "error": "pdf_too_large_without_pages",
-                            "error_type": "invalid_argument",
-                            "path": str(p.resolve()),
-                            "total_pages": total_pages,
-                            "hint": (f"Pass pages='1-{max_pages_without_range}' to read a slice."),
-                        }
-                    wanted = list(range(1, total_pages + 1))
-                else:
-                    parsed, err = _parse_pages_spec(pages, total_pages)
-                    if err:
-                        return {
-                            "error": err,
-                            "error_type": "invalid_argument",
-                            "path": str(p.resolve()),
-                            "total_pages": total_pages,
-                        }
-                    wanted = parsed or []
-                for n in wanted:
-                    page = pdf.pages[n - 1]
-                    page_texts.append((n, page.extract_text() or ""))
-        else:  # pypdf
-            import pypdf  # type: ignore[import-not-found]
-
-            reader = pypdf.PdfReader(str(p))
-            total_pages = len(reader.pages)
-            if pages is None:
-                if total_pages > max_pages_without_range:
-                    return {
-                        "error": "pdf_too_large_without_pages",
-                        "error_type": "invalid_argument",
-                        "path": str(p.resolve()),
-                        "total_pages": total_pages,
-                        "hint": (f"Pass pages='1-{max_pages_without_range}' to read a slice."),
-                    }
-                wanted = list(range(1, total_pages + 1))
-            else:
-                parsed, err = _parse_pages_spec(pages, total_pages)
-                if err:
-                    return {
-                        "error": err,
-                        "error_type": "invalid_argument",
-                        "path": str(p.resolve()),
-                        "total_pages": total_pages,
-                    }
-                wanted = parsed or []
-            for n in wanted:
-                page_obj = reader.pages[n - 1]
-                page_texts.append((n, page_obj.extract_text() or ""))
+        isolated = extract_document_isolated(
+            p.read_bytes(),
+            "pdf",
+            budget=budget,
+            pages=selected,
+            include_page_markers=True,
+        )
+    except DocumentWorkerCleanupError:
+        return {
+            "error": "document_worker_cleanup_uncertain",
+            "error_type": "worker_cleanup_uncertain",
+            "path": str(p.resolve()),
+            "size_bytes": size,
+        }
     except (OSError, ValueError) as exc:
         return {
             "error": f"pdf_parse_failed: {exc}",
             "error_type": "parse_failed",
             "path": str(p.resolve()),
-            "backend": backend,
+        }
+    total_pages = isolated.get("page_count")
+    if type(total_pages) is not int:
+        total_pages = None
+    if selected is None and total_pages is not None and total_pages > max_pages_without_range:
+        return {
+            "error": "pdf_too_large_without_pages",
+            "error_type": "invalid_argument",
+            "path": str(p.resolve()),
+            "total_pages": total_pages,
+            "hint": f"Pass pages='1-{max_pages_without_range}' to read a slice.",
+        }
+    if isolated.get("outcome") == "invalid_argument":
+        return {
+            "error": str(isolated.get("error") or "invalid pages selection"),
+            "error_type": "invalid_argument",
+            "path": str(p.resolve()),
+            "total_pages": total_pages,
+        }
+    if isolated.get("outcome") != "ok" or not isinstance(isolated.get("text"), str):
+        outcome = str(isolated.get("outcome") or "unknown")
+        return {
+            "error": f"pdf_parse_failed: {outcome} pdf file",
+            "error_type": {
+                "resource_limited": "resource_limited",
+                "timed_out": "timed_out",
+                "cancelled": "cancelled",
+                "unavailable": "dependency_missing",
+            }.get(outcome, "parse_failed"),
+            "path": str(p.resolve()),
+            "total_pages": total_pages,
         }
 
-    joined = "\n\n".join(f"--- page {n} ---\n{txt}" for n, txt in page_texts)
+    extracted = isolated.get("pages_extracted")
+    pages_extracted = (
+        [int(page) for page in extracted] if isinstance(extracted, list) else (selected or [])
+    )
     return {
         "ok": True,
         "kind": "pdf",
         "path": str(p.resolve()),
-        "pages_extracted": [n for n, _ in page_texts],
+        "pages_extracted": pages_extracted,
         "total_pages": total_pages,
-        "text": joined,
-        "backend": backend,
+        "text": isolated["text"],
+        "backend": "isolated_worker",
+        "truncated": bool(isolated.get("truncated")),
     }
 
 
@@ -236,7 +284,7 @@ def _read_file_notebook(
 
 
 def _read_file_document(p: Path, *, max_bytes: int) -> dict[str, Any]:
-    """Extract bounded text from an Office or delimited document."""
+    """Extract bounded text from an Office or delimited document in a worker."""
 
     size = p.stat().st_size
     if size > _BINARY_READ_CAP:
@@ -246,34 +294,82 @@ def _read_file_document(p: Path, *, max_bytes: int) -> dict[str, Any]:
             "path": str(p.resolve()),
             "size_bytes": size,
         }
-    from runtime.execution.misc.document_text_extractor import extract_document_path
-
     try:
-        extracted = extract_document_path(p, max_chars=max_bytes)
+        requested_chars = int(max_bytes)
+    except (TypeError, ValueError):
+        return {"error": "max_bytes must be an integer", "error_type": "invalid_argument"}
+    if requested_chars <= 0:
+        return {"error": "max_bytes must be positive", "error_type": "invalid_argument"}
+    if size > _DOCUMENT_WORKER_INPUT_CAP:
+        return {
+            "error": (
+                f"document_too_large_for_worker: {size} bytes (cap {_DOCUMENT_WORKER_INPUT_CAP})"
+            ),
+            "error_type": "resource_limited",
+            "path": str(p.resolve()),
+            "size_bytes": size,
+        }
+    budget = DocumentExtractionBudget(max_chars=min(requested_chars, 1_000_000))
+    try:
+        result = extract_document_isolated(
+            p.read_bytes(),
+            p.suffix,
+            budget=budget,
+        )
     except OSError as exc:
         return {
             "error": f"document_read_failed: {exc}",
             "error_type": "read_failed",
             "path": str(p.resolve()),
         }
-    if extracted is None:
+    except DocumentWorkerCleanupError:
         return {
-            "error": f"document_parse_failed: unsupported or invalid {p.suffix.lower()} file",
-            "error_type": "parse_failed",
+            "error": "document_worker_cleanup_uncertain",
+            "error_type": "worker_cleanup_uncertain",
             "path": str(p.resolve()),
+            "size_bytes": size,
+        }
+    except (RuntimeError, ValueError):
+        return {
+            "error": "document_worker_unavailable",
+            "error_type": "unavailable",
+            "path": str(p.resolve()),
+            "size_bytes": size,
+        }
+    outcome = result.get("outcome")
+    if outcome != "ok" or not isinstance(result.get("text"), str):
+        error_type = {
+            "no_text": "parse_failed",
+            "resource_limited": "resource_limited",
+            "timed_out": "timed_out",
+            "cancelled": "cancelled",
+            "worker_failed": "worker_failed",
+            "unavailable": "unavailable",
+        }.get(str(outcome), "parse_failed")
+        return {
+            "error": f"document_parse_failed: {outcome or 'unknown'} {p.suffix.lower()} file",
+            "error_type": error_type,
+            "path": str(p.resolve()),
+            "size_bytes": size,
         }
     return {
         "ok": True,
         "kind": "document",
-        "format": extracted.format,
+        "format": p.suffix.lstrip(".").lower(),
         "path": str(p.resolve()),
         "size_bytes": size,
-        "truncated": extracted.truncated,
-        "text": extracted.text,
+        "truncated": bool(result.get("truncated")),
+        "text": result["text"],
     }
 
 
-def _list_cwd(path: str = ".", cwd: str | None = None, **_kw: Any) -> dict[str, Any]:
+def _list_cwd(
+    path: str = ".",
+    cwd: str | None = None,
+    *,
+    session: Any = None,
+    **_kw: Any,
+) -> dict[str, Any]:
     p = Path(path)
     if cwd and not p.is_absolute():
         p = Path(cwd) / p
@@ -281,12 +377,24 @@ def _list_cwd(path: str = ".", cwd: str | None = None, **_kw: Any) -> dict[str, 
         return {"error": f"not found: {path}"}
     if not p.is_dir():
         return {"error": f"not a directory: {path}"}
+    resource_scope = workspace_resource_scope(session)
     items = sorted(
         (
-            {
+            with_workspace_resource(
+                {
+                    "name": e.name,
+                    "is_dir": e.is_dir(),
+                    "size": e.stat().st_size if e.is_file() else None,
+                },
+                e,
+                session=session,
+                execution_scope=resource_scope,
+            )
+            if e.is_file()
+            else {
                 "name": e.name,
-                "is_dir": e.is_dir(),
-                "size": e.stat().st_size if e.is_file() else None,
+                "is_dir": True,
+                "size": None,
             }
             for e in p.iterdir()
             if not e.name.startswith(".")
@@ -411,6 +519,7 @@ def _read_file(
     cwd: str | None = None,
     sandbox_dir: str | None = None,
     allow_sensitive: bool = False,
+    session: Any = None,
     **_kw: Any,
 ) -> dict[str, Any]:
     """Read a file, dispatching to the right handler by extension.
@@ -439,21 +548,41 @@ def _read_file(
         return {"error": f"not found: {path}"}
     if not p.is_file():
         return {"error": f"not a file: {path}"}
+    resource_scope = workspace_resource_scope(session)
 
     suffix = p.suffix.lower()
     if suffix in _IMAGE_EXTS:
-        return _read_file_image(p)
+        return with_workspace_resource(
+            _read_file_image(p), p, session=session, execution_scope=resource_scope
+        )
     if suffix == ".pdf":
-        return _read_file_pdf(p, pages=pages)
+        return with_workspace_resource(
+            _read_file_pdf(p, pages=pages), p, session=session, execution_scope=resource_scope
+        )
     if suffix == ".ipynb":
-        return _read_file_notebook(
+        return with_workspace_resource(
+            _read_file_notebook(
+                p,
+                sandbox_dir=sandbox_dir,
+                allow_sensitive=allow_sensitive,
+            ),
             p,
-            sandbox_dir=sandbox_dir,
-            allow_sensitive=allow_sensitive,
+            session=session,
+            execution_scope=resource_scope,
         )
     if suffix in _DOCUMENT_EXTS:
-        return _read_file_document(p, max_bytes=max_bytes)
-    return _read_file_text(p, max_bytes=max_bytes, offset=offset, limit=limit)
+        return with_workspace_resource(
+            _read_file_document(p, max_bytes=max_bytes),
+            p,
+            session=session,
+            execution_scope=resource_scope,
+        )
+    return with_workspace_resource(
+        _read_file_text(p, max_bytes=max_bytes, offset=offset, limit=limit),
+        p,
+        session=session,
+        execution_scope=resource_scope,
+    )
 
 
 def _count_words(text: str = "", **_kw: Any) -> dict[str, Any]:
@@ -481,6 +610,7 @@ def _file_stats(
     cwd: str | None = None,
     sandbox_dir: str | None = None,
     allow_sensitive: bool = False,
+    session: Any = None,
     **_kw: Any,
 ) -> dict[str, Any]:
     if cwd and not Path(path).is_absolute():
@@ -497,14 +627,15 @@ def _file_stats(
     p = Path(verdict.resolved) if verdict.resolved else Path(path)
     if not p.exists():
         return {"error": f"not found: {path}"}
+    resource_scope = workspace_resource_scope(session)
     st = p.stat()
-    return {
+    return with_workspace_resource({
         "path": str(p.resolve()),
         "size": st.st_size,
         "mtime": st.st_mtime,
         "is_file": p.is_file(),
         "is_dir": p.is_dir(),
-    }
+    }, p, session=session, execution_scope=resource_scope)
 
 
 def _use_chatgpt_connector(
@@ -563,6 +694,7 @@ def register_builtins(registry: SkillRegistry) -> SkillRegistry:
     registry.register(
         Skill(
             name="list_cwd",
+            privacy_local=True,
             description=(
                 "用途: 非递归列出一个目录的直接子项（隐藏项已过滤）；快速浏览结构。\n"
                 "何时不用: 需要多层深度用 tree；按 glob 过滤用 glob_files；要文件元数据用 file_stats；按内容找用 grep_text。\n"
@@ -592,6 +724,7 @@ def register_builtins(registry: SkillRegistry) -> SkillRegistry:
     registry.register(
         Skill(
             name="read_file",
+            privacy_local=True,
             description=(
                 "用途: 读取单个文件，按扩展名自动分发: 文本 (UTF-8, 默认 100KB / 2000 行硬上限) / 图片 (.png/.jpg/.jpeg/.webp/.gif → base64) / PDF (.pdf, 需要 pages 切片当 >10 页) / Notebook (.ipynb → 委托给 notebook_read)。\n"
                 "何时不用: 想找某段内容用 grep_text；只看前 N 行或某个范围用 read_file_range；按 pattern 找文件用 glob_files；不支持的二进制会拒读。支持 image/PDF/ipynb/PPTX/DOCX/XLSX/CSV/TSV。\n"
@@ -615,6 +748,7 @@ def register_builtins(registry: SkillRegistry) -> SkillRegistry:
     registry.register(
         Skill(
             name="count_words",
+            privacy_local=True,
             description=(
                 "用途: 对一段已经在手上的文本计算 chars / words / lines 三项；常用于 demo / 兜底统计。\n"
                 "何时不用: 要统计文件用 read_file 取出后再传入；要分词或自然语言分析用 ipython 跑专用库；只是想核对文件大小用 file_stats。\n"
@@ -651,6 +785,7 @@ def register_builtins(registry: SkillRegistry) -> SkillRegistry:
     registry.register(
         Skill(
             name="hash_text",
+            privacy_local=True,
             description=(
                 "用途: 对一段文本计算 blake2b (16 字节) 或 sha256 摘要；用于校验、去重 key、签名前缀等。\n"
                 "何时不用: 要校验文件内容用 read_file 取出后再哈希；需要 HMAC / 密钥派生用 ipython 跑 hashlib/hmac；想加密 (而非摘要) 不要用本工具。\n"
@@ -694,6 +829,7 @@ def register_builtins(registry: SkillRegistry) -> SkillRegistry:
     registry.register(
         Skill(
             name="file_stats",
+            privacy_local=True,
             description=(
                 "用途: 不读内容，只取一个文件/目录的元数据 (size, mtime, is_file, is_dir)；判断存在性、大小、最近修改时间。\n"
                 "何时不用: 要看内容用 read_file；要看目录里有什么用 list_cwd 或 tree；要批量按 pattern 找用 glob_files。\n"

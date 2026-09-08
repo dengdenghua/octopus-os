@@ -250,6 +250,10 @@ def _phase_6b_model_stream(
     _budget_pause_threshold = state.budget_pause_threshold
     _budget_config = getattr(getattr(stack, "config", None), "budget", None)
     _user_context = getattr(intent, "user_context", None) or {}
+    _host_usage_recorder = None
+    _metadata_for_host_usage = _user_context.get("metadata")
+    if isinstance(_metadata_for_host_usage, dict):
+        _host_usage_recorder = _metadata_for_host_usage.get("_subagent_usage_recorder")
     _cumulative_token_auto_pause_enabled = bool(
         _user_context.get("cumulative_token_auto_pause")
         or getattr(intent, "flags", {}).get("cumulative_token_auto_pause", False)
@@ -945,6 +949,18 @@ def _phase_6b_model_stream(
                         output_tokens=_out_tok,
                         cost_usd=_cost,
                         model=str(getattr(resp, "model", "") or ""),
+                    )
+            if callable(_host_usage_recorder):
+                with contextlib.suppress(Exception):
+                    _host_usage_recorder(
+                        {
+                            "input_tokens": _in_tok,
+                            "output_tokens": _out_tok,
+                            "cost_usd": _cost,
+                            "model": str(getattr(resp, "model", "") or effective_model or ""),
+                            "provider": str(getattr(resp, "provider", "") or ""),
+                            "iteration": i + 1,
+                        }
                     )
             # Feed the process-level cost ledger so ECHO_MAX_COST_USD can
             # gate further subagent spawns in bridge.py.

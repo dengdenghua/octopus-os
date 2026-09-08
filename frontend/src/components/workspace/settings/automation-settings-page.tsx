@@ -16,7 +16,7 @@ import {
   TrashIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +56,7 @@ import {
 } from "@/core/settings/permissions-api";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 function useCapabilities() {
   return useQuery({
@@ -82,6 +83,7 @@ function useSaveCapabilities() {
 export default function AutomationSettingsPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const { data, isLoading, error, refetch, isFetching } = useCapabilities();
   const save = useSaveCapabilities();
 
@@ -107,7 +109,7 @@ export default function AutomationSettingsPage() {
 
   const openComputerTool = () => {
     window.dispatchEvent(new Event("echo:close-settings"));
-    navigate("/workspace/computer");
+    navigate(preserveWorkbenchPresentation("/workspace/computer", search));
   };
 
   async function onSave() {
@@ -351,9 +353,10 @@ export default function AutomationSettingsPage() {
 function LocalToolsSection() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const openTool = (path: string) => {
     window.dispatchEvent(new Event("echo:close-settings"));
-    navigate(path);
+    navigate(preserveWorkbenchPresentation(path, search));
   };
 
   return (

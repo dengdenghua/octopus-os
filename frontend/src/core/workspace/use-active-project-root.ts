@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-
-const RECENT_WORKDIRS_KEY = "echo:recentWorkdirs";
+import { currentActorId } from "@/core/auth/api";
+import {
+  readRecentWorkdirs,
+  recentWorkdirsStorageKey,
+  writeRecentWorkdirs,
+} from "./recent-workdirs";
 
 function isAbsolutePath(value: string) {
   return value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
@@ -16,15 +20,9 @@ function readActiveProjectRoot(): string | null {
   ).get("workspace_path");
   if (routePath && isAbsolutePath(routePath)) return routePath;
   try {
-    const parsed = JSON.parse(
-      window.localStorage.getItem(RECENT_WORKDIRS_KEY) ?? "[]",
-    ) as unknown;
-    if (Array.isArray(parsed)) {
-      const first = parsed.find(
-        (item): item is string =>
-          typeof item === "string" && isAbsolutePath(item),
-      );
-      return first ?? null;
+    const first = readRecentWorkdirs().find((item) => isAbsolutePath(item));
+    if (first) {
+      return first;
     }
   } catch {
     // A malformed recent-project entry should not break the knowledge page.
@@ -35,12 +33,7 @@ function readActiveProjectRoot(): string | null {
 export function activateProjectRoot(path: string) {
   if (typeof window === "undefined" || !isAbsolutePath(path)) return;
   try {
-    const parsed = JSON.parse(
-      window.localStorage.getItem(RECENT_WORKDIRS_KEY) ?? "[]",
-    ) as unknown;
-    const recent = Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
+    const recent = readRecentWorkdirs();
     const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
     const next = [
       path,
@@ -48,9 +41,9 @@ export function activateProjectRoot(path: string) {
         (item) => item.replace(/\\/g, "/").replace(/\/+$/, "") !== normalized,
       ),
     ].slice(0, 6);
-    window.localStorage.setItem(RECENT_WORKDIRS_KEY, JSON.stringify(next));
+    writeRecentWorkdirs(next);
   } catch {
-    window.localStorage.setItem(RECENT_WORKDIRS_KEY, JSON.stringify([path]));
+    writeRecentWorkdirs([path]);
   }
   window.dispatchEvent(
     new CustomEvent("echo:workdir-selected", {
@@ -60,7 +53,15 @@ export function activateProjectRoot(path: string) {
 }
 
 export function useActiveProjectRoot() {
+  const actor = currentActorId();
   const [root, setRoot] = useState<string | null>(readActiveProjectRoot);
+  const [sessionActor, setSessionActor] = useState(actor);
+
+  useEffect(() => {
+    if (sessionActor === actor) return;
+    setSessionActor(actor);
+    setRoot(readActiveProjectRoot());
+  }, [actor, sessionActor]);
 
   useEffect(() => {
     const onWorkDirSelected = (event: Event) => {
@@ -68,7 +69,8 @@ export function useActiveProjectRoot() {
       if (typeof path === "string" && isAbsolutePath(path)) setRoot(path);
     };
     const onStorage = (event: StorageEvent) => {
-      if (event.key === RECENT_WORKDIRS_KEY) setRoot(readActiveProjectRoot());
+      if (event.key === recentWorkdirsStorageKey())
+        setRoot(readActiveProjectRoot());
     };
     window.addEventListener("echo:workdir-selected", onWorkDirSelected);
     window.addEventListener("storage", onStorage);
@@ -78,5 +80,5 @@ export function useActiveProjectRoot() {
     };
   }, []);
 
-  return root;
+  return sessionActor === actor ? root : null;
 }

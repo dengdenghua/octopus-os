@@ -326,9 +326,9 @@ def _verify_created_pool(plan: dict[str, Any]) -> dict[str, Any]:
         raise OSError("new ZFS pool is not a mirror")
     for device in plan["devices"]:
         devicefile = device["devicefile"]
-        partition_suffix = "p1" if re.fullmatch(
-            r"/dev/(?:nvme\d+n\d+|mmcblk\d+)", devicefile
-        ) else "1"
+        partition_suffix = (
+            "p1" if re.fullmatch(r"/dev/(?:nvme\d+n\d+|mmcblk\d+)", devicefile) else "1"
+        )
         accepted_paths = (devicefile, f"{devicefile}{partition_suffix}")
         if not any(
             re.search(rf"^\s*{re.escape(path)}\s+ONLINE\b", status, re.MULTILINE)

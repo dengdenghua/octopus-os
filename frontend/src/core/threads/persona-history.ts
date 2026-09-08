@@ -29,9 +29,18 @@ export function threadOwnerAgentId(thread: AgentThread): string {
 export function threadVisibleInPersonaHistory(
   thread: AgentThread,
   personaId: string,
+  availablePersonaIds?: readonly string[],
 ): boolean {
   const ownerId = threadOwnerAgentId(thread);
   if (!ownerId) return personaId === "general";
   if (ownerId === "echo") return false;
+  // A retired/hidden role no longer has a selectable history lane. Keep its
+  // existing tasks reachable from Echo without rewriting their stored owner.
+  if (
+    personaId === "general" &&
+    availablePersonaIds !== undefined &&
+    !availablePersonaIds.includes(ownerId)
+  )
+    return true;
   return ownerId === personaId || !isPrimaryPersonaAgentId(ownerId);
 }

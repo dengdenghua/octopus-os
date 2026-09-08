@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from appliance.state_schema import CURRENT_SCHEMA_VERSION
+
 _REPOSITORY = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPOSITORY / "deploy" / "appliance" / "image_release.py"
 _SPEC = importlib.util.spec_from_file_location("echo_appliance_image_release", _SCRIPT)
@@ -203,7 +205,7 @@ def test_release_manifest_binds_two_platforms_agent_and_state_schema(tmp_path: P
         "commit": manifest["source"]["commit"],
     }
     assert manifest["stateSchema"] == {
-        "currentVersion": 2,
+        "currentVersion": CURRENT_SCHEMA_VERSION,
         "minimumReadableVersion": 0,
         "automaticMigrationAllowed": False,
     }
@@ -256,8 +258,9 @@ def test_release_manifest_binds_two_platforms_agent_and_state_schema(tmp_path: P
     )
     assert operations["installCommand"] == "./install-appliance.sh"
     assert environment.read_text() == (f"ECHO_OS_IMAGE=ghcr.io/echo-os/echo-os@{index_digest}\n")
-    assert stat.S_IMODE(output.stat().st_mode) == 0o644
-    assert stat.S_IMODE(environment.stat().st_mode) == 0o644
+    if os.name != "nt":
+        assert stat.S_IMODE(output.stat().st_mode) == 0o644
+        assert stat.S_IMODE(environment.stat().st_mode) == 0o644
     checksums = output.with_name(f"{output.name}.sha256")
     assert checksums.exists()
     checksum_lines = checksums.read_text().splitlines()

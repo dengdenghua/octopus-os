@@ -147,7 +147,9 @@ function eventSummary(ev: TimelineEvent): string | null {
   }
 }
 
-function jobStatusTone(status: string): "success" | "error" | "paused" | "running" {
+function jobStatusTone(
+  status: string,
+): "success" | "error" | "paused" | "running" {
   switch (status) {
     case "completed":
       return "success";

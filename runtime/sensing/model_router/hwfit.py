@@ -20,7 +20,6 @@ calls touch the outside world.
 
 from __future__ import annotations
 
-import os
 import platform
 import re
 import shutil
@@ -56,6 +55,9 @@ class Hardware:
     bandwidth_gbps: float | None  # memory bandwidth for the tps roofline; None if unknown
     unified_memory: bool
     note: str | None = None
+    available_ram_gb: float | None = None
+    reserve_gb: float = 0.0
+    context_tokens: int = 4096
 
 
 @dataclass
@@ -170,40 +172,29 @@ def _run(cmd: list[str], timeout: float = 2.5) -> str | None:
 
 
 def _ram_gb() -> float:
-    try:
-        import psutil  # type: ignore[import-untyped]
+    from runtime.platform.system_memory import total_memory_gb
 
-        return psutil.virtual_memory().total / (1024**3)
-    except Exception:  # noqa: BLE001 — fall back to platform probes
-        pass
-    if platform.system() == "Darwin":
-        out = _run(["sysctl", "-n", "hw.memsize"])
-        if out and out.isdigit():
-            return int(out) / (1024**3)
-    try:
-        with open("/proc/meminfo", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("MemTotal:"):
-                    return int(line.split()[1]) / (1024**2)
-    except OSError:  # expected · non-Linux or unreadable, falls through to the unknown-size default
-        pass
-    return 0.0
+    return total_memory_gb()
 
 
 def _detect_nvidia() -> tuple[float, str | None]:
-    """Total VRAM (GB) summed across NVIDIA GPUs + a representative name."""
+    """Largest currently free single-GPU budget; do not assume multi-GPU sharding."""
     if not shutil.which("nvidia-smi"):
         return 0.0, None
-    out = _run(["nvidia-smi", "--query-gpu=memory.total,name", "--format=csv,noheader,nounits"])
+    out = _run(["nvidia-smi", "--query-gpu=memory.free,name", "--format=csv,noheader,nounits"])
     if not out:
         return 0.0, None
     total_mb = 0.0
     name = None
     for line in out.splitlines():
         parts = [p.strip() for p in line.split(",")]
-        if len(parts) >= 2 and parts[0].replace(".", "", 1).isdigit():
-            total_mb += float(parts[0])
-            name = name or parts[1]
+        if (
+            len(parts) >= 2
+            and parts[0].replace(".", "", 1).isdigit()
+            and float(parts[0]) > total_mb
+        ):
+            total_mb = float(parts[0])
+            name = parts[1]
     return total_mb / 1024.0, name
 
 
@@ -220,15 +211,22 @@ def _detect_apple() -> tuple[str | None, float | None]:
 def detect_hardware() -> Hardware:
     """Best-effort hardware snapshot. Never raises — worst case is a CPU verdict."""
     ram = round(_ram_gb(), 1)
+    from runtime.platform.system_memory import available_memory_gb
+
+    available = available_memory_gb()
+    reserve = max(2.0, ram * 0.1)
+    budget = max(0.0, min(ram * 0.6, available - reserve)) if available is not None else 0.0
+    shared = dict(available_ram_gb=available, reserve_gb=round(reserve, 1))
     vram, gpu = _detect_nvidia()
     if vram > 0:
         return Hardware(
             backend="cuda",
             gpu_name=gpu,
-            vram_gb=round(vram, 1),
+            vram_gb=round(max(0, vram - 0.5), 1),
             ram_gb=ram,
             bandwidth_gbps=_match_bandwidth(gpu or "", _NVIDIA_BW),
             unified_memory=False,
+            **shared,
         )
     chip, bw = _detect_apple()
     if chip is not None:
@@ -236,27 +234,36 @@ def detect_hardware() -> Hardware:
         return Hardware(
             backend="metal",
             gpu_name=chip,
-            vram_gb=round(ram * 0.72, 1),
+            vram_gb=round(budget, 1),
             ram_gb=ram,
             bandwidth_gbps=bw,
             unified_memory=True,
-            note="Apple Silicon unified memory (≈72% budgeted for weights)",
+            note="Current available unified memory, with system/NAS headroom reserved",
+            **shared,
         )
     return Hardware(
         backend="cpu",
         gpu_name=None,
-        vram_gb=round(ram * 0.6, 1),
+        vram_gb=round(budget, 1),
         ram_gb=ram,
         bandwidth_gbps=None,
         unified_memory=False,
         note="No supported GPU detected — CPU inference is slow; prefer ≤7B models",
+        **shared,
     )
 
 
 # ── fit math (pure / unit-tested) ─────────────────────────────────────────────
-def estimate_mem_gb(params_b: float, quant: str) -> float:
+def estimate_mem_gb(params_b: float, quant: str, context_tokens: int = 4096) -> float:
     """Approx RAM/VRAM (GB) to load + run a model at a given quant."""
-    return params_b * QUANT_BYTES.get(quant, QUANT_BYTES[DEFAULT_QUANT]) + _OVERHEAD_GB
+    return params_b * QUANT_BYTES.get(quant, QUANT_BYTES[DEFAULT_QUANT]) + _context_overhead(
+        context_tokens
+    )
+
+
+def _context_overhead(context_tokens: int) -> float:
+    # Conservative planning allowance, not architecture-specific KV-cache sizing.
+    return _OVERHEAD_GB * max(1.0, context_tokens / 4096)
 
 
 def estimate_tps(active_params_b: float, quant: str, bandwidth_gbps: float | None) -> float | None:
@@ -316,16 +323,18 @@ def recommend(
     for spec in catalog or default_catalog():
         if spec.weight_gb:
             # Live catalog: a measured GGUF size beats the params×bpp estimate.
-            mem = round(spec.weight_gb + _OVERHEAD_GB, 1)
+            mem = round(spec.weight_gb + _context_overhead(hardware.context_tokens), 1)
             tps = (
                 round(hardware.bandwidth_gbps / spec.weight_gb, 1)
                 if hardware.bandwidth_gbps
                 else None
             )
         else:
-            mem = estimate_mem_gb(spec.params_b, quant)
+            mem = estimate_mem_gb(spec.params_b, quant, hardware.context_tokens)
             tps = estimate_tps(spec.active(), quant, hardware.bandwidth_gbps)
         verdict = _verdict(mem, hardware.vram_gb)
+        if hardware.backend in ("cpu", "metal") and verdict == "offload":
+            continue  # CPU/unified memory has no separate pool to offload into.
         if verdict == "too_big":
             continue
         out.append(
@@ -339,7 +348,11 @@ def recommend(
                 verdict=verdict,
                 est_tokens_per_s=tps,
                 installed=spec.tag in installed,
-                score=round(_score(verdict, spec.arch_rank, spec.params_b, tps), 1),
+                score=round(
+                    _score(verdict, spec.arch_rank, spec.params_b, tps)
+                    - (max(0, spec.active() - 7) * 5 if hardware.backend == "cpu" else 0),
+                    1,
+                ),
                 family=spec.family,
             )
         )
@@ -349,19 +362,18 @@ def recommend(
 
 # ── ollama integration (installed set + pull) ─────────────────────────────────
 def _ollama_base_url() -> str:
-    return os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    from .local_model_setup import base_url
+
+    return base_url()
 
 
 def installed_models() -> set[str]:
     """Tags ollama already has locally (``/api/tags``); empty if ollama is down."""
     try:
-        import httpx
+        from .local_model_setup import client, model_catalog
 
-        with httpx.Client(timeout=4.0) as client:
-            resp = client.get(f"{_ollama_base_url()}/api/tags")
-        if resp.status_code != 200:
-            return set()
-        data = resp.json()
+        with client() as connection:
+            data = {"models": model_catalog(connection)}
     except Exception:  # noqa: BLE001 — ollama absent → nothing installed
         return set()
     out: set[str] = set()
@@ -376,36 +388,38 @@ def installed_models() -> set[str]:
 
 def ollama_available() -> bool:
     try:
-        import httpx
+        from .local_model_setup import client, model_catalog
 
-        with httpx.Client(timeout=3.0) as client:
-            client.get(f"{_ollama_base_url()}/api/tags")
+        with client() as connection:
+            model_catalog(connection)
         return True
     except Exception:  # noqa: BLE001
         return False
 
 
-def pull_model(tag: str, *, timeout: float = 3600.0) -> dict[str, object]:
+def pull_model(tag: str, *, timeout: float = 3600.0, base: str | None = None) -> dict[str, object]:
     """Trigger an ollama pull of ``tag`` (blocking; ollama streams progress).
 
     Returns ``{"status": "ok"|"error", ...}``. The tag is validated against a
     strict allow-list so nothing user-controlled reaches a shell or a surprise
     registry path."""
-    if not re.fullmatch(r"[A-Za-z0-9._/:-]{1,120}", tag or ""):
+    from .local_model_setup import client, request_json, valid_tag
+
+    if not valid_tag(tag):
         return {"status": "error", "error": "invalid model tag"}
     try:
-        import httpx
-
-        with httpx.Client(timeout=timeout) as client:
-            resp = client.post(
-                f"{_ollama_base_url()}/api/pull",
+        with client(timeout=timeout, base=base) as connection:
+            result = request_json(
+                connection,
+                "POST",
+                "/api/pull",
                 json={"model": tag, "stream": False},
             )
-        if resp.status_code != 200:
-            return {"status": "error", "error": f"ollama returned {resp.status_code}"}
+        if result.get("status") != "success":
+            return {"status": "error", "error": "下载未完成，请检查 Ollama 后重试"}
         return {"status": "ok", "tag": tag}
     except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+        return {"status": "error", "error": f"本机模型下载失败（{type(exc).__name__}）"}
 
 
 # ── background pull tracking (a pull can take minutes — never block the request) ─
@@ -413,24 +427,63 @@ _pull_lock = threading.Lock()
 _pull_state: dict[str, str] = {}  # tag -> "pulling" | "ok" | "error: ..."
 
 
-def _pull_worker(tag: str) -> None:
-    res = pull_model(tag)
-    with _pull_lock:
-        _pull_state[tag] = "ok" if res.get("status") == "ok" else f"error: {res.get('error')}"
+def _pull_worker(tag: str, base: str, download: bool) -> None:
+    from .local_model_setup import verify_model
+
+    try:
+        if download:
+            res = pull_model(tag, base=base)
+            if res.get("status") != "ok":
+                raise ValueError(str(res.get("error") or "下载失败"))
+        with _pull_lock:
+            _pull_state[tag] = "verifying"
+        verify_model(tag, base=base)
+        with _pull_lock:
+            _pull_state[tag] = "ready"
+    except Exception as exc:
+        message = (
+            str(exc) if isinstance(exc, ValueError) else f"本机验证失败（{type(exc).__name__}）"
+        )
+        with _pull_lock:
+            _pull_state[tag] = f"error: {message}"
 
 
 def start_pull(tag: str) -> dict[str, object]:
     """Kick an ollama pull in the background and return immediately. Poll
     ``cookbook_snapshot()['pulls']`` (or ``installed`` flags) for progress."""
-    if not re.fullmatch(r"[A-Za-z0-9._/:-]{1,120}", tag or ""):
+    return _start_job(tag, download=True)
+
+
+def start_verify(tag: str) -> dict[str, object]:
+    return _start_job(tag, download=False)
+
+
+def _start_job(tag: str, *, download: bool) -> dict[str, object]:
+    from .local_model_setup import clear_verification, valid_tag
+
+    if not valid_tag(tag):
         return {"status": "error", "error": "invalid model tag"}
+    try:
+        base = _ollama_base_url()
+    except ValueError as exc:
+        return {"status": "error", "error": str(exc)}
     with _pull_lock:
-        if _pull_state.get(tag) == "pulling":
+        if _pull_state.get(tag) in ("pulling", "verifying"):
             return {"status": "already_pulling", "tag": tag}
-        _pull_state[tag] = "pulling"
-    threading.Thread(
-        target=_pull_worker, args=(tag,), name=f"ollama-pull-{tag}", daemon=True
-    ).start()
+        if any(state in ("pulling", "verifying", "deploying") for state in _pull_state.values()):
+            return {"status": "error", "error": "已有模型正在准备，请等待完成"}
+        if len(_pull_state) >= 64:
+            _pull_state.pop(next(iter(_pull_state)))
+        clear_verification(tag)
+        _pull_state[tag] = "pulling" if download else "verifying"
+    try:
+        threading.Thread(
+            target=_pull_worker, args=(tag, base, download), name="local-model-setup", daemon=True
+        ).start()
+    except RuntimeError:
+        with _pull_lock:
+            _pull_state[tag] = "error: 无法启动模型准备任务"
+        return {"status": "error", "error": "无法启动模型准备任务"}
     return {"status": "started", "tag": tag}
 
 
@@ -439,12 +492,13 @@ def pull_states() -> dict[str, str]:
         return dict(_pull_state)
 
 
-def cookbook_snapshot() -> dict[str, object]:
+def cookbook_snapshot(context_tokens: int = 4096) -> dict[str, object]:
     """Everything the UI needs in one call: hardware + ranked recommendations,
     with installed flags, ollama availability, in-flight pulls, and the catalog
     source. Prefers the live HuggingFace catalog; falls back to the static
     snapshot on a cold cache / offline (serve-stale-while-revalidate)."""
     hw = detect_hardware()
+    hw.context_tokens = context_tokens
     inst = installed_models()
     specs = None
     source = "static"
@@ -457,10 +511,35 @@ def cookbook_snapshot() -> dict[str, object]:
     except Exception:  # noqa: BLE001 — live catalog is strictly best-effort
         specs = None
     recs = recommend(hw, specs or default_catalog(), installed=inst)
+    from .local_model_setup import verification_states
+
+    # Keep installed and in-flight models visible even when a changing memory
+    # budget or refreshed catalog removes them from the recommendation shortlist.
+    states = pull_states()
+    visible = {rec.tag for rec in recs}
+    known = {spec.tag: spec for spec in (specs or default_catalog())}
+    for tag in sorted((inst | set(states)) - visible):
+        spec = known.get(tag)
+        recs.append(
+            Recommendation(
+                tag,
+                spec.label if spec else tag,
+                spec.params_b if spec else 0,
+                DEFAULT_QUANT,
+                0,
+                False,
+                "unrated",
+                None,
+                tag in inst,
+                0,
+                spec.family if spec else "other",
+            )
+        )
     return {
         "hardware": asdict(hw),
         "ollama_available": ollama_available(),
         "recommendations": [asdict(r) for r in recs],
-        "pulls": pull_states(),
+        "pulls": states,
+        "verifications": verification_states(),
         "source": source,
     }

@@ -9,6 +9,8 @@ import os
 import re
 from typing import Any
 
+from runtime.safety.privacy import deny_private_operation
+
 try:
     import anthropic  # type: ignore[import-untyped]
 
@@ -96,6 +98,7 @@ class AnthropicModelRouter(Provider, ModelRouter):
         self.default_model = default_model
 
     def call(self, request: ModelRequest) -> ModelResponse:
+        deny_private_operation("anthropic_inference")
         model = request.model or self.default_model
         with trace_stage(
             "eyes.anthropic_call",
@@ -343,6 +346,7 @@ class AnthropicModelRouter(Provider, ModelRouter):
         """
         from .models import ModelStreamEvent
 
+        deny_private_operation("anthropic_inference")
         model = request.model or self.default_model
         with trace_stage(
             "eyes.anthropic_stream",

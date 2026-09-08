@@ -109,9 +109,7 @@ function FileItem({ file }: { file: WorkingSetFile }) {
 
 function ThinkingStepIcon({ status }: { status?: ThinkingPlanStepStatus }) {
   if (status === "completed") {
-    return (
-      <CheckCircle2Icon className="mt-0.5 size-3 shrink-0 text-success" />
-    );
+    return <CheckCircle2Icon className="mt-0.5 size-3 shrink-0 text-success" />;
   }
   if (status === "in_progress") {
     return (

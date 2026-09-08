@@ -33,6 +33,8 @@ allowed roots · they never re-implement the mode ladder.
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -212,6 +214,15 @@ class ExecutionScope:
         return _path_allowed_by_roots(path, self.readable_roots)
 
 
+# A host-owned request installs the permissions resolved at admission time.
+# Nested Sessions may narrow their own metadata, but they cannot expand this
+# ceiling by switching to code/local/bypass mode in a child context.
+_EXECUTION_SCOPE_CEILING: ContextVar[ExecutionScope | None] = ContextVar(
+    "execution_scope_ceiling",
+    default=None,
+)
+
+
 def _path_allowed_by_roots(path: str | Path, roots: tuple[Path, ...]) -> bool:
     if not roots:
         return False
@@ -237,20 +248,12 @@ def _path_is_same_or_under(path: Path, root: Path) -> bool:
 
 
 def _normalize_permission_mode(value: Any) -> str:
-    raw = str(value or "default").strip().lower()
-    if raw in {"acceptedits", "accept-edits"}:
-        return "acceptEdits"
-    if raw in {
-        "bypasspermissions",
-        "bypass-permissions",
-        "bypass",
-        "yolo",
-        "full",
-    }:
-        return "bypassPermissions"
-    if raw == "plan":
-        return "plan"
-    return "default"
+    # Keep process-scope resolution aligned with the gateway and Codex
+    # sidecar. In particular, aliases such as ``approve-for-me`` and
+    # ``full-access`` must not acquire a different meaning at this layer.
+    from runtime.safety.approval.permission_modes import canonical_permission_mode
+
+    return canonical_permission_mode(value)
 
 
 def _normalize_approval_policy(value: Any, *, permission_mode: str) -> str:
@@ -581,7 +584,7 @@ def resolve_execution_scope(session: Session | None) -> ExecutionScope:
         network_policy = "allow"
         browser_policy = "ask"
 
-    return ExecutionScope(
+    resolved = ExecutionScope(
         mode=write_scope.mode,
         requested_mode=write_scope.requested_mode,
         readable_roots=readable_roots,
@@ -594,6 +597,115 @@ def resolve_execution_scope(session: Session | None) -> ExecutionScope:
         network_policy=network_policy,
         browser_policy=browser_policy,
     )
+    ceiling = _EXECUTION_SCOPE_CEILING.get()
+    if ceiling is None:
+        return resolved
+    return _intersect_execution_scopes(ceiling, resolved)
+
+
+@contextmanager
+def execution_scope_ceiling(scope: ExecutionScope):
+    """Install a non-expandable permission ceiling for nested workers."""
+
+    if not isinstance(scope, ExecutionScope):
+        raise TypeError("execution scope ceiling must be an ExecutionScope")
+    token = _EXECUTION_SCOPE_CEILING.set(scope)
+    try:
+        yield scope
+    finally:
+        # A cancelled lazy provider may unwind in another executor context;
+        # in that case the worker context is already gone and there is no
+        # permission value to leak into a reused context.
+        with suppress(ValueError):
+            _EXECUTION_SCOPE_CEILING.reset(token)
+
+
+def _intersect_execution_scopes(
+    ceiling: ExecutionScope,
+    requested: ExecutionScope,
+) -> ExecutionScope:
+    """Return the set/policy intersection of a host ceiling and child scope."""
+
+    readable = _intersect_roots(ceiling.readable_roots, requested.readable_roots)
+    writable = _intersect_roots(ceiling.writable_roots, requested.writable_roots)
+    # A child cannot turn a denied/approval-gated host policy into allow.
+    return ExecutionScope(
+        mode=ceiling.mode,
+        requested_mode=requested.requested_mode,
+        readable_roots=readable,
+        writable_roots=writable,
+        permission_mode=_restrict_policy(
+            ceiling.permission_mode,
+            requested.permission_mode,
+            ("plan", "default", "bypassPermissions"),
+        ),
+        approval_policy=_restrict_policy(
+            ceiling.approval_policy,
+            requested.approval_policy,
+            ("untrusted", "on-request", "never"),
+        ),
+        sandbox_mode=_restrict_policy(
+            ceiling.sandbox_mode,
+            requested.sandbox_mode,
+            ("sandbox", "full"),
+        ),
+        execution_environment=_restrict_policy(
+            ceiling.execution_environment,
+            requested.execution_environment,
+            ("sandbox", "local"),
+        ),
+        shell_policy=_restrict_policy(
+            ceiling.shell_policy,
+            requested.shell_policy,
+            ("deny", "ask", "allow"),
+        ),
+        network_policy=_restrict_policy(
+            ceiling.network_policy,
+            requested.network_policy,
+            ("deny", "ask", "allow"),
+        ),
+        browser_policy=_restrict_policy(
+            ceiling.browser_policy,
+            requested.browser_policy,
+            ("deny", "ask", "allow"),
+        ),
+    )
+
+
+def _intersect_roots(
+    ceiling_roots: tuple[Path, ...],
+    requested_roots: tuple[Path, ...],
+) -> tuple[Path, ...]:
+    out: list[Path] = []
+    for parent in ceiling_roots:
+        for child in requested_roots:
+            try:
+                parent_resolved = parent.resolve(strict=False)
+                child_resolved = child.resolve(strict=False)
+            except (OSError, RuntimeError, ValueError):
+                # A malformed or looping path must not punch through the
+                # host ceiling.  Drop that candidate and keep the rest of
+                # the intersection fail-closed.
+                continue
+            try:
+                child_resolved.relative_to(parent_resolved)
+                candidate = child_resolved
+            except ValueError:
+                try:
+                    parent_resolved.relative_to(child_resolved)
+                    candidate = parent_resolved
+                except ValueError:
+                    continue
+            if candidate not in out:
+                out.append(candidate)
+    return tuple(out)
+
+
+def _restrict_policy(parent: str, child: str, order: tuple[str, ...]) -> str:
+    try:
+        return order[min(order.index(parent), order.index(child))]
+    except ValueError:
+        return parent
 
 
 __all__ = [
@@ -605,4 +717,5 @@ __all__ = [
     "team_workspace_root",
     "resolve_execution_scope",
     "resolve_write_scope",
+    "execution_scope_ceiling",
 ]

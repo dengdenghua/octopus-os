@@ -637,9 +637,7 @@ function VariantStatRow({
       )}
     >
       <td className="py-1 font-mono">
-        {isLeader && (
-          <TrophyIcon className="mr-1 inline size-3 text-success" />
-        )}
+        {isLeader && <TrophyIcon className="mr-1 inline size-3 text-success" />}
         {label}
       </td>
       <td className="py-1 text-right font-mono">{row.uses}</td>

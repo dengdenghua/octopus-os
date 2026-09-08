@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import threading
 import time
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from runtime.execution.parallel_agents import ParallelAgentOrchestrator
+from runtime.platform.process.session import current_session
+from runtime.platform.process.task_supervisor import TaskRunStatus, TaskSupervisor
 from runtime.research.deep_research import (
     DeepResearchPlanner,
     DeepResearchRequest,
@@ -12,10 +16,15 @@ from runtime.research.deep_research import (
     ResearchRole,
 )
 from runtime.research.prefetch import ResearchPrefetcher
+from runtime.safety.auth.identity import Identity, IdentityStore
 from runtime.sensing.gateway.deep_research_router import (
     _default_job_store_path,
     create_deep_research_router,
 )
+
+
+def _bearer(key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {key}"}
 
 
 def test_deep_research_planner_builds_roles_sources_and_steps():
@@ -204,6 +213,259 @@ def test_plan_endpoint_merges_explicit_materials_thread_uploads_and_dedupes_urls
     ]
     assert len(synology_materials) == 1
     assert any(ev["url"] == "https://www.synology.com/" for ev in data["evidence"])
+
+
+def test_authenticated_research_jobs_are_scoped_to_owner_and_tenant(tmp_path):
+    identities = IdentityStore()
+    identities.add(
+        Identity(actor_id="alice", roles={"operator"}, metadata={"tenant_id": "tenant-a"}),
+        api_key_plaintext="sk-alice",
+    )
+    identities.add(
+        Identity(actor_id="bob", roles={"operator"}, metadata={"tenant_id": "tenant-b"}),
+        api_key_plaintext="sk-bob",
+    )
+    app = FastAPI()
+    app.include_router(
+        create_deep_research_router(
+            identity_store=identities,
+            require_auth=True,
+            job_store_path=tmp_path / "jobs.jsonl",
+        )
+    )
+    client = TestClient(app)
+
+    created = client.post(
+        "/api/research/deep/plan",
+        headers=_bearer("sk-alice"),
+        json={"topic": "private research"},
+    )
+    assert created.status_code == 200
+    job = created.json()
+    assert job["owner_id"] == "alice"
+    assert job["tenant_id"] == "tenant-a"
+
+    own = client.get(
+        f"/api/research/deep/jobs/{job['job_id']}",
+        headers=_bearer("sk-alice"),
+    )
+    assert own.status_code == 200
+    hidden = client.get(
+        f"/api/research/deep/jobs/{job['job_id']}",
+        headers=_bearer("sk-bob"),
+    )
+    assert hidden.status_code == 404
+    assert client.get("/api/research/deep/jobs", headers=_bearer("sk-bob")).json() == {
+        "jobs": [],
+        "count": 0,
+    }
+
+
+def test_authenticated_research_worker_receives_host_execution_lease(tmp_path):
+    identities = IdentityStore()
+    identities.add(
+        Identity(actor_id="alice", roles={"operator"}, metadata={"tenant_id": "tenant-a"}),
+        api_key_plaintext="sk-alice",
+    )
+    supervisor = TaskSupervisor.from_path(
+        tmp_path / "task-runs.json",
+        holder_id="deep-research-worker",
+    )
+    seen: list[dict[str, str | None]] = []
+    ready = threading.Event()
+
+    def runner(description, *, subagent_name, context=None, cancel_event=None):
+        session = current_session()
+        assert session is not None
+        request = session.execution_request
+        assert request is not None
+        seen.append(
+            {
+                "task_id": request.task.task_id,
+                "thread_id": request.task.thread_id,
+                "actor_id": request.task.actor_id,
+                "tenant_id": request.task.tenant_id,
+                "lease_task_id": (
+                    session.execution_lease.assert_allowed().task_id
+                    if session.execution_lease is not None
+                    else None
+                ),
+            }
+        )
+        ready.set()
+        return f"done: {description}"
+
+    orchestrator = ParallelAgentOrchestrator(
+        max_concurrency=1,
+        task_runner=runner,
+        task_supervisor=supervisor,
+    )
+    app = FastAPI()
+    app.include_router(
+        create_deep_research_router(
+            orchestrator=orchestrator,
+            identity_store=identities,
+            require_auth=True,
+            job_store_path=tmp_path / "jobs.jsonl",
+        )
+    )
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/api/research/deep/start",
+            headers=_bearer("sk-alice"),
+            json={
+                "topic": "host bound research",
+                "thread_id": "research-thread",
+                "roles": [
+                    {
+                        "id": "analyst",
+                        "name": "Analyst",
+                        "focus": "market",
+                        "deliverable": "findings",
+                    }
+                ],
+                "max_subagents": 1,
+            },
+        )
+        assert response.status_code == 200, response.json()
+        job = response.json()
+        assert job["host_task_id"] == f"parallel-batch:{job['dispatch_batch_id']}"
+        assert ready.wait(timeout=3.0)
+        for _ in range(150):
+            batch = orchestrator.get_batch(job["dispatch_batch_id"])
+            assert batch is not None
+            if batch.status == "completed":
+                break
+            time.sleep(0.02)
+        assert seen == [
+            {
+                "task_id": seen[0]["task_id"],
+                "thread_id": "research-thread",
+                "actor_id": "alice",
+                "tenant_id": "tenant-a",
+                "lease_task_id": seen[0]["task_id"],
+            }
+        ]
+        record = supervisor.store.get(seen[0]["task_id"])
+        assert record is not None
+        assert record.status == TaskRunStatus.COMPLETED
+        assert record.owner_id == "alice"
+        assert record.parent_task_id == f"parallel-batch:{job['dispatch_batch_id']}"
+        assert record.metadata["tenant_id"] == "tenant-a"
+        assert record.kind == "parallel_agent"
+        aggregate = supervisor.store.get(f"parallel-batch:{job['dispatch_batch_id']}")
+        assert aggregate is not None
+        assert aggregate.status == TaskRunStatus.COMPLETED
+        assert aggregate.lease is None
+        assert aggregate.metadata["tenant_id"] == "tenant-a"
+        assert aggregate.metadata["research_job_id"] == job["job_id"]
+    finally:
+        orchestrator.shutdown(wait=False)
+
+
+def test_authenticated_research_recovery_snapshot_survives_router_restart(tmp_path):
+    identities = IdentityStore()
+    identities.add(
+        Identity(actor_id="alice", roles={"operator"}, metadata={"tenant_id": "tenant-a"}),
+        api_key_plaintext="sk-alice",
+    )
+    supervisor_path = tmp_path / "task-runs.json"
+    supervisor = TaskSupervisor.from_path(supervisor_path, holder_id="research-host")
+    started = threading.Event()
+    release = threading.Event()
+
+    def runner(description, *, subagent_name, context=None, cancel_event=None):
+        started.set()
+        release.wait(timeout=5.0)
+        return f"done: {description}"
+
+    running = ParallelAgentOrchestrator(
+        max_concurrency=1,
+        task_runner=runner,
+        task_supervisor=supervisor,
+    )
+    jobs_path = tmp_path / "jobs.jsonl"
+    first_app = FastAPI()
+    first_app.include_router(
+        create_deep_research_router(
+            orchestrator=running,
+            identity_store=identities,
+            require_auth=True,
+            job_store_path=jobs_path,
+        )
+    )
+    first_client = TestClient(first_app)
+    restarted_supervisor = TaskSupervisor.from_path(
+        supervisor_path,
+        holder_id="research-restarted-host",
+    )
+    restarted = ParallelAgentOrchestrator(
+        max_concurrency=1,
+        task_runner=runner,
+        task_supervisor=restarted_supervisor,
+    )
+    try:
+        started_response = first_client.post(
+            "/api/research/deep/start",
+            headers=_bearer("sk-alice"),
+            json={
+                "topic": "restart-safe research",
+                "thread_id": "restart-research-thread",
+                "roles": [
+                    {
+                        "id": "analyst",
+                        "name": "Analyst",
+                        "focus": "market",
+                        "deliverable": "findings",
+                    }
+                ],
+                "max_subagents": 1,
+            },
+        )
+        assert started_response.status_code == 200, started_response.json()
+        job = started_response.json()
+        assert started.wait(timeout=3.0)
+
+        # Construct the second router only after the first process has
+        # appended the job, matching a service restart that reloads durable
+        # state during startup.
+        second_app = FastAPI()
+        second_app.include_router(
+            create_deep_research_router(
+                orchestrator=restarted,
+                identity_store=identities,
+                require_auth=True,
+                job_store_path=jobs_path,
+            )
+        )
+        second_client = TestClient(second_app)
+
+        recovered = second_client.get(
+            f"/api/research/deep/jobs/{job['job_id']}/recovery-snapshot",
+            headers=_bearer("sk-alice"),
+        )
+        assert recovered.status_code == 200, recovered.json()
+        body = recovered.json()
+        assert body["batch_id"] == job["dispatch_batch_id"]
+        assert body["host_task_id"] == job["host_task_id"]
+        assert body["status"] == "running"
+        assert body["safety"]["durable_only"] is True
+        assert body["tasks"][0]["status"] == "running"
+
+        own_job = second_client.get(
+            f"/api/research/deep/jobs/{job['job_id']}",
+            headers=_bearer("sk-alice"),
+        )
+        assert own_job.status_code == 200
+        assert own_job.json()["host_task_id"] == job["host_task_id"]
+        assert own_job.json()["status"] == "running"
+        assert own_job.json()["recovery_required"] is True
+        assert own_job.json()["recovery_reason"] == "durable_only_recovery_view"
+    finally:
+        release.set()
+        running.shutdown(wait=True)
+        restarted.shutdown(wait=True)
 
 
 def test_research_jobs_persist_across_router_instances(tmp_path):

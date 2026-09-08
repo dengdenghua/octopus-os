@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { currentActorId } from "@/core/auth/api";
 
 import {
   listCapabilityPermissions,
@@ -9,6 +10,18 @@ import {
   type ToolRegistry,
 } from "./tool-registry-api";
 
+export function agentToolRegistryQueryKey(
+  agentId: string | null | undefined,
+  actor = currentActorId(),
+) {
+  return ["agent-tool-registry", actor, agentId ?? ""] as const;
+}
+
+export function capabilityPermissionsQueryKey() {
+  // Capability switches are device-wide runtime policy, not account data.
+  return ["capability-permissions"] as const;
+}
+
 export function useArms() {
   return useQuery({
     queryKey: ["arms"],
@@ -18,8 +31,9 @@ export function useArms() {
 }
 
 export function useAgentToolRegistry(agentId: string | null | undefined) {
+  const actor = currentActorId();
   return useQuery({
-    queryKey: ["agent-tool-registry", agentId],
+    queryKey: agentToolRegistryQueryKey(agentId, actor),
     queryFn: () => getAgentToolRegistry(agentId as string),
     enabled: Boolean(agentId),
   });
@@ -30,21 +44,18 @@ export function useSaveAgentToolRegistry(agentId: string) {
   return useMutation({
     mutationFn: (body: ToolRegistry) => saveAgentToolRegistry(agentId, body),
     onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["agent-tool-registry", agentId],
-      });
+      void queryClient.invalidateQueries({ queryKey: ["agent-tool-registry"] });
       // Agent detail/list also changes (tool_groups, arms) after save
       void queryClient.invalidateQueries({
-        queryKey: ["agent-detail", agentId],
+        queryKey: ["agents"],
       });
-      void queryClient.invalidateQueries({ queryKey: ["agents"] });
     },
   });
 }
 
 export function useCapabilityPermissions() {
   return useQuery({
-    queryKey: ["capability-permissions"],
+    queryKey: capabilityPermissionsQueryKey(),
     queryFn: () => listCapabilityPermissions(),
     staleTime: 30_000,
   });
@@ -57,7 +68,7 @@ export function useUpdateCapabilityPermission() {
       updateCapabilityPermission(group, enabled),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["capability-permissions"],
+        queryKey: capabilityPermissionsQueryKey(),
       });
     },
   });

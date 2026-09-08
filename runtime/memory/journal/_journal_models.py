@@ -259,6 +259,7 @@ class FileRollbackEvent(JournalEvent):
     source_event_ids: list[str] = Field(default_factory=list)
     paths: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    outcomes: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PreviewRefreshEvent(JournalEvent):

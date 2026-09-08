@@ -68,14 +68,12 @@ class AppState:
             if isinstance(journal, JSONLJournal):
                 journal.attach_trace_store(trace_store)
         self.trace_store = trace_store
-        self.task_supervisor = None
-        try:
-            from runtime.platform.process.paths import app_paths
-            from runtime.platform.process.task_supervisor import TaskSupervisor
+        from runtime.platform.process.paths import app_paths
+        from runtime.platform.process.task_supervisor import TaskSupervisor
 
-            self.task_supervisor = TaskSupervisor.from_path(app_paths().task_runs_path)
-        except Exception:  # noqa: BLE001
-            self.task_supervisor = None
+        # A configured service must not silently lose execution ownership
+        # checks when its durable task store cannot initialize.
+        self.task_supervisor = TaskSupervisor.from_path(app_paths().task_runs_path)
 
         base_journal = (
             journal

@@ -129,6 +129,11 @@ export function DeepResearchHistoryPanel({
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                       <span>{job.status}</span>
+                      {job.recovery_required && (
+                        <span className="rounded-md bg-warning/10 px-1.5 py-0.5 text-warning">
+                          {t.deepResearchPanel.recoveryRequired}
+                        </span>
+                      )}
                       {job.lead_agent_name && (
                         <span>{job.lead_agent_name}</span>
                       )}

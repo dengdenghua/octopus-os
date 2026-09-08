@@ -8,6 +8,8 @@ import os
 from collections.abc import Iterator
 from typing import Any
 
+from runtime.safety.privacy import deny_private_operation
+
 try:
     import httpx  # type: ignore[import-untyped]
 
@@ -142,6 +144,7 @@ class OctModelRouter(Provider, ModelRouter):
         return payload
 
     def call(self, request: ModelRequest) -> ModelResponse:
+        deny_private_operation("echo_cloud_inference")
         actor, link = self._link()
         model = request.model or self.default_model
         payload = self._build_payload(request, stream=False)
@@ -208,6 +211,7 @@ class OctModelRouter(Provider, ModelRouter):
         )
 
     def call_stream(self, request: ModelRequest) -> Iterator[ModelStreamEvent]:
+        deny_private_operation("echo_cloud_inference")
         from .openai_compat_stream import iter_openai_sse
 
         actor, link = self._link()

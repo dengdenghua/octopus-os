@@ -1355,7 +1355,10 @@ export function APIPublishSheet({
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-[var(--dialog-lg)] p-0 sm:w-[var(--dialog-lg)]">
+      <SheetContent
+        side="right"
+        className="w-[var(--dialog-lg)] p-0 sm:w-[var(--dialog-lg)]"
+      >
         <SheetHeader className="sr-only">
           <SheetTitle>API Publish</SheetTitle>
         </SheetHeader>

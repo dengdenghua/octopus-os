@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { renderWithProviders } from "@/test/harness";
 
 import {
-  LAST_AGENT_WORKSPACE_ROUTE_KEY,
+  lastAgentWorkspaceRouteStorageKey,
   WorkspaceSurfaceSwitch,
 } from "./workspace-surface-switch";
 
@@ -47,7 +47,7 @@ describe("WorkspaceSurfaceSwitch", () => {
     });
 
     await waitFor(() =>
-      expect(sessionStorage.getItem(LAST_AGENT_WORKSPACE_ROUTE_KEY)).toBe(
+      expect(sessionStorage.getItem(lastAgentWorkspaceRouteStorageKey())).toBe(
         "/workspace/realtime/thread-42?mode=team",
       ),
     );
@@ -55,7 +55,7 @@ describe("WorkspaceSurfaceSwitch", () => {
 
   it("returns from the browser to the remembered EchoAI route", () => {
     sessionStorage.setItem(
-      LAST_AGENT_WORKSPACE_ROUTE_KEY,
+      lastAgentWorkspaceRouteStorageKey(),
       "/workspace/realtime/thread-42?mode=team",
     );
     renderWithProviders(<WorkspaceSurfaceSwitch active="browser" />, {

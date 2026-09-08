@@ -46,6 +46,8 @@ from uuid import uuid4
 
 if TYPE_CHECKING:  # pragma: no cover
     from runtime.execution.agents.base import Agent
+    from runtime.execution.request import ExecutionRequest
+    from runtime.platform.process.task_execution import TaskExecutionGuard
 
 
 # ═══════════════════════════════════════════════════════════
@@ -114,6 +116,12 @@ class Session:
     turn_id: str = field(default_factory=lambda: uuid4().hex)
     started_at: float = field(default_factory=time.time)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Runtime-owned execution authority, never derived from request/model
+    # metadata. Child dataclass copies retain the same closeable lease guard.
+    execution_lease: TaskExecutionGuard | None = field(default=None, repr=False, compare=False)
+    # Host-owned immutable execution context.  Legacy callers leave this None;
+    # new provider-neutral entrypoints bind it before any side effect.
+    execution_request: ExecutionRequest | None = field(default=None, repr=False, compare=False)
 
     @property
     def agent_id(self) -> str | None:
@@ -176,7 +184,17 @@ def session_scope(session: Session) -> Iterator[Session]:
     model_actor_tok = _model_actor.set(session.actor)
 
     try:
-        yield session
+        # Host-scoped sessions carry an immutable provider-neutral request.
+        # Bind it for the whole synchronous turn so tool handlers and worker
+        # threads can inspect the same task identity without trusting mutable
+        # metadata. Legacy sessions keep the old behavior.
+        if session.execution_request is None:
+            yield session
+        else:
+            from runtime.execution.request import execution_request_scope
+
+            with execution_request_scope(session.execution_request):
+                yield session
     finally:
         _current_session.reset(tok_session)
         _current_agent_id.reset(tok_agent)

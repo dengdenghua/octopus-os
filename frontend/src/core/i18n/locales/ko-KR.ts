@@ -72,6 +72,7 @@ export const koKR: Translations = {
       `${method} ${path}이(가) 스텁 데이터를 반환했습니다. 실제 백엔드 엔드포인트가 활성화되기 전까지 이 워크스페이스 상태는 개발용 fallback으로 간주하세요.`,
     openSidebarMenu: "사이드바 메뉴 열기",
     loadingWorkspace: "작업 공간 불러오는 중...",
+    startingSystem: "시스템 서비스를 시작하는 중입니다. 잠시 기다려 주세요...",
   },
 
   // Home
@@ -85,8 +86,7 @@ export const koKR: Translations = {
   // Echo OS landing page
   landing: {
     tagline: "자율 작업을 안전하게 감독하는 Agent OS",
-    subtitle:
-      "계획·실행·관찰·기억·개선을 하나의 로컬 작업 공간에서",
+    subtitle: "계획·실행·관찰·기억·개선을 하나의 로컬 작업 공간에서",
     getStarted: "시작하기",
     clickToEnter: "클릭하여 작업 공간으로 이동",
     capabilitiesPanel: "Agent와 운영자를 위한 핵심 실행 환경",
@@ -459,12 +459,12 @@ export const koKR: Translations = {
     maxSubagents: "최대 하위 에이전트 수",
     maxSearches: "최대 검색 수",
     permissionModeLabel: "권한",
-    permissionModeDefault: "기본",
+    permissionModeDefault: "승인 요청",
     permissionModeDefaultDesc:
-      "모든 쓰기 작업과 명령은 먼저 확인을 받습니다. 가장 안전합니다.",
-    permissionModeAcceptEdits: "편집 수락",
+      "작업 공간 편집과 일반 명령을 허용하고 네트워크 또는 경계 밖 작업은 확인합니다.",
+    permissionModeAcceptEdits: "자동 승인",
     permissionModeAcceptEditsDesc:
-      "파일 변경은 자동으로 실행되며, 명령 실행 전에는 확인합니다.",
+      "같은 작업 공간 경계를 유지하며 경계 밖 작업은 독립 검토 에이전트가 판단합니다.",
     permissionModeBypass: "완전 액세스",
     permissionModeBypassDesc:
       "모든 작업을 확인 없이 자동 실행합니다. 최대 권한입니다.",
@@ -488,8 +488,8 @@ export const koKR: Translations = {
     projectWriteAccess: "프로젝트 쓰기",
     projectReadOnly: "읽기 전용",
     permissionFullAccess: "완전 액세스",
-    permissionAcceptEdits: "편집 수락",
-    permissionConfirm: "기본",
+    permissionAcceptEdits: "자동 승인",
+    permissionConfirm: "승인 요청",
     addImage: "이미지 추가 (붙여넣기 / 드래그 / 선택)",
     addAppshot: "현재 창 스냅샷 첨부",
     capturingAppshot: "현재 창을 첨부하는 중…",
@@ -1826,6 +1826,13 @@ export const koKR: Translations = {
       "예: 3페이지를 위험 매트릭스로 바꾸고 현재 테마는 유지",
     officeEditHint:
       "수정 요청은 현재 작업으로 전송되며 완료 후 미리보기가 새로고침됩니다",
+    fileAccessDenied:
+      "파일을 읽을 수 없습니다. 로그인 상태와 이 작업의 디렉터리 접근 권한을 확인하세요.",
+    fileMissing:
+      "파일이 없거나 이동되었습니다. 원래 위치를 확인하고 다시 시도하세요.",
+    fileUnavailable: "지금은 파일을 읽을 수 없습니다. 다시 시도하세요.",
+    fileTooLarge:
+      "파일이 너무 커서 여기서 미리 보거나 다운로드할 수 없습니다. 파일 관리자에서 원본을 여세요.",
     previewError:
       "미리보기를 불러올 수 없습니다. 로그인 상태를 확인한 후 다시 시도하세요.",
     previewRetry: "미리보기 다시 불러오기",
@@ -3262,6 +3269,8 @@ export const koKR: Translations = {
       "이번 답변이 중단되었습니다. 대화를 계속하거나 재시도하세요.",
     networkLost:
       "네트워크 연결이 끊겼습니다. 작업이 자동으로 일시정지되었습니다 — 메시지를 보내 체크포인트에서 재개하세요.",
+    eventStreamOverloaded:
+      "이벤트 스트림이 일시적으로 혼잡합니다. 완료된 단계는 보존되었습니다. 재시도하여 계속하세요.",
     turnFailed:
       "이번 턴이 완료되기 전에 중지되었습니다. 대화를 계속하거나 재시도하세요.",
     guardBlocked:
@@ -5575,11 +5584,18 @@ export const koKR: Translations = {
     cancelledTasks: (count: number) => `${count}개 취소`,
     coordinationWarnings: (count: number) => `${count}개 조정 경고`,
     rerunnableTasks: (count: number) => `${count}개 재실행 가능한 작업`,
+    recoveryResume: "스냅샷에서 안전한 작업 다시 실행",
+    recoveryResuming: "다시 실행 중…",
+    recoveryResumeFailed:
+      "복구를 시작할 수 없습니다. 스냅샷을 새로 고친 후 다시 시도하세요",
     failedTasks: (count: number) => `${count}개 실패`,
     dependencyBlocked: (count: number) => `${count}개 의존성 차단`,
     checkpointSequence: (sequence: number) => `체크포인트 #${sequence}`,
     recoverySafe: "redacted",
     recoveryUnsafe: "원시 데이터 포함됨",
+    durableRecovery: "내구성 복구 보기",
+    durableRecoveryHint:
+      "재시작 후 워커 출력은 숨겨집니다. 재개하기 전에 복구 대기열을 확인하세요.",
     statusLabels: {
       pending: "Pending",
       running: "Running",
@@ -6547,6 +6563,8 @@ export const koKR: Translations = {
     readingGitDiff: (running) =>
       running ? "Git 차이점 읽는 중" : "Git 차이점 읽기 완료",
     committingGit: (running) => (running ? "Git 커밋 중" : "Git 커밋 완료"),
+    subagentUsage: (tokens, costUsd) =>
+      `거버넌스 사용량: ${tokens.toLocaleString()} tokens · $${costUsd.toFixed(4)}`,
   },
 
   // Store utilities
@@ -7937,9 +7955,10 @@ export const koKR: Translations = {
     aiModeRecommended: (label: string) => `이 디바이스에 권장: ${label}`,
     efficiencyMode: "효율 모드",
     efficiencyModeDesc:
-      "클우드 고성능 모델을 우선하여 더 빠르고 강력한 응답을 제공합니다.",
+      "클라우드 모델을 허용합니다. 작업 내용, 파일 발췌문 및 대화 기록이 선택한 서비스로 전송될 수 있습니다.",
     privacyMode: "프라이버시 모드",
-    privacyModeDesc: "로컬 모델을 우선하여 데이터가 이 디바이스에 유지됩니다.",
+    privacyModeDesc:
+      "이 기기의 모델만 사용하며 사용할 수 없으면 중지합니다. 네트워크 도구와 검증되지 않은 실행 방식은 차단됩니다.",
     detectButton: "감지",
     recommendedTag: "권장",
     enabledTag: "활성",
@@ -7979,7 +7998,7 @@ export const koKR: Translations = {
   sandboxSettings: {
     title: "샌드박스 및 실행 권한",
     description:
-      "실행 환경과 권한 수준은 독립적인 두 축으로 자유롭게 조합할 수 있습니다. 예: '샌드박스 + 완전 액세스'는 격리 환경에서 완전 자동, '로컬 + 편집 수락'은 이 머신에서 실행하되 명령은 확인을 요청합니다.",
+      "권한 수준이 실행 경계와 검토자를 결정합니다. '승인 요청'과 '자동 승인'은 작업 공간 샌드박스에서 실행하고 '완전 액세스'는 로컬에서 실행합니다. 네트워크는 별도로 설정합니다.",
     activeTag: "현재",
     scopeNote:
       "변경 사항은 로컬 설정에 저장되며 이후의 모든 새 작업에 적용됩니다. 실행 중인 작업에는 영향을 주지 않습니다.",
@@ -8019,14 +8038,14 @@ export const koKR: Translations = {
     },
     permission: {
       default: {
-        label: "기본",
+        label: "승인 요청",
         description:
-          "모든 쓰기 작업과 명령은 먼저 확인을 받습니다. 가장 안전합니다.",
+          "작업 공간 편집과 일반 명령을 허용하고 네트워크 또는 경계 밖 작업은 확인합니다.",
       },
       acceptEdits: {
-        label: "편집 수락",
+        label: "자동 승인",
         description:
-          "파일 변경은 자동으로 실행되며, 명령 실행 전에는 확인합니다.",
+          "같은 작업 공간 경계를 유지하며 경계 밖 작업은 독립 검토 에이전트가 판단합니다.",
       },
       bypassPermissions: {
         label: "완전 액세스",
@@ -9310,6 +9329,10 @@ export const koKR: Translations = {
     batchEventTitle: (status) => `배치 ${status}`,
     subagentEventTitle: (name, status) => `${name} ${status}`,
     subagentFallback: "서브에이전트",
+    durableRecovery: "내구성 복구 보기",
+    durableRecoveryHint:
+      "워커 출력은 숨겨져 있습니다. 재개하기 전에 복구 대기열을 확인하세요.",
+    recoveryRequired: "복구 검토 필요",
     statusComplete: "완료",
     statusUpdated: "업데이트됨",
     routeBlocked: "경로 차단됨",
@@ -9422,11 +9445,15 @@ export const koKR: Translations = {
         "로컬 지식 베이스가 실행 중이지만 연결 자격 증명이 만료되었습니다. 다시 연결하는 중…",
       notFound:
         "echo-storage를 찾을 수 없습니다. 로컬 지식 베이스 서비스를 설치하거나 ECHO_STORAGE_CMD를 설정한 후 다시 시도하세요.",
+      browseOnly:
+        "색인 서비스가 오프라인입니다. 로컬 파일은 계속 찾아보고 참조할 수 있습니다.",
       startFailed:
         "로컬 지식 베이스 서비스 시작에 실패했습니다. 백엔드 로그를 확인한 후 다시 시도하세요.",
       notConnected: "로컬 지식 베이스 서비스에 아직 연결되지 않았습니다: {url}",
       networkError:
         "로컬 지식 베이스 서비스에 연결할 수 없습니다. 서비스가 실행 중인지 확인한 후 다시 시도하세요.",
+      folderPickerUnavailable:
+        "시스템 폴더 선택기를 열 수 없습니다. 데스크톱 브리지 또는 로컬 백엔드를 확인한 후 다시 시도하세요.",
     },
     toolbar: {
       authorize: "승인",

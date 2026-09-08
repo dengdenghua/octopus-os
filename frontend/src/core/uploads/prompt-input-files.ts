@@ -12,10 +12,19 @@ export type PromptInputFilePart = FileUIPart & {
   uploaded?: UploadedFileInfo;
 };
 
+/** Server-resolvable file references selected from the local workspace. */
+export interface PromptInputContextFile {
+  path: string;
+  workDir?: string | null;
+  sourceLabel?: string | null;
+  resourceId?: string | null;
+}
+
 /** A composed message from the input box: plain text plus uploaded files. */
 export type PromptInputMessage = {
   text: string;
   files: PromptInputFilePart[];
+  contextFiles?: PromptInputContextFile[];
 };
 
 export async function promptInputFilePartToFile(

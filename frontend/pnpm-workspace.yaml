@@ -1,4 +1,6 @@
 allowBuilds:
   electron: true
+  # The desktop release uses NSIS; the optional Squirrel installer is unused.
+  electron-winstaller: false
   esbuild: true
   sharp: true

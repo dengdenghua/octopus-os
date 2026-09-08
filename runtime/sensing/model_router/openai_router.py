@@ -14,6 +14,7 @@ from runtime.platform.models.model_capabilities import (
     model_is_reasoning,
     model_rejects_temperature,
 )
+from runtime.safety.privacy import PrivacyViolation, is_loopback_endpoint, require_local_router
 
 from .custom_model_flags import (
     custom_model_entry_for,
@@ -163,6 +164,7 @@ class OpenAIModelRouter(Provider, ModelRouter):
         self.last_compatibility_events: list[dict[str, Any]] = []
 
     def call(self, request: ModelRequest) -> ModelResponse:
+        require_local_router(self)
         model = request.model or self.default_model
 
         with trace_stage(
@@ -178,9 +180,12 @@ class OpenAIModelRouter(Provider, ModelRouter):
                 if self._client is not None
                 else httpx.Client(
                     timeout=self.timeout_seconds,
+                    trust_env=not is_loopback_endpoint(self.base_url),
+                    follow_redirects=False,
                 )
             )
             try:
+                require_local_router(self)
                 resp = client.post(
                     f"{self.base_url}/chat/completions",
                     json=payload,
@@ -201,6 +206,7 @@ class OpenAIModelRouter(Provider, ModelRouter):
                     retry = retry_queue.pop(0)
                     attempt += 1
                     self._record_compat_retry(span, model, profile, attempt, retry)
+                    require_local_router(self)
                     resp = client.post(
                         f"{self.base_url}/chat/completions",
                         json=retry.payload,
@@ -217,6 +223,8 @@ class OpenAIModelRouter(Provider, ModelRouter):
                             seen_payloads=seen_payloads,
                         ),
                     )
+            except PrivacyViolation:
+                raise
             except Exception as e:  # noqa: BLE001
                 raise OpenAIRouterError(
                     f"http_error: {type(e).__name__}: {_redact_error_text(str(e))}"
@@ -284,6 +292,8 @@ class OpenAIModelRouter(Provider, ModelRouter):
 
         from .openai_compat_stream import iter_openai_sse
 
+        require_local_router(self)
+
         model = request.model or self.default_model
         self.last_compatibility_events = []
 
@@ -300,6 +310,8 @@ class OpenAIModelRouter(Provider, ModelRouter):
                 self._client
                 if self._client is not None
                 else httpx.Client(
+                    trust_env=not is_loopback_endpoint(self.base_url),
+                    follow_redirects=False,
                     # Streaming-tuned timeouts: ``connect`` for the initial
                     # handshake, ``read`` is the gap between successive bytes
                     # — must be tight or a hung upstream (mimo / smaller
@@ -398,6 +410,7 @@ class OpenAIModelRouter(Provider, ModelRouter):
             try:
                 if cancellation.is_cancelled:
                     return
+                require_local_router(self)
                 with client.stream(
                     "POST",
                     url,
@@ -436,6 +449,7 @@ class OpenAIModelRouter(Provider, ModelRouter):
                     retry = retry_queue.pop(0)
                     attempt += 1
                     self._record_compat_retry(span, model, profile, attempt, retry)
+                    require_local_router(self)
                     with client.stream(
                         "POST",
                         url,

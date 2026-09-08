@@ -7,13 +7,13 @@ They reason about:
     chitchat, cloud for serious work. Best speed × quality tradeoff
     for most users. (Default.)
 
-  * **隐私模式 (privacy)** — never leave the machine. All turns route
-    to the local model regardless of complexity. Files stay local.
-    Slower / weaker on hard tasks, but zero data exits the host.
+  * **隐私模式 (privacy)** — admit only verified loopback model
+    transports and explicitly local tools. Stop when local inference
+    is unavailable; never escalate to a cloud provider. This is an
+    Agent application policy, not an operating-system firewall.
 
-This module is the user-facing knob. Internally it sits **above**
-``turn_complexity``: AI mode maps to a routing override that the
-classifier honors.
+This module is the canonical policy source. Routing, model transports,
+tool execution and the Storage gateway enforce the same setting.
 
 Operator/user setting flow:
 
@@ -78,23 +78,21 @@ def current_ai_mode() -> AIMode:
       2. ``data/ai_mode.json`` (user setting from UI)
       3. ``"efficiency"`` (default)
 
-    Always returns a valid mode — corrupted files / unknown values
-    fall through to the default.
+    An unreadable or malformed existing policy fails closed to privacy.
     """
     env_val = os.environ.get("ECHO_AI_MODE")
-    if env_val and env_val.strip().lower() in _VALID_MODES:
-        return env_val.strip().lower()  # type: ignore[return-value]
+    if env_val is not None:
+        return "efficiency" if env_val.strip().lower() == "efficiency" else "privacy"
 
     p = _state_path()
-    if p.is_file():
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            mode = data.get("mode")
-            if isinstance(mode, str) and mode.lower() in _VALID_MODES:
-                return mode.lower()  # type: ignore[return-value]
-        except Exception:  # noqa: BLE001 — corrupted file → default
-            pass
-    return _DEFAULT_MODE
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        mode = data.get("mode") if isinstance(data, dict) else None
+        return "efficiency" if mode == "efficiency" else "privacy"
+    except FileNotFoundError:
+        return _DEFAULT_MODE
+    except (OSError, ValueError):
+        return "privacy"
 
 
 def set_ai_mode(mode: str) -> AIMode:
@@ -111,19 +109,16 @@ def set_ai_mode(mode: str) -> AIMode:
         raise ValueError(
             f"unknown AI mode {mode!r}; expected one of {_VALID_MODES}",
         )
-    p = _state_path()
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(
-            json.dumps(
-                {"mode": canonical, "set_at": time.time()},
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-    except OSError as exc:
-        _log.warning("ai_mode persist failed: %s", exc)
+    env_mode = os.environ.get("ECHO_AI_MODE")
+    if env_mode is not None and canonical != current_ai_mode():
+        raise ValueError("AI 模式已由设备环境配置锁定，无法在界面中修改。")
+    from runtime.platform.io import atomic_write_json
+
+    # No backup rotation: readers must never observe a missing policy between
+    # two renames. Persistence errors must reach the UI, never false success.
+    atomic_write_json(
+        _state_path(), {"mode": canonical, "set_at": time.time()}, keep_backup=False
+    )
     return canonical  # type: ignore[return-value]
 
 
@@ -151,45 +146,35 @@ class DeviceSummary:
 
 
 def _detect_local_model() -> tuple[bool, str | None]:
-    """Whether a local model server appears available.
+    """Require a loopback model catalog, not merely an open application port."""
+    import urllib.request
 
-    Looks for:
-      * ``ECHO_MODEL_LOCAL`` env (explicit operator config)
-      * ``ollama`` on PATH + a local server on :11434
-      * LM Studio default port 1234
-    """
-    if os.environ.get("ECHO_MODEL_LOCAL"):
-        return True, "ECHO_MODEL_LOCAL configured"
+    from runtime.safety.privacy import is_loopback_endpoint, private_urlopen
+    from runtime.sensing.model_router.custom_model_flags import read_custom_models
 
-    if shutil.which("ollama"):
+    endpoints: list[str] = []
+    for entry in (read_custom_models() or {}).values():
+        base = entry.get("base_url") if isinstance(entry, dict) else None
+        if is_loopback_endpoint(base):
+            endpoints.append(f"{base.rstrip('/')}/models")
+    endpoints.extend([
+        "http://127.0.0.1:11434/api/tags",
+        "http://127.0.0.1:1234/v1/models",
+    ])
+    for endpoint in list(dict.fromkeys(endpoints))[:8]:
         try:
-            r = subprocess.run(
-                ["ollama", "list"],
-                capture_output=True,
-                text=True,
-                timeout=2.0,
-                check=False,
-            )
-            if r.returncode == 0 and r.stdout.strip().count("\n") >= 1:
-                return True, "ollama detected with at least one model"
-        except (OSError, subprocess.SubprocessError):  # noqa: BLE001 — ollama check is best-effort
-            pass
-
-    # Best-effort port probe — LM Studio / vLLM default
-    try:
-        import socket
-
-        for port in (11434, 1234, 8000):
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(0.3)
-            try:
-                if sock.connect_ex(("127.0.0.1", port)) == 0:
-                    return True, f"local server on port {port}"
-            finally:
-                sock.close()
-    except OSError:  # noqa: BLE001 — port probe is best-effort
-        pass
-
+            with private_urlopen(urllib.request.Request(endpoint), timeout=0.3) as response:
+                catalog = json.loads(response.read(64 * 1024))
+            if not isinstance(catalog, dict):
+                continue
+            models = catalog.get("models") or catalog.get("data")
+            if isinstance(models, list) and any(
+                isinstance(model, dict) and (model.get("id") or model.get("name"))
+                for model in models
+            ):
+                return True, "local model catalog available"
+        except (OSError, ValueError):
+            continue
     return False, None
 
 
@@ -229,23 +214,9 @@ def _detect_gpu() -> tuple[bool, str | None]:
 
 def _detect_ram_gb() -> float:
     """Total RAM in GB. Returns 0 on failure."""
-    try:
-        # psutil is in pyproject deps; fall back to platform-specific if missing
-        import psutil  # type: ignore[import-untyped]
+    from runtime.platform.system_memory import total_memory_gb
 
-        return psutil.virtual_memory().total / (1024**3)
-    except ImportError:  # noqa: BLE001 — RAM check is best-effort, fall back to /proc
-        pass
-    try:
-        # Linux fallback
-        with open("/proc/meminfo", encoding="utf-8") as f:
-            for line in f:
-                if line.startswith("MemTotal:"):
-                    kb = int(line.split()[1])
-                    return kb / (1024**2)
-    except OSError:  # noqa: BLE001 — RAM check is best-effort
-        pass
-    return 0.0
+    return total_memory_gb()
 
 
 def _detect_cpu_count() -> int:
@@ -291,7 +262,7 @@ def detect_device_summary() -> DeviceSummary:
 
     ram_gb = _detect_ram_gb()
     cpu_count = _detect_cpu_count()
-    cloud = _detect_cloud_reachable()
+    cloud = False if current_ai_mode() == "privacy" else _detect_cloud_reachable()
 
     if not cloud:
         notes.append("no cloud LLM reachable")
@@ -326,9 +297,8 @@ def recommend_mode(summary: DeviceSummary) -> AIMode:
 def apply_ai_mode_override(verdict: str) -> str:
     """Map a complexity verdict through the active AI mode.
 
-    Privacy mode pins everything to ``local`` — the router will then
-    escalate up if no local model is configured (so we never silently
-    ship data to cloud when the user asked for privacy).
+    Privacy mode pins to local. Selection and provider transports separately
+    enforce that no cloud fallback is permitted.
 
     Efficiency mode is a no-op pass-through; the 3-tier classifier
     decides per turn.

@@ -40,6 +40,7 @@ class ResearchMaterial(BaseModel):
     kind: Literal["file", "url", "text", "site"] = "text"
     title: str = ""
     path: str | None = None
+    resource_id: str | None = None
     url: str | None = None
     text: str | None = None
     notes: str | None = None
@@ -186,6 +187,11 @@ class ResearchJob(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     job_id: str
+    # Kept in this compatibility module as well as the canonical split model
+    # so older importers cannot lose tenant or host-task coordinates when
+    # loading persisted jobs.
+    owner_id: str | None = None
+    tenant_id: str | None = None
     thread_id: str | None = None
     lead_agent_name: str | None = None
     topic: str
@@ -202,6 +208,11 @@ class ResearchJob(BaseModel):
     steps: list[ResearchStep]
     max_searches: int
     dispatch_batch_id: str | None = None
+    host_task_id: str | None = None
+    # Additive execution-plane marker for jobs loaded after a scheduler
+    # restart. The workflow ``status`` remains backward compatible.
+    recovery_required: bool = False
+    recovery_reason: str | None = None
     final_report_format: str = "markdown"
     final_report: str | None = None
     completed_at: str | None = None

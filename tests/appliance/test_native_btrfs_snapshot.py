@@ -175,8 +175,7 @@ def test_btrfs_filesystem_uuid_accepts_duplicate_systemd_mount_observations(
     )
 
     assert (
-        native_btrfs_snapshot._btrfs_filesystem_uuid(Path("/mnt/volume/source"))
-        == filesystem_uuid
+        native_btrfs_snapshot._btrfs_filesystem_uuid(Path("/mnt/volume/source")) == filesystem_uuid
     )
 
 

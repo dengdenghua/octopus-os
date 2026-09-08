@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+
+import runtime.execution.suckers.builtins as builtins_module
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.execution.suckers.builtins import _read_file
 from runtime.execution.suckers.write_skills import _write_text_file
@@ -125,7 +127,9 @@ class TestHandlerException:
         assert step.result.status == "failed"
         assert step.result.error_type == "ValueError"
 
-    def test_transient_handler_error_retries_once(self, registry, immunity, journal, budget):
+    def test_transient_canonical_read_handler_error_retries_once(
+        self, registry, immunity, journal, budget, monkeypatch
+    ):
         calls = {"count": 0}
 
         def flaky(**kw):
@@ -134,12 +138,17 @@ class TestHandlerException:
                 raise TimeoutError("temporary timeout")
             return {"ok": True}
 
+        # The effect receipt layer only grants retry-safe status to exact
+        # server-owned read handlers. Patch the canonical builtin so this
+        # remains a real retry test without weakening the fail-closed rule for
+        # replaceable handlers.
+        monkeypatch.setattr(builtins_module, "_read_file", flaky)
         registry.register(
             Skill(
-                name="flaky",
+                name="read_file",
                 description="fails once",
-                affinity=["demo"],
-                trusted_source="skill://public/flaky",
+                affinity=["read"],
+                trusted_source="skill://public/read_file",
                 handler=flaky,
             )
         )
@@ -148,7 +157,7 @@ class TestHandlerException:
         step = exe.execute_step(
             step_id=0,
             node_id="n0",
-            sucker_id=SkillId("flaky"),
+            sucker_id=SkillId("read_file"),
             args={},
             caller="arms/code_arm",
             task_id=budget.task_id,
@@ -192,6 +201,40 @@ class TestHandlerException:
         assert not step.success
         assert calls["count"] == 1
         assert step.result.error_type == "ValueError"
+
+    def test_unknown_handler_timeout_fails_closed_without_retry(
+        self, registry, immunity, journal, budget
+    ):
+        calls = {"count": 0}
+
+        def unknown(**kw):
+            calls["count"] += 1
+            raise TimeoutError("uncertain effect")
+
+        registry.register(
+            Skill(
+                name="unknown_timeout",
+                description="unknown effect handler",
+                affinity=["demo"],
+                trusted_source="skill://public/unknown_timeout",
+                handler=unknown,
+            )
+        )
+
+        step = ToolExecutor(registry, immunity, journal).execute_step(
+            step_id=0,
+            node_id="n0",
+            sucker_id=SkillId("unknown_timeout"),
+            args={},
+            caller="arms/code_arm",
+            task_id=budget.task_id,
+            arm_id=ArmId("code_arm"),
+            budget=budget,
+        )
+
+        assert not step.success
+        assert step.result.status == "timeout"
+        assert calls["count"] == 1
 
 
 class TestImmunityReject:

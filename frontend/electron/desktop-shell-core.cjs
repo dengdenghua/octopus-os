@@ -33,6 +33,13 @@ function isDirectDesktopItem(candidate, desktopDir) {
  */
 function resolveMoveTarget(srcPath, destDir, desktopDir) {
   const desktop = path.resolve(desktopDir);
+  if (
+    typeof srcPath !== "string" ||
+    typeof destDir !== "string" ||
+    !destDir.trim()
+  ) {
+    return { error: "Source and destination must be non-empty paths" };
+  }
   if (!isDirectDesktopItem(srcPath, desktop)) {
     return { error: "Only direct items on the Desktop can be moved" };
   }
@@ -74,9 +81,25 @@ function readJournalFile(filePath) {
   }
 }
 
-/** Persist the organizer journal (pretty JSON). */
+/** Replace the journal only after a complete, flushed temporary file exists. */
 function writeJournalFile(filePath, entries) {
-  fs.writeFileSync(filePath, JSON.stringify(entries, null, 2));
+  const temporary = `${filePath}.${process.pid}.${require("crypto").randomUUID()}.tmp`;
+  let descriptor;
+  try {
+    descriptor = fs.openSync(temporary, "wx", 0o600);
+    fs.writeFileSync(descriptor, JSON.stringify(entries, null, 2));
+    fs.fsyncSync(descriptor);
+    fs.closeSync(descriptor);
+    descriptor = undefined;
+    fs.renameSync(temporary, filePath);
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    try {
+      fs.unlinkSync(temporary);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
 }
 
 module.exports = {

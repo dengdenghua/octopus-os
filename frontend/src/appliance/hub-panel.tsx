@@ -1,4 +1,15 @@
 import {
+  WorkbenchAppPlacement,
+  workbenchAppForAsset,
+  canOpenWorkbenchAsset,
+} from "./workbench-app-placement";
+import { CoreAppCard } from "./core-app-card";
+import {
+  supportsPresentation,
+  WORKBENCH_BUILTIN_APPS,
+} from "@/core/workbench/apps";
+import { syncWorkbenchAvailability } from "@/core/workbench/availability";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -2080,6 +2091,8 @@ export function HubPanel({
   onClose,
   onAppsChanged,
   onOpenDeviceApp,
+  onOpenSystemApp,
+  onOpenWorkbench,
   onOpenAgentAssets,
 }: {
   open: boolean;
@@ -2087,6 +2100,8 @@ export function HubPanel({
   onClose: () => void;
   onAppsChanged?: () => void;
   onOpenDeviceApp?: (app: HubApp) => void;
+  onOpenSystemApp?: (route: string) => void;
+  onOpenWorkbench?: (route: string) => void;
   onOpenAgentAssets?: (asset: AgentHubAsset) => void;
 }) {
   const [view, setView] = useState<"device" | "agent">("device");
@@ -2176,6 +2191,7 @@ export function HubPanel({
     fetchAgentHubCatalog()
       .then((result) => {
         setAgentCatalog(result);
+        void syncWorkbenchAvailability().catch(() => undefined);
         setAgentError(result.available ? null : result.error);
       })
       .catch((reason) => {
@@ -2328,6 +2344,7 @@ export function HubPanel({
   const deviceCounts = useMemo(
     () => ({
       installed:
+        WORKBENCH_BUILTIN_APPS.filter((app) => app.delivery === "core").length +
         (catalog?.apps.filter((app) => app.installation.installed).length ??
           0) +
         (agentCatalog?.assets.filter(
@@ -2368,6 +2385,18 @@ export function HubPanel({
     [operations],
   );
 
+  const coreApps = WORKBENCH_BUILTIN_APPS.filter(
+    (app) => app.delivery === "core",
+  );
+  const visibleCoreApps = coreApps.filter(
+    (app) =>
+      (["all", "installed"].includes(category) ||
+        supportsPresentation(app, category as "standalone" | "workbench")) &&
+      `${app.name} ${app.description}`
+        .toLocaleLowerCase()
+        .includes(search.trim().toLocaleLowerCase()),
+  );
+
   const visibleApps = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
     return (catalog?.apps ?? []).filter((app) => {
@@ -2390,11 +2419,24 @@ export function HubPanel({
     const needle = search.trim().toLocaleLowerCase();
     return (agentCatalog?.assets ?? []).filter((asset) => {
       if (!isWorkbenchApplication(asset)) return false;
-      if (category === "standalone") return false;
+      const registeredApp = workbenchAppForAsset(asset);
+      if (
+        (category === "standalone" || category === "workbench") &&
+        (!registeredApp ||
+          !supportsPresentation(
+            registeredApp,
+            category as "standalone" | "workbench",
+          ))
+      )
+        return false;
       if (category === "installed" && !asset.installed) return false;
       if (category === "updates" && asset.lifecycleState !== "update_available")
         return false;
-      if (!["all", "workbench", "installed", "updates"].includes(category))
+      if (
+        !["all", "standalone", "workbench", "installed", "updates"].includes(
+          category,
+        )
+      )
         return false;
       if (!needle) return true;
       return `${asset.name} ${asset.description} ${asset.source}`
@@ -2712,6 +2754,14 @@ export function HubPanel({
   };
 
   const handleWorkbenchAppAction = (asset: AgentHubAsset) => {
+    if (
+      asset.installed &&
+      (asset.lifecycleState === "broken" ||
+        asset.compatibility === "incompatible")
+    ) {
+      setAgentDetailTarget(asset);
+      return;
+    }
     if (!asset.installed || asset.lifecycleState === "update_available") {
       void beginAgentLifecycle("install", asset);
       return;
@@ -2720,7 +2770,12 @@ export function HubPanel({
       void authorizeAgent(asset);
       return;
     }
-    if (onOpenAgentAssets) onOpenAgentAssets(asset);
+    const app = workbenchAppForAsset(asset);
+    if (app && canOpenWorkbenchAsset(asset) && onOpenWorkbench) {
+      onOpenWorkbench(app.workspaceRoute);
+    } else if (!canOpenWorkbenchAsset(asset)) {
+      setAgentDetailTarget(asset);
+    } else if (onOpenAgentAssets) onOpenAgentAssets(asset);
     else setAgentDetailTarget(asset);
   };
 
@@ -2977,6 +3032,18 @@ export function HubPanel({
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
+            {view === "device" && visibleCoreApps.length > 0 && (
+              <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {visibleCoreApps.map((app) => (
+                  <CoreAppCard
+                    key={app.id}
+                    app={app}
+                    onOpen={onOpenSystemApp}
+                    onOpenWorkbench={onOpenWorkbench}
+                  />
+                ))}
+              </div>
+            )}
             {view === "agent" ? (
               agentLoading && !agentCatalog ? (
                 <div className="grid h-56 place-items-center text-sm text-slate-400">
@@ -3043,7 +3110,7 @@ export function HubPanel({
             ) : visibleApps.length === 0 &&
               visibleWorkbenchApps.length === 0 ? (
               <div className="grid h-56 place-items-center text-sm text-slate-400">
-                没有找到匹配的应用
+                {visibleCoreApps.length === 0 ? "没有找到匹配的应用" : ""}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -3070,14 +3137,21 @@ export function HubPanel({
                   />
                 ))}
                 {visibleWorkbenchApps.map((asset) => (
-                  <AgentAssetCard
-                    key={asset.id}
-                    asset={asset}
-                    presentation="workbench"
-                    primaryBusy={agentActionId === asset.id}
-                    onPrimaryAction={handleWorkbenchAppAction}
-                    onDetails={setAgentDetailTarget}
-                  />
+                  <div key={asset.id}>
+                    <AgentAssetCard
+                      key={asset.id}
+                      asset={asset}
+                      presentation="workbench"
+                      primaryBusy={agentActionId === asset.id}
+                      onPrimaryAction={handleWorkbenchAppAction}
+                      onDetails={setAgentDetailTarget}
+                    />
+                    <WorkbenchAppPlacement
+                      asset={asset}
+                      onOpenWindow={onOpenSystemApp}
+                      onOpenWorkbench={onOpenWorkbench}
+                    />
+                  </div>
                 ))}
               </div>
             )}
@@ -3090,7 +3164,7 @@ export function HubPanel({
                   ? `${agentCatalog.plugins} 个插件 · ${agentCatalog.connectors} 个连接器 · ${agentCatalog.skills} 个技能 · 已安装 ${agentCapabilityCounts.installed}${agentCapabilityCounts.updates ? ` · 可更新 ${agentCapabilityCounts.updates}` : ""}`
                   : "Agent 能力目录"
                 : catalog
-                  ? `${visibleApps.length + visibleWorkbenchApps.length}/${catalog.total + (agentCatalog?.workbenches ?? 0)} 个应用 · ${catalog.architecture}`
+                  ? `${visibleCoreApps.length + visibleApps.length + visibleWorkbenchApps.length}/${coreApps.length + catalog.total + (agentCatalog?.workbenches ?? 0)} 个应用 · ${catalog.architecture}`
                   : "Echo 受信目录"}
             </span>
             <span className="flex items-center gap-1.5">

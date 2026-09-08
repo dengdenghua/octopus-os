@@ -6,7 +6,7 @@ import {
   UserPlusIcon,
 } from "lucide-react";
 
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { useDeleteAgent } from "@/core/agents";
 import type { Agent } from "@/core/agents";
 import { useI18n } from "@/core/i18n/hooks";
 import { taskWorkspaceRoute } from "@/core/router/task-workspace-route";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import {
   DEFAULT_PRIMARY_AGENT_ID,
   isPrimaryPersonaAgentId,
@@ -67,13 +68,19 @@ export function AgentCard({
 }: AgentCardProps) {
   const { locale, t } = useI18n();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const activeAgentId = useActiveAgentId();
   const deleteAgent = useDeleteAgent();
   const { confirm, confirmDialog } = useConfirmDialog();
 
   function handleChat() {
     if (isPrimaryIdentity) {
-      navigate(taskWorkspaceRoute({ agentId: agent.name }));
+      navigate(
+        preserveWorkbenchPresentation(
+          taskWorkspaceRoute({ agentId: agent.name }),
+          search,
+        ),
+      );
       return;
     }
     const leaderId = isPrimaryPersonaAgentId(activeAgentId)
@@ -86,7 +93,12 @@ export function AgentCard({
       label: agent.display_name || agent.name,
       openPicker: true,
     });
-    navigate(taskCollaboratorRouteForLeader(leaderId));
+    navigate(
+      preserveWorkbenchPresentation(
+        taskCollaboratorRouteForLeader(leaderId),
+        search,
+      ),
+    );
   }
 
   async function handleDelete() {

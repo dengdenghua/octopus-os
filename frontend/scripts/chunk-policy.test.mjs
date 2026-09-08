@@ -1,7 +1,41 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { heavyDependencyChunk, safeChunkName } from "./chunk-policy.mjs";
+import {
+  heavyDependencyChunk,
+  manualChunks,
+  packageNameFromNodeModule,
+  safeChunkName,
+} from "./chunk-policy.mjs";
+
+test("extracts scoped and unscoped dependency names on Windows paths", () => {
+  assert.equal(
+    packageNameFromNodeModule(
+      "C:\\repo\\node_modules\\@tanstack\\react-query\\build.js",
+    ),
+    "@tanstack/react-query",
+  );
+  assert.equal(
+    packageNameFromNodeModule("/repo/node_modules/react/index.js"),
+    "react",
+  );
+  assert.equal(packageNameFromNodeModule("/repo/src/app.tsx"), null);
+});
+
+test("shares the main-app dependency split policy with workbenches", () => {
+  assert.equal(
+    manualChunks("C:\\repo\\node_modules\\react\\index.js"),
+    "react-vendor",
+  );
+  assert.equal(
+    manualChunks("C:\\repo\\node_modules\\@tanstack\\react-query\\build.js"),
+    "query-virtual",
+  );
+  assert.equal(
+    manualChunks("C:\\repo\\node_modules\\mermaid\\dist\\index.js"),
+    undefined,
+  );
+});
 
 test("uses readable stable package suffixes", () => {
   assert.equal(safeChunkName("@codemirror/lang-json"), "codemirror-lang-json");

@@ -5,14 +5,31 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  isLocalDatabaseRoute,
   WORKBENCH_BUILTIN_APPS,
+  findWorkbenchApp,
   resetWorkspaceWebShortcutCache,
   setWorkspaceWebShortcut,
+  supportsPresentation,
   useWorkspaceWebShortcuts,
   workspaceWebAppRoute,
+  workbenchRoutePath,
 } from "./apps";
 
 describe("built-in workbench apps", () => {
+  it("matches one app identity across standalone and workbench query routes", () => {
+    expect(workbenchRoutePath("/workspace/storage?surface=company")).toBe(
+      "/workspace/storage",
+    );
+    expect(findWorkbenchApp("/workspace/storage?embedded=app")?.id).toBe(
+      "local-database",
+    );
+    expect(isLocalDatabaseRoute("/workspace/storage?library=images")).toBe(
+      true,
+    );
+    expect(isLocalDatabaseRoute("/workspace/projects")).toBe(false);
+  });
+
   it("ships Narrative Studio as a removable runtime plugin application", () => {
     expect(
       WORKBENCH_BUILTIN_APPS.find((app) => app.id === "narrative"),
@@ -29,7 +46,22 @@ describe("built-in workbench apps", () => {
       packageId: "narrative_studio",
       runtimePlugin: "narrative_studio",
       presentation: "workbench",
+      supportedPresentations: ["standalone", "workbench"],
     });
+  });
+
+  it("uses the primary presentation as the legacy fallback", () => {
+    const legacyWorkbenchApp = {
+      presentation: "workbench" as const,
+    };
+    expect(supportsPresentation(legacyWorkbenchApp, "workbench")).toBe(true);
+    expect(supportsPresentation(legacyWorkbenchApp, "standalone")).toBe(false);
+    expect(
+      supportsPresentation(
+        { ...legacyWorkbenchApp, supportedPresentations: ["standalone"] },
+        "standalone",
+      ),
+    ).toBe(true);
   });
 
   it("keeps the narrative icon and native browser mount wired", () => {

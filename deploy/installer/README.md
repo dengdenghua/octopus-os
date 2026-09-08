@@ -152,8 +152,10 @@ credential-backed first-use OEM, production SDDM/X11, selectable SDDM/Wayland
 and direct-desktop cold-boot gates. OEM validation uses the real provisioning
 code and a VM-only random password, while modifying only a disposable copy with
 test SDDM autologin. This is a source-defined destructive release test, not a
-current result: the uncommitted workflow has not run on a Linux runner from this
-workspace. A release still requires that workflow to be green, followed by
+current result. The only remote `os-image` run failed in the online source
+preflight because its Debian container did not install the GitHub CLI; the local
+workflow now installs `gh`, but that change has not been pushed and rerun. A
+release still requires that workflow to be green, followed by
 human-interactive OEM/password testing, A/B dm-verity update/tamper/rollback,
 LUKS2/TPM lifecycle and representative hardware installation gates. The source
 now defines those Linux gates, but this workspace has not executed them on a

@@ -4,9 +4,11 @@ import { ErrorState } from "@/components/ui/state";
 import { type EchoApp } from "@/core/apps/api";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import type { PluginInfo } from "@/core/plugins/types";
 import type { SkillInfo } from "@/core/skills/types";
 import { cn } from "@/lib/utils";
+import { useLocation } from "react-router-dom";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -353,9 +355,13 @@ export function classifyPluginItem(
 
 export function useOpenCreatePluginChat() {
   const { t } = useI18n();
+  const { search } = useLocation();
   return () => {
-    window.location.hash = `/workspace/realtime/new?prompt=${encodeURIComponent(
-      t.storeUtils.createPluginPrompt,
+    window.location.hash = `#${preserveWorkbenchPresentation(
+      `/workspace/realtime/new?prompt=${encodeURIComponent(
+        t.storeUtils.createPluginPrompt,
+      )}`,
+      search,
     )}`;
   };
 }

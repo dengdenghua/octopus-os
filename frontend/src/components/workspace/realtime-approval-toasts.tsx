@@ -34,8 +34,9 @@ function approvalToolLabel(
   ) {
     return t.toolApproval.tools.str_replace;
   }
-  const knownTool =
-    (t.toolApproval.tools as Record<string, string>)[normalized];
+  const knownTool = (t.toolApproval.tools as Record<string, string>)[
+    normalized
+  ];
   if (knownTool) return knownTool;
   if (method.includes("commandExecution")) {
     return t.toolApproval.tools.bash;

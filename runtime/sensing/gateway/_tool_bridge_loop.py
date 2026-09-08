@@ -29,6 +29,7 @@ from runtime.core.cerebrum.todo_protocol import (
     render_todo_protocol_guidance,
     should_require_todo_protocol,
 )
+from runtime.execution.tool_engine.effect_store import NativeEffectRecoveryRequired
 from runtime.execution.tool_spec_builder import build_anthropic_tool_specs
 from runtime.platform.models import (
     ArmId,
@@ -172,6 +173,7 @@ def stream_agentic_fallback(
     model: str | None = None,
     sub_event_queue: Any = None,
     steering_drain: Callable[[], list[str]] | None = None,
+    execution_task_id: TaskId | None = None,
 ) -> Iterator[tuple[str, Any, Any]]:
     """Run the native tool loop with a fail-closed terminal finalizer.
 
@@ -198,11 +200,22 @@ def stream_agentic_fallback(
             model=model,
             sub_event_queue=sub_event_queue,
             steering_drain=steering_drain,
+            execution_task_id=execution_task_id,
             _register_native_finalizer=_register_native_finalizer,
         )
     except GeneratorExit:
         fallback_disposition = "cancelled"
         raise
+    except NativeEffectRecoveryRequired as exc:
+        yield (
+            "error",
+            {
+                "kind": "native_effect_recovery_required",
+                "message": "此前工具操作尚未确认结果，已停止继续执行。请先核对实际结果。",
+                "detail": str(exc),
+            },
+            None,
+        )
     finally:
         # Normal terminal paths finalize before their last public event.  This
         # call is therefore a no-op there, but closes the audit gap for client
@@ -219,6 +232,7 @@ def _stream_agentic_fallback_impl(
     model: str | None = None,
     sub_event_queue: Any = None,
     steering_drain: Callable[[], list[str]] | None = None,
+    execution_task_id: TaskId | None = None,
     _register_native_finalizer: Callable[[Callable[..., bool]], None] | None = None,
 ) -> Iterator[tuple[str, Any, Any]]:
     """Agentic streaming · same ``(kind, delta, final)`` shape as
@@ -504,6 +518,7 @@ def _stream_agentic_fallback_impl(
 
     profile_section = render_profile_memories(
         _profile_memories_payload(intent),
+        annotate=True,
     )
     if profile_section:
         messages.insert(0, Message(role="system", content=profile_section))
@@ -514,6 +529,7 @@ def _stream_agentic_fallback_impl(
             MemoryQuery,
             format_records_for_prompt,
         )
+        from runtime.memory.users.user_store import memory_viewer_from_context
 
         _metadata_for_memory = _session_metadata_from_intent(intent)
         _workspace_for_memory = _metadata_for_memory.get("workspace_path")
@@ -531,6 +547,7 @@ def _stream_agentic_fallback_impl(
             if isinstance(_team_id_for_memory, str) and str(_team_id_for_memory).strip()
             else None
         )
+        _memory_viewer = memory_viewer_from_context(intent.user_context)
         memory_section = format_records_for_prompt(
             MemoryHub(
                 repo_root=_project_for_memory,
@@ -542,6 +559,7 @@ def _stream_agentic_fallback_impl(
                     project=_project_for_memory,
                     team_id=_team_id_for_memory,
                     limit=8,
+                    viewer=_memory_viewer,
                 )
             ),
         )
@@ -783,6 +801,7 @@ def _stream_agentic_fallback_impl(
         conversation_id=_authoritative_thread_id,
         turn_id=getattr(_outer_session, "turn_id", None) or uuid4().hex,
         metadata=_session_metadata,
+        execution_lease=getattr(_outer_session, "execution_lease", None),
     )
     # Stash the SSE pump queue on the Session so sub-agents spawned
     # via ``call_agent`` / ``call_agent_parallel`` can push their
@@ -894,7 +913,7 @@ def _stream_agentic_fallback_impl(
     # Every native tool invocation in this turn shares one durable task id.
     # ToolExecutor still writes each exact StepEvent; the terminal path below
     # aggregates those receipts into one trajectory consumed by regeneration.
-    _native_trajectory_task_id = TaskId(uuid4())
+    _native_trajectory_task_id = execution_task_id or TaskId(uuid4())
     _native_trajectory_arm_id = ArmId("agentic")
     _native_trajectory_budget = Budget(
         _native_trajectory_task_id,
@@ -978,14 +997,23 @@ def _stream_agentic_fallback_impl(
     _native_prepared_event_cache: dict[str, Any] = {}
     _native_persistence_state: dict[str, bool] = {}
 
+    def _reserve_native_step_ids(count: int) -> list[int]:
+        nonlocal _native_next_step_id
+        allocator = getattr(getattr(stack, "executor", None), "reserve_native_step_ids", None)
+        if callable(allocator):
+            return allocator(_native_trajectory_task_id, count)
+        # Lightweight executor doubles have no durable effects. Real
+        # ToolExecutor always allocates in the shared receipt coordinator.
+        step_ids = list(range(_native_next_step_id, _native_next_step_id + count))
+        _native_next_step_id += count
+        return step_ids
+
     def _record_unexecuted_native_attempts(
         calls: list[ToolCall],
         *,
         failure_type: str,
     ) -> list[int]:
-        nonlocal _native_next_step_id
-        step_ids = [_native_next_step_id + index for index in range(len(calls))]
-        _native_next_step_id += len(calls)
+        step_ids = _reserve_native_step_ids(len(calls))
         _native_step_attempts.update(zip(step_ids, calls, strict=True))
         _native_step_failures.update({step_id: failure_type for step_id in step_ids})
         return step_ids
@@ -1038,6 +1066,12 @@ def _stream_agentic_fallback_impl(
 
     if _register_native_finalizer is not None:
         _register_native_finalizer(_finalize_native_trajectory)
+
+    recovery_check = getattr(
+        getattr(stack, "executor", None), "assert_native_task_recoverable", None
+    )
+    if callable(recovery_check):
+        recovery_check(_native_trajectory_task_id)
 
     if (intent.user_context or {}).get("live_steering"):
         from runtime.core.cerebrum.live_steering import (
@@ -2003,11 +2037,14 @@ def _stream_agentic_fallback_impl(
         # Output ordering of tool_result blocks matches round_tool_calls
         # so the assistant ↔ tool_result pairing stays correct.
         tool_result_blocks: list[dict[str, Any]] = []
+        # Trusted gate state travels alongside the legacy two-value result;
+        # never infer approval refusal from model/handler output text.
+        _approval_blocked_reason = ""
+        _execution_blocked_reason = ""
         # Provider call ids are protocol labels, not unique internal keys. Some
         # providers reuse one id inside a streamed turn, so every execution is
         # tracked by its emission-order ordinal instead.
-        _native_step_ids = [_native_next_step_id + index for index in range(len(round_tool_calls))]
-        _native_next_step_id += len(round_tool_calls)
+        _native_step_ids = _reserve_native_step_ids(len(round_tool_calls))
         _native_step_attempts.update(
             zip(_native_step_ids, round_tool_calls, strict=True),
         )
@@ -2078,12 +2115,12 @@ def _stream_agentic_fallback_impl(
                         scoped_cancellation(tool_batch_source.token),
                     ):
                         if tool_batch_source.is_cancelled:
-                            out, err = (
+                            result = (
                                 f"(cancelled before execution: {tool_batch_source.token.reason})",
                                 True,
                             )
                         else:
-                            out, err = _execute_tool_call(
+                            result = _execute_tool_call(
                                 stack,
                                 call,
                                 task_id=_native_trajectory_task_id,
@@ -2093,7 +2130,7 @@ def _stream_agentic_fallback_impl(
                             )
                 finally:
                     _current_session.reset(_call_session_token)
-                return native_step_id, (out, err)
+                return native_step_id, result
 
             if _tool_batch_redirected:
                 _outputs.update(
@@ -2136,18 +2173,23 @@ def _stream_agentic_fallback_impl(
                         for future in done:
                             call, native_step_id = future_calls[future]
                             try:
-                                completed_step_id, (out, err) = future.result()
+                                completed_step_id, result = future.result()
                             except Exception as exc:  # noqa: BLE001 — surface as tool failure
-                                completed_step_id, out, err = (
-                                    native_step_id,
-                                    f"(parallel exec error: {exc})",
-                                    True,
-                                )
+                                completed_step_id = native_step_id
+                                result = (f"(parallel exec error: {exc})", True)
                                 _logger.warning(
                                     "parallel tool exec future failed: %s",
                                     exc,
                                 )
-                            _outputs[completed_step_id] = (out, err)
+                            _outputs[completed_step_id] = result
+                            _approval_blocked_reason = _approval_blocked_reason or getattr(
+                                result, "approval_blocked", ""
+                            )
+                            _execution_blocked_reason = _execution_blocked_reason or getattr(
+                                result, "execution_blocked", ""
+                            )
+                            if _execution_blocked_reason:
+                                _tool_batch_source.cancel(reason="tool effect requires recovery")
                         if pending and _capture_steering():
                             _tool_batch_redirected = True
                             _redirected_step_ids.update(
@@ -2179,13 +2221,17 @@ def _stream_agentic_fallback_impl(
                     _tool_work_since_todo = False
                 else:
                     _tool_work_since_todo = True
-                output, is_error = _outputs.get(
+                result = _outputs.get(
                     native_step_id,
                     ("(no result)", True),
                 )
+                output, is_error = result
                 _redirected_cancelled = native_step_id in _redirected_step_ids
                 _externally_cancelled = bool(
-                    is_error and _tool_batch_source.is_cancelled and not _redirected_cancelled
+                    is_error
+                    and _tool_batch_source.is_cancelled
+                    and not _redirected_cancelled
+                    and not _execution_blocked_reason
                 )
                 _cancelled = _redirected_cancelled or _externally_cancelled
                 if _cancelled:
@@ -2194,7 +2240,8 @@ def _stream_agentic_fallback_impl(
                     _external_cancellation_seen = True
                 if is_error:
                     _native_step_failures[native_step_id] = (
-                        "cancelled" if _cancelled else _native_tool_failure_type(output)
+                        getattr(result, "execution_blocked", "")
+                        or ("cancelled" if _cancelled else _native_tool_failure_type(output))
                     )
                 _observe_code_tool_result(call, is_error, output, round_i + 1)
                 if not is_error:
@@ -2206,6 +2253,11 @@ def _stream_agentic_fallback_impl(
                         "name": call.name,
                         "output": output[:200],
                         "is_error": is_error,
+                        **(
+                            {"effect_receipt": result.effect_receipt}
+                            if getattr(result, "effect_receipt", None) is not None
+                            else {}
+                        ),
                         **({"status": "cancelled"} if _cancelled else {}),
                         "iteration": round_i + 1,
                         "parallel": True,
@@ -2280,13 +2332,17 @@ def _stream_agentic_fallback_impl(
                         _tool_work_since_todo = False
                     else:
                         _tool_work_since_todo = True
-                    if _tool_batch_redirected:
-                        output, is_error = (
+                    if _execution_blocked_reason:
+                        result = ("(tool batch stopped because an effect requires recovery)", True)
+                    elif _approval_blocked_reason:
+                        result = ("(tool batch stopped because approval was not granted)", True)
+                    elif _tool_batch_redirected:
+                        result = (
                             "(cancelled before execution: user redirected active work)",
                             True,
                         )
                     elif serial_pool is None:
-                        output, is_error = _run_serial_one(call, native_step_id)
+                        result = _run_serial_one(call, native_step_id)
                     else:
                         future = serial_pool.submit(
                             contextvars.copy_context().run,  # type: ignore[arg-type]
@@ -2306,16 +2362,26 @@ def _stream_agentic_fallback_impl(
                                     reason="user redirected active tool batch"
                                 )
                         try:
-                            output, is_error = future.result()  # type: ignore[assignment]
+                            result = future.result()
                         except Exception as exc:  # noqa: BLE001 — surface as tool failure
-                            output, is_error = f"(serial exec error: {exc})", True
+                            result = (f"(serial exec error: {exc})", True)
                             _logger.warning("serial tool exec future failed: %s", exc)
+                    _approval_blocked_reason = _approval_blocked_reason or getattr(
+                        result, "approval_blocked", ""
+                    )
+                    _execution_blocked_reason = _execution_blocked_reason or getattr(
+                        result, "execution_blocked", ""
+                    )
+                    output, is_error = result
                     checkpoint = _take_action_narration(wait_for_completion=True)
                     if checkpoint:
                         yield ("commentary", checkpoint, None)
                     _redirected_cancelled = native_step_id in _redirected_step_ids
                     _externally_cancelled = bool(
-                        is_error and _tool_batch_source.is_cancelled and not _redirected_cancelled
+                        is_error
+                        and _tool_batch_source.is_cancelled
+                        and not _redirected_cancelled
+                        and not _execution_blocked_reason
                     )
                     _cancelled = _redirected_cancelled or _externally_cancelled
                     if _cancelled:
@@ -2324,7 +2390,8 @@ def _stream_agentic_fallback_impl(
                         _external_cancellation_seen = True
                     if is_error:
                         _native_step_failures[native_step_id] = (
-                            "cancelled" if _cancelled else _native_tool_failure_type(output)
+                            getattr(result, "execution_blocked", "")
+                            or ("cancelled" if _cancelled else _native_tool_failure_type(output))
                         )
                     _observe_code_tool_result(call, is_error, output, round_i + 1)
                     if not is_error:
@@ -2336,6 +2403,11 @@ def _stream_agentic_fallback_impl(
                             "name": call.name,
                             "output": output[:200],
                             "is_error": is_error,
+                            **(
+                                {"effect_receipt": result.effect_receipt}
+                                if getattr(result, "effect_receipt", None) is not None
+                                else {}
+                            ),
                             **({"status": "cancelled"} if _cancelled else {}),
                             "iteration": round_i + 1,
                         },
@@ -2356,6 +2428,30 @@ def _stream_agentic_fallback_impl(
 
         _tool_batch_source.cancel(reason="tool batch closed")
         _completed_tool_count += len(round_tool_calls)
+
+        if _execution_blocked_reason:
+            _finalize_native_trajectory(success=False, disposition="failed")
+            yield (
+                "error",
+                {
+                    "kind": _execution_blocked_reason,
+                    "message": "工具执行结果尚未确认，已停止后续操作。请先核对实际结果后再决定是否重试。",
+                },
+                None,
+            )
+            return
+
+        if _approval_blocked_reason:
+            _finalize_native_trajectory(success=False, disposition="blocked_on_user")
+            yield (
+                "error",
+                {
+                    "kind": f"tool_{_approval_blocked_reason}",
+                    "message": "工具执行未获得授权，已停止本轮操作。",
+                },
+                None,
+            )
+            return
 
         if _current_native_batch_fingerprint:
             batch_failed = bool(tool_result_blocks) and all(

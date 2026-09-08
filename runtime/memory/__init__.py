@@ -16,12 +16,14 @@
                     scope_paths / file_transactions / process_timeline）
   users/          → 用户存储与画像（user_store / user_preferences /
                     profile / mention_history）
+  semantics       → memory origin/evidence labels used by prompt projections
   diagnostics/    → 诊断与追溯（trace_store / error_classifier /
                     wiki_compiler）
 """
 
 from __future__ import annotations
 
+from . import semantics  # noqa: F401
 from .diagnostics import (  # noqa: F401
     error_classifier,
     trace_store,

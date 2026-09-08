@@ -108,15 +108,10 @@ export function E2ESurpassCertificationCard({
             label={to("Evidence")}
             value={summary.scorecard_evidence_adjusted_echo}
           />
-          <GateStat
-            label={to("Automation")}
-            value={summary.automation_echo}
-          />
+          <GateStat label={to("Automation")} value={summary.automation_echo} />
           <GateStat label={to("Quality")} value={summary.quality_ready} />
           <GateStat
-            label={
-              behavioralBlocked ? to("Behavior blocked") : to("Behavior")
-            }
+            label={behavioralBlocked ? to("Behavior blocked") : to("Behavior")}
             value={
               behavioralReady
                 ? Math.round(summary.behavioral_echo_pass_pow_k * 100)
@@ -177,9 +172,7 @@ export function E2ESurpassCertificationCard({
               )}
             >
               {to("dimensions")}{" "}
-              {summary.all_dimensions_surpassed
-                ? to("surpassed")
-                : to("open")}
+              {summary.all_dimensions_surpassed ? to("surpassed") : to("open")}
             </Badge>
           </div>
         </div>

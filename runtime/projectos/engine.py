@@ -951,6 +951,22 @@ class ProjectEngine:
             "success_criteria": ms.success_criteria,
             "done_outputs": {t.id: t.output for t in tasks if t.status == "done"},
         }
+        # A ProjectEngine may be driven from a realtime/Codex turn.  Preserve
+        # the server-owned session as an explicit, non-model context value so
+        # the downstream subagent/team bridges can inherit the same execution
+        # lease and immutable host request.  Ordinary deterministic callers
+        # keep the historical context shape.
+        try:
+            from runtime.platform.process.session import current_session
+
+            caller_session = current_session()
+        except (ImportError, AttributeError):
+            caller_session = None
+        if caller_session is not None and (
+            getattr(caller_session, "execution_request", None) is not None
+            or getattr(caller_session, "execution_lease", None) is not None
+        ):
+            context["caller_session"] = caller_session
         if self._resolve_thread_context is not None:
             resolved = self._resolve_thread_context(thread_id)
             if not isinstance(resolved, dict):

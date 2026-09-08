@@ -233,6 +233,7 @@ class EvolutionAutoTrigger:
         self._drift_monitor_lock = threading.Lock()
         self._drift_monitors: dict[str, Any] = {}
         self._active = False
+        self._background_models_enabled = True
         self._event_wire_lock = threading.Lock()
         self._event_bus: Any = None
         self._event_subscription_ids: tuple[int, ...] = ()
@@ -247,6 +248,13 @@ class EvolutionAutoTrigger:
         if config is not None:
             self._config = config
         self._stack = stack
+        from runtime.execution.model_services import background_model_calls_enabled
+
+        self._background_models_enabled = background_model_calls_enabled(stack)
+        if not self._background_models_enabled:
+            self.stop()
+            _LOG.info("evolution auto-trigger disabled by background model policy")
+            return
         # An idempotent start without a registry must not erase a registry
         # attached later by mount_agents(). Explicit clearing remains
         # available through bind_agent_registry(None).
@@ -308,6 +316,7 @@ class EvolutionAutoTrigger:
 
     def status(self) -> dict[str, Any]:
         return {
+            "background_model_calls": self._background_models_enabled,
             "running": bool(self._thread and self._thread.is_alive()),
             "tick_count": self._tick_count,
             "config": {
@@ -571,6 +580,11 @@ class EvolutionAutoTrigger:
         *,
         scope: TenantScope | None = None,
     ) -> None:
+        from runtime.execution.model_services import background_model_calls_enabled
+
+        # Recheck on queued event delivery, not only at scheduler startup.
+        if not background_model_calls_enabled(self._stack):
+            return
         try:
             from runtime.memory.learning.deep_evolution import deep_evolve
 

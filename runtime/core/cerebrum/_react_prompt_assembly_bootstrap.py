@@ -59,6 +59,7 @@ def _resolve_turn_bootstrap(
     reasoning_effort: str | None,
     approval_provider: Any,
     resume_task_id: Any,
+    execution_task_id: Any = None,
 ) -> _TurnBootstrap | None:
     """Entry guards + router/native-gate resolution (PHASE 1-2).
 
@@ -196,7 +197,16 @@ def _resolve_turn_bootstrap(
     # ── PHASE 2 · mode + budget detection ──────────────────────────────
     from runtime.platform.models import TaskId as _TaskId
 
-    react_task_id: _TaskId = resume_task_id if resume_task_id is not None else _TaskId(uuid.uuid4())
+    # The supervising driver chooses the root objective before any generator
+    # can execute. Children keep their own trajectory IDs: they inherit the
+    # parent's execution guard, but do not receive this explicit argument.
+    react_task_id: _TaskId = (
+        execution_task_id
+        if execution_task_id is not None
+        else resume_task_id
+        if resume_task_id is not None
+        else _TaskId(uuid.uuid4())
+    )
 
     _camouflage_variant_name = "baseline"
     _camouflage_suffix = ""

@@ -822,5 +822,9 @@ def mount_routers_b(
             identity_store=ctx.identity_store,
             stack=stack,
             agent_registry=ctx.agent_registry,
+            jwt_secret=ctx.jwt_secret,
+            jwt_issuer=ctx.jwt_issuer,
+            jwt_audience=ctx.jwt_audience,
+            require_auth=ctx.require_auth,
         ),
     )

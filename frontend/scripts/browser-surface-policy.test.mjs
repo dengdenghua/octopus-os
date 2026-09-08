@@ -8,10 +8,7 @@ const webviewSource = await readFile(
 );
 
 test("the browser home route has one maintained implementation", () => {
-  assert.match(
-    webviewSource,
-    /import\("\.\/browser-home"\)/,
-  );
+  assert.match(webviewSource, /import\("\.\/browser-home"\)/);
   assert.match(webviewSource, /<BrowserHome\b/);
   assert.doesNotMatch(webviewSource, /LegacyBrowserDesktopHome/);
   assert.doesNotMatch(webviewSource, /interface BrowserDesktopApp/);

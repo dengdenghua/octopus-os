@@ -40,6 +40,12 @@ def mount_parallel(
         )
 
         set_auto_parallel_orchestrator(parallel_agent_orchestrator)
+    # ParallelAgentOrchestrator workers run on their own pool. Give the
+    # shared instance the same durable supervisor used by the rest of the
+    # app so standalone HTTP batches receive aggregate and worker leases.
+    task_supervisor = getattr(ctx.state, "task_supervisor", None)
+    if task_supervisor is not None:
+        parallel_agent_orchestrator._task_supervisor = task_supervisor
     from runtime.sensing.gateway.parallel_agents_router import create_parallel_agents_router
 
     app.include_router(
@@ -84,6 +90,7 @@ def mount_parallel(
             jwt_secret=ctx.jwt_secret,
             jwt_issuer=ctx.jwt_issuer,
             jwt_audience=ctx.jwt_audience,
+            task_supervisor=getattr(ctx.state, "task_supervisor", None),
         )
     )
     app.state.subagent_registry = ctx.subagent_registry

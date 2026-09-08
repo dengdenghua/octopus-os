@@ -13,6 +13,44 @@ const TOKEN_KEY = "echo_auth_token";
 const USER_KEY = "echo_user";
 const TOKEN_TIMESTAMP_KEY = "echo_auth_ts";
 const SESSION_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_STARTUP_RETRY_MS = 3_000;
+const MIN_STARTUP_RETRY_MS = 1_000;
+const MAX_STARTUP_RETRY_MS = 10_000;
+
+export class BackendStartingError extends Error {
+  readonly code = "appliance_starting";
+
+  constructor(
+    public readonly retryAfterMs: number,
+    message = "Echo OS is starting",
+  ) {
+    super(message);
+    this.name = "BackendStartingError";
+  }
+}
+
+export function isBackendStartingError(
+  error: unknown,
+): error is BackendStartingError {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "appliance_starting" &&
+    "retryAfterMs" in error &&
+    typeof error.retryAfterMs === "number"
+  );
+}
+
+function startupRetryDelay(response: Response): number {
+  const seconds = Number(response.headers.get("Retry-After"));
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return DEFAULT_STARTUP_RETRY_MS;
+  }
+  return Math.min(
+    MAX_STARTUP_RETRY_MS,
+    Math.max(MIN_STARTUP_RETRY_MS, Math.round(seconds * 1_000)),
+  );
+}
 
 function canUseBrowserStorage(): boolean {
   return typeof window !== "undefined" && import.meta.env.MODE !== "test";
@@ -117,9 +155,29 @@ export function currentActorId(): string {
   }
 }
 
-export async function getAuthStatus(): Promise<AuthStatus> {
-  const res = await fetch(`${getBackendBaseURL()}/api/auth/status`);
-  if (!res.ok) throw new Error(`Failed to get auth status: ${res.statusText}`);
+export async function getAuthStatus(options?: {
+  signal?: AbortSignal;
+}): Promise<AuthStatus> {
+  const res = await fetch(`${getBackendBaseURL()}/api/auth/status`, {
+    cache: "no-store",
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    if (res.status === 503) {
+      const payload = (await res.json().catch(() => null)) as {
+        detail?: { code?: unknown; message?: unknown };
+      } | null;
+      if (payload?.detail?.code === "appliance_starting") {
+        throw new BackendStartingError(
+          startupRetryDelay(res),
+          typeof payload.detail.message === "string"
+            ? payload.detail.message
+            : undefined,
+        );
+      }
+    }
+    throw new Error(`Failed to get auth status: ${res.statusText}`);
+  }
   return (await res.json()) as AuthStatus;
 }
 

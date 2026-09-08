@@ -8,6 +8,8 @@ import {
 } from "react";
 
 import { cn } from "@/lib/utils";
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 import { useI18n } from "@/core/i18n/hooks";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useResizablePanel } from "./use-resizable-panel";
@@ -74,6 +76,7 @@ export function ChatPageLayout({
   onSecondaryClose,
 }: ChatPageLayoutProps) {
   const { t } = useI18n();
+  const actor = currentActorId();
   // Backwards compat: old callers pass Tailwind classes like "lg:w-72" or
   // "lg:w-[44rem]". Extract the pixel/rem value so we can drive inline
   // width (which animates) instead of fighting breakpoint classes.
@@ -124,7 +127,8 @@ export function ChatPageLayout({
   // With both panels dragged wide, this keeps the chat column usable
   // instead of letting flex squeeze it to zero.
   const sidebarPanel = useResizablePanel({
-    storageKey: SIDEBAR_WIDTH_KEY,
+    storageKey: actorScopedStorageKey(SIDEBAR_WIDTH_KEY, actor),
+    legacyStorageKey: SIDEBAR_WIDTH_KEY,
     minPx: MIN_SIDEBAR_PX,
     maxPx: MAX_SIDEBAR_PX,
     defaultCssWidth: defaultWidth,
@@ -141,7 +145,8 @@ export function ChatPageLayout({
   });
   const sidebarPx = sidebarPanel.resolvedPx;
   const secondaryPanelCtrl = useResizablePanel({
-    storageKey: SECONDARY_PANEL_WIDTH_KEY,
+    storageKey: actorScopedStorageKey(SECONDARY_PANEL_WIDTH_KEY, actor),
+    legacyStorageKey: SECONDARY_PANEL_WIDTH_KEY,
     minPx: MIN_SECONDARY_PX,
     maxPx: MAX_SECONDARY_PX,
     defaultCssWidth: secondaryDefaultWidth,
@@ -434,10 +439,10 @@ export function ChatPageLayout({
               {modeSwitcher}
             </div>
           )}
-          <div className="flex size-full min-w-0 flex-col items-center overflow-hidden">
+          <div className="flex size-full min-h-0 min-w-0 flex-col items-center overflow-hidden">
             <div
               className={cn(
-                "w-full min-w-0 overflow-hidden",
+                "size-full min-h-0 min-w-0 overflow-hidden",
                 messageListClassName,
               )}
             >
@@ -447,9 +452,24 @@ export function ChatPageLayout({
           <div
             ref={inputOverlayRef}
             data-chat-input-overlay="true"
-            className="absolute right-0 bottom-0 left-0 z-30 flex justify-center bg-gradient-to-t from-background via-background/92 to-transparent px-3 pb-3 pt-8"
+            data-chat-composer-placement={isNewThread ? "center" : "bottom"}
+            className={cn(
+              "absolute right-0 bottom-0 left-0 z-30 flex max-h-full flex-col overflow-y-auto overscroll-contain px-4 pb-3",
+              isNewThread
+                ? "top-0 pt-3"
+                : "bg-gradient-to-t from-background via-background/92 to-transparent pt-6",
+            )}
           >
-            <ErrorBoundary>{inputArea}</ErrorBoundary>
+            {/* Auto margins center a short welcome/composer within the window;
+                tall drafts use normal scrollable flow without negative offsets. */}
+            <div
+              className={cn(
+                "flex w-full shrink-0 justify-center",
+                isNewThread && "my-auto",
+              )}
+            >
+              <ErrorBoundary>{inputArea}</ErrorBoundary>
+            </div>
           </div>
         </section>
       </div>

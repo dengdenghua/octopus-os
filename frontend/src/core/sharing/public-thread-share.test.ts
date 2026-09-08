@@ -156,9 +156,7 @@ describe("public thread share API", () => {
     expect(isPublicThreadShareUrl("https://192.168.1.4/#/share/token")).toBe(
       false,
     );
-    expect(isPublicThreadShareUrl("echo-app://ui/#/share/token")).toBe(
-      false,
-    );
+    expect(isPublicThreadShareUrl("echo-app://ui/#/share/token")).toBe(false);
   });
 
   it("restores and clears a created share for refresh-time revocation", async () => {

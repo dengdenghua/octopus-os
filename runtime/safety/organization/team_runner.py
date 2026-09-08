@@ -115,18 +115,22 @@ def _default_role_caller(
     timeout_seconds: int | None,
     use_cheap_model: bool = False,
     event_emitter: Callable[[dict[str, Any]], None] | None = None,
+    session: Any = None,
 ) -> dict[str, Any]:
     """Run one role via the existing subagent bridge."""
     from runtime.execution.subagents.bridge import call_subagent
 
-    return call_subagent(
-        agent_id=agent_id,
-        prompt=prompt,
-        context=context or {},
-        timeout_seconds=timeout_seconds,
-        use_cheap_model=use_cheap_model,
-        event_emitter=event_emitter,
-    )
+    kwargs: dict[str, Any] = {
+        "agent_id": agent_id,
+        "prompt": prompt,
+        "context": context or {},
+        "timeout_seconds": timeout_seconds,
+        "use_cheap_model": use_cheap_model,
+        "event_emitter": event_emitter,
+    }
+    if session is not None:
+        kwargs["session"] = session
+    return call_subagent(**kwargs)
 
 
 def _context_risk_level(context: dict[str, Any]) -> str:
@@ -285,9 +289,23 @@ class TeamRunner:
         role_caller: RoleCaller | None = None,
         timeout_seconds: int | None = 600,
         event_emitter: Callable[[dict[str, Any]], None] | None = None,
+        session: Any = None,
     ) -> None:
         self._role_caller = role_caller or _default_role_caller
         self._timeout = timeout_seconds
+        # Team parallelism runs roles in executor threads, where ContextVars
+        # are empty. Capture the authenticated parent once at construction so
+        # the default bridge can keep turn identity, leases, and governance
+        # attached to every role. Custom role callers remain compatible via
+        # the existing signature fallbacks below.
+        self._session = session
+        if self._session is None:
+            try:
+                from runtime.platform.process.session import current_session
+
+                self._session = current_session()
+            except (ImportError, AttributeError):
+                self._session = None
         # Optional sink for live progress events. The realtime gateway
         # passes a thread-safe ``run_coroutine_threadsafe`` shim that
         # marshals every event back to the WS so the user sees the
@@ -732,33 +750,42 @@ class TeamRunner:
         hb_thread.start()
         try:
             try:
-                raw = self._role_caller(
-                    agent_id=spec.agent_id,
-                    prompt=prompt,
-                    context=merged_ctx,
-                    timeout_seconds=self._timeout,
-                    use_cheap_model=cheap_for_role,
-                    event_emitter=caller_emitter,
-                )
+                caller_kwargs: dict[str, Any] = {
+                    "agent_id": spec.agent_id,
+                    "prompt": prompt,
+                    "context": merged_ctx,
+                    "timeout_seconds": self._timeout,
+                    "use_cheap_model": cheap_for_role,
+                    "event_emitter": caller_emitter,
+                }
+                if self._session is not None:
+                    caller_kwargs["session"] = self._session
+                raw = self._role_caller(**caller_kwargs)
             except TypeError:
                 # Pre-emitter / pre-cheap-routing role callers. Try the
                 # next-most-recent signature, then the legacy one, so an
                 # adapter from any era still works.
                 try:
-                    raw = self._role_caller(
-                        agent_id=spec.agent_id,
-                        prompt=prompt,
-                        context=merged_ctx,
-                        timeout_seconds=self._timeout,
-                        use_cheap_model=cheap_for_role,
-                    )
+                    caller_kwargs = {
+                        "agent_id": spec.agent_id,
+                        "prompt": prompt,
+                        "context": merged_ctx,
+                        "timeout_seconds": self._timeout,
+                        "use_cheap_model": cheap_for_role,
+                    }
+                    if self._session is not None:
+                        caller_kwargs["session"] = self._session
+                    raw = self._role_caller(**caller_kwargs)
                 except TypeError:
-                    raw = self._role_caller(
-                        agent_id=spec.agent_id,
-                        prompt=prompt,
-                        context=merged_ctx,
-                        timeout_seconds=self._timeout,
-                    )
+                    caller_kwargs = {
+                        "agent_id": spec.agent_id,
+                        "prompt": prompt,
+                        "context": merged_ctx,
+                        "timeout_seconds": self._timeout,
+                    }
+                    if self._session is not None:
+                        caller_kwargs["session"] = self._session
+                    raw = self._role_caller(**caller_kwargs)
         except Exception as exc:  # noqa: BLE001
             duration = (time.monotonic() - start) * 1000.0
             self._emit(

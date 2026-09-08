@@ -10,6 +10,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+if os.name != "posix":
+    raise unittest.SkipTest("runner registration tests require POSIX account semantics")
+
 MODULE_PATH = Path(__file__).with_name("verify-linux-image-runner-registration.py")
 SPEC = importlib.util.spec_from_file_location("echo_runner_registration", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None

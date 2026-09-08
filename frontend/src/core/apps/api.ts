@@ -1,4 +1,5 @@
 import { getBackendBaseURL } from "@/core/config";
+import { authHeaders } from "@/core/auth/api";
 
 export interface EchoAppAction {
   name: string;
@@ -32,9 +33,4 @@ export async function listApps(): Promise<EchoApp[]> {
   });
   if (!res.ok) throw new Error(`Failed to load apps: ${res.statusText}`);
   return res.json() as Promise<EchoApp[]>;
-}
-
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem("echo:token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
 }

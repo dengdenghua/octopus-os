@@ -5,7 +5,7 @@ import { getBackendBaseURL } from "@/core/config";
 
 import type { AgentThreadState } from "../threads";
 
-import { urlOfArtifact } from "./utils";
+import { artifactDisplayPath, urlOfArtifact } from "./utils";
 
 export class ArtifactLoadError extends Error {
   status: number;
@@ -17,21 +17,55 @@ export class ArtifactLoadError extends Error {
   }
 }
 
+export async function downloadArtifactFile({
+  filepath,
+  threadId,
+}: {
+  filepath: string;
+  threadId: string;
+}) {
+  const response = await fetch(
+    urlOfArtifact({ filepath, threadId, download: true }),
+    {
+      headers: authHeaders(),
+      cache: "no-store",
+    },
+  );
+  if (!response.ok)
+    throw new ArtifactLoadError(response.status, "file download failed");
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download =
+    artifactDisplayPath(filepath).split(/[/\\]/).at(-1) || "download";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
 export async function loadArtifactContent({
   filepath,
   threadId,
   isMock,
+  signal,
 }: {
   filepath: string;
   threadId: string;
   isMock?: boolean;
+  signal?: AbortSignal;
 }) {
   let enhancedFilepath = filepath;
   if (filepath.endsWith(".skill")) {
     enhancedFilepath = filepath + "/SKILL.md";
   }
   const url = urlOfArtifact({ filepath: enhancedFilepath, threadId, isMock });
-  const response = await fetch(url, { headers: authHeaders() });
+  const response = await fetch(url, {
+    headers: authHeaders(),
+    cache: "no-store",
+    signal,
+  });
   const text = await response.text();
   if (!response.ok) {
     throw new ArtifactLoadError(
@@ -104,7 +138,10 @@ export async function loadOriginalFileContent(path: string, threadId?: string) {
   if (threadId) {
     params.set("thread_id", threadId);
   }
-  const response = await fetch(`${baseURL}/api/fs/read?${params.toString()}`);
+  const response = await fetch(`${baseURL}/api/fs/read?${params.toString()}`, {
+    headers: authHeaders(),
+    cache: "no-store",
+  });
   if (!response.ok) return null;
   const data = await response.json();
   if (data.binary) return null;

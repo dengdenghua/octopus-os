@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import stat
 from typing import Any
 
@@ -273,7 +274,8 @@ def test_platform_collect_writes_json(tmp_path: Any, monkeypatch: Any) -> None:
     assert result["search_count"] == 1
     assert result["output_path"] == str(output)
     assert output.exists()
-    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(output.stat().st_mode) == 0o600
 
 
 def test_platform_collect_confines_output_path(tmp_path: Any, monkeypatch: Any) -> None:
@@ -340,4 +342,3 @@ def test_reach_skills_register() -> None:
     assert registry.has("platform_collect")
     assert registry.has("platform_monitor")
     assert registry.has("reach_doctor")
-

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 
 import pytest
@@ -198,8 +199,14 @@ class TestBootstrap:
         store = json.loads((tmp_path / "appliance-auth.json").read_text())
         assert store["username"] == "admin" and "password_hash" in store
         assert store["session_not_before"] == 0
-        assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o700
-        assert stat.S_IMODE((tmp_path / "appliance-auth.json").stat().st_mode) == 0o600
+        if os.name == "nt":
+            from tests.appliance.windows_acl_assertions import assert_private_windows_acl
+
+            assert_private_windows_acl(tmp_path)
+            assert_private_windows_acl(tmp_path / "appliance-auth.json")
+        else:
+            assert stat.S_IMODE(tmp_path.stat().st_mode) == 0o700
+            assert stat.S_IMODE((tmp_path / "appliance-auth.json").stat().st_mode) == 0o600
 
         # 二次加载读取既有存储,密码哈希与 jwt_secret 不变。
         config2, generated2 = load_or_bootstrap_auth()

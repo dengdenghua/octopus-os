@@ -13,10 +13,7 @@ import {
   type CSSProperties,
   type ComponentType,
 } from "react";
-import {
-  CopyIcon,
-  PlugIcon,
-} from "lucide-react";
+import { CopyIcon, PlugIcon } from "lucide-react";
 
 import { swallow } from "@/core/utils/log";
 import { authHeaders, jsonAuthHeaders } from "@/core/auth/api";
@@ -37,10 +34,7 @@ import {
   AUTOMATION_CAPSULE_SURFACE_CLASS_NAME,
 } from "@/components/ui/automation-capsule";
 
-import {
-  BROWSER_HOME_URL,
-  type BrowserTab,
-} from "./browser-store";
+import { BROWSER_HOME_URL, type BrowserTab } from "./browser-store";
 import {
   RELAY_STATUS_REFRESH_MS,
   getRelayStatusRetryDelay,
@@ -838,10 +832,7 @@ export const WebviewTab = forwardRef<WebviewTabHandle, Props>(
         // Every tab remains mounted while hidden. Publish a stable logical
         // lease and current native id so the desktop host can move the same
         // live webContents between surfaces without navigating it again.
-        wv.setAttribute(
-          "data-echo-webcontents-adoption-lease",
-          adoptionLease,
-        );
+        wv.setAttribute("data-echo-webcontents-adoption-lease", adoptionLease);
         try {
           wv.setAttribute(
             "data-echo-adopted-web-contents-id",

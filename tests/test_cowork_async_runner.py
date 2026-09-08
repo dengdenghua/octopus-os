@@ -15,6 +15,7 @@ from runtime.memory.cowork.group import ContextGrant, MemberEvent
 from runtime.memory.cowork.group_store import GroupStore
 from runtime.memory.cowork.nominate import CompetenceStore
 from runtime.memory.cowork.runtime import create_cowork_runtime
+from runtime.platform.process.session import Session, session_scope
 
 
 def _setup(tmp_path):
@@ -231,6 +232,7 @@ def test_runtime_dispatches_through_subagent_bridge(tmp_path, monkeypatch) -> No
         seen["agent_id"] = agent_id
         seen["prompt"] = prompt
         seen["context"] = kwargs["context"]
+        seen["session"] = kwargs["session"]
         return {"success": True, "output": "worker result"}
 
     previous_runner = get_sub_agent_runner()
@@ -244,11 +246,24 @@ def test_runtime_dispatches_through_subagent_bridge(tmp_path, monkeypatch) -> No
         )
         task = runtime.async_store.assign("t", "worker", "do background work", actor="u")
 
-        assert runtime.runner.drain("t") == 1
+        with session_scope(
+            Session(
+                actor="parent",
+                metadata={"tenant_id": "tenant-1", "_locked_write_root": "secret"},
+            )
+        ):
+            assert runtime.runner.drain("t") == 1
         assert runtime.async_store.get(task.task_id).status == "done"
         assert seen["agent_id"] == "worker"
         assert seen["prompt"] == "do background work"
         assert seen["context"]["source"] == "cowork_async_task"
+        task_session = seen["session"]
+        assert task_session.actor == "u"
+        assert task_session.thread_id == "t"
+        assert task_session.turn_id == f"cowork:{task.task_id}"
+        assert task_session.metadata["cowork_task_id"] == task.task_id
+        assert task_session.metadata["tenant_id"] == "tenant-1"
+        assert "_locked_write_root" not in task_session.metadata
         assert runtime.group_store.blackboard_snapshot("t")
         status = runtime.status("t")
         assert status["runner_status"]["total_ticks"] == 0
@@ -269,4 +284,3 @@ def test_runtime_does_not_enable_runner_without_subagent_executor(tmp_path) -> N
         "done": 0,
         "failed": 0,
     }
-

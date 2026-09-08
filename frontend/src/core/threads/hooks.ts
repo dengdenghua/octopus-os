@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { getAPIClient } from "../api";
 import type { LocalSettings } from "../settings";
+import { currentActorId } from "@/core/auth/api";
 
 import type { LiveToolEvent } from "@/components/workspace/live-tool-timeline";
 
@@ -10,11 +11,17 @@ import type { AgentThread, AgentThreadState } from "./types";
 import { threadVisibleInPersonaHistory } from "./persona-history";
 import { useThreadStreamRealtime } from "./use-thread-stream-realtime";
 import { isPrimaryPersonaAgentId } from "@/core/agents/persona-policy";
+import { useAgents } from "@/core/agents";
 
 export type ToolEndEvent = {
   name: string;
   data: unknown;
 };
+
+/** Prefix shared by all current-account thread search caches. */
+export function threadSearchQueryKey(actor = currentActorId()) {
+  return ["threads", "search", actor] as const;
+}
 
 export type ThreadStreamOptions = {
   threadId?: string | null | undefined;
@@ -308,6 +315,12 @@ export function useThreads(
 ) {
   const personaHistoryAgent =
     agent && isPrimaryPersonaAgentId(agent) ? agent : null;
+  const actor = currentActorId();
+  const { agents, isLoading: agentsLoading, error: agentsError } = useAgents();
+  const availablePersonaIds =
+    agentsLoading || (agentsError && agents.length === 0)
+      ? undefined
+      : agents.map((entry) => entry.name);
   // Compose metadata filter from the optional mode + agent arguments.
   // The backend's ThreadStateStore.search() ANDs together every metadata
   // key-value pair we send, so `{mode:"chat", agent:"coder"}` yields
@@ -326,7 +339,12 @@ export function useThreads(
   }
   const apiClient = getAPIClient();
   return useQuery<AgentThread[]>({
-    queryKey: ["threads", "search", params, personaHistoryAgent],
+    queryKey: [
+      ...threadSearchQueryKey(actor),
+      params,
+      personaHistoryAgent,
+      availablePersonaIds,
+    ],
     queryFn: async () => {
       const maxResults = params.limit as number | undefined;
       const initialOffset = (params.offset ?? 0) as number;
@@ -339,7 +357,11 @@ export function useThreads(
         const result = response as AgentThread[];
         return personaHistoryAgent
           ? result.filter((thread) =>
-              threadVisibleInPersonaHistory(thread, personaHistoryAgent),
+              threadVisibleInPersonaHistory(
+                thread,
+                personaHistoryAgent,
+                availablePersonaIds,
+              ),
             )
           : result;
       }
@@ -378,7 +400,11 @@ export function useThreads(
         threads.push(
           ...(personaHistoryAgent
             ? response.filter((thread) =>
-                threadVisibleInPersonaHistory(thread, personaHistoryAgent),
+                threadVisibleInPersonaHistory(
+                  thread,
+                  personaHistoryAgent,
+                  availablePersonaIds,
+                ),
               )
             : response),
         );
@@ -402,15 +428,18 @@ export function useThreads(
 export function useDeleteThread() {
   const queryClient = useQueryClient();
   const apiClient = getAPIClient();
+  const actor = currentActorId();
   return useMutation({
     onMutate: async ({ threadId }: { threadId: string }) => {
-      await queryClient.cancelQueries({ queryKey: ["threads", "search"] });
+      await queryClient.cancelQueries({
+        queryKey: threadSearchQueryKey(actor),
+      });
       const previousThreads = queryClient.getQueriesData<AgentThread[]>({
-        queryKey: ["threads", "search"],
+        queryKey: threadSearchQueryKey(actor),
       });
       queryClient.setQueriesData(
         {
-          queryKey: ["threads", "search"],
+          queryKey: threadSearchQueryKey(actor),
           exact: false,
         },
         (oldData: Array<AgentThread> | undefined) => {
@@ -440,7 +469,9 @@ export function useDeleteThread() {
       toast.error("删除对话失败，已恢复列表");
     },
     onSettled() {
-      void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+      void queryClient.invalidateQueries({
+        queryKey: threadSearchQueryKey(actor),
+      });
     },
   });
 }
@@ -448,6 +479,7 @@ export function useDeleteThread() {
 export function useRenameThread() {
   const queryClient = useQueryClient();
   const apiClient = getAPIClient();
+  const actor = currentActorId();
   return useMutation({
     mutationFn: async ({
       threadId,
@@ -463,7 +495,7 @@ export function useRenameThread() {
     onSuccess(_, { threadId, title }) {
       queryClient.setQueriesData(
         {
-          queryKey: ["threads", "search"],
+          queryKey: threadSearchQueryKey(actor),
           exact: false,
         },
         (oldData: Array<AgentThread> | undefined) => {
@@ -489,6 +521,7 @@ export function useRenameThread() {
 export function useForkThread() {
   const queryClient = useQueryClient();
   const apiClient = getAPIClient();
+  const actor = currentActorId();
   return useMutation({
     mutationFn: ({
       threadId,
@@ -499,7 +532,7 @@ export function useForkThread() {
     }) => apiClient.threads.forkThread(threadId, atMessageIndex),
     onSuccess() {
       queryClient.invalidateQueries({
-        queryKey: ["threads", "search"],
+        queryKey: threadSearchQueryKey(actor),
         exact: false,
       });
     },

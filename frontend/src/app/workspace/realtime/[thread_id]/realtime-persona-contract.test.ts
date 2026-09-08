@@ -16,10 +16,11 @@ describe("fresh realtime persona contract", () => {
     expect(end).toBeGreaterThan(start);
 
     const resolver = pageSource.slice(start, end);
-    expect(resolver).toContain("isNewThread");
-    expect(resolver).toContain("? activeAgentId");
-    expect(resolver.indexOf("? activeAgentId")).toBeLessThan(
-      resolver.indexOf("resolvedThreadOwnerAgentId"),
+    expect(resolver).toContain("conversationAgentId({");
+    expect(resolver).toContain("isNewThread,");
+    expect(resolver).toContain("activeAgentId,");
+    expect(resolver).toContain(
+      "threadOwnerAgentId: resolvedThreadOwnerAgentId",
     );
   });
 });

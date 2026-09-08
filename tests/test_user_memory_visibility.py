@@ -94,7 +94,12 @@ def test_visible_to_none_viewer_is_legacy_pass_through() -> None:
     [
         # tenant 隔离
         (_fact(tenant_id="t1"), _viewer(tenant_id="t2"), False),
-        (_fact(tenant_id=""), _viewer(tenant_id="t1"), True),  # legacy fact 本地模式视为同租户
+        (_fact(tenant_id=""), _viewer(tenant_id="t1"), False),  # explicit tenant 不继承 legacy
+        (
+            _fact(tenant_id=""),
+            _viewer(actor_id="alice", tenant_id="legacy:alice"),
+            True,
+        ),  # legacy 兼容只允许原 owner
         # owner 本人总可见（private 也只属于 owner）
         (_fact(visibility="private"), _viewer(actor_id="alice"), True),
         (_fact(visibility="private"), _viewer(actor_id="bob"), False),
@@ -165,7 +170,14 @@ def test_admin_cannot_read_others_private() -> None:
 
 def test_junk_fact_never_visible() -> None:
     assert fact_visible_to({}, _viewer(actor_id="bob")) is False
-    assert fact_visible_to({"owner": "bob"}, _viewer(actor_id="bob")) is True  # owner 仍可见
+    assert (
+        fact_visible_to(
+            {"owner": "bob"},
+            _viewer(actor_id="bob", tenant_id="legacy:bob"),
+        )
+        is True
+    )  # legacy owner 仍可见
+    assert fact_visible_to({"owner": "bob"}, _viewer(actor_id="bob")) is False
     assert fact_visible_to(None, _viewer(actor_id="bob")) is False  # type: ignore[arg-type]
 
 
@@ -277,4 +289,3 @@ def test_visible_facts_for_viewer_returns_shared_context(memory_home: Path) -> N
         for f in visible_facts_for_viewer(_viewer(actor_id="admin-user", is_admin=True))
     ]
     assert "给 admin 看" in admin_contents
-

@@ -1,5 +1,5 @@
 import {
-  BROWSER_OPEN_URL_REQUEST_KEY,
+  browserOpenUrlRequestStorageKey,
   BROWSER_OPEN_URL_REQUEST_EVENT,
   BROWSER_OPEN_URL_ACK_EVENT,
   type BrowserOpenUrlAck,
@@ -83,11 +83,11 @@ function waitForBrowserAck(id: string): Promise<boolean> {
 
 function removePendingRequest(id: string): void {
   try {
-    const raw = window.localStorage.getItem(BROWSER_OPEN_URL_REQUEST_KEY);
+    const raw = window.localStorage.getItem(browserOpenUrlRequestStorageKey());
     if (!raw) return;
     const pending = JSON.parse(raw) as Partial<BrowserOpenUrlRequest>;
     if (pending.requestId === id) {
-      window.localStorage.removeItem(BROWSER_OPEN_URL_REQUEST_KEY);
+      window.localStorage.removeItem(browserOpenUrlRequestStorageKey());
     }
   } catch (error) {
     swallow(error, "storage");
@@ -114,7 +114,7 @@ export async function openTarget(
   const previousHash = window.location.hash;
   try {
     window.localStorage.setItem(
-      BROWSER_OPEN_URL_REQUEST_KEY,
+      browserOpenUrlRequestStorageKey(),
       JSON.stringify(request),
     );
     const acknowledged = waitForBrowserAck(request.requestId!);

@@ -52,10 +52,12 @@ import {
   applyOmvSharedFolderRename,
   applyOmvSharePrivilege,
   applyOmvSmbShare,
+  applyOmvTimeMachine,
   fetchOmvFilesystems,
   fetchOmvSharePrivileges,
   fetchOmvSharingOverview,
   fetchOmvStatus,
+  fetchOmvTimeMachineStatus,
   planOmvFilesystemQuota,
   planOmvGroup,
   planOmvNfsShare,
@@ -66,6 +68,7 @@ import {
   planOmvSharedFolderRename,
   planOmvSharePrivilege,
   planOmvSmbShare,
+  planOmvTimeMachine,
   planOmvUser,
   planOmvUserPassword,
   type OmvFilesystem,
@@ -93,6 +96,9 @@ import {
   type OmvStatus,
   type OmvSmbDesiredState,
   type OmvSmbPlan,
+  type OmvTimeMachineDesiredState,
+  type OmvTimeMachinePlan,
+  type OmvTimeMachineStatus,
   type OmvUserDesiredState,
   type OmvUserPlan,
   type OmvUserPasswordDesiredState,
@@ -118,6 +124,21 @@ const RESERVED_ACCOUNT_NAMES = new Set([
   "users",
   "www-data",
 ]);
+
+function sharingUnavailableGuidance(status: OmvStatus | null) {
+  const probe = status?.probeEvidence?.find(
+    (entry) => !["ok", "not-applicable"].includes(entry.state),
+  );
+  if (probe?.source === "block-devices") {
+    return probe.state === "empty"
+      ? "未发现可用物理磁盘。请先在“存储健康”确认磁盘连接或虚拟机磁盘映射，再刷新此页。"
+      : "未能完成磁盘枚举。请先在“存储健康”检查设备读取权限和磁盘映射，再刷新此页。";
+  }
+  if (probe?.source === "filesystems") {
+    return "未能读取可写卷。请先在“存储健康”检查卷挂载状态和读取权限，再刷新此页。";
+  }
+  return "当前主机尚未提供共享管理所需的 Linux 存储能力。请先在“存储健康”完成磁盘与卷检查，再刷新此页。";
+}
 
 function validFamilyAccountName(value: string) {
   return (
@@ -157,9 +178,10 @@ const nfsFieldLabel: Record<string, string> = {
   comment: "备注",
 };
 
-function planValue(value: boolean | string | null) {
+function planValue(value: boolean | string | number | null) {
   if (value === null) return "未配置";
   if (typeof value === "boolean") return value ? "开启" : "关闭";
+  if (typeof value === "number") return quotaLimitLabel(value);
   return value || "空";
 }
 
@@ -173,6 +195,9 @@ export function OmvSharingPanel() {
   const [reloadKey, setReloadKey] = useState(0);
   const [status, setStatus] = useState<OmvStatus | null>(null);
   const [overview, setOverview] = useState<OmvSharingOverview | null>(null);
+  const [timeMachine, setTimeMachine] = useState<OmvTimeMachineStatus | null>(
+    null,
+  );
   const [echoAccounts, setEchoAccounts] = useState<EchoAccountDirectory | null>(
     null,
   );
@@ -198,6 +223,14 @@ export function OmvSharingPanel() {
   const [plan, setPlan] = useState<OmvSmbPlan | null>(null);
   const [planning, setPlanning] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
+  const [editingTimeMachineFolder, setEditingTimeMachineFolder] =
+    useState<OmvSharedFolder | null>(null);
+  const [timeMachineDesired, setTimeMachineDesired] =
+    useState<OmvTimeMachineDesiredState | null>(null);
+  const [timeMachinePlan, setTimeMachinePlan] =
+    useState<OmvTimeMachinePlan | null>(null);
+  const [timeMachinePlanning, setTimeMachinePlanning] = useState(false);
+  const [timeMachineApprovalOpen, setTimeMachineApprovalOpen] = useState(false);
   const [folderCreateOpen, setFolderCreateOpen] = useState(false);
   const [folderMountRef, setFolderMountRef] = useState("");
   const [folderName, setFolderName] = useState("");
@@ -328,6 +361,9 @@ export function OmvSharingPanel() {
     setQuotaPlan(null);
     setQuotaDesired(null);
     setNfsPlan(null);
+    setTimeMachinePlan(null);
+    setTimeMachineDesired(null);
+    setEditingTimeMachineFolder(null);
     setFolderPlan(null);
     setFolderDesired(null);
     setFolderDeletePlan(null);
@@ -371,15 +407,21 @@ export function OmvSharingPanel() {
         if (!nextStatus.available) {
           setOverview(null);
           setFilesystems([]);
+          setTimeMachine(null);
           return;
         }
-        const [nextOverview, nextFilesystems] = await Promise.all([
-          fetchOmvSharingOverview(),
-          fetchOmvFilesystems(),
-        ]);
+        const [nextOverview, nextFilesystems, nextTimeMachine] =
+          await Promise.all([
+            fetchOmvSharingOverview(),
+            fetchOmvFilesystems(),
+            nextStatus.capabilities?.includes("smb.time-machine.desired.v1")
+              ? fetchOmvTimeMachineStatus()
+              : Promise.resolve(null),
+          ]);
         if (alive) {
           setOverview(nextOverview);
           setFilesystems(nextFilesystems);
+          setTimeMachine(nextTimeMachine);
           const firstQuotaFilesystem = nextFilesystems.find(
             (entry) => entry.uuid && entry.supportsQuota && !entry.readOnly,
           );
@@ -400,6 +442,7 @@ export function OmvSharingPanel() {
         if (alive) {
           setOverview(null);
           setFilesystems([]);
+          setTimeMachine(null);
           setError(
             reason instanceof Error ? reason.message : "无法读取共享与用户状态",
           );
@@ -792,6 +835,67 @@ export function OmvSharingPanel() {
   const updateDesired = (change: Partial<OmvSmbDesiredState>) => {
     setDesired((current) => (current ? { ...current, ...change } : current));
     setPlan(null);
+  };
+
+  const beginTimeMachineControl = (folder: OmvSharedFolder) => {
+    const existing = timeMachine?.shares.find(
+      (share) => share.sharedFolderRef === folder.uuid,
+    );
+    setEditingTimeMachineFolder(folder);
+    setTimeMachinePlan(null);
+    setTimeMachineDesired({
+      schema: "echo.storage.time-machine-desired.v1",
+      sharedFolderRef: folder.uuid,
+      enabled: true,
+      owner: existing?.owner ?? overview?.users[0]?.name ?? "",
+      maximumBytes: existing?.maximumBytes ?? 256 * GIB_BYTES,
+    });
+  };
+
+  const updateTimeMachineDesired = (
+    change: Partial<OmvTimeMachineDesiredState>,
+  ) => {
+    setTimeMachineDesired((current) =>
+      current ? { ...current, ...change } : current,
+    );
+    setTimeMachinePlan(null);
+  };
+
+  const previewTimeMachineChange = async () => {
+    if (!timeMachineDesired) return;
+    setTimeMachinePlanning(true);
+    setError(null);
+    try {
+      setTimeMachinePlan(await planOmvTimeMachine(timeMachineDesired));
+    } catch (reason) {
+      setTimeMachinePlan(null);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "无法生成 Time Machine 变更预览",
+      );
+    } finally {
+      setTimeMachinePlanning(false);
+    }
+  };
+
+  const confirmTimeMachineChange = async (password: string) => {
+    if (!timeMachineDesired || !timeMachinePlan) return;
+    const approval = await requestHighRiskApproval(
+      "storage.time-machine.apply",
+      timeMachinePlan.planId,
+      password,
+    );
+    await applyOmvTimeMachine(
+      timeMachineDesired,
+      timeMachinePlan.planId,
+      approval.approvalToken,
+    );
+    setTimeMachineApprovalOpen(false);
+    setEditingTimeMachineFolder(null);
+    setTimeMachineDesired(null);
+    setTimeMachinePlan(null);
+    setReloadKey((value) => value + 1);
   };
 
   const beginNfsControl = (folder: OmvSharedFolder) => {
@@ -1460,7 +1564,7 @@ export function OmvSharingPanel() {
             共享与用户
           </h1>
           <p className="mt-1 text-[13px] text-slate-500">
-            查看 SMB / NFS、NAS 账户和共享权限
+            查看 SMB / NFS / Time Machine、NAS 账户和共享权限
           </p>
         </div>
         <button
@@ -1493,11 +1597,9 @@ export function OmvSharingPanel() {
                 : "共享管理暂不可用"}
           </h2>
           <p className="mt-0.5 text-xs leading-5 text-slate-500">
-            Echo
-            展示脱敏概览，可在现有可写卷上安全新建基础共享文件夹，并为其预览和应用简单私有
-            SMB / NFS
-            规则、普通家庭账户/组、受限成员密码重置及已有用户/组访问权限；原生登记共享目录还可管理根目录
-            POSIX ACL。其他账户修改/删除、递归 ACL 和复杂协议配置仍保持关闭。
+            {!loading && !status?.available
+              ? sharingUnavailableGuidance(status)
+              : "Echo 展示脱敏概览，可在现有可写卷上安全新建基础共享文件夹，并为其预览和应用简单私有 SMB / NFS / Time Machine 规则、普通家庭账户/组、受限成员密码重置及已有用户/组访问权限；原生登记共享目录还可管理根目录 POSIX ACL。其他账户修改/删除、递归 ACL 和复杂协议配置仍保持关闭。"}
           </p>
         </div>
         {status?.adminUrl && (
@@ -1530,7 +1632,7 @@ export function OmvSharingPanel() {
 
       {overview && (
         <>
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
             {[
               {
                 name: "SMB",
@@ -1542,6 +1644,15 @@ export function OmvSharingPanel() {
                 enabled: overview.nfs.enabled,
                 count: overview.nfs.shares.length,
               },
+              ...(timeMachine
+                ? [
+                    {
+                      name: "Time Machine",
+                      enabled: timeMachine.enabled,
+                      count: timeMachine.shares.length,
+                    },
+                  ]
+                : []),
             ].map((service) => (
               <section
                 key={service.name}
@@ -1579,7 +1690,7 @@ export function OmvSharingPanel() {
                 只显示允许的连接范围和访问方式，不返回密码或额外配置字段
               </p>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <strong className="inline-flex items-center gap-1.5 text-xs text-slate-700">
                   <ServerIcon className="size-3.5 text-blue-500" />
@@ -1635,6 +1746,35 @@ export function OmvSharingPanel() {
                   )}
                 </div>
               </div>
+              {timeMachine && (
+                <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+                  <strong className="inline-flex items-center gap-1.5 text-xs text-violet-800">
+                    <ServerIcon className="size-3.5 text-violet-500" />
+                    Time Machine
+                  </strong>
+                  <div className="mt-2 space-y-1.5">
+                    {timeMachine.shares.map((share) => (
+                      <div
+                        key={share.sharedFolderRef}
+                        className="rounded-lg bg-white px-2.5 py-2 text-[10px] text-slate-500 ring-1 ring-violet-100"
+                      >
+                        <span className="block truncate font-medium text-slate-700">
+                          {share.name}
+                        </span>
+                        <span>
+                          {share.owner} · {quotaLimitLabel(share.maximumBytes)}{" "}
+                          · {share.status}
+                        </span>
+                      </div>
+                    ))}
+                    {timeMachine.shares.length === 0 && (
+                      <span className="text-[10px] text-slate-400">
+                        没有 Time Machine 备份目的地
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 
@@ -1765,6 +1905,158 @@ export function OmvSharingPanel() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {editingTimeMachineFolder && timeMachineDesired && (
+            <section className="mt-4 rounded-2xl border border-violet-200 bg-violet-50/60 p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-[15px] font-semibold">
+                    Time Machine 备份目的地 · {editingTimeMachineFolder.name}
+                  </h2>
+                  <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
+                    仅供一位 NAS 成员通过 SMB3
+                    访问；首次启用必须是空的专用目录。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTimeMachineFolder(null);
+                    setTimeMachineDesired(null);
+                    setTimeMachinePlan(null);
+                  }}
+                  className="shrink-0 whitespace-nowrap text-xs text-slate-500 hover:text-slate-800"
+                >
+                  关闭
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <label className="flex items-center gap-2 rounded-xl border border-violet-100 bg-white px-3 py-2.5 text-xs text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={timeMachineDesired.enabled}
+                    onChange={(event) =>
+                      updateTimeMachineDesired({
+                        enabled: event.currentTarget.checked,
+                      })
+                    }
+                    className="size-3.5 rounded border-slate-300"
+                  />
+                  启用 Time Machine
+                </label>
+                <label className="text-xs font-medium text-slate-600">
+                  备份所有者
+                  <select
+                    value={timeMachineDesired.owner}
+                    onChange={(event) =>
+                      updateTimeMachineDesired({
+                        owner: event.currentTarget.value,
+                      })
+                    }
+                    disabled={!timeMachineDesired.enabled}
+                    className="mt-1.5 h-9 w-full rounded-xl border border-violet-100 bg-white px-3 text-xs outline-none focus:border-violet-500 disabled:opacity-60"
+                  >
+                    {overview?.users.map((user) => (
+                      <option key={user.name} value={user.name}>
+                        {user.comment || user.name} ({user.name})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-medium text-slate-600">
+                  最大备份空间 (GiB)
+                  <input
+                    type="number"
+                    min={64}
+                    max={1024 ** 2}
+                    step={1}
+                    value={timeMachineDesired.maximumBytes / GIB_BYTES}
+                    onChange={(event) =>
+                      updateTimeMachineDesired({
+                        maximumBytes:
+                          Number(event.currentTarget.value) * GIB_BYTES,
+                      })
+                    }
+                    disabled={!timeMachineDesired.enabled}
+                    className="mt-1.5 h-9 w-full rounded-xl border border-violet-100 bg-white px-3 text-xs outline-none focus:border-violet-500 disabled:opacity-60"
+                  />
+                </label>
+              </div>
+              <p className="mt-2 text-[10px] leading-5 text-slate-500">
+                空间上限由 Samba 按 sparsebundle
+                大小估算；请不要在这个目录中存放其他文件。停用只移除共享，不删除备份。
+              </p>
+              <div className="mt-4 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void previewTimeMachineChange()}
+                  disabled={
+                    timeMachinePlanning ||
+                    (timeMachineDesired.enabled &&
+                      (!timeMachineDesired.owner ||
+                        timeMachineDesired.maximumBytes < 64 * GIB_BYTES ||
+                        timeMachineDesired.maximumBytes >
+                          1024 ** 2 * GIB_BYTES ||
+                        timeMachineDesired.maximumBytes % GIB_BYTES !== 0))
+                  }
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-violet-600 px-4 text-xs font-medium text-white transition hover:bg-violet-700 disabled:opacity-50"
+                >
+                  {timeMachinePlanning && (
+                    <Loader2Icon className="size-3.5 animate-spin" />
+                  )}
+                  {timeMachinePlanning ? "正在预览…" : "预览 Time Machine 变更"}
+                </button>
+                <span className="text-[11px] text-slate-500">
+                  预览不会修改 Samba
+                </span>
+              </div>
+              {timeMachinePlan && (
+                <div className="mt-4 rounded-xl border border-violet-100 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <strong className="text-xs text-slate-800">
+                      {timeMachinePlan.operation === "create"
+                        ? "将创建 Time Machine 目的地"
+                        : timeMachinePlan.operation === "update"
+                          ? "将更新 Time Machine 目的地"
+                          : timeMachinePlan.operation === "remove"
+                            ? "将停用 Time Machine（备份保留）"
+                            : "当前已经符合期望状态"}
+                    </strong>
+                    {timeMachinePlan.requiresApproval && (
+                      <button
+                        type="button"
+                        onClick={() => setTimeMachineApprovalOpen(true)}
+                        className="h-8 rounded-lg bg-amber-500 px-3 text-[11px] font-medium text-white hover:bg-amber-600"
+                      >
+                        管理员确认并应用
+                      </button>
+                    )}
+                  </div>
+                  {timeMachinePlan.changes.map((change) => (
+                    <div
+                      key={change.field}
+                      className="mt-2 grid grid-cols-[90px_1fr_auto_1fr] items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[10px] text-slate-500"
+                    >
+                      <span className="font-medium text-slate-700">
+                        {change.field === "enabled"
+                          ? "启用"
+                          : change.field === "owner"
+                            ? "所有者"
+                            : "空间上限"}
+                      </span>
+                      <span className="truncate">
+                        {planValue(change.before)}
+                      </span>
+                      <span>→</span>
+                      <span className="truncate font-medium text-violet-700">
+                        {planValue(change.after)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>
@@ -2434,6 +2726,9 @@ export function OmvSharingPanel() {
                 const nfsRule = overview.nfs.shares.find(
                   (share) => share.sharedFolderRef === folder.uuid,
                 );
+                const timeMachineRule = timeMachine?.shares.find(
+                  (share) => share.sharedFolderRef === folder.uuid,
+                );
                 const folderControlsAllowed =
                   status?.source !== "native" ||
                   !folder.relativePath.startsWith("/");
@@ -2447,6 +2742,10 @@ export function OmvSharingPanel() {
                   status?.capabilities?.includes(
                     "nfs.share.private-network.v1",
                   );
+                const canControlTimeMachine =
+                  folderControlsAllowed &&
+                  timeMachine?.available &&
+                  status?.capabilities?.includes("smb.time-machine.desired.v1");
                 const canControlPrivileges =
                   folderControlsAllowed &&
                   status?.capabilities?.includes(
@@ -2456,7 +2755,9 @@ export function OmvSharingPanel() {
                   status?.source === "native" &&
                   folderControlsAllowed &&
                   status.capabilities?.includes("shared-folder.rename.safe.v1");
-                const renameBlockedByShare = Boolean(smbRule || nfsRule);
+                const renameBlockedByShare = Boolean(
+                  smbRule || nfsRule || timeMachineRule,
+                );
                 const canDetach =
                   status?.source === "native" &&
                   folderControlsAllowed &&
@@ -2541,6 +2842,12 @@ export function OmvSharingPanel() {
                         <button
                           type="button"
                           onClick={() => beginSmbControl(folder)}
+                          disabled={Boolean(timeMachineRule)}
+                          title={
+                            timeMachineRule
+                              ? "请先停用这个文件夹的 Time Machine 目的地"
+                              : undefined
+                          }
                           className="inline-flex h-7 items-center gap-1 rounded-lg bg-blue-600 px-2.5 text-[10px] font-medium text-white transition hover:bg-blue-700"
                         >
                           <SlidersHorizontalIcon className="size-3" />
@@ -2551,10 +2858,36 @@ export function OmvSharingPanel() {
                         <button
                           type="button"
                           onClick={() => beginNfsControl(folder)}
+                          disabled={Boolean(timeMachineRule)}
+                          title={
+                            timeMachineRule
+                              ? "请先停用这个文件夹的 Time Machine 目的地"
+                              : undefined
+                          }
                           className="inline-flex h-7 items-center gap-1 rounded-lg bg-emerald-600 px-2.5 text-[10px] font-medium text-white transition hover:bg-emerald-700"
                         >
                           <SlidersHorizontalIcon className="size-3" />
                           {nfsRule ? "管理 NFS" : "启用 NFS"}
+                        </button>
+                      )}
+                      {canControlTimeMachine && (
+                        <button
+                          type="button"
+                          onClick={() => beginTimeMachineControl(folder)}
+                          disabled={
+                            !timeMachineRule && Boolean(smbRule || nfsRule)
+                          }
+                          title={
+                            !timeMachineRule && (smbRule || nfsRule)
+                              ? "请先停用这个文件夹的普通 SMB/NFS 规则"
+                              : "通过 SMB3 vfs_fruit 供 macOS 备份"
+                          }
+                          className="inline-flex h-7 items-center gap-1 rounded-lg bg-violet-600 px-2.5 text-[10px] font-medium text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          <SlidersHorizontalIcon className="size-3" />
+                          {timeMachineRule
+                            ? "管理 Time Machine"
+                            : "启用 Time Machine"}
                         </button>
                       )}
                       {canRename && (
@@ -2564,7 +2897,7 @@ export function OmvSharingPanel() {
                           disabled={renameBlockedByShare}
                           title={
                             renameBlockedByShare
-                              ? "请先停用这个文件夹的 SMB/NFS 规则"
+                              ? "请先停用这个文件夹的 SMB/NFS/Time Machine 规则"
                               : "保留数据和 UUID，仅修改目录名称"
                           }
                           className="inline-flex h-7 items-center gap-1 rounded-lg border border-cyan-200 bg-white px-2.5 text-[10px] font-medium text-cyan-700 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45"
@@ -2683,7 +3016,7 @@ export function OmvSharingPanel() {
                         <div className="flex items-center justify-between gap-3">
                           <span>
                             将解除 Echo 登记；目录、文件和现有 POSIX ACL
-                            均保留。 SMB/NFS 规则需先停用。
+                            均保留。 SMB/NFS/Time Machine 规则需先停用。
                           </span>
                           <button
                             type="button"
@@ -2699,8 +3032,8 @@ export function OmvSharingPanel() {
                       <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[10px] text-red-800">
                         <div className="flex items-center justify-between gap-3">
                           <span>
-                            已确认目录为空且没有 SMB/NFS 依赖；将删除目录和 Echo
-                            登记，不递归删除任何文件。
+                            已确认目录为空且没有 SMB/NFS/Time Machine
+                            依赖；将删除目录和 Echo 登记，不递归删除任何文件。
                           </span>
                           <button
                             type="button"
@@ -3688,7 +4021,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={folderDetachApprovalOpen && Boolean(folderDetachPlan)}
         title="解除共享文件夹登记"
-        description="Echo 只会移除本机共享文件夹注册元数据，不会删除目录、文件或 POSIX ACL。若 SMB 或 NFS 规则仍存在，预览会拒绝本次操作。"
+        description="Echo 只会移除本机共享文件夹注册元数据，不会删除目录、文件或 POSIX ACL。若 SMB、NFS 或 Time Machine 规则仍存在，预览会拒绝本次操作。"
         targetLabel={
           folderDetachPlan
             ? `${folderDetachPlan.sharedFolder.name}/ · 数据保留 · ${folderDetachPlan.planId.slice(0, 12)}`
@@ -3701,7 +4034,7 @@ export function OmvSharingPanel() {
       <HighRiskApprovalDialog
         open={folderDeleteApprovalOpen && Boolean(folderDeletePlan)}
         title="删除空共享文件夹"
-        description="Echo 只会删除已登记、当前已挂载可写、确认为空且没有 SMB/NFS 依赖的目录，并移除对应登记；不会递归删除文件。若目录状态在审批前变化，apply 会拒绝并要求重新预览。"
+        description="Echo 只会删除已登记、当前已挂载可写、确认为空且没有 SMB/NFS/Time Machine 依赖的目录，并移除对应登记；不会递归删除文件。若目录状态在审批前变化，apply 会拒绝并要求重新预览。"
         targetLabel={
           folderDeletePlan
             ? `${folderDeletePlan.sharedFolder.name}/ · 仅空目录 · ${folderDeletePlan.planId.slice(0, 12)}`
@@ -3723,6 +4056,19 @@ export function OmvSharingPanel() {
         confirmLabel="确认应用"
         onCancel={() => setApprovalOpen(false)}
         onConfirm={confirmSmbChange}
+      />
+      <HighRiskApprovalDialog
+        open={timeMachineApprovalOpen && Boolean(timeMachinePlan)}
+        title="应用 Time Machine 配置"
+        description="Echo 将重写唯一的受管 Samba include，校验 testparm，重载 smbd 并回读所有者、路径、fruit 模块和空间上限。失败时恢复原配置；停用不删除备份数据。"
+        targetLabel={
+          editingTimeMachineFolder && timeMachinePlan
+            ? `${editingTimeMachineFolder.name} · ${timeMachinePlan.desired.owner} · ${timeMachinePlan.planId.slice(0, 12)}`
+            : undefined
+        }
+        confirmLabel="确认应用 Time Machine"
+        onCancel={() => setTimeMachineApprovalOpen(false)}
+        onConfirm={confirmTimeMachineChange}
       />
       <HighRiskApprovalDialog
         open={quotaApprovalOpen && Boolean(quotaPlan)}

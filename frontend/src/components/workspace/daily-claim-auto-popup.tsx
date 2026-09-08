@@ -6,44 +6,16 @@
  * dismissed the popup today, we pop the dialog automatically. Dismissal
  * is stored in localStorage keyed by date so it auto-resets tomorrow.
  */
-import { swallow } from "@/core/utils/log";
 import { useEffect, useState } from "react";
 
 import { useDailyClaimInfo, useOctLink } from "@/core/oct/hooks";
+import {
+  markDailyClaimDismissedToday,
+  wasDailyClaimDismissedToday,
+} from "@/core/credits/daily-claim-preferences";
 import { useAuth } from "@/providers/AuthProvider";
 
 import { DailyClaimDialog } from "./daily-claim-dialog";
-
-const DISMISS_KEY_PREFIX = "oct:dailyClaimDismissed:";
-
-function todayKey(): string {
-  // Match the user's local day boundary — dismissing in the evening
-  // shouldn't auto-reset at midnight UTC.
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${DISMISS_KEY_PREFIX}${y}-${m}-${d}`;
-}
-
-function wasDismissedToday(): boolean {
-  if (typeof window === "undefined") return true; // SSR: don't auto-pop
-  try {
-    return window.localStorage.getItem(todayKey()) === "1";
-  } catch (e) {
-    swallow(e);
-    return true;
-  }
-}
-
-function markDismissedToday() {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(todayKey(), "1");
-  } catch (e) {
-    swallow(e, "storage");
-  }
-}
 
 export function DailyClaimAutoPopup() {
   const { user } = useAuth();
@@ -61,7 +33,7 @@ export function DailyClaimAutoPopup() {
     const data = info.data.data;
     const claimed = Boolean(data?.claimedToday ?? false);
     if (claimed) return;
-    if (wasDismissedToday()) return;
+    if (wasDailyClaimDismissedToday()) return;
     setOpen(true);
   }, [user, linked, info.isLoading, info.data]);
 
@@ -72,7 +44,7 @@ export function DailyClaimAutoPopup() {
       open={open}
       onOpenChange={setOpen}
       autoPopup
-      onDismissToday={markDismissedToday}
+      onDismissToday={markDailyClaimDismissedToday}
     />
   );
 }

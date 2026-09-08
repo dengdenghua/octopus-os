@@ -2052,10 +2052,15 @@ for locale_definition in en_US en_GB zh_CN zh_TW ja_JP ko_KR de_DE fr_FR es_ES p
 done
 if command -v sha256sum >/dev/null 2>&1; then
   FLATHUB_DEFINITION_SHA256="$(sha256sum "$REPO_ROOT/deploy/apps/flathub.flatpakrepo" | awk '{print $1}')"
-else
+elif command -v shasum >/dev/null 2>&1; then
   FLATHUB_DEFINITION_SHA256="$(shasum -a 256 "$REPO_ROOT/deploy/apps/flathub.flatpakrepo" | awk '{print $1}')"
+else
+  FLATHUB_DEFINITION_SHA256=""
+  fail "SHA-256 tool missing (install sha256sum or shasum)"
 fi
-if [[ "$FLATHUB_DEFINITION_SHA256" == 3371dd250e61d9e1633630073fefda153cd4426f72f4afa0c3373ae2e8fea03a ]]; then
+if [[ -z "$FLATHUB_DEFINITION_SHA256" ]]; then
+  : # The missing-tool failure above is the actionable result.
+elif [[ "$FLATHUB_DEFINITION_SHA256" == 3371dd250e61d9e1633630073fefda153cd4426f72f4afa0c3373ae2e8fea03a ]]; then
   pass "bundled Flathub definition matches its independent SHA-256 pin"
 else
   fail "bundled Flathub definition does not match its SHA-256 pin"

@@ -66,26 +66,22 @@ const STATUS_STYLE: Record<
   },
   running: {
     dotColor: "bg-warning",
-    badgeClass:
-      "bg-warning/10 text-warning border-warning/20",
+    badgeClass: "bg-warning/10 text-warning border-warning/20",
     icon: <Loader2Icon className="size-3 animate-spin" />,
   },
   paused: {
     dotColor: "bg-warning",
-    badgeClass:
-      "bg-warning/10 text-warning border-warning/20",
+    badgeClass: "bg-warning/10 text-warning border-warning/20",
     icon: <PauseIcon className="size-3" />,
   },
   completed: {
     dotColor: "bg-success",
-    badgeClass:
-      "bg-success/10 text-success border-success/20",
+    badgeClass: "bg-success/10 text-success border-success/20",
     icon: <CheckCircle2Icon className="size-3" />,
   },
   failed: {
     dotColor: "bg-destructive",
-    badgeClass:
-      "bg-destructive/10 text-destructive border-destructive/20",
+    badgeClass: "bg-destructive/10 text-destructive border-destructive/20",
     icon: <AlertCircleIcon className="size-3" />,
   },
   cancelled: {

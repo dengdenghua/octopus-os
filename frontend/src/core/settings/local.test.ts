@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const identity = vi.hoisted(() => ({ actor: "account-a" }));
+vi.mock("../auth/api", () => ({ currentActorId: () => identity.actor }));
+beforeEach(() => {
+  identity.actor = "account-a";
+});
 
 import {
   clearThreadModelReferences,
@@ -7,6 +13,7 @@ import {
   getThreadModelName,
   saveThreadLocalSettings,
   saveThreadModelName,
+  saveLocalSettings,
   subscribeLocalSettings,
 } from "./local";
 
@@ -104,11 +111,83 @@ describe("local settings defaults", () => {
     expect(getThreadModelName("thread-b")).toBe("kept-model");
     expect(getThreadModelName("thread-c")).toBeUndefined();
   });
+
+  it("isolates system settings between actors", () => {
+    saveLocalSettings({
+      ...getLocalSettings(),
+      context: { ...getLocalSettings().context, model_name: "model-a" },
+    });
+    identity.actor = "account-b";
+    expect(getLocalSettings().context.model_name).toBe("auto");
+    identity.actor = "account-a";
+    expect(getLocalSettings().context.model_name).toBe("model-a");
+  });
 });
 
 describe("per-thread model persistence", () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  it("keeps task model and effort across system changes and isolates accounts", () => {
+    const base = getLocalSettings();
+    saveThreadLocalSettings("task", {
+      ...base,
+      context: {
+        ...base.context,
+        model_scope: "task",
+        model_name: "task-model",
+        reasoning_effort: "high",
+      },
+    });
+    saveLocalSettings({
+      ...getLocalSettings(),
+      context: {
+        ...base.context,
+        model_name: "system-model",
+        reasoning_effort: "low",
+      },
+    });
+    expect(getThreadLocalSettings("task").context).toMatchObject({
+      model_scope: "task",
+      model_name: "task-model",
+      reasoning_effort: "high",
+    });
+    expect(getThreadLocalSettings("other").context).toMatchObject({
+      model_name: "system-model",
+      reasoning_effort: "low",
+    });
+    identity.actor = "account-b";
+    expect(getThreadModelName("task")).toBeUndefined();
+    expect(getThreadLocalSettings("task").context.model_scope).not.toBe("task");
+    expect(clearThreadModelReferences("task-model")).toBe(0);
+    identity.actor = "account-a";
+    expect(getThreadModelName("task")).toBe("task-model");
+  });
+
+  it("returns a task to the system model and effort explicitly", () => {
+    const base = getLocalSettings();
+    saveThreadLocalSettings("task", {
+      ...base,
+      context: {
+        ...base.context,
+        model_scope: "task",
+        model_name: "override",
+        reasoning_effort: "high",
+      },
+    });
+    expect(getLocalSettings().context.reasoning_effort).toBeUndefined();
+    saveThreadLocalSettings("task", {
+      ...base,
+      context: { ...base.context, model_scope: "system" },
+    });
+    expect(getThreadLocalSettings("task").context).toMatchObject({
+      model_scope: "system",
+      model_name: "auto",
+    });
+    expect(
+      getThreadLocalSettings("task").context.reasoning_effort,
+    ).toBeUndefined();
   });
 
   it("round-trips a model selected in one thread without leaking to others", () => {
@@ -121,6 +200,39 @@ describe("per-thread model persistence", () => {
     expect(getThreadLocalSettings("thread-a").context.model_name).toBe(
       "glm-5.3",
     );
+    expect(getLocalSettings().context.model_name).toBe("auto");
+    expect(getThreadLocalSettings("thread-b").context.model_name).toBe("auto");
+  });
+
+  it("preserves a newer system model when an older thread snapshot is saved", () => {
+    const stale = getThreadLocalSettings("thread-a");
+    saveLocalSettings({
+      ...stale,
+      context: { ...stale.context, model_name: "new-system-model" },
+    });
+    saveThreadLocalSettings("thread-a", {
+      ...stale,
+      display: { ...stale.display, chat_font_size: "large" },
+    });
+    expect(getLocalSettings().context.model_name).toBe("new-system-model");
+    expect(getThreadLocalSettings("thread-b").context.model_name).toBe(
+      "new-system-model",
+    );
+    expect(getLocalSettings().display.chat_font_size).toBe("large");
+  });
+
+  it("refreshes subscribers for cross-tab task overrides and storage clearing", () => {
+    let calls = 0;
+    const unsubscribe = subscribeLocalSettings(() => {
+      calls += 1;
+    });
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: "echo.thread-model.thread-a" }),
+    );
+    window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    window.dispatchEvent(new StorageEvent("storage", { key: "unrelated" }));
+    unsubscribe();
+    expect(calls).toBe(2);
   });
 
   it("broadcasts only after the new thread model is observable", () => {

@@ -12,6 +12,7 @@ const toastMocks = vi.hoisted(() => ({
 vi.mock("sonner", () => ({ toast: toastMocks }));
 vi.mock("@/core/auth/api", () => ({
   authHeaders: () => ({ Authorization: "Bearer test-token" }),
+  currentActorId: () => "local:test-actor",
   getToken: () => "test-token",
   jsonAuthHeaders: () => ({
     Authorization: "Bearer test-token",

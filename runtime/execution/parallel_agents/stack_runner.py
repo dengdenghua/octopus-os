@@ -212,22 +212,49 @@ def make_stack_subagent_runner(
         if model and model not in ("echo-agent", ""):
             plan_kwargs["model"] = model
 
-        actor = ctx.get("actor") or ctx.get("file_write_owner")
+        explicit_parent = ctx.get("caller_session")
+        parent_session = (
+            explicit_parent if isinstance(explicit_parent, Session) else current_session()
+        )
+        host_parent = isinstance(parent_session, Session) and bool(
+            getattr(parent_session, "execution_request", None)
+            or getattr(parent_session, "execution_lease", None)
+        )
+        actor = (
+            getattr(parent_session, "actor", None)
+            if host_parent
+            else ctx.get("actor")
+            or ctx.get("file_write_owner")
+            or getattr(parent_session, "actor", None)
+        )
         runtime_metadata: dict[str, Any] = (
             cast(dict[str, Any], ctx.get("runtime_session_metadata"))
             if isinstance(ctx.get("runtime_session_metadata"), dict)
             else {}
         )
+        if isinstance(parent_session, Session):
+            # The caller session is the trusted source for a host task's
+            # scope. Context supplied by an orchestrator may add observations
+            # but must not widen the parent's policy or replace its private
+            # lease metadata.
+            runtime_metadata = {
+                **runtime_metadata,
+                **dict(parent_session.metadata or {}),
+            }
         emit_tool_event = (
             ctx.get("emit_tool_event") if callable(ctx.get("emit_tool_event")) else None
         )
-        thread_id = ctx.get("thread_id")
+        thread_id = (
+            getattr(parent_session, "thread_id", None)
+            if host_parent
+            else ctx.get("thread_id") or getattr(parent_session, "thread_id", None)
+        )
 
         # 3. Intent
         user_context = {
             "subagent_name": subagent_name,
             "parallel": True,
-            **({"thread_id": ctx["thread_id"]} if ctx.get("thread_id") else {}),
+            **({"thread_id": thread_id} if thread_id else {}),
         }
         for key in (
             "lead_agent_name",
@@ -259,6 +286,8 @@ def make_stack_subagent_runner(
                 actor=actor,
                 thread_id=thread_id,
                 metadata=runtime_metadata,
+                execution_lease=getattr(parent_session, "execution_lease", None),
+                execution_request=getattr(parent_session, "execution_request", None),
             )
         ):
             # A delegated task without an explicitly selected project is

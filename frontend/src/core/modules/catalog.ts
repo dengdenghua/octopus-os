@@ -4,9 +4,35 @@
  * Ids are stable persistence keys: renaming one silently resets that module to
  * its default for every existing user, so treat them as a wire contract.
  */
+import {
+  LOCAL_DATABASE_APP_ID,
+  WORKBENCH_BUILTIN_APPS,
+} from "@/core/workbench/apps";
 import type { ModuleDescriptor, ModuleGroup, ModuleSection } from "./types";
 
-export const MODULE_CATALOG: ModuleDescriptor[] = [
+function workbenchModule(
+  appId: string,
+  metadata: Pick<
+    ModuleDescriptor,
+    "labelKey" | "group" | "section" | "removable"
+  >,
+): ModuleDescriptor {
+  const app = WORKBENCH_BUILTIN_APPS.find((entry) => entry.id === appId);
+  if (!app) throw new Error(`unknown workbench app: ${appId}`);
+  return {
+    id: app.moduleId,
+    to: app.workspaceRoute,
+    ...metadata,
+  };
+}
+
+const SIDEBAR_MODULES: ModuleDescriptor[] = [
+  workbenchModule(LOCAL_DATABASE_APP_ID, {
+    labelKey: "navDatabase",
+    group: "knowledge",
+    section: "chatCapability",
+    removable: true,
+  }),
   // ─── 工作台核心 ────────────────────────────────────────────
   {
     id: "hr",
@@ -25,124 +51,70 @@ export const MODULE_CATALOG: ModuleDescriptor[] = [
     section: "chatCapability",
     removable: true,
   },
-  {
-    id: "intelligence",
-    to: "/workspace/intelligence?surface=chat",
+  workbenchModule("intelligence", {
     labelKey: "navIntelligence",
     group: "workspace",
     section: "chatCapability",
     removable: true,
-  },
-  {
+  }),
+  workbenchModule("paper-trading", {
     // 模拟炒股插件页:内嵌平台原版网页(iframe),复刻版已拆到 paper_trading_replica(插件中心)
-    id: "paper.trading",
-    to: "/workspace/paper-trading",
     labelKey: "navPaperTrading",
     group: "workspace",
     section: "chatCapability",
     removable: true,
-  },
-  {
+  }),
+  workbenchModule("projects", {
     // 项目管理(Project OS)驾驶舱:里程碑健康度/风险/下一步/复盘 —— 真实 PM 视角
-    id: "projects",
-    to: "/workspace/projects",
     labelKey: "navProjects",
     group: "workspace",
     section: "chatCapability",
     removable: true,
-  },
-  {
+  }),
+  workbenchModule("design", {
     // 设计创作平台：自由画布与工作流共用节点，角色、技能、插件可视化编排。
-    id: "design",
-    to: "/workspace/design",
     labelKey: "navDesign",
     group: "workspace",
     section: "chatCapability",
     removable: true,
-  },
-  {
+  }),
+  workbenchModule("narrative", {
     // 叙事工坊：角色、世界观、剧情线与叙事资产的统一创作工作台。
-    id: "narrative",
-    to: "/workspace/narrative",
     labelKey: "navNarrative",
     group: "workspace",
     section: "chatCapability",
     removable: true,
-  },
+  }),
 
   // ─── 成长与运营 ────────────────────────────────────────────
-  {
-    id: "evolution",
-    to: "/workspace/evolution?surface=chat",
+  workbenchModule("evolution", {
     labelKey: "navEvolution",
     group: "growth",
     section: "chatCapability",
     removable: true,
-  },
+  }),
 
   // ─── 社区与发现 ────────────────────────────────────────────
-  {
-    id: "community",
-    to: "/workspace/community",
+  workbenchModule("community", {
     labelKey: "navCommunity",
     group: "community",
     section: "community",
     removable: true,
-  },
+  }),
 
   // ─── 知识与存储 ────────────────────────────────────────────
-  // NOTE: the five storage libraries below share one lazy chunk
-  // (`storage/page.tsx`). Hiding a subset saves no download — they are
-  // separate entries only because each is a distinct destination.
   {
     id: "knowledge",
     to: "/workspace/knowledge?surface=chat",
     labelKey: "navKnowledgeGraph",
     group: "knowledge",
-    section: "storageLibrary",
-    removable: true,
-  },
-  {
-    id: "library.apps",
-    to: "/workspace/storage?surface=company&library=apps",
-    labelKey: "libraryApps",
-    group: "knowledge",
-    section: "storageLibrary",
-    removable: true,
-  },
-  {
-    id: "library.docs",
-    to: "/workspace/storage?surface=company&library=docs",
-    labelKey: "libraryDocs",
-    group: "knowledge",
-    section: "storageLibrary",
-    removable: true,
-  },
-  {
-    id: "library.images",
-    to: "/workspace/storage?surface=company&library=images",
-    labelKey: "libraryImages",
-    group: "knowledge",
-    section: "storageLibrary",
-    removable: true,
-  },
-  {
-    id: "library.videos",
-    to: "/workspace/storage?surface=company&library=videos",
-    labelKey: "libraryVideos",
-    group: "knowledge",
-    section: "storageLibrary",
-    removable: true,
-  },
-  {
-    id: "library.computer",
-    to: "/workspace/storage?surface=company&library=computer",
-    labelKey: "libraryComputer",
-    group: "knowledge",
-    section: "storageLibrary",
+    section: "chatCapability",
     removable: true,
   },
 ];
+
+/** Application routes are shared with the app center and desktop. */
+export const MODULE_CATALOG: ModuleDescriptor[] = SIDEBAR_MODULES;
 
 /** Display order of groups in the editor panel. */
 export const MODULE_GROUP_ORDER: ModuleGroup[] = [

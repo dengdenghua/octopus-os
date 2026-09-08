@@ -19,6 +19,7 @@ from runtime.execution.codex_backend.model_profile import (
     is_disallowed_coder_system_model,
     resolve_codex_execution_profile,
 )
+from runtime.execution.codex_backend.readiness import inspect_codex_readiness
 from runtime.execution.codex_backend.types import (
     CodexAppServerError,
     ConfigurationError,
@@ -300,7 +301,7 @@ def _register_coder_codex(router: Any, ctx: _ConfigCtx) -> None:
     )
     async def api_coder_codex_model_profile(request: Request) -> dict[str, object]:
         scope = scope_from_request(request)
-        return _resolved_profile(ctx, preferences.read(scope))
+        return _resolved_profile(ctx, preferences.read(scope), scope)
 
     @router.put(
         "/api/coder/codex/model-profile",
@@ -348,10 +349,11 @@ def _register_coder_codex(router: Any, ctx: _ConfigCtx) -> None:
                 if models is not None:
                     _validate_account_model_preference(preference, models)
         preferences.write(scope, preference)
-        return _resolved_profile(ctx, preference)
+        return _resolved_profile(ctx, preference, scope)
 
 
-def _resolved_profile(ctx: _ConfigCtx, preference: CodexModelPreference):
+def _resolved_profile(ctx: _ConfigCtx, preference: CodexModelPreference, scope: Any = None):
+    accounts = ctx.codex_accounts
     router = getattr(getattr(ctx.stack, "planner", None), "router", None)
     profile = resolve_codex_execution_profile(
         preference=preference,
@@ -360,7 +362,18 @@ def _resolved_profile(ctx: _ConfigCtx, preference: CodexModelPreference):
         proxy_available=router is not None and callable(getattr(router, "call", None)),
         proxy_route_available=lambda model: codex_proxy_route_available(router, model),
     )
-    return {**profile.to_wire(), "selected_model": preference.model}
+    auth_source = getattr(accounts, "resolve_execution_auth_home", None)
+    readiness = inspect_codex_readiness(
+        profile,
+        tools_available=getattr(getattr(ctx.stack, "executor", None), "registry", None) is not None,
+        auth_source=lambda: auth_source(scope) if callable(auth_source) else None,
+    )
+    return {
+        **profile.to_wire(),
+        "selected_model": preference.model,
+        "execution_available": readiness.available,
+        "execution_unavailable_reason": readiness.reason,
+    }
 
 
 async def _read_login_body(request: Request) -> CodexLoginBody:

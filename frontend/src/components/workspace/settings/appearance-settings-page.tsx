@@ -1,8 +1,4 @@
-import {
-  useCallback,
-  useRef,
-  type PointerEvent,
-} from "react";
+import { useCallback, useRef, type PointerEvent } from "react";
 
 import {
   Select,
@@ -32,12 +28,7 @@ const LANGUAGE_OPTIONS = [
 
 export default function AppearanceSettingsPage() {
   const { t, locale, changeLocale } = useI18n();
-  const {
-    cornerScale,
-    density,
-    setCornerScale,
-    setDensity,
-  } = useAppearance();
+  const { cornerScale, density, setCornerScale, setDensity } = useAppearance();
 
   return (
     <div className="space-y-6">

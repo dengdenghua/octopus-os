@@ -104,12 +104,9 @@ function statusLabel(rate: number): string {
 }
 
 function statusStyle(rate: number): string {
-  if (rate >= 0.8)
-    return "bg-success/15 text-success border-success/30";
-  if (rate >= 0.6)
-    return "bg-info/15 text-info dark:text-info border-info/30";
-  if (rate >= 0.4)
-    return "bg-warning/15 text-warning border-warning/30";
+  if (rate >= 0.8) return "bg-success/15 text-success border-success/30";
+  if (rate >= 0.6) return "bg-info/15 text-info dark:text-info border-info/30";
+  if (rate >= 0.4) return "bg-warning/15 text-warning border-warning/30";
   return "bg-destructive/15 text-destructive border-destructive/30";
 }
 

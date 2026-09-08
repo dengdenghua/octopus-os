@@ -13,6 +13,29 @@ function thread(owner?: string): AgentThread {
 }
 
 describe("persona history", () => {
+  it("keeps retired role tasks reachable from Echo without changing ownership", () => {
+    const existing = thread("coder");
+    expect(
+      threadVisibleInPersonaHistory(existing, "general", ["general"]),
+    ).toBe(true);
+    expect(existing.metadata).toEqual({ agent: "coder" });
+    expect(
+      threadVisibleInPersonaHistory(existing, "general", ["general", "coder"]),
+    ).toBe(false);
+  });
+
+  it("keeps another selectable persona's history isolated", () => {
+    expect(
+      threadVisibleInPersonaHistory(thread("market_researcher"), "general", [
+        "general",
+        "market_researcher",
+      ]),
+    ).toBe(false);
+    expect(
+      threadVisibleInPersonaHistory(thread("echo"), "general", ["general"]),
+    ).toBe(false);
+  });
+
   it("keeps White Ghost histories isolated from one another", () => {
     expect(threadVisibleInPersonaHistory(thread("coder"), "coder")).toBe(true);
     expect(threadVisibleInPersonaHistory(thread("coder"), "general")).toBe(

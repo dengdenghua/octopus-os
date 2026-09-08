@@ -16,7 +16,11 @@ import {
   X,
 } from "lucide-react";
 import type { EvolutionStoryChange } from "@/core/evolution/api";
-import { useEvolutionOverview, useSkillPerformance, useEvolutionStory } from "@/core/evolution/hooks";
+import {
+  useEvolutionOverview,
+  useSkillPerformance,
+  useEvolutionStory,
+} from "@/core/evolution/hooks";
 import {
   calculateLevel,
   calculateXP,
@@ -1115,22 +1119,32 @@ export function AgentRoleProfileDialog({
     if (!evolutionData || !skillPerformances) return null;
 
     const skills = transformToSkills(skillPerformances);
-    const abilityScores = calculateAbilityScores(evolutionData, skillPerformances, "general");
+    const abilityScores = calculateAbilityScores(
+      evolutionData,
+      skillPerformances,
+      "general",
+    );
 
     // Generate timeline events from evolution story
     const timelineEvents: TimelineEvent[] = [];
 
     if (evolutionStory?.changes) {
-      evolutionStory.changes.slice(0, 10).forEach((change: EvolutionStoryChange, idx: number) => {
-        timelineEvents.push({
-          id: `event-${idx}`,
-          type: change.kind === 'skill' ? 'skill' :
-                change.kind === 'rule' ? 'rule' : 'achievement',
-          timestamp: new Date(Date.now() - idx * 86400000).toISOString(),
-          title: change.title || '未知事件',
-          description: change.content || change.kind,
+      evolutionStory.changes
+        .slice(0, 10)
+        .forEach((change: EvolutionStoryChange, idx: number) => {
+          timelineEvents.push({
+            id: `event-${idx}`,
+            type:
+              change.kind === "skill"
+                ? "skill"
+                : change.kind === "rule"
+                  ? "rule"
+                  : "achievement",
+            timestamp: new Date(Date.now() - idx * 86400000).toISOString(),
+            title: change.title || "未知事件",
+            description: change.content || change.kind,
+          });
         });
-      });
     }
 
     return {
@@ -1416,42 +1430,54 @@ export function AgentRoleProfileDialog({
                       </p>
 
                       {/* Evolution Level Display */}
-                      {evolutionData && (() => {
-                        const level = calculateLevel(evolutionData.learning_events);
-                        const stars = calculateStars(level);
-                        const { progress } = calculateXP(evolutionData.learning_events);
-                        const getStars = (count: number) => "⭐".repeat(count);
-                        const getTitle = (lvl: number) => {
-                          if (lvl <= 5) return "新手";
-                          if (lvl <= 10) return "学徒";
-                          if (lvl <= 20) return "熟手";
-                          if (lvl <= 35) return "专家";
-                          if (lvl <= 50) return "大师";
-                          if (lvl <= 75) return "宗师";
-                          return "传奇";
-                        };
+                      {evolutionData &&
+                        (() => {
+                          const level = calculateLevel(
+                            evolutionData.learning_events,
+                          );
+                          const stars = calculateStars(level);
+                          const { progress } = calculateXP(
+                            evolutionData.learning_events,
+                          );
+                          const getStars = (count: number) =>
+                            "⭐".repeat(count);
+                          const getTitle = (lvl: number) => {
+                            if (lvl <= 5) return "新手";
+                            if (lvl <= 10) return "学徒";
+                            if (lvl <= 20) return "熟手";
+                            if (lvl <= 35) return "专家";
+                            if (lvl <= 50) return "大师";
+                            if (lvl <= 75) return "宗师";
+                            return "传奇";
+                          };
 
-                        return (
-                          <div className="mt-3">
-                            <div className="flex items-center gap-2 text-sm">
-                              <span className="font-semibold text-primary">Lv.{level}</span>
-                              <span className="text-xs">{getStars(stars)}</span>
-                              <span className="text-white/60">· 🎯 {getTitle(level)}</span>
-                            </div>
-                            <div className="mt-2">
-                              <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                                <div
-                                  className="h-full rounded-full bg-[#f4e86f] transition-all duration-500"
-                                  style={{ width: `${progress}%` }}
-                                />
+                          return (
+                            <div className="mt-3">
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="font-semibold text-primary">
+                                  Lv.{level}
+                                </span>
+                                <span className="text-xs">
+                                  {getStars(stars)}
+                                </span>
+                                <span className="text-white/60">
+                                  · 🎯 {getTitle(level)}
+                                </span>
                               </div>
-                              <p className="mt-1 text-xs text-white/50">
-                                {progress}% → Lv.{level + 1}
-                              </p>
+                              <div className="mt-2">
+                                <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                                  <div
+                                    className="h-full rounded-full bg-[#f4e86f] transition-all duration-500"
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </div>
+                                <p className="mt-1 text-xs text-white/50">
+                                  {progress}% → Lv.{level + 1}
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })()}
+                          );
+                        })()}
 
                       <div className="mt-4 grid grid-cols-3 gap-px overflow-hidden rounded-sm border border-white/10 bg-white/10">
                         {identityRows.map(([label, value]) => (
@@ -1625,9 +1651,17 @@ export function AgentRoleProfileDialog({
                           "relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition",
                           activeBottomTab === tab.id
                             ? "text-primary"
-                            : "text-white/50 hover:text-white/80"
+                            : "text-white/50 hover:text-white/80",
                         )}
-                        onClick={() => setActiveBottomTab(tab.id as "overview" | "growth" | "radar" | "skills")}
+                        onClick={() =>
+                          setActiveBottomTab(
+                            tab.id as
+                              | "overview"
+                              | "growth"
+                              | "radar"
+                              | "skills",
+                          )
+                        }
                       >
                         <span>{tab.icon}</span>
                         <span>{tab.label}</span>
@@ -1681,7 +1715,8 @@ export function AgentRoleProfileDialog({
                         <div className="font-mono text-xs uppercase tracking-eyebrow text-white/48">
                           成长时间线
                         </div>
-                        {tabData?.timelineEvents && tabData.timelineEvents.length > 0 ? (
+                        {tabData?.timelineEvents &&
+                        tabData.timelineEvents.length > 0 ? (
                           <GrowthTimeline
                             events={tabData.timelineEvents}
                             className="max-h-[120px]"
@@ -1699,7 +1734,8 @@ export function AgentRoleProfileDialog({
                         <div className="font-mono text-xs uppercase tracking-eyebrow text-white/48">
                           六维能力图
                         </div>
-                        {tabData?.abilityScores && tabData.abilityScores.length > 0 ? (
+                        {tabData?.abilityScores &&
+                        tabData.abilityScores.length > 0 ? (
                           <AbilityRadarChart
                             data={tabData.abilityScores}
                             size={140}

@@ -7,11 +7,15 @@ router is available, else deterministic stubs so the endpoints always work.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
+from runtime.execution.host_boundary import host_execution_scope
+from runtime.platform.process.session import current_session
 from runtime.projectos.cowork_bridge import (
     full_project_state,
     run_project_from_group,
@@ -138,6 +142,7 @@ def create_projects_router(
     workspace_root: Any = None,
     model_router: Any = None,
     subagent_runner: Any = None,
+    task_supervisor: Any = None,
     identity_store: Any = None,
     require_auth: bool = False,
     jwt_secret: str | None = None,
@@ -266,6 +271,125 @@ def create_projects_router(
                 409,
                 "project execution requires a verified managed thread workspace",
             ) from exc
+
+    @contextmanager
+    def _host_project_execution(
+        request: Request,
+        *,
+        action: str,
+        goal: str,
+        project: Any | None = None,
+        thread_id: str | None = None,
+        project_id: str | None = None,
+        max_ticks: int = DEFAULT_RUN_MAX_TICKS,
+    ) -> Iterator[Any]:
+        """Bind Project OS work to the shared host execution boundary.
+
+        ProjectStore keeps the domain claim and timeline.  TaskSupervisor owns
+        the outer execution lease when the application provides one, so a
+        second HTTP worker cannot run the same project concurrently.  Local
+        test/legacy mounts without a supervisor retain their direct engine
+        behavior.
+        """
+
+        principal = _principal(request)
+        resolved_project_id = str(project_id or getattr(project, "id", "") or "").strip()
+        if not resolved_project_id:
+            resolved_project_id = "unbound"
+        resolved_thread_id = str(thread_id or "").strip()
+        if not resolved_thread_id and project is not None:
+            try:
+                resolved_thread_id = _scoped_store(request).thread_for_project(
+                    resolved_project_id
+                ) or ""
+            except (OSError, ValueError):
+                resolved_thread_id = ""
+        # Legacy local projects can be unbound.  A stable synthetic thread
+        # keeps their artifact/scope identity deterministic without inventing
+        # a second project database binding.
+        resolved_thread_id = resolved_thread_id or f"project:{resolved_project_id}"
+
+        actor_id = (
+            principal.actor_id
+            if principal is not None
+            else str(getattr(project, "owner_id", "") or "").strip() or None
+        )
+        tenant_id = (
+            principal.tenant_id
+            if principal is not None
+            else str(getattr(project, "tenant_id", "") or "").strip() or None
+        )
+        metadata: dict[str, Any] = {
+            "mode": "code",
+            "permission_mode": "default",
+            "approval_policy": "on-request",
+            "sandbox_mode": "full",
+            "execution_environment": "sandbox",
+            "project_id": resolved_project_id,
+            "execution_action": action,
+        }
+        workspace_path: str | None = None
+        resolver = _execution_context_resolver(principal)
+        if resolver is not None:
+            try:
+                resolved = resolver(resolved_thread_id)
+            except (OSError, PermissionError, RuntimeError, TypeError, ValueError) as exc:
+                raise HTTPException(
+                    409,
+                    "project execution requires a verified managed thread workspace",
+                ) from exc
+            if isinstance(resolved, dict):
+                workspace = resolved.get("workspace_path")
+                if isinstance(workspace, str) and workspace.strip():
+                    workspace_path = workspace.strip()
+                    metadata["workspace_path"] = workspace_path
+                runtime_metadata = resolved.get("runtime_session_metadata")
+                if isinstance(runtime_metadata, dict):
+                    # Resolver output is server-owned, then the authenticated
+                    # principal/project coordinates below take precedence. The
+                    # execution policy itself remains host-owned even if a
+                    # future thread metadata schema grows more fields.
+                    metadata.update(runtime_metadata)
+        metadata.update(
+            {
+                "mode": "code",
+                "permission_mode": "default",
+                "approval_policy": "on-request",
+                "sandbox_mode": "full",
+                "execution_environment": "sandbox",
+            }
+        )
+        metadata["project_id"] = resolved_project_id
+        metadata["execution_action"] = action
+        if workspace_path is not None:
+            metadata["workspace_path"] = workspace_path
+
+        parent = current_session()
+        parent_task_id = None
+        if parent is not None:
+            parent_request = getattr(parent, "execution_request", None)
+            parent_task_id = getattr(getattr(parent_request, "task", None), "task_id", None)
+        task_id = (
+            f"projectos:{resolved_project_id}"
+            if project_id is not None or project is not None
+            else f"projectos:thread:{resolved_thread_id}"
+        )
+        timeout_s = max(60.0, min(4 * 60 * 60, float(max_ticks) * 60.0))
+        with host_execution_scope(
+            supervisor=task_supervisor,
+            task_id=task_id,
+            thread_id=resolved_thread_id,
+            goal=goal,
+            timeout_s=timeout_s,
+            actor_id=actor_id,
+            tenant_id=tenant_id,
+            metadata=metadata,
+            parent_task_id=parent_task_id,
+            kind="project_os",
+            mode="project",
+            workspace_path=workspace_path,
+        ) as execution_session:
+            yield execution_session
 
     def _auth_dep(request: Request) -> None:
         _principal(request)
@@ -705,20 +829,27 @@ def create_projects_router(
             resolver = _execution_context_resolver(principal)
             if resolver is not None:
                 hooks["resolve_thread_context"] = resolver
-            result = run_project_from_group(
-                _scoped_store(request),
-                _group_store(),
-                thread_id,
-                name=body.name,
+            execution_scope = _host_project_execution(
+                request,
+                action="project_from_group",
                 goal=body.goal,
-                hooks=hooks,
-                run=body.run,
-                max_ticks=body.max_ticks,
-                subagent_runner=subagent_runner,
-                owner_id=principal.actor_id if principal is not None else "",
-                tenant_id=principal.tenant_id if principal is not None else "",
-                reuse_active=True,
+                thread_id=thread_id,
             )
+            with (execution_scope if body.run else nullcontext()):
+                result = run_project_from_group(
+                    _scoped_store(request),
+                    _group_store(),
+                    thread_id,
+                    name=body.name,
+                    goal=body.goal,
+                    hooks=hooks,
+                    run=body.run,
+                    max_ticks=body.max_ticks,
+                    subagent_runner=subagent_runner,
+                    owner_id=principal.actor_id if principal is not None else "",
+                    tenant_id=principal.tenant_id if principal is not None else "",
+                    reuse_active=True,
+                )
             if result.get("recovery_pending"):
                 raise HTTPException(409, result.get("recovery") or result)
             # `run_project_from_group` only returns after `engine.run` has
@@ -881,10 +1012,18 @@ def create_projects_router(
     @router.post("/api/projects/{project_id}/tick", dependencies=[Depends(_auth_dep)])
     def tick(request: Request, project_id: str) -> dict[str, Any]:
         """Advance the project one loop iteration."""
-        _project_or_404(request, project_id)
+        project = _project_or_404(request, project_id)
         _require_execution_context(request, project_id)
         try:
-            result = _engine(_principal(request)).tick(project_id)
+            with _host_project_execution(
+                request,
+                action="project_tick",
+                goal=str(getattr(project, "goal", "") or f"tick project {project_id}"),
+                project=project,
+                project_id=project_id,
+                max_ticks=1,
+            ):
+                result = _engine(_principal(request)).tick(project_id)
             thread_project = _scoped_store(request).thread_for_project(project_id)
             _project_to_collaboration(request, project_id, thread_id=thread_project or "")
             return result
@@ -894,10 +1033,18 @@ def create_projects_router(
     @router.post("/api/projects/{project_id}/run", dependencies=[Depends(_auth_dep)])
     def run(request: Request, project_id: str, body: RunBody) -> dict[str, Any]:
         """Drive the loop until the project is done/blocked or max_ticks."""
-        _project_or_404(request, project_id)
+        project = _project_or_404(request, project_id)
         _require_execution_context(request, project_id)
         try:
-            result = _engine(_principal(request)).run(project_id, max_ticks=body.max_ticks)
+            with _host_project_execution(
+                request,
+                action="project_run",
+                goal=str(getattr(project, "goal", "") or f"run project {project_id}"),
+                project=project,
+                project_id=project_id,
+                max_ticks=body.max_ticks,
+            ):
+                result = _engine(_principal(request)).run(project_id, max_ticks=body.max_ticks)
             thread_project = _scoped_store(request).thread_for_project(project_id)
             _project_to_collaboration(request, project_id, thread_id=thread_project or "")
             return result
@@ -907,7 +1054,7 @@ def create_projects_router(
     @router.post("/api/projects/{project_id}/recover", dependencies=[Depends(_auth_dep)])
     def recover(request: Request, project_id: str, body: RecoverBody) -> dict[str, Any]:
         """Reopen blocked project work after an operator fixes the cause."""
-        _project_or_404(request, project_id)
+        project = _project_or_404(request, project_id)
         engine = _engine(_principal(request))
         try:
             recovered = engine.recover(
@@ -923,7 +1070,15 @@ def create_projects_router(
         if body.run:
             _require_execution_context(request, project_id)
             try:
-                run_result = engine.run(project_id, max_ticks=body.max_ticks)
+                with _host_project_execution(
+                    request,
+                    action="project_recover_run",
+                    goal=str(getattr(project, "goal", "") or f"recover project {project_id}"),
+                    project=project,
+                    project_id=project_id,
+                    max_ticks=body.max_ticks,
+                ):
+                    run_result = engine.run(project_id, max_ticks=body.max_ticks)
             except ValueError as exc:
                 raise _bad_request(exc) from exc
             thread_project = _scoped_store(request).thread_for_project(project_id)
@@ -949,7 +1104,7 @@ def create_projects_router(
         body: TaskInterventionBody,
     ) -> dict[str, Any]:
         """Manually reassign, reset, complete, or skip a task."""
-        _project_or_404(request, project_id)
+        project = _project_or_404(request, project_id)
         engine = _engine(_principal(request))
         try:
             intervention = engine.intervene_task(
@@ -974,7 +1129,15 @@ def create_projects_router(
         if body.run:
             _require_execution_context(request, project_id)
             try:
-                run_result = engine.run(project_id, max_ticks=body.max_ticks)
+                with _host_project_execution(
+                    request,
+                    action="project_intervene_run",
+                    goal=str(getattr(project, "goal", "") or f"run project {project_id}"),
+                    project=project,
+                    project_id=project_id,
+                    max_ticks=body.max_ticks,
+                ):
+                    run_result = engine.run(project_id, max_ticks=body.max_ticks)
             except ValueError as exc:
                 raise _bad_request(exc) from exc
             thread_project = _scoped_store(request).thread_for_project(project_id)

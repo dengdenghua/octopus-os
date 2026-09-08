@@ -151,7 +151,8 @@ class LinuxImageRunnerHostTests(unittest.TestCase):
             output = Path(directory).resolve() / "host.json"
             payload = MODULE.evidence_payload(healthy_facts())
             MODULE.write_evidence(output, payload)
-            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            if os.name == "posix":
+                self.assertEqual(output.stat().st_mode & 0o777, 0o600)
             self.assertEqual(json.loads(output.read_text(encoding="utf-8")), payload)
             with self.assertRaises(MODULE.HostPreflightError):
                 MODULE.write_evidence(output, payload)
@@ -189,6 +190,7 @@ class LinuxImageRunnerHostTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, script)
 
+    @unittest.skipUnless(os.name == "posix", "requires direct POSIX shell execution")
     def test_host_configurator_rejects_a_system_directory_before_mutation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fake_bin = Path(directory) / "bin"
@@ -275,6 +277,7 @@ class LinuxImageRunnerHostTests(unittest.TestCase):
             ):
                 self.assertNotIn(forbidden, text)
 
+    @unittest.skipUnless(os.name == "posix", "requires direct POSIX shell execution")
     def test_registered_runner_hook_rejects_unrelated_paths_before_cleanup(self) -> None:
         hook = MODULE_PATH.parent / "runner-host/echo-os-image-runner-job-hook.sh"
         environment = os.environ.copy()
@@ -299,6 +302,7 @@ class LinuxImageRunnerHostTests(unittest.TestCase):
         self.assertIn("dedicated /srv/echo-os-image-runner layout", completed.stderr)
         self.assertNotIn("cleanup executable is unavailable", completed.stderr)
 
+    @unittest.skipUnless(os.name == "posix", "requires direct POSIX shell execution")
     def test_hook_configurator_rejects_an_unrelated_owned_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fake_bin = Path(directory) / "bin"

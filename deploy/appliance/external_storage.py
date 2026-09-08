@@ -162,6 +162,7 @@ def verify_external_storage(
     mountpoint: Path,
     deployment_root: Path,
     appliance_env: Path | None,
+    state_root_override: Path | None = None,
     nas_root_override: Path | None = None,
     mountinfo: Path = Path("/proc/self/mountinfo"),
     device_reader: Callable[[Path], int] | None = None,
@@ -169,7 +170,10 @@ def verify_external_storage(
     destination = _safe_directory(destination, "operations destination")
     mountpoint = _safe_directory(mountpoint, "operations mountpoint")
     deployment_root = _safe_directory(deployment_root, "deployment root")
-    state_root = _safe_directory(deployment_root / "data", "device state root")
+    state_root = _safe_directory(
+        deployment_root / "data" if state_root_override is None else state_root_override,
+        "device state root",
+    )
     configured_nas_root = (
         _nas_root(deployment_root, appliance_env)
         if nas_root_override is None
@@ -217,6 +221,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--mountpoint", type=Path, required=True)
     parser.add_argument("--deployment-root", type=Path, required=True)
     parser.add_argument("--appliance-env", type=Path)
+    parser.add_argument("--state-root", type=Path)
+    parser.add_argument("--nas-root", type=Path)
     parser.add_argument("--purpose", choices=("state-backup", "audit-evidence"), required=True)
     return parser
 
@@ -229,6 +235,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             mountpoint=args.mountpoint,
             deployment_root=args.deployment_root,
             appliance_env=args.appliance_env,
+            state_root_override=args.state_root,
+            nas_root_override=args.nas_root,
         )
     except ExternalStorageError as exc:
         print(f"Echo external storage verification failed: {exc}", file=sys.stderr)

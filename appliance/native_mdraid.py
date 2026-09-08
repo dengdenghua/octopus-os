@@ -469,9 +469,7 @@ def managed_mdraid1_arrays(*, config_path: Path = _MDADM_CONFIG) -> list[dict[st
     if shutil.which("mdadm") is None:
         raise OSError("native md RAID1 inventory tool is unavailable: mdadm")
     config = _read_config(config_path)
-    _begin, _end, entries = _managed_entries(
-        config.decode("utf-8") if config is not None else ""
-    )
+    _begin, _end, entries = _managed_entries(config.decode("utf-8") if config is not None else "")
     arrays: list[dict[str, Any]] = []
     for entry in entries:
         tokens = entry.split()

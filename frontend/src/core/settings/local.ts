@@ -1,5 +1,7 @@
 import type { AgentThreadContext, ReasoningEffort } from "../threads";
 import { emitSettingsChanged, eventBus } from "../events";
+import { currentActorId } from "../auth/api";
+import { actorScopedStorageKey } from "../auth/scoped-storage";
 
 export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
   notification: {
@@ -53,6 +55,26 @@ export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
 
 const LOCAL_SETTINGS_KEY = "echo.local-settings";
 const THREAD_MODEL_KEY_PREFIX = "echo.thread-model.";
+const THREAD_MODEL_SCOPE_KEY_PREFIX = "echo.thread-model-scope.";
+
+export function localSettingsStorageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(LOCAL_SETTINGS_KEY, actor);
+}
+
+function readLocalSettingsRaw(): string | null {
+  const scopedKey = localSettingsStorageKey();
+  const scoped = localStorage.getItem(scopedKey);
+  if (scoped !== null) return scoped;
+  const legacy = localStorage.getItem(LOCAL_SETTINGS_KEY);
+  if (legacy === null || currentActorId() === "anonymous") return legacy;
+  try {
+    localStorage.setItem(scopedKey, legacy);
+    localStorage.removeItem(LOCAL_SETTINGS_KEY);
+  } catch {
+    // Private mode / quota: keep the legacy value usable for this render.
+  }
+  return legacy;
+}
 
 function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -72,6 +94,8 @@ export interface LocalSettings {
     | "reasoning_effort"
   > & {
     model_name?: string | undefined;
+    /** Task-only override; never changes the system model profile. */
+    model_scope?: "system" | "task";
     mode: "chat" | "code" | "react" | "deep" | "flash" | "thinking" | undefined;
     reasoning_effort?: ReasoningEffort;
     /** Opt-in independent review for high-risk actions (codex-style
@@ -177,7 +201,11 @@ function mergeLocalSettings(settings?: Partial<LocalSettings>): LocalSettings {
 }
 
 function getThreadModelStorageKey(threadId: string): string {
-  return `${THREAD_MODEL_KEY_PREFIX}${threadId}`;
+  return `${THREAD_MODEL_KEY_PREFIX}${JSON.stringify([currentActorId(), threadId])}`;
+}
+
+function getThreadScopeStorageKey(threadId: string): string {
+  return `${THREAD_MODEL_SCOPE_KEY_PREFIX}${JSON.stringify([currentActorId(), threadId])}`;
 }
 
 export function getThreadModelName(threadId: string): string | undefined {
@@ -218,7 +246,9 @@ export function clearThreadModelReferences(modelName: string): number {
   for (let index = 0; index < localStorage.length; index += 1) {
     const key = localStorage.key(index);
     if (
-      key?.startsWith(THREAD_MODEL_KEY_PREFIX) &&
+      key?.startsWith(
+        `${THREAD_MODEL_KEY_PREFIX}[${JSON.stringify(currentActorId())},`,
+      ) &&
       localStorage.getItem(key) === modelName
     ) {
       keysToRemove.push(key);
@@ -235,6 +265,28 @@ function applyThreadModelOverride(
   threadId?: string,
 ): LocalSettings {
   const threadModelName = threadId ? getThreadModelName(threadId) : undefined;
+  let selection: { scope?: string; reasoning_effort?: ReasoningEffort } = {};
+  if (threadId && isBrowser()) {
+    try {
+      selection =
+        JSON.parse(
+          localStorage.getItem(getThreadScopeStorageKey(threadId)) || "{}",
+        ) ?? {};
+    } catch {
+      /* Older or invalid preferences follow the system. */
+    }
+  }
+  if (selection.scope === "task") {
+    return {
+      ...settings,
+      context: {
+        ...settings.context,
+        model_scope: "task",
+        model_name: threadModelName || settings.context.model_name,
+        reasoning_effort: selection.reasoning_effort,
+      },
+    };
+  }
   if (!threadModelName) {
     return settings;
   }
@@ -243,6 +295,7 @@ function applyThreadModelOverride(
     context: {
       ...settings.context,
       model_name: threadModelName,
+      model_scope: "system",
     },
   };
 }
@@ -251,7 +304,7 @@ export function getLocalSettings(): LocalSettings {
   if (!isBrowser()) {
     return DEFAULT_LOCAL_SETTINGS;
   }
-  const json = localStorage.getItem(LOCAL_SETTINGS_KEY);
+  const json = readLocalSettingsRaw();
   try {
     if (json) {
       const settings = JSON.parse(json) as Partial<LocalSettings>;
@@ -282,7 +335,7 @@ export function saveLocalSettings(settings: LocalSettings) {
   if (!isBrowser()) {
     return;
   }
-  localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settings));
+  localStorage.setItem(localSettingsStorageKey(), JSON.stringify(settings));
   emitSettingsChanged();
 }
 
@@ -291,7 +344,14 @@ export function subscribeLocalSettings(handler: () => void): () => void {
   // Both signals: same-tab event bus + cross-tab storage event.
   const unsubscribe = eventBus.on("settings:changed", handler);
   const storageHandler = (e: StorageEvent) => {
-    if (e.key === LOCAL_SETTINGS_KEY) handler();
+    if (
+      e.key === null ||
+      e.key === LOCAL_SETTINGS_KEY ||
+      e.key === localSettingsStorageKey() ||
+      e.key.startsWith(THREAD_MODEL_KEY_PREFIX) ||
+      e.key.startsWith(THREAD_MODEL_SCOPE_KEY_PREFIX)
+    )
+      handler();
   };
   window.addEventListener("storage", storageHandler);
   return () => {
@@ -309,5 +369,28 @@ export function saveThreadLocalSettings(
   // saveLocalSettings emits; the old order made them observe the previous
   // thread model and immediately roll the picker back.
   saveThreadModelName(threadId, settings.context.model_name);
-  saveLocalSettings(settings);
+  if (isBrowser()) {
+    localStorage.setItem(
+      getThreadScopeStorageKey(threadId),
+      JSON.stringify({
+        scope: settings.context.model_scope || "system",
+        reasoning_effort: settings.context.reasoning_effort,
+      }),
+    );
+  }
+  // A thread snapshot may contain an older system model, or a task override.
+  // Only the explicit system model controls may replace the shared default.
+  const systemContext = getLocalSettings().context;
+  saveLocalSettings({
+    ...settings,
+    context: {
+      ...settings.context,
+      model_name: systemContext.model_name,
+      model_scope: "system",
+      reasoning_effort:
+        settings.context.model_scope === "task"
+          ? systemContext.reasoning_effort
+          : settings.context.reasoning_effort,
+    },
+  });
 }

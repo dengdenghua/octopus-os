@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { MODULE_CATALOG, moduleById, pinnedModuleIds } from "./catalog";
-import {
-  filterRoutesByEnabled,
-  isLocationBlocked,
-  moduleForLocation,
-} from "./module-routing";
+import { filterRoutesByEnabled, moduleForLocation } from "./module-routing";
 
 describe("module catalog", () => {
   it("has unique ids", () => {
@@ -28,17 +24,19 @@ describe("moduleForLocation", () => {
     expect(moduleForLocation("/workspace/community", "")?.id).toBe("community");
   });
 
-  it("distinguishes storage libraries by the library param", () => {
-    expect(
-      moduleForLocation("/workspace/storage", "?library=docs")?.id,
-    ).toBe("library.docs");
-    expect(
-      moduleForLocation("/workspace/storage", "?library=videos")?.id,
-    ).toBe("library.videos");
+  it("maps database categories to the same application", () => {
+    expect(moduleForLocation("/workspace/storage", "?library=docs")?.id).toBe(
+      "local-database",
+    );
+    expect(moduleForLocation("/workspace/storage", "?library=videos")?.id).toBe(
+      "local-database",
+    );
   });
 
-  it("matches no module for a storage URL without a library param", () => {
-    expect(moduleForLocation("/workspace/storage", "")).toBeUndefined();
+  it("matches the database overview", () => {
+    expect(moduleForLocation("/workspace/storage", "")?.id).toBe(
+      "local-database",
+    );
   });
 
   it("returns undefined for routes outside the catalog", () => {
@@ -53,46 +51,17 @@ describe("moduleForLocation", () => {
   });
 });
 
-describe("isLocationBlocked", () => {
-  const all = MODULE_CATALOG.map((m) => m.id);
-
-  it("passes when the owning module is enabled", () => {
-    expect(isLocationBlocked("/workspace/community", "", all)).toBe(false);
-  });
-
-  it("blocks when the owning module is disabled", () => {
-    const without = all.filter((id) => id !== "community");
-    expect(isLocationBlocked("/workspace/community", "", without)).toBe(true);
-  });
-
-  it("never blocks routes outside the catalog", () => {
-    expect(isLocationBlocked("/workspace/realtime/x", "", [])).toBe(false);
-  });
-
-  it("blocks one storage library without touching its siblings", () => {
-    const without = all.filter((id) => id !== "library.images");
-    expect(isLocationBlocked("/workspace/storage", "?library=images", without)).toBe(
-      true,
-    );
-    expect(isLocationBlocked("/workspace/storage", "?library=docs", without)).toBe(
-      false,
-    );
-  });
-});
-
 describe("filterRoutesByEnabled", () => {
   it("drops disabled entries and keeps order", () => {
     const routes = [
       { to: "/workspace/knowledge?surface=chat" },
-      { to: "/workspace/storage?surface=company&library=apps" },
-      { to: "/workspace/storage?surface=company&library=docs" },
+      { to: "/workspace/storage?surface=company" },
     ];
     const enabled = MODULE_CATALOG.map((m) => m.id).filter(
-      (id) => id !== "library.apps",
+      (id) => id !== "local-database",
     );
     expect(filterRoutesByEnabled(routes, enabled).map((r) => r.to)).toEqual([
       "/workspace/knowledge?surface=chat",
-      "/workspace/storage?surface=company&library=docs",
     ]);
   });
 

@@ -12,6 +12,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -115,6 +116,28 @@ _ACTIVE_SUBAGENTS: int = 0
 _ACTIVE_SUBAGENTS_LOCK = threading.Lock()
 
 
+def _public_governance_snapshot(value: Any) -> dict[str, Any] | None:
+    """Return the non-sensitive governance fields safe for UI/event output."""
+    if not isinstance(value, dict):
+        return None
+    allowed = (
+        "root_id",
+        "input_tokens",
+        "output_tokens",
+        "tokens_used",
+        "cost_usd",
+        "breaker",
+        "trip_reason",
+        "active_leases",
+        "created_at",
+        "updated_at",
+        "token_limit",
+        "cost_limit_usd",
+    )
+    result = {key: value[key] for key in allowed if key in value}
+    return result or None
+
+
 def _acquire_subagent_slot() -> bool:
     """Reserve a concurrency slot. Returns False when the global cap is
     already reached (caller must refuse to spawn)."""
@@ -179,42 +202,49 @@ def _publish_bus_lifecycle(kind: str, event: dict, session: Any) -> None:
         thread_id = meta.get("thread_id") or getattr(session, "thread_id", None) or ""
         root = meta.get("root_thread_id") or thread_id or ""
         role = event.get("role") or event.get("agent_id") or ""
+        governance = _public_governance_snapshot(event.get("governance"))
         if kind == "subagent_spawned":
+            payload = {
+                "role": role,
+                "agent_id": event.get("requested_agent_id") or event.get("agent_id") or "",
+                "resolved_agent_id": event.get("agent_id") or "",
+                "codename": event.get("codename") or "",
+                "avatar": event.get("avatar") or "",
+                "prompt_preview": (event.get("prompt_preview") or "")[:200],
+                "started_at": event.get("started_at"),
+                "parent_tool_use_id": event.get("parent_tool_use_id") or "",
+            }
+            if governance is not None:
+                payload["governance"] = governance
             publish_subagent_event(
                 "sub_started",
-                {
-                    "role": role,
-                    "agent_id": event.get("requested_agent_id") or event.get("agent_id") or "",
-                    "resolved_agent_id": event.get("agent_id") or "",
-                    "codename": event.get("codename") or "",
-                    "avatar": event.get("avatar") or "",
-                    "prompt_preview": (event.get("prompt_preview") or "")[:200],
-                    "started_at": event.get("started_at"),
-                    "parent_tool_use_id": event.get("parent_tool_use_id") or "",
-                },
+                payload,
                 thread_id=thread_id,
                 root_thread_id=root,
             )
         else:
             ok = bool(event.get("ok"))
             bus_type = "sub_concluded" if ok and not event.get("error") else "sub_failed"
+            payload = {
+                "role": role,
+                "agent_id": event.get("requested_agent_id") or event.get("agent_id") or "",
+                "resolved_agent_id": event.get("agent_id") or "",
+                "codename": event.get("codename") or "",
+                "avatar": event.get("avatar") or "",
+                "ok": ok,
+                "error": event.get("error") or "",
+                "duration_s": event.get("duration_s"),
+                "iteration_count": event.get("iteration_count"),
+                "files_touched": event.get("files_touched") or 0,
+                "status": event.get("status") or "",
+                "output": event.get("output") or "",
+                "parent_tool_use_id": event.get("parent_tool_use_id") or "",
+            }
+            if governance is not None:
+                payload["governance"] = governance
             publish_subagent_event(
                 bus_type,
-                {
-                    "role": role,
-                    "agent_id": event.get("requested_agent_id") or event.get("agent_id") or "",
-                    "resolved_agent_id": event.get("agent_id") or "",
-                    "codename": event.get("codename") or "",
-                    "avatar": event.get("avatar") or "",
-                    "ok": ok,
-                    "error": event.get("error") or "",
-                    "duration_s": event.get("duration_s"),
-                    "iteration_count": event.get("iteration_count"),
-                    "files_touched": event.get("files_touched") or 0,
-                    "status": event.get("status") or "",
-                    "output": event.get("output") or "",
-                    "parent_tool_use_id": event.get("parent_tool_use_id") or "",
-                },
+                payload,
                 thread_id=thread_id,
                 root_thread_id=root,
             )
@@ -807,6 +837,7 @@ def call_subagent(
                         event_emitter=_tracking_emitter,
                         use_cheap_model=use_cheap_model,
                         runner=runner,
+                        usage_recorder=_record_governance_usage,
                     )
         finally:
             if scope_token is not None:
@@ -970,6 +1001,9 @@ def call_subagent(
         result.setdefault("avatar", _avatar)
         result.setdefault("role", _role_label)
         result.setdefault("requested_agent_id", _requested_agent_id)
+        governance = _governance_snapshot()
+        if governance is not None:
+            result.setdefault("governance", governance)
         # Lifecycle: finish. Mirrors the spawn event so the frontend
         # can mark the tile complete + show duration / iteration /
         # files-touched stats. ``ok`` is the canonical success flag;
@@ -1097,6 +1131,7 @@ def call_subagent(
             "files_touched": list(_files_touched),
             "error": result.get("error"),
             "status": result.get("status"),
+            "governance": governance,
             # Carry the sub-agent's actual answer text so the workbench can
             # render a readable final message instead of dumping the whole
             # result envelope as JSON.
@@ -1123,6 +1158,128 @@ def call_subagent(
         except Exception:  # noqa: BLE001 — hooks are best-effort, never break the call
             pass
         return result
+
+    # Cross-worker governance is keyed to the immutable parent turn. Raw
+    # compatibility callers without a turn identity keep the historical
+    # process-local guard; governed application turns get a durable lease.
+    _governance_root_id = str(_trace_context.get("turn_id") or "").strip()
+    _governance_store: Any = None
+    _governance_lease: dict[str, Any] | None = None
+    _governance_usage_counter = 0
+    _governance_lost = False
+    _governance_renew_stop = threading.Event()
+    _governance_renew_thread: threading.Thread | None = None
+
+    def _record_governance_usage(payload: dict[str, Any] | None) -> None:
+        """Charge one provider response to the parent turn, idempotently."""
+
+        nonlocal _governance_usage_counter
+        if (
+            _governance_store is None
+            or _governance_lease is None
+            or _governance_lost
+            or not isinstance(payload, dict)
+        ):
+            return
+        try:
+            input_tokens = max(0, int(payload.get("input_tokens") or 0))
+            output_tokens = max(0, int(payload.get("output_tokens") or 0))
+            cost_usd = max(0.0, float(payload.get("cost_usd") or 0.0))
+        except (TypeError, ValueError):
+            return
+        if input_tokens == 0 and output_tokens == 0 and cost_usd <= 0:
+            return
+        _governance_usage_counter += 1
+        try:
+            _governance_store.record_usage(
+                _governance_root_id,
+                usage_id=f"{_governance_lease['lease_id']}:{_governance_usage_counter}",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=cost_usd,
+                session_id=str(_active_session.get("session_id") or ""),
+                task_id=str(_trace_context.get("task_id") or ""),
+                iteration=int(payload.get("iteration") or 0),
+                model=str(payload.get("model") or ""),
+            )
+        except Exception as exc:  # noqa: BLE001 — telemetry never breaks a turn
+            _log.debug("subagent governance usage record skipped: %s", exc)
+
+    def _start_governance_heartbeat() -> None:
+        """Renew the durable lease while the child is still running."""
+
+        nonlocal _governance_renew_thread
+        if _governance_store is None or _governance_lease is None:
+            return
+        try:
+            from .governance import lease_seconds
+
+            interval = max(1.0, min(60.0, lease_seconds() / 3.0))
+        except Exception:  # noqa: BLE001 — default keeps cleanup safe
+            interval = 60.0
+        lease_id = str(_governance_lease.get("lease_id") or "")
+        if not lease_id:
+            return
+        _governance_renew_stop.clear()
+
+        def _renew_loop() -> None:
+            nonlocal _governance_lost
+            consecutive_failures = 0
+            while not _governance_renew_stop.wait(interval):
+                try:
+                    if _governance_store is None or _governance_lease is None:
+                        return
+                    if not _governance_store.renew(lease_id):
+                        _log.warning("subagent governance lease expired · lease=%s", lease_id)
+                        _governance_lost = True
+                        _child_source.cancel(reason="subagent governance lease expired")
+                        return
+                    consecutive_failures = 0
+                except Exception as exc:  # noqa: BLE001 — telemetry never breaks a turn
+                    consecutive_failures += 1
+                    _log.debug("subagent governance lease renewal skipped: %s", exc)
+                    if consecutive_failures >= 3:
+                        _log.warning("subagent governance lease lost · lease=%s", lease_id)
+                        _governance_lost = True
+                        _child_source.cancel(reason="subagent governance lease unavailable")
+                        return
+
+        _governance_renew_thread = threading.Thread(
+            target=_renew_loop,
+            name="subagent-governance-renew",
+            daemon=True,
+        )
+        _governance_renew_thread.start()
+
+    def _release_governance() -> None:
+        nonlocal _governance_lease, _governance_renew_thread, _governance_lost
+        if _governance_store is None or _governance_lease is None:
+            return
+        lease_id = str(_governance_lease.get("lease_id") or "")
+        _governance_lease = None
+        _governance_renew_stop.set()
+        _governance_lost = False
+        renew_thread = _governance_renew_thread
+        _governance_renew_thread = None
+        if renew_thread is not None and renew_thread is not threading.current_thread():
+            renew_thread.join(timeout=1.0)
+        if lease_id:
+            try:
+                _governance_store.release(lease_id)
+            except Exception as exc:  # noqa: BLE001 — cleanup is best-effort
+                _log.debug("subagent governance lease release skipped: %s", exc)
+
+    def _governance_snapshot() -> dict[str, Any] | None:
+        """Read a sanitized quota snapshot for result and lifecycle output."""
+        if _governance_store is None or not _governance_root_id:
+            return None
+        try:
+            return _public_governance_snapshot(
+                _governance_store.snapshot(_governance_root_id)
+            )
+        except Exception as exc:  # noqa: BLE001 — telemetry must never fail a run
+            _log.debug("subagent governance snapshot skipped: %s", exc)
+            return None
 
     # Cost ceiling gate: when ECHO_MAX_COST_USD is set, refuse to spawn once
     # the process-level ledger (UsagePricing) reports the ceiling is breached.
@@ -1160,6 +1317,81 @@ def call_subagent(
     except Exception:  # noqa: BLE001
         pass  # budget check failure is non-fatal
 
+    # Durable cross-worker lease: a second backend process cannot oversubscribe
+    # this turn even when each process is below its own in-memory cap. If the
+    # ledger is temporarily unavailable, legacy behavior remains available
+    # unless the appliance explicitly requests fail-closed governance.
+    if _governance_root_id:
+        try:
+            from .governance import (
+                governance_required,
+                governance_store,
+                max_active_subagents_per_turn,
+            )
+
+            _governance_store = governance_store()
+            try:
+                _depth = max(1, int((context or {}).get("delegation_depth", 1)))
+            except (TypeError, ValueError):
+                _depth = 1
+            _governance_lease = _governance_store.acquire(
+                _governance_root_id,
+                depth=_depth,
+                global_limit=MAX_ACTIVE_SUBAGENTS,
+                root_limit=max_active_subagents_per_turn(),
+                owner_id=f"{os.getpid()}:{threading.get_ident()}:{uuid.uuid4().hex}",
+            )
+            _governance_lost = False
+            if _governance_lease is None:
+                _governance_reject = {
+                    "status": "rejected",
+                    "error": (
+                        "subagent durable governance limit reached or breaker tripped "
+                        f"for turn {(_governance_root_id or '')[:12]}"
+                    ),
+                    "agent_id": agent_id,
+                    "role": _role_label,
+                    "codename": _codename,
+                    "avatar": _avatar,
+                    "output": "",
+                    "success": False,
+                    "rounds_completed": 0,
+                    "iteration_count": 0,
+                    "files_touched": [],
+                }
+                _log.warning(
+                    "subagent spawn refused by durable governance · agent_id=%s turn=%s",
+                    agent_id,
+                    _governance_root_id[:12],
+                )
+                return _augment(_governance_reject)
+            _start_governance_heartbeat()
+        except Exception as exc:  # noqa: BLE001 — availability is policy-controlled
+            _governance_store = None
+            _governance_lease = None
+            try:
+                from .governance import governance_required
+            except ImportError:
+                def governance_required() -> bool:
+                    return False
+            if governance_required():
+                _required_reject = {
+                    "status": "rejected",
+                    "error": "subagent durable governance unavailable; spawn refused",
+                    "agent_id": agent_id,
+                    "role": _role_label,
+                    "codename": _codename,
+                    "avatar": _avatar,
+                    "output": "",
+                    "success": False,
+                    "rounds_completed": 0,
+                    "iteration_count": 0,
+                    "files_touched": [],
+                }
+                _log.warning("subagent durable governance unavailable: %s", exc)
+                return _augment(_required_reject)
+            _log.debug("subagent durable governance unavailable: %s", exc)
+
     # Concurrency guard: hold a slot for the whole child run (see the helpers
     # at module top). Over the global cap → refuse to spawn, fail-closed.
     if not _acquire_subagent_slot():
@@ -1185,9 +1417,11 @@ def call_subagent(
             agent_id,
             _role_label,
         )
+        _release_governance()
         return _augment(_reject)
     try:
         slot_release_deferred = False
+        governance_release_deferred = False
         # Preserve the direct-call path for non-request callers that have no
         # cancellable parent. Live turns use a worker even without an explicit
         # timeout, allowing the caller to return promptly when the user
@@ -1218,6 +1452,23 @@ def call_subagent(
             slot_release_deferred = True
             future.add_done_callback(lambda _future: _release_subagent_slot())
 
+        def _defer_governance_until_worker_finishes() -> None:
+            """Keep the durable turn lease while a cancelled worker unwinds.
+
+            A timed-out Python thread cannot be force-killed. Releasing its
+            cross-process lease immediately would let another worker start
+            while the old generation can still write files or consume a
+            provider response. Stop the heartbeat so the lease naturally
+            expires if the worker never exits, then release it on completion.
+            """
+
+            nonlocal governance_release_deferred
+            if governance_release_deferred or future.done():
+                return
+            governance_release_deferred = True
+            _governance_renew_stop.set()
+            future.add_done_callback(lambda _future: _release_governance())
+
         deadline = time.monotonic() + timeout_seconds if timeout_seconds is not None else None
         try:
             while True:
@@ -1227,6 +1478,7 @@ def call_subagent(
                 if _child_source.is_cancelled:
                     future.cancel()
                     _defer_slot_until_worker_finishes()
+                    _defer_governance_until_worker_finishes()
                     reason = _child_source.token.reason or "parent cancelled"
                     elapsed = max(0.0, time.time() - _spawn_started_at)
                     _cancel_event = {
@@ -1245,6 +1497,7 @@ def call_subagent(
                         "status": "cancelled",
                         "cancelled": True,
                         "cancellation_reason": reason,
+                        "governance": _governance_snapshot(),
                     }
                     _attach_trace_fields(_cancel_event, _trace_context)
                     _safe_emit(event_emitter, _cancel_event)
@@ -1265,6 +1518,7 @@ def call_subagent(
                             "rounds_completed": _rounds_state["max_round"],
                             "iteration_count": _rounds_state["max_round"],
                             "files_touched": list(_files_touched),
+                            "governance": _governance_snapshot(),
                         },
                         _trace_context,
                     )
@@ -1288,6 +1542,7 @@ def call_subagent(
             _child_source.cancel(reason="subagent timeout")
             future.cancel()
             _defer_slot_until_worker_finishes()
+            _defer_governance_until_worker_finishes()
             rounds = _rounds_state["max_round"]
             _log.warning(
                 "subagent %s timed out after %ss (rounds_completed=%d)",
@@ -1312,6 +1567,7 @@ def call_subagent(
                 "files_touched": list(_files_touched),
                 "error": f"subagent timed out after {timeout_seconds}s",
                 "status": "timeout",
+                "governance": _governance_snapshot(),
             }
             _attach_trace_fields(_timeout_event, _trace_context)
             _safe_emit(event_emitter, _timeout_event)
@@ -1330,6 +1586,7 @@ def call_subagent(
                     "rounds_completed": rounds,
                     "iteration_count": rounds,
                     "files_touched": list(_files_touched),
+                    "governance": _governance_snapshot(),
                 },
                 _trace_context,
             )
@@ -1337,6 +1594,8 @@ def call_subagent(
             executor.shutdown(wait=False)
     finally:
         _unlink_parent()
+        if not governance_release_deferred:
+            _release_governance()
         # A monitored worker that timed out/cancelled while already running
         # owns the slot until its thread actually exits.  This prevents a
         # retry from running concurrently with the old generation.
@@ -1354,6 +1613,7 @@ def _dispatch(
     event_emitter: Callable[[dict], None] | None,
     use_cheap_model: bool = False,
     runner: SubAgentRunner | None = None,
+    usage_recorder: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Inner dispatch — runs in the caller's thread or a worker thread."""
     _log.info(
@@ -1392,6 +1652,8 @@ def _dispatch(
             # The partner exists but has no stable headless invocation yet —
             # fall back to the in-process loop (dsh provider vocabulary: an
             # unsupported provider degrades to the default transport).
+        if usage_recorder is not None:
+            merged_context["_subagent_usage_recorder"] = usage_recorder
         return run_ephemeral_definition(
             EphemeralRoleDef(
                 id=definition.name,
@@ -1416,6 +1678,8 @@ def _dispatch(
                 merged_eph["model_name"] = cheap
         if event_emitter is not None:
             merged_eph["event_emitter"] = event_emitter
+        if usage_recorder is not None:
+            merged_eph["_subagent_usage_recorder"] = usage_recorder
         return run_ephemeral_role(
             agent_id,
             prompt,
@@ -1436,6 +1700,8 @@ def _dispatch(
         }
 
     merged_ctx: dict[str, Any] = dict(context or {})
+    if usage_recorder is not None:
+        merged_ctx["_subagent_usage_recorder"] = usage_recorder
     merged_ctx["timeout_s"] = timeout_s
     if use_cheap_model and "model_name" not in merged_ctx:
         cheap = _resolve_cheap_subagent_model()

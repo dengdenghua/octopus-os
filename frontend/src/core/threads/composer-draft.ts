@@ -3,16 +3,19 @@
  *
  * The composer keeps its draft in component state, which meant switching
  * threads or reloading the page silently discarded half-typed messages.
- * Drafts are mirrored to localStorage keyed by thread id (a dedicated key
- * for the not-yet-created "new thread" composer). Writes are debounced by
- * the caller; storage failures (quota, private mode) are swallowed — a
- * lost draft is annoying, a thrown exception mid-typing is worse.
+ * Drafts are mirrored to localStorage keyed by actor and thread id (a
+ * dedicated key for the not-yet-created "new thread" composer). Writes are
+ * debounced by the caller; storage failures (quota, private mode) are
+ * swallowed — a lost draft is annoying, a thrown exception mid-typing is
+ * worse.
  *
  * Values are stored as a small JSON envelope carrying a write timestamp.
  * Thread ids can be ephemeral (e.g. the agent-creation page generates a
  * fresh uuid per visit), so stale entries are pruned after 30 days to
  * keep the key space from growing unboundedly.
  */
+
+import { currentActorId } from "@/core/auth/api";
 
 const DRAFT_KEY_PREFIX = "echo:composer-draft:";
 export const NEW_THREAD_DRAFT_KEY = "__new__";
@@ -24,8 +27,13 @@ interface DraftEnvelope {
   savedAt: number;
 }
 
-function storageKey(threadId: string | undefined | null): string {
-  return DRAFT_KEY_PREFIX + (threadId?.trim() ? threadId : NEW_THREAD_DRAFT_KEY);
+function storageKey(
+  threadId: string | undefined | null,
+  actor = currentActorId(),
+): string {
+  const actorKey = encodeURIComponent(actor.trim() || "anonymous");
+  const threadKey = threadId?.trim() ? threadId : NEW_THREAD_DRAFT_KEY;
+  return `${DRAFT_KEY_PREFIX}${actorKey}:${threadKey}`;
 }
 
 function readDraft(raw: string | null): string | null {
@@ -80,7 +88,10 @@ export function saveComposerDraft(
     if (draft) {
       const now = Date.now();
       const envelope: DraftEnvelope = { v: 1, text: draft, savedAt: now };
-      window.localStorage.setItem(storageKey(threadId), JSON.stringify(envelope));
+      window.localStorage.setItem(
+        storageKey(threadId),
+        JSON.stringify(envelope),
+      );
       pruneExpiredDrafts(now);
     } else {
       window.localStorage.removeItem(storageKey(threadId));

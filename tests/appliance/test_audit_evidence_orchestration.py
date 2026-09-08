@@ -7,6 +7,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
+if os.name == "nt":
+    pytest.skip("audit evidence orchestration invokes a POSIX shell", allow_module_level=True)
+
 
 def _stage_export_script(tmp_path: Path) -> Path:
     source = Path(__file__).parents[2] / "deploy" / "appliance"

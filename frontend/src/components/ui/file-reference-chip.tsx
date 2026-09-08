@@ -65,9 +65,7 @@ export function FileReferenceChip({
   const content = (
     <>
       {iconNode}
-      <span className="font-mono text-mini leading-none">
-        {displayName}
-      </span>
+      <span className="font-mono text-mini leading-none">{displayName}</span>
       {lines && (
         <span className="text-muted-foreground/80 text-micro leading-none">
           ({lines.includes("-") ? `L${lines}` : `line ${lines}`})

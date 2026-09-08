@@ -175,6 +175,7 @@ def _register_custom_models(router: Any, ctx: _ConfigCtx) -> None:
                 else prev.get("managed_by_plugin")
             ),
             "models": models,
+            "selection_only": prev.get("selection_only") is True,
             "context_window": context_window,
             "enable_1m_context": enable_1m_context,
             "display_name": (body.get("display_name") or body.get("name") or model_id),

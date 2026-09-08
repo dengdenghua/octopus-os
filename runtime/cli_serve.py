@@ -179,6 +179,11 @@ def maybe_setup_prompt_evolution(
     color: bool,
 ) -> tuple[Any, int]:
     """Enable optional live prompt evolution for serve mode."""
+    from runtime.execution.model_services import background_model_router
+
+    background_router = background_model_router(stack)
+    if background_router is None:
+        return None, 0
     from runtime.core.cerebrum import LLMPlanner
 
     if prompt_variants_path is None:
@@ -213,11 +218,13 @@ def maybe_setup_prompt_evolution(
                 response="<suffix>prefer shorter plans · check inputs first</suffix>",
             )
         else:
-            mutator_router = stack.planner.router
+            mutator_router = background_router
         mutator = PromptMutator(router=mutator_router, model=mutator_model)
         evolver = PromptEvolver(optimizer, mutator, EvolutionPolicy())
 
         def _evolve_tick() -> None:
+            if background_model_router(stack) is None:
+                return
             evolver.step()
 
         runner.add_periodic(
@@ -312,12 +319,12 @@ def register_memory_distill_task(runner: Any, stack: Any) -> int:
     if interval_s <= 0:
         return 0
 
-    router = getattr(getattr(stack, "planner", None), "router", None)
+    from runtime.execution.model_services import background_model_router
 
     def _tick() -> None:
         from runtime.memory.users.distill import distill_user_memory
 
-        distill_user_memory(router)
+        distill_user_memory(background_model_router(stack))
 
     runner.add_periodic(
         "memory_distill",
@@ -481,23 +488,28 @@ def register_reflection_tasks(
 ) -> int:
     """Register the periodic self-improvement tasks for serve mode."""
     from runtime.core.cerebrum import LLMPlanner, StaticPlanner
+    from runtime.execution.model_services import background_model_calls_enabled
 
     count = 0
     jitter = min(30.0, interval_s * 0.05)
 
-    if isinstance(stack.planner, LLMPlanner):
+    if isinstance(stack.planner, LLMPlanner) and background_model_calls_enabled(stack):
 
         def _learn_rules() -> None:
-            stack.planner.learn_from_journal(stack.journal)
+            if background_model_calls_enabled(stack):
+                stack.planner.learn_from_journal(stack.journal)
 
         def _learn_memories() -> None:
-            stack.planner.learn_memories_from_journal(stack.journal)
+            if background_model_calls_enabled(stack):
+                stack.planner.learn_memories_from_journal(stack.journal)
 
         def _learn_kg() -> None:
-            stack.planner.learn_kg_from_journal(stack.journal)
+            if background_model_calls_enabled(stack):
+                stack.planner.learn_kg_from_journal(stack.journal)
 
         def _assess_recipe() -> None:
-            stack.planner.assess_recipe_from_journal(stack.journal)
+            if background_model_calls_enabled(stack):
+                stack.planner.assess_recipe_from_journal(stack.journal)
 
         runner.add_periodic(
             "reflect_rules",

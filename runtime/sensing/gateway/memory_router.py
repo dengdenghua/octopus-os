@@ -37,7 +37,24 @@ def create_memory_router(
 
     from runtime.memory import user_store
     from runtime.memory.assets import asset_trace, can_read_asset, fact_to_asset
+    from runtime.memory.semantics import MemoryAuthor, fact_origin
     from runtime.safety.auth.scope import scope_from_principal
+
+    def _viewer(request: Request) -> Any:
+        return getattr(request.state, "memory_viewer", None)
+
+    def _visible_facts(request: Request) -> list[dict[str, Any]]:
+        viewer = _viewer(request)
+        if viewer is not None:
+            return user_store.visible_facts_for_viewer(
+                viewer,
+                limit=getattr(user_store, "HARD_MAX_FACTS", 2_000),
+            )
+        return [
+            fact
+            for fact in user_store.read_memory(_scope(request)).get("facts", [])
+            if isinstance(fact, dict)
+        ]
 
     def _auth_dep(request: Request) -> None:
         from runtime.safety.auth.principal import resolve_principal
@@ -50,8 +67,28 @@ def create_memory_router(
             jwt_issuer=jwt_issuer,
             jwt_audience=jwt_audience,
         )
+        request.state.principal = principal
         request.state.memory_scope = scope_from_principal(principal)
         request.state.memory_actor = principal.actor_id if principal is not None else "local-user"
+        if principal is not None:
+            from runtime.memory.users.user_store import MemoryViewer
+
+            roles = frozenset(
+                str(role).strip().lower()
+                for role in (getattr(principal, "roles", ()) or ())
+                if str(role).strip()
+            )
+            request.state.memory_viewer = MemoryViewer(
+                actor_id=principal.actor_id,
+                tenant_id=principal.tenant_id,
+                team_ids=frozenset(
+                    str(team_id).strip()
+                    for team_id in (getattr(principal, "team_ids", ()) or ())
+                    if str(team_id).strip()
+                ),
+                roles=roles,
+                is_admin=bool(roles.intersection({"admin", "root"})),
+            )
 
     def _scope(request: Request) -> Any:
         return getattr(request.state, "memory_scope", None)
@@ -77,9 +114,7 @@ def create_memory_router(
             return []
         terms = [term for term in query.split() if term]
         results: list[dict[str, Any]] = []
-        for fact in user_store.read_memory(_scope(request)).get("facts", []):
-            if not isinstance(fact, dict):
-                continue
+        for fact in _visible_facts(request):
             content = str(fact.get("content") or "").casefold()
             category = str(fact.get("category") or "").casefold()
             haystack = f"{content} {category}"
@@ -106,17 +141,21 @@ def create_memory_router(
         """List legacy and new memories through one governed asset contract."""
         query = " ".join(q.split()).casefold()
         role_list = _roles(request, roles)
+        viewer = _viewer(request)
         assets: list[dict[str, Any]] = []
-        for fact in user_store.read_memory(_scope(request)).get("facts", []):
-            if not isinstance(fact, dict):
-                continue
+        for fact in _visible_facts(request):
             asset = fact_to_asset(fact)
+            visible_team = (
+                asset.team_id
+                if viewer is not None and asset.team_id in viewer.team_ids
+                else team_id
+            )
             if not can_read_asset(
                 asset,
                 actor=getattr(request.state, "memory_actor", "local-user"),
                 roles=role_list,
                 agent_id=agent_id,
-                team_id=team_id,
+                team_id=visible_team,
             ):
                 continue
             if asset_type and asset.asset_type != asset_type:
@@ -150,16 +189,22 @@ def create_memory_router(
         roles: str = "",
     ) -> dict[str, Any]:
         role_list = _roles(request, roles)
-        for fact in user_store.read_memory(_scope(request)).get("facts", []):
-            if not isinstance(fact, dict) or str(fact.get("id")) != asset_id:
+        viewer = _viewer(request)
+        for fact in _visible_facts(request):
+            if str(fact.get("id")) != asset_id:
                 continue
             asset = fact_to_asset(fact)
+            visible_team = (
+                asset.team_id
+                if viewer is not None and asset.team_id in viewer.team_ids
+                else team_id
+            )
             if not can_read_asset(
                 asset,
                 actor=getattr(request.state, "memory_actor", "local-user"),
                 roles=role_list,
                 agent_id=agent_id,
-                team_id=team_id,
+                team_id=visible_team,
             ):
                 raise HTTPException(403, "memory asset is not visible to this caller")
             return asset_trace(asset)
@@ -204,6 +249,9 @@ def create_memory_router(
             title=str(body.get("title") or "") or None,
             tags=body.get("tags"),
             tenant_scope=_scope(request),
+            # An API create is a user action.  Ignore any origin/assurance
+            # claim in transport JSON and let the host assign the label.
+            author=MemoryAuthor.USER,
         )
         return await asyncio.to_thread(user_store.read_memory, _scope(request))
 
@@ -250,6 +298,18 @@ def create_memory_router(
                 except Exception:
                     confidence = float(fact.get("confidence", 0.8))
                 fact["confidence"] = max(0.0, min(1.0, confidence))
+            # Editing the assertion is a new user-authored statement.  A
+            # caller cannot promote a model or imported note by changing only
+            # its confidence/provenance fields.
+            if any(
+                key in body
+                for key in ("content", "category", "scope", "agent_id", "project")
+            ):
+                fact["origin"] = fact_origin(
+                    MemoryAuthor.USER,
+                    category=fact.get("category", ""),
+                    scope=fact.get("scope", "global"),
+                )
             fact["asset_version"] = int(fact.get("asset_version") or 1) + 1
             fact["updatedAt"] = user_store.now_iso()
             found = True
@@ -295,7 +355,29 @@ def create_memory_router(
         body = await request.json()
         if not isinstance(body, dict):
             raise HTTPException(400, "invalid memory payload")
-        return await asyncio.to_thread(user_store.write_memory, body, scope=_scope(request))
+        # Imported JSON is untrusted input.  Strip origin labels before the
+        # single store normalizes it so an import cannot forge a user assertion
+        # or an execution-record classification.
+        sanitized = dict(body)
+        for group in ("user", "history"):
+            block = sanitized.get(group)
+            if not isinstance(block, dict):
+                continue
+            sanitized[group] = {
+                key: ({**value, "origin": None} if isinstance(value, dict) else value)
+                for key, value in block.items()
+            }
+        facts = sanitized.get("facts")
+        if isinstance(facts, list):
+            sanitized["facts"] = [
+                {**fact, "origin": None} if isinstance(fact, dict) else fact
+                for fact in facts
+            ]
+        return await asyncio.to_thread(
+            user_store.write_memory,
+            sanitized,
+            scope=_scope(request),
+        )
 
     return router
 

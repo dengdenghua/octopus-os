@@ -58,6 +58,9 @@ async def _drive_reflection_fast_path(
         CancellationSource,
         scoped_cancellation,
     )
+    from runtime.sensing.gateway.realtime_execution_evidence import record_execution
+
+    record_execution(log, turn, engine="native", driver="reflection", model=model)
     from runtime.sensing.gateway.openai_gateway.stream_handler import (
         _stream_direct_llm_fallback,
     )

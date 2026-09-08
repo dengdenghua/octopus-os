@@ -62,6 +62,19 @@ def _write_store(path: Path, data: dict[str, Any]) -> None:
     atomic_write_json(path, data)
 
 
+def _owned_items(items: list[dict[str, Any]], actor: str | None) -> list[dict[str, Any]]:
+    """Return the records visible to *actor*.
+
+    ``None`` is the appliance-local/no-auth mode and intentionally keeps the
+    historical all-records behavior. Authenticated requests see only records
+    explicitly owned by their verified actor.
+    """
+
+    if actor is None:
+        return items
+    return [item for item in items if item.get("owner_id") == actor]
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -591,7 +604,20 @@ def _build_report(
 
 def _remember_report(report: dict[str, Any]) -> bool:
     try:
+        from runtime.memory.semantics import MemoryAuthor
         from runtime.memory.users.user_store import add_fact
+        from runtime.safety.auth.scope import TenantScope
+
+        owner_id = str(report.get("owner_id") or "").strip()
+        tenant_id = str(report.get("tenant_id") or "").strip()
+        tenant_scope = (
+            TenantScope(
+                tenant_id=tenant_id or f"legacy:{owner_id}",
+                actor_id=owner_id,
+            )
+            if owner_id
+            else None
+        )
 
         fact = add_fact(
             f"{report.get('title')}: {report.get('summary')}",
@@ -599,6 +625,9 @@ def _remember_report(report: dict[str, Any]) -> bool:
             source="intelligence",
             scope="global",
             confidence=0.74,
+            author=MemoryAuthor.DERIVED,
+            owner=owner_id or "local-user",
+            tenant_scope=tenant_scope,
         )
         return fact is not None
     except (OSError, TypeError, ValueError):
@@ -649,6 +678,7 @@ def _run_subscription(
 def run_enabled_subscriptions_once(
     store_path: str | Path | None = None,
     *,
+    owner_id: str | None = None,
     search_fn: Any = None,
     fetch_fn: Any = None,
     remember_reports: bool = True,
@@ -663,6 +693,8 @@ def run_enabled_subscriptions_once(
     checked = 0
 
     for subscription in data["subscriptions"]:
+        if owner_id is not None and subscription.get("owner_id") != owner_id:
+            continue
         checked += 1
         if len(reports) >= max_subscriptions:
             break
@@ -676,6 +708,12 @@ def run_enabled_subscriptions_once(
             fetch_fn=fetch_fn,
             max_results_per_query=max_results_per_query,
         )
+        report_owner = subscription.get("owner_id")
+        if isinstance(report_owner, str) and report_owner:
+            report["owner_id"] = report_owner
+            report_tenant = subscription.get("tenant_id")
+            if isinstance(report_tenant, str) and report_tenant:
+                report["tenant_id"] = report_tenant
         report["memory_written"] = _remember_report(report) if remember_reports else False
         subscription["last_run"] = report["created_at"]
         reports.append(report)
@@ -708,6 +746,47 @@ def create_intelligence_router(
     router = APIRouter()
     path = Path(store_path) if store_path is not None else _default_store_path()
 
+    def _migrate_single_actor_legacy_store(actor: str | None) -> None:
+        """Assign the pre-actor flat store only when ownership is unambiguous.
+
+        Older Echo installs had one appliance-wide intelligence file. A sole
+        configured identity is a safe migration target; with multiple
+        identities the records remain unowned and are never exposed by an
+        authenticated actor until an explicit migration is performed.
+        """
+
+        if not require_auth or not actor or identity_store is None:
+            return
+        actor_ids = getattr(identity_store, "actor_ids", lambda: [])()
+        if len(actor_ids) != 1 or actor_ids[0] != actor:
+            return
+        data = _read_store(path)
+        changed = False
+        tenant_id = _tenant_for_actor(actor)
+        for collection in (data["subscriptions"], data["reports"]):
+            for item in collection:
+                if isinstance(item, dict) and not item.get("owner_id"):
+                    item["owner_id"] = actor
+                    changed = True
+                if (
+                    isinstance(item, dict)
+                    and item.get("owner_id") == actor
+                    and not item.get("tenant_id")
+                    and tenant_id
+                ):
+                    item["tenant_id"] = tenant_id
+                    changed = True
+        if changed:
+            _write_store(path, data)
+
+    def _tenant_for_actor(actor: str | None) -> str | None:
+        if not actor:
+            return None
+        identity = getattr(identity_store, "get", lambda _actor: None)(actor)
+        metadata = getattr(identity, "metadata", None) or {}
+        tenant = str(metadata.get("tenant_id") or "").strip()
+        return tenant or f"legacy:{actor}"
+
     def _auth(request: Request) -> str | None:
         from runtime.safety.auth.principal import require_roles
 
@@ -720,13 +799,15 @@ def create_intelligence_router(
             jwt_issuer=jwt_issuer,
             jwt_audience=jwt_audience,
         )
-        return principal.actor_id if principal is not None else None
+        actor = principal.actor_id if principal is not None else None
+        _migrate_single_actor_legacy_store(actor)
+        return actor
 
     @router.get("/api/intelligence/subscriptions")
     def list_subscriptions(request: Request) -> dict[str, Any]:
-        _auth(request)
+        actor = _auth(request)
         data = _read_store(path)
-        return {"subscriptions": data["subscriptions"]}
+        return {"subscriptions": _owned_items(data["subscriptions"], actor)}
 
     @router.post("/api/intelligence/subscriptions/draft")
     def draft_subscription(
@@ -745,7 +826,7 @@ def create_intelligence_router(
         request: Request,
         body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        _auth(request)
+        actor = _auth(request)
         payload = body or {}
         topic = str(payload.get("topic") or "").strip()
         if not topic:
@@ -772,9 +853,15 @@ def create_intelligence_router(
             if isinstance(payload.get("sources"), list)
             else ["web", "news"],
         }
+        if actor is not None:
+            subscription["owner_id"] = actor
+            subscription["tenant_id"] = _tenant_for_actor(actor)
 
         data = _read_store(path)
-        existing = {str(item.get("topic", "")).strip().lower() for item in data["subscriptions"]}
+        existing = {
+            str(item.get("topic", "")).strip().lower()
+            for item in _owned_items(data["subscriptions"], actor)
+        }
         if topic.lower() in existing:
             raise HTTPException(status_code=409, detail="subscription already exists")
 
@@ -788,11 +875,13 @@ def create_intelligence_router(
         sub_id: str,
         body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        _auth(request)
+        actor = _auth(request)
         payload = body or {}
         data = _read_store(path)
         for item in data["subscriptions"]:
-            if item.get("id") != sub_id:
+            if item.get("id") != sub_id or (
+                actor is not None and item.get("owner_id") != actor
+            ):
                 continue
             if "enabled" in payload:
                 item["enabled"] = bool(payload["enabled"])
@@ -828,10 +917,15 @@ def create_intelligence_router(
 
     @router.delete("/api/intelligence/subscriptions/{sub_id}")
     def delete_subscription(request: Request, sub_id: str) -> dict[str, Any]:
-        _auth(request)
+        actor = _auth(request)
         data = _read_store(path)
         before = len(data["subscriptions"])
-        data["subscriptions"] = [item for item in data["subscriptions"] if item.get("id") != sub_id]
+        data["subscriptions"] = [
+            item
+            for item in data["subscriptions"]
+            if item.get("id") != sub_id
+            or (actor is not None and item.get("owner_id") != actor)
+        ]
         if len(data["subscriptions"]) == before:
             raise HTTPException(status_code=404, detail="subscription not found")
         _write_store(path, data)
@@ -843,10 +937,15 @@ def create_intelligence_router(
         sub_id: str,
         body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        _auth(request)
+        actor = _auth(request)
         data = _read_store(path)
         subscription = next(
-            (item for item in data["subscriptions"] if item.get("id") == sub_id),
+            (
+                item
+                for item in data["subscriptions"]
+                if item.get("id") == sub_id
+                and (actor is None or item.get("owner_id") == actor)
+            ),
             None,
         )
         if subscription is None:
@@ -857,6 +956,12 @@ def create_intelligence_router(
             fetch_fn=fetch_fn,
             max_results_per_query=int((body or {}).get("max_results_per_query") or 5),
         )
+        report_owner = subscription.get("owner_id") or actor
+        if isinstance(report_owner, str) and report_owner:
+            report["owner_id"] = report_owner
+        report_tenant = subscription.get("tenant_id") or _tenant_for_actor(actor)
+        if isinstance(report_tenant, str) and report_tenant:
+            report["tenant_id"] = report_tenant
         report["memory_written"] = _remember_report(report) if remember_reports else False
         subscription["last_run"] = report["created_at"]
         data["reports"] = [report, *data["reports"]][:200]
@@ -868,10 +973,11 @@ def create_intelligence_router(
         request: Request,
         body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        _auth(request)
+        actor = _auth(request)
         payload = body or {}
         return run_enabled_subscriptions_once(
             path,
+            owner_id=actor,
             search_fn=search_fn,
             fetch_fn=fetch_fn,
             remember_reports=remember_reports,
@@ -883,19 +989,21 @@ def create_intelligence_router(
 
     @router.get("/api/intelligence/reports")
     def list_reports(request: Request, topic: str | None = None) -> dict[str, Any]:
-        _auth(request)
+        actor = _auth(request)
         data = _read_store(path)
-        reports = data["reports"]
+        reports = _owned_items(data["reports"], actor)
         if topic:
             reports = [item for item in reports if item.get("topic") == topic]
         return {"reports": reports}
 
     @router.get("/api/intelligence/reports/{report_id}")
     def get_report(request: Request, report_id: str) -> dict[str, Any]:
-        _auth(request)
+        actor = _auth(request)
         data = _read_store(path)
         for report in data["reports"]:
-            if report.get("id") == report_id:
+            if report.get("id") == report_id and (
+                actor is None or report.get("owner_id") == actor
+            ):
                 return report
         raise HTTPException(status_code=404, detail="report not found")
 

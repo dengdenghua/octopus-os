@@ -8,6 +8,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+if os.name != "posix":
+    raise unittest.SkipTest("update status tests require POSIX ownership semantics")
+
 MODULE_PATH = Path(__file__).with_name("echo_update_status.py")
 SPEC = importlib.util.spec_from_file_location("echo_update_status", MODULE_PATH)
 assert SPEC and SPEC.loader

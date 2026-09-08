@@ -17,12 +17,12 @@ export function MarketCard({
   onBuy: (item: MarketItem) => void;
   onOpen?: (item: MarketItem) => void;
 }) {
-  const category = MARKET_CATEGORIES.find((entry) => entry.key === item.category);
+  const category = MARKET_CATEGORIES.find(
+    (entry) => entry.key === item.category,
+  );
 
   return (
-    <article
-      className="group/card relative flex flex-col overflow-hidden rounded-xl border border-border-subtle bg-card transition-[border-color,transform,box-shadow] duration-base hover:-translate-y-0.5 hover:border-border-default hover:shadow-[var(--shadow-sm)]"
-    >
+    <article className="group/card relative flex flex-col overflow-hidden rounded-xl border border-border-subtle bg-card transition-[border-color,transform,box-shadow] duration-base hover:-translate-y-0.5 hover:border-border-default hover:shadow-[var(--shadow-sm)]">
       <button
         type="button"
         onClick={() => onOpen?.(item)}
@@ -78,7 +78,9 @@ export function MarketCard({
             <span className="text-lg font-bold tracking-tight tabular-nums text-foreground sm:text-xl">
               {item.price}
             </span>
-            <span className="text-[11px] font-medium text-foreground/60">积分</span>
+            <span className="text-[11px] font-medium text-foreground/60">
+              积分
+            </span>
           </div>
           <button
             type="button"
@@ -128,8 +130,7 @@ export function MarketGrid({
   onOpen?: (item: MarketItem) => void;
 }) {
   const cols = useMemo(() => {
-    if (items.length >= 8)
-      return "grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4";
+    if (items.length >= 8) return "grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4";
     if (items.length >= 4) return "grid-cols-2 xl:grid-cols-3";
     return "grid-cols-1 min-[360px]:grid-cols-2 xl:grid-cols-3";
   }, [items.length]);

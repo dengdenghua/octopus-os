@@ -15,6 +15,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from runtime.memory.semantics import (
+    MemoryAuthor,
+    fact_origin,
+    fact_prompt_text,
+    normalize_origin,
+)
 from runtime.platform.io import atomic_write_json
 from runtime.platform.process.paths import app_paths
 from runtime.safety.auth.scope import TenantScope
@@ -29,6 +35,7 @@ MAX_FACT_CONTENT_CHARS = 500
 MAX_SECTION_SUMMARY_CHARS = 4_000
 MAX_LABEL_CHARS = 80
 MAX_SCOPE_VALUE_CHARS = 120
+MEMORY_VIEWER_CONTEXT_KEY = "_echo_authoritative_memory_viewer"
 
 
 def _scope_suffix(scope: TenantScope) -> str:
@@ -55,18 +62,23 @@ def now_iso() -> str:
 
 def empty_memory() -> dict[str, Any]:
     now = now_iso()
+    unknown_origin = fact_origin(MemoryAuthor.UNKNOWN)
     return {
         "version": "1",
         "lastUpdated": now,
         "user": {
-            "workContext": {"summary": "", "updatedAt": ""},
-            "personalContext": {"summary": "", "updatedAt": ""},
-            "topOfMind": {"summary": "", "updatedAt": ""},
+            "workContext": {"summary": "", "updatedAt": "", "origin": unknown_origin},
+            "personalContext": {"summary": "", "updatedAt": "", "origin": unknown_origin},
+            "topOfMind": {"summary": "", "updatedAt": "", "origin": unknown_origin},
         },
         "history": {
-            "recentMonths": {"summary": "", "updatedAt": ""},
-            "earlierContext": {"summary": "", "updatedAt": ""},
-            "longTermBackground": {"summary": "", "updatedAt": ""},
+            "recentMonths": {"summary": "", "updatedAt": "", "origin": unknown_origin},
+            "earlierContext": {"summary": "", "updatedAt": "", "origin": unknown_origin},
+            "longTermBackground": {
+                "summary": "",
+                "updatedAt": "",
+                "origin": unknown_origin,
+            },
         },
         "facts": [],
     }
@@ -110,6 +122,7 @@ def add_fact(
     title: str | None = None,
     tags: list[str] | None = None,
     tenant_scope: TenantScope | None = None,
+    author: MemoryAuthor = MemoryAuthor.UNKNOWN,
 ) -> dict[str, Any] | None:
     if not read_config(tenant_scope).get("enabled", True):
         return None
@@ -120,6 +133,7 @@ def add_fact(
     facts = list(memory.get("facts") or [])
     max_facts = int(read_config(tenant_scope).get("max_facts") or DEFAULT_MAX_FACTS)
     scope = _normalize_scope(scope, agent_id=agent_id, project=project)
+    origin = fact_origin(author, category=category, scope=scope)
     clean_agent = _clean_scope_value(agent_id)
     clean_project = _clean_scope_value(project)
     key = content.casefold()
@@ -129,6 +143,7 @@ def add_fact(
             and str(fact.get("scope") or "global") == scope
             and str(fact.get("agent_id") or "") == clean_agent
             and str(fact.get("project") or "") == clean_project
+            and normalize_origin(fact.get("origin")) == origin
         ):
             return fact
     fact = {
@@ -158,6 +173,7 @@ def add_fact(
         "allowed_roles": _clean_string_list(allowed_roles),
         "allowed_agents": _clean_string_list(allowed_agents),
         "provenance": _normalize_provenance(provenance, fallback_source=source),
+        "origin": origin,
     }
     memory["facts"] = [*facts, fact][-max_facts:]
     write_memory(memory, scope=tenant_scope)
@@ -257,12 +273,13 @@ def relevant_memory_texts(
     project: str | None = None,
     scope: TenantScope | None = None,
     viewer: MemoryViewer | None = None,
+    annotate: bool = False,
 ) -> list[str]:
     settings = read_config(scope)
     if not settings.get("enabled", True) or not settings.get("injection_enabled", True):
         return []
     return [
-        str(fact.get("content") or "").strip()
+        fact_prompt_text(fact) if annotate else str(fact.get("content") or "").strip()
         for fact in search_facts(
             query,
             limit=limit,
@@ -468,6 +485,7 @@ def normalize_memory(raw: Any, *, scope: TenantScope | None = None) -> dict[str,
                     item.get("provenance"),
                     fallback_source=item.get("source") or "manual",
                 ),
+                "origin": normalize_origin(item.get("origin")),
             }
         )
     base.update(
@@ -490,18 +508,24 @@ def normalize_memory(raw: Any, *, scope: TenantScope | None = None) -> dict[str,
     return base
 
 
-def _section(value: Any, fallback_updated_at: str) -> dict[str, str]:
+def _section(value: Any, fallback_updated_at: str) -> dict[str, Any]:
     if isinstance(value, dict):
         return {
             "summary": _clean_section_summary(value.get("summary") or ""),
             "updatedAt": str(value.get("updatedAt") or fallback_updated_at or ""),
+            "origin": normalize_origin(value.get("origin")),
         }
     if isinstance(value, str):
         return {
             "summary": _clean_section_summary(value),
             "updatedAt": fallback_updated_at or "",
+            "origin": fact_origin(MemoryAuthor.UNKNOWN),
         }
-    return {"summary": "", "updatedAt": fallback_updated_at or ""}
+    return {
+        "summary": "",
+        "updatedAt": fallback_updated_at or "",
+        "origin": fact_origin(MemoryAuthor.UNKNOWN),
+    }
 
 
 def _clean_text(value: Any) -> str:
@@ -647,6 +671,45 @@ class MemoryViewer:
         )
 
 
+def memory_viewer_context(viewer: MemoryViewer) -> dict[str, Any]:
+    """Serialize a server-resolved viewer for trusted in-process hops.
+
+    The payload is intentionally small and contains no credentials.  It is
+    only authoritative when paired with ``AUTHORITATIVE_SCOPE_CONTEXT_KEY``;
+    :func:`memory_viewer_from_context` checks that pair before use.
+    """
+
+    return {
+        "actor_id": viewer.actor_id,
+        "tenant_id": viewer.tenant_id,
+        "team_ids": sorted(viewer.team_ids),
+        "roles": sorted(viewer.roles),
+        "is_admin": bool(viewer.is_admin),
+    }
+
+
+def memory_viewer_from_context(user_context: Any) -> MemoryViewer | None:
+    """Recover a viewer only from a server-stamped scope + viewer pair."""
+
+    if not isinstance(user_context, dict):
+        return None
+    raw = user_context.get(MEMORY_VIEWER_CONTEXT_KEY)
+    if not isinstance(raw, dict):
+        return None
+    try:
+        from runtime.safety.recovery.tenant_scope import trusted_scope_from_user_context
+
+        scope = trusted_scope_from_user_context(user_context)
+    except (ImportError, RuntimeError, ValueError):
+        return None
+    if scope is None:
+        return None
+    viewer = MemoryViewer.from_dict(raw)
+    if viewer.actor_id != scope.actor_id or viewer.tenant_id != scope.tenant_id:
+        return None
+    return viewer
+
+
 def fact_visible_to(fact: dict[str, Any], viewer: MemoryViewer | None) -> bool:
     """判定一条 fact 是否对 ``viewer`` 可见（纯函数，绝不抛出）。
 
@@ -668,6 +731,18 @@ def fact_visible_to(fact: dict[str, Any], viewer: MemoryViewer | None) -> bool:
         fact_owner = str(fact.get("owner") or "").strip()
         tenant_id = str(fact.get("tenant_id") or "").strip()
         if tenant_id and tenant_id != viewer.tenant_id:
+            return False
+        if (
+            not tenant_id
+            and viewer.tenant_id
+            and (
+                viewer.tenant_id != f"legacy:{viewer.actor_id}"
+                or fact_owner != viewer.actor_id
+            )
+        ):
+            # Legacy memory predates tenant partitioning. Only the matching
+            # legacy actor may read it; never treat an untagged default file
+            # as a shared tenant pool during authenticated reads.
             return False
         if fact_owner and fact_owner == viewer.actor_id:
             return True
@@ -755,7 +830,8 @@ def _facts_for_viewer(viewer: MemoryViewer) -> list[dict[str, Any]]:
     for path in _memory_paths_for_tenant(viewer.tenant_id):
         for fact in _facts_from_memory_file(path):
             # 分区哈希不可反推租户：以 fact 自带的 tenant_id 为准；legacy
-            # fact（tenant_id 为空）在本地单租户模式下视为同一空间。
+            # fact（tenant_id 为空）只由 fact_visible_to 放行给匹配的
+            # legacy:<actor> 查看者，不能作为共享租户池。
             tenant_id = str(fact.get("tenant_id") or "").strip()
             if tenant_id and viewer.tenant_id and tenant_id != viewer.tenant_id:
                 continue

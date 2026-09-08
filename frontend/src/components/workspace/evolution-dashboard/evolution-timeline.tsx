@@ -27,20 +27,16 @@ const STATUS_DOT_COLOR: Record<string, string> = {
 
 const CANARY_PHASE_STYLE: Record<string, string> = {
   shadow: "bg-info/15 text-info dark:text-info border-info/30",
-  canary_5:
-    "bg-warning/15 text-warning border-warning/30",
-  canary_25:
-    "bg-warning/15 text-warning border-warning/30",
-  canary_50:
-    "bg-warning/15 text-warning border-warning/30",
+  canary_5: "bg-warning/15 text-warning border-warning/30",
+  canary_25: "bg-warning/15 text-warning border-warning/30",
+  canary_50: "bg-warning/15 text-warning border-warning/30",
   full: "bg-success/15 text-success border-success/30",
   rolled_back: "bg-destructive/15 text-destructive border-destructive/30",
 };
 
 function canaryPhaseStyle(phase: string): string {
   return (
-    CANARY_PHASE_STYLE[phase] ??
-    "bg-muted text-muted-foreground border-border"
+    CANARY_PHASE_STYLE[phase] ?? "bg-muted text-muted-foreground border-border"
   );
 }
 
@@ -118,8 +114,7 @@ function TimelineNode({
   onRollback?: () => void;
   isRollingBack?: boolean;
 }) {
-  const dotColor =
-    STATUS_DOT_COLOR[record.status] ?? "bg-muted-foreground";
+  const dotColor = STATUS_DOT_COLOR[record.status] ?? "bg-muted-foreground";
   const isCanaryKind =
     record.kind.toLowerCase().includes("canary") ||
     record.kind.toLowerCase().includes("skill");
@@ -197,9 +192,7 @@ function TimelineNode({
         <div
           className={cn(
             "shrink-0 flex items-center gap-0.5 text-xs font-medium tabular-nums pt-2",
-            improved
-              ? "text-success"
-              : "text-destructive",
+            improved ? "text-success" : "text-destructive",
           )}
         >
           {improved ? (

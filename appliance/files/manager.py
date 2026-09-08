@@ -20,9 +20,13 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from echo_runtime.resource_identity import appliance_file_resource_id
+
 TRASH_DIRNAME = ".echo-trash"
 _MANIFEST = "manifest.json"
 _UPLOAD_TEMP_PREFIX = ".echo-upload-"
+_ORGANIZE_TEMP_PREFIX = ".echo-organize-"
+_INTERNAL_TEMP_PREFIXES = (_UPLOAD_TEMP_PREFIX, _ORGANIZE_TEMP_PREFIX)
 _UPLOAD_TEMP_SUFFIX = ".part"
 _UPLOAD_SESSION_DIRNAME = ".echo-upload-sessions"
 _UPLOAD_SESSION_VERSION = 1
@@ -32,6 +36,7 @@ DEFAULT_STALE_UPLOAD_SECONDS = 24 * 3600
 DEFAULT_UPLOAD_CHUNK_BYTES = 8 * 1024**2
 DEFAULT_MAX_UPLOAD_SESSIONS = 64
 MAX_SHARE_QUOTAS = 256
+PathAuthorization = Callable[[str, str, bool], None]
 DEFAULT_USAGE_MAX_ENTRIES = 200_000
 USAGE_CACHE_SECONDS = 10.0
 
@@ -64,6 +69,28 @@ _USAGE_EXTENSIONS = {
 
 class PathEscape(ValueError):
     """相对路径解析后逃出了 root。"""
+
+
+def _replace_upload_metadata(source: Path, destination: Path) -> None:
+    """Publish already-fsynced metadata using the platform's rename boundary."""
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        move = ctypes.WinDLL("kernel32", use_last_error=True).MoveFileExW
+        move.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
+        move.restype = wintypes.BOOL
+        # REPLACE_EXISTING | WRITE_THROUGH; no cross-volume copy fallback.
+        # CRT os.open cannot open a directory for the POSIX fsync below.
+        if not move(str(source), str(destination), 0x1 | 0x8):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return
+    os.replace(source, destination)
+    directory_fd = os.open(destination.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
 
 
 class UploadTooLarge(ValueError):
@@ -112,6 +139,7 @@ class FileEntry:
     kind: str  # "dir" | "file"
     size: int
     mtime: float
+    resource_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -120,6 +148,7 @@ class FileEntry:
             "kind": self.kind,
             "size": self.size,
             "mtime": self.mtime,
+            "resource_id": self.resource_id,
         }
 
 
@@ -239,7 +268,7 @@ class FileManager:
         if (
             not parts
             or any(part in {"", ".", "..", TRASH_DIRNAME} for part in parts)
-            or any(part.startswith(_UPLOAD_TEMP_PREFIX) for part in parts)
+            or any(part.casefold().startswith(_INTERNAL_TEMP_PREFIXES) for part in parts)
         ):
             raise ValueError(f"invalid share quota path: {raw_path!r}")
         normalized = "/".join(parts)
@@ -254,7 +283,8 @@ class FileManager:
         # 归一化:去掉前导斜杠,空/"."视为 root。
         rel = (rel or "").strip().lstrip("/")
         if any(
-            part in (TRASH_DIRNAME, _UPLOAD_SESSION_DIRNAME) or part.startswith(_UPLOAD_TEMP_PREFIX)
+            part in (TRASH_DIRNAME, _UPLOAD_SESSION_DIRNAME)
+            or part.casefold().startswith(_INTERNAL_TEMP_PREFIXES)
             for part in Path(rel).parts
         ):
             raise PathEscape("reserved internal path")
@@ -276,8 +306,8 @@ class FileManager:
 
     @staticmethod
     def _is_internal_name(name: str) -> bool:
-        return name in (TRASH_DIRNAME, _UPLOAD_SESSION_DIRNAME) or name.startswith(
-            _UPLOAD_TEMP_PREFIX
+        return name in (TRASH_DIRNAME, _UPLOAD_SESSION_DIRNAME) or name.casefold().startswith(
+            _INTERNAL_TEMP_PREFIXES
         )
 
     def _logical_size(self, path: Path) -> int:
@@ -456,7 +486,7 @@ class FileManager:
             # 隐藏回收站目录本身(仅在 root 层)。
             if child.parent == self.root and child.name == TRASH_DIRNAME:
                 continue
-            if child.name.startswith(_UPLOAD_TEMP_PREFIX):
+            if child.name.casefold().startswith(_INTERNAL_TEMP_PREFIXES):
                 continue
             try:
                 st = child.stat()
@@ -470,6 +500,7 @@ class FileManager:
                     kind="dir" if child.is_dir() else "file",
                     size=st.st_size,
                     mtime=st.st_mtime,
+                    resource_id=appliance_file_resource_id(self.root, child_rel),
                 )
             )
         entries.sort(key=lambda e: (e.kind != "dir", e.name.lower()))
@@ -710,7 +741,9 @@ class FileManager:
         target.mkdir(parents=True, exist_ok=False)
         return self._entry(target)
 
-    def move(self, src_rel: str, dst_rel: str) -> FileEntry:
+    def move(
+        self, src_rel: str, dst_rel: str, *, authorize: PathAuthorization | None = None
+    ) -> FileEntry:
         with self._upload_lock:
             src = self._resolve(src_rel)
             dst = self._resolve(dst_rel)
@@ -722,6 +755,9 @@ class FileManager:
             # dst 是已存在目录 → 移动进该目录;否则视为重命名目标。
             if dst.is_dir():
                 dst = dst / src.name
+            if authorize is not None:
+                authorize("write", self._rel(src), src.is_dir())
+                authorize("write", self._rel(dst), src.is_dir())
             if dst.exists():
                 raise FileExistsError(self._rel(dst))
             if src.is_dir() and (dst == src or src in dst.parents):
@@ -738,7 +774,9 @@ class FileManager:
             shutil.move(str(src), str(dst))
             return self._entry(dst)
 
-    def copy(self, src_rel: str, dst_rel: str) -> FileEntry:
+    def copy(
+        self, src_rel: str, dst_rel: str, *, authorize: PathAuthorization | None = None
+    ) -> FileEntry:
         """复制文件或目录;不覆盖目标,也不复制符号链接树。"""
         with self._upload_lock:
             src = self._resolve(src_rel)
@@ -749,6 +787,9 @@ class FileManager:
                 raise FileNotFoundError(src_rel)
             if dst.is_dir():
                 dst = dst / src.name
+            if authorize is not None:
+                authorize("read", self._rel(src), src.is_dir())
+                authorize("write", self._rel(dst), src.is_dir())
             if dst.exists():
                 raise FileExistsError(self._rel(dst))
             if src.is_dir() and (dst == src or src in dst.parents):
@@ -809,7 +850,9 @@ class FileManager:
         overwrite: bool,
     ) -> tuple[Path, Path]:
         safe_name = Path((filename or "").replace("\\", "/")).name.strip()
-        if safe_name in {"", ".", "..", TRASH_DIRNAME} or safe_name.startswith(_UPLOAD_TEMP_PREFIX):
+        if safe_name in {"", ".", "..", TRASH_DIRNAME} or safe_name.casefold().startswith(
+            _INTERNAL_TEMP_PREFIXES
+        ):
             raise ValueError("invalid upload filename")
         directory = self._resolve(directory_rel)
         if not directory.is_dir():
@@ -899,12 +942,7 @@ class FileManager:
                 output.write(payload)
                 output.flush()
                 os.fsync(output.fileno())
-            os.replace(temporary, destination)
-            directory_fd = os.open(directory, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            _replace_upload_metadata(temporary, destination)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -1419,7 +1457,9 @@ class FileManager:
     def file_for_download(self, rel: str) -> Path:
         target = self._resolve(rel)
         # _resolve 已拦截内部目录，此处二次防御
-        if target.name == _UPLOAD_SESSION_DIRNAME or target.name.startswith(_UPLOAD_TEMP_PREFIX):
+        if target.name == _UPLOAD_SESSION_DIRNAME or target.name.casefold().startswith(
+            _INTERNAL_TEMP_PREFIXES
+        ):
             raise PathEscape("reserved internal path")
         if not target.exists():
             raise FileNotFoundError(rel)
@@ -1434,7 +1474,7 @@ class FileManager:
         return target
 
     # ── 回收站语义 ──────────────────────────────────────────────
-    def trash(self, rel: str) -> dict[str, Any]:
+    def trash(self, rel: str, *, authorize: PathAuthorization | None = None) -> dict[str, Any]:
         """移入回收站(非物理删除)。"""
         with self._upload_lock:
             src = self._resolve(rel)
@@ -1442,6 +1482,8 @@ class FileManager:
                 raise ValueError("cannot trash root")
             if not src.exists():
                 raise FileNotFoundError(rel)
+            if authorize is not None:
+                authorize("write", self._rel(src), src.is_dir())
             self._assert_no_active_uploads(src)
             entry_id = uuid.uuid4().hex
             dest = self._trash_dir / entry_id
@@ -1472,7 +1514,7 @@ class FileManager:
             reverse=True,
         )
 
-    def restore(self, entry_id: str) -> FileEntry:
+    def restore(self, entry_id: str, *, authorize: PathAuthorization | None = None) -> FileEntry:
         with self._upload_lock:
             manifest = self._read_manifest()
             record = next((r for r in manifest if r["id"] == entry_id), None)
@@ -1486,6 +1528,13 @@ class FileManager:
             dest = self._resolve(record["original"])
             if dest.exists():
                 dest = dest.with_name(f"{dest.stem}-restored-{entry_id[:6]}{dest.suffix}")
+            if authorize is not None:
+                # Restoring a renamed collision target still needs permission
+                # for the original tree and the actual destination tree.
+                authorize("write", str(record["original"]), stored.is_dir())
+                authorize("write", self._rel(dest), stored.is_dir())
+            if dest.exists():
+                raise FileExistsError(self._rel(dest))
             logical_bytes = self._logical_size(stored)
             destination_parent = self._existing_parent(dest.parent)
             self._share_quota_reports(dest, logical_bytes)
@@ -1535,4 +1584,5 @@ class FileManager:
             kind="dir" if path.is_dir() else "file",
             size=st.st_size,
             mtime=st.st_mtime,
+            resource_id=appliance_file_resource_id(self.root, self._rel(path)),
         )

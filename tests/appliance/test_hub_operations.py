@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 import time
@@ -222,7 +223,13 @@ def test_worker_persists_real_stream_progress_without_raw_docker_text(tmp_path: 
 
 def test_store_file_is_private_and_schema_does_not_use_agent_tables(tmp_path: Path) -> None:
     store = HubOperationStore(tmp_path, encryption_secret="test-secret")
-    assert store.path.stat().st_mode & 0o777 == 0o600
+    if os.name == "nt":
+        from tests.appliance.windows_acl_assertions import assert_private_windows_acl
+
+        assert_private_windows_acl(tmp_path)
+        assert_private_windows_acl(store.path)
+    else:
+        assert store.path.stat().st_mode & 0o777 == 0o600
     with sqlite3.connect(store.path) as connection:
         tables = {
             row[0]

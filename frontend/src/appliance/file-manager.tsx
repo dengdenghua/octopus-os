@@ -31,6 +31,7 @@ import {
   SearchIcon,
   Trash2Icon,
   UploadCloudIcon,
+  FolderSyncIcon,
   XIcon,
 } from "lucide-react";
 
@@ -52,6 +53,7 @@ import {
 import { requestHighRiskApproval } from "@/appliance/approval";
 import { resolveAgentAppUrl } from "@/appliance/agent-workspace";
 import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
+import { FileOrganizationPanel } from "@/appliance/file-organization-panel";
 import {
   answerStorage,
   searchStorage,
@@ -154,6 +156,7 @@ export function FileManager({
   const [trash, setTrash] = useState<TrashEntry[]>([]);
   const [emptyApprovalOpen, setEmptyApprovalOpen] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
+  const [organizationPath, setOrganizationPath] = useState<string | null>(null);
   const [aiQuery, setAiQuery] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResults, setAiResults] = useState<{
@@ -381,6 +384,21 @@ export function FileManager({
             )}
           </div>
           <div className="mac-finder-actions">
+            <button
+              type="button"
+              aria-label="整理此目录"
+              title="按年月整理此目录的发票"
+              disabled={
+                showTrash ||
+                sidebarTarget !== "nas" ||
+                fileServiceUnavailable ||
+                loading ||
+                busy !== null
+              }
+              onClick={() => setOrganizationPath(path)}
+            >
+              <FolderSyncIcon />
+            </button>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -858,6 +876,14 @@ export function FileManager({
         onCancel={() => setEmptyApprovalOpen(false)}
         onConfirm={confirmEmpty}
       />
+      {organizationPath !== null && (
+        <FileOrganizationPanel
+          key={organizationPath}
+          path={organizationPath}
+          onClose={() => setOrganizationPath(null)}
+          onChanged={refresh}
+        />
+      )}
     </div>
   );
 }

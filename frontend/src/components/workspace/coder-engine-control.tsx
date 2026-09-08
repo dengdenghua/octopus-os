@@ -1,3 +1,8 @@
+import {
+  coderAccountQueryOptions,
+  coderRateLimitsQueryOptions,
+  coderUsageQueryOptions,
+} from "@/core/coder/query-options";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangleIcon,
@@ -43,12 +48,9 @@ import {
 import {
   cancelCoderLogin,
   coderQueryKeys,
-  getCoderAccount,
   getCoderApps,
   getCoderModelProfile,
   getCoderModels,
-  getCoderRateLimits,
-  getCoderUsage,
   logoutCoderAccount,
   startCoderLogin,
   updateCoderApps,
@@ -84,6 +86,16 @@ const COPY = {
     retry: "重试",
     compatible: "可由 Codex 引擎运行",
     incompatible: "当前系统模型与 Codex 不兼容",
+    executionUnavailable: "当前暂不可执行",
+    executionReason: (reason: string) =>
+      ({
+        disabled: "Codex 执行开关已关闭",
+        executable_unavailable: "未找到可用的 Codex App Server",
+        model_incompatible: "当前模型不能安全交给 Codex",
+        tools_unavailable: "运行时工具尚未装配",
+        account_required: "请先登录 Codex 账号",
+        account_unavailable: "Codex 账号授权不可用",
+      })[reason] || `执行条件未满足（${reason}）`,
     provider: "Provider",
     effectiveModel: "实际模型",
     systemModel: "系统模型",
@@ -164,6 +176,17 @@ const COPY = {
     retry: "Retry",
     compatible: "Compatible with the Codex engine",
     incompatible: "The system model is not compatible with Codex",
+    executionUnavailable: "Execution is currently unavailable",
+    executionReason: (reason: string) =>
+      ({
+        disabled: "Codex execution is disabled",
+        executable_unavailable:
+          "No usable Codex App Server executable was found",
+        model_incompatible: "The selected model cannot safely run in Codex",
+        tools_unavailable: "The runtime tool registry is not ready",
+        account_required: "Sign in to a Codex account first",
+        account_unavailable: "Codex account authorization is unavailable",
+      })[reason] || `Execution prerequisites are unmet (${reason})`,
     provider: "Provider",
     effectiveModel: "Effective model",
     systemModel: "System model",
@@ -238,6 +261,21 @@ const COPY = {
 
 function copyForLocale(locale: string) {
   return (locale || "en").toLowerCase().startsWith("zh") ? COPY.zh : COPY.en;
+}
+
+function executionStatus(profile: CoderModelProfile, copy: typeof COPY.en) {
+  if (profile.execution_available === false) {
+    return {
+      label: copy.executionUnavailable,
+      detail: profile.execution_unavailable_reason
+        ? copy.executionReason(profile.execution_unavailable_reason)
+        : null,
+    };
+  }
+  return {
+    label: profile.compatible ? copy.compatible : copy.incompatible,
+    detail: !profile.compatible ? profile.compatibility_reason : null,
+  };
 }
 
 async function openSensitiveAuthorizationUrl(url: string): Promise<boolean> {
@@ -333,9 +371,7 @@ function isCoderSystemModel(model: PickerModel) {
   ]
     .filter((value): value is string => Boolean(value))
     .map((value) => value.trim().toLowerCase());
-  return !identifiers.some(
-    (value) => value === "mix" || value === "echo-mix",
-  );
+  return !identifiers.some((value) => value === "mix" || value === "echo-mix");
 }
 
 function isSystemOrchestratorModel(value: string | null | undefined) {
@@ -352,27 +388,27 @@ function ProfileCompatibility({
 }) {
   const { locale } = useI18n();
   const copy = copyForLocale(locale);
+  const status = executionStatus(profile, copy);
   return (
     <div
       className={cn(
         "flex gap-2 rounded-lg border px-3 py-2 text-xs",
-        profile.compatible
+        profile.execution_available !== false && profile.compatible
           ? "border-success/20 bg-success/[0.06] text-success"
           : "border-warning/25 bg-warning/[0.06] text-warning",
       )}
     >
-      {profile.compatible ? (
+      {profile.execution_available !== false && profile.compatible ? (
         <CheckCircle2Icon className="mt-0.5 size-3.5 shrink-0" />
       ) : (
         <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
       )}
       <div className="min-w-0">
-        <div className="font-medium">
-          {profile.compatible ? copy.compatible : copy.incompatible}
-        </div>
-        {!compact && profile.compatibility_reason ? (
+        <div className="font-medium">{status.label}</div>
+        {status.detail &&
+        (!compact || profile.execution_available === false) ? (
           <div className="mt-0.5 break-words text-current/80">
-            {profile.compatibility_reason}
+            {status.detail}
           </div>
         ) : null}
       </div>
@@ -403,6 +439,7 @@ export function CoderEngineControl({
   systemModels = [],
   disabled = false,
   executionEngine = "codex",
+  taskOverride = false,
   value,
   onChange,
   onEffectiveModelChange,
@@ -411,7 +448,10 @@ export function CoderEngineControl({
 }: {
   systemModels?: PickerModel[];
   disabled?: boolean;
-  executionEngine?: "echo" | "codex";
+  executionEngine?: "echo" | "codex" | "opencode";
+  /** Keep changes local to the current task instead of saving the shared
+   * principal-scoped Codex profile. */
+  taskOverride?: boolean;
   value?: string;
   onChange?: (model: string) => void;
   onEffectiveModelChange?: (model: string) => void;
@@ -435,10 +475,8 @@ export function CoderEngineControl({
     staleTime: 30_000,
   });
   const accountQuery = useQuery({
-    queryKey: queryKeys.account,
-    queryFn: ({ signal }) => getCoderAccount(signal),
+    ...coderAccountQueryOptions(queryKeys),
     enabled: !authLoading,
-    staleTime: 10_000,
   });
   const modelsQuery = useQuery({
     queryKey: queryKeys.models,
@@ -509,6 +547,7 @@ export function CoderEngineControl({
   });
   const profile = profileQuery.data;
   const nativeKernel = executionEngine === "echo";
+  const taskProfile = taskOverride && !nativeKernel;
   const pendingNativeModelRef = useRef(value || "auto");
   useEffect(() => {
     pendingNativeModelRef.current = value || "auto";
@@ -518,6 +557,11 @@ export function CoderEngineControl({
     : "";
   const nativeAccountSelected =
     nativeKernel && /^chatgpt[/:]/i.test(String(value || ""));
+  const taskAccountSelected =
+    taskProfile && /^chatgpt[/:]/i.test(String(value || ""));
+  const taskAccountModel = taskAccountSelected
+    ? String(value || "").replace(/^chatgpt[/:]/i, "")
+    : "";
   const chatGPTSubscriptionConnected =
     accountQuery.data?.account?.type === "chatgpt";
   const visibleAccountSource =
@@ -539,14 +583,16 @@ export function CoderEngineControl({
     () =>
       (nativeKernel
         ? systemModels.find((model) => modelMatches(model, value))
-        : profile?.source === "follow_system"
-          ? systemModels.find((model) =>
-              modelMatches(
-                model,
-                profile.selected_model || profile.effective_model,
-              ),
-            )
-          : undefined) ??
+        : taskProfile
+          ? systemModels.find((model) => modelMatches(model, value))
+          : profile?.source === "follow_system"
+            ? systemModels.find((model) =>
+                modelMatches(
+                  model,
+                  profile.selected_model || profile.effective_model,
+                ),
+              )
+            : undefined) ??
       systemModels.find((model) => modelMatches(model, profile?.system_model)),
     [
       profile?.effective_model,
@@ -555,6 +601,7 @@ export function CoderEngineControl({
       profile?.system_model,
       systemModels,
       nativeKernel,
+      taskProfile,
       value,
     ],
   );
@@ -565,28 +612,42 @@ export function CoderEngineControl({
     value ||
     "auto";
   const visibleSystemSource = activeSystemModel?.source_display_name;
-  const fullProfileLabel = nativeKernel
+  const baseProfileLabel = nativeKernel
     ? nativeAccountSelected
       ? `${copy.subscriptionModeShort} · ${nativeAccountModel}`
       : `${visibleSystemSource || copy.followSystemShort} · ${visibleSystemModelName}`
-    : profile?.source === "codex_account" && profile.effective_model
-      ? `${visibleAccountSource} · ${profile.effective_model}`
-      : profileLabel(profile, copy);
+    : taskProfile
+      ? taskAccountSelected
+        ? `${visibleAccountSource} · ${taskAccountModel}`
+        : `${visibleSystemSource || copy.followSystemShort} · ${visibleSystemModelName}`
+      : profile?.source === "codex_account" && profile.effective_model
+        ? `${visibleAccountSource} · ${profile.effective_model}`
+        : profileLabel(profile, copy);
+  const fullProfileLabel =
+    !nativeKernel && !taskProfile && profile?.execution_available === false
+      ? `${baseProfileLabel} · ${copy.executionUnavailable}`
+      : baseProfileLabel;
   const activeCodexModel = useMemo(
     () =>
       nativeKernel
         ? modelsQuery.data?.models.find(
             (model) => model.id === nativeAccountModel,
           )
-        : profile?.source === "codex_account"
+        : taskProfile
           ? modelsQuery.data?.models.find(
-              (model) => model.id === profile?.effective_model,
+              (model) => model.id === taskAccountModel,
             )
-          : undefined,
+          : profile?.source === "codex_account"
+            ? modelsQuery.data?.models.find(
+                (model) => model.id === profile?.effective_model,
+              )
+            : undefined,
     [
       modelsQuery.data?.models,
       nativeAccountModel,
       nativeKernel,
+      taskAccountModel,
+      taskProfile,
       profile?.effective_model,
       profile?.source,
     ],
@@ -611,7 +672,7 @@ export function CoderEngineControl({
   ]);
 
   const changeReasoningEffort = (effort: ReasoningEffort) => {
-    if (nativeKernel) {
+    if (nativeKernel || taskProfile) {
       onReasoningEffortChange?.(effort);
       return;
     }
@@ -654,6 +715,24 @@ export function CoderEngineControl({
       );
       return;
     }
+    if (taskProfile) {
+      const nextValue = model || "auto";
+      if (
+        model &&
+        activeSystemModel &&
+        modelMatches(activeSystemModel, model)
+      ) {
+        return;
+      }
+      onChange?.(nextValue);
+      onEffectiveModelChange?.(
+        model
+          ? systemModels.find((candidate) => modelMatches(candidate, model))
+              ?.display_name || model
+          : profile?.system_model || copy.systemDefault,
+      );
+      return;
+    }
     const alreadySelected = model
       ? profile?.source === "follow_system" &&
         profile.model_source === "role" &&
@@ -668,15 +747,27 @@ export function CoderEngineControl({
         reasoning_effort: profile?.reasoning_effort,
       },
       {
-        onSuccess: (nextProfile) =>
-          onEffectiveModelChange?.(
-            nextProfile.effective_model || model || copy.systemDefault,
-          ),
+        onSuccess: (nextProfile) => {
+          const nextModel =
+            nextProfile.effective_model || model || copy.systemDefault;
+          // Keep the desktop model badge and other composers on the same
+          // committed selection. Codex still owns execution through its
+          // server profile; this mirrors the choice into the shared UI
+          // setting after the server accepts it.
+          onChange?.(model || "auto");
+          onEffectiveModelChange?.(nextModel);
+        },
       },
     );
   };
 
   const selectAccountModel = (model: string) => {
+    if (taskProfile) {
+      if (taskAccountSelected && taskAccountModel === model) return;
+      onChange?.(`chatgpt/${model}`);
+      onEffectiveModelChange?.(model);
+      return;
+    }
     if (nativeKernel) {
       const nextValue = `chatgpt/${model}`;
       if (pendingNativeModelRef.current === nextValue) return;
@@ -694,26 +785,40 @@ export function CoderEngineControl({
     saveProfile.mutate(
       { source: "codex_account", model },
       {
-        onSuccess: (nextProfile) =>
-          onEffectiveModelChange?.(nextProfile.effective_model || model),
+        onSuccess: (nextProfile) => {
+          // The Codex profile is the execution source, while the desktop
+          // badge reads the shared local setting. Mirror only after the
+          // server confirms the profile update so a failed save cannot leave
+          // the two controls advertising different models.
+          onChange?.(`chatgpt/${nextProfile.effective_model || model}`);
+          onEffectiveModelChange?.(nextProfile.effective_model || model);
+        },
       },
     );
   };
 
-  const controlPending = !nativeKernel && saveProfile.isPending;
-  const compactLabel = nativeKernel
-    ? nativeAccountSelected
-      ? nativeAccountModel
+  const controlPending = !nativeKernel && !taskProfile && saveProfile.isPending;
+  const compactLabel = taskProfile
+    ? taskAccountSelected
+      ? taskAccountModel
       : visibleSystemModelName
-    : compactProfileLabel(profile, copy);
+    : nativeKernel
+      ? nativeAccountSelected
+        ? nativeAccountModel
+        : visibleSystemModelName
+      : compactProfileLabel(profile, copy);
   const selectedReasoningEffort = nativeKernel
     ? reasoningEffort
-    : profile?.reasoning_effort;
+    : taskProfile
+      ? reasoningEffort
+      : profile?.reasoning_effort;
   const activeSystemSelectionValue = nativeKernel
     ? value
-    : profile?.source === "follow_system"
-      ? profile.selected_model || profile.effective_model
-      : profile?.system_model;
+    : taskProfile
+      ? value
+      : profile?.source === "follow_system"
+        ? profile.selected_model || profile.effective_model
+        : profile?.system_model;
 
   const openModelSettings = () => {
     setOpen(false);
@@ -733,7 +838,11 @@ export function CoderEngineControl({
               ? nativeAccountSelected
                 ? "codex_account"
                 : "follow_system"
-              : profile?.source || "follow_system",
+              : taskProfile
+                ? taskAccountSelected
+                  ? "codex_account"
+                  : "follow_system"
+                : profile?.source || "follow_system",
           );
         }
       }}
@@ -822,8 +931,11 @@ export function CoderEngineControl({
                       (nativeKernel
                         ? !nativeAccountSelected &&
                           (!value || value === "auto" || value === "default")
-                        : profile.source === "follow_system" &&
-                          profile.model_source === "system") &&
+                        : taskProfile
+                          ? !taskAccountSelected &&
+                            (!value || value === "auto" || value === "default")
+                          : profile.source === "follow_system" &&
+                            profile.model_source === "system") &&
                         "bg-muted/70 text-foreground",
                     )}
                   >
@@ -841,12 +953,14 @@ export function CoderEngineControl({
                   {visibleSystemModels.map((model, index) => {
                     const selected = nativeKernel
                       ? !nativeAccountSelected && modelMatches(model, value)
-                      : profile.source === "follow_system" &&
-                        profile.model_source === "role" &&
-                        modelMatches(
-                          model,
-                          profile.selected_model || profile.effective_model,
-                        );
+                      : taskProfile
+                        ? !taskAccountSelected && modelMatches(model, value)
+                        : profile.source === "follow_system" &&
+                          profile.model_source === "role" &&
+                          modelMatches(
+                            model,
+                            profile.selected_model || profile.effective_model,
+                          );
                     const contextVariantSelected = Boolean(
                       activeSystemModel &&
                       systemModelFamilyKey(activeSystemModel) ===
@@ -855,8 +969,12 @@ export function CoderEngineControl({
                         ? !nativeAccountSelected &&
                           value !== "auto" &&
                           value !== "default"
-                        : profile.source === "follow_system" &&
-                          profile.model_source === "role"),
+                        : taskProfile
+                          ? !taskAccountSelected &&
+                            value !== "auto" &&
+                            value !== "default"
+                          : profile.source === "follow_system" &&
+                            profile.model_source === "role"),
                     );
                     return (
                       <div
@@ -899,8 +1017,11 @@ export function CoderEngineControl({
                         (nativeKernel
                           ? nativeAccountSelected &&
                             nativeAccountModel === model.id
-                          : profile.source === "codex_account" &&
-                            profile.effective_model === model.id) &&
+                          : taskProfile
+                            ? taskAccountSelected &&
+                              taskAccountModel === model.id
+                            : profile.source === "codex_account" &&
+                              profile.effective_model === model.id) &&
                           "bg-muted/70 text-foreground",
                       )}
                       onClick={() => selectAccountModel(model.id)}
@@ -912,8 +1033,11 @@ export function CoderEngineControl({
                         nativeKernel
                           ? nativeAccountSelected &&
                             nativeAccountModel === model.id
-                          : profile.source === "codex_account" &&
-                            profile.effective_model === model.id
+                          : taskProfile
+                            ? taskAccountSelected &&
+                              taskAccountModel === model.id
+                            : profile.source === "codex_account" &&
+                              profile.effective_model === model.id
                       ) ? (
                         <CheckCircle2Icon className="size-3.5 shrink-0" />
                       ) : null}
@@ -958,7 +1082,7 @@ export function CoderEngineControl({
                       className={cn(
                         "h-6 rounded px-1 text-xs transition",
                         (
-                          nativeKernel
+                          nativeKernel || taskProfile
                             ? selectedReasoningEffort === effort
                             : profile.source === viewSource &&
                               profile.reasoning_effort === effort
@@ -990,7 +1114,7 @@ export function CoderEngineControl({
               />
             ) : null}
 
-            {!profile.compatible ? (
+            {profile.execution_available === false || !profile.compatible ? (
               <div className="mt-1">
                 <ProfileCompatibility profile={profile} compact />
               </div>
@@ -1048,9 +1172,7 @@ export function CoderEngineSettings() {
     staleTime: 30_000,
   });
   const accountQuery = useQuery({
-    queryKey: queryKeys.account,
-    queryFn: ({ signal }) => getCoderAccount(signal),
-    staleTime: 5_000,
+    ...coderAccountQueryOptions(queryKeys),
   });
   const refetchAccount = accountQuery.refetch;
 
@@ -1078,17 +1200,12 @@ export function CoderEngineSettings() {
   });
   const hasChatGPTUsage = accountQuery.data?.account?.type === "chatgpt";
   const rateLimitsQuery = useQuery({
-    queryKey: queryKeys.rateLimits,
-    queryFn: ({ signal }) => getCoderRateLimits(signal),
+    ...coderRateLimitsQueryOptions(queryKeys),
     enabled: hasChatGPTUsage,
-    staleTime: 30_000,
-    refetchInterval: hasChatGPTUsage ? 60_000 : false,
   });
   const usageQuery = useQuery({
-    queryKey: queryKeys.usage,
-    queryFn: ({ signal }) => getCoderUsage(signal),
+    ...coderUsageQueryOptions(queryKeys),
     enabled: hasChatGPTUsage,
-    staleTime: 5 * 60_000,
   });
   const appsQuery = useQuery({
     queryKey: queryKeys.apps,
@@ -1414,15 +1531,17 @@ export function CoderEngineSettings() {
             <span
               className={cn(
                 "ml-auto inline-flex items-center gap-1.5 font-medium",
-                profile.compatible ? "text-success" : "text-warning",
+                profile.execution_available !== false && profile.compatible
+                  ? "text-success"
+                  : "text-warning",
               )}
             >
-              {profile.compatible ? (
+              {profile.execution_available !== false && profile.compatible ? (
                 <CheckCircle2Icon className="size-3.5" />
               ) : (
                 <AlertTriangleIcon className="size-3.5" />
               )}
-              {profile.compatible ? copy.compatible : copy.incompatible}
+              {executionStatus(profile, copy).label}
             </span>
             <details className="basis-full text-muted-foreground">
               <summary className="cursor-pointer select-none text-xs hover:text-foreground">
@@ -1444,7 +1563,15 @@ export function CoderEngineSettings() {
               </div>
             </details>
           </div>
-          {!profile.compatible && profile.compatibility_reason ? (
+          {profile.execution_available === false &&
+          profile.execution_unavailable_reason ? (
+            <p className="text-xs text-warning">
+              {copy.executionReason(profile.execution_unavailable_reason)}
+            </p>
+          ) : null}
+          {profile.execution_available !== false &&
+          !profile.compatible &&
+          profile.compatibility_reason ? (
             <p className="text-xs text-warning">
               {profile.compatibility_reason}
             </p>

@@ -67,14 +67,36 @@ def test_search_storage_unavailable_is_actionable(monkeypatch) -> None:
     assert r["hits"] == []
 
 
+def test_search_desktop_fallback_uses_shared_resource_identity(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "desktop-files"
+    root.mkdir()
+    (root / "notes.md").write_text("the local release note", encoding="utf-8")
+    monkeypatch.setenv("ECHO_DESKTOP", "1")
+    monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(ss, "_request", lambda *_a, **_k: None)
+
+    result = ss._search_documents(query="release", top_k=5)
+
+    assert result["ok"] is True
+    assert result["available"] is True
+    assert result["count"] == 1
+    hit = result["hits"][0]
+    assert hit["path"] == "notes.md"
+    assert hit["resource_id"].startswith("storage-file:v1:")
+    assert "内嵌文件搜索" in result["message"]
+
+
 def test_search_returns_cited_hits(monkeypatch) -> None:
     def fake(_method, _path, payload=None, **_k):
+        if _path == "/v1/policy":
+            return payload
         return {
             "query": payload["query"],
             "mode": "efficiency",
             "hits": [
                 {
                     "path": "/d/a.pdf",
+                    "source_id": "source-a",
                     "title": "A",
                     "snippet": "x" * 999,
                     "score": 0.9,
@@ -93,6 +115,7 @@ def test_search_returns_cited_hits(monkeypatch) -> None:
     assert r["hits"][0]["path"] == "/d/a.pdf"
     assert len(r["hits"][0]["snippet"]) <= ss._SNIPPET_CAP  # capped
     assert r["hits"][0]["citation"] == {"page": 3}
+    assert r["hits"][0]["resource_id"].startswith("storage-file:v1:")
     assert r["hits"][1]["citation"] == {}  # None normalised to {}
 
 
@@ -100,6 +123,8 @@ def test_search_clamps_top_k(monkeypatch) -> None:
     seen: dict = {}
 
     def fake(_method, _path, payload=None, **_k):
+        if _path == "/v1/policy":
+            return payload
         seen["payload"] = payload
         return {"hits": []}
 
@@ -112,4 +137,3 @@ def test_skill_registers() -> None:
     reg = SkillRegistry()
     assert ss.register_storage_skills(reg) == 1
     assert "search_documents" in reg.all_names()
-

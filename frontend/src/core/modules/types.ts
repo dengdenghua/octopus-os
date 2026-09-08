@@ -18,10 +18,7 @@ export type ModuleGroup =
   | "growth"; // 成长与运营
 
 /** Where a module's entry renders in the sidebar. */
-export type ModuleSection =
-  | "chatCapability"
-  | "community"
-  | "storageLibrary";
+export type ModuleSection = "chatCapability" | "community" | "storageLibrary";
 
 export interface ModuleDescriptor {
   /** Stable id — the persistence key. Never reuse across modules. */

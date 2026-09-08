@@ -1,4 +1,4 @@
-export const DEFAULT_AUTH_RETURN_TO = "/workspace";
+export const DEFAULT_AUTH_RETURN_TO = "/desktop";
 
 /** Keep redirects inside this app and preserve the full path, query, and hash. */
 export function sanitizeAuthReturnTo(

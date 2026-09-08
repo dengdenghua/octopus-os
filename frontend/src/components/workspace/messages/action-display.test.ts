@@ -125,7 +125,9 @@ describe("getActionDisplay", () => {
   });
 
   it("maps browser_click to browser_click label", () => {
-    expect(getActionDisplay("browser_click", {}).labelKey).toBe("browser_click");
+    expect(getActionDisplay("browser_click", {}).labelKey).toBe(
+      "browser_click",
+    );
   });
 
   it("maps browser_type to browser_type label", () => {

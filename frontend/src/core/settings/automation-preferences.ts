@@ -1,16 +1,35 @@
 import { swallow } from "@/core/utils/log";
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 
 export type LinkOpenTarget = "external" | "in_app";
 
 const LINK_OPEN_TARGET_KEY = "echo:automation:link-open-target";
 const LINK_OPEN_TARGET_EVENT = "echo:link-open-target-changed";
 
+export function linkOpenTargetStorageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(LINK_OPEN_TARGET_KEY, actor);
+}
+
+function readStoredLinkTarget(): string | null {
+  const scopedKey = linkOpenTargetStorageKey();
+  const scoped = window.localStorage.getItem(scopedKey);
+  if (scoped !== null) return scoped;
+  const legacy = window.localStorage.getItem(LINK_OPEN_TARGET_KEY);
+  if (legacy === null || currentActorId() === "anonymous") return legacy;
+  try {
+    window.localStorage.setItem(scopedKey, legacy);
+    window.localStorage.removeItem(LINK_OPEN_TARGET_KEY);
+  } catch {
+    // Private mode / quota: keep the legacy value usable for this render.
+  }
+  return legacy;
+}
+
 export function getLinkOpenTarget(): LinkOpenTarget {
   if (typeof window === "undefined") return "external";
   try {
-    return window.localStorage.getItem(LINK_OPEN_TARGET_KEY) === "in_app"
-      ? "in_app"
-      : "external";
+    return readStoredLinkTarget() === "in_app" ? "in_app" : "external";
   } catch (error) {
     swallow(error, "storage");
     return "external";
@@ -20,7 +39,7 @@ export function getLinkOpenTarget(): LinkOpenTarget {
 export function setLinkOpenTarget(target: LinkOpenTarget): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(LINK_OPEN_TARGET_KEY, target);
+    window.localStorage.setItem(linkOpenTargetStorageKey(), target);
     window.dispatchEvent(
       new CustomEvent<LinkOpenTarget>(LINK_OPEN_TARGET_EVENT, {
         detail: target,
@@ -41,7 +60,11 @@ export function subscribeLinkOpenTarget(
     );
   };
   const onStorage = (event: StorageEvent) => {
-    if (event.key === LINK_OPEN_TARGET_KEY) listener(getLinkOpenTarget());
+    if (
+      event.key === LINK_OPEN_TARGET_KEY ||
+      event.key === linkOpenTargetStorageKey()
+    )
+      listener(getLinkOpenTarget());
   };
   window.addEventListener(LINK_OPEN_TARGET_EVENT, onChange);
   window.addEventListener("storage", onStorage);

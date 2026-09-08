@@ -7,7 +7,10 @@ endpoint. It deliberately does not touch the SkillRegistry.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 
@@ -24,6 +27,7 @@ except ImportError:  # pragma: no cover
     Request = None  # type: ignore[assignment,misc]
     StreamingResponse = None  # type: ignore[assignment,misc]
 
+from runtime.execution.host_boundary import host_execution_scope
 from runtime.sensing._fastapi_guard import require_fastapi
 
 
@@ -117,6 +121,7 @@ def create_subagents_router(
     jwt_secret: str | None = None,
     jwt_issuer: str | None = None,
     jwt_audience: str | None = None,
+    task_supervisor: Any = None,
 ) -> Any:
     require_fastapi(__name__)
 
@@ -277,6 +282,54 @@ def create_subagents_router(
         )
         return context, workspace_str, principal
 
+    @contextmanager
+    def _host_dispatch_scope(
+        *,
+        body: SubagentDispatchRequest,
+        context: dict[str, Any],
+        workspace_path: str | None,
+        principal: Any,
+    ) -> Iterator[Any]:
+        """Give direct HTTP subagent dispatch the same host-owned contract.
+
+        The request body still controls the prompt and role selection, while
+        task identity, principal and execution policy come from this server
+        boundary.  The optional supervisor keeps legacy local mounts working
+        and enables durable lease exclusion in the full application.
+        """
+
+        actor_id = str(getattr(principal, "actor_id", "") or "").strip() or None
+        tenant_id = str(getattr(principal, "tenant_id", "") or "").strip() or None
+        thread_id = str(
+            body.thread_id
+            or context.get("thread_id")
+            or f"subagent:{uuid4().hex}"
+        ).strip()
+        metadata: dict[str, Any] = {
+            "mode": "code",
+            "permission_mode": "default",
+            "approval_policy": "on-request",
+            "sandbox_mode": "full",
+            "execution_environment": "sandbox",
+            "source": "subagents_api",
+        }
+        if workspace_path:
+            metadata["workspace_path"] = workspace_path
+        with host_execution_scope(
+            supervisor=task_supervisor,
+            task_id=f"subagent:{uuid4().hex}",
+            thread_id=thread_id,
+            actor_id=actor_id,
+            tenant_id=tenant_id,
+            goal=body.prompt,
+            timeout_s=float(_bounded_dispatch_timeout(body.timeout_s)),
+            metadata=metadata,
+            kind="subagent",
+            mode="code",
+            workspace_path=workspace_path,
+        ) as execution_session:
+            yield execution_session
+
     def _registry() -> Any:
         if registry is not None:
             return registry
@@ -389,16 +442,22 @@ def create_subagents_router(
         from runtime.execution.subagents import call_subagent
 
         timeout_s = _bounded_dispatch_timeout(body.timeout_s)
-        result = call_subagent(
-            target,
-            body.prompt,
+        with _host_dispatch_scope(
+            body=body,
             context=ctx,
-            timeout_s=timeout_s,
-            timeout_seconds=float(timeout_s),
-            workspace_path=workspace_path or "",
-            requires_capabilities=body.requires_capabilities,
-            continue_session_id=body.continue_session_id,
-        )
+            workspace_path=workspace_path,
+            principal=_principal,
+        ):
+            result = call_subagent(
+                target,
+                body.prompt,
+                context=ctx,
+                timeout_s=timeout_s,
+                timeout_seconds=float(timeout_s),
+                workspace_path=workspace_path or "",
+                requires_capabilities=body.requires_capabilities,
+                continue_session_id=body.continue_session_id,
+            )
         if not result.get("success"):
             raise HTTPException(400, result.get("error") or "subagent failed")
         return result
@@ -452,17 +511,23 @@ def create_subagents_router(
         def _runner() -> None:
             try:
                 timeout_s = _bounded_dispatch_timeout(body.timeout_s)
-                result = call_subagent(
-                    target,
-                    body.prompt,
+                with _host_dispatch_scope(
+                    body=body,
                     context=stream_ctx,
-                    timeout_s=timeout_s,
-                    timeout_seconds=float(timeout_s),
-                    workspace_path=workspace_path or "",
-                    event_emitter=_emitter,
-                    requires_capabilities=body.requires_capabilities,
-                    continue_session_id=body.continue_session_id,
-                )
+                    workspace_path=workspace_path,
+                    principal=_principal,
+                ):
+                    result = call_subagent(
+                        target,
+                        body.prompt,
+                        context=stream_ctx,
+                        timeout_s=timeout_s,
+                        timeout_seconds=float(timeout_s),
+                        workspace_path=workspace_path or "",
+                        event_emitter=_emitter,
+                        requires_capabilities=body.requires_capabilities,
+                        continue_session_id=body.continue_session_id,
+                    )
                 event_queue.put({"type": "result", **result})
             except Exception as exc:  # noqa: BLE001 — surface as terminal event
                 event_queue.put(

@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from runtime.execution.misc.file_write_leases import authorize_file_write_handoff
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.execution.tool_engine import ToolExecutor
@@ -168,6 +169,7 @@ class TestBeakAutoEmitsFileOp:
             thread_id="t1",
             turn_id="turn-1",
             metadata={
+                "mode": "code",
                 "workspace_path": str(tmp_path),
                 "_read_file_paths_this_turn": [
                     str(target.resolve(strict=False)).casefold(),
@@ -223,6 +225,7 @@ class TestBeakAutoEmitsFileOp:
             thread_id="t1",
             turn_id="turn-2",
             metadata={
+                "mode": "code",
                 "workspace_path": str(tmp_path),
                 "_read_file_paths_this_turn": [
                     str(target.resolve(strict=False)).casefold(),
@@ -275,6 +278,7 @@ class TestBeakAutoEmitsFileOp:
             thread_id="t1",
             turn_id="turn-3",
             metadata={
+                "mode": "code",
                 "workspace_path": str(tmp_path),
                 "_read_file_paths_this_turn": [
                     str(target.resolve(strict=False)).casefold(),
@@ -327,10 +331,10 @@ class TestBeakAutoEmitsFileOp:
     ) -> None:
         """Implementation note."""
         target = tmp_path / "greeting.txt"
-        target.write_text("hello\nworld\n", encoding="utf-8")
+        target.write_bytes(b"hello\nworld\n")
 
         def _overwrite(path: str, content: str) -> dict:
-            Path(path).write_text(content, encoding="utf-8")
+            Path(path).write_bytes(content.encode("utf-8"))
             return {"ok": True}
 
         executor, journal, _ = _make_executor(file_write_handler=_overwrite)
@@ -394,6 +398,8 @@ class TestBeakAutoEmitsFileOp:
         self,
         tmp_path: Path,
     ) -> None:
+        from runtime.memory.runtime_state._file_rollback_io import guarded_remove_supported
+
         target = tmp_path / "created.txt"
 
         def _create(path: str, content: str) -> dict:
@@ -417,9 +423,15 @@ class TestBeakAutoEmitsFileOp:
             project_root=tmp_path,
         )
 
-        assert result.applied == 1
         assert result.failed == 0
-        assert not target.exists()
+        if guarded_remove_supported():
+            assert result.applied == 1
+            assert not target.exists()
+        else:
+            assert result.applied == 0
+            assert result.skipped == 1
+            assert result.outcomes[0].reason == "guarded_delete_unsupported"
+            assert target.read_text(encoding="utf-8") == "new\n"
 
     def test_file_rollback_ledger_skips_when_file_changed_after_event(
         self,
@@ -625,11 +637,13 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _rollback_client(journal: InMemoryJournal) -> TestClient:
+def _rollback_client(journal: InMemoryJournal, workspace_root: Path) -> TestClient:
     app = FastAPI()
     streaming = StreamingJournal(journal)
     app.include_router(
-        create_observability_router(journal=streaming, registry=SkillRegistry()),
+        create_observability_router(
+            journal=streaming, registry=SkillRegistry(), workspace_root=workspace_root
+        ),
     )
     return TestClient(app)
 
@@ -671,7 +685,7 @@ class TestFileRollbackApi:
             },
         )
 
-        r = _rollback_client(journal).get(
+        r = _rollback_client(journal, tmp_path).get(
             "/api/files/rollback/preview",
             params={"task_id": str(task_id), "project_root": str(tmp_path)},
         )
@@ -711,7 +725,7 @@ class TestFileRollbackApi:
             },
         )
 
-        r = _rollback_client(journal).post(
+        r = _rollback_client(journal, tmp_path).post(
             "/api/files/rollback/apply",
             json={"task_id": str(task_id), "project_root": str(tmp_path)},
         )
@@ -747,7 +761,7 @@ class TestFileRollbackApi:
         )
         source_event_id = str(journal.read_by_type("file_op")[0].event_id)
 
-        r = _rollback_client(journal).post(
+        r = _rollback_client(journal, tmp_path).post(
             "/api/files/rollback/apply",
             json={"event_id": source_event_id, "project_root": str(tmp_path)},
         )
@@ -788,7 +802,7 @@ class TestFileRollbackApi:
             },
         )
         source_event_id = str(journal.read_by_type("file_op")[0].event_id)
-        client = _rollback_client(journal)
+        client = _rollback_client(journal, tmp_path)
         apply_response = client.post(
             "/api/files/rollback/apply",
             json={"event_id": source_event_id, "project_root": str(tmp_path)},
@@ -843,7 +857,7 @@ class TestFileRollbackApi:
         )
         event_id = str(journal.read_by_type("file_op")[0].event_id)
 
-        r = _rollback_client(journal).post(
+        r = _rollback_client(journal, tmp_path).post(
             "/api/files/rollback/apply",
             json={"event_id": event_id, "project_root": str(tmp_path)},
         )
@@ -855,13 +869,15 @@ class TestFileRollbackApi:
         assert first.read_text(encoding="utf-8") == "before-1\n"
         assert second.read_text(encoding="utf-8") == "after-2\n"
 
-    def test_rollback_apply_requires_project_root(self) -> None:
+    def test_empty_rollback_does_not_require_or_disclose_project_root(self, tmp_path: Path) -> None:
         journal = InMemoryJournal()
 
-        r = _rollback_client(journal).post(
+        r = _rollback_client(journal, tmp_path).post(
             "/api/files/rollback/apply",
             json={"task_id": str(TaskId(uuid4()))},
         )
 
-        assert r.status_code == 400
-        assert "project_root required" in r.text
+        assert r.status_code == 200
+        assert r.json()["state"] == "empty"
+        assert r.json()["project_root"] is None
+        assert r.json()["execution_complete"] is False

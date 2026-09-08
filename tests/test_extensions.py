@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 import types
 
+import pytest
+
 from runtime.platform.extensions import (
     AppExtensionContext,
     load_app_extensions,
@@ -72,3 +74,16 @@ def test_missing_module_isolated(monkeypatch):
     monkeypatch.setenv("ECHO_APP_EXTENSIONS", "nonexistent_module_xyz")
     assert load_app_extensions("APP", AppExtensionContext()) == 0
 
+
+def test_required_app_extension_fails_closed(monkeypatch):
+    monkeypatch.setenv("ECHO_APP_EXTENSIONS", "nonexistent_module_xyz")
+    monkeypatch.setenv("ECHO_REQUIRED_APP_EXTENSIONS", "1")
+    with pytest.raises(RuntimeError, match="required app extension"):
+        load_app_extensions("APP", AppExtensionContext())
+
+
+def test_required_flag_can_be_passed_without_environment(monkeypatch):
+    monkeypatch.setenv("ECHO_APP_EXTENSIONS", "nonexistent_module_xyz")
+    monkeypatch.delenv("ECHO_REQUIRED_APP_EXTENSIONS", raising=False)
+    with pytest.raises(RuntimeError, match="required app extension"):
+        load_app_extensions("APP", AppExtensionContext(), required=True)

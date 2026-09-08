@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-import av
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
+
+from .readiness import OptionalMediaUnavailable, load_media_dependency
 
 
 def render_project_frames(
@@ -160,6 +161,7 @@ def _base_frame(project: dict[str, Any], at_sec: float) -> tuple[Image.Image, di
 
 
 def _decode_video_frame(path: Path, at_sec: float) -> Image.Image:
+    av = load_media_dependency("av", "video_snapshot")
     try:
         with av.open(str(path)) as container:
             stream = next((item for item in container.streams if item.type == "video"), None)
@@ -292,6 +294,9 @@ def _apply_transition(
         incoming_image = (
             image if incoming is clip else _render_clip(project, incoming, at_sec, max_dim)
         )
+    except OptionalMediaUnavailable:
+        # Missing codec support must not silently remove a requested transition.
+        raise
     except ValueError as exc:
         return image, [
             {

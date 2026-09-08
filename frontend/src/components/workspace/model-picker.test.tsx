@@ -15,6 +15,25 @@ import { AllProviders } from "@/test/harness";
 
 import { ModelPicker, type PickerModel } from "./model-picker";
 
+it("cannot open or select a model while disabled, even if previously open", async () => {
+  const onChange = vi.fn();
+  render(
+    withProviders(
+      <ModelPicker
+        models={[{ name: "task-model" }]}
+        value="task-model"
+        onChange={onChange}
+        disabled
+        open
+      />,
+    ),
+  );
+  expect(screen.getByTestId("model-picker-trigger")).toBeDisabled();
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByTestId("model-picker-trigger"));
+  expect(onChange).not.toHaveBeenCalled();
+});
+
 // Stub useOctLink — picker reads `link.oct_user_id` to auto-enable
 // unconfigured models.
 vi.mock("@/core/oct/hooks", () => ({

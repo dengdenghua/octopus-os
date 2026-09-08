@@ -50,6 +50,7 @@ except ImportError:  # pragma: no cover
     APIRouter = None  # type: ignore[assignment,misc]
     Request = None  # type: ignore[assignment,misc]
 
+from runtime.memory.users.user_store import MEMORY_VIEWER_CONTEXT_KEY, memory_viewer_context
 from runtime.platform.models import ParsedIntent
 from runtime.platform.models.llm import default_reasoning_effort
 from runtime.safety.recovery.tenant_scope import (
@@ -272,6 +273,35 @@ def create_openai_router(
         from runtime.safety.auth.scope import scope_from_principal
 
         memory_tenant_scope = scope_from_principal(principal)
+        # Authenticated turns may read facts shared with them by another
+        # actor in the same tenant.  The ordinary ``TenantScope`` points at
+        # one actor's partition, which is correct for writes but would make
+        # team/restricted facts physically unreachable to their recipients.
+        # Aggregate only when the server supplied a verified principal; the
+        # viewer filter then keeps private facts owner-only and drops foreign
+        # tenants before ranking or prompt injection.
+        memory_viewer = None
+        memory_read_scope = memory_tenant_scope
+        if principal is not None and owner_actor_id and tenant_id:
+            from runtime.memory.users.user_store import MemoryViewer
+
+            principal_roles = frozenset(
+                str(role).strip().lower()
+                for role in (getattr(principal, "roles", ()) or ())
+                if str(role).strip()
+            )
+            memory_viewer = MemoryViewer(
+                actor_id=str(owner_actor_id),
+                tenant_id=str(tenant_id),
+                team_ids=frozenset(
+                    str(team_id).strip()
+                    for team_id in (getattr(principal, "team_ids", ()) or ())
+                    if str(team_id).strip()
+                ),
+                roles=principal_roles,
+                is_admin=bool(principal_roles.intersection({"admin", "root"})),
+            )
+            memory_read_scope = None
         conversation_messages = _normalize_conversation_messages(messages)
         from runtime.memory.users.profile import (
             memories_from_messages,
@@ -304,6 +334,7 @@ def create_openai_router(
         ):
             agent_name_for_memory = ""
         try:
+            from runtime.memory.semantics import MemoryAuthor
             from runtime.memory.users.user_store import (
                 add_fact,
                 read_config,
@@ -331,6 +362,7 @@ def create_openai_router(
                             scope=memory_scope,
                             agent_id=agent_name_for_memory or None,
                             project=project_for_memory or None,
+                            author=MemoryAuthor.USER,
                             tenant_scope=memory_tenant_scope,
                         )
                         is not None
@@ -342,7 +374,9 @@ def create_openai_router(
                     limit=8,
                     agent_id=agent_name_for_memory or None,
                     project=project_for_memory or None,
-                    scope=memory_tenant_scope,
+                    scope=memory_read_scope,
+                    viewer=memory_viewer,
+                    annotate=True,
                 )
         except (OSError, ValueError) as _e:
             _logger = logging.getLogger(__name__)
@@ -417,6 +451,11 @@ def create_openai_router(
                         )
                     }
                     if memory_tenant_scope is not None
+                    else {}
+                ),
+                **(
+                    {MEMORY_VIEWER_CONTEXT_KEY: memory_viewer_context(memory_viewer)}
+                    if memory_viewer is not None
                     else {}
                 ),
                 **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),

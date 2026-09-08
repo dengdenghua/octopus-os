@@ -9,7 +9,7 @@
 # 产物:可刻录 U 盘(dd)/ 可挂 VM 的 hybrid ISO。
 #
 # 用法:
-#   ./build-iso.sh [--profile nas|desktop] [--web-dist <frontend-dist>] [--python-wheelhouse <dir>] [--codex-bundle <dir>] [--system-deb-repo <dir>] [--iso <debian-netinst.iso>] [--mirror <url>] [--out <file>]
+#   ./build-iso.sh [--release] [--profile nas|desktop] [--web-dist <frontend-dist>] [--python-wheelhouse <dir>] [--codex-bundle <dir>] [--system-deb-repo <dir>] [--iso <debian-netinst.iso>] [--iso-sha256 <digest>] [--mirror <url>] [--out <file>]
 #   ./build-iso.sh --iso ~/debian-13.1.0-amd64-netinst.iso --mirror https://mirrors.ustc.edu.cn/debian
 #
 # 依赖:xorriso、cpio、gzip(apt install xorriso cpio gzip)。仅支持 Linux。
@@ -20,9 +20,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 DEBIAN_ISO_URL="${DEBIAN_ISO_URL:-https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/}"
 INPUT_ISO=""
+INPUT_ISO_SHA256=""
 MIRROR=""
 OUT_ISO="$REPO_ROOT/dist/echo-os.iso"
 INSTALL_PROFILE="${ECHO_INSTALL_PROFILE:-nas}"
+RELEASE_MODE=0
 WEB_DIST=""
 PYTHON_WHEELHOUSE=""
 CODEX_BUNDLE_DIR=""
@@ -36,7 +38,9 @@ die()  { printf '\033[1;31m  ✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --release) RELEASE_MODE=1; shift ;;
     --iso)    INPUT_ISO="$2"; shift 2 ;;
+    --iso-sha256) INPUT_ISO_SHA256="$2"; shift 2 ;;
     --mirror) MIRROR="$2";    shift 2 ;;
     --out)    OUT_ISO="$2";   shift 2 ;;
     --profile) INSTALL_PROFILE="$2"; shift 2 ;;
@@ -55,6 +59,27 @@ case "$INSTALL_PROFILE" in
   desktop) HDMI_SHELL="${ECHO_HDMI_SHELL:-on}" ;;
   *) die "未知安装配置: $INSTALL_PROFILE (只接受 nas 或 desktop)" ;;
 esac
+
+if [ "$RELEASE_MODE" -eq 1 ]; then
+  [ "$INSTALL_PROFILE" = nas ] \
+    || die "严格 release 模式当前只支持 nas profile"
+  [ "$HDMI_SHELL" = off ] \
+    || die "严格 release 模式要求 ECHO_HDMI_SHELL=off"
+  [ -n "$INPUT_ISO" ] \
+    || die "严格 release 模式必须用 --iso 指定本地 Debian netinst ISO"
+  [ -n "$INPUT_ISO_SHA256" ] \
+    || die "严格 release 模式必须用 --iso-sha256 绑定基础 ISO"
+  [ -z "$MIRROR" ] \
+    || die "严格 release 模式不接受 --mirror；安装与首启不得依赖外部镜像"
+  [ -n "$WEB_DIST" ] \
+    || die "严格 release 模式缺少 --web-dist"
+  [ -n "$PYTHON_WHEELHOUSE" ] \
+    || die "严格 release 模式缺少 --python-wheelhouse"
+  [ -n "$CODEX_BUNDLE_DIR" ] \
+    || die "严格 release 模式缺少 --codex-bundle"
+  [ -n "$SYSTEM_DEB_REPO" ] \
+    || die "严格 release 模式缺少 --system-deb-repo"
+fi
 DESKTOP_MODE="${ECHO_DESKTOP:-cage}"
 case "$HDMI_SHELL" in off|on|auto) ;; *) die "ECHO_HDMI_SHELL 只接受 off/on/auto" ;; esac
 case "$DESKTOP_MODE" in cage|kwin) ;; *) die "ECHO_DESKTOP 只接受 cage/kwin" ;; esac
@@ -78,7 +103,9 @@ case "$CODEX_PACKAGE_VERSION" in
   ""|*[!0-9A-Za-z.+-]*) die "无法从 frontend/package.json 解析 @openai/codex 版本" ;;
 esac
 
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/echo-iso.XXXXXX")"
+# Debian may mount /tmp as a small tmpfs.  ISO staging needs disk-backed space;
+# retain TMPDIR for builders with a dedicated scratch volume.
+WORK="$(mktemp -d "${TMPDIR:-/var/tmp}/echo-iso.XXXXXX")"
 cleanup() {
   if [ -n "$SNAPSHOT_REF" ]; then
     git update-ref -d "$SNAPSHOT_REF" 2>/dev/null || true
@@ -86,6 +113,14 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
+# A lower-bound admission check, not a guarantee for arbitrarily large payloads.
+# Measure the actual staging filesystem, not / (which may be a different mount).
+WORK_AVAILABLE_KIB="$(LC_ALL=C df -Pk "$WORK" | awk 'END {print $4}')"
+case "$WORK_AVAILABLE_KIB" in
+  ""|*[!0-9]*) die "无法确定构建临时目录可用空间: $WORK" ;;
+esac
+[ "$WORK_AVAILABLE_KIB" -ge 6291456 ] \
+  || die "构建临时目录至少需要 6 GiB 可用空间: $WORK; 请设置 TMPDIR 指向足够大的磁盘目录"
 mkdir -p "$WORK/src" "$WORK/iso"
 
 # ── 1. 取得 Debian netinst ────────────────────────────────
@@ -99,6 +134,17 @@ if [ -z "$INPUT_ISO" ]; then
   curl -fL --progress-bar -o "$INPUT_ISO" "$DEBIAN_ISO_URL/$ISO_NAME"
 fi
 [ -f "$INPUT_ISO" ] || die "ISO 不存在: $INPUT_ISO"
+if [ -n "$INPUT_ISO_SHA256" ]; then
+  case "$INPUT_ISO_SHA256" in
+    *[!0-9a-fA-F]*|'') die "--iso-sha256 必须是 64 位十六进制摘要" ;;
+  esac
+  [ "${#INPUT_ISO_SHA256}" -eq 64 ] \
+    || die "--iso-sha256 必须是 64 位十六进制摘要"
+  ACTUAL_INPUT_ISO_SHA256="$(sha256sum "$INPUT_ISO" | awk '{print $1}')"
+  [ "$ACTUAL_INPUT_ISO_SHA256" = "${INPUT_ISO_SHA256,,}" ] \
+    || die "Debian 基础 ISO SHA-256 不匹配"
+  log "已验证 Debian 基础 ISO $ACTUAL_INPUT_ISO_SHA256"
+fi
 
 # ── 2. 解包 ───────────────────────────────────────────────
 log "解包 $(basename "$INPUT_ISO")"
@@ -128,6 +174,17 @@ install -m0644 "$SCRIPT_DIR/99-echo-os"                  "$PAYLOAD/99-echo-os"
 mkdir -p "$PAYLOAD/units"
 install -m0644 "$SCRIPT_DIR/base/echo-appliance.service" "$PAYLOAD/units/"
 install -m0644 "$SCRIPT_DIR/base/echo-nginx.conf"        "$PAYLOAD/units/"
+
+# 严格发布镜像只让 d-i 安装 netinst 介质自带的 Debian 基座。SSH、sudo、
+# Python、nginx 与全部 NAS 依赖统一移到已校验的本地 system-deb 仓，避免
+# pkgsel 在安装阶段静默访问公网。局域网 DHCP 仍保留，便于首启后直接管理。
+if [ "$RELEASE_MODE" -eq 1 ]; then
+  PRESEED_RELEASE="$WORK/preseed-release.cfg"
+  sh "$SCRIPT_DIR/render-release-preseed.sh" \
+    "$PAYLOAD/preseed.cfg" "$PRESEED_RELEASE"
+  mv "$PRESEED_RELEASE" "$PAYLOAD/preseed.cfg"
+  log "严格 release：d-i 仅安装介质内 Debian 基座，附加包全部来自离线载荷"
+fi
 
 # 镜像源覆盖
 if [ -n "$MIRROR" ]; then
@@ -160,6 +217,8 @@ git bundle create "$PAYLOAD/echo-source.bundle" "$SNAPSHOT_REF"
 git bundle verify "$PAYLOAD/echo-source.bundle" >/dev/null
 [ "$(git show -s --format=%T "$SNAPSHOT_COMMIT")" = "$SOURCE_TREE" ] \
   || die "源码快照 tree 校验失败"
+SOURCE_BUNDLE_SHA256="$(sha256sum "$PAYLOAD/echo-source.bundle" | awk '{print $1}')"
+[ "${#SOURCE_BUNDLE_SHA256}" -eq 64 ] || die "源码 bundle 摘要生成失败"
 git update-ref -d "$SNAPSHOT_REF"
 SNAPSHOT_REF=""
 log "已嵌入精确源码快照 $SOURCE_COMMIT"
@@ -217,6 +276,11 @@ if [ -n "$PYTHON_WHEELHOUSE" ]; then
   [ -s "$PYTHON_WHEELHOUSE/.echo-python-runtime" ] \
     && [ ! -L "$PYTHON_WHEELHOUSE/.echo-python-runtime" ] \
     || die "Python wheelhouse 缺少运行时身份"
+  if [ "$RELEASE_MODE" -eq 1 ]; then
+    [ "$(tr -d '\r\n' <"$PYTHON_WHEELHOUSE/.echo-python-runtime")" \
+        = "cpython-313 linux x86_64" ] \
+      || die "严格 release 的 Python wheelhouse 必须匹配 Debian 13 CPython 3.13"
+  fi
   [ -s "$PYTHON_WHEELHOUSE/SHA256SUMS" ] \
     && [ ! -L "$PYTHON_WHEELHOUSE/SHA256SUMS" ] \
     || die "Python wheelhouse 缺少 SHA256SUMS"
@@ -342,6 +406,25 @@ if [ -n "$SYSTEM_DEB_REPO" ]; then
   log "已嵌入首启离线系统包仓 $SYSTEM_DEB_BUNDLE_SHA256"
 fi
 
+# 严格发布在 ISO 内放一份确定性制品身份。它不替代发布签名，
+# 但把基础 ISO、源码 tree 与每个首启载荷绑成一个可机器复核的闭包。
+if [ "$RELEASE_MODE" -eq 1 ]; then
+  command -v python3 >/dev/null 2>&1 || die "严格 release 缺少 python3 构建工具"
+  python3 "$SCRIPT_DIR/release-manifest.py" create \
+    --output "$PAYLOAD/release-manifest.json" \
+    --source-commit "$SOURCE_COMMIT" \
+    --source-tree "$SOURCE_TREE" \
+    --base-iso-sha256 "$ACTUAL_INPUT_ISO_SHA256" \
+    --source-bundle-sha256 "$SOURCE_BUNDLE_SHA256" \
+    --web-bundle-sha256 "$WEB_BUNDLE_SHA256" \
+    --python-bundle-sha256 "$PYTHON_BUNDLE_SHA256" \
+    --codex-bundle-sha256 "$CODEX_BUNDLE_SHA256" \
+    --system-deb-bundle-sha256 "$SYSTEM_DEB_BUNDLE_SHA256" \
+    --system-deb-repo-sha256 "$SYSTEM_DEB_REPO_SHA256" \
+    --codex-version "$CODEX_PACKAGE_VERSION"
+  log "已生成严格 release 制品身份清单"
+fi
+
 # 允许注入自定义仓库/分支；bundle 是正式 ISO 的首选来源，仓库参数保留给
 # 后续更新和不含 bundle 的旧版/VM 测试介质。
 cat >"$PAYLOAD/echo-env.sh" <<EOF
@@ -351,6 +434,7 @@ ECHO_OS_BRANCH="${ECHO_OS_BRANCH:-p3-provision}"
 ECHO_OVERLAY="${ECHO_OVERLAY:-/opt/echo-os-overlay.tar.gz}"
 ECHO_SOURCE_BUNDLE="/opt/echo-os-source.bundle"
 ECHO_SOURCE_BUNDLE_REF="$SOURCE_BUNDLE_REF"
+ECHO_SOURCE_BUNDLE_SHA256="$SOURCE_BUNDLE_SHA256"
 ECHO_SOURCE_TREE="$SOURCE_TREE"
 ECHO_IMAGE_COMMIT="$SOURCE_COMMIT"
 ECHO_WEB_BUNDLE="$WEB_BUNDLE_TARGET"
@@ -363,6 +447,7 @@ ECHO_SYSTEM_DEB_REPO_SHA256="$SYSTEM_DEB_REPO_SHA256"
 ECHO_CODEX_BUNDLE="$CODEX_BUNDLE_TARGET"
 ECHO_CODEX_BUNDLE_SHA256="$CODEX_BUNDLE_SHA256"
 ECHO_PACKAGED_CODEX_VERSION="$CODEX_PACKAGE_VERSION"
+ECHO_RELEASE_OFFLINE="$RELEASE_MODE"
 DEBIAN_MIRROR="${MIRROR:-https://deb.debian.org/debian}"
 ECHO_INSTALL_PROFILE="$INSTALL_PROFILE"
 ECHO_HDMI_SHELL="$HDMI_SHELL"
@@ -441,14 +526,17 @@ log "重算 md5sum.txt"
 if [ -f "$WORK/iso/md5sum.txt" ]; then
   # Debian ISO 含 `debian -> .` 兼容链接；跟随它会形成目录环并让 set -e
   # 中止构建。校验清单只需要介质上的真实文件，不遍历符号链接。
-  ( cd "$WORK/iso" && find . -type f ! -name md5sum.txt -print0 \
+  # xorriso 后续会改写 BIOS boot-info-table 并重新生成 boot.cat，不能把
+  # 打包前的这两个文件摘要放入最终介质清单；其余载荷仍全部校验。
+  ( cd "$WORK/iso" && find . -type f ! -name md5sum.txt \
+      ! -path './isolinux/isolinux.bin' ! -path './isolinux/boot.cat' -print0 \
       | xargs -0 md5sum > md5sum.txt )
 fi
 
 # ── 6. 重新打包 ───────────────────────────────────────────
 log "打包 ISO → $OUT_ISO"
 mkdir -p "$(dirname "$OUT_ISO")"
-rm -f "$OUT_ISO"
+rm -f "$OUT_ISO" "$OUT_ISO.sha256"
 
 MBR=""
 for cand in /usr/lib/ISOLINUX/isohdpfx.bin \
@@ -468,7 +556,11 @@ xorriso -as mkisofs \
   -no-emul-boot -isohybrid-gpt-basdat \
   "$WORK/iso" 2>&1 | tail -3
 
+FINAL_ISO_SHA256="$(sha256sum "$OUT_ISO" | awk '{print $1}')"
+printf '%s  %s\n' "$FINAL_ISO_SHA256" "$(basename "$OUT_ISO")" \
+  >"$OUT_ISO.sha256"
 log "✓ 完成:$OUT_ISO  ($(du -h "$OUT_ISO" | cut -f1))"
+log "  SHA-256:$FINAL_ISO_SHA256"
 cat <<EOF
 
 写入 U 盘:

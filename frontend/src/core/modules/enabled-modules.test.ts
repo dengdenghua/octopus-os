@@ -1,3 +1,4 @@
+import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { MODULE_CATALOG, pinnedModuleIds } from "./catalog";
@@ -8,8 +9,10 @@ import {
   setModuleAvailabilitySnapshot,
   setModuleAvailable,
   setModuleEnabled,
+  setModuleEnabledGlobally,
   setModuleStateProvider,
   userEnabledModuleIds,
+  useEnabledModuleIds,
 } from "./enabled-modules";
 
 /** In-memory provider so tests never touch localStorage. */
@@ -113,6 +116,18 @@ describe("enabled modules", () => {
     });
   });
 
+  it("lets a system app global pin clear stale persona overrides", () => {
+    const provider = memoryProvider(["local-database"]);
+    setModuleStateProvider(provider);
+
+    setModuleEnabled("local-database", true, "general");
+    setModuleEnabledGlobally("local-database", true);
+
+    expect(enabledModuleIds("general")).toContain("local-database");
+    expect(enabledModuleIds("coder")).toContain("local-database");
+    expect(provider.currentOverrides()).toEqual({});
+  });
+
   it("keeps runtime availability separate from the user's preference", () => {
     setModuleEnabled("narrative", true, "general");
     setModuleAvailabilitySnapshot({ narrative: false });
@@ -129,5 +144,22 @@ describe("enabled modules", () => {
     setModuleAvailabilitySnapshot({ narrative: false });
 
     expect(enabledModuleIds("writer")).not.toContain("narrative");
+  });
+
+  it("adopts same-origin availability pulses for the active account", () => {
+    const hook = renderHook(() => useEnabledModuleIds());
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", {
+          key: "echo.modules.availability-sync.v1",
+          newValue: JSON.stringify({
+            actor: "anonymous",
+            availability: { narrative: false },
+          }),
+        }),
+      );
+    });
+    expect(hook.result.current).not.toContain("narrative");
+    hook.unmount();
   });
 });

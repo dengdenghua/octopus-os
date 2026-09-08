@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 
 import {
   ModeIntentSuggestion,
+  modeIntentStorageKey,
   readDismissedModes,
 } from "./mode-intent-suggestion";
 
@@ -38,11 +39,7 @@ describe("ModeIntentSuggestion", () => {
     const onAccept = vi.fn();
     const user = userEvent.setup();
     render(
-      <ModeIntentSuggestion
-        mode="uxui"
-        modeLabel="UI"
-        onAccept={onAccept}
-      />,
+      <ModeIntentSuggestion mode="uxui" modeLabel="UI" onAccept={onAccept} />,
     );
     await user.click(screen.getByTestId("mode-intent-accept"));
     expect(onAccept).toHaveBeenCalledWith("uxui");
@@ -69,7 +66,11 @@ describe("ModeIntentSuggestion", () => {
     // Re-mounting the same mode stays hidden within this session.
     unmount();
     render(
-      <ModeIntentSuggestion mode="audit" modeLabel="审查" onDismiss={onDismiss} />,
+      <ModeIntentSuggestion
+        mode="audit"
+        modeLabel="审查"
+        onDismiss={onDismiss}
+      />,
     );
     expect(
       screen.queryByTestId("mode-intent-suggestion"),
@@ -78,7 +79,7 @@ describe("ModeIntentSuggestion", () => {
 
   it("shows a different mode even after another was dismissed", () => {
     // Simulate a prior dismissal of audit only, then render uxui: it shows.
-    window.sessionStorage.setItem("echo:modeIntentDismissed", '["audit"]');
+    window.sessionStorage.setItem(modeIntentStorageKey(), '["audit"]');
     render(<ModeIntentSuggestion mode="uxui" modeLabel="UI" />);
     expect(screen.getByTestId("mode-intent-suggestion")).toBeInTheDocument();
   });

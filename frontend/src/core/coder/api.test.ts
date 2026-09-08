@@ -48,6 +48,8 @@ describe("Coder Codex API", () => {
         compatible: true,
         compatibility_reason: null,
         provider: "openai",
+        execution_available: false,
+        execution_unavailable_reason: "account_required",
       }),
     );
 
@@ -55,6 +57,8 @@ describe("Coder Codex API", () => {
       source: "codex_account",
       effective_model: "gpt-5.6-codex",
       compatible: true,
+      execution_available: false,
+      execution_unavailable_reason: "account_required",
     });
   });
 
@@ -209,5 +213,13 @@ describe("Coder Codex API", () => {
         "codex",
       ),
     ).toEqual({});
+    expect(
+      applyCoderModelProfileBoundary(
+        "custom-coder",
+        { model_name: "chatgpt/gpt-5.6-sol", reasoning_effort: "high" },
+        "codex",
+        true,
+      ),
+    ).toEqual({ model_name: "chatgpt/gpt-5.6-sol", reasoning_effort: "high" });
   });
 });

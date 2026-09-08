@@ -148,12 +148,14 @@ function eventPublicTarget(event: LiveToolEvent): string | undefined {
   const input = event.input;
   const explicitSummary = publicTarget(
     compactInline(
-    valueAt(input, ["description", "summary", "label", "title"]),
-    80,
+      valueAt(input, ["description", "summary", "label", "title"]),
+      80,
     ),
   );
   if (explicitSummary) return explicitSummary;
-  const query = publicTarget(compactInline(valueAt(input, ["query", "pattern"]), 80));
+  const query = publicTarget(
+    compactInline(valueAt(input, ["query", "pattern"]), 80),
+  );
   if (query) return query;
   const url = publicTarget(compactInline(valueAt(input, ["url"]), 80));
   if (url) return hostOf(url);

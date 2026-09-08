@@ -386,9 +386,7 @@ function PhaseStepper({ currentPhase }: { currentPhase: QuestPhase }) {
               <div
                 className={cn(
                   "mx-1 h-px w-4 transition-colors duration-slow",
-                  isComplete
-                    ? "bg-success dark:bg-success"
-                    : "bg-border",
+                  isComplete ? "bg-success dark:bg-success" : "bg-border",
                 )}
               />
             )}
@@ -614,7 +612,9 @@ function ExecutionProgress({
                   </p>
                 )}
                 {result?.error && (
-                  <p className="mt-0.5 truncate text-destructive">{result.error}</p>
+                  <p className="mt-0.5 truncate text-destructive">
+                    {result.error}
+                  </p>
                 )}
               </div>
             </div>
@@ -944,7 +944,14 @@ export function QuestPanel({
       swallow(err);
       toast.error(t.questMode.rejectFailed);
     }
-  }, [questId, confirm, t.questMode.rejectConfirmTitle, t.questMode.rejectConfirmDescription, t.questMode.reject, t.questMode.rejectFailed]);
+  }, [
+    questId,
+    confirm,
+    t.questMode.rejectConfirmTitle,
+    t.questMode.rejectConfirmDescription,
+    t.questMode.reject,
+    t.questMode.rejectFailed,
+  ]);
 
   const handleCancel = useCallback(async () => {
     if (!questId) return;
@@ -963,7 +970,14 @@ export function QuestPanel({
       swallow(err);
       toast.error(t.questMode.cancelFailed);
     }
-  }, [questId, confirm, t.questMode.cancelConfirmTitle, t.questMode.cancelConfirmDescription, t.questMode.cancelConfirmLabel, t.questMode.cancelFailed]);
+  }, [
+    questId,
+    confirm,
+    t.questMode.cancelConfirmTitle,
+    t.questMode.cancelConfirmDescription,
+    t.questMode.cancelConfirmLabel,
+    t.questMode.cancelFailed,
+  ]);
 
   const handleNewQuest = useCallback(() => {
     setQuestId(null);

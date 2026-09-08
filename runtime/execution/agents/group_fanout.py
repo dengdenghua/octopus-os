@@ -26,6 +26,12 @@ import concurrent.futures as _cf
 from collections.abc import Callable
 from typing import Any
 
+from runtime.execution.agents.collaboration_quality import (
+    assess_collaboration_quality,
+    build_collaboration_delivery,
+)
+from runtime.execution.agents.team_patterns import is_team_presence_query
+
 # Keep the group from getting spammy / expensive: a real group chat has a few
 # people chime in, not 20. Also bounds the parallel LLM fan-out cost.
 _MAX_FANOUT = 6
@@ -44,6 +50,28 @@ _ROOM_TIER_MEMBERS = 2
 
 # Hard bound on debate rounds so a hostile cue can't spin up unbounded LLM cost.
 _MAX_DEBATE_ROUNDS = 3
+
+
+def is_group_presence_query(message: str) -> bool:
+    """Return whether a message only asks if the team is available."""
+
+    return is_team_presence_query(message)
+
+
+def format_group_presence_reply(members: list[dict[str, Any]]) -> str:
+    """Build a truthful roster-status answer without spending model calls."""
+
+    names = [
+        str(
+            member.get("display_name") or member.get("name") or member.get("agent_id") or ""
+        ).strip()
+        for member in members
+        if isinstance(member, dict)
+    ]
+    names = [name for name in names if name]
+    if not names:
+        return "当前没有可响应的 AI 成员。"
+    return f"{len(names)} 位 AI 成员均已就绪：{'、'.join(names)}。"
 
 
 def _response_id(turn_id: str | None, index: int, agent_id: str) -> str:
@@ -278,6 +306,7 @@ def run_group_fanout(
     turn_id: str | None = None,
     debate_rounds: int = 1,
     mentioned: list[str] | None = None,
+    pattern: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Fan ``message`` out to each member in parallel; collect persona replies.
 
@@ -405,6 +434,8 @@ def run_group_fanout(
     spoke = sum(1 for r in all_replies if r["ok"] and r["reply"].strip())
     arbitration = arbitrate_group_fanout(all_replies, turn_id=turn_id)
     synthesis = synthesize_group_fanout(all_replies, arbitration)
+    quality = assess_collaboration_quality(msg, all_replies, pattern=pattern)
+    delivery = build_collaboration_delivery(all_replies, quality)
     debate = (
         {
             "rounds": max([int(r.get("round") or 1) for r in all_replies], default=1),
@@ -423,5 +454,7 @@ def run_group_fanout(
         "capacity": capacity,
         "arbitration": arbitration,
         "synthesis": synthesis,
+        "quality": quality,
+        "delivery": delivery,
         "debate": debate,
     }

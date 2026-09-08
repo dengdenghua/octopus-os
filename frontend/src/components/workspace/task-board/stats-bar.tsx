@@ -87,9 +87,7 @@ function StatCard({
             {value}
           </p>
           {subValue && (
-            <span className="text-xs text-muted-foreground">
-              {subValue}
-            </span>
+            <span className="text-xs text-muted-foreground">{subValue}</span>
           )}
         </div>
       </div>
@@ -116,10 +114,7 @@ export function StatsBar({
     return (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            className="h-[72px] border"
-          />
+          <div key={i} className="h-[72px] border" />
         ))}
       </div>
     );

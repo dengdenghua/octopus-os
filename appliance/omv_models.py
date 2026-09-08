@@ -22,9 +22,11 @@ from appliance.omv_protocol import (
     EXT4_CHECK_DESIRED_SCHEMA,
     EXT4_VOLUME_DESIRED_SCHEMA,
     GROUP_DESIRED_SCHEMA,
+    MAX_TIME_MACHINE_BYTES,
     MDRAID1_DESIRED_SCHEMA,
     MDRAID1_REPLACE_DESIRED_SCHEMA,
     MDRAID_CHECK_DESIRED_SCHEMA,
+    MIN_TIME_MACHINE_BYTES,
     NFS_DESIRED_SCHEMA,
     NFS_REMOVE_DESIRED_SCHEMA,
     QUOTA_DESIRED_SCHEMA,
@@ -35,6 +37,7 @@ from appliance.omv_protocol import (
     SHARED_FOLDER_RENAME_DESIRED_SCHEMA,
     SMART_SELF_TEST_DESIRED_SCHEMA,
     SMB_DESIRED_SCHEMA,
+    TIME_MACHINE_DESIRED_SCHEMA,
     USER_DESIRED_SCHEMA,
     USER_PASSWORD_DESIRED_SCHEMA,
     ZFS_MIRROR_DESIRED_SCHEMA,
@@ -42,6 +45,7 @@ from appliance.omv_protocol import (
     ZFS_POOL_EXPORT_DESIRED_SCHEMA,
     ZFS_POOL_IMPORT_DESIRED_SCHEMA,
     ZFS_SCRUB_DESIRED_SCHEMA,
+    validate_account_name,
     validate_btrfs_raid1_desired,
     validate_btrfs_replace_desired,
     validate_btrfs_scrub_desired,
@@ -86,6 +90,34 @@ class SmbDesiredState(BaseModel):
     browseable: bool
     recycle_bin: bool = Field(alias="recycleBin")
     comment: str = Field(max_length=512)
+
+
+class TimeMachineDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.storage.time-machine-desired.v1"] = Field(
+        default=TIME_MACHINE_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    shared_folder_ref: str = Field(min_length=36, max_length=36, alias="sharedFolderRef")
+    enabled: bool
+    owner: str = Field(min_length=1, max_length=32)
+    maximum_bytes: int = Field(
+        ge=MIN_TIME_MACHINE_BYTES,
+        le=MAX_TIME_MACHINE_BYTES,
+        multiple_of=1024**3,
+        alias="maximumBytes",
+    )
+
+    @field_validator("shared_folder_ref")
+    @classmethod
+    def validate_folder_ref(cls, value: str) -> str:
+        return validate_omv_uuid(value).lower()
+
+    @field_validator("owner")
+    @classmethod
+    def validate_owner(cls, value: str) -> str:
+        return validate_account_name(value, "Time Machine owner")
 
 
 class GroupDesiredState(BaseModel):
@@ -591,6 +623,13 @@ class SmbApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     desired: SmbDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
+class TimeMachineApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: TimeMachineDesiredState
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
@@ -1418,6 +1457,8 @@ __all__ = [
     "SmartSchedulePolicyDesiredState",
     "SmbApplyRequest",
     "SmbDesiredState",
+    "TimeMachineApplyRequest",
+    "TimeMachineDesiredState",
     "UserApplyRequest",
     "UserDesiredState",
     "UserPasswordApplyRequest",

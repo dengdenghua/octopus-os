@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import sys
 from pathlib import Path
 
@@ -66,8 +67,9 @@ def generate() -> str:
     ]
     for class_name, const_name, type_name in _ENUMS:
         values = _enum_members(tree, class_name)
-        joined = ", ".join(f'"{v}"' for v in values)
-        blocks.append(f"export const {const_name} = [{joined}] as const;")
+        blocks.append(f"export const {const_name} = [")
+        blocks.extend(f"  {json.dumps(value, ensure_ascii=False)}," for value in values)
+        blocks.append("] as const;")
         blocks.append(f"export type {type_name} = (typeof {const_name})[number];")
         blocks.append("")
     return "\n".join(blocks).rstrip() + "\n"
@@ -98,4 +100,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

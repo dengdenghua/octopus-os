@@ -202,9 +202,7 @@ def apply_policy(
             trusted_uid=trusted_uid,
         )
         if plan["planId"] != plan_id:
-            raise BtrfsScrubSchedulePolicyError(
-                "Btrfs scrub schedule plan is stale; preview again"
-            )
+            raise BtrfsScrubSchedulePolicyError("Btrfs scrub schedule plan is stale; preview again")
         if plan["operation"] == "none":
             return {**plan, "applied": False, "verified": True}
         _assert_parent(path, trusted_uid=trusted_uid)

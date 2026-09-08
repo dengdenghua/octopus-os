@@ -288,6 +288,8 @@ if FASTAPI_AVAILABLE:
         compatible: bool
         compatibility_reason: str | None = None
         proxy_required: bool = False
+        execution_available: bool = False
+        execution_unavailable_reason: str | None = None
 
 
 __all__ = [

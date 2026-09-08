@@ -100,6 +100,49 @@ def test_flatten_merges_post_final_trace_items_into_delivered_answer() -> None:
     assert [tool["name"] for tool in ai["tool_calls"]] == ["todo_write"]
 
 
+def test_flatten_preserves_user_context_file_identity() -> None:
+    from runtime.protocol import Turn
+    from runtime.sensing.gateway.realtime_cerebrum import _flatten_turns_to_messages
+
+    turn = Turn.model_validate(
+        {
+            "id": "turn-context-file",
+            "threadId": "thread-context-file",
+            "status": "completed",
+            "startedAt": "2026-06-01T18:53:24Z",
+            "completedAt": "2026-06-01T19:03:00Z",
+            "items": [
+                {
+                    "id": "u-context-file",
+                    "type": "userMessage",
+                    "status": "completed",
+                    "createdAt": "2026-06-01T18:53:24Z",
+                    "text": "请阅读这个文件",
+                    "attachments": [],
+                    "contextFiles": [
+                        {
+                            "path": "报告.md",
+                            "sourceLabel": "本地数据库",
+                            "resourceId": "appliance-file:v1:root:report",
+                        }
+                    ],
+                }
+            ],
+            "error": None,
+        }
+    )
+
+    messages, _, _ = _flatten_turns_to_messages([turn])
+
+    assert messages[0]["additional_kwargs"]["context_files"] == [
+        {
+            "path": "报告.md",
+            "sourceLabel": "本地数据库",
+            "resourceId": "appliance-file:v1:root:report",
+        }
+    ]
+
+
 def test_text_delta_maps_to_agent_message(gateway: Any) -> None:
     client, _ = gateway
     _set_script(
@@ -584,4 +627,3 @@ def test_stale_background_watchers_reaped_on_next_turn(tmp_path: Path) -> None:
         assert all(t.done() for t in bucket), (
             "reaper failed to cancel stale watchers from prior turn"
         )
-

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ TARGET = f"registry.example/echo-os@sha256:{'b' * 64}"
 
 
 def _release(path: Path, image: str = PREVIOUS) -> None:
-    path.write_text(f"ECHO_OS_IMAGE={image}\n")
+    path.write_bytes(f"ECHO_OS_IMAGE={image}\n".encode("ascii"))
     path.chmod(0o600)
 
 
@@ -37,7 +38,8 @@ def test_successful_switch_commits_only_the_selected_immutable_target(tmp_path: 
     assert selected["phase"] == "selected"
     assert committed == {"committed": True, "transactionId": begun["transactionId"]}
     assert release.read_text() == f"ECHO_OS_IMAGE={TARGET}\n"
-    assert release.stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert release.stat().st_mode & 0o777 == 0o600
     assert not journal.exists()
 
 
@@ -128,9 +130,10 @@ def test_transaction_and_release_paths_reject_links_and_public_modes(tmp_path: P
         TARGET,
         previous_release_present=True,
     )
-    journal.chmod(0o644)
-    with pytest.raises(transaction.UpgradeTransactionError, match="ownership, mode, or size"):
-        transaction.select(journal, release)
+    if os.name != "nt":
+        journal.chmod(0o644)
+        with pytest.raises(transaction.UpgradeTransactionError, match="ownership, mode, or size"):
+            transaction.select(journal, release)
 
     journal.unlink()
     target = tmp_path / "real-release.env"

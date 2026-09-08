@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from .readiness import OptionalMediaUnavailable
 from .silence_analysis import detect_silences
 
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9._-]{1,160}$")
@@ -132,6 +133,7 @@ def edit_project(
             results.append({"index": index, "ok": True, **detail})
         except (KeyError, TypeError, ValueError) as exc:
             return project, {
+                **(exc.result() if isinstance(exc, OptionalMediaUnavailable) else {}),
                 "ok": False,
                 "applied": 0,
                 "failed": 1,

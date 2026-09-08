@@ -41,7 +41,7 @@ def test_backend_info_reports_active_wiring(monkeypatch) -> None:
     info = eb.backend_info()
     assert info["kind"] == "remote"
     assert info["endpoint"] == "http://host/v1"
-    assert info["local_only"] is True
+    assert info["local_only"] is False
 
 
 def test_remote_embeds_via_openai_shape(monkeypatch) -> None:
@@ -141,4 +141,3 @@ def test_available_false_when_no_backend(monkeypatch) -> None:
     monkeypatch.delenv("ECHO_EMBED_URL", raising=False)
     monkeypatch.setattr(eb, "_lib_importable", lambda _name: False)
     assert eb.available() is False
-

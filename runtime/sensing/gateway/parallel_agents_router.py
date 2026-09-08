@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 try:
-    from fastapi import APIRouter, HTTPException, Request
+    from fastapi import APIRouter, HTTPException, Query, Request
     from fastapi.responses import StreamingResponse
 
     FASTAPI_AVAILABLE = True
@@ -14,9 +14,14 @@ except ImportError:  # pragma: no cover
     APIRouter = None  # type: ignore[assignment,misc]
     HTTPException = None  # type: ignore[assignment,misc]
     Request = None  # type: ignore[assignment,misc]
+    Query = None  # type: ignore[assignment,misc]
     StreamingResponse = None  # type: ignore[assignment,misc]
 
-from runtime.execution.parallel_agents.models import DispatchRequest, SplitRequest
+from runtime.execution.parallel_agents.models import (
+    DispatchRequest,
+    RecoveryResumeRequest,
+    SplitRequest,
+)
 from runtime.execution.parallel_agents.orchestrator import ParallelAgentOrchestrator
 from runtime.sensing._fastapi_guard import require_fastapi
 
@@ -67,6 +72,7 @@ def create_parallel_agents_router(
         """
         principal = _principal(request)
         actor = principal.actor_id if principal is not None else None
+        tenant_id = principal.tenant_id if principal is not None else None
         # In dev mode (no auth required) skip the check.
         if not require_auth:
             return actor
@@ -84,6 +90,13 @@ def create_parallel_agents_router(
                 raise HTTPException(404, f"batch not found: {batch_id}")
         elif owner != actor:
             raise HTTPException(403, "not the owner of this batch")
+        else:
+            batch_tenant = orchestrator.get_batch_tenant(batch_id)
+            if batch_tenant is None:
+                if principal is None or "admin" not in principal.roles:
+                    raise HTTPException(404, f"batch not found: {batch_id}")
+            elif batch_tenant != tenant_id:
+                raise HTTPException(403, "not in the tenant of this batch")
         return actor
 
     def _require_task_owner(request: Any, task_id: str) -> str | None:
@@ -101,12 +114,48 @@ def create_parallel_agents_router(
             return actor
         if owner != actor:
             raise HTTPException(403, "not the owner of the task's batch")
+        task_tenant = orchestrator.get_task_tenant(task_id)
+        if task_tenant is None:
+            if principal is None or "admin" not in principal.roles:
+                raise HTTPException(404, f"task not found: {task_id}")
+        elif task_tenant != principal.tenant_id:
+            raise HTTPException(403, "not in the tenant of the task's batch")
         return actor
 
     @router.get("/api/agents/parallel/status")
     def status(request: Request) -> dict:
         _auth(request)  # AUTH-OK: actor-agnostic — returns aggregate counts only, no user data
         return orchestrator.status().model_dump()
+
+    @router.get("/api/agents/parallel/recovery-snapshots")
+    def list_recovery_snapshots(
+        request: Request,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict:
+        """Discover durable, redacted batches owned by the caller.
+
+        This route is deliberately separate from the actor-agnostic live
+        status route: a restarted orchestrator has no in-memory batch map,
+        while the recovery list can safely use durable owner/tenant fields.
+        """
+
+        principal = _principal(request)
+        actor = principal.actor_id if principal is not None else None
+        tenant_id = principal.tenant_id if principal is not None else None
+        try:
+            snapshots = orchestrator.list_recovery_snapshots(
+                owner_id=actor if require_auth else None,
+                tenant_id=tenant_id if require_auth else None,
+                limit=limit,
+            )
+        except OSError as exc:
+            raise HTTPException(503, "parallel recovery storage is unavailable") from exc
+        return {
+            "schema": "echo.parallel_batch_recovery_snapshots.v1",
+            "snapshots": [snapshot.model_dump() for snapshot in snapshots],
+            "count": len(snapshots),
+            "limit": limit,
+        }
 
     @router.get("/api/agents/parallel/batch/{batch_id}")
     def get_batch(request: Request, batch_id: str) -> dict:
@@ -124,11 +173,51 @@ def create_parallel_agents_router(
             raise HTTPException(404, f"batch not found: {batch_id}")
         return snapshot.model_dump()
 
+    @router.post("/api/agents/parallel/batch/{batch_id}/resume")
+    def resume_batch(
+        request: Request,
+        batch_id: str,
+        body: RecoveryResumeRequest,
+    ) -> dict:
+        """Explicitly rerun named safe lanes from a recovery snapshot.
+
+        Reading a snapshot never starts work.  This endpoint is the separate
+        user-confirmed action and returns a new batch so the old evidence is
+        preserved for audit and comparison.
+        """
+
+        principal = _principal(request)
+        actor = principal.actor_id if principal is not None else None
+        tenant_id = principal.tenant_id if principal is not None else None
+        _require_batch_owner(request, batch_id)
+        try:
+            result = orchestrator.resume_recovery(
+                batch_id,
+                body.task_ids,
+                owner_id=actor if require_auth else None,
+                tenant_id=tenant_id if require_auth else None,
+                thread_id=body.thread_id,
+                model_name=body.model_name,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            message = str(exc)
+            status = 409 if "active" in message or "rerun" in message else 400
+            raise HTTPException(status, message) from exc
+        return {
+            "schema": "echo.parallel_batch_recovery_resume.v1",
+            "source_batch_id": batch_id,
+            "batch": result.model_dump(),
+        }
+
     # ─── dispatch / split ────────────────────────────────
 
     @router.post("/api/agents/parallel/dispatch")
     def dispatch(request: Request, body: DispatchRequest) -> dict:
-        actor = _auth(request)
+        principal = _principal(request)
+        actor = principal.actor_id if principal is not None else None
+        tenant_id = principal.tenant_id if principal is not None else None
         try:
             result = orchestrator.dispatch(
                 body.tasks,
@@ -138,6 +227,7 @@ def create_parallel_agents_router(
                 thread_id=body.thread_id,
                 model_name=body.model_name,
                 owner_id=actor,
+                tenant_id=tenant_id,
             )
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
@@ -168,8 +258,10 @@ def create_parallel_agents_router(
 
     @router.post("/api/agents/parallel/cancel-all")
     def cancel_all(request: Request) -> dict:
-        actor = _auth(request)
-        orchestrator.cancel_all_for_owner(actor)
+        principal = _principal(request)
+        actor = principal.actor_id if principal is not None else None
+        tenant_id = principal.tenant_id if principal is not None else None
+        orchestrator.cancel_all_for_owner(actor, tenant_id)
         return {"ok": True}
 
     # ─── SSE stream ──────────────────────────────────────

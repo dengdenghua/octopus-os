@@ -20,6 +20,9 @@ if TYPE_CHECKING:
 
 
 def _register_local_models(router: Any, ctx: _ConfigCtx) -> None:
+    from ._config_endpoints_local_setup import register_verified_local_model
+
+    register_verified_local_model(router, ctx)
     custom_models_state = ctx.custom_models
     save = ctx.save
     unregister_entry = ctx.unregister_entry

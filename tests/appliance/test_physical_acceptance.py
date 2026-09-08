@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -10,6 +11,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+if os.name == "nt":
+    pytest.skip(
+        "physical acceptance requires Linux device and service semantics", allow_module_level=True
+    )
 
 from tests.appliance.hub_lifecycle_fixture import hub_lifecycle_material
 from tests.appliance.lan_discovery_functional_fixture import (

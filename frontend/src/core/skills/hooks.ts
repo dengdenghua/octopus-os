@@ -1,12 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { currentActorId } from "../auth/api";
+
 import { enableMarketSkill, enableSkill } from "./api";
 
 import { loadSkills } from ".";
 
+export function skillsQueryKey(actor = currentActorId()) {
+  return ["skills", actor] as const;
+}
+
 export function useSkills(options?: { enabled?: boolean }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["skills"],
+    queryKey: skillsQueryKey(),
     queryFn: () => loadSkills(),
     enabled: options?.enabled ?? true,
   });
@@ -26,7 +32,7 @@ export function useEnableSkill() {
       await enableSkill(skillName, enabled);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["skills"] });
+      void queryClient.invalidateQueries({ queryKey: skillsQueryKey() });
     },
   });
 }
@@ -38,7 +44,7 @@ export function useEnableMarketSkill() {
       await enableMarketSkill(skillName);
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["skills"] });
+      void queryClient.invalidateQueries({ queryKey: skillsQueryKey() });
     },
   });
 }

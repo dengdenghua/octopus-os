@@ -274,9 +274,7 @@ function PreviewDiagnosticRow({ item }: { item: PreviewDiagnostic }) {
         <span
           className={cn(
             "font-medium uppercase",
-            isError
-              ? "text-destructive"
-              : "text-warning",
+            isError ? "text-destructive" : "text-warning",
           )}
         >
           {item.source}

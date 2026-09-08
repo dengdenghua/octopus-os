@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { currentActorId } from "../auth/api";
+
 import {
   deleteTask,
   listTasks,
@@ -10,6 +12,17 @@ import {
 } from "./api";
 
 const TASKS_KEY = ["tasks"] as const;
+
+export function tasksQueryRootKey(actor = currentActorId()) {
+  return [...TASKS_KEY, actor] as const;
+}
+
+export function tasksQueryKey(
+  status: "paused" | "pending" | "active" | "all" = "all",
+  actor = currentActorId(),
+) {
+  return [...tasksQueryRootKey(actor), status] as const;
+}
 
 export function getTasksRefetchInterval(
   data?: TasksListResponse,
@@ -30,7 +43,7 @@ function tasksRefetchInterval(query: {
 export function useTasks(status?: "paused" | "pending" | "active" | "all") {
   const statusValue = status ?? "all";
   return useQuery({
-    queryKey: [...TASKS_KEY, statusValue],
+    queryKey: tasksQueryKey(statusValue),
     queryFn: ({ signal }) => listTasks(statusValue, signal),
     refetchInterval: tasksRefetchInterval,
     refetchIntervalInBackground: true,
@@ -54,7 +67,7 @@ export function usePauseTask() {
       note?: string;
     }) => pauseTask(taskId, reason, note),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: TASKS_KEY });
+      void qc.invalidateQueries({ queryKey: tasksQueryRootKey() });
     },
   });
 }
@@ -74,7 +87,7 @@ export function useResumeTask() {
       extra_usd?: number;
     }) => resumeTask(taskId, { extra_iterations, extra_tokens, extra_usd }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: TASKS_KEY });
+      void qc.invalidateQueries({ queryKey: tasksQueryRootKey() });
     },
   });
 }
@@ -84,7 +97,7 @@ export function useDeleteTask() {
   return useMutation({
     mutationFn: ({ taskId }: { taskId: string }) => deleteTask(taskId),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: TASKS_KEY });
+      void qc.invalidateQueries({ queryKey: tasksQueryRootKey() });
     },
   });
 }

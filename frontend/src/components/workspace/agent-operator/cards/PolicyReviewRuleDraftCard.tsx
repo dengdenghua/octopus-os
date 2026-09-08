@@ -34,9 +34,7 @@ export function PolicyReviewRuleDraftCard({
             <ShieldAlertIcon
               className={cn(
                 "size-4",
-                hasDrafts
-                  ? "text-success"
-                  : "text-muted-foreground",
+                hasDrafts ? "text-success" : "text-muted-foreground",
               )}
             />
             {to("Policy review rules")}

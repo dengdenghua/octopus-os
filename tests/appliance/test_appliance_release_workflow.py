@@ -21,6 +21,7 @@ EXPECTED_ACTIONS = {
     "docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
     "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
     "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65",
 }
 
 
@@ -47,7 +48,7 @@ def test_release_workflow_is_tag_only_and_has_publish_permissions() -> None:
     trigger = workflow.get("on", workflow.get(True))
     assert trigger == {"push": {"tags": ["echo-appliance-v*"]}}
     assert workflow["permissions"] == {
-        "contents": "read",
+        "contents": "write",
         "packages": "write",
         "id-token": "write",
         "attestations": "write",
@@ -74,8 +75,7 @@ def test_release_workflow_builds_exact_two_platform_index_with_attestations() ->
     preflight_position = next(
         index
         for index, step in enumerate(steps)
-        if step.get("name")
-        == "Reject malformed release and verify the unified Echo source"
+        if step.get("name") == "Reject malformed release and verify the unified Echo source"
     )
     hub_storage_position = next(
         index
@@ -83,8 +83,19 @@ def test_release_workflow_builds_exact_two_platform_index_with_attestations() ->
         if step.get("name") == "Verify Hub OCI storage attestations"
     )
     build_position = steps.index(build)
+    source_position = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Build and independently verify Python runtime corresponding source"
+    )
+    source_release_position = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Publish durable corresponding-source release assets"
+    )
     assert preflight_position < build_position
     assert preflight_position < hub_storage_position < build_position
+    assert hub_storage_position < source_position < source_release_position < build_position
     assert "preflight_release_source" in str(steps[preflight_position]["run"])
     assert str(steps[hub_storage_position]["run"]) == ("python deploy/appliance/hub_oci_storage.py")
     options = build["with"]
@@ -127,6 +138,8 @@ def test_release_workflow_extracts_and_binds_both_platform_sboms() -> None:
     assert "--operations-verifier dist/operations_bundle.py" in source
     assert "python deploy/appliance/image_release.py" in source
     assert '--source-sha "$GITHUB_SHA"' in source
+    assert "runtime_source_bundle.py build --output-directory dist" in source
+    assert "dist/runtime_source_bundle.py verify --output-directory dist" in source
 
     upload = next(
         step
@@ -146,3 +159,7 @@ def test_release_workflow_extracts_and_binds_both_platform_sboms() -> None:
     assert "echo-appliance-operations.tar.gz.sha256" in paths
     assert "echo-appliance-operations.spdx.json" in paths
     assert "operations_bundle.py" in paths
+    assert "echo-appliance-python-runtime-sources.tar.gz" in paths
+    assert "echo-appliance-python-runtime-sources.json" in paths
+    assert "echo-appliance-python-runtime-sources.sha256" in paths
+    assert "runtime_source_bundle.py" in paths

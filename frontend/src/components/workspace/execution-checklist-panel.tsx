@@ -188,9 +188,7 @@ function StepIcon({ status }: { status: StepStatus }) {
     return <CheckCircle2Icon className="size-4 shrink-0 text-success" />;
   }
   if (status === "in_progress") {
-    return (
-      <Loader2Icon className="size-4 shrink-0 animate-spin text-info" />
-    );
+    return <Loader2Icon className="size-4 shrink-0 animate-spin text-info" />;
   }
   return <CircleIcon className="size-4 shrink-0 text-muted-foreground/50" />;
 }

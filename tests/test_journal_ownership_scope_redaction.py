@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from runtime.memory.journal._journal_models import UserMessageEvent
@@ -176,6 +177,9 @@ def test_packed_chunks_redact_payloads_without_rewriting_member_structure(
         journal.write(
             AssistantChunkEvent(
                 event_id=event_id,
+                # A packed run requires strictly increasing timestamps.
+                # Windows clock resolution can give rapid writes equal ts.
+                ts=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(microseconds=index),
                 iteration=1,
                 kind="text-delta",
                 delta=f"chunk-{index} {canary}",
@@ -192,4 +196,3 @@ def test_packed_chunks_redact_payloads_without_rewriting_member_structure(
     assert "[REDACTED:api_key]" in raw
     assert [event.event_id for event in restored] == ids
     assert all("[REDACTED:api_key]" in event.delta for event in restored)
-

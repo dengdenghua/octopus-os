@@ -1,0 +1,35 @@
+[Unit]
+Description=Deliver Echo NAS alerts when the appliance control plane is down
+Documentation=file:/opt/echo-os/deploy/appliance/README.md
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/data/appliance-auth.json
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/echo-os
+Environment=ECHO_DATA_DIR=/data
+ExecStart=/opt/echo-os/.venv/bin/python -m appliance.nas_alert_deadman --state-dir /data
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/data
+TimeoutStartSec=120s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=echo-appliance-deadman

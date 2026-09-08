@@ -778,6 +778,7 @@ def test_tag_release_requires_same_sha_evidence_before_build_and_push() -> None:
     }
     assert jobs["create-release"]["permissions"] == {
         "actions": "read",
+        "attestations": "read",
         "contents": "write",
     }
     assert jobs["create-release"]["needs"] == [
@@ -1005,7 +1006,11 @@ def test_windows_artifact_workflow_is_signed_and_commit_bound() -> None:
     workflow_text = workflow_path.read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
 
-    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["permissions"] == {
+        "contents": "read",
+        "id-token": "write",
+        "attestations": "write",
+    }
     assert "secrets.GITHUB_TOKEN" not in workflow_text
     job = workflow["jobs"]["build-win"]
     assert job["runs-on"] == "windows-2025"

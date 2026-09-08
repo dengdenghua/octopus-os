@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { getAPIClient } from "../api";
-import { authHeaders, jsonAuthHeaders } from "../auth/api";
+import { authHeaders, currentActorId, jsonAuthHeaders } from "../auth/api";
 import { getBackendBaseURL } from "../config";
 import { isPrimaryPersonaAgentId } from "../agents/persona-policy";
+import { threadSearchQueryKey } from "../threads/hooks";
 import {
   ensureCollabRoom,
   getCoworkGroup,
@@ -67,6 +68,28 @@ export interface ProjectHomeOptions {
 
 const BASE = () => `${getBackendBaseURL()}/api/projects`;
 export const DEFAULT_PROJECT_AGENT_ID = "general";
+
+export function projectsQueryKey(actor = currentActorId()) {
+  return ["projects", actor] as const;
+}
+
+export function projectQueryKey(
+  projectId: string | null | undefined,
+  actor = currentActorId(),
+) {
+  return ["project", actor, projectId ?? ""] as const;
+}
+
+export function projectByThreadQueryKey(
+  threadId: string | null | undefined,
+  actor = currentActorId(),
+) {
+  return ["project", "by-thread", actor, threadId ?? ""] as const;
+}
+
+export function threadMapQueryKey(actor = currentActorId()) {
+  return ["thread-map", actor] as const;
+}
 
 function normalizedInitialAgents(
   agents: readonly ProjectInitialAgent[] | undefined,
@@ -261,7 +284,7 @@ export async function ensureProjectHome(
 
 export function useProjects() {
   return useQuery<Project[]>({
-    queryKey: ["projects"],
+    queryKey: projectsQueryKey(),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     queryFn: async () => {
@@ -323,9 +346,9 @@ export function useCreateProject() {
       };
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["projects"] });
-      qc.invalidateQueries({ queryKey: ["thread-map"] });
-      qc.invalidateQueries({ queryKey: ["threads"] });
+      qc.invalidateQueries({ queryKey: projectsQueryKey() });
+      qc.invalidateQueries({ queryKey: threadMapQueryKey() });
+      qc.invalidateQueries({ queryKey: threadSearchQueryKey() });
     },
   });
 }
@@ -358,11 +381,11 @@ export function usePromoteGroupToProject() {
       return (await res.json()) as { project: Project };
     },
     onSuccess: (_result, input) => {
-      void qc.invalidateQueries({ queryKey: ["projects"] });
-      void qc.invalidateQueries({ queryKey: ["thread-map"] });
-      void qc.invalidateQueries({ queryKey: ["threads"] });
+      void qc.invalidateQueries({ queryKey: projectsQueryKey() });
+      void qc.invalidateQueries({ queryKey: threadMapQueryKey() });
+      void qc.invalidateQueries({ queryKey: threadSearchQueryKey() });
       void qc.invalidateQueries({
-        queryKey: ["project", "by-thread", input.threadId],
+        queryKey: projectByThreadQueryKey(input.threadId),
       });
     },
   });
@@ -438,11 +461,11 @@ export function useDetachProjectFromGroup() {
       return (await res.json()) as DetachedProjectBinding;
     },
     onSuccess: (_result, input) => {
-      void qc.invalidateQueries({ queryKey: ["projects"] });
-      void qc.invalidateQueries({ queryKey: ["thread-map"] });
-      void qc.invalidateQueries({ queryKey: ["threads"] });
+      void qc.invalidateQueries({ queryKey: projectsQueryKey() });
+      void qc.invalidateQueries({ queryKey: threadMapQueryKey() });
+      void qc.invalidateQueries({ queryKey: threadSearchQueryKey() });
       void qc.invalidateQueries({
-        queryKey: ["project", "by-thread", input.threadId],
+        queryKey: projectByThreadQueryKey(input.threadId),
       });
     },
   });
@@ -455,9 +478,9 @@ export function useEnsureProjectHome() {
     // opening an existing project must intentionally omit creation options.
     mutationFn: (project: Project) => ensureProjectHome(project),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["projects"] });
-      void qc.invalidateQueries({ queryKey: ["thread-map"] });
-      void qc.invalidateQueries({ queryKey: ["threads"] });
+      void qc.invalidateQueries({ queryKey: projectsQueryKey() });
+      void qc.invalidateQueries({ queryKey: threadMapQueryKey() });
+      void qc.invalidateQueries({ queryKey: threadSearchQueryKey() });
     },
   });
 }
@@ -474,7 +497,7 @@ export function useDeleteProject() {
         throw new Error(`Failed to delete project: ${res.statusText}`);
       }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: projectsQueryKey() }),
   });
 }
 
@@ -492,16 +515,16 @@ export function useMoveThreadToProject() {
       return { ok: true, thread_id: threadId, project_id: projectId };
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["projects"] });
-      qc.invalidateQueries({ queryKey: ["thread-map"] });
-      qc.invalidateQueries({ queryKey: ["threads"] });
+      qc.invalidateQueries({ queryKey: projectsQueryKey() });
+      qc.invalidateQueries({ queryKey: threadMapQueryKey() });
+      qc.invalidateQueries({ queryKey: threadSearchQueryKey() });
     },
   });
 }
 
 export function useThreadMap() {
   return useQuery<Record<string, string>>({
-    queryKey: ["thread-map"],
+    queryKey: threadMapQueryKey(),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     queryFn: async () => {

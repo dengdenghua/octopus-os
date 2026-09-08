@@ -23,6 +23,7 @@ from runtime.execution.codex_backend.types import (
 )
 from runtime.platform.models.llm import ModelRequest, ModelResponse
 from runtime.platform.process.session import current_session
+from runtime.platform.process.task_supervisor import TaskSupervisor
 from runtime.platform.runtime_policy import feature_flags
 from runtime.protocol import TurnStatus
 from runtime.safety.auth.scope import TenantScope
@@ -185,6 +186,39 @@ def test_request_uses_only_authoritative_cwd_and_caps_full_access(
         "stdio://",
     )
     assert request.sandbox_mode == "workspace-write"
+
+
+def test_request_enables_full_access_only_after_server_approval_bypass_opt_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "trusted-workspace"
+    workspace.mkdir()
+    monkeypatch.setattr(mod, "blackboard_brief", lambda _turn_id: "")
+    monkeypatch.setenv("ECHO_DEPLOYMENT_MODE", "local")
+
+    turn = SimpleNamespace(id="outer-turn", thread_id="outer-thread")
+    intent = SimpleNamespace(
+        user_context={
+            "cwd": str(workspace),
+            "owner_actor_id": "person-7",
+            "tenant_id": "tenant-3",
+            "approval_policy": "never",
+            "auto_approve": True,
+            "permission_mode": "bypassPermissions",
+        }
+    )
+
+    request = mod._request_for_turn(
+        SimpleNamespace(_allow_client_auto_approve=True),
+        turn,
+        intent,
+        _agent(command="/trusted/bin/codex"),
+        text="run the local batch",
+    )
+
+    assert request.approval_policy == "never"
+    assert request.sandbox_mode == "danger-full-access"
 
 
 class _FakeBridgeState:
@@ -494,6 +528,110 @@ async def test_first_start_streams_native_text_and_terminal_then_closes(
 
 
 @pytest.mark.asyncio
+async def test_driver_delivers_journal_history_after_resolving_current_authority(
+    tmp_path, monkeypatch
+):
+    from runtime.memory.threads.event_log import EventLog
+    from runtime.protocol import AgentMessageItem, ItemStatus, Turn, TurnParams
+
+    workspace, _fake_turn, intent = _prepare_driver(tmp_path, monkeypatch)
+    log = EventLog(tmp_path / "outer-thread.jsonl")
+    log.thread_started("outer-thread")
+    old = Turn(threadId="outer-thread", params=TurnParams(threadId="outer-thread"))
+    log.turn_started(old.thread_id, old)
+    log.item_completed(
+        old.thread_id,
+        old.id,
+        AgentMessageItem(
+            text="An earlier native decision",
+            status=ItemStatus.COMPLETED,
+        ),
+    )
+    log.turn_completed(old.thread_id, old.id, TurnStatus.COMPLETED)
+    turn = Turn(
+        id="outer-turn", threadId="outer-thread", params=TurnParams(threadId="outer-thread")
+    )
+    log.turn_started(turn.thread_id, turn)
+    instances, _operations = _install_fake_session(
+        monkeypatch,
+        events=[
+            Notification(
+                "turn/completed",
+                {"threadId": "inner-thread", "turn": {"id": "inner-turn", "status": "completed"}},
+            )
+        ],
+    )
+    await mod.drive_codex_app_server(
+        _FakeRuntime(),
+        turn,
+        log,
+        _FakeEmitter(),
+        intent,
+        _agent(),
+        object(),
+        text="continue now",
+    )
+    request = instances[0].request
+    assert "An earlier native decision" in request.prompt
+    assert request.prompt.endswith("continue now")
+    assert "An earlier native decision" in request.fresh_thread_prompt
+    assert request.workspace == workspace.resolve()
+    assert log.replay()[-1].execution.engine == "codex"
+    assert any(
+        event.event == "execution_handoff" and event.turn_id == turn.id
+        for event in log.iter_events()
+    )
+
+
+@pytest.mark.asyncio
+async def test_codex_driver_binds_host_request_and_execution_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace, turn, intent = _prepare_driver(tmp_path, monkeypatch)
+    turn.params = SimpleNamespace(owner_actor_id="person", tenant_id="tenant")
+    _instances, _operations = _install_fake_session(
+        monkeypatch,
+        events=[
+            Notification(
+                "turn/completed",
+                {
+                    "threadId": "inner-thread",
+                    "turnId": "inner-turn",
+                    "turn": {"id": "inner-turn", "status": "completed"},
+                },
+            ),
+        ],
+    )
+    runtime = _FakeRuntime()
+    runtime._task_supervisor = TaskSupervisor.from_path(
+        tmp_path / "task-runs.json",
+        holder_id="host-codex",
+    )
+    runtime._task_execution_guards = {}
+
+    assert await mod.drive_codex_app_server(
+        runtime,
+        turn,
+        object(),
+        _FakeEmitter(),
+        intent,
+        _agent(),
+        object(),
+        text="完成这个任务",
+    )
+
+    assert turn.task_id == turn.id
+    guard = runtime._task_execution_guards[turn.id]
+    assert guard.bound_task_id == turn.id
+    record = runtime._task_supervisor.store.get(turn.id)
+    assert record is not None
+    assert record.owner_id == "person"
+    assert record.thread_id == "outer-thread"
+    assert current_session() is None
+
+
+@pytest.mark.asyncio
 async def test_unavailable_before_turn_start_fails_closed_without_cli_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -692,7 +830,7 @@ async def test_interrupt_requests_inner_interrupt_then_hard_closes_as_cancelled(
     assert turn.status == TurnStatus.CANCELLED
     assert turn.outcome_reason == "user_cancelled"
     assert turn.interrupt_reason == "stop now"
-    assert runtime.events == [{"type": "react_cancelled", "reason": "stop now"}]
+    assert runtime.events == [{"type": "react_cancelled", "reason": "user_cancelled"}]
 
 
 @pytest.mark.asyncio
@@ -722,7 +860,70 @@ async def test_turn_deadline_interrupts_then_hard_closes_as_timeout(
     assert turn.status == TurnStatus.CANCELLED
     assert turn.outcome_reason == "codex_timeout"
     assert turn.interrupt_reason == "Codex 代码任务超过运行时限"
-    assert runtime.events == [{"type": "react_cancelled", "reason": "Codex 代码任务超过运行时限"}]
+    assert runtime.events == [{"type": "react_cancelled", "reason": "codex_timeout"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("will_retry", [False, True])
+async def test_error_ends_realtime_only_when_provider_is_not_retrying(
+    tmp_path,
+    monkeypatch,
+    will_retry,
+):
+    _workspace, turn, intent = _prepare_driver(tmp_path, monkeypatch)
+    instances, operations = _install_fake_session(
+        monkeypatch,
+        events=[
+            Notification("error", {"message": "provider error", "willRetry": will_retry}),
+            Notification("turn/completed", {"turn": {"status": "completed"}}),
+        ],
+    )
+    runtime = _FakeRuntime()
+    await mod.drive_codex_app_server(
+        runtime,
+        turn,
+        object(),
+        _FakeEmitter(),
+        intent,
+        _agent(),
+        object(),
+        text="work",
+    )
+    assert runtime.events[-1]["type"] == ("react_completed" if will_retry else "react_error")
+    assert len(instances[0].events) == (0 if will_retry else 1)
+    assert operations[-1] == "close"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal",
+    [
+        Notification("turn/completed", {"turn": {"status": "completed"}}),
+        Notification("error", {"message": "late error", "willRetry": False}),
+    ],
+)
+async def test_late_terminal_after_stop_preserves_cancelled_outcome(
+    tmp_path,
+    monkeypatch,
+    terminal,
+):
+    _workspace, turn, intent = _prepare_driver(tmp_path, monkeypatch)
+    _instances, operations = _install_fake_session(monkeypatch, events=[terminal])
+    runtime = _FakeRuntime()
+    await mod.drive_codex_app_server(
+        runtime,
+        turn,
+        object(),
+        _FakeEmitter(interrupted=True, reason="stop now"),
+        intent,
+        _agent(),
+        object(),
+        text="work",
+    )
+    assert runtime.events == [{"type": "react_cancelled", "reason": "user_cancelled"}]
+    assert turn.status == TurnStatus.CANCELLED
+    assert turn.outcome_reason == "user_cancelled"
+    assert operations[-1] == "close"
 
 
 @pytest.mark.asyncio
@@ -984,4 +1185,3 @@ async def test_direct_chatgpt_turn_refreshes_principal_auth_before_session(
     assert refresh_calls == [(state_root, scope)]
     assert len(instances) == 1
     assert instances[0].request.source_codex_home == refreshed_home
-

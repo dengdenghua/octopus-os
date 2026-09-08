@@ -1,10 +1,11 @@
-import { screen } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModuleEditorDialog } from "./module-editor-dialog";
 import { renderWithProviders } from "@/test/harness";
 import {
+  setModuleAvailable,
   resetModuleStateCache,
   setModuleStateProvider,
 } from "@/core/modules/enabled-modules";
@@ -88,4 +89,23 @@ describe("ModuleEditorDialog", () => {
     expect(screen.getByText("Knowledge & storage")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
   });
+});
+
+it("uses installed application status and excludes internal database categories", async () => {
+  setModuleStateProvider(memoryProvider());
+  resetModuleStateCache();
+  setModuleAvailable("design", false);
+  renderWithProviders(<ModuleEditorDialog open onOpenChange={vi.fn()} />, {
+    locale: "zh-CN",
+  });
+  const design = screen.getByRole("button", { name: /设计画布/ });
+  expect(design).toBeDisabled();
+  expect(
+    screen.queryByRole("button", { name: "文档" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "本地数据库" })).toBeEnabled();
+  act(() => setModuleAvailable("design", true));
+  expect(design).toBeEnabled();
+  act(() => setModuleAvailable("design", false));
+  expect(design).toBeDisabled();
 });

@@ -9,6 +9,22 @@ import pytest
 
 from runtime.execution.codex_backend import role_context
 from runtime.execution.suckers.registry import Skill, SkillRegistry
+from runtime.execution.tool_engine import role_instructions
+
+
+def test_large_role_keeps_bounded_codex_capability_contract(monkeypatch):
+    from runtime.execution.agents import loader
+
+    monkeypatch.setattr(loader, "compose_runtime_soul", lambda *a, **kw: "role " * 40_000)
+    result = role_context.compose_codex_role_instructions(
+        object(),
+        context={},
+        goal="inspect",
+        registry=None,
+    )
+    assert len(result) <= 160_000
+    assert result.endswith("</echo-codex-role-contract>")
+    assert "Do not discover or enable ambient user Codex" in result
 
 
 class _AllowPolicy:
@@ -43,7 +59,7 @@ def test_role_persona_modes_and_only_registry_resolved_skill_content_are_injecte
     outside = tmp_path / "client-selected" / "SKILL.md"
     outside.parent.mkdir(parents=True)
     outside.write_text("CLIENT_PATH_MUST_NOT_LOAD", encoding="utf-8")
-    monkeypatch.setattr(role_context, "_prompt_skill_roots", lambda: (trusted_root,))
+    monkeypatch.setattr(role_instructions, "_prompt_skill_roots", lambda: (trusted_root,))
 
     registry = SkillRegistry()
     for name, source in (

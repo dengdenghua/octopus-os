@@ -5,6 +5,7 @@ export type PermissionMode =
   | "plan";
 export type LegacyPermissionMode = "sandbox" | "full";
 export type ApprovalPolicy = "never" | "on-request" | "untrusted";
+export type ApprovalReviewer = "user" | "auto_review";
 
 /**
  * Network tiers the user picks from the sandbox settings page.
@@ -32,6 +33,7 @@ export type SandboxPolicy =
 export interface PermissionRuntimeConfig {
   mode: PermissionMode;
   approvalPolicy: ApprovalPolicy;
+  approvalReviewer: ApprovalReviewer;
   sandboxPolicy: SandboxPolicy;
   execution_environment: "sandbox" | "local";
   sandbox_mode: LegacyPermissionMode;
@@ -42,6 +44,13 @@ export function normalizePermissionMode(value: unknown): PermissionMode {
   const raw = typeof value === "string" ? value.trim() : "";
   const normalized = raw.toLowerCase();
   if (normalized === "acceptedits" || normalized === "accept-edits") {
+    return "acceptEdits";
+  }
+  if (
+    normalized === "auto-review" ||
+    normalized === "autoreview" ||
+    normalized === "approve-for-me"
+  ) {
     return "acceptEdits";
   }
   if (
@@ -57,7 +66,9 @@ export function normalizePermissionMode(value: unknown): PermissionMode {
   return "default";
 }
 
-export function normalizeNetworkAccess(value: unknown): NetworkAccessMode | undefined {
+export function normalizeNetworkAccess(
+  value: unknown,
+): NetworkAccessMode | undefined {
   if (value === true) return "full";
   if (value === false) return "deny";
   if (typeof value === "string") {
@@ -80,9 +91,7 @@ export function permissionRuntimeConfig(
   const effectiveNetwork =
     normalizeNetworkAccess(networkAccess) ??
     (mode === "bypassPermissions" ? "full" : "deny");
-  const sandboxPolicy = (
-    type: SandboxPolicy["type"],
-  ): SandboxPolicy => {
+  const sandboxPolicy = (type: SandboxPolicy["type"]): SandboxPolicy => {
     if (effectiveNetwork === "full") {
       return { type, networkAccess: true };
     }
@@ -95,6 +104,7 @@ export function permissionRuntimeConfig(
     return {
       mode,
       approvalPolicy: "never",
+      approvalReviewer: "user",
       sandboxPolicy: sandboxPolicy("dangerFullAccess"),
       execution_environment: "local",
       sandbox_mode: "full",
@@ -102,22 +112,23 @@ export function permissionRuntimeConfig(
     };
   }
   if (mode === "acceptEdits") {
-    // "Accept edits" trusts the machine for file changes while commands still
-    // ask for confirmation — so it runs locally, matching the sandbox
-    // settings page's "Local execution" level. Keeping this in sync prevents
-    // the composer shortcut and the settings page from overriding each other.
+    // Keep the legacy stored mode name, but use Codex's automatic-review
+    // contract: ordinary work remains in the workspace sandbox and eligible
+    // boundary crossings go to an independent reviewer.
     return {
       mode,
       approvalPolicy: "on-request",
+      approvalReviewer: "auto_review",
       sandboxPolicy: sandboxPolicy("workspaceWrite"),
-      execution_environment: "local",
-      sandbox_mode: "full",
+      execution_environment: "sandbox",
+      sandbox_mode: "sandbox",
       planningMode: false,
     };
   }
   return {
     mode,
     approvalPolicy: "on-request",
+    approvalReviewer: "user",
     sandboxPolicy: sandboxPolicy("workspaceWrite"),
     execution_environment: "sandbox",
     sandbox_mode: "sandbox",

@@ -78,7 +78,7 @@ def _identity_store() -> IdentityStore:
     return store
 
 
-def _client(journal: StreamingJournal, *, require_auth: bool = True) -> TestClient:
+def _client(journal: StreamingJournal, *, require_auth: bool = True, **context) -> TestClient:
     app = FastAPI()
     app.include_router(
         create_observability_router(
@@ -86,6 +86,7 @@ def _client(journal: StreamingJournal, *, require_auth: bool = True) -> TestClie
             registry=SkillRegistry(),
             identity_store=_identity_store() if require_auth else None,
             require_auth=require_auth,
+            **context,
         )
     )
     return TestClient(app)
@@ -324,6 +325,11 @@ def test_sse_replay_and_live_subscription_do_not_cross_scope(
 
 
 def test_rollback_cannot_select_another_tenants_event(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from runtime.platform.process._task_supervisor_models import TaskRunRecord
+    from runtime.platform.process._task_supervisor_store import TaskSupervisorStore
+
     journal = StreamingJournal(InMemoryJournal())
     target = tmp_path / "bob-state.txt"
     target.write_text("after\n", encoding="utf-8")
@@ -343,7 +349,31 @@ def test_rollback_cannot_select_another_tenants_event(tmp_path: Path) -> None:
             },
         )
     bob_event = next(event for event in journal.read_by_type("file_op"))
-    client = _client(journal)
+    store = TaskSupervisorStore(tmp_path / "tasks.json")
+    store.upsert(
+        TaskRunRecord(
+            task_id=str(bob_task),
+            owner_id="bob",
+            thread_id="bob-thread",
+            workspace_path=str(tmp_path),
+            status="completed",
+        )
+    )
+    client = _client(
+        journal,
+        task_supervisor=SimpleNamespace(store=store),
+        thread_store={
+            "bob-thread": {
+                "metadata": {
+                    "owner_actor_id": "bob",
+                    "tenant_id": "tenant-b",
+                    "workspace_path": str(tmp_path),
+                }
+            }
+        },
+        workspace_root=tmp_path,
+        allow_local_workspace_access=True,
+    )
 
     hidden = client.post(
         "/api/files/rollback/apply",
@@ -409,4 +439,3 @@ def test_process_global_panels_require_explicit_privileged_cross_tenant(
     dev = _client(StreamingJournal(InMemoryJournal()), require_auth=False).get(path)
     assert dev.status_code == 200
     assert dev.json()["global_control_plane"] is True
-

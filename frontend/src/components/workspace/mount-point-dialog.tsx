@@ -111,9 +111,7 @@ const PROTOCOL_ITEMS: Array<{
 ];
 
 function hasNativeFolderPicker(): boolean {
-  return (
-    typeof window !== "undefined" && Boolean(window.echo?.dialog?.open)
-  );
+  return typeof window !== "undefined" && Boolean(window.echo?.dialog?.open);
 }
 
 async function openNativeFolderPicker(
@@ -149,9 +147,10 @@ export function MountPointDialog({
   const [fields, setFields] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<
-    { ok: boolean; message: string } | null
-  >(null);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -523,9 +522,7 @@ export function MountPointDialog({
                     id="sftp-identity"
                     label={tr.identityFileLabel}
                     value={fields.identityFile ?? ""}
-                    onChange={(value) =>
-                      updateField("identityFile", value)
-                    }
+                    onChange={(value) => updateField("identityFile", value)}
                     placeholder="~/.ssh/id_ed25519"
                   />
                 </div>
@@ -577,9 +574,7 @@ export function MountPointDialog({
 
             <div className="flex items-center gap-2 rounded-md bg-background/60 px-2 py-1.5 text-xs text-muted-foreground">
               <HardDriveIcon className="size-3 shrink-0 opacity-60" />
-              <span className="text-foreground/80">
-                {tr.pathLabel}:
-              </span>
+              <span className="text-foreground/80">{tr.pathLabel}:</span>
               <code
                 className={cn(
                   "min-w-0 flex-1 truncate font-mono",

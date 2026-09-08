@@ -19,7 +19,9 @@ function commentary(
   return { type: "commentary", commentary: text, ...extra };
 }
 
-function toolCall(extra: Partial<ProgressOutlineStep> = {}): ProgressOutlineStep {
+function toolCall(
+  extra: Partial<ProgressOutlineStep> = {},
+): ProgressOutlineStep {
   return { type: "toolCall", ...extra };
 }
 

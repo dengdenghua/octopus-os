@@ -213,7 +213,9 @@ def test_production_root_rejects_nested_symlink_alias_and_missing_grant(
         ).scope_for_actor("local:alice")
 
 
-def test_default_policy_rechecks_omv_on_every_request() -> None:
+def test_default_policy_rechecks_omv_on_every_request(monkeypatch) -> None:
+    # Revocation must be observed even on a coarse clock / the same tick.
+    monkeypatch.setattr("appliance.data_access.time.monotonic", lambda: 100.0)
     omv = _Omv()
     policy = OmvDataAccessPolicy(accounts=_Accounts(), omv=omv)
 

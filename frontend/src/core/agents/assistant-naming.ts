@@ -8,15 +8,23 @@
  * without a backend restart.
  */
 import { swallow } from "@/core/utils/log";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 
 export const ASSISTANT_NAME_KEY = "echo.assistant-name";
+function assistantNameStorageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(ASSISTANT_NAME_KEY, actor);
+}
 
 /** Default assistant name — mirrors `agents/echo/profile.jsonc`. */
 export const DEFAULT_ASSISTANT_NAME = "EchoAI";
 
 export function getAssistantDisplayName(): string {
   try {
-    const raw = window.localStorage.getItem(ASSISTANT_NAME_KEY)?.trim();
+    const raw = readActorScopedStorageValue(ASSISTANT_NAME_KEY)?.trim();
     if (raw) return raw;
   } catch (e) {
     swallow(e, "storage");
@@ -28,9 +36,9 @@ export function setAssistantDisplayName(name: string): void {
   const trimmed = name.trim();
   try {
     if (trimmed) {
-      window.localStorage.setItem(ASSISTANT_NAME_KEY, trimmed);
+      window.localStorage.setItem(assistantNameStorageKey(), trimmed);
     } else {
-      window.localStorage.removeItem(ASSISTANT_NAME_KEY);
+      window.localStorage.removeItem(assistantNameStorageKey());
     }
   } catch (e) {
     swallow(e, "storage");

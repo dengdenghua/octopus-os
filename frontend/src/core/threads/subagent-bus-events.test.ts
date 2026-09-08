@@ -128,6 +128,41 @@ describe("busEventToLiveEvent", () => {
     });
   });
 
+  it("maps only the display-safe governance snapshot", () => {
+    const e = busEventToLiveEvent(
+      ev("sub_concluded", {
+        role: "researcher",
+        ok: true,
+        governance: {
+          root_id: "turn-1",
+          input_tokens: 120,
+          output_tokens: 80,
+          tokens_used: 200,
+          cost_usd: 0.0123,
+          breaker: "open",
+          active_leases: 1,
+          token_limit: 1000,
+          cost_limit_usd: 1,
+          owner_id: "must-not-cross-the-wire",
+        },
+      }),
+      0,
+    );
+    expect(e?.governance).toEqual({
+      rootId: "turn-1",
+      inputTokens: 120,
+      outputTokens: 80,
+      tokensUsed: 200,
+      costUsd: 0.0123,
+      breaker: "open",
+      tripReason: undefined,
+      activeLeases: 1,
+      tokenLimit: 1000,
+      costLimitUsd: 1,
+    });
+    expect(e?.governance).not.toHaveProperty("ownerId");
+  });
+
   it("maps sub_incomplete to an explicit incomplete error (not success)", () => {
     const e = busEventToLiveEvent(
       ev("sub_incomplete", {

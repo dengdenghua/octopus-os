@@ -273,6 +273,9 @@ class CerebrumRuntime:
         self._reflex_router = reflex_router
         self._trace_store = trace_store
         self._task_supervisor = task_supervisor
+        # Runtime-owned attempt guards, never deserialized from user metadata.
+        self._task_execution_guards: dict[str, Any] = {}
+        self._task_execution_settled: set[str] = set()
         self._cowork_group_store = cowork_group_store
         self._collaboration_store = collaboration_store
         self._project_store = project_store
@@ -608,15 +611,19 @@ class CerebrumRuntime:
         self,
         thread_id: str,
         text: str,
+        *,
+        scope: Any = None,
     ) -> dict[str, Any] | None:
-        return await _consume_confirmed_resume_intent(self, thread_id, text)
+        return await _consume_confirmed_resume_intent(self, thread_id, text, scope=scope)
 
     async def _consume_paused_task_resume_intent(
         self,
         thread_id: str,
         text: str,
+        *,
+        scope: Any = None,
     ) -> dict[str, Any] | None:
-        return await _consume_paused_task_resume_intent(self, thread_id, text)
+        return await _consume_paused_task_resume_intent(self, thread_id, text, scope=scope)
 
     async def handle_request(
         self,

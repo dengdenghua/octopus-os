@@ -275,10 +275,7 @@ export function ModelRouterIndicator({
               </h5>
               <div className="space-y-0.5">
                 {sortedScores.map(([model, score]) => (
-                  <div
-                    key={model}
-                    className="flex items-center gap-2 text-xs"
-                  >
+                  <div key={model} className="flex items-center gap-2 text-xs">
                     <span
                       className={cn(
                         "flex-1 truncate",

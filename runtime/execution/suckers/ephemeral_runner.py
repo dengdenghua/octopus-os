@@ -589,6 +589,30 @@ def make_llm_ephemeral_runner(
             getattr(call, "context", None),
         )
 
+        _usage_recorder = (getattr(call, "context", None) or {}).get(
+            "_subagent_usage_recorder"
+        )
+
+        def _record_response_usage(response: Any, iteration: int) -> None:
+            """Forward provider usage to the host's durable turn ledger."""
+
+            if not callable(_usage_recorder) or response is None:
+                return
+            try:
+                cost_obj = getattr(response, "cost", None)
+                _usage_recorder(
+                    {
+                        "input_tokens": int(getattr(response, "input_tokens", 0) or 0),
+                        "output_tokens": int(getattr(response, "output_tokens", 0) or 0),
+                        "cost_usd": float(getattr(cost_obj, "usd", 0) or 0.0),
+                        "model": str(getattr(response, "model", "") or effective_model),
+                        "provider": str(getattr(response, "provider", "") or ""),
+                        "iteration": int(iteration),
+                    }
+                )
+            except Exception:  # noqa: BLE001 — accounting never breaks execution
+                _log.debug("ephemeral usage recorder failed", exc_info=True)
+
         # ── MAIN react-loop path (opt-in) ───────────────────────
         # The end-state model drives a sub-agent through ``stream_react_loop``
         # — the SAME machinery as the main conversation — instead of this
@@ -692,8 +716,10 @@ def make_llm_ephemeral_runner(
                                 )
                         elif event.type == "done":
                             fin = event.final
-                            if fin is not None and not accumulated:
-                                accumulated = str(getattr(fin, "text", "") or "")
+                            if fin is not None:
+                                _record_response_usage(fin, 1)
+                                if not accumulated:
+                                    accumulated = str(getattr(fin, "text", "") or "")
                             break
                 except (ConnectionError, TimeoutError, OSError, ValueError, TypeError) as exc:  # noqa: BLE001
                     _log.warning(
@@ -723,6 +749,7 @@ def make_llm_ephemeral_runner(
                     exc,
                 )
                 raise
+            _record_response_usage(resp, 1)
             return str(getattr(resp, "text", None) or "")
 
         # ── Agentic loop path ────────────────────────────────
@@ -772,6 +799,7 @@ def make_llm_ephemeral_runner(
                 system_provider=system_provider,
             )
             resp = router.call(req)
+            _record_response_usage(resp, 1)
             return str(getattr(resp, "text", None) or "")
 
         # Child→parent report lane (dsh ``tool-subagent-report``): a
@@ -876,7 +904,7 @@ def make_llm_ephemeral_runner(
                     return accumulated_text
                 text = str(getattr(resp, "text", None) or "")
                 tool_calls = list(getattr(resp, "tool_calls", []) or [])
-                int(getattr(resp, "input_tokens", 0) or 0)
+                _record_response_usage(resp, round_i + 1)
                 output_tokens_round = int(getattr(resp, "output_tokens", 0) or 0)
                 finish_reason_round = str(getattr(resp, "finish_reason", "stop") or "stop")
             else:
@@ -905,7 +933,7 @@ def make_llm_ephemeral_runner(
                         elif etype == "done":
                             fin = event.final
                             if fin is not None:
-                                int(getattr(fin, "input_tokens", 0) or 0)
+                                _record_response_usage(fin, round_i + 1)
                                 output_tokens_round = int(getattr(fin, "output_tokens", 0) or 0)
                                 finish_reason_round = str(
                                     getattr(fin, "finish_reason", "stop") or "stop"

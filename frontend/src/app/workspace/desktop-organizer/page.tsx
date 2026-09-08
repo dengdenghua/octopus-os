@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { swallow } from "@/core/utils/log";
 import {
   FolderKanbanIcon,
@@ -17,17 +17,18 @@ import {
   WorkspaceContainer,
 } from "@/components/workspace/workspace-container";
 import { useI18n } from "@/core/i18n/hooks";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 
 const DESKTOP_ORGANIZER_ENABLED_KEY = "echo:desktop-organizer-enabled";
 
 export default function DesktopOrganizerPage() {
   const { t } = useI18n();
+  const { search } = useLocation();
   const { confirm, confirmDialog } = useConfirmDialog();
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState<"install" | "remove" | null>(null);
   const [contextMenuMessage, setContextMenuMessage] = useState("");
-  const isElectron =
-    typeof window !== "undefined" && !!window.echo?.isElectron;
+  const isElectron = typeof window !== "undefined" && !!window.echo?.isElectron;
 
   useEffect(() => {
     try {
@@ -177,13 +178,20 @@ export default function DesktopOrganizerPage() {
             <div className="flex flex-wrap gap-3">
               {enabled ? (
                 <Button asChild>
-                  <Link to="/desktop">{t.desktopOrganizerPage.openAssistant}</Link>
+                  <Link to="/desktop">
+                    {t.desktopOrganizerPage.openAssistant}
+                  </Link>
                 </Button>
               ) : (
                 <Button disabled>{t.desktopOrganizerPage.openAssistant}</Button>
               )}
               <Button variant="outline" asChild>
-                <Link to="/workspace/realtime/new">
+                <Link
+                  to={preserveWorkbenchPresentation(
+                    "/workspace/realtime/new",
+                    search,
+                  )}
+                >
                   {t.desktopOrganizerPage.backToWorkspace}
                 </Link>
               </Button>

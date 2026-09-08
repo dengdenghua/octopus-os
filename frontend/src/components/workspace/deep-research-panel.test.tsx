@@ -14,6 +14,7 @@ import {
 const fetchBatchMock = vi.fn();
 const streamBatchMock = vi.fn();
 const fetchDeepResearchJobMock = vi.fn();
+const fetchDeepResearchRecoverySnapshotMock = vi.fn();
 let streamCallbacks: BatchStreamCallbacks | null = null;
 
 vi.mock("@/core/parallel-agents/api", async () => {
@@ -36,6 +37,8 @@ vi.mock("@/core/research/api", async () => {
     ...actual,
     fetchDeepResearchJob: (...args: unknown[]) =>
       fetchDeepResearchJobMock(...args),
+    fetchDeepResearchRecoverySnapshot: (...args: unknown[]) =>
+      fetchDeepResearchRecoverySnapshotMock(...args),
   };
 });
 
@@ -44,6 +47,7 @@ describe("<DeepResearchPanel /> route decisions", () => {
     fetchBatchMock.mockReset();
     streamBatchMock.mockReset();
     fetchDeepResearchJobMock.mockReset();
+    fetchDeepResearchRecoverySnapshotMock.mockReset();
     streamCallbacks = null;
   });
 
@@ -172,6 +176,83 @@ describe("<DeepResearchPanel /> route decisions", () => {
 
     expect(await screen.findByText("Route blocked")).toBeInTheDocument();
     expect(screen.getByText("persisted route decision")).toBeInTheDocument();
+  });
+
+  it("renders the durable recovery view when the live batch was lost", async () => {
+    fetchBatchMock.mockResolvedValue(null);
+    fetchDeepResearchRecoverySnapshotMock.mockResolvedValue({
+      schema: "echo.parallel_batch_recovery_snapshot.v1",
+      batch_id: "batch_1",
+      host_task_id: "parallel-batch:batch_1",
+      status: "running",
+      terminal: false,
+      resume_available: false,
+      created_at: "2026-06-19T00:00:00Z",
+      completed_at: null,
+      task_count: 1,
+      completed_tasks: 0,
+      failed_tasks: 0,
+      cancelled_tasks: 0,
+      running_tasks: 1,
+      pending_tasks: 0,
+      tasks: [
+        {
+          task_id: "step_1",
+          status: "running",
+          subagent_name: "virtual-researcher",
+          depends_on: [],
+          priority: 0,
+          write_paths: [],
+          description_preview: "Durable worker",
+          result_preview: null,
+          error: null,
+          started_at: "2026-06-19T00:00:00Z",
+          completed_at: null,
+          duration_seconds: null,
+          artifact_paths: [],
+          work_contract: null,
+          route_decision: {},
+        },
+      ],
+      dag: { step_1: [] },
+      plan: null,
+      event_sequence: { event_count: 0 },
+      artifact_paths: [],
+      conflicts: [],
+      completion_receipt: {},
+      file_write_observability: {},
+      coordination_summary: {},
+      worker_observability: {},
+      recovery_hints: {
+        rerunnable_task_ids: ["step_1"],
+        running_task_ids: ["step_1"],
+      },
+      safety: {
+        raw_subagent_outputs_included: false,
+        event_payloads_included: false,
+        owner_id_included: false,
+        durable_only: true,
+      },
+    });
+    streamBatchMock.mockReturnValue(() => undefined);
+
+    renderWithProviders(<DeepResearchPanel job={researchJob()} />);
+
+    await waitFor(() =>
+      expect(fetchDeepResearchRecoverySnapshotMock).toHaveBeenCalledWith(
+        "research_1",
+      ),
+    );
+    expect(
+      await screen.findByText("Durable recovery view"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Worker output is withheld; inspect the recovery queue before resuming.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("0/1 completed")).toBeInTheDocument();
+    expect(screen.getAllByText("running").length).toBeGreaterThan(0);
   });
 
   it("renders cancelled batch completion as an error state, not a green done event", async () => {

@@ -68,3 +68,15 @@ def test_dynamic_catalog_cold_returns_none_without_blocking(monkeypatch) -> None
     monkeypatch.setattr(hf, "_maybe_refresh", lambda: None)
     assert hf.dynamic_catalog() is None
 
+
+def test_privacy_blocks_catalog_network_and_background_refresh(monkeypatch):
+    from unittest.mock import Mock
+
+    from runtime.safety import privacy
+
+    monkeypatch.setattr(privacy, "privacy_enabled", lambda: True)
+    thread = Mock()
+    monkeypatch.setattr(hf.threading, "Thread", thread)
+    hf._maybe_refresh()
+    thread.assert_not_called()
+    assert hf._get_json("https://huggingface.co/api/models", 1) is None

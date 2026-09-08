@@ -69,9 +69,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ACTIVE_AGENT_KEY, useActiveAgentId } from "@/core/agents/active";
+import { activeAgentStorageKey, useActiveAgentId } from "@/core/agents/active";
 import { emitAgentChanged } from "@/core/events";
 import { taskWorkspaceRoute } from "@/core/router/task-workspace-route";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import {
   taskCollaboratorRouteForLeader,
   writeTaskCollaboratorPreset,
@@ -153,6 +154,7 @@ const ECHO_CHARACTER_DISPLAY_NAMES = new Set([
 ]);
 
 const BUILTIN_APP_ICONS = {
+  database: FolderKanbanIcon,
   projects: FolderKanbanIcon,
   trading: TrendingUpIcon,
   design: PaletteIcon,
@@ -163,6 +165,7 @@ const BUILTIN_APP_ICONS = {
 } satisfies Record<WorkbenchBuiltinIcon, typeof LayoutGridIcon>;
 
 const BUILTIN_APP_ICON_STYLES = {
+  database: "bg-blue-500/10 text-blue-600",
   projects: "bg-blue-500/10 text-blue-600 ring-blue-500/15 dark:text-blue-400",
   trading:
     "bg-emerald-500/10 text-emerald-600 ring-emerald-500/15 dark:text-emerald-400",
@@ -407,7 +410,12 @@ export function AgentsTab({
       label: scenario.title,
       openPicker: false,
     });
-    navigate(taskCollaboratorRouteForLeader(leader.name));
+    navigate(
+      preserveWorkbenchPresentation(
+        taskCollaboratorRouteForLeader(leader.name),
+        location.search,
+      ),
+    );
   };
 
   useEffect(() => {
@@ -1577,7 +1585,7 @@ export function AgentWorldUnified() {
     if (selectedAgent) return;
     let activeName = "";
     try {
-      activeName = window.localStorage.getItem(ACTIVE_AGENT_KEY) ?? "";
+      activeName = window.localStorage.getItem(activeAgentStorageKey()) ?? "";
     } catch (e) {
       swallow(e, "storage");
     }
@@ -1603,9 +1611,14 @@ export function AgentWorldUnified() {
     void fetchAgents();
   }, [fetchAgents, queryClient]);
 
-  const chatRouteForAgent = useCallback((agent: AgentWorldAgent | null) => {
-    return taskWorkspaceRoute({ agentId: agent?.name });
-  }, []);
+  const chatRouteForAgent = useCallback(
+    (agent: AgentWorldAgent | null) =>
+      preserveWorkbenchPresentation(
+        taskWorkspaceRoute({ agentId: agent?.name }),
+        location.search,
+      ),
+    [location.search],
+  );
 
   const navigateToHubSection = useCallback(
     (section: HubMarketSection) => {
@@ -1621,9 +1634,13 @@ export function AgentWorldUnified() {
       }
       if (section === "skills") params.set("tab", "skills");
       const query = params.toString();
-      navigate(`/workspace/agents${query ? `?${query}` : ""}`, {
-        replace: true,
-      });
+      navigate(
+        preserveWorkbenchPresentation(
+          `/workspace/agents${query ? `?${query}` : ""}`,
+          location.search,
+        ),
+        { replace: true },
+      );
     },
     [location.search, navigate],
   );
@@ -1635,9 +1652,13 @@ export function AgentWorldUnified() {
       params.set("view", view);
       params.delete("connect");
       const query = params.toString();
-      navigate(`/workspace/agents${query ? `?${query}` : ""}`, {
-        replace: true,
-      });
+      navigate(
+        preserveWorkbenchPresentation(
+          `/workspace/agents${query ? `?${query}` : ""}`,
+          location.search,
+        ),
+        { replace: true },
+      );
     },
     [location.search, navigate],
   );
@@ -1731,7 +1752,14 @@ export function AgentWorldUnified() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-44">
                     <DropdownMenuItem
-                      onSelect={() => navigate("/workspace/agents/new")}
+                      onSelect={() =>
+                        navigate(
+                          preserveWorkbenchPresentation(
+                            "/workspace/agents/new",
+                            location.search,
+                          ),
+                        )
+                      }
                     >
                       <BotIcon className="size-4" />
                       创建 AI 成员
@@ -1750,7 +1778,14 @@ export function AgentWorldUnified() {
                 onSelectAgent={handleSelectAgent}
                 onInstallChange={handleInstallChange}
                 onRetry={() => void fetchAgents()}
-                onCreateAgent={() => navigate("/workspace/agents/new")}
+                onCreateAgent={() =>
+                  navigate(
+                    preserveWorkbenchPresentation(
+                      "/workspace/agents/new",
+                      location.search,
+                    ),
+                  )
+                }
                 showManagementActions={false}
                 sceneOnly
               />
@@ -1859,7 +1894,12 @@ export function AgentWorldUnified() {
                             disabled={isMutating}
                             onClick={() => {
                               if (isInstalled && isRuntimeEnabled) {
-                                navigate(app.workspaceRoute);
+                                navigate(
+                                  preserveWorkbenchPresentation(
+                                    app.workspaceRoute,
+                                    location.search,
+                                  ),
+                                );
                               } else if (
                                 isInstalled &&
                                 !isBroken &&
@@ -2150,7 +2190,14 @@ export function AgentWorldUnified() {
               }
             }}
             onSelectAgent={handleSwitchAgent}
-            onCreateAgent={() => navigate("/workspace/agents/new?return=hud")}
+            onCreateAgent={() =>
+              navigate(
+                preserveWorkbenchPresentation(
+                  "/workspace/agents/new?return=hud",
+                  location.search,
+                ),
+              )
+            }
           />
         </Suspense>
       ) : null}

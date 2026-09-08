@@ -44,6 +44,7 @@ from runtime.platform.models.llm import (
 )
 from runtime.platform.process.session import current_session
 from runtime.safety.auth.scope import TenantScope
+from runtime.safety.privacy import deny_private_operation
 
 from .models import DEFAULT_USER_AGENT, LLMResponseFormatError
 from .provider import Provider, ProviderCapabilities
@@ -164,6 +165,7 @@ class ChatGPTSubscriptionModelRouter(Provider, ModelRouter):
         return final
 
     def call_stream(self, request: ModelRequest) -> Iterator[ModelStreamEvent]:
+        deny_private_operation("chatgpt_subscription_inference")
         model = _upstream_model(request.model or self.default_model)
         payload = _build_responses_payload(request, model=model)
         with trace_stage(

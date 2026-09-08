@@ -8,6 +8,12 @@ from pathlib import Path
 
 import pytest
 
+if os.name == "nt":
+    pytest.skip(
+        "OMV platform preflight validates Linux package and ownership state",
+        allow_module_level=True,
+    )
+
 _REPOSITORY = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPOSITORY / "deploy" / "omv" / "platform_preflight.py"
 _SPEC = importlib.util.spec_from_file_location("echo_omv_platform_preflight", _SCRIPT)

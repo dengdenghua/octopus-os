@@ -105,7 +105,9 @@ function verifyAsar(archive, sourceRoot) {
   }
   const entries = asar
     .listPackage(archive)
-    .map((entry) => entry.replace(/^\//, ""));
+    // @electron/asar emits platform-native separators. The package contract
+    // is archive-relative POSIX paths so the same verifier works on Windows.
+    .map((entry) => entry.replace(/\\/g, "/").replace(/^\/+/, ""));
   for (const entry of [
     "dist/index.html",
     "electron/main.cjs",

@@ -18,8 +18,8 @@ SOURCE_TREE="$(git -C "$REPO_ROOT" rev-parse 'HEAD^{tree}')"
 PYTHON_RUNTIME="$(python3 -c \
   'import platform,sys; print(f"{sys.implementation.cache_tag} {platform.system().lower()} {platform.machine().lower()}")')"
 case "$PYTHON_RUNTIME" in
-  cpython-3??\ linux\ x86_64) ;;
-  *) die "正式 amd64 ISO 只接受 Linux x86_64 CPython 3.x wheelhouse: $PYTHON_RUNTIME" ;;
+  cpython-313\ linux\ x86_64) ;;
+  *) die "正式 Debian 13 amd64 ISO 只接受 CPython 3.13 wheelhouse: $PYTHON_RUNTIME" ;;
 esac
 
 OUT_PARENT="$(dirname "$OUT_DIR")"

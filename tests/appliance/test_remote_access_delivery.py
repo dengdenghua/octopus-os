@@ -5,7 +5,12 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
+
+POSIX_SHELL_TEST = pytest.mark.skipif(
+    os.name == "nt", reason="remote access startup script requires a POSIX shell"
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 DEPLOYMENT = ROOT / "deploy" / "appliance"
@@ -66,6 +71,7 @@ def test_tailscale_serve_config_terminates_https_and_only_proxies_echo() -> None
     }
 
 
+@POSIX_SHELL_TEST
 def test_remote_access_startup_validates_secret_without_printing_it(tmp_path: Path) -> None:
     auth_key = tmp_path / "tailscale-auth.key"
     auth_key.write_text("tskey-auth-unit-test-private-value")
@@ -105,6 +111,7 @@ def test_remote_access_startup_validates_secret_without_printing_it(tmp_path: Pa
     )
 
 
+@POSIX_SHELL_TEST
 def test_remote_access_startup_rejects_weak_secret_permissions(tmp_path: Path) -> None:
     auth_key = tmp_path / "tailscale-auth.key"
     auth_key.write_text("tskey-auth-unit-test-private-value")

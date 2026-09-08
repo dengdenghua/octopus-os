@@ -15,7 +15,13 @@ import { useEffect, useRef } from "react";
  * this hook exists purely for its side effect. `PetMood` is kept as the return
  * type for callers that still want to reflect run state locally.
  */
-export type PetMood = "idle" | "thinking" | "working" | "waiting" | "success" | "error";
+export type PetMood =
+  | "idle"
+  | "thinking"
+  | "working"
+  | "waiting"
+  | "success"
+  | "error";
 
 export type PetAgentInput = {
   /** "running" | "waiting" | "error" | null — already derived by the page. */
@@ -41,7 +47,8 @@ function petEventFor(input: PetAgentInput): PetEventName | null {
   if (input.failed) return "error";
   if (input.runState === "waiting") return "waiting_user";
   if (input.runState === "error") return "error";
-  if (input.runState === "running") return input.streaming ? "thinking" : "working";
+  if (input.runState === "running")
+    return input.streaming ? "thinking" : "working";
   // Settled + no longer running → success (only when an answer completed).
   if (input.settled) return "success";
   return "idle";

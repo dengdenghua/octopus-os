@@ -6,11 +6,17 @@
  */
 
 import { swallow } from "@/core/utils/log";
+import { currentActorId } from "@/core/auth/api";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 import {
   DEFAULT_PRIMARY_AGENT_ID,
   isPrimaryPersonaAgentId,
 } from "@/core/agents/persona-policy";
 import { useEffect, useCallback, useRef } from "react";
+
+function activeAgentStorageKey(): string {
+  return actorScopedStorageKey("echo.active-agent.v2", currentActorId());
+}
 
 // 事件类型定义
 export interface EventMap {
@@ -206,10 +212,10 @@ export function emitAgentChanged(
   // must not replace the persisted lead for the next task.
   try {
     if (isPrimaryPersonaAgentId(name)) {
-      window.localStorage.setItem("echo.active-agent", name);
+      window.localStorage.setItem(activeAgentStorageKey(), name);
     } else if (source !== "thread") {
       window.localStorage.setItem(
-        "echo.active-agent",
+        activeAgentStorageKey(),
         DEFAULT_PRIMARY_AGENT_ID,
       );
     }

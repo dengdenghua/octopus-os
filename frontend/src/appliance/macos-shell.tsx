@@ -304,6 +304,7 @@ export function MacMenuBar({
   onLockScreen,
   onSystemAction,
   notificationCount = 0,
+  modelStatus,
 }: {
   activeApp?: string;
   controlCenterOpen: boolean;
@@ -324,6 +325,7 @@ export function MacMenuBar({
   onLockScreen: () => void;
   onSystemAction: (action: MacSystemAction) => void;
   notificationCount?: number;
+  modelStatus?: ReactNode;
 }) {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -561,6 +563,7 @@ export function MacMenuBar({
       </div>
 
       <div className="mac-menu-right">
+        {modelStatus}
         <button
           type="button"
           className={cn("mac-status-icon", liquidGlassOpen && "is-active")}
@@ -575,6 +578,7 @@ export function MacMenuBar({
           className="mac-status-icon"
           aria-label={batteryLabel}
           title={batteryLabel}
+          onClick={onToggleControlCenter}
         >
           <BatteryFullIcon className="size-[15px]" />
         </button>
@@ -588,6 +592,7 @@ export function MacMenuBar({
           )}
           aria-label={wifiLabel}
           title={wifiLabel}
+          onClick={onToggleControlCenter}
         >
           <WifiIcon className="size-[15px]" />
         </button>
@@ -1026,22 +1031,22 @@ export function MacDesktopWidgets({
     checking: {
       title: "正在连接 Echo",
       detail: "正在检查本机 Agent Runtime",
-      label: "正在连接 Echo Agent，打开工作台",
+      label: "正在连接 Echo Agent，打开 Agent",
     },
     ready: {
       title: "Echo Agent 在线",
       detail: "点击开始新的 Agent 会话",
-      label: "Echo Agent 在线，打开工作台",
+      label: "Echo Agent 在线，开始新的 Agent 会话",
     },
     "restart-required": {
       title: "Echo Agent 等待重启",
       detail: "Runtime 更新将在重启后生效",
-      label: "Echo Agent 等待重启，打开工作台",
+      label: "Echo Agent 等待重启，打开 Agent",
     },
     unavailable: {
       title: "Echo Agent 未连接",
-      detail: "点击打开工作台检查连接",
-      label: "Echo Agent 未连接，打开工作台检查连接",
+      detail: "点击打开 Agent 检查连接",
+      label: "Echo Agent 未连接，打开 Agent 检查连接",
     },
   };
   const statusCopy = agentCopy[agentHealth.state];
@@ -1049,12 +1054,12 @@ export function MacDesktopWidgets({
     if (agentHealth.verifiedBundle && agentHealth.sourceId) {
       statusCopy.title = "Echo Agent 已验证";
       statusCopy.detail = `${agentHealth.version ? `v${agentHealth.version} · ` : ""}${agentHealth.sourceId.slice(0, 8)}`;
-      statusCopy.label = `${statusCopy.title}，${statusCopy.detail}，打开工作台`;
+      statusCopy.label = `${statusCopy.title}，${statusCopy.detail}，开始新的 Agent 会话`;
     } else {
       statusCopy.detail = agentHealth.version
         ? `v${agentHealth.version} · 来源未验证`
         : "Runtime 版本未知 · 来源未验证";
-      statusCopy.label = `${statusCopy.title}，${statusCopy.detail}，打开工作台`;
+      statusCopy.label = `${statusCopy.title}，${statusCopy.detail}，开始新的 Agent 会话`;
     }
   }
 
@@ -1081,6 +1086,7 @@ export function MacDesktopWidgets({
         className={cn("mac-agent-widget", `is-${agentHealth.state}`)}
         data-liquid-surface="thick-dark"
         data-agent-status={agentHealth.state}
+        data-agent-entry="primary"
         onClick={onOpenWorkspace}
         aria-label={statusCopy.label}
       >
@@ -1241,6 +1247,7 @@ export function MacLaunchpad({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="搜索"
+          aria-label="搜索应用"
           autoFocus
         />
       </div>

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -17,6 +18,10 @@ from runtime.platform.models.model_provider_plugin import (
     ModelProviderPluginManager,
     model_provider_entry_has_key,
     resolve_model_provider_api_key,
+)
+from runtime.platform.models.provider_errors import (
+    MODEL_UNAVAILABLE_MESSAGE,
+    ModelProviderHTTPError,
 )
 from runtime.safety.auth import Identity, IdentityStore
 from runtime.sensing.gateway.capability_router import create_capability_router
@@ -115,6 +120,110 @@ def test_validate_discovers_only_current_free_models(monkeypatch) -> None:
         "future-coder-free",
     ]
     assert "kimi-k3" not in result["models"]
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected_status", "expected_message"),
+    [
+        (401, "invalid credential: synthetic-secret", 401, "凭据无效"),
+        (429, "rate limited", 429, "请求受限"),
+        (404, "model_not_found", 400, MODEL_UNAVAILABLE_MESSAGE),
+        (500, "upstream path /private/token", 502, "暂时无法连接"),
+    ],
+)
+def test_validate_classifies_provider_failures_without_leaking_response(
+    monkeypatch, status, body, expected_status, expected_message
+) -> None:
+    request = httpx.Request("GET", "https://opencode.ai/zen/v1/models")
+    response = httpx.Response(status, request=request, text=body)
+    monkeypatch.setattr(httpx, "get", lambda *_args, **_kwargs: response)
+    manager = ModelProviderPluginManager(
+        custom_models={},
+        lock=threading.RLock(),
+        save=lambda *_ids: None,
+        unregister_entry=lambda *_args, **_kwargs: False,
+        rebuild_routes=lambda: {},
+        credential_store=_Credentials(),
+    )
+
+    with pytest.raises(ModelProviderHTTPError) as caught:
+        manager.validate(_item(), tokens={"api_key": "zen-secret"})
+
+    code, message = caught.value.public_failure()
+    assert code == expected_status
+    assert expected_message in message
+    assert "synthetic-secret" not in str(caught.value)
+    assert "private/token" not in message
+
+
+def test_validate_classifies_transport_failure_as_retryable(monkeypatch) -> None:
+    request = httpx.Request("GET", "https://opencode.ai/zen/v1/models")
+
+    def fail(*_args: Any, **_kwargs: Any) -> None:
+        raise httpx.ConnectError("secret endpoint", request=request)
+
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        fail,
+    )
+    manager = ModelProviderPluginManager(
+        custom_models={},
+        lock=threading.RLock(),
+        save=lambda *_ids: None,
+        unregister_entry=lambda *_args, **_kwargs: False,
+        rebuild_routes=lambda: {},
+        credential_store=_Credentials(),
+    )
+
+    with pytest.raises(ModelProviderHTTPError) as caught:
+        manager.validate(_item(), tokens={"api_key": "zen-secret"})
+
+    assert caught.value.public_failure()[0] == 502
+    assert "secret endpoint" not in caught.value.public_failure()[1]
+
+
+@pytest.mark.parametrize(
+    ("provider_status", "http_status"),
+    [(401, 400), (502, 503)],
+)
+def test_connect_projects_typed_provider_failure_to_local_recovery_response(
+    provider_status, http_status
+) -> None:
+    class _Registry:
+        def get(self, cid: str) -> dict[str, Any] | None:
+            return {**_item(), "id": cid}
+
+        @staticmethod
+        def _public(item: dict[str, Any]) -> dict[str, Any]:
+            return item
+
+        @staticmethod
+        def require_permissions(_cid: str) -> None:
+            return None
+
+        @staticmethod
+        def connect(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("provider failure must stop before connector connect")
+
+    class _Provider:
+        @staticmethod
+        def validate(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise ModelProviderHTTPError(status_code=provider_status)
+
+    app = FastAPI()
+    app.include_router(
+        create_capability_router(
+            registry=_Registry(),
+            model_provider_plugins=_Provider(),
+            require_auth=False,
+        )
+    )
+    response = TestClient(app).post("/api/capabilities/opencode-zen/connect")
+
+    assert response.status_code == http_status
+    assert "模型服务" in response.json()["detail"]
+    assert "model provider request failed" not in response.text
 
 
 def test_community_provider_discovers_all_models_and_uses_custom_base_url(monkeypatch) -> None:
@@ -356,4 +465,3 @@ def test_plugin_connect_hot_registers_and_disconnect_removes_routes(
     assert disconnected.status_code == 200
     assert config.custom_models == {}
     assert "opencode-zen" not in dispatcher.routes
-

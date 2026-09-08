@@ -21,11 +21,11 @@ import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from datetime import time as datetime_time
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -42,7 +42,14 @@ from .upstream_url import secure_upstream_origin
 
 API_PREFIX = "/api/plugins/paper-trading/quotes"
 _CODE_PATTERN = re.compile(r"\d{6}")
-_SHANGHAI = ZoneInfo("Asia/Shanghai")
+try:
+    _SHANGHAI = ZoneInfo("Asia/Shanghai")
+except ZoneInfoNotFoundError:
+    # The optional plugin must remain importable in the minimal Windows
+    # development runtime, where the IANA tzdata package is often absent.
+    # Shanghai has no DST; this fixed offset preserves the documented market
+    # schedule without silently changing the public timezone label.
+    _SHANGHAI = timezone(timedelta(hours=8), "Asia/Shanghai")
 
 
 def _bounded_int(

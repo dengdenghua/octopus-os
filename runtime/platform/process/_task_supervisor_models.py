@@ -141,10 +141,13 @@ class TaskCapabilityManifest(BaseModel):
 
 
 class TaskLease(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", allow_inf_nan=False)
 
     holder_id: str
-    token: int = Field(ge=1)
+    token: int = Field(ge=1, strict=True)
+    # Old records remain readable without this field. New leases always get a
+    # fresh identity so deleting/recreating the store cannot recycle authority.
+    incarnation: str | None = Field(default=None, strict=True, pattern=r"^[0-9a-f]{32}$")
     acquired_at: str = Field(default_factory=_now_iso)
     heartbeat_at: str = Field(default_factory=_now_iso)
     expires_at: float = 0.0
@@ -171,6 +174,9 @@ class TaskRunRecord(BaseModel):
     workspace_path: str | None = None
     capabilities: TaskCapabilityManifest = Field(default_factory=TaskCapabilityManifest)
     lease: TaskLease | None = None
+    # One-shot permission issued only by a successful server-side approval.
+    # This is separate from caller metadata and bound to the existing epoch.
+    approval_resume_lease_token: int | None = Field(default=None, strict=True, ge=1)
     terminal_reason: str = ""
     latest_checkpoint_id: str | int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

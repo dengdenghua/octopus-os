@@ -33,12 +33,12 @@ afterEach(() => {
 
 describe("desktop renderer origin", () => {
   it("accepts only the fixed app scheme and host", () => {
-    expect(
-      desktopProtocol.isDesktopAppURL("echo-app://app/index.html"),
-    ).toBe(true);
-    expect(
-      desktopProtocol.isDesktopAppURL("echo-app://evil/index.html"),
-    ).toBe(false);
+    expect(desktopProtocol.isDesktopAppURL("echo-app://app/index.html")).toBe(
+      true,
+    );
+    expect(desktopProtocol.isDesktopAppURL("echo-app://evil/index.html")).toBe(
+      false,
+    );
     expect(desktopProtocol.isDesktopAppURL("https://app/index.html")).toBe(
       false,
     );
@@ -198,8 +198,6 @@ describe("desktop protocol handler", () => {
     );
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe(
-      "echo-app://app/api/health/",
-    );
+    expect(response.headers.get("location")).toBe("echo-app://app/api/health/");
   });
 });

@@ -1,11 +1,19 @@
 import {
-  chmodSync,
-  constants,
-  copyFileSync,
+  closeSync,
   existsSync,
+  fsyncSync,
+  linkSync,
   mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  rmdirSync,
+  unlinkSync,
+  writeFileSync,
 } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+
+import { protectDevStagingDirectory } from "./dev-private-directory.mjs";
 
 /**
  * Seed the isolated appliance development data directory with the Agent model
@@ -16,13 +24,31 @@ export function seedDevCustomModels({ sourcePath, targetPath }) {
   if (!existsSync(sourcePath) || existsSync(targetPath)) return false;
 
   mkdirSync(dirname(targetPath), { recursive: true, mode: 0o700 });
+  const staging = mkdtempSync(join(dirname(targetPath), ".echo-model-seed-"));
+  const stagedPath = join(staging, "models.json");
   try {
-    copyFileSync(sourcePath, targetPath, constants.COPYFILE_EXCL);
-  } catch (error) {
-    // A concurrent launcher may have completed the same one-time seed first.
-    if (error?.code === "EEXIST") return false;
-    throw error;
+    protectDevStagingDirectory(staging);
+    // Create a new file so Windows inherits the private staging ACL rather
+    // than importing potentially broader source permissions via CopyFile.
+    const descriptor = openSync(stagedPath, "wx", 0o600);
+    try {
+      writeFileSync(descriptor, readFileSync(sourcePath));
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+    try {
+      // Publish the complete inode without replacing an existing destination.
+      // Unsupported filesystems fail closed instead of falling back to a copy
+      // that could expose partially written credentials.
+      linkSync(stagedPath, targetPath);
+    } catch (error) {
+      if (error?.code === "EEXIST") return false;
+      throw error;
+    }
+    return true;
+  } finally {
+    if (existsSync(stagedPath)) unlinkSync(stagedPath);
+    rmdirSync(staging);
   }
-  chmodSync(targetPath, 0o600);
-  return true;
 }

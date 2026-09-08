@@ -36,6 +36,7 @@ _MIN_NAS_TRANSFER_TEST_BYTES = 16 * 1024 * 1024
 _MAX_NAS_TRANSFER_TEST_BYTES = 10 * 1024**3
 _NAS_TRANSFER_PATTERN = hashlib.sha256(b"Echo OS NAS transfer verification v1").digest()
 _MAX_FAMILY_FIXTURE_BYTES = 32 * 1024
+_KERNEL_RELEASE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._+~-]{0,127}$")
 
 
 class VerificationError(RuntimeError):
@@ -478,6 +479,57 @@ def _assert_runtime_architecture(container: str, expected: str | None) -> str:
     if expected is not None and container_arch != expected:
         raise VerificationError(f"appliance architecture is {container_arch}, expected {expected}")
     return container_arch
+
+
+def _assert_zfs_kernel_runtime(
+    *,
+    module_path: Path = Path("/sys/module/zfs"),
+    uname_path: Path = Path("/usr/bin/uname"),
+    modinfo_path: Path = Path("/usr/sbin/modinfo"),
+    systemctl_path: Path = Path("/usr/bin/systemctl"),
+    zpool_path: Path = Path("/usr/sbin/zpool"),
+    command_runner: Callable[[list[str]], subprocess.CompletedProcess[str]] | None = None,
+) -> dict[str, Any]:
+    """Fail closed unless userspace and the running kernel can both use ZFS."""
+
+    runner = command_runner or (
+        lambda command: subprocess.run(  # nosec B603
+            command,
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=15,
+        )
+    )
+
+    kernel_result = runner([str(uname_path), "-r"])
+    kernel_release = kernel_result.stdout.strip() if isinstance(kernel_result.stdout, str) else ""
+    if kernel_result.returncode != 0 or _KERNEL_RELEASE.fullmatch(kernel_release) is None:
+        raise VerificationError("running kernel release could not be determined safely")
+
+    module_result = runner([str(modinfo_path), "-k", kernel_release, "zfs"])
+    if module_result.returncode != 0:
+        raise VerificationError(
+            f"ZFS kernel module is unavailable for running kernel {kernel_release}"
+        )
+    if not module_path.is_dir():
+        raise VerificationError("ZFS kernel module is installed but not loaded")
+
+    service_result = runner([str(systemctl_path), "is-active", "zfs-load-module.service"])
+    service_state = service_result.stdout.strip() if isinstance(service_result.stdout, str) else ""
+    if service_result.returncode != 0 or service_state != "active":
+        raise VerificationError("zfs-load-module.service is not active")
+
+    zpool_result = runner([str(zpool_path), "list", "-H", "-o", "name"])
+    if zpool_result.returncode != 0:
+        raise VerificationError("ZFS userspace cannot communicate with the running kernel")
+    return {
+        "kernelRelease": kernel_release,
+        "moduleInstalled": True,
+        "moduleLoaded": True,
+        "loadServiceActive": True,
+        "kernelInterfaceReady": True,
+    }
 
 
 def _assert_permanent_privilege_drop(
@@ -3783,6 +3835,9 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     _assert_runtime_identity(args.main_container, args.expected_uid, args.expected_gid)
     _assert_nonroot_runtime_identity(args.proxy_container)
     runtime_arch = _assert_runtime_architecture(args.main_container, args.expected_arch)
+    zfs_runtime_result = (
+        _assert_zfs_kernel_runtime() if bool(getattr(args, "require_zfs_runtime", False)) else None
+    )
     _assert_state_owner(args.main_container, args.expected_uid, args.expected_gid)
     _assert_runtime_secret_indirection(args.main_container)
     _assert_internal_proxy_policy(args.main_container, main_id)
@@ -3957,6 +4012,8 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         result["nas_transfer"] = nas_transfer_result
     if family_isolation_result is not None:
         result["family_isolation"] = family_isolation_result
+    if zfs_runtime_result is not None:
+        result["zfs_runtime"] = zfs_runtime_result
     return result
 
 
@@ -3971,6 +4028,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-arch", choices=("amd64", "arm64"))
     parser.add_argument("--wait-seconds", type=float, default=180)
     parser.add_argument("--require-clean-bundle", action="store_true")
+    parser.add_argument(
+        "--require-zfs-runtime",
+        action="store_true",
+        help=(
+            "fail unless the running kernel has a loaded matching ZFS module, the "
+            "load service is active, and zpool can use the kernel interface"
+        ),
+    )
     parser.add_argument(
         "--nas-transfer-test-bytes",
         type=int,

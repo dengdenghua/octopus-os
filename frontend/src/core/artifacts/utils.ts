@@ -9,6 +9,71 @@ export type WorkspaceOutputArea =
   | "upload";
 
 const WORKSPACE_OUTPUT_PREFIX = "workspace-output:";
+const WORKSPACE_RESOURCE_PREFIX = "workspace-file:v1:";
+
+function encodeWorkspaceResourceSegment(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function workspaceResourceId({
+  threadId,
+  area,
+  relativePath,
+}: {
+  threadId: string;
+  area: WorkspaceOutputArea;
+  relativePath: string;
+}): string {
+  return `${WORKSPACE_RESOURCE_PREFIX}${encodeWorkspaceResourceSegment(threadId)}:${encodeWorkspaceResourceSegment(area)}:${encodeWorkspaceResourceSegment(relativePath.replace(/^\/+/, ""))}`;
+}
+
+export function parseWorkspaceResourceId(value: string): {
+  threadId: string;
+  area: WorkspaceOutputArea;
+  relativePath: string;
+} | null {
+  if (!value.startsWith(WORKSPACE_RESOURCE_PREFIX)) return null;
+  const parts = value.split(":");
+  if (parts.length !== 5 || parts[0] !== "workspace-file" || parts[1] !== "v1")
+    return null;
+  const decode = (segment: string) => {
+    if (!/^[A-Za-z0-9_-]+$/.test(segment)) return null;
+    try {
+      const padded =
+        segment.replace(/-/g, "+").replace(/_/g, "/") +
+        "=".repeat((4 - (segment.length % 4)) % 4);
+      const binary = atob(padded);
+      return new TextDecoder().decode(
+        Uint8Array.from(binary, (char) => char.charCodeAt(0)),
+      );
+    } catch {
+      return null;
+    }
+  };
+  const threadId = decode(parts[2]!);
+  const area = decode(parts[3]!);
+  const relativePath = decode(parts[4]!);
+  if (
+    !threadId ||
+    !area ||
+    !relativePath ||
+    !["output", "stages", "final", "deploy", "upload"].includes(area)
+  )
+    return null;
+  if (
+    relativePath
+      .split("/")
+      .some((part) => !part || part === "." || part === "..")
+  )
+    return null;
+  return { threadId, area: area as WorkspaceOutputArea, relativePath };
+}
 
 export function workspaceOutputRef({
   area,
@@ -37,7 +102,11 @@ export function parseWorkspaceOutputRef(
 }
 
 export function artifactDisplayPath(filepath: string) {
-  return parseWorkspaceOutputRef(filepath)?.relativePath ?? filepath;
+  return (
+    parseWorkspaceOutputRef(filepath)?.relativePath ??
+    parseWorkspaceResourceId(filepath)?.relativePath ??
+    filepath
+  );
 }
 
 /**
@@ -50,6 +119,10 @@ export function normalizeWorkspaceArtifactRef(
   filepath: string,
   threadId?: string,
 ) {
+  const resource = parseWorkspaceResourceId(filepath);
+  if (resource && (!threadId || resource.threadId === threadId)) {
+    return workspaceOutputRef(resource);
+  }
   if (!threadId || parseWorkspaceOutputRef(filepath)) return filepath;
   const normalizedPath = filepath.replaceAll("\\", "/");
   const relativeOutputMatch = normalizedPath.match(
@@ -95,12 +168,11 @@ export function normalizeWorkspaceArtifactRef(
   return filepath;
 }
 
-function encodeArtifactPath(path: string) {
-  return path
-    .replace(/^\/+/, "")
-    .split("/")
-    .map((part) => encodeURIComponent(part))
-    .join("/");
+export function isSourceFileArtifact(filepath: string, threadId: string) {
+  return (
+    /[/\\]/.test(filepath) &&
+    !parseWorkspaceOutputRef(normalizeWorkspaceArtifactRef(filepath, threadId))
+  );
 }
 
 export function urlOfArtifact({
@@ -118,13 +190,15 @@ export function urlOfArtifact({
   officeFidelityPreview?: boolean;
   isMock?: boolean;
 }) {
-  const workspaceOutput = parseWorkspaceOutputRef(filepath);
+  const workspaceOutput = parseWorkspaceOutputRef(
+    normalizeWorkspaceArtifactRef(filepath, threadId),
+  );
   if (workspaceOutput) {
-    const params = new URLSearchParams({ area: workspaceOutput.area });
+    const params = new URLSearchParams();
     if (download) params.set("download", "true");
     if (officePreview) params.set("office_preview", "true");
     if (officeFidelityPreview) params.set("office_fidelity_preview", "true");
-    return `${getBackendBaseURL()}/api/threads/${encodeURIComponent(threadId)}/outputs/${encodeArtifactPath(workspaceOutput.relativePath)}?${params.toString()}`;
+    return `${getBackendBaseURL()}/api/workspace-resources/${encodeURIComponent(workspaceResourceId({ threadId, ...workspaceOutput }))}${params.size ? `?${params.toString()}` : ""}`;
   }
   if (isMock) {
     const params = new URLSearchParams();
@@ -138,8 +212,16 @@ export function urlOfArtifact({
   if (download) params.set("download", "true");
   if (officePreview) params.set("office_preview", "true");
   if (officeFidelityPreview) params.set("office_fidelity_preview", "true");
+  // Source documents retain their full identity and the current task's scope.
+  // The uploads endpoint only owns attachments; reducing a source path to an
+  // attachment basename can open an unrelated, older document.
+  if (/[/\\]/.test(filepath)) {
+    params.set("path", filepath);
+    params.set("thread_id", threadId);
+    return `${getBackendBaseURL()}/api/fs/content?${params.toString()}`;
+  }
   const query = params.size ? `?${params.toString()}` : "";
-  return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts${filepath}${query}`;
+  return `${getBackendBaseURL()}/api/threads/${encodeURIComponent(threadId)}/artifacts/${encodeURIComponent(filepath)}${query}`;
 }
 
 export function urlOfArtifactRevision({
@@ -151,8 +233,8 @@ export function urlOfArtifactRevision({
 }): string | null {
   const workspaceOutput = parseWorkspaceOutputRef(filepath);
   if (!workspaceOutput) return null;
-  const params = new URLSearchParams({ area: workspaceOutput.area });
-  return `${getBackendBaseURL()}/api/threads/${encodeURIComponent(threadId)}/output-revisions/${encodeArtifactPath(workspaceOutput.relativePath)}?${params.toString()}`;
+  const resource = workspaceResourceId({ threadId, ...workspaceOutput });
+  return `${getBackendBaseURL()}/api/workspace-resources/${encodeURIComponent(resource)}`;
 }
 
 export function extractArtifactsFromThread(thread: AgentThread) {
@@ -160,5 +242,5 @@ export function extractArtifactsFromThread(thread: AgentThread) {
 }
 
 export function resolveArtifactURL(absolutePath: string, threadId: string) {
-  return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts${absolutePath}`;
+  return urlOfArtifact({ filepath: absolutePath, threadId });
 }

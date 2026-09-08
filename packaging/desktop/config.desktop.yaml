@@ -29,7 +29,14 @@ immunity:
     - "intel_collector/*"
   unknown_policy: quarantine
 
-journal_file: null
+# Single-user desktop mode may opt into the explicit full-access permission
+# profile after the server has authenticated the local operator.
+safety:
+  allow_client_approval_bypass: true
+
+# Electron sets ECHO_DATA_DIR to this installation's userData/data directory.
+# Keep the journal beside its task, trace and tool-effect stores across restarts.
+journal_file: auto
 enable_web_skills: true
 default_arm_id: code_arm
 
@@ -54,4 +61,3 @@ local_auth:
   jwt_issuer: echo-agent
   actor_prefix: "local:"
   default_roles: [user, local]
-

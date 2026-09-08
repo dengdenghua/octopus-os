@@ -34,7 +34,11 @@ describe("buildSmartTeamPlan", () => {
       "分析股票财报、公司估值和投资风险",
       [
         agent("general", "通用办公助理", "assistant"),
-        agent("semiconductor_analyst", "股票、财报、估值与投资研究", "financial"),
+        agent(
+          "semiconductor_analyst",
+          "股票、财报、估值与投资研究",
+          "financial",
+        ),
         agent("risk_expert", "投资组合与风险分析", "financial"),
       ],
       2,
@@ -58,4 +62,3 @@ describe("buildSmartTeamPlan", () => {
     );
   });
 });
-

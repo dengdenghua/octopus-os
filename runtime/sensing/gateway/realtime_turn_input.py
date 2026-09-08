@@ -324,14 +324,78 @@ def _input_attachments(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return attachments
 
 
-def _input_metadata(params: TurnParams) -> dict[str, Any]:
-    for block in params.input:
+def _input_context_files(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Read the bounded, server-cleaned file references for the user item.
+
+    ``build_turn_metadata`` stores these under ``context_files`` in the
+    nested context. This helper also accepts camelCase for older realtime
+    clients, but only copies the fields that the public item contract exposes.
+    """
+    metadata = _input_metadata(blocks)
+    context = metadata.get("context")
+    source = context if isinstance(context, dict) else metadata
+    raw = source.get("context_files") or source.get("contextFiles")
+    if not isinstance(raw, list):
+        return []
+    cleaned: list[dict[str, Any]] = []
+    for item in raw[:32]:
+        if not isinstance(item, dict):
+            continue
+        path = item.get("path")
+        resource_id = next(
+            (
+                value.strip()
+                for key in ("resource_id", "resourceId")
+                for value in [item.get(key)]
+                if isinstance(value, str) and value.strip()
+            ),
+            "",
+        )
+        if (not isinstance(path, str) or not path.strip()) and not resource_id:
+            continue
+        reference: dict[str, Any] = {}
+        if isinstance(path, str) and path.strip():
+            reference["path"] = path.strip()[:2048]
+        for source_keys, target_key, limit in (
+            (("work_dir", "workDir"), "workDir", 2048),
+            (("source_label", "sourceLabel"), "sourceLabel", 128),
+            (("resource_id", "resourceId"), "resourceId", 512),
+        ):
+            for source_key in source_keys:
+                value = item.get(source_key)
+                if isinstance(value, str) and value.strip():
+                    reference[target_key] = value.strip()[:limit]
+                    break
+        cleaned.append(reference)
+    return cleaned
+
+
+def _input_metadata(params: TurnParams | list[dict[str, Any]]) -> dict[str, Any]:
+    blocks = params if isinstance(params, list) else params.input
+    for block in blocks:
         if not isinstance(block, dict):
             continue
         metadata = block.get("metadata")
         if isinstance(metadata, dict):
             return metadata
     return {}
+
+
+def external_model_owner(params: TurnParams) -> str | None:
+    """Identify external model ownership for input shaping.
+
+    Execution admission remains host-owned; this advisory value only prevents
+    local smart routing from replacing an explicitly selected external model.
+    """
+    if params.execution_engine in {"codex", "opencode"}:
+        return params.execution_engine
+    if params.execution_engine != "auto":
+        return None
+    metadata = _input_metadata(params)
+    context = metadata.get("context")
+    context = context if isinstance(context, dict) else metadata
+    preview = str(context.get("execution_engine") or "").strip().lower()
+    return preview if preview in {"codex", "opencode"} else None
 
 
 def _agent_id_from_params(params: TurnParams) -> str | None:
@@ -747,6 +811,23 @@ _AUDIT_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_EXPLICIT_CHANGE_RE = re.compile(
+    r"^(?:修复|修改|优化|重构|实现|改造|清理|部署|安装|删除|补上|加上|提交)(?:\b|[\u4e00-\u9fff])|"
+    r"(?:请|帮我|直接|现在|开始|着手|把|将).{0,24}(?:修复|修改|优化|重构|实现|改造|清理|部署|安装|删除|补上|加上|提交)",
+    re.IGNORECASE,
+)
+
+
+def _is_explicit_change_request(text: str) -> bool:
+    normalized = " ".join(str(text or "").strip().split())
+    if not normalized:
+        return False
+    if "问题" in normalized and "需要修复" in normalized and not re.search(
+        r"(?:请|帮我|直接|把|将)", normalized
+    ):
+        return False
+    return bool(_EXPLICIT_CHANGE_RE.search(normalized))
+
 
 def _is_audit_intent(text: str, context_payload: dict[str, Any]) -> bool:
     if _AUDIT_INTENT_RE.search(text):
@@ -754,7 +835,15 @@ def _is_audit_intent(text: str, context_payload: dict[str, Any]) -> bool:
     # A declared read-only / audit capability also opts in.
     mode = str(context_payload.get("mode") or "").strip().lower()
     capability = str(context_payload.get("capability_mode") or "").strip().lower()
-    return mode == "audit" or capability == "audit" or bool(context_payload.get("audit_mode"))
+    agent_mode = str(context_payload.get("agent_mode") or "").strip().lower()
+    workflow = str(context_payload.get("workflow_preset") or "").strip().lower()
+    return bool(
+        mode == "audit"
+        or capability == "audit"
+        or agent_mode == "audit"
+        or workflow.startswith("audit.")
+        or context_payload.get("audit_mode")
+    )
 
 
 def _build_intent(
@@ -815,6 +904,13 @@ def _build_intent(
     if thread_store is not None:
         from runtime.sensing.gateway.turn_session import build_turn_metadata
 
+        # Per-turn choices must survive the thread/persona merge. They are
+        # still untrusted here and go through operator-gated normalization below.
+        execution_choices = {
+            key: context_payload[key]
+            for key in ("permission_mode", "execution_environment", "network_access")
+            if key in context_payload
+        }
         context_payload = build_turn_metadata(
             thread_id=params.thread_id,
             body={"context": context_payload},
@@ -823,15 +919,38 @@ def _build_intent(
             owner_actor_id=owner_actor_id or None,
             tenant_id=tenant_id or None,
         )
+        context_payload.update(execution_choices)
     context_payload = dict(context_payload)
     # This private marker is consumed by memory/context readers.  It must
     # never survive from client metadata; authenticated TurnParams are the
     # server-overwritten authority and are re-injected below.
     context_payload.pop(AUTHORITATIVE_SCOPE_CONTEXT_KEY, None)
+    from runtime.memory.users.user_store import (
+        MEMORY_VIEWER_CONTEXT_KEY,
+        MemoryViewer,
+        memory_viewer_context,
+        memory_viewer_from_context,
+    )
+
+    raw_memory_viewer = context_payload.pop(MEMORY_VIEWER_CONTEXT_KEY, None)
     if authenticated_principal:
-        context_payload[AUTHORITATIVE_SCOPE_CONTEXT_KEY] = authoritative_scope_context(
+        authoritative_scope = authoritative_scope_context(
             TenantScope(tenant_id=tenant_id, actor_id=owner_actor_id)
         )
+        context_payload[AUTHORITATIVE_SCOPE_CONTEXT_KEY] = authoritative_scope
+        # Only retain server-injected collaboration memberships when their
+        # actor/tenant pair matches the hidden TurnParams identity. A direct
+        # caller that bypasses the WebSocket sanitizer therefore falls back to
+        # an identity-only viewer instead of widening memory visibility.
+        viewer = memory_viewer_from_context(
+            {
+                AUTHORITATIVE_SCOPE_CONTEXT_KEY: authoritative_scope,
+                MEMORY_VIEWER_CONTEXT_KEY: raw_memory_viewer,
+            }
+        )
+        if viewer is None:
+            viewer = MemoryViewer(actor_id=owner_actor_id, tenant_id=tenant_id)
+        context_payload[MEMORY_VIEWER_CONTEXT_KEY] = memory_viewer_context(viewer)
     attachments = _input_attachments(params.input)
     # Attachment paths arrive from the client and therefore are not authority.
     # Grant read access only to the upload directory derived server-side from
@@ -887,10 +1006,9 @@ def _build_intent(
         context_payload["workspace_path"] = str(managed_layout.root)
         context_payload["workspace_scope"] = "project"
         context_payload["_artifact_output_root"] = str(managed_layout.final)
-    if conversation_messages and not isinstance(
-        context_payload.get("conversation_messages"),
-        list,
-    ):
+    if conversation_messages is not None:
+        # An empty authenticated journal also supersedes browser history.
+        # Direct legacy embeddings may omit the journal argument entirely.
         context_payload["conversation_messages"] = conversation_messages
     if _context_requests_code_workspace(context_payload):
         if (
@@ -919,6 +1037,59 @@ def _build_intent(
     approval_policy = params.approval_policy
     if approval_policy == "never" and not allow_client_auto_approve:
         approval_policy = "on-request"
+    from runtime.safety.approval.permission_modes import (
+        approval_reviewer_for_mode,
+        canonical_permission_mode,
+    )
+
+    declared_permission_mode = context_payload.get("permission_mode")
+    explicit_permission_mode = isinstance(declared_permission_mode, str) and bool(
+        declared_permission_mode.strip()
+    )
+    canonical_mode = canonical_permission_mode(declared_permission_mode)
+    if canonical_mode == "bypassPermissions" and approval_policy != "never":
+        # Mode metadata cannot restore bypass disabled by the operator.
+        canonical_mode = "default"
+    bounded_mode_explicit = explicit_permission_mode and canonical_mode != "bypassPermissions"
+    if bounded_mode_explicit:
+        # The bounded modes share one workspace sandbox. The selected mode
+        # changes only who reviews a boundary crossing; stale or custom
+        # clients cannot combine them with local/full execution.
+        approval_policy = "on-request"
+    context_payload = {
+        **context_payload,
+        "permission_mode": canonical_mode,
+        # Server-derived: client metadata cannot switch who handles an
+        # escalation by supplying a forged reviewer value.
+        "approvals_reviewer": approval_reviewer_for_mode(canonical_mode),
+        **(
+            {
+                "execution_environment": "sandbox",
+                "sandbox_mode": "sandbox",
+            }
+            if bounded_mode_explicit
+            else {}
+        ),
+    }
+    permission_mode = canonical_mode.lower()
+    full_access_requested = permission_mode in {
+        "bypasspermissions",
+        "bypass-permissions",
+        "bypass",
+        "yolo",
+        "full",
+    }
+    if full_access_requested and approval_policy == "never":
+        # Full access is an inclusive backend contract, not merely an
+        # approval shortcut. Keep execution and network aligned with it.
+        context_payload = {
+            **context_payload,
+            "permission_mode": "bypassPermissions",
+            "approval_policy": "never",
+            "execution_environment": "local",
+            "sandbox_mode": "full",
+            "network_access": "full",
+        }
     # Audit / review turns get a prompt-level audit contract (inspect →
     # report; any code edit must be explicitly justified). This is a
     # behavioural nudge, not a permission gate — an audit may legitimately
@@ -926,10 +1097,35 @@ def _build_intent(
     audit_mode = _is_audit_intent(text, context_payload)
     if audit_mode:
         context_payload = {**context_payload, "audit_mode": True}
+        if _is_explicit_change_request(text):
+            # Keep the audit context visible for traceability, but promote an
+            # imperative repair/deployment request into the executable
+            # development workflow in this same turn.
+            audit_mode = False
+            context_payload = {
+                **context_payload,
+                "audit_mode": False,
+                "mode": "code",
+                "agent_mode": "develop",
+                "workflow_mode": "develop",
+                "completion_policy": "develop",
+                "mode_preset": "develop.mode",
+                "workflow_preset": "develop.iterate",
+            }
     # Thread the turn's declared sandbox policy through to execution so
     # exec_shell can honour ``sandboxPolicy.networkAccess``. Default when
     # absent is network denied — a turn must explicitly opt in.
     sb_policy = getattr(params, "sandbox_policy", None) or {}
+    if full_access_requested and approval_policy == "never":
+        sb_policy = {
+            **(sb_policy if isinstance(sb_policy, dict) else {}),
+            "type": "dangerFullAccess",
+            "networkAccess": True,
+        }
+        sb_policy.pop("egressAllowCommon", None)
+        sb_policy.pop("egress_allow_common", None)
+    elif bounded_mode_explicit and isinstance(sb_policy, dict):
+        sb_policy = {**sb_policy, "type": "workspaceWrite"}
     if isinstance(sb_policy, dict) and sb_policy:
         context_payload = {
             **context_payload,

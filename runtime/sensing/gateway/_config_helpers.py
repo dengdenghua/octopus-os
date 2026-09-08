@@ -68,7 +68,10 @@ def _entry_1m_enabled(entry: dict[str, Any], upstreams: list[str]) -> bool:
 def _entry_route_ids(entry: dict[str, Any], fallback_id: str = "") -> list[str]:
     model_id = _entry_model_id(entry) or fallback_id
     route_ids: list[str] = []
-    for raw in [model_id, *_entry_upstreams(entry, model_id)]:
+    # Verified setup imports are addressed by their opaque picker selection.
+    # Do not steal a legacy upstream alias from an already configured service.
+    aliases = [] if entry.get("selection_only") is True else _entry_upstreams(entry, model_id)
+    for raw in [model_id, *aliases]:
         route_id = str(raw or "").strip()
         if route_id and route_id not in route_ids:
             route_ids.append(route_id)

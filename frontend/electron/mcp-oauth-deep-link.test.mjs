@@ -140,9 +140,7 @@ describe("MCP OAuth desktop deep-link bridge", () => {
     const event = { preventDefault: vi.fn() };
 
     contents.emit("will-navigate", event, "https://example.com/next");
-    expect(bridge.handleWindowOpen("evil://oauth/callback?code=C")).toBe(
-      false,
-    );
+    expect(bridge.handleWindowOpen("evil://oauth/callback?code=C")).toBe(false);
     expect(event.preventDefault).not.toHaveBeenCalled();
     expect(contents.loadURL).not.toHaveBeenCalled();
   });

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { revokeAllSessions, rotateAdminPassword } from "./account-security";
+import {
+  beginAdministratorTotpEnrollment,
+  disableAdministratorTotp,
+  revokeAllSessions,
+  rotateAdminPassword,
+} from "./account-security";
 
 vi.mock("@/appliance/auth", () => ({
   authHeader: () => ({ Authorization: "Bearer current-session" }),
@@ -80,6 +85,58 @@ describe("account security API", () => {
 
     await expect(revokeAllSessions("stale-ticket")).rejects.toThrow(
       "登录已失效，请重新登录",
+    );
+  });
+
+  it("keeps TOTP enrollment approval and disable factor in separate requests", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            enrollmentId: "setup",
+            secret: "BASE32",
+            otpauthUri: "otpauth://totp/example",
+            recoveryCodes: [],
+            expiresIn: 300,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            success: true,
+            sessionsRevoked: true,
+            sessionNotBefore: 44,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await beginAdministratorTotpEnrollment("enroll-ticket");
+    await disableAdministratorTotp("AAAA-BBBB-CCCC-DDDD", "disable-ticket");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/appliance/credentials/totp/enroll",
+      expect.objectContaining({
+        headers: {
+          Authorization: "Bearer current-session",
+          "X-Echo-Approval": "enroll-ticket",
+        },
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/appliance/credentials/totp/disable",
+      expect.objectContaining({
+        body: JSON.stringify({ factor: "AAAA-BBBB-CCCC-DDDD" }),
+        headers: expect.objectContaining({
+          "X-Echo-Approval": "disable-ticket",
+        }),
+      }),
     );
   });
 });

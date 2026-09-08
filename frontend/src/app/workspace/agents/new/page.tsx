@@ -29,6 +29,10 @@ import { ArtifactsProvider } from "@/components/workspace/artifacts";
 import { MessageList } from "@/components/workspace/messages";
 import { ThreadProviders } from "@/components/workspace/messages/context";
 import { swallow } from "@/core/utils/log";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import type { Agent } from "@/core/agents";
 import { checkAgentName, getAgent } from "@/core/agents/api";
 import { useActiveAgentId } from "@/core/agents/active";
@@ -38,6 +42,7 @@ import {
   writeTaskCollaboratorPreset,
 } from "@/core/collaboration/task-collaborator-preset";
 import { useI18n } from "@/core/i18n/hooks";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { useThreadStream } from "@/core/threads/hooks";
 import { uuid } from "@/core/utils/uuid";
 import { isIMEComposing } from "@/lib/ime";
@@ -80,6 +85,7 @@ type AgentCapabilityPack = {
 
 const NAME_RE = /^[A-Za-z0-9-]+$/;
 const SAVE_HINT_STORAGE_KEY = "echo.agent-create.save-hint-seen";
+const saveHintStorageKey = () => actorScopedStorageKey(SAVE_HINT_STORAGE_KEY);
 const AGENT_READ_RETRY_DELAYS_MS = [200, 500, 1_000, 2_000];
 const AGENT_GENERATOR_SKILL_ID = "agent-generator";
 
@@ -221,10 +227,12 @@ export default function NewAgentPage() {
   const requestedRoleName = searchParams.get("role");
   const requestedRoleFocus = searchParams.get("focus");
   const requestedRoleCapability = searchParams.get("capability");
-  const galleryReturnPath =
+  const galleryReturnPath = preserveWorkbenchPresentation(
     searchParams.get("return") === "hud"
       ? "/workspace/agents?hud=1&surface=chat"
-      : "/workspace/agents";
+      : "/workspace/agents",
+    searchParams.toString() ? `?${searchParams.toString()}` : "",
+  );
 
   const agentNew = t.agents.agentNew;
 
@@ -394,11 +402,11 @@ export default function NewAgentPage() {
     if (typeof window === "undefined" || step !== "chat") {
       return;
     }
-    if (window.localStorage.getItem(SAVE_HINT_STORAGE_KEY) === "1") {
+    if (readActorScopedStorageValue(SAVE_HINT_STORAGE_KEY) === "1") {
       return;
     }
     setShowSaveHint(true);
-    window.localStorage.setItem(SAVE_HINT_STORAGE_KEY, "1");
+    window.localStorage.setItem(saveHintStorageKey(), "1");
   }, [step]);
 
   const handleConfirmName = useCallback(async () => {
@@ -972,7 +980,14 @@ export default function NewAgentPage() {
                             label: agent.display_name || agent.name,
                             openPicker: true,
                           });
-                          navigate(taskCollaboratorRouteForLeader(leaderId));
+                          navigate(
+                            preserveWorkbenchPresentation(
+                              taskCollaboratorRouteForLeader(leaderId),
+                              searchParams.toString()
+                                ? `?${searchParams.toString()}`
+                                : "",
+                            ),
+                          );
                         }}
                       >
                         {t.agentCard.addOnDemand}

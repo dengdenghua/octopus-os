@@ -1,10 +1,16 @@
+import { currentActorId } from "@/core/auth/api";
 import { useQuery } from "@tanstack/react-query";
 
 import { loadModels } from "./api";
 
+export function modelsQueryKey(actor = currentActorId()) {
+  return ["models", actor] as const;
+}
+
 export function useModels({ enabled = true }: { enabled?: boolean } = {}) {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["models"],
+  const actor = currentActorId();
+  const query = useQuery({
+    queryKey: modelsQueryKey(actor),
     queryFn: () => loadModels(),
     enabled,
     refetchOnWindowFocus: false,
@@ -17,5 +23,10 @@ export function useModels({ enabled = true }: { enabled?: boolean } = {}) {
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });
-  return { models: data ?? [], isLoading, error };
+  return {
+    models: query.data ?? [],
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+  };
 }

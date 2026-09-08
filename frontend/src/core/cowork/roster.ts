@@ -1,6 +1,10 @@
 import type { ThreadCollaborationRosterEntry } from "@/core/collaboration/thread-collaboration";
 
-import type { CollaborationSession, CoworkGroupResponse, CoworkMember } from "./types";
+import type {
+  CollaborationSession,
+  CoworkGroupResponse,
+  CoworkMember,
+} from "./types";
 
 export interface CoworkAgentProfile {
   name: string;

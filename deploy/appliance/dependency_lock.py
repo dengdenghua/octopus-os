@@ -85,27 +85,53 @@ def _safe_read(path: Path, *, maximum: int = MAX_INPUT_BYTES) -> bytes:
         os.close(descriptor)
 
 
+def _publish_lock(temporary: Path, path: Path) -> None:
+    """Publish an already-fsynced same-directory file; no copy/delete fallback."""
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        move = ctypes.WinDLL("kernel32", use_last_error=True).MoveFileExW
+        move.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
+        move.restype = wintypes.BOOL
+        # Same-directory rename, not MOVEFILE_COPY_ALLOWED or delayed reboot.
+        # https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-movefileexw
+        if not move(str(temporary), str(path), 0x1 | 0x8):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return
+    os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
 def _atomic_write(path: Path, data: bytes, *, mode: int = 0o644) -> None:
+    """Write public build inputs atomically using the host's actual primitives.
+
+    POSIX records the requested mode before file fsync. Windows artifacts
+    inherit the output directory's ACL; 0644 is the public-artifact convention,
+    not an attempt to emulate POSIX permissions or secure secret files.
+    Publication is per file; refreshing all three locks is not a transaction.
+    """
+    if os.name == "nt" and mode != 0o644:
+        raise DependencyLockError("Windows dependency locks only support public artifact mode")
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.parent.is_symlink() or not path.parent.is_dir() or path.is_symlink():
         raise DependencyLockError(f"dependency lock output path is unsafe: {path}")
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temporary = Path(temporary_name)
     try:
-        os.fchmod(descriptor, mode)
+        if os.name != "nt":
+            os.fchmod(descriptor, mode)
         owned = descriptor
         descriptor = -1
         with os.fdopen(owned, "wb") as output:
             output.write(data)
             output.flush()
             os.fsync(output.fileno())
-        os.replace(temporary, path)
-        path.chmod(mode)
-        directory = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        _publish_lock(temporary, path)
     finally:
         if descriptor >= 0:
             os.close(descriptor)

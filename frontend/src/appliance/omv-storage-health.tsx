@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRightIcon,
   CheckCircle2Icon,
@@ -24,6 +24,7 @@ import {
   type OmvSmartDevice,
   type OmvStorageTopology,
   type OmvStatus,
+  type StorageProbeEvidence,
 } from "@/appliance/omv";
 import { SmartSelfTestControls } from "@/appliance/smart-self-test-controls";
 
@@ -39,8 +40,71 @@ function formatBytes(bytes: number) {
   return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
 }
 
-function healthy(value: string) {
-  return /^(passed|ok|good|healthy|true)$/i.test(value.trim());
+function healthy(value: string | null | undefined) {
+  return /^(passed|ok|good|healthy|true)$/i.test((value ?? "").trim());
+}
+
+function unknownHealth(value: string | null | undefined) {
+  return (
+    !value?.trim() ||
+    /^(unknown|unavailable|unsupported|n\/a)$/i.test(value.trim())
+  );
+}
+
+function smartUnconfirmed(report: OmvSmart | OmvSmartDevice) {
+  return (
+    unknownHealth(report.health) ||
+    (healthy(report.health) &&
+      (report.available === false ||
+        report.coverage === "none" ||
+        report.coverage === "partial" ||
+        report.probeEvidence?.some(
+          (probe) => !["ok", "not-applicable"].includes(probe.state),
+        )))
+  );
+}
+
+function probeGuidance(probe: StorageProbeEvidence) {
+  if (probe.source === "smart") {
+    if (probe.code === "tool_missing")
+      return "SMART 组件尚未安装，健康状态未确认。请设备管理员安装组件后刷新。";
+    if (probe.code === "unsupported")
+      return "该磁盘未提供可用的 SMART 健康数据，请检查磁盘或转接设备是否支持。";
+    return "未取得完整 SMART 结果。请设备管理员检查 SMART 组件、磁盘支持和读取权限。";
+  }
+  if (probe.source === "block-devices") {
+    return probe.state === "empty"
+      ? "未发现可检查的物理磁盘。请确认磁盘连接或虚拟机磁盘映射后刷新。"
+      : "磁盘枚举未完成。请设备管理员检查设备访问权限后刷新。";
+  }
+  if (probe.source === "filesystems") {
+    return "卷容量读取未完成。请检查挂载状态和读取权限后刷新。";
+  }
+  return "阵列检查未完成。请设备管理员检查阵列组件和读取权限后刷新。";
+}
+
+function usedPercent(filesystem: OmvFilesystem): number | null {
+  if (!Number.isFinite(filesystem.sizeBytes) || filesystem.sizeBytes <= 0)
+    return null;
+  if (
+    Number.isFinite(filesystem.usedPercent) &&
+    filesystem.usedPercent != null &&
+    filesystem.usedPercent >= 0 &&
+    filesystem.usedPercent <= 100
+  )
+    return filesystem.usedPercent;
+  if (
+    Number.isFinite(filesystem.sizeBytes) &&
+    filesystem.sizeBytes > 0 &&
+    Number.isFinite(filesystem.availableBytes) &&
+    filesystem.availableBytes >= 0 &&
+    filesystem.availableBytes <= filesystem.sizeBytes
+  ) {
+    return Math.round(
+      (1 - filesystem.availableBytes / filesystem.sizeBytes) * 100,
+    );
+  }
+  return null;
 }
 
 function raidStatus(status: string) {
@@ -81,63 +145,82 @@ export function OmvStorageHealth() {
   const [smartLoading, setSmartLoading] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [readErrors, setReadErrors] = useState<string[]>([]);
+  const generation = useRef(0);
 
   useEffect(() => {
     let alive = true;
+    generation.current += 1;
     setLoading(true);
     setError(null);
+    setReadErrors([]);
+    setStatus(null);
+    setFilesystems([]);
+    setDevices([]);
+    setTopology(null);
     setSmart({});
+    setSmartLoading(null);
     setHealthSnapshot(null);
     // 存储面完全原生化:数据权威是主机本身(内核 / zpool / smartctl)。
-    fetchNativeStatus()
-      .then(async (nextStatus) => {
+    Promise.allSettled([
+      fetchNativeStatus(),
+      fetchNativeHealth(),
+      fetchNativeFilesystems(),
+      fetchNativeSmartDevices(),
+      fetchNativeStorageTopology(),
+    ]).then(
+      ([nextStatus, nextHealth, volumes, physicalDevices, storageTopology]) => {
         if (!alive) return;
-        setStatus(nextStatus);
-        const nextHealth = await fetchNativeHealth();
-        if (!alive) return;
-        setHealthSnapshot(nextHealth);
-        const [volumes, physicalDevices, storageTopology] = await Promise.all([
-          fetchNativeFilesystems(),
-          fetchNativeSmartDevices(),
-          fetchNativeStorageTopology(),
-        ]);
-        if (alive) {
-          setFilesystems(volumes);
-          setDevices(physicalDevices);
-          setTopology(storageTopology);
-        }
-      })
-      .catch((reason) => {
-        if (alive) {
-          setError(
-            reason instanceof Error ? reason.message : "无法读取存储健康状态",
-          );
-          setFilesystems([]);
-          setDevices([]);
-          setTopology(null);
-          setHealthSnapshot(null);
-        }
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
+        if (nextStatus.status === "fulfilled") setStatus(nextStatus.value);
+        if (nextHealth.status === "fulfilled")
+          setHealthSnapshot(nextHealth.value);
+        if (volumes.status === "fulfilled") setFilesystems(volumes.value);
+        if (physicalDevices.status === "fulfilled")
+          setDevices(physicalDevices.value);
+        if (storageTopology.status === "fulfilled")
+          setTopology(storageTopology.value);
+        setReadErrors(
+          [
+            ["存储连接", nextStatus],
+            ["健康检查", nextHealth],
+            ["卷容量", volumes],
+            ["物理磁盘 SMART", physicalDevices],
+            ["存储拓扑", storageTopology],
+          ].flatMap(([label, result]) => {
+            const outcome = result as PromiseSettledResult<unknown>;
+            return outcome.status === "rejected"
+              ? [
+                  `${label}读取失败：${outcome.reason instanceof Error ? outcome.reason.message : "请检查设备连接与读取权限后刷新"}`,
+                ]
+              : [];
+          }),
+        );
+        setLoading(false);
+      },
+    );
     return () => {
       alive = false;
+      generation.current += 1;
     };
   }, [reloadKey]);
 
   const readSmart = async (device: string) => {
+    const requestGeneration = generation.current;
     setSmartLoading(device);
     setError(null);
     try {
       const report = await fetchNativeSmart(device);
+      if (requestGeneration !== generation.current) return;
       setSmart((current) => ({ ...current, [device]: report }));
     } catch (reason) {
+      if (requestGeneration !== generation.current) return;
       setError(
         reason instanceof Error ? reason.message : "无法读取 SMART 状态",
       );
     } finally {
-      setSmartLoading(null);
+      if (requestGeneration === generation.current) {
+        setSmartLoading((current) => (current === device ? null : current));
+      }
     }
   };
 
@@ -153,6 +236,54 @@ export function OmvStorageHealth() {
   const lvmCount = topologyLayers.filter(
     (device) => device.type.toLowerCase() === "lvm",
   ).length;
+  const evidence = healthSnapshot?.probeEvidence ?? [];
+  const incompleteProbes = evidence.filter(
+    (probe) =>
+      probe.required &&
+      (["partial", "unavailable", "error"].includes(probe.state) ||
+        (probe.source === "block-devices" && probe.state === "empty")),
+  );
+  const hasDevices =
+    devices.length > 0 ||
+    physicalCount > 0 ||
+    evidence.some(
+      (probe) =>
+        probe.source === "block-devices" &&
+        probe.state === "ok" &&
+        (probe.count ?? 0) > 0,
+    );
+  const critical =
+    healthSnapshot?.state === "critical" ||
+    healthSnapshot?.activeAlerts.some(
+      (alert) => alert.severity === "critical",
+    ) ||
+    (healthSnapshot?.summary.critical ?? 0) > 0;
+  const warning =
+    healthSnapshot?.state === "warning" ||
+    healthSnapshot?.activeAlerts.some(
+      (alert) => alert.severity === "warning",
+    ) ||
+    (healthSnapshot?.summary.warning ?? 0) > 0;
+  const confirmedHealthy =
+    healthSnapshot?.state === "healthy" &&
+    healthSnapshot.stale === false &&
+    healthSnapshot.checkedAt != null &&
+    Number.isFinite(Date.parse(healthSnapshot.checkedAt)) &&
+    healthSnapshot.coverage === "complete" &&
+    evidence.length > 0 &&
+    incompleteProbes.length === 0 &&
+    hasDevices &&
+    readErrors.length === 0 &&
+    devices.every(
+      (device) =>
+        healthy(device.health) &&
+        !smartUnconfirmed(device) &&
+        (device.temperatureC ?? 0) < 50,
+    );
+  const monitorLabel = healthSnapshot?.monitoring ? "持续监测" : "本次检查";
+  const emptyInventory = (status?.probeEvidence ?? evidence).some(
+    (probe) => probe.source === "block-devices" && probe.state === "empty",
+  );
   return (
     <>
       <header className="flex items-start justify-between gap-4">
@@ -180,14 +311,14 @@ export function OmvStorageHealth() {
           <span
             className={`grid size-10 place-items-center rounded-xl ${
               status?.available
-                ? "bg-emerald-50 text-emerald-600"
+                ? "bg-blue-50 text-blue-600"
                 : "bg-amber-50 text-amber-600"
             }`}
           >
             {loading ? (
               <Loader2Icon className="size-5 animate-spin" />
             ) : status?.available ? (
-              <CheckCircle2Icon className="size-5" />
+              <HardDriveIcon className="size-5" />
             ) : (
               <TriangleAlertIcon className="size-5" />
             )}
@@ -198,58 +329,80 @@ export function OmvStorageHealth() {
                 ? "正在读取存储状态…"
                 : status?.available
                   ? "原生存储面已连接"
-                  : status?.configured
-                    ? "存储面暂不可用"
-                    : "未检测到存储设备"}
+                  : emptyInventory
+                    ? "未检测到存储设备"
+                    : "存储连接尚未确认"}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
               {status?.available
-                ? "Echo 只能查看状态，不能格式化磁盘或修改阵列。"
-                : "Echo 其他桌面、Agent 和文件功能不受影响。"}
+                ? "此页为只读检查，连接成功不代表磁盘健康状态已确认。"
+                : "请检查磁盘连接、设备映射与读取权限后刷新。下方保留已取得的检查结果。"}
             </p>
           </div>
         </div>
       </section>
 
-      {!loading && healthSnapshot && (
+      {!loading && (
         <section
-          aria-label="持续存储监测"
+          aria-label="存储健康检查"
           className={`mt-3 rounded-2xl border p-4 text-xs ${
-            healthSnapshot.state === "critical" ||
-            healthSnapshot.state === "unavailable"
+            critical
               ? "border-red-200 bg-red-50 text-red-800"
-              : healthSnapshot.state === "warning"
+              : warning || healthSnapshot?.state === "degraded"
                 ? "border-amber-200 bg-amber-50 text-amber-800"
-                : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : confirmedHealthy
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-slate-200 bg-slate-50 text-slate-700"
           }`}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
               <strong className="font-semibold">
-                {healthSnapshot.state === "unavailable"
-                  ? "持续监测：存储面连接中断"
-                  : healthSnapshot.state === "critical"
-                    ? "持续监测发现严重故障"
-                    : healthSnapshot.state === "warning"
-                      ? "持续监测发现需要关注的状态"
-                      : healthSnapshot.state === "pending"
-                        ? "持续监测正在启动"
-                        : "持续监测未发现异常"}
+                {critical
+                  ? `${monitorLabel}发现严重故障`
+                  : warning
+                    ? `${monitorLabel}发现需要关注的状态`
+                    : confirmedHealthy
+                      ? `${monitorLabel}已完成，已检查项目未发现异常`
+                      : healthSnapshot?.stale
+                        ? "检查结果不完整或已过期"
+                        : healthSnapshot?.state === "pending"
+                          ? "健康检查正在启动"
+                          : "存储健康尚未确认"}
               </strong>
               <p className="mt-1 leading-5 opacity-80">
-                {healthSnapshot.summary.total > 0
-                  ? `${healthSnapshot.summary.critical} 项严重 · ${healthSnapshot.summary.warning} 项提醒`
-                  : "磁盘 SMART、温度、卷容量和软件阵列状态正常。"}
-                {healthSnapshot.stale ? " · 当前数据已过期" : ""}
+                {healthSnapshot && healthSnapshot.summary.total > 0
+                  ? `${healthSnapshot.summary.critical} 项严重 · ${healthSnapshot.summary.warning} 项提醒。`
+                  : confirmedHealthy
+                    ? "本次已取得所需检查结果。"
+                    : "尚无足够检查结果判断整体健康；请查看未完成项目并刷新。"}
+                {healthSnapshot?.stale
+                  ? " 当前数据不完整或已过期，已知告警仍需处理。"
+                  : ""}
+                {healthSnapshot?.checkedAt
+                  ? ` 检查时间：${formatTimestamp(healthSnapshot.checkedAt)}`
+                  : ""}
               </p>
             </div>
             <span className="shrink-0 text-[10px] opacity-70">
-              每 {Math.max(1, Math.round(healthSnapshot.intervalSeconds / 60))}{" "}
-              分钟
+              {healthSnapshot?.monitoring && healthSnapshot.intervalSeconds > 0
+                ? `每 ${Math.max(1, Math.round(healthSnapshot.intervalSeconds / 60))} 分钟`
+                : "按需检查"}
             </span>
           </div>
 
-          {healthSnapshot.activeAlerts.length > 0 && (
+          {incompleteProbes.length > 0 && (
+            <ul className="mt-3 space-y-1 border-t border-current/10 pt-3">
+              {incompleteProbes.map((probe, index) => (
+                <li key={`${probe.source}:${probe.target ?? ""}:${index}`}>
+                  {probe.target ? `${probe.target}：` : ""}
+                  {probeGuidance(probe)}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {healthSnapshot && healthSnapshot.activeAlerts.length > 0 && (
             <div className="mt-3 space-y-1.5 border-t border-current/10 pt-3">
               {healthSnapshot.activeAlerts.map((alert) => (
                 <article
@@ -274,7 +427,7 @@ export function OmvStorageHealth() {
             </div>
           )}
 
-          {healthSnapshot.events.length > 0 && (
+          {healthSnapshot && healthSnapshot.events.length > 0 && (
             <details className="mt-3 border-t border-current/10 pt-3">
               <summary className="cursor-pointer text-[11px] font-medium">
                 最近告警变化
@@ -297,12 +450,26 @@ export function OmvStorageHealth() {
             </details>
           )}
 
-          {!healthSnapshot.persistenceHealthy && (
+          {healthSnapshot?.persistenceHealthy === false && (
             <p role="alert" className="mt-3 font-medium">
               告警状态无法安全写入设备存储；重启后可能无法保留历史。
             </p>
           )}
         </section>
+      )}
+
+      {readErrors.length > 0 && (
+        <div
+          role="alert"
+          className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-800"
+        >
+          {readErrors.map((message) => (
+            <p key={message}>{message}</p>
+          ))}
+          <p className="mt-1">
+            已成功读取的卷和磁盘仍显示在下方。请检查对应组件或读取权限后刷新。
+          </p>
+        </div>
       )}
 
       {error && (
@@ -314,13 +481,13 @@ export function OmvStorageHealth() {
         </p>
       )}
 
-      {!loading && status?.available && filesystems.length === 0 && (
+      {!loading && filesystems.length === 0 && (
         <p className="mt-4 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
-          当前没有可显示的已挂载数据卷。
+          当前没有可显示的已挂载数据卷；请结合上方检查结果确认挂载状态。
         </p>
       )}
 
-      {!loading && status?.available && devices.length > 0 && (
+      {!loading && devices.length > 0 && (
         <section className="mt-4 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
@@ -335,14 +502,26 @@ export function OmvStorageHealth() {
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {devices.map((device) => {
-              const isHealthy = healthy(device.health);
-              const isHot = (device.temperatureC ?? 0) >= 50;
               const detail = smart[device.devicefile];
+              const currentReport = detail ?? device;
+              const probe =
+                currentReport.probeEvidence ??
+                evidence.filter(
+                  (entry) =>
+                    entry.source === "smart" &&
+                    entry.target === device.devicefile,
+                );
+              const isUnknown = smartUnconfirmed({
+                ...currentReport,
+                probeEvidence: probe,
+              });
+              const isHealthy = healthy(currentReport.health) && !isUnknown;
+              const isHot = (currentReport.temperatureC ?? 0) >= 50;
               return (
                 <article
                   key={device.devicefile}
                   className={`rounded-xl border p-3 ${
-                    !isHealthy || isHot
+                    (!isHealthy && !isUnknown) || isHot
                       ? "border-amber-200 bg-amber-50/70"
                       : "border-slate-200 bg-slate-50"
                   }`}
@@ -352,7 +531,9 @@ export function OmvStorageHealth() {
                       className={`mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg ${
                         isHealthy && !isHot
                           ? "bg-emerald-100 text-emerald-700"
-                          : "bg-amber-100 text-amber-700"
+                          : isUnknown && !isHot
+                            ? "bg-slate-200 text-slate-600"
+                            : "bg-amber-100 text-amber-700"
                       }`}
                     >
                       {isHealthy && !isHot ? (
@@ -374,10 +555,14 @@ export function OmvStorageHealth() {
                       <div className="mt-2 flex items-center gap-3 text-[11px]">
                         <span
                           className={
-                            isHealthy ? "text-emerald-700" : "text-amber-800"
+                            isHealthy
+                              ? "text-emerald-700"
+                              : isUnknown
+                                ? "text-slate-600"
+                                : "text-amber-800"
                           }
                         >
-                          {device.health}
+                          {isUnknown ? "健康状态未知" : currentReport.health}
                         </span>
                         <span
                           className={
@@ -386,11 +571,17 @@ export function OmvStorageHealth() {
                               : "text-slate-600"
                           }
                         >
-                          {device.temperatureC == null
+                          {currentReport.temperatureC == null
                             ? "温度未知"
-                            : `${device.temperatureC}°C`}
+                            : `${currentReport.temperatureC}°C`}
                         </span>
                       </div>
+                      {isUnknown && (
+                        <p className="mt-2 text-[10px] text-slate-500">
+                          未取得完整健康结论，请检查 SMART
+                          组件、磁盘支持与读取权限。
+                        </p>
+                      )}
                       {detail ? (
                         <p className="mt-2 text-[10px] text-slate-500">
                           通电 {detail.powerOnHours ?? "未知"} 小时 · 启停{" "}
@@ -428,7 +619,7 @@ export function OmvStorageHealth() {
         </section>
       )}
 
-      {!loading && status?.available && topology && (
+      {!loading && topology && (
         <section className="mt-4 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -453,7 +644,9 @@ export function OmvStorageHealth() {
 
           {topologyLayers.length === 0 ? (
             <p className="mt-3 rounded-xl bg-slate-50 px-3 py-3 text-xs text-slate-500">
-              当前是直连磁盘或分区，没有发现软件 RAID / LVM 层。
+              {topology.devices.length > 0
+                ? "当前已读取的拓扑中没有软件 RAID / LVM 层。"
+                : "尚未取得设备拓扑，请检查磁盘枚举结果后刷新。"}
             </p>
           ) : (
             <div className="mt-3 space-y-2">
@@ -508,18 +701,11 @@ export function OmvStorageHealth() {
         {filesystems.map((filesystem) => {
           const device = filesystem.parentdevicefile || filesystem.devicefile;
           const report = smart[device];
+          const reportUnknown = report && smartUnconfirmed(report);
           const canReadSmart = devices.some(
             (physicalDevice) => physicalDevice.devicefile === device,
           );
-          const used =
-            filesystem.usedPercent ??
-            (filesystem.sizeBytes > 0
-              ? Math.round(
-                  ((filesystem.sizeBytes - filesystem.availableBytes) /
-                    filesystem.sizeBytes) *
-                    100,
-                )
-              : 0);
+          const used = usedPercent(filesystem);
           return (
             <article
               key={`${filesystem.devicefile}:${filesystem.mountpoint}`}
@@ -549,20 +735,28 @@ export function OmvStorageHealth() {
                   <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
                     <div
                       className={`h-full rounded-full ${
-                        used >= 90
+                        used != null && used >= 90
                           ? "bg-red-500"
-                          : used >= 75
+                          : used != null && used >= 75
                             ? "bg-amber-500"
                             : "bg-blue-500"
                       }`}
-                      style={{ width: `${Math.max(0, Math.min(100, used))}%` }}
+                      style={{
+                        width:
+                          used == null
+                            ? "0%"
+                            : `${Math.max(0, Math.min(100, used))}%`,
+                      }}
                     />
                   </div>
                   <div className="mt-1.5 flex justify-between text-[11px] text-slate-500">
-                    <span>已使用 {used}%</span>
                     <span>
-                      可用 {formatBytes(filesystem.availableBytes)} /{" "}
-                      {formatBytes(filesystem.sizeBytes)}
+                      {used == null ? "容量使用率未知" : `已使用 ${used}%`}
+                    </span>
+                    <span>
+                      {filesystem.sizeBytes > 0
+                        ? `可用 ${formatBytes(filesystem.availableBytes)} / ${formatBytes(filesystem.sizeBytes)}`
+                        : "尚未取得容量，请检查挂载状态后刷新"}
                     </span>
                   </div>
 
@@ -574,12 +768,14 @@ export function OmvStorageHealth() {
                         </span>
                         <strong
                           className={
-                            healthy(report.health)
+                            healthy(report.health) && !reportUnknown
                               ? "text-emerald-600"
-                              : "text-amber-700"
+                              : reportUnknown
+                                ? "text-slate-600"
+                                : "text-amber-700"
                           }
                         >
-                          {report.health}
+                          {reportUnknown ? "健康状态未知" : report.health}
                         </strong>
                       </div>
                       <div>
@@ -625,7 +821,8 @@ export function OmvStorageHealth() {
                     </button>
                   ) : (
                     <p className="mt-3 text-[10px] text-slate-400">
-                      该卷位于阵列或逻辑层；SMART 请查看上方对应物理磁盘。
+                      尚未关联到可读取 SMART 的物理磁盘；请检查设备拓扑、SMART
+                      组件与读取权限。
                     </p>
                   )}
                 </div>
@@ -636,9 +833,10 @@ export function OmvStorageHealth() {
       </div>
 
       <p className="mt-4 text-[11px] leading-5 text-slate-400">
-        Echo 会在后台持续检测并保留最近告警变化；如需邮件或推送，请同时配置
-        官方通知。序列号和原始 SMART 文本不会进入
-        Echo。阵列修复、格式化、共享和权限修改将在原生写面逐步提供。
+        {healthSnapshot?.monitoring
+          ? "后台监测已启用，最近告警变化显示在上方。"
+          : "当前为按需检查；点击“刷新”重新读取，尚未启用后台持续监测。"}
+        序列号和原始 SMART 文本不会进入 Echo。
       </p>
     </>
   );

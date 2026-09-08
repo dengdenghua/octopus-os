@@ -384,7 +384,7 @@ Echo 会在设置页保留告警变化并写容器日志，但不擅自配置邮
 ```bash
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
   deploy/appliance/verify-running-appliance.py \
-  --require-clean-bundle --require-omv --expected-gid 1000
+  --require-clean-bundle --require-zfs-runtime --require-omv --expected-gid 1000
 ```
 
 结果的 `omv.host_install` 必须包含 `support_matrix:debian-13+omv-8` 和实际 `omv_version`；如果
@@ -398,7 +398,7 @@ ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
 ```bash
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
   deploy/appliance/verify-running-appliance.py \
-  --require-clean-bundle --require-omv --expected-gid 1000 \
+  --require-clean-bundle --require-zfs-runtime --require-omv --expected-gid 1000 \
   --omv-smb-test-folder 11111111-2222-4333-8444-555555555555
 ```
 
@@ -408,7 +408,7 @@ ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
 ```bash
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
   deploy/appliance/verify-running-appliance.py \
-  --require-clean-bundle --require-omv --expected-gid 1000 \
+  --require-clean-bundle --require-zfs-runtime --require-omv --expected-gid 1000 \
   --omv-smb-test-folder 11111111-2222-4333-8444-555555555555 \
   --require-omv-smb-write \
   --omv-smb-write-confirm \
@@ -427,7 +427,7 @@ ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
 ```bash
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
   deploy/appliance/verify-running-appliance.py \
-  --require-clean-bundle --require-omv --expected-gid 1000 \
+  --require-clean-bundle --require-zfs-runtime --require-omv --expected-gid 1000 \
   --omv-quota-test-filesystem aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee \
   --omv-quota-test-subject-type user \
   --omv-quota-test-subject-name echoverify \
@@ -441,7 +441,7 @@ ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
 ```bash
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
   deploy/appliance/verify-running-appliance.py \
-  --require-clean-bundle --require-omv --expected-gid 1000 \
+  --require-clean-bundle --require-zfs-runtime --require-omv --expected-gid 1000 \
   --omv-quota-test-filesystem aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee \
   --omv-quota-test-subject-type user \
   --omv-quota-test-subject-name echoverify \
@@ -462,7 +462,7 @@ SMB、NFS 写满配额的底层强制执行测试。
 ```bash
 ECHO_ADMIN_PASSWORD="$ECHO_ADMIN_PASSWORD" python \
   deploy/appliance/verify-running-appliance.py \
-  --require-clean-bundle --require-omv --expected-gid 1000 \
+  --require-clean-bundle --require-zfs-runtime --require-omv --expected-gid 1000 \
   --nas-transfer-test-bytes 1073741824 --nas-transfer-test-path verification \
   --nas-transfer-restart-main
 ```

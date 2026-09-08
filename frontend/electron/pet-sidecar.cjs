@@ -82,7 +82,10 @@ function resolveGodot() {
 }
 
 function appIsPackaged() {
-  return !!(process.env.NODE_ENV === "production" || require("electron")?.app?.isPackaged);
+  return !!(
+    process.env.NODE_ENV === "production" ||
+    require("electron")?.app?.isPackaged
+  );
 }
 
 function resolveProject() {
@@ -212,7 +215,10 @@ function startWindowSync() {
   const push = () => {
     if (!isPetRunning()) return;
     const payload = Buffer.from(
-      JSON.stringify({ type: "world.windows", windows: _collectWindowRects() }) + "\n",
+      JSON.stringify({
+        type: "world.windows",
+        windows: _collectWindowRects(),
+      }) + "\n",
       "utf8",
     );
     _enqueue(payload);
@@ -270,7 +276,10 @@ function sendTired(intensity = 0.5) {
 }
 
 function sendPresence(online, deviceId = "") {
-  return sendPetEvent("agent.presence", { online: !!online, device_id: deviceId });
+  return sendPetEvent("agent.presence", {
+    online: !!online,
+    device_id: deviceId,
+  });
 }
 
 function shutdown() {

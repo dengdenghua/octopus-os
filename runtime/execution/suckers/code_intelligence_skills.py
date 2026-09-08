@@ -94,13 +94,12 @@ def _load_persisted_index() -> list[tuple[str, str, Any]]:
     if not _INDEX_DB_PATH.exists():
         return []
     try:
-        import sqlite3
-
         import numpy as np
 
-        conn = sqlite3.connect(str(_INDEX_DB_PATH))
-        rows = conn.execute("SELECT path, chunk, embedding FROM code_chunks").fetchall()
-        conn.close()
+        from runtime.platform.io.sqlite import connect_closing
+
+        with connect_closing(str(_INDEX_DB_PATH)) as conn:
+            rows = conn.execute("SELECT path, chunk, embedding FROM code_chunks").fetchall()
         return [(r[0], r[1], np.frombuffer(r[2], dtype=np.float32)) for r in rows]
     except Exception:  # noqa: BLE001
         return []
@@ -108,21 +107,19 @@ def _load_persisted_index() -> list[tuple[str, str, Any]]:
 
 def _save_persisted_index(index: list[tuple[str, str, Any]]) -> None:
     try:
-        import sqlite3
-
         _INDEX_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(_INDEX_DB_PATH))
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS code_chunks (path TEXT, chunk TEXT, embedding BLOB)"
-        )
-        conn.execute("DELETE FROM code_chunks")
-        for path, chunk, emb in index:
+        from runtime.platform.io.sqlite import connect_closing
+
+        with connect_closing(str(_INDEX_DB_PATH)) as conn:
             conn.execute(
-                "INSERT INTO code_chunks VALUES (?, ?, ?)",
-                (path, chunk, emb.tobytes()),
+                "CREATE TABLE IF NOT EXISTS code_chunks (path TEXT, chunk TEXT, embedding BLOB)"
             )
-        conn.commit()
-        conn.close()
+            conn.execute("DELETE FROM code_chunks")
+            for path, chunk, emb in index:
+                conn.execute(
+                    "INSERT INTO code_chunks VALUES (?, ?, ?)",
+                    (path, chunk, emb.tobytes()),
+                )
     except (OSError, ImportError, TypeError, ValueError):  # noqa: BLE001
         pass
 

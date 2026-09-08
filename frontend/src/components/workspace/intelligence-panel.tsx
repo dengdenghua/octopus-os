@@ -37,6 +37,10 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getBackendBaseURL } from "@/core/config";
+import {
+  intelligenceReportsQueryKey,
+  intelligenceSubscriptionsQueryKey,
+} from "@/core/intelligence/query-keys";
 import { useI18n } from "@/core/i18n/hooks";
 import type { Translations } from "@/core/i18n/locales/types";
 import { cn } from "@/lib/utils";
@@ -91,8 +95,6 @@ type SubscriptionDraft = {
   sources: string[];
 };
 
-const subscriptionsKey = ["intelligence", "subscriptions"] as const;
-const reportsKey = ["intelligence", "reports"] as const;
 const EMPTY_SUBSCRIPTIONS: IntelligenceSubscription[] = [];
 const EMPTY_REPORTS: IntelligenceReport[] = [];
 const MONTHDAY_OPTIONS = Array.from({ length: 31 }, (_, index) =>
@@ -443,6 +445,8 @@ function ReportTimelineItem({
 export function IntelligencePanel() {
   const { locale, t } = useI18n();
   const queryClient = useQueryClient();
+  const subscriptionsKey = intelligenceSubscriptionsQueryKey();
+  const reportsKey = intelligenceReportsQueryKey();
   const [goal, setGoal] = useState("");
   const [draft, setDraft] = useState<SubscriptionDraft | null>(null);
   const [builderOpen, setBuilderOpen] = useState(true);

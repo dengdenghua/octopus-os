@@ -31,6 +31,16 @@ from appliance.auth import (
     normalized_accounts,
     read_auth_store,
 )
+from appliance.nas_alert_delivery import (
+    ALERT_DELIVERY_FILENAME,
+    MAX_ALERT_DELIVERY_BYTES,
+    validate_alert_delivery_state,
+)
+from appliance.nas_email_alert_delivery import (
+    EMAIL_ALERT_DELIVERY_FILENAME,
+    MAX_EMAIL_ALERT_DELIVERY_BYTES,
+    validate_email_alert_delivery_state,
+)
 from appliance.state_lock import LOCK_FILENAME
 from appliance.state_schema import (
     AUTH_SCHEMA_VERSION_KEY,
@@ -40,6 +50,7 @@ from appliance.state_schema import (
     StateSchemaError,
     inspect_state_schema,
 )
+from appliance.totp import MAX_TOTP_STATE_BYTES, TOTP_FILENAME, validate_totp_state
 
 _BCRYPT = re.compile(r"^bcrypt:\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$")
 _LEGACY_SHA256 = re.compile(r"^(?:sha256:)?[0-9a-f]{64}$")
@@ -58,6 +69,23 @@ def _private_regular_file(path: Path, *, maximum_bytes: int) -> None:
         info = path.lstat()
     except FileNotFoundError as exc:
         raise StateRecoveryError(f"required restored state file is missing: {path.name}") from exc
+    if os.name == "nt":
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or stat.S_ISLNK(info.st_mode)
+            or info.st_size < 1
+            or info.st_size > maximum_bytes
+        ):
+            raise StateRecoveryError(f"restored state file is unsafe: {path.name}")
+        try:
+            from appliance.windows_state import open_private_file, private_state_directory
+
+            with private_state_directory(path.parent, protect=True):
+                descriptor = open_private_file(path)
+                os.close(descriptor)
+        except (OSError, ValueError) as exc:
+            raise StateRecoveryError(f"restored state file is unsafe: {path.name}") from exc
+        return
     if (
         not stat.S_ISREG(info.st_mode)
         or stat.S_ISLNK(info.st_mode)
@@ -88,6 +116,14 @@ def inspect_restored_state(
         raise StateRecoveryError(f"restored state directory does not exist: {root}") from exc
     if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode):
         raise StateRecoveryError(f"restored state directory is unsafe: {root}")
+    if os.name == "nt":
+        try:
+            from appliance.windows_state import private_state_directory
+
+            with private_state_directory(root, protect=True):
+                pass
+        except (OSError, ValueError) as exc:
+            raise StateRecoveryError(f"restored state directory is unsafe: {root}") from exc
     if (root / "nas").exists() or (root / "nas").is_symlink():
         raise StateRecoveryError("restored state unexpectedly contains NAS user data")
     if (root / LOCK_FILENAME).exists() or (root / LOCK_FILENAME).is_symlink():
@@ -98,6 +134,9 @@ def inspect_restored_state(
         f"{AUDIT_FILENAME}.checkpoint": MAX_CHECKPOINT_BYTES,
         AUDIT_KEYRING_FILENAME: MAX_KEYRING_BYTES,
         OWNER_MARKER: 1024,
+        TOTP_FILENAME: MAX_TOTP_STATE_BYTES,
+        ALERT_DELIVERY_FILENAME: MAX_ALERT_DELIVERY_BYTES,
+        EMAIL_ALERT_DELIVERY_FILENAME: MAX_EMAIL_ALERT_DELIVERY_BYTES,
     }
     for name, maximum_bytes in optional_private_files.items():
         path = root / name
@@ -169,6 +208,45 @@ def inspect_restored_state(
     if require_current and auth.get(AUTH_SCHEMA_VERSION_KEY) != CURRENT_SCHEMA_VERSION:
         raise StateRecoveryError("restored authentication schema anchor is not current")
 
+    totp_enabled = False
+    recovery_codes_remaining = 0
+    totp_path = root / TOTP_FILENAME
+    if totp_path.exists() or totp_path.is_symlink():
+        try:
+            totp_state = validate_totp_state(read_auth_store(totp_path))
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            raise StateRecoveryError("restored administrator TOTP state is invalid") from exc
+        totp_enabled = True
+        recovery_codes_remaining = len(totp_state["recovery_code_hashes"])
+
+    alert_delivery_configured = False
+    alert_delivery_enabled = False
+    alert_delivery_path = root / ALERT_DELIVERY_FILENAME
+    if alert_delivery_path.exists() or alert_delivery_path.is_symlink():
+        try:
+            alert_delivery = validate_alert_delivery_state(
+                alert_delivery_path,
+                encryption_secret=jwt_secret,
+            )
+        except (OSError, ValueError) as exc:
+            raise StateRecoveryError("restored NAS alert delivery state is invalid") from exc
+        alert_delivery_configured = alert_delivery["url"] is not None
+        alert_delivery_enabled = alert_delivery["enabled"]
+
+    email_alert_delivery_configured = False
+    email_alert_delivery_enabled = False
+    email_alert_delivery_path = root / EMAIL_ALERT_DELIVERY_FILENAME
+    if email_alert_delivery_path.exists() or email_alert_delivery_path.is_symlink():
+        try:
+            email_alert_delivery = validate_email_alert_delivery_state(
+                email_alert_delivery_path,
+                encryption_secret=jwt_secret,
+            )
+        except (OSError, ValueError) as exc:
+            raise StateRecoveryError("restored NAS email alert state is invalid") from exc
+        email_alert_delivery_configured = email_alert_delivery["smtpHost"] is not None
+        email_alert_delivery_enabled = email_alert_delivery["enabled"]
+
     try:
         audit = ApplianceAudit.from_data_dir(root, jwt_secret=jwt_secret)
         audit_report = audit.verify()
@@ -188,6 +266,12 @@ def inspect_restored_state(
         "localAccounts": len(accounts),
         "passwordHashKind": hash_kind,
         "sessionNotBefore": session_not_before,
+        "administratorTotpEnabled": totp_enabled,
+        "administratorRecoveryCodesRemaining": recovery_codes_remaining,
+        "nasAlertDeliveryConfigured": alert_delivery_configured,
+        "nasAlertDeliveryEnabled": alert_delivery_enabled,
+        "nasEmailAlertDeliveryConfigured": email_alert_delivery_configured,
+        "nasEmailAlertDeliveryEnabled": email_alert_delivery_enabled,
         "auditEntries": audit_report.entries_checked,
         "auditSigningKeyId": anchor["signing"]["keyId"],
         "nasUserDataIncluded": False,

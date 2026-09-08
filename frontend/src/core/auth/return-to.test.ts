@@ -31,12 +31,8 @@ describe("auth returnTo", () => {
   });
 
   it("rejects cross-origin and auth-loop redirects", () => {
-    expect(sanitizeAuthReturnTo("https://evil.example/path")).toBe(
-      "/workspace",
-    );
-    expect(sanitizeAuthReturnTo("//evil.example/path")).toBe("/workspace");
-    expect(sanitizeAuthReturnTo("/login?returnTo=/workspace")).toBe(
-      "/workspace",
-    );
+    expect(sanitizeAuthReturnTo("https://evil.example/path")).toBe("/desktop");
+    expect(sanitizeAuthReturnTo("//evil.example/path")).toBe("/desktop");
+    expect(sanitizeAuthReturnTo("/login?returnTo=/workspace")).toBe("/desktop");
   });
 });

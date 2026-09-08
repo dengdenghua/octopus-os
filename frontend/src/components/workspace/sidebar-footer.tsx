@@ -9,11 +9,14 @@ import {
   UsersRoundIcon,
   UserCircleIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { swallow } from "@/core/utils/log";
-import { ACTIVE_AGENT_KEY, ROUTE_LOCKS } from "@/core/agents/active";
-import { eventBus, emitAgentChanged, emitOpenSettings } from "@/core/events";
+import {
+  ROUTE_LOCKS,
+  setActiveAgentId,
+  useActiveAgentId,
+} from "@/core/agents/active";
+import { emitAgentChanged, emitOpenSettings } from "@/core/events";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,17 +25,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAgents, dedupePersonaAgentsByDisplayName } from "@/core/agents";
+import { useAgents, dedupeAgentsByName } from "@/core/agents";
 import type { Agent } from "@/core/agents";
-import {
-  DEFAULT_PRIMARY_AGENT_ID,
-  isPrimaryPersonaAgentId,
-} from "@/core/agents/persona-policy";
+import { isPrimaryPersonaAgentId } from "@/core/agents/persona-policy";
 import { withAgentAvatarVersion } from "@/core/agents/avatar";
 import { LOCAL_AGENT_RANK } from "@/components/workspace/agents/agent-world-data";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
 import { taskWorkspaceRoute } from "@/core/router/task-workspace-route";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { agentHudHref } from "@/core/workspace/sidebar-routing";
 import { useOctLink } from "@/core/oct/hooks";
 import { useAuth } from "@/providers/AuthProvider";
@@ -46,18 +47,6 @@ import {
 } from "@/components/workspace/evolution-dashboard/game-data-transformer";
 
 // ─── Helpers ─────────────────────────────────────────────────────
-
-function readActiveAgentName(): string | null {
-  try {
-    const stored = window.localStorage.getItem(ACTIVE_AGENT_KEY)?.trim() || "";
-    if (!stored || isPrimaryPersonaAgentId(stored)) return stored || null;
-    window.localStorage.setItem(ACTIVE_AGENT_KEY, DEFAULT_PRIMARY_AGENT_ID);
-    return DEFAULT_PRIMARY_AGENT_ID;
-  } catch (e) {
-    swallow(e);
-    return null;
-  }
-}
 
 function isPlaceholderUsername(username?: string | null): boolean {
   const value = username?.trim().toLowerCase();
@@ -166,72 +155,38 @@ export function AgentFooter() {
   const { t } = useI18n();
   const credits = octLink.data?.credits?.surplusCredits;
   const [creditsOpen, setCreditsOpen] = useState(false);
-  const [activeName, setActiveName] = useState<string | null>(() =>
-    readActiveAgentName(),
-  );
+  const activeName = useActiveAgentId();
 
   // Fetch evolution data for the active agent (no agent filter, gets current user's data)
   const { data: evolutionData } = useEvolutionOverview({
     enabled: canAccessOperatorControlPlane(authStatus, user),
   });
-  useEffect(() => {
-    return eventBus.on("agent:changed", ({ name, source }) => {
-      if (isPrimaryPersonaAgentId(name)) {
-        setActiveName(name);
-      } else if (source !== "thread") {
-        setActiveName(DEFAULT_PRIMARY_AGENT_ID);
-      }
-    });
-  }, []);
-  // 兜底：监听 localStorage 变化（多标签页同步 + 页面初始化时序补偿）。
-  // emitAgentChanged 已经写 localStorage 并发 eventBus 事件，但 window CustomEvent
-  // 和跨 tab storage 事件不经过 eventBus，这里做最后一道同步保障。
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key !== ACTIVE_AGENT_KEY) return;
-      const next = readActiveAgentName();
-      setActiveName(next);
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
   const lock = ROUTE_LOCKS.find((r) => pathname.startsWith(r.prefix));
   const surfaceParam = new URLSearchParams(search).get("surface");
-  const urlAgentName = new URLSearchParams(search).get("agent")?.trim() || null;
   const agentLibrarySurface = surfaceParam === "company" ? "company" : "chat";
   const agentLibraryHref = (tab?: string, agentName?: string) =>
-    agentHudHref({ surface: agentLibrarySurface, tab, agentName });
+    preserveWorkbenchPresentation(
+      agentHudHref({ surface: agentLibrarySurface, tab, agentName }),
+      search,
+    );
   const personaAgents = useMemo(() => {
     // Only the fixed White Ghost squad owns personal conversation identities.
     // Installed experts and digital twins are selected in
     // the task's member control and join that task on demand.
-    return dedupePersonaAgentsByDisplayName(
+    return dedupeAgentsByName(
       agents
         .filter((agent) => isPrimaryPersonaAgentId(agent.name))
         .sort(sortHubDefaultAgents),
     );
   }, [agents]);
-  // 解析优先级与 page.tsx activeAgentId 保持一致：
-  // 1) route lock（如 /workspace/agents/:id/chats 锁定到该 agent）
-  // 2) URL ?agent= 参数 — 但 "echo" 是全局助理入口，位于角色选择器
-  //    之上，不应改变左下角的角色选择状态，因此忽略它
-  // 3) localStorage 里用户最近选择的 agent
-  // 4) 兜底 "general"
-  const isFreshTaskRoute = /^\/workspace\/realtime\/new(?:\/|$)/.test(pathname);
-  const effectiveUrlAgent =
-    isFreshTaskRoute && urlAgentName !== "echo" ? urlAgentName : null;
-  const effectiveName =
-    lock?.agent ?? effectiveUrlAgent ?? activeName ?? "general";
-
   // The assistant (echo) is a global fixed persona, not a switchable role.
   // It coexists with every other agent but must never surface in the bottom-left
   // persona trigger — even when the current thread belongs to the assistant.
   const switcherAgents = useMemo(() => personaAgents, [personaAgents]);
 
-  const active: Agent | undefined =
-    (effectiveName && switcherAgents.find((a) => a.name === effectiveName)) ||
-    switcherAgents[0];
+  const active: Agent | undefined = switcherAgents.find(
+    (agent) => agent.name === activeName,
+  );
 
   const lockedAgent: Agent | undefined =
     lock && !agents.find((a) => a.name === lock.agent)
@@ -248,9 +203,14 @@ export function AgentFooter() {
       : undefined;
 
   const selectAgent = (name: string) => {
-    setActiveName(name);
+    setActiveAgentId(name);
     emitAgentChanged(name);
-    _navigate(taskWorkspaceRoute({ agentId: name }));
+    _navigate(
+      preserveWorkbenchPresentation(
+        taskWorkspaceRoute({ agentId: name }),
+        search,
+      ),
+    );
   };
 
   // Per-row HUD shortcut. Rendered inside a DropdownMenuItem, so it has to stop

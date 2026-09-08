@@ -165,7 +165,18 @@ def _normalize_tree_mtime(root: Path, epoch: int) -> None:
     for path in reversed(paths):
         try:
             os.utime(path, (epoch, epoch), follow_symlinks=False)
-        except (FileNotFoundError, NotImplementedError):
+        except NotImplementedError:
+            # Windows' ``utime`` implementation does not expose the
+            # ``follow_symlinks`` keyword.  Generated bundle trees must still
+            # be reproducible there, but never follow a link supplied by a
+            # caller while applying the timestamp.
+            try:
+                if path.is_symlink():
+                    continue
+                os.utime(path, (epoch, epoch))
+            except (FileNotFoundError, OSError):
+                continue
+        except (FileNotFoundError, OSError):
             continue
 
 
@@ -902,6 +913,16 @@ print(json.dumps(report, sort_keys=True, separators=(",", ":")))
     environment.pop("PYTHONPATH", None)
     contract_path = os_root / "appliance" / "agent_api" / "contract.py"
     try:
+        from appliance.agent_api.contract import ALL_AGENT_API_DOMAINS
+
+        expected_domains = tuple(ALL_AGENT_API_DOMAINS)
+    except (ImportError, AttributeError, TypeError):
+        # The verifier can also run from a flattened release-tool directory
+        # where the source package is not importable.  The isolated child still
+        # performs the authoritative contract probe; this parent check remains
+        # strict when the OS contract is available locally.
+        expected_domains = ()
+    try:
         completed = subprocess.run(
             [sys.executable, "-c", program, str(contract_path)],
             cwd=source,
@@ -927,7 +948,13 @@ print(json.dumps(report, sort_keys=True, separators=(",", ":")))
         or report.get("schema") != "echo.agent_api_contract.v1"
         or report.get("compatible") is not True
         or not isinstance(report.get("required"), list)
-        or len(report["required"]) != 8
+        or (
+            expected_domains
+            and tuple(
+                item.get("id") if isinstance(item, dict) else None for item in report["required"]
+            )
+            != expected_domains
+        )
         or report.get("optional") != []
         or any(
             not isinstance(item, dict)

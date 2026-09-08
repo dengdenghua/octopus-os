@@ -31,10 +31,7 @@ import {
 
 // Vitest runs from the frontend root; jsdom rewrites import.meta.url to an
 // http URL, so resolve fixtures from the working directory instead.
-const FIXTURE_DIR = join(
-  process.cwd(),
-  "src/core/realtime/__fixtures__",
-);
+const FIXTURE_DIR = join(process.cwd(), "src/core/realtime/__fixtures__");
 
 function loadGoldenEvents(): SequencedLoggedEvent[] {
   return readFileSync(join(FIXTURE_DIR, "replay-golden.events.jsonl"), "utf8")
@@ -183,8 +180,16 @@ describe("normalizeEvent", () => {
       turnId: "t1",
       payload: {
         grounding: [{ kind: "source", title: "a.ts", path: "src/a.ts:1" }],
-        phases: [{ id: "ph1", index: 1, total: 1, title: "x", status: "running" }],
-        workbenchSnapshot: { schemaVersion: 2, version: 1, status: "running", phases: [], updatedAt: "t" },
+        phases: [
+          { id: "ph1", index: 1, total: 1, title: "x", status: "running" },
+        ],
+        workbenchSnapshot: {
+          schemaVersion: 2,
+          version: 1,
+          status: "running",
+          phases: [],
+          updatedAt: "t",
+        },
       },
     });
     expect(events.map((e) => e.method)).toEqual([
@@ -229,7 +234,15 @@ describe("normalizeEvent", () => {
       fileChangeHunk: {
         path: "a.ts",
         op: "create",
-        hunk: { id: "h", oldStart: 0, oldLines: 0, newStart: 1, newLines: 1, body: "+x", decision: "pending" },
+        hunk: {
+          id: "h",
+          oldStart: 0,
+          oldLines: 0,
+          newStart: 1,
+          newLines: 1,
+          body: "+x",
+          decision: "pending",
+        },
       },
       mcpToolProgress: { status: "running", updatedAt: "t" },
     };
@@ -380,7 +393,9 @@ describe("replayEvents", () => {
     const events = loadGoldenEvents();
     const first = replayEvents(events).conversation;
     const second = replayEvents(events).conversation;
-    expect(JSON.stringify(project(first))).toBe(JSON.stringify(project(second)));
+    expect(JSON.stringify(project(first))).toBe(
+      JSON.stringify(project(second)),
+    );
   });
 
   it("materializes trailing in-flight deltas into item wire fields", () => {
@@ -392,7 +407,13 @@ describe("replayEvents", () => {
         threadId: "thr",
         turnId: "t1",
         payload: {
-          item: { id: "p1", type: "plan", status: "inProgress", createdAt: "t", text: "" },
+          item: {
+            id: "p1",
+            type: "plan",
+            status: "inProgress",
+            createdAt: "t",
+            text: "",
+          },
         },
       },
       {
@@ -425,7 +446,13 @@ describe("replayEvents", () => {
         threadId: "thr",
         turnId: "t1",
         payload: {
-          item: { id: "a1", type: "agentMessage", status: "inProgress", createdAt: "t", text: "" },
+          item: {
+            id: "a1",
+            type: "agentMessage",
+            status: "inProgress",
+            createdAt: "t",
+            text: "",
+          },
         },
       },
       {
@@ -433,7 +460,13 @@ describe("replayEvents", () => {
         threadId: "thr",
         turnId: "t1",
         payload: {
-          item: { id: "a1", type: "agentMessage", status: "completed", createdAt: "t", text: "final" },
+          item: {
+            id: "a1",
+            type: "agentMessage",
+            status: "completed",
+            createdAt: "t",
+            text: "final",
+          },
         },
       },
       {
@@ -469,7 +502,13 @@ describe("replayEvents", () => {
           threadId: "thr",
           turnId: "t1",
           payload: {
-            item: { id: "a1", type: "agentMessage", status: "completed", createdAt: "t", text: "hi" },
+            item: {
+              id: "a1",
+              type: "agentMessage",
+              status: "completed",
+              createdAt: "t",
+              text: "hi",
+            },
           },
         },
       ],
@@ -505,7 +544,13 @@ describe("replayEvents batch fold (§2.6)", () => {
         threadId: "thr",
         turnId: "t1",
         payload: {
-          item: { id: "a1", type: "agentMessage", status: "inProgress", createdAt: "t", text: "" },
+          item: {
+            id: "a1",
+            type: "agentMessage",
+            status: "inProgress",
+            createdAt: "t",
+            text: "",
+          },
         },
       },
       // 50 consecutive deltas to the same item → 1 reduce call.
@@ -547,7 +592,13 @@ describe("replayEvents batch fold (§2.6)", () => {
         threadId: "thr",
         turnId: "t1",
         payload: {
-          item: { id: "a1", type: "agentMessage", status: "inProgress", createdAt: "t", text: "" },
+          item: {
+            id: "a1",
+            type: "agentMessage",
+            status: "inProgress",
+            createdAt: "t",
+            text: "",
+          },
         },
       },
       {
@@ -555,16 +606,34 @@ describe("replayEvents batch fold (§2.6)", () => {
         threadId: "thr",
         turnId: "t1",
         payload: {
-          item: { id: "r1", type: "reasoning", status: "inProgress", createdAt: "t", content: "" },
+          item: {
+            id: "r1",
+            type: "reasoning",
+            status: "inProgress",
+            createdAt: "t",
+            content: "",
+          },
         },
       },
       // Interleaved items: no merge possible even with batching on.
-      { event: "item_delta", threadId: "thr", turnId: "t1",
-        payload: { itemId: "a1", kind: "agentMessage", delta: "A" } },
-      { event: "item_delta", threadId: "thr", turnId: "t1",
-        payload: { itemId: "r1", kind: "reasoning", delta: "R" } },
-      { event: "item_delta", threadId: "thr", turnId: "t1",
-        payload: { itemId: "a1", kind: "agentMessage", delta: "B" } },
+      {
+        event: "item_delta",
+        threadId: "thr",
+        turnId: "t1",
+        payload: { itemId: "a1", kind: "agentMessage", delta: "A" },
+      },
+      {
+        event: "item_delta",
+        threadId: "thr",
+        turnId: "t1",
+        payload: { itemId: "r1", kind: "reasoning", delta: "R" },
+      },
+      {
+        event: "item_delta",
+        threadId: "thr",
+        turnId: "t1",
+        payload: { itemId: "a1", kind: "agentMessage", delta: "B" },
+      },
     ];
     const batched = replayEvents(events);
     const literal = replayEvents(events, { batch: false });
@@ -585,7 +654,12 @@ describe("replayEvents batch fold (§2.6)", () => {
         threadId: "thr",
         turnId: "t1",
         payload: {
-          item: { id: "m1", type: "mcpToolCall", status: "inProgress", createdAt: "t" },
+          item: {
+            id: "m1",
+            type: "mcpToolCall",
+            status: "inProgress",
+            createdAt: "t",
+          },
         },
       },
       ...[1, 2, 3].map((step) => ({

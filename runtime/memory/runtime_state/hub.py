@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
+from runtime.memory.semantics import fact_semantics, memory_data_notice, memory_file_type
 from runtime.safety.auth.scope import TenantScope
+
+if TYPE_CHECKING:
+    from runtime.memory.users.user_store import MemoryViewer
 
 MemoryKind = Literal[
     "fact",
@@ -30,6 +35,8 @@ class MemoryRecord:
     created_at: str = ""
     evidence_refs: list[str] = field(default_factory=list)
     score: float = 0.0
+    memory_type: str = "unclassified"
+    assurance: str = "unverified"
 
 
 @dataclass(frozen=True)
@@ -41,6 +48,7 @@ class MemoryQuery:
     include_global: bool = True
     limit: int = 12
     tenant_scope: TenantScope | None = None
+    viewer: MemoryViewer | None = None
 
 
 class MemoryHub:
@@ -113,11 +121,26 @@ class MemoryHub:
                         scope = TenantScope(tenant_id, actor_id)
                 except (ImportError, RuntimeError):
                     scope = None
-            memory = user_store.read_memory(scope)
+            viewer = query.viewer
+            config_scope = scope
+            if viewer is not None:
+                # Shared facts live in their owner's tenant partition.  A
+                # normal ``read_memory(scope)`` would make team/restricted
+                # facts unreachable to authorized recipients, so aggregate
+                # only through the viewer-filtered store path.
+                facts = user_store.visible_facts_for_viewer(
+                    viewer,
+                    limit=getattr(user_store, "HARD_MAX_FACTS", 2_000),
+                )
+                memory = {"facts": facts}
+                if config_scope is None and viewer.tenant_id and viewer.actor_id:
+                    config_scope = TenantScope(viewer.tenant_id, viewer.actor_id)
+            else:
+                memory = user_store.read_memory(scope)
         except (OSError, TypeError, ValueError):
             return []
         try:
-            config = user_store.read_config(scope)
+            config = user_store.read_config(config_scope)
         except (OSError, TypeError, ValueError, AttributeError):
             config = {}
         if not config.get("enabled", True) or not config.get(
@@ -139,6 +162,7 @@ class MemoryHub:
             kind: MemoryKind = (
                 "intelligence_report" if category == "intelligence_report" else "fact"
             )
+            semantics = fact_semantics(fact)
             out.append(
                 MemoryRecord(
                     id=str(fact.get("id") or f"user_store:{len(out)}"),
@@ -154,6 +178,8 @@ class MemoryHub:
                     tags=[category],
                     created_at=str(fact.get("createdAt") or ""),
                     evidence_refs=[str(fact.get("source") or "manual")],
+                    memory_type=semantics.memory_type,
+                    assurance=semantics.assurance,
                 )
             )
         return out
@@ -224,6 +250,7 @@ class MemoryHub:
                         scope_key=scope_key,
                         confidence=0.7,
                         evidence_refs=[str(path)],
+                        memory_type=memory_file_type(line, scope=scope),
                     )
                 )
         return out
@@ -251,25 +278,14 @@ class MemoryHub:
                         source=source,
                         scope="global",
                         confidence=0.78,
+                        memory_type="model_summary",
                     )
                 )
         return records
 
     def _with_score(self, record: MemoryRecord, query: str) -> MemoryRecord:
         score = _score(query, record.content, record.tags)
-        return MemoryRecord(
-            id=record.id,
-            kind=record.kind,
-            content=record.content,
-            source=record.source,
-            scope=record.scope,
-            scope_key=record.scope_key,
-            confidence=record.confidence,
-            tags=list(record.tags),
-            created_at=record.created_at,
-            evidence_refs=list(record.evidence_refs),
-            score=score,
-        )
+        return replace(record, score=score)
 
 
 def retrieve_relevant(
@@ -280,6 +296,7 @@ def retrieve_relevant(
     limit: int = 12,
     repo_root: str | Path | None = None,
     planner: Any = None,
+    viewer: MemoryViewer | None = None,
 ) -> list[MemoryRecord]:
     return MemoryHub(repo_root=repo_root, planner=planner).retrieve(
         MemoryQuery(
@@ -287,6 +304,7 @@ def retrieve_relevant(
             agent_id=agent_id,
             project=project,
             limit=limit,
+            viewer=viewer,
         )
     )
 
@@ -298,25 +316,44 @@ def format_records_for_prompt(
 ) -> str:
     if not records:
         return ""
-    lines = ["RELEVANT LONG-TERM MEMORY:"]
-    total = len(lines[0]) + 1
+    lines = ["RELEVANT LONG-TERM MEMORY:", memory_data_notice()]
+    total = len("\n".join(lines)) + 1
+    has_record = False
     for record in records:
         content = _clean_text(record.content)
         if not content:
             continue
-        prefix = f"- [{record.scope}/{record.kind}/{record.source}] "
-        line = prefix + content
+        prefix = (
+            f"- [{record.scope}/{record.kind}/{record.source}] "
+            f"[{record.memory_type}/{record.assurance}] "
+        )
         remaining = max_chars - total
-        if remaining <= 0:
+        if remaining < len(prefix) + 3:
             break
-        if len(line) > remaining:
-            line = line[: max(0, remaining - 1)].rstrip() + "..."
+        encoded = json.dumps(content, ensure_ascii=False)
+        keep = len(content)
+        while len(prefix) + len(encoded) > remaining:
+            keep = max(
+                0,
+                keep - (len(prefix) + len(encoded) - remaining) - 1,
+            )
+            encoded = json.dumps(content[:keep] + "…", ensure_ascii=False)
+        line = prefix + encoded
         lines.append(line)
         total += len(line) + 1
-    return "\n".join(lines) if len(lines) > 1 else ""
+        has_record = True
+    return "\n".join(lines) if has_record else ""
 
 
 def _fact_visible(fact: dict[str, Any], query: MemoryQuery) -> bool:
+    if query.viewer is not None:
+        try:
+            from runtime.memory.users.user_store import fact_visible_to
+
+            if not fact_visible_to(fact, query.viewer):
+                return False
+        except (ImportError, TypeError, ValueError):
+            return False
     scope = str(fact.get("scope") or "global")
     if scope == "global":
         return query.include_global

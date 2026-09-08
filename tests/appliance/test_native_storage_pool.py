@@ -799,9 +799,11 @@ def scrub_host(
     monkeypatch.setattr(
         native_storage_pool,
         "_run_checked",
-        lambda *args, **_kwargs: _maintenance_status(state["scan"], state["progress"])
-        if args[:3] == ("zpool", "status", "-P")
-        else (_ for _ in ()).throw(AssertionError(f"unexpected command {args}")),
+        lambda *args, **_kwargs: (
+            _maintenance_status(state["scan"], state["progress"])
+            if args[:3] == ("zpool", "status", "-P")
+            else (_ for _ in ()).throw(AssertionError(f"unexpected command {args}"))
+        ),
     )
     return state
 

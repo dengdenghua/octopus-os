@@ -2,19 +2,25 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 import tarfile
 import tempfile
 import threading
 from collections.abc import Iterator
 from pathlib import Path
-from socketserver import StreamRequestHandler, ThreadingUnixStreamServer
+from socketserver import StreamRequestHandler
 from types import SimpleNamespace
 
 import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+if os.name == "nt":
+    pytest.skip("Docker Unix-socket proxy requires a POSIX host", allow_module_level=True)
+
+from socketserver import ThreadingUnixStreamServer
 
 from appliance.app_registry.docker_client import (
     DockerClient,

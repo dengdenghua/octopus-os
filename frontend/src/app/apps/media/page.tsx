@@ -16,7 +16,12 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   ELECTRON_TITLE_BAR_HEIGHT,
@@ -27,13 +32,13 @@ import {
   createNASIndexJob,
   listNASAlbums,
   listNASFiles,
-  loadNASAssetURL,
   startNASService,
   triggerVideoIndex,
   type NASAlbum,
   type NASFileAsset,
 } from "@/core/storage/api";
 import { cn } from "@/lib/utils";
+import { useNASAsset } from "@/appliance/use-nas-asset";
 
 export type MediaAppKind = "image" | "video";
 
@@ -69,33 +74,6 @@ function formatDate(mtimeNs: number): string {
     month: "short",
     day: "numeric",
   }).format(date);
-}
-
-function useAssetObjectURL(assetId: string | undefined): string | null {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!assetId) {
-      setUrl(null);
-      return;
-    }
-    let disposed = false;
-    let objectURL: string | null = null;
-    void loadNASAssetURL(`/v1/files/${encodeURIComponent(assetId)}/content`)
-      .then((next) => {
-        objectURL = next;
-        if (!disposed) setUrl(next);
-      })
-      .catch(() => {
-        if (!disposed) setUrl(null);
-      });
-    return () => {
-      disposed = true;
-      if (objectURL) URL.revokeObjectURL(objectURL);
-    };
-  }, [assetId]);
-
-  return url;
 }
 
 async function loadAssets(
@@ -516,8 +494,10 @@ function MediaAssetCard({
   kind: MediaAppKind;
   onOpen: () => void;
 }) {
-  const imageURL = useAssetObjectURL(
-    kind === "image" ? asset.asset_id : undefined,
+  const imageURL = useNASAsset(
+    kind === "image"
+      ? `/v1/files/${encodeURIComponent(asset.asset_id)}/content`
+      : undefined,
   );
   const isImage = kind === "image";
   return (
@@ -577,7 +557,11 @@ function MediaPreviewDialog({
   kind: MediaAppKind;
   onClose: () => void;
 }) {
-  const contentURL = useAssetObjectURL(asset?.asset_id);
+  const contentURL = useNASAsset(
+    asset?.asset_id
+      ? `/v1/files/${encodeURIComponent(asset.asset_id)}/content`
+      : undefined,
+  );
   const isImage = kind === "image";
   return (
     <Dialog
@@ -590,6 +574,9 @@ function MediaPreviewDialog({
         <DialogTitle className="sr-only">
           {asset?.name ?? "媒体预览"}
         </DialogTitle>
+        <DialogDescription className="sr-only">
+          查看媒体文件的预览
+        </DialogDescription>
         <div className="flex max-h-[92vh] flex-col bg-background">
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0">

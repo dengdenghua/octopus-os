@@ -1,6 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { AutomationPolicyRuleDraftsReport, AutomationRadarReport } from "@/core/agent-trace/api";
+import type {
+  AutomationPolicyRuleDraftsReport,
+  AutomationRadarReport,
+} from "@/core/agent-trace/api";
 import { cn } from "@/lib/utils";
 import { GateStat } from "../../replay-panel";
 import { ShieldAlertIcon } from "lucide-react";

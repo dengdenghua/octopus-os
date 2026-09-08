@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 import threading
 from datetime import UTC, datetime, timedelta
@@ -91,8 +92,14 @@ def test_monitor_persists_alerts_and_resolution_history(tmp_path: Path) -> None:
     }
     assert all(alert["occurrences"] == 1 for alert in unhealthy["activeAlerts"])
     assert [event["event"] for event in unhealthy["events"]] == ["opened"] * 4
-    assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
-    persisted = json.loads(state_path.read_text())
+    if os.name == "nt":
+        from tests.appliance.windows_acl_assertions import assert_private_windows_acl
+
+        assert_private_windows_acl(tmp_path)
+        assert_private_windows_acl(state_path)
+    else:
+        assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
+    persisted = json.loads(state_path.read_text(encoding="utf-8"))
     assert "monitoring" not in persisted
     assert persisted["readOnly"] is True
 
@@ -167,7 +174,7 @@ def test_monitor_never_follows_a_state_symlink(tmp_path: Path) -> None:
     snapshot = OmvHealthMonitor(client, state_path).poll()
 
     assert snapshot["persistenceHealthy"] is False
-    assert outside.read_text() == "do not replace"
+    assert outside.read_text(encoding="utf-8") == "do not replace"
     assert state_path.is_symlink()
 
 

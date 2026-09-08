@@ -13,6 +13,16 @@ const {
   runNativeAppIpcSmoke,
 } = require("./native-app-ipc-smoke.cjs");
 
+// This diagnostic deliberately exercises Linux ownership/mode bits and the
+// Linux desktop-session contract. Other platforms reject it before touching
+// the runtime marker, so keep their Electron suite green with an explicit skip.
+if (process.platform !== "linux") {
+  console.log(
+    "Native application IPC smoke tests skipped (Linux session only)",
+  );
+  process.exit(0);
+}
+
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "echo-native-ipc-"));
   const runtime = path.join(root, "runtime");

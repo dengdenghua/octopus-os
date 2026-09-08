@@ -30,6 +30,11 @@ import { authHeaders } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
 import { useI18n } from "@/core/i18n/hooks";
 import { swallow } from "@/core/utils/log";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
+import { currentActorId } from "@/core/auth/api";
 import { cn } from "@/lib/utils";
 
 export type AgentModeName = "develop" | "audit" | "uxui";
@@ -192,6 +197,7 @@ export function ModeSelector({
   className,
 }: ModeSelectorProps) {
   const { t } = useI18n();
+  const actor = currentActorId();
   const [detection, setDetection] = useState<DetectResponse | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -277,6 +283,7 @@ export function ModeSelector({
     onManualOverrideChange,
     onModeChange,
     workDir,
+    actor,
   ]);
 
   useEffect(() => {
@@ -645,6 +652,8 @@ function compactWorkspaceLabel(path: string): string {
 }
 
 const MODE_OVERRIDE_STORAGE_KEY = "echo:modeOverride";
+const modeOverrideStorageKey = () =>
+  actorScopedStorageKey(MODE_OVERRIDE_STORAGE_KEY);
 
 /**
  * A persisted per-workspace override stores both the manual mode AND the
@@ -667,7 +676,7 @@ function isValidAuditIntensity(v: unknown): v is AuditIntensity {
 function readStoredEntries(): Record<string, StoredModeEntry> {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(MODE_OVERRIDE_STORAGE_KEY);
+    const raw = readActorScopedStorageValue(MODE_OVERRIDE_STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, StoredModeEntry>;
     return parsed && typeof parsed === "object" ? parsed : {};
@@ -725,7 +734,7 @@ export function writeStoredModeOverride(
         : {}),
     };
     window.localStorage.setItem(
-      MODE_OVERRIDE_STORAGE_KEY,
+      modeOverrideStorageKey(),
       JSON.stringify(current),
     );
   } catch (e) {
@@ -756,7 +765,7 @@ export function writeStoredAuditIntensity(
       auditIntensity: intensity,
     };
     window.localStorage.setItem(
-      MODE_OVERRIDE_STORAGE_KEY,
+      modeOverrideStorageKey(),
       JSON.stringify(current),
     );
   } catch (e) {

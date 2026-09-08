@@ -187,11 +187,7 @@ export default function EvolutionSettingsPage() {
             {Object.entries(sched.last_summary)
               .filter(([k]) => !["tick", "ts"].includes(k))
               .map(([k, v]) => (
-                <Badge
-                  key={k}
-                  variant="outline"
-                  className="text-xs font-mono"
-                >
+                <Badge key={k} variant="outline" className="text-xs font-mono">
                   {k}={String(v)}
                 </Badge>
               ))}

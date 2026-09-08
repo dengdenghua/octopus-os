@@ -146,6 +146,41 @@ def test_authenticated_dispatch_uses_only_server_managed_authority(
     assert context["runtime_session_metadata"]["owner_actor_id"] == "alice"
 
 
+def test_dispatch_binds_host_request_and_releases_shared_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from runtime.execution.request import current_execution_request
+    from runtime.platform.process.session import current_session
+    from runtime.platform.process.task_supervisor import TaskRunStatus, TaskSupervisor
+
+    supervisor = TaskSupervisor.from_path(tmp_path / "task-runs.json")
+    app = FastAPI()
+    app.include_router(create_subagents_router(task_supervisor=supervisor))
+    client = TestClient(app)
+    observed: list[tuple[Any, Any]] = []
+
+    def fake_call_subagent(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        observed.append((current_session(), current_execution_request()))
+        return {"agent_id": args[0], "output": "ok", "success": True, "error": None}
+
+    monkeypatch.setattr("runtime.execution.subagents.call_subagent", fake_call_subagent)
+    response = client.post(
+        "/api/subagents/dispatch",
+        json={"subagent_type": "researcher", "prompt": "inspect safely", "thread_id": "t"},
+    )
+
+    assert response.status_code == 200
+    assert observed and observed[0][0] is not None
+    request = observed[0][1]
+    assert request is not None
+    assert request.task.thread_id == "t"
+    records = supervisor.store.list(kind="subagent")
+    assert len(records) == 1
+    assert records[0].status == TaskRunStatus.COMPLETED
+    assert records[0].lease is None
+
+
 def test_authenticated_stream_dispatch_and_sessions_share_owned_thread_boundary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -801,4 +836,3 @@ def test_authenticated_session_listing_and_continue_are_actor_tenant_scoped(
     )
     assert continued.status_code == 400
     assert "unknown subagent session" in continued.json()["detail"]
-

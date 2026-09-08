@@ -32,6 +32,7 @@ from runtime.safety.auth import TrustEngine
 from .schema import AgentConfig
 
 Planner = StaticPlanner | LLMPlanner
+_INHERIT_MODEL_SERVICE = object()
 
 
 @runtime_checkable
@@ -69,6 +70,20 @@ class BuiltStack:
     runtime: GraphRuntime
     planner: Planner
     mcp_clients: list[Any] = field(default_factory=list)
+    approval_router: Any | None = field(default=_INHERIT_MODEL_SERVICE, repr=False)
+    background_router: Any | None = field(default=_INHERIT_MODEL_SERVICE, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.approval_router is _INHERIT_MODEL_SERVICE:
+            self.approval_router = getattr(self.planner, "router", None)
+        if self.background_router is _INHERIT_MODEL_SERVICE:
+            from runtime.execution.model_services import background_model_calls_enabled
+
+            self.background_router = (
+                getattr(self.planner, "router", None)
+                if background_model_calls_enabled(self)
+                else None
+            )
 
     @property
     def is_llm_planner(self) -> bool:
@@ -128,14 +143,24 @@ def build_from_config(config: AgentConfig) -> BuiltStack:
     # Default-on secret redaction: the journal is the source-of-truth audit log
     # and records tool args/outputs, so run every payload through the redactor
     # before persistence to keep accidental secrets (.env values, keys) off disk.
+    # Packaged/local profiles opt into the app's existing state-directory
+    # contract. A literal cwd-relative "data/events.jsonl" would split the
+    # journal from thread/trace state when launched from frontend/ or from a
+    # read-only installation directory. Keep null as the explicit in-memory
+    # choice for library callers, tests, and user-owned configurations.
+    journal_path = config.journal_file
+    if journal_path == "auto":
+        from runtime.platform.process.paths import app_paths
+
+        journal_path = str(app_paths().data_dir / "events.jsonl")
     journal: Journal
     journal = (
         JSONLJournal(
-            config.journal_file,
+            journal_path,
             max_size_bytes=config.journal_max_bytes,
             redactor=Redactor(),
         )
-        if config.journal_file
+        if journal_path
         else InMemoryJournal(max_events=_in_memory_journal_cap(config.journal_max_bytes))
     )
 

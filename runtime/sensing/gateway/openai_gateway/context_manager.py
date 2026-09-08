@@ -46,7 +46,10 @@ def _build_messages_for_llm(
         messages.insert(0, Message(role="system", content=runtime_soul))
     from runtime.memory.users.profile import render_profile_memories
 
-    profile_section = render_profile_memories(_profile_memories_payload(intent))
+    profile_section = render_profile_memories(
+        _profile_memories_payload(intent),
+        annotate=True,
+    )
     if profile_section:
         messages.insert(0, Message(role="system", content=profile_section))
     try:

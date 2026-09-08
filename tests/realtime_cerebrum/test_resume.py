@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import pytest
+
 try:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -23,6 +25,41 @@ from tests.realtime_cerebrum._helpers import (
 from tests.realtime_cerebrum._helpers import (
     set_script as _set_script,
 )
+
+
+@pytest.fixture
+def persistent_resume_gateway(tmp_path: Path):
+    from runtime.memory.diagnostics.trace_store import AgentTraceStore
+    from runtime.sensing.gateway.realtime_cerebrum import CerebrumRuntime
+    from runtime.sensing.gateway.realtime_gateway import RealtimeGateway
+
+    trace = AgentTraceStore(tmp_path / "trace.sqlite")
+    runtime = CerebrumRuntime(
+        stack=object(), agent=None, logs_root=str(tmp_path / "threads"), trace_store=trace
+    )
+    app = FastAPI()
+    app.include_router(RealtimeGateway(runtime=runtime, approval_timeout=5).router)
+    try:
+        with TestClient(app) as client:
+            yield client, trace
+    finally:
+        trace.close()
+
+
+def _persistent_checkpoint(trace, task_id, thread_id, iteration):
+    return trace.record_checkpoint(
+        task_id=task_id,
+        thread_id=thread_id,
+        checkpoint_type="react",
+        iteration=iteration,
+        state={
+            "iteration_completed": iteration,
+            "messages_snapshot": [{"role": "user", "content": "original task"}],
+            "steps_snapshot": [
+                {"iteration": iteration, "action": "read_file", "observation": "read file"}
+            ],
+        },
+    )
 
 
 def test_realtime_react_binds_thread_artifact_session(tmp_path: Path) -> None:
@@ -213,9 +250,14 @@ Resume this agent run from the selected durable checkpoint.
     assert "raw_state" not in text
 
 
-def test_confirmed_resume_intent_runs_react_once_and_is_consumed(gateway: Any) -> None:
-    client, _ = gateway
-    resume_text = """
+def test_confirmed_resume_intent_runs_react_once_and_is_consumed(
+    persistent_resume_gateway: Any,
+) -> None:
+    client, trace = persistent_resume_gateway
+    task_id = str(uuid4())
+    checkpoint_id = _persistent_checkpoint(trace, task_id, "th-resume-consume", 2)
+    resume_text = (
+        """
 Resume this agent run from the selected durable checkpoint.
 
 <echo_resume_proposal>
@@ -243,6 +285,9 @@ Resume this agent run from the selected durable checkpoint.
 }
 </echo_resume_proposal>
 """.strip()
+        .replace('"checkpoint_id": 12', f'"checkpoint_id": {checkpoint_id}')
+        .replace("task-12", task_id)
+    )
     with client.websocket_connect("/api/realtime") as ws:
         _set_script(
             [{"type": "text_delta", "delta": "should not run"}, {"type": "react_completed"}]
@@ -262,13 +307,13 @@ Resume this agent run from the selected durable checkpoint.
             ws,
             {
                 "threadId": "th-resume-consume",
-                "input": [{"type": "text", "text": "确认恢复 checkpoint #12"}],
+                "input": [{"type": "text", "text": f"确认恢复 checkpoint #{checkpoint_id}"}],
                 "approvalPolicy": "on-request",
             },
         )
         assert _LAST_STREAM_KWARGS["thread_id"] == "th-resume-consume"
         resume_intent = _LAST_SESSION["metadata"]["resume_intent"]
-        assert resume_intent["checkpoint_id"] == 12
+        assert resume_intent["checkpoint_id"] == checkpoint_id
         assert resume_intent["requires_confirmation"] is False
         assert resume_intent["confirmed"] is True
         assert resume_intent["recent_tool_calls"][0]["tool"] == "read_file"
@@ -286,16 +331,17 @@ Resume this agent run from the selected durable checkpoint.
         assert "resume_intent" not in _LAST_SESSION["metadata"]
 
 
-def test_confirmed_resume_intent_passes_task_id_to_react(gateway: Any) -> None:
-    client, _ = gateway
+def test_confirmed_resume_intent_passes_task_id_to_react(persistent_resume_gateway: Any) -> None:
+    client, trace = persistent_resume_gateway
     task_id = str(uuid4())
+    checkpoint_id = _persistent_checkpoint(trace, task_id, "th-resume-task-id", 5)
     resume_text = f"""
 Resume this agent run from the selected durable checkpoint.
 
 <echo_resume_proposal>
 {{
   "schema": "echo.resume_proposal.v1",
-  "checkpoint_id": 33,
+  "checkpoint_id": {checkpoint_id},
   "task_id": "{task_id}",
   "checkpoint_type": "react",
   "iteration": 5,
@@ -323,7 +369,7 @@ Resume this agent run from the selected durable checkpoint.
             ws,
             {
                 "threadId": "th-resume-task-id",
-                "input": [{"type": "text", "text": "确认恢复 checkpoint #33"}],
+                "input": [{"type": "text", "text": f"确认恢复 checkpoint #{checkpoint_id}"}],
                 "approvalPolicy": "on-request",
             },
         )
@@ -560,6 +606,8 @@ def test_confirmed_resume_intent_survives_runtime_restart_when_trace_store_exist
     from runtime.sensing.gateway.realtime_gateway import RealtimeGateway
 
     trace = AgentTraceStore(tmp_path / "trace.sqlite")
+    task_id = str(uuid4())
+    checkpoint_id = _persistent_checkpoint(trace, task_id, "th-resume-restart", 6)
     runtime_a = CerebrumRuntime(
         stack=object(),
         agent=None,
@@ -568,7 +616,8 @@ def test_confirmed_resume_intent_survives_runtime_restart_when_trace_store_exist
     )
     app_a = FastAPI()
     app_a.include_router(RealtimeGateway(runtime=runtime_a, approval_timeout=5.0).router)
-    resume_text = """
+    resume_text = (
+        """
 Resume this agent run from the selected durable checkpoint.
 
 <echo_resume_proposal>
@@ -588,6 +637,9 @@ Resume this agent run from the selected durable checkpoint.
 }
 </echo_resume_proposal>
 """.strip()
+        .replace('"checkpoint_id": 21', f'"checkpoint_id": {checkpoint_id}')
+        .replace("task-21", task_id)
+    )
     with TestClient(app_a) as client, client.websocket_connect("/api/realtime") as ws:
         _set_script([{"type": "react_completed"}])
         _drive(
@@ -614,16 +666,15 @@ Resume this agent run from the selected durable checkpoint.
             ws,
             {
                 "threadId": "th-resume-restart",
-                "input": [{"type": "text", "text": "确认恢复 checkpoint #21"}],
+                "input": [{"type": "text", "text": f"确认恢复 checkpoint #{checkpoint_id}"}],
                 "approvalPolicy": "on-request",
             },
         )
 
     resume_intent = _LAST_SESSION["metadata"]["resume_intent"]
-    assert resume_intent["checkpoint_id"] == 21
+    assert resume_intent["checkpoint_id"] == checkpoint_id
     assert resume_intent["confirmed"] is True
     assert "message body" not in str(resume_intent)
     assert trace.latest_pending_resume_request(thread_id="th-resume-restart") is None
     requests = trace.resume_requests(thread_id="th-resume-restart")
     assert requests[0]["status"] == "consumed"
-

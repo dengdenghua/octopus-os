@@ -146,6 +146,9 @@ export function pendingOutboundToHumanMessage(
       ...(pending.error ? { delivery_error: pending.error } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
       ...(files.length > 0 ? { files } : {}),
+      ...(pending.message.contextFiles?.length
+        ? { context_files: pending.message.contextFiles }
+        : {}),
     },
   };
 }

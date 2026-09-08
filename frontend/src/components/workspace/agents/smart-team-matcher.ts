@@ -15,7 +15,15 @@ export interface SmartTeamPlan {
 const DOMAINS = [
   {
     words: ["股票", "投资", "财报", "估值", "证券", "基金", "量化", "finance"],
-    agent: ["investment", "financial", "market", "equity", "投研", "金融", "估值"],
+    agent: [
+      "investment",
+      "financial",
+      "market",
+      "equity",
+      "投研",
+      "金融",
+      "估值",
+    ],
     plugins: [
       ["finance", "行情与财务数据", "查询行情、财报和估值数据"],
       ["web-search", "联网搜索", "核验公告、新闻和公开资料"],
@@ -23,8 +31,24 @@ const DOMAINS = [
     ],
   },
   {
-    words: ["电商", "亚马逊", "tiktok shop", "shopify", "跨境", "选品", "amazon"],
-    agent: ["ecommerce", "commerce", "amazon", "shopify", "供应链", "选品", "跨境"],
+    words: [
+      "电商",
+      "亚马逊",
+      "tiktok shop",
+      "shopify",
+      "跨境",
+      "选品",
+      "amazon",
+    ],
+    agent: [
+      "ecommerce",
+      "commerce",
+      "amazon",
+      "shopify",
+      "供应链",
+      "选品",
+      "跨境",
+    ],
     plugins: [
       ["browser", "浏览器自动化", "采集商品、竞品与渠道数据"],
       ["spreadsheet", "电子表格", "测算毛利、库存与广告回报"],
@@ -33,7 +57,16 @@ const DOMAINS = [
   },
   {
     words: ["漫剧", "短剧", "视频", "分镜", "剧本", "角色", "动画", "内容"],
-    agent: ["creative", "story", "video", "narrative", "漫剧", "分镜", "内容", "创意"],
+    agent: [
+      "creative",
+      "story",
+      "video",
+      "narrative",
+      "漫剧",
+      "分镜",
+      "内容",
+      "创意",
+    ],
     plugins: [
       ["image", "图像生成", "制作角色、场景与关键帧"],
       ["video", "视频制作", "生成镜头并完成剪辑合成"],
@@ -51,7 +84,15 @@ const DOMAINS = [
   },
   {
     words: ["代码", "开发", "应用", "系统", "bug", "接口", "部署", "agent"],
-    agent: ["coder", "engineer", "developer", "software", "代码", "工程", "开发"],
+    agent: [
+      "coder",
+      "engineer",
+      "developer",
+      "software",
+      "代码",
+      "工程",
+      "开发",
+    ],
     plugins: [
       ["filesystem", "项目文件", "读取和修改项目代码"],
       ["terminal", "终端", "运行测试、构建和部署命令"],
@@ -60,7 +101,15 @@ const DOMAINS = [
   },
   {
     words: ["办公", "报表", "会议", "邮件", "流程", "erp", "crm", "自动化"],
-    agent: ["assistant", "automation", "office", "rpa", "办公", "流程", "自动化"],
+    agent: [
+      "assistant",
+      "automation",
+      "office",
+      "rpa",
+      "办公",
+      "流程",
+      "自动化",
+    ],
     plugins: [
       ["documents", "文档", "处理方案、报告与会议材料"],
       ["spreadsheet", "电子表格", "处理台账、数据和报表"],
@@ -101,7 +150,9 @@ export function buildSmartTeamPlan(
       for (const domain of matchedDomains) {
         score += domain.agent.filter((word) => text.includes(word)).length * 12;
       }
-      for (const token of query.split(/[\s,，。；;、/]+/).filter((v) => v.length > 1)) {
+      for (const token of query
+        .split(/[\s,，。；;、/]+/)
+        .filter((v) => v.length > 1)) {
         if (text.includes(token)) score += 5;
       }
       if (agent.is_installed) score += 2;
@@ -112,7 +163,9 @@ export function buildSmartTeamPlan(
     .filter((entry) => entry.score > 2)
     .sort((a, b) => b.score - a.score || b.agent.rating - a.agent.rating);
 
-  const members = scored.slice(0, Math.max(1, limit)).map((entry) => entry.agent);
+  const members = scored
+    .slice(0, Math.max(1, limit))
+    .map((entry) => entry.agent);
   if (members.length === 0) {
     members.push(
       ...agents
@@ -135,4 +188,3 @@ export function buildSmartTeamPlan(
     mode: members.length >= 4 ? "swarm" : "cluster",
   };
 }
-

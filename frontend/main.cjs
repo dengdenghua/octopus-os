@@ -434,10 +434,7 @@ function readPasswordVault() {
     return Array.isArray(entries) ? entries : [];
   } catch (error) {
     if (error?.code !== "ENOENT") {
-      console.warn(
-        "[echo] password vault could not be read:",
-        error.message,
-      );
+      console.warn("[echo] password vault could not be read:", error.message);
     }
     return [];
   }
@@ -476,10 +473,7 @@ function readSitePermissions() {
     return Array.isArray(entries) ? entries : [];
   } catch (error) {
     if (error?.code !== "ENOENT") {
-      console.warn(
-        "[echo] site permissions could not be read:",
-        error.message,
-      );
+      console.warn("[echo] site permissions could not be read:", error.message);
     }
     return [];
   }
@@ -686,10 +680,7 @@ async function loadEnabledExtensions() {
     try {
       await session.defaultSession.loadExtension(ext.path);
     } catch (err) {
-      console.warn(
-        `[echo] extension ${ext.name} failed to load:`,
-        err.message,
-      );
+      console.warn(`[echo] extension ${ext.name} failed to load:`, err.message);
     }
   }
 }
@@ -945,10 +936,7 @@ function registerIpc() {
       const exe = process.execPath; // path to the packaged Echo.exe
       const entries = [
         ["HKCU\\Software\\Classes\\*\\shell\\Echo", "Open with EchoAI"],
-        [
-          "HKCU\\Software\\Classes\\Directory\\shell\\Echo",
-          "Open with EchoAI",
-        ],
+        ["HKCU\\Software\\Classes\\Directory\\shell\\Echo", "Open with EchoAI"],
       ];
       for (const [key, label] of entries) {
         spawnSync("reg", ["add", key, "/d", label, "/f"], { stdio: "ignore" });
@@ -1623,9 +1611,7 @@ if (!app.requestSingleInstanceLock()) {
           .then((visible) => {
             if (visible) maybeStartPet();
             else
-              console.log(
-                "[echo] pet suppressed by settings (visible=false)",
-              );
+              console.log("[echo] pet suppressed by settings (visible=false)");
           })
           .catch(() => maybeStartPet());
       });

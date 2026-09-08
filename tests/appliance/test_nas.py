@@ -109,9 +109,7 @@ class TestStorageInspector:
         assert insp.list_disks() == []
 
     def test_list_pools_groups_datasets(self):
-        insp = StorageInspector(
-            _fake_runner({"zpool": (0, _ZPOOL, ""), "zfs": (0, _ZFS, "")})
-        )
+        insp = StorageInspector(_fake_runner({"zpool": (0, _ZPOOL, ""), "zfs": (0, _ZFS, "")}))
         pools = insp.list_pools()
         assert [p.name for p in pools] == ["tank", "backup"]
         assert pools[0].health == "ONLINE"
@@ -177,18 +175,14 @@ class TestShareManager:
         assert shares[0].path.endswith("media2")
         assert shares[0].read_only is True
 
-    @pytest.mark.parametrize(
-        "bad", ["with space", "a/b", "sec]\n[evil", "", "x" * 65]
-    )
+    @pytest.mark.parametrize("bad", ["with space", "a/b", "sec]\n[evil", "", "x" * 65])
     def test_rejects_unsafe_share_name(self, tmp_path, bad):
         """共享名非法必须挡住 —— 换行注入可以凭空造一个可写共享。"""
         mgr = ShareManager(tmp_path)
         with pytest.raises(ShareError):
             mgr.add_share(Share(name=bad, path="/data/x"))
 
-    @pytest.mark.parametrize(
-        "bad", ["/etc", "/etc/passwd", "/", "/tmp/../etc", "/var/lib"]
-    )
+    @pytest.mark.parametrize("bad", ["/etc", "/etc/passwd", "/", "/tmp/../etc", "/var/lib"])
     def test_rejects_path_outside_allowed_roots(self, tmp_path, bad):
         mgr = ShareManager(tmp_path)
         with pytest.raises(ShareError):
@@ -202,9 +196,7 @@ class TestShareManager:
 
     def test_render_smb_conf(self, tmp_path):
         mgr = ShareManager(tmp_path)
-        mgr.add_share(
-            Share(name="media", path="/data/media", comment="影音", guest_ok=True)
-        )
+        mgr.add_share(Share(name="media", path="/data/media", comment="影音", guest_ok=True))
         mgr.add_share(Share(name="ro", path="/data/ro", read_only=True))
         conf = mgr.render_smb_conf()
         assert "[media]" in conf
@@ -238,9 +230,7 @@ class TestShareManager:
     def test_render_nfs_exports(self, tmp_path):
         mgr = ShareManager(tmp_path)
         mgr.add_share(Share(name="ro", path="/data/ro", protocols=["nfs"], read_only=True))
-        mgr.add_share(
-            Share(name="pub", path="/data/pub", protocols=["nfs"], guest_ok=True)
-        )
+        mgr.add_share(Share(name="pub", path="/data/pub", protocols=["nfs"], guest_ok=True))
         exports = mgr.render_nfs_exports()
         assert "/data/ro *(fsid=0,ro,sync,no_subtree_check)" in exports
         assert "all_squash" in exports
@@ -271,9 +261,7 @@ class TestShareManager:
     def test_reload_reports_success(self, tmp_path):
         mgr = ShareManager(
             tmp_path,
-            runner=_fake_runner(
-                {"smbcontrol": (0, "", ""), "exportfs": (0, "", "")}
-            ),
+            runner=_fake_runner({"smbcontrol": (0, "", ""), "exportfs": (0, "", "")}),
         )
         result = mgr.apply()
         assert result["reload"]["smb"]["ok"] is True
@@ -312,9 +300,7 @@ class TestNasRouter:
         assert [d["name"] for d in r.json()["disks"]] == ["sda", "nvme0n1"]
 
     def test_pools_endpoint(self):
-        insp = StorageInspector(
-            _fake_runner({"zpool": (0, _ZPOOL, ""), "zfs": (0, _ZFS, "")})
-        )
+        insp = StorageInspector(_fake_runner({"zpool": (0, _ZPOOL, ""), "zfs": (0, _ZFS, "")}))
         r = _client(inspector=insp).get("/api/appliance/nas/pools")
         assert r.status_code == 200
         assert r.json()["pools"][0]["health"] == "ONLINE"

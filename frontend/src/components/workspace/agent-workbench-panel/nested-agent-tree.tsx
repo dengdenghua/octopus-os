@@ -127,12 +127,17 @@ function AgentNodeRow({
           <span className="w-4 flex-shrink-0" />
         )}
 
-        <span className="text-base flex-shrink-0">{node.tile.avatar ?? "🤖"}</span>
+        <span className="text-base flex-shrink-0">
+          {node.tile.avatar ?? "🤖"}
+        </span>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span className="truncate font-medium">
-              {node.tile.codename || node.tile.roleDisplayName || node.tile.role || node.tile.name}
+              {node.tile.codename ||
+                node.tile.roleDisplayName ||
+                node.tile.role ||
+                node.tile.name}
             </span>
             {node.tile.iterationCount !== undefined && (
               <span className="text-xs text-muted-foreground">
@@ -205,9 +210,7 @@ function NestedAgentTreeImpl({
   }
 
   return (
-    <div className="flex flex-col gap-0.5 py-1">
-      {tree.map(renderNode)}
-    </div>
+    <div className="flex flex-col gap-0.5 py-1">{tree.map(renderNode)}</div>
   );
 }
 

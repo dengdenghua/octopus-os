@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 
 import { getBackendBaseURL } from "@/core/config";
+import { currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +42,7 @@ interface BrainStatus {
 const DISMISS_KEY = "echo.localBrain.dismissed";
 
 export default function LocalBrainSetup() {
+  const actor = currentActorId();
   const { t } = useI18n();
   const [status, setStatus] = useState<BrainStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -46,12 +52,19 @@ export default function LocalBrainSetup() {
     try {
       return (
         typeof window !== "undefined" &&
-        window.localStorage.getItem(DISMISS_KEY) === "1"
+        readActorScopedStorageValue(DISMISS_KEY, actor) === "1"
       );
     } catch {
       return false;
     }
   });
+  const [stateActor, setStateActor] = useState(actor);
+  useEffect(() => {
+    if (stateActor === actor) return;
+    setStateActor(actor);
+    setDismissed(readActorScopedStorageValue(DISMISS_KEY, actor) === "1");
+    setExpanded(false);
+  }, [actor, stateActor]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -131,7 +144,10 @@ export default function LocalBrainSetup() {
           onClick={() => {
             setDismissed(true);
             try {
-              window.localStorage.setItem(DISMISS_KEY, "1");
+              window.localStorage.setItem(
+                actorScopedStorageKey(DISMISS_KEY, actor),
+                "1",
+              );
             } catch {
               /* ignore */
             }

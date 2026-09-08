@@ -44,7 +44,7 @@ export function calculateXP(learningEvents: number): {
 export function transformToCharacterStats(
   data: EvolutionOverview,
   skillPerformances: SkillPerformance[],
-  previousData?: EvolutionOverview
+  previousData?: EvolutionOverview,
 ): CharacterStats {
   const level = calculateLevel(data.learning_events);
   const { xp, xpToNextLevel } = calculateXP(data.learning_events);
@@ -67,7 +67,11 @@ export function transformToCharacterStats(
     : 0;
 
   // 计算能力雷达图数据
-  const abilityScores = calculateAbilityScores(data, skillPerformances, "general");
+  const abilityScores = calculateAbilityScores(
+    data,
+    skillPerformances,
+    "general",
+  );
 
   return {
     level,
@@ -88,7 +92,7 @@ export function transformToCharacterStats(
  * 将技能性能数据转换为技能树数据
  */
 export function transformToSkills(
-  skillPerformances: SkillPerformance[]
+  skillPerformances: SkillPerformance[],
 ): Skill[] {
   return skillPerformances.map((skill, index) => {
     const level = Math.min(Math.floor(skill.success_rate / 20), 5); // 0-100% -> Lv.0-5
@@ -111,10 +115,10 @@ export function transformToSkills(
       usageCount: skill.usage_count,
       successRate: Math.round(skill.success_rate),
       unlocked,
-      nextLevelAbilities: level < maxLevel ? [
-        `提升${skill.name}成功率`,
-        `降低${skill.name}使用成本`,
-      ] : undefined,
+      nextLevelAbilities:
+        level < maxLevel
+          ? [`提升${skill.name}成功率`, `降低${skill.name}使用成本`]
+          : undefined,
     };
   });
 }
@@ -125,7 +129,12 @@ export function transformToSkills(
 function getSkillIcon(skillName: string): string {
   const name = skillName.toLowerCase();
 
-  if (name.includes("code") || name.includes("代码") || name.includes("refactor") || name.includes("重构")) {
+  if (
+    name.includes("code") ||
+    name.includes("代码") ||
+    name.includes("refactor") ||
+    name.includes("重构")
+  ) {
     return "🔧";
   }
   if (name.includes("bug") || name.includes("fix") || name.includes("修复")) {
@@ -140,7 +149,11 @@ function getSkillIcon(skillName: string): string {
   if (name.includes("doc") || name.includes("文档")) {
     return "📝";
   }
-  if (name.includes("performance") || name.includes("性能") || name.includes("optimize")) {
+  if (
+    name.includes("performance") ||
+    name.includes("性能") ||
+    name.includes("optimize")
+  ) {
     return "⚡";
   }
   if (name.includes("security") || name.includes("安全")) {
@@ -157,7 +170,7 @@ function getSkillIcon(skillName: string): string {
  * 将进化故事转换为时间线事件
  */
 export function transformToTimelineEvents(
-  story: EvolutionStory
+  story: EvolutionStory,
 ): TimelineEvent[] {
   const events: TimelineEvent[] = [];
 
@@ -179,8 +192,8 @@ export function transformToTimelineEvents(
     });
   });
 
-  return events.sort((a, b) =>
-    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  return events.sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
   );
 }
 
@@ -189,7 +202,7 @@ export function transformToTimelineEvents(
  */
 export function extractAchievements(
   data: EvolutionOverview,
-  skillPerformances: SkillPerformance[]
+  skillPerformances: SkillPerformance[],
 ) {
   const achievements: Array<{
     id: string;
@@ -226,7 +239,7 @@ export function extractAchievements(
 
   // 技能掌握成就
   const masterSkills = skillPerformances.filter(
-    (s) => s.usage_count >= 10 && s.success_rate >= 80
+    (s) => s.usage_count >= 10 && s.success_rate >= 80,
   );
   if (masterSkills.length >= 3) {
     achievements.push({
@@ -259,7 +272,7 @@ export function calculateCollectiveStats(data: EvolutionOverview) {
   const skillScore = Math.min((data.skills.total / 20) * 100, 100); // 20个技能=满分
   const memoryScore = Math.min((data.memory.total_facts / 500) * 100, 100); // 500个事实=满分
   const healthScore = Math.round(
-    (successScore * 0.5 + skillScore * 0.3 + memoryScore * 0.2)
+    successScore * 0.5 + skillScore * 0.3 + memoryScore * 0.2,
   );
 
   return {
@@ -301,7 +314,7 @@ export function transformToAgentCard(
   agentName: string,
   agentIcon: string,
   data: EvolutionOverview,
-  skillPerformances: SkillPerformance[]
+  skillPerformances: SkillPerformance[],
 ) {
   const level = calculateLevel(data.learning_events);
   const stars = calculateStars(level);

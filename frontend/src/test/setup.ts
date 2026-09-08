@@ -89,3 +89,21 @@ Object.defineProperty(window, "localStorage", {
   writable: true,
   value: localStorageMock,
 });
+
+// jsdom intentionally has no rendering backend. The landing shell's
+// decorative grid only needs a tiny color-sampling surface, so provide that
+// bounded contract instead of letting every test emit a getContext warning.
+Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+  configurable: true,
+  value: vi.fn((contextId: string) => {
+    if (contextId !== "2d") return null;
+    return {
+      fillStyle: "",
+      clearRect: vi.fn(),
+      fillRect: vi.fn(),
+      getImageData: vi.fn(() => ({
+        data: new Uint8ClampedArray([0, 0, 0, 255]),
+      })),
+    } as unknown as CanvasRenderingContext2D;
+  }),
+});

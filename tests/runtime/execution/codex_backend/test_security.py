@@ -57,6 +57,7 @@ def _prepare(
     thread_id: str = "thread-a",
     task_id: str = "task-a",
     sandbox_mode: str = "workspace-write",
+    approval_reviewer: str = "user",
     selected_app_ids: tuple[str, ...] = (),
     outer_hard_sandbox_active: bool = False,
     host_env: dict[str, str] | None = None,
@@ -68,6 +69,7 @@ def _prepare(
         task_id=task_id,
         workspace=workspace,
         sandbox_mode=sandbox_mode,  # type: ignore[arg-type]
+        approval_reviewer=approval_reviewer,  # type: ignore[arg-type]
         selected_app_ids=selected_app_ids,
         outer_hard_sandbox_active=outer_hard_sandbox_active,
         host_env=host_env,
@@ -152,6 +154,7 @@ def test_realm_tenant_and_thread_each_partition_codex_home(
 
     assert baseline.thread_root != other.thread_root
     assert baseline.codex_home != other.codex_home
+    assert baseline.sqlite_home != other.sqlite_home
 
 
 def test_external_ids_are_hashed_and_cannot_shape_paths(tmp_path: Path) -> None:
@@ -297,6 +300,19 @@ def test_generated_workspace_write_config_is_locked_and_self_validating(tmp_path
     assert APPROVAL_FAILURE_DECISION == "decline"
 
 
+def test_auto_review_reviewer_is_locked_across_config_and_thread_overrides(
+    tmp_path: Path,
+) -> None:
+    manager, workspace, _state_root = _manager(tmp_path)
+    context = _prepare(manager, workspace, approval_reviewer="auto_review")
+    config = _config(context)
+
+    assert config["approvals_reviewer"] == "auto_review"
+    assert context.thread_start_security_overrides()["approvalsReviewer"] == "auto_review"
+    assert context.turn_start_security_overrides()["approvalsReviewer"] == "auto_review"
+    context.validate_effective_config({"config": config})
+
+
 def test_selected_apps_are_exact_and_keep_high_risk_tools_prompted(tmp_path: Path) -> None:
     manager, workspace, _state_root = _manager(tmp_path)
     context = _prepare(manager, workspace, selected_app_ids=("google_drive",))
@@ -352,6 +368,28 @@ def test_generated_read_only_config_keeps_workspace_read_only_and_private_scratc
         str(context.state_root): "deny",
     }
     context.validate_effective_config(config)
+
+
+def test_generated_full_access_config_keeps_sidecar_state_denied_and_enables_network(
+    tmp_path: Path,
+) -> None:
+    manager, workspace, _state_root = _manager(tmp_path)
+    context = _prepare(manager, workspace, sandbox_mode="danger-full-access")
+    config = _config(context)
+    profile = config["permissions"][PERMISSION_PROFILE]  # type: ignore[index]
+
+    assert profile["workspace_roots"] == {
+        str(context.workspace): True,
+        str(context.scratch_root): True,
+    }
+    assert profile["filesystem"] == {
+        ":minimal": "read",
+        ":root": "write",
+        str(context.scratch_root): "write",
+        str(context.state_root): "deny",
+    }
+    assert profile["network"] == {"enabled": True}
+    context.validate_effective_config({"config": config})
 
 
 def test_selected_apps_keep_locked_non_destructive_approval_policy(tmp_path: Path) -> None:
@@ -541,10 +579,11 @@ def test_workspace_symlink_escape_and_state_overlap_are_rejected(tmp_path: Path)
 
 
 def test_filesystem_root_cannot_be_an_allowed_workspace_root(tmp_path: Path) -> None:
+    filesystem_root = Path(tmp_path.anchor)
     manager = CodexSidecarSecurity(
         CodexSecurityPolicy(
             state_root=tmp_path / "state",
-            allowed_workspace_roots=(Path("/"),),
+            allowed_workspace_roots=(filesystem_root,),
         )
     )
     with pytest.raises(CodexSecurityError, match="filesystem root"):
@@ -568,10 +607,13 @@ def test_explicit_hard_sandbox_requirement_applies_to_local_mode(tmp_path: Path)
         _prepare(manager, workspace)
 
 
-def test_danger_full_access_mode_is_never_accepted(tmp_path: Path) -> None:
+def test_danger_full_access_mode_is_explicit_and_keeps_state_denied(tmp_path: Path) -> None:
     manager, workspace, _state_root = _manager(tmp_path)
-    with pytest.raises(CodexSecurityError, match="only allow"):
-        _prepare(manager, workspace, sandbox_mode="danger-full-access")
+    context = _prepare(manager, workspace, sandbox_mode="danger-full-access")
+    profile = _config(context)["permissions"][PERMISSION_PROFILE]  # type: ignore[index]
+    assert profile["filesystem"][":root"] == "write"  # type: ignore[index]
+    assert profile["network"] == {"enabled": True}
+    assert profile["filesystem"][str(context.state_root)] == "deny"  # type: ignore[index]
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX owner/mode assertion")
@@ -927,3 +969,29 @@ def test_cleanup_refuses_invalid_markers_and_outside_paths(tmp_path: Path) -> No
         forged.cleanup()
     assert outside.exists()
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows SQLite path layout")
+def test_windows_sqlite_uses_compact_persistent_scoped_path(tmp_path: Path) -> None:
+    manager, workspace, state_root = _manager(tmp_path)
+    first = _prepare(manager, workspace, task_id="attempt-a")
+    second = _prepare(manager, workspace, task_id="attempt-b")
+    assert first.sqlite_home == second.sqlite_home
+    assert first.sqlite_home.parent == state_root.resolve() / "sqlite"
+    assert len(first.sqlite_home.name) == 64
+    assert len(str(first.sqlite_home)) < len(str(first.codex_home / "sqlite"))
+    assert first.sqlite_home.is_dir()
+    assert _config(first)["sqlite_home"] == str(first.sqlite_home)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows SQLite path layout")
+def test_windows_sqlite_keeps_existing_legacy_database_and_wal(tmp_path: Path) -> None:
+    manager, workspace, _state_root = _manager(tmp_path)
+    context = _prepare(manager, workspace)
+    legacy = context.codex_home / "sqlite"
+    legacy.mkdir()
+    (legacy / "state.sqlite").write_bytes(b"existing database")
+    (legacy / "state.sqlite-wal").write_bytes(b"pending writes")
+    resumed = _prepare(manager, workspace, task_id="resume-attempt")
+    assert resumed.sqlite_home == legacy
+    assert _config(resumed)["sqlite_home"] == str(legacy)
+    assert (legacy / "state.sqlite").read_bytes() == b"existing database"
+    assert (legacy / "state.sqlite-wal").read_bytes() == b"pending writes"

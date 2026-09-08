@@ -1,9 +1,4 @@
-export {
-  extractOctGoods,
-  octApi,
-  octAuthApi,
-  OctApiError,
-} from "./api";
+export { extractOctGoods, octApi, octAuthApi, OctApiError } from "./api";
 export {
   useClaimDailyCredits,
   useCreateOrder,
@@ -12,6 +7,7 @@ export {
   useOctGoods,
   useOctLink,
   useRefreshOctCredits,
+  octLinkQueryKey,
 } from "./hooks";
 export type {
   OctBalance,

@@ -5,7 +5,8 @@
  * move / trash files), so the pure logic lives in desktop-shell-core.cjs and
  * is tested here without launching Electron.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import fs from "node:fs";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -101,6 +102,15 @@ describe("resolveMoveTarget", () => {
     const res = desktopCore.resolveMoveTarget(src(), dest, desktopDir);
     expect(res.target).toBe(path.join(dest, "report.pdf"));
   });
+
+  it("rejects malformed renderer arguments without throwing", () => {
+    expect(
+      desktopCore.resolveMoveTarget(src(), null, desktopDir).error,
+    ).toBeTruthy();
+    expect(
+      desktopCore.resolveMoveTarget({}, "documents", desktopDir).error,
+    ).toBeTruthy();
+  });
 });
 
 describe("buildDesktopItem", () => {
@@ -170,5 +180,25 @@ describe("journal persistence", () => {
     desktopCore.writeJournalFile(journalPath(), [{ from: "/a", to: "/b" }]);
     const raw = readFileSync(journalPath(), "utf8");
     expect(raw).toContain("\n");
+  });
+
+  it("preserves the prior complete journal if atomic replacement fails", () => {
+    desktopCore.writeJournalFile(journalPath(), [{ from: "/a", to: "/b" }]);
+    const rename = vi.spyOn(fs, "renameSync").mockImplementation(() => {
+      throw Object.assign(new Error("blocked"), { code: "EPERM" });
+    });
+    try {
+      expect(() =>
+        desktopCore.writeJournalFile(journalPath(), [{ from: "/c", to: "/d" }]),
+      ).toThrow("blocked");
+    } finally {
+      rename.mockRestore();
+    }
+    expect(desktopCore.readJournalFile(journalPath())).toEqual([
+      { from: "/a", to: "/b" },
+    ]);
+    expect(
+      fs.readdirSync(tmpRoot).filter((name) => name.endsWith(".tmp")),
+    ).toEqual([]);
   });
 });

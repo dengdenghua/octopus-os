@@ -38,6 +38,25 @@ function readStoredWidthInRange(
   return null;
 }
 
+function readStoredWidthWithLegacy(
+  key: string,
+  minPx: number,
+  maxPx: number,
+  legacyKey?: string,
+): number | null {
+  const scoped = readStoredWidthInRange(key, minPx, maxPx);
+  if (scoped !== null || !legacyKey || legacyKey === key) return scoped;
+  const legacy = readStoredWidthInRange(legacyKey, minPx, maxPx);
+  if (legacy === null || typeof window === "undefined") return null;
+  try {
+    window.localStorage.setItem(key, String(legacy));
+    window.localStorage.removeItem(legacyKey);
+  } catch (e) {
+    swallow(e, "storage");
+  }
+  return legacy;
+}
+
 /** Numeric estimate for the width strings resolveSidebarWidth produces
  *  ("min(300px, 36vw)", "420px", "26rem"). Used for aria-valuenow, keyboard
  *  resizing and viewport clamping before any dragged width is stored. */
@@ -61,6 +80,8 @@ function estimateCssWidthPx(css: string, viewportWidth: number): number | null {
 export interface UseResizablePanelOptions {
   /** localStorage key used to persist the dragged width. */
   storageKey: string;
+  /** Pre-actor key used by older builds; migrated once when no scoped value exists. */
+  legacyStorageKey?: string;
   minPx: number;
   maxPx: number;
   /** The CSS width string (e.g. "min(300px, 36vw)") used as a fallback
@@ -93,6 +114,7 @@ export interface ResizablePanelController {
  *  dependencies stay in the component. */
 export function useResizablePanel({
   storageKey,
+  legacyStorageKey,
   minPx,
   maxPx,
   defaultCssWidth,
@@ -103,8 +125,17 @@ export function useResizablePanel({
   // Lazy init from localStorage so a previously-dragged width persists
   // across reloads / remounts (SSR-safe — returns null on the server).
   const [customWidth, setCustomWidth] = useState<number | null>(() =>
-    readStoredWidthInRange(storageKey, minPx, maxPx),
+    readStoredWidthWithLegacy(storageKey, minPx, maxPx, legacyStorageKey),
   );
+  useEffect(() => {
+    // The storage key includes the actor for user-scoped workbench chrome.
+    // Reload the basis when an auth transition changes that key while the
+    // layout remains mounted; otherwise the previous actor's width would
+    // remain visible until a full remount.
+    setCustomWidth(
+      readStoredWidthWithLegacy(storageKey, minPx, maxPx, legacyStorageKey),
+    );
+  }, [legacyStorageKey, maxPx, minPx, storageKey]);
   const basisPx =
     customWidth ?? estimateCssWidthPx(defaultCssWidth, viewportWidth);
   const resolvedPx = clamp(basisPx ?? fallbackPx);

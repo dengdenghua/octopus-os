@@ -1437,6 +1437,22 @@
             ],
             "title": "Effective Model"
           },
+          "execution_available": {
+            "default": false,
+            "title": "Execution Available",
+            "type": "boolean"
+          },
+          "execution_unavailable_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Unavailable Reason"
+          },
           "mode": {
             "enum": [
               "follow_system",
@@ -3236,6 +3252,19 @@
           "topic"
         ],
         "title": "DeepResearchRequest",
+        "type": "object"
+      },
+      "DeployRequest": {
+        "properties": {
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id"
+        ],
+        "title": "DeployRequest",
         "type": "object"
       },
       "DetachFromGroupBody": {
@@ -6224,6 +6253,47 @@
         "title": "RecoverBody",
         "type": "object"
       },
+      "RecoveryResumeRequest": {
+        "description": "POST /api/agents/parallel/batch/{batch_id}/resume body.\n\nRecovery is deliberately an explicit decision.  The caller names the\nlanes to rerun instead of allowing the server to replay an entire lost\nbatch (which could repeat an unknown side effect).",
+        "properties": {
+          "model_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Name"
+          },
+          "task_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Task Ids",
+            "type": "array"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          }
+        },
+        "required": [
+          "task_ids"
+        ],
+        "title": "RecoveryResumeRequest",
+        "type": "object"
+      },
       "RejectTeamJoinRequest": {
         "properties": {
           "reason": {
@@ -6300,6 +6370,17 @@
               }
             ],
             "title": "Path"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
           },
           "text": {
             "anyOf": [
@@ -8464,6 +8545,10 @@
             "title": "Relative Path",
             "type": "string"
           },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -8476,7 +8561,8 @@
           "path",
           "size",
           "modified",
-          "download_url"
+          "download_url",
+          "resource_id"
         ],
         "title": "WorkspaceOutputEntry",
         "type": "object"
@@ -14213,6 +14299,61 @@
         ]
       }
     },
+    "/api/agents/parallel/batch/{batch_id}/resume": {
+      "post": {
+        "description": "Explicitly rerun named safe lanes from a recovery snapshot.\n\nReading a snapshot never starts work.  This endpoint is the separate\nuser-confirmed action and returns a new batch so the old evidence is\npreserved for audit and comparison.",
+        "operationId": "resume_batch_api_agents_parallel_batch__batch_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Resume Batch Api Agents Parallel Batch  Batch Id  Resume Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Batch",
+        "tags": [
+          "parallel-agents"
+        ]
+      }
+    },
     "/api/agents/parallel/cancel-all": {
       "post": {
         "operationId": "cancel_all_api_agents_parallel_cancel_all_post",
@@ -14318,6 +14459,54 @@
           }
         },
         "summary": "Dispatch",
+        "tags": [
+          "parallel-agents"
+        ]
+      }
+    },
+    "/api/agents/parallel/recovery-snapshots": {
+      "get": {
+        "description": "Discover durable, redacted batches owned by the caller.\n\nThis route is deliberately separate from the actor-agnostic live\nstatus route: a restarted orchestrator has no in-memory batch map,\nwhile the recovery list can safely use durable owner/tenant fields.",
+        "operationId": "list_recovery_snapshots_api_agents_parallel_recovery_snapshots_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Recovery Snapshots Api Agents Parallel Recovery Snapshots Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Recovery Snapshots",
         "tags": [
           "parallel-agents"
         ]
@@ -21215,6 +21404,51 @@
         ]
       }
     },
+    "/api/config/local-models/activate": {
+      "post": {
+        "operationId": "activate_api_config_local_models_activate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Activate Api Config Local Models Activate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Activate",
+        "tags": [
+          "config"
+        ]
+      }
+    },
     "/api/config/local-models/import": {
       "post": {
         "description": "Take one row from ``/scan`` and write it into\n``custom_models_state``. Mirrors what\n``api_upsert_custom_model`` does for the public PUT path\nbut skips the HTTP round-trip — local imports are trusted.\n\nBody shape:\n  ``{ base_url, models, display_name?, id? }``\n\n``id`` defaults to the first non-empty model id (the\npicker default) so the dispatcher's lookup key matches\nthe user's mental model. ``api_key`` is left empty —\nlocal services don't need one, and the OpenAI-compat\nrouter ships a dummy key for unauthenticated calls.",
@@ -22821,6 +23055,115 @@
         ]
       }
     },
+    "/api/cookbook/deployment": {
+      "get": {
+        "operationId": "deployment_status_api_cookbook_deployment_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Deployment Status Api Cookbook Deployment Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Deployment Status",
+        "tags": [
+          "cookbook"
+        ]
+      }
+    },
+    "/api/cookbook/deployment/plan": {
+      "post": {
+        "operationId": "deployment_plan_api_cookbook_deployment_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PullRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Deployment Plan Api Cookbook Deployment Plan Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deployment Plan",
+        "tags": [
+          "cookbook"
+        ]
+      }
+    },
+    "/api/cookbook/deployment/start": {
+      "post": {
+        "operationId": "deployment_start_api_cookbook_deployment_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeployRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Deployment Start Api Cookbook Deployment Start Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deployment Start",
+        "tags": [
+          "cookbook"
+        ]
+      }
+    },
     "/api/cookbook/pull": {
       "post": {
         "description": "One-click pull a recommended model via ollama (runs in the background).",
@@ -22869,6 +23212,20 @@
       "get": {
         "description": "Detected hardware + ranked recommendations + ollama availability.",
         "operationId": "snapshot_api_cookbook_snapshot_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "context_tokens",
+            "required": false,
+            "schema": {
+              "default": 4096,
+              "maximum": 32768,
+              "minimum": 4096,
+              "title": "Context Tokens",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -22881,9 +23238,62 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Snapshot",
+        "tags": [
+          "cookbook"
+        ]
+      }
+    },
+    "/api/cookbook/verify": {
+      "post": {
+        "operationId": "verify_api_cookbook_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PullRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verify Api Cookbook Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify",
         "tags": [
           "cookbook"
         ]
@@ -31122,6 +31532,240 @@
         "summary": "Api Files Stream",
         "tags": [
           "observability"
+        ]
+      }
+    },
+    "/api/fs/content": {
+      "get": {
+        "operationId": "api_fs_content_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "thread_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace_path",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace Path"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Download",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "office_preview",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Office Preview",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "office_fidelity_preview",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Office Fidelity Preview",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Fs Content",
+        "tags": [
+          "fs"
+        ]
+      },
+      "head": {
+        "operationId": "api_fs_content_head",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "thread_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Thread Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace_path",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace Path"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Download",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "office_preview",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Office Preview",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "office_fidelity_preview",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Office Fidelity Preview",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Fs Content",
+        "tags": [
+          "fs"
         ]
       }
     },
@@ -42772,6 +43416,51 @@
         ]
       }
     },
+    "/api/research/deep/jobs/{job_id}/recovery-snapshot": {
+      "get": {
+        "description": "Return the batch's redacted recovery view after a restart.\n\nA ResearchJob is the user-facing durable record, while the parallel\norchestrator owns execution state.  Keep the lookup scoped by the\njob's immutable owner/tenant coordinates and require the returned\nsnapshot to match the persisted host coordinate before exposing it.",
+        "operationId": "get_deep_research_recovery_snapshot_api_research_deep_jobs__job_id__recovery_snapshot_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Deep Research Recovery Snapshot Api Research Deep Jobs  Job Id  Recovery Snapshot Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Deep Research Recovery Snapshot",
+        "tags": [
+          "deep-research"
+        ]
+      }
+    },
     "/api/research/deep/plan": {
       "post": {
         "operationId": "plan_deep_research_api_research_deep_plan_post",
@@ -48752,6 +49441,16 @@
               "title": "Office Fidelity Preview",
               "type": "boolean"
             }
+          },
+          {
+            "in": "query",
+            "name": "locate",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Locate",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -49985,6 +50684,189 @@
         ]
       }
     },
+    "/api/workspace-resources/{resource_id}": {
+      "get": {
+        "description": "Resolve a portable file identity through the same auth boundary.",
+        "operationId": "api_workspace_resource_api_workspace_resources__resource_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Download",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "office_preview",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Office Preview",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "office_fidelity_preview",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Office Fidelity Preview",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "locate",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Locate",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Api Workspace Resource Api Workspace Resources  Resource Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Workspace Resource",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "post": {
+        "operationId": "api_restore_workspace_resource_api_workspace_resources__resource_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceOutputRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceOutputWriteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Restore Workspace Resource",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "put": {
+        "operationId": "api_write_workspace_resource_api_workspace_resources__resource_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceOutputWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceOutputWriteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Write Workspace Resource",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
     "/api/workspaces": {
       "get": {
         "description": "List workspaces accessible to ``user_id``.",
@@ -50238,6 +51120,16 @@
             "schema": {
               "default": false,
               "title": "Office Fidelity Preview",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "locate",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Locate",
               "type": "boolean"
             }
           }

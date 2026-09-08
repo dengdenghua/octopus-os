@@ -5,6 +5,8 @@ from __future__ import annotations
 from runtime.execution.agents.group_fanout import (
     arbitrate_group_fanout,
     build_fanout_prompt,
+    format_group_presence_reply,
+    is_group_presence_query,
     run_group_fanout,
     synthesize_group_fanout,
 )
@@ -155,6 +157,11 @@ def test_full_scale_mode_dispatches_kimi_scale_roster_with_bounded_workers() -> 
 def test_guards() -> None:
     assert run_group_fanout("", _MEMBERS, agent_caller=_caller_ok)["ok"] is False  # no msg
     assert run_group_fanout("hi", [], agent_caller=_caller_ok)["ok"] is False  # no members
+
+
+def test_presence_reply_is_deterministic_and_does_not_need_model_calls() -> None:
+    assert is_group_presence_query("大家都在线吗") is True
+    assert format_group_presence_reply(_MEMBERS) == "3 位 AI 成员均已就绪：Aoi、Coder、Market Researcher。"
 
 
 def test_prompt_is_persona_and_brief() -> None:
@@ -391,4 +398,3 @@ def test_fanout_emits_failure_rows() -> None:
     # 网关失败分支应产出一条带 ⚠️ 的文本（该逻辑在 _drive_group_fanout 内，
     # 此处通过协议层验证 error 信息可承载即可）。
     assert "quota exceeded" in str(coder["error"])
-

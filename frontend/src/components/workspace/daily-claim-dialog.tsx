@@ -14,13 +14,16 @@ import { useI18n } from "@/core/i18n/hooks";
 import { useClaimDailyCredits, useDailyClaimInfo } from "@/core/oct/hooks";
 import { cn } from "@/lib/utils";
 
-type ClaimInfoData = {
-  fixedCredits?: number;
-  directCredits?: number;
-  maxCredits?: number;
-  maxDrawCredits?: number;
-  claimedToday?: boolean;
-} | null | undefined;
+type ClaimInfoData =
+  | {
+      fixedCredits?: number;
+      directCredits?: number;
+      maxCredits?: number;
+      maxDrawCredits?: number;
+      claimedToday?: boolean;
+    }
+  | null
+  | undefined;
 
 /**
  * Pull the best-known fields out of the account service response with

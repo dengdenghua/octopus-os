@@ -29,13 +29,21 @@ function DropdownMenuTrigger({
   );
 }
 
+type DropdownMenuContentProps = React.ComponentProps<
+  typeof DropdownMenuPrimitive.Content
+> & {
+  /** Optional host for menus that belong to a themed application shell. */
+  portalContainer?: HTMLElement | null;
+};
+
 function DropdownMenuContent({
   className,
   sideOffset = 4,
+  portalContainer,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+}: DropdownMenuContentProps) {
   return (
-    <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.Portal container={portalContainer ?? undefined}>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}

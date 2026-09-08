@@ -45,7 +45,9 @@ function UploadProgressBar({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-label={
-        failed ? t.uploads.uploadFailed : t.uploads.uploadProgress(upload.progress)
+        failed
+          ? t.uploads.uploadFailed
+          : t.uploads.uploadProgress(upload.progress)
       }
       data-upload-status={upload.status}
     >
@@ -101,10 +103,7 @@ function formatFileSize(bytes: number): string {
 
 function cleanFileName(name: string): string {
   return name
-    .replace(
-      /^[\s【】\[\]「」『』《》（）()]+/,
-      "",
-    )
+    .replace(/^[\s【】\[\]「」『』《》（）()]+/, "")
     .replace(/[-_]?\s*(?:副本|copy|复件|\(\d+\))$/i, "")
     .trim();
 }
@@ -334,11 +333,7 @@ export function FileAttachment({
                     : meta}
               </span>
             </span>
-            <UploadRetryButton
-              upload={upload}
-              onRetry={onRetryUpload}
-              t={t}
-            />
+            <UploadRetryButton upload={upload} onRetry={onRetryUpload} t={t} />
             <button
               type="button"
               onClick={() => onRemoveFile(file.id)}

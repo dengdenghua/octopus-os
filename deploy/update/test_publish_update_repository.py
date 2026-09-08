@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import fcntl
 import hashlib
+import importlib
 import importlib.util
 import json
 import os
@@ -10,6 +10,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+if os.name != "posix":
+    raise unittest.SkipTest("update publication tests require POSIX locking semantics")
+
+fcntl = importlib.import_module("fcntl")
 
 MODULE_PATH = Path(__file__).with_name("publish_update_repository.py")
 SPEC = importlib.util.spec_from_file_location("publish_update_repository", MODULE_PATH)

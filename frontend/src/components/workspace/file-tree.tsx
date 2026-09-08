@@ -226,8 +226,7 @@ export function FileTree({
   useEffect(() => {
     const handler = () => void fetchTree(true);
     window.addEventListener("echo:workspace-changed", handler);
-    return () =>
-      window.removeEventListener("echo:workspace-changed", handler);
+    return () => window.removeEventListener("echo:workspace-changed", handler);
   }, [fetchTree]);
 
   // Build a lookup: entry.path -> highlight expiry timestamp.
@@ -378,7 +377,11 @@ export function FileTree({
             style={{ paddingLeft: `${entry.depth * 14 + 8}px` }}
             role="button"
             tabIndex={0}
-            aria-label={isDir ? t.fileTree.openFolderAria(entry.name) : t.fileTree.openFileAria(entry.name)}
+            aria-label={
+              isDir
+                ? t.fileTree.openFolderAria(entry.name)
+                : t.fileTree.openFileAria(entry.name)
+            }
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
@@ -427,14 +430,10 @@ export function FileTree({
               <span
                 className={cn(
                   "ml-auto shrink-0 rounded px-1 py-0.5 text-xs font-semibold",
-                  gitStatus === "M" &&
-                    "bg-warning/10 text-warning",
-                  gitStatus === "A" &&
-                    "bg-success/10 text-success",
-                  gitStatus === "D" &&
-                    "bg-destructive/10 text-destructive",
-                  gitStatus === "R" &&
-                    "bg-info/10 text-info dark:text-info",
+                  gitStatus === "M" && "bg-warning/10 text-warning",
+                  gitStatus === "A" && "bg-success/10 text-success",
+                  gitStatus === "D" && "bg-destructive/10 text-destructive",
+                  gitStatus === "R" && "bg-info/10 text-info dark:text-info",
                 )}
               >
                 {gitStatus}

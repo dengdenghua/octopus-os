@@ -153,6 +153,17 @@ class StreamingJournal(Journal):
     ) -> list[JournalEvent]:
         return self._inner.read_by_type(event_type, scope=scope)
 
+    def read_by_type_for_recovery(
+        self,
+        event_type: JournalEventType,
+        *,
+        scope: TenantScope | None = None,
+    ) -> list[JournalEvent]:
+        reader = getattr(self._inner, "read_by_type_for_recovery", None)
+        if callable(reader):
+            return reader(event_type, scope=scope)
+        return self._inner.read_by_type(event_type, scope=scope)
+
     def read_since(self, ts: datetime) -> list[JournalEvent]:
         return self._inner.read_since(ts)
 

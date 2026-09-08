@@ -1,6 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { AutoVerifierMetricsReport, RepairRouteQualityReport } from "@/core/agent-trace/api";
+import type {
+  AutoVerifierMetricsReport,
+  RepairRouteQualityReport,
+} from "@/core/agent-trace/api";
 import { cn } from "@/lib/utils";
 import { GateStat } from "../../replay-panel";
 import { GitBranchIcon, ListChecksIcon } from "lucide-react";
@@ -104,8 +107,7 @@ export function AutoVerifierCard({
               variant="outline"
               className="border-destructive/30 bg-destructive/10 text-xs text-destructive"
             >
-              {alert.family} {to("drift")}{" "}
-              {Math.round(alert.pass_rate * 100)}%
+              {alert.family} {to("drift")} {Math.round(alert.pass_rate * 100)}%
             </Badge>
           ))}
         </div>

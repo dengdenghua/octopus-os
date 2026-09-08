@@ -31,8 +31,13 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-from runtime.execution.tool_engine.effect_store import EffectStore
-from runtime.memory.journal import Journal, StepEvent, ToolEffectIntentEvent
+from runtime.execution.tool_engine.effect_store import EffectStore, NativeEffectRecoveryRequired
+from runtime.memory.journal import (
+    Journal,
+    JournalRecoveryReadError,
+    StepEvent,
+    ToolEffectIntentEvent,
+)
 from runtime.platform.models import CostEntry, ExecutionResult, Step, ToolCall, now_utc
 
 _SIDE_EFFECT_AFFINITIES = frozenset({"write", "edit", "exec", "delete", "dangerous"})
@@ -103,6 +108,14 @@ def is_side_effecting(affinity: list[str] | None) -> bool:
     return not bool(tags & _READ_ONLY_AFFINITIES)
 
 
+def should_refresh_read_result(skill: Any) -> bool:
+    """Honor a server-registered live-read policy without weakening write receipts."""
+
+    return getattr(skill, "replay_policy", "durable") == "refresh_read" and not is_side_effecting(
+        getattr(skill, "affinity", None)
+    )
+
+
 def _canonical_effect_class(skill: Any, *, handler_executed: bool) -> EffectClass:
     """Classify only exact in-tree handlers; every replaceable handler fails closed.
 
@@ -148,6 +161,19 @@ def _canonical_effect_class(skill: Any, *, handler_executed: bool) -> EffectClas
     workspace_write_handlers = {"edit_file": _edit_file}
     local_state_handlers = {"todo_write": _todo_write}
     if read_only_handlers.get(name) is handler:
+        return "read_only"
+    # Appliance photo tools are server-owned, authorization-checked live
+    # reads. Their handlers are bound methods, so object identity alone cannot
+    # be compared with a module-level function; keep the allowlist exact to
+    # this in-tree service instead of trusting affinity or a plugin label.
+    owner = getattr(handler, "__self__", None)
+    owner_type = type(owner) if owner is not None else None
+    if (
+        owner_type is not None
+        and owner_type.__module__ == "appliance.photo_tools"
+        and owner_type.__name__ == "PhotoToolService"
+        and name in {"photos_library", "photos_search", "photos_status", "photos_index_plan"}
+    ):
         return "read_only"
     if workspace_write_handlers.get(name) is handler:
         return "workspace_write"
@@ -259,6 +285,9 @@ class EffectLeaseLost(RuntimeError):
 class ToolEffectReceiptIndex:
     """Journal-backed receipts plus optional cross-process coordination."""
 
+    _native_memory_lock = threading.RLock()
+    _native_memory_sequences: dict[tuple[object, str], int] = {}
+
     def __init__(
         self,
         journal: Journal,
@@ -283,10 +312,91 @@ class ToolEffectReceiptIndex:
         self._steps_by_call_id: dict[str, Step] = {}
         self._effect_by_call_id: dict[str, str] = {}
         self._heartbeats: dict[str, threading.Event] = {}
+        self._native_max_steps: dict[str, int] = {}
+        self._uncertain: dict[str, tuple[str, Step]] = {}
+        self._task_by_key: dict[str, str] = {}
 
     @property
     def store(self) -> EffectStore | None:
         return self._store
+
+    def reserve_native_step_ids(self, task_id: Any, count: int) -> list[int]:
+        """Reserve IDs once, before dispatch; unused reservations remain consumed."""
+
+        task = str(task_id)
+        if not task or type(count) is not int or count < 0:
+            raise ValueError("task_id and a non-negative integer count are required")
+        with self._condition:
+            self._refresh_from_journal()
+            minimum = self._native_max_steps.get(task, 0)
+            if self._store is not None:
+                reserve = getattr(self._store, "reserve_native_step_ids", None)
+                if not callable(reserve):
+                    raise NativeEffectRecoveryRequired(
+                        task, state="unavailable", reason="native_effect_sequence_unavailable"
+                    )
+                return reserve(task_id=task, count=count, minimum_step_id=minimum)
+            # No configured receipt plane: serialize independent indexes in this
+            # process. A JSONL restart seeds its high-water mark from actual events;
+            # cross-process reservation requires the SQLite receipt plane.
+            path = getattr(self._journal, "path", None) or getattr(self._journal, "_path", None)
+            journal_identity = str(Path(path).resolve()) if path is not None else self._journal
+            identity = (journal_identity, task)
+            with self._native_memory_lock:
+                maximum = max(minimum, self._native_memory_sequences.get(identity, 0))
+                self._native_memory_sequences[identity] = maximum + count
+                return list(range(maximum + 1, maximum + count + 1))
+
+    def assert_native_task_recoverable(self, task_id: Any) -> None:
+        """Do not escape an unfinished side effect by allocating a fresh step ID."""
+
+        task = str(task_id)
+        if not task:
+            raise ValueError("task_id is required")
+        with self._condition:
+            # A recovery admission decision must not treat a parseable prefix
+            # as the complete journal. JSONL readers expose a strict typed
+            # path that raises when any later row is unreadable; translate that
+            # loss of evidence into the same fail-closed native recovery
+            # result used for an unresolved effect.
+            try:
+                self._refresh_from_journal(strict=True)
+            except JournalRecoveryReadError as exc:
+                raise NativeEffectRecoveryRequired(
+                    task,
+                    state="unavailable",
+                    reason="native_effect_recovery_required",
+                ) from exc
+            unresolved = {
+                key
+                for key, intent in self._intents.items()
+                if str(intent.task_id) == task
+                and intent.side_effecting
+                and key not in self._committed
+            }
+            unresolved.update(key for key, (owner, _) in self._uncertain.items() if owner == task)
+            if self._store is not None:
+                check = getattr(self._store, "assert_native_task_recoverable", None)
+                if not callable(check):
+                    raise NativeEffectRecoveryRequired(
+                        task, state="unavailable", reason="native_effect_sequence_unavailable"
+                    )
+                # A durable successful Step can repair a process loss between its
+                # journal append and SQL commit, but never overrides a live claim.
+                for key, intent in self._intents.items():
+                    if str(intent.task_id) == task and key in self._committed:
+                        self._store.record_committed(effect_key=key, step=self._committed[key])
+                check(task_id=task, unresolved_effect_keys=tuple(sorted(unresolved)))
+                return
+            if unresolved:
+                key = sorted(unresolved)[0]
+                live = key in self._live
+                raise NativeEffectRecoveryRequired(
+                    task,
+                    state="started" if live else "indeterminate",
+                    reason="native_effect_inflight" if live else "native_effect_recovery_required",
+                    effect_key=key,
+                )
 
     def begin(
         self,
@@ -302,6 +412,7 @@ class ToolEffectReceiptIndex:
         deadline = time.monotonic() + self._wait_timeout_s
         with self._condition:
             self._refresh_from_journal()
+            self._task_by_key[key] = str(task_id)
             while key in self._live:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -329,6 +440,8 @@ class ToolEffectReceiptIndex:
                 self._store.record_committed(effect_key=key, step=committed)
 
             intent = self._intents.get(key)
+            uncertain = key in self._uncertain
+            side_effecting = side_effecting or uncertain
             if self._store is not None:
                 while True:
                     decision = self._store.claim(
@@ -340,7 +453,7 @@ class ToolEffectReceiptIndex:
                         side_effecting=side_effecting,
                         holder_id=self._holder_id,
                         lease_ttl_s=self._lease_ttl_s,
-                        observed_durable_intent=intent is not None,
+                        observed_durable_intent=intent is not None or uncertain,
                     )
                     if decision.kind == "execute":
                         resolution = EffectResolution(
@@ -394,7 +507,7 @@ class ToolEffectReceiptIndex:
                         continue
                     intent = self._intents.get(key)
 
-            if intent is not None and (side_effecting or intent.side_effecting):
+            if uncertain or (intent is not None and (side_effecting or intent.side_effecting)):
                 return EffectResolution(
                     "indeterminate",
                     key,
@@ -421,6 +534,8 @@ class ToolEffectReceiptIndex:
         with self._condition:
             self._refresh_from_journal()
             self._intents[event.effect_key] = event
+            task = str(event.task_id)
+            self._native_max_steps[task] = max(self._native_max_steps.get(task, 0), event.step_id)
             self._effect_by_call_id[event.call_id] = event.effect_key
             if self._store is not None:
                 started = self._store.mark_started(
@@ -439,7 +554,25 @@ class ToolEffectReceiptIndex:
     def finish(self, resolution: EffectResolution, step: Step) -> None:
         with self._condition:
             self._stop_heartbeat(resolution.key)
-            if step.success:
+            uncertain = self._step_is_indeterminate(step)
+            if uncertain:
+                intent = self._intents.get(resolution.key)
+                task = (
+                    str(intent.task_id)
+                    if intent is not None
+                    else self._task_by_key.get(resolution.key, "")
+                )
+                self._uncertain[resolution.key] = (task, step)
+                self._committed.pop(resolution.key, None)
+                if self._store is not None:
+                    self._store.finish_failed(
+                        effect_key=resolution.key,
+                        holder_id=resolution.holder_id,
+                        fencing_token=resolution.fencing_token,
+                        side_effecting=True,
+                        reason="the server-sealed effect receipt is indeterminate",
+                    )
+            elif step.success:
                 if self._store is not None:
                     committed = self._store.commit(
                         effect_key=resolution.key,
@@ -452,6 +585,7 @@ class ToolEffectReceiptIndex:
                         self._condition.notify_all()
                         raise EffectLeaseLost("tool-effect lease was lost before result commit")
                 self._committed[resolution.key] = step
+                self._uncertain.pop(resolution.key, None)
             elif not self._intent_is_side_effecting(resolution.key):
                 self._intents.pop(resolution.key, None)
                 if self._store is not None:
@@ -493,25 +627,73 @@ class ToolEffectReceiptIndex:
         intent = self._intents.get(key)
         return bool(intent and intent.side_effecting)
 
-    def _refresh_from_journal(self) -> None:
-        events = self._journal.read_all()
+    @staticmethod
+    def _step_is_indeterminate(step: Step) -> bool:
+        receipt = step.result.effect_receipt
+        return (
+            isinstance(receipt, dict)
+            and receipt.get("schema") == EFFECT_RECEIPT_SCHEMA
+            and receipt.get("sealed") is True
+            and receipt.get("emitted_by") == "tool_executor"
+            and receipt.get("state") == "indeterminate"
+        )
+
+    def _observe_step(self, task: str, key: str, step: Step) -> None:
+        if self._step_is_indeterminate(step):
+            self._uncertain[key] = (task, step)
+            self._committed.pop(key, None)
+        elif step.success:
+            self._committed[key] = step
+            self._uncertain.pop(key, None)
+
+    def _refresh_from_journal(self, *, strict: bool = False) -> None:
+        if strict:
+            reader = getattr(self._journal, "read_by_type_for_recovery", None)
+            if callable(reader):
+                # Effects are represented by exactly these two event types.
+                # Reading both through the strict backend preserves the
+                # completeness guarantee while keeping compatibility with
+                # journals that only implement the original read_all API.
+                events = [
+                    event
+                    for event_type in ("step", "tool_effect_intent")
+                    for event in reader(event_type)
+                ]
+            else:
+                events = self._journal.read_all()
+        else:
+            events = self._journal.read_all()
         for event in events:
             event_id = str(event.event_id)
             if event_id in self._seen_event_ids:
                 continue
             self._seen_event_ids.add(event_id)
             if isinstance(event, StepEvent):
+                task = str(event.task_id)
+                self._native_max_steps[task] = max(
+                    self._native_max_steps.get(task, 0), event.step.step_id
+                )
                 call_id = str(event.step.action.call_id)
                 self._steps_by_call_id[call_id] = event.step
                 key = self._effect_by_call_id.get(call_id)
-                if key is not None and event.step.success:
-                    self._committed[key] = event.step
+                if key is None:
+                    key = effect_key(
+                        event.task_id,
+                        event.step.step_id,
+                        event.step.action.sucker_id,
+                        event.step.action.args,
+                    )
+                self._observe_step(task, key, event.step)
             elif isinstance(event, ToolEffectIntentEvent):
+                task = str(event.task_id)
+                self._native_max_steps[task] = max(
+                    self._native_max_steps.get(task, 0), event.step_id
+                )
                 self._intents[event.effect_key] = event
                 self._effect_by_call_id[event.call_id] = event.effect_key
                 step = self._steps_by_call_id.get(event.call_id)
-                if step is not None and step.success:
-                    self._committed[event.effect_key] = step
+                if step is not None:
+                    self._observe_step(task, event.effect_key, step)
 
     def _start_heartbeat(self, resolution: EffectResolution) -> None:
         if self._store is None or resolution.fencing_token <= 0:
@@ -692,6 +874,7 @@ __all__ = [
     "EFFECT_RECEIPT_SCHEMA",
     "EffectLeaseLost",
     "EffectResolution",
+    "NativeEffectRecoveryRequired",
     "ToolEffectReceiptIndex",
     "args_fingerprint",
     "build_server_effect_receipt",
@@ -699,4 +882,5 @@ __all__ = [
     "indeterminate_step",
     "is_side_effecting",
     "not_executed_effect_receipt",
+    "should_refresh_read_result",
 ]

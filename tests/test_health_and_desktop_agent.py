@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.execution.agents import AgentRegistry, make_desktop_operator_agent
 from runtime.execution.arms.presets import make_desktop_operator_arm
@@ -89,6 +90,7 @@ class TestDesktopOperatorAgent:
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.platform.ui import create_app  # noqa: E402
 
 
@@ -121,7 +123,9 @@ class TestHealthEndpoint:
         data = r.json()
         # health endpoint should report exactly the agents we registered
         assert data["agents"] == len(presets)
-        assert data["agents"] >= 4, "expected at least the four user-facing presets"
+        # The roster contains Echo plus the two hidden execution identities;
+        # admin is loaded only for privileged code-mode sessions.
+        assert data["agents"] >= 3, "expected the bundled Echo execution roster"
 
     def test_reports_channels_when_manager_wired(self, tmp_path: Path):
         from runtime.adapters.channels import (
@@ -171,3 +175,22 @@ class TestHealthEndpoint:
         assert data["agents"] == 0
         assert data["channels"] == []
         assert data["groups"] == 0
+
+    def test_self_check_uses_configured_backend_port_behind_frontend_proxy(
+        self, tmp_path: Path
+    ):
+        app = create_app(
+            journal_path=tmp_path / "events.jsonl",
+            server_host="127.0.0.1",
+            server_port=18000,
+            frontend_port=13000,
+            frontend_proxy_target="http://127.0.0.1:18000",
+        )
+        response = TestClient(app).get(
+            "/api/runtime/self-check",
+            headers={"host": "localhost:13000", "origin": "http://localhost:13000"},
+        )
+        assert response.status_code == 200
+        frontend = response.json()["frontend"]
+        assert frontend["proxy_target"] == "http://127.0.0.1:18000"
+        assert frontend["proxy_targets_backend"] is True

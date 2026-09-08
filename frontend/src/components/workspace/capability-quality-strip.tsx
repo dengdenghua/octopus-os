@@ -180,8 +180,14 @@ export function CapabilityQualityStrip({
               <QualityPill
                 icon={<GlobeIcon className="size-3.5" />}
                 label="Browser"
-                value={summary.browser ? String(summary.browser.score) : String(summary.overall)}
-                tone={summary.browser && summary.browser.stale > 0 ? "warn" : "good"}
+                value={
+                  summary.browser
+                    ? String(summary.browser.score)
+                    : String(summary.overall)
+                }
+                tone={
+                  summary.browser && summary.browser.stale > 0 ? "warn" : "good"
+                }
               />
             ) : null}
             {!compact ? (
@@ -266,10 +272,8 @@ function QualityPill({
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium",
-        tone === "good" &&
-          "border-success/25 bg-success/10 text-success",
-        tone === "warn" &&
-          "border-warning/25 bg-warning/10 text-warning",
+        tone === "good" && "border-success/25 bg-success/10 text-success",
+        tone === "warn" && "border-warning/25 bg-warning/10 text-warning",
         tone === "muted" &&
           "border-border-default bg-muted/40 text-muted-foreground",
       )}

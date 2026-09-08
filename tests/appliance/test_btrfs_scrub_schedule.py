@@ -152,7 +152,9 @@ def test_runner_is_fail_closed_when_disabled() -> None:
 def test_runner_is_fail_closed_when_enabled_value_has_no_policy_file() -> None:
     result = runner.run_schedule(
         policy_reader=lambda: (False, {"schemaVersion": 1, "enabled": True}),
-        inventory_reader=lambda: pytest.fail("unconfigured schedule must not enumerate filesystems"),
+        inventory_reader=lambda: pytest.fail(
+            "unconfigured schedule must not enumerate filesystems"
+        ),
     )
     assert result["outcome"] == "disabled"
 
@@ -242,9 +244,7 @@ def test_systemd_timer_is_staggered_and_runner_is_constrained() -> None:
     timer = (REPOSITORY / "deploy/appliance/systemd/echo-btrfs-scrub.timer").read_text(
         encoding="utf-8"
     )
-    provision = (REPOSITORY / "deploy/provision/base/provision-lib.sh").read_text(
-        encoding="utf-8"
-    )
+    provision = (REPOSITORY / "deploy/provision/base/provision-lib.sh").read_text(encoding="utf-8")
 
     assert "deploy.appliance.btrfs_scrub_schedule_runner" in service
     assert "NoNewPrivileges=true" in service

@@ -14,6 +14,8 @@
  * scoped to the tab, which matches the "this specific send" semantics.
  */
 
+import { currentActorId } from "@/core/auth/api";
+
 const PENDING_NEW_SESSION_KEY = "echo:pending-new-session";
 
 /** Max age of a pending hand-off. Leftovers from a much earlier navigation
@@ -25,14 +27,34 @@ type PendingNewSession = {
   ts: number;
 };
 
+function scopedPendingKey(): string {
+  const actor = encodeURIComponent(currentActorId().trim() || "anonymous");
+  return `${PENDING_NEW_SESSION_KEY}:${actor}`;
+}
+
+/** Clear any pending hand-off when an authentication session ends. */
+export function clearPendingNewSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.sessionStorage.key(index);
+      if (
+        key === PENDING_NEW_SESSION_KEY ||
+        key?.startsWith(`${PENDING_NEW_SESSION_KEY}:`)
+      ) {
+        window.sessionStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
 export function writePendingNewSession(text: string): void {
   if (typeof window === "undefined") return;
   try {
     const payload: PendingNewSession = { text, ts: Date.now() };
-    window.sessionStorage.setItem(
-      PENDING_NEW_SESSION_KEY,
-      JSON.stringify(payload),
-    );
+    window.sessionStorage.setItem(scopedPendingKey(), JSON.stringify(payload));
   } catch {
     // Storage full / disabled — auto-new-session is best-effort; the message
     // still lands in the current (stale) thread if this fails.
@@ -48,13 +70,13 @@ export function consumePendingNewSession(): string | null {
   if (typeof window === "undefined") return null;
   let raw: string | null = null;
   try {
-    raw = window.sessionStorage.getItem(PENDING_NEW_SESSION_KEY);
+    raw = window.sessionStorage.getItem(scopedPendingKey());
   } catch {
     return null;
   }
   if (!raw) return null;
   try {
-    window.sessionStorage.removeItem(PENDING_NEW_SESSION_KEY);
+    window.sessionStorage.removeItem(scopedPendingKey());
     const parsed = JSON.parse(raw) as Partial<PendingNewSession>;
     if (
       typeof parsed.text === "string" &&

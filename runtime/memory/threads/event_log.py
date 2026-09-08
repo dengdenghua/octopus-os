@@ -66,6 +66,7 @@ EventKind = Literal[
     "item_delta",
     "item_completed",
     "turn_compacted",
+    "execution_handoff",
 ]
 
 
@@ -248,6 +249,13 @@ class EventLog:
                     "startedAt": turn.started_at.isoformat(),
                     "objectiveId": turn.objective_id,
                     "taskId": turn.task_id,
+                    # These excluded TurnParams fields were authenticated by
+                    # the gateway. Keep them internal to the journal so future
+                    # history projection can detect a mixed-principal log.
+                    "principal": {
+                        "actorId": turn.params.owner_actor_id if turn.params else None,
+                        "tenantId": turn.params.tenant_id if turn.params else None,
+                    },
                 },
             )
         )
@@ -318,6 +326,9 @@ class EventLog:
         task_id: str | None = None,
         checkpoint_id: int | None = None,
         outcome_reason: str | None = None,
+        execution: dict[str, Any] | None = None,
+        execution_model: dict[str, Any] | None = None,
+        durable: bool = False,
     ) -> LoggedEvent | None:
         payload: dict[str, Any] = {}
         if phases is not None:
@@ -336,6 +347,10 @@ class EventLog:
             payload["checkpointId"] = checkpoint_id
         if outcome_reason is not None:
             payload["outcomeReason"] = outcome_reason
+        if execution is not None:
+            payload["execution"] = execution
+        if execution_model is not None:
+            payload["executionModel"] = execution_model
         if not payload:
             return None
         return self.append(
@@ -344,7 +359,24 @@ class EventLog:
                 threadId=thread_id,
                 turnId=turn_id,
                 payload=payload,
-            )
+            ),
+            durable=durable,
+        )
+
+    def execution_handoff(
+        self,
+        thread_id: str,
+        turn_id: str,
+        receipt: dict[str, Any],
+    ) -> LoggedEvent:
+        return self.append(
+            LoggedEvent(
+                event="execution_handoff",
+                threadId=thread_id,
+                turnId=turn_id,
+                payload=receipt,
+            ),
+            durable=True,
         )
 
     def turn_compacted(

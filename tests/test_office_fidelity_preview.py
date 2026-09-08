@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -51,9 +52,11 @@ def test_fidelity_preview_prefers_quicklook_and_sanitizes_html(
         executable.write_text("#!/bin/sh\n")
         executable.chmod(0o755)
     commands: list[list[str]] = []
+    environments: list[dict[str, str]] = []
 
     def fake_run(command: list[str], **_kwargs: Any) -> None:
         commands.append(command)
+        environments.append(_kwargs["env"])
         if command[0] == str(qlmanage):
             preview = Path(command[3]) / "deck.pptx.qlpreview"
             preview.mkdir()
@@ -75,6 +78,7 @@ def test_fidelity_preview_prefers_quicklook_and_sanitizes_html(
     monkeypatch.setattr(office_fidelity_preview, "_CACHE_ROOT", tmp_path / "cache")
     monkeypatch.setattr(office_fidelity_preview, "_find_qlmanage", lambda: str(qlmanage))
     monkeypatch.setattr(office_fidelity_preview, "_find_pdftoppm", lambda: str(pdftoppm))
+    monkeypatch.setenv("OPENAI_API_KEY", "should-not-reach-preview")
     monkeypatch.setattr(office_fidelity_preview.subprocess, "run", fake_run)
     monkeypatch.setattr(
         office_fidelity_preview,
@@ -99,6 +103,8 @@ def test_fidelity_preview_prefers_quicklook_and_sanitizes_html(
     assert "body>div.slide" in html
     assert "scroll-snap-stop:always" in html
     assert len(commands) == 2
+    assert all("OPENAI_API_KEY" not in env for env in environments)
+    assert all(Path(env["HOME"]).name == "profile" for env in environments)
 
 
 def test_fidelity_preview_falls_back_when_page_renderer_is_missing(
@@ -111,3 +117,33 @@ def test_fidelity_preview_falls_back_when_page_renderer_is_missing(
 
     assert office_fidelity_preview.render_office_fidelity_preview(source) is None
 
+
+def test_fidelity_cache_does_not_reuse_same_metadata_after_replacement(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    source = tmp_path / "deck.pdf"
+    source.write_bytes(b"%PDF-one")
+    cache = tmp_path / "cache"
+    converter = tmp_path / "pdftoppm"
+    converter.write_text("# converter\n")
+    converter.chmod(0o755)
+    calls: list[int] = []
+
+    def fake_run(command: list[str], **_kwargs: Any) -> None:
+        calls.append(len(calls) + 1)
+        prefix = Path(command[-1])
+        prefix.with_name(f"{prefix.name}-1.jpg").write_bytes(f"page-{len(calls)}".encode())
+
+    monkeypatch.setattr(office_fidelity_preview, "_CACHE_ROOT", cache)
+    monkeypatch.setattr(office_fidelity_preview, "_find_pdftoppm", lambda: str(converter))
+    monkeypatch.setattr(office_fidelity_preview.subprocess, "run", fake_run)
+
+    first_stat = source.stat()
+    first = office_fidelity_preview.render_office_fidelity_preview(source)
+    source.write_bytes(b"%PDF-two")
+    os.utime(source, ns=(first_stat.st_atime_ns, first_stat.st_mtime_ns))
+    second = office_fidelity_preview.render_office_fidelity_preview(source)
+
+    assert first is not None and second is not None
+    assert first != second
+    assert len(calls) == 2

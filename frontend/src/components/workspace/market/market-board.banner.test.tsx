@@ -3,10 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { renderWithProviders } from "@/test/harness";
+import { actorScopedStorageKey } from "@/core/auth/scoped-storage";
 
 import { MarketBoard } from "./market-board";
 
 const BANNER_KEY = "echo.market.assets-banner-dismissed.v1";
+const scopedBannerKey = () => actorScopedStorageKey(BANNER_KEY);
 
 describe("MarketBoard 资产引导横幅", () => {
   beforeEach(() => {
@@ -15,9 +17,7 @@ describe("MarketBoard 资产引导横幅", () => {
 
   it("默认显示横幅与前往按钮", async () => {
     renderWithProviders(<MarketBoard />);
-    expect(
-      screen.getByText(/这里是社区好物/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/这里是社区好物/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /前往统一资产/ }),
     ).toBeInTheDocument();
@@ -27,11 +27,11 @@ describe("MarketBoard 资产引导横幅", () => {
     renderWithProviders(<MarketBoard />);
     await userEvent.click(screen.getByRole("button", { name: "关闭提示" }));
     expect(screen.queryByText(/这里是社区好物/)).not.toBeInTheDocument();
-    expect(window.localStorage.getItem(BANNER_KEY)).toBe("1");
+    expect(window.localStorage.getItem(scopedBannerKey())).toBe("1");
   });
 
   it("已关闭过则不再显示", () => {
-    window.localStorage.setItem(BANNER_KEY, "1");
+    window.localStorage.setItem(scopedBannerKey(), "1");
     renderWithProviders(<MarketBoard />);
     expect(screen.queryByText(/这里是社区好物/)).not.toBeInTheDocument();
   });

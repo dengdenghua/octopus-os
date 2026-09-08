@@ -2,17 +2,18 @@
 
 Echo remains the public control plane: it owns the authenticated outer
 thread, durable journal, approvals, interruption, UI items, and final status.
-Codex owns only the inner coding loop for a selected ``codex-cli`` local
-partner.  The adapter never exposes Codex protocol objects to the frontend and
-never lets a failed security check fall through to a weaker executor.
+Codex owns the inner execution loop for roles configured with the
+``codex_app_server`` backend. The adapter never exposes Codex protocol objects
+to the frontend and never lets a failed security check fall through to a
+weaker executor.
 """
 
 from __future__ import annotations
 
 import contextlib
 import logging
-import os
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -21,33 +22,42 @@ from runtime.execution.agents.shared_blackboard import (
     harvest_to_blackboard,
 )
 from runtime.execution.codex_backend.backend import (
-    CodexBackendUnavailable,
     CodexExecutionRequest,
     CodexExecutionSession,
 )
+from runtime.execution.codex_backend.command import codex_app_server_argv
 from runtime.execution.codex_backend.events import (
     CodexEventState,
     translate_notification,
 )
 from runtime.execution.codex_backend.role_runner import (
+    _explicit_feature_flag as _explicit_feature_flag,
+)
+from runtime.execution.codex_backend.role_runner import (
     agent_uses_codex_execution_backend,
     build_codex_role_request,
-    codex_app_server_command,
     codex_execution_lifecycle,
+    codex_request_policy,
+    configured_codex_executable,
     require_codex_backend_enabled,
-    resolve_codex_sandbox_mode,
+)
+from runtime.execution.codex_backend.role_runner import (
+    deployment_mode as _deployment_mode,
+)
+from runtime.execution.codex_backend.role_runner import (
+    source_codex_home as _source_codex_home,
 )
 from runtime.execution.codex_backend.role_runner import (
     state_root_for_workspace as _shared_state_root_for_workspace,
 )
 from runtime.execution.codex_backend.security import (
-    CodexSandboxMode,
     CodexSecurityError,
 )
+from runtime.execution.codex_backend.timeouts import execution_timeout_s
 from runtime.execution.codex_backend.types import RemoteError, RequestTimeoutError
-from runtime.platform.process.paths import app_paths
-from runtime.platform.process.session import Session, current_session
-from runtime.platform.runtime_policy.feature_flags import resolution
+from runtime.execution.host_boundary import bind_session_execution_request
+from runtime.platform.process.session import Session, current_session, session_scope
+from runtime.platform.process.task_execution import TaskExecutionGuard
 from runtime.protocol import AgentMessageItem, ServerMethod, TurnStatus
 from runtime.safety.sandboxing.sandbox import (
     effective_process_sandbox_mode,
@@ -56,12 +66,9 @@ from runtime.safety.sandboxing.sandbox import (
 
 _logger = logging.getLogger(__name__)
 
-_PRODUCTION_MODES = frozenset({"commercial", "production", "server", "shared"})
 _NOTIFICATION_POLL_S = 0.5
 _HEARTBEAT_INTERVAL_S = 5.0
 _INTERRUPT_GRACE_S = 5.0
-_DEFAULT_TURN_TIMEOUT_S = 30.0 * 60.0
-_MAX_TURN_TIMEOUT_S = 4.0 * 60.0 * 60.0
 _INVALID_REQUEST = -32600
 _METHOD_NOT_FOUND = -32601
 _NOT_SUBMITTED_STEER_MESSAGES = frozenset(
@@ -74,26 +81,13 @@ _NOT_SUBMITTED_STEER_MESSAGES = frozenset(
 )
 
 
-def _deployment_mode() -> str:
-    return str(os.environ.get("ECHO_DEPLOYMENT_MODE") or "local").strip().lower()
-
-
-def _explicit_feature_flag() -> bool | None:
-    value, source = resolution("execution.codex_app_server")
-    if source in (None, "default"):
-        return None
-    # Production enablement is a security decision, so JSON numbers, objects,
-    # and other merely truthy file values are not accepted as an explicit yes.
-    return value if type(value) is bool else False
-
-
 def agent_is_codex_app_server_partner(agent: Any) -> bool:
     """Return whether routing should enter the Codex App Server boundary.
 
-    Local/single-user deployments enable it by default and retain an explicit
-    opt-out to the hardened one-shot adapter.  Production-like deployments
-    always enter this boundary even while disabled so they fail closed instead
-    of silently running the weaker legacy CLI path.
+    Local/single-user deployments enable explicitly configured roles by
+    default and honor an explicit opt-out. Production-like deployments always
+    enter this boundary even while disabled so the execution gate rejects the
+    request instead of silently selecting another engine.
     """
 
     return agent_uses_codex_execution_backend(agent)
@@ -104,52 +98,11 @@ def _require_enabled_for_deployment() -> None:
 
 
 def _turn_timeout_s() -> float:
-    raw = str(os.environ.get("ECHO_CODEX_APP_SERVER_TIMEOUT") or "").strip()
-    if not raw:
-        return _DEFAULT_TURN_TIMEOUT_S
-    try:
-        return min(_MAX_TURN_TIMEOUT_S, max(30.0, float(raw)))
-    except (TypeError, ValueError):
-        _logger.warning("invalid ECHO_CODEX_APP_SERVER_TIMEOUT=%r; using default", raw)
-        return _DEFAULT_TURN_TIMEOUT_S
+    return execution_timeout_s()
 
 
 def _state_root_for_workspace(workspace: Path) -> Path:
     return _shared_state_root_for_workspace(workspace)
-
-
-def _source_codex_home() -> Path | None:
-    explicit = str(os.environ.get("ECHO_CODEX_SOURCE_HOME") or "").strip()
-    if explicit:
-        source = Path(explicit).expanduser()
-        if not source.is_absolute():
-            raise CodexSecurityError("ECHO_CODEX_SOURCE_HOME must be absolute")
-        return source.resolve(strict=False)
-    if _deployment_mode() in _PRODUCTION_MODES:
-        return None
-    # Local desktop/CLI use deliberately reuses the current OS user's Codex
-    # login, but the security layer copies only a validated private auth.json
-    # into a principal/thread-scoped CODEX_HOME.  The rest of ~/.codex is never
-    # inherited.
-    return (Path.home() / ".codex").resolve(strict=False)
-
-
-def _sandbox_mode(
-    context: dict[str, Any],
-    *,
-    trusted_parent_metadata: dict[str, Any] | None = None,
-) -> CodexSandboxMode:
-    # ``danger-full-access`` remains capped by the shared resolver.  Audit and
-    # trusted parent read-only declarations additionally force the built-in
-    # Codex shell/patch surface into a read-only filesystem profile.
-    return resolve_codex_sandbox_mode(
-        context,
-        trusted_parent_metadata=trusted_parent_metadata,
-    )
-
-
-def _partner_command(agent: Any) -> tuple[str, ...]:
-    return codex_app_server_command(agent)
 
 
 def _trusted_realtime_parent(
@@ -184,18 +137,9 @@ def _trusted_realtime_parent(
     )
 
 
-def _request_for_turn(
-    runtime: Any,
-    turn: Any,
-    intent: Any,
-    agent: Any,
-    *,
-    text: str,
-    approval_provider: Any = None,
-    is_interrupted: Any = None,
-) -> CodexExecutionRequest:
-    context = getattr(intent, "user_context", None)
-    context = dict(context) if isinstance(context, dict) else {}
+def _resolved_codex_workspace(context: dict[str, Any]) -> Path:
+    """Resolve the server-selected Codex workspace once at the boundary."""
+
     raw_cwd = context.get("cwd")
     if not isinstance(raw_cwd, str) or not raw_cwd.strip():
         raise CodexSecurityError("Codex execution requires a server-resolved workspace")
@@ -208,6 +152,177 @@ def _request_for_turn(
         raise CodexSecurityError("server-resolved Codex workspace does not exist") from exc
     if not workspace.is_dir():
         raise CodexSecurityError("server-resolved Codex workspace is not a directory")
+    return workspace
+
+
+def _host_codex_session(
+    runtime: Any,
+    turn: Any,
+    intent: Any,
+    agent: Any,
+    *,
+    text: str,
+    workspace: Path,
+) -> tuple[Session | None, TaskExecutionGuard | None]:
+    """Admit Codex to the same host lease and request used by native turns.
+
+    The Codex sidecar already has its own workspace security.  This helper
+    adds the Echo-side identity/lease ceiling before the dynamic-tool broker
+    is constructed, so a stale Codex continuation cannot keep invoking Echo
+    tools after its parent task lost ownership.  Legacy embedders without a
+    ``TaskSupervisor`` retain the old no-guard path.
+    """
+
+    supervisor = getattr(runtime, "_task_supervisor", None)
+    if supervisor is None:
+        return None, None
+
+    guards = getattr(runtime, "_task_execution_guards", None)
+    if not isinstance(guards, dict):
+        guards = {}
+        runtime._task_execution_guards = guards
+
+    parent = current_session()
+    if parent is None:
+        parent = _trusted_realtime_parent(
+            turn,
+            agent,
+            dict(getattr(intent, "user_context", None) or {}),
+            workspace,
+        )
+
+    existing_request = getattr(parent, "execution_request", None) if parent is not None else None
+    existing_lease = getattr(parent, "execution_lease", None) if parent is not None else None
+    if existing_request is not None:
+        # Nested Codex execution already belongs to an outer host task. Never
+        # replace that immutable request with a new task identity.
+        return parent, existing_lease if isinstance(existing_lease, TaskExecutionGuard) else None
+
+    previous = guards.get(turn.id)
+    guard = previous.fork() if previous is not None else TaskExecutionGuard(supervisor)
+    # Install the pending guard before admission. If another holder rejects
+    # the start, finalization sees a pending guard and cannot transition that
+    # holder's task record on our behalf.
+    guards[turn.id] = guard
+
+    context = dict(getattr(intent, "user_context", None) or {})
+    params = getattr(turn, "params", None)
+    owner_id = str(getattr(parent, "actor", None) or "").strip() or None
+    if owner_id is None:
+        owner_id = str(getattr(params, "owner_actor_id", None) or "").strip() or None
+    tenant_id = None
+    if parent is not None and isinstance(parent.metadata, dict):
+        tenant_id = str(parent.metadata.get("tenant_id") or "").strip() or None
+    if tenant_id is None:
+        tenant_id = str(getattr(params, "tenant_id", None) or "").strip() or None
+
+    task_id = str(
+        getattr(turn, "task_id", None)
+        or getattr(turn, "objective_id", None)
+        or getattr(turn, "id", "")
+    ).strip()
+    guard.admit(
+        task_id,
+        kind="realtime_codex",
+        owner_id=owner_id,
+        thread_id=str(getattr(turn, "thread_id", "") or "").strip(),
+        title=str(text or "").strip()[:80],
+        goal=str(text or "").strip(),
+        mode="codex",
+        workspace_path=str(workspace),
+        origin_task_id=str(getattr(turn, "id", "") or "").strip(),
+        metadata={
+            "turn_id": str(getattr(turn, "id", "") or ""),
+            "objective_id": task_id,
+            "execution_engine": "codex",
+            "model_name": str(getattr(params, "model", None) or "").strip() or None,
+        },
+    )
+
+    if parent is None:
+        parent = Session(
+            actor=owner_id,
+            agent=agent,
+            thread_id=str(getattr(turn, "thread_id", "") or "").strip(),
+            conversation_id=str(getattr(turn, "thread_id", "") or "").strip(),
+            turn_id=str(getattr(turn, "id", "") or "").strip(),
+            metadata={},
+            execution_lease=guard,
+        )
+    else:
+        # The trusted parent from TurnParams may contain transport context.
+        # Build a narrow host projection so client privilege fields cannot
+        # expand the request's scope while the provider still gets the
+        # server-selected workspace and principal.
+        parent = Session(
+            actor=parent.actor,
+            agent=parent.agent or agent,
+            thread_id=parent.thread_id or str(getattr(turn, "thread_id", "") or "").strip(),
+            conversation_id=parent.conversation_id
+            or str(getattr(turn, "thread_id", "") or "").strip(),
+            turn_id=parent.turn_id or str(getattr(turn, "id", "") or "").strip(),
+            started_at=parent.started_at,
+            metadata={},
+            execution_lease=guard,
+        )
+    parent.metadata.update(
+        {
+            "tenant_id": tenant_id,
+            "owner_actor_id": owner_id,
+            "workspace_path": str(workspace),
+            "extra_workspaces": [str(workspace)],
+            "mode": "code",
+            "permission_mode": "default",
+            "approval_policy": "on-request",
+            "sandbox_mode": "full",
+            "execution_environment": "sandbox",
+        }
+    )
+    budget = getattr(getattr(getattr(runtime, "_stack", None), "config", None), "budget", None)
+    try:
+        bind_session_execution_request(
+            parent,
+            task_id=task_id,
+            goal=str(text or "").strip(),
+            timeout_s=_turn_timeout_s(),
+            parent_task_id=(
+                str(context.get("parent_task_id") or "").strip() or None
+            ),
+            budget=budget,
+            execution_engine="codex",
+        )
+    except BaseException:
+        # Admission succeeded, but the host request could not be built. Stop
+        # this provider scope immediately; outer turn finalization may still
+        # settle the exact durable lease with ``require_open=False``.
+        guard.close()
+        raise
+    with contextlib.suppress(AttributeError, TypeError, ValueError):
+        turn.task_id = task_id
+    return parent, guard
+
+
+def _request_for_turn(
+    runtime: Any,
+    turn: Any,
+    intent: Any,
+    agent: Any,
+    *,
+    text: str,
+    approval_provider: Any = None,
+    is_interrupted: Any = None,
+) -> CodexExecutionRequest:
+    context = getattr(intent, "user_context", None)
+    context = dict(context) if isinstance(context, dict) else {}
+    # The realtime gateway sanitizes approvalPolicy and auto_approve. Require
+    # the server-owned operator switch again here before relaxing Codex's own
+    # approval policy; client metadata alone can never enable full access.
+    server_auto_approve = bool(
+        getattr(runtime, "_allow_client_auto_approve", False)
+        and context.get("approval_policy") == "never"
+        and context.get("auto_approve") is True
+    )
+    workspace = _resolved_codex_workspace(context)
     # Realtime turn validation designates ``cwd`` as the execution
     # coordinate. A browser-supplied workspace_path must not override it.
     context["workspace_path"] = str(workspace)
@@ -233,34 +348,30 @@ def _request_for_turn(
             raise CodexSecurityError(
                 "Codex App Server driver requires an embedded standard role"
             )
-        command = str(
-            capabilities.get("codex_app_server_executable")
-            or capabilities.get("codex_executable")
-            or "codex"
-        ).strip()
-        if not command or "\x00" in command:
-            raise CodexSecurityError("Codex executable is invalid")
-        model = ""
+        from runtime.safety.approval.permission_modes import approval_reviewer_for_mode
+
+        policy = codex_request_policy(
+            context,
+            server_auto_approve=server_auto_approve,
+            trusted_parent_metadata=(
+                trusted_parent.metadata
+                if trusted_parent is not None and isinstance(trusted_parent.metadata, dict)
+                else None
+            ),
+        )
+
         return CodexExecutionRequest(
             outer_thread_id=str(getattr(turn, "thread_id", "") or ""),
             outer_turn_id=str(getattr(turn, "id", "") or ""),
             workspace=workspace,
-            realm_id=str(os.environ.get("ECHO_CODEX_REALM") or app_paths().data_dir.resolve()),
+            **policy,
             tenant_id=str(context.get("tenant_id") or "local"),
             principal_id=str(context.get("owner_actor_id") or "local"),
             prompt=prompt,
-            command=(command, "app-server", "--strict-config", "--listen", "stdio://"),
+            command=codex_app_server_argv(configured_codex_executable(agent)),
             source_codex_home=_source_codex_home(),
-            model=model or None,
             effort=str(context.get("reasoning_effort") or "").strip() or None,
-            sandbox_mode=_sandbox_mode(
-                context,
-                trusted_parent_metadata=(
-                    trusted_parent.metadata
-                    if trusted_parent is not None and isinstance(trusted_parent.metadata, dict)
-                    else None
-                ),
-            ),
+            approval_reviewer=approval_reviewer_for_mode(context.get("permission_mode")),
         )
 
     request, _broker, _provider = build_codex_role_request(
@@ -272,6 +383,7 @@ def _request_for_turn(
         outer_turn_id=str(getattr(turn, "id", "") or ""),
         approval_provider=approval_provider,
         is_interrupted=is_interrupted,
+        server_auto_approve=server_auto_approve,
     )
     return request
 
@@ -323,6 +435,73 @@ async def drive_codex_app_server(
     *,
     text: str,
 ) -> bool:
+    """Run Codex inside Echo's host-owned request/lease context.
+
+    The App Server remains an isolated provider, but its Echo dynamic tools
+    must observe the same task identity and permission ceiling as Native
+    ReAct.  The wrapper is a no-op for legacy runtimes that do not expose a
+    ``TaskSupervisor``.
+    """
+
+    context = getattr(intent, "user_context", None)
+    context = dict(context) if isinstance(context, dict) else {}
+    workspace = _resolved_codex_workspace(context)
+    host_session, execution_guard = _host_codex_session(
+        runtime,
+        turn,
+        intent,
+        agent,
+        text=text,
+        workspace=workspace,
+    )
+    if host_session is None:
+        return await _drive_codex_app_server_inner(
+            runtime,
+            turn,
+            log,
+            emitter,
+            intent,
+            agent,
+            provider,
+            text=text,
+        )
+
+    try:
+        with session_scope(host_session):
+            return await _drive_codex_app_server_inner(
+                runtime,
+                turn,
+                log,
+                emitter,
+                intent,
+                agent,
+                provider,
+                text=text,
+            )
+    finally:
+        # The outer lifecycle owns final transition. Closing this provider
+        # scope only blocks late dynamic-tool calls; a subsequent steering or
+        # repair invocation can fork the still-current durable lease.
+        guards = getattr(runtime, "_task_execution_guards", None)
+        if (
+            execution_guard is not None
+            and isinstance(guards, dict)
+            and guards.get(getattr(turn, "id", "")) is execution_guard
+        ):
+            execution_guard.close()
+
+
+async def _drive_codex_app_server_inner(
+    runtime: Any,
+    turn: Any,
+    log: Any,
+    emitter: Any,
+    intent: Any,
+    agent: Any,
+    provider: Any,
+    *,
+    text: str,
+) -> bool:
     """Run one outer turn through Codex and stream it into native UI items.
 
     The embedded standard role has no persona/policy-equivalent fallback. Every
@@ -343,6 +522,18 @@ async def drive_codex_app_server(
         approval_provider=provider,
         is_interrupted=interrupted,
     )
+    from runtime.sensing.gateway.realtime_execution_evidence import record_execution
+
+    record_execution(log, turn, engine="codex", driver="codex_app_server", model=request.model)
+    from runtime.sensing.gateway.realtime_engine_history import engine_history_for_turn
+
+    # Resolve the current role/tool authority before adding quoted history.
+    history = engine_history_for_turn(log, turn, "codex")
+    request = replace(
+        request,
+        prompt=history.prompt(request.prompt, resumed=True),
+        fresh_thread_prompt=history.prompt(request.prompt, resumed=False),
+    )
     # Persist the engine-owned effective model, not an outer smart-routing
     # candidate. This is the authoritative coordinate used by history,
     # outcome/evolution records and any UI that inspects the completed turn.
@@ -355,9 +546,24 @@ async def drive_codex_app_server(
             # object rather than the production Pydantic model.
             turn.params.model = request.model
     turn.execution_engine = "codex"
+    # The resolver may replace an outer routing candidate with the provider's
+    # effective model. Refresh the same durable task record while it runs.
+    execution_guard = getattr(runtime, "_task_execution_guards", {}).get(turn.id)
+    if isinstance(execution_guard, TaskExecutionGuard) and request.model:
+        with contextlib.suppress(Exception):
+            execution_guard.transition(
+                "running",
+                metadata_patch={
+                    "execution_engine": "codex",
+                    "model_name": request.model,
+                },
+            )
     raw_context = getattr(intent, "user_context", None)
     context = dict(raw_context) if isinstance(raw_context, dict) else {}
     trusted_parent = _trusted_realtime_parent(turn, agent, context, request.workspace)
+    execution_lease = getattr(trusted_parent, "execution_lease", None)
+    if isinstance(execution_lease, TaskExecutionGuard):
+        execution_lease.assert_allowed()
     async with codex_execution_lifecycle(
         getattr(runtime, "_stack", None),
         request,
@@ -371,14 +577,10 @@ async def drive_codex_app_server(
         session_factory=CodexExecutionSession,
     ) as prepared:
         session = prepared.session
-        try:
-            await session.start()
-        except CodexBackendUnavailable:
-            if session.turn_started or _deployment_mode() in _PRODUCTION_MODES:
-                raise
-            # Keep one execution and security model.  The retired one-shot CLI
-            # bridge must not be resurrected as a silent fallback.
-            raise
+        # Startup failures propagate through the shared cleanup boundary;
+        # never retry an ambiguous start through a different executor.
+        await session.start()
+        history.mark_delivered()
 
         bridge_state = runtime._make_bridge_state(turn.thread_id, turn.id, agent=agent)
         event_state = CodexEventState()
@@ -417,7 +619,7 @@ async def drive_codex_app_server(
                     bridge_state,
                     {
                         "type": "react_cancelled",
-                        "reason": turn.interrupt_reason or turn.outcome_reason,
+                        "reason": turn.outcome_reason or turn.interrupt_reason,
                     },
                 )
                 break
@@ -448,6 +650,25 @@ async def drive_codex_app_server(
                 continue
 
             for event in translate_notification(notification, event_state):
+                terminal = event.get("type") in {
+                    "react_completed", "react_cancelled", "react_error",
+                }
+                if terminal and interrupt_requested:
+                    # A queued completion/error may arrive after we accepted
+                    # a stop. It must not replace the authoritative stop reason
+                    # or flush the task's output as successfully completed.
+                    event = {
+                        "type": "react_cancelled",
+                        "reason": turn.outcome_reason or "user_cancelled",
+                    }
+                if isinstance(execution_lease, TaskExecutionGuard) and event.get("type") in {
+                    "tool_start",
+                    "react_completed",
+                }:
+                    if event.get("type") == "tool_start":
+                        execution_lease.assert_allowed()
+                    else:
+                        execution_lease.assert_held()
                 await runtime._apply_react_event(
                     turn,
                     log,
@@ -455,8 +676,9 @@ async def drive_codex_app_server(
                     bridge_state,
                     event,
                 )
-            if notification.method == "turn/completed":
-                saw_terminal = True
+                if terminal:
+                    saw_terminal = True
+                    break
 
         if not saw_terminal and turn.status == TurnStatus.IN_PROGRESS:
             await runtime._apply_react_event(

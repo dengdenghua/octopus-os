@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { pickLocalDirectory } from "./pick-local-directory";
+import {
+  isLocalDirectoryPickerUnavailableError,
+  LocalDirectoryPickerError,
+  pickLocalDirectory,
+} from "./pick-local-directory";
 
 describe("pickLocalDirectory", () => {
   afterEach(() => {
@@ -64,5 +68,27 @@ describe("pickLocalDirectory", () => {
     );
 
     await expect(pickLocalDirectory()).resolves.toBeNull();
+  });
+
+  it("keeps the backend status for an unavailable browser picker", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 504 }),
+    );
+
+    await expect(pickLocalDirectory()).rejects.toMatchObject({
+      name: "LocalDirectoryPickerError",
+      status: 504,
+    });
+    expect(
+      isLocalDirectoryPickerUnavailableError(
+        new LocalDirectoryPickerError(503),
+      ),
+    ).toBe(true);
+    expect(
+      isLocalDirectoryPickerUnavailableError(
+        new LocalDirectoryPickerError(400),
+      ),
+    ).toBe(false);
   });
 });

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import re
@@ -155,8 +154,7 @@ class ComfyUIBridgePlugin(ModulePlugin):
             ),
         ]
         for skill in skills:
-            with contextlib.suppress(Exception):
-                self.ctx.register_skill(skill)
+            self.ctx.register_skill(skill)
 
     def _status_skill(self, **_kwargs: Any) -> dict[str, Any]:
         base_url = self._local_base_url()

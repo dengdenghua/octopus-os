@@ -26,7 +26,9 @@ def register_app(app: Any, _context: Any) -> None:
 
     mount_agent_ui(app)
     app.state.echo_agent_api_contract = require_agent_api_contract(
-        required_domains=("tasks",),
+        required_domains=(
+            ("tasks", "storage") if os.environ.get("ECHO_DESKTOP") == "1" else ("tasks",)
+        ),
         optional_domains=(),
     )
 
@@ -42,6 +44,52 @@ def register_app(app: Any, _context: Any) -> None:
             jwt_secret=None,
         )
     )
+
+    # The native desktop shell may run without the optional Storage sibling.
+    # Give its local-database fallback the same authenticated file identity
+    # endpoints as the appliance, while keeping the NAS appliance control
+    # plane (state lock, Docker, photos, and destructive operations) out of
+    # this lightweight extension. Mutating file actions remain unavailable
+    # without the appliance's explicit approval/audit services.
+    if os.environ.get("ECHO_DESKTOP") == "1":
+        from appliance.agent_api.storage import (
+            create_storage_proxy_router,
+            desktop_file_manager,
+        )
+        from appliance.files import create_files_router
+        from appliance.security import ApplianceAuthenticator
+
+        context = _context
+        provider = desktop_file_manager()
+        if provider is None:
+            raise RuntimeError("desktop file provider is unavailable")
+        file_manager = provider.manager
+        authenticator = ApplianceAuthenticator(getattr(context, "jwt_secret", None))
+        app.state.echo_native_file_manager = file_manager
+        app.include_router(
+            create_files_router(
+                file_manager,
+                authenticator=authenticator,
+            )
+        )
+
+        # A full Agent process already mounts this same-origin proxy from the
+        # collaboration router.  The native desktop entrypoint can be a
+        # smaller process, so provide the identical Storage contract there
+        # only when it has not already been installed.
+        if not any(
+            getattr(route, "path", "") == "/api/storage/{storage_path:path}"
+            for route in getattr(app, "routes", ())
+        ):
+            app.include_router(
+                create_storage_proxy_router(
+                    identity_store=getattr(context, "identity_store", None),
+                    require_auth=getattr(context, "require_auth", False),
+                    jwt_secret=getattr(context, "jwt_secret", None),
+                    jwt_issuer=getattr(context, "jwt_issuer", None),
+                    jwt_audience=getattr(context, "jwt_audience", None),
+                )
+            )
 
 
 __all__ = ["register_app"]

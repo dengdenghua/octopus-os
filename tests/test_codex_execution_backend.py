@@ -410,6 +410,27 @@ async def test_first_start_is_isolated_durable_and_binds_approval_scope(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_server_authorized_full_access_reaches_thread_and_turn_policy(tmp_path: Path) -> None:
+    session, security, _context, _factory, client = _make_session(tmp_path)
+    session.request = replace(
+        session.request,
+        sandbox_mode="danger-full-access",
+        approval_policy="never",
+    )
+
+    await session.start()
+
+    assert security.prepare_kwargs is not None
+    assert security.prepare_kwargs["sandbox_mode"] == "danger-full-access"
+    thread_call = next(value for name, value in client.calls if name == "thread/start")
+    assert thread_call["approval_policy"] == "never"
+    assert thread_call["approvals_reviewer"] == "user"
+    turn_call = next(value for name, value in client.calls if name == "turn/start")
+    assert turn_call[2]["extra_params"]["approvalPolicy"] == "never"
+    await session.close()
+
+
+@pytest.mark.asyncio
 async def test_environment_ids_are_never_forwarded_even_if_context_regresses(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -633,6 +654,30 @@ async def test_production_transform_failure_is_fail_closed(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["fresh", "resumed", "missing"])
+async def test_history_prompt_follows_actual_session_resume_result(tmp_path: Path, mode) -> None:
+    session, _security, _context, _factory, client = _make_session(
+        tmp_path,
+        binding=None if mode == "fresh" else _binding(),
+    )
+    session.request = replace(
+        session.request,
+        prompt="missing-history\nlatest",
+        fresh_thread_prompt="full-history\nlatest",
+    )
+    if mode == "missing":
+        client.resume_error = RemoteError(-32600, "thread not found: inner-existing")
+    try:
+        await session.start()
+        submitted = next(value for name, value in client.calls if name == "turn/start")
+        assert submitted[1] == (
+            "missing-history\nlatest" if mode == "resumed" else "full-history\nlatest"
+        )
+    finally:
+        await session.close()
+
+
+@pytest.mark.asyncio
 async def test_existing_binding_resumes_without_rewriting(tmp_path: Path) -> None:
     session, security, _context, _factory, client = _make_session(
         tmp_path,
@@ -827,4 +872,3 @@ async def test_interrupt_steer_and_notification_scope(tmp_path: Path) -> None:
         3.0,
     )
     await session.close()
-

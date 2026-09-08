@@ -72,9 +72,7 @@ export function agentRunDotClass(status: AgentRunStatusInput): string {
   return "bg-warning/80";
 }
 
-export function agentRunStatusLightClass(
-  status: AgentRunStatusInput,
-): string {
+export function agentRunStatusLightClass(status: AgentRunStatusInput): string {
   const state = agentRunStateFromStatus(status);
   if (state === "pending") return "bg-warning";
   return agentRunDotClass(state);
@@ -115,8 +113,7 @@ export function agentRunBadgeClass(status: AgentRunStatusInput): string {
 export function agentRunTextClass(status: AgentRunStatusInput): string {
   const state = agentRunStateFromStatus(status);
   if (state === "running") return "text-foreground";
-  if (state === "waiting" || state === "pending")
-    return "text-warning";
+  if (state === "waiting" || state === "pending") return "text-warning";
   if (state === "done") return "text-success";
   if (state === "error") return "text-destructive";
   return "text-muted-foreground";
@@ -125,8 +122,7 @@ export function agentRunTextClass(status: AgentRunStatusInput): string {
 export function agentRunIconClass(status: AgentRunStatusInput): string {
   const state = agentRunStateFromStatus(status);
   if (state === "running") return "text-success";
-  if (state === "waiting" || state === "pending")
-    return "text-warning";
+  if (state === "waiting" || state === "pending") return "text-warning";
   if (state === "error") return "text-destructive";
   if (state === "done") return "text-info dark:text-info";
   return "text-muted-foreground";

@@ -11,7 +11,7 @@ import {
   type SetStateAction,
   type WheelEvent as ReactWheelEvent,
 } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArchiveIcon,
   ArrowRightIcon,
@@ -76,7 +76,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAgents } from "@/core/agents/hooks";
 import { useActiveAgentId } from "@/core/agents/active";
 import { DEFAULT_PRIMARY_AGENT_ID } from "@/core/agents/persona-policy";
-import { authHeaders } from "@/core/auth/api";
+import { authHeaders, currentActorId } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import { getBackendBaseURL } from "@/core/config";
 import { useModels } from "@/core/models/hooks";
 import { useStreamdownPlugins } from "@/core/streamdown";
@@ -84,6 +88,8 @@ import {
   CREATIVE_PROJECTS_CHANGED_EVENT,
   createLocalCreativeProject,
   creativeCanvasStorageKey,
+  legacyCreativeCanvasStorageKey,
+  readCreativeCanvasValue,
   readLocalCreativeProjects,
   type LocalCreativeProject,
 } from "@/core/design/local-projects";
@@ -94,6 +100,7 @@ import {
 } from "@/core/skills/hooks";
 import type { SkillInfo } from "@/core/skills/types";
 import { cn } from "@/lib/utils";
+import { preserveWorkbenchPresentation } from "@/core/router/desktop-workspace-route";
 import { useAuth } from "@/providers/AuthProvider";
 
 import {
@@ -136,6 +143,11 @@ type EmbeddedSurface = "director" | "editor" | "comfyui" | null;
 type DesignModelTab = "agent" | "image" | "video" | "audio";
 
 const DESIGN_MODEL_SELECTION_KEY = "echo-design-enabled-models-v1";
+export function designModelSelectionStorageKey(
+  actor = currentActorId(),
+): string {
+  return actorScopedStorageKey(DESIGN_MODEL_SELECTION_KEY, actor);
+}
 const DESIGN_MEDIA_CAPABILITIES: Array<{
   id: string;
   tab: Exclude<DesignModelTab, "agent">;
@@ -238,6 +250,38 @@ const CANVAS_BACKGROUND_TONES: Array<{
   { id: "blush", label: "浅粉", color: "#f8eff1" },
   { id: "sand", label: "沙色", color: "#f5f0e6" },
 ];
+type CanvasViewPreferences = {
+  pattern: CanvasBackgroundPattern;
+  tone: CanvasBackgroundTone;
+  showEdges: boolean;
+  showMinimap: boolean;
+};
+
+function parseCanvasViewPreferences(raw: string | null): CanvasViewPreferences {
+  const fallback: CanvasViewPreferences = {
+    pattern: "dots",
+    tone: "default",
+    showEdges: true,
+    showMinimap: false,
+  };
+  if (!raw) return fallback;
+  try {
+    const saved = JSON.parse(raw) as Partial<CanvasViewPreferences> | null;
+    return {
+      pattern:
+        saved?.pattern === "grid" || saved?.pattern === "none"
+          ? saved.pattern
+          : "dots",
+      tone: CANVAS_BACKGROUND_TONES.some((tone) => tone.id === saved?.tone)
+        ? (saved?.tone as CanvasBackgroundTone)
+        : "default",
+      showEdges: saved?.showEdges !== false,
+      showMinimap: saved?.showMinimap === true,
+    };
+  } catch {
+    return fallback;
+  }
+}
 type CanvasSyncState =
   | "local"
   | "loading"
@@ -1147,15 +1191,21 @@ function DesignHomeView({
   currentProjectId: string | null;
   onSelectProject: (projectId: string | null) => void;
 }) {
+  const actor = currentActorId();
+  const selectionKey = designModelSelectionStorageKey(actor);
   const { models, isLoading: modelsLoading } = useModels();
   const { agents, isLoading: agentsLoading } = useAgents();
   const [prompt, setPrompt] = useState("");
   const [category, setCategory] = useState("精选");
   const [modelOpen, setModelOpen] = useState(false);
   const [modelTab, setModelTab] = useState<DesignModelTab>("agent");
+  const [stateActor, setStateActor] = useState(actor);
   const [enabledModels, setEnabledModels] = useState<Set<string>>(() => {
     try {
-      const stored = window.localStorage.getItem(DESIGN_MODEL_SELECTION_KEY);
+      const stored = readActorScopedStorageValue(
+        DESIGN_MODEL_SELECTION_KEY,
+        actor,
+      );
       return new Set(stored ? (JSON.parse(stored) as string[]) : []);
     } catch {
       return new Set();
@@ -1163,7 +1213,7 @@ function DesignHomeView({
   });
   const modelDefaultsAppliedRef = useRef(
     typeof window !== "undefined" &&
-      window.localStorage.getItem(DESIGN_MODEL_SELECTION_KEY) !== null,
+      readActorScopedStorageValue(DESIGN_MODEL_SELECTION_KEY, actor) !== null,
   );
   const [previewTitle, setPreviewTitle] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1202,6 +1252,23 @@ function DesignHomeView({
     allModelIds.length > 0 && allModelIds.every((id) => enabledModels.has(id));
 
   useEffect(() => {
+    if (stateActor === actor) return;
+    const stored = readActorScopedStorageValue(
+      DESIGN_MODEL_SELECTION_KEY,
+      actor,
+    );
+    let next = new Set<string>();
+    try {
+      next = new Set(stored ? (JSON.parse(stored) as string[]) : []);
+    } catch {
+      next = new Set();
+    }
+    setStateActor(actor);
+    setEnabledModels(next);
+    modelDefaultsAppliedRef.current = stored !== null;
+  }, [actor, stateActor]);
+
+  useEffect(() => {
     if (
       modelsLoading ||
       agentsLoading ||
@@ -1214,12 +1281,12 @@ function DesignHomeView({
   }, [agentsLoading, modelItems, modelsLoading]);
 
   useEffect(() => {
-    if (!modelDefaultsAppliedRef.current) return;
+    if (!modelDefaultsAppliedRef.current || stateActor !== actor) return;
     window.localStorage.setItem(
-      DESIGN_MODEL_SELECTION_KEY,
+      selectionKey,
       JSON.stringify(Array.from(enabledModels)),
     );
-  }, [enabledModels]);
+  }, [actor, enabledModels, selectionKey, stateActor]);
   const showcases = [
     {
       category: "官方 Skill",
@@ -2523,6 +2590,7 @@ function SkillsView({
   loading: boolean;
 }) {
   const navigate = useNavigate();
+  const { search } = useLocation();
   const enableSkill = useEnableSkill();
   const enableMarketSkill = useEnableMarketSkill();
   const streamdownPlugins = useStreamdownPlugins();
@@ -2710,7 +2778,11 @@ function SkillsView({
             <Button
               variant="outline"
               className="h-9 rounded-[10px] px-4 text-[11px]"
-              onClick={() => navigate("/workspace/skills")}
+              onClick={() =>
+                navigate(
+                  preserveWorkbenchPresentation("/workspace/skills", search),
+                )
+              }
             >
               <PlusIcon className="mr-1.5 size-3.5" />
               安装 Skill
@@ -4749,7 +4821,9 @@ export default function DesignPage({
 }: {
   embeddedProject?: { id: string; name?: string | null };
 } = {}) {
+  const actor = currentActorId();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const personaId = useActiveAgentId() ?? DEFAULT_PRIMARY_AGENT_ID;
@@ -4775,8 +4849,15 @@ export default function DesignPage({
   const canvasScopeName =
     projectName || currentCreativeProject?.name || "创作空间";
   const storageKey = projectId
-    ? `${DESIGN_CANVAS_STORAGE_KEY}:project:${projectId}`
+    ? actorScopedStorageKey(`${DESIGN_CANVAS_STORAGE_KEY}:project:${projectId}`)
     : creativeCanvasStorageKey(
+        DESIGN_CANVAS_STORAGE_KEY,
+        personaId,
+        creativeProjectId,
+      );
+  const legacyStorageKey = projectId
+    ? `${DESIGN_CANVAS_STORAGE_KEY}:project:${projectId}`
+    : legacyCreativeCanvasStorageKey(
         DESIGN_CANVAS_STORAGE_KEY,
         personaId,
         creativeProjectId,
@@ -4789,7 +4870,10 @@ export default function DesignPage({
   const [layout, setLayout] = useState<WorkspaceLayout>(() => {
     if (embeddedProject) return "canvas";
     if (typeof window === "undefined") return "chat-left";
-    const saved = window.localStorage.getItem(WORKSPACE_LAYOUT_STORAGE_KEY);
+    const saved = readActorScopedStorageValue(
+      WORKSPACE_LAYOUT_STORAGE_KEY,
+      actor,
+    );
     return saved === "split" ||
       saved === "chat-left" ||
       saved === "chat" ||
@@ -4797,6 +4881,7 @@ export default function DesignPage({
       ? saved
       : "chat-left";
   });
+  const [viewStateActor, setViewStateActor] = useState(actor);
   const [layoutOpen, setLayoutOpen] = useState(false);
   const handleCreativeProjectChange = useCallback(
     (nextProjectId: string | null) => {
@@ -4811,9 +4896,14 @@ export default function DesignPage({
       }
       setSection("canvas");
       const query = next.toString();
-      navigate(`/workspace/design${query ? `?${query}` : ""}`);
+      navigate(
+        preserveWorkbenchPresentation(
+          `/workspace/design${query ? `?${query}` : ""}`,
+          search,
+        ),
+      );
     },
-    [navigate, searchParams],
+    [navigate, search, searchParams],
   );
   useEffect(() => {
     if (embeddedProject) return;
@@ -4828,10 +4918,14 @@ export default function DesignPage({
     next.delete("project");
     next.delete("name");
     const query = next.toString();
-    navigate(`/workspace/design${query ? `?${query}` : ""}`, {
-      replace: true,
-    });
-  }, [embeddedProject, navigate, searchParams]);
+    navigate(
+      preserveWorkbenchPresentation(
+        `/workspace/design${query ? `?${query}` : ""}`,
+        search,
+      ),
+      { replace: true },
+    );
+  }, [embeddedProject, navigate, search, searchParams]);
   useEffect(() => {
     if (creativeProjectId && !currentCreativeProject) {
       handleCreativeProjectChange(null);
@@ -4841,7 +4935,7 @@ export default function DesignPage({
     const raw =
       typeof window === "undefined"
         ? null
-        : window.localStorage.getItem(storageKey);
+        : readCreativeCanvasValue(storageKey, legacyStorageKey);
     const initial = parseDesignCanvas(raw);
     return canvasScopeName && !raw
       ? { ...initial, title: `${canvasScopeName} · 创作画布` }
@@ -4977,38 +5071,13 @@ export default function DesignPage({
   const [spacePanning, setSpacePanning] = useState(false);
   const [zoom, setZoom] = useState(0.83);
   const [pan, setPan] = useState({ x: 80, y: 80 });
-  const [canvasView, setCanvasView] = useState<{
-    pattern: CanvasBackgroundPattern;
-    tone: CanvasBackgroundTone;
-    showEdges: boolean;
-    showMinimap: boolean;
-  }>(() => {
-    const fallback = {
-      pattern: "dots" as CanvasBackgroundPattern,
-      tone: "default" as CanvasBackgroundTone,
-      showEdges: true,
-      showMinimap: false,
-    };
-    if (typeof window === "undefined") return fallback;
-    try {
-      const saved = JSON.parse(
-        window.localStorage.getItem(CANVAS_VIEW_STORAGE_KEY) || "null",
-      ) as Partial<typeof fallback> | null;
-      return {
-        pattern:
-          saved?.pattern === "grid" || saved?.pattern === "none"
-            ? saved.pattern
-            : "dots",
-        tone: CANVAS_BACKGROUND_TONES.some((tone) => tone.id === saved?.tone)
-          ? (saved?.tone as CanvasBackgroundTone)
-          : "default",
-        showEdges: saved?.showEdges !== false,
-        showMinimap: saved?.showMinimap === true,
-      };
-    } catch {
-      return fallback;
-    }
-  });
+  const [canvasView, setCanvasView] = useState<CanvasViewPreferences>(() =>
+    typeof window === "undefined"
+      ? parseCanvasViewPreferences(null)
+      : parseCanvasViewPreferences(
+          readActorScopedStorageValue(CANVAS_VIEW_STORAGE_KEY, actor),
+        ),
+  );
   const [canvasSettingsOpen, setCanvasSettingsOpen] = useState(false);
   const [tidyOpen, setTidyOpen] = useState(false);
   const [tidyGroup, setTidyGroup] = useState<"category" | "layout" | null>(
@@ -5032,15 +5101,42 @@ export default function DesignPage({
   const [embeddedChatUrl, setEmbeddedChatUrl] = useState<string | null>(null);
   const { skills, isLoading: skillsLoading } = useSkills();
   useEffect(() => {
+    if (viewStateActor === actor) return;
+    setViewStateActor(actor);
+    const savedLayout = readActorScopedStorageValue(
+      WORKSPACE_LAYOUT_STORAGE_KEY,
+      actor,
+    );
+    if (!embeddedProject) {
+      setLayout(
+        savedLayout === "split" ||
+          savedLayout === "chat-left" ||
+          savedLayout === "chat" ||
+          savedLayout === "canvas"
+          ? savedLayout
+          : "chat-left",
+      );
+    }
+    setCanvasView(
+      parseCanvasViewPreferences(
+        readActorScopedStorageValue(CANVAS_VIEW_STORAGE_KEY, actor),
+      ),
+    );
+  }, [actor, embeddedProject, viewStateActor]);
+  useEffect(() => {
+    if (viewStateActor !== actor) return;
     window.localStorage.setItem(
-      CANVAS_VIEW_STORAGE_KEY,
+      actorScopedStorageKey(CANVAS_VIEW_STORAGE_KEY, actor),
       JSON.stringify(canvasView),
     );
-  }, [canvasView]);
+  }, [actor, canvasView, viewStateActor]);
   useEffect(() => {
-    if (!embeddedProject)
-      window.localStorage.setItem(WORKSPACE_LAYOUT_STORAGE_KEY, layout);
-  }, [embeddedProject, layout]);
+    if (!embeddedProject && viewStateActor === actor)
+      window.localStorage.setItem(
+        actorScopedStorageKey(WORKSPACE_LAYOUT_STORAGE_KEY, actor),
+        layout,
+      );
+  }, [actor, embeddedProject, layout, viewStateActor]);
   useEffect(() => {
     if (document.mode !== "workflow") {
       setConnectionSourceId(null);
@@ -5274,7 +5370,7 @@ export default function DesignPage({
   useEffect(() => {
     if (activeStorageKeyRef.current !== storageKey) {
       activeStorageKeyRef.current = storageKey;
-      const raw = window.localStorage.getItem(storageKey);
+      const raw = readCreativeCanvasValue(storageKey, legacyStorageKey);
       const next = parseDesignCanvas(raw);
       undoHistoryRef.current = [];
       redoHistoryRef.current = [];
@@ -5287,7 +5383,7 @@ export default function DesignPage({
       return;
     }
     window.localStorage.setItem(storageKey, JSON.stringify(document));
-  }, [canvasScopeName, document, storageKey]);
+  }, [canvasScopeName, document, legacyStorageKey, storageKey]);
   useEffect(() => {
     if (!projectId || !serverReadyRef.current) return;
     const serialized = JSON.stringify(document);

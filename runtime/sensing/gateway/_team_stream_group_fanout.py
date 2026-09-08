@@ -261,6 +261,21 @@ async def _drive_group_fanout(
             await emitter.notify(ServerMethod.ITEM_STARTED, payload)
             await emitter.notify(ServerMethod.ITEM_COMPLETED, payload)
 
+    # Presence questions are answered from the server-owned roster. This keeps
+    # a status check deterministic and avoids waking every model just to say
+    # whether the team is online.
+    team_pattern = ctx.get("team_pattern")
+    if isinstance(team_pattern, dict) and team_pattern.get("execution") == "presence":
+        from runtime.execution.agents.group_fanout import format_group_presence_reply
+
+        await _emit(
+            format_group_presence_reply(members),
+            display_name="团队状态",
+            agent_id="team-status",
+            icon="●",
+        )
+        return
+
     async def _fallback_to_react() -> None:
         loop = asyncio.get_running_loop()
         gateway_provider = GatewayApprovalProvider(
@@ -431,6 +446,8 @@ async def _drive_group_fanout(
                 "capacity": result.get("capacity") or planned_group_capacity,
                 "arbitration": result.get("arbitration"),
                 "synthesis": result.get("synthesis"),
+                "quality": result.get("quality"),
+                "delivery": result.get("delivery"),
                 "replies": replies,
             }
             team_trace_item.error = None if ok else str(result.get("error") or "no member replied")
@@ -635,6 +652,7 @@ async def _drive_group_fanout(
                 turn_id=turn.id,
                 debate_rounds=debate_rounds,
                 mentioned=mentioned,
+                pattern=team_pattern if isinstance(team_pattern, dict) else None,
             )
             await _complete_group_trace(result)
             arbitration = result.get("arbitration")
@@ -646,6 +664,8 @@ async def _drive_group_fanout(
                                 "schema": "echo.group_fanout_audit.v1",
                                 "arbitration": arbitration,
                                 "capacity": result.get("capacity") or planned_group_capacity,
+                                "quality": result.get("quality"),
+                                "delivery": result.get("delivery"),
                             },
                             ensure_ascii=False,
                             sort_keys=True,

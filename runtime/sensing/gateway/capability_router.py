@@ -43,6 +43,7 @@ except ImportError:  # pragma: no cover
 
 from runtime.platform.connectors import oauth_support
 from runtime.platform.connectors.auth_orchestrator import RefreshCleanupRequiredError
+from runtime.platform.models.provider_errors import ModelProviderHTTPError
 from runtime.safety.auth.scope import scope_from_request
 from runtime.sensing._fastapi_guard import require_fastapi
 from runtime.sensing.gateway._device_flow_models import (
@@ -440,7 +441,11 @@ def create_capability_router(
                     models=list(discovered.get("models") or []),
                     base_url=str(discovered.get("base_url") or "") or None,
                 )
-            except Exception as exc:  # noqa: BLE001 - restore the lifecycle state
+            except ModelProviderHTTPError as exc:
+                registry.set_enabled(cid, False, revoke_credentials=False)
+                _status, message = exc.public_failure()
+                raise HTTPException(409, message) from exc
+            except Exception as exc:  # noqa: BLE001 — restore the lifecycle state
                 registry.set_enabled(cid, False, revoke_credentials=False)
                 raise HTTPException(409, str(exc)) from exc
             return {"enabled": True, "capability_id": cid, **configured}
@@ -542,6 +547,12 @@ def create_capability_router(
                     "message": "请确认该插件的全部签名权限后再连接。",
                 },
             ) from exc
+        except ModelProviderHTTPError as exc:
+            status, message = exc.public_failure()
+            # Keep provider status out of the local auth contract.  A rejected
+            # provider request is a client configuration failure for this
+            # endpoint, while an unknown/transport failure is retryable.
+            raise HTTPException(400 if status != 502 else 503, message) from exc
         except ValueError as exc:
             raise HTTPException(400 if item.get("model_provider") else 409, str(exc)) from exc
         except Exception as exc:  # noqa: BLE001 - keep partial setup out of the runtime

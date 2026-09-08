@@ -1,1 +1,1 @@
-export { default } from "@/appliance/local-database-content";
+export { LocalDatabaseSurface as default } from "@/appliance/local-database-app";

@@ -12,8 +12,16 @@ from __future__ import annotations
 
 import contextlib
 import re
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
+from runtime.core.cerebrum.react_resume import (
+    ResumeCheckpointError,
+    _checkpoint_snapshot_from_journal_event,
+    _checkpoint_snapshot_from_trace,
+    _validate_resume_checkpoint_snapshot,
+)
 from runtime.sensing.gateway.realtime_turn_input import (
     _execution_resume_intent,
     _parse_resume_confirmation,
@@ -55,6 +63,8 @@ async def _consume_confirmed_resume_intent(
     runtime: CerebrumRuntime,
     thread_id: str,
     text: str,
+    *,
+    scope: Any = None,
 ) -> dict[str, Any] | None:
     checkpoint_id = _parse_resume_confirmation(text)
     if checkpoint_id is None:
@@ -69,24 +79,91 @@ async def _consume_confirmed_resume_intent(
                     pending = request.get("intent")
                     pending_request_id = _safe_int(request.get("id"))
         if not isinstance(pending, dict):
-            return None
+            raise ResumeCheckpointError("", "resume_confirmation_unavailable")
         if _safe_int(pending.get("checkpoint_id")) != checkpoint_id:
-            return None
-        runtime._pending_resume_intents.pop(thread_id, None)
-    if runtime._trace_store is not None:
-        with contextlib.suppress(Exception):
-            confirmed = runtime._trace_store.confirm_resume_request(
-                thread_id=thread_id,
-                checkpoint_id=checkpoint_id,
-                confirmation_text=f"确认恢复 checkpoint #{checkpoint_id}",
-            )
-            if isinstance(confirmed, dict):
-                confirmed_intent = confirmed.get("intent")
-                pending = confirmed_intent if isinstance(confirmed_intent, dict) else pending
+            raise ResumeCheckpointError(pending.get("task_id"), "resume_confirmation_unavailable")
+        _validate_realtime_resume(runtime, pending, thread_id=thread_id, scope=scope)
+        if runtime._trace_store is not None:
+            try:
+                confirmed = runtime._trace_store.confirm_resume_request(
+                    thread_id=thread_id,
+                    checkpoint_id=checkpoint_id,
+                    confirmation_text=f"确认恢复 checkpoint #{checkpoint_id}",
+                )
+                if not isinstance(confirmed, dict):
+                    raise ResumeCheckpointError(pending.get("task_id"), "resume_confirmation_unavailable")
                 pending_request_id = _safe_int(confirmed.get("id")) or pending_request_id
-            if pending_request_id is not None:
-                runtime._trace_store.consume_resume_request(pending_request_id)
+                if pending_request_id is None or not runtime._trace_store.consume_resume_request(pending_request_id):
+                    raise ResumeCheckpointError(pending.get("task_id"), "resume_confirmation_unavailable")
+            except ResumeCheckpointError:
+                raise
+            except Exception as exc:
+                raise ResumeCheckpointError(pending.get("task_id"), "resume_checkpoint_unavailable") from exc
+        runtime._pending_resume_intents.pop(thread_id, None)
     return _execution_resume_intent(pending, checkpoint_id)
+
+
+def _validate_realtime_resume(
+    runtime: CerebrumRuntime,
+    resume_intent: dict[str, Any],
+    *,
+    thread_id: str,
+    scope: Any = None,
+) -> None:
+    """Validate the selected durable state before dispatch or consuming pause state."""
+    task_id = str(resume_intent.get("task_id") or "")
+    try:
+        UUID(task_id)
+    except (ValueError, TypeError) as exc:
+        raise ResumeCheckpointError(task_id, "resume_task_invalid") from exc
+    if resume_intent.get("checkpoint_type") != "react":
+        raise ResumeCheckpointError(task_id, "resume_task_invalid")
+    checkpoint_id = resume_intent.get("checkpoint_id", 0)
+    if type(checkpoint_id) is not int or checkpoint_id < 0:
+        raise ResumeCheckpointError(task_id)
+    try:
+        if checkpoint_id:
+            store = runtime._trace_store
+            checkpoint = (
+                store.checkpoint_by_id(checkpoint_id, scope=scope) if store is not None else None
+            )
+            if (
+                not isinstance(checkpoint, dict)
+                or str(checkpoint.get("task_id") or "") != task_id
+                or checkpoint.get("checkpoint_type") != "react"
+                or (checkpoint.get("thread_id") and checkpoint["thread_id"] != thread_id)
+                or (
+                    scope is None
+                    and (checkpoint.get("tenant_id") or checkpoint.get("owner_actor_id"))
+                )
+            ):
+                raise ResumeCheckpointError(task_id, "resume_checkpoint_missing")
+            snapshot = _checkpoint_snapshot_from_trace(checkpoint, task_id)
+        else:
+            from runtime.core.cerebrum.react_resume import _load_resume_checkpoint_snapshot
+            from runtime.safety.recovery.tenant_scope import (
+                AUTHORITATIVE_SCOPE_CONTEXT_KEY,
+                authoritative_scope_context,
+            )
+
+            snapshot = _load_resume_checkpoint_snapshot(
+                runtime._stack,
+                SimpleNamespace(
+                    user_context={
+                        AUTHORITATIVE_SCOPE_CONTEXT_KEY: authoritative_scope_context(scope)
+                    }
+                    if scope is not None
+                    else {}
+                ),
+                task_id,
+            )
+        _validate_resume_checkpoint_snapshot(snapshot, task_id)
+    except ResumeCheckpointError:
+        raise
+    except (AttributeError, KeyError, TypeError, ValueError, OSError) as exc:
+        raise ResumeCheckpointError(task_id) from exc
+    except Exception as exc:  # noqa: BLE001 — a storage error cannot become a new task
+        raise ResumeCheckpointError(task_id, "resume_checkpoint_unavailable") from exc
 
 
 def _latest_paused_task_for_thread(thread_id: str) -> Any | None:
@@ -126,60 +203,74 @@ def _unambiguous_paused_task_for_thread(thread_id: str) -> Any | None:
 def _resume_checkpoint_metadata(
     runtime: CerebrumRuntime,
     task_id: str,
+    *,
+    strict: bool = False,
+    scope: Any = None,
 ) -> dict[str, Any] | None:
     """Read only the sanitized fields needed to resume a ReAct checkpoint."""
 
-    trace_store = runtime._trace_store
-    if trace_store is not None and hasattr(trace_store, "latest_checkpoint"):
-        with contextlib.suppress(Exception):
+    try:
+        from runtime.platform.process.session import current_session
+        from runtime.safety.recovery.tenant_scope import trusted_scope_from_session
+
+        effective_scope = scope or trusted_scope_from_session(current_session())
+        trace_store = runtime._trace_store
+        checkpoint = None
+        if trace_store is not None and hasattr(trace_store, "latest_checkpoint"):
             checkpoint = trace_store.latest_checkpoint(
                 task_id=task_id,
                 checkpoint_type="react",
+                scope=effective_scope,
             )
-            if isinstance(checkpoint, dict):
-                state = checkpoint.get("state")
-                state = state if isinstance(state, dict) else {}
-                return {
-                    "checkpoint_id": _safe_int(checkpoint.get("id")) or 0,
-                    "iteration": _safe_int(
-                        state.get("iteration_completed") or checkpoint.get("iteration"),
-                    ),
-                    "phase": str(state.get("current_phase") or ""),
-                    "working_set": [
-                        str(item.get("path"))
-                        for item in state.get("working_set_snapshot", [])
-                        if isinstance(item, dict) and item.get("path")
-                    ][:32],
-                }
+        if isinstance(checkpoint, dict):
+            snapshot = _checkpoint_snapshot_from_trace(checkpoint, task_id)
+            checkpoint_id = _safe_int(checkpoint.get("id")) or 0
+        else:
+            journal = getattr(runtime._stack, "journal", None)
+            if journal is None or not hasattr(journal, "read_by_type"):
+                return None
+            from runtime.safety.recovery.tenant_scope import read_recovery_events
 
-    journal = getattr(runtime._stack, "journal", None)
-    if journal is None or not hasattr(journal, "read_by_type"):
+            checkpoints = [
+                event
+                for event in read_recovery_events(
+                    journal,
+                    "react_checkpoint",
+                    scope=effective_scope,
+                )
+                if str(getattr(event, "task_id", "") or "") == task_id
+            ]
+            if not checkpoints:
+                return None
+            snapshot = _checkpoint_snapshot_from_journal_event(checkpoints[-1])
+            checkpoint_id = 0
+        _validate_resume_checkpoint_snapshot(snapshot, task_id)
+        return {
+            "checkpoint_id": checkpoint_id,
+            "iteration": snapshot["iteration_completed"],
+            "phase": snapshot["current_phase"],
+            "working_set": [
+                str(item.get("path"))
+                for item in snapshot["working_set_snapshot"]
+                if isinstance(item, dict) and item.get("path")
+            ][:32],
+        }
+    except Exception as exc:  # noqa: BLE001 — status stays readable; execution uses strict=True
+        # A corrupt latest trace is not permission to advertise or select an
+        # older journal checkpoint. Status remains readable but non-resumable.
+        if strict:
+            if isinstance(exc, ResumeCheckpointError):
+                raise
+            raise ResumeCheckpointError(task_id, "resume_checkpoint_unavailable") from exc
         return None
-    with contextlib.suppress(Exception):
-        checkpoints = [
-            event
-            for event in journal.read_by_type("react_checkpoint")
-            if str(getattr(event, "task_id", "") or "") == task_id
-        ]
-        if checkpoints:
-            checkpoint = checkpoints[-1]
-            return {
-                "checkpoint_id": 0,
-                "iteration": int(getattr(checkpoint, "iteration_completed", 0) or 0),
-                "phase": str(getattr(checkpoint, "current_phase", "") or ""),
-                "working_set": [
-                    str(item.get("path"))
-                    for item in (getattr(checkpoint, "working_set_snapshot", []) or [])
-                    if isinstance(item, dict) and item.get("path")
-                ][:32],
-            }
-    return None
 
 
 async def _consume_paused_task_resume_intent(
     runtime: CerebrumRuntime,
     thread_id: str,
     text: str,
+    *,
+    scope: Any = None,
 ) -> dict[str, Any] | None:
     """Turn a strict short Continue message into a durable task resume.
 
@@ -199,9 +290,7 @@ async def _consume_paused_task_resume_intent(
     selected_from_banner = bool(task_id)
     pause_request = controller.get_request(task_id) if task_id else None
     if pause_request is not None and pause_request.thread_id != thread_id:
-        task_id = None
-        pause_request = None
-        selected_from_banner = False
+        raise ResumeCheckpointError(task_id, "resume_task_invalid")
 
     if not task_id:
         pause_request = _unambiguous_paused_task_for_thread(thread_id)
@@ -209,13 +298,34 @@ async def _consume_paused_task_resume_intent(
     if not task_id:
         return None
 
-    checkpoint = _resume_checkpoint_metadata(runtime, task_id)
+    try:
+        checkpoint = _resume_checkpoint_metadata(runtime, task_id, strict=True)
+    except ResumeCheckpointError:
+        if selected_from_banner:
+            controller.set_pending_resume(thread_id, task_id)
+        raise
     if checkpoint is None:
         # A banner click can race the loop's checkpoint write. Preserve the
         # explicit handoff instead of consuming it irreversibly.
         if selected_from_banner:
             controller.set_pending_resume(thread_id, task_id)
-        return None
+        raise ResumeCheckpointError(task_id, "resume_checkpoint_missing")
+
+    try:
+        _validate_realtime_resume(
+            runtime,
+            {
+                "task_id": task_id,
+                "checkpoint_type": "react",
+                "checkpoint_id": checkpoint["checkpoint_id"],
+            },
+            thread_id=thread_id,
+            scope=scope,
+        )
+    except ResumeCheckpointError:
+        if selected_from_banner:
+            controller.set_pending_resume(thread_id, task_id)
+        raise
 
     if not selected_from_banner:
         pause_reason = getattr(pause_request, "reason", "")

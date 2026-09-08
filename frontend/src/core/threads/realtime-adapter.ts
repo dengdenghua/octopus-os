@@ -1227,6 +1227,9 @@ function userMessageToHuman(item: UserMessageItem): HumanMessage {
       ...(item.attachments && item.attachments.length > 0
         ? { attachments: item.attachments }
         : {}),
+      ...(item.contextFiles && item.contextFiles.length > 0
+        ? { context_files: item.contextFiles }
+        : {}),
       created_at: item.createdAt,
     },
   };

@@ -1,7 +1,10 @@
 import { swallow } from "@/core/utils/log";
 import { jsonAuthHeaders } from "@/core/auth/api";
 import { getBackendBaseURL } from "@/core/config";
-import type { SubagentRouteDecision } from "@/core/parallel-agents/api";
+import type {
+  BatchRecoverySnapshot,
+  SubagentRouteDecision,
+} from "@/core/parallel-agents/api";
 
 export type ResearchDepth = "quick" | "standard" | "deep";
 
@@ -29,6 +32,7 @@ export interface ResearchMaterial {
   kind: "file" | "url" | "text" | "site";
   title: string;
   path?: string | null;
+  resource_id?: string | null;
   url?: string | null;
   text?: string | null;
   notes?: string | null;
@@ -116,6 +120,9 @@ export interface ResearchJob {
   steps: ResearchStep[];
   max_searches: number;
   dispatch_batch_id?: string | null;
+  host_task_id?: string | null;
+  recovery_required?: boolean;
+  recovery_reason?: string | null;
   final_report_format: string;
   final_report?: string | null;
   completed_at?: string | null;
@@ -184,6 +191,24 @@ export async function fetchDeepResearchJob(
     );
     if (!res.ok) return null;
     return (await res.json()) as ResearchJob;
+  } catch (e) {
+    swallow(e);
+    return null;
+  }
+}
+
+export async function fetchDeepResearchRecoverySnapshot(
+  jobId: string,
+): Promise<BatchRecoverySnapshot | null> {
+  try {
+    const res = await fetch(
+      `${getBackendBaseURL()}/api/research/deep/jobs/${jobId}/recovery-snapshot`,
+      {
+        headers: jsonAuthHeaders(),
+      },
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as BatchRecoverySnapshot;
   } catch (e) {
     swallow(e);
     return null;

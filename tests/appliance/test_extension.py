@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi import APIRouter, FastAPI
@@ -33,7 +34,9 @@ def test_extension_passes_one_authenticator_to_routes_instead_of_raw_jwt() -> No
         "create_capabilities_router",
         "create_device_link_router",
         "create_device_sync_router",
+        "create_diagnostics_router",
         "create_files_router",
+        "create_file_organization_router",
         "create_hub_router",
         "create_native_storage_router",
         "create_omv_alias_router",
@@ -86,22 +89,31 @@ def test_register_app_mounts_appliance_when_enabled(tmp_path, monkeypatch):
     assert any("/api/appliance/photos" in p for p in paths), "照片路由应挂载"
     assert any("/api/appliance/approvals" in p for p in paths), "高风险审批路由应挂载"
     assert any("/api/appliance/audit" in p for p in paths), "防篡改审计路由应挂载"
+    assert any("/api/appliance/diagnostics" in p for p in paths), "脱敏诊断路由应挂载"
+    assert "/api/appliance/notifications/webhook" in paths
+    assert "/api/appliance/notifications/email" in paths
     assert any("/api/appliance/omv" in p for p in paths), "OMV 只读路由应挂载"
     assert any("/api/appliance/capabilities" in p for p in paths), "能力契约路由应挂载"
     assert any("/api/appliance/tasks" in p for p in paths), "任务投影路由应挂载"
     assert app.state.echo_appliance_audit is not None
+    assert app.state.echo_appliance_diagnostics is not None
     assert app.state.echo_appliance_approval is not None
-    assert app.state.echo_appliance_omv_health is not None
+    assert any(p == "/api/appliance/storage/health" for p in paths)
+    assert any(p == "/api/appliance/storage/backups/schedule" for p in paths)
     assert app.state.echo_remote_access is not None
     assert app.state.echo_remote_access.configured is False
     assert app.state.echo_remote_access.start in app.router.on_startup
     assert app.state.echo_remote_access.stop in app.router.on_shutdown
+    assert app.state.echo_nas_alert_delivery.start in app.router.on_startup
+    assert app.state.echo_nas_alert_delivery.stop in app.router.on_shutdown
+    assert app.state.echo_nas_email_alert_delivery.start in app.router.on_startup
+    assert app.state.echo_nas_email_alert_delivery.stop in app.router.on_shutdown
     assert app.state.echo_photo_service is not None
     assert app.state.echo_family_data_access._root == nas_root.resolve()
-    assert len(app.state.echo_appliance_capabilities) == 26
-    assert app.state.echo_appliance_omv_health.running is False
-    assert app.state.echo_appliance_omv_health.start in app.router.on_startup
-    assert app.state.echo_appliance_omv_health.stop in app.router.on_shutdown
+    assert app.state.echo_family_data_access._cache_seconds == 0
+    assert app.state.echo_file_organization is not None
+    assert any(p == "/api/appliance/files/organize/plans" for p in paths)
+    assert len(app.state.echo_appliance_capabilities) == 27
     assert app.state.echo_appliance_state_lock is not None
     assert app.state.echo_appliance_state_schema["version"] == CURRENT_SCHEMA_VERSION
     assert (tmp_path / "echo-state-schema.json").is_file()
@@ -111,6 +123,47 @@ def test_register_app_mounts_appliance_when_enabled(tmp_path, monkeypatch):
         sum(middleware.cls is ApplianceWebSecurityMiddleware for middleware in app.user_middleware)
         == 1
     )
+
+
+@pytest.mark.parametrize("documents_available", [True, False])
+def test_documents_optional_domain_controls_router_and_real_tool_registration(
+    tmp_path, monkeypatch, documents_available
+):
+    from appliance.agent_api import contract
+    from runtime.execution.suckers.registry import SkillRegistry
+
+    report = contract.inspect_agent_api_contract()
+    report["optional"] = [item for item in report["optional"] if item["id"] != "documents"]
+    report["optional"].append(
+        {
+            "id": "documents",
+            "compatible": documents_available,
+            "missing": [] if documents_available else ["extract_document_text"],
+        }
+    )
+    monkeypatch.setattr(contract, "require_agent_api_contract", lambda: report)
+    monkeypatch.setenv("ECHO_APPLIANCE", "1")
+    monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("ECHO_ADMIN_PASSWORD", "synthetic-optional-documents")
+    nas = tmp_path / "nas"
+    nas.mkdir()
+    monkeypatch.setenv("ECHO_NAS_ROOT", str(nas))
+    registry = SkillRegistry()
+    app = FastAPI()
+    register_app(app, AppExtensionContext(stack=SimpleNamespace(registry=registry)))
+    paths = _routes(app)
+    assert "/api/appliance/files/list" in paths
+    assert "/api/appliance/photos/status" in paths
+    assert ("/api/appliance/files/organize/plans" in paths) is documents_available
+    assert hasattr(app.state, "echo_file_organization") is documents_available
+    assert ("files_organize_plan" in registry.all_names()) is documents_available
+    assert ("files_organize_status" in registry.all_names()) is documents_available
+    if documents_available:
+        bridge = app.state.echo_file_organization_tools
+        assert bridge._service is app.state.echo_file_organization
+        assert registry.get("files_organize_plan").handler.__self__ is bridge
+        assert registry.get("files_organize_status").handler.__self__ is bridge
+        assert registry.get("files_organize_plan").replay_policy == "refresh_read"
 
 
 def test_register_app_is_noop_when_disabled(tmp_path, monkeypatch):

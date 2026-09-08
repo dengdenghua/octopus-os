@@ -30,7 +30,7 @@ function StarRating({ stars, max = 5 }: { stars: number; max?: number }) {
           key={i}
           className={cn(
             "text-xs",
-            i < stars ? "text-yellow-500" : "text-muted-foreground/30"
+            i < stars ? "text-yellow-500" : "text-muted-foreground/30",
           )}
         >
           ⭐
@@ -44,7 +44,7 @@ function AgentCardItem({
   agent,
   selected,
   onClick,
-  index
+  index,
 }: {
   agent: AgentCard;
   selected: boolean;
@@ -64,7 +64,7 @@ function AgentCardItem({
         "group relative overflow-hidden rounded-xl border p-4 text-left transition-all",
         selected
           ? "border-primary bg-primary/5 shadow-lg"
-          : "border-border bg-card hover:border-primary/50 hover:shadow-md"
+          : "border-border bg-card hover:border-primary/50 hover:shadow-md",
       )}
     >
       {/* Active Badge */}
@@ -118,15 +118,22 @@ function AgentCardItem({
         </div>
         <div>
           <div className="text-xs text-muted-foreground">成就</div>
-          <div className="mt-0.5 text-sm font-semibold">{agent.achievementCount}</div>
+          <div className="mt-0.5 text-sm font-semibold">
+            {agent.achievementCount}
+          </div>
         </div>
         <div>
           <div className="text-xs text-muted-foreground">成功率</div>
-          <div className={cn(
-            "mt-0.5 text-sm font-semibold",
-            agent.successRate >= 80 ? "text-success" :
-            agent.successRate >= 60 ? "text-warning" : "text-destructive"
-          )}>
+          <div
+            className={cn(
+              "mt-0.5 text-sm font-semibold",
+              agent.successRate >= 80
+                ? "text-success"
+                : agent.successRate >= 60
+                  ? "text-warning"
+                  : "text-destructive",
+            )}
+          >
             {agent.successRate}%
           </div>
         </div>
@@ -134,13 +141,11 @@ function AgentCardItem({
 
       {/* View Details Indicator */}
       <div className="mt-3 flex items-center justify-between border-t border-border-subtle pt-3">
-        <span className="text-xs text-muted-foreground">
-          点击查看详情
-        </span>
+        <span className="text-xs text-muted-foreground">点击查看详情</span>
         <ChevronRightIcon
           className={cn(
             "size-4 text-muted-foreground transition-transform",
-            "group-hover:translate-x-1"
+            "group-hover:translate-x-1",
           )}
         />
       </div>
@@ -157,12 +162,16 @@ export function AgentGrid({
   agents,
   onSelectAgent,
   selectedAgentId,
-  className
+  className,
 }: AgentGridProps) {
   const totalLevel = agents.reduce((sum, agent) => sum + agent.level, 0);
-  const avgSuccessRate = agents.length > 0
-    ? Math.round(agents.reduce((sum, agent) => sum + agent.successRate, 0) / agents.length)
-    : 0;
+  const avgSuccessRate =
+    agents.length > 0
+      ? Math.round(
+          agents.reduce((sum, agent) => sum + agent.successRate, 0) /
+            agents.length,
+        )
+      : 0;
 
   return (
     <div className={cn("space-y-4", className)}>

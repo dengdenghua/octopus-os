@@ -8,6 +8,7 @@ import { ProtectedRoute } from "./protected-route";
 
 let authState = {
   isLoading: true,
+  isBackendStarting: false,
   authStatus: null as { enabled: boolean } | null,
   isAuthenticated: false,
 };
@@ -19,9 +20,25 @@ vi.mock("@/providers/AuthProvider", () => ({
 beforeEach(() => {
   authState = {
     isLoading: true,
+    isBackendStarting: false,
     authStatus: null,
     isAuthenticated: false,
   };
+});
+
+it("identifies the appliance cold-start wait", () => {
+  authState.isBackendStarting = true;
+
+  renderWithProviders(
+    <Routes>
+      <Route element={<ProtectedRoute />}>
+        <Route path="/" element={<div>工作区</div>} />
+      </Route>
+    </Routes>,
+    { locale: "zh-CN" },
+  );
+
+  expect(screen.getByText("系统服务正在启动，请稍候...")).toBeInTheDocument();
 });
 
 function CurrentLocation() {
@@ -46,6 +63,7 @@ it("shows a localized workspace loading state", () => {
 it("keeps the complete invite URL when returning to the OS login", async () => {
   authState = {
     isLoading: false,
+    isBackendStarting: false,
     authStatus: { enabled: true },
     isAuthenticated: false,
   };

@@ -215,6 +215,23 @@ describe("conversationToAgentThreadState · userMessage", () => {
     });
   });
 
+  it("keeps context file identities on the human message", () => {
+    const u: UserMessageItem = {
+      ...userMsg("with database file"),
+      contextFiles: [
+        {
+          path: "报告.md",
+          sourceLabel: "本地数据库",
+          resourceId: "appliance-file:v1:root:report",
+        },
+      ],
+    };
+    const state = conversationToAgentThreadState(makeConv([makeTurn([u])]));
+    expect(state.messages[0]?.additional_kwargs).toMatchObject({
+      context_files: u.contextFiles,
+    });
+  });
+
   it("keeps child reports inside the owning assistant turn", () => {
     const childReport: SteeringUserMessageItem = {
       id: "child-report-1",

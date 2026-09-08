@@ -221,6 +221,12 @@ def _transcribe(value: str) -> str | None:
     The per-image timeout is short because transcription is best-effort
     and must never stall the model turn waiting on agnes.
     """
+    from runtime.safety.privacy import privacy_enabled
+
+    if privacy_enabled():
+        # The auxiliary vision plugin has its own transport. Never send an
+        # image there just because the selected local model cannot see it.
+        return None
     try:
         from runtime.platform.plugins.bundled.whale_eye import service as agnes
 

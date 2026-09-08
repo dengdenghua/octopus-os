@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import tarfile
 
 import pytest
@@ -65,6 +66,10 @@ class TestExtractMember:
         assert (out / "SKILL.md").exists()
         assert (out / "scripts" / "gen.py").exists()
 
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="Windows does not expose POSIX executable mode bits through stat()",
+    )
     def test_normalizes_archive_file_modes(self, tmp_path):
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tf:

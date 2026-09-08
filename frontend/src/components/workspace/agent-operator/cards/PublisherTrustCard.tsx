@@ -1,10 +1,20 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { revokePluginPublisherKey, rotatePluginPublisherKey } from "@/core/plugins/api";
+import {
+  revokePluginPublisherKey,
+  rotatePluginPublisherKey,
+} from "@/core/plugins/api";
 import type { PluginPublisherTrustReport } from "@/core/plugins/types";
 import { cn } from "@/lib/utils";
 import { ShieldAlertIcon } from "lucide-react";
@@ -199,12 +209,8 @@ export function PublisherTrustCard({
               />
             )}
             <Input
-              aria-label={
-                mode === "rotate" ? to("New key ID") : to("Key ID")
-              }
-              placeholder={
-                mode === "rotate" ? to("New key ID") : to("Key ID")
-              }
+              aria-label={mode === "rotate" ? to("New key ID") : to("Key ID")}
+              placeholder={mode === "rotate" ? to("New key ID") : to("Key ID")}
               value={keyId}
               disabled={mode === "revoke"}
               onChange={(event) => setKeyId(event.target.value)}

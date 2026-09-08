@@ -61,6 +61,12 @@ class TestPathSafety:
         entries = fm.list_dir("/docs")
         assert [e.name for e in entries] == ["a.txt"]
 
+    def test_entries_expose_path_free_resource_identity(self, fm):
+        entry = fm.list_dir("/docs")[0]
+        assert entry.resource_id.startswith("appliance-file:v1:")
+        assert str(fm.root) not in entry.resource_id
+        assert entry.to_dict()["resource_id"] == entry.resource_id
+
     def test_dirs_sort_before_files(self, fm):
         (fm.root / "zeta").mkdir()
         kinds = [e.kind for e in fm.list_dir("")]
@@ -72,6 +78,40 @@ class TestPathSafety:
             fm.list_dir(".echo-trash")
         with pytest.raises(PathEscape):
             fm.file_for_download(".echo-trash/manifest.json")
+
+    def test_organization_pending_is_hidden_preserved_and_never_downloadable(self, fm):
+        pending = fm.root / "docs" / ".echo-organize-prepared.part"
+        pending.write_bytes(b"private prepared original")
+        assert [entry.name for entry in fm.list_dir("docs")] == ["a.txt"]
+        assert pending.read_bytes() == b"private prepared original"
+        with pytest.raises(PathEscape, match="reserved internal path"):
+            fm.file_for_download("docs/.echo-organize-prepared.part")
+        # NTFS also opens the same file through a differently cased spelling.
+        with pytest.raises(PathEscape, match="reserved internal path"):
+            fm.file_for_download("docs/.ECHO-ORGANIZE-prepared.part")
+        with pytest.raises(PathEscape, match="reserved internal path"):
+            fm.list_dir("docs/.echo-organize-prepared.part")
+        assert fm._logical_size(fm.root / "docs") == len(b"hello")
+
+    def test_organization_names_cannot_be_created_or_reached_through_user_operations(self, fm):
+        for target in (".echo-organize-new", "docs/.echo-organize-new", "docs/.ECHO-ORGANIZE-new"):
+            with pytest.raises(PathEscape):
+                fm.mkdir(target)
+            with pytest.raises(PathEscape):
+                fm.copy("docs/a.txt", target)
+            with pytest.raises(PathEscape):
+                fm.move("docs/a.txt", target)
+        with pytest.raises(ValueError, match="invalid upload filename"):
+            fm.preflight_upload("docs", ".echo-organize-original.part", 1)
+        assert (fm.root / "docs/a.txt").read_bytes() == b"hello"
+
+    def test_copy_does_not_publish_internal_organization_originals(self, fm):
+        pending = fm.root / "docs/.echo-organize-secret.part"
+        pending.write_bytes(b"private")
+        fm.copy("docs", "copied-docs")
+        assert (fm.root / "copied-docs/a.txt").read_bytes() == b"hello"
+        assert not (fm.root / "copied-docs/.echo-organize-secret.part").exists()
+        assert pending.read_bytes() == b"private"
 
 
 class TestMutations:
@@ -543,6 +583,42 @@ class TestRouter:
         )
         return TestClient(app)
 
+    def test_http_does_not_read_create_or_copy_organization_pending_names(self, fm):
+        pending = fm.root / "docs/.echo-organize-private.part"
+        pending.write_bytes(b"private prepared bytes")
+        with self._client(fm) as client:
+            listed = client.get("/api/appliance/files/list", params={"path": "docs"})
+            assert [entry["name"] for entry in listed.json()["entries"]] == ["a.txt"]
+            assert (
+                client.get(
+                    "/api/appliance/files/download",
+                    params={"path": "docs/.echo-organize-private.part"},
+                ).status_code
+                == 400
+            )
+            assert (
+                client.post(
+                    "/api/appliance/files/mkdir", json={"path": "docs/.echo-organize-new"}
+                ).status_code
+                == 400
+            )
+            assert (
+                client.post(
+                    "/api/appliance/files/upload/preflight",
+                    json={"path": "docs", "filename": ".echo-organize-forged.part", "size": 1},
+                ).status_code
+                == 400
+            )
+            assert (
+                client.post(
+                    "/api/appliance/files/copy",
+                    json={"src": "docs/.echo-organize-private.part", "dst": "leak.txt"},
+                ).status_code
+                == 400
+            )
+        assert pending.read_bytes() == b"private prepared bytes"
+        assert not (fm.root / "leak.txt").exists()
+
     def test_list_and_trash_roundtrip(self, fm):
         client = self._client(fm)
         listed = client.get("/api/appliance/files/list", params={"path": ""}).json()
@@ -557,6 +633,34 @@ class TestRouter:
 
         restored = client.post("/api/appliance/files/trash/restore", json={"id": tid}).json()
         assert restored["entry"]["name"] == "photo.jpg"
+
+    def test_resource_identity_download_uses_same_auth_boundary(self, fm):
+        client = self._client(fm)
+        entry = client.get("/api/appliance/files/list", params={"path": "docs"}).json()["entries"][
+            0
+        ]
+        resource_url = f"/api/appliance/files/resource/{entry['resource_id']}"
+        downloaded = client.get(resource_url)
+        assert downloaded.status_code == 200
+        assert downloaded.content == b"hello"
+        assert client.get("/api/appliance/files/resource/not-a-resource").status_code == 404
+
+    def test_resource_identity_location_supports_path_free_navigation(self, fm):
+        client = self._client(fm)
+        entry = client.get("/api/appliance/files/list", params={"path": "docs"}).json()["entries"][
+            0
+        ]
+        response = client.get(f"/api/appliance/files/resource/{entry['resource_id']}/location")
+        assert response.status_code == 200
+        assert response.json() == {
+            "resource_id": entry["resource_id"],
+            "path": "docs/a.txt",
+            "directory": "docs",
+            "is_directory": False,
+        }
+        assert (
+            client.get("/api/appliance/files/resource/not-a-resource/location").status_code == 404
+        )
 
     def test_usage_endpoint_is_read_only_and_supports_explicit_refresh(self, fm):
         client = self._client(fm)

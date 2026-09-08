@@ -24,6 +24,9 @@ from typing import Any
 
 import pytest
 
+if not sys.platform.startswith("linux"):
+    pytest.skip("the hardened verifier attack suite requires Linux", allow_module_level=True)
+
 from benchmarks import linux_hardened_verifier as hardened
 from benchmarks.trusted_verifier_contract import (
     CLI_JSON_ENV,
@@ -637,4 +640,3 @@ def test_real_trusted_controller_worker_chain_owns_the_final_verdict(
     assert verdict["score"] == 0.0
     assert verdict["checks"] == []
     assert stat.S_ISREG((workspace / "file_service.py").lstat().st_mode)
-

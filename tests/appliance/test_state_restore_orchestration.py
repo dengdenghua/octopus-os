@@ -8,6 +8,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
+if os.name == "nt":
+    pytest.skip("state restore orchestration invokes a POSIX shell", allow_module_level=True)
+
 
 def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
     tools = tmp_path / "tools"

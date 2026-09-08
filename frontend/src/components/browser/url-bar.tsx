@@ -61,7 +61,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { swallow } from "@/core/utils/log";
-import { jsonAuthHeaders } from "@/core/auth/api";
+import { currentActorId, jsonAuthHeaders } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import { getBackendBaseURL } from "@/core/config";
 import {
   BROWSER_AGENT_POLICY_EVENT,
@@ -147,11 +151,15 @@ const SITE_PERMISSION_LABELS: Record<
 
 const DOWNLOAD_HISTORY_KEY = "echo:browser-download-history.v1";
 
-function loadDownloadHistory(): BrowserDownload[] {
+function downloadHistoryStorageKey(actor = currentActorId()): string {
+  return actorScopedStorageKey(DOWNLOAD_HISTORY_KEY, actor);
+}
+
+function loadDownloadHistory(actor = currentActorId()): BrowserDownload[] {
   if (typeof window === "undefined") return [];
   try {
     const parsed = JSON.parse(
-      window.localStorage.getItem(DOWNLOAD_HISTORY_KEY) || "[]",
+      readActorScopedStorageValue(DOWNLOAD_HISTORY_KEY, actor) || "[]",
     );
     if (!Array.isArray(parsed)) return [];
     return parsed
@@ -204,6 +212,7 @@ interface Props {
 }
 
 export function UrlBar({ webviewHandle, onOpenExtensions }: Props) {
+  const actor = currentActorId();
   const { t } = useI18n();
   const ub = t.browser.urlBar;
   const bp = t.browserPreviewPanel;
@@ -228,8 +237,10 @@ export function UrlBar({ webviewHandle, onOpenExtensions }: Props) {
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestionIndex, setSuggestionIndex] = useState(-1);
   const [downloadsOpen, setDownloadsOpen] = useState(false);
-  const [downloads, setDownloads] =
-    useState<BrowserDownload[]>(loadDownloadHistory);
+  const [downloads, setDownloads] = useState<BrowserDownload[]>(() =>
+    loadDownloadHistory(actor),
+  );
+  const [stateActor, setStateActor] = useState(actor);
   const [dataCenterOpen, setDataCenterOpen] = useState(false);
   const [clearingBrowsingData, setClearingBrowsingData] = useState(false);
   const [siteDataStatus, setSiteDataStatus] = useState<string | null>(null);
@@ -257,6 +268,13 @@ export function UrlBar({ webviewHandle, onOpenExtensions }: Props) {
   useEffect(() => {
     setDraft(activeTab?.url ?? "");
   }, [activeTab?.id, activeTab?.url]);
+
+  useEffect(() => {
+    if (stateActor === actor) return;
+    setStateActor(actor);
+    setDownloads(loadDownloadHistory(actor));
+    setDownloadsOpen(false);
+  }, [actor, stateActor]);
 
   useEffect(() => {
     if (!webviewHandle) {
@@ -579,15 +597,16 @@ export function UrlBar({ webviewHandle, onOpenExtensions }: Props) {
   }, []);
 
   useEffect(() => {
+    if (stateActor !== actor) return;
     try {
       window.localStorage.setItem(
-        DOWNLOAD_HISTORY_KEY,
+        downloadHistoryStorageKey(actor),
         JSON.stringify(downloads.slice(0, 50)),
       );
     } catch (error) {
       swallow(error, "download-history");
     }
-  }, [downloads]);
+  }, [actor, downloads, stateActor]);
 
   useEffect(() => {
     if (!siteInfoOpen) return;
@@ -1099,10 +1118,7 @@ function BrowserDataCenterDialog({
 
   const fillPassword = async (id: string) => {
     if (webContentsId == null) return;
-    const result = await window.echo?.browser.fillPassword(
-      webContentsId,
-      id,
-    );
+    const result = await window.echo?.browser.fillPassword(webContentsId, id);
     if (result?.ok) toast.success("已填充当前登录页面");
     else toast.error(result?.error || "当前页面没有可填充的登录表单");
   };
@@ -1944,9 +1960,7 @@ function DownloadDropdown({
                     </button>
                     <button
                       onClick={() =>
-                        void window.echo?.browser.showDownloadInFolder(
-                          item.id,
-                        )
+                        void window.echo?.browser.showDownloadInFolder(item.id)
                       }
                       className="flex items-center gap-1 rounded-md px-2 py-1 text-mini text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                     >

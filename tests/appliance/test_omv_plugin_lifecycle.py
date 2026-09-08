@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
+
+if os.name == "nt":
+    pytest.skip("OMV plugin lifecycle verifier is a POSIX shell script", allow_module_level=True)
 
 _REPOSITORY = Path(__file__).resolve().parents[2]
 _LIFECYCLE_SCRIPT = _REPOSITORY / "deploy/omv/verify-plugin-package-lifecycle.sh"

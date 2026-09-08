@@ -1,10 +1,4 @@
-/**
- * Pure routing helpers for pluggable modules — no React, no storage.
- *
- * Two layers matter: the sidebar hides an entry, AND the router refuses the
- * route. Hiding alone is not enough — bookmarks and history would still reach
- * a module the user removed.
- */
+/** Routing and sidebar placement for workspace applications. */
 import { MODULE_CATALOG } from "./catalog";
 import type { ModuleDescriptor } from "./types";
 
@@ -20,14 +14,7 @@ function routeLibrary(to: string): string | null {
   return new URLSearchParams(to.slice(index)).get("library");
 }
 
-/**
- * Does `descriptor` own this location?
- *
- * Storage libraries all share `/workspace/storage`, so a bare path match would
- * make every library claim every storage URL — the `library` param has to
- * match too. A storage URL with no `library` param belongs to no single
- * module (it's the shared overview) and matches nothing.
- */
+/** Match application routes, including optional category-specific destinations. */
 export function moduleMatchesLocation(
   descriptor: ModuleDescriptor,
   pathname: string,
@@ -43,7 +30,8 @@ export function moduleMatchesLocation(
   if (targetLibrary === null) return true;
 
   const currentLibrary = new URLSearchParams(
-    search || (pathname.includes("?") ? pathname.slice(pathname.indexOf("?")) : ""),
+    search ||
+      (pathname.includes("?") ? pathname.slice(pathname.indexOf("?")) : ""),
   ).get("library");
   return currentLibrary === targetLibrary;
 }
@@ -57,20 +45,6 @@ export function moduleForLocation(
   search: string,
 ): ModuleDescriptor | undefined {
   return MODULE_CATALOG.find((m) => moduleMatchesLocation(m, pathname, search));
-}
-
-/**
- * Should this location be blocked? True only when a *known* module owns it and
- * that module is disabled. Unknown routes always pass.
- */
-export function isLocationBlocked(
-  pathname: string,
-  search: string,
-  enabledIds: readonly string[],
-): boolean {
-  const descriptor = moduleForLocation(pathname, search);
-  if (!descriptor) return false;
-  return !enabledIds.includes(descriptor.id);
 }
 
 /** Filter route specs down to enabled modules, preserving input order. */

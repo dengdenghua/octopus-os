@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/core/agents", () => ({
   useAgents: () => mocks.agentState,
-  dedupePersonaAgentsByDisplayName: (agents: Agent[]) => agents,
+  dedupeAgentsByName: (agents: Agent[]) => agents,
 }));
 
 vi.mock("@/providers/AuthProvider", () => ({
@@ -43,6 +43,8 @@ vi.mock("@/components/workspace/credits-center", () => ({
 }));
 
 import { AgentAvatar, AgentFooter } from "./sidebar-footer";
+import { Welcome } from "./welcome";
+import { activeAgentStorageKey } from "@/core/agents/active";
 
 beforeEach(() => {
   mocks.agentState.agents = [];
@@ -96,6 +98,63 @@ describe("AgentAvatar", () => {
 });
 
 describe("AgentFooter roster states", () => {
+  const echo: Agent = {
+    name: "general",
+    display_name: "Echo",
+    description: "通用助理",
+    model: null,
+    tool_groups: [],
+  };
+
+  it.each(["/workspace/realtime/new", "/workspace/realtime/new?agent=coder"])(
+    "keeps the footer and welcome on the available persona after an old Coder selection: %s",
+    (initialRoute) => {
+      window.localStorage.setItem(activeAgentStorageKey(), "coder");
+      mocks.agentState.agents = [echo];
+      renderWithProviders(
+        <>
+          <AgentFooter />
+          <Welcome />
+        </>,
+        {
+          initialRoute,
+          locale: "zh-CN",
+        },
+      );
+      expect(screen.getByRole("button", { name: "Echo" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: "你好，我是 Echo" }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it("updates both surfaces when the user selects another available persona", async () => {
+    const user = userEvent.setup();
+    mocks.agentState.agents = [
+      echo,
+      { ...echo, name: "market_researcher", display_name: "Noah" },
+    ];
+    renderWithProviders(
+      <>
+        <AgentFooter />
+        <Welcome />
+      </>,
+      {
+        initialRoute: "/workspace/realtime/new",
+        locale: "zh-CN",
+      },
+    );
+    await user.click(screen.getByRole("button", { name: "Echo" }));
+    await user.click(screen.getByRole("menuitem", { name: /Noah/ }));
+    expect(screen.getByRole("button", { name: "Noah" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "你好，我是 Noah" }),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem(activeAgentStorageKey())).toBe(
+      "market_researcher",
+    );
+  });
+
   it("shows a real loading state instead of a fake question-mark agent", () => {
     mocks.agentState.isLoading = true;
     mocks.agentState.isFetching = true;

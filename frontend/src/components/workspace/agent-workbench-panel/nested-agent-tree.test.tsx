@@ -60,7 +60,11 @@ describe("NestedAgentTree", () => {
 
   it("builds hierarchy from parentToolUseId", () => {
     const tiles = [
-      mockAgentTile("root", { codename: "RootAgent", task: "Root task", parentToolUseId: undefined }),
+      mockAgentTile("root", {
+        codename: "RootAgent",
+        task: "Root task",
+        parentToolUseId: undefined,
+      }),
       mockAgentTile("child1", {
         codename: "ChildAlpha",
         task: "Alpha task",
@@ -244,8 +248,12 @@ describe("NestedAgentTree", () => {
     // Check ordering by getting all buttons and verifying First-Child comes before Second
     const buttons = screen.getAllByRole("button");
     const buttonTexts = buttons.map((btn) => btn.textContent);
-    const firstIndex = buttonTexts.findIndex((text) => text?.includes("First-Child"));
-    const secondIndex = buttonTexts.findIndex((text) => text?.includes("Second"));
+    const firstIndex = buttonTexts.findIndex((text) =>
+      text?.includes("First-Child"),
+    );
+    const secondIndex = buttonTexts.findIndex((text) =>
+      text?.includes("Second"),
+    );
 
     expect(firstIndex).toBeGreaterThan(-1);
     expect(secondIndex).toBeGreaterThan(-1);

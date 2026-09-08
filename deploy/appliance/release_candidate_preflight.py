@@ -109,9 +109,11 @@ def _strict_json(raw: str, label: str) -> Any:
 
 
 def _hash_regular(path: Path, label: str) -> str:
-    flags = os.O_RDONLY | os.O_CLOEXEC
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
+    if path.is_symlink():
+        raise CandidatePreflightError(f"{label} is unavailable")
+    flags = os.O_RDONLY
+    for flag_name in ("O_CLOEXEC", "O_NOFOLLOW", "O_BINARY"):
+        flags |= getattr(os, flag_name, 0)
     try:
         descriptor = os.open(path, flags)
     except OSError as exc:
@@ -336,17 +338,23 @@ def _write_new(path: Path, payload: Mapping[str, Any]) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, 0o444)
+        if os.name != "nt":
+            os.chmod(temporary, 0o444)
         try:
             os.link(temporary, target, follow_symlinks=False)
         except FileExistsError as exc:
             raise CandidatePreflightError("output must remain a new path") from exc
         temporary.unlink()
-        directory = os.open(parent, os.O_RDONLY)
+        if os.name == "nt":
+            target.chmod(0o444)
         try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+            directory = os.open(parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        except OSError:
+            pass
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise

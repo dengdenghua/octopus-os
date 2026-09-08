@@ -212,7 +212,7 @@ def test_dangling_side_effect_intent_fails_closed_after_restart():
     assert calls == 0
 
 
-def test_dangling_read_only_intent_is_safe_to_retry():
+def test_untrusted_read_affinity_does_not_retry_a_dangling_intent():
     journal = InMemoryJournal()
     task_id = TaskId(uuid4())
     args = {"value": "x"}
@@ -236,8 +236,9 @@ def test_dangling_read_only_intent_is_safe_to_retry():
 
     result = _run(_executor(journal, _handler, affinity=["read"]), task_id, args=args)
 
-    assert result.success is True
-    assert calls == 1
+    assert result.success is False
+    assert result.result.error_type == "indeterminate_side_effect"
+    assert calls == 0
 
 
 def test_side_effecting_timeout_is_not_retried_inside_executor():
@@ -258,7 +259,7 @@ def test_side_effecting_timeout_is_not_retried_inside_executor():
     assert calls == 1
 
 
-def test_read_only_transient_failure_still_retries_once():
+def test_untrusted_read_affinity_does_not_retry_transient_failure():
     calls = 0
 
     def _handler(value: str):
@@ -274,9 +275,10 @@ def test_read_only_transient_failure_still_retries_once():
         task_id,
     )
 
-    assert result.success is True
-    assert calls == 2
-    assert "transient_retry:TimeoutError" in result.result.stderr_tags
+    assert result.success is False
+    assert result.result.status == "timeout"
+    assert calls == 1
+    assert "transient_retry:TimeoutError" not in result.result.stderr_tags
 
 
 def test_effect_intent_survives_jsonl_restart(tmp_path):
@@ -397,4 +399,3 @@ def test_unknown_affinity_fails_closed_as_side_effecting():
     assert is_side_effecting(["custom"]) is True
     assert is_side_effecting(["read"]) is False
     assert is_side_effecting(["read", "write"]) is True
-

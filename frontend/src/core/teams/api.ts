@@ -1,5 +1,9 @@
 import { swallow } from "@/core/utils/log";
-import { authHeaders, jsonAuthHeaders } from "@/core/auth/api";
+import { authHeaders, currentActorId, jsonAuthHeaders } from "@/core/auth/api";
+import {
+  actorScopedStorageKey,
+  readActorScopedStorageValue,
+} from "@/core/auth/scoped-storage";
 import { getBackendBaseURL } from "@/core/config";
 import { eventBus } from "@/core/events";
 import type { Agent } from "@/core/agents/types";
@@ -215,6 +219,12 @@ export interface CreateTeamInput {
 
 const BASE = () => `${getBackendBaseURL()}/api`;
 const PARTICIPANT_KEY = "echo:teamParticipantId";
+const LEGACY_TEAMS_KEY = "echo:teams";
+const CURRENT_TEAM_ID_KEY = "echo:currentTeamId";
+const CURRENT_TEAM_KEY = "echo:currentTeam";
+const teamStorageKey = (key: string) => actorScopedStorageKey(key);
+const participantStorageKey = (actor = currentActorId()) =>
+  actorScopedStorageKey(PARTICIPANT_KEY, actor);
 
 async function parseJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -500,7 +510,7 @@ export async function migrateLegacyTeamsIfNeeded(
   existing: Team[],
 ): Promise<Team[]> {
   if (existing.length > 0 || typeof window === "undefined") return existing;
-  const raw = window.localStorage.getItem("echo:teams");
+  const raw = window.localStorage.getItem(teamStorageKey(LEGACY_TEAMS_KEY));
   if (!raw) return existing;
   let legacy: Team[];
   try {
@@ -538,9 +548,11 @@ export async function migrateLegacyTeamsIfNeeded(
 export function readPreferredTeamId(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const direct = window.localStorage.getItem("echo:currentTeamId");
+    const direct = window.localStorage.getItem(
+      teamStorageKey(CURRENT_TEAM_ID_KEY),
+    );
     if (direct) return direct;
-    const raw = window.localStorage.getItem("echo:currentTeam");
+    const raw = window.localStorage.getItem(teamStorageKey(CURRENT_TEAM_KEY));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { id?: string };
     return parsed.id ?? null;
@@ -554,12 +566,15 @@ export function writePreferredTeam(team: Team | null): void {
   if (typeof window === "undefined") return;
   try {
     if (!team) {
-      window.localStorage.removeItem("echo:currentTeamId");
-      window.localStorage.removeItem("echo:currentTeam");
+      window.localStorage.removeItem(teamStorageKey(CURRENT_TEAM_ID_KEY));
+      window.localStorage.removeItem(teamStorageKey(CURRENT_TEAM_KEY));
       return;
     }
-    window.localStorage.setItem("echo:currentTeamId", team.id);
-    window.localStorage.setItem("echo:currentTeam", JSON.stringify(team));
+    window.localStorage.setItem(teamStorageKey(CURRENT_TEAM_ID_KEY), team.id);
+    window.localStorage.setItem(
+      teamStorageKey(CURRENT_TEAM_KEY),
+      JSON.stringify(team),
+    );
   } catch (e) {
     swallow(e, "storage");
   }
@@ -577,13 +592,13 @@ export function dispatchTeamUpdated(team?: Team | null): void {
 export function readOrCreateTeamParticipantId(): string {
   if (typeof window === "undefined") return `guest-${Date.now()}`;
   try {
-    const existing = window.localStorage.getItem(PARTICIPANT_KEY);
+    const existing = readActorScopedStorageValue(PARTICIPANT_KEY);
     if (existing) return existing;
     const id =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
         : `guest-${Date.now()}`;
-    window.localStorage.setItem(PARTICIPANT_KEY, id);
+    window.localStorage.setItem(participantStorageKey(), id);
     return id;
   } catch (e) {
     swallow(e);
@@ -594,7 +609,7 @@ export function readOrCreateTeamParticipantId(): string {
 export function readTeamParticipantIdForTeam(team?: Team | null): string {
   if (typeof window === "undefined") return `guest-${Date.now()}`;
   try {
-    const existing = window.localStorage.getItem(PARTICIPANT_KEY);
+    const existing = readActorScopedStorageValue(PARTICIPANT_KEY);
     if (
       existing &&
       team?.participants?.some(

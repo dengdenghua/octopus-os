@@ -16,11 +16,14 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import CancelledError as FutureCancelledError
 from concurrent.futures import Future, InvalidStateError
 from typing import TYPE_CHECKING, Any
+from uuid import UUID, uuid4
 
 from runtime.execution.subagents._ambient import react_stack_scope
 from runtime.memory.threads.event_log import EventLog
-from runtime.platform.models import ParsedIntent
+from runtime.platform.models import ParsedIntent, TaskId
 from runtime.platform.models.llm import default_reasoning_effort
+from runtime.platform.process.task_execution import TaskExecutionGuard
+from runtime.platform.process.task_supervisor import LostTaskLease
 from runtime.protocol import (
     ItemMarker,
     ItemStatus,
@@ -330,10 +333,15 @@ async def _drive_react(
     """
     from runtime.core.cerebrum.react_loop import stream_react_loop
     from runtime.core.cerebrum.react_step_evaluator import build_runtime_step_evaluator
+    from runtime.execution.host_boundary import bind_session_execution_request
+    from runtime.execution.request import iter_with_execution_request
     from runtime.safety.approval.cancellation import (
         CancellationSource,
         scoped_cancellation,
     )
+    from runtime.sensing.gateway.realtime_execution_evidence import record_execution
+
+    record_execution(log, turn, engine="native", driver="react", model=model)
 
     queue: asyncio.Queue[_QueuedReactEvent | dict[str, Any]] = asyncio.Queue(maxsize=64)
     loop = asyncio.get_running_loop()
@@ -346,6 +354,16 @@ async def _drive_react(
     # ``stream_react_loop`` sees the same token via the
     # ``scoped_cancellation`` contextvar and bails out fast.
     cancel_source = CancellationSource()
+    supervisor = getattr(runtime, "_task_supervisor", None)
+    execution_guard = None
+    if supervisor is not None:
+        previous_guard = runtime._task_execution_guards.get(turn.id)
+        execution_guard = (
+            previous_guard.fork() if previous_guard is not None else TaskExecutionGuard(supervisor)
+        )
+        runtime._task_execution_guards[turn.id] = execution_guard
+    task_started_published = False
+    lease_failure: BaseException | None = None
     pending_apply_receipts: set[Future[None]] = set()
     pending_apply_receipts_lock = threading.Lock()
     producer_failure: BaseException | None = None
@@ -363,6 +381,38 @@ async def _drive_react(
             else:
                 receipt.set_exception(error)
 
+    def _check_execution_event(event: dict[str, Any]) -> dict[str, Any]:
+        if execution_guard is None:
+            return event
+        kind = event.get("type")
+        if kind == "react_completed":
+            record = execution_guard.assert_held()
+            if record.status.value == "waiting_approval":
+                from runtime.core.cerebrum.completion_decision import decide_completion
+
+                # A governance HOLD owns its lease while awaiting the user.
+                # Accept its terminal report, never another tool dispatch or
+                # a model-authored claim that the blocked operation succeeded.
+                decision = decide_completion(
+                    terminated_reason="approval_required",
+                    effective_success=False,
+                    blocked_on_user=bool(record.metadata.get("approval_required")),
+                )
+                return {
+                    **event,
+                    "success": False,
+                    "disposition": decision.outcome,
+                    "completion_decision": decision.to_dict(),
+                    "completion_receipt": {
+                        **dict(event.get("completion_receipt") or {}),
+                        "ready": False,
+                    },
+                }
+            execution_guard.assert_allowed()
+        elif kind in {"react_started", "tool_start"}:
+            execution_guard.assert_allowed()
+        return event
+
     def _safe_put(event: dict[str, Any], *, timeout: float | None = None) -> None:
         """Bounded blocking ``queue.put`` from the worker thread.
 
@@ -377,7 +427,25 @@ async def _drive_react(
         drop the newest delta instead of stalling the producer 10s (which
         used to cascade and lose *structural* events downstream).
         """
+        nonlocal task_started_published, lease_failure
         event_kind = str(event.get("type") or "")
+        if execution_guard is not None and event_kind in {
+            "react_started",
+            "tool_start",
+            "react_completed",
+        }:
+            try:
+                event = _check_execution_event(event)
+                if event_kind == "react_started":
+                    if str(event.get("task_id") or "") != execution_guard.bound_task_id:
+                        raise LostTaskLease(
+                            execution_guard.bound_task_id or "", "unexpected producer task identity"
+                        )
+                    if task_started_published:
+                        return
+            except Exception as exc:
+                lease_failure = exc
+                raise
         if consumer_closed.is_set():
             # Never let a provider that wakes up after the turn was already
             # cancelled advance past ``yield tool_start`` into the real side
@@ -417,7 +485,7 @@ async def _drive_react(
 
         apply_receipt: Future[None] | None = None
         queued_event: _QueuedReactEvent | dict[str, Any] = event
-        if isinstance(event, dict) and event.get("type") == "tool_start":
+        if isinstance(event, dict) and event.get("type") in {"tool_start", "react_started"}:
             apply_receipt = Future()
             queued_event = _QueuedReactEvent(event=event, applied=apply_receipt)
             with pending_apply_receipts_lock:
@@ -464,6 +532,10 @@ async def _drive_react(
             # the CommandExecution item (and completed its live notification)
             # before allowing that next() call.
             apply_receipt.result(timeout=timeout_s)
+            if execution_guard is not None:
+                execution_guard.assert_allowed()
+            if event_kind == "react_started":
+                task_started_published = True
         except Exception as exc:
             apply_receipt.cancel()
             cancel_source.cancel(reason="tool_start durable audit failed")
@@ -538,6 +610,7 @@ async def _drive_react(
             conversation_id=turn.thread_id,
             turn_id=turn.id,
             metadata=session_metadata,
+            execution_lease=execution_guard,
         )
         # journal_context drives a SEPARATE contextvar that journal
         # write_* methods read for conversation_id/agent_id; without
@@ -599,10 +672,103 @@ async def _drive_react(
             # only reliable key for the journal events sub-agents mirror.
             unsubscribe_lifecycle: Callable[[], None] | None = None
             try:
+                execution_task_id = None
+                host_execution_request = None
+                if execution_guard is not None:
+                    resume_task_id = _resume_task_id_from_intent(intent)
+                    chosen_task_id = execution_guard.bound_task_id or str(resume_task_id or uuid4())
+                    approved_resume_token = None
+                    if execution_guard.bound_task_id is None and resume_task_id is not None:
+                        # Read only the server's durable approval handoff. The
+                        # atomic admission rechecks its token and owner/thread;
+                        # client metadata cannot mint or refresh this permit.
+                        resume_record = supervisor.store.get(chosen_task_id)
+                        if resume_record is not None:
+                            approved_resume_token = resume_record.approval_resume_lease_token
+                    execution_guard.admit(
+                        chosen_task_id,
+                        kind="realtime_objective",
+                        owner_id=_journal_owner_actor_id or turn_session.actor,
+                        thread_id=turn.thread_id,
+                        title=intent.normalized_goal[:80],
+                        goal=intent.normalized_goal,
+                        mode="react",
+                        workspace_path=turn.execution_workspace_path,
+                        origin_task_id=turn.id,
+                        approved_resume_lease_token=approved_resume_token,
+                        metadata={
+                            "turn_id": turn.id,
+                            "objective_id": chosen_task_id,
+                            # Keep the execution identity on the durable task
+                            # from its first live state. Task-scoped Codex
+                            # overrides are already server-normalized in the
+                            # intent context; all other ReAct turns use Echo.
+                            "execution_engine": (
+                                "codex"
+                                if str((intent.user_context or {}).get("execution_engine") or "")
+                                .strip()
+                                .lower()
+                                == "codex"
+                                else "echo"
+                            ),
+                            "model_name": model
+                            or str((intent.user_context or {}).get("model_name") or "").strip()
+                            or None,
+                        },
+                    )
+                    # D:\\echo agent's provider-neutral host boundary is now
+                    # attached to the admitted realtime Session.  The lazy
+                    # iterator wrappers below keep this immutable request in
+                    # scope while Native/Codex providers and child workers
+                    # actually execute.
+                    budget_config = getattr(getattr(runtime._stack, "config", None), "budget", None)
+                    timeout_s = max(
+                        0.001,
+                        float(getattr(budget_config, "max_latency_ms", 600_000)) / 1000.0,
+                    )
+                    try:
+                        host_execution_request = bind_session_execution_request(
+                            turn_session,
+                            task_id=chosen_task_id,
+                            goal=intent.normalized_goal,
+                            timeout_s=timeout_s,
+                            parent_task_id=(
+                                str((intent.user_context or {}).get("parent_task_id") or "").strip()
+                                or None
+                            ),
+                            budget=budget_config,
+                            execution_engine="native",
+                        )
+                    except (TypeError, ValueError, OSError) as exc:
+                        # Legacy/anonymous test and CLI sessions may not carry
+                        # a complete tenant principal.  Keep their existing
+                        # ReAct path while authenticated turns use the host
+                        # request contract above.
+                        _logger.debug("host execution request unavailable: %s", exc)
+                        host_execution_request = None
+                    # The supervisor accepts durable string identifiers so a
+                    # resumed legacy checkpoint may use a non-UUID task key.
+                    # Native trajectory plumbing still requires the platform
+                    # UUID NewType; leave that optional argument unset for
+                    # legacy keys while keeping the host lease bound to the
+                    # original string identity.
+                    try:
+                        execution_task_id = TaskId(UUID(chosen_task_id))
+                    except (TypeError, ValueError, AttributeError):
+                        execution_task_id = None
+                    turn_session.metadata["task_id"] = chosen_task_id
+                    # No generator (including native fallback) advances before
+                    # durable admission and the consumer's start receipt.
+                    _safe_put({"type": "react_started", "task_id": chosen_task_id})
                 _planning_mode = bool(
                     (intent.user_context or {}).get("planning_mode", False),
                 )
-                if _should_use_native_tool_loop(
+                # Native fallback has its own durable effect receipts but does
+                # not rebuild a ReAct checkpoint. A confirmed resume must go
+                # through the checkpoint-aware loop so it cannot silently
+                # start a fresh model trajectory from the same task.
+                _resume_task_id = _resume_task_id_from_intent(intent)
+                if _resume_task_id is None and _should_use_native_tool_loop(
                     runtime._stack,
                     intent,
                     planning_mode=_planning_mode,
@@ -612,12 +778,17 @@ async def _drive_react(
                         stream_agentic_fallback,
                     )
 
-                    for kind, delta, final in stream_agentic_fallback(
+                    fallback_events = stream_agentic_fallback(
                         runtime._stack,
                         intent,
                         agent,
                         model=model,
                         steering_drain=lambda: runtime._drain_turn_steering(turn.id),
+                        **({"execution_task_id": execution_task_id} if execution_task_id else {}),
+                    )
+                    for kind, delta, final in iter_with_execution_request(
+                        fallback_events,
+                        host_execution_request,
                     ):
                         evt = _agentic_stream_event_to_react_event(
                             kind,
@@ -627,8 +798,6 @@ async def _drive_react(
                         if evt is not None:
                             _safe_put(evt)
                 else:
-                    _resume_task_id = _resume_task_id_from_intent(intent)
-
                     def _on_auto_parallel_batch(batch_id: str) -> None:
                         # The auto-parallel short-circuit (running on the
                         # producer thread) dispatched a parallel batch. Hop
@@ -641,24 +810,28 @@ async def _drive_react(
                         with contextlib.suppress(RuntimeError):
                             asyncio.run_coroutine_threadsafe(_spawn(), loop)
 
-                    events: Iterator[dict[str, Any]] = stream_react_loop(
-                        runtime._stack,
-                        intent,
-                        agent,
-                        thread_id=turn.thread_id,
-                        max_iterations=runtime._max_iterations,
-                        resume_task_id=_resume_task_id,
-                        approval_provider=provider,
-                        output_chunk_sink=_push_chunk,
-                        step_evaluator=build_runtime_step_evaluator(),
-                        planning_mode=_planning_mode,
-                        model=model,
-                        reasoning_effort=(
-                            (intent.user_context or {}).get("reasoning_effort")
-                            or default_reasoning_effort(model)
+                    events: Iterator[dict[str, Any]] = iter_with_execution_request(
+                        stream_react_loop(
+                            runtime._stack,
+                            intent,
+                            agent,
+                            thread_id=turn.thread_id,
+                            max_iterations=runtime._max_iterations,
+                            resume_task_id=_resume_task_id,
+                            approval_provider=provider,
+                            output_chunk_sink=_push_chunk,
+                            step_evaluator=build_runtime_step_evaluator(),
+                            planning_mode=_planning_mode,
+                            model=model,
+                            reasoning_effort=(
+                                (intent.user_context or {}).get("reasoning_effort")
+                                or default_reasoning_effort(model)
+                            ),
+                            steering_drain=lambda: runtime._drain_turn_steering(turn.id),
+                            on_auto_parallel_batch=_on_auto_parallel_batch,
+                            **({"execution_task_id": execution_task_id} if execution_task_id else {}),
                         ),
-                        steering_drain=lambda: runtime._drain_turn_steering(turn.id),
-                        on_auto_parallel_batch=_on_auto_parallel_batch,
+                        host_execution_request,
                     )
                     for evt in events:
                         if (
@@ -686,6 +859,7 @@ async def _drive_react(
                         _safe_put(evt)
             except Exception as exc:
                 producer_failure = exc
+                _logger.warning("react producer failed: %s", exc, exc_info=True)
                 # The queue may be the very resource that failed. Keep the
                 # exception in shared control-plane state above, then make a
                 # best effort to publish the ordinary react_error event. The
@@ -738,7 +912,6 @@ async def _drive_react(
     # consumer loop (throttled to lease_ttl/3, matching the loops path)
     # keeps the lease alive for long tasks and still lets them
     # terminate cleanly.
-    supervisor = getattr(runtime, "_task_supervisor", None)
     _last_supervisor_heartbeat = time.monotonic()
     _supervisor_heartbeat_interval = 0.0
     if supervisor is not None:
@@ -750,7 +923,7 @@ async def _drive_react(
             _supervisor_heartbeat_interval = 0.0
 
     def _supervisor_heartbeat_if_due(now: float) -> None:
-        nonlocal _last_supervisor_heartbeat
+        nonlocal _last_supervisor_heartbeat, lease_failure
         if (
             supervisor is None
             or _supervisor_heartbeat_interval <= 0.0
@@ -763,8 +936,10 @@ async def _drive_react(
             return
         _last_supervisor_heartbeat = now
         try:
-            supervisor.heartbeat(task_id)
+            if execution_guard is not None:
+                execution_guard.heartbeat()
         except Exception as exc:  # noqa: BLE001 — lease lost/revoked; abort turn
+            lease_failure = exc
             _logger.warning(
                 "react supervisor heartbeat failed for %s: %s — cancelling turn",
                 task_id,
@@ -858,6 +1033,12 @@ async def _drive_react(
                 # closes the consumer boundary before detaching if needed.
                 break
             try:
+                if execution_guard is not None and event_kind in {"tool_start", "react_completed"}:
+                    try:
+                        evt = _check_execution_event(evt)
+                    except Exception as exc:
+                        lease_failure = exc
+                        raise
                 await _apply_react_event(runtime, turn, log, emitter, state, evt)
             except asyncio.CancelledError:
                 _settle_apply_receipt(
@@ -913,6 +1094,8 @@ async def _drive_react(
         # interrupt, or supervisor lease loss) — a dropped WebSocket no
         # longer reaches this path; the turn runs on server-side.
         cancel_source.cancel(reason="consumer teardown")
+        if execution_guard is not None:
+            execution_guard.close()
         consumer_closed.set()
         if queue_getter is not None and not queue_getter.done():
             queue_getter.cancel()
@@ -988,7 +1171,15 @@ async def _drive_react(
 
     # Finalize anything still open. Wrapped in suppress so a torn-
     # down ws doesn't take the whole turn-completion path with it.
-    if structural_apply_failure is not None:
+    if lease_failure is not None:
+        turn.status = TurnStatus.FAILED
+        turn.outcome_reason = "task_execution_lease_lost"
+        turn.error = {
+            "code": "task_execution_lease_lost",
+            "message": "任务执行权已失效，已阻止后续工具操作。",
+            "exception_type": lease_failure.__class__.__name__,
+        }
+    if structural_apply_failure is not None and lease_failure is None:
         # A later drained pause/cancel cannot mask the audit failure.
         turn.status = TurnStatus.FAILED
         turn.outcome_reason = "react_structural_event_apply_failed"

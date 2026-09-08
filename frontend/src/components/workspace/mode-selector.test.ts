@@ -1,4 +1,10 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const identity = vi.hoisted(() => ({ actor: "account-a" }));
+
+vi.mock("@/core/auth/api", () => ({
+  currentActorId: () => identity.actor,
+}));
 
 import {
   modeFromProjectKind,
@@ -8,7 +14,7 @@ import {
   writeStoredModeOverride,
 } from "./mode-selector";
 
-const STORAGE_KEY = "echo:modeOverride";
+const STORAGE_KEY = "echo:modeOverride:account-a";
 
 describe("modeFromProjectKind", () => {
   test("maps builder to develop", () => {
@@ -26,6 +32,7 @@ describe("modeFromProjectKind", () => {
 
 describe("readStoredModeOverride / writeStoredModeOverride", () => {
   beforeEach(() => {
+    identity.actor = "account-a";
     window.localStorage.clear();
   });
 
@@ -62,6 +69,17 @@ describe("readStoredModeOverride / writeStoredModeOverride", () => {
     expect(readStoredAuditIntensity("/workspace/a")).toBeNull();
   });
 
+  test("migrates the legacy device key into the signed-in account", () => {
+    window.localStorage.setItem(
+      "echo:modeOverride",
+      JSON.stringify({ "/workspace/a": { mode: "audit" } }),
+    );
+
+    expect(readStoredModeOverride("/workspace/a")).toBe("audit");
+    expect(window.localStorage.getItem("echo:modeOverride")).toBeNull();
+    expect(window.localStorage.getItem(STORAGE_KEY)).toContain("audit");
+  });
+
   test("overwrites the override for an existing workspace path", () => {
     writeStoredModeOverride("/workspace/a", "develop");
     writeStoredModeOverride("/workspace/a", "uxui");
@@ -80,6 +98,15 @@ describe("readStoredModeOverride / writeStoredModeOverride", () => {
   test("returns null when stored JSON is malformed", () => {
     window.localStorage.setItem(STORAGE_KEY, "{not valid json");
     expect(readStoredModeOverride("/workspace/a")).toBeNull();
+  });
+
+  test("keeps workspace overrides isolated between accounts", () => {
+    writeStoredModeOverride("/workspace/a", "audit");
+    identity.actor = "account-b";
+    expect(readStoredModeOverride("/workspace/a")).toBeNull();
+    writeStoredModeOverride("/workspace/a", "uxui");
+    identity.actor = "account-a";
+    expect(readStoredModeOverride("/workspace/a")).toBe("audit");
   });
 
   test("no-ops on the SSR branch (window undefined)", () => {

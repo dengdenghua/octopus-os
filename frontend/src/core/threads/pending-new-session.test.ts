@@ -1,7 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const identity = vi.hoisted(() => ({ actor: "actor-one" }));
+vi.mock("@/core/auth/api", () => ({
+  currentActorId: () => identity.actor,
+}));
 
 import {
   consumePendingNewSession,
+  clearPendingNewSession,
   isThreadStale,
   writePendingNewSession,
 } from "./pending-new-session";
@@ -37,6 +43,7 @@ describe("isThreadStale", () => {
 describe("pending-new-session hand-off", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    identity.actor = "actor-one";
   });
   afterEach(() => {
     window.sessionStorage.clear();
@@ -44,7 +51,11 @@ describe("pending-new-session hand-off", () => {
 
   it("round-trips a written hand-off and clears it on consume", () => {
     writePendingNewSession("hello world");
-    expect(window.sessionStorage.getItem("echo:pending-new-session")).not.toBeNull();
+    expect(
+      window.sessionStorage.getItem(
+        `echo:pending-new-session:${encodeURIComponent(identity.actor)}`,
+      ),
+    ).not.toBeNull();
     const text = consumePendingNewSession();
     expect(text).toBe("hello world");
     // Consumed → cleared, so a second consume returns null.
@@ -62,10 +73,26 @@ describe("pending-new-session hand-off", () => {
       text: "old",
       ts: Date.now() - 120_000,
     });
-    window.sessionStorage.setItem("echo:pending-new-session", stale);
+    window.sessionStorage.setItem(
+      `echo:pending-new-session:${encodeURIComponent(identity.actor)}`,
+      stale,
+    );
     expect(consumePendingNewSession()).toBeNull();
     // And the stale entry is removed.
-    expect(window.sessionStorage.getItem("echo:pending-new-session")).toBeNull();
+    expect(
+      window.sessionStorage.getItem(
+        `echo:pending-new-session:${encodeURIComponent(identity.actor)}`,
+      ),
+    ).toBeNull();
+  });
+
+  it("does not carry a hand-off across actors and can clear all sessions", () => {
+    writePendingNewSession("private hand-off");
+    identity.actor = "actor-two";
+    expect(consumePendingNewSession()).toBeNull();
+    clearPendingNewSession();
+    identity.actor = "actor-one";
+    expect(consumePendingNewSession()).toBeNull();
   });
 
   it("returns null when nothing is pending", () => {

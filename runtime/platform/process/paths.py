@@ -62,6 +62,12 @@ class AppPaths:
         return self.data_dir / "tool_effects.sqlite3"
 
     @property
+    def subagent_governance_path(self) -> Path:
+        """Cross-worker sub-agent lease and usage ledger."""
+
+        return self.data_dir / "subagent_governance.sqlite3"
+
+    @property
     def experience_ledger_path(self) -> Path:
         return self.data_dir / "experience_ledger.json"
 

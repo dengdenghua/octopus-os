@@ -45,6 +45,28 @@ function num(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+function governanceSnapshot(
+  value: unknown,
+): LiveToolEvent["governance"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const tokensUsed = num(raw.tokens_used);
+  const costUsd = num(raw.cost_usd);
+  if (tokensUsed === undefined && costUsd === undefined) return undefined;
+  return {
+    rootId: str(raw.root_id),
+    inputTokens: num(raw.input_tokens),
+    outputTokens: num(raw.output_tokens),
+    tokensUsed,
+    costUsd,
+    breaker: str(raw.breaker),
+    tripReason: str(raw.trip_reason),
+    activeLeases: num(raw.active_leases),
+    tokenLimit: num(raw.token_limit),
+    costLimitUsd: num(raw.cost_limit_usd),
+  };
+}
+
 function toMillis(tsSeconds: unknown): number {
   const s = num(tsSeconds);
   if (s === undefined) return Date.now();
@@ -75,6 +97,7 @@ export function busEventToLiveEvent(
     subAgentRole: role || undefined,
     subagentCodename: str(payload.codename),
     iteration: num(payload.iteration) ?? 0,
+    governance: governanceSnapshot(payload.governance),
     parentToolUseId:
       str(payload.parent_tool_use_id) ?? str(payload.parentToolUseId),
   };

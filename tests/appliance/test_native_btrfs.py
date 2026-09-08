@@ -161,7 +161,9 @@ def test_btrfs_stale_hardware_identity_is_rejected_before_format(
     changed[0] = {**changed[0], "serial": "replacement"}
     monkeypatch.setattr(native_btrfs, "inspect_blank_whole_disks", lambda _devices: changed)
     commands: list[tuple[str, ...]] = []
-    monkeypatch.setattr(native_btrfs, "_run_mutating", lambda *args, **_kwargs: commands.append(args))
+    monkeypatch.setattr(
+        native_btrfs, "_run_mutating", lambda *args, **_kwargs: commands.append(args)
+    )
 
     with pytest.raises(ValueError, match="stale"):
         native_btrfs.apply_btrfs_raid1(

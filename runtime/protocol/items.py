@@ -98,6 +98,13 @@ class UserMessageItem(_ItemBase):
     type: Literal[ItemType.USER_MESSAGE] = ItemType.USER_MESSAGE
     text: str
     attachments: list[dict[str, Any]] = Field(default_factory=list)
+    # Server-cleaned references selected from the local database/workspace.
+    # They are display and resolution coordinates, never an authorization
+    # grant; access is rechecked by the resource endpoint on use.
+    context_files: list[dict[str, Any]] = Field(
+        default_factory=list,
+        alias="contextFiles",
+    )
 
 
 class SteeringUserMessageItem(_ItemBase):
@@ -544,6 +551,11 @@ class TurnParams(BaseModel):
         alias="sandboxPolicy",
     )
     model: str | None = None
+    # Per-task backend preference. The host validates readiness and records
+    # the actual engine before invocation; client metadata is never evidence.
+    execution_engine: Literal["auto", "octopus", "codex", "opencode"] = Field(
+        default="auto", alias="executionEngine"
+    )
     effort: Literal["minimal", "low", "medium", "high", "xhigh", "max"] = "medium"
     summary: Literal["none", "auto", "detailed"] = "none"
     output_schema: dict[str, Any] | None = Field(default=None, alias="outputSchema")
@@ -582,6 +594,18 @@ class TurnParams(BaseModel):
     owner_actor_id: str | None = Field(default=None, exclude=True)
 
 
+class ExecutionSnapshot(BaseModel):
+    """Host-selected execution coordinate; input preferences are not evidence."""
+
+    model_config = ConfigDict(frozen=True)
+
+    engine: Literal["native", "octopus", "codex", "opencode"]
+    driver: str = Field(min_length=1, max_length=80)
+    reason: str = Field(default="legacy", min_length=1, max_length=160)
+    phase: Literal["primary", "steering", "verification", "repair"] = "primary"
+    invocation: int = Field(ge=1, strict=True)
+
+
 class Turn(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -609,6 +633,7 @@ class Turn(BaseModel):
     # Trusted runtime-only execution strand used by the evolution ledger.
     # It is never accepted from or serialized back to the client.
     execution_engine: str | None = Field(default=None, exclude=True)
+    execution: ExecutionSnapshot | None = None
     # Resolved cwd after authentication, local-workspace validation, and
     # managed-workspace allocation. Task supervision consumes this trusted
     # value instead of guessing from the client's raw TurnParams shape.
@@ -625,6 +650,7 @@ class Turn(BaseModel):
 
 
 __all__ = [
+    "ExecutionSnapshot",
     "AgentPhaseSnapshot",
     "AgentMessageItem",
     "ApprovalItem",

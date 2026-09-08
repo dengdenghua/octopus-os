@@ -315,7 +315,7 @@ def create_config_router(
             return {}
         return {k: v for k, v in data.items() if isinstance(v, dict)}
 
-    def _save(*touched: str) -> None:
+    def _save(*touched: str, strict: bool = False) -> None:
         """Persist, writing through only the ids this request changed.
 
         This file is routinely hand-edited — it is where an operator sets
@@ -360,6 +360,8 @@ def create_config_router(
                 os.replace(temp_path, path)
                 temp_path = None
             except OSError as exc:  # noqa: BLE001 — in-memory mutation already succeeded
+                if strict:
+                    raise
                 # Preserve the historical best-effort API contract, but make
                 # restart data-loss risk visible to operators.
                 logging.getLogger(__name__).error(
@@ -580,6 +582,14 @@ def create_config_router(
                     else self._inner
                 )
                 return inner.call(rewritten)
+
+            def privacy_upstream(self, model: str | None) -> _MRR:
+                resolved = self._resolve(_MR(model=model or self._default, messages=[]))
+                return (
+                    self._responses_inner
+                    if self._responses_inner is not None and resolved in self._responses_models
+                    else self._inner
+                )
 
             def call_stream(self, request: _MR):
                 # Mirror ``call`` · route to the right upstream slot,

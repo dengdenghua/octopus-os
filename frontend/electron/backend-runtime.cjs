@@ -624,6 +624,14 @@ async function spawnBackend(configPath, onProgress) {
   const env = {
     ...process.env,
     ECHO_DESKTOP: "1",
+    // The desktop backend owns the native system application surface. Use the
+    // lightweight native extension so Electron does not start the NAS
+    // appliance's private-state lock and Docker control plane.
+    ECHO_NATIVE_OS: process.env.ECHO_NATIVE_OS || "1",
+    ECHO_APP_EXTENSIONS:
+      process.env.ECHO_APP_EXTENSIONS || "appliance.native_extension",
+    ECHO_REQUIRED_APP_EXTENSIONS:
+      process.env.ECHO_REQUIRED_APP_EXTENSIONS || "1",
     ECHO_DATA_DIR: path.join(app.getPath("userData"), "data"),
     ECHO_RESOURCES_DIR: path.join(app.getPath("userData"), "resources"),
     ECHO_PACKAGED_CODEX_VERSION: PACKAGED_CODEX_VERSION,

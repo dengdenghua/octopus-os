@@ -10,10 +10,27 @@ optional imaging stack (PIL / OpenCV) is unavailable or input is malformed.
 from __future__ import annotations
 
 import array
+import hashlib
 import math
 from typing import Any
 
 from PIL import Image
+
+
+def _decoded_image_fingerprint(img) -> str:
+    """Identify the decoded source, independently of replaceable mtimes.
+
+    Hash bounded strips to avoid another full-resolution pixel allocation.
+    Include EXIF because derived metadata/orientation may change with the same
+    pixels. This is cache identity, not a hash of the original file bytes.
+    """
+    digest = hashlib.sha256()
+    digest.update(f"decoded-v1:{img.mode}:{img.width}:{img.height}:".encode("ascii"))
+    for top in range(0, img.height, 128):
+        with img.crop((0, top, img.width, min(top + 128, img.height))) as strip:
+            digest.update(strip.tobytes())
+    digest.update(img.getexif().tobytes())
+    return "decoded-v1:" + digest.hexdigest()
 
 
 def _compute_dhash(img, size: int = 8) -> str:

@@ -62,9 +62,7 @@ export interface WorkBlock {
 
 export type WorkBlockStatus = LiveToolEvent["status"] | "warning";
 
-export type WorkBlockStatusLabels = Partial<
-  Record<WorkBlockStatus, string>
->;
+export type WorkBlockStatusLabels = Partial<Record<WorkBlockStatus, string>>;
 
 export interface WorkBlockLabels {
   actions: Record<WorkBlockActionKey, string>;
