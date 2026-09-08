@@ -12,6 +12,19 @@ def test_autostart_gating(monkeypatch) -> None:
     assert ss._autostart_enabled() is True
 
 
+def test_bundled_protocol_server_requires_explicit_root(monkeypatch, tmp_path):
+    monkeypatch.delenv("ECHO_STORAGE_CMD", raising=False)
+    monkeypatch.delenv("ECHO_STORAGE_URL", raising=False)
+    monkeypatch.setattr(ss.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(ss.Path, "exists", lambda _self: False)
+    monkeypatch.delenv("ECHO_STORAGE_ROOT", raising=False)
+    assert ss.resolve_storage_command() is None
+    monkeypatch.setenv("ECHO_STORAGE_ROOT", str(tmp_path))
+    assert ss.resolve_storage_command() == [
+        ss.sys.executable, "-m", "runtime.storage.service", "serve", "--port", "8767",
+    ]
+
+
 def test_resolve_explicit_cmd_appends_serve_and_port(monkeypatch) -> None:
     monkeypatch.setenv("ECHO_STORAGE_CMD", "/opt/bin/echo-storage")
     monkeypatch.delenv("ECHO_STORAGE_URL", raising=False)
@@ -193,4 +206,3 @@ def test_heartbeat_gated_on_autostart_and_idempotent(monkeypatch) -> None:
     ss.start_storage_heartbeat()
     assert started["n"] == 1
     monkeypatch.setattr(ss, "_heartbeat_started", False)
-

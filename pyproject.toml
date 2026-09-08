@@ -228,6 +228,7 @@ repo_url = "https://github.com/dengdenghua/echo-os"
 echo-lint = "tools.lint.invariant_check:main"
 echo = "runtime.cli:main"
 echo-agent = "runtime.cli:main"
+echo-storage = "runtime.storage.service:main"
 
 [build-system]
 requires = ["hatchling>=1.27"]

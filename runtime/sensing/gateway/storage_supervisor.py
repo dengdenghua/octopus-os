@@ -25,6 +25,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -95,6 +96,10 @@ def resolve_storage_command() -> list[str] | None:
     found = shutil.which("echo-storage")
     if found:
         return [found, "serve", "--port", port]
+    # Explicitly granting a root enables the bundled lightweight protocol
+    # server, without guessing which desktop/appliance directory may be edited.
+    if os.environ.get("ECHO_STORAGE_ROOT", "").strip() and not getattr(sys, "frozen", False):
+        return [sys.executable, "-m", "runtime.storage.service", "serve", "--port", port]
     return None
 
 

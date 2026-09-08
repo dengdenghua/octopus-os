@@ -12,6 +12,7 @@ import errno
 import os
 import stat
 from pathlib import Path
+from typing import Any
 
 LOCK_FILENAME = ".echo-state.lock"
 
@@ -21,9 +22,10 @@ class StateLockError(RuntimeError):
 
 
 class StateDirectoryLock:
-    def __init__(self, descriptor: int, path: Path) -> None:
+    def __init__(self, descriptor: int, path: Path, *, directory_guard: Any = None) -> None:
         self._descriptor = descriptor
         self.path = path
+        self._directory_guard = directory_guard
 
     @classmethod
     def acquire(
@@ -34,9 +36,13 @@ class StateDirectoryLock:
         create: bool = False,
         purpose: str | None = None,
     ) -> StateDirectoryLock:
+        if os.name == "nt":
+            return cls._acquire_windows(
+                state_dir, exclusive=exclusive, create=create, purpose=purpose
+            )
         try:
             import fcntl
-        except ImportError as exc:  # pragma: no cover - appliance targets Unix NAS hosts
+        except ImportError as exc:  # pragma: no cover - unsupported non-Windows platform
             raise StateLockError("state locking requires a Unix host") from exc
 
         root = Path(state_dir)
@@ -75,6 +81,40 @@ class StateDirectoryLock:
             raise
         return cls(descriptor, path)
 
+    @classmethod
+    def _acquire_windows(
+        cls, state_dir: Path | str, *, exclusive: bool, create: bool, purpose: str | None
+    ) -> StateDirectoryLock:
+        from appliance.windows_state import (
+            lock_descriptor,
+            open_private_file,
+            private_state_directory,
+        )
+
+        guard = private_state_directory(state_dir, create=create, protect=False)
+        descriptor = -1
+        try:
+            root = guard.__enter__()
+            path = root / LOCK_FILENAME
+            descriptor = open_private_file(path, lock_file=True)
+            try:
+                lock_descriptor(descriptor, exclusive=exclusive)
+            except OSError as exc:
+                if getattr(exc, "winerror", None) in {32, 33, 158}:
+                    mode = purpose or ("backup/restore" if exclusive else "runtime")
+                    raise StateLockError(
+                        f"state directory is already in use; cannot start {mode}"
+                    ) from exc
+                raise
+            return cls(descriptor, path, directory_guard=guard)
+        except BaseException as exc:
+            if descriptor >= 0:
+                os.close(descriptor)
+            guard.__exit__(None, None, None)
+            if isinstance(exc, (StateLockError, KeyboardInterrupt, SystemExit)):
+                raise
+            raise StateLockError("cannot open private state lock") from exc
+
     def release(self) -> None:
         descriptor = self._descriptor
         if descriptor < 0:
@@ -82,6 +122,9 @@ class StateDirectoryLock:
         self._descriptor = -1
         with contextlib.suppress(OSError):
             os.close(descriptor)
+        guard, self._directory_guard = self._directory_guard, None
+        if guard is not None:
+            guard.__exit__(None, None, None)
 
     def __enter__(self) -> StateDirectoryLock:
         return self

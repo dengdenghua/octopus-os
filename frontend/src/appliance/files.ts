@@ -100,6 +100,35 @@ export type DownloadOptions = {
   retryDelayMs?: number;
 };
 
+/** Build a download URL from a server-issued, path-free resource identity. */
+export function downloadResourceUrl(resourceId: string): string {
+  const value = resourceId.trim();
+  if (!value.startsWith("appliance-file:v1:")) {
+    throw new Error("文件资源标识无效，请重新读取目录");
+  }
+  return `/api/appliance/files/resource/${encodeURIComponent(value)}`;
+}
+
+export type ResourceLocation = {
+  resource_id: string;
+  path: string;
+  directory: string;
+  is_directory: boolean;
+};
+
+/** Resolve an appliance resource to a root-relative navigation location. */
+export async function resolveResourceLocation(
+  resourceId: string,
+): Promise<ResourceLocation> {
+  const value = resourceId.trim();
+  if (!value.startsWith("appliance-file:v1:")) {
+    throw new Error("文件资源标识无效，请重新读取目录");
+  }
+  return jsonGet<ResourceLocation>(
+    `/api/appliance/files/resource/${encodeURIComponent(value)}/location`,
+  );
+}
+
 type WritableDownload = {
   write(data: Uint8Array): Promise<void>;
   seek(position: number): Promise<void>;

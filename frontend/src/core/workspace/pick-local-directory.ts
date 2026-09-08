@@ -4,6 +4,22 @@ import { getBackendBaseURL } from "@/core/config";
 
 type PickDirectoryResponse = components["schemas"]["FsPickDirectoryResponse"];
 
+export class LocalDirectoryPickerError extends Error {
+  constructor(public readonly status: number) {
+    super(`Folder picker request failed (${status})`);
+    this.name = "LocalDirectoryPickerError";
+  }
+}
+
+export function isLocalDirectoryPickerUnavailableError(
+  error: unknown,
+): boolean {
+  return (
+    error instanceof LocalDirectoryPickerError &&
+    [502, 503, 504].includes(error.status)
+  );
+}
+
 export async function pickLocalDirectory(
   defaultPath = "",
 ): Promise<string | null> {
@@ -26,7 +42,7 @@ export async function pickLocalDirectory(
     { headers: authHeaders() },
   );
   if (!response.ok) {
-    throw new Error(`Folder picker request failed (${response.status})`);
+    throw new LocalDirectoryPickerError(response.status);
   }
 
   const result = (await response.json()) as PickDirectoryResponse;
