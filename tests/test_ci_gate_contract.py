@@ -176,3 +176,69 @@ def test_untracked_source_guard_rejects_an_omitted_appliance_module(
     output = capsys.readouterr()
     assert "appliance/native_future.py" in output.err
     assert "notes/local.md" not in output.err
+
+
+def _ruff_commands() -> dict[str, list[str]]:
+    """Flatten every `uv run ruff ...` invocation in ci.yml, per subcommand.
+
+    A single step may contain both `ruff check` and `ruff format --check`, so the
+    run blocks are joined (undoing shell line continuations) and then split on
+    each `uv run ruff` boundary rather than matched by substring.
+    """
+    blocks: list[str] = []
+    for job in _ci_doc()["jobs"].values():
+        for step in job.get("steps", []):
+            run = step.get("run")
+            if isinstance(run, str) and "ruff" in run:
+                blocks.append(run.replace("\\\n", " "))
+
+    commands: dict[str, list[str]] = {"check": [], "format": []}
+    for chunk in re.split(r"(?=uv run ruff)", " ".join(blocks)):
+        flat = " ".join(chunk.split())
+        if flat.startswith("uv run ruff check"):
+            commands["check"].append(flat)
+        elif flat.startswith("uv run ruff format"):
+            commands["format"].append(flat)
+    return commands
+
+
+@pytest.mark.parametrize("target", ["runtime/", "tests/"])
+def test_ruff_check_covers_the_whole_tree(target: str) -> None:
+    """``ruff check`` must not be scoped to only part of the source tree.
+
+    Until 2026-09-12 every invocation read ``ruff check appliance/ tests/appliance/``
+    plus an explicit ``deploy/`` file list.  ``runtime/`` — 1,530 modules and
+    ~520k lines — and the ~1,050 root-level ``tests/`` modules were never linted.
+    Both turned out to be nearly clean (2 and 230 violations), so the gap was
+    pure coverage loss rather than hidden debt.  A future edit that narrows the
+    scope again would silently stop linting most of the project.
+    """
+    commands = _ruff_commands()["check"]
+    assert commands, "ci.yml no longer runs `ruff check` at all"
+    for command in commands:
+        assert f" {target}" in f" {command}", (
+            f"`ruff check` no longer covers {target!r}: {command}\n"
+            "Widening the scope back is a deliberate decision, not a drive-by edit."
+        )
+
+
+def test_ruff_format_scope_is_not_silently_widened() -> None:
+    """``ruff format --check`` coverage is intentionally narrower than ``check``.
+
+    runtime/ (51 files) and tests/ (587 files) are not formatted yet, so adding
+    them to the format gate would fail CI immediately on a 638-file diff.  This
+    test documents that as a known, deliberate gap: it fails if someone widens
+    format without reformatting first, and it fails if someone "reconciles" the
+    two scopes by narrowing `ruff check` instead.
+    """
+    commands = _ruff_commands()
+    assert commands["format"], "ci.yml no longer runs `ruff format --check`"
+    for command in commands["format"]:
+        offenders = [token for token in command.split() if token in {"runtime/", "tests/"}]
+        assert not offenders, (
+            f"`ruff format --check` was widened to {offenders} without "
+            f"reformatting the tree first: {command}"
+        )
+    # The check gate must still be the wide one, otherwise the two scopes were
+    # reconciled in the wrong direction.
+    assert any(" runtime/" in f" {cmd}" for cmd in commands["check"])

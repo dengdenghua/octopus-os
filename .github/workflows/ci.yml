@@ -84,9 +84,13 @@ jobs:
       - name: Verify the unified Echo source policy
         run: uv run python deploy/appliance/test_unified_echo_workflow_policy.py
 
+      # Coverage note: `ruff check` now covers runtime/ and the whole tests/ tree.
+      # `ruff format --check` deliberately still covers only appliance/ plus the
+      # explicit deploy lists, because runtime/ (51 files) and tests/ (587 files)
+      # are not yet formatted — widening format is a separate, larger change.
       - name: Ruff check and format
         run: |
-          uv run ruff check appliance/ tests/appliance/ deploy/appliance/agent_bundle.py \
+          uv run ruff check appliance/ runtime/ tests/ deploy/appliance/agent_bundle.py \
             deploy/appliance/delivery_source_preflight.py \
             deploy/appliance/external_storage.py \
             deploy/appliance/hub_oci_storage.py \
@@ -219,7 +223,7 @@ jobs:
 
       - name: Ruff check
         run: >-
-          uv run ruff check appliance/ tests/appliance/ deploy/appliance/agent_bundle.py
+          uv run ruff check appliance/ runtime/ tests/ deploy/appliance/agent_bundle.py
           deploy/appliance/delivery_source_preflight.py
           deploy/appliance/external_storage.py
           deploy/appliance/nas_data_backup.py
