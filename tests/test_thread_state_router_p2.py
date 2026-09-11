@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -39,7 +40,13 @@ def _p2_env():
         app = FastAPI()
         app.include_router(router)
         client = TestClient(app)
-        yield store, client
+        # close() releases the FTS5 SQLite handle. Without it Windows keeps the
+        # file locked and TemporaryDirectory cleanup fails with [WinError 32],
+        # turning every passing test into a teardown error.
+        try:
+            yield store, client
+        finally:
+            store.close()
 
 
 @pytest.fixture
@@ -99,7 +106,10 @@ class TestFullTextSearch:
             )
             thread_id = thread["thread_id"]
 
-            yield client, thread_id
+            try:
+                yield client, thread_id
+            finally:
+                store.close()
 
     def test_search_basic(self, setup):
         """Test basic full-text search."""
@@ -196,7 +206,10 @@ class TestExportMarkdown:
             )
             thread_id = thread["thread_id"]
 
-            yield client, thread_id
+            try:
+                yield client, thread_id
+            finally:
+                store.close()
 
     def test_export_basic(self, setup):
         """Test basic markdown export."""
@@ -411,7 +424,10 @@ class TestP2FeaturesDisabled:
 
             app = FastAPI()
             app.include_router(router)
-            yield TestClient(app)
+            try:
+                yield TestClient(app)
+            finally:
+                store.close()
 
     def test_search_disabled(self, client_no_p2):
         """Test search returns 501 when disabled."""
@@ -429,4 +445,30 @@ class TestP2FeaturesDisabled:
             json={"message_index": 0, "feedback_type": "thumbs_up"},
         )
         assert response.status_code == 501
+
+
+
+def test_store_close_releases_the_search_index_handle(tmp_path: Path) -> None:
+    """``ThreadStateStore.close()`` must release the FTS5 SQLite handle.
+
+    ``SessionSearchIndex`` holds one connection open for the life of the store
+    and only closes it from ``__del__``.  POSIX tolerates unlinking an open
+    file, so the leak stayed invisible for a long time; on Windows the still-
+    open handle makes ``TemporaryDirectory`` cleanup fail with
+    ``[WinError 32]``, which turns every *passing* test in this module into a
+    teardown error (24 of them before the fix).
+    """
+    store = ThreadStateStore(
+        per_agent_base=tmp_path,
+        search_enabled=True,
+        feedback_enabled=False,
+    )
+    database = tmp_path / "data" / "sessions" / "search.db"
+    assert database.exists(), "the search index should be created eagerly"
+
+    store.close()
+    store.close()  # idempotent: teardown paths may close twice
+    database.unlink()  # PermissionError on Windows if the handle leaked
+
+    assert not database.exists()
 

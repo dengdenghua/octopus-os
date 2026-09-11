@@ -28,6 +28,17 @@ from benchmarks.trusted_verifier_worker import (
     run_trusted_supervisor,
 )
 
+# The trusted supervisor hands socket descriptors to a child process by number
+# (`--candidate-protocol-fd`) and duplicates them with `os.dup()`.  Windows
+# sockets are not inheritable OS file handles, so `os.dup()` raises
+# `OSError: [Errno 9] Bad file descriptor` and every case here fails inside the
+# harness before reaching a single assertion (25/25 on Windows).  The Linux CI
+# runner exercises the real behaviour.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="trusted verifier passes socketpair() descriptors to a child process; POSIX only",
+)
+
 _TOKEN = re.compile(r"[0-9a-f]{64}")
 
 

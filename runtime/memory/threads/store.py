@@ -278,6 +278,26 @@ class ThreadStateStore:
         if self._index is not None and len(self._index) == 0 and self._threads:
             self._reindex_all_locked()
 
+    def close(self) -> None:
+        """Release the handles this store owns.
+
+        ``SessionSearchIndex`` keeps a single SQLite connection open for the
+        life of the store and only closes it from ``__del__``, which the GC
+        runs at an arbitrary later point.  On POSIX that is invisible — an open
+        file can still be unlinked — but on Windows the still-open handle makes
+        ``TemporaryDirectory`` cleanup fail with ``[WinError 32]``, turning 24
+        passing tests into teardown errors.  Callers that own a store should
+        close it deterministically; repeated calls are safe.
+        """
+        if self._search is not None:
+            self._search.close()
+
+    def __enter__(self) -> ThreadStateStore:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
     # ─── index helpers ───────────────────────────────────────
 
     def _resolve_index_path(self) -> Path | None:

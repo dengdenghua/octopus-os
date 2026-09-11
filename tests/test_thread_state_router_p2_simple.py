@@ -46,7 +46,12 @@ def test_env():
         )
         thread_id = thread["thread_id"]
 
-        yield {"client": client, "thread_id": thread_id, "store": store}
+        # close() releases the FTS5 SQLite handle; on Windows an unclosed
+        # handle makes TemporaryDirectory cleanup fail with [WinError 32].
+        try:
+            yield {"client": client, "thread_id": thread_id, "store": store}
+        finally:
+            store.close()
 
 
 def test_search_endpoint(test_env):
@@ -142,12 +147,11 @@ def test_feedback_stats(test_env):
 
 def test_features_disabled():
     """Test behavior when P2 features disabled."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        store = ThreadStateStore(
-            per_agent_base=tmpdir,
-            search_enabled=False,
-            feedback_enabled=False,
-        )
+    with tempfile.TemporaryDirectory() as tmpdir, ThreadStateStore(
+        per_agent_base=tmpdir,
+        search_enabled=False,
+        feedback_enabled=False,
+    ) as store:
         router = create_thread_state_router(store=store, require_auth=False)
         app = FastAPI()
         app.include_router(router)
