@@ -107,6 +107,57 @@ def test_full_suite_job_is_wired() -> None:
     )
 
 
+def test_jobs_running_pytest_checkout_submodules() -> None:
+    """Any job executing pytest must initialise git submodules.
+
+    ``extensions/workbuddy-connectors`` is a submodule (branch ``source``,
+    pinned ``cc020be``).  A checkout without it leaves the directory empty, so
+    the connector catalogue has zero entries and ~30 connector tests fail with
+    ``KeyError: connector not found: <id>`` — a failure that has nothing to do
+    with the code under test.  On 2026-09-12 only ``lint-and-test`` passed
+    ``submodules: true``; ``pytest-cross-platform`` and ``full-test-suite``
+    did not, which would have made the observation run look far worse than
+    reality.
+    """
+    offenders: list[str] = []
+    for name, job in _ci_doc()["jobs"].items():
+        steps = job.get("steps") or []
+        if not any("pytest" in str(step.get("run", "")) for step in steps):
+            continue
+        checkouts = [
+            step
+            for step in steps
+            if str(step.get("uses", "")).startswith("actions/checkout")
+        ]
+        if not checkouts:
+            continue
+        if not any(bool((step.get("with") or {}).get("submodules")) for step in checkouts):
+            offenders.append(name)
+
+    assert not offenders, (
+        "these ci.yml jobs run pytest without `submodules: true`: "
+        + ", ".join(sorted(offenders))
+        + ". The workbuddy-connectors submodule then arrives empty and every "
+        "connector test fails on a missing catalogue."
+    )
+
+
+def test_connector_marketplace_submodule_is_declared() -> None:
+    """Dropping the submodule declaration must not be a silent edit.
+
+    The connector marketplace content lives outside this repository.  If the
+    gitlink disappears, the source tree still imports fine and only the tests
+    notice — on a fresh checkout, with no obvious link back to the cause.
+    """
+    gitmodules = REPO_ROOT / ".gitmodules"
+    assert gitmodules.exists(), ".gitmodules is gone; submodules would be silently dropped"
+    text = gitmodules.read_text(encoding="utf-8")
+    assert "extensions/workbuddy-connectors" in text, (
+        ".gitmodules no longer declares extensions/workbuddy-connectors; the "
+        "connector catalogue would be empty on every fresh clone"
+    )
+
+
 # `monkeypatch.setattr(<module>.threading.X, ...)` mutates the *stdlib* class,
 # because `mod.threading` is just the global threading module.  Patching
 # `threading.Thread.start` broke pytest-timeout's Timer and aborted a full run

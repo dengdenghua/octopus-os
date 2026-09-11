@@ -66,6 +66,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -341,7 +343,11 @@ jobs:
       matrix:
         os: [windows-2025, macos-15]
     steps:
+      # extensions/workbuddy-connectors is a git submodule: without it the
+      # connector catalogue is empty and every connector test fails.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.11.9"
@@ -371,7 +377,12 @@ jobs:
     timeout-minutes: 90
     continue-on-error: true
     steps:
+      # extensions/workbuddy-connectors is a git submodule.  Without it the
+      # connector catalogue is empty and ~30 connector tests fail for reasons
+      # that have nothing to do with the code under test.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12.11"
