@@ -40,6 +40,7 @@ import {
 } from "@/appliance/accounts";
 import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
 import {
+  applyOmvDlna,
   applyOmvGroup,
   applyOmvUser,
   applyOmvUserPassword,
@@ -53,11 +54,15 @@ import {
   applyOmvSharePrivilege,
   applyOmvSmbShare,
   applyOmvTimeMachine,
+  applyOmvWebDav,
+  fetchOmvDlnaStatus,
   fetchOmvFilesystems,
   fetchOmvSharePrivileges,
   fetchOmvSharingOverview,
   fetchOmvStatus,
   fetchOmvTimeMachineStatus,
+  fetchOmvWebDavStatus,
+  planOmvDlna,
   planOmvFilesystemQuota,
   planOmvGroup,
   planOmvNfsShare,
@@ -69,8 +74,12 @@ import {
   planOmvSharePrivilege,
   planOmvSmbShare,
   planOmvTimeMachine,
+  planOmvWebDav,
   planOmvUser,
   planOmvUserPassword,
+  type OmvDlnaDesiredState,
+  type OmvDlnaPlan,
+  type OmvDlnaStatus,
   type OmvFilesystem,
   type OmvGroupDesiredState,
   type OmvGroupPlan,
@@ -99,6 +108,9 @@ import {
   type OmvTimeMachineDesiredState,
   type OmvTimeMachinePlan,
   type OmvTimeMachineStatus,
+  type OmvWebDavDesiredState,
+  type OmvWebDavPlan,
+  type OmvWebDavStatus,
   type OmvUserDesiredState,
   type OmvUserPlan,
   type OmvUserPasswordDesiredState,
@@ -231,6 +243,21 @@ export function OmvSharingPanel() {
     useState<OmvTimeMachinePlan | null>(null);
   const [timeMachinePlanning, setTimeMachinePlanning] = useState(false);
   const [timeMachineApprovalOpen, setTimeMachineApprovalOpen] = useState(false);
+  const [dlna, setDlna] = useState<OmvDlnaStatus | null>(null);
+  const [editingDlnaFolder, setEditingDlnaFolder] =
+    useState<OmvSharedFolder | null>(null);
+  const [dlnaDesired, setDlnaDesired] = useState<OmvDlnaDesiredState | null>(
+    null,
+  );
+  const [dlnaPlan, setDlnaPlan] = useState<OmvDlnaPlan | null>(null);
+  const [dlnaPlanning, setDlnaPlanning] = useState(false);
+  const [dlnaApprovalOpen, setDlnaApprovalOpen] = useState(false);
+  const [webdav, setWebDav] = useState<OmvWebDavStatus | null>(null);
+  const [webdavDesired, setWebDavDesired] =
+    useState<OmvWebDavDesiredState | null>(null);
+  const [webdavPlan, setWebDavPlan] = useState<OmvWebDavPlan | null>(null);
+  const [webdavPlanning, setWebDavPlanning] = useState(false);
+  const [webdavApprovalOpen, setWebDavApprovalOpen] = useState(false);
   const [folderCreateOpen, setFolderCreateOpen] = useState(false);
   const [folderMountRef, setFolderMountRef] = useState("");
   const [folderName, setFolderName] = useState("");
@@ -364,6 +391,11 @@ export function OmvSharingPanel() {
     setTimeMachinePlan(null);
     setTimeMachineDesired(null);
     setEditingTimeMachineFolder(null);
+    setDlnaPlan(null);
+    setDlnaDesired(null);
+    setEditingDlnaFolder(null);
+    setWebDavPlan(null);
+    setWebDavDesired(null);
     setFolderPlan(null);
     setFolderDesired(null);
     setFolderDeletePlan(null);
@@ -408,20 +440,35 @@ export function OmvSharingPanel() {
           setOverview(null);
           setFilesystems([]);
           setTimeMachine(null);
+          setDlna(null);
+          setWebDav(null);
           return;
         }
-        const [nextOverview, nextFilesystems, nextTimeMachine] =
-          await Promise.all([
-            fetchOmvSharingOverview(),
-            fetchOmvFilesystems(),
-            nextStatus.capabilities?.includes("smb.time-machine.desired.v1")
-              ? fetchOmvTimeMachineStatus()
-              : Promise.resolve(null),
-          ]);
+        const [
+          nextOverview,
+          nextFilesystems,
+          nextTimeMachine,
+          nextDlna,
+          nextWebDav,
+        ] = await Promise.all([
+          fetchOmvSharingOverview(),
+          fetchOmvFilesystems(),
+          nextStatus.capabilities?.includes("smb.time-machine.desired.v1")
+            ? fetchOmvTimeMachineStatus()
+            : Promise.resolve(null),
+          nextStatus.capabilities?.includes("media.dlna-share.desired.v1")
+            ? fetchOmvDlnaStatus()
+            : Promise.resolve(null),
+          nextStatus.capabilities?.includes("sharing.webdav.gateway.desired.v1")
+            ? fetchOmvWebDavStatus()
+            : Promise.resolve(null),
+        ]);
         if (alive) {
           setOverview(nextOverview);
           setFilesystems(nextFilesystems);
           setTimeMachine(nextTimeMachine);
+          setDlna(nextDlna);
+          setWebDav(nextWebDav);
           const firstQuotaFilesystem = nextFilesystems.find(
             (entry) => entry.uuid && entry.supportsQuota && !entry.readOnly,
           );
@@ -443,6 +490,8 @@ export function OmvSharingPanel() {
           setOverview(null);
           setFilesystems([]);
           setTimeMachine(null);
+          setDlna(null);
+          setWebDav(null);
           setError(
             reason instanceof Error ? reason.message : "无法读取共享与用户状态",
           );
@@ -895,6 +944,100 @@ export function OmvSharingPanel() {
     setEditingTimeMachineFolder(null);
     setTimeMachineDesired(null);
     setTimeMachinePlan(null);
+    setReloadKey((value) => value + 1);
+  };
+
+  const beginDlnaControl = (folder: OmvSharedFolder) => {
+    const existing = dlna?.shares.find(
+      (share) => share.sharedFolderRef === folder.uuid,
+    );
+    setEditingDlnaFolder(folder);
+    setDlnaPlan(null);
+    setDlnaDesired({
+      schema: "echo.storage.dlna-desired.v1",
+      sharedFolderRef: folder.uuid,
+      enabled: true,
+      mediaType: existing?.mediaType ?? "all",
+    });
+  };
+
+  const updateDlnaDesired = (change: Partial<OmvDlnaDesiredState>) => {
+    setDlnaDesired((current) =>
+      current ? { ...current, ...change } : current,
+    );
+    setDlnaPlan(null);
+  };
+
+  const previewDlnaChange = async () => {
+    if (!dlnaDesired) return;
+    setDlnaPlanning(true);
+    setError(null);
+    try {
+      setDlnaPlan(await planOmvDlna(dlnaDesired));
+    } catch (reason) {
+      setDlnaPlan(null);
+      setError(
+        reason instanceof Error ? reason.message : "无法生成 DLNA 变更预览",
+      );
+    } finally {
+      setDlnaPlanning(false);
+    }
+  };
+
+  const confirmDlnaChange = async (password: string) => {
+    if (!dlnaDesired || !dlnaPlan) return;
+    const approval = await requestHighRiskApproval(
+      "storage.dlna.apply",
+      dlnaPlan.planId,
+      password,
+    );
+    await applyOmvDlna(dlnaDesired, dlnaPlan.planId, approval.approvalToken);
+    setDlnaApprovalOpen(false);
+    setEditingDlnaFolder(null);
+    setDlnaDesired(null);
+    setDlnaPlan(null);
+    setReloadKey((value) => value + 1);
+  };
+
+  const beginWebDavControl = () => {
+    setWebDavPlan(null);
+    setWebDavDesired({
+      schema: "echo.storage.webdav-desired.v1",
+      enabled: webdav?.enabled ?? false,
+    });
+  };
+
+  const previewWebDavChange = async () => {
+    if (!webdavDesired) return;
+    setWebDavPlanning(true);
+    setError(null);
+    try {
+      setWebDavPlan(await planOmvWebDav(webdavDesired));
+    } catch (reason) {
+      setWebDavPlan(null);
+      setError(
+        reason instanceof Error ? reason.message : "无法生成 WebDAV 变更预览",
+      );
+    } finally {
+      setWebDavPlanning(false);
+    }
+  };
+
+  const confirmWebDavChange = async (password: string) => {
+    if (!webdavDesired || !webdavPlan) return;
+    const approval = await requestHighRiskApproval(
+      "storage.webdav.apply",
+      webdavPlan.planId,
+      password,
+    );
+    await applyOmvWebDav(
+      webdavDesired,
+      webdavPlan.planId,
+      approval.approvalToken,
+    );
+    setWebDavApprovalOpen(false);
+    setWebDavDesired(null);
+    setWebDavPlan(null);
     setReloadKey((value) => value + 1);
   };
 
@@ -1653,6 +1796,24 @@ export function OmvSharingPanel() {
                     },
                   ]
                 : []),
+              ...(dlna
+                ? [
+                    {
+                      name: "DLNA",
+                      enabled: dlna.enabled && dlna.active,
+                      count: dlna.shares.length,
+                    },
+                  ]
+                : []),
+              ...(webdav
+                ? [
+                    {
+                      name: "WebDAV",
+                      enabled: webdav.enabled && webdav.active,
+                      count: webdav.publishedShares.length,
+                    },
+                  ]
+                : []),
             ].map((service) => (
               <section
                 key={service.name}
@@ -1690,7 +1851,7 @@ export function OmvSharingPanel() {
                 只显示允许的连接范围和访问方式，不返回密码或额外配置字段
               </p>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <strong className="inline-flex items-center gap-1.5 text-xs text-slate-700">
                   <ServerIcon className="size-3.5 text-blue-500" />
@@ -1775,8 +1936,173 @@ export function OmvSharingPanel() {
                   </div>
                 </div>
               )}
+              {dlna && (
+                <div className="rounded-xl border border-orange-200 bg-orange-50/50 p-3">
+                  <strong className="inline-flex items-center gap-1.5 text-xs text-orange-800">
+                    <ServerIcon className="size-3.5 text-orange-500" />
+                    DLNA（只读）
+                  </strong>
+                  <div className="mt-2 space-y-1.5">
+                    {dlna.shares.map((share) => (
+                      <div
+                        key={share.sharedFolderRef}
+                        className="rounded-lg bg-white px-2.5 py-2 text-[10px] text-slate-500 ring-1 ring-orange-100"
+                      >
+                        <span className="block truncate font-medium text-slate-700">
+                          {share.name}
+                        </span>
+                        <span>
+                          {share.mediaType === "all"
+                            ? "全部媒体"
+                            : share.mediaType === "audio"
+                              ? "仅音频"
+                              : share.mediaType === "video"
+                                ? "仅视频"
+                                : "仅图片"}{" "}
+                          · {share.status}
+                        </span>
+                      </div>
+                    ))}
+                    {dlna.shares.length === 0 && (
+                      <span className="text-[10px] text-slate-400">
+                        没有 DLNA 媒体目录
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {webdav && (
+                <div className="rounded-xl border border-cyan-200 bg-cyan-50/50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <strong className="inline-flex items-center gap-1.5 text-xs text-cyan-800">
+                      <ServerIcon className="size-3.5 text-cyan-600" />
+                      WebDAV（TLS）
+                    </strong>
+                    <button
+                      type="button"
+                      onClick={beginWebDavControl}
+                      className="rounded-lg bg-cyan-700 px-2 py-1 text-[10px] font-medium text-white hover:bg-cyan-800"
+                    >
+                      配置
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-1.5 text-[10px] text-slate-500">
+                    <span className="block font-medium text-slate-700">
+                      {webdav.enabled && webdav.active
+                        ? `已发布 ${webdav.publishedShares.length} 个 ACL 可读共享`
+                        : "默认关闭，未发布共享"}
+                    </span>
+                    <span className="block">入口 {webdav.endpoint}</span>
+                    <a
+                      href={webdav.certificateEndpoint}
+                      download="echo-os-device.crt"
+                      className="inline-flex items-center gap-1 text-cyan-700 hover:text-cyan-900"
+                    >
+                      下载设备证书
+                      <ExternalLinkIcon className="size-3" />
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
+
+          {webdavDesired && (
+            <section className="mt-4 rounded-2xl border border-cyan-200 bg-cyan-50/60 p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-[15px] font-semibold">
+                    WebDAV 网关期望状态
+                  </h2>
+                  <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
+                    默认关闭。启用后只通过 HTTPS 发布已登记、且当前账号 ACL
+                    可读的共享；不会复用 NAS 系统密码，也不会开放明文端口。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWebDavDesired(null);
+                    setWebDavPlan(null);
+                  }}
+                  className="shrink-0 whitespace-nowrap text-xs text-slate-500 hover:text-slate-800"
+                >
+                  关闭
+                </button>
+              </div>
+              <label className="mt-4 flex items-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 py-2.5 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={webdavDesired.enabled}
+                  onChange={(event) => {
+                    setWebDavDesired({
+                      ...webdavDesired,
+                      enabled: event.currentTarget.checked,
+                    });
+                    setWebDavPlan(null);
+                  }}
+                  className="size-3.5 rounded border-slate-300"
+                />
+                启用经认证的 WebDAV TLS 网关
+              </label>
+              <p className="mt-2 text-[10px] leading-5 text-slate-500">
+                当前已登记 {webdav?.registeredShareCount ?? 0}{" "}
+                个共享。停用会撤销 rclone、SFTP chroot、刷新 watcher 和现有 bind
+                mount，不删除任何文件。
+              </p>
+              <div className="mt-4 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void previewWebDavChange()}
+                  disabled={webdavPlanning}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-cyan-700 px-4 text-xs font-medium text-white transition hover:bg-cyan-800 disabled:opacity-50"
+                >
+                  {webdavPlanning && (
+                    <Loader2Icon className="size-3.5 animate-spin" />
+                  )}
+                  {webdavPlanning ? "正在预览…" : "预览 WebDAV 变更"}
+                </button>
+                <span className="text-[11px] text-slate-500">
+                  预览不会启动或停止服务
+                </span>
+              </div>
+              {webdavPlan && (
+                <div className="mt-4 rounded-xl border border-cyan-100 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <strong className="text-xs text-slate-800">
+                      {webdavPlan.operation === "enable"
+                        ? `将通过 WebDAV 发布 ${webdavPlan.publishedShareCount} 个已挂载共享`
+                        : webdavPlan.operation === "disable"
+                          ? "将停用 WebDAV（数据保留）"
+                          : "当前已经符合期望状态"}
+                    </strong>
+                    {webdavPlan.requiresApproval && (
+                      <button
+                        type="button"
+                        onClick={() => setWebDavApprovalOpen(true)}
+                        className="h-8 rounded-lg bg-amber-500 px-3 text-[11px] font-medium text-white hover:bg-amber-600"
+                      >
+                        管理员确认并应用
+                      </button>
+                    )}
+                  </div>
+                  {webdavPlan.changes.map((change) => (
+                    <div
+                      key={change.field}
+                      className="mt-2 grid grid-cols-[90px_1fr_auto_1fr] items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[10px] text-slate-500"
+                    >
+                      <span className="font-medium text-slate-700">启用</span>
+                      <span>{planValue(change.before)}</span>
+                      <span>→</span>
+                      <span className="font-medium text-cyan-700">
+                        {planValue(change.after)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           {editingFolder && desired && (
             <section className="mt-4 rounded-2xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm">
@@ -2053,6 +2379,129 @@ export function OmvSharingPanel() {
                       </span>
                       <span>→</span>
                       <span className="truncate font-medium text-violet-700">
+                        {planValue(change.after)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {editingDlnaFolder && dlnaDesired && (
+            <section className="mt-4 rounded-2xl border border-orange-200 bg-orange-50/60 p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-[15px] font-semibold">
+                    DLNA 媒体目录 · {editingDlnaFolder.name}
+                  </h2>
+                  <p className="mt-0.5 text-[11px] leading-5 text-slate-500">
+                    仅把选中的共享目录以只读方式发布到私有 IPv4
+                    局域网；不会开放写入、任意路径或自定义端口。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingDlnaFolder(null);
+                    setDlnaDesired(null);
+                    setDlnaPlan(null);
+                  }}
+                  className="shrink-0 whitespace-nowrap text-xs text-slate-500 hover:text-slate-800"
+                >
+                  关闭
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="flex items-center gap-2 rounded-xl border border-orange-100 bg-white px-3 py-2.5 text-xs text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={dlnaDesired.enabled}
+                    onChange={(event) =>
+                      updateDlnaDesired({
+                        enabled: event.currentTarget.checked,
+                      })
+                    }
+                    className="size-3.5 rounded border-slate-300"
+                  />
+                  启用 DLNA 只读发布
+                </label>
+                <label className="text-xs font-medium text-slate-600">
+                  媒体类型
+                  <select
+                    aria-label="DLNA 媒体类型"
+                    value={dlnaDesired.mediaType}
+                    onChange={(event) =>
+                      updateDlnaDesired({
+                        mediaType: event.currentTarget
+                          .value as OmvDlnaDesiredState["mediaType"],
+                      })
+                    }
+                    disabled={!dlnaDesired.enabled}
+                    className="mt-1.5 h-9 w-full rounded-xl border border-orange-100 bg-white px-3 text-xs outline-none focus:border-orange-500 disabled:opacity-60"
+                  >
+                    <option value="all">全部媒体</option>
+                    <option value="audio">仅音频</option>
+                    <option value="video">仅视频</option>
+                    <option value="pictures">仅图片</option>
+                  </select>
+                </label>
+              </div>
+              <p className="mt-2 text-[10px] leading-5 text-slate-500">
+                ReadyMedia 使用固定 TCP 8200 / UDP
+                1900；停用只撤销服务、只读挂载和防火墙规则，不删除媒体文件。
+              </p>
+              <div className="mt-4 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void previewDlnaChange()}
+                  disabled={dlnaPlanning}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-orange-600 px-4 text-xs font-medium text-white transition hover:bg-orange-700 disabled:opacity-50"
+                >
+                  {dlnaPlanning && (
+                    <Loader2Icon className="size-3.5 animate-spin" />
+                  )}
+                  {dlnaPlanning ? "正在预览…" : "预览 DLNA 变更"}
+                </button>
+                <span className="text-[11px] text-slate-500">
+                  预览不会启动服务
+                </span>
+              </div>
+              {dlnaPlan && (
+                <div className="mt-4 rounded-xl border border-orange-100 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <strong className="text-xs text-slate-800">
+                      {dlnaPlan.operation === "create"
+                        ? "将发布 DLNA 媒体目录"
+                        : dlnaPlan.operation === "update"
+                          ? "将更新 DLNA 媒体类型"
+                          : dlnaPlan.operation === "remove"
+                            ? "将停用 DLNA（媒体保留）"
+                            : "当前已经符合期望状态"}
+                    </strong>
+                    {dlnaPlan.requiresApproval && (
+                      <button
+                        type="button"
+                        onClick={() => setDlnaApprovalOpen(true)}
+                        className="h-8 rounded-lg bg-amber-500 px-3 text-[11px] font-medium text-white hover:bg-amber-600"
+                      >
+                        管理员确认并应用
+                      </button>
+                    )}
+                  </div>
+                  {dlnaPlan.changes.map((change) => (
+                    <div
+                      key={change.field}
+                      className="mt-2 grid grid-cols-[90px_1fr_auto_1fr] items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[10px] text-slate-500"
+                    >
+                      <span className="font-medium text-slate-700">
+                        {change.field === "enabled" ? "启用" : "媒体类型"}
+                      </span>
+                      <span className="truncate">
+                        {planValue(change.before)}
+                      </span>
+                      <span>→</span>
+                      <span className="truncate font-medium text-orange-700">
                         {planValue(change.after)}
                       </span>
                     </div>
@@ -2729,6 +3178,9 @@ export function OmvSharingPanel() {
                 const timeMachineRule = timeMachine?.shares.find(
                   (share) => share.sharedFolderRef === folder.uuid,
                 );
+                const dlnaRule = dlna?.shares.find(
+                  (share) => share.sharedFolderRef === folder.uuid,
+                );
                 const folderControlsAllowed =
                   status?.source !== "native" ||
                   !folder.relativePath.startsWith("/");
@@ -2746,6 +3198,10 @@ export function OmvSharingPanel() {
                   folderControlsAllowed &&
                   timeMachine?.available &&
                   status?.capabilities?.includes("smb.time-machine.desired.v1");
+                const canControlDlna =
+                  folderControlsAllowed &&
+                  dlna?.available &&
+                  status?.capabilities?.includes("media.dlna-share.desired.v1");
                 const canControlPrivileges =
                   folderControlsAllowed &&
                   status?.capabilities?.includes(
@@ -2756,7 +3212,7 @@ export function OmvSharingPanel() {
                   folderControlsAllowed &&
                   status.capabilities?.includes("shared-folder.rename.safe.v1");
                 const renameBlockedByShare = Boolean(
-                  smbRule || nfsRule || timeMachineRule,
+                  smbRule || nfsRule || timeMachineRule || dlnaRule,
                 );
                 const canDetach =
                   status?.source === "native" &&
@@ -2890,6 +3346,17 @@ export function OmvSharingPanel() {
                             : "启用 Time Machine"}
                         </button>
                       )}
+                      {canControlDlna && (
+                        <button
+                          type="button"
+                          onClick={() => beginDlnaControl(folder)}
+                          title="以只读方式发布到私有 IPv4 局域网"
+                          className="inline-flex h-7 items-center gap-1 rounded-lg bg-orange-600 px-2.5 text-[10px] font-medium text-white transition hover:bg-orange-700"
+                        >
+                          <SlidersHorizontalIcon className="size-3" />
+                          {dlnaRule ? "管理 DLNA" : "启用 DLNA"}
+                        </button>
+                      )}
                       {canRename && (
                         <button
                           type="button"
@@ -2897,7 +3364,7 @@ export function OmvSharingPanel() {
                           disabled={renameBlockedByShare}
                           title={
                             renameBlockedByShare
-                              ? "请先停用这个文件夹的 SMB/NFS/Time Machine 规则"
+                              ? "请先停用这个文件夹的 SMB/NFS/Time Machine/DLNA 规则"
                               : "保留数据和 UUID，仅修改目录名称"
                           }
                           className="inline-flex h-7 items-center gap-1 rounded-lg border border-cyan-200 bg-white px-2.5 text-[10px] font-medium text-cyan-700 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-45"
@@ -4069,6 +4536,32 @@ export function OmvSharingPanel() {
         confirmLabel="确认应用 Time Machine"
         onCancel={() => setTimeMachineApprovalOpen(false)}
         onConfirm={confirmTimeMachineChange}
+      />
+      <HighRiskApprovalDialog
+        open={dlnaApprovalOpen && Boolean(dlnaPlan)}
+        title="应用 DLNA 只读发布"
+        description="Echo 将生成唯一的 ReadyMedia 配置和只读挂载清单，仅向私有 IPv4 局域网开放固定 TCP 8200 / UDP 1900，并回读服务与防火墙状态。失败时恢复原配置；停用不删除媒体数据。"
+        targetLabel={
+          editingDlnaFolder && dlnaPlan
+            ? `${editingDlnaFolder.name} · ${dlnaPlan.desired.mediaType} · ${dlnaPlan.planId.slice(0, 12)}`
+            : undefined
+        }
+        confirmLabel="确认应用 DLNA"
+        onCancel={() => setDlnaApprovalOpen(false)}
+        onConfirm={confirmDlnaChange}
+      />
+      <HighRiskApprovalDialog
+        open={webdavApprovalOpen && Boolean(webdavPlan)}
+        title="应用 WebDAV 网关配置"
+        description="Echo 将写入唯一的受管发布策略，并按顺序同步逐账号 chroot、回环 SFTP 和 rclone TLS 代理。停用会撤销服务和 bind mount，但不会删除共享数据；失败时恢复原策略与运行态。"
+        targetLabel={
+          webdavPlan
+            ? `${webdavPlan.desired.enabled ? "启用" : "停用"} · ${webdavPlan.publishedShareCount} 个共享 · ${webdavPlan.planId.slice(0, 12)}`
+            : undefined
+        }
+        confirmLabel="确认应用 WebDAV"
+        onCancel={() => setWebDavApprovalOpen(false)}
+        onConfirm={confirmWebDavChange}
       />
       <HighRiskApprovalDialog
         open={quotaApprovalOpen && Boolean(quotaPlan)}

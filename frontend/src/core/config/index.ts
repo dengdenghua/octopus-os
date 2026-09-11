@@ -227,4 +227,4 @@ export function getPublicAssetURL(pathname: string) {
 // deployments that fork to a different URL.
 export const GITHUB_URL: string =
   (import.meta.env.VITE_GITHUB_URL as string | undefined) ??
-  "https://github.com/dengdenghua/echo-os";
+  "https://github.com/dengdenghua/octopus-os";

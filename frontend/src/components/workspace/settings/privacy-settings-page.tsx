@@ -764,7 +764,7 @@ export default function PrivacySettingsPage() {
             <p className="mt-1 text-xs text-muted-foreground">
               {copy.profileDescription}{" "}
               <RoutedWebLink
-                href="https://github.com/dengdenghua/echo-os/blob/main/docs/constitution.md"
+                href="https://github.com/dengdenghua/octopus-os/blob/main/docs/constitution.md"
                 className="underline underline-offset-2"
                 openTargetSource="privacy-documentation"
               >

@@ -22,6 +22,7 @@ import {
   HardDriveIcon,
   HomeIcon,
   ListIcon,
+  Link2Icon,
   Loader2Icon,
   MessageSquareIcon,
   MoreHorizontalIcon,
@@ -54,6 +55,9 @@ import { requestHighRiskApproval } from "@/appliance/approval";
 import { resolveAgentAppUrl } from "@/appliance/agent-workspace";
 import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
 import { FileOrganizationPanel } from "@/appliance/file-organization-panel";
+import { FileSharePanel } from "@/appliance/file-share-panel";
+import { revealFileRequest } from "@/appliance/desktop-actions";
+import type { DesktopAgentContext } from "./desktop-agent-context";
 import {
   answerStorage,
   searchStorage,
@@ -126,19 +130,37 @@ function Breadcrumb({
 }
 
 export function FileManager({
+  openRequest,
+  onAskAgent,
   onClose,
   onOpenSettings,
   onOpenSystemFiles,
 }: {
+  openRequest?: { path: string; selectedPath?: string } | null;
+  onAskAgent?: (context: DesktopAgentContext) => void;
   onClose: () => void;
   onOpenSettings?: () => void;
   onOpenSystemFiles?: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const directoryRequest = useRef(0);
   const uploadControlRef = useRef<ResumableUploadController | null>(null);
   const downloadAbortRef = useRef<AbortController | null>(null);
   const [path, setPath] = useState("");
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const selectedRow = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (!openRequest) return;
+    setPath(openRequest.path);
+    setSelectedPath(openRequest.selectedPath ?? null);
+    setOrganizationPath(null);
+    setSidebarTarget("nas");
+    setShowTrash(false);
+  }, [openRequest]);
   const [entries, setEntries] = useState<FileEntry[]>([]);
+  useEffect(() => {
+    selectedRow.current?.scrollIntoView?.({ block: "nearest" });
+  }, [entries, selectedPath]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileServiceUnavailable, setFileServiceUnavailable] = useState(false);
@@ -157,6 +179,7 @@ export function FileManager({
   const [emptyApprovalOpen, setEmptyApprovalOpen] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [organizationPath, setOrganizationPath] = useState<string | null>(null);
+  const [showSharePanel, setShowSharePanel] = useState(false);
   const [aiQuery, setAiQuery] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResults, setAiResults] = useState<{
@@ -167,14 +190,17 @@ export function FileManager({
   } | null>(null);
 
   const refresh = useCallback(() => {
+    const request = ++directoryRequest.current;
     setLoading(true);
     setError(null);
     listDir(path)
       .then((r) => {
+        if (request !== directoryRequest.current) return;
         setEntries(r.entries);
         setFileServiceUnavailable(false);
       })
       .catch((e) => {
+        if (request !== directoryRequest.current) return;
         if (e instanceof FileServiceUnavailableError) {
           setEntries([]);
           setFileServiceUnavailable(true);
@@ -183,12 +209,17 @@ export function FileManager({
         setFileServiceUnavailable(false);
         setError(e instanceof Error ? e.message : "读取失败");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (request === directoryRequest.current) setLoading(false);
+      });
   }, [path]);
 
   useEffect(() => {
     if (!showTrash && sidebarTarget === "nas") refresh();
-  }, [refresh, showTrash, sidebarTarget]);
+    return () => {
+      directoryRequest.current += 1;
+    };
+  }, [refresh, showTrash, sidebarTarget, openRequest]);
 
   const selectSidebarTarget = (target: FinderSidebarTarget) => {
     setSidebarTarget(target);
@@ -348,6 +379,20 @@ export function FileManager({
           <div className="mac-finder-traffic">
             <button
               type="button"
+              onClick={() => setShowSharePanel(true)}
+              disabled={
+                showTrash ||
+                sidebarTarget !== "nas" ||
+                entries.find((entry) => entry.path === selectedPath)?.kind !==
+                  "file"
+              }
+              aria-label="分享所选文件"
+              title="创建或管理外部分享链接"
+            >
+              <Link2Icon />
+            </button>
+            <button
+              type="button"
               className="mac-traffic-light close"
               onClick={onClose}
               aria-label="关闭"
@@ -430,10 +475,33 @@ export function FileManager({
             </button>
             <button
               type="button"
-              onClick={() => setShowAiPanel((value) => !value)}
+              onClick={() => {
+                if (!onAskAgent) {
+                  setShowAiPanel((value) => !value);
+                  return;
+                }
+                const selected = entries.find(
+                  (entry) => entry.path === selectedPath,
+                );
+                onAskAgent({
+                  app: "files",
+                  kind:
+                    selected?.kind === "dir" || !selected
+                      ? "directory"
+                      : "file",
+                  path: selected?.path ?? path,
+                });
+              }}
+              disabled={
+                !!onAskAgent &&
+                (showTrash ||
+                  sidebarTarget !== "nas" ||
+                  fileServiceUnavailable ||
+                  loading)
+              }
               className={showAiPanel ? "is-active" : ""}
-              aria-label="AI 问答"
-              title="AI 问答"
+              aria-label={onAskAgent ? "交给 Agent" : "AI 问答"}
+              title={onAskAgent ? "将选中对象或当前目录交给 Agent" : "AI 问答"}
             >
               <MessageSquareIcon />
             </button>
@@ -772,9 +840,23 @@ export function FileManager({
                     <span>种类</span>
                   </li>
                   {entries.map((entry) => (
-                    <li key={entry.path} className="group">
+                    <li
+                      key={entry.path}
+                      className="group"
+                      ref={
+                        selectedPath === entry.path ? selectedRow : undefined
+                      }
+                      data-selected={selectedPath === entry.path || undefined}
+                      style={
+                        selectedPath === entry.path
+                          ? { backgroundColor: "rgba(59, 130, 246, 0.16)" }
+                          : undefined
+                      }
+                    >
                       <button
                         type="button"
+                        aria-pressed={selectedPath === entry.path}
+                        onClick={() => setSelectedPath(entry.path)}
                         onDoubleClick={() => {
                           if (entry.kind === "dir") setPath(entry.path);
                           else void onDownload(entry);
@@ -882,6 +964,24 @@ export function FileManager({
           path={organizationPath}
           onClose={() => setOrganizationPath(null)}
           onChanged={refresh}
+          onReveal={(target) => {
+            const request = revealFileRequest(target);
+            if (!request) return;
+            setOrganizationPath(null);
+            setShowTrash(false);
+            setSidebarTarget("nas");
+            setSelectedPath(request.selectedPath);
+            if (request.path === path) refresh();
+            else setPath(request.path);
+          }}
+        />
+      )}
+      {showSharePanel && (
+        <FileSharePanel
+          selected={
+            entries.find((entry) => entry.path === selectedPath) ?? null
+          }
+          onClose={() => setShowSharePanel(false)}
         />
       )}
     </div>

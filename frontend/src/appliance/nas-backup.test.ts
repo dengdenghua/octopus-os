@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyNasBackupRemote,
   applyNasBackupCredential,
   applyNasBackupRestore,
   applyNasBackupSchedule,
   fetchNasBackupRestoreSets,
   fetchNasBackupRestoreTargets,
+  fetchNasBackupRepositoryCandidates,
+  fetchNasBackupRemotes,
   fetchNasBackupSchedule,
   planNasBackupCredential,
   planNasBackupRestore,
+  planNasBackupRemote,
   planNasBackupSchedule,
 } from "./nas-backup";
 
@@ -21,6 +25,65 @@ beforeEach(() => {
 });
 
 describe("NAS backup API", () => {
+  it("uses authenticated and approval-bound remote mount endpoints", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    } as Response);
+    const desired = {
+      schema: "echo.nas-backup-remote-desired.v1" as const,
+      operation: "create" as const,
+      remoteId: "offsite",
+      label: "异地对象存储",
+      endpoint: "https://s3.example.test",
+      region: "us-east-1",
+      bucket: "echo-backups",
+      prefix: "family/nas",
+      accessKeyId: "ACCESS-KEY",
+      secretAccessKey: "private-secret",
+    };
+
+    await fetchNasBackupRemotes();
+    await planNasBackupRemote(desired);
+    await applyNasBackupRemote(desired, "a".repeat(64), "approval-once");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/appliance/storage/backups/remotes",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "/api/appliance/storage/backups/remotes/plan",
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      "/api/appliance/storage/backups/remotes/apply",
+    );
+    expect(fetchMock.mock.calls[2]?.[1]?.headers).toMatchObject({
+      Authorization: "Bearer operator-token",
+      "X-Echo-Approval": "approval-once",
+    });
+    expect(fetchMock.mock.calls[2]?.[1]?.body).toBe(
+      JSON.stringify({ desired, planId: "a".repeat(64) }),
+    );
+  });
+
+  it("reads repository candidates with operator authentication", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        schema: "echo.external-storage-candidates.v1",
+        candidates: [],
+        truncated: false,
+        sourcesRedacted: true,
+      }),
+    } as Response);
+
+    await fetchNasBackupRepositoryCandidates();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/appliance/storage/backups/repository-candidates",
+      { headers: { Authorization: "Bearer operator-token" } },
+    );
+  });
+
   it("uses authenticated status, plan and approval-bound apply endpoints", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,

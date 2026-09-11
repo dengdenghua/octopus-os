@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyOmvDlna,
   applyOmvBtrfsRaid1,
   applyOmvBtrfsReplace,
   applyOmvBtrfsScrub,
@@ -17,6 +18,7 @@ import {
   applyOmvSharePrivilege,
   applyOmvSmbShare,
   applyOmvTimeMachine,
+  applyOmvWebDav,
   applyOmvUser,
   applyOmvUserPassword,
   applyOmvZfsMirror,
@@ -25,6 +27,7 @@ import {
   applyOmvZfsPoolImport,
   applyOmvZfsScrub,
   fetchOmvFilesystems,
+  fetchOmvDlnaStatus,
   fetchOmvBtrfsMaintenance,
   fetchOmvBtrfsScrubSchedule,
   fetchOmvBtrfsRaid1Candidates,
@@ -39,6 +42,7 @@ import {
   fetchOmvStorageTopology,
   fetchOmvStatus,
   fetchOmvTimeMachineStatus,
+  fetchOmvWebDavStatus,
   fetchOmvUpsStatus,
   fetchOmvZfsMirrorCandidates,
   fetchOmvZfsMirrorReplacementCandidates,
@@ -46,6 +50,7 @@ import {
   fetchOmvZfsPools,
   fetchOmvZfsMaintenance,
   planOmvNfsShare,
+  planOmvDlna,
   planOmvBtrfsRaid1,
   planOmvBtrfsReplace,
   planOmvBtrfsScrub,
@@ -61,6 +66,7 @@ import {
   planOmvSharePrivilege,
   planOmvSmbShare,
   planOmvTimeMachine,
+  planOmvWebDav,
   planOmvUser,
   planOmvUserPassword,
   planOmvZfsMirror,
@@ -950,6 +956,138 @@ describe("OMV read-only API client", () => {
     });
     expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
       "one-shot-time-machine-token",
+    );
+  });
+
+  it("keeps DLNA status, preview, and approved apply on bounded routes", async () => {
+    const desired = {
+      schema: "echo.storage.dlna-desired.v1" as const,
+      sharedFolderRef: "11111111-2222-4333-8444-555555555555",
+      enabled: true,
+      mediaType: "pictures" as const,
+    };
+    const status = {
+      schema: "echo.storage.dlna-status.v1" as const,
+      enabled: false,
+      active: false,
+      available: true,
+      port: 8200 as const,
+      shares: [],
+      source: "native" as const,
+      readOnly: true as const,
+    };
+    const plan = {
+      schema: "echo.storage.dlna-plan.v1" as const,
+      planId: "e".repeat(64),
+      baseRevision: "f".repeat(64),
+      operation: "create" as const,
+      requiresApproval: true,
+      sharedFolder: {
+        uuid: desired.sharedFolderRef,
+        name: "Photos",
+        status: "MOUNTED",
+      },
+      desired,
+      changes: [{ field: "enabled" as const, before: false, after: true }],
+      safety: { contentAccess: "selectedShareReadOnlyBind" },
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(status), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ...plan, applied: true, verified: true }),
+          { status: 200 },
+        ),
+      );
+
+    expect((await fetchOmvDlnaStatus()).available).toBe(true);
+    expect((await planOmvDlna(desired)).planId).toBe(plan.planId);
+    expect(
+      (await applyOmvDlna(desired, plan.planId, "one-shot-dlna-token"))
+        .verified,
+    ).toBe(true);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/sharing/dlna",
+      "/api/appliance/omv/sharing/dlna/plan",
+      "/api/appliance/omv/sharing/dlna/apply",
+    ]);
+    const apply = fetchMock.mock.calls[2]?.[1] as RequestInit;
+    expect(JSON.parse(String(apply.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
+      "one-shot-dlna-token",
+    );
+  });
+
+  it("keeps WebDAV disabled-state reads and approved transitions on bounded routes", async () => {
+    const desired = {
+      schema: "echo.storage.webdav-desired.v1" as const,
+      enabled: true,
+    };
+    const status = {
+      schema: "echo.storage.webdav-status.v1" as const,
+      enabled: false,
+      active: false,
+      available: true,
+      endpoint: "/webdav/" as const,
+      certificateEndpoint: "/api/appliance/tls/certificate" as const,
+      publishedShares: [],
+      registeredShareCount: 1,
+      source: "native" as const,
+      tlsRequired: true as const,
+    };
+    const plan = {
+      schema: "echo.storage.webdav-plan.v1" as const,
+      planId: "c".repeat(64),
+      baseRevision: "d".repeat(64),
+      operation: "enable" as const,
+      requiresApproval: true,
+      desired,
+      changes: [{ field: "enabled" as const, before: false, after: true }],
+      publishedShareCount: 1,
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(status), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(plan), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...plan, applied: true }), {
+          status: 200,
+        }),
+      );
+
+    expect((await fetchOmvWebDavStatus()).enabled).toBe(false);
+    expect((await planOmvWebDav(desired)).operation).toBe("enable");
+    expect(
+      (await applyOmvWebDav(desired, plan.planId, "one-shot-webdav-token"))
+        .applied,
+    ).toBe(true);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/appliance/omv/sharing/webdav",
+      "/api/appliance/omv/sharing/webdav/plan",
+      "/api/appliance/omv/sharing/webdav/apply",
+    ]);
+    const apply = fetchMock.mock.calls[2]?.[1] as RequestInit;
+    expect(JSON.parse(String(apply.body))).toEqual({
+      desired,
+      planId: plan.planId,
+    });
+    expect((apply.headers as Record<string, string>)["X-Echo-Approval"]).toBe(
+      "one-shot-webdav-token",
     );
   });
 

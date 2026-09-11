@@ -1,4 +1,5 @@
 import { Settings2Icon, XIcon } from "lucide-react";
+import { useAgentPhotoResults } from "@/appliance/use-agent-photo-results";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FinalArtifactCompletionNotice } from "@/components/workspace/realtime/final-artifact-completion-notice";
@@ -1091,10 +1092,7 @@ function RealtimePageContent({
     // ordinary model picker must stamp the request so the host can bind the
     // real OpenCode adapter instead of silently running Echo Mix.
     const modelName = String(settings.context.model_name || "").toLowerCase();
-    if (
-      modelName.startsWith("opencode") ||
-      modelName.startsWith("zen-")
-    ) {
+    if (modelName.startsWith("opencode") || modelName.startsWith("zen-")) {
       return "opencode" as const;
     }
     return "echo" as const;
@@ -2547,6 +2545,7 @@ function RealtimePageContent({
     lastTurnToolEvents,
     realtimeApprovals,
   ] = useThreadStream(streamOptions);
+  useAgentPhotoResults(lastTurnToolEvents);
   useEffect(() => {
     // Keep the displayed selection stable for the running turn.
     if (thread.isLoading) return;
@@ -4494,7 +4493,7 @@ function RealtimePageContent({
                           <TaskModelScope
                             scope={settings.context.model_scope || "system"}
                             supportsOverride={
-                            selectedExecutionEngine === "echo" ||
+                              selectedExecutionEngine === "echo" ||
                               selectedExecutionEngine === "codex" ||
                               selectedExecutionEngine === "opencode"
                             }

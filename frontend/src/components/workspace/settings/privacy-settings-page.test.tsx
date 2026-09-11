@@ -170,7 +170,7 @@ describe("PrivacySettingsPage · AI mode section", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看规则说明" })).toHaveAttribute(
       "href",
-      "https://github.com/dengdenghua/echo-os/blob/main/docs/constitution.md",
+      "https://github.com/dengdenghua/octopus-os/blob/main/docs/constitution.md",
     );
     expect(screen.getByRole("link", { name: "查看规则说明" })).toHaveAttribute(
       "target",

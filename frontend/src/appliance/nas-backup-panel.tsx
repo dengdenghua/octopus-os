@@ -8,11 +8,13 @@ import {
 
 import { requestHighRiskApproval } from "@/appliance/approval";
 import { HighRiskApprovalDialog } from "@/appliance/high-risk-approval-dialog";
+import { NasBackupRemotePanel } from "@/appliance/nas-backup-remote-panel";
 import { NasBackupRestorePanel } from "@/appliance/nas-backup-restore-panel";
 import {
   applyNasBackupCredential,
   applyNasBackupCredentialRotation,
   applyNasBackupSchedule,
+  fetchNasBackupRepositoryCandidates,
   fetchNasBackupSchedule,
   planNasBackupCredential,
   planNasBackupCredentialRotation,
@@ -21,6 +23,7 @@ import {
   type NasBackupCredentialPlan,
   type NasBackupCredentialRotationDesired,
   type NasBackupCredentialRotationPlan,
+  type NasBackupRepositoryCandidate,
   type NasBackupScheduleDesired,
   type NasBackupSchedulePlan,
   type NasBackupScheduleStatus,
@@ -32,10 +35,22 @@ function outcomeLabel(outcome: "completed" | "disabled" | "failed") {
   return "失败";
 }
 
+function capacityLabel(bytes: number) {
+  if (bytes >= 1024 ** 4) return `${(bytes / 1024 ** 4).toFixed(1)} TiB`;
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MiB`;
+  return `${bytes} B`;
+}
+
 export function NasBackupPanel() {
   const [status, setStatus] = useState<NasBackupScheduleStatus | null>(null);
   const [repositoryMount, setRepositoryMount] = useState("");
   const [repository, setRepository] = useState("");
+  const [repositoryCandidates, setRepositoryCandidates] = useState<
+    NasBackupRepositoryCandidate[]
+  >([]);
+  const [candidateLoading, setCandidateLoading] = useState(true);
+  const [candidateError, setCandidateError] = useState(false);
   const [credentialMode, setCredentialMode] = useState<
     "initialize" | "connect"
   >("initialize");
@@ -81,6 +96,35 @@ export function NasBackupPanel() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const refreshCandidates = useCallback(async () => {
+    setCandidateLoading(true);
+    try {
+      const result = await fetchNasBackupRepositoryCandidates();
+      setRepositoryCandidates(result.candidates);
+      setCandidateError(false);
+    } catch {
+      setRepositoryCandidates([]);
+      setCandidateError(true);
+    } finally {
+      setCandidateLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCandidates();
+  }, [refreshCandidates]);
+
+  const selectRepositoryCandidate = (mountpoint: string) => {
+    if (!mountpoint) return;
+    setRepositoryMount(mountpoint);
+    setRepository(`${mountpoint}/echo-restic`);
+  };
+
+  const remoteChanged = async (mountpoint?: string) => {
+    await refreshCandidates();
+    if (mountpoint) selectRepositoryCandidate(mountpoint);
+  };
 
   const preview = async (enabled: boolean) => {
     const mount = repositoryMount.trim();
@@ -333,145 +377,191 @@ export function NasBackupPanel() {
         </div>
 
         {status && !status.enabled && (
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <label className="text-[11px] font-medium text-slate-700">
-              外部备份盘挂载点
-              <input
-                aria-label="外部备份盘挂载点"
-                value={repositoryMount}
-                onChange={(event) => setRepositoryMount(event.target.value)}
-                placeholder="/mnt/backup"
-                className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 font-mono text-[11px] outline-none focus:border-blue-400"
-              />
-            </label>
-            <label className="text-[11px] font-medium text-slate-700">
-              Restic 仓库目录
-              <input
-                aria-label="Restic 仓库目录"
-                value={repository}
-                onChange={(event) => setRepository(event.target.value)}
-                placeholder="/mnt/backup/echo-restic"
-                className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 font-mono text-[11px] outline-none focus:border-blue-400"
-              />
-            </label>
-            {!status.credentialConfigured && (
-              <>
-                <label className="text-[11px] font-medium text-slate-700">
-                  仓库类型
-                  <select
-                    aria-label="仓库类型"
-                    value={credentialMode}
-                    onChange={(event) =>
-                      setCredentialMode(
-                        event.target.value as "initialize" | "connect",
-                      )
-                    }
-                    className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
-                  >
-                    <option value="initialize">初始化空仓库</option>
-                    <option value="connect">连接已有仓库</option>
-                  </select>
-                </label>
-                <label className="text-[11px] font-medium text-slate-700">
-                  仓库加密密码
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    aria-label="仓库加密密码"
-                    value={backupPassword}
-                    onChange={(event) => setBackupPassword(event.target.value)}
-                    className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
-                  />
-                </label>
-                <label className="text-[11px] font-medium text-slate-700">
-                  再次输入仓库密码
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    aria-label="再次输入仓库密码"
-                    value={backupPasswordConfirmation}
-                    onChange={(event) =>
-                      setBackupPasswordConfirmation(event.target.value)
-                    }
-                    className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
-                  />
-                </label>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    disabled={
-                      busy ||
-                      loading ||
-                      status.credentialRotationRecoveryPending
-                    }
-                    onClick={() => void previewCredential()}
-                    className="h-9 rounded-lg bg-blue-600 px-3 text-[11px] font-semibold text-white disabled:opacity-40"
-                  >
-                    {credentialMode === "initialize"
-                      ? "初始化并加密保存"
-                      : "验证并加密保存"}
-                  </button>
-                </div>
-              </>
-            )}
-            {status.credentialConfigured && (
-              <>
-                <label className="text-[11px] font-medium text-slate-700">
-                  当前仓库密码
-                  <input
-                    type="password"
-                    autoComplete="current-password"
-                    aria-label="当前仓库密码"
-                    value={currentBackupPassword}
-                    onChange={(event) =>
-                      setCurrentBackupPassword(event.target.value)
-                    }
-                    className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
-                  />
-                </label>
-                <label className="text-[11px] font-medium text-slate-700">
-                  新仓库密码
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    aria-label="新仓库密码"
-                    value={newBackupPassword}
-                    onChange={(event) =>
-                      setNewBackupPassword(event.target.value)
-                    }
-                    className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
-                  />
-                </label>
-                <label className="text-[11px] font-medium text-slate-700">
-                  再次输入新仓库密码
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    aria-label="再次输入新仓库密码"
-                    value={newBackupPasswordConfirmation}
-                    onChange={(event) =>
-                      setNewBackupPasswordConfirmation(event.target.value)
-                    }
-                    className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
-                  />
-                </label>
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    disabled={
-                      busy ||
-                      loading ||
-                      status.credentialRotationRecoveryPending
-                    }
-                    onClick={() => void previewRotation()}
-                    className="h-9 rounded-lg border border-blue-300 bg-blue-50 px-3 text-[11px] font-semibold text-blue-700 disabled:opacity-40"
-                  >
-                    预览安全轮换
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+          <>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="text-[11px] font-medium text-slate-700 md:col-span-2">
+                已发现的安全外置挂载
+                <select
+                  aria-label="已发现的安全外置挂载"
+                  defaultValue=""
+                  disabled={
+                    candidateLoading || repositoryCandidates.length === 0
+                  }
+                  onChange={(event) =>
+                    selectRepositoryCandidate(event.target.value)
+                  }
+                  className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400 disabled:bg-slate-50"
+                >
+                  <option value="">
+                    {candidateLoading
+                      ? "正在扫描 USB、网络和 rclone 挂载…"
+                      : repositoryCandidates.length
+                        ? "选择一个已通过独立文件系统校验的挂载"
+                        : "未发现候选；仍可在下方手动填写"}
+                  </option>
+                  {repositoryCandidates.map((candidate) => (
+                    <option
+                      key={candidate.mountpoint}
+                      value={candidate.mountpoint}
+                    >
+                      {candidate.mountpoint} ·{" "}
+                      {candidate.kind === "remote" ? "远端" : "本地外置"} ·{" "}
+                      {candidate.filesystem} · 可用{" "}
+                      {capacityLabel(candidate.freeBytes)}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block font-normal leading-5 text-slate-500">
+                  {candidateError
+                    ? "自动发现暂不可用，不影响手动填写；提交时仍会重新校验挂载边界。"
+                    : "只显示可写、独立于系统和 NAS 数据盘的挂载；不会展示远端源地址或凭据。"}
+                </span>
+              </label>
+              <label className="text-[11px] font-medium text-slate-700">
+                外部备份盘挂载点
+                <input
+                  aria-label="外部备份盘挂载点"
+                  value={repositoryMount}
+                  onChange={(event) => setRepositoryMount(event.target.value)}
+                  placeholder="/mnt/backup"
+                  className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 font-mono text-[11px] outline-none focus:border-blue-400"
+                />
+              </label>
+              <label className="text-[11px] font-medium text-slate-700">
+                Restic 仓库目录
+                <input
+                  aria-label="Restic 仓库目录"
+                  value={repository}
+                  onChange={(event) => setRepository(event.target.value)}
+                  placeholder="/mnt/backup/echo-restic"
+                  className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 font-mono text-[11px] outline-none focus:border-blue-400"
+                />
+              </label>
+              {!status.credentialConfigured && (
+                <>
+                  <label className="text-[11px] font-medium text-slate-700">
+                    仓库类型
+                    <select
+                      aria-label="仓库类型"
+                      value={credentialMode}
+                      onChange={(event) =>
+                        setCredentialMode(
+                          event.target.value as "initialize" | "connect",
+                        )
+                      }
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
+                    >
+                      <option value="initialize">初始化空仓库</option>
+                      <option value="connect">连接已有仓库</option>
+                    </select>
+                  </label>
+                  <label className="text-[11px] font-medium text-slate-700">
+                    仓库加密密码
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      aria-label="仓库加密密码"
+                      value={backupPassword}
+                      onChange={(event) =>
+                        setBackupPassword(event.target.value)
+                      }
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <label className="text-[11px] font-medium text-slate-700">
+                    再次输入仓库密码
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      aria-label="再次输入仓库密码"
+                      value={backupPasswordConfirmation}
+                      onChange={(event) =>
+                        setBackupPasswordConfirmation(event.target.value)
+                      }
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      disabled={
+                        busy ||
+                        loading ||
+                        status.credentialRotationRecoveryPending
+                      }
+                      onClick={() => void previewCredential()}
+                      className="h-9 rounded-lg bg-blue-600 px-3 text-[11px] font-semibold text-white disabled:opacity-40"
+                    >
+                      {credentialMode === "initialize"
+                        ? "初始化并加密保存"
+                        : "验证并加密保存"}
+                    </button>
+                  </div>
+                </>
+              )}
+              {status.credentialConfigured && (
+                <>
+                  <label className="text-[11px] font-medium text-slate-700">
+                    当前仓库密码
+                    <input
+                      type="password"
+                      autoComplete="current-password"
+                      aria-label="当前仓库密码"
+                      value={currentBackupPassword}
+                      onChange={(event) =>
+                        setCurrentBackupPassword(event.target.value)
+                      }
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <label className="text-[11px] font-medium text-slate-700">
+                    新仓库密码
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      aria-label="新仓库密码"
+                      value={newBackupPassword}
+                      onChange={(event) =>
+                        setNewBackupPassword(event.target.value)
+                      }
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <label className="text-[11px] font-medium text-slate-700">
+                    再次输入新仓库密码
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      aria-label="再次输入新仓库密码"
+                      value={newBackupPasswordConfirmation}
+                      onChange={(event) =>
+                        setNewBackupPasswordConfirmation(event.target.value)
+                      }
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none focus:border-blue-400"
+                    />
+                  </label>
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      disabled={
+                        busy ||
+                        loading ||
+                        status.credentialRotationRecoveryPending
+                      }
+                      onClick={() => void previewRotation()}
+                      className="h-9 rounded-lg border border-blue-300 bg-blue-50 px-3 text-[11px] font-semibold text-blue-700 disabled:opacity-40"
+                    >
+                      预览安全轮换
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            <NasBackupRemotePanel
+              disabled={busy || status.credentialRotationRecoveryPending}
+              onChanged={remoteChanged}
+            />
+          </>
         )}
 
         {status && (

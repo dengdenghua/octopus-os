@@ -47,6 +47,67 @@ afterEach(() => {
 });
 
 describe("FileManager organization entry", () => {
+  it("hands the selected file to Agent without submitting or downloading it", async () => {
+    const onAskAgent = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <FileManager
+        openRequest={{ path: "receipts" }}
+        onClose={vi.fn()}
+        onAskAgent={onAskAgent}
+      />,
+    );
+    await user.click(await screen.findByText("invoice.txt"));
+    await user.click(screen.getByRole("button", { name: "交给 Agent" }));
+    expect(onAskAgent).toHaveBeenCalledExactlyOnceWith({
+      app: "files",
+      kind: "file",
+      path: "receipts/invoice.txt",
+    });
+  });
+  it("hands the current directory to Agent when nothing is selected", async () => {
+    const onAskAgent = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <FileManager
+        openRequest={{ path: "receipts" }}
+        onClose={vi.fn()}
+        onAskAgent={onAskAgent}
+      />,
+    );
+    await screen.findByText("invoice.txt");
+    await user.click(screen.getByRole("button", { name: "交给 Agent" }));
+    expect(onAskAgent).toHaveBeenCalledExactlyOnceWith({
+      app: "files",
+      kind: "directory",
+      path: "receipts",
+    });
+    await user.click(screen.getByRole("button", { name: "回收站" }));
+    expect(screen.getByRole("button", { name: "交给 Agent" })).toBeDisabled();
+  });
+  it("highlights the requested file without opening or downloading it", async () => {
+    render(
+      <FileManager
+        openRequest={{ path: "receipts", selectedPath: "receipts/invoice.txt" }}
+        onClose={vi.fn()}
+      />,
+    );
+    const name = await screen.findByText("invoice.txt");
+    expect(name.closest("button")).toHaveAttribute("aria-pressed", "true");
+    expect(name.closest("li")).toHaveAttribute("data-selected", "true");
+  });
+  it("opens a requested directory and refreshes repeated desktop requests", async () => {
+    const view = render(
+      <FileManager openRequest={{ path: "receipts" }} onClose={vi.fn()} />,
+    );
+    await screen.findByText("invoice.txt");
+    expect(listDir).toHaveBeenCalledWith("receipts");
+    vi.mocked(listDir).mockClear();
+    view.rerender(
+      <FileManager openRequest={{ path: "receipts" }} onClose={vi.fn()} />,
+    );
+    expect(listDir).toHaveBeenCalledWith("receipts");
+  });
   it.each(["", "receipts"])(
     "previews the selected NAS directory '%s' through the real panel and typed API",
     async (path) => {

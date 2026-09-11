@@ -229,6 +229,45 @@ export type OmvTimeMachineStatus = {
   readOnly: true;
 };
 
+export type OmvDlnaMediaType = "all" | "audio" | "video" | "pictures";
+
+export type OmvDlnaShare = {
+  sharedFolderRef: string;
+  name: string;
+  mediaType: OmvDlnaMediaType;
+  status: string;
+};
+
+export type OmvDlnaStatus = {
+  schema: "echo.storage.dlna-status.v1";
+  enabled: boolean;
+  active: boolean;
+  available: boolean;
+  port: 8200;
+  shares: OmvDlnaShare[];
+  source: "native";
+  readOnly: true;
+};
+
+export type OmvWebDavShare = {
+  sharedFolderRef: string;
+  name: string;
+  status: string;
+};
+
+export type OmvWebDavStatus = {
+  schema: "echo.storage.webdav-status.v1";
+  enabled: boolean;
+  active: boolean;
+  available: boolean;
+  endpoint: "/webdav/";
+  certificateEndpoint: "/api/appliance/tls/certificate";
+  publishedShares: OmvWebDavShare[];
+  registeredShareCount: number;
+  source: "native";
+  tlsRequired: true;
+};
+
 export type OmvSharingOverview = {
   sharedFolders: OmvSharedFolder[];
   sharedFolderTargets: OmvSharedFolderTarget[];
@@ -588,6 +627,54 @@ export type OmvTimeMachinePlan = {
   applied?: boolean;
   verified?: boolean;
   dataPreserved?: boolean;
+};
+
+export type OmvDlnaDesiredState = {
+  schema: "echo.storage.dlna-desired.v1";
+  sharedFolderRef: string;
+  enabled: boolean;
+  mediaType: OmvDlnaMediaType;
+};
+
+export type OmvDlnaPlan = {
+  schema: "echo.storage.dlna-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "create" | "update" | "remove" | "none";
+  requiresApproval: boolean;
+  sharedFolder: { uuid: string; name: string; status: string };
+  desired: OmvDlnaDesiredState;
+  changes: Array<{
+    field: "enabled" | "mediaType";
+    before: boolean | OmvDlnaMediaType | null;
+    after: boolean | OmvDlnaMediaType | null;
+  }>;
+  safety: Record<string, string>;
+  applied?: boolean;
+  verified?: boolean;
+  dataPreserved?: boolean;
+};
+
+export type OmvWebDavDesiredState = {
+  schema: "echo.storage.webdav-desired.v1";
+  enabled: boolean;
+};
+
+export type OmvWebDavPlan = {
+  schema: "echo.storage.webdav-plan.v1";
+  planId: string;
+  baseRevision: string;
+  operation: "enable" | "disable" | "none";
+  requiresApproval: boolean;
+  desired: OmvWebDavDesiredState;
+  changes: Array<{
+    field: "enabled";
+    before: boolean;
+    after: boolean;
+  }>;
+  publishedShareCount: number;
+  applied?: boolean;
+  status?: OmvWebDavStatus;
 };
 
 export type OmvNfsDesiredState = {
@@ -1789,6 +1876,66 @@ export function applyOmvTimeMachine(
     "/api/appliance/omv/sharing/time-machine/apply",
     { desired, planId },
     "无法应用 Time Machine 配置",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function fetchOmvDlnaStatus(): Promise<OmvDlnaStatus> {
+  return readJson<OmvDlnaStatus>(
+    "/api/appliance/omv/sharing/dlna",
+    "无法读取 DLNA 状态",
+  );
+}
+
+export function planOmvDlna(
+  desired: OmvDlnaDesiredState,
+): Promise<OmvDlnaPlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/dlna/plan",
+    desired,
+    "无法生成 DLNA 变更预览",
+  );
+}
+
+export function applyOmvDlna(
+  desired: OmvDlnaDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvDlnaPlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/dlna/apply",
+    { desired, planId },
+    "无法应用 DLNA 配置",
+    approvalHeader(approvalToken),
+  );
+}
+
+export function fetchOmvWebDavStatus(): Promise<OmvWebDavStatus> {
+  return readJson<OmvWebDavStatus>(
+    "/api/appliance/omv/sharing/webdav",
+    "无法读取 WebDAV 状态",
+  );
+}
+
+export function planOmvWebDav(
+  desired: OmvWebDavDesiredState,
+): Promise<OmvWebDavPlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/webdav/plan",
+    desired,
+    "无法生成 WebDAV 变更预览",
+  );
+}
+
+export function applyOmvWebDav(
+  desired: OmvWebDavDesiredState,
+  planId: string,
+  approvalToken: string,
+): Promise<OmvWebDavPlan> {
+  return postJson(
+    "/api/appliance/omv/sharing/webdav/apply",
+    { desired, planId },
+    "无法应用 WebDAV 配置",
     approvalHeader(approvalToken),
   );
 }

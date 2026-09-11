@@ -5,6 +5,9 @@ import {
 import { AppOpenChoice } from "@/appliance/app-open-choice";
 import { useDesktopWorkspaces } from "@/appliance/use-desktop-workspaces";
 import { useDesktopWorkspaceRequest } from "@/appliance/use-desktop-workspace-request";
+import { useDesktopAction } from "@/appliance/use-desktop-action";
+import { revealFileRequest } from "@/appliance/desktop-actions";
+import { desktopAgentDraft } from "@/appliance/desktop-agent-context";
 import { taskWorkspaceRoute } from "@/core/router/task-workspace-route";
 import {
   findWorkbenchApp,
@@ -532,6 +535,32 @@ export default function DesktopShellPage() {
   // NAS 文件管理器(原生路线;Electron 寄生模式仍用透明桌面整理抽屉)。
   const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const [photosOpen, setPhotosOpen] = useState(false);
+  const [photoSearchRequest, setPhotoSearchRequest] = useState<{
+    query: string;
+    selectedPath?: string;
+  } | null>(null);
+  const [fileOpenRequest, setFileOpenRequest] = useState<{
+    path: string;
+    selectedPath?: string;
+  } | null>(null);
+  useDesktopAction(applianceAuthed === true, (action) => {
+    if (action.type === "photos.search" || action.type === "photos.reveal") {
+      setPhotoSearchRequest({
+        query: action.query,
+        ...(action.type === "photos.reveal"
+          ? { selectedPath: action.path }
+          : {}),
+      });
+      setPhotosOpen(true);
+    } else {
+      setFileOpenRequest(
+        action.type === "files.reveal"
+          ? revealFileRequest(action.path)
+          : { path: action.path },
+      );
+      setFileManagerOpen(true);
+    }
+  });
   const [storageCenterOpen, setStorageCenterOpen] = useState(false);
   const [deviceLinkOpen, setDeviceLinkOpen] = useState(false);
   const [hubOpen, setHubOpen] = useState(false);
@@ -2692,6 +2721,13 @@ export default function DesktopShellPage() {
 
       {fileManagerOpen && (
         <FileManager
+          onAskAgent={(context) => {
+            setFileManagerOpen(false);
+            openWorkspace(
+              taskWorkspaceRoute({ prompt: desktopAgentDraft(context) }),
+            );
+          }}
+          openRequest={fileOpenRequest}
           onClose={() => setFileManagerOpen(false)}
           onOpenSystemFiles={
             nativeFileManagerApp
@@ -2748,7 +2784,19 @@ export default function DesktopShellPage() {
         }}
       />
 
-      <PhotosPanel open={photosOpen} onClose={() => setPhotosOpen(false)} />
+      <PhotosPanel
+        open={photosOpen}
+        searchRequest={photoSearchRequest}
+        onAskAgent={(context) =>
+          openWorkspace(
+            taskWorkspaceRoute({ prompt: desktopAgentDraft(context) }),
+          )
+        }
+        onClose={() => {
+          setPhotosOpen(false);
+          setPhotoSearchRequest(null);
+        }}
+      />
 
       {isDeviceOperator && (
         <StorageCenterPanel

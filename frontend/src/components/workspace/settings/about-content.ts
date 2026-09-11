@@ -4,7 +4,7 @@
  * because the surrounding UI uses another supported locale.
  */
 const ABOUT_MARKDOWN = {
-  en: `# 🐙 [About Echo](https://github.com/dengdenghua/echo-os)
+  en: `# 🐙 [About Echo](https://github.com/dengdenghua/octopus-os)
 
 > **From Open Source, Back to Open Source**
 
@@ -24,7 +24,7 @@ Echo is an open-source **super-agent harness** that coordinates **agents**, **me
 
 ## 🌟 Project links
 
-* [GitHub repository](https://github.com/dengdenghua/echo-os)
+* [GitHub repository](https://github.com/dengdenghua/octopus-os)
 * [Official website](https://echo.dev/)
 * [Support](mailto:support@echo.dev)
 
@@ -40,7 +40,7 @@ Thank you to the open-source projects and contributors who make Echo possible, i
 
 Special thanks to [Daniel Walnut](https://github.com/hetaoBackend/) and [Henry Li](https://github.com/magiccube/) for their vision and dedication.
 `,
-  zh: `# 🐙 [关于 Echo](https://github.com/dengdenghua/echo-os)
+  zh: `# 🐙 [关于 Echo](https://github.com/dengdenghua/octopus-os)
 
 > **源于开源，回馈开源**
 
@@ -60,7 +60,7 @@ Echo 是一个开源的**超级智能体框架**，通过协同**智能体、记
 
 ## 🌟 项目链接
 
-* [GitHub 仓库](https://github.com/dengdenghua/echo-os)
+* [GitHub 仓库](https://github.com/dengdenghua/octopus-os)
 * [官方网站](https://echo.dev/)
 * [联系支持](mailto:support@echo.dev)
 
@@ -76,7 +76,7 @@ Echo 采用 **Apache License 2.0** 开源发布。
 
 特别感谢 [Daniel Walnut](https://github.com/hetaoBackend/) 与 [Henry Li](https://github.com/magiccube/) 的愿景、热情和长期投入。
 `,
-  ja: `# 🐙 [Echo について](https://github.com/dengdenghua/echo-os)
+  ja: `# 🐙 [Echo について](https://github.com/dengdenghua/octopus-os)
 
 > **オープンソースから生まれ、オープンソースへ還元する**
 
@@ -96,7 +96,7 @@ Echo は、**エージェント、メモリ、安全な実行環境**を連携�
 
 ## 🌟 プロジェクトリンク
 
-* [GitHub リポジトリ](https://github.com/dengdenghua/echo-os)
+* [GitHub リポジトリ](https://github.com/dengdenghua/octopus-os)
 * [公式サイト](https://echo.dev/)
 * [サポート](mailto:support@echo.dev)
 
@@ -112,7 +112,7 @@ Echo を支えるすべてのオープンソースプロジェクトと貢献者
 
 ビジョンと継続的な貢献を寄せてくださった [Daniel Walnut](https://github.com/hetaoBackend/) と [Henry Li](https://github.com/magiccube/) に、心より感謝します。
 `,
-  ko: `# 🐙 [Echo 소개](https://github.com/dengdenghua/echo-os)
+  ko: `# 🐙 [Echo 소개](https://github.com/dengdenghua/octopus-os)
 
 > **오픈 소스에서 시작해 오픈 소스로 돌려드립니다**
 
@@ -132,7 +132,7 @@ Echo는 **에이전트, 메모리, 안전한 실행 환경**을 조율하고 확
 
 ## 🌟 프로젝트 링크
 
-* [GitHub 저장소](https://github.com/dengdenghua/echo-os)
+* [GitHub 저장소](https://github.com/dengdenghua/octopus-os)
 * [공식 웹사이트](https://echo.dev/)
 * [지원 문의](mailto:support@echo.dev)
 

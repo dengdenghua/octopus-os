@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyOmvDlna,
   applyOmvFilesystemQuota,
   applyOmvGroup,
   applyOmvNfsShare,
@@ -14,14 +15,18 @@ import {
   applyOmvSharePrivilege,
   applyOmvSmbShare,
   applyOmvTimeMachine,
+  applyOmvWebDav,
   applyOmvUser,
   applyOmvUserPassword,
   fetchOmvFilesystems,
+  fetchOmvDlnaStatus,
   fetchOmvSharePrivileges,
   fetchOmvSharingOverview,
   fetchOmvStatus,
   fetchOmvTimeMachineStatus,
+  fetchOmvWebDavStatus,
   planOmvFilesystemQuota,
+  planOmvDlna,
   planOmvGroup,
   planOmvNfsShare,
   planOmvNfsShareRemove,
@@ -32,6 +37,7 @@ import {
   planOmvSharePrivilege,
   planOmvSmbShare,
   planOmvTimeMachine,
+  planOmvWebDav,
   planOmvUser,
   planOmvUserPassword,
 } from "./omv";
@@ -50,6 +56,7 @@ import {
 import { OmvSharingPanel } from "./omv-sharing-panel";
 
 vi.mock("./omv", () => ({
+  applyOmvDlna: vi.fn(),
   applyOmvFilesystemQuota: vi.fn(),
   applyOmvGroup: vi.fn(),
   applyOmvNfsShare: vi.fn(),
@@ -61,14 +68,18 @@ vi.mock("./omv", () => ({
   applyOmvSharePrivilege: vi.fn(),
   applyOmvSmbShare: vi.fn(),
   applyOmvTimeMachine: vi.fn(),
+  applyOmvWebDav: vi.fn(),
   applyOmvUser: vi.fn(),
   applyOmvUserPassword: vi.fn(),
   fetchOmvFilesystems: vi.fn(),
+  fetchOmvDlnaStatus: vi.fn(),
   fetchOmvSharePrivileges: vi.fn(),
   fetchOmvSharingOverview: vi.fn(),
   fetchOmvStatus: vi.fn(),
   fetchOmvTimeMachineStatus: vi.fn(),
+  fetchOmvWebDavStatus: vi.fn(),
   planOmvFilesystemQuota: vi.fn(),
+  planOmvDlna: vi.fn(),
   planOmvGroup: vi.fn(),
   planOmvNfsShare: vi.fn(),
   planOmvNfsShareRemove: vi.fn(),
@@ -79,6 +90,7 @@ vi.mock("./omv", () => ({
   planOmvSharePrivilege: vi.fn(),
   planOmvSmbShare: vi.fn(),
   planOmvTimeMachine: vi.fn(),
+  planOmvWebDav: vi.fn(),
   planOmvUser: vi.fn(),
   planOmvUserPassword: vi.fn(),
 }));
@@ -194,6 +206,28 @@ beforeEach(() => {
     shares: [],
     source: "native",
     readOnly: true,
+  });
+  vi.mocked(fetchOmvDlnaStatus).mockResolvedValue({
+    schema: "echo.storage.dlna-status.v1",
+    enabled: false,
+    active: false,
+    available: true,
+    port: 8200,
+    shares: [],
+    source: "native",
+    readOnly: true,
+  });
+  vi.mocked(fetchOmvWebDavStatus).mockResolvedValue({
+    schema: "echo.storage.webdav-status.v1",
+    enabled: false,
+    active: false,
+    available: true,
+    endpoint: "/webdav/",
+    certificateEndpoint: "/api/appliance/tls/certificate",
+    publishedShares: [],
+    registeredShareCount: 1,
+    source: "native",
+    tlsRequired: true,
   });
   vi.mocked(fetchEchoAccounts).mockResolvedValue({
     schema: "echo.account-directory.v1",
@@ -1112,6 +1146,144 @@ describe("OMV sharing and users settings", () => {
       desired,
       plan.planId,
       "time-machine-token",
+    );
+  });
+
+  it("publishes a registered folder through read-only DLNA after approval", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchOmvStatus).mockResolvedValueOnce({
+      configured: true,
+      available: true,
+      readOnly: false,
+      adminUrl: null,
+      source: "native",
+      capabilities: ["media.dlna-share.desired.v1"],
+    });
+    const desired = {
+      schema: "echo.storage.dlna-desired.v1" as const,
+      sharedFolderRef: shareUuid,
+      enabled: true,
+      mediaType: "pictures" as const,
+    };
+    const plan = {
+      schema: "echo.storage.dlna-plan.v1" as const,
+      planId: "e".repeat(64),
+      baseRevision: "f".repeat(64),
+      operation: "create" as const,
+      requiresApproval: true,
+      sharedFolder: { uuid: shareUuid, name: "Family", status: "MOUNTED" },
+      desired,
+      changes: [
+        { field: "enabled" as const, before: false, after: true },
+        {
+          field: "mediaType" as const,
+          before: null,
+          after: "pictures" as const,
+        },
+      ],
+      safety: { contentAccess: "selectedShareReadOnlyBind" },
+    };
+    vi.mocked(planOmvDlna).mockResolvedValue(plan);
+    vi.mocked(applyOmvDlna).mockResolvedValue({
+      ...plan,
+      applied: true,
+      verified: true,
+      dataPreserved: true,
+    });
+    vi.mocked(requestHighRiskApproval).mockResolvedValueOnce({
+      approvalToken: "dlna-token",
+      expiresIn: 90,
+      action: "storage.dlna.apply",
+      target: plan.planId,
+    });
+
+    render(<OmvSharingPanel />);
+    await user.click(await screen.findByRole("button", { name: "启用 DLNA" }));
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "DLNA 媒体类型" }),
+      "pictures",
+    );
+    await user.click(screen.getByRole("button", { name: "预览 DLNA 变更" }));
+    await waitFor(() => expect(planOmvDlna).toHaveBeenCalledWith(desired));
+    expect(screen.getByText("将发布 DLNA 媒体目录")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "管理员确认并应用" }));
+    await user.type(screen.getByLabelText("设备管理员密码"), "device-password");
+    await user.click(screen.getByRole("button", { name: "确认应用 DLNA" }));
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "storage.dlna.apply",
+        plan.planId,
+        "device-password",
+      ),
+    );
+    expect(applyOmvDlna).toHaveBeenCalledWith(
+      desired,
+      plan.planId,
+      "dlna-token",
+    );
+  });
+
+  it("keeps WebDAV disabled until the global publication plan is approved", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchOmvStatus).mockResolvedValueOnce({
+      configured: true,
+      available: true,
+      readOnly: false,
+      adminUrl: null,
+      source: "native",
+      capabilities: ["sharing.webdav.gateway.desired.v1"],
+    });
+    const desired = {
+      schema: "echo.storage.webdav-desired.v1" as const,
+      enabled: true,
+    };
+    const plan = {
+      schema: "echo.storage.webdav-plan.v1" as const,
+      planId: "c".repeat(64),
+      baseRevision: "d".repeat(64),
+      operation: "enable" as const,
+      requiresApproval: true,
+      desired,
+      changes: [{ field: "enabled" as const, before: false, after: true }],
+      publishedShareCount: 1,
+    };
+    vi.mocked(planOmvWebDav).mockResolvedValue(plan);
+    vi.mocked(applyOmvWebDav).mockResolvedValue({ ...plan, applied: true });
+    vi.mocked(requestHighRiskApproval).mockResolvedValueOnce({
+      approvalToken: "webdav-token",
+      expiresIn: 90,
+      action: "storage.webdav.apply",
+      target: plan.planId,
+    });
+
+    render(<OmvSharingPanel />);
+    await user.click(await screen.findByRole("button", { name: "配置" }));
+    await user.click(
+      screen.getByRole("checkbox", {
+        name: "启用经认证的 WebDAV TLS 网关",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "预览 WebDAV 变更" }));
+    await waitFor(() => expect(planOmvWebDav).toHaveBeenCalledWith(desired));
+    expect(
+      screen.getByText(/将通过 WebDAV 发布 1 个已挂载共享/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "管理员确认并应用" }));
+    await user.type(screen.getByLabelText("设备管理员密码"), "device-password");
+    await user.click(screen.getByRole("button", { name: "确认应用 WebDAV" }));
+
+    await waitFor(() =>
+      expect(requestHighRiskApproval).toHaveBeenCalledWith(
+        "storage.webdav.apply",
+        plan.planId,
+        "device-password",
+      ),
+    );
+    expect(applyOmvWebDav).toHaveBeenCalledWith(
+      desired,
+      plan.planId,
+      "webdav-token",
     );
   });
 

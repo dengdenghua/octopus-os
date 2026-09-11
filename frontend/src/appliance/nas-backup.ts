@@ -31,6 +31,79 @@ export type NasBackupScheduleStatus = {
   source: "native";
 };
 
+export type NasBackupRepositoryCandidate = {
+  mountpoint: string;
+  filesystem: string;
+  kind: "local" | "remote";
+  totalBytes: number;
+  freeBytes: number;
+  writable: true;
+};
+
+export type NasBackupRepositoryCandidates = {
+  schema: "echo.external-storage-candidates.v1";
+  candidates: NasBackupRepositoryCandidate[];
+  truncated: boolean;
+  sourcesRedacted: true;
+};
+
+export type NasBackupRemote = {
+  id: string;
+  label: string;
+  kind: "s3";
+  mounted: boolean;
+};
+
+export type NasBackupRemoteStatus = {
+  schema: "echo.nas-backup-remote-status.v1";
+  remotes: NasBackupRemote[];
+  count: number;
+  pathsRedacted: true;
+  secretsRedacted: true;
+};
+
+export type NasBackupS3RemoteCreateDesired = {
+  schema: "echo.nas-backup-remote-desired.v1";
+  operation: "create";
+  remoteId: string;
+  label: string;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  prefix: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+};
+
+export type NasBackupRemoteRemoveDesired = {
+  schema: "echo.nas-backup-remote-desired.v1";
+  operation: "remove";
+  remoteId: string;
+};
+
+export type NasBackupRemoteDesired =
+  | NasBackupS3RemoteCreateDesired
+  | NasBackupRemoteRemoveDesired;
+
+export type NasBackupRemotePlan = {
+  schema: "echo.nas-backup-remote-plan.v1";
+  planId: string;
+  operation: "create" | "remove";
+  requiresApproval: true;
+  desired: {
+    operation: "create" | "remove";
+    remoteId: string;
+    kind: "s3";
+    label?: string;
+  };
+  mountpoint: string;
+  pathsRedacted: true;
+  secretsRedacted: true;
+  applied?: boolean;
+  verified?: boolean;
+  mounted?: boolean;
+};
+
 export type NasBackupScheduleDesired = {
   schema: "echo.nas-data-backup-schedule.v1";
   enabled: boolean;
@@ -253,6 +326,27 @@ export async function fetchNasBackupSchedule() {
   return (await response.json()) as NasBackupScheduleStatus;
 }
 
+export async function fetchNasBackupRepositoryCandidates() {
+  const response = await fetch(
+    "/api/appliance/storage/backups/repository-candidates",
+    { headers: authHeader() },
+  );
+  if (!response.ok) {
+    throw await responseError(response, "无法读取外置或远端备份挂载列表");
+  }
+  return (await response.json()) as NasBackupRepositoryCandidates;
+}
+
+export async function fetchNasBackupRemotes() {
+  const response = await fetch("/api/appliance/storage/backups/remotes", {
+    headers: authHeader(),
+  });
+  if (!response.ok) {
+    throw await responseError(response, "无法读取 S3 兼容备份远端");
+  }
+  return (await response.json()) as NasBackupRemoteStatus;
+}
+
 export function fetchNasBackupRestoreSets(
   repository: NasBackupRestoreRepository,
   limit = 50,
@@ -298,6 +392,27 @@ export function planNasBackupSchedule(desired: NasBackupScheduleDesired) {
     "/api/appliance/storage/backups/schedule/plan",
     desired,
     "无法生成 NAS 备份策略预览",
+  );
+}
+
+export function planNasBackupRemote(desired: NasBackupRemoteDesired) {
+  return postJson<NasBackupRemotePlan>(
+    "/api/appliance/storage/backups/remotes/plan",
+    desired,
+    "无法生成 S3 兼容备份远端预览",
+  );
+}
+
+export function applyNasBackupRemote(
+  desired: NasBackupRemoteDesired,
+  planId: string,
+  approvalToken: string,
+) {
+  return postJson<NasBackupRemotePlan>(
+    "/api/appliance/storage/backups/remotes/apply",
+    { desired, planId },
+    "无法配置 S3 兼容备份远端",
+    approvalToken,
   );
 }
 

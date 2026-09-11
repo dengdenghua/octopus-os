@@ -248,6 +248,12 @@ describe("search within the loaded organization plan", () => {
     expect(results.getByText("金额：128.50 CNY")).toBeInTheDocument();
     expect(results.getByText(/价税合计：CNY 128.50/)).toBeInTheDocument();
     expect(results.queryByText("金额：1234.50 CNY")).not.toBeInTheDocument();
+    const reveal = results.getByRole("link", { name: "在文件夹中显示" });
+    const params = new URLSearchParams(
+      reveal.getAttribute("href")!.split("?")[1],
+    );
+    expect(params.get("desktopAction")).toBe("files.reveal");
+    expect(params.get("path")).toBe("receipts/verified/invoice.txt");
     expect(
       fetch.mock.calls.find(([url]) => url.endsWith("/apply"))?.[1]?.body,
     ).toBe("{}");

@@ -174,16 +174,20 @@ function resultTitle(result: OrganizationResult) {
     : "本次操作尚未完成";
 }
 
+import { desktopActionHref, revealFileRequest } from "./desktop-actions";
+
 export function FileOrganizationPanel({
   path,
   onClose,
   onChanged,
   onOpenTask,
+  onReveal,
 }: {
   path: string;
   onClose: () => void;
   onChanged?: () => void;
   onOpenTask?: (taskId: string) => void;
+  onReveal?: (path: string) => void;
 }) {
   const [plan, setPlan] = useState<OrganizationPlan | null>(null);
   const [result, setResult] = useState<OrganizationResult | null>(null);
@@ -1013,6 +1017,29 @@ export function FileOrganizationPanel({
                       </p>
                     )}
                     {entry && <Evidence entry={entry} />}
+                    {row.actualPath && revealFileRequest(row.actualPath) && (
+                      <a
+                        className="mr-3 inline-flex text-blue-700 underline"
+                        href={desktopActionHref({
+                          type: "files.reveal",
+                          path: row.actualPath,
+                        })}
+                        onClick={(event) => {
+                          if (
+                            !onReveal ||
+                            event.ctrlKey ||
+                            event.metaKey ||
+                            event.shiftKey ||
+                            event.altKey
+                          )
+                            return;
+                          event.preventDefault();
+                          onReveal(row.actualPath!);
+                        }}
+                      >
+                        在文件夹中显示
+                      </a>
+                    )}
                     {row.actualPath ? (
                       <button
                         type="button"

@@ -9,6 +9,25 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PhotosPanel } from "@/appliance/photos-panel";
+
+it("hands a previewed photo to the existing Agent entry", async () => {
+  vi.stubGlobal("fetch", initialFetch());
+  const onAskAgent = vi.fn();
+  const onClose = vi.fn();
+  const user = userEvent.setup();
+  render(<PhotosPanel open onClose={onClose} onAskAgent={onAskAgent} />);
+  await user.click(
+    await screen.findByRole("button", { name: "查看 海边.jpg" }),
+  );
+  await user.click(screen.getByRole("button", { name: "交给 Agent" }));
+  expect(onAskAgent).toHaveBeenCalledExactlyOnceWith({
+    app: "photos",
+    kind: "photo",
+    path: "旅行/海边.jpg",
+    query: "",
+  });
+  expect(onClose).toHaveBeenCalledOnce();
+});
 import type {
   PhotoIndexJob,
   PhotoIndexPlan,
@@ -244,6 +263,68 @@ function emptyIndexFetch(extra?: Parameters<typeof initialFetch>[0]) {
 }
 
 describe("PhotosPanel", () => {
+  it("restores the search and previews only the exact requested photo", async () => {
+    vi.stubGlobal(
+      "fetch",
+      initialFetch((url) =>
+        url.endsWith("/search") ? searchResult(library.items[0]!) : null,
+      ),
+    );
+    render(
+      <PhotosPanel
+        open
+        searchRequest={{ query: "海边", selectedPath: "旅行/海边.jpg" }}
+        onClose={vi.fn()}
+      />,
+    );
+    await screen.findByRole("button", { name: "关闭照片预览" });
+    expect(
+      screen
+        .getAllByRole("img", { name: "海边.jpg", exact: true })
+        .some(
+          (image) =>
+            image.getAttribute("src") ===
+            `/api/appliance/photos/original?path=${encodeURIComponent("旅行/海边.jpg")}`,
+        ),
+    ).toBe(true);
+  });
+  it("reports a missing requested photo instead of previewing another result", async () => {
+    vi.stubGlobal("fetch", initialFetch());
+    render(
+      <PhotosPanel
+        open
+        searchRequest={{ query: "", selectedPath: "已移动.jpg" }}
+        onClose={vi.fn()}
+      />,
+    );
+    await screen.findByText(
+      "已恢复相册视图，但当前结果中没有这张照片，可能已移动或不在当前页。",
+    );
+    expect(
+      screen.queryByRole("button", { name: "关闭照片预览" }),
+    ).not.toBeInTheDocument();
+  });
+  it("shows an Agent search in the photo window without a second submission", async () => {
+    const fetch = initialFetch((url) =>
+      url.endsWith("/search") ? searchResult(library.items[0]!) : null,
+    );
+    vi.stubGlobal("fetch", fetch);
+    const request = { query: "海边" };
+    const view = render(
+      <PhotosPanel open searchRequest={request} onClose={vi.fn()} />,
+    );
+    await screen.findByText("海边.jpg");
+    expect(screen.getByRole("textbox", { name: "搜索照片" })).toHaveValue(
+      "海边",
+    );
+    expect(screen.queryByText("晚餐.png")).not.toBeInTheDocument();
+    view.rerender(
+      <PhotosPanel open searchRequest={request} onClose={vi.fn()} />,
+    );
+    expect(
+      fetch.mock.calls.filter(([url]) => String(url).endsWith("/search")),
+    ).toHaveLength(1);
+  });
   it("previews residual annotations even when no photo or face rows remain", async () => {
     const current = emptyIndexedStatus();
     current.index.indexed = 0;

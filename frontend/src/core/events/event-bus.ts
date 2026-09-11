@@ -20,6 +20,7 @@ function activeAgentStorageKey(): string {
 
 // 事件类型定义
 export interface EventMap {
+  "desktop:photo-search": { query: string };
   // Agent 相关
   "agent:changed": { name: string; source?: "user" | "thread" | "system" };
 

@@ -1,4 +1,4 @@
-# 🐙 [About Echo](https://github.com/dengdenghua/echo-os)
+# 🐙 [About Echo](https://github.com/dengdenghua/octopus-os)
 
 > **From Open Source, Back to Open Source**
 
@@ -10,7 +10,7 @@ different levels of tasks that could take minutes to hours.
 
 ## 🌟 GitHub Repository
 
-Explore Echo on GitHub: [github.com/dengdenghua/echo-os](https://github.com/dengdenghua/echo-os)
+Explore Echo on GitHub: [github.com/dengdenghua/octopus-os](https://github.com/dengdenghua/octopus-os)
 
 ## 🌐 Official Website
 

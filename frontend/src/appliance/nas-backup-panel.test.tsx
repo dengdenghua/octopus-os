@@ -7,6 +7,7 @@ import {
   applyNasBackupCredential,
   applyNasBackupCredentialRotation,
   applyNasBackupSchedule,
+  fetchNasBackupRepositoryCandidates,
   fetchNasBackupSchedule,
   planNasBackupCredential,
   planNasBackupCredentialRotation,
@@ -19,6 +20,7 @@ vi.mock("./nas-backup", () => ({
   applyNasBackupCredential: vi.fn(),
   applyNasBackupCredentialRotation: vi.fn(),
   applyNasBackupSchedule: vi.fn(),
+  fetchNasBackupRepositoryCandidates: vi.fn(),
   fetchNasBackupSchedule: vi.fn(),
   planNasBackupCredential: vi.fn(),
   planNasBackupCredentialRotation: vi.fn(),
@@ -44,6 +46,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   vi.mocked(fetchNasBackupSchedule).mockResolvedValue(status);
+  vi.mocked(fetchNasBackupRepositoryCandidates).mockResolvedValue({
+    schema: "echo.external-storage-candidates.v1",
+    candidates: [],
+    truncated: false,
+    sourcesRedacted: true,
+  });
   vi.mocked(requestHighRiskApproval).mockResolvedValue({
     approvalToken: "backup-once",
     expiresIn: 300,
@@ -53,6 +61,37 @@ beforeEach(() => {
 });
 
 describe("NAS backup panel", () => {
+  it("fills the repository paths from a verified external mount candidate", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchNasBackupRepositoryCandidates).mockResolvedValue({
+      schema: "echo.external-storage-candidates.v1",
+      candidates: [
+        {
+          mountpoint: "/mnt/cloud",
+          filesystem: "fuse.rclone",
+          kind: "remote",
+          totalBytes: 1024 ** 4,
+          freeBytes: 512 * 1024 ** 3,
+          writable: true,
+        },
+      ],
+      truncated: false,
+      sourcesRedacted: true,
+    });
+    render(<NasBackupPanel />);
+
+    await user.selectOptions(
+      await screen.findByLabelText("已发现的安全外置挂载"),
+      "/mnt/cloud",
+    );
+
+    expect(screen.getByLabelText("外部备份盘挂载点")).toHaveValue("/mnt/cloud");
+    expect(screen.getByLabelText("Restic 仓库目录")).toHaveValue(
+      "/mnt/cloud/echo-restic",
+    );
+    expect(screen.getByText(/fuse\.rclone/)).toBeInTheDocument();
+  });
+
   it("previews and password-approves an encrypted external backup schedule", async () => {
     const user = userEvent.setup();
     const desired = {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import type { DesktopAgentContext } from "./desktop-agent-context";
 import {
   BrainCircuitIcon,
   ImageIcon,
@@ -236,9 +237,13 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 export function PhotosPanel({
   open,
+  searchRequest,
+  onAskAgent,
   onClose,
 }: {
   open: boolean;
+  searchRequest?: { query: string; selectedPath?: string } | null;
+  onAskAgent?: (context: DesktopAgentContext) => void;
   onClose: () => void;
 }) {
   const [library, setLibrary] = useState<PhotoLibrary | null>(null);
@@ -458,52 +463,90 @@ export function PhotosPanel({
     );
   }, [status]);
 
-  const submitSearch = async (event: FormEvent) => {
-    event.preventDefault();
-    const value = query.trim();
-    if (!value) {
-      await refresh();
+  const runSearch = useCallback(
+    async (value: string) => {
+      if (!value) {
+        await refresh();
+        return;
+      }
+      const currentSession = session.current;
+      const request = ++viewRequest.current;
+      const current = () =>
+        currentSession === session.current && request === viewRequest.current;
+      activeSearch.current = value;
+      pagePending.current = false;
+      setLoading(false);
+      setLoadingMore(false);
+      setSearching(true);
+      setSearchMode(displayedView.current.mode);
+      setError(null);
+      try {
+        const result = await searchPhotos(value);
+        if (!current()) return;
+        displayedView.current = { query: value, mode: result.mode };
+        setLibrary({
+          schema: "echo.photos.library.v1",
+          total: result.total,
+          offset: 0,
+          limit: 50,
+          scanTruncated: false,
+          unsafeLinksSkipped: status?.library.unsafeLinksSkipped ?? 0,
+          items: result.items,
+        });
+        setSearchMode(result.mode);
+      } catch (reason) {
+        if (current()) {
+          activeSearch.current = displayedView.current.query;
+          setSearchMode(displayedView.current.mode);
+          toast.error(
+            reason instanceof Error ? reason.message : "照片搜索失败",
+          );
+        }
+      } finally {
+        if (current()) {
+          setSearching(false);
+          // Search can be the first model load attempt. Observe its outcome without
+          // replacing results, including a valid filename fallback after load failure.
+          void readStatus().catch(() => undefined);
+        }
+      }
+    },
+    [refresh, readStatus, status?.library.unsafeLinksSkipped],
+  );
+
+  const consumedSearch = useRef<object | null>(null);
+  const pendingReveal = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) {
+      consumedSearch.current = null;
+      pendingReveal.current = null;
       return;
     }
-    const currentSession = session.current;
-    const request = ++viewRequest.current;
-    const current = () =>
-      currentSession === session.current && request === viewRequest.current;
-    activeSearch.current = value;
-    pagePending.current = false;
-    setLoading(false);
-    setLoadingMore(false);
-    setSearching(true);
-    setSearchMode(displayedView.current.mode);
-    setError(null);
-    try {
-      const result = await searchPhotos(value);
-      if (!current()) return;
-      displayedView.current = { query: value, mode: result.mode };
-      setLibrary({
-        schema: "echo.photos.library.v1",
-        total: result.total,
-        offset: 0,
-        limit: 50,
-        scanTruncated: false,
-        unsafeLinksSkipped: status?.library.unsafeLinksSkipped ?? 0,
-        items: result.items,
-      });
-      setSearchMode(result.mode);
-    } catch (reason) {
-      if (current()) {
-        activeSearch.current = displayedView.current.query;
-        setSearchMode(displayedView.current.mode);
-        toast.error(reason instanceof Error ? reason.message : "照片搜索失败");
-      }
-    } finally {
-      if (current()) {
-        setSearching(false);
-        // Search can be the first model load attempt. Observe its outcome without
-        // replacing results, including a valid filename fallback after load failure.
-        void readStatus().catch(() => undefined);
-      }
-    }
+    if (!searchRequest || consumedSearch.current === searchRequest) return;
+    consumedSearch.current = searchRequest;
+    setQuery(searchRequest.query);
+    setSelected(null);
+    setLibrary(null);
+    pendingReveal.current = searchRequest.selectedPath ?? null;
+    void runSearch(searchRequest.query);
+  }, [open, searchRequest, runSearch]);
+
+  useEffect(() => {
+    if (!open || !library || !pendingReveal.current) return;
+    const photo = library.items.find(
+      (item) => item.path === pendingReveal.current,
+    );
+    pendingReveal.current = null;
+    if (photo) setSelected(photo);
+    else
+      setError(
+        "已恢复相册视图，但当前结果中没有这张照片，可能已移动或不在当前页。",
+      );
+  }, [open, library]);
+
+  const submitSearch = async (event: FormEvent) => {
+    event.preventDefault();
+    await runSearch(query.trim());
   };
 
   const beginIndex = async () => {
@@ -1294,6 +1337,24 @@ export function PhotosPanel({
                 : ""}
               {selected.path}
             </div>
+            {onAskAgent && (
+              <button
+                type="button"
+                className="mt-3 rounded-full bg-white/15 px-4 py-2 text-sm text-white hover:bg-white/25"
+                onClick={() => {
+                  onAskAgent({
+                    app: "photos",
+                    kind: "photo",
+                    path: selected.path,
+                    query: displayedView.current.query ?? "",
+                  });
+                  setSelected(null);
+                  onClose();
+                }}
+              >
+                交给 Agent
+              </button>
+            )}
           </div>
         </div>
       )}

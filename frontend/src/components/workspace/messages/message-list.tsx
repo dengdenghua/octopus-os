@@ -1374,17 +1374,17 @@ export function MessageList({
                 ? t.streaming.eventStreamOverloaded
                 : kind === "verification"
                   ? t.streaming.verificationRequired
-                : kind === "guard"
-                  ? hasStructuredReadableDetail
-                    ? failure.detail
-                    : t.streaming.guardBlocked
-                  : kind === "lifecycle"
-                    ? t.streaming.lifecycleFailed
-                    : requiresWorkspaceWrite
-                      ? t.streaming.workspaceWriteRequired
-                      : hasStructuredReadableDetail
-                        ? failure.detail
-                        : t.streaming.turnFailed;
+                  : kind === "guard"
+                    ? hasStructuredReadableDetail
+                      ? failure.detail
+                      : t.streaming.guardBlocked
+                    : kind === "lifecycle"
+                      ? t.streaming.lifecycleFailed
+                      : requiresWorkspaceWrite
+                        ? t.streaming.workspaceWriteRequired
+                        : hasStructuredReadableDetail
+                          ? failure.detail
+                          : t.streaming.turnFailed;
       return { ...failure, kind, message };
     },
     [
