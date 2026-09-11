@@ -313,6 +313,29 @@ def test_proxy_rejects_missing_token_and_client_sends_configured_token(monkeypat
         thread.join(timeout=2)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="systemd credentials use POSIX modes")
+def test_proxy_and_client_share_the_named_systemd_credential(tmp_path, monkeypatch) -> None:
+    token = "native-device-token-which-is-long-enough-1234567890"
+    credential = tmp_path / "echo.docker-proxy-token"
+    credential.write_text(token, encoding="ascii")
+    credential.chmod(0o400)
+    monkeypatch.delenv("ECHO_DOCKER_PROXY_TOKEN", raising=False)
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+
+    docker = _FakeDocker()
+    server = create_proxy_server(docker, host="127.0.0.1", port=0)  # type: ignore[arg-type]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        assert httpx.get(f"http://{host}:{port}/health").status_code == 401
+        assert DockerClient(base_url=f"http://{host}:{port}").ping() is True
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_proxy_exposes_only_sanitized_verified_docker_capacity(tmp_path) -> None:
     docker = _FakeDocker()
     server = create_proxy_server(
@@ -477,6 +500,33 @@ def test_proxy_refuses_to_control_protected_appliance_containers(proxy) -> None:
     assert ("stop", "b" * 12) not in docker.calls
 
 
+def test_proxy_refuses_generic_control_of_hub_managed_containers() -> None:
+    docker = _FakeDocker()
+    docker.containers.append(
+        {
+            "Id": "c" * 64,
+            "Names": ["/echo-hub-jellyfin"],
+            "Labels": {
+                "sh.echo.hub.managed": "true",
+                "sh.echo.hub.app-id": "jellyfin",
+            },
+        }
+    )
+    server = create_proxy_server(docker, host="127.0.0.1", port=0)  # type: ignore[arg-type]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        response = httpx.post(f"http://{host}:{port}/containers/{'c' * 12}/stop")
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert response.status_code == 403
+    assert ("stop", "c" * 64) not in docker.calls
+
+
 def test_proxy_rejects_request_bodies_and_closes_the_connection(proxy) -> None:
     base_url, docker = proxy
     response = httpx.post(
@@ -506,11 +556,13 @@ def test_docker_client_uses_the_restricted_http_proxy(proxy, monkeypatch) -> Non
 def test_proxy_exposes_catalog_verified_hub_lifecycle_without_docker_config() -> None:
     docker = _FakeDocker()
     installer = _FakeHubInstaller()
+    firewall_syncs: list[str] = []
     server = create_proxy_server(
         docker,
         host="127.0.0.1",
         port=0,
         hub_installer=installer,  # type: ignore[arg-type]
+        hub_firewall_sync=lambda: firewall_syncs.append("sync"),
     )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -553,6 +605,36 @@ def test_proxy_exposes_catalog_verified_hub_lifecycle_without_docker_config() ->
         ("demo-app", "1" * 64, "b" * 64),
     ]
     assert injected.status_code == 400
+    assert firewall_syncs == ["sync"] * 6
+
+
+def test_proxy_fails_closed_when_hub_firewall_sync_fails() -> None:
+    def unavailable() -> None:
+        raise OSError("private firewalld detail")
+
+    server = create_proxy_server(
+        _FakeDocker(),  # type: ignore[arg-type]
+        host="127.0.0.1",
+        port=0,
+        hub_installer=_FakeHubInstaller(),  # type: ignore[arg-type]
+        hub_firewall_sync=unavailable,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        response = httpx.post(
+            f"http://{host}:{port}/hub/apps/demo-app/install",
+            json={"planId": "a" * 64, "catalogDigest": "b" * 64},
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Hub firewall synchronization is unavailable"}
+    assert "private" not in response.text
 
 
 def test_proxy_streams_only_bounded_hub_progress_and_final_result() -> None:

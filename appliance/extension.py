@@ -429,6 +429,24 @@ def register_app(app: Any, context: Any) -> None:
                 data_access=family_data_access,
             )
         )
+        from appliance.file_share_routes import create_file_share_router
+        from appliance.file_shares import FileShareService
+
+        file_share_service = FileShareService(
+            file_manager,
+            data_dir,
+            token_pepper=auth_cfg.jwt_secret,
+            data_access=family_data_access,
+        )
+        app.state.echo_file_share_service = file_share_service
+        app.include_router(
+            create_file_share_router(
+                file_share_service,
+                authenticator=authenticator,
+                approval=approval,
+                audit=audit,
+            )
+        )
         files_mounted = True
     except OSError as fs_exc:
         _alog.warning("NAS file manager not mounted (%s): %s", nas_root, fs_exc)

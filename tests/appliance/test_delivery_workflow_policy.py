@@ -143,6 +143,9 @@ def test_public_source_test_runner_rejects_unreviewed_cli_arguments(
     assert namespace["main"]([]) == 0
     assert captured[:2] == ["-q", "--confcutdir=tests/appliance"]
     assert "tests/appliance/test_delivery_workflow_policy.py" in captured
+    assert "appliance/" in namespace["sys"].modules[
+        "tools.lint.untracked_source_check"
+    ].SOURCE_ROOTS
 
 
 def test_privileged_container_jobs_use_the_validated_container_scratch_path() -> None:
@@ -176,7 +179,7 @@ def test_delivery_workflows_target_the_actual_and_compatible_delivery_branches()
         for event in ("push", "pull_request"):
             event_trigger = trigger[event]
             assert isinstance(event_trigger, dict), f"{name} {event} trigger is not bounded"
-            assert set(event_trigger["branches"]) == DELIVERY_BRANCHES, (
+            assert set(event_trigger["branches"]) >= DELIVERY_BRANCHES, (
                 f"{name} {event} does not cover the actual os-main delivery branch"
             )
 

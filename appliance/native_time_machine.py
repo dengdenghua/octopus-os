@@ -214,7 +214,10 @@ def _samba_modules_available() -> bool:
 
 def capability_available() -> bool:
     try:
-        if any(shutil.which(binary) is None for binary in ("smbd", "testparm", "systemctl")):
+        if any(
+            shutil.which(binary) is None
+            for binary in ("firewall-cmd", "smbd", "testparm", "systemctl")
+        ):
             return False
         if (
             not _config_has_managed_include()
@@ -236,6 +239,11 @@ def _require_ready() -> None:
         raise OSError(
             "native Time Machine requires the managed Samba include and fruit VFS modules"
         )
+
+
+def firewall_required() -> bool:
+    """Return whether at least one managed Time Machine share needs Samba ingress."""
+    return bool(_load_entries(strict=True))
 
 
 def _testparm_value(section: str, parameter: str) -> str:
@@ -440,6 +448,7 @@ def apply_time_machine(desired_state: dict[str, Any], plan_id: str) -> dict[str,
                 _verify_live_entry(existing)
             else:
                 _verify_live_absent(plan["sharedFolder"]["name"])
+            storage._verify_native_protocol_firewall()
             return {**plan, "applied": False, "verified": True, "dataPreserved": True}
 
         wanted = [
@@ -459,6 +468,7 @@ def apply_time_machine(desired_state: dict[str, Any], plan_id: str) -> dict[str,
                 _verify_live_entry(replacement)
             else:
                 _verify_live_absent(plan["sharedFolder"]["name"])
+            storage._sync_native_protocol_firewall()
         except Exception as exc:
             try:
                 assert old_config is not None
@@ -516,6 +526,7 @@ __all__ = [
     "capability_available",
     "dependency_for",
     "dependency_for_name",
+    "firewall_required",
     "plan_time_machine",
     "render_config",
     "status",

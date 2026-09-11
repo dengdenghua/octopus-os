@@ -235,11 +235,35 @@ class TestBootstrap:
         monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path))
         monkeypatch.delenv("ECHO_ADMIN_PASSWORD", raising=False)
         monkeypatch.delenv("ECHO_LOCAL_JWT_SECRET", raising=False)
+        monkeypatch.delenv("ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH", raising=False)
         from appliance.auth import load_or_bootstrap_auth
 
         config, generated = load_or_bootstrap_auth()
         assert generated and len(generated) >= 12
         assert verify_password(generated, config.users["admin"])
+
+    def test_production_requires_oem_provisioned_auth(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH", "1")
+        monkeypatch.delenv("ECHO_ADMIN_PASSWORD", raising=False)
+        from appliance.auth import load_or_bootstrap_auth
+
+        with pytest.raises(RuntimeError, match="must be provisioned"):
+            load_or_bootstrap_auth()
+        assert not (tmp_path / "appliance-auth.json").exists()
+
+    def test_production_accepts_existing_provisioned_auth(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("ECHO_ADMIN_PASSWORD", "provision-before-native-start")
+        from appliance.auth import load_or_bootstrap_auth
+
+        first, _generated = load_or_bootstrap_auth()
+        monkeypatch.setenv("ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH", "1")
+        second, generated = load_or_bootstrap_auth()
+
+        assert generated is None
+        assert second.users == first.users
+        assert second.jwt_secret == first.jwt_secret
 
     def test_bootstrap_reuses_runtime_jwt_secret(self, tmp_path, monkeypatch):
         shared_secret = "Echo-Dev-Shared-Secret-1234567890!"

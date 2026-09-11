@@ -2341,6 +2341,59 @@ def test_smb_share_enable(
     assert calls[0][-2:] == (f"S-1-22-2-100:{'r' if read_only else 'f'}", "guest_ok=n")
 
 
+def test_smb_firewall_failure_restores_absent_usershare(
+    native_volume: tuple[Path, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    folder = _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    present = {"value": False}
+    calls: list[tuple[str, ...]] = []
+
+    def info(_name: str) -> dict[str, Any] | None:
+        if not present["value"]:
+            return None
+        return {
+            "path": str(folder),
+            "comment": "Media",
+            "usershare_acl": "S-1-22-2-100:F,",
+            "guest_ok": "n",
+        }
+
+    def write(*args: str, **_kwargs: Any) -> None:
+        calls.append(args)
+        if args[:3] == ("net", "usershare", "add"):
+            present["value"] = True
+        elif args == ("net", "usershare", "delete", "Photos"):
+            present["value"] = False
+
+    monkeypatch.setattr(native_storage, "_smb_usershare_info", info)
+    monkeypatch.setattr(native_storage, "_run_write", write)
+    monkeypatch.setattr(native_storage, "_native_protocol_firewall_enabled", lambda: True)
+    monkeypatch.setattr(
+        native_storage,
+        "_sync_native_protocol_firewall",
+        lambda: (_ for _ in ()).throw(OSError("firewall unavailable")),
+    )
+    desired = {
+        "schema": "echo.omv.smb-share-desired.v1",
+        "sharedFolderRef": folder_uuid,
+        "enabled": True,
+        "readOnly": False,
+        "browseable": True,
+        "recycleBin": False,
+        "comment": "Media",
+    }
+    plan = native_storage.plan_smb(desired)
+
+    with pytest.raises(OSError, match="firewall unavailable"):
+        native_storage.apply_smb(desired, plan["planId"])
+
+    assert present["value"] is False
+    assert calls[0][:3] == ("net", "usershare", "add")
+    assert calls[-1] == ("net", "usershare", "delete", "Photos")
+
+
 @pytest.mark.parametrize("gid", [100, 1500])
 def test_smb_grantee_uses_actual_unix_gid(monkeypatch: pytest.MonkeyPatch, gid: int) -> None:
     grp = SimpleNamespace(getgrnam=lambda name: SimpleNamespace(gr_gid=gid))
@@ -2940,6 +2993,42 @@ def test_nfs_live_verify_failure_rolls_back_managed_exports(
         native_storage.apply_nfs(desired, plan["planId"])
 
     assert not exports.exists()
+
+
+def test_nfs_firewall_failure_rolls_back_managed_exports(
+    native_volume: tuple[Path, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    volume, registry, mount_point_ref = native_volume
+    folder_uuid = "11111111-2222-4333-8444-555555555555"
+    folder = _register_folder(volume, registry, mount_point_ref, folder_uuid)
+    exports = tmp_path / "exports.d" / "echo-os.exports"
+    calls: list[tuple[str, ...]] = []
+    monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", exports)
+    monkeypatch.setattr(
+        native_storage, "_run_write", lambda *args, **_kwargs: calls.append(args)
+    )
+    monkeypatch.setattr(
+        native_storage,
+        "_run_read_checked",
+        lambda *_args, **_kwargs: (
+            f"{folder} 192.168.50.0/24(rw,sync,no_subtree_check,root_squash,secure)\n"
+        ),
+    )
+    monkeypatch.setattr(
+        native_storage,
+        "_sync_native_protocol_firewall",
+        lambda: (_ for _ in ()).throw(OSError("firewall unavailable")),
+    )
+    desired = _nfs_desired(folder_uuid)
+    plan = native_storage.plan_nfs(desired)
+
+    with pytest.raises(OSError, match="firewall unavailable"):
+        native_storage.apply_nfs(desired, plan["planId"])
+
+    assert not exports.exists()
+    assert calls == [("exportfs", "-ra"), ("exportfs", "-ra")]
 
 
 def test_nfs_remove_deletes_only_managed_rule_and_preserves_folder_data(

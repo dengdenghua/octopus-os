@@ -39,6 +39,8 @@ FIRSTBOOT_SYSTEM_PACKAGES = {
     "avahi-daemon",
     "libnss-mdns",
     "openssh-server",
+    "rclone",
+    "fuse3",
     "sudo",
     "python3",
     "python3-venv",
@@ -104,6 +106,13 @@ def test_low_memory_swap_is_ready_before_the_storage_package_transaction() -> No
     assert 'of="$sf.partial"' in helper
     assert helper.index('mkswap -q "$sf.partial"') < helper.index('mv "$sf.partial" "$sf"')
     assert storage.index("ensure_swap") < storage.index("apt-get install")
+
+
+def test_native_data_roots_are_traversable_by_nas_identities() -> None:
+    provision = (REPOSITORY / "deploy/provision/base/provision-lib.sh").read_text(encoding="utf-8")
+
+    assert "install -d -o root -g root -m0755 /data /data/nas /data/apps" in provision
+    assert "mkdir -p /data/nas /data/apps" not in provision
 
 
 def test_samba_registry_grants_read_only_metadata_access_before_storage_is_done() -> None:
@@ -204,6 +213,8 @@ def test_apt_step_bootstraps_tools_removed_from_strict_release_pkgsel() -> None:
     bootstrap = apt_step[install_at:done_at]
     for package in (
         "openssh-server",
+        "rclone",
+        "fuse3",
         "sudo",
         "git",
         "zstd",
@@ -477,6 +488,41 @@ def test_system_deb_manifest_exactly_covers_headless_firstboot_transactions() ->
     assert manifest == FIRSTBOOT_SYSTEM_PACKAGES
 
 
+def test_rclone_mount_runtime_includes_a_privilege_safe_fuse_helper() -> None:
+    mkosi = (REPOSITORY / "packaging/image/mkosi.conf").read_text(encoding="utf-8")
+    postinst = (REPOSITORY / "packaging/image/mkosi.postinst.chroot").read_text(
+        encoding="utf-8"
+    )
+    verifier = (REPOSITORY / "packaging/image/verify-image.sh").read_text(encoding="utf-8")
+
+    assert "        rclone\n        fuse3\n" in mkosi
+    assert "/usr/bin/rclone /usr/bin/fusermount3" in postinst
+    assert "usr/bin/fusermount3 \\" in verifier
+    assert '"$IMAGE_MOUNT/usr/bin/fusermount3")" == "0:0:4755"' in verifier
+
+
+def test_encrypted_backup_remote_mount_is_installed_without_a_private_namespace() -> None:
+    provision = (REPOSITORY / "deploy/provision/base/provision-lib.sh").read_text(
+        encoding="utf-8"
+    )
+    unit = (
+        REPOSITORY / "deploy/appliance/systemd/echo-rclone-backup@.service"
+    ).read_text(encoding="utf-8")
+    mkosi = (REPOSITORY / "packaging/image/mkosi.conf").read_text(encoding="utf-8")
+
+    assert "echo-rclone-backup@.service" in provision
+    assert "/usr/lib/echo-os/rclone-backup-mount" in provision
+    assert "/mnt/echo-backup-remotes" in provision
+    assert "LoadCredentialEncrypted=rclone.conf:" in unit
+    assert "CapabilityBoundingSet=CAP_SYS_ADMIN" in unit
+    assert "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" in unit
+    assert "ProtectSystem=" not in unit
+    assert "ProtectHome=" not in unit
+    assert "PrivateTmp=" not in unit
+    assert "rclone-backup-mount" in mkosi
+    assert "echo-rclone-backup@.service" in mkosi
+
+
 def test_iso_can_embed_a_verified_firstboot_system_deb_repository() -> None:
     builder = (REPOSITORY / "deploy/provision/build-iso.sh").read_text(encoding="utf-8")
     preseed = (REPOSITORY / "deploy/provision/installer/preseed.cfg").read_text(encoding="utf-8")
@@ -531,6 +577,8 @@ def test_strict_nas_release_requires_every_offline_payload_and_a_pinned_base_iso
     assert '"$OUT_ISO.sha256"' in builder
     for package in (
         "openssh-server",
+        "rclone",
+        "fuse3",
         "sudo",
         "python3",
         "python3-venv",
@@ -724,6 +772,7 @@ def test_native_appliance_service_inherits_the_image_codex_version() -> None:
 
     assert "EnvironmentFile=-/etc/echo-os/firstboot.env" in service
     assert "ExecStart=/opt/echo-os/.venv/bin/echo-agent serve" in service
+    assert "Environment=ECHO_REQUIRED_APP_EXTENSIONS=1" in service
     unit_section = service.split("[Service]", 1)[0]
     assert "StartLimitIntervalSec=300s" in unit_section
     assert "StartLimitBurst=5" in unit_section

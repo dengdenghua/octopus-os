@@ -28,6 +28,7 @@ def canonical(value: dict[str, object]) -> bytes:
 def appliance() -> dict[str, object]:
     return {
         "bundleVerified": True,
+        "applianceCapabilitiesVerified": True,
         "immutableImageVerified": True,
         "administratorLoginReady": True,
         "agentWorkbenchReady": True,

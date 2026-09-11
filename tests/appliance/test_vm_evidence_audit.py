@@ -18,7 +18,7 @@ def _write(path: Path, payload: dict[str, object]) -> str:
 def _index(path: Path, entries: list[dict[str, object]]) -> Path:
     path.write_text(
         json.dumps(
-            {"schemaVersion": 1, "kind": "echo.local-vm-evidence-index", "entries": entries}
+            {"schemaVersion": 2, "kind": "echo.local-vm-evidence-index", "entries": entries}
         ),
         encoding="utf-8",
     )
@@ -35,6 +35,7 @@ def _entry(
         "name": name,
         "sha256": digest,
         "discriminator": {"field": "kind", "value": f"echo-{name}"},
+        "assertions": [{"field": "outcome", "value": "verified"}],
         "bindings": bindings or [],
     }
 
@@ -44,12 +45,14 @@ def test_audit_accepts_bound_private_vm_evidence(tmp_path: Path) -> None:
     root.mkdir()
     provision = {
         "kind": "echo-provision.json",
+        "outcome": "verified",
         "pool": {"poolGuid": "123"},
         "payload": {"sha256": "a" * 64},
     }
     provision_hash = _write(root / "provision.json", provision)
     reboot = {
         "kind": "echo-reboot.json",
+        "outcome": "verified",
         "provisionEvidenceSha256": provision_hash,
         "pool": {"poolGuid": "123"},
         "payload": {"sha256": "a" * 64},
@@ -85,6 +88,7 @@ def test_audit_rejects_tampering_host_paths_and_cross_run_bindings(tmp_path: Pat
         root / "reboot.json",
         {
             "kind": "echo-reboot.json",
+            "outcome": "failed",
             "pool": {"poolGuid": "two"},
             "localState": r"C:\private\state.json",
         },
@@ -121,9 +125,35 @@ def test_audit_rejects_duplicate_manifest_keys(tmp_path: Path) -> None:
     root.mkdir()
     index = tmp_path / "index.json"
     index.write_text(
-        '{"schemaVersion":1,"schemaVersion":1,"kind":"echo.local-vm-evidence-index","entries":[]}',
+        '{"schemaVersion":2,"schemaVersion":2,"kind":"echo.local-vm-evidence-index","entries":[]}',
         encoding="utf-8",
     )
 
     with pytest.raises(VmEvidenceAuditError, match="duplicate JSON key"):
         audit_vm_evidence(index, root)
+
+
+def test_audit_rejects_hash_valid_evidence_that_did_not_complete(tmp_path: Path) -> None:
+    root = tmp_path / "evidence"
+    root.mkdir()
+    digest = _write(root / "run.json", {"kind": "echo-run.json", "outcome": "failed"})
+    index = _index(tmp_path / "index.json", [_entry("run.json", digest)])
+
+    report = audit_vm_evidence(index, root)
+
+    assert report["ready"] is False
+    assert "run.json:assertion:outcome" in report["blockers"]
+
+
+def test_boolean_completion_assertion_does_not_accept_integer_one(tmp_path: Path) -> None:
+    root = tmp_path / "evidence"
+    root.mkdir()
+    digest = _write(root / "run.json", {"kind": "echo-run.json", "passed": 1})
+    entry = _entry("run.json", digest)
+    entry["assertions"] = [{"field": "passed", "value": True}]
+    index = _index(tmp_path / "index.json", [entry])
+
+    report = audit_vm_evidence(index, root)
+
+    assert report["ready"] is False
+    assert "run.json:assertion:passed" in report["blockers"]

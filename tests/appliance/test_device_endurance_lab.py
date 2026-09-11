@@ -27,10 +27,10 @@ BOOT_B = "22222222-2222-4222-8222-222222222222"
 
 def _candidate_index(tmp_path: Path) -> Path:
     value: dict[str, Any] = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "kind": "echo.delivery-release-evidence-index",
         "source": {
-            "repository": "dengdenghua/echo-os",
+            "repository": "dengdenghua/octopus-os",
             "commit": "1" * 40,
             "agentRepository": "dengdenghua/echo-agent",
             "agentCommit": "2" * 40,
@@ -38,6 +38,12 @@ def _candidate_index(tmp_path: Path) -> Path:
         },
         "evidence": {
             "candidatePreflight": {"reportId": "4" * 64},
+            "nasRuntimeProfile": {
+                "product": "echo-nas-appliance",
+                "host": "debian-13-openmediavault-8",
+                "deployment": "oci-compose",
+                "echoOsImageRole": "separate-native-desktop-artifact",
+            },
             "appliance": {
                 "manifestSha256": "5" * 64,
                 "immutableReference": IMAGE_REFERENCE,
@@ -163,6 +169,16 @@ def _running_result() -> dict[str, Any]:
         "approval_replay": 403,
         "protected_stop": 403,
         "audit_verify": 200,
+        "system_capabilities": {
+            "apiVersion": "echo.ai/v1alpha1",
+            "count": 27,
+            "requiredCapabilities": [
+                "apps.list",
+                "hub.catalog.list",
+                "storage.health.read",
+            ],
+            "unique": True,
+        },
         "zfs_runtime": {
             "kernelRelease": "6.12.94+deb13-amd64",
             "moduleInstalled": True,

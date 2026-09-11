@@ -36,6 +36,7 @@ def test_extension_passes_one_authenticator_to_routes_instead_of_raw_jwt() -> No
         "create_device_sync_router",
         "create_diagnostics_router",
         "create_files_router",
+        "create_file_share_router",
         "create_file_organization_router",
         "create_hub_router",
         "create_native_storage_router",
@@ -86,6 +87,8 @@ def test_register_app_mounts_appliance_when_enabled(tmp_path, monkeypatch):
     assert any(p.startswith("/api/appliance/apps") for p in paths), "启动器路由应挂载"
     assert any("/api/auth/local" in p for p in paths), "本地认证路由应挂载"
     assert any("/api/appliance/files" in p for p in paths), "文件管理器路由应挂载"
+    assert any("/api/appliance/file-shares" in p for p in paths), "文件分享管理路由应挂载"
+    assert any("/api/public/file-shares" in p for p in paths), "文件分享匿名下载路由应挂载"
     assert any("/api/appliance/photos" in p for p in paths), "照片路由应挂载"
     assert any("/api/appliance/approvals" in p for p in paths), "高风险审批路由应挂载"
     assert any("/api/appliance/audit" in p for p in paths), "防篡改审计路由应挂载"
@@ -112,6 +115,7 @@ def test_register_app_mounts_appliance_when_enabled(tmp_path, monkeypatch):
     assert app.state.echo_family_data_access._root == nas_root.resolve()
     assert app.state.echo_family_data_access._cache_seconds == 0
     assert app.state.echo_file_organization is not None
+    assert app.state.echo_file_share_service is not None
     assert any(p == "/api/appliance/files/organize/plans" for p in paths)
     assert len(app.state.echo_appliance_capabilities) == 27
     assert app.state.echo_appliance_state_lock is not None

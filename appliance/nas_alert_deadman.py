@@ -130,6 +130,13 @@ def run_deadman(
     email_factory: Callable[..., _DeliveryService] = NasEmailAlertDeliveryService,
 ) -> dict[str, Any]:
     root = Path(state_dir)
+    if root.is_symlink() or not root.is_dir():
+        return {
+            "schema": DEADMAN_SCHEMA,
+            "state": "unavailable",
+            "channels": {},
+            "retryRequired": True,
+        }
     try:
         lock = lock_factory(root)
     except (OSError, StateLockError):

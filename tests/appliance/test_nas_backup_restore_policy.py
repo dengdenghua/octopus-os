@@ -9,6 +9,7 @@ import pytest
 from appliance import (
     btrfs_snapshot_schedule_policy,
     native_btrfs_snapshot,
+    native_dlna,
     native_storage,
     native_time_machine,
 )
@@ -594,6 +595,7 @@ def test_target_quiescence_fails_closed_when_smb_inventory_is_untrusted_or_activ
         lambda _ref: ({"name": "photos"}, TARGET, {"readOnly": False}),
     )
     monkeypatch.setattr(native_time_machine, "dependency_for", lambda _ref: None)
+    monkeypatch.setattr(native_dlna, "dependency_for", lambda _ref: None)
     monkeypatch.setattr(native_storage, "_run", lambda *_args, **_kwargs: smb_inventory)
     monkeypatch.setattr(native_storage, "_nfs_exports_load", lambda **_kwargs: [])
     monkeypatch.setattr(
@@ -611,3 +613,23 @@ def test_target_quiescence_fails_closed_when_smb_inventory_is_untrusted_or_activ
         restore_policy._ensure_target_quiesced(SHARE_REF)
 
     assert caught.value.code == expected_code
+
+
+def test_target_quiescence_rejects_active_dlna_publication(monkeypatch) -> None:
+    monkeypatch.setattr(
+        native_btrfs_snapshot,
+        "_resolve_share",
+        lambda _ref: ({"name": "photos"}, TARGET, {"readOnly": False}),
+    )
+    monkeypatch.setattr(native_time_machine, "dependency_for", lambda _ref: None)
+    monkeypatch.setattr(
+        native_dlna,
+        "dependency_for",
+        lambda _ref: {"sharedFolderRef": SHARE_REF, "mediaType": "pictures"},
+    )
+
+    with pytest.raises(restore_policy.NasBackupRestorePolicyError) as caught:
+        restore_policy._ensure_target_quiesced(SHARE_REF)
+
+    assert caught.value.code == "share_published"
+    assert "DLNA" in str(caught.value)

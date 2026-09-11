@@ -16,7 +16,7 @@ assert SPEC is not None and SPEC.loader is not None
 preflight = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(preflight)
 
-REPOSITORY = "dengdenghua/echo-os"
+REPOSITORY = "dengdenghua/octopus-os"
 SOURCE_REVISION = "1" * 40
 RELEASE_TAG = "echo-appliance-v1.2.3"
 RUN_IDS = {"osImage": 101, "abUpdate": 102, "realOmvX86": 103, "appliance": 104}

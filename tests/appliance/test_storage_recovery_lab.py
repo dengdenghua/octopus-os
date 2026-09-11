@@ -24,10 +24,10 @@ pytestmark = pytest.mark.skipif(
 
 def _candidate_index(tmp_path: Path) -> Path:
     value: dict[str, Any] = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "kind": "echo.delivery-release-evidence-index",
         "source": {
-            "repository": "dengdenghua/echo-os",
+            "repository": "dengdenghua/octopus-os",
             "commit": "1" * 40,
             "agentRepository": "dengdenghua/echo-agent",
             "agentCommit": "2" * 40,
@@ -35,6 +35,12 @@ def _candidate_index(tmp_path: Path) -> Path:
         },
         "evidence": {
             "candidatePreflight": {"reportId": "4" * 64},
+            "nasRuntimeProfile": {
+                "product": "echo-nas-appliance",
+                "host": "debian-13-openmediavault-8",
+                "deployment": "oci-compose",
+                "echoOsImageRole": "separate-native-desktop-artifact",
+            },
             "appliance": {
                 "manifestSha256": "5" * 64,
                 "immutableReference": IMAGE_REFERENCE,

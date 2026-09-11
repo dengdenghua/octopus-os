@@ -312,6 +312,7 @@ def _ensure_target_quiesced(shared_folder_ref: str) -> tuple[Path, str]:
     from appliance import (
         btrfs_snapshot_schedule_policy,
         native_btrfs_snapshot,
+        native_dlna,
         native_storage,
         native_time_machine,
     )
@@ -321,6 +322,10 @@ def _ensure_target_quiesced(shared_folder_ref: str) -> tuple[Path, str]:
         if native_time_machine.dependency_for(shared_folder_ref) is not None:
             raise NasBackupRestorePolicyError(
                 "Remove Time Machine publication before restoring", code="share_published"
+            )
+        if native_dlna.dependency_for(shared_folder_ref) is not None:
+            raise NasBackupRestorePolicyError(
+                "Remove DLNA publication before restoring", code="share_published"
             )
         share_name = entry.get("name")
         if not isinstance(share_name, str) or not share_name:

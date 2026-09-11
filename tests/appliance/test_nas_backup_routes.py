@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import FastAPI
@@ -87,6 +88,39 @@ def _rotation_plan() -> dict[str, Any]:
             "newPasswordBound": True,
         },
         "pathsRedacted": True,
+    }
+
+
+def _remote_desired() -> dict[str, Any]:
+    return {
+        "schema": "echo.nas-backup-remote-desired.v1",
+        "operation": "create",
+        "remoteId": "offsite",
+        "label": "异地对象存储",
+        "endpoint": "https://s3.example.test",
+        "region": "us-east-1",
+        "bucket": "echo-backups",
+        "prefix": "family/nas",
+        "accessKeyId": "ACCESS-KEY-123",
+        "secretAccessKey": "private-secret-value",
+    }
+
+
+def _remote_plan() -> dict[str, Any]:
+    return {
+        "schema": "echo.nas-backup-remote-plan.v1",
+        "planId": PLAN_ID,
+        "operation": "create",
+        "requiresApproval": True,
+        "desired": {
+            "operation": "create",
+            "remoteId": "offsite",
+            "kind": "s3",
+            "label": "异地对象存储",
+        },
+        "mountpoint": "/mnt/echo-backup-remotes/offsite",
+        "pathsRedacted": True,
+        "secretsRedacted": True,
     }
 
 
@@ -180,6 +214,145 @@ def test_status_returns_only_redacted_management_state(monkeypatch) -> None:
     assert response.json()["pathsRedacted"] is True
     assert response.json()["credentialRotationRecoveryPending"] is False
     assert "/mnt/" not in response.text
+
+
+def test_repository_candidates_are_operator_only_and_source_redacted(monkeypatch) -> None:
+    monkeypatch.setattr(
+        nas_backup_routes.external_storage,
+        "list_external_storage_mounts",
+        lambda **_kwargs: {
+            "schema": "echo.external-storage-candidates.v1",
+            "candidates": [
+                {
+                    "mountpoint": "/mnt/off-device",
+                    "filesystem": "fuse.rclone",
+                    "kind": "remote",
+                    "totalBytes": 1_000,
+                    "freeBytes": 750,
+                    "writable": True,
+                }
+            ],
+            "truncated": False,
+            "sourcesRedacted": True,
+        },
+    )
+
+    response = _client().get("/api/appliance/storage/backups/repository-candidates")
+
+    assert response.status_code == 200
+    assert response.json()["candidates"][0]["kind"] == "remote"
+    assert response.json()["sourcesRedacted"] is True
+    assert "secret-remote" not in response.text
+
+
+def test_repository_candidate_discovery_fails_closed(monkeypatch) -> None:
+    monkeypatch.setattr(
+        nas_backup_routes.external_storage,
+        "list_external_storage_mounts",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            nas_backup_routes.external_storage.ExternalStorageError("/mnt/secret-remote")
+        ),
+    )
+
+    response = _client().get("/api/appliance/storage/backups/repository-candidates")
+
+    assert response.status_code == 503
+    assert "/mnt/secret-remote" not in response.text
+
+
+def test_remote_list_returns_only_redacted_status(monkeypatch) -> None:
+    monkeypatch.setattr(
+        nas_backup_routes.remote_policy,
+        "list_remotes",
+        lambda: {
+            "schema": "echo.nas-backup-remote-status.v1",
+            "remotes": [
+                {"id": "offsite", "label": "异地对象存储", "kind": "s3", "mounted": True}
+            ],
+            "count": 1,
+            "pathsRedacted": True,
+            "secretsRedacted": True,
+        },
+    )
+
+    response = _client().get("/api/appliance/storage/backups/remotes")
+
+    assert response.status_code == 200
+    assert response.json()["remotes"][0]["mounted"] is True
+    assert "s3.example.test" not in response.text
+    assert "ACCESS-KEY" not in response.text
+
+
+def test_remote_plan_passes_secrets_to_policy_but_never_returns_them(monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def plan(desired: dict[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        captured.update(desired)
+        return _remote_plan()
+
+    monkeypatch.setattr(nas_backup_routes.remote_policy, "plan_remote", plan)
+
+    response = _client().post(
+        "/api/appliance/storage/backups/remotes/plan",
+        json=_remote_desired(),
+    )
+
+    assert response.status_code == 200
+    assert captured["secretAccessKey"] == "private-secret-value"
+    assert "private-secret-value" not in response.text
+    assert "s3.example.test" not in response.text
+
+
+def test_remote_apply_consumes_approval_and_audits_only_redacted_metadata(
+    monkeypatch,
+) -> None:
+    approval = Approval()
+    audit = Audit()
+    applied: dict[str, Any] = {}
+    monkeypatch.setattr(
+        nas_backup_routes.remote_policy,
+        "plan_remote",
+        lambda *_args, **_kwargs: _remote_plan(),
+    )
+
+    def apply(desired: dict[str, Any], plan_id: str, **_kwargs: Any) -> dict[str, Any]:
+        applied.update(desired)
+        assert plan_id == PLAN_ID
+        return {**_remote_plan(), "applied": True, "verified": True, "mounted": True}
+
+    monkeypatch.setattr(nas_backup_routes.remote_policy, "apply_remote", apply)
+
+    response = _client(approval=approval, audit=audit).post(
+        "/api/appliance/storage/backups/remotes/apply",
+        json={"desired": _remote_desired(), "planId": PLAN_ID},
+        headers={"X-Echo-Approval": "approval-token"},
+    )
+
+    assert response.status_code == 200
+    assert applied["secretAccessKey"] == "private-secret-value"
+    assert approval.calls[0]["action"] == nas_backup_routes.REMOTE_ACTION
+    assert [call["outcome"] for call in audit.calls] == ["attempted", "succeeded"]
+    assert all(call["metadata"]["secretRedacted"] is True for call in audit.calls)
+    audit_text = json.dumps(audit.calls, ensure_ascii=False)
+    assert "private-secret-value" not in audit_text
+    assert "s3.example.test" not in audit_text
+
+
+def test_remote_apply_rejects_stale_plan_before_approval(monkeypatch) -> None:
+    approval = Approval()
+    monkeypatch.setattr(
+        nas_backup_routes.remote_policy,
+        "plan_remote",
+        lambda *_args, **_kwargs: _remote_plan(),
+    )
+
+    response = _client(approval=approval).post(
+        "/api/appliance/storage/backups/remotes/apply",
+        json={"desired": _remote_desired(), "planId": "b" * 64},
+    )
+
+    assert response.status_code == 409
+    assert approval.calls == []
 
 
 def test_status_reports_pending_rotation_recovery_without_exposing_paths(

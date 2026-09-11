@@ -1181,6 +1181,112 @@ def test_web_surface_probe_requires_one_echo_frontend(monkeypatch) -> None:
     ]
 
 
+def _system_capability(capability_id: str) -> dict:
+    return {
+        "apiVersion": "echo.ai/v1alpha1",
+        "kind": "Capability",
+        "metadata": {
+            "id": capability_id,
+            "version": 1,
+            "title": capability_id,
+            "description": "release verification fixture",
+        },
+        "provider": {
+            "id": "echo-os.verifier",
+            "transport": "http",
+            "operation": {"method": "GET", "path": "/api/appliance/status"},
+        },
+        "requestSchema": {"type": "object"},
+        "effect": {"type": "read", "risk": "low", "reversible": True},
+        "scope": {"resourceKind": "system", "validation": "fixed"},
+        "authorization": {"approval": "none", "actorKinds": ["human", "agent"]},
+        "audit": {"action": capability_id, "required": False},
+    }
+
+
+def test_system_capability_probe_proves_the_appliance_extension_is_mounted(monkeypatch) -> None:
+    capabilities = [
+        _system_capability(capability_id)
+        for capability_id in ("apps.list", "hub.catalog.list", "storage.health.read")
+    ]
+    responses = iter(
+        [
+            (401, b'{"detail":"authentication required"}', {}),
+            (
+                200,
+                json.dumps(
+                    {
+                        "apiVersion": "echo.ai/v1alpha1",
+                        "kind": "CapabilityList",
+                        "count": len(capabilities),
+                        "capabilities": capabilities,
+                    }
+                ).encode(),
+                {},
+            ),
+        ]
+    )
+    observed: list[dict] = []
+
+    def http(method, url, **kwargs):
+        observed.append({"method": method, "url": url, **kwargs})
+        return next(responses)
+
+    monkeypatch.setattr(verifier, "_http", http)
+
+    result = verifier._assert_system_capabilities_contract(
+        "http://127.0.0.1:8000", "token"
+    )
+
+    assert result == {
+        "apiVersion": "echo.ai/v1alpha1",
+        "count": 3,
+        "requiredCapabilities": ["apps.list", "hub.catalog.list", "storage.health.read"],
+        "unique": True,
+    }
+    assert observed[0].get("token") is None
+    assert observed[1]["token"] == "token"
+
+
+@pytest.mark.parametrize(
+    ("status", "capability_ids", "message"),
+    [
+        (404, [], "contract is invalid"),
+        (200, ["apps.list", "hub.catalog.list"], "omitted required"),
+        (
+            200,
+            ["apps.list", "hub.catalog.list", "storage.health.read", "apps.list"],
+            "invalid capability",
+        ),
+    ],
+)
+def test_system_capability_probe_fails_closed_when_extension_contract_is_incomplete(
+    monkeypatch, status, capability_ids, message
+) -> None:
+    capabilities = [_system_capability(capability_id) for capability_id in capability_ids]
+    responses = iter(
+        [
+            (401, b"{}", {}),
+            (
+                status,
+                json.dumps(
+                    {
+                        "apiVersion": "echo.ai/v1alpha1",
+                        "kind": "CapabilityList",
+                        "count": len(capabilities),
+                        "capabilities": capabilities,
+                    }
+                ).encode(),
+                {},
+            ),
+        ]
+    )
+    monkeypatch.setattr(verifier, "_http", lambda *_args, **_kwargs: next(responses))
+
+    with pytest.raises(verifier.VerificationError, match=message):
+        verifier._assert_system_capabilities_contract("http://127.0.0.1:8000", "token")
+
+
 def test_agent_asset_probe_requires_auth_and_public_bounded_fields(monkeypatch) -> None:
     payload = {
         "schema": "echo.agent-assets.v6",

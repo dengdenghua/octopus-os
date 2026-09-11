@@ -2,23 +2,27 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from starlette.concurrency import run_in_threadpool
 
 from appliance import nas_backup_credential_policy as credential_policy
+from appliance import nas_backup_remote_policy as remote_policy
 from appliance import nas_backup_restore_policy as restore_policy
 from appliance import nas_backup_schedule_policy as policy
 from appliance.approval import consume_request_approval, request_intent_id
 from appliance.audit import AuditIntegrityError
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
+from deploy.appliance import external_storage
+from deploy.appliance import nas_data_backup_schedule_runner as schedule_runner
 
 ACTION = "storage.nas-backup.schedule"
 CREDENTIAL_ACTION = "storage.nas-backup.credential.provision"
 CREDENTIAL_ROTATION_ACTION = "storage.nas-backup.credential.rotate"
 RESTORE_ACTION = "storage.nas-backup.restore"
+REMOTE_ACTION = "storage.nas-backup.remote.configure"
 
 
 class NasBackupCredentialDesiredState(BaseModel):
@@ -124,6 +128,73 @@ class NasBackupScheduleApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     desired: NasBackupScheduleDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
+class NasBackupS3RemoteCreateDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.nas-backup-remote-desired.v1"] = Field(
+        default=remote_policy.DESIRED_SCHEMA,
+        alias="schema",
+    )
+    operation: Literal["create"]
+    remote_id: str = Field(pattern=r"^[a-z][a-z0-9-]{0,31}$", alias="remoteId")
+    label: str = Field(min_length=1, max_length=96)
+    endpoint: str = Field(min_length=8, max_length=2048)
+    region: str = Field(min_length=1, max_length=63)
+    bucket: str = Field(min_length=3, max_length=63)
+    prefix: str = Field(default="", max_length=1024)
+    access_key_id: SecretStr = Field(min_length=3, max_length=256, alias="accessKeyId")
+    secret_access_key: SecretStr = Field(
+        min_length=8,
+        max_length=4096,
+        alias="secretAccessKey",
+    )
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema_name,
+            "operation": self.operation,
+            "remoteId": self.remote_id,
+            "label": self.label,
+            "endpoint": self.endpoint,
+            "region": self.region,
+            "bucket": self.bucket,
+            "prefix": self.prefix,
+            "accessKeyId": self.access_key_id.get_secret_value(),
+            "secretAccessKey": self.secret_access_key.get_secret_value(),
+        }
+
+
+class NasBackupRemoteRemoveDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.nas-backup-remote-desired.v1"] = Field(
+        default=remote_policy.DESIRED_SCHEMA,
+        alias="schema",
+    )
+    operation: Literal["remove"]
+    remote_id: str = Field(pattern=r"^[a-z][a-z0-9-]{0,31}$", alias="remoteId")
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema_name,
+            "operation": self.operation,
+            "remoteId": self.remote_id,
+        }
+
+
+NasBackupRemoteDesiredState = Annotated[
+    NasBackupS3RemoteCreateDesiredState | NasBackupRemoteRemoveDesiredState,
+    Field(discriminator="operation"),
+]
+
+
+class NasBackupRemoteApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: NasBackupRemoteDesiredState
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 
@@ -284,6 +355,142 @@ def create_nas_backup_router(
             **status,
             "credentialRotationRecoveryPending": recovery_pending,
         }
+
+    @router.get("/repository-candidates")
+    async def repository_candidates() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                external_storage.list_external_storage_mounts,
+                deployment_root=schedule_runner.DEPLOYMENT_ROOT,
+                appliance_env=schedule_runner.APPLIANCE_ENV,
+                state_root_override=schedule_runner.STATE_ROOT,
+                nas_root_override=schedule_runner.NAS_ROOT,
+            )
+        except (external_storage.ExternalStorageError, OSError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="外置或远端备份挂载列表暂不可用",
+            ) from exc
+
+    @router.get("/remotes")
+    async def backup_remotes() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(remote_policy.list_remotes)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="S3 兼容备份远端状态暂不可用",
+            ) from exc
+
+    @router.post("/remotes/plan")
+    async def plan_backup_remote(
+        body: NasBackupRemoteDesiredState,
+    ) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                remote_policy.plan_remote,
+                body.to_wire(),
+                binding_key=binding_key,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="S3 兼容备份远端暂不可配置",
+            ) from exc
+
+    @router.post("/remotes/apply")
+    async def apply_backup_remote(
+        body: NasBackupRemoteApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        desired = body.desired.to_wire()
+        try:
+            current = await run_in_threadpool(
+                remote_policy.plan_remote,
+                desired,
+                binding_key=binding_key,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="S3 兼容备份远端暂不可配置",
+            ) from exc
+        if current.get("planId") != body.plan_id:
+            raise HTTPException(
+                status_code=409,
+                detail="NAS backup remote plan is stale; preview again",
+            )
+        if approval is None:
+            if auth.required:
+                raise HTTPException(status_code=503, detail="high-risk approval unavailable")
+        else:
+            consume_request_approval(
+                request,
+                approval,
+                actor=actor,
+                action=REMOTE_ACTION,
+                target=body.plan_id,
+            )
+        metadata = {
+            "operation": current["operation"],
+            "remoteId": current["desired"]["remoteId"],
+            "kind": "s3",
+            "pathsRedacted": True,
+            "secretRedacted": True,
+            "source": "native",
+        }
+        record(
+            request,
+            actor=actor,
+            action=REMOTE_ACTION,
+            target=body.plan_id,
+            outcome="attempted",
+            metadata=metadata,
+        )
+        try:
+            result = await run_in_threadpool(
+                remote_policy.apply_remote,
+                desired,
+                body.plan_id,
+                binding_key=binding_key,
+            )
+        except ValueError as exc:
+            record(
+                request,
+                actor=actor,
+                action=REMOTE_ACTION,
+                target=body.plan_id,
+                outcome="failed",
+                metadata={**metadata, "errorType": type(exc).__name__},
+            )
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            record(
+                request,
+                actor=actor,
+                action=REMOTE_ACTION,
+                target=body.plan_id,
+                outcome="failed",
+                metadata={**metadata, "errorType": type(exc).__name__},
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="S3 兼容备份远端配置失败；已尝试恢复原状态",
+            ) from exc
+        record(
+            request,
+            actor=actor,
+            action=REMOTE_ACTION,
+            target=body.plan_id,
+            outcome="succeeded",
+            metadata=metadata,
+        )
+        return result
 
     @router.post("/restore/sets")
     async def restore_sets(
@@ -767,6 +974,9 @@ __all__ = [
     "NasBackupRestoreTargetBinding",
     "NasBackupScheduleApplyRequest",
     "NasBackupScheduleDesiredState",
+    "NasBackupRemoteApplyRequest",
+    "NasBackupRemoteDesiredState",
+    "REMOTE_ACTION",
     "RESTORE_ACTION",
     "create_nas_backup_router",
 ]

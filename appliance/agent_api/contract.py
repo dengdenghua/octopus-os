@@ -27,10 +27,14 @@ _DOMAINS: dict[str, tuple[_Symbol, ...]] = {
             "local_config", "runtime.adapters.integrations.local_auth.config", "LocalAuthConfig"
         ),
         _Symbol(
-            "password_hash", "runtime.adapters.integrations.local_auth.config", "hash_password"
+            "password_hash",
+            "runtime.adapters.integrations.local_auth.passwords",
+            "hash_password",
         ),
         _Symbol(
-            "password_verify", "runtime.adapters.integrations.local_auth.config", "verify_password"
+            "password_verify",
+            "runtime.adapters.integrations.local_auth.passwords",
+            "verify_password",
         ),
         _Symbol("jwt_error", "runtime.safety.auth.identity", "JWTError"),
         _Symbol("jwt_verify", "runtime.safety.auth.identity", "verify_jwt_hs256"),

@@ -60,6 +60,8 @@ def _fake_storage(tmp_path: Path, *, empty: bool = True, smb: Any = None, nfs=No
         _canonical_hash=canonical,
         _registry_transaction=contextlib.nullcontext,
         _atomic_text_save=lambda path, content, mode: path.write_text(content, encoding="utf-8"),
+        _sync_native_protocol_firewall=lambda: None,
+        _verify_native_protocol_firewall=lambda: None,
     )
 
 
@@ -205,6 +207,28 @@ def test_apply_rolls_back_exact_config_when_reload_fails(
     assert reloads == 2
 
 
+def test_apply_rolls_back_exact_config_when_firewall_sync_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, managed_paths
+) -> None:
+    managed, _samba = managed_paths
+    storage = _fake_storage(tmp_path)
+    storage._sync_native_protocol_firewall = lambda: (_ for _ in ()).throw(
+        OSError("firewall unavailable")
+    )
+    monkeypatch.setattr(native_time_machine, "_storage", lambda: storage)
+    monkeypatch.setattr(native_time_machine, "_require_ready", lambda: None)
+    monkeypatch.setattr(native_time_machine, "_run_checked", lambda *_args, **_kwargs: "")
+    monkeypatch.setattr(native_time_machine, "_verify_live_entry", lambda _entry: None)
+    old = native_time_machine.render_config([])
+    managed.write_text(old, encoding="utf-8")
+    plan = native_time_machine.plan_time_machine(_desired())
+
+    with pytest.raises(OSError, match="firewall unavailable"):
+        native_time_machine.apply_time_machine(_desired(), plan["planId"])
+
+    assert managed.read_text(encoding="utf-8") == old
+
+
 def test_managed_include_must_be_unique_and_inside_global(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, managed_paths
 ) -> None:
@@ -269,7 +293,7 @@ def test_existing_time_machine_share_blocks_reverse_smb_nfs_and_folder_detach(
         )
     assert native_storage._shared_folder_detach_dependencies(
         {"uuid": FOLDER_REF, "name": "TimeMachine"}
-    ) == (False, [], dependency)
+    ) == (False, [], dependency, None)
 
 
 def test_native_routes_expose_time_machine_status_plan_and_noop_apply(

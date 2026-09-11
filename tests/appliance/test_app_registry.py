@@ -95,6 +95,19 @@ class TestCatalog:
     def test_hide_label_removes_app(self):
         assert container_to_app(_container(Labels={"sh.echo.hide": "1"})) is None
 
+    def test_hub_managed_container_never_enters_generic_launcher(self):
+        assert (
+            container_to_app(
+                _container(
+                    Labels={
+                        "sh.echo.hub.managed": "true",
+                        "sh.echo.hub.app-id": "jellyfin",
+                    }
+                )
+            )
+            is None
+        )
+
     def test_catalog_orders_running_first_then_name(self):
         stopped = _container(Id="b" * 32, Names=["/aria2"], State="exited", Status="Exited")
         running = _container(Id="c" * 32, Names=["/zulu"], State="running")

@@ -1,17 +1,15 @@
 """Agent authentication compatibility surface consumed by Echo OS."""
 
 from runtime.adapters.integrations.local_auth import create_local_auth_router
-from runtime.adapters.integrations.local_auth.config import (
-    LocalAuthConfig,
-    hash_password,
-    verify_password,
-)
+from runtime.adapters.integrations.local_auth.config import LocalAuthConfig
 from runtime.safety.auth.identity import JWTError, verify_jwt_hs256
 from runtime.safety.auth.principal import (
     LEGACY_SESSION_COOKIE_NAME,
     SESSION_COOKIE_NAME,
     clear_session_cookie,
 )
+
+from .passwords import hash_password, verify_password
 
 __all__ = [
     "JWTError",

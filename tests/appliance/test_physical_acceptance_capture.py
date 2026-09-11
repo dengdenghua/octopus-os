@@ -44,10 +44,10 @@ def _digest(data: bytes) -> str:
 
 def _candidate(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
     value = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "kind": "echo.delivery-release-evidence-index",
         "source": {
-            "repository": "dengdenghua/echo-os",
+            "repository": "dengdenghua/octopus-os",
             "commit": OS_COMMIT,
             "agentRepository": "dengdenghua/echo-agent",
             "agentCommit": AGENT_COMMIT,
@@ -55,6 +55,7 @@ def _candidate(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
         },
         "evidence": {
             "candidatePreflight": {"reportId": "4" * 64},
+            "nasRuntimeProfile": dict(physical.NAS_RUNTIME_PROFILE),
             "appliance": {
                 "manifestSha256": "5" * 64,
                 "immutableReference": f"ghcr.io/echo-os/echo-os@sha256:{'6' * 64}",
@@ -230,6 +231,7 @@ def _bare_metal_material(
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, bytes]]:
     appliance = {
         "bundleVerified": True,
+        "applianceCapabilitiesVerified": True,
         "immutableImageVerified": True,
         "administratorLoginReady": True,
         "agentWorkbenchReady": True,
@@ -1103,7 +1105,7 @@ def test_plan_command_writes_one_deterministic_read_only_candidate_bound_six_gat
     assert plan["schemaVersion"] == 17
     assert plan["candidate"] == {
         "indexId": candidate["indexId"],
-        "osRepository": "dengdenghua/echo-os",
+        "osRepository": "dengdenghua/octopus-os",
         "sourceRevision": OS_COMMIT,
         "agentRepository": "dengdenghua/echo-agent",
         "agentRevision": AGENT_COMMIT,
@@ -2159,6 +2161,7 @@ def test_device_result_binds_four_machine_phases_and_all_common_checks(tmp_path:
     boot_b = "22222222-2222-4222-8222-222222222222"
     appliance = {
         "bundleVerified": True,
+        "applianceCapabilitiesVerified": True,
         "administratorLoginReady": True,
         "fileLifecycleVerified": True,
         "familyMemberIsolationVerified": True,
@@ -2221,7 +2224,7 @@ def test_device_result_binds_four_machine_phases_and_all_common_checks(tmp_path:
             "indexPath": str(candidate_path.resolve()),
             "indexId": candidate["indexId"],
             "indexSha256": _digest(candidate_path.read_bytes()),
-            "osRepository": "dengdenghua/echo-os",
+            "osRepository": "dengdenghua/octopus-os",
             "sourceRevision": OS_COMMIT,
             "agentRepository": "dengdenghua/echo-agent",
             "agentRevision": AGENT_COMMIT,

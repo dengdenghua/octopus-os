@@ -43,6 +43,7 @@ DESCRIPTION_LABELS = (
     "org.opencontainers.image.description",
 )
 HIDE_LABELS = ("sh.echo.hide", f"{_LEGACY_LABEL_NAMESPACE}.hide")
+HUB_MANAGED_LABEL = "sh.echo.hub.managed"
 
 # 多端口容器挑"哪个是 Web UI"的启发式优先级。
 WEB_PORT_PREFERENCE = (80, 443, 3000, 8080, 8096, 8123, 9000, 5000, 8000)
@@ -111,9 +112,11 @@ def _safe_web_url(labels: dict[str, str]) -> str | None:
 
 
 def container_to_app(container: dict[str, Any]) -> ApplianceApp | None:
-    """单个容器的映射;被 sh.echo.hide 标记的返回 None。"""
+    """Map only generic launcher containers, never Hub lifecycle members."""
     labels: dict[str, str] = container.get("Labels") or {}
-    if any(labels.get(key, "").lower() in ("1", "true", "yes") for key in HIDE_LABELS):
+    if any(labels.get(key, "").lower() in ("1", "true", "yes") for key in HIDE_LABELS) or (
+        labels.get(HUB_MANAGED_LABEL, "").strip().casefold() in {"1", "true", "yes", "on"}
+    ):
         return None
 
     names = container.get("Names") or []

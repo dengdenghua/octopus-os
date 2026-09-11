@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlencode
 
 from appliance.agent_authorization import require_appliance_actor
 from appliance.data_access import DataAccessUnavailable
@@ -107,6 +108,14 @@ class FileOrganizationToolService:
                 "ok": True,
                 "source": "appliance.files",
                 "capabilityId": capability,
+                "desktopAction": {
+                    "type": "files.open",
+                    "path": plan["path"],
+                    "label": "在文件管理器中查看",
+                    "href": "/#/desktop?" + urlencode({
+                        "desktopAction": "files.open", "path": plan["path"],
+                    }),
+                },
                 "message": message,
             }
         except PermissionError:

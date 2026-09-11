@@ -379,6 +379,32 @@ def test_nested_extraction_context_is_restored_after_exception(monkeypatch):
     assert seen[2] == {} and documents._context.get() is None
 
 
+def test_worker_setup_unavailable_retries_once_with_the_same_request_boundary(monkeypatch):
+    seen = []
+    budget = extraction.DocumentExtractionBudget()
+    cancel = threading.Event()
+
+    def transient(data, extension, **context):
+        seen.append((data, extension, context))
+        if len(seen) == 1:
+            return {
+                "text": None,
+                "truncated": False,
+                "available": False,
+                "outcome": "unavailable",
+            }
+        return _ok(data)
+
+    monkeypatch.setattr(extraction, "extract_document_isolated", transient)
+    with documents.invoice_extraction_context(budget=budget, deadline=123.0, cancel=cancel):
+        result = documents.extract_invoice_document(_INVOICE, "txt")
+
+    assert result["outcome"] == "ok"
+    assert len(seen) == 2
+    assert seen[0] == seen[1]
+    assert seen[0][2] == {"budget": budget, "deadline": 123.0, "cancel": cancel}
+
+
 _SLEEP_WORKER = """
 import json, os, struct, sys, time
 from pathlib import Path

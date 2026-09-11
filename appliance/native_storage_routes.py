@@ -8,6 +8,7 @@ installer route, which never deployed OMV.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -20,8 +21,10 @@ from appliance import (
     disk_idle_policy,
     mdraid_check_schedule_policy,
     native_btrfs_snapshot,
+    native_dlna,
     native_storage,
     native_time_machine,
+    native_webdav_control,
     nut_device_config,
     smart_schedule_policy,
 )
@@ -52,6 +55,8 @@ from appliance.omv_models import (
     BtrfsSnapshotSchedulePolicyDesiredState,
     DiskIdlePolicyApplyRequest,
     DiskIdlePolicyDesiredState,
+    DlnaApplyRequest,
+    DlnaDesiredState,
     Ext4CheckApplyRequest,
     Ext4CheckDesiredState,
     Ext4VolumeApplyRequest,
@@ -98,6 +103,8 @@ from appliance.omv_models import (
     UserDesiredState,
     UserPasswordApplyRequest,
     UserPasswordDesiredState,
+    WebDavApplyRequest,
+    WebDavDesiredState,
     ZfsMirrorApplyRequest,
     ZfsMirrorDesiredState,
     ZfsMirrorReplaceApplyRequest,
@@ -111,6 +118,60 @@ from appliance.omv_models import (
 )
 from appliance.security import ApplianceAuthenticator, resolve_authenticator
 from appliance.ups_shutdown_policy import apply_policy, plan_policy, policy_status
+
+
+def _read_native_storage(
+    read_fn: Any,
+    desired: dict[str, Any],
+) -> Any:
+    """Read root-owned native storage state through the broker when configured."""
+
+    socket_path = os.environ.get("ECHO_NATIVE_STORAGE_BROKER_SOCKET", "").strip()
+    if not socket_path:
+        return read_fn(desired["shareUuid"]) if desired else read_fn()
+    from appliance.native_storage_broker import (
+        NativeStorageBrokerClient,
+        operation_for_callable,
+    )
+
+    return NativeStorageBrokerClient(socket_path).read(operation_for_callable(read_fn), desired)
+
+
+def _plan_native_write(
+    plan_fn: Any,
+    desired: dict[str, Any],
+) -> dict[str, Any]:
+    """Calculate a write plan in the same authority domain as its apply."""
+
+    socket_path = os.environ.get("ECHO_NATIVE_STORAGE_BROKER_SOCKET", "").strip()
+    if not socket_path:
+        return plan_fn(desired)
+    from appliance.native_storage_broker import (
+        NativeStorageBrokerClient,
+        operation_for_callable,
+    )
+
+    return NativeStorageBrokerClient(socket_path).plan(operation_for_callable(plan_fn), desired)
+
+
+def _apply_native_write(
+    apply_fn: Any,
+    desired: dict[str, Any],
+    plan_id: str,
+) -> dict[str, Any]:
+    """Execute locally, or cross the native image's narrow root boundary."""
+
+    socket_path = os.environ.get("ECHO_NATIVE_STORAGE_BROKER_SOCKET", "").strip()
+    if not socket_path:
+        return apply_fn(desired, plan_id)
+    from appliance.native_storage_broker import (
+        NativeStorageBrokerClient,
+        operation_for_callable,
+    )
+
+    return NativeStorageBrokerClient(socket_path).call(
+        operation_for_callable(apply_fn), desired, plan_id
+    )
 
 
 def register_native_storage_routes(router: APIRouter) -> None:
@@ -282,7 +343,10 @@ def register_native_storage_routes(router: APIRouter) -> None:
 
     @router.get("/sharing")
     async def sharing() -> dict[str, Any]:
-        return {**await run_in_threadpool(native_storage.sharing_overview), "readOnly": True}
+        return {
+            **await run_in_threadpool(_read_native_storage, native_storage.sharing_overview, {}),
+            "readOnly": True,
+        }
 
     @router.get("/sharing/time-machine")
     async def time_machine_status() -> dict[str, Any]:
@@ -291,10 +355,28 @@ def register_native_storage_routes(router: APIRouter) -> None:
         except OSError as exc:
             raise HTTPException(status_code=503, detail="Time Machine 配置读取失败") from exc
 
+    @router.get("/sharing/dlna")
+    async def dlna_status() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(native_dlna.status)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="DLNA 配置读取失败") from exc
+
+    @router.get("/sharing/webdav")
+    async def webdav_status() -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(native_webdav_control.status)
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="WebDAV 配置读取失败") from exc
+
     @router.get("/sharing/{share_uuid}/privileges")
     async def share_privileges(share_uuid: str) -> dict[str, Any]:
         try:
-            privileges = await run_in_threadpool(native_storage.share_privileges, share_uuid)
+            privileges = await run_in_threadpool(
+                _read_native_storage,
+                native_storage.share_privileges,
+                {"shareUuid": share_uuid},
+            )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -417,7 +499,9 @@ def create_omv_alias_router(
     async def plan_shared_folder(body: SharedFolderDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
-                native_storage.plan_shared_folder, body.model_dump(by_alias=True)
+                _plan_native_write,
+                native_storage.plan_shared_folder,
+                body.model_dump(by_alias=True),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -432,7 +516,9 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         desired = body.desired.model_dump(by_alias=True)
         try:
-            current_plan = await run_in_threadpool(native_storage.plan_shared_folder, desired)
+            current_plan = await run_in_threadpool(
+                _plan_native_write, native_storage.plan_shared_folder, desired
+            )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -444,7 +530,10 @@ def create_omv_alias_router(
         if current_plan.get("operation") == "none":
             try:
                 return await run_in_threadpool(
-                    native_storage.apply_shared_folder, desired, body.plan_id
+                    _apply_native_write,
+                    native_storage.apply_shared_folder,
+                    desired,
+                    body.plan_id,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -473,7 +562,10 @@ def create_omv_alias_router(
         )
         try:
             result = await run_in_threadpool(
-                native_storage.apply_shared_folder, desired, body.plan_id
+                _apply_native_write,
+                native_storage.apply_shared_folder,
+                desired,
+                body.plan_id,
             )
         except ValueError as exc:
             _record(
@@ -511,6 +603,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_shared_folder_rename,
                 body.model_dump(by_alias=True),
             )
@@ -546,6 +639,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_shared_folder_detach,
                 body.model_dump(by_alias=True),
             )
@@ -580,6 +674,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_shared_folder_delete,
                 body.model_dump(by_alias=True),
             )
@@ -621,6 +716,7 @@ def create_omv_alias_router(
     async def plan_btrfs_snapshot(body: BtrfsSnapshotDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_btrfs_snapshot.plan_snapshot,
                 body.model_dump(by_alias=True),
             )
@@ -656,6 +752,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_btrfs_snapshot.plan_snapshot_delete,
                 body.model_dump(by_alias=True),
             )
@@ -690,6 +787,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_btrfs_snapshot.plan_snapshot_restore_copy,
                 body.model_dump(by_alias=True),
             )
@@ -726,6 +824,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 btrfs_snapshot_lock_policy.plan_lock,
                 body.model_dump(by_alias=True),
             )
@@ -773,6 +872,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 btrfs_snapshot_schedule_policy.plan_policy,
                 body.model_dump(by_alias=True, exclude_none=True),
             )
@@ -817,7 +917,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         """Shared stall/approval/audit envelope for every native write slice."""
         try:
-            current_plan = await run_in_threadpool(plan_fn, desired)
+            current_plan = await run_in_threadpool(_plan_native_write, plan_fn, desired)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -826,7 +926,7 @@ def create_omv_alias_router(
             raise HTTPException(status_code=409, detail=f"{action} plan is stale; preview again")
         if current_plan.get("operation") in ("none",):
             try:
-                return await run_in_threadpool(apply_fn, desired, plan_id)
+                return await run_in_threadpool(_apply_native_write, apply_fn, desired, plan_id)
             except ValueError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             except OSError as exc:
@@ -846,7 +946,7 @@ def create_omv_alias_router(
             metadata=audit_metadata,
         )
         try:
-            result = await run_in_threadpool(apply_fn, desired, plan_id)
+            result = await run_in_threadpool(_apply_native_write, apply_fn, desired, plan_id)
         except ValueError as exc:
             _record(
                 request,
@@ -882,7 +982,9 @@ def create_omv_alias_router(
     async def plan_group(body: GroupDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
-                native_storage.plan_group, body.model_dump(by_alias=True)
+                _plan_native_write,
+                native_storage.plan_group,
+                body.model_dump(by_alias=True),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -909,7 +1011,9 @@ def create_omv_alias_router(
     @router.post("/accounts/users/plan")
     async def plan_user(body: UserDesiredState) -> dict[str, Any]:
         try:
-            return await run_in_threadpool(native_storage.plan_user, body.to_wire())
+            return await run_in_threadpool(
+                _plan_native_write, native_storage.plan_user, body.to_wire()
+            )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -939,7 +1043,9 @@ def create_omv_alias_router(
     @router.post("/accounts/users/password/plan")
     async def plan_user_password(body: UserPasswordDesiredState) -> dict[str, Any]:
         try:
-            return await run_in_threadpool(native_storage.plan_user_password, body.to_wire())
+            return await run_in_threadpool(
+                _plan_native_write, native_storage.plan_user_password, body.to_wire()
+            )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -970,7 +1076,9 @@ def create_omv_alias_router(
     async def plan_share_privilege(body: SharePrivilegeDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
-                native_storage.plan_share_privilege, body.model_dump(by_alias=True)
+                _plan_native_write,
+                native_storage.plan_share_privilege,
+                body.model_dump(by_alias=True),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1003,7 +1111,11 @@ def create_omv_alias_router(
     @router.post("/sharing/smb/plan")
     async def plan_smb(body: SmbDesiredState) -> dict[str, Any]:
         try:
-            return await run_in_threadpool(native_storage.plan_smb, body.model_dump(by_alias=True))
+            return await run_in_threadpool(
+                _plan_native_write,
+                native_storage.plan_smb,
+                body.model_dump(by_alias=True),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -1030,6 +1142,7 @@ def create_omv_alias_router(
     async def plan_time_machine(body: TimeMachineDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_time_machine.plan_time_machine,
                 body.model_dump(by_alias=True),
             )
@@ -1060,11 +1173,81 @@ def create_omv_alias_router(
             },
         )
 
+    # --- Read-only DLNA/UPnP-AV media publication ----------------------
+    @router.post("/sharing/dlna/plan")
+    async def plan_dlna(body: DlnaDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                _plan_native_write,
+                native_dlna.plan_dlna,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="DLNA 配置暂不可用") from exc
+
+    @router.post("/sharing/dlna/apply")
+    async def apply_dlna_route(
+        body: DlnaApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="storage.dlna.apply",
+            plan_fn=native_dlna.plan_dlna,
+            apply_fn=native_dlna.apply_dlna,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={
+                "sharedFolderRef": body.desired.shared_folder_ref,
+                "enabled": body.desired.enabled,
+                "mediaType": body.desired.media_type,
+            },
+        )
+
+    # --- Explicit authenticated WebDAV publication --------------------
+    @router.post("/sharing/webdav/plan")
+    async def plan_webdav(body: WebDavDesiredState) -> dict[str, Any]:
+        try:
+            return await run_in_threadpool(
+                _plan_native_write,
+                native_webdav_control.plan_webdav,
+                body.model_dump(by_alias=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="WebDAV 配置暂不可用") from exc
+
+    @router.post("/sharing/webdav/apply")
+    async def apply_webdav_route(
+        body: WebDavApplyRequest,
+        request: Request,
+        actor: str = Depends(require_operator),
+    ) -> dict[str, Any]:
+        return await _apply_write(
+            request,
+            actor=actor,
+            action="storage.webdav.apply",
+            plan_fn=native_webdav_control.plan_webdav,
+            apply_fn=native_webdav_control.apply_webdav,
+            desired=body.desired.model_dump(by_alias=True),
+            plan_id=body.plan_id,
+            metadata={"enabled": body.desired.enabled},
+        )
+
     # --- NFS private-network export ------------------------------------
     @router.post("/sharing/nfs/plan")
     async def plan_nfs(body: NfsDesiredState) -> dict[str, Any]:
         try:
-            return await run_in_threadpool(native_storage.plan_nfs, body.model_dump(by_alias=True))
+            return await run_in_threadpool(
+                _plan_native_write,
+                native_storage.plan_nfs,
+                body.model_dump(by_alias=True),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except OSError as exc:
@@ -1097,6 +1280,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_nfs_remove,
                 body.model_dump(by_alias=True),
             )
@@ -1130,7 +1314,9 @@ def create_omv_alias_router(
     async def plan_quota(body: QuotaDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
-                native_storage.plan_quota, body.model_dump(by_alias=True)
+                _plan_native_write,
+                native_storage.plan_quota,
+                body.model_dump(by_alias=True),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1158,7 +1344,9 @@ def create_omv_alias_router(
     async def plan_zfs_mirror(body: ZfsMirrorDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
-                native_storage.plan_zfs_mirror, body.model_dump(by_alias=True)
+                _plan_native_write,
+                native_storage.plan_zfs_mirror,
+                body.model_dump(by_alias=True),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1187,6 +1375,7 @@ def create_omv_alias_router(
     async def plan_mdraid1(body: MdRaid1DesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_mdraid1,
                 body.model_dump(by_alias=True),
             )
@@ -1217,6 +1406,7 @@ def create_omv_alias_router(
     async def plan_mdraid1_replace(body: MdRaid1ReplaceDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_mdraid1_replace,
                 body.model_dump(by_alias=True),
             )
@@ -1252,6 +1442,7 @@ def create_omv_alias_router(
     async def plan_mdraid_check(body: MdRaidCheckDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_mdraid_check,
                 body.model_dump(by_alias=True),
             )
@@ -1288,6 +1479,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 mdraid_check_schedule_policy.plan_policy,
                 body.model_dump(by_alias=True),
             )
@@ -1324,6 +1516,7 @@ def create_omv_alias_router(
     async def plan_ext4_volume(body: Ext4VolumeDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_ext4_volume,
                 body.model_dump(by_alias=True),
             )
@@ -1356,6 +1549,7 @@ def create_omv_alias_router(
     async def plan_ext4_check(body: Ext4CheckDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_ext4_check,
                 body.model_dump(by_alias=True),
             )
@@ -1391,6 +1585,7 @@ def create_omv_alias_router(
     async def plan_btrfs_raid1(body: BtrfsRaid1DesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_btrfs_raid1,
                 body.model_dump(by_alias=True),
             )
@@ -1425,6 +1620,7 @@ def create_omv_alias_router(
     async def plan_btrfs_scrub(body: BtrfsScrubDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_btrfs_scrub,
                 body.model_dump(by_alias=True),
             )
@@ -1461,6 +1657,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 btrfs_scrub_schedule_policy.plan_policy,
                 body.model_dump(by_alias=True),
             )
@@ -1496,6 +1693,7 @@ def create_omv_alias_router(
     async def plan_btrfs_replace(body: BtrfsReplaceDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_btrfs_replace,
                 body.model_dump(by_alias=True),
             )
@@ -1531,6 +1729,7 @@ def create_omv_alias_router(
     async def plan_zfs_mirror_replace(body: ZfsMirrorReplaceDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_zfs_mirror_replace,
                 body.model_dump(by_alias=True),
             )
@@ -1567,7 +1766,9 @@ def create_omv_alias_router(
     async def plan_zfs_pool_export(body: ZfsPoolExportDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
-                native_storage.plan_zfs_pool_export, body.model_dump(by_alias=True)
+                _plan_native_write,
+                native_storage.plan_zfs_pool_export,
+                body.model_dump(by_alias=True),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1599,7 +1800,9 @@ def create_omv_alias_router(
     async def plan_zfs_pool_import(body: ZfsPoolImportDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
-                native_storage.plan_zfs_pool_import, body.model_dump(by_alias=True)
+                _plan_native_write,
+                native_storage.plan_zfs_pool_import,
+                body.model_dump(by_alias=True),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1632,6 +1835,7 @@ def create_omv_alias_router(
     async def plan_zfs_scrub(body: ZfsScrubDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 native_storage.plan_zfs_scrub,
                 body.model_dump(by_alias=True),
             )
@@ -1666,6 +1870,7 @@ def create_omv_alias_router(
     async def plan_local_ups_config(body: NutLocalUpsDesiredState) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 nut_device_config.plan_config,
                 body.model_dump(by_alias=True),
             )
@@ -1703,6 +1908,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 plan_policy,
                 body.model_dump(by_alias=True),
             )
@@ -1739,6 +1945,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 disk_idle_policy.plan_policy,
                 body.model_dump(by_alias=True),
             )
@@ -1774,6 +1981,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 smart_schedule_policy.plan_policy,
                 body.model_dump(by_alias=True),
             )
@@ -1809,6 +2017,7 @@ def create_omv_alias_router(
     ) -> dict[str, Any]:
         try:
             return await run_in_threadpool(
+                _plan_native_write,
                 plan_smart_self_test,
                 body.model_dump(by_alias=True),
             )

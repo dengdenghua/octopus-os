@@ -53,7 +53,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from appliance import native_time_machine
+from appliance import native_dlna, native_firewall, native_time_machine, native_webdav_control
 from appliance.btrfs_scrub_schedule_policy import (
     scheduler_installed as _btrfs_scrub_scheduler_installed,
 )
@@ -1069,6 +1069,8 @@ _NATIVE_WRITE_CAPABILITIES = (
     "shared-folder.privilege.simple.v1",
     "smb.share.desired.v1",
     native_time_machine.TIME_MACHINE_CAPABILITY,
+    native_dlna.DLNA_CAPABILITY,
+    native_webdav_control.WEBDAV_CAPABILITY,
     "nfs.share.private-network.v1",
     "nfs.share.remove.safe.v1",
     "filesystem.quota.user-group.v1",
@@ -1124,13 +1126,17 @@ def _native_write_capabilities() -> list[str]:
         unavailable.add("shared-folder.snapshot.schedule.latest.v1")
         unavailable.add("shared-folder.snapshot.schedule.retention.v2")
     if (
-        not _native_command_tools_available("net", "smbd")
+        not _native_command_tools_available("net", "smbd", "firewall-cmd")
         or not _native_smb_users_group_available()
     ):
         unavailable.add("smb.share.desired.v1")
     if not native_time_machine.capability_available():
         unavailable.add(native_time_machine.TIME_MACHINE_CAPABILITY)
-    if not _native_command_tools_available("exportfs"):
+    if not native_dlna.capability_available():
+        unavailable.add(native_dlna.DLNA_CAPABILITY)
+    if not native_webdav_control.capability_available():
+        unavailable.add(native_webdav_control.WEBDAV_CAPABILITY)
+    if not _native_command_tools_available("exportfs", "firewall-cmd"):
         unavailable.add("nfs.share.private-network.v1")
         unavailable.add("nfs.share.remove.safe.v1")
     if not (_native_command_tools_available("zfs") or _native_quota_tools_available()):
@@ -2146,7 +2152,7 @@ def apply_shared_folder(desired_state: dict[str, Any], plan_id: str) -> dict[str
 
 def _shared_folder_detach_dependencies(
     entry: dict[str, Any],
-) -> tuple[bool, list[dict[str, Any]], dict[str, Any] | None]:
+) -> tuple[bool, list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
     """Return live dependent shares that must be removed before detaching."""
     smb_present = _smb_usershare_info(str(entry["name"])) is not None
     nfs_entries = [
@@ -2155,7 +2161,8 @@ def _shared_folder_detach_dependencies(
         if item.get("sharedFolderRef") == entry.get("uuid")
     ]
     time_machine = native_time_machine.dependency_for(str(entry["uuid"]))
-    return smb_present, nfs_entries, time_machine
+    dlna = native_dlna.dependency_for(str(entry["uuid"]))
+    return smb_present, nfs_entries, time_machine, dlna
 
 
 def _build_shared_folder_rename_plan(desired: dict[str, Any]) -> dict[str, Any]:
@@ -2185,7 +2192,7 @@ def _build_shared_folder_rename_plan(desired: dict[str, Any]) -> dict[str, Any]:
         if target_state["kind"] != "absent":
             raise ValueError("shared folder rename target already exists")
 
-    smb_present, nfs_entries, time_machine = _shared_folder_detach_dependencies(entry)
+    smb_present, nfs_entries, time_machine, dlna = _shared_folder_detach_dependencies(entry)
     if operation != "none":
         if smb_present:
             raise ValueError("disable the SMB share before renaming this folder")
@@ -2193,6 +2200,8 @@ def _build_shared_folder_rename_plan(desired: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("remove the NFS rule before renaming this folder")
         if time_machine is not None:
             raise ValueError("disable Time Machine before renaming this folder")
+        if dlna is not None:
+            raise ValueError("disable DLNA before renaming this folder")
 
     base_revision = _canonical_hash(
         {
@@ -2351,13 +2360,15 @@ def _build_shared_folder_detach_plan(desired: dict[str, Any]) -> dict[str, Any]:
     # data volume is temporarily unavailable.
     path = _native_registered_path(entry)
     folder_status = _native_registered_folder_status(entry)
-    smb_present, nfs_entries, time_machine = _shared_folder_detach_dependencies(entry)
+    smb_present, nfs_entries, time_machine, dlna = _shared_folder_detach_dependencies(entry)
     if smb_present:
         raise ValueError("disable the SMB share before detaching this folder")
     if nfs_entries:
         raise ValueError("remove the NFS rule before detaching this folder")
     if time_machine is not None:
         raise ValueError("disable Time Machine before detaching this folder")
+    if dlna is not None:
+        raise ValueError("disable DLNA before detaching this folder")
     base_revision = _canonical_hash(
         {
             "registry": registry,
@@ -2509,13 +2520,15 @@ def _build_shared_folder_delete_plan(desired: dict[str, Any]) -> dict[str, Any]:
             "shared folder directory is not empty; only empty directories can be deleted"
         )
 
-    smb_present, nfs_entries, time_machine = _shared_folder_detach_dependencies(entry)
+    smb_present, nfs_entries, time_machine, dlna = _shared_folder_detach_dependencies(entry)
     if smb_present:
         raise ValueError("disable the SMB share before deleting this folder")
     if nfs_entries:
         raise ValueError("remove the NFS rule before deleting this folder")
     if time_machine is not None:
         raise ValueError("disable Time Machine before deleting this folder")
+    if dlna is not None:
+        raise ValueError("disable DLNA before deleting this folder")
 
     target_state = _target_state(path)
     base_revision = _canonical_hash(
@@ -3502,6 +3515,42 @@ def _verify_live_nfs_absent(path: Path, client: str) -> None:
         raise OSError("NFS rule remained in the live export table after removal")
 
 
+def _native_protocol_firewall_enabled() -> bool:
+    """Limit automatic firewall ownership to the source-built native OS."""
+    return os.environ.get("ECHO_NATIVE_OS") == "1"
+
+
+def _native_samba_firewall_required() -> bool:
+    output = _run_read_checked("net", "usershare", "info", "--long", timeout=15.0)
+    headers = [
+        line.strip()
+        for line in output.splitlines()
+        if line.strip().startswith("[") and line.strip().endswith("]")
+    ]
+    if output.strip() and not headers:
+        raise OSError("Samba usershare inventory is malformed")
+    return bool(headers) or native_time_machine.firewall_required()
+
+
+def _native_protocol_firewall_desired() -> tuple[bool, list[str]]:
+    exports = _nfs_exports_load(strict=True, allow_unmounted=True)
+    return _native_samba_firewall_required(), [entry["client"] for entry in exports]
+
+
+def _sync_native_protocol_firewall() -> None:
+    if not _native_protocol_firewall_enabled():
+        return
+    smb, clients = _native_protocol_firewall_desired()
+    native_firewall.sync(smb=smb, nfs_clients=clients)
+
+
+def _verify_native_protocol_firewall() -> None:
+    if not _native_protocol_firewall_enabled():
+        return
+    smb, clients = _native_protocol_firewall_desired()
+    native_firewall.verify_protocols(smb=smb, nfs_clients=clients)
+
+
 def apply_nfs(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     desired = validate_nfs_desired(dict(desired_state))
     with _registry_transaction():
@@ -3511,6 +3560,7 @@ def apply_nfs(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
         _folder, path = _nfs_rule_path(desired["sharedFolderRef"])
         if plan["operation"] == "none":
             _verify_live_nfs(path, desired)
+            _verify_native_protocol_firewall()
             return {**plan, "applied": False, "verified": True}
 
         old_exports = _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True)
@@ -3538,6 +3588,7 @@ def apply_nfs(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
             if _nfs_exports_load(strict=True) != wanted:
                 raise OSError("native NFS export write-back verification failed")
             _verify_live_nfs(path, desired)
+            _sync_native_protocol_firewall()
         except Exception as exc:
             try:
                 _restore_managed_text(_NATIVE_NFS_EXPORTS, old_exports, mode=0o644)
@@ -3654,6 +3705,7 @@ def apply_nfs_remove(desired_state: dict[str, Any], plan_id: str) -> dict[str, A
         path = _nfs_registered_path(folder)
         if plan["operation"] == "none":
             _verify_live_nfs_absent(path, desired["clientCidr"])
+            _verify_native_protocol_firewall()
             return {**plan, "applied": False, "verified": True, "dataPreserved": True}
         old_exports = _read_regular_text(_NATIVE_NFS_EXPORTS, missing_ok=True)
         exports = _nfs_exports_load(strict=True, allow_unmounted=True)
@@ -3691,6 +3743,7 @@ def apply_nfs_remove(desired_state: dict[str, Any], plan_id: str) -> dict[str, A
             if _nfs_exports_load(strict=True, allow_unmounted=True) != wanted:
                 raise OSError("native NFS export removal write-back verification failed")
             _verify_live_nfs_absent(path, desired["clientCidr"])
+            _sync_native_protocol_firewall()
         except Exception as exc:
             try:
                 _restore_managed_text(_NATIVE_NFS_EXPORTS, old_exports, mode=0o644)
@@ -3952,6 +4005,30 @@ def plan_smb(desired_state: dict[str, Any]) -> dict[str, Any]:
     return _build_smb_plan(desired)
 
 
+def _restore_smb_usershare(name: str, expected_path: Path, old: dict[str, Any] | None) -> None:
+    """Restore the exact pre-apply usershare after a native firewall failure."""
+    current = _smb_usershare_info(name)
+    if old is None:
+        if current is not None:
+            _run_write("net", "usershare", "delete", name)
+        if _smb_usershare_info(name) is not None:
+            raise OSError("new Samba usershare rollback was not verified")
+        return
+    path = old.get("path", str(expected_path))
+    comment = old.get("comment", name)
+    acl = old.get("usershare_acl")
+    guest = old.get("guest_ok")
+    if not all(isinstance(value, str) for value in (path, comment, acl, guest)):
+        raise OSError("previous Samba usershare cannot be restored safely")
+    _run_write("net", "usershare", "add", name, path, comment, acl, f"guest_ok={guest}")
+    restored = _smb_usershare_info(name)
+    if restored is None or not _smb_info_targets_path(restored, expected_path):
+        raise OSError("Samba usershare rollback was not verified")
+    for field in ("comment", "usershare_acl", "guest_ok"):
+        if restored.get(field) != old.get(field):
+            raise OSError("Samba usershare rollback differs from its original state")
+
+
 def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     """Create, update, or remove the Samba usershare via ``net usershare``."""
     desired = validate_smb_desired(dict(desired_state))
@@ -3975,14 +4052,28 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
                 raise OSError("SMB share ACL changed during apply")
         elif observed is not None:
             raise OSError("planned SMB share appeared during apply")
+        _verify_native_protocol_firewall()
         return {**plan, "applied": False, "verified": True, "share": {"name": name}}
+    old_usershare = _smb_usershare_info(name)
     if operation == "remove":
-        observed = _smb_usershare_info(name)
+        observed = old_usershare
         if observed is not None and not _smb_info_targets_path(observed, expected_path):
             raise OSError("Samba usershare path changed during apply")
         _run_write("net", "usershare", "delete", name)
         if _smb_usershare_info(name) is not None:
             raise OSError("Samba usershare remained after delete")
+        try:
+            _sync_native_protocol_firewall()
+        except Exception as exc:
+            try:
+                _restore_smb_usershare(name, expected_path, old_usershare)
+            except Exception as rollback_exc:
+                raise OSError(
+                    "SMB removal failed and rollback also failed; inspect Samba immediately"
+                ) from rollback_exc
+            if isinstance(exc, (OSError, ValueError)):
+                raise
+            raise OSError("SMB removal failed") from exc
         return {**plan, "applied": True, "verified": True, "share": {"name": name}}
     path = _native_folder_path(entry)
     # create or update: (re)declare the usershare. Read/write is expressed via
@@ -3992,28 +4083,41 @@ def apply_smb(desired_state: dict[str, Any], plan_id: str) -> dict[str, Any]:
     # Missing groups fail during planning; never widen the ACL to Everyone.
     sid = plan["safety"]["aclPrincipal"]
     acl = f"{sid}:{'r' if desired['readOnly'] else 'f'}"
-    _run_write(
-        "net",
-        "usershare",
-        "add",
-        name,
-        path,
-        desired["comment"] or name,
-        acl,
-        "guest_ok=n",
-    )
-    observed = _smb_usershare_info(name)
-    if observed is None:
-        raise OSError("Samba usershare was not registered after net usershare add")
-    if not _smb_info_targets_path(observed, expected_path):
-        raise OSError("Samba usershare points at a different path after update")
-    expected_comment = desired["comment"] or name
-    if (
-        observed.get("comment") != expected_comment
-        or _smb_info_read_only(observed) != desired["readOnly"]
-        or not _smb_info_matches_acl(observed, sid, desired["readOnly"])
-    ):
-        raise OSError("Samba usershare did not persist the requested state")
+    try:
+        _run_write(
+            "net",
+            "usershare",
+            "add",
+            name,
+            path,
+            desired["comment"] or name,
+            acl,
+            "guest_ok=n",
+        )
+        observed = _smb_usershare_info(name)
+        if observed is None:
+            raise OSError("Samba usershare was not registered after net usershare add")
+        if not _smb_info_targets_path(observed, expected_path):
+            raise OSError("Samba usershare points at a different path after update")
+        expected_comment = desired["comment"] or name
+        if (
+            observed.get("comment") != expected_comment
+            or _smb_info_read_only(observed) != desired["readOnly"]
+            or not _smb_info_matches_acl(observed, sid, desired["readOnly"])
+        ):
+            raise OSError("Samba usershare did not persist the requested state")
+        _sync_native_protocol_firewall()
+    except Exception as exc:
+        if _native_protocol_firewall_enabled():
+            try:
+                _restore_smb_usershare(name, expected_path, old_usershare)
+            except Exception as rollback_exc:
+                raise OSError(
+                    "SMB update failed and rollback also failed; inspect Samba immediately"
+                ) from rollback_exc
+        if isinstance(exc, (OSError, ValueError)):
+            raise
+        raise OSError("SMB update failed") from exc
     return {**plan, "applied": True, "verified": True, "share": {"name": name}}
 
 
@@ -4423,9 +4527,23 @@ class NativeStorageAuthority:
         return bool(block_devices())
 
     def sharing_overview(self) -> dict[str, Any]:
+        socket_path = os.environ.get("ECHO_NATIVE_STORAGE_BROKER_SOCKET", "").strip()
+        if socket_path:
+            from appliance.native_storage_broker import NativeStorageBrokerClient
+
+            return NativeStorageBrokerClient(socket_path).read(
+                "native_storage.sharing_overview", {}
+            )
         return sharing_overview()
 
     def share_privileges(self, share_uuid: str) -> list[dict[str, Any]]:
+        socket_path = os.environ.get("ECHO_NATIVE_STORAGE_BROKER_SOCKET", "").strip()
+        if socket_path:
+            from appliance.native_storage_broker import NativeStorageBrokerClient
+
+            return NativeStorageBrokerClient(socket_path).read(
+                "native_storage.share_privileges", {"shareUuid": share_uuid}
+            )
         return share_privileges(share_uuid)
 
 

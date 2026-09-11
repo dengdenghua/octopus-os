@@ -22,6 +22,9 @@ def _source_tree(tmp_path: Path) -> Path:
     config.write_bytes(
         host_migration.TIME_MACHINE_HEADER + b"vfs objects = catia fruit streams_xattr\n"
     )
+    wrapper = root / host_migration.REMOTE_WRAPPER_SOURCE
+    wrapper.parent.mkdir(parents=True, exist_ok=True)
+    wrapper.write_text("#!/usr/bin/python3\nprint('mount')\n", encoding="utf-8")
     return root
 
 
@@ -31,9 +34,18 @@ def _host_paths(tmp_path: Path) -> dict[str, Path]:
     samba_config = samba_dir / "smb.conf"
     if not samba_config.exists():
         samba_config.write_text("[global]\n", encoding="utf-8")
+    wrapper_dir = tmp_path / "lib" / "echo-os"
+    wrapper_dir.mkdir(parents=True, exist_ok=True)
+    etc_dir = tmp_path / "etc"
+    etc_dir.mkdir(exist_ok=True)
+    mnt_dir = tmp_path / "mnt"
+    mnt_dir.mkdir(exist_ok=True)
     return {
         "samba_config_path": samba_config,
         "time_machine_config_path": samba_dir / "echo-os-time-machine.conf",
+        "remote_wrapper_path": wrapper_dir / "rclone-backup-mount",
+        "remote_credential_directory": etc_dir / "credstore.encrypted",
+        "remote_mount_directory": mnt_dir / "echo-backup-remotes",
     }
 
 
@@ -125,9 +137,11 @@ def test_apply_installs_fixed_dependencies_units_and_enabled_services(tmp_path: 
     assert result["verified"] is True
     assert result["packagesInstalled"] == [
         "btrfs-progs",
+        "fuse3",
         "hdparm",
         "nut-client",
         "nut-server",
+        "rclone",
         "samba-vfs-modules",
     ]
     assert enabled == set(host_migration.ENABLED_UNITS)
@@ -138,15 +152,24 @@ def test_apply_installs_fixed_dependencies_units_and_enabled_services(tmp_path: 
         "--yes",
         "--no-install-recommends",
         "btrfs-progs",
+        "fuse3",
         "hdparm",
         "nut-client",
         "nut-server",
+        "rclone",
         "samba-vfs-modules",
     ]
     assert [str(systemctl), "restart", "echo-appliance.service"] in calls
     for name, relative in host_migration.UNIT_SOURCES.items():
         assert (units / name).read_bytes() == (source / relative).read_bytes()
     host_paths = _host_paths(tmp_path)
+    assert host_paths["remote_wrapper_path"].read_bytes() == (
+        source / host_migration.REMOTE_WRAPPER_SOURCE
+    ).read_bytes()
+    if host_migration.os.name == "posix":
+        assert host_paths["remote_wrapper_path"].stat().st_mode & 0o777 == 0o755
+    assert host_paths["remote_credential_directory"].is_dir()
+    assert host_paths["remote_mount_directory"].is_dir()
     assert (
         host_paths["time_machine_config_path"].read_bytes()
         == (source / host_migration.TIME_MACHINE_SOURCE).read_bytes()
@@ -243,6 +266,11 @@ def test_versioned_evidence_distinguishes_completed_migration(tmp_path: Path) ->
             host_paths["time_machine_config_path"],
         )
     )
+    host_paths["remote_wrapper_path"].write_bytes(
+        (source / host_migration.REMOTE_WRAPPER_SOURCE).read_bytes()
+    )
+    host_paths["remote_credential_directory"].mkdir()
+    host_paths["remote_mount_directory"].mkdir()
     plan = host_migration.plan_migration(**probes)
 
     assert plan["operation"] == "none"
@@ -291,6 +319,9 @@ def test_systemd_failure_restores_original_units_and_enablement_state(tmp_path: 
         (units / name).write_bytes(payload)
         originals[name] = payload
     marker = tmp_path / "marker.json"
+    host_paths = _host_paths(tmp_path)
+    original_wrapper = b"#!/bin/sh\nexit 1\n"
+    host_paths["remote_wrapper_path"].write_bytes(original_wrapper)
     systemctl = tmp_path / "systemctl"
     systemctl.write_text("binary", encoding="utf-8")
     enabled: set[str] = set()
@@ -314,7 +345,7 @@ def test_systemd_failure_restores_original_units_and_enablement_state(tmp_path: 
         return timer in enabled
 
     plan = host_migration.plan_migration(
-        **_host_paths(tmp_path),
+        **host_paths,
         source_root=source,
         unit_directory=units,
         marker_path=marker,
@@ -327,7 +358,7 @@ def test_systemd_failure_restores_original_units_and_enablement_state(tmp_path: 
     ):
         host_migration.apply_migration(
             plan["planId"],
-            **_host_paths(tmp_path),
+            **host_paths,
             source_root=source,
             unit_directory=units,
             marker_path=marker,
@@ -341,9 +372,11 @@ def test_systemd_failure_restores_original_units_and_enablement_state(tmp_path: 
             testparm=systemctl,
         )
     assert {name: (units / name).read_bytes() for name in originals} == originals
-    host_paths = _host_paths(tmp_path)
     assert host_paths["samba_config_path"].read_text(encoding="utf-8") == "[global]\n"
     assert not host_paths["time_machine_config_path"].exists()
+    assert host_paths["remote_wrapper_path"].read_bytes() == original_wrapper
+    assert not host_paths["remote_credential_directory"].exists()
+    assert not host_paths["remote_mount_directory"].exists()
     assert enabled == set()
     assert not marker.exists()
 

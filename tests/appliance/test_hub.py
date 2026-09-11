@@ -12,6 +12,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from appliance.app_registry.docker_client import (
+    DOCKER_STOP_TIMEOUT_SECONDS,
+    HUB_MUTATION_TIMEOUT_SECONDS,
     DockerClient,
     DockerControlDenied,
     DockerUnavailable,
@@ -26,9 +28,62 @@ from appliance.audit import ApplianceAudit
 from appliance.hub import HubCatalog, HubCatalogError, HubService, create_hub_router
 from appliance.hub.docker_installer import HubDockerInstaller, HubInstallRejected
 from appliance.hub.operations import HubOperationService, HubOperationStore
+from appliance.hub.runtime import HubRuntimeInspector, empty_hub_runtime
 from runtime.safety.auth.identity import encode_jwt_hs256
 
 JWT_SECRET = "echo-hub-test-secret-that-is-long-enough"
+
+
+def test_direct_docker_client_inspects_hub_runtime_without_proxy_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = empty_hub_runtime("not-installed")
+    client = DockerClient(base_url="", allow_direct_socket=True)
+    monkeypatch.setattr(HubCatalog, "load", classmethod(lambda cls: object()))
+    monkeypatch.setattr(
+        HubRuntimeInspector,
+        "inspect",
+        lambda self, app_id: expected if app_id == "demo-app" else None,
+    )
+    monkeypatch.setattr(
+        client,
+        "_request",
+        lambda *args, **kwargs: pytest.fail("direct runtime inspection requested an HTTP route"),
+    )
+
+    assert client.hub_app_runtime("demo-app") == expected
+
+
+def test_non_streaming_hub_lifecycle_uses_a_bounded_mutation_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = DockerClient(base_url="http://127.0.0.1:2375")
+    observed: dict = {}
+
+    def request(method: str, path: str, **kwargs: object) -> httpx.Response:
+        observed.update({"method": method, "path": path, **kwargs})
+        return httpx.Response(200, json={"schema": "echo.hub.stop-result.v1"})
+
+    monkeypatch.setattr(client, "_request", request)
+    client.stop_hub_app("demo-app", plan_id="a" * 64, catalog_digest="b" * 64)
+
+    assert observed["timeout"] == HUB_MUTATION_TIMEOUT_SECONDS
+
+
+def test_container_stop_waits_for_the_declared_shutdown_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = DockerClient(base_url="http://127.0.0.1:2375")
+    observed: dict = {}
+
+    def request(method: str, path: str, **kwargs: object) -> httpx.Response:
+        observed.update({"method": method, "path": path, **kwargs})
+        return httpx.Response(204)
+
+    monkeypatch.setattr(client, "_request", request)
+    client.stop("a" * 64)
+
+    assert observed["timeout"] == DOCKER_STOP_TIMEOUT_SECONDS
 
 
 def _catalog_mapping(*, image: str | None = None) -> dict:

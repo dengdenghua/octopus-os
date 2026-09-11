@@ -39,7 +39,16 @@ def extract_invoice_document(data: bytes, extension: str) -> dict[str, Any]:
             available = False
         if not available:
             return {"text": None, "truncated": False, "available": False, "outcome": "unavailable"}
-    return extract_document_isolated(data, extension, **(_context.get() or {}))
+    context = _context.get() or {}
+    result = extract_document_isolated(data, extension, **context)
+    if result.get("outcome") == "unavailable":
+        # ``unavailable`` means the isolated worker could not establish its
+        # safety boundary before parsing any document bytes. A fresh worker is
+        # safe to try once and remains bounded by the same request deadline.
+        # Parser failures, resource limits, cancellation, and cleanup errors
+        # deliberately do not enter this retry path.
+        result = extract_document_isolated(data, extension, **context)
+    return result
 
 
 __all__ = [

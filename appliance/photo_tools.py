@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlencode
 
 from appliance.agent_api.tasks import current_execution_request
 from appliance.agent_authorization import require_appliance_actor
@@ -126,7 +127,7 @@ class PhotoToolService:
             return _failure(
                 "invalid_argument", "请输入不超过 120 字的搜索内容，结果数量应为 1–50。"
             )
-        return self._invoke(
+        response = self._invoke(
             "photos.search",
             lambda scope: self._service.search(
                 query,
@@ -134,6 +135,15 @@ class PhotoToolService:
                 path_visible=None if scope.operator else scope.visible,
             ),
         )
+        if response.get("ok"):
+            response["desktopAction"] = {
+                "type": "photos.search", "query": query.strip(),
+                "label": "在相册中查看",
+                "href": "/#/desktop?" + urlencode({
+                    "desktopAction": "photos.search", "query": query.strip(),
+                }),
+            }
+        return response
 
     def status(self) -> dict[str, Any]:
         return self._invoke(

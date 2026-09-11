@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 INDEX_KIND = "echo.local-vm-evidence-index"
 MAX_INDEX_BYTES = 256 * 1024
 MAX_EVIDENCE_BYTES = 4 * 1024 * 1024
@@ -81,12 +81,14 @@ def _validated_index(value: Any) -> list[dict[str, Any]]:
             "sha256",
             "discriminator",
             "bindings",
+            "assertions",
         }:
             raise VmEvidenceAuditError("evidence index entry schema is invalid")
         name = entry["name"]
         digest = entry["sha256"]
         discriminator = entry["discriminator"]
         bindings = entry["bindings"]
+        assertions = entry["assertions"]
         if (
             not isinstance(name, str)
             or _NAME.fullmatch(name) is None
@@ -104,6 +106,17 @@ def _validated_index(value: Any) -> list[dict[str, Any]]:
             raise VmEvidenceAuditError("evidence discriminator is invalid")
         if not isinstance(bindings, list) or len(bindings) > 16:
             raise VmEvidenceAuditError("evidence bindings are invalid")
+        if not isinstance(assertions, list) or not 1 <= len(assertions) <= 64:
+            raise VmEvidenceAuditError("evidence assertions are invalid")
+        for assertion in assertions:
+            if (
+                not isinstance(assertion, dict)
+                or set(assertion) != {"field", "value"}
+                or not isinstance(assertion["field"], str)
+                or not assertion["field"]
+                or not isinstance(assertion["value"], (str, int, float, bool))
+            ):
+                raise VmEvidenceAuditError("evidence assertion schema is invalid")
         for binding in bindings:
             if (
                 not isinstance(binding, dict)
@@ -150,9 +163,25 @@ def audit_vm_evidence(index_path: Path, evidence_root: Path) -> dict[str, Any]:
         for code, passed in checks.items():
             if not passed:
                 blockers.append(f"{name}:{code}")
-        results.append({"name": name, "checks": checks, "bindings": []})
+        results.append({"name": name, "checks": checks, "assertions": [], "bindings": []})
 
     result_by_name = {result["name"]: result for result in results}
+    for entry in entries:
+        payload = payloads.get(entry["name"])
+        for assertion in entry["assertions"]:
+            passed = False
+            try:
+                actual = _field(payload, assertion["field"])
+                expected = assertion["value"]
+                passed = type(actual) is type(expected) and actual == expected
+            except (KeyError, TypeError):
+                pass
+            result_by_name[entry["name"]]["assertions"].append(
+                {**assertion, "passed": passed}
+            )
+            if not passed:
+                blockers.append(f"{entry['name']}:assertion:{assertion['field']}")
+
     for entry in entries:
         source = payloads.get(entry["name"])
         for binding in entry["bindings"]:

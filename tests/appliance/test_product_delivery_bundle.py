@@ -69,6 +69,7 @@ def test_builds_deterministic_read_only_offline_product_delivery_directories(
     second, second_root = _build(tmp_path / "second")
 
     assert first["nasProductDeliveryReady"] is True
+    assert first["nasRuntimeProfile"] == physical_fixture.physical.NAS_RUNTIME_PROFILE
     assert first["bundleId"] == second["bundleId"]
     assert first["productReportId"] == second["productReportId"]
     assert (first_root / bundle.MANIFEST_NAME).read_bytes() == (

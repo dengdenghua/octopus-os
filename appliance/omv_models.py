@@ -19,6 +19,7 @@ from appliance.omv_protocol import (
     BTRFS_SNAPSHOT_DESIRED_SCHEMA,
     BTRFS_SNAPSHOT_LOCK_DESIRED_SCHEMA,
     BTRFS_SNAPSHOT_RESTORE_COPY_DESIRED_SCHEMA,
+    DLNA_DESIRED_SCHEMA,
     EXT4_CHECK_DESIRED_SCHEMA,
     EXT4_VOLUME_DESIRED_SCHEMA,
     GROUP_DESIRED_SCHEMA,
@@ -40,6 +41,7 @@ from appliance.omv_protocol import (
     TIME_MACHINE_DESIRED_SCHEMA,
     USER_DESIRED_SCHEMA,
     USER_PASSWORD_DESIRED_SCHEMA,
+    WEBDAV_DESIRED_SCHEMA,
     ZFS_MIRROR_DESIRED_SCHEMA,
     ZFS_MIRROR_REPLACE_DESIRED_SCHEMA,
     ZFS_POOL_EXPORT_DESIRED_SCHEMA,
@@ -53,6 +55,7 @@ from appliance.omv_protocol import (
     validate_btrfs_snapshot_desired,
     validate_btrfs_snapshot_lock_desired,
     validate_btrfs_snapshot_restore_copy_desired,
+    validate_dlna_desired,
     validate_ext4_check_desired,
     validate_ext4_volume_desired,
     validate_group_desired,
@@ -69,6 +72,7 @@ from appliance.omv_protocol import (
     validate_smart_self_test_desired,
     validate_user_desired,
     validate_user_password_desired,
+    validate_webdav_desired,
     validate_zfs_mirror_desired,
     validate_zfs_mirror_replace_desired,
     validate_zfs_pool_export_desired,
@@ -118,6 +122,44 @@ class TimeMachineDesiredState(BaseModel):
     @classmethod
     def validate_owner(cls, value: str) -> str:
         return validate_account_name(value, "Time Machine owner")
+
+
+class DlnaDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.storage.dlna-desired.v1"] = Field(
+        default=DLNA_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    shared_folder_ref: str = Field(min_length=36, max_length=36, alias="sharedFolderRef")
+    enabled: bool
+    media_type: Literal["all", "audio", "video", "pictures"] = Field(alias="mediaType")
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> DlnaDesiredState:
+        try:
+            validate_dlna_desired(self.model_dump(by_alias=True))
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
+
+
+class WebDavDesiredState(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    schema_name: Literal["echo.storage.webdav-desired.v1"] = Field(
+        default=WEBDAV_DESIRED_SCHEMA,
+        alias="schema",
+    )
+    enabled: bool
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> WebDavDesiredState:
+        try:
+            validate_webdav_desired(self.model_dump(by_alias=True))
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
 
 
 class GroupDesiredState(BaseModel):
@@ -630,6 +672,20 @@ class TimeMachineApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     desired: TimeMachineDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
+class DlnaApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: DlnaDesiredState
+    plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
+
+
+class WebDavApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    desired: WebDavDesiredState
     plan_id: str = Field(pattern=r"^[0-9a-f]{64}$", alias="planId")
 
 

@@ -12,8 +12,9 @@ import json
 import os
 import re
 import secrets
+import stat
 import tarfile
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -35,6 +36,9 @@ _SECRET_FILE_NAME = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _DATA_COPY_PROVIDER_LABEL = "sh.echo.hub.data-copy-provider"
 _NAS_PROVIDER_LABEL = "sh.echo.hub.nas-provider"
 DOCKER_STORAGE_SCHEMA = "echo.hub.docker-storage.v1"
+DOCKER_PROXY_CREDENTIAL = "echo.docker-proxy-token"
+HUB_MUTATION_TIMEOUT_SECONDS = 3600.0
+DOCKER_STOP_TIMEOUT_SECONDS = 120.0
 _DATA_COPY_SCRIPT = """\
 import os
 import shutil
@@ -95,6 +99,54 @@ class DockerConflict(DockerUnavailable):
     """The verified Docker operation no longer matches current engine state."""
 
 
+def _validate_proxy_token(value: str) -> str:
+    token = value.strip()
+    if token and not 32 <= len(token) <= 512:
+        raise DockerUnavailable("ECHO_DOCKER_PROXY_TOKEN must contain 32-512 characters")
+    if token and re.fullmatch(r"[A-Za-z0-9._~-]+", token) is None:
+        raise DockerUnavailable("ECHO_DOCKER_PROXY_TOKEN contains unsafe characters")
+    return token
+
+
+def configured_proxy_token(explicit: str | None = None) -> str:
+    """Load the proxy secret from an explicit value, environment, or systemd credential.
+
+    Raw Echo OS uses ``LoadCredential`` so the per-device secret never appears
+    in a unit file or process argument. Compose keeps its existing environment
+    contract. Explicit values remain useful for the proxy's tests and callers.
+    """
+
+    if explicit is not None:
+        return _validate_proxy_token(str(explicit))
+    environment_token = os.environ.get("ECHO_DOCKER_PROXY_TOKEN", "")
+    if environment_token.strip():
+        return _validate_proxy_token(environment_token)
+
+    raw_directory = os.environ.get("CREDENTIALS_DIRECTORY", "").strip()
+    if not raw_directory:
+        return ""
+    directory = Path(raw_directory)
+    if not directory.is_absolute() or directory.is_symlink() or not directory.is_dir():
+        raise DockerUnavailable("Docker proxy credentials directory is unsafe")
+    credential = directory / DOCKER_PROXY_CREDENTIAL
+    try:
+        info = credential.lstat()
+    except FileNotFoundError:
+        return ""
+    if (
+        credential.is_symlink()
+        or not stat.S_ISREG(info.st_mode)
+        or info.st_mode & 0o022
+        or not 32 <= info.st_size <= 512
+    ):
+        raise DockerUnavailable("Docker proxy credential is unsafe")
+    try:
+        token = credential.read_bytes().decode("ascii")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise DockerUnavailable("Docker proxy credential cannot be read") from exc
+    return _validate_proxy_token(token)
+
+
 def _normalized_base_url(value: str | None) -> str | None:
     configured = str(value or "").strip()
     if not configured:
@@ -134,14 +186,7 @@ class DockerClient:
         configured_base = base_url if base_url is not None else os.environ.get("ECHO_DOCKER_HOST")
         self._base_url = _normalized_base_url(configured_base)
         self._timeout = timeout
-        configured_token = (
-            proxy_token
-            if proxy_token is not None
-            else os.environ.get("ECHO_DOCKER_PROXY_TOKEN", "")
-        )
-        self._proxy_token = str(configured_token or "").strip()
-        if self._proxy_token and not 32 <= len(self._proxy_token) <= 512:
-            raise DockerUnavailable("ECHO_DOCKER_PROXY_TOKEN must contain 32-512 characters")
+        self._proxy_token = configured_proxy_token(proxy_token)
         self._allow_direct_socket = (
             os.environ.get("ECHO_APPLIANCE") != "1"
             if allow_direct_socket is None
@@ -254,6 +299,18 @@ class DockerClient:
 
         if _HUB_APP_ID.fullmatch(app_id) is None:
             raise DockerUnavailable("invalid Hub app id")
+        if self._base_url is None:
+            # The privileged proxy owns the Unix-socket client itself. Asking
+            # Docker Engine for our proxy-only route would always return 404
+            # and make every plan-bound lifecycle operation fail closed.
+            from appliance.hub.catalog import HubCatalog
+            from appliance.hub.runtime import HubRuntimeInspector
+
+            try:
+                runtime = HubRuntimeInspector(HubCatalog.load(), self).inspect(app_id)
+                return validate_hub_runtime(runtime)
+            except (KeyError, OSError, RuntimeError, ValueError) as exc:
+                raise DockerUnavailable("Hub runtime inspection is unavailable") from exc
         response = self._request("GET", f"/hub/apps/{app_id}/runtime")
         self._require_success(response, {200})
         try:
@@ -288,7 +345,11 @@ class DockerClient:
         self._require_success(response, {204, 304})
 
     def stop(self, container_id: str) -> None:
-        response = self._request("POST", f"/containers/{container_id}/stop")
+        response = self._request(
+            "POST",
+            f"/containers/{container_id}/stop",
+            timeout=DOCKER_STOP_TIMEOUT_SECONDS,
+        )
         self._require_success(response, {204, 304})
 
     def install_hub_app(
@@ -313,6 +374,7 @@ class DockerClient:
             "POST",
             f"/hub/apps/{app_id}/install",
             json={"planId": plan_id, "catalogDigest": catalog_digest},
+            timeout=HUB_MUTATION_TIMEOUT_SECONDS,
         )
         self._require_success(response, {200, 201})
         try:
@@ -356,6 +418,7 @@ class DockerClient:
             "POST",
             f"/hub/apps/{app_id}/uninstall",
             json={"planId": plan_id, "catalogDigest": catalog_digest},
+            timeout=HUB_MUTATION_TIMEOUT_SECONDS,
         )
         self._require_success(response, {200})
         try:
@@ -399,6 +462,7 @@ class DockerClient:
             "POST",
             f"/hub/apps/{app_id}/update",
             json={"planId": plan_id, "catalogDigest": catalog_digest},
+            timeout=HUB_MUTATION_TIMEOUT_SECONDS,
         )
         self._require_success(response, {200})
         try:
@@ -443,6 +507,7 @@ class DockerClient:
             "POST",
             f"/hub/apps/{app_id}/{operation}",
             json={"planId": plan_id, "catalogDigest": catalog_digest},
+            timeout=HUB_MUTATION_TIMEOUT_SECONDS,
         )
         self._require_success(response, {200})
         try:

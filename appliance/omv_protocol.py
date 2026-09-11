@@ -39,6 +39,12 @@ SMB_DESIRED_SCHEMA = "echo.omv.smb-share-desired.v1"
 SMB_PLAN_SCHEMA = "echo.omv.smb-share-plan.v1"
 TIME_MACHINE_DESIRED_SCHEMA = "echo.storage.time-machine-desired.v1"
 TIME_MACHINE_PLAN_SCHEMA = "echo.storage.time-machine-plan.v1"
+DLNA_DESIRED_SCHEMA = "echo.storage.dlna-desired.v1"
+DLNA_PLAN_SCHEMA = "echo.storage.dlna-plan.v1"
+DLNA_CONTROL_CAPABILITY = "media.dlna-share.desired.v1"
+WEBDAV_DESIRED_SCHEMA = "echo.storage.webdav-desired.v1"
+WEBDAV_PLAN_SCHEMA = "echo.storage.webdav-plan.v1"
+WEBDAV_CONTROL_CAPABILITY = "sharing.webdav.gateway.desired.v1"
 SMB_CONTROL_CAPABILITY = "smb.share.desired.v1"
 NFS_DESIRED_SCHEMA = "echo.omv.nfs-share-desired.v1"
 NFS_PLAN_SCHEMA = "echo.omv.nfs-share-plan.v1"
@@ -953,6 +959,41 @@ def validate_time_machine_desired(value: Any) -> dict[str, Any]:
         "owner": validate_account_name(value.get("owner"), "Time Machine owner"),
         "maximumBytes": maximum_bytes,
     }
+
+
+def validate_dlna_desired(value: Any) -> dict[str, Any]:
+    """Validate one read-only ReadyMedia publication for a registered share."""
+    expected = {"schema", "sharedFolderRef", "enabled", "mediaType"}
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("DLNA desired state has unexpected fields")
+    if value.get("schema") != DLNA_DESIRED_SCHEMA:
+        raise ValueError("DLNA desired-state schema is unsupported")
+    folder_ref = value.get("sharedFolderRef")
+    if not isinstance(folder_ref, str):
+        raise ValueError("DLNA shared folder UUID is invalid")
+    if not isinstance(value.get("enabled"), bool):
+        raise ValueError("DLNA desired field enabled must be boolean")
+    media_type = value.get("mediaType")
+    if media_type not in {"all", "audio", "video", "pictures"}:
+        raise ValueError("DLNA mediaType must be all, audio, video or pictures")
+    return {
+        "schema": DLNA_DESIRED_SCHEMA,
+        "sharedFolderRef": validate_omv_uuid(folder_ref).lower(),
+        "enabled": value["enabled"],
+        "mediaType": media_type,
+    }
+
+
+def validate_webdav_desired(value: Any) -> dict[str, Any]:
+    """Validate the explicit global WebDAV publication decision."""
+
+    if not isinstance(value, dict) or set(value) != {"schema", "enabled"}:
+        raise ValueError("WebDAV desired state has unexpected fields")
+    if value.get("schema") != WEBDAV_DESIRED_SCHEMA:
+        raise ValueError("WebDAV desired-state schema is unsupported")
+    if not isinstance(value.get("enabled"), bool):
+        raise ValueError("WebDAV desired field enabled must be boolean")
+    return {"schema": WEBDAV_DESIRED_SCHEMA, "enabled": value["enabled"]}
 
 
 def validate_private_network(value: Any) -> str:

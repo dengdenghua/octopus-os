@@ -57,6 +57,25 @@ def test_live_runtime_or_maintenance_lock_suppresses_deadman_delivery(tmp_path) 
     assert health_reads == 0
 
 
+def test_missing_state_directory_requests_a_retry_without_creating_it(tmp_path) -> None:
+    state_dir = tmp_path / "missing"
+
+    result = run_deadman(
+        state_dir,
+        lock_factory=lambda _root: (_ for _ in ()).throw(
+            AssertionError("missing state must be rejected before locking")
+        ),
+    )
+
+    assert result == {
+        "schema": DEADMAN_SCHEMA,
+        "state": "unavailable",
+        "channels": {},
+        "retryRequired": True,
+    }
+    assert not state_dir.exists()
+
+
 def test_healthy_or_disabled_appliance_does_not_open_auth_state(tmp_path) -> None:
     def secret(_root):
         raise AssertionError("healthy probe must not read the auth store")

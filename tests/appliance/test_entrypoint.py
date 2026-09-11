@@ -57,7 +57,7 @@ def test_codex_prepare_uses_only_the_captured_repository_dependency_tree():
     assert 'DEPENDENCY_SRC="${ECHO_AGENT_DEPENDENCY_SRC:-$AGENT_SRC}"' in codex
     assert "install --frozen-lockfile --ignore-scripts" in codex
     assert 'NODE_PATH="$DEPENDENCY_SRC/frontend/node_modules${NODE_PATH:+:$NODE_PATH}"' in codex
-    assert "ECHO_LINUX_ARCH=x64" in codex
+    assert 'ECHO_LINUX_ARCH="${ECHO_LINUX_ARCH:-x64}"' in codex
     assert "OCTO" + "PUS_LINUX_ARCH" not in codex
     assert "octo" + "pus-codex-bundle.json" not in codex
 

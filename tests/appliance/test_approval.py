@@ -196,7 +196,11 @@ def test_empty_shared_folder_delete_uses_a_plan_bound_approval(tmp_path):
         "storage.nas-backup.schedule",
         "storage.nas-backup.credential.provision",
         "storage.nas-backup.credential.rotate",
+        "storage.nas-backup.remote.configure",
         "storage.nas-backup.restore",
+        "storage.time-machine.apply",
+        "storage.dlna.apply",
+        "storage.webdav.apply",
     ],
 )
 def test_btrfs_snapshot_mutations_use_plan_bound_approval(tmp_path, action):

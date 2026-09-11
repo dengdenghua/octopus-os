@@ -12,6 +12,31 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_native_agent_service_requires_its_declared_os_extension() -> None:
+    service = (ROOT / "deploy/agent/echo-agent.service").read_text(encoding="utf-8")
+
+    assert "Environment=ECHO_APP_EXTENSIONS=appliance.extension" in service
+    assert "Environment=ECHO_APPLIANCE=1" in service
+    assert "Environment=ECHO_REQUIRED_APP_EXTENSIONS=1" in service
+    assert "Requires=echo-local-account.service" in service
+    assert "Requires=echo-native-storage-broker.service" in service
+    assert "LoadCredential=echo.os.ci-session" in service
+    assert (
+        "Environment=ECHO_NATIVE_STORAGE_BROKER_SOCKET=/run/echo-storage-broker/broker.sock"
+        in service
+    )
+
+
+def test_native_health_requires_a_real_storage_broker_handshake() -> None:
+    health = (ROOT / "deploy/agent/verify-native-agent-health").read_text(encoding="utf-8")
+
+    assert 'BROKER_SOCKET = Path("/run/echo-storage-broker/broker.sock")' in health
+    assert "NativeStorageBrokerClient(BROKER_SOCKET, timeout=3.0).probe()" in health
+    main = health.split("def main() -> int:", 1)[1]
+    assert main.index("_verify_storage_broker()") < main.index("_verify_once(")
+    assert main.index("_authorization_headers()") < main.index("_verify_once(")
+
+
 def _load_script(name: str, path: Path):
     loader = SourceFileLoader(name, str(path))
     spec = importlib.util.spec_from_loader(name, loader)
@@ -198,6 +223,24 @@ def _health_payloads(health) -> tuple[dict, dict[str, bytes]]:
                 },
             }
         ).encode(),
+        f"{health.BASE_URL}/api/appliance/tasks?limit=1": json.dumps(
+            {
+                "schema": "echo.task_projection.v1",
+                "available": True,
+                "generatedAt": "2026-08-26T00:00:00+00:00",
+                "counts": {
+                    "total": 0,
+                    "active": 0,
+                    "waitingApproval": 0,
+                    "paused": 0,
+                    "recoveryNeeded": 0,
+                    "failed": 0,
+                    "completed": 0,
+                },
+                "auditIntegrity": {"available": False, "ok": None, "entriesChecked": 0},
+                "tasks": [],
+            }
+        ).encode(),
         f"{health.BASE_URL}/api/task-runs/recovery-queue?limit=200": json.dumps(
             {
                 "schema": "echo.task_recovery_queue.v1",
@@ -222,16 +265,21 @@ def test_native_health_reads_recovery_queue_without_mutation(monkeypatch) -> Non
     expected, payloads = _health_payloads(health)
     observed: list[str] = []
 
-    def _read(url: str, *, maximum: int) -> bytes:
+    def _read(url: str, *, maximum: int, headers=None) -> bytes:
         observed.append(url)
+        assert headers == {"Authorization": "Bearer health-token"}
         value = payloads[url]
         assert len(value) <= maximum
         return value
 
     monkeypatch.setattr(health, "_read", _read)
 
-    assert health._verify_once(expected) == ("a" * 40, 1)
+    assert health._verify_once(
+        expected,
+        headers={"Authorization": "Bearer health-token"},
+    ) == ("a" * 40, 1)
     assert observed[-1].endswith("/api/task-runs/recovery-queue?limit=200")
+    assert any(url.endswith("/api/appliance/tasks?limit=1") for url in observed)
     assert all("resume-execution" not in url and "takeover" not in url for url in observed)
 
 
@@ -242,7 +290,9 @@ def test_native_health_rejects_a_runtime_from_another_agent_revision(monkeypatch
     payload = json.loads(payloads[health_url])
     payload["runtime"]["sourceId"] = "b" * 40
     payloads[health_url] = json.dumps(payload).encode()
-    monkeypatch.setattr(health, "_read", lambda url, *, maximum: payloads[url])
+    monkeypatch.setattr(
+        health, "_read", lambda url, *, maximum, headers=None: payloads[url]
+    )
 
     with pytest.raises(RuntimeError, match="health identity differs"):
         health._verify_once(expected)
@@ -255,7 +305,22 @@ def test_native_health_rejects_incompatible_recovery_queue(monkeypatch) -> None:
     payloads[queue_url] = json.dumps(
         {"schema": "legacy.queue", "total": 0, "count": 0, "limit": 200, "items": []}
     ).encode()
-    monkeypatch.setattr(health, "_read", lambda url, *, maximum: payloads[url])
+    monkeypatch.setattr(
+        health, "_read", lambda url, *, maximum, headers=None: payloads[url]
+    )
 
     with pytest.raises(RuntimeError, match="recovery queue response is incompatible"):
+        health._verify_once(expected)
+
+
+def test_native_health_rejects_a_missing_native_os_extension(monkeypatch) -> None:
+    health = _health_verifier()
+    expected, payloads = _health_payloads(health)
+    projection_url = f"{health.BASE_URL}/api/appliance/tasks?limit=1"
+    payloads[projection_url] = json.dumps({"detail": "Not Found"}).encode()
+    monkeypatch.setattr(
+        health, "_read", lambda url, *, maximum, headers=None: payloads[url]
+    )
+
+    with pytest.raises(RuntimeError, match="native OS extension task projection is unavailable"):
         health._verify_once(expected)

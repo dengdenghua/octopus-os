@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+from deploy.appliance import physical_acceptance, product_delivery_bundle
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "deploy" / "appliance" / "release_evidence_index.py"
 SPEC = importlib.util.spec_from_file_location("echo_release_evidence_index", SCRIPT)
@@ -46,7 +48,7 @@ def _with_evidence_id(value: dict[str, Any]) -> dict[str, Any]:
 
 def _source() -> dict[str, Any]:
     return {
-        "repository": "https://github.com/dengdenghua/echo-os.git",
+        "repository": "https://github.com/dengdenghua/octopus-os.git",
         "commit": OS_COMMIT,
         "tree": OS_TREE,
         "commit_time": "2026-08-27T00:00:00+00:00",
@@ -73,9 +75,9 @@ def _preflight() -> dict[str, Any]:
         "expectedBranch": "os-main",
         "branch": "os-main",
         "sourceRevision": OS_COMMIT,
-        "osRepository": "dengdenghua/echo-os",
+        "osRepository": "dengdenghua/octopus-os",
         "agentSource": {
-            "repository": "dengdenghua/echo-os",
+            "repository": "dengdenghua/octopus-os",
             "commit": AGENT_COMMIT,
         },
         "requiredWorkflows": list(release_index.REQUIRED_WORKFLOWS),
@@ -181,12 +183,12 @@ def _appliance() -> dict[str, Any]:
         "createdAt": "2026-08-27T00:00:00Z",
         "release": {"tag": RELEASE_TAG, "version": "1.0.0"},
         "source": {
-            "repository": "dengdenghua/echo-os",
+            "repository": "dengdenghua/octopus-os",
             "ref": f"refs/tags/{RELEASE_TAG}",
             "commit": OS_COMMIT,
         },
         "agentSource": {
-            "repository": "dengdenghua/echo-os",
+            "repository": "dengdenghua/octopus-os",
             "commit": AGENT_COMMIT,
         },
         "image": {
@@ -246,7 +248,7 @@ def _candidate_preflight(digests: dict[str, str]) -> dict[str, Any]:
             "workflow": workflow,
             "event": "push",
             "headBranch": RELEASE_TAG if name == "appliance" else "os-main",
-            "htmlUrl": f"https://github.com/dengdenghua/echo-os/actions/runs/{100 + index}",
+            "htmlUrl": f"https://github.com/dengdenghua/octopus-os/actions/runs/{100 + index}",
         }
         for index, (name, workflow) in enumerate(workflows.items(), start=1)
     }
@@ -254,7 +256,7 @@ def _candidate_preflight(digests: dict[str, str]) -> dict[str, Any]:
     for name, (run_name, branch_ref) in release_index.CANDIDATE_ATTESTATIONS.items():
         attestations[name] = {
             "sha256": digests[name],
-            "signerWorkflow": (f"github.com/dengdenghua/echo-os/{workflows[run_name]}"),
+            "signerWorkflow": (f"github.com/dengdenghua/octopus-os/{workflows[run_name]}"),
             "sourceRef": f"refs/tags/{RELEASE_TAG}" if branch_ref is None else branch_ref,
             "runnerPolicy": release_index.CANDIDATE_RUNNER_POLICIES[run_name],
             "verificationCount": 1,
@@ -263,7 +265,7 @@ def _candidate_preflight(digests: dict[str, str]) -> dict[str, Any]:
         "schemaVersion": 1,
         "kind": "echo.delivery-release-candidate-preflight",
         "ready": True,
-        "repository": "dengdenghua/echo-os",
+        "repository": "dengdenghua/octopus-os",
         "sourceRevision": OS_COMMIT,
         "releaseTag": RELEASE_TAG,
         "releaseTagRevision": OS_COMMIT,
@@ -386,9 +388,9 @@ def test_builds_one_source_bound_candidate_without_claiming_product_delivery() -
     report = release_index.build_index(**_inputs())
 
     assert report["source"] == {
-        "repository": "dengdenghua/echo-os",
+        "repository": "dengdenghua/octopus-os",
         "commit": OS_COMMIT,
-        "agentRepository": "dengdenghua/echo-os",
+        "agentRepository": "dengdenghua/octopus-os",
         "agentCommit": AGENT_COMMIT,
         "releaseTag": RELEASE_TAG,
     }
@@ -397,6 +399,7 @@ def test_builds_one_source_bound_candidate_without_claiming_product_delivery() -
     assert report["evidence"]["candidatePreflight"]["runnerPolicies"] == (
         release_index.CANDIDATE_RUNNER_POLICIES
     )
+    assert report["evidence"]["nasRuntimeProfile"] == release_index.NAS_RUNTIME_PROFILE
     assert report["evidence"]["appliance"]["operationsBundle"] == {
         "artifactId": "5" * 16,
         "sha256": "6" * 64,
@@ -407,6 +410,58 @@ def test_builds_one_source_bound_candidate_without_claiming_product_delivery() -
     unsigned = dict(report)
     index_id = unsigned.pop("indexId")
     assert index_id == _digest(json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode())
+
+
+@pytest.mark.parametrize("mutation", ["missing", "wrong-host", "wrong-image-role"])
+def test_physical_promotion_rejects_an_ambiguous_or_false_runtime_profile(
+    mutation: str,
+) -> None:
+    report = release_index.build_index(**_inputs())
+    profile = report["evidence"]["nasRuntimeProfile"]
+    if mutation == "missing":
+        del report["evidence"]["nasRuntimeProfile"]
+    elif mutation == "wrong-host":
+        profile["host"] = "echo-os-native"
+    else:
+        profile["echoOsImageRole"] = "nas-host-os"
+    unsigned = dict(report)
+    unsigned.pop("indexId")
+    report["indexId"] = _digest(
+        json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
+    )
+    raw = (json.dumps(report, sort_keys=True) + "\n").encode()
+
+    with pytest.raises(
+        physical_acceptance.PhysicalAcceptanceError,
+        match="complete CI release candidate",
+    ):
+        physical_acceptance._validate_candidate(report, raw)
+
+
+def test_final_product_manifest_exposes_and_pins_the_nas_runtime_profile() -> None:
+    records = [{"path": "evidence.json", "sha256": "a" * 64, "size": 1, "mode": "0444"}]
+    report = {
+        "candidate": {"indexId": "b" * 64},
+        "reportId": "c" * 64,
+        "acceptanceKeyringSha256": "d" * 64,
+        "acceptanceSignerFingerprint": "E" * 40,
+        "nasRuntimeProfile": dict(release_index.NAS_RUNTIME_PROFILE),
+    }
+    manifest = product_delivery_bundle._manifest(report, records)
+
+    assert manifest["schemaVersion"] == 2
+    assert manifest["nasRuntimeProfile"] == release_index.NAS_RUNTIME_PROFILE
+    assert product_delivery_bundle._validate_manifest(manifest) == records
+
+    manifest["nasRuntimeProfile"]["echoOsImageRole"] = "nas-host-os"
+    unsigned = dict(manifest)
+    unsigned.pop("bundleId")
+    manifest["bundleId"] = _digest(product_delivery_bundle._canonical_json(unsigned))
+    with pytest.raises(
+        product_delivery_bundle.ProductDeliveryBundleError,
+        match="identity is invalid",
+    ):
+        product_delivery_bundle._validate_manifest(manifest)
 
 
 @pytest.mark.parametrize(

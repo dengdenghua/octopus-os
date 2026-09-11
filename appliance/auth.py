@@ -172,7 +172,8 @@ def _validate_auth_store_path(target: Path, *, create_parent: bool = False) -> N
     # The implicit local-development path is the checkout's current directory;
     # never change its permissions. Explicit data directories are private state.
     if parent != Path("."):
-        parent.chmod(0o700)
+        if stat.S_IMODE(parent.stat().st_mode) != 0o700:
+            parent.chmod(0o700)
         if stat.S_IMODE(parent.stat().st_mode) != 0o700:
             raise OSError("appliance auth directory permissions are not private")
     if target.is_symlink():
@@ -180,7 +181,8 @@ def _validate_auth_store_path(target: Path, *, create_parent: bool = False) -> N
     if target.exists():
         if not target.is_file():
             raise ValueError("appliance auth store must be a regular file")
-        target.chmod(0o600)
+        if stat.S_IMODE(target.stat().st_mode) != 0o600:
+            target.chmod(0o600)
         if stat.S_IMODE(target.stat().st_mode) != 0o600:
             raise OSError("appliance auth store permissions are not private")
 
@@ -334,6 +336,10 @@ def load_or_bootstrap_auth() -> tuple[Any, str | None]:
         # bcrypt 静默截断 72B，必须在入口处拒绝，避免“强口令实际弱化”
         if len(password.encode("utf-8")) > 72:
             raise ValueError("ECHO_ADMIN_PASSWORD must be at most 72 UTF-8 bytes (bcrypt limit)")
+    elif os.environ.get("ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH") == "1":
+        raise RuntimeError(
+            "appliance authentication must be provisioned before production startup"
+        )
     else:
         password = secrets.token_urlsafe(12)
         generated = password

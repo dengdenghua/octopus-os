@@ -107,26 +107,41 @@ def _fake_dependency_locks(path: Path) -> None:
     _write(path / agent_bundle.DEPENDENCY_LOCK_METADATA, json.dumps(metadata) + "\n")
 
 
-def _fake_codex(path: Path, *, schema: str = "echo.codex_bundle.v1") -> None:
+def _fake_codex(path: Path, *, schema: str = "echo.codex_bundle.v1", arm64: bool = False, wrong_machine: bool = False) -> None:
     executable = path / "bin" / "codex"
     executable.parent.mkdir(parents=True, exist_ok=True)
     # Minimal little-endian x86-64 ELF64 header; bundle tests validate target
     # identity and hashes, not process execution.
     header = bytearray(20)
     header[:6] = b"\x7fELF\x02\x01"
-    header[18:20] = (62).to_bytes(2, "little")
+    header[18:20] = (183 if arm64 and not wrong_machine else 62).to_bytes(2, "little")
     executable.write_bytes(header)
     executable.chmod(0o755)
     manifest = {
         "schema": schema,
         "package": "@openai/codex",
         "version": "0.149.0",
-        "platformPackage": "@openai/codex-linux-x64",
-        "target": "x86_64-unknown-linux-musl",
+        "platformPackage": "@openai/codex-linux-arm64" if arm64 else "@openai/codex-linux-x64",
+        "target": "aarch64-unknown-linux-musl" if arm64 else "x86_64-unknown-linux-musl",
         "fileHashPhase": "pre-package",
         "files": {"bin/codex": hashlib.sha256(header).hexdigest()},
     }
     _write(path / "echo-codex-bundle.json", json.dumps(manifest) + "\n")
+
+
+@pytest.mark.parametrize("wrong_machine", [False, True])
+def test_record_codex_arm64_checks_binary_architecture(tmp_path: Path, wrong_machine: bool) -> None:
+    source = _agent_checkout(tmp_path)
+    identity_path = tmp_path / "source.json"
+    agent_bundle.capture_source(source, identity_path, allow_dirty=False)
+    codex = tmp_path / "agent-codex"
+    _fake_codex(codex, arm64=True, wrong_machine=wrong_machine)
+    if wrong_machine:
+        with pytest.raises(agent_bundle.BundleError, match="architecture"):
+            agent_bundle.record_codex(source, identity_path, codex)
+    else:
+        result = agent_bundle.record_codex(source, identity_path, codex)
+        assert result["artifact"]["target"] == "aarch64-unknown-linux-musl"
 
 
 def test_record_codex_rejects_the_pre_echo_manifest_namespace(tmp_path: Path) -> None:

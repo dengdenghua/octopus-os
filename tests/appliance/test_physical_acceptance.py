@@ -56,10 +56,10 @@ def _digest(data: bytes) -> str:
 
 def _candidate() -> dict[str, Any]:
     value = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "kind": "echo.delivery-release-evidence-index",
         "source": {
-            "repository": "dengdenghua/echo-os",
+            "repository": "dengdenghua/octopus-os",
             "commit": OS_COMMIT,
             "agentRepository": "dengdenghua/echo-agent",
             "agentCommit": AGENT_COMMIT,
@@ -67,6 +67,7 @@ def _candidate() -> dict[str, Any]:
         },
         "evidence": {
             "candidatePreflight": {"reportId": "4" * 64},
+            "nasRuntimeProfile": dict(physical.NAS_RUNTIME_PROFILE),
             "appliance": {
                 "manifestSha256": "5" * 64,
                 "immutableReference": f"ghcr.io/echo-os/echo-os@sha256:{'6' * 64}",
@@ -86,6 +87,31 @@ def _candidate() -> dict[str, Any]:
     }
     value["indexId"] = _digest(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())
     return value
+
+
+@pytest.mark.parametrize("mutation", ["missing", "wrong-host", "wrong-image-role"])
+def test_candidate_rejects_an_ambiguous_or_misdeclared_nas_runtime_profile(
+    mutation: str,
+) -> None:
+    value = _candidate()
+    profile = value["evidence"]["nasRuntimeProfile"]
+    if mutation == "missing":
+        del value["evidence"]["nasRuntimeProfile"]
+    elif mutation == "wrong-host":
+        profile["host"] = "echo-os-native"
+    else:
+        profile["echoOsImageRole"] = "nas-host-os"
+    value["indexId"] = _digest(
+        json.dumps(
+            {key: item for key, item in value.items() if key != "indexId"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    )
+    raw = (json.dumps(value, sort_keys=True) + "\n").encode()
+
+    with pytest.raises(physical.PhysicalAcceptanceError, match="complete CI release candidate"):
+        physical._validate_candidate(value, raw)
 
 
 def _write_json(path: Path, value: Any) -> bytes:
@@ -449,6 +475,7 @@ def _bare_metal_material(candidate: dict[str, Any]) -> tuple[dict[str, bytes], b
     }
     app = {
         "bundleVerified": True,
+        "applianceCapabilitiesVerified": True,
         "immutableImageVerified": True,
         "administratorLoginReady": True,
         "agentWorkbenchReady": True,
@@ -1021,6 +1048,7 @@ def test_six_signed_physical_gates_promote_one_candidate_to_product_delivery(
     assert report["ciReleaseCandidateReady"] is True
     assert report["physicalAcceptanceComplete"] is True
     assert report["nasProductDeliveryReady"] is True
+    assert report["nasRuntimeProfile"] == physical.NAS_RUNTIME_PROFILE
     assert report["deliveryRequirementsVerified"] == list(physical.DELIVERY_REQUIREMENTS)
     assert set(report["gates"]) == set(physical.PHYSICAL_GATES)
     assert report["acceptanceKeyringSha256"] == KEYRING_SHA

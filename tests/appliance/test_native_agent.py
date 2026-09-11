@@ -75,6 +75,36 @@ def test_native_entrypoint_rejects_an_unversioned_agent_bundle(monkeypatch) -> N
         native_entrypoint.main()
 
 
+def test_native_entrypoint_provisions_opaque_auth_only_for_ci_credential(
+    tmp_path, monkeypatch
+) -> None:
+    data = tmp_path / "state"
+    credentials = tmp_path / "credentials"
+    credentials.mkdir()
+    (credentials / native_entrypoint.CI_SESSION_CREDENTIAL).write_bytes(b"1")
+    monkeypatch.setenv("ECHO_DATA_DIR", str(data))
+    monkeypatch.setenv("ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH", "1")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credentials))
+
+    assert native_entrypoint._provision_ci_auth() is True
+    payload = (data / "appliance-auth.json").read_text(encoding="utf-8")
+    assert '"username":"admin"' in payload
+    assert "ECHO_ADMIN_PASSWORD" not in os.environ
+    assert native_entrypoint._provision_ci_auth() is False
+
+
+def test_native_entrypoint_rejects_invalid_ci_credential(tmp_path, monkeypatch) -> None:
+    credentials = tmp_path / "credentials"
+    credentials.mkdir()
+    (credentials / native_entrypoint.CI_SESSION_CREDENTIAL).write_bytes(b"0")
+    monkeypatch.setenv("ECHO_DATA_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH", "1")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(credentials))
+
+    with pytest.raises(RuntimeError, match="CI credential is invalid"):
+        native_entrypoint._provision_ci_auth()
+
+
 @pytest.mark.parametrize("value", ["0", "65536", "http", "8000 extra"])
 def test_native_entrypoint_rejects_invalid_ports(value: str, monkeypatch) -> None:
     monkeypatch.setenv("ECHO_NATIVE_AGENT_PORT", value)

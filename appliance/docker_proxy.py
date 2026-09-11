@@ -23,6 +23,7 @@ create/delete/exec/images/volumes/networks and arbitrary proxying do not exist.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hmac
 import ipaddress
 import json
@@ -31,6 +32,7 @@ import re
 import shutil
 import stat
 import sys
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -41,6 +43,7 @@ from appliance.app_registry.docker_client import (
     DockerClient,
     DockerConflict,
     DockerUnavailable,
+    configured_proxy_token,
 )
 from appliance.hub.catalog import HubCatalog
 from appliance.hub.docker_installer import HubDockerInstaller, HubInstallRejected
@@ -62,15 +65,16 @@ _FALSE_VALUES = {"0", "false"}
 _LEGACY_LABEL_NAMESPACE = "sh.octo" + "pus"
 _PROTECTED_LABELS = (
     "sh.echo.control-protected",
+    "sh.echo.hub.managed",
     f"{_LEGACY_LABEL_NAMESPACE}.control-protected",
 )
 
 
 def _proxy_token() -> str:
-    token = os.environ.get("ECHO_DOCKER_PROXY_TOKEN", "").strip()
-    if token and not 32 <= len(token) <= 512:
-        raise RuntimeError("ECHO_DOCKER_PROXY_TOKEN must contain 32-512 characters")
-    return token
+    try:
+        return configured_proxy_token()
+    except DockerUnavailable as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def _loopback_bind(host: str) -> bool:
@@ -183,6 +187,8 @@ def _handler_for(
     hub_installer: HubDockerInstaller,
     hub_runtime: HubRuntimeInspector,
     *,
+    proxy_token: str,
+    hub_firewall_sync: Callable[[], Any] | None,
     docker_data_root_mount: Path | None,
     expected_docker_root: str | None,
 ) -> type[BaseHTTPRequestHandler]:
@@ -190,6 +196,11 @@ def _handler_for(
         protocol_version = "HTTP/1.1"
         server_version = "EchoDockerControl/1"
         sys_version = ""
+
+        @staticmethod
+        def _sync_hub_firewall() -> None:
+            if hub_firewall_sync is not None:
+                hub_firewall_sync()
 
         def _send_bytes(
             self,
@@ -260,11 +271,10 @@ def _handler_for(
             return False
 
         def _check_auth(self) -> bool:
-            expected = _proxy_token()
-            if not expected:
+            if not proxy_token:
                 return True
             got = self.headers.get("X-Echo-Proxy-Token", "").strip()
-            if not got or not hmac_compare(got, expected):
+            if not got or not hmac_compare(got, proxy_token):
                 self._error(401, "proxy token required")
                 return False
             return True
@@ -393,10 +403,22 @@ def _handler_for(
                         catalog_digest=body["catalogDigest"],
                     )
                 except HubInstallRejected as exc:
+                    try:
+                        self._sync_hub_firewall()
+                    except OSError:
+                        self._error(503, "Hub firewall synchronization is unavailable")
+                        return
                     self._error(409, str(exc))
                     return
                 except (DockerUnavailable, OSError):
+                    with contextlib.suppress(OSError):
+                        self._sync_hub_firewall()
                     self._error(503, "Hub installer is unavailable")
+                    return
+                try:
+                    self._sync_hub_firewall()
+                except OSError:
+                    self._error(503, "Hub firewall synchronization is unavailable")
                     return
                 self._send_json(201 if operation == "install" else 200, result)
                 return
@@ -425,11 +447,24 @@ def _handler_for(
                         progress=emit,
                     )
                 except HubInstallRejected:
+                    try:
+                        self._sync_hub_firewall()
+                    except OSError:
+                        self._write_hub_stream_event(
+                            {
+                                "schema": HUB_STREAM_SCHEMA,
+                                "type": "error",
+                                "code": "UNAVAILABLE",
+                            }
+                        )
+                        return
                     self._write_hub_stream_event(
                         {"schema": HUB_STREAM_SCHEMA, "type": "error", "code": "CONFLICT"}
                     )
                     return
                 except (DockerUnavailable, OSError):
+                    with contextlib.suppress(OSError):
+                        self._sync_hub_firewall()
                     self._write_hub_stream_event(
                         {
                             "schema": HUB_STREAM_SCHEMA,
@@ -439,11 +474,24 @@ def _handler_for(
                     )
                     return
                 except Exception:  # noqa: BLE001 - emit only a bounded code across the boundary
+                    with contextlib.suppress(OSError):
+                        self._sync_hub_firewall()
                     self._write_hub_stream_event(
                         {
                             "schema": HUB_STREAM_SCHEMA,
                             "type": "error",
                             "code": "INTERNAL",
+                        }
+                    )
+                    return
+                try:
+                    self._sync_hub_firewall()
+                except OSError:
+                    self._write_hub_stream_event(
+                        {
+                            "schema": HUB_STREAM_SCHEMA,
+                            "type": "error",
+                            "code": "UNAVAILABLE",
                         }
                     )
                     return
@@ -508,8 +556,11 @@ def create_proxy_server(
     hub_installer: HubDockerInstaller | None = None,
     docker_data_root_mount: Path | None = None,
     expected_docker_root: str | None = None,
+    proxy_token: str | None = None,
+    hub_firewall_sync: Callable[[], Any] | None = None,
 ) -> ThreadingHTTPServer:
-    if not _proxy_token() and not _loopback_bind(host):
+    effective_token = configured_proxy_token(proxy_token)
+    if not effective_token and not _loopback_bind(host):
         raise RuntimeError(
             "ECHO_DOCKER_PROXY_TOKEN is required when Docker control listens beyond loopback"
         )
@@ -539,6 +590,8 @@ def create_proxy_server(
             client,
             installer,
             runtime_inspector,
+            proxy_token=effective_token,
+            hub_firewall_sync=hub_firewall_sync,
             docker_data_root_mount=configured_mount,
             expected_docker_root=configured_root,
         ),
@@ -563,8 +616,6 @@ def _drop_socket_privileges(socket_path: Path, username: str) -> None:
     except KeyError as exc:
         raise RuntimeError(f"Docker control proxy user not found: {username}") from exc
     # 清理补充组，仅保留必要 gid
-    import contextlib
-
     with contextlib.suppress(OSError):
         os.initgroups(username, account.pw_gid)
     groups = sorted({account.pw_gid, socket_stat.st_gid})
@@ -573,6 +624,14 @@ def _drop_socket_privileges(socket_path: Path, username: str) -> None:
     os.setuid(account.pw_uid)
     if os.geteuid() == 0:
         raise RuntimeError("Docker control proxy failed to drop root privileges")
+
+
+def _sync_native_hub_firewall() -> None:
+    if os.environ.get("ECHO_NATIVE_OS") != "1":
+        return
+    from appliance.native_storage_broker import DEFAULT_SOCKET, NativeStorageBrokerClient
+
+    NativeStorageBrokerClient(DEFAULT_SOCKET).system("native_hub_firewall.sync")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -593,13 +652,25 @@ def main(argv: list[str] | None = None) -> int:
     if not 1 <= args.port <= 65535:
         parser.error("--port must be between 1 and 65535")
 
+    # systemd credentials are readable by the unit's configured root identity.
+    # Capture the token before permanently dropping to the socket group.
+    proxy_token = _proxy_token()
     _drop_socket_privileges(args.socket, args.user)
     client = DockerClient(
         socket_path=str(args.socket),
         base_url="",
         allow_direct_socket=True,
     )
-    server = create_proxy_server(client, host=args.host, port=args.port)
+    hub_firewall_sync = _sync_native_hub_firewall if os.environ.get("ECHO_NATIVE_OS") == "1" else None
+    if hub_firewall_sync is not None:
+        hub_firewall_sync()
+    server = create_proxy_server(
+        client,
+        host=args.host,
+        port=args.port,
+        proxy_token=proxy_token,
+        hub_firewall_sync=hub_firewall_sync,
+    )
     print(
         f"Echo Docker control proxy listening on {args.host}:{args.port} "
         f"as uid={os.geteuid()} gid={os.getegid()}",

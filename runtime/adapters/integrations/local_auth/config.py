@@ -4,32 +4,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .passwords import hash_password, verify_password
 
-def hash_password(plaintext: str) -> str:
-    """Hash a password using bcrypt with a random salt.
-
-    Returns a string in the format ``bcrypt:<hash>`` for forward
-    compatibility and to distinguish from legacy sha256 hashes.
-    """
-    import bcrypt
-
-    pw_bytes = plaintext.encode("utf-8")
-    hashed = bcrypt.hashpw(pw_bytes, bcrypt.gensalt(rounds=12))
-    return f"bcrypt:{hashed.decode('utf-8')}"
-
-
-def verify_password(plaintext: str, hashed: str) -> bool:
-    """Verify a plaintext password against a bcrypt or legacy sha256 hash."""
-    if hashed.startswith("bcrypt:"):
-        import bcrypt
-
-        stored = hashed[7:].encode("utf-8")
-        return bcrypt.checkpw(plaintext.encode("utf-8"), stored)
-    # Legacy sha256 fallback for migration
-    import hashlib
-
-    legacy = hashlib.sha256(plaintext.encode("utf-8")).hexdigest()
-    return hashed == legacy or hashed == f"sha256:{legacy}"
+__all__ = ["LocalAuthConfig", "hash_password", "verify_password"]
 
 
 class LocalAuthConfig(BaseModel):
