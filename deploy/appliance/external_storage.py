@@ -7,10 +7,12 @@ import argparse
 import os
 import re
 import shlex
+import shutil
 import stat
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 MAX_ENV_BYTES = 64 * 1024
 MAX_MOUNTINFO_BYTES = 4 * 1024 * 1024
@@ -35,6 +37,8 @@ UNSAFE_FILESYSTEMS = {
     "tmpfs",
     "tracefs",
 }
+DEFAULT_CANDIDATE_ROOTS = (Path("/mnt"), Path("/media"), Path("/run/media"))
+MAX_CANDIDATE_MOUNTS = 64
 
 
 class ExternalStorageError(RuntimeError):
@@ -139,21 +143,135 @@ def _nas_root(deployment_root: Path, appliance_env: Path | None) -> Path:
     return candidate if candidate.is_absolute() else deployment_root / candidate
 
 
-def _mount_entry(mountinfo: Path, expected: Path) -> tuple[str, str]:
+def _mount_rows(mountinfo: Path) -> list[dict[str, Any]]:
     text = _read_regular(mountinfo, maximum=MAX_MOUNTINFO_BYTES, label="mount table")
-    matches: list[tuple[str, str]] = []
+    rows: list[dict[str, Any]] = []
     for line in text.splitlines():
         before, separator, after = line.partition(" - ")
         fields = before.split()
         trailing = after.split()
         if not separator or len(fields) < 6 or len(trailing) < 3:
             raise ExternalStorageError("mount table contains a malformed record")
-        mount_point = _unescape_mount_field(fields[4])
-        if mount_point == str(expected):
-            matches.append((trailing[0], trailing[1]))
+        rows.append(
+            {
+                "mountpoint": _unescape_mount_field(fields[4]),
+                "options": frozenset(fields[5].split(",")),
+                "filesystem": trailing[0],
+                "source": _unescape_mount_field(trailing[1]),
+            }
+        )
+    return rows
+
+
+def _mount_entry(
+    mountinfo: Path,
+    expected: Path,
+    *,
+    rows: Sequence[dict[str, Any]] | None = None,
+) -> tuple[str, str]:
+    matches = [
+        (str(row["filesystem"]), str(row["source"]))
+        for row in (_mount_rows(mountinfo) if rows is None else rows)
+        if row["mountpoint"] == str(expected)
+    ]
     if not matches:
         raise ExternalStorageError("declared operations mount is not currently mounted")
     return matches[-1]
+
+
+def _candidate_kind(filesystem: str) -> str:
+    normalized = filesystem.casefold()
+    if normalized.startswith("fuse.") or normalized in {
+        "9p",
+        "cifs",
+        "nfs",
+        "nfs4",
+        "smb3",
+    }:
+        return "remote"
+    return "local"
+
+
+def list_external_storage_mounts(
+    *,
+    deployment_root: Path,
+    appliance_env: Path | None,
+    state_root_override: Path | None = None,
+    nas_root_override: Path | None = None,
+    mountinfo: Path = Path("/proc/self/mountinfo"),
+    device_reader: Callable[[Path], int] | None = None,
+    disk_usage_reader: Callable[[Path], Any] = shutil.disk_usage,
+    candidate_roots: Sequence[Path] = DEFAULT_CANDIDATE_ROOTS,
+) -> dict[str, Any]:
+    """List writable external mounts that pass the backup safety boundary.
+
+    Discovery is deliberately narrower than verification: only conventional
+    removable/remote mount roots are shown, mount sources are never returned,
+    and every row must independently pass ``verify_external_storage``.  The
+    selected repository directory is still reverified during plan/apply.
+    """
+
+    roots = tuple(Path(root) for root in candidate_roots)
+    if not roots or any(not root.is_absolute() or root == Path("/") for root in roots):
+        raise ExternalStorageError("external storage candidate roots are invalid")
+
+    # Keep the final record for an over-mounted path, matching the kernel's
+    # effective view and ``_mount_entry`` above.
+    mount_rows = _mount_rows(mountinfo)
+    effective: dict[str, dict[str, Any]] = {}
+    for row in mount_rows:
+        effective[str(row["mountpoint"])] = row
+
+    candidates: list[dict[str, Any]] = []
+    valid_count = 0
+    for mountpoint_text, row in sorted(effective.items()):
+        mountpoint = Path(mountpoint_text)
+        if (
+            not mountpoint.is_absolute()
+            or len(mountpoint_text) > 4096
+            or any(ord(character) < 32 or character == "\x7f" for character in mountpoint_text)
+            or not any(mountpoint == root or root in mountpoint.parents for root in roots)
+            or "rw" not in row["options"]
+        ):
+            continue
+        try:
+            verified = verify_external_storage(
+                destination=mountpoint,
+                mountpoint=mountpoint,
+                deployment_root=deployment_root,
+                appliance_env=appliance_env,
+                state_root_override=state_root_override,
+                nas_root_override=nas_root_override,
+                mountinfo=mountinfo,
+                device_reader=device_reader,
+                mount_rows=mount_rows,
+            )
+            usage = disk_usage_reader(mountpoint)
+            total = int(usage.total)
+            free = int(usage.free)
+            if total < 0 or free < 0 or free > total:
+                raise ValueError("invalid filesystem capacity")
+        except (ExternalStorageError, OSError, ValueError):
+            continue
+        valid_count += 1
+        if len(candidates) >= MAX_CANDIDATE_MOUNTS:
+            continue
+        candidates.append(
+            {
+                "mountpoint": verified["mountpoint"],
+                "filesystem": verified["filesystem"],
+                "kind": _candidate_kind(verified["filesystem"]),
+                "totalBytes": total,
+                "freeBytes": free,
+                "writable": True,
+            }
+        )
+    return {
+        "schema": "echo.external-storage-candidates.v1",
+        "candidates": candidates,
+        "truncated": valid_count > len(candidates),
+        "sourcesRedacted": True,
+    }
 
 
 def verify_external_storage(
@@ -166,6 +284,7 @@ def verify_external_storage(
     nas_root_override: Path | None = None,
     mountinfo: Path = Path("/proc/self/mountinfo"),
     device_reader: Callable[[Path], int] | None = None,
+    mount_rows: Sequence[dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     destination = _safe_directory(destination, "operations destination")
     mountpoint = _safe_directory(mountpoint, "operations mountpoint")
@@ -184,7 +303,7 @@ def verify_external_storage(
         destination == mountpoint or mountpoint in destination.parents
     ):
         raise ExternalStorageError("operations destination is outside its declared non-root mount")
-    filesystem, source = _mount_entry(mountinfo, mountpoint)
+    filesystem, source = _mount_entry(mountinfo, mountpoint, rows=mount_rows)
     if filesystem.casefold() in UNSAFE_FILESYSTEMS:
         raise ExternalStorageError("operations mount uses a volatile or system filesystem")
     read_device = device_reader or (lambda path: path.stat().st_dev)

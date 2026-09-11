@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -50,12 +52,13 @@ class EchoFirewallHealthTests(unittest.TestCase):
               --state) printf '%s\n' "${ECHO_TEST_STATE:-running}" ;;
               --get-default-zone) printf '%s\n' "${ECHO_TEST_RUNTIME_ZONE:-echo-public}" ;;
               --get-zones) printf '%s\n' "block drop echo-public home public trusted work" ;;
-              '--zone=echo-public --get-target') printf '%s\n' "${ECHO_TEST_TARGET:-default}" ;;
-              '--zone=echo-public --get-services') printf '%s\n' "${ECHO_TEST_SERVICES:-dhcpv6-client}" ;;
-              '--zone=echo-public --get-ports') printf '%s' "${ECHO_TEST_PORTS:-}" ;;
-              '--zone=echo-public --get-protocols') printf '%s' "${ECHO_TEST_PROTOCOLS:-}" ;;
-              '--zone=echo-public --get-source-ports') printf '%s' "${ECHO_TEST_SOURCE_PORTS:-}" ;;
+              '--permanent --zone=echo-public --get-target') printf '%s\n' "${ECHO_TEST_TARGET:-default}" ;;
+              '--zone=echo-public --list-services') printf '%s\n' "${ECHO_TEST_SERVICES:-dhcpv6-client}" ;;
+              '--zone=echo-public --list-ports') printf '%s' "${ECHO_TEST_PORTS:-}" ;;
+              '--zone=echo-public --list-protocols') printf '%s' "${ECHO_TEST_PROTOCOLS:-}" ;;
+              '--zone=echo-public --list-source-ports') printf '%s' "${ECHO_TEST_SOURCE_PORTS:-}" ;;
               '--zone=echo-public --list-rich-rules') printf '%s' "${ECHO_TEST_RICH_RULES:-}" ;;
+              '--permanent --zone=echo-public --list-rich-rules') printf '%s' "${ECHO_TEST_PERMANENT_RICH_RULES-${ECHO_TEST_RICH_RULES:-}}" ;;
               '--zone=echo-public --query-forward') exit "${ECHO_TEST_FORWARD_STATUS:-1}" ;;
               '--zone=echo-public --query-masquerade') exit "${ECHO_TEST_MASQUERADE_STATUS:-1}" ;;
               *) exit 9 ;;
@@ -93,6 +96,8 @@ class EchoFirewallHealthTests(unittest.TestCase):
             "ECHO_FIREWALL_BUSCTL": str(self.busctl),
             "ECHO_FIREWALL_CMD": str(self.firewall_cmd),
             "ECHO_FIREWALL_NFT": str(self.nft),
+            "ECHO_FIREWALL_PYTHON": sys.executable,
+            "ECHO_FIREWALL_PYTHONPATH": str(HERE.parent.parent),
         }
         if sentinel:
             environment["ECHO_FIREWALL_SOURCE_TEST"] = "USE-SOURCE-RUNTIME"
@@ -113,7 +118,7 @@ class EchoFirewallHealthTests(unittest.TestCase):
         self.assertEqual(
             result.stdout,
             "ECHO_FIREWALL_READY backend=nftables default-zone=echo-public "
-            "inbound=deny forward=explicit\n",
+            "inbound=deny forward=explicit managed-rules=0\n",
         )
 
     def test_authorized_non_vendor_default_is_reported_without_forging_deny(self) -> None:
@@ -124,7 +129,41 @@ class EchoFirewallHealthTests(unittest.TestCase):
             }
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("default-zone=work inbound=admin-defined", result.stdout)
+        self.assertIn(
+            "default-zone=work inbound=admin-defined forward=explicit "
+            "managed-rules=admin-defined",
+            result.stdout,
+        )
+
+    def test_vendor_zone_accepts_only_exact_state_bound_nas_rules(self) -> None:
+        from appliance import native_firewall
+
+        state = native_firewall.desired_state(
+            smb=True, nfs_clients=["192.168.50.0/24"]
+        )
+        state_path = self.root / "native-firewall.json"
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        os.chmod(state_path, 0o600)
+        rules = "\n".join(native_firewall.managed_rules(state))
+        result = self.run_health(
+            {
+                "ECHO_NATIVE_FIREWALL_STATE": str(state_path),
+                "ECHO_TEST_RICH_RULES": rules,
+                "ECHO_TEST_PERMANENT_RICH_RULES": rules,
+            }
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("managed-rules=15", result.stdout)
+
+        mismatch = self.run_health(
+            {
+                "ECHO_NATIVE_FIREWALL_STATE": str(state_path),
+                "ECHO_TEST_RICH_RULES": rules,
+                "ECHO_TEST_PERMANENT_RICH_RULES": "",
+            }
+        )
+        self.assertNotEqual(mismatch.returncode, 0)
+        self.assertIn("unexpected managed rich rule", mismatch.stderr)
 
     def test_service_dbus_runtime_zone_and_nft_fail_closed(self) -> None:
         cases = (

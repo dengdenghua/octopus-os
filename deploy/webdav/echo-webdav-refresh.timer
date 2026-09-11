@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically refresh Echo WebDAV identity and share views
+
+[Timer]
+OnBootSec=45s
+OnUnitInactiveSec=30s
+AccuracySec=5s
+Unit=echo-webdav-refresh.service
+
+[Install]
+WantedBy=timers.target

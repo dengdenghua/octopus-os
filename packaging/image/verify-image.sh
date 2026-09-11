@@ -91,6 +91,11 @@ require_executable "$REPO_ROOT/deploy/appliance/device_endurance_lab.py"
 require_file "$REPO_ROOT/tests/appliance/test_device_endurance_lab.py"
 require_executable "$REPO_ROOT/deploy/appliance/nas_data_backup.py"
 require_file "$REPO_ROOT/tests/appliance/test_nas_data_backup.py"
+require_file "$REPO_ROOT/deploy/appliance/rclone_backup_mount.py"
+require_file "$REPO_ROOT/deploy/appliance/systemd/echo-rclone-backup@.service"
+require_file "$REPO_ROOT/appliance/nas_backup_remote_policy.py"
+require_file "$REPO_ROOT/tests/appliance/test_nas_backup_remote_policy.py"
+require_file "$REPO_ROOT/tests/appliance/test_rclone_backup_mount.py"
 require_executable "$REPO_ROOT/deploy/appliance/bare_metal_recovery_lab.py"
 require_file "$REPO_ROOT/tests/appliance/test_bare_metal_recovery_lab.py"
 require_executable "$REPO_ROOT/deploy/appliance/power_state_recovery_lab.py"
@@ -113,6 +118,11 @@ require_executable "$REPO_ROOT/deploy/network-security/echo-firewall-health"
 require_file "$REPO_ROOT/deploy/network-security/echo-firewall-health.service"
 require_executable "$REPO_ROOT/deploy/network-security/test_echo_firewall_health.py"
 require_file "$REPO_ROOT/deploy/network-security/README.md"
+require_file "$REPO_ROOT/deploy/storage/echo-zfs-health"
+require_file "$REPO_ROOT/deploy/storage/echo-zfs-health.service"
+require_file "$REPO_ROOT/deploy/storage/zfs-zed-echo.conf"
+require_file "$REPO_ROOT/deploy/storage/test_echo_zfs_health.py"
+require_file "$REPO_ROOT/deploy/storage/README.md"
 require_executable "$REPO_ROOT/deploy/removable-storage/echo-removable-storage-health"
 require_file "$REPO_ROOT/deploy/removable-storage/echo-removable-storage-health.service"
 require_executable "$REPO_ROOT/deploy/removable-storage/test_echo_removable_storage_health.py"
@@ -186,6 +196,12 @@ require_file "$REPO_ROOT/deploy/oem/echo-account-capture.service"
 require_file "$REPO_ROOT/deploy/oem/echo-account-capture.path"
 require_file "$REPO_ROOT/deploy/agent/echo-agent.service"
 require_file "$REPO_ROOT/deploy/agent/echo-agent-health.service"
+require_file "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service"
+require_file "$REPO_ROOT/deploy/agent/native-storage-broker.md"
+require_file "$REPO_ROOT/deploy/agent/echo-docker-credential.service"
+require_file "$REPO_ROOT/deploy/agent/echo-docker-control.service"
+require_file "$REPO_ROOT/deploy/agent/echo-docker-control-health.service"
+require_file "$REPO_ROOT/deploy/agent/native-docker-control.md"
 require_file "$REPO_ROOT/deploy/agent/echo-agent-native.yaml"
 require_executable "$REPO_ROOT/deploy/agent/verify-native-agent-health"
 require_executable "$REPO_ROOT/deploy/backup/echo-user-backup"
@@ -197,6 +213,27 @@ require_executable "$REPO_ROOT/deploy/recovery/test_echo_restore_transaction.py"
 require_file "$REPO_ROOT/deploy/backup/echo-restore-transaction-health.service"
 require_file "$REPO_ROOT/appliance/native_extension.py"
 require_file "$REPO_ROOT/appliance/native_entrypoint.py"
+require_file "$REPO_ROOT/appliance/native_auth_provisioning.py"
+require_file "$REPO_ROOT/appliance/native_dlna.py"
+require_file "$REPO_ROOT/appliance/native_webdav.py"
+require_file "$REPO_ROOT/appliance/native_webdav_control.py"
+require_file "$REPO_ROOT/appliance/native_firewall.py"
+require_file "$REPO_ROOT/appliance/native_hub_firewall.py"
+require_file "$REPO_ROOT/deploy/media/echo-dlna.service"
+require_file "$REPO_ROOT/deploy/media/README.md"
+require_file "$REPO_ROOT/deploy/webdav/echo-device-tls"
+require_file "$REPO_ROOT/deploy/webdav/echo-webdav-auth"
+require_file "$REPO_ROOT/deploy/webdav/echo-webdav-jails"
+require_file "$REPO_ROOT/deploy/webdav/echo_webdav_jails.py"
+require_file "$REPO_ROOT/deploy/webdav/sshd_config"
+require_file "$REPO_ROOT/deploy/webdav/echo-device-tls.service"
+require_file "$REPO_ROOT/deploy/webdav/echo-webdav-jails.service"
+require_file "$REPO_ROOT/deploy/webdav/echo-webdav-refresh.service"
+require_file "$REPO_ROOT/deploy/webdav/echo-webdav-refresh.timer"
+require_file "$REPO_ROOT/deploy/webdav/echo-webdav-refresh.path"
+require_file "$REPO_ROOT/deploy/webdav/echo-webdav-sshd.service"
+require_file "$REPO_ROOT/deploy/webdav/echo-webdav.service"
+require_file "$REPO_ROOT/deploy/webdav/README.md"
 require_executable "$REPO_ROOT/deploy/apps/echo-app-catalog"
 require_executable "$REPO_ROOT/deploy/apps/test-echo-app-catalog.sh"
 require_file "$REPO_ROOT/deploy/apps/echo-app-catalog.service"
@@ -419,6 +456,7 @@ require_pattern "$IMAGE_DIR/mkosi.postinst.chroot" 'org_kde_powerdevil' "image a
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/sysusers.d/echo-os.conf" '^m echo audio$' "desktop user belongs to the audio device group"
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/sysusers.d/echo-os.conf" '^m echo input$' "desktop user can use brightness-controlled LED input devices"
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/sysusers.d/echo-os.conf" '^m echo video$' "desktop user can use brightness-controlled backlight devices"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/sysusers.d/echo-os.conf" '^u echo-docker-control - "Echo Docker Control" / -$' "native Docker control uses a dedicated system account"
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/sysusers.d/echo-os.conf" '^m echo scanner$' "desktop user receives the distribution scanner-device authorization"
 require_pattern "$REPO_ROOT/deploy/desktop-session/setup-desktop-session.sh" 'systemsettings plasma-nm bluedevil plasma-pa kscreen powerdevil' "manual desktop installation includes the native settings module set"
 require_pattern "$REPO_ROOT/deploy/desktop-session/setup-desktop-session.sh" '^  upower power-profiles-daemon \\' "manual desktop installation includes both system power providers"
@@ -490,12 +528,86 @@ require_pattern "$IMAGE_DIR/mkosi.conf" '^BuildSources=%D/\.\./\.\.:echo-os$' "m
 require_pattern "$IMAGE_DIR/mkosi.build" 'cmake --build "\$EFFECT_BUILD" --parallel' "native glass effect is compiled during image assembly"
 require_pattern "$IMAGE_DIR/mkosi.build" '^DESTDIR=' "native glass artifact is installed through mkosi's image staging root"
 require_pattern "$IMAGE_DIR/mkosi.conf" '^        restic$' "Debian restic provides the encrypted backup format"
+require_pattern "$IMAGE_DIR/mkosi.conf" '^Repositories=contrib non-free-firmware$' "Debian contrib is enabled for OpenZFS"
+for nas_package in samba samba-common-bin samba-vfs-modules smbclient wsdd2 minidlna \
+  nfs-kernel-server nfs-common mdadm smartmontools nut-client nut-server hdparm quota \
+  docker.io kmod dkms linux-headers-amd64 zfsutils-linux zfs-dkms zfs-zed \
+  nginx openssh-server rclone fuse3 xz-utils zstd; do
+  require_pattern "$IMAGE_DIR/mkosi.conf" "^        ${nas_package}$" \
+    "native NAS data-plane package is explicit: ${nas_package}"
+done
 require_pattern "$IMAGE_DIR/mkosi.conf" '^        acl$' "backup acceptance can verify POSIX ACL metadata"
 require_pattern "$IMAGE_DIR/mkosi.conf" '^        attr$' "backup acceptance can verify extended attributes"
 require_pattern "$IMAGE_DIR/mkosi.conf" '^        util-linux$' "backup lifecycle has fixed block, mount and privilege-drop tools"
 require_pattern "$IMAGE_DIR/mkosi.conf" '^        %D/mkosi\.agent-runtime:/$' "verified native Agent tree is copied into the image"
 require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-agent\.service:/usr/lib/systemd/system/echo-agent\.service$' "native Agent service is copied into the image"
 require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-agent-health\.service:/usr/lib/systemd/system/echo-agent-health\.service$' "native Agent boot gate is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-docker-credential\.service:/usr/lib/systemd/system/echo-docker-credential\.service$' "per-device Docker credential service is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-docker-control\.service:/usr/lib/systemd/system/echo-docker-control\.service$' "native Docker control proxy is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-docker-control-health\.service:/usr/lib/systemd/system/echo-docker-control-health\.service$' "native Docker control boot gate is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'native-docker-control\.md:/usr/share/doc/echo-os/native-docker-control\.md$' "native Docker trust boundary is documented in the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-zfs-health:/usr/lib/echo-os/echo-zfs-health$' "OpenZFS running-kernel verifier is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-zfs-health\.service:/usr/lib/systemd/system/echo-zfs-health\.service$' "OpenZFS boot gate is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'zfs-zed-echo\.conf:/etc/systemd/system/zfs-zed\.service\.d/echo\.conf$' "OpenZFS ZED ordering drop-in is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'README\.md:/usr/share/doc/echo-os/openzfs\.md$' "OpenZFS image policy is documented"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-dlna\.service:/usr/lib/systemd/system/echo-dlna\.service$' "hardened DLNA service is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'README\.md:/usr/share/doc/echo-os/dlna\.md$' "DLNA isolation policy is documented in the image"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^disable minidlna\.service$' "upstream DLNA service stays disabled"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^disable echo-dlna\.service$' "Echo DLNA service stays disabled until approval"
+require_pattern "$REPO_ROOT/deploy/media/echo-dlna.service" '^User=minidlna$' "DLNA uses the dedicated Debian account"
+require_pattern "$REPO_ROOT/deploy/media/echo-dlna.service" '^CapabilityBoundingSet=$' "DLNA receives no Linux capabilities"
+require_pattern "$REPO_ROOT/deploy/media/echo-dlna.service" '^ProtectSystem=strict$' "DLNA has a read-only system view"
+require_pattern "$REPO_ROOT/deploy/media/echo-dlna.service" '^InaccessiblePaths=-/data -/mnt -/srv -/fs -/volume$' "DLNA hides every NAS root by default"
+require_pattern "$REPO_ROOT/deploy/media/echo-dlna.service" '^Environment=PYTHONPATH=/opt/echo-agent/site-packages$' "DLNA preflight imports the immutable native-agent wheel"
+require_pattern "$REPO_ROOT/deploy/media/echo-dlna.service" '^ExecStartPre=\+/usr/bin/python3 -m appliance\.native_dlna verify-start$' "every DLNA start revalidates volume identity and firewall state"
+require_pattern "$REPO_ROOT/appliance/native_dlna.py" '^def apply_dlna\(' "DLNA mutations use a dedicated transactional apply path"
+require_pattern "$REPO_ROOT/appliance/native_dlna.py" 'BindReadOnlyPaths=' "approved media folders are projected read-only"
+require_pattern "$REPO_ROOT/appliance/native_dlna.py" 'sync_dlna\(enabled=' "DLNA firewall state follows the approved share set"
+require_pattern "$IMAGE_DIR/mkosi.postinst.chroot" 'Echo OS DLNA service baseline is incomplete' "image assembly verifies the DLNA runtime"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-webdav\.service:/usr/lib/systemd/system/echo-webdav\.service$' "authenticated WebDAV is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-device-tls\.service:/usr/lib/systemd/system/echo-device-tls\.service$' "per-device TLS provisioning is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-nginx\.conf:/etc/nginx/sites-available/echo$' "the shared TLS gateway is copied into the image"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-device-tls\.service$' "per-device TLS provisioning is enabled"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^disable echo-webdav\.service$' "WebDAV stays disabled until an approved publication action"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^disable echo-webdav-jails\.service$' "WebDAV jail projection stays disabled by default"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^disable echo-webdav-refresh\.path$' "WebDAV refresh watcher stays disabled without publication"
+require_pattern "$REPO_ROOT/deploy/webdav/echo-webdav.service" '^User=echo$' "WebDAV rclone never runs as root"
+require_pattern "$REPO_ROOT/deploy/webdav/echo-webdav.service" '^ExecStart=/usr/bin/rclone serve webdav --addr=127\.0\.0\.1:5005 ' "WebDAV plaintext listener is loopback-only"
+require_pattern "$REPO_ROOT/deploy/webdav/echo-webdav.service" '^CapabilityBoundingSet=$' "WebDAV rclone receives no Linux capabilities"
+require_pattern "$REPO_ROOT/deploy/webdav/echo-webdav-refresh.service" '^CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETGID CAP_SETUID CAP_SYS_ADMIN$' "WebDAV refresh receives only its bind-mount capability set"
+require_pattern "$REPO_ROOT/deploy/webdav/echo-webdav-refresh.service" '^RestrictAddressFamilies=AF_UNIX$' "WebDAV refresh cannot open network sockets"
+forbid_pattern "$REPO_ROOT/deploy/webdav/echo-webdav-refresh.service" '^Protect(System|ControlGroups|KernelTunables)=' "WebDAV refresh publishes mount changes in the host namespace"
+require_pattern "$REPO_ROOT/deploy/webdav/sshd_config" '^ListenAddress 127\.0\.0\.1$' "WebDAV SFTP identity boundary is loopback-only"
+require_pattern "$REPO_ROOT/deploy/webdav/sshd_config" '^ChrootDirectory /run/echo-webdav/jails/%u$' "every WebDAV POSIX identity is chrooted"
+require_pattern "$REPO_ROOT/deploy/webdav/sshd_config" '^ForceCommand internal-sftp -u 0002$' "WebDAV SFTP identities cannot obtain a shell"
+require_pattern "$REPO_ROOT/deploy/webdav/sshd_config" '^DisableForwarding yes$' "WebDAV SFTP identities cannot forward traffic"
+require_pattern "$REPO_ROOT/deploy/webdav/echo-device-tls" 'subjectAltName=DNS:\$device_name,DNS:\$device_name\.local,IP:127\.0\.0\.1' "device TLS certificates contain modern SAN identities"
+require_pattern "$REPO_ROOT/deploy/provision/base/echo-nginx.conf" '^    location \^~ /webdav/ \{$' "nginx owns the public WebDAV TLS endpoint"
+require_pattern "$REPO_ROOT/deploy/provision/base/echo-nginx.conf" '^        if \(\$scheme = http\) \{ return 403; \}$' "WebDAV refuses cleartext Basic authentication"
+require_pattern "$IMAGE_DIR/mkosi.postinst.chroot" 'Echo OS WebDAV delivery baseline is incomplete' "image assembly verifies the WebDAV runtime"
+require_pattern "$IMAGE_DIR/mkosi.postinst.chroot" '^ZFS_SIGNING_KEY=/var/lib/dkms/mok\.key$' "OpenZFS verifies the conventional DKMS signing identity"
+require_pattern "$IMAGE_DIR/mkosi.postinst.chroot" '^    module_file="\$\(realpath -e -- "\$module_file"\)"$' "OpenZFS verification resolves each installed DKMS module"
+require_pattern "$IMAGE_DIR/mkosi.postinst.chroot" '^rm -f -- /var/lib/dkms/mok\.key /var/lib/dkms/mok\.pub$' "image assembly removes the transient release DKMS signing identity"
+forbid_pattern "$IMAGE_DIR/mkosi.postinst.chroot" 'BEGIN (RSA |EC )?PRIVATE KEY' "image assembly embeds no module-signing key"
+require_pattern "$IMAGE_DIR/build-image.sh" '^MODULE_SIGNING_TREE="\$\(mktemp -d\)"$' "release build isolates the OpenZFS signing identity"
+require_pattern "$IMAGE_DIR/build-image.sh" '^install -m 0400 "\$ECHO_SECURE_BOOT_KEY" \\' "release db key pre-populates the private DKMS signing path"
+require_pattern "$IMAGE_DIR/build-image.sh" '^    --skeleton-tree="\$MODULE_SIGNING_TREE" \\' "mkosi injects the isolated signing identity before DKMS package installation"
+require_pattern "$IMAGE_DIR/verify-image.sh" 'custom systemd initrd contains a transient OpenZFS signing identity' "UKI artifact verification rejects a signing identity in initramfs"
+require_pattern "$REPO_ROOT/deploy/storage/echo-zfs-health.service" '^Requires=zfs-load-module\.service zfs-zed\.service$' "OpenZFS health requires the upstream module loader and event daemon"
+require_pattern "$REPO_ROOT/deploy/storage/zfs-zed-echo.conf" '^Requires=zfs-load-module\.service$' "ZED requires the module loader before evaluating module presence"
+require_pattern "$REPO_ROOT/deploy/storage/zfs-zed-echo.conf" '^After=zfs-load-module\.service$' "ZED starts only after OpenZFS is loaded"
+require_pattern "$REPO_ROOT/deploy/storage/echo-zfs-health.service" '^Before=echo-native-storage-broker\.service echo-agent\.service boot-complete\.target$' "OpenZFS is verified before native storage and boot blessing"
+require_pattern "$REPO_ROOT/deploy/storage/echo-zfs-health.service" '^RequiredBy=echo-native-storage-broker\.service boot-complete\.target$' "bad OpenZFS blocks native storage and A/B blessing"
+forbid_pattern "$REPO_ROOT/deploy/storage/echo-zfs-health.service" '^PrivateDevices=yes$' "OpenZFS health retains only the /dev/zfs access needed for a real kernel API probe"
+forbid_pattern "$REPO_ROOT/deploy/storage/echo-zfs-health.service" '^ProtectKernelModules=yes$' "OpenZFS health can read the exact running module tree"
+require_pattern "$REPO_ROOT/deploy/storage/echo-zfs-health.service" '^CapabilityBoundingSet=$' "OpenZFS health cannot load or mutate kernel modules"
+require_pattern "$REPO_ROOT/deploy/storage/echo-zfs-health" '^signature_id="\$\(\$MODINFO -k "\$kernel_release" -F sig_id zfs\)"$' "OpenZFS health binds module signature to the running kernel"
+require_pattern "$REPO_ROOT/deploy/storage/test_echo_zfs_health.py" '^    def test_wrong_or_missing_signature_fails_closed\(self\) -> None:$' "OpenZFS health tests unsigned-module rejection"
+require_pattern "$REPO_ROOT/deploy/storage/test_echo_zfs_health.py" '^    def test_unloaded_kernel_module_fails_closed\(self\) -> None:$' "OpenZFS health tests unloaded-module rejection"
+require_pattern "$IMAGE_DIR/mkosi.postinst.chroot" 'OpenZFS DKMS module is missing for kernel' "image assembly rejects a header/module mismatch"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-zfs-health\.service$' "OpenZFS health is enabled in the immutable image"
+require_pattern "$REPO_ROOT/.github/workflows/os-image.yml" 'test_echo_zfs_health\.py' "image CI tests OpenZFS boot health"
+require_pattern "$REPO_ROOT/.github/workflows/ab-update-smoke.yml" 'test_echo_zfs_health\.py' "A/B CI tests OpenZFS boot health"
 require_pattern "$IMAGE_DIR/mkosi.conf" 'verify-native-agent-runtime\.py:/usr/lib/echo-os/verify-native-agent-runtime\.py$' "native Agent provenance verifier is copied into the image"
 require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-session-lock:/usr/lib/echo-os/echo-session-lock$' "session lock coordinator is copied into the image"
 require_pattern "$IMAGE_DIR/mkosi.conf" 'echo-screen-locker:/usr/lib/echo-os/echo-screen-locker$' "sleep-aware lock adapter is copied into the image"
@@ -622,6 +734,10 @@ forbid_pattern "$IMAGE_DIR/mkosi.repart/40-home.conf" '^SizeMaxBytes=' "home can
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-desktop\.service$' "credential-gated VM desktop unit is enabled"
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-agent\.service$' "native Agent runtime is enabled"
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-agent-health\.service$' "native Agent health gates boot completion"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable docker\.service$' "native Docker Engine is enabled"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-docker-credential\.service$' "per-device Docker credential provisioning is enabled"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-docker-control\.service$' "bounded native Docker control is enabled"
+require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-docker-control-health\.service$' "native Docker readiness gates boot completion"
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-desktop-health\.service$' "credential-gated VM desktop health is enabled"
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable echo-crash-health\.service$' "bounded crash collection gates boot completion"
 require_pattern "$IMAGE_DIR/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset" '^enable firewalld\.service$' "host packet filtering starts on every boot"
@@ -660,8 +776,76 @@ require_pattern "$IMAGE_DIR/verify-native-agent-runtime.py" '^SCHEMA_VERSION = 4
 require_pattern "$IMAGE_DIR/verify-native-agent-runtime.py" '^RECOVERY_QUEUE_PATH = "/api/task-runs/recovery-queue"$' "native Agent image requires the persisted recovery queue"
 require_pattern "$IMAGE_DIR/verify-native-agent-runtime.py" '^RESUME_EXECUTION_PATH = "/api/task-runs/\{task_id\}/resume-execution"$' "native Agent image requires checkpoint execution resume"
 require_pattern "$IMAGE_DIR/verify-native-agent-runtime.py" '^HEALTH_PATH = "/api/health"$' "native Agent image requires a versioned runtime identity endpoint"
+require_pattern "$IMAGE_DIR/verify-native-agent-runtime.py" 'native Agent runtime has no read-only DLNA controller' "native Agent verifier requires the DLNA controller in the immutable wheel"
 require_pattern "$REPO_ROOT/appliance/native_entrypoint.py" '^    os\.environ\["ECHO_RUNTIME_BUNDLE_VERIFIED"\] = "1"$' "native launcher asserts runtime identity only after bundle verification"
-require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_NATIVE_OS=1$' "Agent uses the minimal native OS extension"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_NATIVE_OS=1$' "Agent enables native OS integration"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_APPLIANCE=1$' "native image enables the authenticated NAS control plane"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH=1$' "native Agent refuses an unprovisioned production authentication store"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_REQUIRED_APP_EXTENSIONS=1$' "native Agent fails closed when its OS extension cannot load"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_APP_EXTENSIONS=appliance\.extension$' "native Agent loads the complete NAS extension"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Requires=echo-local-account\.service$' "native Agent waits for one-time or restored local identity"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^LoadCredential=echo\.os\.ci-session$' "direct VM boots receive only their named test credential"
+require_pattern "$REPO_ROOT/appliance/auth.py" '^    elif os\.environ\.get\("ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH"\) == "1":$' "production auth cannot fall back to a logged random password"
+require_pattern "$REPO_ROOT/appliance/native_entrypoint.py" '^def _provision_ci_auth\(\) -> bool:$' "native Agent has a credential-gated opaque CI auth path"
+require_pattern "$REPO_ROOT/appliance/native_entrypoint.py" '^    _provision_ci_auth\(\)$' "native Agent prepares CI auth before starting the runtime"
+require_pattern "$REPO_ROOT/deploy/oem/echo_oem_setup.py" '^        provision_native_nas_auth\(password\)$' "OEM setup provisions NAS authentication before completion"
+require_pattern "$REPO_ROOT/deploy/oem/echo_oem_setup.py" '^        provision_native_auth_for_account\(password, account=ACCOUNT\)$' "OEM password crosses only the in-process authentication boundary"
+require_pattern "$REPO_ROOT/deploy/oem/echo_oem_setup.py" '^    if len\(raw\.encode\("utf-8"\)\) > 72:$' "OEM password validation enforces the bcrypt byte boundary"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Requires=echo-native-storage-broker\.service$' "native Agent requires its narrow privileged storage broker"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_NATIVE_STORAGE_BROKER_SOCKET=/run/echo-storage-broker/broker\.sock$' "native storage writes cross only the declared Unix socket"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Requires=echo-docker-credential\.service$' "native Agent requires its per-device Docker credential"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Wants=echo-docker-control\.service$' "native Agent starts the optional-resilient Hub control plane"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^LoadCredential=echo\.docker-proxy-token:/var/lib/echo-os/docker-proxy-token$' "native Agent receives Docker authorization through systemd credentials"
+require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_DOCKER_HOST=http://127\.0\.0\.1:2375$' "native Agent can reach only loopback Docker control"
+forbid_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" 'docker\.sock|ECHO_DOCKER_PROXY_TOKEN=' "native Agent has neither the Docker socket nor a unit-file token"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-credential.service" '^ExecStart=/usr/bin/python3 -m appliance\.docker_credential ensure$' "native device creates its Docker credential atomically"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-credential.service" '^ReadWritePaths=/var/lib/echo-os$' "credential provisioner can mutate only persistent Echo state"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^ConditionPathExists=/var/run/docker\.sock$' "native Docker control waits for the Engine endpoint"
+require_pattern "$REPO_ROOT/appliance/docker_proxy.py" 'stat\.S_ISSOCK\(socket_stat\.st_mode\)' "native Docker control rejects a non-socket endpoint before dropping privileges"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^Requires=docker\.service echo-docker-credential\.service echo-native-storage-broker\.service$' "native Docker control requires Engine, credential and bounded firewall broker"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^Environment=ECHO_NATIVE_OS=1$' "native Docker lifecycle enables synchronous Hub firewall reconciliation"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control-health.service" '^Requires=echo-docker-control\.service$' "Docker health requires the bounded control service"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control-health.service" '^ExecStart=/usr/bin/python3 -m appliance\.native_docker_health$' "Docker health executes the source-bound verifier"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control-health.service" '^RequiredBy=boot-complete\.target$' "Docker readiness gates A/B boot blessing"
+require_pattern "$REPO_ROOT/appliance/native_docker_health.py" '^CONTROL_ORIGIN = "http://127\.0\.0\.1:2375"$' "Docker health can query only the loopback control endpoint"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^ExecStart=/usr/bin/python3 -m appliance\.docker_proxy --host 127\.0\.0\.1 --port 2375$' "native Docker control listens only on loopback"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^LoadCredential=echo\.docker-proxy-token:/var/lib/echo-os/docker-proxy-token$' "native Docker control receives the same per-device credential"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^BindReadOnlyPaths=/var/lib/docker:/run/echo-host/docker-data$' "Docker data-root capacity is observed read-only"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^User=echo-docker-control$' "native Docker control never starts as root"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^Group=echo$' "native Docker control can reach only the fixed broker group"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^SupplementaryGroups=docker$' "native Docker control retains only Docker socket access"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^CapabilityBoundingSet=$' "native Docker control has no Linux capabilities"
+require_pattern "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service" '--user echo --user echo-docker-control --group echo$' "native storage broker admits only fixed source-owned service identities"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^IPAddressDeny=any$' "native Docker control has no non-loopback IP access"
+require_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '^IPAddressAllow=localhost$' "native Docker control can serve only loopback callers"
+forbid_pattern "$REPO_ROOT/deploy/agent/echo-docker-control.service" '0\.0\.0\.0|ECHO_DOCKER_PROXY_TOKEN=' "native Docker control exposes neither a LAN listener nor a baked token"
+require_pattern "$REPO_ROOT/appliance/app_registry/docker_client.py" '^def configured_proxy_token\(' "Docker clients support named systemd credentials"
+require_pattern "$REPO_ROOT/appliance/docker_credential.py" '^def ensure_credential\(' "Docker credential provisioning is idempotent and testable"
+require_pattern "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service" '^User=root$' "native storage broker owns the privileged boundary"
+require_pattern "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service" '^Group=echo$' "native storage socket is limited to the Agent account group"
+require_pattern "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service" '^Requires=echo-zfs-health\.service echo-firewall-health\.service$' "native storage mutations require verified OpenZFS and firewall state"
+require_pattern "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service" '^After=local-fs\.target echo-local-account\.service echo-zfs-health\.service echo-firewall-health\.service$' "native storage starts only after its filesystem, identity, OpenZFS and firewall gates"
+require_pattern "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service" '^Environment=ECHO_NATIVE_OS=1$' "native storage broker enables bounded protocol firewall ownership"
+require_pattern "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service" '^RestrictAddressFamilies=AF_UNIX$' "native storage broker cannot open an IP listener"
+forbid_pattern "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service" 'AF_INET|0\.0\.0\.0|127\.0\.0\.1' "native storage broker exposes no TCP surface"
+forbid_pattern "$REPO_ROOT/deploy/agent/echo-native-storage-broker.service" 'ProtectSystem=|ProtectHome=|PrivateTmp=|ReadWritePaths=|ProtectKernelTunables=' "native storage mutations remain in the host mount and block-device namespace"
+require_pattern "$REPO_ROOT/appliance/native_storage_broker.py" '^PLAN_OPERATION_TARGETS: Mapping\[' "native storage broker uses a source-owned plan allowlist"
+require_pattern "$REPO_ROOT/appliance/native_storage_broker.py" '^APPLY_OPERATION_TARGETS: Mapping\[' "native storage broker uses a source-owned apply allowlist"
+require_pattern "$REPO_ROOT/appliance/native_storage_broker.py" '^READ_OPERATION_TARGETS: Mapping\[' "native storage broker exposes only source-owned root-state reads"
+require_pattern "$REPO_ROOT/appliance/native_storage_routes.py" '^def _plan_native_write\(' "native storage plans cross the privileged broker boundary"
+require_pattern "$REPO_ROOT/appliance/native_storage_routes.py" 'NativeStorageBrokerClient\(socket_path\)\.plan\(' "native storage route plans use the declared broker client"
+forbid_pattern "$REPO_ROOT/appliance/native_storage_broker.py" 'subprocess|shell=True|eval\(|exec\(' "native storage broker exposes no generic process or code execution"
+require_pattern "$REPO_ROOT/appliance/native_firewall.py" '^def managed_rules\(' "native firewall derives a fixed protocol rule set"
+require_pattern "$REPO_ROOT/appliance/native_firewall.py" '^def sync\(' "native firewall changes are transactional"
+require_pattern "$REPO_ROOT/appliance/native_firewall.py" '^def sync_hub\(' "native Hub firewall changes preserve NAS protocol rules"
+require_pattern "$REPO_ROOT/appliance/native_firewall.py" '^def verify\(' "native firewall state has a boot verifier"
+require_pattern "$REPO_ROOT/appliance/native_hub_firewall.py" '^def desired_forwards\(' "Hub forwards derive only from catalog-owned containers"
+require_pattern "$REPO_ROOT/appliance/native_hub_firewall.py" '^def sync\(' "Hub firewall drift closes all managed app ports"
+require_pattern "$REPO_ROOT/appliance/native_storage_broker.py" '"native_hub_firewall\.sync": \("appliance\.native_hub_firewall", "sync"\)' "root broker exposes only argument-free Hub firewall reconciliation"
+require_pattern "$REPO_ROOT/appliance/docker_proxy.py" 'NativeStorageBrokerClient\(DEFAULT_SOCKET\)\.system\("native_hub_firewall\.sync"\)' "Hub lifecycle synchronously crosses the fixed root firewall boundary"
+require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health" 'appliance\.native_firewall verify-health' "boot health binds rich rules to approved NAS state"
+require_pattern "$IMAGE_DIR/mkosi.postinst.chroot" 'Echo OS NAS data-plane tool is missing' "image assembly rejects an incomplete NAS protocol stack"
+require_pattern "$IMAGE_DIR/mkosi.postinst.chroot" 'include = \{managed\}' "image assembly wires the managed Time Machine Samba include"
 require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_PROMPT_SKILL_REFRESH_DEADLINE_S=0$' "Agent boot uses its bundled skill catalog without a startup network refresh"
 require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_DISABLE_STUB_API=1$' "native Agent never exposes simulated compatibility account or billing APIs"
 require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^Environment=ECHO_CODEX_EXECUTABLE=/opt/echo-agent/codex/bin/codex$' "Agent executes the source-bound Linux Codex binary"
@@ -675,6 +859,10 @@ require_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" '^ProtectSystem=str
 forbid_pattern "$REPO_ROOT/deploy/agent/echo-agent.service" 'network-online\.target' "Agent boot is not gated on network availability"
 require_pattern "$REPO_ROOT/deploy/agent/echo-agent-health.service" '^RequiredBy=boot-complete\.target$' "Agent readiness is a boot-blessing requirement"
 require_pattern "$REPO_ROOT/deploy/agent/verify-native-agent-health" '^BASE_URL = "http://127\.0\.0\.1:8000"$' "Agent health probe is fixed to loopback"
+require_pattern "$REPO_ROOT/deploy/agent/verify-native-agent-health" '^AUTH_STORE = Path\("/var/lib/echo-agent/appliance-auth\.json"\)$' "Agent health authenticates from the fixed private store"
+require_pattern "$REPO_ROOT/deploy/agent/verify-native-agent-health" '^def _authorization_headers\(\) -> dict\[str, str\]:$' "Agent health uses a short-lived authenticated probe"
+require_pattern "$REPO_ROOT/deploy/agent/verify-native-agent-health" 'NativeStorageBrokerClient\(BROKER_SOCKET, timeout=3\.0\)\.probe\(\)' "cold boot performs a real native storage broker handshake"
+require_pattern "$REPO_ROOT/deploy/agent/verify-native-agent-health" 'api/appliance/tasks\?limit=1' "cold boot proves the native OS extension mounted"
 require_pattern "$REPO_ROOT/deploy/agent/verify-native-agent-health" 'recovery-queue\?limit=200' "cold boot reads the persisted Agent recovery queue"
 require_pattern "$REPO_ROOT/deploy/agent/verify-native-agent-health" 'runtime\.get\("sourceId"\) != source\.get\("source_id"\)' "cold boot binds the live Agent health identity to the image manifest"
 forbid_pattern "$REPO_ROOT/deploy/agent/verify-native-agent-health" 'resume-execution|/takeover' "cold boot never mutates or resumes Agent tasks"
@@ -862,7 +1050,11 @@ require_pattern "$REPO_ROOT/deploy/appliance/btrfs_snapshot_schedule_runner.py" 
 require_pattern "$REPO_ROOT/appliance/native_storage.py" 'shared-folder\.snapshot\.schedule\.retention\.v2' "native storage advertises advanced snapshot retention"
 require_pattern "$REPO_ROOT/deploy/appliance/systemd/echo-btrfs-snapshot.timer" '^OnCalendar=\*-\*-\* 02:15:00$' "automatic share snapshots use the fixed daily window"
 require_pattern "$REPO_ROOT/deploy/provision/base/provision-lib.sh" 'systemctl enable --now echo-btrfs-snapshot\.timer' "fresh appliances enable guarded automatic snapshots"
-require_pattern "$REPO_ROOT/deploy/provision/host_migration.py" '^MIGRATION_ID = "nas-maintenance-v2"$' "upgraded appliances receive the current storage maintenance units"
+require_pattern "$REPO_ROOT/deploy/provision/host_migration.py" '^MIGRATION_ID = "nas-maintenance-v4"$' "upgraded appliances receive the current storage and encrypted backup-remote assets"
+require_pattern "$REPO_ROOT/deploy/provision/host_migration.py" '^    "fuse3",$' "upgraded appliances receive the FUSE runtime"
+require_pattern "$REPO_ROOT/deploy/provision/host_migration.py" '^    "rclone",$' "upgraded appliances receive the remote-storage runtime"
+require_pattern "$REPO_ROOT/deploy/provision/host_migration.py" 'echo-rclone-backup@\.service' "upgraded appliances receive the encrypted remote mount template"
+require_pattern "$REPO_ROOT/deploy/provision/host_migration.py" 'REMOTE_WRAPPER_SOURCE' "upgraded appliances receive the fail-closed rclone wrapper"
 require_pattern "$REPO_ROOT/appliance/native_storage.py" 'storage\.disk\.idle\.configure\.v1' "native storage advertises only the guarded HDD idle policy"
 require_pattern "$REPO_ROOT/appliance/disk_idle_policy.py" '^IDLE_CODES = \{0: 0, 30: 241, 60: 242, 120: 244, 240: 248\}$' "HDD standby exposes only the bounded timer choices"
 require_pattern "$REPO_ROOT/deploy/appliance/systemd/echo-disk-idle.service" '^CapabilityBoundingSet=CAP_SYS_RAWIO$' "HDD idle boot apply retains only raw-disk authority"
@@ -872,6 +1064,12 @@ require_pattern "$REPO_ROOT/deploy/appliance/operations_bundle.py" 'nasDataBacku
 require_pattern "$REPO_ROOT/deploy/appliance/nas_data_backup.py" '^RENAME_EXCHANGE = 2$' "NAS data restore promotes one complete tree atomically"
 require_pattern "$REPO_ROOT/deploy/appliance/nas_data_backup.py" '"check", "--read-data"' "NAS data backup authenticates repository contents with a full read"
 require_pattern "$REPO_ROOT/deploy/appliance/nas_data_backup.py" 'NAS backup source must be a read-only mounted snapshot' "NAS data backup rejects a live writable source"
+require_pattern "$REPO_ROOT/appliance/nas_backup_remote_policy.py" 'systemdEncryptedCredential' "backup remotes disclose no plaintext S3 credential"
+require_pattern "$REPO_ROOT/deploy/appliance/systemd/echo-rclone-backup@.service" '^LoadCredentialEncrypted=rclone\.conf:' "rclone receives its private configuration through systemd credentials"
+require_pattern "$REPO_ROOT/deploy/appliance/systemd/echo-rclone-backup@.service" '^CapabilityBoundingSet=CAP_SYS_ADMIN$' "remote mount receives only the mount capability"
+forbid_pattern "$REPO_ROOT/deploy/appliance/systemd/echo-rclone-backup@.service" '^Protect(System|Home)=|^PrivateTmp=' "host-visible FUSE mount is not hidden in a private mount namespace"
+require_pattern "$REPO_ROOT/deploy/appliance/rclone_backup_mount.py" '^REMOTE_ID = re\.compile' "remote service validates its systemd instance id"
+require_pattern "$REPO_ROOT/deploy/provision/base/provision-lib.sh" 'echo-rclone-backup@\.service' "fresh NAS installs the encrypted remote mount template"
 require_pattern "$REPO_ROOT/deploy/appliance/operations_bundle.py" 'upgradeRecovery' "operations bundle publishes crash-interrupted upgrade recovery"
 require_pattern "$REPO_ROOT/deploy/appliance/operations_bundle.py" 'powerStateRecoveryLab' "operations bundle publishes the physical power/state recovery lab"
 require_pattern "$REPO_ROOT/deploy/appliance/operations_bundle.py" 'bareMetalRecoveryLab' "operations bundle publishes the destructive bare-metal recovery lab"
@@ -1003,6 +1201,9 @@ require_pattern "$REPO_ROOT/deploy/network-security/echo_firewall_policy.py" 'do
 require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health" 'ECHO_FIREWALL_SOURCE_TEST.*USE-SOURCE-RUNTIME' "firewall runtime overrides require an explicit source-test sentinel"
 require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health" 'org\.fedoraproject\.FirewallD1' "firewall health requires the real system D-Bus owner"
 require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health" 'list table inet firewalld' "firewall health proves the nftables table is loaded"
+require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health" '--permanent --zone=echo-public --get-target' "firewall health uses firewalld's supported zone-target query"
+require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health" '--zone=echo-public --list-services' "firewall health inspects the runtime zone service surface"
+require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health" '--list-ports --list-protocols --list-source-ports' "firewall health uses supported runtime zone-list queries"
 require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health" 'ECHO_FIREWALL_READY backend=nftables default-zone=%s inbound=%s forward=explicit' "firewall health emits a bounded readiness record"
 require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health.service" '^Requires=firewalld\.service$' "firewall health fails with its policy daemon"
 require_pattern "$REPO_ROOT/deploy/network-security/echo-firewall-health.service" '^Before=NetworkManager\.service sddm\.service echo-desktop\.service boot-complete\.target$' "firewall policy loads before network, login, desktop and blessing"
@@ -1970,6 +2171,9 @@ require_pattern "$REPO_ROOT/deploy/machine-state/echo-region-state" 'readiness\(
 require_pattern "$IMAGE_DIR/smoke-oem-image.sh" '^ECHO_LOGIN_PROVISION_MODE=oem-credential \\$' "OEM cold-boot smoke selects credential-backed first use"
 require_pattern "$IMAGE_DIR/smoke-oem-image.sh" '^  ECHO_LOGIN_OUTPUT_IMAGE="\$2"$' "OEM smoke can publish a provisioned lifecycle image"
 require_pattern "$IMAGE_DIR/smoke-login-image.sh" '^ECHO_BOOT_OEM_CREDENTIAL_FILE="\$OEM_CREDENTIAL_INPUT" \\$' "OEM credential is passed only as an ephemeral VM input"
+require_pattern "$IMAGE_DIR/smoke-login-image.sh" '/var/lib/echo-agent/appliance-auth\.json' "OEM cold boot retrieves the encrypted NAS authentication store"
+require_pattern "$IMAGE_DIR/smoke-login-image.sh" 'provisioned OEM marker and NAS authentication verified' "OEM cold boot validates the NAS authentication schema before publication"
+require_pattern "$IMAGE_DIR/smoke-login-image.sh" 'NATIVE_AUTH_STORE.*== 600' "OEM cold boot requires a private NAS authentication store"
 require_pattern "$IMAGE_DIR/smoke-login-image.sh" '"\$ENCRYPTED_IMAGE" remove "\$LOGIN_IMAGE"' "provisioned image cleanup opens only the disposable encrypted lifecycle copy"
 require_pattern "$IMAGE_DIR/smoke-login-image.sh" '"\$ENCRYPTED_IMAGE" assert-absent' "published OEM image verifies removal of its test autologin policy"
 require_pattern "$IMAGE_DIR/smoke-login-image.sh" '^  mv -- "\$LOGIN_IMAGE" "\$OUTPUT_RAW"$' "provisioned image is published only after state and cleanup checks"
@@ -2125,6 +2329,13 @@ FIREWALL_GATE_COUNT="$(grep -c '"\$FIREWALL_READY" -eq 1' "$IMAGE_DIR/smoke-boot
   exit 1
 }
 pass "greeter and all installed desktop completion gates require nftables/firewalld health"
+require_pattern "$IMAGE_DIR/smoke-boot-image.sh" 'ECHO_ZFS_READY kernel=\[0-9A-Za-z\]\[0-9A-Za-z\._\+~-\]' "every normal raw boot observes signed OpenZFS readiness"
+ZFS_GATE_COUNT="$(grep -c '"\$ZFS_READY" -eq 1' "$IMAGE_DIR/smoke-boot-image.sh")"
+[[ "$ZFS_GATE_COUNT" -eq 5 ]] || {
+  echo "greeter and all four installed desktop completion gates must require OpenZFS health" >&2
+  exit 1
+}
+pass "greeter and all installed desktop completion gates require loaded signed OpenZFS"
 require_pattern "$IMAGE_DIR/smoke-boot-image.sh" 'ECHO_REMOVABLE_STORAGE_READY provider=udisks2 policy=polkit mount=on-demand filesystems=vfat,exfat,ntfs,ext4,btrfs,xfs portable=mtp' "every normal raw boot observes the removable-storage stack"
 REMOVABLE_STORAGE_GATE_COUNT="$(grep -c '"\$REMOVABLE_STORAGE_READY" -eq 1' "$IMAGE_DIR/smoke-boot-image.sh")"
 [[ "$REMOVABLE_STORAGE_GATE_COUNT" -eq 5 ]] || {
@@ -2200,6 +2411,7 @@ require_pattern "$IMAGE_DIR/smoke-ab-update.sh" '^cmp "\$ECHO_TPM2_PCR_PUBLIC_KE
 require_pattern "$REPO_ROOT/.github/workflows/os-image.yml" 'ECHO_LOGIN_SESSION: echo-wayland\.desktop' "image CI boots the candidate from a disposable SDDM copy"
 require_pattern "$REPO_ROOT/.github/workflows/os-image.yml" '^  source-contract:$' "pull requests retain a portable image source-contract job"
 require_pattern "$REPO_ROOT/.github/workflows/os-image.yml" '^          python3 packaging/image/test_verify_os_image_evidence\.py$' "pull requests exercise the signed-evidence binder"
+require_pattern "$REPO_ROOT/.github/workflows/os-image.yml" '^          python3 deploy/oem/test_echo_oem_setup\.py$' "pull requests exercise one-time NAS authentication provisioning"
 require_pattern "$REPO_ROOT/.github/workflows/os-image.yml" '^      github\.event_name != '\''pull_request'\'' &&$' "privileged whole-image execution excludes untrusted pull requests"
 require_pattern "$REPO_ROOT/.github/workflows/os-image.yml" '^      \(github\.ref == '\''refs/heads/os-main'\'' \|\| github\.ref == '\''refs/heads/main'\''\)$' "privileged whole-image execution accepts only trusted delivery branches"
 require_pattern "$REPO_ROOT/.github/workflows/os-image.yml" '^    runs-on: \[self-hosted, linux, x64, echo-os-image\]$' "trusted image runs require the dedicated self-hosted image runner"
@@ -2271,7 +2483,7 @@ require_pattern "$IMAGE_DIR/runner-host/echo-os-image-runner.modules.conf" '^loo
 require_pattern "$IMAGE_DIR/runner-host/echo-os-image-runner.modules.conf" '^nbd$' "runner host loads the NBD module at boot"
 require_pattern "$IMAGE_DIR/runner-host/echo-os-image-runner.modprobe.conf" '^options loop max_loop=64$' "runner host persists loop capacity across reboot"
 require_pattern "$IMAGE_DIR/runner-host/echo-os-image-runner.modprobe.conf" '^options nbd nbds_max=16 max_part=16$' "runner host persists NBD capacity across reboot"
-require_pattern "$IMAGE_DIR/verify-linux-image-runner-registration.py" '^EXPECTED_REPOSITORY = "dengdenghua/echo-os"$' "registered image runner is scoped to the reviewed GitHub repository"
+require_pattern "$IMAGE_DIR/verify-linux-image-runner-registration.py" '^EXPECTED_REPOSITORY = "dengdenghua/octopus-os"$' "registered image runner is scoped to the reviewed GitHub repository"
 require_pattern "$IMAGE_DIR/verify-linux-image-runner-registration.py" '^RUNNER_WORK_ROOT = Path\("/srv/echo-os-image-runner"\)$' "registered image runner retains the verified host work root"
 require_pattern "$IMAGE_DIR/verify-linux-image-runner-registration.py" 'settings\.get\("WorkFolder"\) != str\(work_root\)' "registration fails closed on an incorrect official runner work folder"
 require_pattern "$IMAGE_DIR/verify-linux-image-runner-registration.py" 'ECHO_IMAGE_RUNNER_REGISTRATION_READY' "registration emits one bounded local readiness marker"
@@ -2307,7 +2519,7 @@ IMAGE_PATH="$2"
 }
 [[ -f "$IMAGE_PATH" ]] || { echo "image not found: $IMAGE_PATH" >&2; exit 1; }
 for command_name in \
-  cmp cryptsetup find losetup lsblk lsinitramfs mcopy modprobe mount openssl python3 realpath sfdisk sha256sum stat umount \
+  cmp cryptsetup find losetup lsblk lsinitramfs mcopy modinfo modprobe mount openssl python3 realpath sfdisk sha256sum stat umount \
   systemd-analyze systemd-dissect udevadm veritysetup; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "artifact verifier dependency missing: $command_name" >&2
@@ -2504,6 +2716,11 @@ VAR_MOUNT="$VERIFY_TEMP_DIR/encrypted-var"
 mkdir -m 0700 "$VAR_MOUNT"
 mount -o ro,noload "/dev/mapper/$VAR_MAPPING_NAME" "$VAR_MOUNT"
 VAR_MOUNTED=1
+[[ ! -e "$VAR_MOUNT/lib/dkms/mok.key" && \
+   ! -e "$VAR_MOUNT/lib/dkms/mok.pub" ]] || {
+  echo "artifact contains a forbidden transient DKMS signing identity" >&2
+  exit 1
+}
 UNEXPECTED_WAYLAND_IPC_REQUEST="$VAR_MOUNT/lib/echo-os/etc-overlay/upper/echo-os/wayland-native-app-ipc"
 [[ ! -e "$UNEXPECTED_WAYLAND_IPC_REQUEST" && \
    ! -L "$UNEXPECTED_WAYLAND_IPC_REQUEST" ]] || {
@@ -2630,6 +2847,28 @@ pass "artifact embeds the exact release-selected dm-verity certificate"
 IMAGE_MOUNT="$VERIFY_TEMP_DIR/root"
 mkdir -p "$IMAGE_MOUNT"
 systemd-dissect --read-only --fsck=no --mount "$ROOT_PAYLOAD" "$IMAGE_MOUNT"
+mapfile -d '' -t ZFS_KERNEL_TREES < <(
+  find "$IMAGE_MOUNT/usr/lib/modules" -mindepth 1 -maxdepth 1 -type d -print0
+)
+[[ "${#ZFS_KERNEL_TREES[@]}" -gt 0 ]] || {
+  echo "artifact contains no kernel module tree" >&2
+  exit 1
+}
+for kernel_tree in "${ZFS_KERNEL_TREES[@]}"; do
+  kernel_release="${kernel_tree##*/}"
+  for component in zfs spl zavl znvpair zunicode zcommon icp; do
+    modinfo -b "$IMAGE_MOUNT" -k "$kernel_release" "$component" >/dev/null || {
+      echo "artifact OpenZFS module is missing: $component/$kernel_release" >&2
+      exit 1
+    }
+    [[ "$(modinfo -b "$IMAGE_MOUNT" -k "$kernel_release" -F sig_id "$component")" == PKCS#7 && \
+       -n "$(modinfo -b "$IMAGE_MOUNT" -k "$kernel_release" -F signer "$component")" ]] || {
+      echo "artifact OpenZFS module is unsigned: $component/$kernel_release" >&2
+      exit 1
+    }
+  done
+done
+pass "artifact contains signed OpenZFS modules for every installed kernel"
 for session_executable in \
   usr/bin/xss-lock \
   usr/bin/xsecurelock \
@@ -2647,7 +2886,14 @@ for session_executable in \
   usr/bin/spd-say \
   usr/bin/espeak-ng \
   usr/bin/restic \
+  usr/bin/fusermount3 \
   usr/bin/findmnt \
+  usr/bin/docker \
+  usr/sbin/dockerd \
+  usr/bin/zfs \
+  usr/bin/zpool \
+  usr/sbin/zed \
+  usr/sbin/minidlnad \
   usr/bin/echo-os-backup \
   usr/libexec/at-spi-bus-launcher \
   usr/libexec/at-spi2-registryd \
@@ -2667,6 +2913,8 @@ for session_executable in \
   usr/lib/echo-os/echo-sddm-xstop \
   usr/lib/systemd/systemd-coredump \
   usr/lib/echo-os/echo-crash-health \
+  usr/lib/echo-os/echo-zfs-health \
+  usr/lib/echo-os/rclone-backup-mount \
   usr/lib/echo-os/verify-native-agent-health \
   usr/lib/echo-os/verify-native-agent-runtime.py; do
   [[ -x "$IMAGE_MOUNT/$session_executable" ]] || {
@@ -2687,6 +2935,26 @@ for backup_runtime in \
   usr/share/doc/echo-os/user-backup.md; do
   [[ -f "$IMAGE_MOUNT/$backup_runtime" ]] || {
     echo "encrypted backup runtime is missing from artifact: /$backup_runtime" >&2
+    exit 1
+  }
+done
+for dlna_runtime in \
+  usr/lib/systemd/system/echo-dlna.service \
+  usr/share/doc/echo-os/dlna.md; do
+  [[ -f "$IMAGE_MOUNT/$dlna_runtime" ]] || {
+    echo "DLNA runtime is missing from artifact: /$dlna_runtime" >&2
+    exit 1
+  }
+done
+[[ ! -e "$IMAGE_MOUNT/etc/echo-os/minidlna.conf" && \
+   ! -e "$IMAGE_MOUNT/etc/systemd/system/echo-dlna.service.d/shares.conf" ]] || {
+  echo "artifact unexpectedly contains an approved DLNA share" >&2
+  exit 1
+}
+for dlna_unit in minidlna.service echo-dlna.service; do
+  DLNA_ENABLEMENT="$(systemctl --root="$IMAGE_MOUNT" is-enabled "$dlna_unit" 2>/dev/null || true)"
+  [[ "$DLNA_ENABLEMENT" == disabled || "$DLNA_ENABLEMENT" == masked ]] || {
+    echo "artifact unexpectedly enables DLNA service $dlna_unit: $DLNA_ENABLEMENT" >&2
     exit 1
   }
 done
@@ -3067,7 +3335,22 @@ PY
    "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/opt/echo-agent/native-runtime.json")" == "0:0:644" && \
    "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/opt/echo-agent/codex/bin/codex")" == "0:0:755" && \
    "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/systemd/system/echo-agent.service")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/systemd/system/echo-native-storage-broker.service")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/share/doc/echo-os/native-storage-broker.md")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/systemd/system/echo-docker-credential.service")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/systemd/system/echo-docker-control.service")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/systemd/system/echo-docker-control-health.service")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/share/doc/echo-os/native-docker-control.md")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/echo-os/echo-zfs-health")" == "0:0:755" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/systemd/system/echo-zfs-health.service")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/etc/systemd/system/zfs-zed.service.d/echo.conf")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/share/doc/echo-os/openzfs.md")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/systemd/system/echo-dlna.service")" == "0:0:644" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/share/doc/echo-os/dlna.md")" == "0:0:644" && \
    "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/echo-os/verify-native-agent-health")" == "0:0:755" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/bin/fusermount3")" == "0:0:4755" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/echo-os/rclone-backup-mount")" == "0:0:755" && \
+   "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/systemd/system/echo-rclone-backup@.service")" == "0:0:644" && \
    "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/bin/echo-os-backup")" == "0:0:755" && \
    "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/lib/systemd/system/echo-user-backup.service")" == "0:0:644" && \
    "$(stat -c '%u:%g:%a' "$IMAGE_MOUNT/usr/share/doc/echo-os/user-backup.md")" == "0:0:644" && \
@@ -3123,6 +3406,16 @@ python3 "$IMAGE_MOUNT/usr/lib/echo-os/echo_update_trust.py" verify-system \
   --system-keyring "$IMAGE_MOUNT/usr/lib/echo-os/update-keyring.gpg" \
   --verifier "$IMAGE_MOUNT/usr/lib/echo-os/verify-public-keyring.py"
 systemd-analyze --root="$IMAGE_MOUNT" verify \
+  echo-rclone-backup@offsite.service \
+  echo-native-storage-broker.service \
+  echo-docker-credential.service \
+  echo-docker-control.service \
+  echo-docker-control-health.service \
+  echo-zfs-health.service \
+  echo-dlna.service \
+  zfs-load-module.service \
+  zfs-zed.service \
+  docker.service \
   echo-agent.service \
   echo-agent-health.service \
   echo-oem-setup.service \
@@ -3192,6 +3485,10 @@ grep -q '\.pcrpkey' "$MAIN_UKI_INSPECT"
   --section ".pcrpkey:text@$MAIN_PCR_PUBLIC_KEY" \
   --section ".pcrsig:text@$MAIN_PCR_SIGNATURE" >/dev/null
 lsinitramfs "$MAIN_INITRD" >"$MAIN_INITRD_CONTENTS"
+if grep -Eq '(^|/)var/lib/dkms/mok\.(key|pub)$' "$MAIN_INITRD_CONTENTS"; then
+  echo "custom systemd initrd contains a transient OpenZFS signing identity" >&2
+  exit 1
+fi
 for initrd_member in \
   usr/lib/echo-os/echo-machine-id \
   usr/lib/systemd/system/echo-machine-state-initrd.service \

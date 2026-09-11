@@ -446,7 +446,12 @@ jobs:
         run: ./.venv/bin/python scripts/configure_builtin_plugin_publisher.py
 
       - name: Build wheel and source distribution
-        run: uv build --no-sources --out-dir dist
+        run: |
+          set -euo pipefail
+          uv build --no-sources --sdist --out-dir dist
+          mapfile -t sdists < <(find dist -maxdepth 1 -type f -name 'echo_os-*.tar.gz' -print)
+          [[ ${#sdists[@]} -eq 1 ]]
+          uv build --no-sources --wheel --out-dir dist "${sdists[0]}"
 
       - name: Validate metadata and isolated wheel imports
         run: |
@@ -461,8 +466,8 @@ jobs:
           dist = Path("dist")
           with Path("pyproject.toml").open("rb") as handle:
               expected_version = str(tomllib.load(handle)["project"]["version"])
-          wheels = list(dist.glob("echo_agent_runtime-*.whl"))
-          sdists = list(dist.glob("echo_agent_runtime-*.tar.gz"))
+          wheels = list(dist.glob("echo_os-*.whl"))
+          sdists = list(dist.glob("echo_os-*.tar.gz"))
           if len(wheels) != 1 or len(sdists) != 1:
               raise SystemExit(
                   f"expected one wheel and one sdist, got wheels={wheels}, sdists={sdists}"
@@ -473,7 +478,7 @@ jobs:
                   raise SystemExit(f"expected one METADATA entry, got {metadata_names}")
               metadata = BytesParser().parsebytes(package.read(metadata_names[0]))
           if (
-              metadata["Name"] != "echo-agent-runtime"
+              metadata["Name"] != "echo-os"
               or metadata["Version"] != expected_version
           ):
               raise SystemExit(
@@ -482,18 +487,26 @@ jobs:
           PY
           mkdir -p "${RUNNER_TEMP}/echo-release-wheel"
           uv pip install --python .venv/bin/python --target "${RUNNER_TEMP}/echo-release-wheel" \
-            --no-deps dist/echo_agent_runtime-*.whl
+            --no-deps dist/echo_os-*.whl
+          .venv/bin/python -m compileall -q "${RUNNER_TEMP}/echo-release-wheel"
           ECHO_RELEASE_WHEEL="${RUNNER_TEMP}/echo-release-wheel" \
             PYTHONPATH="${RUNNER_TEMP}/echo-release-wheel" \
             .venv/bin/python -P - <<'PY'
           import os
           from pathlib import Path
 
+          import appliance.native_storage_broker
+          import appliance.native_webdav_control
           import echo_runtime
           import runtime.cli
 
           root = Path(os.environ["ECHO_RELEASE_WHEEL"]).resolve()
-          for module in (echo_runtime, runtime.cli):
+          for module in (
+              appliance.native_storage_broker,
+              appliance.native_webdav_control,
+              echo_runtime,
+              runtime.cli,
+          ):
               source = Path(module.__file__).resolve()
               if root not in source.parents:
                   raise SystemExit(f"module escaped isolated wheel: {module.__name__} -> {source}")
@@ -516,7 +529,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment:
       name: pypi
-      url: https://pypi.org/p/echo-agent-runtime
+      url: https://pypi.org/p/echo-os
     permissions:
       contents: read
       id-token: write

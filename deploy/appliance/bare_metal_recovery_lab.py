@@ -907,6 +907,7 @@ def _running_verification(
         value = json.loads(completed.stdout, object_pairs_hook=systemd._reject_duplicate_keys)
     except json.JSONDecodeError as exc:
         raise BareMetalRecoveryLabError("running verifier returned invalid JSON") from exc
+    system_capabilities = value.get("system_capabilities") if isinstance(value, dict) else None
     if (
         not isinstance(value, dict)
         or value.get("bundle_verified") is not True
@@ -923,6 +924,14 @@ def _running_verification(
         or value.get("approval") != 200
         or value.get("approval_replay") != 403
         or value.get("protected_stop") != 403
+        or not isinstance(system_capabilities, dict)
+        or system_capabilities.get("apiVersion") != "echo.ai/v1alpha1"
+        or system_capabilities.get("unique") is not True
+        or system_capabilities.get("requiredCapabilities")
+        != ["apps.list", "hub.catalog.list", "storage.health.read"]
+        or not isinstance(system_capabilities.get("count"), int)
+        or isinstance(system_capabilities.get("count"), bool)
+        or system_capabilities["count"] < 3
         or not isinstance(value.get("zfs_runtime"), dict)
         or value["zfs_runtime"].get("moduleInstalled") is not True
         or value["zfs_runtime"].get("moduleLoaded") is not True
@@ -945,6 +954,7 @@ def _running_verification(
             raise BareMetalRecoveryLabError("installed appliance image is not the candidate")
     return {
         "bundleVerified": True,
+        "applianceCapabilitiesVerified": True,
         "immutableImageVerified": True,
         "administratorLoginReady": True,
         "agentWorkbenchReady": True,
@@ -1571,6 +1581,7 @@ def _valid_state(value: object, expected: Mapping[str, Any]) -> bool:
 def _valid_appliance(value: object, expected_architecture: str) -> bool:
     return isinstance(value, dict) and value == {
         "bundleVerified": True,
+        "applianceCapabilitiesVerified": True,
         "immutableImageVerified": True,
         "administratorLoginReady": True,
         "agentWorkbenchReady": True,

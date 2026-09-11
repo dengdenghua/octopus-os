@@ -598,12 +598,18 @@ def record_codex(agent_src: Path, identity_path: Path, dist: Path) -> dict[str, 
         raise BundleError("Agent source does not pin a packaged Codex version")
     codex_manifest_path = dist / "echo-codex-bundle.json"
     codex_manifest = _read_json(codex_manifest_path)
+    targets = {
+        "x86_64-unknown-linux-musl": ("@openai/codex-linux-x64", 62),
+        "aarch64-unknown-linux-musl": ("@openai/codex-linux-arm64", 183),
+    }
+    selected_target = codex_manifest.get("target")
+    profile = targets.get(selected_target) if isinstance(selected_target, str) else None
     if (
         codex_manifest.get("schema") != "echo.codex_bundle.v1"
         or codex_manifest.get("package") != "@openai/codex"
         or codex_manifest.get("version") != expected_version
-        or codex_manifest.get("platformPackage") != "@openai/codex-linux-x64"
-        or codex_manifest.get("target") != "x86_64-unknown-linux-musl"
+        or profile is None
+        or codex_manifest.get("platformPackage") != profile[0]
         or codex_manifest.get("fileHashPhase") != "pre-package"
     ):
         raise BundleError("Codex bundle does not match the selected Agent/Linux target")
@@ -624,19 +630,19 @@ def record_codex(agent_src: Path, identity_path: Path, dist: Path) -> dict[str, 
             raise BundleError(f"Codex file hash mismatch: {relative}")
     executable = dist / "bin/codex"
     if executable.is_symlink() or not executable.is_file() or not os.access(executable, os.X_OK):
-        raise BundleError("Codex bundle has no executable x86-64 entrypoint")
+        raise BundleError("Codex bundle has no executable Linux entrypoint")
     with executable.open("rb") as handle:
         header = handle.read(20)
     if (
         len(header) != 20
         or header[:6] != b"\x7fELF\x02\x01"
-        or int.from_bytes(header[18:20], "little") != 62
+        or int.from_bytes(header[18:20], "little") != profile[1]
     ):
-        raise BundleError("Codex entrypoint is not a little-endian x86-64 ELF64 binary")
+        raise BundleError("Codex entrypoint ELF64 architecture does not match its declared target")
     artifact = {
         **_tree_digest(dist, exclude={PARTIAL_MANIFEST}),
         "version": expected_version,
-        "target": "x86_64-unknown-linux-musl",
+        "target": selected_target,
         "manifest_sha256": _sha256(codex_manifest_path),
         "executable_sha256": _sha256(executable),
     }

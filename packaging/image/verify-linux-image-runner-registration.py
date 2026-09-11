@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 RUNNER_APPLICATION_DIR = Path("/opt/actions-runner")
 RUNNER_WORK_ROOT = Path("/srv/echo-os-image-runner")
 SYSTEMD_UNIT_ROOT = Path("/etc/systemd/system")
-EXPECTED_REPOSITORY = "dengdenghua/echo-os"
+EXPECTED_REPOSITORY = "dengdenghua/octopus-os"
 HOST_EVIDENCE_NAME = "echo-image-runner-host.json"
 HOOK_STARTED = "ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/libexec/echo-os-image-runner-job-hook.sh"
 HOOK_COMPLETED = (

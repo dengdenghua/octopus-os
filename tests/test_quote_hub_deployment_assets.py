@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -175,11 +176,13 @@ def test_quotes_tls_vhost_is_independent_authenticated_and_narrow() -> None:
 
 
 def test_release_scripts_are_executable_syntax_checked_and_atomic() -> None:
+    bash = shutil.which("bash")
     for name in ("build-release-artifact.sh", "deploy-release.sh", "rollback-release.sh"):
         path = DEPLOY / name
         script = path.read_text(encoding="utf-8")
         assert os.access(path, os.X_OK)
-        subprocess.run(["bash", "-n", str(path)], check=True)
+        if bash is not None:
+            subprocess.run([bash, "-n", str(path)], check=True)
         assert "rm -rf" not in script
 
     for name in ("deploy-release.sh", "rollback-release.sh"):
@@ -195,6 +198,10 @@ def test_release_scripts_are_executable_syntax_checked_and_atomic() -> None:
     assert "mode 0600" in deploy
     assert "uv build" in build
     assert "--wheel" in build
+    assert "echo_os-*.whl" in build
+    assert "echo_os-*.whl" in deploy
+    assert "echo_agent_runtime-*.whl" not in build
+    assert "echo_agent_runtime-*.whl" not in deploy
     assert "uv export" in build
     assert "--locked" in build
     assert "--no-emit-project" in build
@@ -231,4 +238,3 @@ def test_deployment_guide_documents_permissions_auth_and_rollback() -> None:
     assert "最终网络段不是 TLS" in guide
     assert "SHA256SUMS" in guide
     assert "不会把本地工作区" in guide
-

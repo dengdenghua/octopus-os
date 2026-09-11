@@ -1,0 +1,35 @@
+[Unit]
+Description=Echo OS narrow privileged native-storage broker
+Documentation=file:/usr/share/doc/echo-os/native-storage-broker.md
+Requires=echo-zfs-health.service echo-firewall-health.service
+After=local-fs.target echo-local-account.service echo-zfs-health.service echo-firewall-health.service
+Before=echo-agent.service
+ConditionPathExists=/opt/echo-agent/native-runtime.json
+
+[Service]
+Type=simple
+User=root
+Group=echo
+RuntimeDirectory=echo-storage-broker
+RuntimeDirectoryMode=0750
+UMask=0007
+Environment=PYTHONPATH=/opt/echo-agent/site-packages
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=ECHO_NATIVE_OS=1
+ExecStart=/usr/bin/python3 -m appliance.native_storage_broker --socket /run/echo-storage-broker/broker.sock --user echo --user echo-docker-control --group echo
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=130s
+
+NoNewPrivileges=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

@@ -50,7 +50,7 @@ uv export \
 rm -f -- "${STAGING}/.gitignore"
 
 shopt -s nullglob
-wheels=("${STAGING}"/echo_agent_runtime-*.whl)
+wheels=("${STAGING}"/echo_os-*.whl)
 shopt -u nullglob
 [[ ${#wheels[@]} -eq 1 ]] || die "expected exactly one runtime wheel"
 WHEEL=${wheels[0]}

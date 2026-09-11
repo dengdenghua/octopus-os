@@ -1,0 +1,41 @@
+[Unit]
+Description=Echo OS authenticated WebDAV gateway
+Documentation=https://rclone.org/commands/rclone_serve_webdav/
+After=network.target echo-webdav-jails.service echo-webdav-sshd.service
+Requires=echo-webdav-jails.service echo-webdav-sshd.service
+ConditionPathExists=/var/lib/echo-agent/appliance-auth.json
+
+[Service]
+Type=simple
+User=echo
+Group=echo
+Environment=PYTHONPATH=/opt/echo-agent/site-packages
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=ECHO_DATA_DIR=/var/lib/echo-agent
+LoadCredential=webdav-sftp.key:/var/lib/echo-os/webdav-gateway/id_ed25519
+LoadCredential=webdav-known-hosts:/var/lib/echo-os/webdav-gateway/known_hosts
+ExecStart=/usr/bin/rclone serve webdav --addr=127.0.0.1:5005 --baseurl=/webdav --auth-proxy=/usr/lib/echo-os/webdav/echo-webdav-auth --realm=Echo_OS --vfs-cache-mode=off --dir-cache-time=5s --poll-interval=0 --server-read-timeout=1h --server-write-timeout=1h --max-header-bytes=16384 --config=""
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET
+
+[Install]
+WantedBy=multi-user.target

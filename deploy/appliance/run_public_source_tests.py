@@ -53,11 +53,16 @@ TESTS = (
     "tests/appliance/test_nas_email_alert_delivery.py",
     "tests/appliance/test_nas_backup_routes.py",
     "tests/appliance/test_nas_backup_credential_policy.py",
+    "tests/appliance/test_nas_backup_remote_policy.py",
     "tests/appliance/test_nas_backup_schedule_policy.py",
     "tests/appliance/test_nas_backup_recovery.py",
     "tests/appliance/test_nas_backup_restore_policy.py",
     "tests/appliance/test_nas.py",
     "tests/appliance/test_native_agent_recovery_contract.py",
+    "tests/appliance/test_native_auth_provisioning.py",
+    "tests/appliance/test_native_dlna.py",
+    "tests/appliance/test_native_firewall.py",
+    "tests/appliance/test_native_hub_firewall.py",
     "tests/appliance/test_native_ext4.py",
     "tests/appliance/test_native_ext4_check.py",
     "tests/appliance/test_native_btrfs.py",
@@ -69,6 +74,10 @@ TESTS = (
     "tests/appliance/test_native_mdraid_check.py",
     "tests/appliance/test_native_mdraid_replace.py",
     "tests/appliance/test_native_storage.py",
+    "tests/appliance/test_native_storage_broker.py",
+    "tests/appliance/test_native_webdav.py",
+    "tests/appliance/test_native_webdav_control.py",
+    "tests/appliance/test_native_webdav_delivery.py",
     "tests/appliance/test_native_time_machine.py",
     "tests/appliance/test_native_storage_pool.py",
     "tests/appliance/test_native_storage_observation.py",
@@ -104,6 +113,8 @@ TESTS = (
     "tests/appliance/test_lan_discovery_proxy.py",
     "tests/appliance/test_remote_access.py",
     "tests/appliance/test_remote_access_delivery.py",
+    "tests/appliance/test_rclone_backup_mount.py",
+    "tests/appliance/test_rk3576_profile.py",
     "tests/appliance/test_running_appliance_verifier.py",
     "tests/appliance/test_script_source_integrity.py",
     "tests/appliance/test_state_backup.py",
@@ -142,11 +153,15 @@ EMBEDDED_RUNTIME_TESTS = (
     "tests/appliance/test_capabilities.py",
     "tests/appliance/test_diagnostics.py",
     "tests/appliance/test_docker_proxy.py",
+    "tests/appliance/test_docker_credential.py",
+    "tests/appliance/test_native_docker_control.py",
+    "tests/appliance/test_native_docker_health.py",
     "tests/appliance/test_device_link.py",
     "tests/appliance/test_entrypoint.py",
     "tests/appliance/test_document_worker_packaging.py",
     "tests/appliance/test_extension.py",
     "tests/appliance/test_files.py",
+    "tests/appliance/test_file_shares.py",
     "tests/appliance/test_file_recursive_authorization.py",
     "tests/appliance/test_file_operation_tasks.py",
     "tests/appliance/test_file_organization_directories.py",
@@ -249,6 +264,14 @@ def main(argv: list[str] | None = None) -> int:
     repository_import_root = str(REPO_ROOT)
     if repository_import_root not in sys.path:
         sys.path.insert(0, repository_import_root)
+
+    # Run this from the developer checkout as well as CI. A clean CI checkout
+    # cannot see files that were accidentally omitted from the commit, while
+    # this shared runner can fail before reporting a misleading green suite.
+    from tools.lint import untracked_source_check
+
+    if untracked_source_check.main([]) != 0:
+        raise SystemExit("public source-contract gate found untracked source files")
 
     classified = set(TESTS) | set(EMBEDDED_RUNTIME_TESTS)
     if len(classified) != len(TESTS) + len(EMBEDDED_RUNTIME_TESTS):

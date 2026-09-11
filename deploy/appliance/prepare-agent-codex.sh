@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the pinned Linux x86-64 Codex engine from the frozen Echo OS snapshot.
+# Build the selected Linux Codex engine from the frozen Echo OS snapshot.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -65,7 +65,7 @@ export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$($PYTHON -c \
 
 echo "Building pinned Echo Codex engine for Linux x86-64"
 NODE_PATH="$DEPENDENCY_SRC/frontend/node_modules${NODE_PATH:+:$NODE_PATH}" \
-  ECHO_LINUX_ARCH=x64 node "$PREPARE"
+  ECHO_LINUX_ARCH="${ECHO_LINUX_ARCH:-x64}" node "$PREPARE"
 SOURCE="$AGENT_SRC/extras/desktop/build/codex"
 [[ -f "$SOURCE/echo-codex-bundle.json" && -x "$SOURCE/bin/codex" ]] || {
   echo "ERROR: Agent Codex packager produced an incomplete tree" >&2

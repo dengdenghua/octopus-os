@@ -61,7 +61,7 @@ expected = {
 }
 if entries != expected:
     raise SystemExit(f"packaged updater config differs from the release channel: {entries!r}")
-print("PACKAGED_UPDATE_CHANNEL_OK=github:dengdenghua/echo-os")
+print("PACKAGED_UPDATE_CHANNEL_OK=github:dengdenghua/octopus-os")
 PY
 
 ELECTRON_RUN_AS_NODE=1 "$app_executable" -e \

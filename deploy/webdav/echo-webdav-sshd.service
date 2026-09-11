@@ -1,0 +1,31 @@
+[Unit]
+Description=Echo WebDAV loopback-only SFTP identity boundary
+After=network.target echo-webdav-jails.service
+Requires=echo-webdav-jails.service
+
+[Service]
+Type=notify
+ExecStartPre=/usr/sbin/sshd -t -f /etc/ssh/sshd_config_echo_webdav
+ExecStart=/usr/sbin/sshd -D -e -f /etc/ssh/sshd_config_echo_webdav
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=30s
+RuntimeDirectory=sshd
+RuntimeDirectoryMode=0755
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_AUDIT_WRITE CAP_CHOWN CAP_DAC_OVERRIDE CAP_SETGID CAP_SETUID CAP_SYS_CHROOT
+AmbientCapabilities=
+LockPersonality=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX AF_INET
+
+[Install]
+WantedBy=multi-user.target

@@ -116,6 +116,34 @@ AGENT_RUNTIME_MANIFEST="$AGENT_ROOT/native-runtime.json"
 AGENT_CODEX="$AGENT_ROOT/codex/bin/codex"
 AGENT_SERVICE=/usr/lib/systemd/system/echo-agent.service
 AGENT_HEALTH_SERVICE=/usr/lib/systemd/system/echo-agent-health.service
+STORAGE_BROKER_SERVICE=/usr/lib/systemd/system/echo-native-storage-broker.service
+STORAGE_BROKER_DOCUMENTATION=/usr/share/doc/echo-os/native-storage-broker.md
+DOCKER_CREDENTIAL_SERVICE=/usr/lib/systemd/system/echo-docker-credential.service
+DOCKER_CONTROL_SERVICE=/usr/lib/systemd/system/echo-docker-control.service
+DOCKER_CONTROL_HEALTH_SERVICE=/usr/lib/systemd/system/echo-docker-control-health.service
+DOCKER_CONTROL_DOCUMENTATION=/usr/share/doc/echo-os/native-docker-control.md
+ZFS_HEALTH=/usr/lib/echo-os/echo-zfs-health
+ZFS_HEALTH_SERVICE=/usr/lib/systemd/system/echo-zfs-health.service
+ZFS_ZED_DROPIN=/etc/systemd/system/zfs-zed.service.d/echo.conf
+ZFS_DOCUMENTATION=/usr/share/doc/echo-os/openzfs.md
+DLNA_SERVICE=/usr/lib/systemd/system/echo-dlna.service
+DLNA_DOCUMENTATION=/usr/share/doc/echo-os/dlna.md
+WEBDAV_ROOT=/usr/lib/echo-os/webdav
+WEBDAV_AUTH="$WEBDAV_ROOT/echo-webdav-auth"
+WEBDAV_JAILS="$WEBDAV_ROOT/echo-webdav-jails"
+WEBDAV_JAILS_MODULE="$WEBDAV_ROOT/echo_webdav_jails.py"
+DEVICE_TLS="$WEBDAV_ROOT/echo-device-tls"
+DEVICE_TLS_SERVICE=/usr/lib/systemd/system/echo-device-tls.service
+WEBDAV_JAILS_SERVICE=/usr/lib/systemd/system/echo-webdav-jails.service
+WEBDAV_REFRESH_SERVICE=/usr/lib/systemd/system/echo-webdav-refresh.service
+WEBDAV_REFRESH_TIMER=/usr/lib/systemd/system/echo-webdav-refresh.timer
+WEBDAV_REFRESH_PATH=/usr/lib/systemd/system/echo-webdav-refresh.path
+WEBDAV_SSHD_SERVICE=/usr/lib/systemd/system/echo-webdav-sshd.service
+WEBDAV_SERVICE=/usr/lib/systemd/system/echo-webdav.service
+WEBDAV_SSHD_CONFIG=/etc/ssh/sshd_config_echo_webdav
+WEBDAV_DOCUMENTATION=/usr/share/doc/echo-os/webdav.md
+ECHO_NGINX=/etc/nginx/sites-available/echo
+ECHO_NGINX_ENABLED=/etc/nginx/sites-enabled/echo
 AGENT_HEALTH_VERIFIER=/usr/lib/echo-os/verify-native-agent-health
 AGENT_RUNTIME_VERIFIER=/usr/lib/echo-os/verify-native-agent-runtime.py
 BACKUP_COMMAND=/usr/bin/echo-os-backup
@@ -128,6 +156,10 @@ FINDMNT=/usr/bin/findmnt
 OS_SOURCE_VERIFIER=/usr/lib/echo-os/os-source-identity.py
 OS_SOURCE_MANIFEST=/usr/lib/echo-os/os-source-identity.json
 OS_SOURCE_READER=/usr/lib/echo-os/echo-os-source-identity
+SAMBA_CONFIG=/etc/samba/smb.conf
+SAMBA_TIME_MACHINE_CONFIG=/etc/samba/echo-os-time-machine.conf
+SAMBA_USERSHARES=/var/lib/samba/usershares
+WSD_DROPIN=/etc/systemd/system/wsdd2.service.d/echo.conf
 
 [[ -x "$DESKTOP_BINARY" ]] || {
   echo "Echo Desktop binary is missing from the image" >&2
@@ -494,6 +526,10 @@ PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 "$CORE_APPS_POLICY"
 [[ -d "$AGENT_ROOT" && ! -L "$AGENT_ROOT" && \
    -f "$AGENT_MANIFEST" && -f "$AGENT_RUNTIME_MANIFEST" && \
    -x "$AGENT_CODEX" && -f "$AGENT_SERVICE" && \
+   -f "$STORAGE_BROKER_SERVICE" && -f "$STORAGE_BROKER_DOCUMENTATION" && \
+   -f "$DOCKER_CREDENTIAL_SERVICE" && -f "$DOCKER_CONTROL_SERVICE" && \
+   -f "$DOCKER_CONTROL_HEALTH_SERVICE" && \
+   -f "$DOCKER_CONTROL_DOCUMENTATION" && \
    -f "$AGENT_HEALTH_SERVICE" && -f "$AGENT_HEALTH_VERIFIER" && \
    -f "$AGENT_RUNTIME_VERIFIER" ]] || {
   echo "Echo OS native Agent runtime/startup chain is incomplete" >&2
@@ -581,6 +617,198 @@ getent group sudo >/dev/null || {
   exit 1
 }
 
+# The raw image must contain the same upstream NAS protocol substrate proven
+# by the installer path. Keep Samba closed at the firewall until an approved
+# usershare or Time Machine destination is created.
+for nas_tool in /usr/sbin/smbd /usr/bin/testparm /usr/bin/net /usr/sbin/exportfs \
+  /usr/sbin/mdadm /usr/sbin/smartctl /usr/sbin/upsd /usr/bin/upsc \
+  /usr/sbin/hdparm /usr/sbin/repquota /usr/sbin/setquota \
+  /usr/bin/docker /usr/sbin/dockerd /usr/bin/zfs /usr/bin/zpool \
+  /usr/sbin/zed /usr/sbin/modinfo /usr/sbin/dkms /usr/sbin/minidlnad \
+  /usr/bin/rclone /usr/bin/fusermount3 /usr/sbin/sshd /usr/sbin/nginx /usr/bin/ssh-keygen \
+  /usr/bin/mountpoint; do
+  [[ -x "$nas_tool" ]] || {
+    echo "Echo OS NAS data-plane tool is missing: $nas_tool" >&2
+    exit 1
+  }
+done
+[[ -f "$WEBDAV_AUTH" && ! -L "$WEBDAV_AUTH" && \
+   -f "$WEBDAV_JAILS" && ! -L "$WEBDAV_JAILS" && \
+   -f "$WEBDAV_JAILS_MODULE" && ! -L "$WEBDAV_JAILS_MODULE" && \
+   -f "$DEVICE_TLS" && ! -L "$DEVICE_TLS" && \
+   -f "$DEVICE_TLS_SERVICE" && -f "$WEBDAV_JAILS_SERVICE" && \
+   -f "$WEBDAV_REFRESH_SERVICE" && -f "$WEBDAV_REFRESH_TIMER" && \
+   -f "$WEBDAV_REFRESH_PATH" && -f "$WEBDAV_SSHD_SERVICE" && \
+   -f "$WEBDAV_SERVICE" && -f "$WEBDAV_SSHD_CONFIG" && \
+   -f "$WEBDAV_DOCUMENTATION" && -f "$ECHO_NGINX" ]] || {
+  echo "Echo OS WebDAV delivery baseline is incomplete" >&2
+  exit 1
+}
+/usr/bin/python3 -m py_compile "$WEBDAV_JAILS_MODULE"
+/usr/bin/bash -n "$DEVICE_TLS"
+install -d -m 0755 -o root -g root /run/sshd
+/usr/sbin/sshd -t -f "$WEBDAV_SSHD_CONFIG"
+rm -f /etc/nginx/sites-enabled/default
+ln -sfn ../sites-available/echo "$ECHO_NGINX_ENABLED"
+[[ -f "$DLNA_SERVICE" && ! -L "$DLNA_SERVICE" && \
+   -f "$DLNA_DOCUMENTATION" && ! -L "$DLNA_DOCUMENTATION" ]] || {
+  echo "Echo OS DLNA service baseline is incomplete" >&2
+  exit 1
+}
+getent passwd minidlna >/dev/null || {
+  echo "Echo OS DLNA service account is missing" >&2
+  exit 1
+}
+grep -qx 'User=minidlna' "$DLNA_SERVICE"
+grep -qx 'SupplementaryGroups=users' "$DLNA_SERVICE"
+grep -qx 'CapabilityBoundingSet=' "$DLNA_SERVICE"
+grep -qx 'InaccessiblePaths=-/data -/mnt -/srv -/fs -/volume' "$DLNA_SERVICE"
+grep -qx 'Environment=PYTHONPATH=/opt/echo-agent/site-packages' "$DLNA_SERVICE"
+grep -qx 'ExecStartPre=+/usr/bin/python3 -m appliance.native_dlna verify-start' "$DLNA_SERVICE"
+mapfile -d '' -t ZFS_KERNEL_TREES < <(
+  find /usr/lib/modules -mindepth 1 -maxdepth 1 -type d -print0
+)
+[[ "${#ZFS_KERNEL_TREES[@]}" -gt 0 ]] || {
+  echo "Echo OS image contains no kernel module tree" >&2
+  exit 1
+}
+ZFS_SIGNING_KEY=/var/lib/dkms/mok.key
+ZFS_SIGNING_CERTIFICATE=/var/lib/dkms/mok.pub
+[[ -f "$ZFS_SIGNING_KEY" && ! -L "$ZFS_SIGNING_KEY" && \
+   -f "$ZFS_SIGNING_CERTIFICATE" && ! -L "$ZFS_SIGNING_CERTIFICATE" ]] || {
+  echo "isolated OpenZFS module-signing identity is missing" >&2
+  exit 1
+}
+key_mode="$(stat -c '%a' "$ZFS_SIGNING_KEY")"
+[[ "$key_mode" == 400 || "$key_mode" == 600 ]] || {
+  echo "OpenZFS module-signing private key has unsafe permissions" >&2
+  exit 1
+}
+(( (8#$(stat -c '%a' "$ZFS_SIGNING_CERTIFICATE") & 8#022) == 0 )) || {
+  echo "OpenZFS module-signing certificate is writable by group or others" >&2
+  exit 1
+}
+for kernel_tree in "${ZFS_KERNEL_TREES[@]}"; do
+  kernel_release="${kernel_tree##*/}"
+  [[ "$kernel_release" =~ ^[0-9A-Za-z][0-9A-Za-z._+~-]{0,127}$ ]] || {
+    echo "image contains an unsafe kernel module-tree name" >&2
+    exit 1
+  }
+  [[ -d "$kernel_tree/build" ]] || {
+    echo "matching kernel headers are missing for $kernel_release" >&2
+    exit 1
+  }
+  headers_tree="$(realpath -e -- "$kernel_tree/build")"
+  [[ "$headers_tree" == "/usr/src/linux-headers-$kernel_release" ]] || {
+    echo "kernel headers do not match module tree $kernel_release" >&2
+    exit 1
+  }
+  dkms_tree="$kernel_tree/updates/dkms"
+  [[ -d "$dkms_tree" && ! -L "$dkms_tree" ]] || {
+    echo "OpenZFS DKMS output is missing for kernel $kernel_release" >&2
+    exit 1
+  }
+  dkms_tree="$(realpath -e -- "$dkms_tree")"
+  for component in zfs spl zavl znvpair zunicode zcommon icp; do
+    module_file="$(/usr/sbin/modinfo -k "$kernel_release" -F filename "$component")" || {
+      echo "OpenZFS DKMS module is missing: $component/$kernel_release" >&2
+      exit 1
+    }
+    [[ -f "$module_file" && ! -L "$module_file" ]] || {
+      echo "OpenZFS DKMS module is not a regular file: $component/$kernel_release" >&2
+      exit 1
+    }
+    module_file="$(realpath -e -- "$module_file")"
+    [[ "$module_file" == "$dkms_tree/"* && \
+       "$(/usr/sbin/modinfo -k "$kernel_release" -F sig_id "$component")" == PKCS#7 && \
+       -n "$(/usr/sbin/modinfo -k "$kernel_release" -F signer "$component")" ]] || {
+      echo "OpenZFS DKMS module is misplaced or unsigned: $component/$kernel_release" >&2
+      exit 1
+    }
+  done
+done
+# The release build pre-populates these conventional DKMS paths with the same
+# db identity used for its UKIs before apt runs. DKMS therefore signs each
+# module once, before compression. Never publish the private identity in /var.
+rm -f -- /var/lib/dkms/mok.key /var/lib/dkms/mok.pub
+/usr/bin/bash -n "$ZFS_HEALTH"
+[[ -f "$SAMBA_CONFIG" && ! -L "$SAMBA_CONFIG" && \
+   -f "$SAMBA_TIME_MACHINE_CONFIG" && ! -L "$SAMBA_TIME_MACHINE_CONFIG" && \
+   -f "$WSD_DROPIN" && ! -L "$WSD_DROPIN" ]] || {
+  echo "Echo OS Samba/Time Machine/WSD baseline is incomplete" >&2
+  exit 1
+}
+chown root:root "$SAMBA_TIME_MACHINE_CONFIG" "$WSD_DROPIN"
+chmod 0644 "$SAMBA_TIME_MACHINE_CONFIG" "$WSD_DROPIN"
+SAMBA_MODULE_DIR="$(/usr/sbin/smbd -b | awk '$1 == "MODULESDIR:" { print $2; exit }')"
+for module in catia fruit streams_xattr; do
+  [[ -f "$SAMBA_MODULE_DIR/vfs/$module.so" ]] || {
+    echo "Echo OS Samba is missing the $module VFS module" >&2
+    exit 1
+  }
+done
+PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 - "$SAMBA_CONFIG" "$SAMBA_TIME_MACHINE_CONFIG" <<'PY'
+import os
+import re
+import sys
+import tempfile
+from pathlib import Path
+
+config = Path(sys.argv[1])
+managed = sys.argv[2]
+text = config.read_text(encoding="utf-8")
+section = ""
+matches = []
+global_line = None
+for index, raw in enumerate(text.splitlines()):
+    line = re.split(r"[;#]", raw, maxsplit=1)[0].strip()
+    header = re.fullmatch(r"\[([^]]+)\]", line)
+    if header:
+        section = header.group(1).strip().casefold()
+        if section == "global" and global_line is None:
+            global_line = index
+        continue
+    key, separator, value = line.partition("=")
+    if separator and key.strip().casefold() == "include" and value.strip() == managed:
+        matches.append(section)
+if matches:
+    if matches != ["global"]:
+        raise SystemExit("Time Machine include is duplicate or outside [global]")
+else:
+    if global_line is None:
+        raise SystemExit("Samba configuration has no [global] section")
+    lines = text.splitlines()
+    lines.insert(global_line + 1, f"   include = {managed}")
+    rendered = "\n".join(lines) + "\n"
+    descriptor, name = tempfile.mkstemp(prefix=".smb.conf.echo.", dir=config.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as handle:
+            handle.write(rendered)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(name, config.stat().st_mode & 0o777)
+        os.replace(name, config)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+PY
+/usr/bin/testparm -s "$SAMBA_CONFIG" >/dev/null
+[[ "$(/usr/bin/testparm -s --parameter-name='usershare path' 2>/dev/null)" == "$SAMBA_USERSHARES" ]] || {
+  echo "Echo OS Samba usershare path is not the managed registry" >&2
+  exit 1
+}
+SAMBA_MAX_SHARES="$(/usr/bin/testparm -s --parameter-name='usershare max shares' 2>/dev/null)"
+[[ "$SAMBA_MAX_SHARES" =~ ^[0-9]+$ && "$SAMBA_MAX_SHARES" -gt 0 ]] || {
+  echo "Echo OS Samba usershares are disabled" >&2
+  exit 1
+}
+getent group users >/dev/null
+getent group sambashare >/dev/null
+install -d -o root -g sambashare -m 1770 "$SAMBA_USERSHARES"
+/usr/bin/setfacl --no-mask -m g:users:r-x "$SAMBA_USERSHARES"
+/usr/bin/getfacl --absolute-names --omit-header "$SAMBA_USERSHARES" \
+  | grep -q '^group:users:r-x$'
+
 chown root:root "$CHROME_SANDBOX"
 chmod 4755 "$CHROME_SANDBOX"
 chmod 0755 "$DESKTOP_ROOT/deploy/desktop-session/echo-desktop-session.sh"
@@ -615,9 +843,15 @@ chmod 0644 "$SCREEN_READER_DESKTOP"
 chmod 0755 "$SDDM_ACCESSIBILITY" "$SDDM_XSETUP" "$SDDM_XSTOP"
 chmod 0644 "$SDDM_CONFIG"
 install -d -o root -g root -m 0755 /etc/echo-os
+install -d -o root -g root -m 0700 /etc/credstore.encrypted
+install -d -o root -g root -m 0755 /mnt/echo-backup-remotes
 chown root:root "$COREDUMP_CONFIG" "$CRASH_HEALTH" "$CRASH_HEALTH_SERVICE"
 chmod 0644 "$COREDUMP_CONFIG" "$CRASH_HEALTH_SERVICE"
 chmod 0755 "$CRASH_HEALTH"
+chown root:root /usr/lib/echo-os/rclone-backup-mount \
+  /usr/lib/systemd/system/echo-rclone-backup@.service
+chmod 0755 /usr/lib/echo-os/rclone-backup-mount
+chmod 0644 /usr/lib/systemd/system/echo-rclone-backup@.service
 chown root:root "$FIREWALL_CONFIG" "$FIREWALL_ZONE" "$FIREWALL_POLICY" \
   "$FIREWALL_HEALTH" "$FIREWALL_HEALTH_SERVICE" "$FIREWALL_DOCUMENTATION"
 chmod 0644 "$FIREWALL_CONFIG" "$FIREWALL_ZONE" \
@@ -651,14 +885,36 @@ chmod 0644 "$VERITY_CERTIFICATE" "$UPDATE_KEYRING" "$UPDATE_CHANNEL_CONFIG" \
 /usr/bin/python3 -m py_compile "$UPDATE_STATUS_TOOL"
 chown -R root:root "$AGENT_ROOT"
 chown root:root "$AGENT_SERVICE" "$AGENT_HEALTH_SERVICE" \
+  "$STORAGE_BROKER_SERVICE" "$STORAGE_BROKER_DOCUMENTATION" \
+  "$DOCKER_CREDENTIAL_SERVICE" "$DOCKER_CONTROL_SERVICE" \
+  "$DOCKER_CONTROL_HEALTH_SERVICE" \
+  "$DOCKER_CONTROL_DOCUMENTATION" \
+  "$ZFS_HEALTH" "$ZFS_HEALTH_SERVICE" "$ZFS_ZED_DROPIN" \
+  "$ZFS_DOCUMENTATION" "$DLNA_SERVICE" "$DLNA_DOCUMENTATION" \
   "$AGENT_HEALTH_VERIFIER" "$AGENT_RUNTIME_VERIFIER"
-chmod 0644 "$AGENT_SERVICE" "$AGENT_HEALTH_SERVICE"
-chmod 0755 "$AGENT_HEALTH_VERIFIER" "$AGENT_RUNTIME_VERIFIER" "$AGENT_CODEX"
+chmod 0644 "$AGENT_SERVICE" "$AGENT_HEALTH_SERVICE" \
+  "$STORAGE_BROKER_SERVICE" "$STORAGE_BROKER_DOCUMENTATION" \
+  "$DOCKER_CREDENTIAL_SERVICE" "$DOCKER_CONTROL_SERVICE" \
+  "$DOCKER_CONTROL_HEALTH_SERVICE" \
+  "$DOCKER_CONTROL_DOCUMENTATION" "$ZFS_HEALTH_SERVICE" "$ZFS_ZED_DROPIN" \
+  "$ZFS_DOCUMENTATION" "$DLNA_SERVICE" "$DLNA_DOCUMENTATION"
+chmod 0755 "$AGENT_HEALTH_VERIFIER" "$AGENT_RUNTIME_VERIFIER" "$AGENT_CODEX" \
+  "$ZFS_HEALTH"
 chown root:root "$BACKUP_COMMAND" "$BACKUP_SERVICE" "$BACKUP_DOCUMENTATION" \
   "$RESTORE_TRANSACTION" "$RESTORE_TRANSACTION_HEALTH"
 chmod 0755 "$BACKUP_COMMAND" "$RESTORE_TRANSACTION"
 chmod 0644 "$BACKUP_SERVICE" "$BACKUP_DOCUMENTATION" \
   "$RESTORE_TRANSACTION_HEALTH"
+chown -R root:root "$WEBDAV_ROOT"
+chown root:root "$DEVICE_TLS_SERVICE" "$WEBDAV_JAILS_SERVICE" \
+  "$WEBDAV_REFRESH_SERVICE" "$WEBDAV_REFRESH_TIMER" "$WEBDAV_REFRESH_PATH" \
+  "$WEBDAV_SSHD_SERVICE" "$WEBDAV_SERVICE" "$WEBDAV_SSHD_CONFIG" \
+  "$WEBDAV_DOCUMENTATION" "$ECHO_NGINX"
+chmod 0755 "$WEBDAV_AUTH" "$WEBDAV_JAILS" "$DEVICE_TLS"
+chmod 0644 "$WEBDAV_JAILS_MODULE" "$DEVICE_TLS_SERVICE" \
+  "$WEBDAV_JAILS_SERVICE" "$WEBDAV_REFRESH_SERVICE" "$WEBDAV_REFRESH_TIMER" \
+  "$WEBDAV_REFRESH_PATH" "$WEBDAV_SSHD_SERVICE" "$WEBDAV_SERVICE" \
+  "$WEBDAV_SSHD_CONFIG" "$WEBDAV_DOCUMENTATION" "$ECHO_NGINX"
 
 # These paths must already exist in the finished raw image: test harnesses and
 # first-boot services write into the persistent /var partition before tmpfiles

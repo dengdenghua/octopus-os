@@ -18,11 +18,27 @@ class MkosiSummaryVerifierTests(unittest.TestCase):
     def paths(self) -> tuple[Path, ...]:
         return tuple(
             Path(f"/release/{name}")
-            for name in ("db.key", "db.crt", "pcr.key", "pcr.crt", "factory.key", "trust-tree")
+            for name in (
+                "db.key",
+                "db.crt",
+                "pcr.key",
+                "pcr.crt",
+                "factory.key",
+                "trust-tree",
+                "zfs-signing-source",
+            )
         )
 
     def document(self) -> dict[str, object]:
-        secure_key, secure_cert, pcr_key, pcr_cert, factory_key, trust_tree = self.paths()
+        (
+            secure_key,
+            secure_cert,
+            pcr_key,
+            pcr_cert,
+            factory_key,
+            trust_tree,
+            zfs_signing_tree,
+        ) = self.paths()
         common = {
             "Distribution": "debian",
             "Release": "trixie",
@@ -77,6 +93,8 @@ class MkosiSummaryVerifierTests(unittest.TestCase):
             "SignExpectedPcrCertificate": str(pcr_cert),
             "Passphrase": str(factory_key),
             "ExtraTrees": [{"Source": str(trust_tree), "Target": None}],
+            "BuildSources": [{"Source": "/source/repo", "Target": "echo-os"}],
+            "SkeletonTrees": [{"Source": str(zfs_signing_tree), "Target": None}],
         }
         return {"Images": [initrd, main]}
 
@@ -101,6 +119,24 @@ class MkosiSummaryVerifierTests(unittest.TestCase):
     def test_rejects_incomplete_custom_initrd(self) -> None:
         document = self.document()
         document["Images"][0]["KernelModulesInclude"].remove("/overlay.ko")
+        with self.assertRaises(verifier.SummaryError):
+            self.verify(document)
+
+    def test_rejects_unbound_openzfs_signing_identity(self) -> None:
+        document = self.document()
+        document["Images"][1]["SkeletonTrees"] = [{"Source": "/release/other", "Target": None}]
+        with self.assertRaises(verifier.SummaryError):
+            self.verify(document)
+
+    def test_rejects_openzfs_source_that_replaces_the_project_mount(self) -> None:
+        document = self.document()
+        document["Images"][1]["BuildSources"] = []
+        with self.assertRaises(verifier.SummaryError):
+            self.verify(document)
+
+    def test_rejects_openzfs_signing_identity_in_initrd(self) -> None:
+        document = self.document()
+        document["Images"][0]["SkeletonTrees"] = [{"Source": str(self.paths()[-1]), "Target": None}]
         with self.assertRaises(verifier.SummaryError):
             self.verify(document)
 

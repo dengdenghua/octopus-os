@@ -359,6 +359,76 @@ def _inputs(root: Path) -> dict[str, Any]:
     os_config = root / "native-config.yaml"
     if os_config.is_symlink() or not os_config.is_file():
         raise RuntimeError("native Agent runtime has no immutable OS policy overlay")
+    native_auth = root / "site-packages/appliance/native_auth_provisioning.py"
+    if native_auth.is_symlink() or not native_auth.is_file():
+        raise RuntimeError("native Agent runtime has no OEM authentication provisioner")
+    native_auth_source = native_auth.read_text(encoding="utf-8")
+    for marker in (
+        "def provision_native_auth(",
+        "def provision_native_auth_for_account(",
+        'NATIVE_AGENT_STATE_DIRECTORY = Path("/var/lib/echo-agent")',
+    ):
+        if marker not in native_auth_source:
+            raise RuntimeError("native Agent OEM authentication provisioner is incomplete")
+    native_firewall = root / "site-packages/appliance/native_firewall.py"
+    if native_firewall.is_symlink() or not native_firewall.is_file():
+        raise RuntimeError("native Agent runtime has no NAS firewall transaction manager")
+    native_firewall_source = native_firewall.read_text(encoding="utf-8")
+    for marker in (
+        "def managed_rules(",
+        "def sync(",
+        "def sync_dlna(",
+        "def sync_hub(",
+        "def verify(",
+        'STATE_PATH = Path("/var/lib/echo-os/native-firewall.json")',
+    ):
+        if marker not in native_firewall_source:
+            raise RuntimeError("native Agent NAS firewall manager is incomplete")
+    native_dlna = root / "site-packages/appliance/native_dlna.py"
+    if native_dlna.is_symlink() or not native_dlna.is_file():
+        raise RuntimeError("native Agent runtime has no read-only DLNA controller")
+    native_dlna_source = native_dlna.read_text(encoding="utf-8")
+    for marker in (
+        "def plan_dlna(",
+        "def apply_dlna(",
+        "def verify_start(",
+        "BindReadOnlyPaths=",
+        "native_firewall.sync_dlna(enabled=",
+    ):
+        if marker not in native_dlna_source:
+            raise RuntimeError("native Agent read-only DLNA controller is incomplete")
+    native_hub_firewall = root / "site-packages/appliance/native_hub_firewall.py"
+    if native_hub_firewall.is_symlink() or not native_hub_firewall.is_file():
+        raise RuntimeError("native Agent runtime has no Hub firewall state derivation")
+    native_hub_firewall_source = native_hub_firewall.read_text(encoding="utf-8")
+    for marker in ("def desired_forwards(", "def sync(", "owned_hub_services"):
+        if marker not in native_hub_firewall_source:
+            raise RuntimeError("native Agent Hub firewall derivation is incomplete")
+    native_docker_health = root / "site-packages/appliance/native_docker_health.py"
+    if native_docker_health.is_symlink() or not native_docker_health.is_file():
+        raise RuntimeError("native Agent runtime has no Docker boot health gate")
+    native_docker_health_source = native_docker_health.read_text(encoding="utf-8")
+    for marker in ("def verify(", 'CONTROL_ORIGIN = "http://127.0.0.1:2375"'):
+        if marker not in native_docker_health_source:
+            raise RuntimeError("native Agent Docker boot health gate is incomplete")
+    docker_credential = root / "site-packages/appliance/docker_credential.py"
+    if docker_credential.is_symlink() or not docker_credential.is_file():
+        raise RuntimeError("native Agent runtime has no per-device Docker credential provisioner")
+    docker_credential_source = docker_credential.read_text(encoding="utf-8")
+    for marker in (
+        "def ensure_credential(",
+        'DEFAULT_CREDENTIAL = Path("/var/lib/echo-os/docker-proxy-token")',
+        "secrets.token_hex(32)",
+    ):
+        if marker not in docker_credential_source:
+            raise RuntimeError("native Agent Docker credential provisioner is incomplete")
+    docker_proxy = root / "site-packages/appliance/docker_proxy.py"
+    if docker_proxy.is_symlink() or not docker_proxy.is_file():
+        raise RuntimeError("native Agent runtime has no bounded Docker control proxy")
+    docker_proxy_source = docker_proxy.read_text(encoding="utf-8")
+    for marker in ("def create_proxy_server(", "def _drop_socket_privileges("):
+        if marker not in docker_proxy_source:
+            raise RuntimeError("native Agent Docker control proxy is incomplete")
 
     distribution = str(wheel.get("distribution") or "")
     version = str(wheel.get("version") or "")

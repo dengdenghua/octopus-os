@@ -22,7 +22,7 @@ try:
 except ModuleNotFoundError:
     import physical_acceptance
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MANIFEST_NAME = "echo-nas-product-delivery-bundle.json"
 REPORT_NAME = "echo-nas-product-delivery-release.json"
 KEYRING_NAME = "echo-physical-acceptance-keyring.gpg"
@@ -308,6 +308,7 @@ def _manifest(report: Mapping[str, Any], records: list[dict[str, Any]]) -> dict[
         "productReportId": report["reportId"],
         "acceptanceKeyringSha256": report["acceptanceKeyringSha256"],
         "acceptanceSignerFingerprint": report["acceptanceSignerFingerprint"],
+        "nasRuntimeProfile": report["nasRuntimeProfile"],
         "files": records,
         "nasProductDeliveryReady": True,
     }
@@ -343,6 +344,7 @@ def _validate_manifest(value: dict[str, Any]) -> list[dict[str, Any]]:
         "productReportId",
         "acceptanceKeyringSha256",
         "acceptanceSignerFingerprint",
+        "nasRuntimeProfile",
         "files",
         "nasProductDeliveryReady",
         "bundleId",
@@ -356,6 +358,7 @@ def _validate_manifest(value: dict[str, Any]) -> list[dict[str, Any]]:
         value["schemaVersion"] != SCHEMA_VERSION
         or value["kind"] != "echo.nas-product-delivery-bundle"
         or value["nasProductDeliveryReady"] is not True
+        or value["nasRuntimeProfile"] != physical_acceptance.NAS_RUNTIME_PROFILE
         or not isinstance(bundle_id, str)
         or bundle_id != hashlib.sha256(_canonical_json(unsigned)).hexdigest()
         or not isinstance(value["productReportId"], str)
@@ -440,6 +443,7 @@ def verify(
         or manifest["productReportId"] != reproduced["reportId"]
         or manifest["acceptanceKeyringSha256"] != reproduced["acceptanceKeyringSha256"]
         or manifest["acceptanceSignerFingerprint"] != reproduced["acceptanceSignerFingerprint"]
+        or manifest["nasRuntimeProfile"] != reproduced["nasRuntimeProfile"]
         or reproduced["nasProductDeliveryReady"] is not True
     ):
         raise ProductDeliveryBundleError("delivery bundle manifest differs from its product report")
@@ -456,6 +460,7 @@ def verify(
         "productReportId": reproduced["reportId"],
         "candidateIndexId": reproduced["candidate"]["indexId"],
         "acceptanceSignerFingerprint": reproduced["acceptanceSignerFingerprint"],
+        "nasRuntimeProfile": reproduced["nasRuntimeProfile"],
         "fileCount": len(actual_records),
         "nasProductDeliveryReady": True,
     }

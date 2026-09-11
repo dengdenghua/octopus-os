@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_SIGNATURE_BYTES = 1024 * 1024
 MAX_PLUGIN_BYTES = 32 * 1024 * 1024
@@ -74,6 +74,12 @@ CANDIDATE_RUNNER_POLICIES = {
     "abUpdate": "dedicated-self-hosted",
     "realOmvX86": "github-hosted-only",
     "appliance": "github-hosted-only",
+}
+NAS_RUNTIME_PROFILE = {
+    "product": "echo-nas-appliance",
+    "host": "debian-13-openmediavault-8",
+    "deployment": "oci-compose",
+    "echoOsImageRole": "separate-native-desktop-artifact",
 }
 CANDIDATE_ATTESTATIONS = {
     "osImageManifest": ("osImage", "refs/heads/os-main"),
@@ -850,6 +856,7 @@ def build_index(
                 for name, run in candidate["runs"].items()
             },
         },
+        "nasRuntimeProfile": dict(NAS_RUNTIME_PROFILE),
         "osImage": {
             "manifestSha256": _sha256(raw_bytes),
             "signatureSha256": raw_signature["signatureSha256"],

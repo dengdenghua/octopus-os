@@ -28,6 +28,12 @@ OMV_VERSION = re.compile(r"^8\.[0-9]+(?:\.[0-9]+)?(?:[-+~][0-9A-Za-z.+~-]+)?$")
 SHA1 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 ARTIFACT_ID = re.compile(r"^[0-9a-f]{16}$")
+NAS_RUNTIME_PROFILE = {
+    "product": "echo-nas-appliance",
+    "host": "debian-13-openmediavault-8",
+    "deployment": "oci-compose",
+    "echoOsImageRole": "separate-native-desktop-artifact",
+}
 PRESERVATION_LABELS = (
     "deviceState",
     "NASData",
@@ -277,6 +283,7 @@ def _candidate_identity(path: Path, *, trusted_uid: int) -> dict[str, str]:
         raise OperationsSystemdLabError("release candidate index is not strict JSON") from exc
     source = value.get("source") if isinstance(value, dict) else None
     evidence = value.get("evidence") if isinstance(value, dict) else None
+    runtime_profile = evidence.get("nasRuntimeProfile") if isinstance(evidence, dict) else None
     appliance = evidence.get("appliance") if isinstance(evidence, dict) else None
     operations = appliance.get("operationsBundle") if isinstance(appliance, dict) else None
     physical = value.get("physicalAcceptance") if isinstance(value, dict) else None
@@ -293,7 +300,7 @@ def _candidate_identity(path: Path, *, trusted_uid: int) -> dict[str, str]:
             "physicalAcceptance",
             "indexId",
         }
-        or value.get("schemaVersion") != 1
+        or value.get("schemaVersion") != 2
         or value.get("kind") != "echo.delivery-release-evidence-index"
         or value.get("ciReleaseCandidateReady") is not True
         or value.get("nasProductDeliveryReady") is not False
@@ -308,6 +315,7 @@ def _candidate_identity(path: Path, *, trusted_uid: int) -> dict[str, str]:
         or not isinstance(source["releaseTag"], str)
         or not isinstance(evidence, dict)
         or "candidatePreflight" not in evidence
+        or runtime_profile != NAS_RUNTIME_PROFILE
         or not isinstance(appliance, dict)
         or set(appliance) != {"manifestSha256", "immutableReference", "operationsBundle"}
         or not isinstance(appliance["manifestSha256"], str)

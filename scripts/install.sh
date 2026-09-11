@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="https://github.com/dengdenghua/echo-os.git"
+REPO_URL="https://github.com/dengdenghua/octopus-os.git"
 PYENV_INSTALL_SHA256="1065197a9fff657e0e2941e4ca8c8b6e72833833466b777b9eddd0fff335ec41"
 NVM_INSTALL_SHA256="abdb525ee9f5b48b34d8ed9fc67c6013fb0f659712e401ecd88ab989b3af8f53"
 UV_INSTALL_SHA256="92e8554321e2bde08c9b1445dae47a65360f885274f31df51cdc2f9faa84e001"

@@ -1,0 +1,32 @@
+[Unit]
+Description=Verify OpenZFS for the running kernel before native storage starts
+Documentation=file:/usr/share/doc/echo-os/openzfs.md
+Requires=zfs-load-module.service zfs-zed.service
+After=systemd-modules-load.service zfs-load-module.service zfs-zed.service
+Before=echo-native-storage-broker.service echo-agent.service boot-complete.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/echo-os/echo-zfs-health
+RemainAfterExit=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+RequiredBy=echo-native-storage-broker.service boot-complete.target

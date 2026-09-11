@@ -1,0 +1,27 @@
+[Unit]
+Description=Echo WebDAV per-user chroot views
+After=local-fs.target echo-local-account.service
+Requires=echo-local-account.service
+Before=echo-webdav-sshd.service echo-webdav.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PYTHONPATH=/opt/echo-agent/site-packages:/usr/lib/echo-os/webdav
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/lib/echo-os/webdav/echo-webdav-jails sync
+ExecStop=/usr/lib/echo-os/webdav/echo-webdav-jails clean
+TimeoutStartSec=120s
+TimeoutStopSec=120s
+UMask=0077
+# This oneshot must publish bind mounts into the host namespace for the
+# separately sandboxed sshd. Filesystem Protect*= options would create a
+# private mount namespace and discard those mounts when the process exits.
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETGID CAP_SETUID CAP_SYS_ADMIN
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=multi-user.target

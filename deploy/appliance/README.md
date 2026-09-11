@@ -81,6 +81,13 @@ appliance 必须匹配不可变 OCI 摘要。只有全部一致
 `echo-delivery-release-candidate-<标签>`，其中包含来源报告、run/attestation 报告、统一索引、
 离线验证器和总 SHA-256。
 
+统一索引中的 `nasRuntimeProfile` 是发布边界，不是展示文案：当前值固定说明 NAS 产品是运行在
+Debian 13 + OpenMediaVault 8 宿主上的 OCI Compose appliance；同候选中的 `packaging/image`
+原生 Echo OS 镜像是独立桌面产物。现场实验器、最终验收器和产品目录清单都会复核并输出这个
+profile，缺失、扩展或把原生镜像错标成 NAS 宿主都会失败关闭。原生镜像虽已接入完整认证控制面、
+核心协议/监控包和共享生命周期防火墙，仍须完成受限容器数据面与 raw OpenZFS 内核装配，并让六项
+真机门直接验证冻结制品，才可以变更这项合同。
+
 下载候选 artifact 后，联网时先验证总校验清单自身的 GitHub OIDC 来源；之后整份目录可以带到
 隔离网络，由随包脚本重新执行 raw/A-B GPG、OMV 包字节、appliance 摘要和统一索引回放：
 
@@ -963,7 +970,7 @@ python3 tools/product_delivery_bundle.py verify "$PWD"
 signer fingerprint，不能只看目录名称。
 
 ```bash
-git clone https://github.com/dengdenghua/echo-os.git
+git clone https://github.com/dengdenghua/octopus-os.git
 cd echo-os
 
 # 从当前同一源码快照生成统一 wheel、运行资源、Linux Codex 与完整性清单
@@ -1187,9 +1194,18 @@ Echo 默认每 5 分钟持续检测 SMART、温度、容量和阵列状态，并
 管理员可在 **系统设置 → 通知与锁屏** 独立启用公网 HTTPS Webhook 和 SMTP 邮件告警；两者分别
 加密保存目标、凭据、去重游标和退避状态，均需密码单次审批。SMTP 只允许全部解析为公网地址的
 DNS 名称及 465 TLS/587 STARTTLS，并在 TLS 建立前不发送认证凭据。支持诊断包只记录服务数量、
-状态计数和固定告警码，不收集 journal、环境、路径或原始 systemctl 输出。正式部署仍应先发送测试
-通知，并验证断网恢复、DNS 变化、服务重启风暴、UPS/RAID/SMART 故障和断电重启；主后端永久
-失效时同进程投递也会停止，因此仍需部署侧外部存活探针作为最终兜底。
+状态计数和固定告警码，不收集 journal、环境、路径或原始 systemctl 输出。主后端触发启动限制后，
+`OnFailure` 会立即调用独立的 `echo-appliance-deadman.service`；另有五分钟持久化 timer 补偿漏触发。
+deadman 只有取得 `/data` 独占状态锁后才读取固定服务健康和已有加密通道配置，因此不会与在线后端、
+备份或恢复流程并发；它复用同一告警 ID、Webhook/SMTP 去重游标和退避状态。正式部署仍应先发送
+测试通知。本地 Debian 13 QEMU 已实测在线锁抑制、5 次重启后的 `OnFailure`、主服务恢复和 timer
+自然触发，且确认沙箱属性生效；证据为 `_vmtest/deadman_systemd_result.json`（SHA-256
+`f7fe8367a6bdd939d76a96e7bc11be8c537a1be07918ebfb88b09988b5c1779d`）。实验同时修复了原生 unit
+未要求 appliance 扩展、以及 wheel 漏装四个备份运行引擎的问题。仍需在冻结候选和真实公网环境验证
+收件、断网恢复、DNS 变化、UPS/RAID/SMART 故障和物理断电重启。候选运行验收器现会直接请求受
+认证保护的 `/api/appliance/capabilities`，校验完整能力列表并要求 `apps.list`、`hub.catalog.list`、
+`storage.health.read`；设备耐久和裸机恢复证据会显式携带该结果，因此“通用 Agent 健康但 NAS 扩展
+未挂载”的退化不能再通过正式物理门。
 
 ### 首次登录与家庭账号
 

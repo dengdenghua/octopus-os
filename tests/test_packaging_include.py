@@ -116,6 +116,23 @@ _REQUIRED_RUNTIME_WHEEL_FILES = {
     "runtime/sensing/gateway/thread_workspace.py",
 }
 
+_REQUIRED_APPLIANCE_RUNTIME_WHEEL_FILES = {
+    "appliance/native_auth_provisioning.py",
+    "appliance/native_dlna.py",
+    "appliance/native_firewall.py",
+    "appliance/native_hub_firewall.py",
+    "appliance/docker_credential.py",
+    "appliance/docker_proxy.py",
+    "appliance/native_docker_health.py",
+    "appliance/native_storage_broker.py",
+    "appliance/native_webdav.py",
+    "appliance/native_webdav_control.py",
+    "deploy/appliance/external_storage.py",
+    "deploy/appliance/nas_data_backup.py",
+    "deploy/appliance/nas_data_backup_schedule_runner.py",
+    "deploy/appliance/nas_data_backup_support.py",
+}
+
 _REQUIRED_BUNDLED_WHEEL_FILES = {
     "runtime/platform/plugins/bundled/documents/LICENSE.txt",
     "runtime/platform/plugins/bundled/documents/SKILL.md",
@@ -385,6 +402,11 @@ def _clean_packaging_source(tmp_path: Path) -> Path:
         "LICENSE",
         "NOTICE",
         "skills.lock.json",
+        "appliance",
+        "deploy/appliance/external_storage.py",
+        "deploy/appliance/nas_data_backup.py",
+        "deploy/appliance/nas_data_backup_schedule_runner.py",
+        "deploy/appliance/nas_data_backup_support.py",
         "runtime",
         "tools",
         "echo_runtime",
@@ -484,7 +506,12 @@ def _overlay_candidate_release_files(source: Path) -> None:
     exact files proposed for release form a complete wheel before staging.
     """
 
-    required = _REQUIRED_RUNTIME_WHEEL_FILES | _REQUIRED_BUNDLED_WHEEL_FILES
+    required = (
+        _REQUIRED_RUNTIME_WHEEL_FILES
+        | _REQUIRED_APPLIANCE_RUNTIME_WHEEL_FILES
+        | _REQUIRED_BUNDLED_WHEEL_FILES
+        | {"pyproject.toml"}
+    )
     for relative in sorted(required):
         src = _REPO / relative
         assert src.is_file(), f"declared release file does not exist: {relative}"
@@ -558,17 +585,17 @@ def _assert_bundled_plugins_in_wheel(
     expected = repr(sorted(_EXPECTED_BUNDLED_PLUGIN_IDS))
     plugin_smoke = subprocess.run(
         [
-                sys.executable,
-                "-c",
-                (
-                    "from pathlib import Path; "
-                    "import runtime.platform.plugins.plugin_hub as plugin_hub; "
-                    "root = Path(plugin_hub.__file__).resolve().parent; "
-                    "hub = plugin_hub.PluginHub("
-                    "plugin_dir=Path.cwd() / 'empty-plugins', "
-                    "bundled_plugin_dir=root / 'bundled', "
-                    "activation_root=Path.cwd() / 'activation', "
-                    "data_root=Path.cwd() / 'plugin-data'); "
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "import runtime.platform.plugins.plugin_hub as plugin_hub; "
+                "root = Path(plugin_hub.__file__).resolve().parent; "
+                "hub = plugin_hub.PluginHub("
+                "plugin_dir=Path.cwd() / 'empty-plugins', "
+                "bundled_plugin_dir=root / 'bundled', "
+                "activation_root=Path.cwd() / 'activation', "
+                "data_root=Path.cwd() / 'plugin-data'); "
                 "items = {item['id']: item for item in hub.discover()}; "
                 f"expected = set({expected}); "
                 "assert expected <= set(items), (expected, set(items)); "
@@ -607,6 +634,11 @@ def test_clean_tracked_source_wheel_contains_bundled_market_skills(tmp_path: Pat
     assert not missing_runtime_files, (
         "clean tracked-source wheel omitted production modules: " + ", ".join(missing_runtime_files)
     )
+    missing_appliance_files = sorted(_REQUIRED_APPLIANCE_RUNTIME_WHEEL_FILES - packaged_names)
+    assert not missing_appliance_files, (
+        "clean tracked-source wheel omitted appliance runtime dependencies: "
+        + ", ".join(missing_appliance_files)
+    )
     assert len(skill_files) >= 3
     assert "runtime/execution/all_skills/database-inspector/SKILL.md" in skill_files
     assert "runtime/execution/all_skills/repo-audit/SKILL.md" in skill_files
@@ -639,6 +671,27 @@ def test_clean_tracked_source_wheel_contains_bundled_market_skills(tmp_path: Pat
     assert installed_smoke.returncode == 0, f"{installed_smoke.stdout}\n{installed_smoke.stderr}"
 
 
+def test_legacy_statistics_skill_entrypoint_is_portable_python() -> None:
+    """Windows-built wheels must not contain a materialized Git link target."""
+
+    relative = "runtime/execution/all_skills/auto-hypothesis-test/scripts/statistical_test_suite.py"
+    entrypoint = _REPO / relative
+    source = entrypoint.read_text(encoding="utf-8")
+    tracked = subprocess.run(
+        ["git", "ls-files", "-s", "--", relative],
+        cwd=_REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert not entrypoint.is_symlink()
+    assert tracked.returncode == 0
+    assert tracked.stdout.startswith("100644 ")
+    compile(source, str(entrypoint), "exec")
+    assert "runpy.run_path" in source
+
+
 def test_candidate_wheel_contains_declared_runtime_and_bundled_plugins(tmp_path: Path) -> None:
     """A not-yet-staged candidate can be complete without weakening the Git gate."""
 
@@ -650,7 +703,36 @@ def test_candidate_wheel_contains_declared_runtime_and_bundled_plugins(tmp_path:
     assert not missing_runtime_files, "candidate wheel omitted production modules: " + ", ".join(
         missing_runtime_files
     )
+    missing_appliance_files = sorted(_REQUIRED_APPLIANCE_RUNTIME_WHEEL_FILES - packaged_names)
+    assert not missing_appliance_files, (
+        "candidate wheel omitted appliance runtime dependencies: "
+        + ", ".join(missing_appliance_files)
+    )
     _assert_bundled_plugins_in_wheel(packaged_names, installed, tmp_path)
+
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(installed)
+    smoke = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "import appliance.nas_backup_schedule_policy; "
+                "import appliance.nas_backup_restore_policy; "
+                "import appliance.nas_backup_credential_policy; "
+                "import deploy.appliance.nas_data_backup as backup; "
+                f"root=Path({str(installed)!r}).resolve(); "
+                "assert Path(backup.__file__).resolve().is_relative_to(root), backup.__file__"
+            ),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert smoke.returncode == 0, f"{smoke.stdout}\n{smoke.stderr}"
 
 
 def test_docker_distribution_copies_bootstrap_code_and_lockfile() -> None:

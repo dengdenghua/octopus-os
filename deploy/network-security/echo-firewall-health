@@ -8,8 +8,10 @@ SYSTEMCTL=/usr/bin/systemctl
 BUSCTL=/usr/bin/busctl
 FIREWALL_CMD=/usr/bin/firewall-cmd
 NFT=/usr/sbin/nft
+PYTHON=/usr/bin/python3
+NATIVE_SITE_PACKAGES=/opt/echo-agent/site-packages
 
-if [[ -n "${ECHO_FIREWALL_POLICY_TOOL:-}${ECHO_FIREWALL_SYSTEMCTL:-}${ECHO_FIREWALL_BUSCTL:-}${ECHO_FIREWALL_CMD:-}${ECHO_FIREWALL_NFT:-}" ]]; then
+if [[ -n "${ECHO_FIREWALL_POLICY_TOOL:-}${ECHO_FIREWALL_SYSTEMCTL:-}${ECHO_FIREWALL_BUSCTL:-}${ECHO_FIREWALL_CMD:-}${ECHO_FIREWALL_NFT:-}${ECHO_FIREWALL_PYTHON:-}${ECHO_FIREWALL_PYTHONPATH:-}" ]]; then
   [[ "${ECHO_FIREWALL_SOURCE_TEST:-}" == "USE-SOURCE-RUNTIME" ]] || {
     echo "firewall runtime overrides require the explicit source-test sentinel" >&2
     exit 2
@@ -19,6 +21,8 @@ if [[ -n "${ECHO_FIREWALL_POLICY_TOOL:-}${ECHO_FIREWALL_SYSTEMCTL:-}${ECHO_FIREW
   BUSCTL="${ECHO_FIREWALL_BUSCTL:-$BUSCTL}"
   FIREWALL_CMD="${ECHO_FIREWALL_CMD:-$FIREWALL_CMD}"
   NFT="${ECHO_FIREWALL_NFT:-$NFT}"
+  PYTHON="${ECHO_FIREWALL_PYTHON:-$PYTHON}"
+  NATIVE_SITE_PACKAGES="${ECHO_FIREWALL_PYTHONPATH:-$NATIVE_SITE_PACKAGES}"
 fi
 
 for runtime in "$POLICY_TOOL" "$SYSTEMCTL" "$BUSCTL" "$FIREWALL_CMD" "$NFT"; do
@@ -27,6 +31,14 @@ for runtime in "$POLICY_TOOL" "$SYSTEMCTL" "$BUSCTL" "$FIREWALL_CMD" "$NFT"; do
     exit 1
   }
 done
+[[ "$PYTHON" == /* && -x "$PYTHON" ]] || {
+  echo "native firewall Python runtime is missing or unsafe" >&2
+  exit 1
+}
+[[ "$NATIVE_SITE_PACKAGES" == /* && -d "$NATIVE_SITE_PACKAGES" && ! -L "$NATIVE_SITE_PACKAGES" ]] || {
+  echo "native firewall verifier path is missing or unsafe" >&2
+  exit 1
+}
 
 DEFAULT_ZONE="$($POLICY_TOOL verify-runtime --machine)"
 [[ "$DEFAULT_ZONE" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$ ]] || {
@@ -65,20 +77,44 @@ done
 
 INBOUND=admin-defined
 if [[ "$DEFAULT_ZONE" == "echo-public" ]]; then
-  [[ "$($FIREWALL_CMD --zone=echo-public --get-target)" == "default" ]] || {
+  # firewalld exposes a zone target only through the permanent configuration;
+  # the running zone is then proven separately by the active nftables table.
+  [[ "$($FIREWALL_CMD --permanent --zone=echo-public --get-target)" == "default" ]] || {
     echo "Echo public zone target is not the default reject policy" >&2
     exit 1
   }
-  [[ "$($FIREWALL_CMD --zone=echo-public --get-services)" == "dhcpv6-client" ]] || {
+  [[ "$($FIREWALL_CMD --zone=echo-public --list-services)" == "dhcpv6-client" ]] || {
     echo "Echo public zone exposes an unexpected service" >&2
     exit 1
   }
-  for query in --get-ports --get-protocols --get-source-ports --list-rich-rules; do
+  for query in --list-ports --list-protocols --list-source-ports; do
     [[ -z "$($FIREWALL_CMD --zone=echo-public "$query")" ]] || {
       echo "Echo public zone exposes an unexpected rule: $query" >&2
       exit 1
     }
   done
+  if [[ "${ECHO_FIREWALL_SOURCE_TEST:-}" == "USE-SOURCE-RUNTIME" ]]; then
+    if ! MANAGED_STATUS="$(
+      ECHO_NATIVE_FIREWALL_SOURCE_TEST=USE-SOURCE-RUNTIME \
+      ECHO_NATIVE_FIREWALL_CMD="$FIREWALL_CMD" \
+      PYTHONDONTWRITEBYTECODE=1 \
+      PYTHONPATH="$NATIVE_SITE_PACKAGES" \
+      "$PYTHON" -m appliance.native_firewall verify-health
+    )"; then
+      echo "Echo public zone exposes an unexpected managed rich rule" >&2
+      exit 1
+    fi
+  else
+    if ! MANAGED_STATUS="$(PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$NATIVE_SITE_PACKAGES" "$PYTHON" -m appliance.native_firewall verify-health)"; then
+      echo "Echo public zone exposes an unexpected managed rich rule" >&2
+      exit 1
+    fi
+  fi
+  [[ "$MANAGED_STATUS" =~ ^ECHO_NATIVE_FIREWALL_READY\ rules=([0-9]+)$ ]] || {
+    echo "managed NAS firewall verifier returned invalid evidence" >&2
+    exit 1
+  }
+  MANAGED_RULES="${BASH_REMATCH[1]}"
   set +e
   "$FIREWALL_CMD" --zone=echo-public --query-forward >/dev/null 2>&1
   FORWARD_STATUS=$?
@@ -92,5 +128,5 @@ if [[ "$DEFAULT_ZONE" == "echo-public" ]]; then
   INBOUND=deny
 fi
 
-printf 'ECHO_FIREWALL_READY backend=nftables default-zone=%s inbound=%s forward=explicit\n' \
-  "$DEFAULT_ZONE" "$INBOUND"
+printf 'ECHO_FIREWALL_READY backend=nftables default-zone=%s inbound=%s forward=explicit managed-rules=%s\n' \
+  "$DEFAULT_ZONE" "$INBOUND" "${MANAGED_RULES:-admin-defined}"

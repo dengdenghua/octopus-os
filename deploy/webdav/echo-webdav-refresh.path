@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Echo WebDAV after account or share registry changes
+
+[Path]
+PathChanged=/var/lib/echo-agent/appliance-auth.json
+PathChanged=/var/lib/echo-os/native-shared-folders.json
+PathChanged=/var/lib/echo-os/native-webdav.json
+Unit=echo-webdav-refresh.service
+
+[Install]
+WantedBy=multi-user.target

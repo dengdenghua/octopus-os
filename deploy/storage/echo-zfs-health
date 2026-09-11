@@ -1,0 +1,96 @@
+#!/bin/bash
+# Verify that OpenZFS is usable by the running, Secure-Booted kernel.
+set -euo pipefail
+set -f
+
+RUNTIME_ROOT=/
+if [[ -n "${ECHO_ZFS_RUNTIME_ROOT:-}" ]]; then
+  [[ "${ECHO_ZFS_SOURCE_TEST:-}" == "USE-SOURCE-RUNTIME" ]] || {
+    echo "ZFS runtime override requires the explicit source-test sentinel" >&2
+    exit 2
+  }
+  RUNTIME_ROOT="$ECHO_ZFS_RUNTIME_ROOT"
+fi
+[[ "$RUNTIME_ROOT" == /* && -d "$RUNTIME_ROOT" && ! -L "$RUNTIME_ROOT" ]] || {
+  echo "ZFS runtime root is unsafe" >&2
+  exit 1
+}
+
+runtime_path() {
+  local suffix="$1"
+  if [[ "$RUNTIME_ROOT" == / ]]; then
+    printf '%s\n' "$suffix"
+  else
+    printf '%s%s\n' "${RUNTIME_ROOT%/}" "$suffix"
+  fi
+}
+
+UNAME="$(runtime_path /usr/bin/uname)"
+MODINFO="$(runtime_path /usr/sbin/modinfo)"
+ZFS="$(runtime_path /usr/sbin/zfs)"
+ZPOOL="$(runtime_path /usr/sbin/zpool)"
+STAT="$(runtime_path /usr/bin/stat)"
+SYSTEMCTL="$(runtime_path /usr/bin/systemctl)"
+MODULE_SYSFS="$(runtime_path /sys/module/zfs)"
+
+for runtime in "$UNAME" "$MODINFO" "$ZFS" "$ZPOOL" "$STAT" "$SYSTEMCTL"; do
+  [[ -f "$runtime" && -x "$runtime" ]] || {
+    echo "ZFS runtime executable is missing: $runtime" >&2
+    exit 1
+  }
+  metadata="$($STAT -Lc '%u:%g:%a' "$runtime")" || {
+    echo "cannot inspect ZFS runtime executable: $runtime" >&2
+    exit 1
+  }
+  IFS=: read -r owner group mode <<<"$metadata"
+  [[ "$owner" == 0 && "$group" == 0 && "$mode" =~ ^[0-7]{3,4}$ && \
+     $((8#$mode & 8#022)) -eq 0 ]] || {
+    echo "ZFS runtime is not immutable root-owned content: $runtime" >&2
+    exit 1
+  }
+done
+
+kernel_release="$($UNAME -r)"
+[[ "$kernel_release" =~ ^[0-9A-Za-z][0-9A-Za-z._+~-]{0,127}$ ]] || {
+  echo "running kernel release is invalid" >&2
+  exit 1
+}
+
+module_file="$($MODINFO -k "$kernel_release" -F filename zfs)" || {
+  echo "OpenZFS has no module for the running kernel" >&2
+  exit 1
+}
+[[ "$module_file" == "/lib/modules/$kernel_release/"* || \
+   "$module_file" == "/usr/lib/modules/$kernel_release/"* ]] || {
+  echo "OpenZFS module is outside the running kernel module tree" >&2
+  exit 1
+}
+signature_id="$($MODINFO -k "$kernel_release" -F sig_id zfs)"
+signer="$($MODINFO -k "$kernel_release" -F signer zfs)"
+[[ "$signature_id" == PKCS#7 && -n "$signer" && ${#signer} -le 256 ]] || {
+  echo "OpenZFS module does not carry a bounded PKCS#7 signature" >&2
+  exit 1
+}
+
+[[ -d "$MODULE_SYSFS" && ! -L "$MODULE_SYSFS" ]] || {
+  echo "OpenZFS module is not loaded in the running kernel" >&2
+  exit 1
+}
+"$SYSTEMCTL" is-active --quiet zfs-load-module.service || {
+  echo "OpenZFS module loader is not active" >&2
+  exit 1
+}
+"$SYSTEMCTL" is-active --quiet zfs-zed.service || {
+  echo "OpenZFS event daemon is not active" >&2
+  exit 1
+}
+version="$($MODINFO -k "$kernel_release" -F version zfs)"
+[[ "$version" =~ ^[0-9][0-9A-Za-z._+~-]{0,63}$ ]] || {
+  echo "OpenZFS module version is invalid" >&2
+  exit 1
+}
+"$ZFS" list -H -o name >/dev/null
+"$ZPOOL" list -H -o name >/dev/null
+
+printf 'ECHO_ZFS_READY kernel=%s version=%s signature=pkcs7\n' \
+  "$kernel_release" "$version"

@@ -60,7 +60,7 @@ source = (
         {
             "schema": 1,
             "kind": "echo-os-source-identity",
-            "repository": "https://github.com/dengdenghua/echo-os.git",
+            "repository": "https://github.com/dengdenghua/octopus-os.git",
             "commit": commit,
             "tree": "b" * 40,
             "commit_time": "2026-08-26T00:00:00+00:00",

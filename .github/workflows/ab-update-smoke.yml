@@ -10,6 +10,7 @@ on:
       - "packaging/recovery/**"
       - "appliance/**"
       - "deploy/agent/**"
+      - "deploy/storage/**"
       - "deploy/appliance/**"
       - "deploy/desktop-session/**"
       - "deploy/apps/**"
@@ -37,6 +38,7 @@ on:
       - "packaging/recovery/**"
       - "appliance/**"
       - "deploy/agent/**"
+      - "deploy/storage/**"
       - "deploy/appliance/**"
       - "deploy/desktop-session/**"
       - "deploy/apps/**"
@@ -308,6 +310,9 @@ jobs:
 
       - name: Verify on-demand removable-storage policy
         run: python3 deploy/removable-storage/test_echo_removable_storage_health.py
+
+      - name: Verify running-kernel OpenZFS policy
+        run: python3 deploy/storage/test_echo_zfs_health.py
 
       - name: Verify private local printing policy
         run: |

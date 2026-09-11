@@ -1,0 +1,7 @@
+#!/usr/bin/python3
+"""System entry point for Echo WebDAV jail reconciliation."""
+
+from echo_webdav_jails import main
+
+
+raise SystemExit(main())

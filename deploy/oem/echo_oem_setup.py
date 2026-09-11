@@ -7,7 +7,6 @@ import contextlib
 import getpass
 import json
 import os
-import pwd
 import re
 import socket
 import stat
@@ -17,11 +16,23 @@ import time
 import unicodedata
 from pathlib import Path
 
+if os.name == "posix":
+    import pwd
+else:  # pragma: no cover - production is Linux-only; tests patch this shim
+
+    class _PwdUnavailable:
+        @staticmethod
+        def getpwnam(_account: str):
+            raise KeyError(_account)
+
+    pwd = _PwdUnavailable()
+
 ACCOUNT = "echo"
 STATE_DIRECTORY = Path("/var/lib/echo-os")
 COMPLETE_MARKER = STATE_DIRECTORY / "oem-complete.json"
 SHADOW_STATE = STATE_DIRECTORY / "local-account.shadow"
 REGION_STATE_TOOL = Path("/usr/lib/echo-os/echo-region-state")
+NATIVE_AGENT_SITE_PACKAGES = Path("/opt/echo-agent/site-packages")
 OEM_CREDENTIAL_NAME = "echo.os.oem"
 OEM_CREDENTIAL_SCHEMA = 1
 MAX_OEM_CREDENTIAL_SIZE = 8192
@@ -71,6 +82,8 @@ def validate_hostname(raw: str) -> str:
 def validate_password(raw: str) -> str:
     if not 12 <= len(raw) <= 256:
         raise InputError("password must contain 12 to 256 characters")
+    if len(raw.encode("utf-8")) > 72:
+        raise InputError("password must be at most 72 UTF-8 bytes")
     if any(unicodedata.category(char).startswith("C") for char in raw):
         raise InputError("password contains unsupported control characters")
     folded = raw.casefold()
@@ -219,6 +232,22 @@ def emit_audit_marker(message: str) -> None:
 def require_root() -> None:
     if os.geteuid() != 0:
         raise PermissionError("Echo local-account management must run as root")
+
+
+def provision_native_nas_auth(password: str) -> None:
+    """Initialize NAS web auth from OEM memory without argv/env/log exposure."""
+
+    if not NATIVE_AGENT_SITE_PACKAGES.is_dir() or NATIVE_AGENT_SITE_PACKAGES.is_symlink():
+        raise RuntimeError("native Agent runtime is unavailable during OEM setup")
+    site_packages = str(NATIVE_AGENT_SITE_PACKAGES)
+    sys.path.insert(0, site_packages)
+    try:
+        from appliance.native_auth_provisioning import provision_native_auth_for_account
+
+        provision_native_auth_for_account(password, account=ACCOUNT)
+    finally:
+        if sys.path and sys.path[0] == site_packages:
+            sys.path.pop(0)
 
 
 def account_record():
@@ -448,6 +477,7 @@ def setup_main() -> int:
         run_checked(["/usr/sbin/usermod", "--append", "--groups", "sudo", ACCOUNT])
         run_checked(["/usr/bin/hostnamectl", "set-hostname", hostname])
         run_checked(["/usr/sbin/chpasswd"], stdin=f"{ACCOUNT}:{password}\n")
+        provision_native_nas_auth(password)
         password = ""
         write_shadow_state(validate_password_hash(shadow_entry()))
         write_complete_marker(display_name, hostname)

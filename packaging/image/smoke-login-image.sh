@@ -98,6 +98,7 @@ BOOT_EPHEMERAL=yes
 LOGIN_IMAGE="$TEMP_DIR/echo-os-login-test.raw"
 OEM_MARKER="$TEMP_DIR/oem-complete.json"
 ACCOUNT_SHADOW="$TEMP_DIR/local-account.shadow"
+NATIVE_AUTH_STORE="$TEMP_DIR/appliance-auth.json"
 TEST_AUTOLOGIN="$TEMP_DIR/99-echo-ci-autologin.conf"
 WAYLAND_NATIVE_APP_IPC_REQUEST="$TEMP_DIR/wayland-native-app-ipc"
 OEM_CREDENTIAL="$TEMP_DIR/echo.os.oem"
@@ -181,8 +182,12 @@ if [[ -n "$OUTPUT_RAW" ]]; then
   "$ENCRYPTED_IMAGE" copy-from \
     "$LOGIN_IMAGE" "$IMAGE_VERSION" "$RECOVERY_KEY" \
     /var/lib/echo-os/local-account.shadow "$ACCOUNT_SHADOW"
-  python3 - "$OEM_MARKER" "$IMAGE_VERSION" <<'PY'
+  "$ENCRYPTED_IMAGE" copy-from \
+    "$LOGIN_IMAGE" "$IMAGE_VERSION" "$RECOVERY_KEY" \
+    /var/lib/echo-agent/appliance-auth.json "$NATIVE_AUTH_STORE"
+  python3 - "$OEM_MARKER" "$IMAGE_VERSION" "$NATIVE_AUTH_STORE" <<'PY'
 import json
+import re
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as stream:
@@ -205,10 +210,48 @@ if marker.get("root_version") != sys.argv[2]:
     raise SystemExit("provisioned OEM marker has the wrong root version")
 if not isinstance(marker.get("completed_unix"), int) or marker["completed_unix"] <= 0:
     raise SystemExit("provisioned OEM completion timestamp is invalid")
-print("provisioned OEM marker verified")
+
+with open(sys.argv[3], encoding="utf-8") as stream:
+    auth = json.load(stream)
+expected_auth_keys = {
+    "username",
+    "password_hash",
+    "jwt_secret",
+    "session_not_before",
+    "account_session_not_before",
+    "state_schema_version",
+    "accounts",
+}
+if set(auth) != expected_auth_keys:
+    raise SystemExit(f"provisioned NAS auth fields are invalid: {sorted(auth)}")
+password_hash = auth.get("password_hash")
+admin = auth.get("accounts", {}).get("admin")
+if (
+    auth.get("username") != "admin"
+    or auth.get("state_schema_version") != 3
+    or auth.get("session_not_before") != 0
+    or auth.get("account_session_not_before") != {}
+    or not isinstance(auth.get("jwt_secret"), str)
+    or len(auth["jwt_secret"]) < 64
+    or not isinstance(password_hash, str)
+    or re.fullmatch(r"\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}", password_hash) is None
+    or set(auth.get("accounts", {})) != {"admin"}
+    or not isinstance(admin, dict)
+    or admin
+    != {
+        "display_name": "管理员",
+        "role": "admin",
+        "password_hash": password_hash,
+        "omv_username": None,
+        "active": True,
+    }
+):
+    raise SystemExit("provisioned NAS authentication identity is invalid")
+print("provisioned OEM marker and NAS authentication verified")
 PY
   [[ "$(stat -c '%a' "$OEM_MARKER")" == 600 && \
-     "$(stat -c '%a' "$ACCOUNT_SHADOW")" == 600 ]] || {
+     "$(stat -c '%a' "$ACCOUNT_SHADOW")" == 600 && \
+     "$(stat -c '%a' "$NATIVE_AUTH_STORE")" == 600 ]] || {
     echo "provisioned OEM state is not private" >&2
     exit 1
   }

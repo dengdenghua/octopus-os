@@ -37,7 +37,7 @@ class RegistrationFixture:
             "PoolId": 1,
             "PoolName": "Default",
             "ServerUrl": "https://pipelines.actions.githubusercontent.com/tenant",
-            "GitHubUrl": "https://github.com/dengdenghua/echo-os",
+            "GitHubUrl": "https://github.com/dengdenghua/octopus-os",
             "WorkFolder": str(self.work),
             "UseV2Flow": True,
         }
@@ -86,7 +86,7 @@ class RegistrationFixture:
             runner_user="echo-runner",
             runner_uid=self.uid,
             unit_owner_uid=self.uid,
-            repository="dengdenghua/echo-os",
+            repository="dengdenghua/octopus-os",
         )
 
 
@@ -96,7 +96,7 @@ class RegistrationVerifierTests(unittest.TestCase):
             fixture = RegistrationFixture(Path(directory).resolve())
             with mock.patch.object(MODULE, "_bounded_command", return_value="enabled"):
                 facts = fixture.inspect()
-        self.assertEqual(facts.repository, "dengdenghua/echo-os")
+        self.assertEqual(facts.repository, "dengdenghua/octopus-os")
         self.assertEqual(facts.runner_name, "echo-image-x64")
         self.assertIn("ECHO_IMAGE_RUNNER_REGISTRATION_READY", MODULE.success_marker(facts))
         self.assertIn("hooks=ready", MODULE.success_marker(facts))

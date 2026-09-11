@@ -1,0 +1,34 @@
+[Unit]
+Description=Echo OS encrypted S3-compatible backup remote %i
+Documentation=https://rclone.org/s3/
+Wants=network-online.target
+After=network-online.target
+Before=echo-nas-data-backup.service
+ConditionPathExists=/etc/credstore.encrypted/echo-rclone-backup-%i.conf
+ConditionPathIsDirectory=/mnt/echo-backup-remotes/%i
+
+[Service]
+Type=simple
+User=root
+Group=root
+UMask=0077
+WorkingDirectory=/mnt/echo-backup-remotes/%i
+LoadCredentialEncrypted=rclone.conf:/etc/credstore.encrypted/echo-rclone-backup-%i.conf
+ExecStart=/usr/bin/python3 /usr/lib/echo-os/rclone-backup-mount %i
+ExecStop=-/usr/bin/fusermount3 -u /mnt/echo-backup-remotes/%i
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=90s
+TimeoutStopSec=30s
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_SYS_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

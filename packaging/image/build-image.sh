@@ -150,13 +150,24 @@ for command_name in cmp gpg install mktemp python3 realpath rm systemd-dissect; 
     exit 1
   }
 done
+configure_echo_secure_boot
+[[ "$ECHO_SECURE_BOOT_CONFIGURED" == yes ]] || {
+  echo "signed Secure Boot and PCR policy identities are required for release images" >&2
+  exit 1
+}
 UPDATE_KEYRING_TREE="$(mktemp -d)"
+MODULE_SIGNING_TREE="$(mktemp -d)"
 MKOSI_SUMMARY_JSON="$(mktemp)"
 cleanup_build_inputs() {
   rm -f -- "$MKOSI_SUMMARY_JSON"
-  rm -rf -- "$UPDATE_KEYRING_TREE"
+  rm -rf -- "$UPDATE_KEYRING_TREE" "$MODULE_SIGNING_TREE"
 }
 trap cleanup_build_inputs EXIT INT TERM
+install -d -m 0700 "$MODULE_SIGNING_TREE/var/lib/dkms"
+install -m 0400 "$ECHO_SECURE_BOOT_KEY" \
+  "$MODULE_SIGNING_TREE/var/lib/dkms/mok.key"
+install -m 0444 "$ECHO_SECURE_BOOT_CERTIFICATE" \
+  "$MODULE_SIGNING_TREE/var/lib/dkms/mok.pub"
 install -d -m 0755 "$UPDATE_KEYRING_TREE/usr/lib/echo-os"
 install -m 0444 "$OS_SOURCE_MANIFEST" \
   "$UPDATE_KEYRING_TREE/usr/lib/echo-os/os-source-identity.json"
@@ -177,11 +188,6 @@ python3 "$UPDATE_TRUST_TOOL" create-policy \
   --verifier "$KEYRING_VERIFIER" \
   --output "$UPDATE_KEYRING_TREE/usr/lib/echo-os/update-trust-policy.json" \
   "${UPDATE_RETIRED_ARGS[@]}"
-configure_echo_secure_boot
-[[ "$ECHO_SECURE_BOOT_CONFIGURED" == yes ]] || {
-  echo "signed Secure Boot and PCR policy identities are required for release images" >&2
-  exit 1
-}
 install -d -m 0755 "$UPDATE_KEYRING_TREE/usr/lib/systemd"
 install -m 0644 "$ECHO_TPM2_PCR_PUBLIC_KEY" \
   "$UPDATE_KEYRING_TREE/usr/lib/systemd/tpm2-pcr-public-key.pem"
@@ -211,14 +217,16 @@ fi
   cd "$IMAGE_DIR"
   mkosi --json "${MKOSI_VERSION_ARGS[@]}" "${ECHO_MKOSI_SECURE_BOOT_ARGS[@]}" \
     --passphrase="$FACTORY_DATA_KEY" \
+    --skeleton-tree="$MODULE_SIGNING_TREE" \
     --extra-tree="$UPDATE_KEYRING_TREE" summary >"$MKOSI_SUMMARY_JSON"
   python3 "$MKOSI_SUMMARY_VERIFIER" \
     "$MKOSI_SUMMARY_JSON" "$IMAGE_VERSION" \
     "$ECHO_SECURE_BOOT_KEY" "$ECHO_SECURE_BOOT_CERTIFICATE" \
     "$ECHO_PCR_POLICY_KEY" "$ECHO_PCR_POLICY_CERTIFICATE" \
-    "$FACTORY_DATA_KEY" "$UPDATE_KEYRING_TREE"
+    "$FACTORY_DATA_KEY" "$UPDATE_KEYRING_TREE" "$MODULE_SIGNING_TREE"
   mkosi "${MKOSI_VERSION_ARGS[@]}" "${ECHO_MKOSI_SECURE_BOOT_ARGS[@]}" \
     --passphrase="$FACTORY_DATA_KEY" \
+    --skeleton-tree="$MODULE_SIGNING_TREE" \
     --extra-tree="$UPDATE_KEYRING_TREE" --force build
 )
 

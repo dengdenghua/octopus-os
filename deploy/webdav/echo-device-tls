@@ -1,0 +1,47 @@
+#!/bin/bash
+set -euo pipefail
+
+STATE_DIR=/var/lib/echo-os/device-tls
+KEY="$STATE_DIR/device.key"
+CERT="$STATE_DIR/device.crt"
+
+install -d -o root -g root -m 0711 "$STATE_DIR"
+
+if [[ -e "$KEY" || -e "$CERT" ]]; then
+  [[ -f "$KEY" && ! -L "$KEY" && -f "$CERT" && ! -L "$CERT" ]] || {
+    echo "Echo device TLS identity is incomplete or unsafe" >&2
+    exit 1
+  }
+  chmod 0600 "$KEY"
+  chmod 0644 "$CERT"
+  openssl x509 -in "$CERT" -noout -checkend 86400 >/dev/null
+  key_fingerprint="$(openssl pkey -in "$KEY" -pubout -outform DER 2>/dev/null | sha256sum)"
+  cert_fingerprint="$(openssl x509 -in "$CERT" -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum)"
+  [[ "${key_fingerprint%% *}" == "${cert_fingerprint%% *}" ]] || {
+    echo "Echo device TLS key and certificate do not match" >&2
+    exit 1
+  }
+  exit 0
+fi
+
+device_name="$(hostname --short 2>/dev/null || true)"
+if [[ ! "$device_name" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$ ]]; then
+  device_name=echo-os
+fi
+
+temporary="$(mktemp -d "$STATE_DIR/.identity.XXXXXX")"
+trap 'rm -rf -- "$temporary"' EXIT
+openssl req -x509 -nodes -newkey rsa:3072 -sha256 -days 825 \
+  -subj "/CN=$device_name" \
+  -addext "basicConstraints=critical,CA:FALSE" \
+  -addext "keyUsage=critical,digitalSignature,keyEncipherment" \
+  -addext "extendedKeyUsage=serverAuth" \
+  -addext "subjectAltName=DNS:$device_name,DNS:$device_name.local,IP:127.0.0.1" \
+  -keyout "$temporary/device.key" \
+  -out "$temporary/device.crt"
+chmod 0600 "$temporary/device.key"
+chmod 0644 "$temporary/device.crt"
+chown root:root "$temporary/device.key" "$temporary/device.crt"
+mv "$temporary/device.key" "$KEY"
+mv "$temporary/device.crt" "$CERT"
+sync -f "$STATE_DIR"

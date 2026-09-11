@@ -115,8 +115,9 @@ ISO 临时文件默认放在 `/var/tmp`，构建前检查该文件系统至少�
 
 裸机主机升级与 `deploy/appliance/upgrade-appliance.sh` 的容器镜像事务是两条
 独立边界。更新 `/opt/echo-os` 源码后，先生成主机迁移计划，再用同一计划 ID
-应用；当前 `nas-maintenance-v3` 计划只允许增量安装 NUT/SMART/
-`samba-vfs-modules` 包、更新固定 systemd unit、补齐 Echo Time Machine 受管配置与
+应用；当前 `nas-maintenance-v4` 计划只允许增量安装 NUT/SMART/
+`samba-vfs-modules`、`rclone`、`fuse3` 包，更新固定 systemd unit 和 rclone 挂载
+wrapper，创建 Echo 专用凭据/挂载根目录，补齐 Echo Time Machine 受管配置与
 Samba `[global]` include，并启用 UPS 守卫与 SMART 定时器，不修改数据盘。Samba
 配置会绑定计划、经 `testparm` 验证并在失败时原样回滚：
 

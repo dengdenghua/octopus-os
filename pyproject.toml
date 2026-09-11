@@ -218,15 +218,15 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dengdenghua/echo-os"
-Documentation = "https://github.com/dengdenghua/echo-os/blob/main/README.md"
-Repository = "https://github.com/dengdenghua/echo-os"
-Issues = "https://github.com/dengdenghua/echo-os/issues"
-Changelog = "https://github.com/dengdenghua/echo-os/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/dengdenghua/octopus-os"
+Documentation = "https://github.com/dengdenghua/octopus-os/blob/main/README.md"
+Repository = "https://github.com/dengdenghua/octopus-os"
+Issues = "https://github.com/dengdenghua/octopus-os/issues"
+Changelog = "https://github.com/dengdenghua/octopus-os/blob/main/CHANGELOG.md"
 
 # ─── Single source of truth for the canonical repo URL ──────────
 [tool.echo]
-repo_url = "https://github.com/dengdenghua/echo-os"
+repo_url = "https://github.com/dengdenghua/octopus-os"
 
 [project.scripts]
 echo-lint = "tools.lint.invariant_check:main"
@@ -253,6 +253,15 @@ artifacts = [
     "runtime/execution/all_skills/**",
     "skills.lock.json",
 ]
+
+# Appliance API modules import these four operational engines directly. Keep
+# the rest of deploy/ out of the runtime wheel, but never ship a NAS control
+# plane whose lazy backup routes fail only after a clean wheel install.
+[tool.hatch.build.targets.wheel.force-include]
+"deploy/appliance/external_storage.py" = "deploy/appliance/external_storage.py"
+"deploy/appliance/nas_data_backup.py" = "deploy/appliance/nas_data_backup.py"
+"deploy/appliance/nas_data_backup_schedule_runner.py" = "deploy/appliance/nas_data_backup_schedule_runner.py"
+"deploy/appliance/nas_data_backup_support.py" = "deploy/appliance/nas_data_backup_support.py"
 
 [tool.uv]
 # 发行依赖锁由这个解析器版本生成；版本漂移必须显式升级并重建锁。

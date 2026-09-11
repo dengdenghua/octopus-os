@@ -1,0 +1,7 @@
+#!/usr/bin/python3
+"""System entry point for the Echo WebDAV rclone authentication proxy."""
+
+from appliance.native_webdav import main
+
+
+raise SystemExit(main())

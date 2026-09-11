@@ -52,6 +52,7 @@ class InputValidationTests(unittest.TestCase):
             "passwordpassword",
             "echo-admin-42",
             "good-password\n42",
+            "电" * 25,
         ):
             with self.subTest(value=value), self.assertRaises(oem.InputError):
                 oem.validate_password(value)
@@ -218,6 +219,7 @@ class ProvisioningFlowTests(unittest.TestCase):
             mock.patch.object(oem, "write_complete_marker") as write_marker,
             mock.patch.object(oem, "shadow_entry", return_value=TEST_HASH),
             mock.patch.object(oem, "write_shadow_state") as write_shadow,
+            mock.patch.object(oem, "provision_native_nas_auth") as provision_auth,
             mock.patch.object(oem.sys, "stdout", new=io.StringIO()),
             mock.patch.object(oem.sys, "stderr", new=io.StringIO()),
         ):
@@ -232,10 +234,9 @@ class ProvisioningFlowTests(unittest.TestCase):
         self.assertFalse(
             any("correct horse 42" in argument for command in commands for argument in command)
         )
-        self.assertEqual(
-            run_checked.call_args_list[-1].kwargs["stdin"], "echo:correct horse 42\n"
-        )
+        self.assertEqual(run_checked.call_args_list[-1].kwargs["stdin"], "echo:correct horse 42\n")
         write_shadow.assert_called_once_with(TEST_HASH)
+        provision_auth.assert_called_once_with("correct horse 42")
         write_marker.assert_called_once_with("Echo User", "echo-lab")
 
     def test_system_command_failure_never_commits_completion_marker(self) -> None:
@@ -254,6 +255,30 @@ class ProvisioningFlowTests(unittest.TestCase):
                 side_effect=subprocess.CalledProcessError(1, ["/usr/sbin/usermod"]),
             ),
             mock.patch.object(oem, "write_complete_marker") as write_marker,
+            mock.patch.object(oem.sys, "stdout", new=io.StringIO()),
+            mock.patch.object(oem.sys, "stderr", new=io.StringIO()),
+        ):
+            self.assertEqual(oem.main([]), 1)
+        write_marker.assert_not_called()
+
+    def test_nas_auth_failure_never_commits_completion_marker(self) -> None:
+        patches = self.base_patches()
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patches[4],
+            patches[5],
+            patches[6],
+            mock.patch.object(oem, "run_checked"),
+            mock.patch.object(
+                oem,
+                "provision_native_nas_auth",
+                side_effect=RuntimeError("auth store unavailable"),
+            ),
+            mock.patch.object(oem, "write_complete_marker") as write_marker,
+            mock.patch.object(oem, "shadow_entry", return_value=TEST_HASH),
             mock.patch.object(oem.sys, "stdout", new=io.StringIO()),
             mock.patch.object(oem.sys, "stderr", new=io.StringIO()),
         ):
@@ -280,6 +305,7 @@ class ProvisioningFlowTests(unittest.TestCase):
             mock.patch.object(oem, "write_complete_marker") as write_marker,
             mock.patch.object(oem, "shadow_entry", return_value=TEST_HASH),
             mock.patch.object(oem, "write_shadow_state") as write_shadow,
+            mock.patch.object(oem, "provision_native_nas_auth") as provision_auth,
             mock.patch.object(oem.sys, "stdout", new=stdout),
             mock.patch.object(oem.sys, "stderr", new=io.StringIO()),
         ):
@@ -308,6 +334,7 @@ class ProvisioningFlowTests(unittest.TestCase):
             stdout.getvalue(),
         )
         write_shadow.assert_called_once_with(TEST_HASH)
+        provision_auth.assert_called_once_with(password)
         write_marker.assert_called_once_with("Echo CI", "echo-oem-ci")
 
     def test_locked_new_root_restores_hash_without_putting_it_in_argv(self) -> None:

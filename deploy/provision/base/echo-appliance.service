@@ -19,6 +19,7 @@ WorkingDirectory=/opt/echo-os
 EnvironmentFile=-/etc/echo-os/firstboot.env
 Environment=ECHO_APPLIANCE=1
 Environment=ECHO_APP_EXTENSIONS=appliance.extension
+Environment=ECHO_REQUIRED_APP_EXTENSIONS=1
 Environment=ECHO_SKILL_EXTENSIONS=appliance.pm_skills:register_pm_skills
 Environment=ECHO_DATA_DIR=/data
 Environment=ECHO_NAS_ROOT=/data/nas

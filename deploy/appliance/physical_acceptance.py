@@ -41,7 +41,7 @@ try:
     from deploy.appliance import hub_lifecycle_lab as hub_lab
     from deploy.appliance import lan_discovery_functional_lab as lan_discovery_lab
     from deploy.appliance import paperless_functional_lab as paperless_lab
-    from deploy.appliance.release_evidence_index import PHYSICAL_GATES
+    from deploy.appliance.release_evidence_index import NAS_RUNTIME_PROFILE, PHYSICAL_GATES
     from deploy.installer.verify_public_keyring import (
         PublicKeyringError,
         verify_public_keyring_bytes,
@@ -50,7 +50,7 @@ except ModuleNotFoundError:
     import hub_lifecycle_lab as hub_lab
     import lan_discovery_functional_lab as lan_discovery_lab
     import paperless_functional_lab as paperless_lab
-    from release_evidence_index import PHYSICAL_GATES
+    from release_evidence_index import NAS_RUNTIME_PROFILE, PHYSICAL_GATES
     from verify_public_keyring import PublicKeyringError, verify_public_keyring_bytes
 
 SCHEMA_VERSION = 2
@@ -573,6 +573,7 @@ def _validate_candidate(value: Mapping[str, Any], raw: bytes) -> dict[str, str]:
         value["physicalAcceptance"], {"complete", "remainingGates"}, "candidate physical gates"
     )
     evidence = value["evidence"]
+    runtime_profile = evidence.get("nasRuntimeProfile") if isinstance(evidence, dict) else None
     appliance = (
         _exact(
             evidence.get("appliance"),
@@ -592,7 +593,7 @@ def _validate_candidate(value: Mapping[str, Any], raw: bytes) -> dict[str, str]:
         else {}
     )
     if (
-        value["schemaVersion"] != 1
+        value["schemaVersion"] != 2
         or value["kind"] != "echo.delivery-release-evidence-index"
         or value["ciReleaseCandidateReady"] is not True
         or value["nasProductDeliveryReady"] is not False
@@ -600,6 +601,7 @@ def _validate_candidate(value: Mapping[str, Any], raw: bytes) -> dict[str, str]:
         or physical["remainingGates"] != list(PHYSICAL_GATES)
         or not isinstance(evidence, dict)
         or "candidatePreflight" not in evidence
+        or runtime_profile != NAS_RUNTIME_PROFILE
         or not isinstance(appliance.get("manifestSha256"), str)
         or SHA256.fullmatch(appliance["manifestSha256"]) is None
         or not isinstance(appliance.get("immutableReference"), str)
@@ -1323,6 +1325,7 @@ def _bare_metal_state(value: object) -> bool:
 def _bare_metal_appliance(value: object, architecture: str) -> bool:
     return value == {
         "bundleVerified": True,
+        "applianceCapabilitiesVerified": True,
         "immutableImageVerified": True,
         "administratorLoginReady": True,
         "agentWorkbenchReady": True,
@@ -2514,6 +2517,7 @@ def verify_acceptance(
         "acceptanceSignerFingerprint": next(iter(signer_fingerprints)),
         "gates": gates,
         "deliveryRequirementsVerified": list(DELIVERY_REQUIREMENTS),
+        "nasRuntimeProfile": dict(NAS_RUNTIME_PROFILE),
         "ciReleaseCandidateReady": True,
         "physicalAcceptanceComplete": True,
         "nasProductDeliveryReady": True,

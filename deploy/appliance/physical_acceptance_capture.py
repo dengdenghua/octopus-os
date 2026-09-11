@@ -1965,6 +1965,7 @@ def _valid_device_appliance(value: object) -> bool:
         and set(value)
         == {
             "bundleVerified",
+            "applianceCapabilitiesVerified",
             "administratorLoginReady",
             "fileLifecycleVerified",
             "familyMemberIsolationVerified",
@@ -1981,6 +1982,7 @@ def _valid_device_appliance(value: object) -> bool:
             value.get(name) is True
             for name in (
                 "bundleVerified",
+                "applianceCapabilitiesVerified",
                 "administratorLoginReady",
                 "fileLifecycleVerified",
                 "familyMemberIsolationVerified",

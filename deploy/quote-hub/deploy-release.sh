@@ -86,7 +86,7 @@ if find "${ARTIFACT_DIR}" -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep 
 fi
 
 shopt -s nullglob
-wheels=("${ARTIFACT_DIR}"/echo_agent_runtime-*.whl)
+wheels=("${ARTIFACT_DIR}"/echo_os-*.whl)
 shopt -u nullglob
 [[ ${#wheels[@]} -eq 1 ]] || die "artifact must contain exactly one runtime wheel"
 WHEEL=${wheels[0]}

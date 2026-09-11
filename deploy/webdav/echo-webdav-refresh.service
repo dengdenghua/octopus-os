@@ -1,0 +1,20 @@
+[Unit]
+Description=Refresh Echo WebDAV identity and share views
+After=echo-webdav-jails.service
+Requires=echo-webdav-jails.service
+
+[Service]
+Type=oneshot
+Environment=PYTHONPATH=/opt/echo-agent/site-packages:/usr/lib/echo-os/webdav
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/lib/echo-os/webdav/echo-webdav-jails refresh
+TimeoutStartSec=180s
+UMask=0077
+# Refresh must add and remove bind mounts in the same host namespace used by
+# echo-webdav-jails.service and the separately sandboxed sshd. Filesystem
+# Protect*= options would make those changes disappear with this oneshot.
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETGID CAP_SETUID CAP_SYS_ADMIN
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+RestrictRealtime=yes

@@ -1,7 +1,11 @@
 [Unit]
 Description=Echo Agent native runtime for the Echo OS workbench
 Documentation=file:/usr/lib/echo-os/image-contract
-After=local-fs.target echo-local-account.service
+Requires=echo-local-account.service
+Requires=echo-native-storage-broker.service
+Requires=echo-docker-credential.service
+Wants=echo-docker-control.service
+After=local-fs.target echo-local-account.service echo-native-storage-broker.service echo-docker-credential.service echo-docker-control.service
 ConditionPathExists=/opt/echo-agent/native-runtime.json
 StartLimitIntervalSec=60s
 StartLimitBurst=5
@@ -14,6 +18,8 @@ WorkingDirectory=/var/lib/echo-agent
 StateDirectory=echo-agent
 StateDirectoryMode=0700
 UMask=0077
+LoadCredential=echo.os.ci-session
+LoadCredential=echo.docker-proxy-token:/var/lib/echo-os/docker-proxy-token
 
 Environment=PYTHONPATH=/opt/echo-agent/site-packages
 Environment=PYTHONDONTWRITEBYTECODE=1
@@ -22,9 +28,14 @@ Environment=HOME=/home/echo
 Environment=USER=echo
 Environment=LOGNAME=echo
 Environment=ECHO_NATIVE_OS=1
+Environment=ECHO_APPLIANCE=1
+Environment=ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH=1
 Environment=ECHO_PROMPT_SKILL_REFRESH_DEADLINE_S=0
 Environment=ECHO_DISABLE_STUB_API=1
-Environment=ECHO_APP_EXTENSIONS=appliance.native_extension
+Environment=ECHO_APP_EXTENSIONS=appliance.extension
+Environment=ECHO_REQUIRED_APP_EXTENSIONS=1
+Environment=ECHO_NATIVE_STORAGE_BROKER_SOCKET=/run/echo-storage-broker/broker.sock
+Environment=ECHO_DOCKER_HOST=http://127.0.0.1:2375
 Environment=ECHO_DATA_DIR=/var/lib/echo-agent
 Environment=ECHO_HOME=/var/lib/echo-agent
 Environment=ECHO_RESOURCES_DIR=/opt/echo-agent/resources

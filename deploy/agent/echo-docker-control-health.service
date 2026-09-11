@@ -1,0 +1,41 @@
+[Unit]
+Description=Verify native Echo Docker control and managed Hub firewall state
+Documentation=file:/usr/share/doc/echo-os/native-docker-control.md
+Requires=echo-docker-control.service
+After=echo-docker-control.service
+Before=boot-complete.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+LoadCredential=echo.docker-proxy-token:/var/lib/echo-os/docker-proxy-token
+Environment=PYTHONPATH=/opt/echo-agent/site-packages
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m appliance.native_docker_health
+RemainAfterExit=yes
+
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+RequiredBy=boot-complete.target

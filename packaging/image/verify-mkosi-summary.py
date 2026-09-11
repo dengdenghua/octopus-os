@@ -50,6 +50,7 @@ def verify_summary(
     pcr_policy_certificate: Path,
     factory_key: Path,
     trust_tree: Path,
+    module_signing_tree: Path,
 ) -> None:
     images = document.get("Images")
     if not isinstance(images, list) or len(images) != 2:
@@ -98,6 +99,17 @@ def verify_summary(
     missing_targets = sorted(required_targets - initrd_targets)
     if missing_targets:
         raise SummaryError(f"initrd extra trees are missing: {', '.join(missing_targets)}")
+    selected_signing_tree = module_signing_tree.resolve(strict=False)
+    initrd_skeleton_trees = initrd.get("SkeletonTrees", [])
+    if not isinstance(initrd_skeleton_trees, list) or not all(
+        isinstance(item, dict) for item in initrd_skeleton_trees
+    ):
+        raise SummaryError("initrd skeleton trees must be objects")
+    if any(
+        resolved_path(item.get("Source"), "initrd skeleton tree") == selected_signing_tree
+        for item in initrd_skeleton_trees
+    ):
+        raise SummaryError("OpenZFS signing identity must not enter the initrd image")
 
     require_equal(main.get("Format"), "disk", "main image format")
     require_equal(main.get("Output"), f"echo-os_{version}", "main image output name")
@@ -152,6 +164,27 @@ def verify_summary(
     ):
         raise SummaryError("main image does not include the selected release trust tree")
 
+    build_sources = main.get("BuildSources")
+    if not isinstance(build_sources, list) or not all(
+        isinstance(item, dict) for item in build_sources
+    ):
+        raise SummaryError("main image build sources must be objects")
+    if not any(item.get("Target") == "echo-os" for item in build_sources):
+        raise SummaryError("main image does not retain the Echo OS source build mount")
+
+    skeleton_trees = main.get("SkeletonTrees")
+    if not isinstance(skeleton_trees, list) or not all(
+        isinstance(item, dict) for item in skeleton_trees
+    ):
+        raise SummaryError("main image skeleton trees must be objects")
+    if not any(
+        item.get("Target") is None
+        and resolved_path(item.get("Source"), "OpenZFS module-signing skeleton")
+        == selected_signing_tree
+        for item in skeleton_trees
+    ):
+        raise SummaryError("main image does not inject the isolated OpenZFS signing skeleton")
+
 
 def read_summary(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
@@ -169,10 +202,10 @@ def read_summary(path: Path) -> dict[str, Any]:
 
 
 def main() -> int:
-    if len(sys.argv) != 9:
+    if len(sys.argv) != 10:
         print(
             "usage: verify-mkosi-summary.py SUMMARY VERSION SECURE_BOOT_KEY "
-            "SECURE_BOOT_CERT PCR_KEY PCR_CERT FACTORY_KEY TRUST_TREE",
+            "SECURE_BOOT_CERT PCR_KEY PCR_CERT FACTORY_KEY TRUST_TREE ZFS_SIGNING_TREE",
             file=sys.stderr,
         )
         return 2

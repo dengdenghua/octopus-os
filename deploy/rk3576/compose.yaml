@@ -1,0 +1,38 @@
+# Vendor Debian remains the boot/driver/control owner. No host devices or sockets.
+name: echo-rk3576
+services:
+  echo:
+    platform: linux/arm64
+    image: ${ECHO_ARM_IMAGE:?set an ARM64 image reference}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18000:8000"
+    environment:
+      ECHO_APPLIANCE: "1"
+      ECHO_APP_EXTENSIONS: appliance.extension
+      ECHO_REQUIRED_APP_EXTENSIONS: "1"
+      ECHO_DATA_DIR: /data
+      ECHO_NAS_ROOT: /data/nas
+      ECHO_PUID: "1000"
+      ECHO_PGID: "1000"
+    volumes:
+      - echo-state:/data
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test: [CMD, python, -c, "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8000/api/appliance/config',timeout=3)); assert d.get('agent_bundle',{}).get('verified') is True"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+volumes:
+  echo-state:

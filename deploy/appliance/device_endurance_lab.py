@@ -571,6 +571,7 @@ def _verify_running_result(value: Any, *, expected_arch: str) -> dict[str, Any]:
     transfer = value.get("nas_transfer") if isinstance(value, dict) else None
     family = value.get("family_isolation") if isinstance(value, dict) else None
     zfs_runtime = value.get("zfs_runtime") if isinstance(value, dict) else None
+    system_capabilities = value.get("system_capabilities") if isinstance(value, dict) else None
     if (
         not isinstance(value, dict)
         or value.get("bundle_verified") is not True
@@ -587,6 +588,14 @@ def _verify_running_result(value: Any, *, expected_arch: str) -> dict[str, Any]:
         or value.get("approval_replay") != 403
         or value.get("protected_stop") != 403
         or value.get("audit_verify") != 200
+        or not isinstance(system_capabilities, dict)
+        or system_capabilities.get("apiVersion") != "echo.ai/v1alpha1"
+        or system_capabilities.get("unique") is not True
+        or system_capabilities.get("requiredCapabilities")
+        != ["apps.list", "hub.catalog.list", "storage.health.read"]
+        or not isinstance(system_capabilities.get("count"), int)
+        or isinstance(system_capabilities.get("count"), bool)
+        or system_capabilities["count"] < 3
         or not isinstance(zfs_runtime, dict)
         or zfs_runtime.get("moduleInstalled") is not True
         or zfs_runtime.get("moduleLoaded") is not True
@@ -620,6 +629,7 @@ def _verify_running_result(value: Any, *, expected_arch: str) -> dict[str, Any]:
         raise DeviceEnduranceLabError("running appliance did not pass the device delivery probe")
     return {
         "bundleVerified": True,
+        "applianceCapabilitiesVerified": True,
         "administratorLoginReady": True,
         "fileLifecycleVerified": True,
         "agentWorkbenchVerified": True,

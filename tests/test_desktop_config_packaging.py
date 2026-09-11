@@ -583,7 +583,7 @@ def test_desktop_core_keeps_shipped_clip_studio_video_runtime() -> None:
     assert "Authorization: Bearer $access_token" in verifier
     assert "/api/plugins/clip-studio/health" in verifier
     assert "PACKAGED_CONNECTOR_MARKETPLACE_ON_DEMAND=1" in verifier
-    assert "PACKAGED_UPDATE_CHANNEL_OK=github:dengdenghua/echo-os" in verifier
+    assert "PACKAGED_UPDATE_CHANNEL_OK=github:dengdenghua/octopus-os" in verifier
     assert "PACKAGED_ELECTRON_UPDATER_OK=6.8.9" in verifier
     assert "must not embed the WorkBuddy marketplace snapshot" in verifier
     assert "ECHO_SMOKE=1" in verifier

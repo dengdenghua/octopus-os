@@ -315,7 +315,7 @@ EOF
   # 从已验证的本地仓补齐。开发镜像重复安装已存在包也是幂等的。
   apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates curl zstd gnupg lsb-release openssl avahi-daemon libnss-mdns \
-    openssh-server sudo git \
+    openssh-server rclone fuse3 sudo git \
     python3 python3-venv python3-pip \
     nginx
   done_mark apt
@@ -464,6 +464,24 @@ step_storage() {
   install -m755 -d /etc/systemd/system/wsdd2.service.d
   install -m644 "$OS_DIR/deploy/provision/base/wsdd2-echo.conf" \
     /etc/systemd/system/wsdd2.service.d/echo.conf
+  install -m755 -d /usr/lib/echo-os/webdav /etc/systemd/system/nginx.service.d
+  install -m755 "$OS_DIR/deploy/webdav/echo-device-tls" \
+    /usr/lib/echo-os/webdav/echo-device-tls
+  install -m755 "$OS_DIR/deploy/webdav/echo-webdav-auth" \
+    /usr/lib/echo-os/webdav/echo-webdav-auth
+  install -m755 "$OS_DIR/deploy/webdav/echo-webdav-jails" \
+    /usr/lib/echo-os/webdav/echo-webdav-jails
+  install -m644 "$OS_DIR/deploy/webdav/echo_webdav_jails.py" \
+    /usr/lib/echo-os/webdav/echo_webdav_jails.py
+  install -m644 "$OS_DIR/deploy/webdav/sshd_config" \
+    /etc/ssh/sshd_config_echo_webdav
+  for unit in echo-device-tls.service echo-webdav-jails.service \
+    echo-webdav-refresh.service echo-webdav-refresh.timer \
+    echo-webdav-refresh.path echo-webdav-sshd.service echo-webdav.service; do
+    install -m644 "$OS_DIR/deploy/webdav/$unit" "/etc/systemd/system/$unit"
+  done
+  install -m644 "$OS_DIR/deploy/webdav/nginx.service.d/echo-device-tls.conf" \
+    /etc/systemd/system/nginx.service.d/echo-device-tls.conf
   systemctl daemon-reload
   apt_retry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     "linux-headers-${kernel_release}"
@@ -1041,7 +1059,7 @@ step_services() {
   log "== 7/7 安装服务单元 =="
 
   # 数据根目录:统一命名空间挂在这里(参考 NAS用 /fs,我们用 /data)
-  mkdir -p /data/nas /data/apps
+  install -d -o root -g root -m0755 /data /data/nas /data/apps
 
   # ── 配置:首启从模板生成 /etc/echo-os/config.yaml ───────────────
   # echo-appliance.service 的 --config 指向它;缺失则后端起不来。
@@ -1101,6 +1119,12 @@ YAML
     /etc/systemd/system/echo-nas-data-backup.service
   install -m644 "$OS_DIR/deploy/appliance/systemd/echo-nas-data-backup.timer" \
     /etc/systemd/system/echo-nas-data-backup.timer
+  install -m644 "$OS_DIR/deploy/appliance/systemd/echo-rclone-backup@.service" \
+    /etc/systemd/system/echo-rclone-backup@.service
+  install -m755 "$OS_DIR/deploy/appliance/rclone_backup_mount.py" \
+    /usr/lib/echo-os/rclone-backup-mount
+  install -d -m0700 -o root -g root /etc/credstore.encrypted
+  install -d -m0755 -o root -g root /mnt/echo-backup-remotes
   install -m644 "$OS_DIR/deploy/appliance/systemd/echo-disk-idle.service" \
     /etc/systemd/system/echo-disk-idle.service
   install -m755 -d /etc/systemd/system/wsdd2.service.d
@@ -1125,17 +1149,13 @@ YAML
   ln -sf /etc/nginx/sites-available/echo /etc/nginx/sites-enabled/echo
   rm -f /etc/nginx/sites-enabled/default
 
-  # 随机生成 TLS 自签证书(每设备独立)。
-  # 参考 NAS的一个隐患:nginx conf 里随包带了 server.crt/key,若全系共用则等于
-  # TLS 私钥公开。这里强制每设备首启重新生成。
-  if [ ! -f /etc/ssl/private/echo-selfsigned.key ]; then
-    openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
-      -subj "/CN=$(hostname)" \
-      -keyout /etc/ssl/private/echo-selfsigned.key \
-      -out /etc/ssl/certs/echo-selfsigned.crt 2>/dev/null || log "警告:自签证书生成失败"
-  fi
-
   systemctl daemon-reload
+  systemctl enable --now echo-device-tls.service
+  # WebDAV is a second publication path for every ACL-readable registered
+  # share. Keep it disabled until an administrator approves the explicit
+  # native WebDAV plan/apply action.
+  systemctl disable --now echo-webdav-refresh.path echo-webdav-refresh.timer \
+    echo-webdav.service echo-webdav-sshd.service echo-webdav-jails.service
   systemctl enable --now echo-appliance-deadman.timer
   systemctl enable --now echo-ups-shutdown-guard.timer
   systemctl enable --now echo-smart-self-test.timer

@@ -11,6 +11,7 @@ on:
       - "packaging/desktop/**"
       - "appliance/**"
       - "deploy/agent/**"
+      - "deploy/storage/**"
       - "deploy/backup/**"
       - "deploy/appliance/**"
       - "deploy/desktop-session/**"
@@ -40,6 +41,7 @@ on:
       - "packaging/desktop/**"
       - "appliance/**"
       - "deploy/agent/**"
+      - "deploy/storage/**"
       - "deploy/backup/**"
       - "deploy/appliance/**"
       - "deploy/desktop-session/**"
@@ -100,6 +102,8 @@ jobs:
           python3 packaging/image/test_verify_linux_image_runner_host.py
           python3 packaging/image/test_verify_linux_image_runner.py
           python3 packaging/image/test_verify_os_image_evidence.py
+          python3 deploy/oem/test_echo_oem_setup.py
+          python3 deploy/agent/test_native_storage_broker_linux.py
           ./packaging/image/verify-image.sh --static
 
   build-and-boot:
@@ -305,6 +309,9 @@ jobs:
 
       - name: Verify on-demand removable-storage policy
         run: python3 deploy/removable-storage/test_echo_removable_storage_health.py
+
+      - name: Verify running-kernel OpenZFS policy
+        run: python3 deploy/storage/test_echo_zfs_health.py
 
       - name: Verify private local printing policy
         run: |

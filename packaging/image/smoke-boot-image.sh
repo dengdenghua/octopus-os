@@ -282,6 +282,7 @@ while (( SECONDS < deadline )); do
   QMP_SCREEN_READER_KEY_SENT=0
   CRASH_COLLECTION_READY=0
   FIREWALL_READY=0
+  ZFS_READY=0
   REMOVABLE_STORAGE_READY=0
   PRINTING_READY=0
   SCANNING_READY=0
@@ -323,6 +324,7 @@ while (( SECONDS < deadline )); do
   grep -q 'ECHO_QMP_KEY_SENT chord=super-alt-s' "$BOOT_LOG" && QMP_SCREEN_READER_KEY_SENT=1
   grep -q 'ECHO_CRASH_COLLECTION_READY provider=systemd-coredump storage=encrypted-var max-use=1G keep-free=2G' "$BOOT_LOG" && CRASH_COLLECTION_READY=1
   grep -q 'ECHO_FIREWALL_READY backend=nftables default-zone=echo-public inbound=deny forward=explicit' "$BOOT_LOG" && FIREWALL_READY=1
+  grep -Eq 'ECHO_ZFS_READY kernel=[0-9A-Za-z][0-9A-Za-z._+~-]{0,127} version=[0-9][0-9A-Za-z._+~-]{0,63} signature=pkcs7' "$BOOT_LOG" && ZFS_READY=1
   grep -q 'ECHO_REMOVABLE_STORAGE_READY provider=udisks2 policy=polkit mount=on-demand filesystems=vfat,exfat,ntfs,ext4,btrfs,xfs portable=mtp' "$BOOT_LOG" && REMOVABLE_STORAGE_READY=1
   grep -q 'ECHO_PRINTING_READY provider=cups transport=local-only auth=polkit driverless=ipp-usb retention=off storage=encrypted-var' "$BOOT_LOG" && PRINTING_READY=1
   grep -q 'ECHO_SCANNING_READY provider=sane frontend=skanpage usb=udev,ipp-usb network=airscan-on-demand sharing=off retention=user-owned' "$BOOT_LOG" && SCANNING_READY=1
@@ -361,7 +363,8 @@ while (( SECONDS < deadline )); do
   if [[ "$BOOT_TARGET" == "greeter" && "$LOGIN_READY" -eq 1 && \
         "$ACCOUNT_READY" -eq 1 && "$MACHINE_ID_READY" -eq 1 && \
         "$NETWORK_STATE_READY" -eq 1 && "$REGION_STATE_READY" -eq 1 && \
-        "$FIREWALL_READY" -eq 1 && "$REMOVABLE_STORAGE_READY" -eq 1 && \
+        "$FIREWALL_READY" -eq 1 && "$ZFS_READY" -eq 1 && \
+        "$REMOVABLE_STORAGE_READY" -eq 1 && \
         "$PRINTING_READY" -eq 1 && "$SCANNING_READY" -eq 1 && \
         "$CORE_APPS_READY" -eq 1 && \
         "$SDDM_ACCESSIBILITY_ARMED" -eq 1 && \
@@ -390,6 +393,7 @@ while (( SECONDS < deadline )); do
         "$CLIPBOARD_READY" -eq 1 && \
         "$ACCESSIBILITY_READY" -eq 1 && \
         "$CRASH_COLLECTION_READY" -eq 1 && "$FIREWALL_READY" -eq 1 && \
+        "$ZFS_READY" -eq 1 && \
         "$REMOVABLE_STORAGE_READY" -eq 1 && "$PRINTING_READY" -eq 1 && \
         "$SCANNING_READY" -eq 1 && "$CORE_APPS_READY" -eq 1 ]]; then
     echo "  ✓ VM-only systemd credential exercised the production OEM account path"
@@ -423,6 +427,7 @@ while (( SECONDS < deadline )); do
         "$CLIPBOARD_READY" -eq 1 && \
         "$ACCESSIBILITY_READY" -eq 1 && \
         "$CRASH_COLLECTION_READY" -eq 1 && "$FIREWALL_READY" -eq 1 && \
+        "$ZFS_READY" -eq 1 && \
         "$REMOVABLE_STORAGE_READY" -eq 1 && "$PRINTING_READY" -eq 1 && \
         "$SCANNING_READY" -eq 1 && "$CORE_APPS_READY" -eq 1 ]]; then
     echo "  ✓ persistent local-account state is valid on the selected root"
@@ -465,6 +470,7 @@ while (( SECONDS < deadline )); do
         "$CLIPBOARD_READY" -eq 1 && \
         "$ACCESSIBILITY_READY" -eq 1 && \
         "$CRASH_COLLECTION_READY" -eq 1 && "$FIREWALL_READY" -eq 1 && \
+        "$ZFS_READY" -eq 1 && \
         "$REMOVABLE_STORAGE_READY" -eq 1 && "$PRINTING_READY" -eq 1 && \
         "$SCANNING_READY" -eq 1 && "$CORE_APPS_READY" -eq 1 ]]; then
     echo "  ✓ disposable SDDM copy selected the packaged Wayland candidate"
@@ -496,7 +502,8 @@ while (( SECONDS < deadline )); do
         "$CLIPBOARD_READY" -eq 1 && \
         "$ACCESSIBILITY_READY" -eq 1 && \
         "$CRASH_COLLECTION_READY" -eq 1 && \
-        "$FIREWALL_READY" -eq 1 && "$REMOVABLE_STORAGE_READY" -eq 1 && \
+        "$FIREWALL_READY" -eq 1 && "$ZFS_READY" -eq 1 && \
+        "$REMOVABLE_STORAGE_READY" -eq 1 && \
         "$PRINTING_READY" -eq 1 && "$SCANNING_READY" -eq 1 && \
         "$CORE_APPS_READY" -eq 1 && \
         "$CORE_APPS_SESSION_READY" -eq 1 && \
@@ -522,6 +529,7 @@ while (( SECONDS < deadline )); do
     echo "  ✓ AT-SPI exposed the fixed Echo application marker for assistive technology"
     echo "  ✓ Bounded crash collection is active on encrypted persistent storage"
     echo "  ✓ nftables rejects unsolicited inbound and implicit container forwarding"
+    echo "  ✓ signed OpenZFS modules loaded under the running Secure Boot kernel"
     echo "  ✓ Dolphin can request PolicyKit-mediated removable-media mounts through UDisks2"
     echo "  ✓ KDE can administer local CUPS printers through the PolicyKit helper"
     echo "  ✓ XDG defaults opened text, PDF, image, archive and audio fixtures in native applications"
