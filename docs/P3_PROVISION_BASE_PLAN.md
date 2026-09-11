@@ -1,6 +1,6 @@
 # P3 · 整机镜像:Echo OS × 参考 NAS
 
-> 分支:`p3-provision`(upstream = dengdenghua/echo-os @ `5b82381`)
+> 分支:`p3-provision`(upstream = dengdenghua/octopus-os @ `5b82381`)
 > 状态:**规划 + 骨架已落地**(历史 NAS 管控面 41 测试全绿；当前 P3 原生窄写已接入并完成本机/VM 回归；装机链路待 Linux 验证)
 > 前情:`docs/ECHO_OS_PLAN.md` §6 P3 / `docs/NATIVE_SHELL_PLAN.md`
 
@@ -256,7 +256,7 @@ Stage A 源码构建路线的最低推荐内存。正式 mkosi 镜像在构建�
 
 ## 7. 与上游的关系
 
-- 分支 `p3-provision`,`upstream` 指向 `dengdenghua/echo-os`;
+- 分支 `p3-provision`,`upstream` 指向 `dengdenghua/octopus-os`;
 - 所有 OS 专属代码放 `appliance/` 与 `deploy/`,**不碰 runtime**(沿用
   `docs/ECHO_OS_PLAN.md` §4 的 fork 管理策略);
 - 定期 `git fetch upstream && git merge upstream/os-main`。

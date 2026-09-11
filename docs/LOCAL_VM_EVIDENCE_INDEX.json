@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "echo.local-vm-evidence-index",
   "entries": [
     {
@@ -9,6 +9,11 @@
         "field": "schema",
         "value": "echo.heic-linux-runtime-evidence.v1"
       },
+      "assertions": [
+        { "field": "bundledNotice", "value": true },
+        { "field": "bundledNoticeMentions", "value": true },
+        { "field": "machine", "value": "x86_64" }
+      ],
       "bindings": []
     },
     {
@@ -18,6 +23,7 @@
         "field": "kind",
         "value": "echo-mdraid-ext4-functional-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": []
     },
     {
@@ -27,6 +33,7 @@
         "field": "kind",
         "value": "echo-mdraid-ext4-reboot-functional-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": []
     },
     {
@@ -36,6 +43,7 @@
         "field": "kind",
         "value": "echo-mdraid-replace-functional-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": []
     },
     {
@@ -45,6 +53,7 @@
         "field": "kind",
         "value": "echo-mdraid-replace-reboot-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": []
     },
     {
@@ -54,6 +63,7 @@
         "field": "kind",
         "value": "echo-btrfs-replace-hotplug-functional-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": []
     },
     {
@@ -63,6 +73,7 @@
         "field": "kind",
         "value": "echo-btrfs-replace-reboot-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": []
     },
     {
@@ -72,6 +83,7 @@
         "field": "kind",
         "value": "echo-btrfs-snapshot-functional-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": []
     },
     {
@@ -81,6 +93,7 @@
         "field": "kind",
         "value": "echo-btrfs-scrub-functional-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": []
     },
     {
@@ -90,6 +103,7 @@
         "field": "kind",
         "value": "echo-zfs-mirror-functional-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": []
     },
     {
@@ -99,6 +113,7 @@
         "field": "kind",
         "value": "echo-zfs-mirror-reboot-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
       "bindings": [
         {
           "field": "provisionEvidenceSha256",
@@ -129,6 +144,62 @@
         "field": "kind",
         "value": "echo-zfs-replace-functional-result"
       },
+      "assertions": [{ "field": "outcome", "value": "verified" }],
+      "bindings": []
+    },
+    {
+      "name": "host-migration-v4.json",
+      "sha256": "681b5d416b2173e511d3b697dc175cdc3910dca48d77750c0d23bbcce18b4808",
+      "discriminator": {
+        "field": "schema",
+        "value": "echo.vm.host-migration-v4.v1"
+      },
+      "assertions": [
+        { "field": "passed", "value": true },
+        { "field": "snapshotMode", "value": true },
+        { "field": "checks.v4MigrationPlanned", "value": true },
+        { "field": "checks.remoteTemplateInstalled", "value": true },
+        { "field": "checks.wrapperInstalled", "value": true },
+        { "field": "checks.directoriesCreated", "value": true },
+        { "field": "checks.applyVerified", "value": true },
+        { "field": "checks.idempotent", "value": true },
+        { "field": "checks.packagesInstalled", "value": true },
+        { "field": "checks.wrapperMode", "value": true },
+        { "field": "checks.unitMode", "value": true },
+        { "field": "checks.credentialMode", "value": true },
+        { "field": "checks.mountRootMode", "value": true },
+        { "field": "checks.applianceActive", "value": true },
+        { "field": "checks.noCredentiallessInstanceEnabled", "value": true },
+        { "field": "checks.wrapperHash", "value": true },
+        { "field": "checks.unitHash", "value": true }
+      ],
+      "bindings": []
+    },
+    {
+      "name": "s3-backup-interop.json",
+      "sha256": "61103dfd1a11ea8124ca2f87ffd080900403b3e951d5eba8c58f65c8720fd67d",
+      "discriminator": {
+        "field": "schema",
+        "value": "echo.vm.s3-backup-interop.v1"
+      },
+      "assertions": [
+        { "field": "passed", "value": true },
+        { "field": "snapshotMode", "value": true },
+        { "field": "server.httpsLoopbackOnly", "value": true },
+        { "field": "checks.createApplied", "value": true },
+        { "field": "checks.mountedStatus", "value": true },
+        { "field": "checks.s3ObjectsWritten", "value": true },
+        { "field": "checks.hostVisibleFuse", "value": true },
+        { "field": "checks.resticReadData", "value": true },
+        { "field": "checks.credentialEncrypted", "value": true },
+        { "field": "checks.httpsTrusted", "value": true },
+        { "field": "checks.secretsRedacted", "value": true },
+        { "field": "checks.removeApplied", "value": true },
+        { "field": "checks.registryEmpty", "value": true },
+        { "field": "checks.unmounted", "value": true },
+        { "field": "checks.credentialRemoved", "value": true },
+        { "field": "checks.mountpointRemoved", "value": true }
+      ],
       "bindings": []
     }
   ]

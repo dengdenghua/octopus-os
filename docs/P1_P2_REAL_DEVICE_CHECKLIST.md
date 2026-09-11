@@ -15,7 +15,7 @@ Agent runtime、设备能力和工作台都在 Echo 仓库中。构建前从同�
 **wheel + resources + Codex + bundle manifest**：
 
 ```bash
-git clone https://github.com/dengdenghua/echo-os.git
+git clone https://github.com/dengdenghua/octopus-os.git
 cd echo-os
 
 # ⓪ 发布/远端重型门必须先得到 ready:true；--offline 永远不能批准发布

@@ -26,12 +26,12 @@ Agent 仓库或第二套 WebUI。设备功能访问运行时必须通过 `applia
 
 ## 运行形态与装配差异
 
-| 形态                   | 入口和进程                                                                                                             | 安全与适用范围                                                                                                                                |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 本地源码开发           | `frontend/scripts/dev-appliance-backend.mjs` 启动回环 Agent；Vite 提供 UI 并代理 API                                   | 默认开发免密，仅用于本机；不是生产部署入口                                                                                                    |
-| Docker appliance       | `deploy/appliance/docker-compose.yml` 与 `appliance/entrypoint.py`，加载 `appliance.extension`                         | 设备会话、单次高风险审批；Docker 控制通过受限代理                                                                                             |
-| netinst/provision 整机 | `deploy/provision/base/echo-appliance.service` 以 root 运行完整 appliance 扩展，回环后端经 nginx 提供服务              | 可以访问受支持宿主存储控制；权限边界不同于非 root native Agent                                                                                |
-| mkosi/raw 原生整机     | `deploy/agent/echo-agent.service` 以 echo 用户运行 `appliance/native_entrypoint.py`，加载 `appliance.native_extension` | native 扩展主要装配 UI/任务投影；不能把完整 appliance NAS API 视为默认存在。Electron 另有实际原生控制；SDDM/PAM、A/B 和 Recovery 需按候选验证 |
+| 形态                   | 入口和进程                                                                                                          | 安全与适用范围                                                                                                                                                                                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 本地源码开发           | `frontend/scripts/dev-appliance-backend.mjs` 启动回环 Agent；Vite 提供 UI 并代理 API                                | 默认开发免密，仅用于本机；不是生产部署入口                                                                                                                                                                                                                                                                           |
+| Docker appliance       | `deploy/appliance/docker-compose.yml` 与 `appliance/entrypoint.py`，加载 `appliance.extension`                      | 设备会话、单次高风险审批；Docker 控制通过受限代理                                                                                                                                                                                                                                                                    |
+| netinst/provision 整机 | `deploy/provision/base/echo-appliance.service` 以 root 运行完整 appliance 扩展，回环后端经 nginx 提供服务           | 可以访问受支持宿主存储控制；权限边界不同于非 root native Agent                                                                                                                                                                                                                                                       |
+| mkosi/raw 原生整机     | `deploy/agent/echo-agent.service` 以 echo 用户运行 `appliance/native_entrypoint.py`，加载完整 `appliance.extension` | OEM 口令绑定私有 Web 认证，存储写入经 root broker；核心 NAS 数据栈、共享防火墙、默认关闭且只读挂载的 ReadyMedia DLNA、Docker Engine、每设备 credential、回环降权 Hub 代理、目录/容器绑定的私网端口转发，以及逐内核构建、发布签名和 boot gate 的 OpenZFS 已进入装配源码。DLNA 已通过 Debian 13 QEMU 的 systemd/firewalld/SSDP/媒体流运行验证；候选级 Secure-Boot/ZFS、DLNA raw/异机播放、Docker/nftables、SDDM/PAM、A/B、Recovery、其他异机协议验证仍缺 |
 
 独立 Electron 桌面安装包也有自己的 launcher 与用户状态目录。上述路径使用同仓运行时，
 但服务身份、扩展列表与系统能力不同。不能以同一个前端构建判断每种镜像都具备相同后端。
@@ -67,7 +67,7 @@ appliance 扩展。原生 Electron 已有 Wi-Fi、蓝牙、电源与更新等系
 | ------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | Agent 状态          | 用户 JSON/Markdown 记忆、线程 JSONL、任务 JSON、工具副作用 SQLite、日志与 trace SQLite                     | 按职责存储。新发行模板选择持久日志；已有显式内存配置不会被覆盖。见[恢复策略](AGENT_PERSISTENCE_POLICY.md) |
 | 文件管家/媒体工作台 | UI 和已注册 Agent storage 工具连接同一 echo-storage 服务；UI 经认证代理，服务令牌在后端注入                | 服务源码不在本仓，不能用接口推断其内部数据库或全套成员权限已验证                                          |
-| 自有照片引擎        | runtime 的 SQLite 保存图片向量、人脸、元数据、OCR、分类与质量数据；appliance 照片服务经 agent_api 复用算法 | 通用 Agent 图片工具仍有独立索引；本轮新增的设备相册工具使用桌面同一服务、数据库和成员权限                  |
+| 自有照片引擎        | runtime 的 SQLite 保存图片向量、人脸、元数据、OCR、分类与质量数据；appliance 照片服务经 agent_api 复用算法 | 通用 Agent 图片工具仍有独立索引；本轮新增的设备相册工具使用桌面同一服务、数据库和成员权限                 |
 
 直接 Agent 图片工具已改为按规范化完整目录路径生成库标识，状态遵循 `ECHO_DATA_DIR` /
 `ECHO_HOME` 合同。旧 basename 索引无法证明源目录，因此保留旧文件并要求在原目录重新建立，
