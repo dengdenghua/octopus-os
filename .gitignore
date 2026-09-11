@@ -25,6 +25,12 @@ htmlcov/
 .tox/
 coverage.xml
 
+# tests/test_wiki_router_coverage.py exercises the no-root PUT path, which by
+# design writes into the real docs/auto tree, then deletes the artifact in a
+# best-effort cleanup. A killed worker or a failing assertion skips that
+# cleanup, so ignore the scratch directory rather than let it be committed.
+docs/auto/_coverage_tmp/
+
 # IDE / Editor
 .vscode/
 .idea/
