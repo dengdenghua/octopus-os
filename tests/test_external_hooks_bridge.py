@@ -29,6 +29,19 @@ from runtime.safety.hooks.external_bridge import (
 )
 from runtime.safety.hooks.registry import HookRegistry, get_global_registry
 
+# These tests assert POSIX shell semantics: `touch`, single-quoted argv and
+# `/tmp/...` paths.  On Windows the hook command runs through a different shell,
+# so the assertions do not hold — and worse, `touch C:\Users\...\ran-ok` loses
+# its backslashes to shell escaping and lands a junk file named
+# `C:UsersAdministrator...ran-ok` in the repo root (a C:-relative path).
+# The bridge itself is exercised on Linux/macOS CI, which is the shipping
+# platform for these hooks.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="hook command tests assert POSIX shell semantics; Windows shell "
+    "escaping drops backslashes from Windows paths",
+)
+
 # ─── matchers ──────────────────────────────────────────────────────────────
 
 

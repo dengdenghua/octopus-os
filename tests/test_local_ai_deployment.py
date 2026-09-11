@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import types
 import zipfile
 
 import httpx
@@ -80,14 +82,36 @@ def test_expiry_disk_race_and_existing_job_stop_start(monkeypatch):
         deploy.start(p["plan_id"])
 
 
+class _ExplodingThread:
+    """Stand-in for ``threading.Thread`` whose ``start()`` always fails."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        self._args = args
+        self._kwargs = kwargs
+
+    def start(self) -> None:
+        raise RuntimeError("cannot spawn")
+
+
 def test_thread_failure_clears_busy_reservation(monkeypatch):
     fake_resources(monkeypatch)
     p = deploy.plan("fixture:1b")
 
-    def fail(*args, **kwargs):
-        raise RuntimeError("cannot spawn")
-
-    monkeypatch.setattr(deploy.threading.Thread, "start", fail)
+    # Rebind `threading` *inside the module under test* instead of mutating the
+    # stdlib class.  `deploy.threading` IS the stdlib module, so the old
+    # `monkeypatch.setattr(deploy.threading.Thread, "start", ...)` broke every
+    # thread in the process — including pytest-timeout's Timer, whose failure
+    # aborted the whole session with INTERNALERROR and skipped thousands of
+    # later tests.
+    monkeypatch.setattr(
+        deploy,
+        "threading",
+        types.SimpleNamespace(
+            Lock=threading.Lock,
+            Event=threading.Event,
+            Thread=_ExplodingThread,
+        ),
+    )
     with pytest.raises(ValueError, match="无法启动"):
         deploy.start(p["plan_id"])
     assert deploy.status()["stage"] == "error"
