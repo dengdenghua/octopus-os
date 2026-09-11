@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from runtime.platform.runtime_policy.browser_sessions import BrowserSessionCenter
 from runtime.platform.ui.browser_router import create_browser_router
 

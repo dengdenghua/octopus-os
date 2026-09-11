@@ -6,6 +6,7 @@ import threading
 from unittest.mock import patch
 
 import pytest
+
 from runtime.safety.evolution.canary import CanaryConfig, CanaryManager, CanaryPhase
 from runtime.safety.evolution.drift_monitor import DriftConfig, DriftMonitor
 from runtime.safety.evolution.proposal_ledger import ProposalLedger, ProposalStatus

@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from runtime.core.cerebrum.planner import Rule, StaticPlanner
 from runtime.tentacle.base import ToolCall
 from runtime.tentacle.coordinator import TentacleCoordinator

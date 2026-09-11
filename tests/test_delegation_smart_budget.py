@@ -15,6 +15,7 @@ These tests directly poke the budget primitives. Higher-level tests in
 from __future__ import annotations
 
 import pytest
+
 from runtime.execution.suckers.delegation_budget import (
     _PER_TURN_ABSOLUTE_LIMIT,
     _TURN_DELEGATIONS,

@@ -25,6 +25,7 @@ These tests pin each signal + interactions + cycle detection.
 from __future__ import annotations
 
 import pytest
+
 from runtime.core.cerebrum.llm_planner import (
     _extract_edges,
     _has_cycle,

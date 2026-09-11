@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
 from runtime.memory.journal import (
     BrowserArtifactEvent,
     FileRollbackEvent,

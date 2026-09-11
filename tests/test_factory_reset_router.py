@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+
 from runtime.memory.threads import ThreadStateStore
 from runtime.platform.ui.app import create_app
 

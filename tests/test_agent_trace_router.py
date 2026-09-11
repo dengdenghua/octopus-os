@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from runtime.memory.diagnostics.trace_store import AgentTraceStore
 from runtime.sensing.gateway.agent_trace_router import create_agent_trace_router
 

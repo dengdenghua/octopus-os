@@ -7,6 +7,7 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.sensing.gateway.team_rooms_router import (  # noqa: E402
     TeamParticipantWire,
     TeamRoomWire,

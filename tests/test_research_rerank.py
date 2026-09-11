@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.research.citations import SourceEntry
 from runtime.research.rerank import (
     _bm25_scores,

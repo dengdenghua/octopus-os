@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.safety.invariants import (
     AppendOnlyList,
     AppendOnlyMapping,

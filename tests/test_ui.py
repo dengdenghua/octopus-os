@@ -8,6 +8,7 @@ import pytest
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.platform.ui import create_app  # noqa: E402
 
 # ═══════════════════════════════════════════════════════════

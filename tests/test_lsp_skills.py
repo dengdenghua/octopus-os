@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from runtime.execution.suckers import lsp_skills
 from runtime.execution.suckers.lsp_skills import (
     _detect_language,

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
 from runtime.platform.ui.app import create_app
 
 

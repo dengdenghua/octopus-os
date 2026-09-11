@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 import pytest
+
 from runtime.safety.auth import (
     Identity,
     IdentityStore,
@@ -336,6 +337,7 @@ class TestIdentityStoreJWT:
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.safety.auth import TrustEngine  # noqa: E402
 from runtime.sensing.gateway.openai_gateway_router import create_openai_router  # noqa: E402
 

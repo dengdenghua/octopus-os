@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+
 from runtime.core.cerebrum.planner import Rule, StaticPlanner
 from runtime.core.graph_runtime import GraphRuntime, TemplateResolutionError, resolve_templates
 from runtime.execution.suckers import Skill, SkillRegistry

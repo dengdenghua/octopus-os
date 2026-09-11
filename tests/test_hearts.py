@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 
 import pytest
+
 from runtime.adapters.scheduler import BackgroundRunner
 from runtime.core.hearts import Hearts, HeartsSnapshot
 from runtime.safety.budget_breaker import CircuitBreaker

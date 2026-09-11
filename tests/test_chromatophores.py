@@ -8,6 +8,7 @@ from typing import cast
 
 import pytest
 from pydantic import ValidationError
+
 from runtime.platform.models import ArmId
 from runtime.safety.chromatophores import (
     STANDARD_TOPICS,

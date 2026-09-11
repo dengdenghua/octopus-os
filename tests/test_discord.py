@@ -11,6 +11,7 @@ pytest.importorskip("cryptography")
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # noqa: E402
     Ed25519PrivateKey,
 )
+
 from runtime.adapters.channels import (  # noqa: E402
     DiscordChannel,
     DiscordError,

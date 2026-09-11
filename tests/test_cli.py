@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.cli import main, run_goal
 from runtime.platform.i18n import set_lang
 

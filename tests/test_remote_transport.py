@@ -10,6 +10,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from runtime.platform import feature_flags as ff
 from runtime.sensing.gateway.remote_backends_router import (
     create_remote_backends_router,

@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+
 from runtime.memory.journal import (
     InMemoryJournal,
     JSONLJournal,

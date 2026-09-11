@@ -436,6 +436,7 @@ class TestWebhookVerify:
     def test_fastapi_dependency_valid(self):
         from fastapi import Depends, FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.safety.audit.webhook_verify import create_verify_dependency
 
         secret = b"hook-secret"
@@ -458,6 +459,7 @@ class TestWebhookVerify:
     def test_fastapi_dependency_rejects(self):
         from fastapi import Depends, FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.safety.audit.webhook_verify import create_verify_dependency
 
         dep = create_verify_dependency(

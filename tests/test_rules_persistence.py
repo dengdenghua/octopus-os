@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+
 from runtime.core.cerebrum import StaticPlanner
 from runtime.core.cerebrum.planner import Rule
 from runtime.core.cerebrum.rules_persistence import (

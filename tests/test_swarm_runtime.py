@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
+
 from runtime.execution.swarm import (
     AgentHandoff,
     SwarmEvent,

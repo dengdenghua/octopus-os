@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.memory.runtime_state.hub import MemoryHub
 from runtime.memory.runtime_state.scope_paths import project_root_from_metadata
 from runtime.platform.process.paths import app_paths

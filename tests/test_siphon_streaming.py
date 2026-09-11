@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+
 from runtime.memory.journal import InMemoryJournal, JSONLJournal
 from runtime.platform.models import (
     ArmId,
@@ -169,6 +170,7 @@ class TestWithJSONLInner:
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.platform.ui import create_app  # noqa: E402
 
 

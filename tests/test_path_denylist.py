@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from runtime.safety.auth import path_denylist as pdn
 from runtime.safety.auth.path_guard import check_path
 

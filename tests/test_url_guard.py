@@ -5,6 +5,7 @@ from __future__ import annotations
 import socket
 
 import pytest
+
 from runtime.safety.auth import check_url, is_safe_url
 
 # ═══════════════════════════════════════════════════════════

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.core.cerebrum import PlannerError, StaticPlanner
 from runtime.core.cerebrum.planner import Rule
 from runtime.platform.models import BudgetSpec, ParsedIntent, SkillId

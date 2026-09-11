@@ -6,6 +6,7 @@ import threading
 import time
 
 import pytest
+
 from runtime.core.cerebrum import StaticPlanner
 from runtime.core.cerebrum.planner import Rule
 from runtime.core.graph_runtime import GraphRuntime

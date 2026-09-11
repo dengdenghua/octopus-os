@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 import pytest
+
 from runtime.core.hearts.coordinator import Lease
 from runtime.core.hearts.redis_coordinator import RedisCoordinator
 

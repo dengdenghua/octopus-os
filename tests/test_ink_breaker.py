@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.safety.budget_breaker import BreakerModelRouter, CircuitBreaker, CircuitOpen
 from runtime.sensing.model_router import (
     Message,

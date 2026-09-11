@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.adapters.instrumentation import (
     ECHO_ATTR_STAGE,
     ECHO_ATTR_TASK_ID,

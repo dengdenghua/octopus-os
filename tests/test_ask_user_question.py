@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+
 from runtime.execution.suckers.ask_user_question import (
     _ask_user_question,
     register_ask_user_question_skill,

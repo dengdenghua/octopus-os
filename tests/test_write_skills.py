@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.suckers.write_skills import (
     _BACKGROUND_PROCESSES,

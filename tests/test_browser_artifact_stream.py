@@ -6,6 +6,7 @@ import base64
 from pathlib import Path
 
 import pytest
+
 from runtime.execution.suckers.browser_act_skills import (
     _emit_screenshot_artifact,
 )

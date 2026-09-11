@@ -24,6 +24,7 @@ import logging
 from typing import Any
 
 import pytest
+
 from runtime.adapters.channels.base import (
     Channel,
     OutboundMessage,

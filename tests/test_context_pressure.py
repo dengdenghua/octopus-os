@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from runtime.core.cerebrum.react_loop import _estimate_context_fullness
 from runtime.core.cerebrum._react_context_helpers import _compress_context
+from runtime.core.cerebrum.react_loop import _estimate_context_fullness
 from runtime.platform.models.llm import Message
 
 

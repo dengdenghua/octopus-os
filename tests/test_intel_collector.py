@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
+
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.memory.journal import InMemoryJournal
 from runtime.safety.recovery import (

@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 import pytest
+
 from runtime.memory.cowork import CoworkStore, Task
 from runtime.memory.cowork.store import (
     PHASE_COMPLETE,

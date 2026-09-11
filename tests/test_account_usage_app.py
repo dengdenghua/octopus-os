@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+
 from runtime.memory.journal import InMemoryJournal
 from runtime.platform.models import CostEntry
 from runtime.platform.ui import create_app

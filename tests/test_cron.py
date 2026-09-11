@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 
 import pytest
+
 from runtime.adapters.scheduler import (
     BackgroundRunner,
     CronExpression,

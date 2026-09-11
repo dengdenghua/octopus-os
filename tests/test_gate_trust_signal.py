@@ -14,6 +14,7 @@ Verifies the contract:
 from __future__ import annotations
 
 import pytest
+
 from runtime.safety.validation import gate
 
 # ══════════════════════════════════════════════════════════════════

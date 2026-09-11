@@ -411,6 +411,7 @@ class TestProposalLedger:
     ):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.sensing.gateway.evolution_router import create_evolution_router
 
         monkeypatch.chdir(tmp_path)
@@ -522,6 +523,7 @@ class TestCanaryManager:
     def test_canary_router_lists_full_and_rolled_back_states(self, tmp_path, monkeypatch):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.sensing.gateway.evolution_router import create_evolution_router
 
         cm = CanaryManager(CanaryConfig(state_dir=str(tmp_path / "canary")))

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
+
 from runtime.memory.journal import InMemoryJournal
 from runtime.memory.knowledge_graph import KnowledgeGraph, Triple
 from runtime.platform.models import (

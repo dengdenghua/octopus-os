@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from runtime.execution.suckers.browser_skills import (
     BROWSER_SKILL_NAMES,
     _browser_click,

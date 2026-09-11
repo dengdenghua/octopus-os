@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.safety.evolution.guard_judge import (
     GuardJudgeVerdict,
     null_guard_judge,

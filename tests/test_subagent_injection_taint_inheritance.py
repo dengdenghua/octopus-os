@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+
 from runtime.safety.validation.prompt_injection import (
     mark_injection_taint,
     reset_injection_taint,

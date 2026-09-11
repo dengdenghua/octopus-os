@@ -15,6 +15,7 @@ needs a full stack + journal + LLM router).
 from __future__ import annotations
 
 import pytest
+
 from runtime.core.cerebrum.react_loop import (
     _checkpoint_interval,
     _should_auto_checkpoint,

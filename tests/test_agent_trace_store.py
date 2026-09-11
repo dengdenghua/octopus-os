@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+
 from runtime.memory.diagnostics.trace_store import AgentTraceStore
 from runtime.memory.journal import JSONLJournal
 from runtime.safety.approval.approval_gate import ApprovalRequest

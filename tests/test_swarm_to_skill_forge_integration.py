@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.execution.arms import Arm, ArmPool
 from runtime.execution.suckers import Skill, SkillRegistry

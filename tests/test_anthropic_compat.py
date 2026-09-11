@@ -7,6 +7,7 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.sensing.gateway.anthropic_compat import create_anthropic_compat_router  # noqa: E402
 
 _BETA = {"anthropic-beta": "managed-agents-2026-04-01"}

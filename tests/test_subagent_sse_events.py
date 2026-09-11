@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+
 from runtime.execution.suckers.ephemeral_runner import _emit_sub_tool_event
 from runtime.memory.journal import (
     InMemoryJournal,

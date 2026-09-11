@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.execution.suckers import SkillRegistry
 from runtime.execution.suckers.browser_skills import (
     BROWSER_SKILL_NAMES,

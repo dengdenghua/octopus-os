@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.safety.organization.builtin_topologies import (
     BUILTIN_TOPOLOGIES,
     seed_builtin_topologies,

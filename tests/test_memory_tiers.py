@@ -23,6 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.execution.agents.loader import (
     _compose_soul,
     _memory_tier_paths,

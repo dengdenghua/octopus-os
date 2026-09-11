@@ -7,6 +7,7 @@ import time
 from uuid import uuid4
 
 import pytest
+
 from runtime.core.nerves.bus import TypedEventBus
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config
 from runtime.platform.models import (

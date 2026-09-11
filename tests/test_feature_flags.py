@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
 from runtime.platform import feature_flags as ff
 
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.execution.suckers.ephemeral_agents import BUILTIN_ROLES
 
 # Repo root is two levels up from this file: tests/test_doc_reality_alignment.py

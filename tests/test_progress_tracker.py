@@ -6,6 +6,7 @@ import time
 from uuid import uuid4
 
 import pytest
+
 from runtime.memory.journal import (
     InMemoryJournal,
     TaskProgressTracker,
@@ -315,6 +316,7 @@ class TestIncrementalPerformance:
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.platform.ui import create_app  # noqa: E402
 
 

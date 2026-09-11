@@ -39,6 +39,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from runtime.platform.prompts.registry import PromptRegistry
 from runtime.sensing.gateway.prompts_router import create_prompts_router
 

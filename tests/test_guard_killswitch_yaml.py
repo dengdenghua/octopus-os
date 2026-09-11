@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.core.cerebrum.react_loop import (
     _disabled_guard_labels,
     _disabled_guards_from_yaml,

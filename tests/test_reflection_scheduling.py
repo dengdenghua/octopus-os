@@ -115,6 +115,7 @@ class TestServeReflectionScheduling:
     def test_learn_interval_zero_no_reflection_tasks(self, tmp_path: Path, monkeypatch):
         cfg = _write_cfg(tmp_path)
         import uvicorn
+
         from runtime import scheduler
         from runtime.cli import run_serve
 
@@ -143,6 +144,7 @@ class TestServeReflectionScheduling:
     def test_learn_interval_positive_registers_llm_reflection(self, tmp_path: Path, monkeypatch):
         cfg = _write_cfg(tmp_path, planner_type="llm")
         import uvicorn
+
         from runtime import scheduler
         from runtime.cli import run_serve
 
@@ -174,6 +176,7 @@ class TestServeReflectionScheduling:
     def test_learn_interval_positive_registers_static_reflection(self, tmp_path: Path, monkeypatch):
         cfg = _write_cfg(tmp_path, planner_type="static")
         import uvicorn
+
         from runtime import scheduler
         from runtime.cli import run_serve
 

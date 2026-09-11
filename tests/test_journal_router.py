@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from runtime.sensing.gateway.journal_router import create_journal_router
 
 

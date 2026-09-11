@@ -10,6 +10,7 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config  # noqa: E402
 from runtime.safety.experiments import PromptOptimizer, PromptVariant  # noqa: E402
 from runtime.sensing.gateway import create_openai_router  # noqa: E402
@@ -174,6 +175,7 @@ class TestServePromptEvolution:
     def test_variants_yaml_missing_gracefully(self, tmp_path, monkeypatch, capsys):
         """Implementation note."""
         import uvicorn
+
         from runtime.cli import run_serve
 
         monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)
@@ -194,6 +196,7 @@ class TestServePromptEvolution:
 
     def test_static_planner_skips_evolution_gracefully(self, tmp_path, monkeypatch, capsys):
         import uvicorn
+
         from runtime.cli import run_serve
 
         monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)
@@ -215,6 +218,7 @@ class TestServePromptEvolution:
 
     def test_evolve_interval_registers_scheduler_task(self, tmp_path, monkeypatch):
         import uvicorn
+
         from runtime import scheduler
         from runtime.cli import run_serve
 
@@ -244,6 +248,7 @@ class TestServePromptEvolution:
     def test_variants_only_no_evolver_skipped(self, tmp_path, monkeypatch):
         """Implementation note."""
         import uvicorn
+
         from runtime import scheduler
         from runtime.cli import run_serve
 
@@ -272,6 +277,7 @@ class TestServePromptEvolution:
 
     def test_serve_output_shows_variants(self, tmp_path, monkeypatch, capsys):
         import uvicorn
+
         from runtime.cli import run_serve
 
         monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: None)

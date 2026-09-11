@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.sensing.gateway.realtime_turn_routing import (
     looks_like_contextual_tool_followup,
     looks_like_plain_chat,

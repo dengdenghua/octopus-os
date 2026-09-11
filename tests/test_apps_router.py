@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from runtime.sensing.gateway.apps_router import create_apps_router, discover_apps
 
 

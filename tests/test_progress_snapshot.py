@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+
 from runtime.memory.journal import (
     InMemoryJournal,
     all_task_progress,
@@ -202,6 +203,7 @@ class TestAllTasks:
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.platform.ui import create_app  # noqa: E402
 
 

@@ -26,6 +26,7 @@ class TestMetricsRouter:
 
     def _make_app(self, registry=None):
         from fastapi import FastAPI
+
         from runtime.sensing.gateway.metrics_router import create_metrics_router
 
         app = FastAPI()
@@ -93,6 +94,7 @@ class TestMetricsRouter:
 
     def test_empty_registry_renders_clean(self):
         from fastapi.testclient import TestClient
+
         from runtime.platform.observability.metrics import MetricsRegistry
 
         client = TestClient(self._make_app(registry=MetricsRegistry()))
@@ -102,6 +104,7 @@ class TestMetricsRouter:
 
     def test_endpoint_uses_explicit_registry_when_provided(self):
         from fastapi.testclient import TestClient
+
         from runtime.platform.observability.metrics import MetricsRegistry
 
         local = MetricsRegistry()
@@ -192,6 +195,7 @@ class TestK8sProbes:
     def test_livez_returns_200_when_process_alive(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.platform.observability.health import (
             HealthCheck,
             HealthRegistry,
@@ -219,6 +223,7 @@ class TestK8sProbes:
     def test_readyz_503_when_critical_check_fails(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.platform.observability.health import (
             HealthCheck,
             HealthRegistry,
@@ -245,6 +250,7 @@ class TestK8sProbes:
     def test_readyz_warns_on_noncritical_failure(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.platform.observability.health import (
             HealthCheck,
             HealthRegistry,
@@ -281,6 +287,7 @@ class TestK8sProbes:
         """Liveness must pass independent of readiness state."""
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.platform.observability.health import (
             HealthCheck,
             HealthRegistry,
@@ -357,6 +364,7 @@ class TestMetricsEndToEnd:
 
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.platform.models import Budget, BudgetLimits
         from runtime.sensing.gateway.metrics_router import create_metrics_router
 

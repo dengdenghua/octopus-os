@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from runtime.adapters.channels import (
     Channel,
     ChannelManager,

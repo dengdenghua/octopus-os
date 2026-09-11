@@ -27,6 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.platform.prompts.registry import PromptRegistry
 from runtime.platform.prompts.seed import (
     DEFAULT_TEMPLATES,

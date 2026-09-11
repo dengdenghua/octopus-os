@@ -1,6 +1,7 @@
 """Tests for ServiceProvider dependency injection container."""
 
 import pytest
+
 from runtime.platform.process.service_provider import (
     ServiceProvider,
     get_provider,

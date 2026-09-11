@@ -9,6 +9,7 @@ from uuid import uuid4  # noqa: E402
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.execution.suckers import (  # noqa: E402
     Skill,
     SkillRegistry,

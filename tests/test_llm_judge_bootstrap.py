@@ -8,6 +8,7 @@ the fail-open registration semantics.
 from typing import Any
 
 import pytest
+
 from runtime.safety.validation.bootstrap import (
     llm_judge_enabled,
     maybe_register_llm_judge,

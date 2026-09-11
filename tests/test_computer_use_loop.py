@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from runtime.execution.suckers import computer_skills
 from runtime.execution.suckers.computer_use_loop import (
     MockVisionPlanner,

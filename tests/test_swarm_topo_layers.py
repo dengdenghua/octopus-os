@@ -7,6 +7,7 @@ import time
 from uuid import uuid4
 
 import pytest
+
 from runtime.execution.swarm import SwarmRuntime
 from runtime.execution.swarm.runtime import _split_topo_layers
 from runtime.platform.models import (

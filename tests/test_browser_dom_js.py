@@ -10,6 +10,7 @@ import shutil
 import subprocess
 
 import pytest
+
 from runtime.execution.suckers.browser_dom_js import (
     DOM_HELPERS_JS,
     dom_snapshot_function_js,

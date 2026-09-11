@@ -15,6 +15,7 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+
 from runtime.core.cerebrum.checkpoint_mirror import (
     CheckpointMirror,
     _CircuitBreaker,

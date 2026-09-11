@@ -540,6 +540,7 @@ class TestHealthCheck:
     def test_create_probe_router(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.platform.observability.health import (
             HealthCheck,
             HealthRegistry,
@@ -565,6 +566,7 @@ class TestHealthCheck:
     def test_probe_router_returns_503_on_fail(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
+
         from runtime.platform.observability.health import (
             HealthCheck,
             HealthRegistry,

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 
 import pytest
+
 from runtime.core.cerebrum.checkpoint_mirror import (
     CHECKPOINT_KEY_PREFIX,
     TASKS_INDEX_KEY,

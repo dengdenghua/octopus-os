@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.execution.arms.presets import (
     make_desktop_operator_arm,
     make_mobile_browser_operator_arm,

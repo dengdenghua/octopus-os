@@ -10,6 +10,7 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.safety.organization import (  # noqa: E402
     AgentSpec,
     CoordinationProtocol,

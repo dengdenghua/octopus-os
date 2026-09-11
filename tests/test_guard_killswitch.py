@@ -14,6 +14,7 @@ counting it would poison the digest the evolver consumes.
 from __future__ import annotations
 
 import pytest
+
 from runtime.core.cerebrum.react_guards import (
     GuardContext,
     GuardSpec,

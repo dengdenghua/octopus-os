@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 import pytest
+
 from runtime.core.nerves.bus import TypedEventBus
 from runtime.sensing.normalize import (
     EnvSensor,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.execution.suckers import (
     TIER_THRESHOLDS,
     Skill,

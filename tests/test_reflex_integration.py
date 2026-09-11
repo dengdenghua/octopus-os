@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from runtime.memory.journal import (
     InMemoryJournal,
     JSONLJournal,
@@ -173,6 +174,7 @@ class TestLoopReflex:
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.platform.config import AgentConfig, PlannerConfig, build_from_config  # noqa: E402
 from runtime.sensing.gateway import create_openai_router  # noqa: E402
 

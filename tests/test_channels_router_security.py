@@ -15,6 +15,7 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+
 from runtime.safety.auth.identity import Identity, IdentityStore  # noqa: E402
 from runtime.sensing.gateway.channels_router import (  # noqa: E402
     LocalChannelManager,

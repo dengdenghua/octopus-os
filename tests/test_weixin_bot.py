@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from runtime.adapters.channels import (
     ChannelManager,
     InboundMessage,

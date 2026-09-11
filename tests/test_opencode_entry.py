@@ -9,8 +9,7 @@ from runtime.execution.engines import EngineId, ExecutionPhase, select_execution
 from runtime.memory.threads.event_log import EventLog
 from runtime.platform.models import ParsedIntent
 from runtime.protocol import Turn, TurnParams
-from runtime.sensing.gateway import realtime_opencode_backend
-from runtime.sensing.gateway import realtime_execution
+from runtime.sensing.gateway import realtime_execution, realtime_opencode_backend
 from runtime.sensing.gateway.realtime_execution import TurnExecutionRequest, bind_turn_execution
 
 

@@ -144,6 +144,7 @@ def test_emit_swallows_exceptions(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_artifact_endpoint_serves_png(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from runtime.platform.ui.browser_router import create_browser_router
 
     # Write a fake PNG
@@ -168,6 +169,7 @@ def test_artifact_endpoint_serves_png(tmp_path: Path, monkeypatch: pytest.Monkey
 def test_artifact_endpoint_rejects_traversal() -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from runtime.platform.ui.browser_router import create_browser_router
 
     app = FastAPI()
@@ -181,6 +183,7 @@ def test_artifact_endpoint_rejects_traversal() -> None:
 def test_artifact_endpoint_rejects_non_png() -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from runtime.platform.ui.browser_router import create_browser_router
 
     app = FastAPI()
@@ -194,6 +197,7 @@ def test_artifact_endpoint_rejects_non_png() -> None:
 def test_artifact_endpoint_404_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from runtime.execution.suckers import browser_act_skills as bas
     from runtime.platform.ui.browser_router import create_browser_router
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from runtime.adapters.mcp_client import (
     STDIO_AVAILABLE,
     MCPClientError,

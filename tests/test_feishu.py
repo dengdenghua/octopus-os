@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 import pytest
+
 from runtime.adapters.channels import (
     FeishuChannel,
     FeishuError,

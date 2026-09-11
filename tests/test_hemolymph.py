@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+
 from runtime.execution.suckers import Skill, SkillRegistry
 from runtime.execution.suckers.builtins import register_builtins
 from runtime.memory.hemolymph import ContextComposer, estimate_tokens

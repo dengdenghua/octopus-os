@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from runtime.core.graph_runtime import GraphRuntime
 from runtime.core.nerves import (
     AgentAdded,
@@ -218,6 +219,7 @@ class TestForgeTriggersEvent:
         if shutil.which("git") is None:
             pytest.skip("git not on PATH")
 
+        from demos.bugfix_demo import build_bugfix_graph, setup_buggy_project
         from runtime.execution.suckers.builtins import register_all
         from runtime.execution.suckers.write_skills import register_exec_skill
         from runtime.execution.tool_engine import ToolExecutor
@@ -225,8 +227,6 @@ class TestForgeTriggersEvent:
         from runtime.platform.models import Budget, BudgetLimits
         from runtime.safety.auth import TrustEngine
         from runtime.safety.recovery import ForgeConfig, SkillForge
-
-        from demos.bugfix_demo import build_bugfix_graph, setup_buggy_project
 
         bus = TypedEventBus()
         events: list[SkillRegistered] = []

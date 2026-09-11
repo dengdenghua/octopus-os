@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+
 from runtime.execution.suckers import (
     SkillRegistry,
     dump_forged_skill_to_md,

@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 import pytest
+
 from runtime.sensing.model_router import (
     GeminiModelRouter,
     GeminiRouterError,

@@ -11,6 +11,7 @@ import urllib.parse
 from unittest.mock import MagicMock
 
 import pytest
+
 from runtime.adapters.channels import (
     DingTalkChannel,
     DingTalkError,
