@@ -382,6 +382,39 @@ jobs:
         run: >-
           uv run pytest tests/ -q -rf --tb=line --timeout=60
           -p no:cacheprovider
+          --junitxml=full-suite-junit.xml
+      - name: Summarise failures by file
+        if: always()
+        run: |
+          uv run python - <<'PY'
+          import collections
+          import pathlib
+          import xml.etree.ElementTree as ET
+
+          report = pathlib.Path("full-suite-junit.xml")
+          if not report.exists():
+              print("no JUnit report: the suite aborted before pytest could write one")
+              raise SystemExit(0)
+
+          root = ET.parse(report).getroot()
+          by_file = collections.Counter()
+          for case in root.iter("testcase"):
+              if any(child.tag in {"failure", "error"} for child in case):
+                  by_file[case.get("file") or case.get("classname") or "?"] += 1
+
+          cases = list(root.iter("testcase"))
+          print(f"testcases: {len(cases)}")
+          print(f"files with failures/errors: {len(by_file)}")
+          for path, count in by_file.most_common(40):
+              print(f"{count:5d}  {path}")
+          PY
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-suite-junit
+          path: full-suite-junit.xml
+          if-no-files-found: warn
 
   security-scan:
     name: Security scan

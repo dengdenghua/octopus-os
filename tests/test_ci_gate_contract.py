@@ -99,6 +99,12 @@ def test_full_suite_job_is_wired() -> None:
         "full-test-suite needs an explicit timeout-minutes; the suite takes "
         "~50 min and would otherwise hang on a stalled runner"
     )
+    # Without a machine-readable report the job can only be triaged by reading
+    # 17k lines of console output, so `continue-on-error` would never be removed.
+    assert "--junitxml" in script, (
+        "full-test-suite must emit --junitxml so the observation period can be "
+        "triaged and continue-on-error eventually removed"
+    )
 
 
 # `monkeypatch.setattr(<module>.threading.X, ...)` mutates the *stdlib* class,
