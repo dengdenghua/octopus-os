@@ -1,8 +1,8 @@
 site_name: Echo OS
 site_description: "家庭服务器 AI Agent 设备层（NAS 桌面 / 启动器 / 文件）"
 site_url: https://echo-agent.github.io/
-repo_url: https://github.com/dengdenghua/echo-os
-repo_name: echo-agent/echo-os
+repo_url: https://github.com/dengdenghua/octopus-os
+repo_name: dengdenghua/octopus-os
 copyright: "Apache-2.0 · echo-os contributors"
 
 theme:
@@ -98,6 +98,7 @@ nav:
       - 速查卡: invariants-cheatsheet.md
       - 标准: standards.md
       - 宪法: constitution.md
+      - 命名约定: NAMING_CONVENTIONS.md
   - 能力与基准:
       - Agent 能力: agent-capabilities.md
       - ECHO 系统能力契约: ECHO_CAPABILITY_CONTRACT.md
@@ -139,6 +140,6 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/dengdenghua/echo-os
+      link: https://github.com/dengdenghua/octopus-os
   version:
     provider: mike

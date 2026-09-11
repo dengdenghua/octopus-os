@@ -32,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # scratch notes and audit reports at the repo root are a workflow choice, not
 # a release risk.
 SOURCE_ROOTS: tuple[str, ...] = (
+    "appliance/",
     "runtime/",
     "tests/",
     "tools/",
@@ -58,7 +59,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.parse_args(argv)
 
-    untracked = _untracked_files(REPO_ROOT)
+    try:
+        untracked = _untracked_files(REPO_ROOT)
+    except FileNotFoundError:
+        # Observed on a Windows shell whose PATH lost git: the raw traceback is
+        # a bare FileNotFoundError that reads like a bug in this script.
+        print(
+            "FAIL · `git` was not found on PATH, so the tracked state cannot be "
+            "verified.\nInstall git or fix PATH, then re-run this guard. "
+            "(CI runners ship git, so this only affects local shells.)",
+            file=sys.stderr,
+        )
+        return 2
     offenders = sorted(
         path for path in untracked if any(path.startswith(prefix) for prefix in SOURCE_ROOTS)
     )
