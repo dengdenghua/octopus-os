@@ -55,6 +55,7 @@ from runtime.execution.codex_backend.model_profile import CodexModelPreferenceSt
 from runtime.execution.codex_backend.paths import resolve_codex_state_root
 from runtime.execution.codex_backend.upstream_update import CodexUpstreamUpdateService
 from runtime.platform.models.custom_model_selection import selections_for_entry
+from runtime.platform.observability.crash_reporter import install_best_effort
 from runtime.platform.process.paths import app_paths
 
 try:
@@ -276,11 +277,15 @@ def create_config_router(
     async def _config_lifespan(_app: Any):
         codex_accounts.start_idle_reaper()
         codex_updates.start()
+        uninstall_crash_reporter = install_best_effort(context={"component": "config"})
         try:
             yield
         finally:
             await codex_updates.close()
             await codex_accounts.close_all()
+            # Uninstall last: teardown is exactly when a latent shutdown bug
+            # surfaces, so capture has to stay installed through close().
+            uninstall_crash_reporter()
 
     router = APIRouter(
         tags=["config"],

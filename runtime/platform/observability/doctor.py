@@ -64,7 +64,53 @@ class Doctor:
         self._check_config(report)
         self._check_data_dir(report)
         self._check_sandbox(report)
+        self._check_crashes(report)
         return report
+
+    def _check_crashes(self, report: DoctorReport) -> None:
+        """Surface recent unhandled failures.
+
+        On an appliance a crash at 03:00 followed by an automatic restart
+        leaves no trace anywhere a human looks — the process is healthy again
+        and the traceback is buried in a log nobody tails. Doctor is the one
+        place that gets run when something feels off, so it has to say so.
+        """
+        try:
+            from runtime.platform.observability.crash_reporter import (
+                analyze,
+                default_store,
+            )
+
+            store = default_store()
+            records = store.all()
+        except Exception:  # noqa: BLE001 - doctor must never fail on its own
+            return
+        if not records:
+            report.results.append(
+                CheckResult(name="Crashes", status="ok", message="none recorded")
+            )
+            return
+
+        newest = records[0]
+        diagnosis = analyze(newest)
+        total = sum(r.occurrence_count for r in records)
+        recurring = any(r.occurrence_count > 1 for r in records)
+        report.results.append(
+            CheckResult(
+                name="Crashes",
+                status="fail" if recurring else "warn",
+                message=(
+                    f"{len(records)} distinct / {total} total · latest "
+                    f"{newest.exception_type} ({diagnosis.cause}) at "
+                    f"{newest.last_seen_at}"
+                ),
+                fix_hint=(
+                    f"{diagnosis.suggested_fix} "
+                    f"· triage: GET /api/crashes/{newest.fingerprint}/report "
+                    "· clear when done: DELETE /api/crashes"
+                ),
+            )
+        )
 
     def _check_sandbox(self, report: DoctorReport) -> None:
         """Report the process-sandbox posture for agent shell commands.
