@@ -3,11 +3,8 @@ import { Link } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { env } from "@/env";
 import { pathOfThread } from "@/core/threads/utils";
-import { cn } from "@/lib/utils";
 
 import { Section } from "../section";
-
-const publicAssetBase = import.meta.env.BASE_URL;
 
 export function CaseStudySection({ className }: { className?: string }) {
   const caseStudies = [
@@ -65,37 +62,13 @@ export function CaseStudySection({ className }: { className?: string }) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            <Card className="group/card relative h-64 overflow-hidden">
-              <div
-                className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat transition-all duration-300 group-hover/card:scale-110 group-hover/card:brightness-90"
-                style={{
-                  backgroundImage: `url(${publicAssetBase}images/${caseStudy.threadId}.jpg)`,
-                }}
-              ></div>
-              <div
-                className={cn(
-                  "flex h-full w-full translate-y-[calc(100%-60px)] flex-col items-center",
-                  "transition-all duration-300",
-                  "group-hover/card:translate-y-[calc(100%-128px)]",
-                )}
-              >
-                <div
-                  className="flex w-full flex-col p-4"
-                  style={{
-                    background:
-                      "linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 1) 100%)",
-                  }}
-                >
-                  <div className="flex flex-col gap-2">
-                    <h3 className="flex h-14 items-center text-xl font-bold text-shadow-black">
-                      {caseStudy.title}
-                    </h3>
-                    <p className="box-shadow-black overflow-hidden text-sm text-white/85 text-shadow-black">
-                      {caseStudy.description}
-                    </p>
-                  </div>
-                </div>
-              </div>
+            <Card className="group/card h-64 justify-end gap-2 overflow-hidden p-6">
+              <h3 className="flex h-14 items-center text-xl font-bold text-card-foreground">
+                {caseStudy.title}
+              </h3>
+              <p className="overflow-hidden text-sm text-muted-foreground">
+                {caseStudy.description}
+              </p>
             </Card>
           </Link>
         ))}

@@ -66,7 +66,7 @@ describe("Echo desktop shell", () => {
       icon?.querySelector(".mac-app-icon-liquid-backdrop > img"),
     ).toHaveAttribute(
       "src",
-      "/third-party/appletechie-macos/wallpaper-day2.jpg",
+      "/third-party/appletechie-macos/wallpaper-day2-2560.webp",
     );
     expect(
       icon?.querySelector(".mac-app-icon-liquid-backdrop > svg"),
@@ -159,7 +159,7 @@ describe("Echo desktop shell", () => {
     expect(wallpaper).toBeInTheDocument();
     expect(wallpaper).toHaveAttribute(
       "src",
-      "/third-party/appletechie-macos/wallpaper-day2.jpg",
+      "/third-party/appletechie-macos/wallpaper-day2-2560.webp",
     );
     expect(wallpaper).toHaveAttribute("alt", "");
   });
@@ -179,7 +179,7 @@ describe("Echo desktop shell", () => {
     samples.forEach((sample) => {
       expect(sample).toHaveAttribute(
         "src",
-        "/third-party/appletechie-macos/wallpaper-day2.jpg",
+        "/third-party/appletechie-macos/wallpaper-day2-2560.webp",
       );
     });
     expect(

@@ -264,13 +264,21 @@
     linear-gradient(145deg, #ef9676, #ac4eb5 52%, #3e63ba);
 }
 
-/* Licensed wallpaper retained as the user's selected visual background. */
+/* Licensed wallpaper retained as the user's selected visual background.
+   WebP variants replace the 16 MB original; the 3840-wide candidate covers
+   high-DPI panels, so the browser never loads the oversized source. */
 .mac-wallpaper-orbit .desktop-wallpaper {
   background-color: #3852a6;
-  background-image: url("/third-party/appletechie-macos/wallpaper-day2.jpg");
+  background-image: url("/third-party/appletechie-macos/wallpaper-day2-2560.webp");
   background-position: center;
   background-size: cover;
   animation: none;
+}
+
+@media (min-resolution: 1.5dppx) {
+  .mac-wallpaper-orbit .desktop-wallpaper {
+    background-image: url("/third-party/appletechie-macos/wallpaper-day2-3840.webp");
+  }
 }
 
 .mac-wallpaper-orbit .desktop-wallpaper::before {

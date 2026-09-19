@@ -9,8 +9,9 @@ import {
   LIQUID_GLASS_MOTION_EVENT,
   type LiquidGlassMotionDetail,
 } from "@/appliance/liquid-glass-motion";
+import { DESKTOP_WALLPAPER_URL } from "@/appliance/desktop-wallpaper";
 
-const WALLPAPER_URL = "/third-party/appletechie-macos/wallpaper-day2.jpg";
+const WALLPAPER_URL = DESKTOP_WALLPAPER_URL;
 const MAX_LENSES = MAX_LIQUID_GLASS_SURFACES;
 export const LIQUID_GLASS_INTERACTION_SETTLE_MS = 180;
 

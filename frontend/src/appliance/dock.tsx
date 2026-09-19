@@ -16,6 +16,12 @@ import {
   type ReactNode,
 } from "react";
 
+import {
+  DESKTOP_WALLPAPER_SIZES,
+  DESKTOP_WALLPAPER_SRCSET,
+  DESKTOP_WALLPAPER_URL,
+} from "@/appliance/desktop-wallpaper";
+
 // 应用图标属于稳定的系统识别层，不随鼠标或玻璃模式改变尺寸和基线。
 const BASE_SIZE = 62;
 
@@ -102,7 +108,12 @@ export function Dock({
   return (
     <nav ref={navRef} data-desktop-interactive className={className}>
       <span className="mac-dock-lens" aria-hidden>
-        <img src="/third-party/appletechie-macos/wallpaper-day2.jpg" alt="" />
+        <img
+          src={DESKTOP_WALLPAPER_URL}
+          srcSet={DESKTOP_WALLPAPER_SRCSET}
+          sizes={DESKTOP_WALLPAPER_SIZES}
+          alt=""
+        />
       </span>
       {children}
     </nav>

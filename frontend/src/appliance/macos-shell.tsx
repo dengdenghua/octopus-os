@@ -7,6 +7,12 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+
+import {
+  DESKTOP_WALLPAPER_SIZES,
+  DESKTOP_WALLPAPER_SRCSET,
+  DESKTOP_WALLPAPER_URL,
+} from "@/appliance/desktop-wallpaper";
 import {
   BatteryFullIcon,
   BellIcon,
@@ -146,7 +152,9 @@ export function MacDesktopWallpaperArtwork() {
     <img
       aria-hidden="true"
       className="desktop-wallpaper-art"
-      src="/third-party/appletechie-macos/wallpaper-day2.jpg"
+      src={DESKTOP_WALLPAPER_URL}
+      srcSet={DESKTOP_WALLPAPER_SRCSET}
+      sizes={DESKTOP_WALLPAPER_SIZES}
       alt=""
     />
   );
@@ -966,7 +974,12 @@ function MacSurfaceLens() {
   return (
     <span ref={lensRef} className="mac-surface-lens" aria-hidden>
       <span className="mac-surface-lens-raster">
-        <img src="/third-party/appletechie-macos/wallpaper-day2.jpg" alt="" />
+        <img
+          src={DESKTOP_WALLPAPER_URL}
+          srcSet={DESKTOP_WALLPAPER_SRCSET}
+          sizes={DESKTOP_WALLPAPER_SIZES}
+          alt=""
+        />
       </span>
       <MacDesktopWallpaperArtwork />
     </span>
@@ -1009,7 +1022,9 @@ function MacIconLiquidBackdrop() {
       className="mac-app-icon-liquid-backdrop"
       aria-hidden
     >
-      <img src="/third-party/appletechie-macos/wallpaper-day2.jpg" alt="" />
+      <img src={DESKTOP_WALLPAPER_URL}
+      srcSet={DESKTOP_WALLPAPER_SRCSET}
+      sizes={DESKTOP_WALLPAPER_SIZES} alt="" />
     </span>
   );
 }
