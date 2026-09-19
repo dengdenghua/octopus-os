@@ -241,6 +241,21 @@ def detect_hardware() -> Hardware:
             note="Current available unified memory, with system/NAS headroom reserved",
             **shared,
         )
+    from . import managed_rknn
+
+    if managed_rknn.available():
+        # NPU LLM decode shares the LPDDR bus: same unified-memory planning
+        # rule as Apple, but throughput is bus-bound, not TOPS-bound.
+        return Hardware(
+            backend="rknn-npu",
+            gpu_name=managed_rknn.NPU_NAME,
+            vram_gb=round(budget, 1),
+            ram_gb=ram,
+            bandwidth_gbps=managed_rknn.LPDDR_BANDWIDTH_GBPS,
+            unified_memory=True,
+            note="Rockchip NPU detected — decode speed follows LPDDR bandwidth",
+            **shared,
+        )
     return Hardware(
         backend="cpu",
         gpu_name=None,

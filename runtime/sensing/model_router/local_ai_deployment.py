@@ -11,7 +11,7 @@ import uuid
 
 from runtime.platform.io.atomic import atomic_write_json
 
-from . import hwfit
+from . import hwfit, managed_rknn
 from . import managed_ollama as runtime
 from .local_model_setup import clear_verification, verify_model
 
@@ -22,16 +22,19 @@ _stopping = threading.Event()
 
 
 def status() -> dict:
+    # NPU capability is orthogonal to the Ollama job lifecycle — surface it
+    # in both branches so clients see the RK3576 tier regardless of stage.
+    npu = managed_rknn.probe()
     with _lock:
         if _active is not None:
-            return dict(_active)
+            return {**dict(_active), "npu": npu}
     try:
         previous = json.loads((runtime.root() / "deployment.json").read_text("utf-8"))
         if previous.get("stage") not in {"ready", "error"}:
             previous.update(stage="error", error="服务曾中断，请重新检查并部署；已下载权重可复用")
-        return previous
+        return {**previous, "npu": npu}
     except (OSError, ValueError):
-        return {"stage": "idle"}
+        return {"stage": "idle", "npu": npu}
 
 
 def plan(tag: str) -> dict:
