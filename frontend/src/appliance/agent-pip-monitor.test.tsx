@@ -49,11 +49,15 @@ describe("AgentPipMonitor (Codex 画中画)", () => {
     );
   });
 
-  it("rejects high risk operation and fires error notification", () => {
-    render(<AgentPipMonitor />);
+  it("rejects high risk operation and fires onReject callback", () => {
+    const onReject = vi.fn();
+    render(<AgentPipMonitor onReject={onReject} />);
     const rejectBtn = screen.getByRole("button", { name: /拦截/i });
     fireEvent.click(rejectBtn);
 
+    expect(onReject).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "pip-task-live" })
+    );
     expect(toast.error).toHaveBeenCalledWith("已拦截并拒绝高危操作");
   });
 
@@ -65,5 +69,31 @@ describe("AgentPipMonitor (Codex 画中画)", () => {
     fireEvent.click(expandBtn);
 
     expect(onExpand).toHaveBeenCalledOnce();
+  });
+
+  it("fires onApprove callback when approving high risk operation", () => {
+    const onApprove = vi.fn();
+    render(<AgentPipMonitor onApprove={onApprove} />);
+    const approveBtn = screen.getByRole("button", { name: /批准放行/i });
+    fireEvent.click(approveBtn);
+
+    expect(onApprove).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "pip-task-live" })
+    );
+    expect(toast.success).toHaveBeenCalledWith(
+      "已批准执行高危操作",
+      expect.anything()
+    );
+  });
+
+  it("supports keyboard Enter to expand collapsed pill", () => {
+    render(<AgentPipMonitor />);
+    const minimizeBtn = screen.getByRole("button", { name: /最小化/i });
+    fireEvent.click(minimizeBtn);
+
+    const pill = screen.getByRole("button", { name: /展开 Codex 画中画监控/i });
+    fireEvent.keyDown(pill, { key: "Enter" });
+
+    expect(screen.getByTestId("agent-pip-monitor")).toBeInTheDocument();
   });
 });
