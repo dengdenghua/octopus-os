@@ -7,9 +7,14 @@ from typing import Any, TypeVar
 
 try:
     from opentelemetry import trace  # type: ignore[import-untyped]
+    from opentelemetry.sdk import trace as sdk_trace  # type: ignore[import-untyped]
     from opentelemetry.trace import Status, StatusCode  # type: ignore[import-untyped]
 
-    OTEL_AVAILABLE = True
+    # Treat tracing as available only when the API and its concrete SDK are
+    # both importable.  The API package alone supplies a no-op provider; it
+    # cannot configure exporters and previously made SDK-backed tests and UI
+    # capability reporting enter a half-enabled state.
+    OTEL_AVAILABLE = trace is not None and sdk_trace is not None
 except ImportError:  # pragma: no cover - tested via test_tracing_noop path
     OTEL_AVAILABLE = False
 
