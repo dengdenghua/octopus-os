@@ -1,0 +1,52 @@
+[Unit]
+Description=Echo OS appliance backend (RK3576 firmware · NAS control plane + agent runtime)
+Documentation=https://github.com/dengdenghua/octopus-os
+# 与 deploy/provision/base/echo-appliance.service 同构(平行 ARM 版,互不修改)。
+# 固件形态差异:无 docker 依赖(未烘焙),After 收窄到 network-online。
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# 需要 root:zfs/zpool、smbcontrol、exportfs、smartctl 都要特权。
+# 对外的 HTTP 入口是 nginx(80/443),本服务只监听回环,不直接暴露。
+User=root
+WorkingDirectory=/opt/echo-os
+
+EnvironmentFile=-/etc/echo-os/firstboot.env
+Environment=ECHO_APPLIANCE=1
+Environment=ECHO_APP_EXTENSIONS=appliance.extension
+Environment=ECHO_REQUIRED_APP_EXTENSIONS=1
+Environment=ECHO_SKILL_EXTENSIONS=appliance.pm_skills:register_pm_skills
+Environment=ECHO_DATA_DIR=/data
+Environment=ECHO_NAS_ROOT=/data/nas
+Environment=ECHO_CONFIG=/etc/echo-os/config.yaml
+Environment=ECHO_WEBUI_DIST=/opt/echo-os/webui-dist
+Environment=ECHO_CODEX_BUNDLE_DIR=/opt/echo-os/agent-codex
+Environment=ECHO_CODEX_EXECUTABLE=/opt/echo-os/agent-codex/bin/codex
+Environment=PYTHONUNBUFFERED=1
+# ── agent 常驻进程内存三件套(resource-tune 配套,A72+LPDDR 实证有效)──
+# 1) jemalloc:glibc malloc 的 per-thread arena 在长驻 Python 里碎片化
+#    严重(实测可多占 30-50% RSS);换 jemalloc 并收 arena 数。
+Environment=LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2
+Environment=MALLOC_ARENA_MAX=2
+# 2) 压制 C 扩展(numpy 等 OpenMP)线程爆炸——big.LITTLE 上 8 核各开
+#    BLAS 线程既慢又费内存,后端是 IO 密集,2 线程足够。
+Environment=OMP_NUM_THREADS=2
+Environment=OPENBLAS_NUM_THREADS=2
+Environment=NUMEXPR_NUM_THREADS=2
+
+ExecStart=/opt/echo-os/.venv/bin/echo-agent serve \
+  --config /etc/echo-os/config.yaml \
+  --host 127.0.0.1 --port 8000
+
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=echo-appliance
+
+[Install]
+WantedBy=multi-user.target

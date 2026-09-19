@@ -1,0 +1,6 @@
+[Unit]
+Description=Echo OS: HDMI hotplug → desktop stack toggle
+# udev SYSTEMD_WANTS 按需拉起,不需要 WantedBy;oneshot 与事件解耦
+[Service]
+Type=oneshot
+ExecStart=/opt/echo-os/deploy/rk3576/firmware/hdmi-hotplug.sh udev

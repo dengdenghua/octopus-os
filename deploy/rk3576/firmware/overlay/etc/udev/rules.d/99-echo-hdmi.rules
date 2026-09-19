@@ -1,0 +1,4 @@
+# Echo OS: DRM 热插拔 → 桌面栈实时升降
+# 插拔 HDMI/DP 触发内核向 udev 派发 drm 卡 change 事件,这里转成
+# systemd 按需拉起 oneshot 服务(不在 udev 进程里跑脚本,避免阻塞事件流)。
+ACTION=="change", SUBSYSTEM=="drm", TAG+="systemd", ENV{SYSTEMD_WANTS}+="echo-desktop-hotplug.service"

@@ -1,0 +1,20 @@
+[Unit]
+Description=Echo OS first-boot provisioning (RK3576 firmware · offline)
+Documentation=https://github.com/dengdenghua/octopus-os
+After=local-fs.target network-online.target
+Wants=local-fs.target network-online.target
+# 固件载荷全部构建期烘焙,首启只做设备相关三步,无网络依赖。
+# 哨兵未生成前重开会自动续跑(脚本幂等)。
+ConditionPathExists=!/var/lib/echo-os/firstboot-firmware/services
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/echo-os/deploy/rk3576/firmware/setup-firmware.sh
+# overlay 树按根目录直拷,上路径即拷入后的真实位置。
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=echo-firstboot-firmware
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+# SDK 用户态加速库清单(RK3576 firmware · NPU + 硬编解码)。
+#
+# 消费方: build-rootfs.sh 的 sdk-userspace 阶段,从 RK_USERSPACE_DEB_DIR
+# (SDK debian/ 构建产物)按本清单核对。内核态驱动(rknpu/vpu/rga)不在此
+# 列——随 BSP kernel 原样保留。
+#
+# 注意:确切 deb 文件名以实际 SDK 产物为准,下面是**预期提供的组件清单**
+# 而非精确文件名;SDK 构建后逐项对照勾销。
+#
+# [NPU] external/rknpu2 · Runtime (必须)
+#   - librknnrt.so          # 经典/视觉模型推理(Echo vision/embedder 消费)
+#   - rknpu2 runtime deb    # 含版本号,如 rknn-toolkit2 runtime 2.x
+#
+# [NPU-LLM] rkllm-sdk · RKLLM Runtime (必须 —— LLM 走 RKLLM 而非 RKNN)
+#   - librkllmrt.so         # .rkllm 模型推理运行时
+#   - 注意区分:.rknn(rknn-toolkit2,视觉/经典)与 .rkllm(rkllm-toolkit,
+#     LLM)是两套运行时;模型转换都在 x86 主机做,固件只烘 runtime
+#
+# [VDEC/VENC] external/mpp (必须)
+#   - librockchip-mpp1 / librockchip-mpp-dev
+#   - mpp 工具(mpi_dec_test / mpi_enc_test,板端验证通路用)
+#
+# [2D] external/linux-rga (必须)
+#   - librga2 / librga-dev
+#
+# [GPU] external/libmali (必须 —— HDMI 本地桌面形态,2026-09-12 拍板)
+#   - libmali blob:须选 **Wayland + GLES** 变体(板载桌面走
+#     SDDM+KWin/Wayland,不走 X11);确切文件名/版本以 SDK 产物为准
+#   - 消费方:KWin 合成器(OpenGL ES 渲染)、一切 GL 呈现
+#   - 注意:KWin 会话栈(sddm/kwin-wayland/plasma 组件)在
+#     packages-arm64.txt 桌面层,不在此文件
+#
+# [模型] 构建主机 rknn-toolkit2 转出的 .rknn 文件
+#   - 不在本清单(不是 deb),烘焙进 /opt/echo-os/models/
+#   - 转换在 x86 主机做,toolkit 不进固件
+#
+# [暂缓] 待确认后再加入:
+#   - rockit / iva(rockit 框架音视频链路,先确认 Echo 媒体面是否需要)

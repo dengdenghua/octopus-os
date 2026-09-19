@@ -42,6 +42,10 @@ files:
   - "!electron/**/*.test.mjs"
   - "!electron/**/*.node-test.cjs"
   - "!**/*.map"
+  # Design-time logo candidates stay in the repo for the web allowlist but are
+  # never referenced by the shipped shell, so they do not belong in the app
+  # bundle or the OS image.
+  - "!dist/logo-candidates/**"
 
 # 额外资源：放入应用 resources/ 目录（打包后 process.resourcesPath 下一级）。
 # main.cjs 在启动后端前会先将配置和可变资源安全物化到

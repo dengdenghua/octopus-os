@@ -1,0 +1,79 @@
+# Echo OS RK3576 firmware rootfs packages (Debian 12 arm64).
+#
+# 派生自 deploy/provision/system-packages-nas.txt(x86 ISO 首启清单),
+# 差异只做减法/加法,保持两边语义可对照:
+#   - 去掉 x86 专属: intel/amd64-microcode、firmware-{amd,intel}-graphics、
+#     firmware-{iwlwifi,atheros,brcm80211}(Intel/Atheros/Broadcom 无线)
+#   - 去掉首启 docker-ce*(固件形态烘焙期决定是否纳入,默认不装;
+#     需要路线 B 容器共存时再显式加回)
+#   - 加固件侧必需: udisks2(存储 broker 依赖)、dosfstools/exfatprogs/xfsprogs
+#   - Rockchip 项(libmali/rknpu2 用户态)待板卡厂商 ABI+授权确认后单列,
+#     不进本清单
+#
+# 包名一行一个;构建脚本按行消费。内核 headers 不在此列——它来自 BSP
+# (BSP_HEADERS_DEB),不能用 Debian 通用包替代。
+ca-certificates
+curl
+zstd
+gnupg
+lsb-release
+openssl
+avahi-daemon
+libnss-mdns
+openssh-server
+rclone
+fuse3
+sudo
+python3
+python3-venv
+python3-pip
+git
+nginx
+zfsutils-linux
+zfs-dkms
+samba
+samba-common-bin
+smbclient
+wsdd2
+samba-vfs-modules
+nfs-kernel-server
+acl
+quota
+e2fsprogs
+udisks2
+dosfstools
+exfatprogs
+xfsprogs
+smartmontools
+hdparm
+mdadm
+lvm2
+btrfs-progs
+parted
+util-linux
+firmware-linux-free
+firmware-misc-nonfree
+firmware-realtek
+nvme-cli
+pciutils
+usbutils
+# ── 桌面层(HDMI 本地形态,2026-09-12 拍板)─────────────────
+# SDDM + KWin(Wayland) 与 x86 桌面栈同构;libmali(GPU blob)不在
+# 此列,走 sdk-userspace.txt。体积大,首版先装齐、后续裁剪。
+sddm
+kwin-wayland
+plasma-workspace
+plasma-desktop
+breeze
+polkit-kde-agent-1
+powerdevil
+fcitx5
+qtwayland5
+
+ethtool
+lm-sensors
+restic
+# ── 资源档位(zram 压缩交换,resource-tune 阶段写配置)────────
+systemd-zram-generator
+# ── agent 常驻进程内存(LD_PRELOAD,见服务单元注释)──────────
+libjemalloc2
