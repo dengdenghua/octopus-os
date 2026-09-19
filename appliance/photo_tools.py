@@ -137,11 +137,16 @@ class PhotoToolService:
         )
         if response.get("ok"):
             response["desktopAction"] = {
-                "type": "photos.search", "query": query.strip(),
+                "type": "photos.search",
+                "query": query.strip(),
                 "label": "在相册中查看",
-                "href": "/#/desktop?" + urlencode({
-                    "desktopAction": "photos.search", "query": query.strip(),
-                }),
+                "href": "/#/desktop?"
+                + urlencode(
+                    {
+                        "desktopAction": "photos.search",
+                        "query": query.strip(),
+                    }
+                ),
             }
         return response
 

@@ -19,10 +19,7 @@ def test_native_agent_never_receives_the_docker_socket_or_plaintext_token() -> N
     source = _source(AGENT_SERVICE)
 
     assert "Environment=ECHO_DOCKER_HOST=http://127.0.0.1:2375" in source
-    assert (
-        "LoadCredential=echo.docker-proxy-token:/var/lib/echo-os/docker-proxy-token"
-        in source
-    )
+    assert "LoadCredential=echo.docker-proxy-token:/var/lib/echo-os/docker-proxy-token" in source
     assert "docker.sock" not in source
     assert "ECHO_DOCKER_PROXY_TOKEN=" not in source
 
@@ -32,13 +29,11 @@ def test_native_proxy_is_loopback_only_and_never_starts_as_root() -> None:
 
     assert "ConditionPathExists=/var/run/docker.sock" in source
     assert (
-        "Requires=docker.service echo-docker-credential.service "
-        "echo-native-storage-broker.service"
+        "Requires=docker.service echo-docker-credential.service echo-native-storage-broker.service"
     ) in source
     assert "Environment=ECHO_NATIVE_OS=1" in source
     assert (
-        "ExecStart=/usr/bin/python3 -m appliance.docker_proxy "
-        "--host 127.0.0.1 --port 2375"
+        "ExecStart=/usr/bin/python3 -m appliance.docker_proxy --host 127.0.0.1 --port 2375"
     ) in source
     assert "User=echo-docker-control" in source
     assert "Group=echo" in source

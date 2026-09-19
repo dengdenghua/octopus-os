@@ -38,9 +38,7 @@ _NAS_TRANSFER_PATTERN = hashlib.sha256(b"Echo OS NAS transfer verification v1").
 _MAX_FAMILY_FIXTURE_BYTES = 32 * 1024
 _KERNEL_RELEASE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._+~-]{0,127}$")
 _SYSTEM_CAPABILITY_ID = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$")
-_REQUIRED_SYSTEM_CAPABILITIES = frozenset(
-    {"apps.list", "hub.catalog.list", "storage.health.read"}
-)
+_REQUIRED_SYSTEM_CAPABILITIES = frozenset({"apps.list", "hub.catalog.list", "storage.health.read"})
 
 
 class VerificationError(RuntimeError):

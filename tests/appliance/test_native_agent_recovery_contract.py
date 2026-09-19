@@ -290,9 +290,7 @@ def test_native_health_rejects_a_runtime_from_another_agent_revision(monkeypatch
     payload = json.loads(payloads[health_url])
     payload["runtime"]["sourceId"] = "b" * 40
     payloads[health_url] = json.dumps(payload).encode()
-    monkeypatch.setattr(
-        health, "_read", lambda url, *, maximum, headers=None: payloads[url]
-    )
+    monkeypatch.setattr(health, "_read", lambda url, *, maximum, headers=None: payloads[url])
 
     with pytest.raises(RuntimeError, match="health identity differs"):
         health._verify_once(expected)
@@ -305,9 +303,7 @@ def test_native_health_rejects_incompatible_recovery_queue(monkeypatch) -> None:
     payloads[queue_url] = json.dumps(
         {"schema": "legacy.queue", "total": 0, "count": 0, "limit": 200, "items": []}
     ).encode()
-    monkeypatch.setattr(
-        health, "_read", lambda url, *, maximum, headers=None: payloads[url]
-    )
+    monkeypatch.setattr(health, "_read", lambda url, *, maximum, headers=None: payloads[url])
 
     with pytest.raises(RuntimeError, match="recovery queue response is incompatible"):
         health._verify_once(expected)
@@ -318,9 +314,7 @@ def test_native_health_rejects_a_missing_native_os_extension(monkeypatch) -> Non
     expected, payloads = _health_payloads(health)
     projection_url = f"{health.BASE_URL}/api/appliance/tasks?limit=1"
     payloads[projection_url] = json.dumps({"detail": "Not Found"}).encode()
-    monkeypatch.setattr(
-        health, "_read", lambda url, *, maximum, headers=None: payloads[url]
-    )
+    monkeypatch.setattr(health, "_read", lambda url, *, maximum, headers=None: payloads[url])
 
     with pytest.raises(RuntimeError, match="native OS extension task projection is unavailable"):
         health._verify_once(expected)

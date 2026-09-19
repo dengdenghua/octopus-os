@@ -490,9 +490,7 @@ def test_system_deb_manifest_exactly_covers_headless_firstboot_transactions() ->
 
 def test_rclone_mount_runtime_includes_a_privilege_safe_fuse_helper() -> None:
     mkosi = (REPOSITORY / "packaging/image/mkosi.conf").read_text(encoding="utf-8")
-    postinst = (REPOSITORY / "packaging/image/mkosi.postinst.chroot").read_text(
-        encoding="utf-8"
-    )
+    postinst = (REPOSITORY / "packaging/image/mkosi.postinst.chroot").read_text(encoding="utf-8")
     verifier = (REPOSITORY / "packaging/image/verify-image.sh").read_text(encoding="utf-8")
 
     assert "        rclone\n        fuse3\n" in mkosi
@@ -502,12 +500,10 @@ def test_rclone_mount_runtime_includes_a_privilege_safe_fuse_helper() -> None:
 
 
 def test_encrypted_backup_remote_mount_is_installed_without_a_private_namespace() -> None:
-    provision = (REPOSITORY / "deploy/provision/base/provision-lib.sh").read_text(
+    provision = (REPOSITORY / "deploy/provision/base/provision-lib.sh").read_text(encoding="utf-8")
+    unit = (REPOSITORY / "deploy/appliance/systemd/echo-rclone-backup@.service").read_text(
         encoding="utf-8"
     )
-    unit = (
-        REPOSITORY / "deploy/appliance/systemd/echo-rclone-backup@.service"
-    ).read_text(encoding="utf-8")
     mkosi = (REPOSITORY / "packaging/image/mkosi.conf").read_text(encoding="utf-8")
 
     assert "echo-rclone-backup@.service" in provision

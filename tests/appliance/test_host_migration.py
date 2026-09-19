@@ -163,9 +163,10 @@ def test_apply_installs_fixed_dependencies_units_and_enabled_services(tmp_path: 
     for name, relative in host_migration.UNIT_SOURCES.items():
         assert (units / name).read_bytes() == (source / relative).read_bytes()
     host_paths = _host_paths(tmp_path)
-    assert host_paths["remote_wrapper_path"].read_bytes() == (
-        source / host_migration.REMOTE_WRAPPER_SOURCE
-    ).read_bytes()
+    assert (
+        host_paths["remote_wrapper_path"].read_bytes()
+        == (source / host_migration.REMOTE_WRAPPER_SOURCE).read_bytes()
+    )
     if host_migration.os.name == "posix":
         assert host_paths["remote_wrapper_path"].stat().st_mode & 0o777 == 0o755
     assert host_paths["remote_credential_directory"].is_dir()

@@ -75,9 +75,7 @@ def test_plan_rejects_enablement_without_a_mounted_share(
         ],
     )
     with pytest.raises(ValueError, match="mounted registered"):
-        control.plan_webdav(
-            {"schema": "echo.storage.webdav-desired.v1", "enabled": True}
-        )
+        control.plan_webdav({"schema": "echo.storage.webdav-desired.v1", "enabled": True})
     assert not policy_path.exists()
 
 
@@ -147,12 +145,9 @@ def test_apply_rejects_a_stale_plan_without_mutation(
 def test_image_and_provisioning_keep_webdav_disabled_until_approval() -> None:
     repository = Path(__file__).resolve().parents[2]
     preset = (
-        repository
-        / "packaging/image/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset"
+        repository / "packaging/image/mkosi.extra/usr/lib/systemd/system-preset/80-echo-os.preset"
     ).read_text(encoding="utf-8")
-    provision = (repository / "deploy/provision/base/provision-lib.sh").read_text(
-        encoding="utf-8"
-    )
+    provision = (repository / "deploy/provision/base/provision-lib.sh").read_text(encoding="utf-8")
     refresh_path = (repository / "deploy/webdav/echo-webdav-refresh.path").read_text(
         encoding="utf-8"
     )

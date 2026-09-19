@@ -77,10 +77,7 @@ def _validate_labels(
             or labels.get("sh.echo.hub.bundle-service") != service.id
             or labels.get("sh.echo.hub.bundle-digest") != artifact_digest
             or labels.get("sh.echo.hub.bundle-version") != app.version
-            or (
-                labels.get("sh.echo.hub.app-id") == app.id
-            )
-            != (service.id == bundle.public_service)
+            or (labels.get("sh.echo.hub.app-id") == app.id) != (service.id == bundle.public_service)
         ):
             raise OSError("Hub service identity differs from the trusted bundle")
     return plan_id
@@ -164,9 +161,7 @@ def desired_forwards(catalog: HubCatalog, docker: DockerClient) -> list[dict[str
                 raise OSError("Hub service container inspection is unavailable")
             public_service = service is None or definition.id == service.id
             expected_name = (
-                f"/echo-hub-{app.id}"
-                if public_service
-                else f"/echo-hub-{app.id}--{definition.id}"
+                f"/echo-hub-{app.id}" if public_service else f"/echo-hub-{app.id}--{definition.id}"
             )
             if current.get("Id") != container_id or current.get("Name") != expected_name:
                 raise OSError("Hub service container inspection changed identity")

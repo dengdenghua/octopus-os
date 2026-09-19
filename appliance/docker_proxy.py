@@ -661,7 +661,9 @@ def main(argv: list[str] | None = None) -> int:
         base_url="",
         allow_direct_socket=True,
     )
-    hub_firewall_sync = _sync_native_hub_firewall if os.environ.get("ECHO_NATIVE_OS") == "1" else None
+    hub_firewall_sync = (
+        _sync_native_hub_firewall if os.environ.get("ECHO_NATIVE_OS") == "1" else None
+    )
     if hub_firewall_sync is not None:
         hub_firewall_sync()
     server = create_proxy_server(

@@ -107,7 +107,13 @@ def _fake_dependency_locks(path: Path) -> None:
     _write(path / agent_bundle.DEPENDENCY_LOCK_METADATA, json.dumps(metadata) + "\n")
 
 
-def _fake_codex(path: Path, *, schema: str = "echo.codex_bundle.v1", arm64: bool = False, wrong_machine: bool = False) -> None:
+def _fake_codex(
+    path: Path,
+    *,
+    schema: str = "echo.codex_bundle.v1",
+    arm64: bool = False,
+    wrong_machine: bool = False,
+) -> None:
     executable = path / "bin" / "codex"
     executable.parent.mkdir(parents=True, exist_ok=True)
     # Minimal little-endian x86-64 ELF64 header; bundle tests validate target

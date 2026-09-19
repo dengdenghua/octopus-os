@@ -229,7 +229,11 @@ def _desired(value: Mapping[str, Any]) -> dict[str, Any]:
             raise NasBackupRemotePolicyError("remove request has an invalid schema")
         if value.get("schema") != DESIRED_SCHEMA:
             raise NasBackupRemotePolicyError("remote request schema is unsupported")
-        return {"schema": DESIRED_SCHEMA, "operation": "remove", "remoteId": _remote_id(value.get("remoteId"))}
+        return {
+            "schema": DESIRED_SCHEMA,
+            "operation": "remove",
+            "remoteId": _remote_id(value.get("remoteId")),
+        }
     expected = {
         "schema",
         "operation",
@@ -256,8 +260,12 @@ def _desired(value: Mapping[str, Any]) -> dict[str, Any]:
         "region": region,
         "bucket": _bucket(value.get("bucket")),
         "prefix": _prefix(value.get("prefix")),
-        "accessKeyId": _safe_text(value.get("accessKeyId"), "S3 access key", minimum=3, maximum=256),
-        "secretAccessKey": _safe_text(value.get("secretAccessKey"), "S3 secret key", minimum=8, maximum=4096),
+        "accessKeyId": _safe_text(
+            value.get("accessKeyId"), "S3 access key", minimum=3, maximum=256
+        ),
+        "secretAccessKey": _safe_text(
+            value.get("secretAccessKey"), "S3 secret key", minimum=8, maximum=4096
+        ),
     }
 
 
@@ -348,7 +356,19 @@ def _context(
         public_desired["label"] = desired["label"]
         secret_binding = hmac.new(
             binding_key,
-            _canonical({key: desired[key] for key in ("endpoint", "region", "bucket", "prefix", "accessKeyId", "secretAccessKey")}),
+            _canonical(
+                {
+                    key: desired[key]
+                    for key in (
+                        "endpoint",
+                        "region",
+                        "bucket",
+                        "prefix",
+                        "accessKeyId",
+                        "secretAccessKey",
+                    )
+                }
+            ),
             hashlib.sha256,
         ).hexdigest()
     binding = {
@@ -647,9 +667,8 @@ def apply_remote(
             if operation == "create":
                 if mountpoint.exists():
                     _assert_directory(mountpoint, trusted_uid=trusted_uid)
-                    if (
-                        next(mountpoint.iterdir(), None) is not None
-                        or mount_state_reader(mountpoint)
+                    if next(mountpoint.iterdir(), None) is not None or mount_state_reader(
+                        mountpoint
                     ):
                         raise OSError("remote mountpoint is not empty")
                 else:
@@ -707,7 +726,9 @@ def apply_remote(
             rollback_errors: list[str] = []
             try:
                 if registry_existed and previous_registry is not None:
-                    _atomic_write(registry_path, previous_registry, uid=trusted_uid, gid=trusted_gid)
+                    _atomic_write(
+                        registry_path, previous_registry, uid=trusted_uid, gid=trusted_gid
+                    )
                 else:
                     registry_path.unlink(missing_ok=True)
             except OSError:

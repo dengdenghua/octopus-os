@@ -337,9 +337,7 @@ def load_or_bootstrap_auth() -> tuple[Any, str | None]:
         if len(password.encode("utf-8")) > 72:
             raise ValueError("ECHO_ADMIN_PASSWORD must be at most 72 UTF-8 bytes (bcrypt limit)")
     elif os.environ.get("ECHO_APPLIANCE_REQUIRE_PROVISIONED_AUTH") == "1":
-        raise RuntimeError(
-            "appliance authentication must be provisioned before production startup"
-        )
+        raise RuntimeError("appliance authentication must be provisioned before production startup")
     else:
         password = secrets.token_urlsafe(12)
         generated = password

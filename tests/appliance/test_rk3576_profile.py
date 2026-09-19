@@ -6,12 +6,24 @@ from deploy.rk3576.probe import evaluate
 
 
 def test_probe_requires_vendor_board_arch_os_and_resources():
-    good = ("aarch64", {"ID": "debian", "VERSION_ID": "12"},
-            "rockchip,rk3576-evb1-v10\0rockchip,rk3576\0", 4_000_000, True, True)
+    good = (
+        "aarch64",
+        {"ID": "debian", "VERSION_ID": "12"},
+        "rockchip,rk3576-evb1-v10\0rockchip,rk3576\0",
+        4_000_000,
+        True,
+        True,
+    )
     assert evaluate(*good)["prerequisites_met"]
     assert not evaluate(*good)["hardware_validated"]
-    for index, value in [(0, "x86_64"), (1, {"ID": "ubuntu"}), (2, "rockchip,rk3588"),
-                         (3, 1_000_000), (4, False), (5, False)]:
+    for index, value in [
+        (0, "x86_64"),
+        (1, {"ID": "ubuntu"}),
+        (2, "rockchip,rk3588"),
+        (3, 1_000_000),
+        (4, False),
+        (5, False),
+    ]:
         bad = list(good)
         bad[index] = value
         assert not evaluate(*bad)["prerequisites_met"]

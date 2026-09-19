@@ -143,9 +143,9 @@ def test_public_source_test_runner_rejects_unreviewed_cli_arguments(
     assert namespace["main"]([]) == 0
     assert captured[:2] == ["-q", "--confcutdir=tests/appliance"]
     assert "tests/appliance/test_delivery_workflow_policy.py" in captured
-    assert "appliance/" in namespace["sys"].modules[
-        "tools.lint.untracked_source_check"
-    ].SOURCE_ROOTS
+    assert (
+        "appliance/" in namespace["sys"].modules["tools.lint.untracked_source_check"].SOURCE_ROOTS
+    )
 
 
 def test_privileged_container_jobs_use_the_validated_container_scratch_path() -> None:

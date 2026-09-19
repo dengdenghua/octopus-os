@@ -1234,9 +1234,7 @@ def test_system_capability_probe_proves_the_appliance_extension_is_mounted(monke
 
     monkeypatch.setattr(verifier, "_http", http)
 
-    result = verifier._assert_system_capabilities_contract(
-        "http://127.0.0.1:8000", "token"
-    )
+    result = verifier._assert_system_capabilities_contract("http://127.0.0.1:8000", "token")
 
     assert result == {
         "apiVersion": "echo.ai/v1alpha1",

@@ -266,9 +266,7 @@ def test_remote_list_returns_only_redacted_status(monkeypatch) -> None:
         "list_remotes",
         lambda: {
             "schema": "echo.nas-backup-remote-status.v1",
-            "remotes": [
-                {"id": "offsite", "label": "异地对象存储", "kind": "s3", "mounted": True}
-            ],
+            "remotes": [{"id": "offsite", "label": "异地对象存储", "kind": "s3", "mounted": True}],
             "count": 1,
             "pathsRedacted": True,
             "secretsRedacted": True,

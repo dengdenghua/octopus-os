@@ -174,7 +174,10 @@ def _registered_shares() -> list[dict[str, Any]]:
 def capability_available() -> bool:
     if any(shutil.which(name) is None for name in ("rclone", "sshd", "systemctl", "mount")):
         return False
-    if any(not any(path.is_file() and not path.is_symlink() for path in paths) for paths in SERVICE_PATHS.values()):
+    if any(
+        not any(path.is_file() and not path.is_symlink() for path in paths)
+        for paths in SERVICE_PATHS.values()
+    ):
         return False
     try:
         _read_policy(strict=True)
@@ -234,11 +237,13 @@ def plan_webdav(desired_state: dict[str, Any]) -> dict[str, Any]:
     unit_states = service["units"].values()
     any_enabled = any(item["enabled"] for item in unit_states)
     any_active = any(item["active"] for item in service["units"].values())
-    converged = (
-        current and service["enabled"] and service["active"]
-    ) or (not current and not any_enabled and not any_active)
-    operation = "none" if current == desired["enabled"] and converged else (
-        "enable" if desired["enabled"] else "disable"
+    converged = (current and service["enabled"] and service["active"]) or (
+        not current and not any_enabled and not any_active
+    )
+    operation = (
+        "none"
+        if current == desired["enabled"] and converged
+        else ("enable" if desired["enabled"] else "disable")
     )
     plan_id = storage._canonical_hash(
         {

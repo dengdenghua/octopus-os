@@ -3006,9 +3006,7 @@ def test_nfs_firewall_failure_rolls_back_managed_exports(
     exports = tmp_path / "exports.d" / "echo-os.exports"
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(native_storage, "_NATIVE_NFS_EXPORTS", exports)
-    monkeypatch.setattr(
-        native_storage, "_run_write", lambda *args, **_kwargs: calls.append(args)
-    )
+    monkeypatch.setattr(native_storage, "_run_write", lambda *args, **_kwargs: calls.append(args))
     monkeypatch.setattr(
         native_storage,
         "_run_read_checked",

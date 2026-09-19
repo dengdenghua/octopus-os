@@ -83,9 +83,9 @@ class UnifiedEchoWorkflowPolicyTests(unittest.TestCase):
             ".github/workflows/ab-update-smoke.yml",
         ):
             workflow = self._workflow(relative_path)
-            dependency_step = workflow.split(
-                "- name: Install source-contract dependencies", 1
-            )[1].split("- uses:", 1)[0]
+            dependency_step = workflow.split("- name: Install source-contract dependencies", 1)[
+                1
+            ].split("- uses:", 1)[0]
             installed_packages = set(re.findall(r"[a-z0-9][a-z0-9+.-]*", dependency_step))
             self.assertTrue(
                 required_packages <= installed_packages,

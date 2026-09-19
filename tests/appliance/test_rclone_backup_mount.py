@@ -46,8 +46,7 @@ def test_command_uses_only_the_systemd_credential_and_managed_mountpoint(
     assert command[:3] == [str(runtime["rclone_path"]), "mount", "echo:"]
     assert command[3] == str(runtime["mount_root"] / "offsite")
     assert command[4] == (
-        f"--config={runtime['environ']['CREDENTIALS_DIRECTORY']}"
-        f"{os.sep}rclone.conf"
+        f"--config={runtime['environ']['CREDENTIALS_DIRECTORY']}{os.sep}rclone.conf"
     )
     assert not any("access" in item.lower() or "secret" in item.lower() for item in command)
     assert "--vfs-cache-mode=off" in command

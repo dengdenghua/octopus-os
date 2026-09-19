@@ -101,12 +101,8 @@ def test_secret_or_endpoint_change_invalidates_plan(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
 
     first = remote.plan_remote(_desired(), **runtime)
-    second = remote.plan_remote(
-        _desired(secretAccessKey="another-private-secret"), **runtime
-    )
-    third = remote.plan_remote(
-        _desired(endpoint="https://another.example.test"), **runtime
-    )
+    second = remote.plan_remote(_desired(secretAccessKey="another-private-secret"), **runtime)
+    third = remote.plan_remote(_desired(endpoint="https://another.example.test"), **runtime)
 
     assert len({first["planId"], second["planId"], third["planId"]}) == 3
 
@@ -191,9 +187,7 @@ def test_default_mount_verifier_uses_the_current_external_storage_contract(
         ("secretAccessKey", "short"),
     ],
 )
-def test_create_plan_rejects_unsafe_remote_values(
-    tmp_path: Path, field: str, value: str
-) -> None:
+def test_create_plan_rejects_unsafe_remote_values(tmp_path: Path, field: str, value: str) -> None:
     runtime = _runtime(tmp_path)
 
     with pytest.raises(remote.NasBackupRemotePolicyError):

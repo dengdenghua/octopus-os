@@ -176,9 +176,7 @@ def audit_vm_evidence(index_path: Path, evidence_root: Path) -> dict[str, Any]:
                 passed = type(actual) is type(expected) and actual == expected
             except (KeyError, TypeError):
                 pass
-            result_by_name[entry["name"]]["assertions"].append(
-                {**assertion, "passed": passed}
-            )
+            result_by_name[entry["name"]]["assertions"].append({**assertion, "passed": passed})
             if not passed:
                 blockers.append(f"{entry['name']}:assertion:{assertion['field']}")
 

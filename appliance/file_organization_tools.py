@@ -112,9 +112,13 @@ class FileOrganizationToolService:
                     "type": "files.open",
                     "path": plan["path"],
                     "label": "在文件管理器中查看",
-                    "href": "/#/desktop?" + urlencode({
-                        "desktopAction": "files.open", "path": plan["path"],
-                    }),
+                    "href": "/#/desktop?"
+                    + urlencode(
+                        {
+                            "desktopAction": "files.open",
+                            "path": plan["path"],
+                        }
+                    ),
                 },
                 "message": message,
             }

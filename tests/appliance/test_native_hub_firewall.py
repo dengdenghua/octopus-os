@@ -67,9 +67,7 @@ def _runtime(
         {}
         if mode == "host"
         else {
-            f"{port.container}/{port.protocol}": [
-                {"HostIp": "0.0.0.0", "HostPort": str(port.host)}
-            ]
+            f"{port.container}/{port.protocol}": [{"HostIp": "0.0.0.0", "HostPort": str(port.host)}]
             for port in ports
         }
     )
@@ -170,13 +168,7 @@ def test_complete_multi_service_bundle_uses_its_declared_public_network() -> Non
             "NetworkSettings": {
                 "Networks": {network_name: {"IPAddress": f"172.21.0.{index + 2}"}},
                 "Ports": (
-                    {
-                        "80/tcp": [
-                            {"HostIp": "0.0.0.0", "HostPort": "8081"}
-                        ]
-                    }
-                    if is_public
-                    else {}
+                    {"80/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8081"}]} if is_public else {}
                 ),
             },
         }
