@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
+
 from runtime.execution.codex_backend.upstream_update import (
     CodexUpstreamUpdateService,
     resolve_bundled_codex_version,
@@ -132,3 +135,77 @@ def test_rejects_unverified_or_insecure_metadata(tmp_path):
 
     assert status.update_available is False
     assert status.error == "Codex package integrity is missing"
+
+
+def test_closed_service_stops_writing_status_file(tmp_path):
+    state = tmp_path / "status.json"
+    service = CodexUpstreamUpdateService(
+        state,
+        current_version="0.149.0",
+        fetcher=lambda _url, _timeout: _metadata(),
+    )
+    service.check()
+    before = state.read_text(encoding="utf-8")
+
+    # close() flips this flag *before* cancelling the worker task. Without it a
+    # check already running on the thread keeps writing while the app tears
+    # down, and any failure on that path escapes through lifespan teardown.
+    service._closed = True
+    service.check()
+
+    assert state.read_text(encoding="utf-8") == before
+
+
+def test_write_surfaces_real_failure_when_cleanup_also_fails(tmp_path, monkeypatch):
+    from runtime.execution.codex_backend import upstream_update as mod
+
+    service = mod.CodexUpstreamUpdateService(
+        tmp_path / "status.json",
+        current_version="0.149.0",
+        fetcher=lambda _url, _timeout: _metadata(),
+    )
+    status = service.check()
+
+    def boom_replace(_src, _dst):
+        raise OSError("replace failed")
+
+    def boom_unlink(_self, missing_ok=False):
+        raise OSError("cleanup failed")
+
+    monkeypatch.setattr(mod.os, "replace", boom_replace)
+    monkeypatch.setattr(mod.Path, "unlink", boom_unlink)
+
+    try:
+        service._write(status)
+    except OSError as exc:
+        assert "replace failed" in str(exc), "cleanup failure masked the real error"
+    else:  # pragma: no cover
+        raise AssertionError("_write must surface the real persistence failure")
+
+
+def test_run_survives_repeated_check_failures(tmp_path):
+    def boom(_url, _timeout):
+        raise RuntimeError("radar boom")
+
+    service = CodexUpstreamUpdateService(
+        tmp_path / "status.json",
+        current_version="0.149.0",
+        fetcher=boom,
+        initial_check_delay_seconds=0,
+        check_interval_seconds=0,
+    )
+
+    async def scenario():
+        task = asyncio.create_task(service._run())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        return task
+
+    task = asyncio.run(scenario())
+
+    # The radar must still be alive when we cancel it. An unhandled check
+    # failure would end the loop early, leaving the task finished with an
+    # exception instead of cancelled.
+    assert task.cancelled()

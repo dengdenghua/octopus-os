@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -29,6 +30,8 @@ DEFAULT_CHECK_INTERVAL_SECONDS = 6 * 60 * 60
 DEFAULT_INITIAL_CHECK_DELAY_SECONDS = 15
 MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_BUNDLE_MANIFEST_BYTES = 1024 * 1024
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> str:
@@ -180,6 +183,7 @@ class CodexUpstreamUpdateService:
         self._initial_check_delay_seconds = max(0.0, float(initial_check_delay_seconds))
         self._lock = threading.RLock()
         self._task: asyncio.Task[None] | None = None
+        self._closed = False
 
     def read(self) -> CodexUpdateStatus:
         with self._lock:
@@ -267,11 +271,18 @@ class CodexUpstreamUpdateService:
 
     def start(self) -> None:
         if self._task is None or self._task.done():
+            self._closed = False
             self._task = asyncio.create_task(self._run(), name="codex-update-radar")
 
     async def close(self) -> None:
         task = self._task
         self._task = None
+        # Stop persisting *before* cancelling. `asyncio.to_thread` cannot
+        # interrupt a check that already started, so without this the worker
+        # thread keeps running and writes a status file while the app is
+        # tearing down -- any failure on that path (including cleanup of the
+        # temp file) escapes through lifespan teardown and kills the process.
+        self._closed = True
         if task is None:
             return
         task.cancel()
@@ -281,7 +292,16 @@ class CodexUpstreamUpdateService:
     async def _run(self) -> None:
         await asyncio.sleep(self._initial_check_delay_seconds)
         while True:
-            await asyncio.to_thread(self.check)
+            try:
+                await asyncio.to_thread(self.check)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning(
+                    "codex release radar check failed; retrying in %.0fs",
+                    self._check_interval_seconds,
+                    exc_info=True,
+                )
             await asyncio.sleep(self._check_interval_seconds)
 
     def _empty_status(self) -> CodexUpdateStatus:
@@ -303,6 +323,8 @@ class CodexUpstreamUpdateService:
             return self._empty_status()
 
     def _write(self, status: CodexUpdateStatus) -> None:
+        if self._closed:
+            return
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         temp_path: Path | None = None
         try:
@@ -321,7 +343,10 @@ class CodexUpstreamUpdateService:
             os.replace(temp_path, self._state_path)
         finally:
             if temp_path is not None and temp_path.exists():
-                temp_path.unlink(missing_ok=True)
+                # Cleanup must never mask the real failure from the block
+                # above: when os.replace fails we still need to know why.
+                with suppress(OSError):
+                    temp_path.unlink(missing_ok=True)
 
 
 __all__ = [
